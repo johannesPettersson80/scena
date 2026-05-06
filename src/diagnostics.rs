@@ -3,7 +3,7 @@
 use std::error;
 use std::fmt;
 
-use crate::assets::{GeometryHandle, MaterialHandle};
+use crate::assets::{EnvironmentHandle, GeometryHandle, MaterialHandle};
 use crate::geometry::GeometryTopology;
 use crate::material::{AlphaMode, MaterialKind};
 use crate::scene::{CameraKey, NodeKey};
@@ -73,6 +73,12 @@ pub enum PrepareError {
         node: NodeKey,
         material: MaterialHandle,
     },
+    EnvironmentAssetsRequired {
+        environment: EnvironmentHandle,
+    },
+    EnvironmentNotFound {
+        environment: EnvironmentHandle,
+    },
     UnsupportedGeometryTopology {
         node: NodeKey,
         topology: GeometryTopology,
@@ -109,6 +115,11 @@ pub enum NotPreparedReason {
         current_revision: u64,
         change: ChangeKind,
     },
+    EnvironmentChanged {
+        prepared_revision: u64,
+        current_revision: u64,
+        change: ChangeKind,
+    },
     TargetChanged {
         prepared_revision: u64,
         current_revision: u64,
@@ -119,6 +130,7 @@ pub enum NotPreparedReason {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeKind {
     SceneStructure,
+    Environment,
     RenderTarget,
 }
 
@@ -330,6 +342,18 @@ impl fmt::Display for PrepareError {
                     "node {node:?} references missing material handle {material:?}"
                 )
             }
+            Self::EnvironmentAssetsRequired { environment } => {
+                write!(
+                    formatter,
+                    "environment handle {environment:?} requires prepare_with_assets"
+                )
+            }
+            Self::EnvironmentNotFound { environment } => {
+                write!(
+                    formatter,
+                    "active environment handle {environment:?} was not found in assets"
+                )
+            }
             Self::UnsupportedGeometryTopology { node, topology } => {
                 write!(
                     formatter,
@@ -386,9 +410,14 @@ impl fmt::Display for NotPreparedReason {
                 prepared_revision,
                 current_revision,
                 change,
+            }
+            | Self::EnvironmentChanged {
+                prepared_revision,
+                current_revision,
+                change,
             } => write!(
                 formatter,
-                "scene changed after prepare ({prepared_revision} -> {current_revision}, {change:?})"
+                "prepared state changed after prepare ({prepared_revision} -> {current_revision}, {change:?})"
             ),
             Self::TargetChanged {
                 prepared_revision,

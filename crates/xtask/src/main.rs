@@ -140,6 +140,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_module_boundaries(root, findings);
     check_asset_api_contracts(root, findings);
     check_prepare_asset_contracts(root, findings);
+    check_environment_lifecycle_contracts(root, findings);
     check_render_alpha_contracts(root, findings);
     check_output_stage_contracts(root, findings);
     check_renderer_stats_contracts(root, findings);
@@ -689,14 +690,24 @@ fn check_render_alpha_contracts(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "ARCH-RENDER-ALPHA",
+        "src/render/cpu.rs",
+        &[
+            "fn blend_source_over(source: Color, destination: Color) -> Color",
+            "let blended = blend_source_over(color, linear_frame[pixel_index])",
+            "linear_frame[pixel_index] = blended",
+            "&output.encode_rgba8(blended)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-ALPHA",
         "src/render.rs",
         &[
             "linear_frame: Option<Vec<Color>>",
             "linear_frame: (!has_gpu).then(|| vec![Color::BLACK; target.pixel_len()])",
-            "fn blend_source_over(source: Color, destination: Color) -> Color",
-            "let blended = blend_source_over(color, linear_frame[pixel_index])",
-            "linear_frame[pixel_index] = blended",
-            "&self.output.encode_rgba8(blended)",
+            "cpu::clear_cpu",
+            "cpu::draw_primitive_cpu",
         ],
     );
     require_contains(
@@ -884,6 +895,55 @@ fn check_prepare_asset_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "ARCH-PREPARE-ASSETS",
         "docs/specs/public-api.md",
         &["pub fn prepare_with_assets<F>"],
+    );
+}
+
+fn check_environment_lifecycle_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENVIRONMENT-LIFECYCLE",
+        "src/render.rs",
+        &[
+            "environment: Option<EnvironmentHandle>",
+            "environment_revision: u64",
+            "pub fn environment(&self) -> Option<EnvironmentHandle>",
+            "pub fn set_environment(&mut self, environment: EnvironmentHandle)",
+            "PrepareError::EnvironmentAssetsRequired",
+            "PrepareError::EnvironmentNotFound",
+            "self.stats.environments = environment_count",
+            "NotPreparedReason::EnvironmentChanged",
+            "ChangeKind::Environment",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENVIRONMENT-LIFECYCLE",
+        "src/diagnostics.rs",
+        &[
+            "EnvironmentAssetsRequired",
+            "EnvironmentNotFound",
+            "EnvironmentChanged",
+            "Environment",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENVIRONMENT-LIFECYCLE",
+        "tests/m1_geometry_materials.rs",
+        &["renderer_environment_is_structural_and_validated_during_prepare"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENVIRONMENT-LIFECYCLE",
+        "tests/m1_visual_proof.rs",
+        &[
+            "render_default_cube_with_default_environment",
+            "validate_default_cube_luminance_and_silhouette",
+        ],
     );
 }
 
@@ -1273,6 +1333,9 @@ fn check_visual_fixture_metadata(root: &Path, findings: &mut Vec<Finding>) {
             "name = \"transparent-blend\"",
             "name = \"line-material\"",
             "name = \"wire-edge-materials\"",
+            "name = \"default-cube\"",
+            "luminance_gate = \"center-nonblack\"",
+            "silhouette_gate = \"corner-black\"",
         ],
     );
     require_contains(
@@ -1558,6 +1621,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_prepare_asset_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn environment_lifecycle_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_environment_lifecycle_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

@@ -30,3 +30,9 @@ required_surface = "headless-cpu"
 [[fixture]]
 name = "wire-edge-materials"
 required_surface = "headless-cpu"
+
+[[fixture]]
+name = "default-cube"
+required_surface = "headless-cpu"
+luminance_gate = "center-nonblack"
+silhouette_gate = "corner-black"

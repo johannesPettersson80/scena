@@ -4,16 +4,17 @@ use std::cell::Cell;
 use std::marker::PhantomData;
 use std::sync::Weak;
 
+mod cpu;
 mod gpu;
 mod output;
 mod prepare;
 
-use crate::assets::Assets;
+use crate::assets::{Assets, EnvironmentHandle};
 use crate::diagnostics::{
     Backend, BuildError, Capabilities, ChangeKind, NotPreparedReason, PrepareError, RenderError,
     RenderOutcome, RendererStats,
 };
-use crate::geometry::{Primitive, Vertex};
+use crate::geometry::Primitive;
 use crate::material::Color;
 use crate::platform::{PlatformSurface, PlatformSurfaceAttachment, SurfaceEvent, SurfaceKind};
 use crate::scene::{CameraKey, Scene};
@@ -34,6 +35,8 @@ pub struct Renderer {
     capabilities: Capabilities,
     gpu: Option<GpuDeviceState>,
     output: OutputTransform,
+    environment: Option<EnvironmentHandle>,
+    environment_revision: u64,
     target_revision: u64,
     not_sync: PhantomData<Cell<()>>,
 }
@@ -42,6 +45,7 @@ pub struct Renderer {
 struct PreparedSceneState {
     scene: Weak<()>,
     structure_revision: u64,
+    environment_revision: u64,
     target_revision: u64,
     primitives: Vec<Primitive>,
 }
@@ -183,6 +187,8 @@ impl Renderer {
             capabilities,
             gpu,
             output: OutputTransform::default(),
+            environment: None,
+            environment_revision: 0,
             target_revision: 0,
             not_sync: PhantomData,
         })
@@ -211,13 +217,27 @@ impl Renderer {
                 height: self.target.height,
             }
         })?;
+        let environment_count = match self.environment {
+            Some(environment) => {
+                let Some(assets) = assets else {
+                    return Err(PrepareError::EnvironmentAssetsRequired { environment });
+                };
+                if assets.environment(environment).is_none() {
+                    return Err(PrepareError::EnvironmentNotFound { environment });
+                }
+                1
+            }
+            None => 0,
+        };
         let primitives = prepare::collect_prepared_primitives(self.target, scene, assets)?;
         if let Some(gpu) = &mut self.gpu {
             gpu.prepare(self.target, &primitives);
         }
+        self.stats.environments = environment_count;
         self.prepared = Some(PreparedSceneState {
             scene: scene.identity(),
             structure_revision: scene.structure_revision(),
+            environment_revision: self.environment_revision,
             target_revision: self.target_revision,
             primitives,
         });
@@ -239,9 +259,29 @@ impl Renderer {
         if self.gpu.is_some() {
             self.draw_gpu()?;
         } else {
-            self.clear(Color::BLACK);
+            let linear_frame = self
+                .linear_frame
+                .as_mut()
+                .expect("CPU renderer owns a linear accumulator");
+            cpu::clear_cpu(
+                self.target,
+                self.output,
+                linear_frame,
+                &mut self.frame,
+                Color::BLACK,
+            );
             for primitive in &primitives {
-                self.draw_primitive(primitive);
+                let linear_frame = self
+                    .linear_frame
+                    .as_mut()
+                    .expect("CPU renderer owns a linear accumulator");
+                cpu::draw_primitive_cpu(
+                    self.target,
+                    self.output,
+                    linear_frame,
+                    &mut self.frame,
+                    primitive,
+                );
             }
         }
 
@@ -311,6 +351,17 @@ impl Renderer {
         self.output.set_tonemapper(tonemapper);
     }
 
+    pub fn environment(&self) -> Option<EnvironmentHandle> {
+        self.environment
+    }
+
+    pub fn set_environment(&mut self, environment: EnvironmentHandle) {
+        if self.environment != Some(environment) {
+            self.environment = Some(environment);
+            self.environment_revision = self.environment_revision.saturating_add(1);
+        }
+    }
+
     pub fn has_gpu_device(&self) -> bool {
         self.gpu.is_some()
     }
@@ -357,6 +408,16 @@ impl Renderer {
             });
         }
 
+        if prepared.environment_revision != self.environment_revision {
+            return Err(RenderError::NotPrepared {
+                reason: NotPreparedReason::EnvironmentChanged {
+                    prepared_revision: prepared.environment_revision,
+                    current_revision: self.environment_revision,
+                    change: ChangeKind::Environment,
+                },
+            });
+        }
+
         if prepared.target_revision != self.target_revision {
             return Err(RenderError::NotPrepared {
                 reason: NotPreparedReason::TargetChanged {
@@ -368,70 +429,6 @@ impl Renderer {
         }
 
         Ok(prepared)
-    }
-
-    fn clear(&mut self, color: Color) {
-        let rgba = self.output.encode_rgba8(color);
-        let linear_frame = self
-            .linear_frame
-            .as_mut()
-            .expect("CPU renderer owns a linear accumulator");
-        for (linear, pixel) in linear_frame.iter_mut().zip(self.frame.chunks_exact_mut(4)) {
-            *linear = color;
-            pixel.copy_from_slice(&rgba);
-        }
-    }
-
-    fn draw_primitive(&mut self, primitive: &Primitive) {
-        let [a, b, c] = primitive.vertices();
-        let a = ScreenVertex::from_vertex(*a, self.target);
-        let b = ScreenVertex::from_vertex(*b, self.target);
-        let c = ScreenVertex::from_vertex(*c, self.target);
-
-        let min_x = a.x.min(b.x).min(c.x).floor().max(0.0) as u32;
-        let max_x =
-            a.x.max(b.x)
-                .max(c.x)
-                .ceil()
-                .min(self.target.width as f32 - 1.0) as u32;
-        let min_y = a.y.min(b.y).min(c.y).floor().max(0.0) as u32;
-        let max_y =
-            a.y.max(b.y)
-                .max(c.y)
-                .ceil()
-                .min(self.target.height as f32 - 1.0) as u32;
-
-        let area = edge(a, b, c.x, c.y);
-        if area.abs() <= f32::EPSILON {
-            return;
-        }
-
-        for y in min_y..=max_y {
-            for x in min_x..=max_x {
-                let px = x as f32 + 0.5;
-                let py = y as f32 + 0.5;
-                let w0 = edge(b, c, px, py) / area;
-                let w1 = edge(c, a, px, py) / area;
-                let w2 = edge(a, b, px, py) / area;
-                if w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0 {
-                    let color = mix_color(a.color, b.color, c.color, w0, w1, w2);
-                    self.write_pixel(x, y, color);
-                }
-            }
-        }
-    }
-
-    fn write_pixel(&mut self, x: u32, y: u32, color: Color) {
-        let pixel_index = self.target.pixel_index(x, y);
-        let linear_frame = self
-            .linear_frame
-            .as_mut()
-            .expect("CPU renderer owns a linear accumulator");
-        let blended = blend_source_over(color, linear_frame[pixel_index]);
-        linear_frame[pixel_index] = blended;
-
-        let byte_index = pixel_index * 4;
-        self.frame[byte_index..byte_index + 4].copy_from_slice(&self.output.encode_rgba8(blended));
     }
 }
 
@@ -454,78 +451,6 @@ fn backend_for_attached_surface(kind: SurfaceKind) -> Backend {
         SurfaceKind::NativeWindow => Backend::NativeSurface,
         SurfaceKind::BrowserWebGpuCanvas => Backend::WebGpu,
         SurfaceKind::BrowserWebGl2Canvas => Backend::WebGl2,
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ScreenVertex {
-    x: f32,
-    y: f32,
-    color: Color,
-}
-
-impl ScreenVertex {
-    fn from_vertex(vertex: Vertex, target: RasterTarget) -> Self {
-        let width = target.width.saturating_sub(1) as f32;
-        let height = target.height.saturating_sub(1) as f32;
-        Self {
-            x: (vertex.position.x * 0.5 + 0.5) * width,
-            y: (1.0 - (vertex.position.y * 0.5 + 0.5)) * height,
-            color: vertex.color,
-        }
-    }
-}
-
-fn edge(a: ScreenVertex, b: ScreenVertex, x: f32, y: f32) -> f32 {
-    (x - a.x) * (b.y - a.y) - (y - a.y) * (b.x - a.x)
-}
-
-fn mix_color(a: Color, b: Color, c: Color, w0: f32, w1: f32, w2: f32) -> Color {
-    Color::from_linear_rgba(
-        a.r * w0 + b.r * w1 + c.r * w2,
-        a.g * w0 + b.g * w1 + c.g * w2,
-        a.b * w0 + b.b * w1 + c.b * w2,
-        a.a * w0 + b.a * w1 + c.a * w2,
-    )
-}
-
-fn blend_source_over(source: Color, destination: Color) -> Color {
-    let source_alpha = clamp_alpha_or(source.a, 1.0);
-    let destination_alpha = clamp_alpha_or(destination.a, 1.0);
-    if source_alpha == 1.0 {
-        return Color::from_linear_rgba(source.r, source.g, source.b, 1.0);
-    }
-    if source_alpha <= 0.0 {
-        return destination;
-    }
-
-    let inverse_source_alpha = 1.0 - source_alpha;
-    let output_alpha = source_alpha + destination_alpha * inverse_source_alpha;
-    // RGB is intentionally unclamped so HDR linear input can reach the ACES output stage.
-    let premultiplied_r =
-        source.r * source_alpha + destination.r * destination_alpha * inverse_source_alpha;
-    let premultiplied_g =
-        source.g * source_alpha + destination.g * destination_alpha * inverse_source_alpha;
-    let premultiplied_b =
-        source.b * source_alpha + destination.b * destination_alpha * inverse_source_alpha;
-
-    if output_alpha <= f32::EPSILON {
-        Color::from_linear_rgba(0.0, 0.0, 0.0, 0.0)
-    } else {
-        Color::from_linear_rgba(
-            premultiplied_r / output_alpha,
-            premultiplied_g / output_alpha,
-            premultiplied_b / output_alpha,
-            output_alpha,
-        )
-    }
-}
-
-fn clamp_alpha_or(value: f32, fallback: f32) -> f32 {
-    if value.is_finite() {
-        value.clamp(0.0, 1.0)
-    } else {
-        fallback
     }
 }
 

@@ -2,9 +2,10 @@ use scena::{
     Aabb, AlphaMode, AlphaPipelineStatus, AssetPath, Assets, Backend, Capabilities, Color,
     DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES, DEFAULT_STROKE_WIDTH_PX, EnvironmentDesc,
     EnvironmentHandle, GeometryDesc, GeometryHandle, GeometryTopology, MaterialDesc,
-    MaterialHandle, MaterialKind, ModelHandle, NodeKind, OutputStageStatus, PerspectiveCamera,
-    PrepareError, Primitive, Renderer, Scene, SceneAsset, TextureColorSpace, TextureDesc,
-    TextureHandle, Tonemapper, Transform, Vec3, Vertex, WasmEnvironmentDelivery,
+    MaterialHandle, MaterialKind, ModelHandle, NodeKind, NotPreparedReason, OutputStageStatus,
+    PerspectiveCamera, PrepareError, Primitive, RenderError, Renderer, Scene, SceneAsset,
+    TextureColorSpace, TextureDesc, TextureHandle, Tonemapper, Transform, Vec3, Vertex,
+    WasmEnvironmentDelivery,
 };
 
 fn assert_handle<T: Copy + Eq + std::fmt::Debug>() {}
@@ -360,6 +361,54 @@ fn m1_cpu_resource_lifetime_counters_return_to_baseline() {
         assert_eq!(stats.approximate_gpu_memory_bytes, None);
         assert_eq!(stats.gpu_frame_ms, None);
     }
+}
+
+#[test]
+fn renderer_environment_is_structural_and_validated_during_prepare() {
+    let assets = Assets::new();
+    let environment = assets.default_environment();
+    let geometry = assets.create_geometry(fullscreen_triangle_geometry());
+    let material =
+        assets.create_material(MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 1.0));
+    let (mut scene, camera) = scene_with_camera();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("default-environment mesh inserts");
+    let mut renderer = Renderer::headless(4, 4).expect("headless renderer builds");
+
+    assert_eq!(renderer.environment(), None);
+    renderer.set_environment(environment);
+    assert_eq!(renderer.environment(), Some(environment));
+    assert!(matches!(
+        renderer.prepare(&mut scene),
+        Err(PrepareError::EnvironmentAssetsRequired { environment: error_environment })
+            if error_environment == environment
+    ));
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("default environment validates during prepare");
+    assert_eq!(renderer.stats().environments, 1);
+    renderer.render(&scene, camera).expect("scene renders");
+    assert_eq!(
+        center_pixel(renderer.frame_rgba8(), 4, 4),
+        [206, 206, 206, 255]
+    );
+
+    let missing_environment = EnvironmentHandle::default();
+    renderer.set_environment(missing_environment);
+    assert!(matches!(
+        renderer.render(&scene, camera),
+        Err(RenderError::NotPrepared {
+            reason: NotPreparedReason::EnvironmentChanged { .. }
+        })
+    ));
+    assert!(matches!(
+        renderer.prepare_with_assets(&mut scene, &assets),
+        Err(PrepareError::EnvironmentNotFound { environment: error_environment })
+            if error_environment == missing_environment
+    ));
 }
 
 #[test]

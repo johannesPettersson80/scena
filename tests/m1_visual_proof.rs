@@ -20,6 +20,7 @@ fn m1_headless_visual_artifacts_cover_core_material_paths() {
             fixture.name
         );
         let frame = (fixture.render)();
+        (fixture.validate)(&frame, fixture.width, fixture.height);
         assert!(
             frame
                 .chunks_exact(4)
@@ -42,45 +43,59 @@ struct VisualFixture {
     width: u32,
     height: u32,
     render: fn() -> Vec<u8>,
+    validate: fn(&[u8], u32, u32),
 }
 
-fn visual_fixtures() -> [VisualFixture; 6] {
+fn visual_fixtures() -> [VisualFixture; 7] {
     [
         VisualFixture {
             name: "primitive-fullscreen",
             width: 16,
             height: 16,
             render: render_primitive_fullscreen,
+            validate: validate_nonblack,
         },
         VisualFixture {
             name: "unlit-asset-mesh",
             width: 16,
             height: 16,
             render: render_unlit_asset_mesh,
+            validate: validate_nonblack,
         },
         VisualFixture {
             name: "pbr-asset-mesh",
             width: 16,
             height: 16,
             render: render_pbr_asset_mesh,
+            validate: validate_nonblack,
         },
         VisualFixture {
             name: "transparent-blend",
             width: 16,
             height: 16,
             render: render_transparent_blend,
+            validate: validate_nonblack,
         },
         VisualFixture {
             name: "line-material",
             width: 16,
             height: 16,
             render: render_line_material,
+            validate: validate_nonblack,
         },
         VisualFixture {
             name: "wire-edge-materials",
             width: 16,
             height: 16,
             render: render_wire_edge_materials,
+            validate: validate_nonblack,
+        },
+        VisualFixture {
+            name: "default-cube",
+            width: 16,
+            height: 16,
+            render: render_default_cube_with_default_environment,
+            validate: validate_default_cube_luminance_and_silhouette,
         },
     ]
 }
@@ -156,6 +171,28 @@ fn render_wire_edge_materials() -> Vec<u8> {
     renderer
         .render(&scene, camera)
         .expect("technical material meshes render");
+    renderer.frame_rgba8().to_vec()
+}
+
+fn render_default_cube_with_default_environment() -> Vec<u8> {
+    let assets = Assets::new();
+    let environment = assets.default_environment();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.2, 1.2, 0.1));
+    let material =
+        assets.create_material(MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 1.0));
+    let (mut scene, camera) = scene_with_camera();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("default cube inserts");
+    let mut renderer = Renderer::headless(16, 16).expect("headless renderer builds");
+    renderer.set_environment(environment);
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("default cube prepares with default environment");
+    renderer
+        .render(&scene, camera)
+        .expect("default cube renders with visible environment");
     renderer.frame_rgba8().to_vec()
 }
 
@@ -269,6 +306,27 @@ fn flat_square_geometry() -> GeometryDesc {
         vec![0, 1, 2, 0, 2, 3],
     )
     .expect("flat square test geometry is valid")
+}
+
+fn validate_nonblack(_frame: &[u8], _width: u32, _height: u32) {}
+
+fn validate_default_cube_luminance_and_silhouette(frame: &[u8], width: u32, height: u32) {
+    assert_eq!(
+        pixel_at(frame, width, width / 2, height / 2),
+        [206, 206, 206, 255]
+    );
+    assert_eq!(pixel_at(frame, width, 0, 0), [0, 0, 0, 255]);
+    assert_eq!(
+        pixel_at(frame, width, width - 1, height - 1),
+        [0, 0, 0, 255]
+    );
+}
+
+fn pixel_at(frame: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
+    let offset = ((y * width + x) * 4) as usize;
+    frame[offset..offset + 4]
+        .try_into()
+        .expect("pixel slice has four channels")
 }
 
 fn write_ppm_artifact(dir: &Path, name: &str, width: u32, height: u32, rgba: &[u8]) {
