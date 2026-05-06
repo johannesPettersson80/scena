@@ -1405,7 +1405,11 @@ fn check_m1_browser_rendered_output(root: &Path, findings: &mut Vec<Finding>) {
         &[
             "wasm_bindgen_test_configure!(run_in_browser)",
             "fn m1_browser_wasm_renders_color_and_alpha_to_canvas",
+            "fn m1_browser_wasm_renders_technical_materials_to_canvas",
             "Renderer::headless(4, 4)",
+            "MaterialDesc::line",
+            "MaterialDesc::wireframe",
+            "MaterialDesc::edge",
             "put_image_data",
             "get_image_data",
             "[158, 0, 159, 255]",

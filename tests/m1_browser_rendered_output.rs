@@ -1,6 +1,9 @@
 #![cfg(target_arch = "wasm32")]
 
-use scena::{Color, PerspectiveCamera, Primitive, Renderer, Scene, Transform, Vec3, Vertex};
+use scena::{
+    Assets, Color, GeometryDesc, GeometryTopology, MaterialDesc, PerspectiveCamera, Primitive,
+    Renderer, Scene, Transform, Vec3, Vertex,
+};
 use wasm_bindgen::{Clamped, JsCast};
 use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
@@ -42,7 +45,71 @@ fn m1_browser_wasm_renders_color_and_alpha_to_canvas() {
     assert_eq!(center_pixel(&readback, 4, 4), [158, 0, 159, 255]);
 }
 
+#[wasm_bindgen_test]
+fn m1_browser_wasm_renders_technical_materials_to_canvas() {
+    for frame in [
+        render_line_material(),
+        render_wireframe_material(),
+        render_edge_material(),
+    ] {
+        assert!(nonblack_pixel_count(&frame) > 0);
+        assert_eq!(browser_canvas_roundtrip(&frame, 16, 16), frame);
+    }
+}
+
+fn render_line_material() -> Vec<u8> {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::line(
+        Vec3::new(-0.85, 0.0, 0.0),
+        Vec3::new(0.85, 0.0, 0.0),
+    ));
+    let material = assets.create_material(MaterialDesc::line(Color::WHITE, 1.0));
+    render_asset_mesh(&assets, geometry, material)
+}
+
+fn render_wireframe_material() -> Vec<u8> {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(flat_square_geometry());
+    let material = assets.create_material(MaterialDesc::wireframe(Color::WHITE, 1.0));
+    render_asset_mesh(&assets, geometry, material)
+}
+
+fn render_edge_material() -> Vec<u8> {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(flat_square_geometry());
+    let material = assets.create_material(MaterialDesc::edge(Color::WHITE, 1.0));
+    render_asset_mesh(&assets, geometry, material)
+}
+
+fn render_asset_mesh(
+    assets: &Assets,
+    geometry: scena::GeometryHandle,
+    material: scena::MaterialHandle,
+) -> Vec<u8> {
+    let (mut scene, camera) = scene_with_camera();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("asset mesh inserts");
+    let mut renderer = Renderer::headless(16, 16).expect("headless renderer builds in wasm");
+    renderer
+        .prepare_with_assets(&mut scene, assets)
+        .expect("asset mesh prepares in wasm");
+    renderer
+        .render(&scene, camera)
+        .expect("asset mesh renders in wasm");
+    renderer.frame_rgba8().to_vec()
+}
+
 fn scene_with_fullscreen_primitives(primitives: Vec<Primitive>) -> (Scene, scena::CameraKey) {
+    let (mut scene, camera) = scene_with_camera();
+    scene
+        .add_renderable(scene.root(), primitives, Transform::default())
+        .expect("fullscreen primitives insert");
+    (scene, camera)
+}
+
+fn scene_with_camera() -> (Scene, scena::CameraKey) {
     let mut scene = Scene::new();
     let camera = scene
         .add_perspective_camera(
@@ -54,9 +121,6 @@ fn scene_with_fullscreen_primitives(primitives: Vec<Primitive>) -> (Scene, scena
     scene
         .set_active_camera(camera)
         .expect("camera can become active");
-    scene
-        .add_renderable(scene.root(), primitives, Transform::default())
-        .expect("fullscreen primitives insert");
     (scene, camera)
 }
 
@@ -95,6 +159,21 @@ fn browser_canvas(width: u32, height: u32) -> HtmlCanvasElement {
     canvas
 }
 
+fn browser_canvas_roundtrip(frame: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let canvas = browser_canvas(width, height);
+    let context = canvas_2d_context(&canvas);
+    let image = ImageData::new_with_u8_clamped_array_and_sh(Clamped(frame), width, height)
+        .expect("image data accepts renderer frame");
+    context
+        .put_image_data(&image, 0.0, 0.0)
+        .expect("renderer frame writes to browser canvas");
+    context
+        .get_image_data(0.0, 0.0, f64::from(width), f64::from(height))
+        .expect("browser canvas readback succeeds")
+        .data()
+        .to_vec()
+}
+
 fn canvas_2d_context(canvas: &HtmlCanvasElement) -> CanvasRenderingContext2d {
     canvas
         .get_context("2d")
@@ -109,4 +188,37 @@ fn center_pixel(frame: &[u8], width: u32, height: u32) -> [u8; 4] {
     frame[offset..offset + 4]
         .try_into()
         .expect("pixel slice has four channels")
+}
+
+fn nonblack_pixel_count(frame: &[u8]) -> usize {
+    frame
+        .chunks_exact(4)
+        .filter(|pixel| pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0)
+        .count()
+}
+
+fn flat_square_geometry() -> GeometryDesc {
+    GeometryDesc::try_new(
+        GeometryTopology::Triangles,
+        vec![
+            scena::GeometryVertex {
+                position: Vec3::new(-0.75, -0.75, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            scena::GeometryVertex {
+                position: Vec3::new(0.75, -0.75, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            scena::GeometryVertex {
+                position: Vec3::new(0.75, 0.75, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            scena::GeometryVertex {
+                position: Vec3::new(-0.75, 0.75, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+        ],
+        vec![0, 1, 2, 0, 2, 3],
+    )
+    .expect("flat square test geometry is valid")
 }
