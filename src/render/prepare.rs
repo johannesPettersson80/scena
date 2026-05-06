@@ -6,7 +6,7 @@ use crate::diagnostics::{
 };
 use crate::geometry::{GeometryDesc, GeometryTopology, Primitive, Vertex};
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
-use crate::scene::{Camera, Light, NodeKey, Scene};
+use crate::scene::{Camera, Light, NodeKey, Quat, Scene, Transform, Vec3};
 
 use super::RasterTarget;
 
@@ -44,13 +44,19 @@ pub(super) fn collect_prepared_primitives<F>(
         return Err(PrepareError::UnsupportedModelNode { node: model_node });
     }
 
+    let origin_shift = scene.origin_shift();
     let mut primitives: Vec<Primitive> = scene
         .renderables()
-        .flat_map(|renderable| renderable.primitives().iter().cloned())
+        .flat_map(|(renderable, transform)| {
+            renderable
+                .primitives()
+                .iter()
+                .map(move |primitive| transform_primitive(primitive, transform, origin_shift))
+        })
         .collect();
     let mut transparent_primitives = Vec::new();
 
-    for (node, mesh) in scene.mesh_nodes() {
+    for (node, mesh, transform) in scene.mesh_nodes() {
         let Some(assets) = assets else {
             return Err(PrepareError::AssetsRequired { node });
         };
@@ -70,7 +76,11 @@ pub(super) fn collect_prepared_primitives<F>(
             node,
             &geometry,
             &material,
-            target,
+            PrimitiveBakeParams {
+                target,
+                transform,
+                origin_shift,
+            },
             &mut primitives,
             &mut transparent_primitives,
         )?;
@@ -126,13 +136,21 @@ pub(super) fn collect_precision_diagnostics(scene: &Scene, backend: Backend) -> 
     let mut diagnostics = Vec::new();
 
     for (node, transform) in scene.node_transforms() {
-        let magnitude = transform
+        let relative_translation = subtract_vec3(transform.translation, scene.origin_shift());
+        let absolute_magnitude = transform
             .translation
             .x
             .abs()
             .max(transform.translation.y.abs())
             .max(transform.translation.z.abs());
-        if magnitude >= LARGE_SCENE_TRANSLATION_WARNING {
+        let magnitude = relative_translation
+            .x
+            .abs()
+            .max(relative_translation.y.abs())
+            .max(relative_translation.z.abs());
+        if absolute_magnitude >= LARGE_SCENE_TRANSLATION_WARNING
+            && magnitude >= LARGE_SCENE_TRANSLATION_WARNING
+        {
             diagnostics.push(Diagnostic::warning(
                 DiagnosticCode::LargeScenePrecisionRisk,
                 format!(
@@ -222,7 +240,7 @@ pub(super) fn collect_logical_resource_stats<F>(
     let mut materials = HashSet::new();
     let mut textures = HashSet::new();
 
-    for (_node, mesh) in scene.mesh_nodes() {
+    for (_node, mesh, _transform) in scene.mesh_nodes() {
         geometries.insert(mesh.geometry());
         materials.insert(mesh.material());
 
@@ -267,6 +285,13 @@ struct TransparentPrimitive {
 }
 
 #[derive(Clone, Copy)]
+struct PrimitiveBakeParams {
+    target: RasterTarget,
+    transform: Transform,
+    origin_shift: Vec3,
+}
+
+#[derive(Clone, Copy)]
 enum MaterialPass {
     Opaque(Color),
     Blend(Color),
@@ -276,7 +301,7 @@ fn append_geometry_primitives(
     node: NodeKey,
     geometry: &GeometryDesc,
     material: &MaterialDesc,
-    target: RasterTarget,
+    params: PrimitiveBakeParams,
     primitives: &mut Vec<Primitive>,
     transparent_primitives: &mut Vec<TransparentPrimitive>,
 ) -> Result<(), PrepareError> {
@@ -285,12 +310,12 @@ fn append_geometry_primitives(
             node,
             geometry,
             material,
-            target,
+            params,
             primitives,
             transparent_primitives,
         ),
         GeometryTopology::Lines => {
-            strokes::append_line_primitives(node, geometry, material, target, primitives)
+            strokes::append_line_primitives(node, geometry, material, params.target, primitives)
         }
     }
 }
@@ -299,7 +324,7 @@ fn append_triangle_primitives(
     node: NodeKey,
     geometry: &GeometryDesc,
     material: &MaterialDesc,
-    target: RasterTarget,
+    params: PrimitiveBakeParams,
     primitives: &mut Vec<Primitive>,
     transparent_primitives: &mut Vec<TransparentPrimitive>,
 ) -> Result<(), PrepareError> {
@@ -313,11 +338,21 @@ fn append_triangle_primitives(
         }
         MaterialKind::Wireframe => {
             return strokes::append_wireframe_primitives(
-                node, geometry, material, target, primitives,
+                node,
+                geometry,
+                material,
+                params.target,
+                primitives,
             );
         }
         MaterialKind::Edge => {
-            return strokes::append_edge_primitives(node, geometry, material, target, primitives);
+            return strokes::append_edge_primitives(
+                node,
+                geometry,
+                material,
+                params.target,
+                primitives,
+            );
         }
     }
 
@@ -330,15 +365,27 @@ fn append_triangle_primitives(
         };
         let primitive = Primitive::triangle([
             Vertex {
-                position: vertices[triangle[0] as usize].position,
+                position: transform_position(
+                    vertices[triangle[0] as usize].position,
+                    params.transform,
+                    params.origin_shift,
+                ),
                 color,
             },
             Vertex {
-                position: vertices[triangle[1] as usize].position,
+                position: transform_position(
+                    vertices[triangle[1] as usize].position,
+                    params.transform,
+                    params.origin_shift,
+                ),
                 color,
             },
             Vertex {
-                position: vertices[triangle[2] as usize].position,
+                position: transform_position(
+                    vertices[triangle[2] as usize].position,
+                    params.transform,
+                    params.origin_shift,
+                ),
                 color,
             },
         ]);
@@ -386,8 +433,69 @@ fn material_pass(node: NodeKey, material: &MaterialDesc) -> Result<MaterialPass,
 }
 
 fn average_depth(primitive: &Primitive) -> f32 {
-    // M1 foundation depth uses local-space z. Node transforms and view projection are not
-    // applied until the scene transform/camera dirty-state work lands.
+    // M1/M2 depth sorting uses prepared scene-space z. View projection and camera-space
+    // sorting remain separate dirty-state work.
     let vertices = primitive.vertices();
     (vertices[0].position.z + vertices[1].position.z + vertices[2].position.z) / 3.0
+}
+
+fn transform_primitive(
+    primitive: &Primitive,
+    transform: Transform,
+    origin_shift: Vec3,
+) -> Primitive {
+    let [a, b, c] = primitive.vertices();
+    Primitive::triangle([
+        transform_vertex(*a, transform, origin_shift),
+        transform_vertex(*b, transform, origin_shift),
+        transform_vertex(*c, transform, origin_shift),
+    ])
+}
+
+fn transform_vertex(vertex: Vertex, transform: Transform, origin_shift: Vec3) -> Vertex {
+    Vertex {
+        position: transform_position(vertex.position, transform, origin_shift),
+        color: vertex.color,
+    }
+}
+
+fn transform_position(position: Vec3, transform: Transform, origin_shift: Vec3) -> Vec3 {
+    let scaled = Vec3::new(
+        position.x * transform.scale.x,
+        position.y * transform.scale.y,
+        position.z * transform.scale.z,
+    );
+    let rotated = rotate_vec3(transform.rotation, scaled);
+    subtract_vec3(add_vec3(rotated, transform.translation), origin_shift)
+}
+
+fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
+    let length_squared = rotation.x * rotation.x
+        + rotation.y * rotation.y
+        + rotation.z * rotation.z
+        + rotation.w * rotation.w;
+    if length_squared <= f32::EPSILON || !length_squared.is_finite() {
+        return vector;
+    }
+    let inverse_length = length_squared.sqrt().recip();
+    let qx = rotation.x * inverse_length;
+    let qy = rotation.y * inverse_length;
+    let qz = rotation.z * inverse_length;
+    let qw = rotation.w * inverse_length;
+    let tx = 2.0 * (qy * vector.z - qz * vector.y);
+    let ty = 2.0 * (qz * vector.x - qx * vector.z);
+    let tz = 2.0 * (qx * vector.y - qy * vector.x);
+    Vec3::new(
+        vector.x + qw * tx + (qy * tz - qz * ty),
+        vector.y + qw * ty + (qz * tx - qx * tz),
+        vector.z + qw * tz + (qx * ty - qy * tx),
+    )
+}
+
+fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
+    Vec3::new(left.x + right.x, left.y + right.y, left.z + right.z)
+}
+
+fn subtract_vec3(left: Vec3, right: Vec3) -> Vec3 {
+    Vec3::new(left.x - right.x, left.y - right.y, left.z - right.z)
 }

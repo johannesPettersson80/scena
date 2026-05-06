@@ -515,6 +515,62 @@ fn clipping_plane_set_clips_rendered_output_half_space() {
 }
 
 #[test]
+fn origin_shift_keeps_large_offset_renderable_visible_without_precision_warning() {
+    let mut scene = Scene::new();
+    scene.set_origin_shift(Vec3::new(10_000.0, 0.0, 0.0));
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("camera becomes active");
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![Primitive::triangle([
+                Vertex {
+                    position: Vec3::new(-1.0, -1.0, 0.0),
+                    color: Color::WHITE,
+                },
+                Vertex {
+                    position: Vec3::new(3.0, -1.0, 0.0),
+                    color: Color::WHITE,
+                },
+                Vertex {
+                    position: Vec3::new(-1.0, 3.0, 0.0),
+                    color: Color::WHITE,
+                },
+            ])],
+            Transform {
+                translation: Vec3::new(10_000.0, 0.0, 0.0),
+                ..Transform::default()
+            },
+        )
+        .expect("large-offset renderable inserts");
+    let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+
+    renderer.prepare(&mut scene).expect("scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("origin-shifted renderable renders");
+
+    assert_eq!(
+        pixel_at(renderer.frame_rgba8(), 8, 4, 4),
+        [206, 206, 206, 255]
+    );
+    assert!(
+        !renderer
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code == DiagnosticCode::LargeScenePrecisionRisk)
+    );
+}
+
+#[test]
 fn m2_resource_counters_return_to_baseline_after_empty_prepare() {
     let assets = Assets::new();
     let environment =

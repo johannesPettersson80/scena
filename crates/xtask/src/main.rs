@@ -152,6 +152,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_webgl2_depth_contracts(root, findings);
     check_m2_leak_stats_contracts(root, findings);
     check_camera_depth_contracts(root, findings);
+    check_origin_shift_contracts(root, findings);
     check_clipping_contracts(root, findings);
     check_render_alpha_contracts(root, findings);
     check_output_stage_contracts(root, findings);
@@ -1942,6 +1943,61 @@ fn check_clipping_contracts(root: &Path, findings: &mut Vec<Finding>) {
     );
 }
 
+fn check_origin_shift_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-ORIGIN-SHIFT",
+        "src/scene.rs",
+        &[
+            "origin_shift: Vec3",
+            "pub fn set_origin_shift",
+            "pub fn origin_shift(&self) -> Vec3",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ORIGIN-SHIFT",
+        "src/render/prepare.rs",
+        &[
+            "let origin_shift = scene.origin_shift()",
+            "transform_primitive",
+            "transform_position",
+            "subtract_vec3",
+            "relative_translation",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ORIGIN-SHIFT",
+        "tests/m2_lighting_depth_clipping.rs",
+        &[
+            "origin_shift_keeps_large_offset_renderable_visible_without_precision_warning",
+            "scene.set_origin_shift",
+            "DiagnosticCode::LargeScenePrecisionRisk",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ORIGIN-SHIFT",
+        "docs/specs/public-api.md",
+        &["pub fn set_origin_shift", "large-world"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ORIGIN-SHIFT",
+        "docs/checklists/m2-lighting-depth-clipping.md",
+        &[
+            "Camera-relative rendering or origin-shift support",
+            "ARCH-ORIGIN-SHIFT",
+        ],
+    );
+}
+
 fn check_material_desc_fields_private(root: &Path, findings: &mut Vec<Finding>) {
     let path = root.join("src/material.rs");
     let Ok(text) = fs::read_to_string(path) else {
@@ -2843,6 +2899,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_camera_depth_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn origin_shift_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_origin_shift_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

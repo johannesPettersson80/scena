@@ -30,6 +30,7 @@ pub struct Scene {
     lights: SlotMap<LightKey, Light>,
     clipping_planes: SlotMap<ClippingPlaneKey, ClippingPlane>,
     active_clipping_planes: ClippingPlaneSet,
+    origin_shift: Vec3,
     root: NodeKey,
     active_camera: Option<CameraKey>,
     structure_revision: u64,
@@ -138,6 +139,7 @@ impl Scene {
             lights: SlotMap::with_key(),
             clipping_planes: SlotMap::with_key(),
             active_clipping_planes: ClippingPlaneSet::new(),
+            origin_shift: Vec3::ZERO,
             root,
             active_camera: None,
             structure_revision: 0,
@@ -275,6 +277,17 @@ impl Scene {
         &self.active_clipping_planes
     }
 
+    pub fn set_origin_shift(&mut self, origin_shift: Vec3) {
+        if self.origin_shift != origin_shift {
+            self.origin_shift = origin_shift;
+            self.structure_revision = self.structure_revision.saturating_add(1);
+        }
+    }
+
+    pub fn origin_shift(&self) -> Vec3 {
+        self.origin_shift
+    }
+
     pub(crate) fn identity(&self) -> Weak<()> {
         Arc::downgrade(&self.identity)
     }
@@ -283,9 +296,9 @@ impl Scene {
         self.structure_revision
     }
 
-    pub(crate) fn renderables(&self) -> impl Iterator<Item = &RenderableNode> {
+    pub(crate) fn renderables(&self) -> impl Iterator<Item = (&RenderableNode, Transform)> {
         self.nodes.values().filter_map(|node| match &node.kind {
-            NodeKind::Renderable(renderable) => Some(renderable),
+            NodeKind::Renderable(renderable) => Some((renderable, node.transform)),
             NodeKind::Empty
             | NodeKind::Mesh(_)
             | NodeKind::Model(_)
@@ -294,9 +307,9 @@ impl Scene {
         })
     }
 
-    pub(crate) fn mesh_nodes(&self) -> impl Iterator<Item = (NodeKey, MeshNode)> + '_ {
+    pub(crate) fn mesh_nodes(&self) -> impl Iterator<Item = (NodeKey, MeshNode, Transform)> + '_ {
         self.nodes.iter().filter_map(|(key, node)| match node.kind {
-            NodeKind::Mesh(mesh) => Some((key, mesh)),
+            NodeKind::Mesh(mesh) => Some((key, mesh, node.transform)),
             NodeKind::Empty
             | NodeKind::Renderable(_)
             | NodeKind::Model(_)
