@@ -1,6 +1,6 @@
 use scena::{
-    Backend, BuildError, CameraKey, NotPreparedReason, PerspectiveCamera, PlatformSurface,
-    Primitive, RenderError, Renderer, Scene, SurfaceEvent, Transform,
+    Backend, BuildError, CameraKey, Color, NotPreparedReason, PerspectiveCamera, PlatformSurface,
+    Primitive, RenderError, Renderer, Scene, SurfaceEvent, Transform, Vec3, Vertex,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -48,6 +48,41 @@ fn scene_with_triangle() -> (Scene, CameraKey) {
     (scene, camera)
 }
 
+fn scene_with_primitive(primitive: Primitive) -> (Scene, CameraKey) {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts under root");
+    scene
+        .set_active_camera(camera)
+        .expect("camera can become active");
+    scene
+        .add_renderable(scene.root(), vec![primitive], Transform::default())
+        .expect("primitive inserts under root");
+    (scene, camera)
+}
+
+fn white_triangle() -> Primitive {
+    Primitive::triangle([
+        Vertex {
+            position: Vec3::new(-0.6, -0.5, 0.0),
+            color: Color::from_linear_rgb(1.0, 1.0, 1.0),
+        },
+        Vertex {
+            position: Vec3::new(0.6, -0.5, 0.0),
+            color: Color::from_linear_rgb(1.0, 1.0, 1.0),
+        },
+        Vertex {
+            position: Vec3::new(0.0, 0.6, 0.0),
+            color: Color::from_linear_rgb(1.0, 1.0, 1.0),
+        },
+    ])
+}
+
 #[test]
 fn surface_descriptors_and_attached_surfaces_are_explicit() {
     let descriptor = PlatformSurface::native_window(80, 60);
@@ -70,7 +105,8 @@ fn descriptor_surface_async_initialization_is_structured() {
     ))
     .expect("descriptor surface renderer builds");
 
-    assert_eq!(renderer.capabilities().backend, Backend::WebGpu);
+    assert_eq!(renderer.capabilities().backend, Backend::SurfaceDescriptor);
+    assert!(!renderer.capabilities().gpu_device);
     assert!(!renderer.capabilities().surface_attached);
 }
 
@@ -144,31 +180,63 @@ fn headless_gpu_triangle_render_uses_gpu_submission_when_available() {
 }
 
 #[test]
-fn native_surface_renderer_uses_native_surface_capability() {
+fn headless_gpu_triangle_render_uses_scene_vertex_data_when_available() {
+    match Renderer::headless_gpu(64, 64) {
+        Ok(mut renderer) => {
+            let (mut scene, camera) = scene_with_primitive(white_triangle());
+            renderer.prepare(&mut scene).expect("prepare succeeds");
+            renderer.render(&scene, camera).expect("render succeeds");
+
+            assert!(
+                renderer
+                    .frame_rgba8()
+                    .chunks_exact(4)
+                    .any(|pixel| pixel[0] >= 250 && pixel[1] >= 250 && pixel[2] >= 250),
+                "GPU frame should contain the white scene triangle, not a hard-coded shader triangle"
+            );
+        }
+        Err(BuildError::NoAdapter { backend }) => {
+            assert_eq!(backend, Backend::HeadlessGpu);
+        }
+        Err(BuildError::RequestDevice { backend }) => {
+            assert_eq!(backend, Backend::HeadlessGpu);
+        }
+        Err(error) => panic!("unexpected headless GPU render setup result: {error:?}"),
+    }
+}
+
+#[test]
+fn native_surface_descriptor_reports_descriptor_capability() {
     let renderer = Renderer::from_surface(PlatformSurface::native_window(80, 60))
         .expect("native surface renderer builds");
 
-    assert_eq!(renderer.capabilities().backend, Backend::NativeSurface);
+    assert_eq!(renderer.capabilities().backend, Backend::SurfaceDescriptor);
+    assert!(!renderer.capabilities().gpu_device);
+    assert!(!renderer.capabilities().surface_attached);
     assert_eq!(renderer.stats().target_width, 80);
     assert_eq!(renderer.stats().target_height, 60);
 }
 
 #[test]
-fn browser_canvas_defaults_to_webgpu_capability() {
+fn browser_canvas_descriptor_reports_descriptor_capability() {
     let renderer = Renderer::from_surface(PlatformSurface::browser_canvas(80, 60))
         .expect("browser canvas renderer builds");
 
-    assert_eq!(renderer.capabilities().backend, Backend::WebGpu);
+    assert_eq!(renderer.capabilities().backend, Backend::SurfaceDescriptor);
+    assert!(!renderer.capabilities().gpu_device);
+    assert!(!renderer.capabilities().surface_attached);
     assert_eq!(renderer.stats().target_width, 80);
     assert_eq!(renderer.stats().target_height, 60);
 }
 
 #[test]
-fn browser_webgl2_canvas_uses_webgl2_capability() {
+fn browser_webgl2_canvas_descriptor_reports_descriptor_capability() {
     let renderer = Renderer::from_surface(PlatformSurface::browser_webgl2_canvas(80, 60))
         .expect("browser webgl2 canvas renderer builds");
 
-    assert_eq!(renderer.capabilities().backend, Backend::WebGl2);
+    assert_eq!(renderer.capabilities().backend, Backend::SurfaceDescriptor);
+    assert!(!renderer.capabilities().gpu_device);
+    assert!(!renderer.capabilities().surface_attached);
     assert_eq!(renderer.stats().target_width, 80);
     assert_eq!(renderer.stats().target_height, 60);
 }
@@ -282,6 +350,23 @@ fn structural_change_after_prepare_requires_prepare_again() {
             reason: NotPreparedReason::SceneChanged { .. }
         })
     ));
+}
+
+#[test]
+fn rendering_a_different_scene_after_prepare_is_not_prepared() {
+    let (mut prepared_scene, _) = scene_with_triangle();
+    let (different_scene, different_camera) = scene_with_triangle();
+    let mut renderer = Renderer::headless(32, 32).expect("headless renderer builds");
+    renderer
+        .prepare(&mut prepared_scene)
+        .expect("prepare succeeds");
+
+    assert_eq!(
+        renderer.render(&different_scene, different_camera),
+        Err(RenderError::NotPrepared {
+            reason: NotPreparedReason::DifferentScene
+        })
+    );
 }
 
 #[test]

@@ -67,17 +67,17 @@ impl Renderer {
 
     pub fn from_surface(surface: PlatformSurface) -> Result<Self, BuildError> {
         let (kind, size, attachment) = surface.into_parts();
-        let backend = match kind {
-            SurfaceKind::NativeWindow => Backend::NativeSurface,
-            SurfaceKind::BrowserWebGpuCanvas => Backend::WebGpu,
-            SurfaceKind::BrowserWebGl2Canvas => Backend::WebGl2,
-        };
         match attachment {
-            PlatformSurfaceAttachment::Descriptor => {
-                Self::from_raster_target(size.width, size.height, backend, None, false)
-            }
+            PlatformSurfaceAttachment::Descriptor => Self::from_raster_target(
+                size.width,
+                size.height,
+                Backend::SurfaceDescriptor,
+                None,
+                false,
+            ),
             #[cfg(not(target_arch = "wasm32"))]
             PlatformSurfaceAttachment::NativeWindow(window) => {
+                let backend = backend_for_attached_surface(kind);
                 let gpu =
                     pollster::block_on(gpu::request_native_surface_gpu(backend, size, window))?;
                 Self::from_raster_target(size.width, size.height, backend, Some(gpu), true)
@@ -85,6 +85,7 @@ impl Renderer {
             #[cfg(target_arch = "wasm32")]
             PlatformSurfaceAttachment::BrowserWebGpuCanvas(_)
             | PlatformSurfaceAttachment::BrowserWebGl2Canvas(_) => {
+                let backend = backend_for_attached_surface(kind);
                 Err(BuildError::AsyncSurfaceRequired { backend })
             }
         }
@@ -92,26 +93,48 @@ impl Renderer {
 
     pub async fn from_surface_async(surface: PlatformSurface) -> Result<Self, BuildError> {
         let (kind, size, attachment) = surface.into_parts();
-        let backend = match kind {
-            SurfaceKind::NativeWindow => Backend::NativeSurface,
-            SurfaceKind::BrowserWebGpuCanvas => Backend::WebGpu,
-            SurfaceKind::BrowserWebGl2Canvas => Backend::WebGl2,
-        };
-        let gpu = match attachment {
-            PlatformSurfaceAttachment::Descriptor => {
-                return Self::from_raster_target(size.width, size.height, backend, None, false);
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            match attachment {
+                PlatformSurfaceAttachment::Descriptor => {
+                    return Self::from_raster_target(
+                        size.width,
+                        size.height,
+                        Backend::SurfaceDescriptor,
+                        None,
+                        false,
+                    );
+                }
+                PlatformSurfaceAttachment::BrowserWebGpuCanvas(canvas)
+                | PlatformSurfaceAttachment::BrowserWebGl2Canvas(canvas) => {
+                    let _ = canvas;
+                    let backend = backend_for_attached_surface(kind);
+                    return Err(BuildError::UnsupportedBackend { backend });
+                }
             }
-            #[cfg(not(target_arch = "wasm32"))]
-            PlatformSurfaceAttachment::NativeWindow(window) => {
-                gpu::request_native_surface_gpu(backend, size, window).await?
-            }
-            #[cfg(target_arch = "wasm32")]
-            PlatformSurfaceAttachment::BrowserWebGpuCanvas(canvas)
-            | PlatformSurfaceAttachment::BrowserWebGl2Canvas(canvas) => {
-                gpu::request_browser_surface_gpu(backend, size, canvas).await?
-            }
-        };
-        Self::from_raster_target(size.width, size.height, backend, Some(gpu), true)
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let gpu = match attachment {
+                PlatformSurfaceAttachment::Descriptor => {
+                    return Self::from_raster_target(
+                        size.width,
+                        size.height,
+                        Backend::SurfaceDescriptor,
+                        None,
+                        false,
+                    );
+                }
+                PlatformSurfaceAttachment::NativeWindow(window) => {
+                    let backend = backend_for_attached_surface(kind);
+                    gpu::request_native_surface_gpu(backend, size, window).await?
+                }
+            };
+            let backend = backend_for_attached_surface(kind);
+            Self::from_raster_target(size.width, size.height, backend, Some(gpu), true)
+        }
     }
 
     fn from_raster_target(
@@ -163,8 +186,9 @@ impl Renderer {
             structure_revision: scene.structure_revision(),
             target_revision: self.target_revision,
         });
+        let primitives = collect_primitives(scene);
         if let Some(gpu) = &mut self.gpu {
-            gpu.prepare(self.target);
+            gpu.prepare(self.target, &primitives);
         }
         Ok(())
     }
@@ -181,7 +205,7 @@ impl Renderer {
 
         let primitives = count_primitives(scene);
         if self.gpu.is_some() {
-            self.draw_gpu(primitives)?;
+            self.draw_gpu()?;
         } else {
             self.clear(Color::BLACK);
             for renderable in scene.renderables() {
@@ -241,21 +265,20 @@ impl Renderer {
         self.gpu.is_some()
     }
 
-    fn draw_gpu(&mut self, primitives: u64) -> Result<(), RenderError> {
+    fn draw_gpu(&mut self) -> Result<(), RenderError> {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let gpu = self
                 .gpu
                 .as_mut()
                 .expect("draw_gpu is called only when a GPU device exists");
-            self.frame = gpu.render_to_frame(self.target, primitives)?;
+            gpu.render_to_frame(self.target, &mut self.frame)?;
             self.stats.gpu_submissions = self.stats.gpu_submissions.saturating_add(1);
             Ok(())
         }
 
         #[cfg(target_arch = "wasm32")]
         {
-            let _ = primitives;
             Err(RenderError::GpuResourcesNotPrepared {
                 backend: self.target.backend,
             })
@@ -360,6 +383,21 @@ fn count_primitives(scene: &Scene) -> u64 {
         .renderables()
         .map(|renderable| renderable.primitives().len() as u64)
         .sum()
+}
+
+fn collect_primitives(scene: &Scene) -> Vec<Primitive> {
+    scene
+        .renderables()
+        .flat_map(|renderable| renderable.primitives().iter().cloned())
+        .collect()
+}
+
+fn backend_for_attached_surface(kind: SurfaceKind) -> Backend {
+    match kind {
+        SurfaceKind::NativeWindow => Backend::NativeSurface,
+        SurfaceKind::BrowserWebGpuCanvas => Backend::WebGpu,
+        SurfaceKind::BrowserWebGl2Canvas => Backend::WebGl2,
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

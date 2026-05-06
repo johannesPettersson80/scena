@@ -5,6 +5,8 @@ use std::sync::mpsc;
 use crate::diagnostics::RenderError;
 use crate::diagnostics::{Backend, BuildError};
 #[cfg(not(target_arch = "wasm32"))]
+use crate::geometry::{Primitive, Vertex};
+#[cfg(not(target_arch = "wasm32"))]
 use crate::platform::BoxedNativeWindow;
 use crate::platform::SurfaceSize;
 
@@ -35,15 +37,32 @@ struct GpuPreparedResources {
     texture: wgpu::Texture,
     view: wgpu::TextureView,
     readback: wgpu::Buffer,
-    pipeline: wgpu::RenderPipeline,
+    vertex_buffer: wgpu::Buffer,
+    vertex_count: u32,
+    offscreen_pipeline: wgpu::RenderPipeline,
+    surface_pipeline: Option<wgpu::RenderPipeline>,
     padded_bytes_per_row: u32,
     unpadded_bytes_per_row: u32,
 }
 
 impl GpuDeviceState {
     #[cfg(not(target_arch = "wasm32"))]
-    pub(super) fn prepare(&mut self, target: RasterTarget) {
+    pub(super) fn prepare(&mut self, target: RasterTarget, primitives: &[Primitive]) {
         self.configure_surface(target);
+        let vertex_bytes = encode_vertices(primitives);
+        let vertex_buffer_size = vertex_bytes.len().max(4) as u64;
+        let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("scena.m0.scene_vertices"),
+            size: vertex_buffer_size,
+            usage: wgpu::BufferUsages::VERTEX,
+            mapped_at_creation: true,
+        });
+        if !vertex_bytes.is_empty() {
+            let mut mapped = vertex_buffer.slice(..).get_mapped_range_mut();
+            mapped.copy_from_slice(&vertex_bytes);
+        }
+        vertex_buffer.unmap();
+
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("scena.headless_gpu.target"),
             size: wgpu::Extent3d {
@@ -68,60 +87,33 @@ impl GpuDeviceState {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        let shader = self
-            .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("scena.m0.unlit_triangle"),
-                source: wgpu::ShaderSource::Wgsl(GPU_TRIANGLE_SHADER.into()),
-            });
-        let pipeline_layout = self
-            .device
-            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("scena.m0.pipeline_layout"),
-                bind_group_layouts: &[],
-                immediate_size: 0,
-            });
-        let pipeline = self
-            .device
-            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("scena.m0.unlit_triangle_pipeline"),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some("vs_main"),
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                    buffers: &[],
-                },
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_main"),
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: GPU_COLOR_FORMAT,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                multiview_mask: None,
-                cache: None,
-            });
+        let offscreen_pipeline = create_unlit_pipeline(&self.device, GPU_COLOR_FORMAT);
+        let surface_pipeline = self
+            .surface
+            .as_ref()
+            .map(|surface| create_unlit_pipeline(&self.device, surface.config.format));
 
         self.resources = Some(GpuPreparedResources {
             target,
             texture,
             view,
             readback,
-            pipeline,
+            vertex_buffer,
+            vertex_count: (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32,
+            offscreen_pipeline,
+            surface_pipeline,
             padded_bytes_per_row,
             unpadded_bytes_per_row,
         });
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub(super) fn prepare(&mut self, target: RasterTarget) {
+    pub(super) fn prepare(
+        &mut self,
+        target: RasterTarget,
+        primitives: &[crate::geometry::Primitive],
+    ) {
+        let _ = primitives;
         self.configure_surface(target);
     }
 
@@ -129,8 +121,8 @@ impl GpuDeviceState {
     pub(super) fn render_to_frame(
         &mut self,
         target: RasterTarget,
-        primitives: u64,
-    ) -> Result<Vec<u8>, RenderError> {
+        frame: &mut Vec<u8>,
+    ) -> Result<(), RenderError> {
         if self
             .resources
             .as_ref()
@@ -170,16 +162,20 @@ impl GpuDeviceState {
         encode_unlit_pass(
             &mut encoder,
             &resources.view,
-            &resources.pipeline,
-            primitives,
+            &resources.vertex_buffer,
+            resources.vertex_count,
+            &resources.offscreen_pipeline,
             "scena.headless_gpu.render_pass",
         );
-        if let Some(surface_view) = surface_view.as_ref() {
+        if let (Some(surface_view), Some(surface_pipeline)) =
+            (surface_view.as_ref(), resources.surface_pipeline.as_ref())
+        {
             encode_unlit_pass(
                 &mut encoder,
                 surface_view,
-                &resources.pipeline,
-                primitives,
+                &resources.vertex_buffer,
+                resources.vertex_count,
+                surface_pipeline,
                 "scena.surface.render_pass",
             );
         }
@@ -229,7 +225,9 @@ impl GpuDeviceState {
             })?;
 
         let mapped = readback.get_mapped_range();
-        let mut frame = vec![0; target.byte_len()];
+        if frame.len() != target.byte_len() {
+            frame.resize(target.byte_len(), 0);
+        }
         for row in 0..target.height as usize {
             let source_start = row * resources.padded_bytes_per_row as usize;
             let source_end = source_start + resources.unpadded_bytes_per_row as usize;
@@ -240,7 +238,7 @@ impl GpuDeviceState {
         drop(mapped);
         resources.readback.unmap();
 
-        Ok(frame)
+        Ok(())
     }
 
     fn configure_surface(&mut self, target: RasterTarget) {
@@ -287,6 +285,7 @@ pub(super) async fn request_native_surface_gpu(
 }
 
 #[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
 pub(super) async fn request_browser_surface_gpu(
     backend: crate::diagnostics::Backend,
     size: crate::platform::SurfaceSize,
@@ -295,6 +294,7 @@ pub(super) async fn request_browser_surface_gpu(
     request_surface_gpu(backend, size, wgpu::SurfaceTarget::Canvas(canvas)).await
 }
 
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 async fn request_surface_gpu(
     backend: Backend,
     size: SurfaceSize,
@@ -335,8 +335,9 @@ async fn request_surface_gpu(
 fn encode_unlit_pass(
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
+    vertex_buffer: &wgpu::Buffer,
+    vertex_count: u32,
     pipeline: &wgpu::RenderPipeline,
-    primitives: u64,
     label: &'static str,
 ) {
     let color_attachment = Some(wgpu::RenderPassColorAttachment {
@@ -357,9 +358,9 @@ fn encode_unlit_pass(
         multiview_mask: None,
     });
     pass.set_pipeline(pipeline);
-    if primitives > 0 {
-        let instances = primitives.min(u64::from(u32::MAX)) as u32;
-        pass.draw(0..3, 0..instances);
+    pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+    if vertex_count > 0 {
+        pass.draw(0..vertex_count, 0..1);
     }
 }
 
@@ -368,29 +369,37 @@ const BYTES_PER_PIXEL: u32 = 4;
 #[cfg(not(target_arch = "wasm32"))]
 const GPU_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 #[cfg(not(target_arch = "wasm32"))]
+const VERTEX_BYTE_LEN: usize = 7 * std::mem::size_of::<f32>();
+#[cfg(not(target_arch = "wasm32"))]
+const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] = [
+    wgpu::VertexAttribute {
+        format: wgpu::VertexFormat::Float32x3,
+        offset: 0,
+        shader_location: 0,
+    },
+    wgpu::VertexAttribute {
+        format: wgpu::VertexFormat::Float32x4,
+        offset: 3 * std::mem::size_of::<f32>() as u64,
+        shader_location: 1,
+    },
+];
+#[cfg(not(target_arch = "wasm32"))]
 const GPU_TRIANGLE_SHADER: &str = r#"
+struct VertexIn {
+    @location(0) position: vec3<f32>,
+    @location(1) color: vec4<f32>,
+};
+
 struct VertexOut {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
 };
 
 @vertex
-fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOut {
-    let index = vertex_index % 3u;
-    let positions = array<vec2<f32>, 3>(
-        vec2<f32>(-0.6, -0.5),
-        vec2<f32>(0.6, -0.5),
-        vec2<f32>(0.0, 0.6),
-    );
-    let colors = array<vec4<f32>, 3>(
-        vec4<f32>(1.0, 0.2, 0.1, 1.0),
-        vec4<f32>(0.1, 0.8, 0.2, 1.0),
-        vec4<f32>(0.1, 0.3, 1.0, 1.0),
-    );
-
+fn vs_main(in: VertexIn) -> VertexOut {
     var out: VertexOut;
-    out.position = vec4<f32>(positions[index], 0.0, 1.0);
-    out.color = colors[index];
+    out.position = vec4<f32>(in.position, 1.0);
+    out.color = in.color;
     return out;
 }
 
@@ -403,4 +412,76 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 #[cfg(not(target_arch = "wasm32"))]
 fn align_to(value: u32, alignment: u32) -> u32 {
     value.div_ceil(alignment) * alignment
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn create_unlit_pipeline(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("scena.m0.unlit_triangle"),
+        source: wgpu::ShaderSource::Wgsl(GPU_TRIANGLE_SHADER.into()),
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("scena.m0.pipeline_layout"),
+        bind_group_layouts: &[],
+        immediate_size: 0,
+    });
+    let vertex_buffer = wgpu::VertexBufferLayout {
+        array_stride: VERTEX_BYTE_LEN as u64,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &VERTEX_ATTRIBUTES,
+    };
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("scena.m0.unlit_triangle_pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            buffers: &[vertex_buffer],
+        },
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn encode_vertices(primitives: &[Primitive]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(primitives.len() * 3 * VERTEX_BYTE_LEN);
+    for primitive in primitives {
+        for vertex in primitive.vertices() {
+            encode_vertex(&mut bytes, *vertex);
+        }
+    }
+    bytes
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn encode_vertex(bytes: &mut Vec<u8>, vertex: Vertex) {
+    for value in [
+        vertex.position.x,
+        vertex.position.y,
+        vertex.position.z,
+        vertex.color.r,
+        vertex.color.g,
+        vertex.color.b,
+        vertex.color.a,
+    ] {
+        bytes.extend_from_slice(&value.to_ne_bytes());
+    }
 }

@@ -71,6 +71,7 @@ pub enum LookupError {
 pub enum Backend {
     Headless,
     HeadlessGpu,
+    SurfaceDescriptor,
     NativeSurface,
     WebGpu,
     WebGl2,

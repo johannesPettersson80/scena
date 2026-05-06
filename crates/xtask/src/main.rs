@@ -445,17 +445,21 @@ fn require_contains(
 }
 
 fn check_source_scope(root: &Path, findings: &mut Vec<Finding>) {
-    for rel in REQUIRED_SOURCE_MODULES {
-        let path = root.join(rel);
+    for rel in source_files(root) {
+        let path = root.join(&rel);
         let Ok(text) = fs::read_to_string(&path) else {
             continue;
         };
         let lower = text.to_ascii_lowercase();
         for term in SOURCE_SCOPE_TERMS {
-            if lower.contains(term) {
+            if contains_scope_term(&lower, term) {
                 findings.push(Finding::new(
                     "ARCH-SCOPE",
-                    format!("{rel} contains renderer-forbidden term '{}'", term),
+                    format!(
+                        "{} contains renderer-forbidden term '{}'",
+                        rel.display(),
+                        term
+                    ),
                 ));
             }
         }
@@ -504,6 +508,18 @@ fn check_module_boundaries(root: &Path, findings: &mut Vec<Finding>) {
         "src/render.rs",
         &["fetch(", "load_scene", "load_texture", "gltf::"],
     );
+    for rel in source_files(root)
+        .into_iter()
+        .filter(|path| path.starts_with("src/render"))
+    {
+        forbid_contains_path(
+            root,
+            findings,
+            "ARCH-RENDER",
+            &rel,
+            &["fetch(", "load_scene", "load_texture", "gltf::"],
+        );
+    }
 }
 
 fn check_solid_kiss(root: &Path, findings: &mut Vec<Finding>) {
@@ -519,8 +535,8 @@ fn check_solid_kiss(root: &Path, findings: &mut Vec<Finding>) {
         ],
     );
 
-    for rel in REQUIRED_SOURCE_MODULES {
-        let path = root.join(rel);
+    for rel in source_files(root) {
+        let path = root.join(&rel);
         let Ok(text) = fs::read_to_string(&path) else {
             continue;
         };
@@ -530,7 +546,8 @@ fn check_solid_kiss(root: &Path, findings: &mut Vec<Finding>) {
             findings.push(Finding::new(
                 "ARCH-KISS-SIZE",
                 format!(
-                    "{rel} has {significant_lines} significant lines; split before exceeding {MAX_SIGNIFICANT_LINES_PER_SOURCE_MODULE}"
+                    "{} has {significant_lines} significant lines; split before exceeding {MAX_SIGNIFICANT_LINES_PER_SOURCE_MODULE}",
+                    rel.display()
                 ),
             ));
         }
@@ -540,7 +557,8 @@ fn check_solid_kiss(root: &Path, findings: &mut Vec<Finding>) {
                 findings.push(Finding::new(
                     "ARCH-SOLID-CATCH-ALL",
                     format!(
-                        "{rel}:{} declares catch-all type '{}'; use an owner-specific type or add an ADR-backed doctor allowlist",
+                        "{}:{} declares catch-all type '{}'; use an owner-specific type or add an ADR-backed doctor allowlist",
+                        rel.display(),
                         line_index + 1,
                         type_name
                     ),
@@ -604,6 +622,16 @@ fn forbid_contains(
     rel: &str,
     needles: &[&str],
 ) {
+    forbid_contains_path(root, findings, rule, Path::new(rel), needles);
+}
+
+fn forbid_contains_path(
+    root: &Path,
+    findings: &mut Vec<Finding>,
+    rule: &'static str,
+    rel: &Path,
+    needles: &[&str],
+) {
     let path = root.join(rel);
     let Ok(text) = fs::read_to_string(&path) else {
         return;
@@ -613,10 +641,47 @@ fn forbid_contains(
         if text.contains(needle) {
             findings.push(Finding::new(
                 rule,
-                format!("{rel} contains forbidden boundary text '{}'", needle),
+                format!(
+                    "{} contains forbidden boundary text '{}'",
+                    rel.display(),
+                    needle
+                ),
             ));
         }
     }
+}
+
+fn source_files(root: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    collect_source_files(&root.join("src"), Path::new("src"), &mut files);
+    files.sort();
+    files
+}
+
+fn collect_source_files(dir: &Path, rel_dir: &Path, files: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let rel = rel_dir.join(entry.file_name());
+        if path.is_dir() {
+            collect_source_files(&path, &rel, files);
+        } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+            files.push(rel);
+        }
+    }
+}
+
+fn contains_scope_term(lower_text: &str, term: &str) -> bool {
+    if term.contains(' ') {
+        return lower_text.contains(term);
+    }
+
+    lower_text
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .any(|token| token == term)
 }
 
 fn check_unit_test_first_governance(root: &Path, findings: &mut Vec<Finding>) {
@@ -791,5 +856,23 @@ mod tests {
         check_backend_vocabulary(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn source_files_include_renderer_submodules() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let files = source_files(&root);
+
+        assert!(
+            files
+                .iter()
+                .any(|path| path == Path::new("src/render/gpu.rs"))
+        );
+    }
+
+    #[test]
+    fn source_scope_terms_match_whole_tokens() {
+        assert!(contains_scope_term("a robot module", "robot"));
+        assert!(!contains_scope_term("a roboticist module", "robot"));
     }
 }
