@@ -1,0 +1,120 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "scena-m3a-test-fixture"
+  },
+  "extensionsUsed": [
+    "KHR_materials_unlit"
+  ],
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "Default",
+      "nodes": [0]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "ColoredTriangle",
+      "mesh": 0
+    }
+  ],
+  "meshes": [
+    {
+      "name": "TriangleMesh",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "COLOR_0": 2
+          },
+          "indices": 3,
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "UnlitTexturedMaterial",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [0.25, 0.5, 0.75, 1.0],
+        "baseColorTexture": {
+          "index": 0
+        },
+        "metallicFactor": 0.0,
+        "roughnessFactor": 1.0
+      },
+      "extensions": {
+        "KHR_materials_unlit": {}
+      }
+    }
+  ],
+  "textures": [
+    {
+      "source": 0
+    }
+  ],
+  "images": [
+    {
+      "uri": "textures/albedo.png"
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 126,
+      "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AACAPwAAAAAAAAAAAACAPwAAAAAAAIA/AAAAAAAAgD8AAAAAAAAAAAAAgD8AAIA/AAABAAIA"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 36
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 36,
+      "byteLength": 36
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 72,
+      "byteLength": 48
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 120,
+      "byteLength": 6
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC3",
+      "min": [-0.5, -0.5, 0.0],
+      "max": [0.5, 0.5, 0.0]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5123,
+      "count": 3,
+      "type": "SCALAR"
+    }
+  ]
+}

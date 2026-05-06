@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::assets::{AssetFetcher, AssetPath, Assets, SceneAsset};
 use crate::diagnostics::{ImportError, InstantiateError, LookupError};
 
-use super::{NodeKey, NodeKind, Scene, Transform};
+use super::{MeshNode, NodeKey, NodeKind, Scene, Transform};
 
 #[derive(Debug, Clone)]
 pub struct SceneImport {
@@ -124,8 +124,17 @@ impl Scene {
                     parent: source_index,
                     child: source_index,
                 })?;
+        let kind = source_node
+            .mesh()
+            .map(|mesh| {
+                NodeKind::Mesh(MeshNode {
+                    geometry: mesh.geometry(),
+                    material: mesh.material(),
+                })
+            })
+            .unwrap_or(NodeKind::Empty);
         let node = self
-            .insert_node(parent, NodeKind::Empty, Transform::default())
+            .insert_node(parent, kind, Transform::default())
             .expect("import parent was inserted by this scene");
         records.push(ImportedNode {
             node,

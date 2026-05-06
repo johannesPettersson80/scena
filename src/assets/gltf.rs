@@ -4,7 +4,12 @@ use serde_json::Value as JsonValue;
 
 use crate::diagnostics::AssetError;
 
-use super::AssetPath;
+use self::accessor::{parse_accessors, parse_buffer_views, parse_buffers};
+use self::read::{parse_materials, parse_meshes, parse_textures};
+use super::{AssetPath, AssetStorage, GeometryHandle, MaterialHandle};
+
+mod accessor;
+mod read;
 
 #[derive(Debug, Clone)]
 pub struct SceneAsset {
@@ -15,6 +20,7 @@ pub struct SceneAsset {
 struct SceneAssetData {
     path: AssetPath,
     node_count: usize,
+    mesh_count: usize,
     nodes: Vec<SceneAssetNode>,
     extensions_used: Vec<String>,
     extensions_required: Vec<String>,
@@ -24,6 +30,14 @@ struct SceneAssetData {
 pub struct SceneAssetNode {
     name: Option<String>,
     children: Vec<usize>,
+    mesh: Option<SceneAssetMesh>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SceneAssetMesh {
+    geometry: GeometryHandle,
+    material: MaterialHandle,
+    uses_vertex_colors: bool,
 }
 
 impl SceneAsset {
@@ -32,6 +46,7 @@ impl SceneAsset {
             inner: Arc::new(SceneAssetData {
                 path: AssetPath::from("memory:empty"),
                 node_count: 0,
+                mesh_count: 0,
                 nodes: Vec::new(),
                 extensions_used: Vec::new(),
                 extensions_required: Vec::new(),
@@ -39,7 +54,11 @@ impl SceneAsset {
         }
     }
 
-    pub(super) fn from_gltf_source(path: AssetPath, source: &str) -> Result<Self, AssetError> {
+    pub(super) fn from_gltf_source(
+        path: AssetPath,
+        source: &str,
+        storage: &mut AssetStorage,
+    ) -> Result<Self, AssetError> {
         let json: JsonValue = serde_json::from_str(source).map_err(|error| AssetError::Parse {
             path: path.as_str().to_string(),
             reason: error.to_string(),
@@ -56,12 +75,28 @@ impl SceneAsset {
             }
         }
 
-        let nodes = parse_gltf_nodes(&json);
+        let buffers = parse_buffers(&path, &json)?;
+        let buffer_views = parse_buffer_views(&path, &json)?;
+        let accessors = parse_accessors(&path, &json)?;
+        let textures = parse_textures(&path, &json, storage);
+        let materials = parse_materials(&json, storage, &textures);
+        let meshes = parse_meshes(
+            &path,
+            &json,
+            &buffers,
+            &buffer_views,
+            &accessors,
+            &materials,
+            storage,
+        )?;
+        let nodes = parse_gltf_nodes(&json, &meshes);
         let node_count = nodes.len();
+        let mesh_count = meshes.len();
         Ok(Self {
             inner: Arc::new(SceneAssetData {
                 path,
                 node_count,
+                mesh_count,
                 nodes,
                 extensions_used,
                 extensions_required,
@@ -75,6 +110,10 @@ impl SceneAsset {
 
     pub fn node_count(&self) -> usize {
         self.inner.node_count
+    }
+
+    pub fn mesh_count(&self) -> usize {
+        self.inner.mesh_count
     }
 
     pub fn nodes(&self) -> &[SceneAssetNode] {
@@ -106,6 +145,24 @@ impl SceneAssetNode {
     pub fn children(&self) -> &[usize] {
         &self.children
     }
+
+    pub fn mesh(&self) -> Option<SceneAssetMesh> {
+        self.mesh
+    }
+}
+
+impl SceneAssetMesh {
+    pub const fn geometry(self) -> GeometryHandle {
+        self.geometry
+    }
+
+    pub const fn material(self) -> MaterialHandle {
+        self.material
+    }
+
+    pub const fn uses_vertex_colors(self) -> bool {
+        self.uses_vertex_colors
+    }
 }
 
 fn validate_gltf_version(path: &AssetPath, json: &JsonValue) -> Result<(), AssetError> {
@@ -136,7 +193,7 @@ fn string_array_field(json: &JsonValue, field: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn parse_gltf_nodes(json: &JsonValue) -> Vec<SceneAssetNode> {
+fn parse_gltf_nodes(json: &JsonValue, meshes: &[SceneAssetMesh]) -> Vec<SceneAssetNode> {
     json.get("nodes")
         .and_then(JsonValue::as_array)
         .map(|nodes| {
@@ -158,6 +215,11 @@ fn parse_gltf_nodes(json: &JsonValue) -> Vec<SceneAssetNode> {
                                 .collect()
                         })
                         .unwrap_or_default(),
+                    mesh: node
+                        .get("mesh")
+                        .and_then(JsonValue::as_u64)
+                        .and_then(|mesh| meshes.get(mesh as usize))
+                        .copied(),
                 })
                 .collect()
         })

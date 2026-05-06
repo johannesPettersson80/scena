@@ -264,8 +264,9 @@ impl<F: AssetFetcher> Assets<F> {
             path: path.as_str().to_string(),
             reason: format!("expected UTF-8 glTF JSON source: {error}"),
         })?;
-        let scene = SceneAsset::from_gltf_source(path.clone(), &source)?;
-        self.storage().scene_lookup.insert(path, scene.clone());
+        let mut storage = self.storage();
+        let scene = SceneAsset::from_gltf_source(path.clone(), &source, &mut storage)?;
+        storage.scene_lookup.insert(path, scene.clone());
         Ok(scene)
     }
 }

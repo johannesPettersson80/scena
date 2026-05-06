@@ -383,18 +383,28 @@ fn append_triangle_primitives(
         let normal_a = transform_normal(vertices[triangle[0] as usize].normal, params.transform);
         let normal_b = transform_normal(vertices[triangle[1] as usize].normal, params.transform);
         let normal_c = transform_normal(vertices[triangle[2] as usize].normal, params.transform);
+        let vertex_colors = geometry.vertex_colors();
         let primitive = Primitive::triangle([
             Vertex {
                 position: position_a,
-                color: material_color(material, position_a, normal_a, params.lights),
+                color: multiply_color(
+                    material_color(material, position_a, normal_a, params.lights),
+                    vertex_colors[triangle[0] as usize],
+                ),
             },
             Vertex {
                 position: position_b,
-                color: material_color(material, position_b, normal_b, params.lights),
+                color: multiply_color(
+                    material_color(material, position_b, normal_b, params.lights),
+                    vertex_colors[triangle[1] as usize],
+                ),
             },
             Vertex {
                 position: position_c,
-                color: material_color(material, position_c, normal_c, params.lights),
+                color: multiply_color(
+                    material_color(material, position_c, normal_c, params.lights),
+                    vertex_colors[triangle[2] as usize],
+                ),
             },
         ]);
         match material_pass {
@@ -428,6 +438,18 @@ fn material_pass(node: NodeKey, material: &MaterialDesc) -> Result<MaterialPass,
             alpha_mode: material.alpha_mode(),
         }),
     }
+}
+
+fn multiply_color(
+    left: crate::material::Color,
+    right: crate::material::Color,
+) -> crate::material::Color {
+    crate::material::Color::from_linear_rgba(
+        left.r * right.r,
+        left.g * right.g,
+        left.b * right.b,
+        left.a * right.a,
+    )
 }
 
 fn average_depth(primitive: &Primitive) -> f32 {

@@ -2075,7 +2075,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         findings,
         "ARCH-M3A-SCENE-IMPORT",
         "Cargo.toml",
-        &["serde_json", "wasm-bindgen-futures", "Response"],
+        &["base64", "serde_json", "wasm-bindgen-futures", "Response"],
     );
     require_contains(
         root,
@@ -2114,7 +2114,11 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         &[
             "pub struct SceneAsset",
             "pub struct SceneAssetNode",
+            "pub struct SceneAssetMesh",
             "pub(super) fn from_gltf_source",
+            "pub fn mesh_count",
+            "pub fn mesh(&self)",
+            "pub const fn uses_vertex_colors",
             "UnsupportedRequiredExtension",
             "KHR_lights_punctual",
             "KHR_materials_unlit",
@@ -2122,6 +2126,41 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "KHR_texture_transform",
             "KHR_mesh_quantization",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/assets/gltf/accessor.rs",
+        &[
+            "parse_buffers",
+            "parse_buffer_views",
+            "parse_accessors",
+            "read_color_accessor",
+            "GL_UNSIGNED_SHORT",
+            "base64::engine::general_purpose::STANDARD",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/assets/gltf/read.rs",
+        &[
+            "parse_materials",
+            "parse_meshes",
+            "GeometryDesc::try_new_with_vertex_colors",
+            "TextureColorSpace::Srgb",
+            "KHR_materials_unlit",
+            "KHR_materials_emissive_strength",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/geometry.rs",
+        &["try_new_with_vertex_colors", "pub fn vertex_colors"],
     );
     require_contains(
         root,
@@ -2161,6 +2200,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub fn replace_import(",
             "mark_stale",
             "LookupError::StaleImport",
+            "NodeKind::Mesh",
             "scene_asset: &SceneAsset",
             "pub fn node(&self, name: &str)",
             "pub fn first_node(&self, name: &str)",
@@ -2196,6 +2236,8 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "scene_import_reports_duplicate_names_and_escaped_paths",
             "camera_frame_and_look_at_helpers_update_view_and_require_prepare",
             "assets_load_scene_uses_fetcher_trait_and_deduplicates_by_asset_path",
+            "gltf_loader_creates_geometry_material_texture_and_vertex_color_contracts",
+            "mesh_material_vertex_color_scene.gltf",
             "ImportOptions::gltf_default",
             "Root/A\\\\/B",
             "UnsupportedRequiredExtension",

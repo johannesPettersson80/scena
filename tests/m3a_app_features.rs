@@ -1,9 +1,9 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use scena::{
-    Aabb, AssetError, AssetFetcher, AssetPath, Assets, Camera, ChangeKind, ImportOptions,
-    LookupError, NodeKind, NotPreparedReason, PerspectiveCamera, Quat, RenderError, Renderer,
-    Scene, Transform, Vec3,
+    Aabb, AssetError, AssetFetcher, AssetPath, Assets, Camera, ChangeKind, Color, GeometryTopology,
+    ImportOptions, LookupError, MaterialKind, NodeKind, NotPreparedReason, PerspectiveCamera, Quat,
+    RenderError, Renderer, Scene, Transform, Vec3,
 };
 use std::future::{Ready, ready};
 use std::sync::{
@@ -81,6 +81,67 @@ fn assets_load_scene_uses_fetcher_trait_and_deduplicates_by_asset_path() {
             path: "memory://missing.gltf".to_string()
         }
     );
+}
+
+#[test]
+fn gltf_loader_creates_geometry_material_texture_and_vertex_color_contracts() {
+    let assets = Assets::new();
+    let scene_asset = pollster::block_on(
+        assets.load_scene("tests/assets/gltf/mesh_material_vertex_color_scene.gltf"),
+    )
+    .expect("mesh glTF scene loads");
+
+    let mesh = scene_asset.nodes()[0]
+        .mesh()
+        .expect("glTF node records mesh payload");
+    let geometry = assets
+        .geometry(mesh.geometry())
+        .expect("glTF geometry is registered in Assets");
+    let material = assets
+        .material(mesh.material())
+        .expect("glTF material is registered in Assets");
+    let base_color_texture = material
+        .base_color_texture()
+        .expect("glTF base color texture is registered");
+    let texture = assets
+        .texture(base_color_texture)
+        .expect("glTF texture handle resolves");
+
+    assert_eq!(scene_asset.mesh_count(), 1);
+    assert!(mesh.uses_vertex_colors());
+    assert_eq!(geometry.topology(), GeometryTopology::Triangles);
+    assert_eq!(geometry.vertices().len(), 3);
+    assert_eq!(geometry.indices(), [0, 1, 2]);
+    assert_eq!(
+        geometry.vertex_colors(),
+        [
+            Color::from_linear_rgba(1.0, 0.0, 0.0, 1.0),
+            Color::from_linear_rgba(0.0, 1.0, 0.0, 1.0),
+            Color::from_linear_rgba(0.0, 0.0, 1.0, 1.0),
+        ]
+    );
+    assert_eq!(material.kind(), MaterialKind::Unlit);
+    assert_eq!(
+        material.base_color(),
+        Color::from_linear_rgba(0.25, 0.5, 0.75, 1.0)
+    );
+    assert_eq!(
+        texture.path().as_str(),
+        "tests/assets/gltf/textures/albedo.png"
+    );
+
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("mesh scene instantiates");
+    let node = import
+        .node("ColoredTriangle")
+        .expect("mesh node is import-queryable");
+    let NodeKind::Mesh(mesh_node) = scene.node(node).expect("mesh node exists").kind() else {
+        panic!("glTF mesh node should instantiate as Scene::mesh");
+    };
+    assert_eq!(mesh_node.geometry(), mesh.geometry());
+    assert_eq!(mesh_node.material(), mesh.material());
 }
 
 #[test]

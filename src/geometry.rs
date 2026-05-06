@@ -20,6 +20,10 @@ pub enum GeometryError {
         index: u32,
         vertex_count: usize,
     },
+    InvalidVertexColorCount {
+        vertex_count: usize,
+        color_count: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -39,6 +43,7 @@ pub struct GeometryDesc {
     topology: GeometryTopology,
     vertices: Vec<GeometryVertex>,
     indices: Vec<u32>,
+    vertex_colors: Vec<Color>,
     bounds: Aabb,
 }
 
@@ -59,9 +64,25 @@ impl GeometryDesc {
         vertices: Vec<GeometryVertex>,
         indices: Vec<u32>,
     ) -> Result<Self, GeometryError> {
+        let vertex_colors = vec![Color::WHITE; vertices.len()];
+        Self::try_new_with_vertex_colors(topology, vertices, indices, vertex_colors)
+    }
+
+    pub fn try_new_with_vertex_colors(
+        topology: GeometryTopology,
+        vertices: Vec<GeometryVertex>,
+        indices: Vec<u32>,
+        vertex_colors: Vec<Color>,
+    ) -> Result<Self, GeometryError> {
         let Some(bounds) = Aabb::from_vertices(&vertices) else {
             return Err(GeometryError::EmptyVertices);
         };
+        if vertex_colors.len() != vertices.len() {
+            return Err(GeometryError::InvalidVertexColorCount {
+                vertex_count: vertices.len(),
+                color_count: vertex_colors.len(),
+            });
+        }
         let valid_arity = match topology {
             GeometryTopology::Triangles => indices.len().is_multiple_of(3),
             GeometryTopology::Lines => indices.len().is_multiple_of(2),
@@ -84,6 +105,7 @@ impl GeometryDesc {
             topology,
             vertices,
             indices,
+            vertex_colors,
             bounds,
         })
     }
@@ -369,6 +391,10 @@ impl GeometryDesc {
 
     pub fn indices(&self) -> &[u32] {
         &self.indices
+    }
+
+    pub fn vertex_colors(&self) -> &[Color] {
+        &self.vertex_colors
     }
 
     pub fn bounds(&self) -> Aabb {
