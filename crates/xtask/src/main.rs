@@ -141,6 +141,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_asset_api_contracts(root, findings);
     check_prepare_asset_contracts(root, findings);
     check_render_alpha_contracts(root, findings);
+    check_renderer_stats_contracts(root, findings);
     check_solid_kiss(root, findings);
     check_backend_vocabulary(root, findings);
     check_unit_test_first_governance(root, findings);
@@ -706,6 +707,49 @@ fn check_render_alpha_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "headless_alpha_blends_in_linear_before_output_encoding",
             "AlphaPipelineStatus::LinearSourceOver",
             "AlphaPipelineStatus::BackendPassthrough",
+        ],
+    );
+}
+
+fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STATS",
+        "src/diagnostics.rs",
+        &[
+            "pub struct RendererStats",
+            "pub buffers: u64",
+            "pub textures: u64",
+            "pub materials: u64",
+            "pub render_targets: u64",
+            "pub pipelines: u64",
+            "pub bind_groups: u64",
+            "pub shader_modules: u64",
+            "pub environments: u64",
+            "pub scene_imports: u64",
+            "pub live_logical_handles: u64",
+            "pub pending_destructions: u64",
+            "pub approximate_gpu_memory_bytes: Option<u64>",
+            "pub gpu_frame_ms: Option<f32>",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STATS",
+        "tests/m1_geometry_materials.rs",
+        &["m1_cpu_resource_lifetime_counters_return_to_baseline"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STATS",
+        "docs/specs/public-api.md",
+        &[
+            "pub struct RendererStats",
+            "pub buffers: u64",
+            "pub target_height: u32",
         ],
     );
 }
@@ -1429,6 +1473,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_render_alpha_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn renderer_stats_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_renderer_stats_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

@@ -247,6 +247,7 @@ impl Renderer {
 
         self.stats.frames_rendered = self.stats.frames_rendered.saturating_add(1);
         self.stats.draw_calls = primitive_count;
+        self.stats.triangles = primitive_count;
         self.stats.primitives = primitive_count;
 
         Ok(RenderOutcome {

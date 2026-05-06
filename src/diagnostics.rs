@@ -163,13 +163,29 @@ pub struct Capabilities {
     pub alpha_pipeline: AlphaPipelineStatus,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct RendererStats {
+    pub buffers: u64,
+    pub textures: u64,
+    pub materials: u64,
+    pub render_targets: u64,
+    pub pipelines: u64,
+    pub bind_groups: u64,
+    pub shader_modules: u64,
+    pub environments: u64,
+    pub scene_imports: u64,
+    pub live_logical_handles: u64,
+    pub pending_destructions: u64,
     pub frames_rendered: u64,
     pub draw_calls: u64,
-    pub primitives: u64,
+    pub triangles: u64,
+    pub culled_objects: u64,
+    pub skipped_frames: u64,
     pub gpu_submissions: u64,
-    pub pending_destructions: u64,
+    pub approximate_gpu_memory_bytes: Option<u64>,
+    pub cpu_frame_ms: f32,
+    pub gpu_frame_ms: Option<f32>,
+    pub primitives: u64,
     pub target_width: u32,
     pub target_height: u32,
 }

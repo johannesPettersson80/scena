@@ -308,6 +308,61 @@ fn default_environment_manifest_fields_are_structured_and_loadable() {
 }
 
 #[test]
+fn m1_cpu_resource_lifetime_counters_return_to_baseline() {
+    let baseline = Renderer::headless(4, 4)
+        .expect("headless renderer builds")
+        .stats();
+    assert_eq!(baseline.buffers, 0);
+    assert_eq!(baseline.textures, 0);
+    assert_eq!(baseline.materials, 0);
+    assert_eq!(baseline.render_targets, 0);
+    assert_eq!(baseline.pipelines, 0);
+    assert_eq!(baseline.bind_groups, 0);
+    assert_eq!(baseline.shader_modules, 0);
+    assert_eq!(baseline.environments, 0);
+    assert_eq!(baseline.scene_imports, 0);
+    assert_eq!(baseline.live_logical_handles, 0);
+    assert_eq!(baseline.pending_destructions, 0);
+
+    for _ in 0..10 {
+        let assets = Assets::new();
+        let _texture = pollster::block_on(
+            assets.load_texture("textures/lifetime.png", TextureColorSpace::Srgb),
+        )
+        .expect("texture request is recorded");
+        let _environment = assets.default_environment();
+        let geometry = assets.create_geometry(fullscreen_triangle_geometry());
+        let material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+        let (mut scene, camera) = scene_with_camera();
+        scene
+            .mesh(geometry, material)
+            .add()
+            .expect("mesh node inserts");
+        let mut renderer = Renderer::headless(4, 4).expect("headless renderer builds");
+
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("asset mesh prepares");
+        renderer.render(&scene, camera).expect("asset mesh renders");
+
+        let stats = renderer.stats();
+        assert_eq!(stats.buffers, baseline.buffers);
+        assert_eq!(stats.textures, baseline.textures);
+        assert_eq!(stats.materials, baseline.materials);
+        assert_eq!(stats.render_targets, baseline.render_targets);
+        assert_eq!(stats.pipelines, baseline.pipelines);
+        assert_eq!(stats.bind_groups, baseline.bind_groups);
+        assert_eq!(stats.shader_modules, baseline.shader_modules);
+        assert_eq!(stats.environments, baseline.environments);
+        assert_eq!(stats.scene_imports, baseline.scene_imports);
+        assert_eq!(stats.live_logical_handles, baseline.live_logical_handles);
+        assert_eq!(stats.pending_destructions, baseline.pending_destructions);
+        assert_eq!(stats.approximate_gpu_memory_bytes, None);
+        assert_eq!(stats.gpu_frame_ms, None);
+    }
+}
+
+#[test]
 fn material_descriptor_defaults_are_explicit() {
     let material = MaterialDesc::default();
 
