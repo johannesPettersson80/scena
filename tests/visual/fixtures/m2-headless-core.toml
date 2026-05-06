@@ -1,0 +1,36 @@
+[suite]
+name = "m2-headless-core"
+format = "ppm"
+encoding = "srgb8"
+width = 16
+height = 16
+artifact_dir = "target/gate-artifacts/m2-visual"
+reference = "tests/visual/references/m2-headless-core.toml"
+reference_mode = "sampled-rgba"
+max_abs_diff = 0
+status = "artifact-proof"
+
+[[fixture]]
+name = "direct-lights-pbr"
+required_surface = "headless-cpu"
+contract = "PBR mesh output responds to scene direct-light color"
+
+[[fixture]]
+name = "shadowed-directional-light"
+required_surface = "headless-cpu"
+contract = "one shadowed directional light records shadow-map and PCF resources"
+
+[[fixture]]
+name = "ibl-environment"
+required_surface = "headless-cpu"
+contract = "equirectangular HDR environment prepares cubemap, prefilter, and BRDF LUT resources"
+
+[[fixture]]
+name = "fxaa-edge"
+required_surface = "headless-cpu"
+contract = "FXAA runs after the ACES output transform without a second tonemap pass"
+
+[[fixture]]
+name = "clipping-half-space"
+required_surface = "headless-cpu"
+contract = "active clipping planes discard pixels in the rejected half-space"

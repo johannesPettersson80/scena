@@ -1,0 +1,50 @@
+[suite]
+name = "m2-headless-core"
+status = "reference"
+reference_mode = "sampled-rgba"
+max_abs_diff = 0
+
+[[reference]]
+name = "direct-lights-pbr"
+max_abs_diff = 0
+center_rgba = [216, 0, 9, 255]
+left_mid_rgba = [216, 0, 9, 255]
+right_mid_rgba = [216, 0, 9, 255]
+nonblack_pixels = 240
+rgba_hash = "fnv1a64:50d58e61016ef3a5"
+
+[[reference]]
+name = "shadowed-directional-light"
+max_abs_diff = 0
+center_rgba = [206, 206, 206, 255]
+left_mid_rgba = [206, 206, 206, 255]
+right_mid_rgba = [206, 206, 206, 255]
+nonblack_pixels = 240
+rgba_hash = "fnv1a64:14989755a652a465"
+
+[[reference]]
+name = "ibl-environment"
+max_abs_diff = 0
+center_rgba = [206, 206, 206, 255]
+left_mid_rgba = [206, 206, 206, 255]
+right_mid_rgba = [206, 206, 206, 255]
+nonblack_pixels = 240
+rgba_hash = "fnv1a64:14989755a652a465"
+
+[[reference]]
+name = "fxaa-edge"
+max_abs_diff = 0
+center_rgba = [68, 68, 68, 255]
+left_mid_rgba = [206, 206, 206, 255]
+right_mid_rgba = [0, 0, 0, 255]
+nonblack_pixels = 133
+rgba_hash = "fnv1a64:7a9b2cba585d4f09"
+
+[[reference]]
+name = "clipping-half-space"
+max_abs_diff = 0
+center_rgba = [206, 206, 206, 255]
+left_mid_rgba = [0, 0, 0, 255]
+right_mid_rgba = [206, 206, 206, 255]
+nonblack_pixels = 141
+rgba_hash = "fnv1a64:53e497bce0ce2aed"

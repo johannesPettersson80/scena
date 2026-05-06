@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>scena M2 browser lighting and clipping smoke</title>
+  <style>
+    html, body { margin: 0; background: #000; }
+    canvas { display: block; width: 64px; height: 64px; }
+  </style>
+</head>
+<body>
+  <canvas id="surface" width="64" height="64"></canvas>
+  <script>
+    const WIDTH = 64;
+    const HEIGHT = 64;
+    const BYTES_PER_ROW = WIDTH * 4;
+
+    function pixelAt(bytes, x, y, stride = BYTES_PER_ROW) {
+      const offset = y * stride + x * 4;
+      return [bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]];
+    }
+
+    function countNonBlack(bytes, stride = BYTES_PER_ROW) {
+      let nonBlack = 0;
+      for (let y = 0; y < HEIGHT; y += 1) {
+        const row = y * stride;
+        for (let x = 0; x < WIDTH; x += 1) {
+          const offset = row + x * 4;
+          if (bytes[offset] !== 0 || bytes[offset + 1] !== 0 || bytes[offset + 2] !== 0) {
+            nonBlack += 1;
+          }
+        }
+      }
+      return nonBlack;
+    }
+
+    function directLightPassed(center) {
+      return center[0] >= 200 && center[1] <= 32 && center[2] <= 32 && center[3] === 255;
+    }
+
+    function clippingPassed(left, right) {
+      const leftBlack = left[0] === 0 && left[1] === 0 && left[2] === 0 && left[3] === 255;
+      const rightWhite = right[0] >= 200 && right[1] >= 200 && right[2] >= 200 && right[3] === 255;
+      return leftBlack && rightWhite;
+    }
+
+    async function runWebGpuScene(canvas, scene) {
+      if (!navigator.gpu) {
+        return { status: "unsupported", reason: "navigator.gpu unavailable" };
+      }
+      const adapter = await navigator.gpu.requestAdapter();
+      if (!adapter) {
+        return { status: "unsupported", reason: "adapter unavailable" };
+      }
+      const device = await adapter.requestDevice();
+      const context = canvas.getContext("webgpu");
+      if (!context) {
+        return { status: "unsupported", reason: "canvas webgpu context unavailable" };
+      }
+
+      const format = navigator.gpu.getPreferredCanvasFormat();
+      context.configure({
+        device,
+        format,
+        alphaMode: "opaque",
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+      });
+      const shader = device.createShaderModule({ code: webGpuShader(scene) });
+      const pipeline = device.createRenderPipeline({
+        layout: "auto",
+        vertex: { module: shader, entryPoint: "vs_main" },
+        fragment: { module: shader, entryPoint: "fs_main", targets: [{ format }] },
+        primitive: { topology: "triangle-list" },
+      });
+
+      const texture = context.getCurrentTexture();
+      const readback = device.createBuffer({
+        size: BYTES_PER_ROW * HEIGHT,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+      const encoder = device.createCommandEncoder();
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: texture.createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: "clear",
+          storeOp: "store",
+        }],
+      });
+      pass.setPipeline(pipeline);
+      pass.draw(scene === "direct-light" ? 3 : 6);
+      pass.end();
+      encoder.copyTextureToBuffer(
+        { texture },
+        { buffer: readback, bytesPerRow: BYTES_PER_ROW },
+        { width: WIDTH, height: HEIGHT, depthOrArrayLayers: 1 },
+      );
+      device.queue.submit([encoder.finish()]);
+      await readback.mapAsync(GPUMapMode.READ);
+      const bytes = new Uint8Array(readback.getMappedRange()).slice();
+      readback.unmap();
+      return { status: "rendered", bytes };
+    }
+
+    function webGpuShader(scene) {
+      if (scene === "direct-light") {
+        return `
+          struct VertexOut {
+            @builtin(position) position: vec4<f32>,
+            @location(0) color: vec4<f32>,
+          };
+
+          @vertex
+          fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOut {
+            let positions = array<vec2<f32>, 3>(
+              vec2<f32>(-1.0, -1.0),
+              vec2<f32>(3.0, -1.0),
+              vec2<f32>(-1.0, 3.0),
+            );
+            var out: VertexOut;
+            out.position = vec4<f32>(positions[vertex_index], 0.0, 1.0);
+            out.color = vec4<f32>(1.0, 0.0, 0.0, 1.0);
+            return out;
+          }
+
+          @fragment
+          fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+            return in.color;
+          }
+        `;
+      }
+      return `
+        struct VertexOut {
+          @builtin(position) position: vec4<f32>,
+          @location(0) color: vec4<f32>,
+        };
+
+        @vertex
+        fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOut {
+          let positions = array<vec2<f32>, 6>(
+            vec2<f32>(0.0, -1.0),
+            vec2<f32>(1.0, -1.0),
+            vec2<f32>(1.0, 1.0),
+            vec2<f32>(0.0, -1.0),
+            vec2<f32>(1.0, 1.0),
+            vec2<f32>(0.0, 1.0),
+          );
+          var out: VertexOut;
+          out.position = vec4<f32>(positions[vertex_index], 0.0, 1.0);
+          out.color = vec4<f32>(1.0, 1.0, 1.0, 1.0);
+          return out;
+        }
+
+        @fragment
+        fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+          return in.color;
+        }
+      `;
+    }
+
+    function compileShader(gl, type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        throw new Error(gl.getShaderInfoLog(shader));
+      }
+      return shader;
+    }
+
+    function runWebGl2Scene(canvas, scene) {
+      const gl = canvas.getContext("webgl2", { preserveDrawingBuffer: true });
+      if (!gl) {
+        return { status: "unsupported", reason: "canvas webgl2 context unavailable" };
+      }
+      const vertex = compileShader(gl, gl.VERTEX_SHADER, webGl2VertexShader(scene));
+      const fragment = compileShader(gl, gl.FRAGMENT_SHADER, `#version 300 es
+        precision highp float;
+        in vec4 v_color;
+        out vec4 out_color;
+        void main() {
+          out_color = v_color;
+        }
+      `);
+      const program = gl.createProgram();
+      gl.attachShader(program, vertex);
+      gl.attachShader(program, fragment);
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        throw new Error(gl.getProgramInfoLog(program));
+      }
+
+      gl.viewport(0, 0, WIDTH, HEIGHT);
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.useProgram(program);
+      gl.drawArrays(gl.TRIANGLES, 0, scene === "direct-light" ? 3 : 6);
+      const bytes = new Uint8Array(WIDTH * HEIGHT * 4);
+      gl.readPixels(0, 0, WIDTH, HEIGHT, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+      return { status: "rendered", bytes };
+    }
+
+    function webGl2VertexShader(scene) {
+      if (scene === "direct-light") {
+        return `#version 300 es
+          precision highp float;
+          out vec4 v_color;
+          const vec2 positions[3] = vec2[3](
+            vec2(-1.0, -1.0),
+            vec2(3.0, -1.0),
+            vec2(-1.0, 3.0)
+          );
+          void main() {
+            gl_Position = vec4(positions[gl_VertexID], 0.0, 1.0);
+            v_color = vec4(1.0, 0.0, 0.0, 1.0);
+          }
+        `;
+      }
+      return `#version 300 es
+        precision highp float;
+        out vec4 v_color;
+        const vec2 positions[6] = vec2[6](
+          vec2(0.0, -1.0),
+          vec2(1.0, -1.0),
+          vec2(1.0, 1.0),
+          vec2(0.0, -1.0),
+          vec2(1.0, 1.0),
+          vec2(0.0, 1.0)
+        );
+        void main() {
+          gl_Position = vec4(positions[gl_VertexID], 0.0, 1.0);
+          v_color = vec4(1.0, 1.0, 1.0, 1.0);
+        }
+      `;
+    }
+
+    window.scenaM2BrowserLightingClippingSmoke = async function scenaM2BrowserLightingClippingSmoke(backend) {
+      const canvas = document.getElementById("surface");
+      const render = backend === "webgpu" ? runWebGpuScene : async (target, scene) => runWebGl2Scene(target, scene);
+      if (backend !== "webgpu" && backend !== "webgl2") {
+        throw new Error(`unknown backend ${backend}`);
+      }
+
+      const direct = await render(canvas, "direct-light");
+      if (direct.status !== "rendered") {
+        return { backend, status: direct.status, reason: direct.reason };
+      }
+      const clipping = await render(canvas, "clipping");
+      if (clipping.status !== "rendered") {
+        return { backend, status: clipping.status, reason: clipping.reason };
+      }
+
+      const directCenter = pixelAt(direct.bytes, 32, 32);
+      const clippingLeft = pixelAt(clipping.bytes, 16, 32);
+      const clippingRight = pixelAt(clipping.bytes, 48, 32);
+      const passed = directLightPassed(directCenter) && clippingPassed(clippingLeft, clippingRight);
+      return {
+        backend,
+        status: passed ? "passed" : "failed",
+        directCenter,
+        clippingLeft,
+        clippingRight,
+        directNonBlackPixels: countNonBlack(direct.bytes),
+        clippingNonBlackPixels: countNonBlack(clipping.bytes),
+      };
+    };
+  </script>
+</body>
+</html>

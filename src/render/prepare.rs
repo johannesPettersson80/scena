@@ -5,11 +5,13 @@ use crate::diagnostics::{
     Backend, Capabilities, CapabilityStatus, Diagnostic, DiagnosticCode, PrepareError,
 };
 use crate::geometry::{GeometryDesc, GeometryTopology, Primitive, Vertex};
-use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
+use crate::material::{AlphaMode, MaterialDesc, MaterialKind};
 use crate::scene::{Camera, Light, NodeKey, Quat, Scene, Transform, Vec3};
 
+use self::lighting::{PreparedLights, material_color};
 use super::RasterTarget;
 
+mod lighting;
 mod strokes;
 
 pub(super) const DIRECTIONAL_SHADOW_PCF_KERNEL: u8 = 3;
@@ -45,6 +47,7 @@ pub(super) fn collect_prepared_primitives<F>(
     }
 
     let origin_shift = scene.origin_shift();
+    let lights = PreparedLights::from_scene(scene, origin_shift);
     let mut primitives: Vec<Primitive> = scene
         .renderables()
         .flat_map(|(renderable, transform)| {
@@ -80,6 +83,7 @@ pub(super) fn collect_prepared_primitives<F>(
                 target,
                 transform,
                 origin_shift,
+                lights: &lights,
             },
             &mut primitives,
             &mut transparent_primitives,
@@ -103,7 +107,7 @@ pub(super) fn collect_lighting_stats(
     backend: Backend,
 ) -> Result<PreparedLightingStats, PrepareError> {
     let mut first_shadowed_directional = None;
-    for (node, _light_key, light) in scene.light_nodes() {
+    for (node, _light_key, light, _transform) in scene.light_nodes() {
         let Light::Directional(light) = light else {
             continue;
         };
@@ -285,23 +289,24 @@ struct TransparentPrimitive {
 }
 
 #[derive(Clone, Copy)]
-struct PrimitiveBakeParams {
+struct PrimitiveBakeParams<'lights> {
     target: RasterTarget,
     transform: Transform,
     origin_shift: Vec3,
+    lights: &'lights PreparedLights,
 }
 
 #[derive(Clone, Copy)]
 enum MaterialPass {
-    Opaque(Color),
-    Blend(Color),
+    Opaque,
+    Blend,
 }
 
 fn append_geometry_primitives(
     node: NodeKey,
     geometry: &GeometryDesc,
     material: &MaterialDesc,
-    params: PrimitiveBakeParams,
+    params: PrimitiveBakeParams<'_>,
     primitives: &mut Vec<Primitive>,
     transparent_primitives: &mut Vec<TransparentPrimitive>,
 ) -> Result<(), PrepareError> {
@@ -324,7 +329,7 @@ fn append_triangle_primitives(
     node: NodeKey,
     geometry: &GeometryDesc,
     material: &MaterialDesc,
-    params: PrimitiveBakeParams,
+    params: PrimitiveBakeParams<'_>,
     primitives: &mut Vec<Primitive>,
     transparent_primitives: &mut Vec<TransparentPrimitive>,
 ) -> Result<(), PrepareError> {
@@ -360,38 +365,41 @@ fn append_triangle_primitives(
 
     for triangle in geometry.indices().chunks_exact(3) {
         let vertices = geometry.vertices();
-        let color = match material_pass {
-            MaterialPass::Opaque(color) | MaterialPass::Blend(color) => color,
-        };
+        let position_a = transform_position(
+            vertices[triangle[0] as usize].position,
+            params.transform,
+            params.origin_shift,
+        );
+        let position_b = transform_position(
+            vertices[triangle[1] as usize].position,
+            params.transform,
+            params.origin_shift,
+        );
+        let position_c = transform_position(
+            vertices[triangle[2] as usize].position,
+            params.transform,
+            params.origin_shift,
+        );
+        let normal_a = transform_normal(vertices[triangle[0] as usize].normal, params.transform);
+        let normal_b = transform_normal(vertices[triangle[1] as usize].normal, params.transform);
+        let normal_c = transform_normal(vertices[triangle[2] as usize].normal, params.transform);
         let primitive = Primitive::triangle([
             Vertex {
-                position: transform_position(
-                    vertices[triangle[0] as usize].position,
-                    params.transform,
-                    params.origin_shift,
-                ),
-                color,
+                position: position_a,
+                color: material_color(material, position_a, normal_a, params.lights),
             },
             Vertex {
-                position: transform_position(
-                    vertices[triangle[1] as usize].position,
-                    params.transform,
-                    params.origin_shift,
-                ),
-                color,
+                position: position_b,
+                color: material_color(material, position_b, normal_b, params.lights),
             },
             Vertex {
-                position: transform_position(
-                    vertices[triangle[2] as usize].position,
-                    params.transform,
-                    params.origin_shift,
-                ),
-                color,
+                position: position_c,
+                color: material_color(material, position_c, normal_c, params.lights),
             },
         ]);
         match material_pass {
-            MaterialPass::Opaque(_) => primitives.push(primitive),
-            MaterialPass::Blend(_) => transparent_primitives.push(TransparentPrimitive {
+            MaterialPass::Opaque => primitives.push(primitive),
+            MaterialPass::Blend => transparent_primitives.push(TransparentPrimitive {
                 depth: average_depth(&primitive),
                 primitive,
             }),
@@ -412,19 +420,9 @@ fn material_pass(node: NodeKey, material: &MaterialDesc) -> Result<MaterialPass,
         }
     }
 
-    let mut color = material.base_color();
-    let emissive = material.emissive();
-    let emissive_strength = material.emissive_strength();
-    color.r += emissive.r * emissive_strength;
-    color.g += emissive.g * emissive_strength;
-    color.b += emissive.b * emissive_strength;
-
     match material.alpha_mode() {
-        AlphaMode::Opaque => {
-            color.a = 1.0;
-            Ok(MaterialPass::Opaque(color))
-        }
-        AlphaMode::Blend => Ok(MaterialPass::Blend(color)),
+        AlphaMode::Opaque => Ok(MaterialPass::Opaque),
+        AlphaMode::Blend => Ok(MaterialPass::Blend),
         AlphaMode::Mask { .. } => Err(PrepareError::UnsupportedAlphaMode {
             node,
             alpha_mode: material.alpha_mode(),
@@ -469,6 +467,13 @@ fn transform_position(position: Vec3, transform: Transform, origin_shift: Vec3) 
     subtract_vec3(add_vec3(rotated, transform.translation), origin_shift)
 }
 
+fn transform_normal(normal: Vec3, transform: Transform) -> Vec3 {
+    normalize_or(
+        rotate_vec3(transform.rotation, normal),
+        Vec3::new(0.0, 0.0, 1.0),
+    )
+}
+
 fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
     let length_squared = rotation.x * rotation.x
         + rotation.y * rotation.y
@@ -498,4 +503,21 @@ fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
 
 fn subtract_vec3(left: Vec3, right: Vec3) -> Vec3 {
     Vec3::new(left.x - right.x, left.y - right.y, left.z - right.z)
+}
+
+fn dot_vec3(left: Vec3, right: Vec3) -> f32 {
+    left.x * right.x + left.y * right.y + left.z * right.z
+}
+
+fn length_vec3(vector: Vec3) -> f32 {
+    dot_vec3(vector, vector).sqrt()
+}
+
+fn normalize_or(vector: Vec3, fallback: Vec3) -> Vec3 {
+    let length = length_vec3(vector);
+    if length <= f32::EPSILON || !length.is_finite() {
+        fallback
+    } else {
+        Vec3::new(vector.x / length, vector.y / length, vector.z / length)
+    }
 }

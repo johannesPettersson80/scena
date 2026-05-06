@@ -329,7 +329,9 @@ impl Scene {
         })
     }
 
-    pub(crate) fn light_nodes(&self) -> impl Iterator<Item = (NodeKey, LightKey, Light)> + '_ {
+    pub(crate) fn light_nodes(
+        &self,
+    ) -> impl Iterator<Item = (NodeKey, LightKey, Light, Transform)> + '_ {
         self.nodes.iter().filter_map(|(node_key, node)| {
             let NodeKind::Light(light_key) = node.kind else {
                 return None;
@@ -337,7 +339,7 @@ impl Scene {
             self.lights
                 .get(light_key)
                 .copied()
-                .map(|light| (node_key, light_key, light))
+                .map(|light| (node_key, light_key, light, node.transform))
         })
     }
 
@@ -466,9 +468,8 @@ impl MeshBuilder<'_> {
 
     /// Overrides the local transform. The default is [`Transform::IDENTITY`].
     ///
-    /// The M1 foundation renderer records this transform on the node, but mesh render
-    /// preparation still treats geometry positions as already in clip-facing scene space.
-    /// Transform application lands with the broader scene transform dirty-state work.
+    /// Mesh geometry is transformed during render preparation, including the active scene
+    /// origin shift used for large-scene precision.
     pub fn transform(mut self, transform: Transform) -> Self {
         self.transform = transform;
         self

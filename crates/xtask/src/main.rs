@@ -132,7 +132,9 @@ fn run_docs_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_required_doc_contracts(root, findings);
     check_default_environment_manifest(root, findings);
     check_visual_fixture_metadata(root, findings);
+    check_m2_visual_fixture_metadata(root, findings);
     check_m1_browser_rendered_output(root, findings);
+    check_m2_browser_rendered_output(root, findings);
 }
 
 fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
@@ -145,6 +147,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_equirectangular_hdr_environment_contracts(root, findings);
     check_environment_ibl_prepare_contracts(root, findings);
     check_scene_light_contracts(root, findings);
+    check_direct_light_shading_contracts(root, findings);
     check_directional_shadow_contracts(root, findings);
     check_shadow_map_contracts(root, findings);
     check_depth_prepass_contracts(root, findings);
@@ -1398,6 +1401,69 @@ fn check_scene_light_contracts(root: &Path, findings: &mut Vec<Finding>) {
     );
 }
 
+fn check_direct_light_shading_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIRECT-LIGHT-SHADING",
+        "src/scene.rs",
+        &[
+            "impl Iterator<Item = (NodeKey, LightKey, Light, Transform)>",
+            "map(|light| (node_key, light_key, light, node.transform))",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIRECT-LIGHT-SHADING",
+        "src/render/prepare.rs",
+        &[
+            "mod lighting;",
+            "use self::lighting::{PreparedLights, material_color}",
+            "let lights = PreparedLights::from_scene(scene, origin_shift)",
+            "material_color(material, position_a, normal_a, params.lights)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIRECT-LIGHT-SHADING",
+        "src/render/prepare/lighting.rs",
+        &[
+            "pub(super) struct PreparedLights",
+            "pub(super) fn from_scene(scene: &Scene, origin_shift: Vec3) -> Self",
+            "MaterialKind::PbrMetallicRoughness if lights.has_direct_lights()",
+            "shade_pbr_base_color",
+            "light_direction(transform)",
+            "light.illuminance_lux()",
+            "light.intensity_candela()",
+            "spot_cone_attenuation",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIRECT-LIGHT-SHADING",
+        "tests/m2_lighting_depth_clipping.rs",
+        &[
+            "direct_lights_tint_pbr_mesh_output",
+            "MaterialDesc::pbr_metallic_roughness",
+            "with_color(Color::from_linear_rgb(1.0, 0.0, 0.0))",
+            "[216, 0, 9, 255]",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIRECT-LIGHT-SHADING",
+        "docs/checklists/m2-lighting-depth-clipping.md",
+        &[
+            "direct_lights_tint_pbr_mesh_output",
+            "ARCH-DIRECT-LIGHT-SHADING",
+        ],
+    );
+}
+
 fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec<Finding>) {
     require_contains(
         root,
@@ -2457,6 +2523,73 @@ fn check_visual_fixture_metadata(root: &Path, findings: &mut Vec<Finding>) {
     );
 }
 
+fn check_m2_visual_fixture_metadata(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "VISUAL-M2-FIXTURE-METADATA",
+        "tests/visual/fixtures/m2-headless-core.toml",
+        &[
+            "[suite]",
+            "name = \"m2-headless-core\"",
+            "format = \"ppm\"",
+            "encoding = \"srgb8\"",
+            "artifact_dir = \"target/gate-artifacts/m2-visual\"",
+            "reference = \"tests/visual/references/m2-headless-core.toml\"",
+            "reference_mode = \"sampled-rgba\"",
+            "max_abs_diff = 0",
+            "name = \"direct-lights-pbr\"",
+            "name = \"shadowed-directional-light\"",
+            "name = \"ibl-environment\"",
+            "name = \"fxaa-edge\"",
+            "name = \"clipping-half-space\"",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-M2-FIXTURE-METADATA",
+        "tests/visual/references/m2-headless-core.toml",
+        &[
+            "[suite]",
+            "status = \"reference\"",
+            "max_abs_diff = 0",
+            "center_rgba = [216, 0, 9, 255]",
+            "center_rgba = [68, 68, 68, 255]",
+            "nonblack_pixels = 141",
+            "rgba_hash = \"fnv1a64:53e497bce0ce2aed\"",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-M2-FIXTURE-METADATA",
+        "tests/m2_visual_proof.rs",
+        &[
+            "m2_headless_visual_artifacts_cover_lighting_depth_and_clipping",
+            "m2_headless_reference_tolerances_match_current_fixtures",
+            "write_ppm_artifact",
+            "target/gate-artifacts/m2-visual",
+            "include_str!(\"visual/fixtures/m2-headless-core.toml\")",
+            "include_str!(\"visual/references/m2-headless-core.toml\")",
+            "validate_shadowed_directional_light",
+            "validate_ibl_environment",
+            "validate_clipping_half_space",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-M2-FIXTURE-METADATA",
+        "docs/checklists/m2-lighting-depth-clipping.md",
+        &[
+            "m2_headless_visual_artifacts_cover_lighting_depth_and_clipping",
+            "m2-headless-core.toml",
+            "VISUAL-M2-FIXTURE-METADATA",
+        ],
+    );
+}
+
 fn check_m1_browser_rendered_output(root: &Path, findings: &mut Vec<Finding>) {
     require_contains(
         root,
@@ -2496,6 +2629,51 @@ fn check_m1_browser_rendered_output(root: &Path, findings: &mut Vec<Finding>) {
         &[
             "m1_browser_rendered_output",
             "Rust/WASM browser rendered-output proof",
+        ],
+    );
+}
+
+fn check_m2_browser_rendered_output(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M2",
+        "tests/browser/m2_browser_lighting_clipping_smoke.js",
+        &[
+            "m2_browser_lighting_clipping_smoke.html",
+            "scenaM2BrowserLightingClippingSmoke",
+            "webgl2",
+            "webgpu",
+            "m2-browser-lighting-clipping-smoke.json",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M2",
+        "tests/browser/m2_browser_lighting_clipping_smoke.html",
+        &[
+            "runWebGpuScene",
+            "runWebGl2Scene",
+            "directLightPassed",
+            "clippingPassed",
+            "vec4<f32>(1.0, 0.0, 0.0, 1.0)",
+            "vec4(1.0, 0.0, 0.0, 1.0)",
+            "directCenter",
+            "clippingLeft",
+            "clippingRight",
+            "clippingNonBlackPixels",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M2",
+        "docs/checklists/m2-lighting-depth-clipping.md",
+        &[
+            "node tests/browser/m2_browser_lighting_clipping_smoke.js",
+            "m2-browser-lighting-clipping-smoke.json",
+            "VISUAL-BROWSER-M2",
         ],
     );
 }
@@ -2834,6 +3012,16 @@ mod tests {
     }
 
     #[test]
+    fn direct_light_shading_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_direct_light_shading_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
     fn directional_shadow_contracts_are_source_enforced() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let mut findings = Vec::new();
@@ -2944,11 +3132,31 @@ mod tests {
     }
 
     #[test]
+    fn m2_visual_fixture_metadata_is_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_m2_visual_fixture_metadata(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
     fn m1_browser_rendered_output_is_source_enforced() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let mut findings = Vec::new();
 
         check_m1_browser_rendered_output(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn m2_browser_rendered_output_is_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_m2_browser_rendered_output(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

@@ -3,8 +3,9 @@
 use scena::{
     Angle, AssetError, Assets, Backend, Capabilities, CapabilityStatus, ClippingPlane,
     ClippingPlaneSet, Color, DepthRange, DiagnosticCode, DiagnosticSeverity, DirectionalLight,
-    EnvironmentSourceKind, Light, NodeKind, OrthographicCamera, PerspectiveCamera, PointLight,
-    PrepareError, Primitive, Renderer, Scene, SpotLight, Transform, Vec3, Vertex,
+    EnvironmentSourceKind, GeometryDesc, GeometryTopology, Light, MaterialDesc, NodeKind,
+    OrthographicCamera, PerspectiveCamera, PointLight, PrepareError, Primitive, Renderer, Scene,
+    SpotLight, Transform, Vec3, Vertex,
 };
 
 fn pixel_at(frame: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
@@ -95,6 +96,28 @@ fn fullscreen_white_scene() -> Scene {
         )
         .expect("fullscreen primitive inserts");
     scene
+}
+
+fn fullscreen_triangle_geometry() -> GeometryDesc {
+    GeometryDesc::try_new(
+        GeometryTopology::Triangles,
+        vec![
+            scena::GeometryVertex {
+                position: Vec3::new(-1.0, -1.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            scena::GeometryVertex {
+                position: Vec3::new(3.0, -1.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            scena::GeometryVertex {
+                position: Vec3::new(-1.0, 3.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+        ],
+        vec![0, 1, 2],
+    )
+    .expect("fullscreen test geometry is valid")
 }
 
 #[test]
@@ -204,6 +227,44 @@ fn scene_light_components_are_typed_and_node_owned() {
                 && light.inner_cone_angle() == Angle::from_degrees(12.0)
                 && light.outer_cone_angle() == Angle::from_degrees(30.0)
     ));
+}
+
+#[test]
+fn direct_lights_tint_pbr_mesh_output() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(fullscreen_triangle_geometry());
+    let material =
+        assets.create_material(MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 1.0));
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("camera becomes active");
+    scene
+        .directional_light(
+            DirectionalLight::default()
+                .with_color(Color::from_linear_rgb(1.0, 0.0, 0.0))
+                .with_illuminance_lux(10_000.0),
+        )
+        .add()
+        .expect("red directional light inserts");
+    scene.mesh(geometry, material).add().expect("mesh inserts");
+
+    let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("lit mesh prepares");
+    renderer
+        .render_active(&scene)
+        .expect("lit mesh renders through active camera");
+
+    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 4, 4), [216, 0, 9, 255]);
 }
 
 #[test]
