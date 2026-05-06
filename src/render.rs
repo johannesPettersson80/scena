@@ -231,12 +231,17 @@ impl Renderer {
             None => 0,
         };
         let primitives = prepare::collect_prepared_primitives(self.target, scene, assets)?;
+        let logical_stats =
+            prepare::collect_logical_resource_stats(scene, assets, environment_count);
+        self.stats.materials = logical_stats.materials;
+        self.stats.environments = logical_stats.environments;
+        self.stats.live_logical_handles = logical_stats.live_logical_handles;
         if let Some(gpu) = &mut self.gpu {
             gpu.prepare(self.target, &primitives);
             let stats = gpu.prepared_resource_stats();
             let pending_destructions = gpu.pending_destructions();
             self.stats.buffers = stats.buffers;
-            self.stats.textures = stats.textures;
+            self.stats.textures = stats.textures + logical_stats.textures;
             self.stats.render_targets = stats.render_targets;
             self.stats.pipelines = stats.pipelines;
             self.stats.bind_groups = stats.bind_groups;
@@ -244,8 +249,9 @@ impl Renderer {
             self.stats.pending_destructions = pending_destructions;
             self.stats.approximate_gpu_memory_bytes = (stats.approximate_gpu_memory_bytes > 0)
                 .then_some(stats.approximate_gpu_memory_bytes);
+        } else {
+            self.stats.textures = logical_stats.textures;
         }
-        self.stats.environments = environment_count;
         self.prepared = Some(PreparedSceneState {
             scene: scene.identity(),
             structure_revision: scene.structure_revision(),
@@ -392,6 +398,13 @@ impl Renderer {
     pub fn set_environment(&mut self, environment: EnvironmentHandle) {
         if self.environment != Some(environment) {
             self.environment = Some(environment);
+            self.environment_revision = self.environment_revision.saturating_add(1);
+        }
+    }
+
+    pub fn clear_environment(&mut self) {
+        if self.environment.is_some() {
+            self.environment = None;
             self.environment_revision = self.environment_revision.saturating_add(1);
         }
     }

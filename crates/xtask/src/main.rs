@@ -814,6 +814,18 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "ARCH-RENDER-STATS",
+        "src/render/prepare.rs",
+        &[
+            "pub(super) struct PreparedLogicalResourceStats",
+            "pub(super) fn collect_logical_resource_stats",
+            "material.base_color_texture()",
+            "live_logical_handles",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STATS",
         "src/render/gpu/stats.rs",
         &[
             "pub(in crate::render) struct GpuResourceStats",
@@ -847,7 +859,10 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
         findings,
         "ARCH-RENDER-STATS",
         "src/render.rs",
-        &["pub fn poll_device(&mut self) -> DevicePoll"],
+        &[
+            "pub fn poll_device(&mut self) -> DevicePoll",
+            "self.stats.live_logical_handles = logical_stats.live_logical_handles",
+        ],
     );
     require_contains(
         root,
@@ -856,6 +871,7 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "tests/m1_geometry_materials.rs",
         &[
             "m1_cpu_resource_lifetime_counters_return_to_baseline",
+            "m1_logical_asset_resource_counters_return_to_baseline_after_empty_prepare",
             "m1_headless_gpu_resource_counters_return_to_baseline_after_empty_reprepare",
             "poll.pending_destructions_before",
         ],
@@ -878,6 +894,7 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
         &[
             "pub struct RendererStats",
             "pub struct DevicePoll",
+            "live_logical_handles",
             "pub buffers: u64",
             "pub target_height: u32",
         ],
@@ -974,9 +991,9 @@ fn check_environment_lifecycle_contracts(root: &Path, findings: &mut Vec<Finding
             "environment_revision: u64",
             "pub fn environment(&self) -> Option<EnvironmentHandle>",
             "pub fn set_environment(&mut self, environment: EnvironmentHandle)",
+            "pub fn clear_environment(&mut self)",
             "PrepareError::EnvironmentAssetsRequired",
             "PrepareError::EnvironmentNotFound",
-            "self.stats.environments = environment_count",
             "NotPreparedReason::EnvironmentChanged",
             "ChangeKind::Environment",
         ],
@@ -998,7 +1015,11 @@ fn check_environment_lifecycle_contracts(root: &Path, findings: &mut Vec<Finding
         findings,
         "ARCH-ENVIRONMENT-LIFECYCLE",
         "tests/m1_geometry_materials.rs",
-        &["renderer_environment_is_structural_and_validated_during_prepare"],
+        &[
+            "renderer_environment_is_structural_and_validated_during_prepare",
+            "m1_logical_asset_resource_counters_return_to_baseline_after_empty_prepare",
+            "renderer.clear_environment()",
+        ],
     );
     require_contains(
         root,

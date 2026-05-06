@@ -372,20 +372,39 @@ fn m1_cpu_resource_lifetime_counters_return_to_baseline() {
             .expect("asset mesh prepares");
         renderer.render(&scene, camera).expect("asset mesh renders");
 
-        let stats = renderer.stats();
-        assert_eq!(stats.buffers, baseline.buffers);
-        assert_eq!(stats.textures, baseline.textures);
-        assert_eq!(stats.materials, baseline.materials);
-        assert_eq!(stats.render_targets, baseline.render_targets);
-        assert_eq!(stats.pipelines, baseline.pipelines);
-        assert_eq!(stats.bind_groups, baseline.bind_groups);
-        assert_eq!(stats.shader_modules, baseline.shader_modules);
-        assert_eq!(stats.environments, baseline.environments);
-        assert_eq!(stats.scene_imports, baseline.scene_imports);
-        assert_eq!(stats.live_logical_handles, baseline.live_logical_handles);
-        assert_eq!(stats.pending_destructions, baseline.pending_destructions);
-        assert_eq!(stats.approximate_gpu_memory_bytes, None);
-        assert_eq!(stats.gpu_frame_ms, None);
+        let prepared = renderer.stats();
+        assert_eq!(prepared.buffers, baseline.buffers);
+        assert_eq!(prepared.textures, baseline.textures);
+        assert_eq!(prepared.materials, 1);
+        assert_eq!(prepared.render_targets, baseline.render_targets);
+        assert_eq!(prepared.pipelines, baseline.pipelines);
+        assert_eq!(prepared.bind_groups, baseline.bind_groups);
+        assert_eq!(prepared.shader_modules, baseline.shader_modules);
+        assert_eq!(prepared.environments, baseline.environments);
+        assert_eq!(prepared.scene_imports, baseline.scene_imports);
+        assert_eq!(prepared.live_logical_handles, 2);
+        assert_eq!(prepared.pending_destructions, baseline.pending_destructions);
+        assert_eq!(prepared.approximate_gpu_memory_bytes, None);
+        assert_eq!(prepared.gpu_frame_ms, None);
+
+        let (mut empty_scene, _empty_camera) = scene_with_camera();
+        renderer
+            .prepare(&mut empty_scene)
+            .expect("empty scene releases logical resources");
+        let released = renderer.stats();
+        assert_eq!(released.buffers, baseline.buffers);
+        assert_eq!(released.textures, baseline.textures);
+        assert_eq!(released.materials, baseline.materials);
+        assert_eq!(released.render_targets, baseline.render_targets);
+        assert_eq!(released.pipelines, baseline.pipelines);
+        assert_eq!(released.bind_groups, baseline.bind_groups);
+        assert_eq!(released.shader_modules, baseline.shader_modules);
+        assert_eq!(released.environments, baseline.environments);
+        assert_eq!(released.scene_imports, baseline.scene_imports);
+        assert_eq!(released.live_logical_handles, baseline.live_logical_handles);
+        assert_eq!(released.pending_destructions, baseline.pending_destructions);
+        assert_eq!(released.approximate_gpu_memory_bytes, None);
+        assert_eq!(released.gpu_frame_ms, None);
     }
 }
 
@@ -500,6 +519,71 @@ fn renderer_environment_is_structural_and_validated_during_prepare() {
         Err(PrepareError::EnvironmentNotFound { environment: error_environment })
             if error_environment == missing_environment
     ));
+}
+
+#[test]
+fn m1_logical_asset_resource_counters_return_to_baseline_after_empty_prepare() {
+    let assets = Assets::new();
+    let albedo = pollster::block_on(
+        assets.load_texture("textures/lifetime-albedo.png", TextureColorSpace::Srgb),
+    )
+    .expect("albedo texture is recorded");
+    let normal = pollster::block_on(
+        assets.load_texture("textures/lifetime-normal.png", TextureColorSpace::Linear),
+    )
+    .expect("normal texture is recorded");
+    let metallic_roughness = pollster::block_on(assets.load_texture(
+        "textures/lifetime-metallic-roughness.png",
+        TextureColorSpace::Linear,
+    ))
+    .expect("metallic-roughness texture is recorded");
+    let occlusion = pollster::block_on(
+        assets.load_texture("textures/lifetime-occlusion.png", TextureColorSpace::Linear),
+    )
+    .expect("occlusion texture is recorded");
+    let emissive = pollster::block_on(
+        assets.load_texture("textures/lifetime-emissive.png", TextureColorSpace::Srgb),
+    )
+    .expect("emissive texture is recorded");
+    let environment = assets.default_environment();
+    let geometry = assets.create_geometry(fullscreen_triangle_geometry());
+    let material = assets.create_material(
+        MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 1.0)
+            .with_base_color_texture(albedo)
+            .with_normal_texture(normal)
+            .with_metallic_roughness_texture(metallic_roughness)
+            .with_occlusion_texture(occlusion)
+            .with_emissive_texture(emissive),
+    );
+    let (mut scene, _camera) = scene_with_camera();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("textured material mesh inserts");
+    let mut renderer = Renderer::headless(4, 4).expect("headless renderer builds");
+    let baseline = renderer.stats();
+
+    renderer.set_environment(environment);
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("textured material prepares");
+    let prepared = renderer.stats();
+    assert_eq!(prepared.materials, 1);
+    assert_eq!(prepared.textures, 5);
+    assert_eq!(prepared.environments, 1);
+    assert_eq!(prepared.live_logical_handles, 8);
+
+    renderer.clear_environment();
+    let (mut empty_scene, _empty_camera) = scene_with_camera();
+    renderer
+        .prepare(&mut empty_scene)
+        .expect("empty scene prepares after clearing environment");
+    let released = renderer.stats();
+    assert_eq!(released.materials, baseline.materials);
+    assert_eq!(released.textures, baseline.textures);
+    assert_eq!(released.environments, baseline.environments);
+    assert_eq!(released.live_logical_handles, baseline.live_logical_handles);
+    assert_eq!(released.pending_destructions, baseline.pending_destructions);
 }
 
 #[test]

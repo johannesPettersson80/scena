@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::assets::Assets;
 use crate::diagnostics::PrepareError;
@@ -61,6 +61,62 @@ pub(super) fn collect_prepared_primitives<F>(
     );
 
     Ok(primitives)
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct PreparedLogicalResourceStats {
+    pub(super) materials: u64,
+    pub(super) textures: u64,
+    pub(super) environments: u64,
+    pub(super) live_logical_handles: u64,
+}
+
+pub(super) fn collect_logical_resource_stats<F>(
+    scene: &Scene,
+    assets: Option<&Assets<F>>,
+    environment_count: u64,
+) -> PreparedLogicalResourceStats {
+    let mut geometries = HashSet::new();
+    let mut materials = HashSet::new();
+    let mut textures = HashSet::new();
+
+    for (_node, mesh) in scene.mesh_nodes() {
+        geometries.insert(mesh.geometry());
+        materials.insert(mesh.material());
+
+        let Some(assets) = assets else {
+            continue;
+        };
+        let Some(material) = assets.material(mesh.material()) else {
+            continue;
+        };
+        for texture in [
+            material.base_color_texture(),
+            material.normal_texture(),
+            material.metallic_roughness_texture(),
+            material.occlusion_texture(),
+            material.emissive_texture(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if assets.texture(texture).is_some() {
+                textures.insert(texture);
+            }
+        }
+    }
+
+    let materials = materials.len() as u64;
+    let textures = textures.len() as u64;
+    let environments = environment_count;
+    let live_logical_handles = geometries.len() as u64 + materials + textures + environments;
+
+    PreparedLogicalResourceStats {
+        materials,
+        textures,
+        environments,
+        live_logical_handles,
+    }
 }
 
 struct TransparentPrimitive {
