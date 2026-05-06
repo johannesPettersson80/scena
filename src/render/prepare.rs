@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::assets::Assets;
+use crate::assets::{Assets, EnvironmentDesc};
 use crate::diagnostics::PrepareError;
 use crate::geometry::{GeometryDesc, GeometryTopology, Primitive, Vertex};
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
@@ -18,6 +18,13 @@ pub(super) struct PreparedLightingStats {
     pub(super) shadow_maps: u64,
     pub(super) directional_shadow_map_resolution: Option<u32>,
     pub(super) directional_shadow_pcf_kernel: Option<u8>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct PreparedEnvironmentStats {
+    pub(super) cubemaps: u64,
+    pub(super) prefilter_passes: u64,
+    pub(super) brdf_luts: u64,
 }
 
 pub(super) fn collect_prepared_primitives<F>(
@@ -99,6 +106,19 @@ pub(super) fn collect_lighting_stats(scene: &Scene) -> Result<PreparedLightingSt
     } else {
         PreparedLightingStats::default()
     })
+}
+
+pub(super) fn collect_environment_prepare_stats(
+    environment: Option<&EnvironmentDesc>,
+) -> PreparedEnvironmentStats {
+    match environment {
+        Some(environment) if environment.is_equirectangular_hdr() => PreparedEnvironmentStats {
+            cubemaps: 1,
+            prefilter_passes: 1,
+            brdf_luts: 1,
+        },
+        Some(_) | None => PreparedEnvironmentStats::default(),
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

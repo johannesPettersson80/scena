@@ -218,14 +218,17 @@ impl Renderer {
                 height: self.target.height,
             }
         })?;
+        let mut environment_prepare_stats = prepare::PreparedEnvironmentStats::default();
         let environment_count = match self.environment {
             Some(environment) => {
                 let Some(assets) = assets else {
                     return Err(PrepareError::EnvironmentAssetsRequired { environment });
                 };
-                if assets.environment(environment).is_none() {
+                let Some(environment_desc) = assets.environment(environment) else {
                     return Err(PrepareError::EnvironmentNotFound { environment });
-                }
+                };
+                environment_prepare_stats =
+                    prepare::collect_environment_prepare_stats(Some(&environment_desc));
                 1
             }
             None => 0,
@@ -236,6 +239,9 @@ impl Renderer {
             prepare::collect_logical_resource_stats(scene, assets, environment_count);
         self.stats.materials = logical_stats.materials;
         self.stats.environments = logical_stats.environments;
+        self.stats.environment_cubemaps = environment_prepare_stats.cubemaps;
+        self.stats.environment_prefilter_passes = environment_prepare_stats.prefilter_passes;
+        self.stats.environment_brdf_luts = environment_prepare_stats.brdf_luts;
         self.stats.live_logical_handles = logical_stats.live_logical_handles;
         self.stats.shadow_maps = lighting_stats.shadow_maps;
         self.stats.directional_shadow_map_resolution =

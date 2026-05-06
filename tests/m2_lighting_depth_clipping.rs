@@ -247,3 +247,24 @@ fn equirectangular_hdr_environment_loading_records_source_contract() {
         }
     );
 }
+
+#[test]
+fn equirectangular_environment_prepare_generates_ibl_resources() {
+    let assets = Assets::new();
+    let environment =
+        pollster::block_on(assets.load_environment("tests/assets/environment/studio_1024x512.hdr"))
+            .expect("equirectangular HDR environment loads");
+    let mut scene = Scene::new();
+    let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+    renderer.set_environment(environment);
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("equirectangular environment prepares");
+    let stats = renderer.stats();
+
+    assert_eq!(stats.environments, 1);
+    assert_eq!(stats.environment_cubemaps, 1);
+    assert_eq!(stats.environment_prefilter_passes, 1);
+    assert_eq!(stats.environment_brdf_luts, 1);
+}

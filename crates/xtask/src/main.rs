@@ -143,6 +143,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_prepare_asset_contracts(root, findings);
     check_environment_lifecycle_contracts(root, findings);
     check_equirectangular_hdr_environment_contracts(root, findings);
+    check_environment_ibl_prepare_contracts(root, findings);
     check_scene_light_contracts(root, findings);
     check_directional_shadow_contracts(root, findings);
     check_shadow_map_contracts(root, findings);
@@ -819,6 +820,9 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub bind_groups: u64",
             "pub shader_modules: u64",
             "pub environments: u64",
+            "pub environment_cubemaps: u64",
+            "pub environment_prefilter_passes: u64",
+            "pub environment_brdf_luts: u64",
             "pub scene_imports: u64",
             "pub shadow_maps: u64",
             "pub live_logical_handles: u64",
@@ -838,7 +842,9 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "src/render/prepare.rs",
         &[
             "pub(super) struct PreparedLogicalResourceStats",
+            "pub(super) struct PreparedEnvironmentStats",
             "pub(super) fn collect_logical_resource_stats",
+            "pub(super) fn collect_environment_prepare_stats",
             "material.base_color_texture()",
             "live_logical_handles",
         ],
@@ -884,6 +890,7 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub fn poll_device(&mut self) -> DevicePoll",
             "self.stats.live_logical_handles = logical_stats.live_logical_handles",
             "self.stats.shadow_maps = lighting_stats.shadow_maps",
+            "self.stats.environment_cubemaps = environment_prepare_stats.cubemaps",
         ],
     );
     require_contains(
@@ -1105,6 +1112,53 @@ fn check_equirectangular_hdr_environment_contracts(root: &Path, findings: &mut V
             "Equirectangular HDR environment loading",
             "EnvironmentSourceKind",
         ],
+    );
+}
+
+fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "src/render/prepare.rs",
+        &[
+            "pub(super) struct PreparedEnvironmentStats",
+            "cubemaps: 1",
+            "prefilter_passes: 1",
+            "brdf_luts: 1",
+            "environment.is_equirectangular_hdr()",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "src/render.rs",
+        &[
+            "prepare::collect_environment_prepare_stats(Some(&environment_desc))",
+            "self.stats.environment_cubemaps = environment_prepare_stats.cubemaps",
+            "self.stats.environment_prefilter_passes = environment_prepare_stats.prefilter_passes",
+            "self.stats.environment_brdf_luts = environment_prepare_stats.brdf_luts",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "tests/m2_lighting_depth_clipping.rs",
+        &[
+            "equirectangular_environment_prepare_generates_ibl_resources",
+            "environment_cubemaps",
+            "environment_prefilter_passes",
+            "environment_brdf_luts",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "docs/checklists/m2-lighting-depth-clipping.md",
+        &["Cubemap conversion", "ARCH-ENV-IBL-PREP"],
     );
 }
 
@@ -2144,6 +2198,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_equirectangular_hdr_environment_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn environment_ibl_prepare_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_environment_ibl_prepare_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }
