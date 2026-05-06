@@ -268,3 +268,97 @@ fn equirectangular_environment_prepare_generates_ibl_resources() {
     assert_eq!(stats.environment_prefilter_passes, 1);
     assert_eq!(stats.environment_brdf_luts, 1);
 }
+
+#[test]
+fn depth_prepass_is_prepared_for_opaque_scene_geometry() {
+    let mut scene = Scene::new();
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![Primitive::unlit_triangle()],
+            Transform::default(),
+        )
+        .expect("opaque primitive inserts");
+    let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+
+    renderer.prepare(&mut scene).expect("scene prepares");
+    let prepared = renderer.stats();
+    assert_eq!(prepared.depth_prepass_passes, 1);
+    assert_eq!(prepared.depth_prepass_draws, 1);
+
+    let mut empty_scene = Scene::new();
+    renderer
+        .prepare(&mut empty_scene)
+        .expect("empty scene prepares");
+    let released = renderer.stats();
+    assert_eq!(released.depth_prepass_passes, 0);
+    assert_eq!(released.depth_prepass_draws, 0);
+}
+
+#[test]
+fn m2_resource_counters_return_to_baseline_after_empty_prepare() {
+    let assets = Assets::new();
+    let environment =
+        pollster::block_on(assets.load_environment("tests/assets/environment/studio_1024x512.hdr"))
+            .expect("equirectangular HDR environment loads");
+    let mut scene = Scene::new();
+    scene
+        .directional_light(DirectionalLight::default().with_shadows(true))
+        .add()
+        .expect("shadowed directional light inserts");
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![Primitive::unlit_triangle()],
+            Transform::default(),
+        )
+        .expect("opaque primitive inserts");
+    let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+    let baseline = renderer.stats();
+
+    renderer.set_environment(environment);
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("M2 resources prepare");
+    let prepared = renderer.stats();
+    assert_eq!(prepared.environments, 1);
+    assert_eq!(prepared.environment_cubemaps, 1);
+    assert_eq!(prepared.environment_prefilter_passes, 1);
+    assert_eq!(prepared.environment_brdf_luts, 1);
+    assert_eq!(prepared.shadow_maps, 1);
+    assert_eq!(prepared.directional_shadow_map_resolution, Some(2048));
+    assert_eq!(prepared.directional_shadow_pcf_kernel, Some(3));
+    assert_eq!(prepared.depth_prepass_passes, 1);
+    assert_eq!(prepared.depth_prepass_draws, 1);
+
+    renderer.clear_environment();
+    let mut empty_scene = Scene::new();
+    renderer
+        .prepare(&mut empty_scene)
+        .expect("empty scene prepares after clearing M2 resources");
+    let released = renderer.stats();
+
+    assert_eq!(released.environments, baseline.environments);
+    assert_eq!(released.environment_cubemaps, baseline.environment_cubemaps);
+    assert_eq!(
+        released.environment_prefilter_passes,
+        baseline.environment_prefilter_passes
+    );
+    assert_eq!(
+        released.environment_brdf_luts,
+        baseline.environment_brdf_luts
+    );
+    assert_eq!(released.shadow_maps, baseline.shadow_maps);
+    assert_eq!(
+        released.directional_shadow_map_resolution,
+        baseline.directional_shadow_map_resolution
+    );
+    assert_eq!(
+        released.directional_shadow_pcf_kernel,
+        baseline.directional_shadow_pcf_kernel
+    );
+    assert_eq!(released.depth_prepass_passes, baseline.depth_prepass_passes);
+    assert_eq!(released.depth_prepass_draws, baseline.depth_prepass_draws);
+    assert_eq!(released.textures, baseline.textures);
+    assert_eq!(released.pending_destructions, baseline.pending_destructions);
+}

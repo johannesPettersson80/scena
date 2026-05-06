@@ -1,7 +1,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 use super::vertices::VERTEX_BYTE_LEN;
 #[cfg(not(target_arch = "wasm32"))]
-use super::{BYTES_PER_PIXEL, align_to, output};
+use super::{BYTES_PER_PIXEL, output};
 
 #[cfg(not(target_arch = "wasm32"))]
 use super::super::RasterTarget;
@@ -35,6 +35,8 @@ pub(super) fn estimate_prepared_resource_stats(
     vertex_count: usize,
     has_surface_pipeline: bool,
     shadow_maps: u64,
+    shadow_map_resolution: Option<u32>,
+    depth_prepass_passes: u64,
 ) -> GpuResourceStats {
     if vertex_count == 0 {
         return GpuResourceStats::default();
@@ -46,13 +48,22 @@ pub(super) fn estimate_prepared_resource_stats(
     let readback_bytes = u64::from(padded_bytes_per_row) * u64::from(target.height);
     let vertex_bytes = (vertex_count * VERTEX_BYTE_LEN).max(4) as u64;
     let uniform_bytes = output::OUTPUT_UNIFORM_BYTE_LEN;
-    let pipelines = 1 + u64::from(has_surface_pipeline);
-    let shadow_map_bytes = shadow_maps.saturating_mul(DIRECTIONAL_SHADOW_MAP_BYTES);
+    let pipelines = 1 + u64::from(has_surface_pipeline) + depth_prepass_passes;
+    let shadow_map_bytes = shadow_map_resolution
+        .map(|resolution| {
+            let edge = u64::from(resolution);
+            shadow_maps.saturating_mul(edge.saturating_mul(edge).saturating_mul(4))
+        })
+        .unwrap_or(0);
+    let depth_prepass_bytes = u64::from(target.width)
+        .saturating_mul(u64::from(target.height))
+        .saturating_mul(4)
+        .saturating_mul(depth_prepass_passes);
 
     GpuResourceStats {
         buffers: 3,
-        textures: 1 + shadow_maps,
-        render_targets: 1 + shadow_maps,
+        textures: 1 + shadow_maps + depth_prepass_passes,
+        render_targets: 1 + shadow_maps + depth_prepass_passes,
         pipelines,
         bind_groups: 1,
         shader_modules: pipelines,
@@ -60,12 +71,15 @@ pub(super) fn estimate_prepared_resource_stats(
             + readback_bytes
             + vertex_bytes
             + uniform_bytes
-            + shadow_map_bytes,
+            + shadow_map_bytes
+            + depth_prepass_bytes,
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-const DIRECTIONAL_SHADOW_MAP_BYTES: u64 = 2048 * 2048 * 4;
+pub(super) fn align_to(value: u32, alignment: u32) -> u32 {
+    value.div_ceil(alignment) * alignment
+}
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
@@ -80,7 +94,7 @@ mod tests {
             backend: Backend::HeadlessGpu,
         };
 
-        let stats = estimate_prepared_resource_stats(target, 3, false, 0);
+        let stats = estimate_prepared_resource_stats(target, 3, false, 0, None, 0);
 
         assert_eq!(stats.buffers, 3);
         assert_eq!(stats.textures, 1);
@@ -100,7 +114,7 @@ mod tests {
             backend: Backend::HeadlessGpu,
         };
 
-        let stats = estimate_prepared_resource_stats(target, 0, false, 0);
+        let stats = estimate_prepared_resource_stats(target, 0, false, 0, None, 0);
 
         assert_eq!(stats, GpuResourceStats::default());
         assert_eq!(stats.destruction_records(), 0);
@@ -114,11 +128,29 @@ mod tests {
             backend: Backend::HeadlessGpu,
         };
 
-        let stats = estimate_prepared_resource_stats(target, 3, false, 1);
+        let stats = estimate_prepared_resource_stats(target, 3, false, 1, Some(2048), 0);
 
         assert_eq!(stats.textures, 2);
         assert_eq!(stats.render_targets, 2);
         assert_eq!(stats.destruction_records(), 10);
         assert!(stats.approximate_gpu_memory_bytes >= 2048 * 2048 * 4);
+    }
+
+    #[test]
+    fn estimates_depth_prepass_resource_counters() {
+        let target = RasterTarget {
+            width: 4,
+            height: 4,
+            backend: Backend::HeadlessGpu,
+        };
+
+        let stats = estimate_prepared_resource_stats(target, 3, false, 0, None, 1);
+
+        assert_eq!(stats.textures, 2);
+        assert_eq!(stats.render_targets, 2);
+        assert_eq!(stats.pipelines, 2);
+        assert_eq!(stats.shader_modules, 2);
+        assert_eq!(stats.destruction_records(), 12);
+        assert!(stats.approximate_gpu_memory_bytes >= 4 * 4 * 4);
     }
 }

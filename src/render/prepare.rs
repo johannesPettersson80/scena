@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::assets::{Assets, EnvironmentDesc};
-use crate::diagnostics::PrepareError;
+use crate::diagnostics::{Backend, Capabilities, PrepareError};
 use crate::geometry::{GeometryDesc, GeometryTopology, Primitive, Vertex};
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
 use crate::scene::{Light, NodeKey, Scene};
@@ -10,7 +10,6 @@ use super::RasterTarget;
 
 mod strokes;
 
-pub(super) const DIRECTIONAL_SHADOW_MAP_RESOLUTION: u32 = 2048;
 pub(super) const DIRECTIONAL_SHADOW_PCF_KERNEL: u8 = 3;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -25,6 +24,12 @@ pub(super) struct PreparedEnvironmentStats {
     pub(super) cubemaps: u64,
     pub(super) prefilter_passes: u64,
     pub(super) brdf_luts: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct PreparedDepthStats {
+    pub(super) passes: u64,
+    pub(super) draws: u64,
 }
 
 pub(super) fn collect_prepared_primitives<F>(
@@ -80,7 +85,10 @@ pub(super) fn collect_prepared_primitives<F>(
     Ok(primitives)
 }
 
-pub(super) fn collect_lighting_stats(scene: &Scene) -> Result<PreparedLightingStats, PrepareError> {
+pub(super) fn collect_lighting_stats(
+    scene: &Scene,
+    backend: Backend,
+) -> Result<PreparedLightingStats, PrepareError> {
     let mut first_shadowed_directional = None;
     for (node, _light_key, light) in scene.light_nodes() {
         let Light::Directional(light) = light else {
@@ -98,14 +106,28 @@ pub(super) fn collect_lighting_stats(scene: &Scene) -> Result<PreparedLightingSt
         first_shadowed_directional = Some(node);
     }
     Ok(if first_shadowed_directional.is_some() {
+        let capabilities = Capabilities::for_backend(backend);
         PreparedLightingStats {
             shadow_maps: 1,
-            directional_shadow_map_resolution: Some(DIRECTIONAL_SHADOW_MAP_RESOLUTION),
+            directional_shadow_map_resolution: Some(
+                capabilities.directional_shadow_map_default_size,
+            ),
             directional_shadow_pcf_kernel: Some(DIRECTIONAL_SHADOW_PCF_KERNEL),
         }
     } else {
         PreparedLightingStats::default()
     })
+}
+
+pub(super) fn collect_depth_prepass_stats(primitives: &[Primitive]) -> PreparedDepthStats {
+    if primitives.is_empty() {
+        PreparedDepthStats::default()
+    } else {
+        PreparedDepthStats {
+            passes: 1,
+            draws: primitives.len() as u64,
+        }
+    }
 }
 
 pub(super) fn collect_environment_prepare_stats(

@@ -147,6 +147,8 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_scene_light_contracts(root, findings);
     check_directional_shadow_contracts(root, findings);
     check_shadow_map_contracts(root, findings);
+    check_depth_prepass_contracts(root, findings);
+    check_m2_leak_stats_contracts(root, findings);
     check_camera_depth_contracts(root, findings);
     check_render_alpha_contracts(root, findings);
     check_output_stage_contracts(root, findings);
@@ -202,6 +204,8 @@ const REQUIRED_SOURCE_MODULES: &[&str] = &[
     "src/geometry.rs",
     "src/material.rs",
     "src/render.rs",
+    "src/render/gpu/depth.rs",
+    "src/render/gpu/shadow.rs",
     "src/render/gpu/vertices.rs",
     "src/render/prepare/strokes.rs",
     "src/animation.rs",
@@ -825,6 +829,8 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub environment_brdf_luts: u64",
             "pub scene_imports: u64",
             "pub shadow_maps: u64",
+            "pub depth_prepass_passes: u64",
+            "pub depth_prepass_draws: u64",
             "pub live_logical_handles: u64",
             "pub pending_destructions: u64",
             "pub approximate_gpu_memory_bytes: Option<u64>",
@@ -843,8 +849,10 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
         &[
             "pub(super) struct PreparedLogicalResourceStats",
             "pub(super) struct PreparedEnvironmentStats",
+            "pub(super) struct PreparedDepthStats",
             "pub(super) fn collect_logical_resource_stats",
             "pub(super) fn collect_environment_prepare_stats",
+            "pub(super) fn collect_depth_prepass_stats",
             "material.base_color_texture()",
             "live_logical_handles",
         ],
@@ -890,6 +898,9 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub fn poll_device(&mut self) -> DevicePoll",
             "self.stats.live_logical_handles = logical_stats.live_logical_handles",
             "self.stats.shadow_maps = lighting_stats.shadow_maps",
+            "self.stats.depth_prepass_passes = depth_stats.passes",
+            "self.stats.depth_prepass_draws = depth_stats.draws",
+            "self.stats.textures = logical_stats.textures",
             "self.stats.environment_cubemaps = environment_prepare_stats.cubemaps",
         ],
     );
@@ -924,9 +935,12 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub struct RendererStats",
             "pub struct DevicePoll",
             "shadow_maps",
+            "depth_prepass_passes",
+            "depth_prepass_draws",
             "live_logical_handles",
             "pub buffers: u64",
             "pub target_height: u32",
+            "logical `TextureHandle` values only",
         ],
     );
 }
@@ -1229,7 +1243,9 @@ fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec<Finding>) 
         "ARCH-DIRECTIONAL-SHADOW",
         "src/render/prepare.rs",
         &[
-            "pub(super) fn collect_lighting_stats(scene: &Scene) -> Result<PreparedLightingStats, PrepareError>",
+            "pub(super) fn collect_lighting_stats(",
+            "backend: Backend",
+            "Capabilities::for_backend(backend)",
             "scene.light_nodes()",
             "light.casts_shadows()",
             "PrepareError::MultipleShadowedDirectionalLights",
@@ -1297,7 +1313,8 @@ fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "ARCH-SHADOW-MAP",
         "src/render/prepare.rs",
         &[
-            "DIRECTIONAL_SHADOW_MAP_RESOLUTION: u32 = 2048",
+            "Capabilities::for_backend(backend)",
+            "capabilities.directional_shadow_map_default_size",
             "DIRECTIONAL_SHADOW_PCF_KERNEL: u8 = 3",
             "pub(super) struct PreparedLightingStats",
             "shadow_maps: 1",
@@ -1310,7 +1327,18 @@ fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "ARCH-SHADOW-MAP",
         "src/render/gpu.rs",
         &[
-            "create_shadow_texture",
+            "shadow_texture: Option<wgpu::Texture>",
+            "shadow_view: Option<wgpu::TextureView>",
+            "ARCH-SHADOW-MAP: M2 allocates shadow resources before the shadow render pass",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SHADOW-MAP",
+        "src/render/gpu/shadow.rs",
+        &[
+            "pub(super) fn create_shadow_texture",
             "wgpu::TextureFormat::Depth32Float",
             "wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING",
             "scena.m2.directional_shadow_map",
@@ -1323,9 +1351,10 @@ fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "src/render/gpu/stats.rs",
         &[
             "shadow_maps: u64",
-            "textures: 1 + shadow_maps",
-            "render_targets: 1 + shadow_maps",
-            "DIRECTIONAL_SHADOW_MAP_BYTES",
+            "shadow_map_resolution: Option<u32>",
+            "depth_prepass_passes: u64",
+            "textures: 1 + shadow_maps + depth_prepass_passes",
+            "render_targets: 1 + shadow_maps + depth_prepass_passes",
             "estimates_single_shadow_map_resource_counters",
         ],
     );
@@ -1347,6 +1376,138 @@ fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "ARCH-SHADOW-MAP",
         "docs/checklists/m2-lighting-depth-clipping.md",
         &["Single shadow map with PCF 3x3", "ARCH-SHADOW-MAP"],
+    );
+}
+
+fn check_depth_prepass_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-DEPTH-PREPASS",
+        "src/diagnostics.rs",
+        &[
+            "pub depth_prepass_passes: u64",
+            "pub depth_prepass_draws: u64",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DEPTH-PREPASS",
+        "src/render/prepare.rs",
+        &[
+            "pub(super) struct PreparedDepthStats",
+            "pub(super) fn collect_depth_prepass_stats(primitives: &[Primitive]) -> PreparedDepthStats",
+            "passes: 1",
+            "draws: primitives.len() as u64",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DEPTH-PREPASS",
+        "src/render.rs",
+        &[
+            "let depth_stats = prepare::collect_depth_prepass_stats(&primitives)",
+            "self.stats.depth_prepass_passes = depth_stats.passes",
+            "self.stats.depth_prepass_draws = depth_stats.draws",
+            "gpu.prepare(self.target, &primitives, lighting_stats, depth_stats)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DEPTH-PREPASS",
+        "src/render/gpu.rs",
+        &[
+            "mod depth;",
+            "PreparedDepthStats",
+            "depth_prepass: Option<depth::DepthPrepassResources>",
+            "depth::create_depth_prepass_resources",
+            "depth::encode_depth_prepass",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DEPTH-PREPASS",
+        "src/render/gpu/depth.rs",
+        &[
+            "pub(super) struct DepthPrepassResources",
+            "wgpu::TextureFormat::Depth32Float",
+            "scena.m2.depth_prepass",
+            "pub(super) fn encode_depth_prepass",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DEPTH-PREPASS",
+        "src/render/gpu/stats.rs",
+        &[
+            "depth_prepass_passes: u64",
+            "depth_prepass_bytes",
+            "estimates_depth_prepass_resource_counters",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DEPTH-PREPASS",
+        "tests/m2_lighting_depth_clipping.rs",
+        &[
+            "depth_prepass_is_prepared_for_opaque_scene_geometry",
+            "depth_prepass_passes",
+            "depth_prepass_draws",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DEPTH-PREPASS",
+        "docs/checklists/m2-lighting-depth-clipping.md",
+        &["Depth pre-pass", "ARCH-DEPTH-PREPASS"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DEPTH-PREPASS",
+        "docs/specs/public-api.md",
+        &[
+            "pub depth_prepass_passes: u64",
+            "pub depth_prepass_draws: u64",
+            "M2 also prepares a depth pre-pass",
+        ],
+    );
+}
+
+fn check_m2_leak_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-M2-LEAK-STATS",
+        "tests/m2_lighting_depth_clipping.rs",
+        &[
+            "m2_resource_counters_return_to_baseline_after_empty_prepare",
+            "environment_cubemaps",
+            "environment_prefilter_passes",
+            "environment_brdf_luts",
+            "shadow_maps",
+            "depth_prepass_passes",
+            "depth_prepass_draws",
+            "released.textures, baseline.textures",
+            "released.pending_destructions, baseline.pending_destructions",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M2-LEAK-STATS",
+        "docs/checklists/m2-lighting-depth-clipping.md",
+        &[
+            "m2_resource_counters_return_to_baseline_after_empty_prepare",
+            "ARCH-M2-LEAK-STATS",
+        ],
     );
 }
 
@@ -2238,6 +2399,26 @@ mod tests {
         let mut findings = Vec::new();
 
         check_shadow_map_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn depth_prepass_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_depth_prepass_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn m2_leak_stats_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_m2_leak_stats_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

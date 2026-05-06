@@ -1,9 +1,13 @@
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::mpsc;
 
+#[cfg(not(target_arch = "wasm32"))]
+mod depth;
 mod lifecycle;
 #[cfg(not(target_arch = "wasm32"))]
 mod output;
+#[cfg(not(target_arch = "wasm32"))]
+mod shadow;
 mod stats;
 #[cfg(not(target_arch = "wasm32"))]
 mod vertices;
@@ -22,13 +26,15 @@ use self::output::{
     GPU_TRIANGLE_SHADER, create_output_bind_group, create_output_bind_group_layout,
     create_output_uniform_buffer, encode_output_uniform,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use self::shadow::create_shadow_texture;
 pub(super) use self::stats::GpuResourceStats;
 #[cfg(not(target_arch = "wasm32"))]
-use self::stats::estimate_prepared_resource_stats;
+use self::stats::{align_to, estimate_prepared_resource_stats};
 #[cfg(not(target_arch = "wasm32"))]
 use self::vertices::{VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN, encode_vertices};
 use super::RasterTarget;
-use super::prepare::PreparedLightingStats;
+use super::prepare::{PreparedDepthStats, PreparedLightingStats};
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -59,8 +65,13 @@ struct GpuPreparedResources {
     vertex_buffer: wgpu::Buffer,
     output_uniform: wgpu::Buffer,
     output_bind_group: wgpu::BindGroup,
-    _shadow_texture: Option<wgpu::Texture>,
-    _shadow_view: Option<wgpu::TextureView>,
+    // ARCH-SHADOW-MAP: M2 allocates shadow resources before the shadow render pass is
+    // wired; the explicit fields keep the deferred binding visible to reviews and doctor.
+    #[allow(dead_code)]
+    shadow_texture: Option<wgpu::Texture>,
+    #[allow(dead_code)]
+    shadow_view: Option<wgpu::TextureView>,
+    depth_prepass: Option<depth::DepthPrepassResources>,
     vertex_count: u32,
     offscreen_pipeline: wgpu::RenderPipeline,
     surface_pipeline: Option<wgpu::RenderPipeline>,
@@ -76,6 +87,7 @@ impl GpuDeviceState {
         target: RasterTarget,
         primitives: &[Primitive],
         lighting_stats: PreparedLightingStats,
+        depth_stats: PreparedDepthStats,
     ) {
         self.configure_surface(target);
         self.release_prepared_resources();
@@ -132,6 +144,8 @@ impl GpuDeviceState {
         let shadow_view = shadow_texture
             .as_ref()
             .map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()));
+        let depth_prepass = (depth_stats.passes > 0)
+            .then(|| depth::create_depth_prepass_resources(&self.device, target));
         let offscreen_pipeline =
             create_unlit_pipeline(&self.device, GPU_COLOR_FORMAT, &output_bind_group_layout);
         let surface_pipeline = self.surface.as_ref().map(|surface| {
@@ -146,6 +160,8 @@ impl GpuDeviceState {
             vertex_bytes.len() / VERTEX_BYTE_LEN,
             surface_pipeline.is_some(),
             lighting_stats.shadow_maps,
+            lighting_stats.directional_shadow_map_resolution,
+            depth_stats.passes,
         );
 
         self.resources = Some(GpuPreparedResources {
@@ -156,8 +172,9 @@ impl GpuDeviceState {
             vertex_buffer,
             output_uniform,
             output_bind_group,
-            _shadow_texture: shadow_texture,
-            _shadow_view: shadow_view,
+            shadow_texture,
+            shadow_view,
+            depth_prepass,
             vertex_count: (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32,
             offscreen_pipeline,
             surface_pipeline,
@@ -173,9 +190,11 @@ impl GpuDeviceState {
         target: RasterTarget,
         primitives: &[crate::geometry::Primitive],
         lighting_stats: PreparedLightingStats,
+        depth_stats: PreparedDepthStats,
     ) {
         let _ = primitives;
         let _ = lighting_stats;
+        let _ = depth_stats;
         self.configure_surface(target);
     }
 
@@ -224,6 +243,14 @@ impl GpuDeviceState {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("scena.headless_gpu.encoder"),
             });
+        if let Some(depth_prepass) = &resources.depth_prepass {
+            depth::encode_depth_prepass(
+                &mut encoder,
+                depth_prepass,
+                &resources.vertex_buffer,
+                resources.vertex_count,
+            );
+        }
         encode_unlit_pass(
             &mut encoder,
             &resources.view,
@@ -452,10 +479,6 @@ fn encode_unlit_pass(
 const BYTES_PER_PIXEL: u32 = 4;
 #[cfg(not(target_arch = "wasm32"))]
 const GPU_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
-#[cfg(not(target_arch = "wasm32"))]
-fn align_to(value: u32, alignment: u32) -> u32 {
-    value.div_ceil(alignment) * alignment
-}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn create_unlit_pipeline(
@@ -501,25 +524,5 @@ fn create_unlit_pipeline(
         }),
         multiview_mask: None,
         cache: None,
-    })
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn create_shadow_texture(device: &wgpu::Device, resolution: Option<u32>) -> Option<wgpu::Texture> {
-    resolution.map(|size| {
-        device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("scena.m2.directional_shadow_map"),
-            size: wgpu::Extent3d {
-                width: size,
-                height: size,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth32Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        })
     })
 }

@@ -233,8 +233,9 @@ impl Renderer {
             }
             None => 0,
         };
-        let lighting_stats = prepare::collect_lighting_stats(scene)?;
+        let lighting_stats = prepare::collect_lighting_stats(scene, self.target.backend)?;
         let primitives = prepare::collect_prepared_primitives(self.target, scene, assets)?;
+        let depth_stats = prepare::collect_depth_prepass_stats(&primitives);
         let logical_stats =
             prepare::collect_logical_resource_stats(scene, assets, environment_count);
         self.stats.materials = logical_stats.materials;
@@ -244,15 +245,17 @@ impl Renderer {
         self.stats.environment_brdf_luts = environment_prepare_stats.brdf_luts;
         self.stats.live_logical_handles = logical_stats.live_logical_handles;
         self.stats.shadow_maps = lighting_stats.shadow_maps;
+        self.stats.depth_prepass_passes = depth_stats.passes;
+        self.stats.depth_prepass_draws = depth_stats.draws;
         self.stats.directional_shadow_map_resolution =
             lighting_stats.directional_shadow_map_resolution;
         self.stats.directional_shadow_pcf_kernel = lighting_stats.directional_shadow_pcf_kernel;
         if let Some(gpu) = &mut self.gpu {
-            gpu.prepare(self.target, &primitives, lighting_stats);
+            gpu.prepare(self.target, &primitives, lighting_stats, depth_stats);
             let stats = gpu.prepared_resource_stats();
             let pending_destructions = gpu.pending_destructions();
             self.stats.buffers = stats.buffers;
-            self.stats.textures = stats.textures + logical_stats.textures;
+            self.stats.textures = logical_stats.textures;
             self.stats.render_targets = stats.render_targets;
             self.stats.pipelines = stats.pipelines;
             self.stats.bind_groups = stats.bind_groups;

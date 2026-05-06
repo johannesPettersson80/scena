@@ -426,11 +426,11 @@ fn m1_headless_gpu_resource_counters_return_to_baseline_after_empty_reprepare() 
         renderer.prepare(&mut scene).expect("gpu scene prepares");
         let prepared = renderer.stats();
         assert!(prepared.buffers >= 3);
-        assert_eq!(prepared.textures, 1);
-        assert_eq!(prepared.render_targets, 1);
-        assert!(prepared.pipelines >= 1);
+        assert_eq!(prepared.textures, baseline.textures);
+        assert_eq!(prepared.render_targets, 2);
+        assert!(prepared.pipelines >= 2);
         assert_eq!(prepared.bind_groups, 1);
-        assert_eq!(prepared.shader_modules, 1);
+        assert!(prepared.shader_modules >= 2);
         assert_eq!(prepared.pending_destructions, 0);
         assert!(prepared.approximate_gpu_memory_bytes.unwrap_or_default() > 0);
         renderer.render(&scene, camera).expect("gpu scene renders");
