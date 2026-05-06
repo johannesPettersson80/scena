@@ -1,9 +1,10 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use scena::{
-    Aabb, AssetError, AssetFetcher, AssetPath, Assets, Camera, ChangeKind, Color, GeometryTopology,
-    ImportOptions, LookupError, MaterialKind, NodeKind, NotPreparedReason, PerspectiveCamera, Quat,
-    RenderError, Renderer, Scene, SourceCoordinateSystem, SourceUnits, Transform, Vec3,
+    Aabb, AssetError, AssetFetcher, AssetPath, Assets, Camera, ChangeKind, Color, CursorPosition,
+    GeometryTopology, HitTarget, ImportOptions, LookupError, MaterialKind, NodeKind,
+    NotPreparedReason, PerspectiveCamera, Primitive, Quat, RenderError, Renderer, Scene,
+    SourceCoordinateSystem, SourceUnits, Transform, Vec3, Viewport,
 };
 use std::future::{Ready, ready};
 use std::sync::{
@@ -179,6 +180,41 @@ fn scene_import_reports_local_and_world_bounds_for_imported_meshes() {
     assert_vec3_near(local.max, Vec3::new(0.5, 0.5, 0.0));
     assert_vec3_near(world.min, Vec3::new(1.0, 2.0, 4.0));
     assert_vec3_near(world.max, Vec3::new(3.0, 4.0, 4.0));
+}
+
+#[test]
+fn scene_pick_returns_typed_hit_target_for_renderable_triangle() {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    let target = scene
+        .add_renderable(
+            scene.root(),
+            vec![Primitive::unlit_triangle()],
+            Transform::default(),
+        )
+        .expect("renderable triangle inserts");
+    let viewport = Viewport::new(8, 8, 1.0).expect("viewport is valid");
+
+    let hit = scene
+        .pick(camera, CursorPosition::physical(4.0, 4.0), viewport)
+        .expect("pick succeeds")
+        .expect("center cursor hits triangle");
+
+    assert_eq!(hit.target(), HitTarget::Node(target));
+    assert_vec3_near(hit.world_position, Vec3::new(0.0, 0.0, 0.0));
+    assert!(hit.distance >= 0.0);
+    assert_eq!(
+        scene
+            .pick(camera, CursorPosition::logical(0.0, 0.0), viewport)
+            .expect("corner pick succeeds"),
+        None
+    );
 }
 
 #[test]

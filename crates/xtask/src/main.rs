@@ -2170,7 +2170,34 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         findings,
         "ARCH-M3A-SCENE-IMPORT",
         "src/scene.rs",
-        &["mod import;", "mod view;", "ImportOptions", "SceneImport"],
+        &[
+            "mod import;",
+            "mod picking;",
+            "mod view;",
+            "ImportOptions",
+            "SceneImport",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/scene/picking.rs",
+        &["pub fn pick(", "pickable_renderables", "pick_scene"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/picking.rs",
+        &[
+            "pub struct CursorPosition",
+            "pub struct Viewport",
+            "pub enum HitTarget",
+            "pub struct Hit",
+            "pub(crate) fn pick_scene",
+            "HitTarget::Node",
+        ],
     );
     require_contains(
         root,
@@ -2249,6 +2276,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "gltf_loader_creates_geometry_material_texture_and_vertex_color_contracts",
             "import_options_apply_gltf_node_transforms_and_source_units",
             "scene_import_reports_local_and_world_bounds_for_imported_meshes",
+            "scene_pick_returns_typed_hit_target_for_renderable_triangle",
             "mesh_material_vertex_color_scene.gltf",
             "transform_options_scene.gltf",
             "ImportOptions::gltf_default",

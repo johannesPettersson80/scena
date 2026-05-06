@@ -13,6 +13,7 @@ use crate::geometry::Primitive;
 mod camera;
 mod import;
 mod lights;
+mod picking;
 mod view;
 pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
 pub use import::{ImportOptions, SceneImport, SourceCoordinateSystem, SourceUnits};
