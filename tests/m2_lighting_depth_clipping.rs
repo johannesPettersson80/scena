@@ -1,10 +1,10 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use scena::{
-    Angle, AssetError, Assets, Backend, Capabilities, CapabilityStatus, Color, DepthRange,
-    DiagnosticCode, DiagnosticSeverity, DirectionalLight, EnvironmentSourceKind, Light, NodeKind,
-    OrthographicCamera, PerspectiveCamera, PointLight, PrepareError, Primitive, Renderer, Scene,
-    SpotLight, Transform, Vec3, Vertex,
+    Angle, AssetError, Assets, Backend, Capabilities, CapabilityStatus, ClippingPlane,
+    ClippingPlaneSet, Color, DepthRange, DiagnosticCode, DiagnosticSeverity, DirectionalLight,
+    EnvironmentSourceKind, Light, NodeKind, OrthographicCamera, PerspectiveCamera, PointLight,
+    PrepareError, Primitive, Renderer, Scene, SpotLight, Transform, Vec3, Vertex,
 };
 
 fn pixel_at(frame: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
@@ -59,6 +59,41 @@ fn split_screen_fxaa_scene() -> Scene {
     scene
         .add_renderable(scene.root(), white_left_half.to_vec(), Transform::default())
         .expect("split-screen primitive inserts");
+    scene
+}
+
+fn fullscreen_white_scene() -> Scene {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("camera becomes active");
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![Primitive::triangle([
+                Vertex {
+                    position: Vec3::new(-1.0, -1.0, 0.0),
+                    color: Color::WHITE,
+                },
+                Vertex {
+                    position: Vec3::new(3.0, -1.0, 0.0),
+                    color: Color::WHITE,
+                },
+                Vertex {
+                    position: Vec3::new(-1.0, 3.0, 0.0),
+                    color: Color::WHITE,
+                },
+            ])],
+            Transform::default(),
+        )
+        .expect("fullscreen primitive inserts");
     scene
 }
 
@@ -456,6 +491,27 @@ fn webgl2_depth_capability_reports_structured_compatibility_warning() {
                 .as_deref()
                 .is_some_and(|help| help.contains("near/far"))
     }));
+}
+
+#[test]
+fn clipping_plane_set_clips_rendered_output_half_space() {
+    let mut scene = fullscreen_white_scene();
+    let plane = scene.add_clipping_plane(ClippingPlane::new(Vec3::new(1.0, 0.0, 0.0), 0.0));
+    scene
+        .set_clipping_planes(ClippingPlaneSet::new().with_plane(plane))
+        .expect("active clipping plane set is valid");
+    let mut renderer = Renderer::headless(16, 16).expect("renderer builds");
+
+    renderer.prepare(&mut scene).expect("scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("clipped scene renders");
+
+    assert_eq!(pixel_at(renderer.frame_rgba8(), 16, 3, 8), [0, 0, 0, 255]);
+    assert_eq!(
+        pixel_at(renderer.frame_rgba8(), 16, 12, 8),
+        [206, 206, 206, 255]
+    );
 }
 
 #[test]

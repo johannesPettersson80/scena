@@ -17,7 +17,7 @@ use crate::diagnostics::{
 use crate::geometry::Primitive;
 use crate::material::Color;
 use crate::platform::{PlatformSurface, PlatformSurfaceAttachment, SurfaceEvent, SurfaceKind};
-use crate::scene::{CameraKey, Scene};
+use crate::scene::{CameraKey, ClippingPlane, Scene};
 
 use self::gpu::GpuDeviceState;
 use self::output::OutputTransform;
@@ -50,6 +50,7 @@ struct PreparedSceneState {
     environment_revision: u64,
     target_revision: u64,
     primitives: Vec<Primitive>,
+    clipping_planes: Vec<ClippingPlane>,
 }
 
 /// Row-major render target dimensions used for CPU frame and accumulator indexing.
@@ -278,6 +279,7 @@ impl Renderer {
             environment_revision: self.environment_revision,
             target_revision: self.target_revision,
             primitives,
+            clipping_planes: scene.active_clipping_plane_values().collect(),
         });
         self.diagnostics = diagnostics;
         Ok(())
@@ -294,6 +296,7 @@ impl Renderer {
         }
 
         let primitives = self.prepared_state(scene)?.primitives.clone();
+        let clipping_planes = self.prepared_state(scene)?.clipping_planes.clone();
         let primitive_count = primitives.len() as u64;
         if self.gpu.is_some() {
             self.draw_gpu()?;
@@ -320,6 +323,7 @@ impl Renderer {
                     linear_frame,
                     &mut self.frame,
                     primitive,
+                    &clipping_planes,
                 );
             }
         }

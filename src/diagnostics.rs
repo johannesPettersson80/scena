@@ -6,7 +6,7 @@ use std::fmt;
 use crate::assets::{EnvironmentHandle, GeometryHandle, MaterialHandle};
 use crate::geometry::GeometryTopology;
 use crate::material::{AlphaMode, MaterialKind};
-use crate::scene::{CameraKey, NodeKey};
+use crate::scene::{CameraKey, ClippingPlaneKey, NodeKey};
 
 mod capabilities;
 pub use capabilities::{
@@ -151,6 +151,7 @@ pub enum ChangeKind {
 pub enum LookupError {
     NodeNotFound(NodeKey),
     CameraNotFound(CameraKey),
+    ClippingPlaneNotFound(ClippingPlaneKey),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -479,6 +480,9 @@ impl fmt::Display for LookupError {
         match self {
             Self::NodeNotFound(_) => write!(formatter, "node key does not exist in the scene"),
             Self::CameraNotFound(_) => write!(formatter, "camera key does not exist in the scene"),
+            Self::ClippingPlaneNotFound(_) => {
+                write!(formatter, "clipping plane key does not exist in the scene")
+            }
         }
     }
 }

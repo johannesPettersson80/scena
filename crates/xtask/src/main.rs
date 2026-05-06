@@ -152,6 +152,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_webgl2_depth_contracts(root, findings);
     check_m2_leak_stats_contracts(root, findings);
     check_camera_depth_contracts(root, findings);
+    check_clipping_contracts(root, findings);
     check_render_alpha_contracts(root, findings);
     check_output_stage_contracts(root, findings);
     check_fxaa_output_contracts(root, findings);
@@ -1857,6 +1858,90 @@ fn check_camera_depth_contracts(root: &Path, findings: &mut Vec<Finding>) {
     );
 }
 
+fn check_clipping_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-CLIPPING",
+        "src/scene.rs",
+        &[
+            "pub struct ClippingPlaneKey",
+            "pub struct ClippingPlane",
+            "pub struct ClippingPlaneSet",
+            "pub fn add_clipping_plane",
+            "pub fn set_clipping_planes",
+            "pub(crate) fn active_clipping_plane_values",
+            "pub fn contains(self, point: Vec3) -> bool",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-CLIPPING",
+        "src/diagnostics.rs",
+        &["ClippingPlaneNotFound"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-CLIPPING",
+        "src/lib.rs",
+        &["ClippingPlane", "ClippingPlaneKey", "ClippingPlaneSet"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-CLIPPING",
+        "src/render.rs",
+        &[
+            "clipping_planes: Vec<ClippingPlane>",
+            "scene.active_clipping_plane_values().collect()",
+            "let clipping_planes = self.prepared_state(scene)?.clipping_planes.clone()",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-CLIPPING",
+        "src/render/cpu.rs",
+        &[
+            "clipping_planes: &[ClippingPlane]",
+            "mix_position",
+            "is_clipped",
+            "plane.contains(position)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-CLIPPING",
+        "tests/m2_lighting_depth_clipping.rs",
+        &[
+            "clipping_plane_set_clips_rendered_output_half_space",
+            "ClippingPlane::new",
+            "ClippingPlaneSet::new().with_plane",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-CLIPPING",
+        "docs/specs/public-api.md",
+        &[
+            "pub struct ClippingPlaneKey",
+            "dot(normal, position) + distance >= 0",
+            "ClippingPlaneNotFound",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-CLIPPING",
+        "docs/checklists/m2-lighting-depth-clipping.md",
+        &["ClippingPlane", "ARCH-CLIPPING"],
+    );
+}
+
 fn check_material_desc_fields_private(root: &Path, findings: &mut Vec<Finding>) {
     let path = root.join("src/material.rs");
     let Ok(text) = fs::read_to_string(path) else {
@@ -2758,6 +2843,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_camera_depth_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn clipping_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_clipping_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

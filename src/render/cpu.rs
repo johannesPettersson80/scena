@@ -1,5 +1,6 @@
 use crate::geometry::{Primitive, Vertex};
 use crate::material::Color;
+use crate::scene::{ClippingPlane, Vec3};
 
 use super::RasterTarget;
 use super::output::OutputTransform;
@@ -25,6 +26,7 @@ pub(super) fn draw_primitive_cpu(
     linear_frame: &mut [Color],
     frame: &mut [u8],
     primitive: &Primitive,
+    clipping_planes: &[ClippingPlane],
 ) {
     let [a, b, c] = primitive.vertices();
     let a = ScreenVertex::from_vertex(*a, target);
@@ -49,6 +51,10 @@ pub(super) fn draw_primitive_cpu(
             let w1 = edge(c, a, px, py) / area;
             let w2 = edge(a, b, px, py) / area;
             if w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0 {
+                let position = mix_position(a.position, b.position, c.position, w0, w1, w2);
+                if is_clipped(position, clipping_planes) {
+                    continue;
+                }
                 let color = mix_color(a.color, b.color, c.color, w0, w1, w2);
                 write_pixel(target, output, linear_frame, frame, x, y, color);
             }
@@ -60,6 +66,7 @@ pub(super) fn draw_primitive_cpu(
 struct ScreenVertex {
     x: f32,
     y: f32,
+    position: Vec3,
     color: Color,
 }
 
@@ -70,6 +77,7 @@ impl ScreenVertex {
         Self {
             x: (vertex.position.x * 0.5 + 0.5) * width,
             y: (1.0 - (vertex.position.y * 0.5 + 0.5)) * height,
+            position: vertex.position,
             color: vertex.color,
         }
     }
@@ -86,6 +94,20 @@ fn mix_color(a: Color, b: Color, c: Color, w0: f32, w1: f32, w2: f32) -> Color {
         a.b * w0 + b.b * w1 + c.b * w2,
         a.a * w0 + b.a * w1 + c.a * w2,
     )
+}
+
+fn mix_position(a: Vec3, b: Vec3, c: Vec3, w0: f32, w1: f32, w2: f32) -> Vec3 {
+    Vec3::new(
+        a.x * w0 + b.x * w1 + c.x * w2,
+        a.y * w0 + b.y * w1 + c.y * w2,
+        a.z * w0 + b.z * w1 + c.z * w2,
+    )
+}
+
+fn is_clipped(position: Vec3, clipping_planes: &[ClippingPlane]) -> bool {
+    clipping_planes
+        .iter()
+        .any(|plane| !plane.contains(position))
 }
 
 fn write_pixel(
