@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::assets::{AssetFetcher, AssetPath, Assets, SceneAsset};
 use crate::diagnostics::{ImportError, InstantiateError, LookupError};
 
-use super::{MeshNode, NodeKey, NodeKind, Scene, Transform};
+use super::{MeshNode, NodeKey, NodeKind, Scene, Transform, Vec3};
 
 #[derive(Debug, Clone)]
 pub struct SceneImport {
@@ -24,12 +24,15 @@ pub struct ImportOptions {
 pub enum SourceUnits {
     #[default]
     Meters,
+    Centimeters,
+    Millimeters,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SourceCoordinateSystem {
     #[default]
     GltfYUpRightHanded,
+    ZUpRightHanded,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,7 +53,7 @@ impl Scene {
     pub fn instantiate_with(
         &mut self,
         scene_asset: &SceneAsset,
-        _options: ImportOptions,
+        options: ImportOptions,
     ) -> Result<SceneImport, InstantiateError> {
         let nodes = scene_asset.nodes();
         let mut child_indices = BTreeSet::new();
@@ -72,6 +75,7 @@ impl Scene {
                 source_index,
                 self.root,
                 None,
+                options,
                 &mut import.records,
             )?;
             import.roots.push(node);
@@ -114,6 +118,7 @@ impl Scene {
         source_index: usize,
         parent: NodeKey,
         imported_parent: Option<NodeKey>,
+        options: ImportOptions,
         records: &mut Vec<ImportedNode>,
     ) -> Result<NodeKey, InstantiateError> {
         let source_node =
@@ -134,7 +139,11 @@ impl Scene {
             })
             .unwrap_or(NodeKind::Empty);
         let node = self
-            .insert_node(parent, kind, Transform::default())
+            .insert_node(
+                parent,
+                kind,
+                options.convert_transform(source_node.transform()),
+            )
             .expect("import parent was inserted by this scene");
         records.push(ImportedNode {
             node,
@@ -148,7 +157,14 @@ impl Scene {
                     child: *child,
                 });
             }
-            self.instantiate_scene_asset_node(scene_asset, *child, node, Some(node), records)?;
+            self.instantiate_scene_asset_node(
+                scene_asset,
+                *child,
+                node,
+                Some(node),
+                options,
+                records,
+            )?;
         }
         Ok(node)
     }
@@ -166,9 +182,65 @@ impl ImportOptions {
         self.source_units
     }
 
+    pub const fn with_source_units(mut self, units: SourceUnits) -> Self {
+        self.source_units = units;
+        self
+    }
+
     pub const fn source_coordinate_system(self) -> SourceCoordinateSystem {
         self.source_coordinate_system
     }
+
+    pub const fn with_source_coordinate_system(
+        mut self,
+        coordinate_system: SourceCoordinateSystem,
+    ) -> Self {
+        self.source_coordinate_system = coordinate_system;
+        self
+    }
+
+    fn convert_transform(self, transform: Transform) -> Transform {
+        let unit_scale = self.source_units.meters_per_unit();
+        Transform {
+            translation: self
+                .source_coordinate_system
+                .convert_vec3(scale_vec3(transform.translation, unit_scale)),
+            rotation: transform.rotation,
+            scale: self
+                .source_coordinate_system
+                .convert_scale(scale_vec3(transform.scale, unit_scale)),
+        }
+    }
+}
+
+impl SourceUnits {
+    const fn meters_per_unit(self) -> f32 {
+        match self {
+            Self::Meters => 1.0,
+            Self::Centimeters => 0.01,
+            Self::Millimeters => 0.001,
+        }
+    }
+}
+
+impl SourceCoordinateSystem {
+    const fn convert_vec3(self, value: Vec3) -> Vec3 {
+        match self {
+            Self::GltfYUpRightHanded => value,
+            Self::ZUpRightHanded => Vec3::new(value.x, value.z, -value.y),
+        }
+    }
+
+    const fn convert_scale(self, value: Vec3) -> Vec3 {
+        match self {
+            Self::GltfYUpRightHanded => value,
+            Self::ZUpRightHanded => Vec3::new(value.x, value.z, value.y),
+        }
+    }
+}
+
+const fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
+    Vec3::new(value.x * scale, value.y * scale, value.z * scale)
 }
 
 impl SceneImport {

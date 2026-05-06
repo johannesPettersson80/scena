@@ -3,6 +3,7 @@ use std::sync::Arc;
 use serde_json::Value as JsonValue;
 
 use crate::diagnostics::AssetError;
+use crate::scene::{Quat, Transform, Vec3};
 
 use self::accessor::{parse_accessors, parse_buffer_views, parse_buffers};
 use self::read::{parse_materials, parse_meshes, parse_textures};
@@ -30,6 +31,7 @@ struct SceneAssetData {
 pub struct SceneAssetNode {
     name: Option<String>,
     children: Vec<usize>,
+    transform: Transform,
     mesh: Option<SceneAssetMesh>,
 }
 
@@ -146,6 +148,10 @@ impl SceneAssetNode {
         &self.children
     }
 
+    pub fn transform(&self) -> Transform {
+        self.transform
+    }
+
     pub fn mesh(&self) -> Option<SceneAssetMesh> {
         self.mesh
     }
@@ -215,6 +221,7 @@ fn parse_gltf_nodes(json: &JsonValue, meshes: &[SceneAssetMesh]) -> Vec<SceneAss
                                 .collect()
                         })
                         .unwrap_or_default(),
+                    transform: parse_node_transform(node),
                     mesh: node
                         .get("mesh")
                         .and_then(JsonValue::as_u64)
@@ -224,6 +231,44 @@ fn parse_gltf_nodes(json: &JsonValue, meshes: &[SceneAssetMesh]) -> Vec<SceneAss
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn parse_node_transform(node: &JsonValue) -> Transform {
+    Transform {
+        translation: vec3_field(node, "translation", Vec3::ZERO),
+        rotation: quat_field(node, "rotation", Quat::IDENTITY),
+        scale: vec3_field(node, "scale", Vec3::ONE),
+    }
+}
+
+fn vec3_field(node: &JsonValue, field: &str, fallback: Vec3) -> Vec3 {
+    let Some(values) = node.get(field).and_then(JsonValue::as_array) else {
+        return fallback;
+    };
+    Vec3::new(
+        array_f32(values, 0).unwrap_or(fallback.x),
+        array_f32(values, 1).unwrap_or(fallback.y),
+        array_f32(values, 2).unwrap_or(fallback.z),
+    )
+}
+
+fn quat_field(node: &JsonValue, field: &str, fallback: Quat) -> Quat {
+    let Some(values) = node.get(field).and_then(JsonValue::as_array) else {
+        return fallback;
+    };
+    Quat {
+        x: array_f32(values, 0).unwrap_or(fallback.x),
+        y: array_f32(values, 1).unwrap_or(fallback.y),
+        z: array_f32(values, 2).unwrap_or(fallback.z),
+        w: array_f32(values, 3).unwrap_or(fallback.w),
+    }
+}
+
+fn array_f32(values: &[JsonValue], index: usize) -> Option<f32> {
+    values
+        .get(index)
+        .and_then(JsonValue::as_f64)
+        .map(|value| value as f32)
 }
 
 fn is_v1_required_gltf_extension(extension: &str) -> bool {

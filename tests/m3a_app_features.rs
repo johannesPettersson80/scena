@@ -3,7 +3,7 @@
 use scena::{
     Aabb, AssetError, AssetFetcher, AssetPath, Assets, Camera, ChangeKind, Color, GeometryTopology,
     ImportOptions, LookupError, MaterialKind, NodeKind, NotPreparedReason, PerspectiveCamera, Quat,
-    RenderError, Renderer, Scene, Transform, Vec3,
+    RenderError, Renderer, Scene, SourceCoordinateSystem, SourceUnits, Transform, Vec3,
 };
 use std::future::{Ready, ready};
 use std::sync::{
@@ -142,6 +142,69 @@ fn gltf_loader_creates_geometry_material_texture_and_vertex_color_contracts() {
     };
     assert_eq!(mesh_node.geometry(), mesh.geometry());
     assert_eq!(mesh_node.material(), mesh.material());
+}
+
+#[test]
+fn import_options_apply_gltf_node_transforms_and_source_units() {
+    let assets = Assets::new();
+    let scene_asset =
+        pollster::block_on(assets.load_scene("tests/assets/gltf/transform_options_scene.gltf"))
+            .expect("transform glTF scene loads");
+    let mut scene = Scene::new();
+
+    let import = scene
+        .instantiate_with(
+            &scene_asset,
+            ImportOptions::gltf_default().with_source_units(SourceUnits::Centimeters),
+        )
+        .expect("centimeter source scene instantiates");
+    let root = import.node("RootCm").expect("root lookup succeeds");
+    let child = import.node("ChildCm").expect("child lookup succeeds");
+
+    assert_eq!(
+        scene_asset.nodes()[0].transform().translation,
+        Vec3::new(100.0, 0.0, 0.0)
+    );
+    assert_vec3_near(
+        scene
+            .node(root)
+            .expect("root exists")
+            .transform()
+            .translation,
+        Vec3::new(1.0, 0.0, 0.0),
+    );
+    assert_vec3_near(
+        scene.node(root).expect("root exists").transform().scale,
+        Vec3::new(0.02, 0.02, 0.02),
+    );
+    assert_vec3_near(
+        scene
+            .node(child)
+            .expect("child exists")
+            .transform()
+            .translation,
+        Vec3::new(0.0, 0.5, 0.25),
+    );
+
+    let mut z_up_scene = Scene::new();
+    let z_up_import = z_up_scene
+        .instantiate_with(
+            &scene_asset,
+            ImportOptions::gltf_default()
+                .with_source_coordinate_system(SourceCoordinateSystem::ZUpRightHanded),
+        )
+        .expect("Z-up source scene instantiates");
+    let z_up_child = z_up_import
+        .node("ChildCm")
+        .expect("Z-up child lookup succeeds");
+    assert_vec3_near(
+        z_up_scene
+            .node(z_up_child)
+            .expect("Z-up child exists")
+            .transform()
+            .translation,
+        Vec3::new(0.0, 25.0, -50.0),
+    );
 }
 
 #[test]
