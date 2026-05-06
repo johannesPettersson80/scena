@@ -20,12 +20,17 @@ description: Use when implementing or refactoring scena renderer architecture, p
 
 ## Implementation Rules
 
+- Before production implementation, add or update the focused unit/integration test that
+  locks the contract and verify it fails for the expected reason.
 - Do not hide asset fetch, shader compile, or GPU upload inside `render()`.
 - Use typed handles and structured errors; avoid stringly runtime contracts.
 - Keep renderer internals independent of domain simulation logic.
 - Preserve native/WASM separation: platform adapters call into renderer logic, not the other
   way around.
 - Add tests for public contract changes before broadening implementation.
+- Follow SOLID/KISS: assign one owner module per public feature, keep modules small enough
+  to review, avoid catch-all `Manager`/`Engine`/`World`/broad `Context` types, and add
+  abstractions only when they remove real duplication or enforce a current contract.
 
 ## Required Checks
 

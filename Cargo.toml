@@ -6,7 +6,20 @@ license = "MIT OR Apache-2.0"
 description = "A Rust-native scene-graph renderer intended as an easy, production-safe Three.js replacement."
 readme = "README.md"
 
+[workspace]
+members = [".", "crates/xtask"]
+resolver = "3"
+
 [lib]
 path = "src/lib.rs"
 
 [dependencies]
+raw-window-handle = "0.6.2"
+slotmap = "1.0"
+wgpu = { version = "29.0.3", features = ["webgl"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pollster = "0.4.0"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3.82", features = ["HtmlCanvasElement"] }

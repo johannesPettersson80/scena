@@ -1,5 +1,349 @@
 //! Scene graph, typed keys, transforms, bounds, anchors, clipping, and queries.
 
-/// Placeholder module marker for the scene graph.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SceneModule;
+use std::cell::Cell;
+use std::marker::PhantomData;
+use std::sync::{Arc, Weak};
+
+use slotmap::{SlotMap, new_key_type};
+
+use crate::diagnostics::LookupError;
+use crate::geometry::Primitive;
+
+new_key_type! {
+    pub struct NodeKey;
+    pub struct CameraKey;
+}
+
+#[derive(Debug)]
+pub struct Scene {
+    identity: Arc<()>,
+    nodes: SlotMap<NodeKey, Node>,
+    cameras: SlotMap<CameraKey, Camera>,
+    root: NodeKey,
+    active_camera: Option<CameraKey>,
+    structure_revision: u64,
+    not_sync: PhantomData<Cell<()>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Node {
+    parent: Option<NodeKey>,
+    children: Vec<NodeKey>,
+    transform: Transform,
+    kind: NodeKind,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum NodeKind {
+    Empty,
+    Renderable(RenderableNode),
+    Camera(CameraKey),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RenderableNode {
+    primitives: Vec<Primitive>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Camera {
+    Perspective(PerspectiveCamera),
+    Orthographic(OrthographicCamera),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PerspectiveCamera {
+    pub vertical_fov: Angle,
+    pub aspect: f32,
+    pub near: f32,
+    pub far: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OrthographicCamera {
+    pub left: f32,
+    pub right: f32,
+    pub bottom: f32,
+    pub top: f32,
+    pub near: f32,
+    pub far: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Transform {
+    pub translation: Vec3,
+    pub rotation: Quat,
+    pub scale: Vec3,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Vec3 {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Quat {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub w: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Angle {
+    radians: f32,
+}
+
+impl Scene {
+    pub fn new() -> Self {
+        let mut nodes = SlotMap::with_key();
+        let root = nodes.insert(Node::empty_root());
+        Self {
+            identity: Arc::new(()),
+            nodes,
+            cameras: SlotMap::with_key(),
+            root,
+            active_camera: None,
+            structure_revision: 0,
+            not_sync: PhantomData,
+        }
+    }
+
+    pub fn root(&self) -> NodeKey {
+        self.root
+    }
+
+    pub fn active_camera(&self) -> Option<CameraKey> {
+        self.active_camera
+    }
+
+    pub fn set_active_camera(&mut self, camera: CameraKey) -> Result<(), LookupError> {
+        if self.cameras.contains_key(camera) {
+            self.active_camera = Some(camera);
+            Ok(())
+        } else {
+            Err(LookupError::CameraNotFound(camera))
+        }
+    }
+
+    pub fn node(&self, node: NodeKey) -> Option<&Node> {
+        self.nodes.get(node)
+    }
+
+    pub fn camera(&self, camera: CameraKey) -> Option<&Camera> {
+        self.cameras.get(camera)
+    }
+
+    pub fn add_empty(
+        &mut self,
+        parent: NodeKey,
+        transform: Transform,
+    ) -> Result<NodeKey, LookupError> {
+        self.insert_node(parent, NodeKind::Empty, transform)
+    }
+
+    pub fn add_renderable(
+        &mut self,
+        parent: NodeKey,
+        primitives: Vec<Primitive>,
+        transform: Transform,
+    ) -> Result<NodeKey, LookupError> {
+        self.insert_node(
+            parent,
+            NodeKind::Renderable(RenderableNode { primitives }),
+            transform,
+        )
+    }
+
+    pub fn add_perspective_camera(
+        &mut self,
+        parent: NodeKey,
+        camera: PerspectiveCamera,
+        transform: Transform,
+    ) -> Result<CameraKey, LookupError> {
+        self.insert_camera(parent, Camera::Perspective(camera), transform)
+    }
+
+    pub fn add_orthographic_camera(
+        &mut self,
+        parent: NodeKey,
+        camera: OrthographicCamera,
+        transform: Transform,
+    ) -> Result<CameraKey, LookupError> {
+        self.insert_camera(parent, Camera::Orthographic(camera), transform)
+    }
+
+    pub fn set_transform(
+        &mut self,
+        node: NodeKey,
+        transform: Transform,
+    ) -> Result<(), LookupError> {
+        let node = self
+            .nodes
+            .get_mut(node)
+            .ok_or(LookupError::NodeNotFound(node))?;
+        node.transform = transform;
+        Ok(())
+    }
+
+    pub(crate) fn identity(&self) -> Weak<()> {
+        Arc::downgrade(&self.identity)
+    }
+
+    pub(crate) fn structure_revision(&self) -> u64 {
+        self.structure_revision
+    }
+
+    pub(crate) fn renderables(&self) -> impl Iterator<Item = &RenderableNode> {
+        self.nodes.values().filter_map(|node| match &node.kind {
+            NodeKind::Renderable(renderable) => Some(renderable),
+            NodeKind::Empty | NodeKind::Camera(_) => None,
+        })
+    }
+
+    fn insert_camera(
+        &mut self,
+        parent: NodeKey,
+        camera: Camera,
+        transform: Transform,
+    ) -> Result<CameraKey, LookupError> {
+        let camera = self.cameras.insert(camera);
+        if let Err(error) = self.insert_node(parent, NodeKind::Camera(camera), transform) {
+            self.cameras.remove(camera);
+            return Err(error);
+        }
+        Ok(camera)
+    }
+
+    fn insert_node(
+        &mut self,
+        parent: NodeKey,
+        kind: NodeKind,
+        transform: Transform,
+    ) -> Result<NodeKey, LookupError> {
+        if !self.nodes.contains_key(parent) {
+            return Err(LookupError::NodeNotFound(parent));
+        }
+
+        let node = self.nodes.insert(Node {
+            parent: Some(parent),
+            children: Vec::new(),
+            transform,
+            kind,
+        });
+        self.nodes[parent].children.push(node);
+        self.structure_revision = self.structure_revision.saturating_add(1);
+        Ok(node)
+    }
+}
+
+impl Default for Scene {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Node {
+    fn empty_root() -> Self {
+        Self {
+            parent: None,
+            children: Vec::new(),
+            transform: Transform::IDENTITY,
+            kind: NodeKind::Empty,
+        }
+    }
+
+    pub fn parent(&self) -> Option<NodeKey> {
+        self.parent
+    }
+
+    pub fn children(&self) -> &[NodeKey] {
+        &self.children
+    }
+
+    pub fn transform(&self) -> Transform {
+        self.transform
+    }
+
+    pub fn kind(&self) -> &NodeKind {
+        &self.kind
+    }
+}
+
+impl RenderableNode {
+    pub fn primitives(&self) -> &[Primitive] {
+        &self.primitives
+    }
+}
+
+impl Default for PerspectiveCamera {
+    fn default() -> Self {
+        Self {
+            vertical_fov: Angle::from_degrees(60.0),
+            aspect: 1.0,
+            near: 0.01,
+            far: 1000.0,
+        }
+    }
+}
+
+impl Default for OrthographicCamera {
+    fn default() -> Self {
+        Self {
+            left: -1.0,
+            right: 1.0,
+            bottom: -1.0,
+            top: 1.0,
+            near: -1.0,
+            far: 1.0,
+        }
+    }
+}
+
+impl Transform {
+    pub const IDENTITY: Self = Self {
+        translation: Vec3::ZERO,
+        rotation: Quat::IDENTITY,
+        scale: Vec3::ONE,
+    };
+}
+
+impl Default for Transform {
+    fn default() -> Self {
+        Self::IDENTITY
+    }
+}
+
+impl Vec3 {
+    pub const ZERO: Self = Self::new(0.0, 0.0, 0.0);
+    pub const ONE: Self = Self::new(1.0, 1.0, 1.0);
+
+    pub const fn new(x: f32, y: f32, z: f32) -> Self {
+        Self { x, y, z }
+    }
+}
+
+impl Quat {
+    pub const IDENTITY: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+        w: 1.0,
+    };
+}
+
+impl Angle {
+    pub fn from_degrees(degrees: f32) -> Self {
+        Self::from_radians(degrees.to_radians())
+    }
+
+    pub const fn from_radians(radians: f32) -> Self {
+        Self { radians }
+    }
+
+    pub const fn radians(self) -> f32 {
+        self.radians
+    }
+}
