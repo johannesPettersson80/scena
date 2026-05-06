@@ -1,7 +1,7 @@
 use scena::{
-    AlphaMode, AssetPath, Assets, Color, EnvironmentHandle, GeometryHandle, MaterialDesc,
-    MaterialHandle, MaterialKind, ModelHandle, NodeKind, Scene, SceneAsset, TextureColorSpace,
-    TextureDesc, TextureHandle, Transform, Vec3,
+    Aabb, AlphaMode, AssetPath, Assets, Color, EnvironmentHandle, GeometryDesc, GeometryHandle,
+    GeometryTopology, MaterialDesc, MaterialHandle, MaterialKind, ModelHandle, NodeKind, Scene,
+    SceneAsset, TextureColorSpace, TextureDesc, TextureHandle, Transform, Vec3,
 };
 
 fn assert_handle<T: Copy + Eq + std::fmt::Debug>() {}
@@ -85,12 +85,98 @@ fn assets_load_texture_records_color_space_and_deduplicates_cache_key() {
     );
 }
 
+fn assert_geometry_invariants(geometry: &GeometryDesc) {
+    assert!(!geometry.vertices().is_empty());
+    for index in geometry.indices() {
+        assert!((*index as usize) < geometry.vertices().len());
+    }
+    for vertex in geometry.vertices() {
+        assert!(geometry.bounds().contains(vertex.position));
+    }
+    match geometry.topology() {
+        GeometryTopology::Triangles => {
+            assert_eq!(geometry.indices().len() % 3, 0);
+            for vertex in geometry.vertices() {
+                let length = vector_length(vertex.normal);
+                assert!(
+                    (length - 1.0).abs() <= 1.0e-4,
+                    "triangle geometry normals must be unit length, got {length}"
+                );
+            }
+        }
+        GeometryTopology::Lines => assert_eq!(geometry.indices().len() % 2, 0),
+    }
+}
+
+fn vector_length(value: Vec3) -> f32 {
+    (value.x * value.x + value.y * value.y + value.z * value.z).sqrt()
+}
+
+#[test]
+fn builtin_geometry_generators_produce_valid_bounds_and_indices() {
+    let geometries = [
+        GeometryDesc::box_xyz(2.0, 4.0, 6.0),
+        GeometryDesc::sphere(1.5, 12, 6),
+        GeometryDesc::cylinder(1.0, 3.0, 12),
+        GeometryDesc::plane(2.0, 3.0),
+        GeometryDesc::line(Vec3::ZERO, Vec3::new(1.0, 2.0, 3.0)),
+        GeometryDesc::polyline(&[
+            Vec3::ZERO,
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(1.0, 1.0, 0.0),
+        ]),
+        GeometryDesc::arrow(Vec3::ZERO, Vec3::new(0.0, 1.0, 0.0)),
+        GeometryDesc::grid(10.0, 10),
+        GeometryDesc::axes(2.0),
+    ];
+
+    for geometry in geometries {
+        assert_geometry_invariants(&geometry);
+    }
+    assert_eq!(
+        GeometryDesc::box_xyz(2.0, 4.0, 6.0).bounds(),
+        Aabb::new(Vec3::new(-1.0, -2.0, -3.0), Vec3::new(1.0, 2.0, 3.0))
+    );
+}
+
+#[test]
+fn geometry_construction_rejects_invalid_manual_buffers() {
+    assert!(Aabb::from_vertices(&[]).is_none());
+    assert!(GeometryDesc::try_new(GeometryTopology::Triangles, Vec::new(), Vec::new()).is_err());
+    assert!(
+        GeometryDesc::try_new(
+            GeometryTopology::Triangles,
+            GeometryDesc::plane(1.0, 1.0).vertices().to_vec(),
+            vec![0, 1]
+        )
+        .is_err()
+    );
+    assert!(
+        GeometryDesc::try_new(
+            GeometryTopology::Lines,
+            GeometryDesc::line(Vec3::ZERO, Vec3::new(1.0, 0.0, 0.0))
+                .vertices()
+                .to_vec(),
+            vec![0, 2]
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn assets_create_geometry_stores_descriptor_by_typed_handle() {
+    let assets = Assets::new();
+    let geometry = GeometryDesc::plane(2.0, 2.0);
+
+    let handle = assets.create_geometry(geometry.clone());
+
+    assert_eq!(assets.geometry(handle), Some(geometry));
+}
+
 #[test]
 fn scene_mesh_builder_inserts_typed_mesh_node() {
     let assets = Assets::new();
-    // Geometry creation lands with built-in geometry; this sentinel only proves the
-    // scene-side typed-handle insertion path.
-    let geometry = GeometryHandle::default();
+    let geometry = assets.create_geometry(GeometryDesc::plane(1.0, 1.0));
     let material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
     let mut scene = Scene::new();
 

@@ -22,7 +22,9 @@ pub use diagnostics::{
     AssetError, Backend, BuildError, Capabilities, ChangeKind, Error, LookupError,
     NotPreparedReason, PrepareError, RenderError, RenderOutcome, RendererStats,
 };
-pub use geometry::{Primitive, Vertex};
+pub use geometry::{
+    Aabb, GeometryDesc, GeometryError, GeometryTopology, GeometryVertex, Primitive, Vertex,
+};
 pub use material::{
     AlphaMode, Color, ColorParseError, MaterialDesc, MaterialKind, TextureColorSpace,
 };

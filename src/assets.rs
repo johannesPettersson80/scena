@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use slotmap::{SlotMap, new_key_type};
 
 use crate::diagnostics::AssetError;
+use crate::geometry::GeometryDesc;
 use crate::material::{MaterialDesc, TextureColorSpace};
 
 new_key_type! {
@@ -54,6 +55,7 @@ pub struct Assets<F = ()> {
 
 #[derive(Debug)]
 struct AssetStorage {
+    geometries: SlotMap<GeometryHandle, GeometryDesc>,
     materials: SlotMap<MaterialHandle, MaterialDesc>,
     textures: SlotMap<TextureHandle, TextureDesc>,
     texture_lookup: BTreeMap<TextureCacheKey, TextureHandle>,
@@ -77,6 +79,7 @@ impl<F> Assets<F> {
             fetcher,
             retain_policy: RetainPolicy::OnContextLossOnly,
             storage: Arc::new(Mutex::new(AssetStorage {
+                geometries: SlotMap::with_key(),
                 materials: SlotMap::with_key(),
                 textures: SlotMap::with_key(),
                 texture_lookup: BTreeMap::new(),
@@ -98,6 +101,14 @@ impl<F> Assets<F> {
 
     pub fn create_material(&self, material: impl Into<MaterialDesc>) -> MaterialHandle {
         self.storage().materials.insert(material.into())
+    }
+
+    pub fn create_geometry(&self, geometry: GeometryDesc) -> GeometryHandle {
+        self.storage().geometries.insert(geometry)
+    }
+
+    pub fn geometry(&self, handle: GeometryHandle) -> Option<GeometryDesc> {
+        self.storage().geometries.get(handle).cloned()
     }
 
     /// Returns a cloned material descriptor for a typed material handle.
