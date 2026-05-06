@@ -26,7 +26,8 @@ pub use geometry::{
     Aabb, GeometryDesc, GeometryError, GeometryTopology, GeometryVertex, Primitive, Vertex,
 };
 pub use material::{
-    AlphaMode, Color, ColorParseError, MaterialDesc, MaterialKind, TextureColorSpace,
+    AlphaMode, Color, ColorParseError, DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES,
+    DEFAULT_STROKE_WIDTH_PX, MaterialDesc, MaterialKind, TextureColorSpace,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use platform::NativeWindowHandle;

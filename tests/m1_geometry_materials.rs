@@ -1,8 +1,9 @@
 use scena::{
-    Aabb, AlphaMode, AssetPath, Assets, Color, EnvironmentHandle, GeometryDesc, GeometryHandle,
-    GeometryTopology, MaterialDesc, MaterialHandle, MaterialKind, ModelHandle, NodeKind,
-    OutputStageStatus, PerspectiveCamera, Primitive, Renderer, Scene, SceneAsset,
-    TextureColorSpace, TextureDesc, TextureHandle, Tonemapper, Transform, Vec3, Vertex,
+    Aabb, AlphaMode, AssetPath, Assets, Color, DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES,
+    DEFAULT_STROKE_WIDTH_PX, EnvironmentHandle, GeometryDesc, GeometryHandle, GeometryTopology,
+    MaterialDesc, MaterialHandle, MaterialKind, ModelHandle, NodeKind, OutputStageStatus,
+    PerspectiveCamera, Primitive, Renderer, Scene, SceneAsset, TextureColorSpace, TextureDesc,
+    TextureHandle, Tonemapper, Transform, Vec3, Vertex,
 };
 
 fn assert_handle<T: Copy + Eq + std::fmt::Debug>() {}
@@ -241,6 +242,49 @@ fn alpha_and_emissive_helpers_sanitize_descriptor_values() {
 
     let transparent = MASKED.with_alpha_mode(AlphaMode::Blend);
     assert_eq!(transparent.alpha_mode(), AlphaMode::Blend);
+}
+
+#[test]
+fn technical_material_descriptors_capture_line_wireframe_and_edge_contracts() {
+    const LINE: MaterialDesc = MaterialDesc::line(Color::WHITE, 0.0);
+    const WIREFRAME: MaterialDesc =
+        MaterialDesc::wireframe(Color::from_linear_rgb(0.1, 0.2, 0.3), f32::NAN)
+            .with_stroke_width_px(f32::INFINITY);
+    const EDGE: MaterialDesc = MaterialDesc::edge(Color::from_linear_rgb(0.8, 0.7, 0.6), 2.5)
+        .with_edge_angle_threshold_degrees(400.0);
+    const NEGATIVE_EDGE: MaterialDesc =
+        MaterialDesc::edge(Color::WHITE, -4.0).with_edge_angle_threshold_degrees(-20.0);
+    const NAN_EDGE: MaterialDesc =
+        MaterialDesc::edge(Color::WHITE, 3.0).with_edge_angle_threshold_degrees(f32::NAN);
+    const NON_STROKE: MaterialDesc = MaterialDesc::unlit(Color::WHITE).with_stroke_width_px(5.0);
+    const NON_EDGE: MaterialDesc =
+        MaterialDesc::line(Color::WHITE, 2.0).with_edge_angle_threshold_degrees(45.0);
+
+    assert_eq!(LINE.kind(), MaterialKind::Line);
+    assert_eq!(LINE.base_color(), Color::WHITE);
+    assert_eq!(LINE.stroke_width_px(), Some(DEFAULT_STROKE_WIDTH_PX));
+    assert_eq!(LINE.edge_angle_threshold_degrees(), None);
+
+    assert_eq!(WIREFRAME.kind(), MaterialKind::Wireframe);
+    assert_eq!(
+        WIREFRAME.base_color(),
+        Color::from_linear_rgb(0.1, 0.2, 0.3)
+    );
+    assert_eq!(WIREFRAME.stroke_width_px(), Some(1.0));
+    assert_eq!(WIREFRAME.edge_angle_threshold_degrees(), None);
+
+    assert_eq!(EDGE.kind(), MaterialKind::Edge);
+    assert_eq!(EDGE.base_color(), Color::from_linear_rgb(0.8, 0.7, 0.6));
+    assert_eq!(EDGE.stroke_width_px(), Some(2.5));
+    assert_eq!(EDGE.edge_angle_threshold_degrees(), Some(180.0));
+    assert_eq!(NEGATIVE_EDGE.stroke_width_px(), Some(1.0));
+    assert_eq!(NEGATIVE_EDGE.edge_angle_threshold_degrees(), Some(0.0));
+    assert_eq!(
+        NAN_EDGE.edge_angle_threshold_degrees(),
+        Some(DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES)
+    );
+    assert_eq!(NON_STROKE.stroke_width_px(), None);
+    assert_eq!(NON_EDGE.edge_angle_threshold_degrees(), None);
 }
 
 #[test]

@@ -5,6 +5,9 @@ use std::fmt;
 
 use crate::assets::TextureHandle;
 
+pub const DEFAULT_STROKE_WIDTH_PX: f32 = 1.0;
+pub const DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES: f32 = 30.0;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Color {
     pub r: f32,
@@ -88,9 +91,18 @@ pub enum TextureColorSpace {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Discriminant for [`MaterialDesc`]; selects the shading model and which metadata fields apply.
 pub enum MaterialKind {
+    /// Unlit color material for flat UI, labels, helper meshes, and simple preview surfaces.
     Unlit,
+    /// Physically based metallic-roughness material for lit mesh surfaces.
     PbrMetallicRoughness,
+    /// Screen-space stroke material for line-topology geometry and polylines.
+    Line,
+    /// Screen-space stroke material that renders triangle mesh edges as a wire overlay.
+    Wireframe,
+    /// Screen-space stroke material for extracted triangle-pair boundaries above an angle threshold.
+    Edge,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -115,6 +127,8 @@ pub struct MaterialDesc {
     metallic_factor: f32,
     roughness_factor: f32,
     double_sided: bool,
+    stroke_width_px: Option<f32>,
+    edge_angle_threshold_degrees: Option<f32>,
 }
 
 impl MaterialDesc {
@@ -133,6 +147,8 @@ impl MaterialDesc {
             metallic_factor: 0.0,
             roughness_factor: 1.0,
             double_sided: false,
+            stroke_width_px: None,
+            edge_angle_threshold_degrees: None,
         }
     }
 
@@ -155,6 +171,58 @@ impl MaterialDesc {
             metallic_factor: clamp_unit_or(metallic_factor, 0.0),
             roughness_factor: clamp_unit_or(roughness_factor, 1.0),
             double_sided: false,
+            stroke_width_px: None,
+            edge_angle_threshold_degrees: None,
+        }
+    }
+
+    /// Creates a screen-space stroke material for line-topology geometry and polylines.
+    pub const fn line(base_color: Color, width_px: f32) -> Self {
+        Self::technical(MaterialKind::Line, base_color, width_px, None)
+    }
+
+    /// Creates a screen-space stroke material that renders triangle mesh edges.
+    pub const fn wireframe(base_color: Color, width_px: f32) -> Self {
+        Self::technical(MaterialKind::Wireframe, base_color, width_px, None)
+    }
+
+    /// Creates a screen-space stroke material for extracted mesh edges.
+    ///
+    /// The default edge threshold is 30 degrees. Use
+    /// [`with_edge_angle_threshold_degrees`](Self::with_edge_angle_threshold_degrees) to
+    /// override it.
+    pub const fn edge(base_color: Color, width_px: f32) -> Self {
+        Self::technical(
+            MaterialKind::Edge,
+            base_color,
+            width_px,
+            Some(DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES),
+        )
+    }
+
+    const fn technical(
+        kind: MaterialKind,
+        color: Color,
+        width_px: f32,
+        edge_angle_threshold_degrees: Option<f32>,
+    ) -> Self {
+        // Keep the three technical constructors aligned until render-path-specific fields split.
+        Self {
+            kind,
+            base_color: color,
+            base_color_texture: None,
+            normal_texture: None,
+            metallic_roughness_texture: None,
+            occlusion_texture: None,
+            emissive_texture: None,
+            alpha_mode: AlphaMode::Opaque,
+            emissive: Color::BLACK,
+            emissive_strength: 1.0,
+            metallic_factor: 0.0,
+            roughness_factor: 1.0,
+            double_sided: false,
+            stroke_width_px: Some(positive_or(width_px, DEFAULT_STROKE_WIDTH_PX)),
+            edge_angle_threshold_degrees,
         }
     }
 
@@ -208,6 +276,49 @@ impl MaterialDesc {
 
     pub const fn double_sided(&self) -> bool {
         self.double_sided
+    }
+
+    /// Returns the screen-space stroke width in physical pixels for line, wireframe, and
+    /// edge materials. Returns `None` for non-stroke materials.
+    pub const fn stroke_width_px(&self) -> Option<f32> {
+        self.stroke_width_px
+    }
+
+    /// Returns the edge dihedral-angle threshold in degrees for edge materials.
+    ///
+    /// `0.0` means nearly every triangle pair can become an edge; `180.0` means only
+    /// explicit boundaries remain. Returns `None` for non-edge materials.
+    pub const fn edge_angle_threshold_degrees(&self) -> Option<f32> {
+        self.edge_angle_threshold_degrees
+    }
+
+    /// Updates the screen-space stroke width for line, wireframe, and edge materials.
+    ///
+    /// Invalid values fall back to [`DEFAULT_STROKE_WIDTH_PX`]. This has no effect on
+    /// non-stroke materials.
+    pub const fn with_stroke_width_px(mut self, width_px: f32) -> Self {
+        if matches!(
+            self.kind,
+            MaterialKind::Line | MaterialKind::Wireframe | MaterialKind::Edge
+        ) {
+            self.stroke_width_px = Some(positive_or(width_px, DEFAULT_STROKE_WIDTH_PX));
+        }
+        self
+    }
+
+    /// Updates the edge dihedral-angle threshold in degrees.
+    ///
+    /// Values clamp to `[0.0, 180.0]`; non-finite values fall back to
+    /// [`DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES`], replacing any previous value. This has no
+    /// effect on non-edge materials.
+    pub const fn with_edge_angle_threshold_degrees(mut self, angle_threshold_degrees: f32) -> Self {
+        if matches!(self.kind, MaterialKind::Edge) {
+            self.edge_angle_threshold_degrees = Some(clamp_degrees_or(
+                angle_threshold_degrees,
+                DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES,
+            ));
+        }
+        self
     }
 
     pub const fn with_base_color_texture(mut self, texture: TextureHandle) -> Self {
@@ -289,6 +400,26 @@ const fn non_negative_or(value: f32, fallback: f32) -> f32 {
         fallback
     } else if value < 0.0 {
         0.0
+    } else {
+        value
+    }
+}
+
+const fn positive_or(value: f32, fallback: f32) -> f32 {
+    if !value.is_finite() || value <= 0.0 {
+        fallback
+    } else {
+        value
+    }
+}
+
+const fn clamp_degrees_or(value: f32, fallback: f32) -> f32 {
+    if !value.is_finite() {
+        fallback
+    } else if value < 0.0 {
+        0.0
+    } else if value > 180.0 {
+        180.0
     } else {
         value
     }
