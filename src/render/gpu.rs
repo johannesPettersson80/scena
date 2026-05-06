@@ -144,8 +144,9 @@ impl GpuDeviceState {
         let shadow_view = shadow_texture
             .as_ref()
             .map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()));
-        let depth_prepass = (depth_stats.passes > 0)
-            .then(|| depth::create_depth_prepass_resources(&self.device, target));
+        let depth_prepass = (depth_stats.passes > 0).then(|| {
+            depth::create_depth_prepass_resources(&self.device, target, depth_stats.reversed_z)
+        });
         let offscreen_pipeline =
             create_unlit_pipeline(&self.device, GPU_COLOR_FORMAT, &output_bind_group_layout);
         let surface_pipeline = self.surface.as_ref().map(|surface| {

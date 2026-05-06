@@ -20,9 +20,9 @@ pub use assets::{
     TextureDesc, TextureHandle, WasmEnvironmentDelivery,
 };
 pub use diagnostics::{
-    AlphaPipelineStatus, AssetError, Backend, BuildError, Capabilities, ChangeKind, DevicePoll,
-    Diagnostic, DiagnosticCode, DiagnosticSeverity, Error, LookupError, NotPreparedReason,
-    OutputStageStatus, PrepareError, RenderError, RenderOutcome, RendererStats,
+    AlphaPipelineStatus, AssetError, Backend, BuildError, Capabilities, CapabilityStatus,
+    ChangeKind, DevicePoll, Diagnostic, DiagnosticCode, DiagnosticSeverity, Error, LookupError,
+    NotPreparedReason, OutputStageStatus, PrepareError, RenderError, RenderOutcome, RendererStats,
 };
 pub use geometry::{
     Aabb, GeometryDesc, GeometryError, GeometryTopology, GeometryVertex, Primitive, Vertex,

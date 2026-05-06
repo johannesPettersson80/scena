@@ -1,7 +1,9 @@
 use std::collections::HashSet;
 
 use crate::assets::{Assets, EnvironmentDesc};
-use crate::diagnostics::{Backend, Capabilities, Diagnostic, DiagnosticCode, PrepareError};
+use crate::diagnostics::{
+    Backend, Capabilities, CapabilityStatus, Diagnostic, DiagnosticCode, PrepareError,
+};
 use crate::geometry::{GeometryDesc, GeometryTopology, Primitive, Vertex};
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
 use crate::scene::{Camera, Light, NodeKey, Scene};
@@ -30,6 +32,7 @@ pub(super) struct PreparedEnvironmentStats {
 pub(super) struct PreparedDepthStats {
     pub(super) passes: u64,
     pub(super) draws: u64,
+    pub(super) reversed_z: bool,
 }
 
 pub(super) fn collect_prepared_primitives<F>(
@@ -170,13 +173,18 @@ pub(super) fn collect_precision_diagnostics(scene: &Scene, backend: Backend) -> 
     diagnostics
 }
 
-pub(super) fn collect_depth_prepass_stats(primitives: &[Primitive]) -> PreparedDepthStats {
+pub(super) fn collect_depth_prepass_stats(
+    primitives: &[Primitive],
+    backend: Backend,
+) -> PreparedDepthStats {
     if primitives.is_empty() {
         PreparedDepthStats::default()
     } else {
+        let capabilities = Capabilities::for_backend(backend);
         PreparedDepthStats {
             passes: 1,
             draws: primitives.len() as u64,
+            reversed_z: capabilities.reversed_z_depth == CapabilityStatus::Supported,
         }
     }
 }

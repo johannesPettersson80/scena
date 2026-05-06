@@ -241,7 +241,7 @@ impl Renderer {
         };
         let lighting_stats = prepare::collect_lighting_stats(scene, self.target.backend)?;
         let primitives = prepare::collect_prepared_primitives(self.target, scene, assets)?;
-        let depth_stats = prepare::collect_depth_prepass_stats(&primitives);
+        let depth_stats = prepare::collect_depth_prepass_stats(&primitives, self.target.backend);
         let logical_stats =
             prepare::collect_logical_resource_stats(scene, assets, environment_count);
         self.stats.materials = logical_stats.materials;

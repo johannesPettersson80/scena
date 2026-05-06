@@ -18,11 +18,13 @@ pub(super) struct DepthPrepassResources {
     texture: wgpu::Texture,
     view: wgpu::TextureView,
     pipeline: wgpu::RenderPipeline,
+    clear_depth: f32,
 }
 
 pub(super) fn create_depth_prepass_resources(
     device: &wgpu::Device,
     target: RasterTarget,
+    reversed_z: bool,
 ) -> DepthPrepassResources {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("scena.m2.depth_prepass"),
@@ -66,7 +68,11 @@ pub(super) fn create_depth_prepass_resources(
         depth_stencil: Some(wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
             depth_write_enabled: Some(true),
-            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+            depth_compare: Some(if reversed_z {
+                wgpu::CompareFunction::GreaterEqual
+            } else {
+                wgpu::CompareFunction::LessEqual
+            }),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
@@ -80,6 +86,7 @@ pub(super) fn create_depth_prepass_resources(
         texture,
         view,
         pipeline,
+        clear_depth: if reversed_z { 0.0 } else { 1.0 },
     }
 }
 
@@ -92,7 +99,7 @@ pub(super) fn encode_depth_prepass(
     let depth_attachment = Some(wgpu::RenderPassDepthStencilAttachment {
         view: &resources.view,
         depth_ops: Some(wgpu::Operations {
-            load: wgpu::LoadOp::Clear(1.0),
+            load: wgpu::LoadOp::Clear(resources.clear_depth),
             store: wgpu::StoreOp::Store,
         }),
         stencil_ops: None,

@@ -24,6 +24,15 @@ pub enum AlphaPipelineStatus {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
+pub enum CapabilityStatus {
+    Supported,
+    Degraded,
+    FeatureDisabled,
+    ErrorIfRequired,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Capabilities {
     pub backend: Backend,
     pub color_target_format: &'static str,
@@ -34,6 +43,7 @@ pub struct Capabilities {
     pub directional_shadow_map_default_size: u32,
     pub directional_shadow_map_max_size: u32,
     pub directional_shadow_pcf_kernel: u8,
+    pub reversed_z_depth: CapabilityStatus,
 }
 
 impl Capabilities {
@@ -52,6 +62,7 @@ impl Capabilities {
             directional_shadow_map_default_size: directional_shadow_map_default_size(backend),
             directional_shadow_map_max_size: directional_shadow_map_max_size(backend),
             directional_shadow_pcf_kernel: 3,
+            reversed_z_depth: reversed_z_depth_status(backend),
         }
     }
 
@@ -66,6 +77,7 @@ impl Capabilities {
             directional_shadow_map_default_size: directional_shadow_map_default_size(backend),
             directional_shadow_map_max_size: directional_shadow_map_max_size(backend),
             directional_shadow_pcf_kernel: 3,
+            reversed_z_depth: reversed_z_depth_status(backend),
         }
     }
 
@@ -80,6 +92,18 @@ impl Capabilities {
             directional_shadow_map_default_size: directional_shadow_map_default_size(backend),
             directional_shadow_map_max_size: directional_shadow_map_max_size(backend),
             directional_shadow_pcf_kernel: 3,
+            reversed_z_depth: reversed_z_depth_status(backend),
+        }
+    }
+}
+
+const fn reversed_z_depth_status(backend: Backend) -> CapabilityStatus {
+    match backend {
+        Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu => {
+            CapabilityStatus::Supported
+        }
+        Backend::Headless | Backend::SurfaceDescriptor | Backend::WebGl2 => {
+            CapabilityStatus::FeatureDisabled
         }
     }
 }

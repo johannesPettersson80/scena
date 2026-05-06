@@ -1,10 +1,10 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use scena::{
-    Angle, AssetError, Assets, Color, DepthRange, DiagnosticCode, DiagnosticSeverity,
-    DirectionalLight, EnvironmentSourceKind, Light, NodeKind, OrthographicCamera,
-    PerspectiveCamera, PointLight, PrepareError, Primitive, Renderer, Scene, SpotLight, Transform,
-    Vec3, Vertex,
+    Angle, AssetError, Assets, Backend, Capabilities, CapabilityStatus, Color, DepthRange,
+    DiagnosticCode, DiagnosticSeverity, DirectionalLight, EnvironmentSourceKind, Light, NodeKind,
+    OrthographicCamera, PerspectiveCamera, PointLight, PrepareError, Primitive, Renderer, Scene,
+    SpotLight, Transform, Vec3, Vertex,
 };
 
 fn pixel_at(frame: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
@@ -425,6 +425,22 @@ fn prepare_emits_structured_depth_precision_warnings() {
                 .as_deref()
                 .is_some_and(|help| help.contains("camera-relative"))
     }));
+}
+
+#[test]
+fn capability_matrix_reports_reversed_z_depth_support_and_webgl2_fallback() {
+    assert_eq!(
+        Capabilities::for_gpu_backend(Backend::HeadlessGpu).reversed_z_depth,
+        CapabilityStatus::Supported
+    );
+    assert_eq!(
+        Capabilities::for_attached_gpu_backend(Backend::WebGpu).reversed_z_depth,
+        CapabilityStatus::Supported
+    );
+    assert_eq!(
+        Capabilities::for_attached_gpu_backend(Backend::WebGl2).reversed_z_depth,
+        CapabilityStatus::FeatureDisabled
+    );
 }
 
 #[test]

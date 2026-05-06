@@ -148,6 +148,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_directional_shadow_contracts(root, findings);
     check_shadow_map_contracts(root, findings);
     check_depth_prepass_contracts(root, findings);
+    check_reversed_z_contracts(root, findings);
     check_m2_leak_stats_contracts(root, findings);
     check_camera_depth_contracts(root, findings);
     check_render_alpha_contracts(root, findings);
@@ -1463,6 +1464,7 @@ fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub directional_shadow_map_default_size: u32",
             "pub directional_shadow_map_max_size: u32",
             "pub directional_shadow_pcf_kernel: u8",
+            "pub reversed_z_depth: CapabilityStatus",
         ],
     );
     require_contains(
@@ -1555,7 +1557,8 @@ fn check_depth_prepass_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "src/render/prepare.rs",
         &[
             "pub(super) struct PreparedDepthStats",
-            "pub(super) fn collect_depth_prepass_stats(primitives: &[Primitive]) -> PreparedDepthStats",
+            "pub(super) fn collect_depth_prepass_stats(",
+            "backend: Backend",
             "passes: 1",
             "draws: primitives.len() as u64",
         ],
@@ -1566,7 +1569,7 @@ fn check_depth_prepass_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "ARCH-DEPTH-PREPASS",
         "src/render.rs",
         &[
-            "let depth_stats = prepare::collect_depth_prepass_stats(&primitives)",
+            "let depth_stats = prepare::collect_depth_prepass_stats(&primitives, self.target.backend)",
             "self.stats.depth_prepass_passes = depth_stats.passes",
             "self.stats.depth_prepass_draws = depth_stats.draws",
             "gpu.prepare(self.target, &primitives, lighting_stats, depth_stats)",
@@ -1594,6 +1597,7 @@ fn check_depth_prepass_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub(super) struct DepthPrepassResources",
             "wgpu::TextureFormat::Depth32Float",
             "scena.m2.depth_prepass",
+            "clear_depth",
             "pub(super) fn encode_depth_prepass",
         ],
     );
@@ -1636,6 +1640,81 @@ fn check_depth_prepass_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub depth_prepass_draws: u64",
             "M2 also prepares a depth pre-pass",
         ],
+    );
+}
+
+fn check_reversed_z_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-REVERSED-Z",
+        "src/diagnostics/capabilities.rs",
+        &[
+            "pub enum CapabilityStatus",
+            "Supported",
+            "FeatureDisabled",
+            "pub reversed_z_depth: CapabilityStatus",
+            "const fn reversed_z_depth_status",
+            "Backend::WebGl2",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-REVERSED-Z",
+        "src/lib.rs",
+        &["CapabilityStatus"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-REVERSED-Z",
+        "src/render/prepare.rs",
+        &[
+            "reversed_z: bool",
+            "capabilities.reversed_z_depth == CapabilityStatus::Supported",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-REVERSED-Z",
+        "src/render/gpu/depth.rs",
+        &[
+            "reversed_z: bool",
+            "wgpu::CompareFunction::GreaterEqual",
+            "clear_depth: if reversed_z { 0.0 } else { 1.0 }",
+            "wgpu::LoadOp::Clear(resources.clear_depth)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-REVERSED-Z",
+        "tests/m2_lighting_depth_clipping.rs",
+        &[
+            "capability_matrix_reports_reversed_z_depth_support_and_webgl2_fallback",
+            "CapabilityStatus::Supported",
+            "CapabilityStatus::FeatureDisabled",
+            "Backend::WebGl2",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-REVERSED-Z",
+        "docs/specs/public-api.md",
+        &[
+            "pub reversed_z_depth: CapabilityStatus",
+            "Capabilities::reversed_z_depth",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-REVERSED-Z",
+        "docs/checklists/m2-lighting-depth-clipping.md",
+        &["Reversed-Z support", "ARCH-REVERSED-Z"],
     );
 }
 
@@ -2587,6 +2666,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_depth_prepass_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn reversed_z_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_reversed_z_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

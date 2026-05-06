@@ -9,7 +9,9 @@ use crate::material::{AlphaMode, MaterialKind};
 use crate::scene::{CameraKey, NodeKey};
 
 mod capabilities;
-pub use capabilities::{AlphaPipelineStatus, Backend, Capabilities, OutputStageStatus};
+pub use capabilities::{
+    AlphaPipelineStatus, Backend, Capabilities, CapabilityStatus, OutputStageStatus,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Error {
