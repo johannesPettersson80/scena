@@ -202,6 +202,14 @@ pub struct RendererStats {
     pub target_height: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct DevicePoll {
+    pub pending_destructions_before: u64,
+    pub pending_destructions_after: u64,
+    pub destroyed_resources: u64,
+    pub gpu_polled: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RenderOutcome {
     pub width: u32,

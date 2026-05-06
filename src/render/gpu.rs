@@ -1,6 +1,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::mpsc;
 
+mod lifecycle;
 #[cfg(not(target_arch = "wasm32"))]
 mod output;
 mod stats;
@@ -32,6 +33,7 @@ pub(super) struct GpuDeviceState {
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface: Option<GpuSurfaceState>,
+    pending_destructions: u64,
     #[cfg(not(target_arch = "wasm32"))]
     resources: Option<GpuPreparedResources>,
 }
@@ -64,8 +66,8 @@ impl GpuDeviceState {
     #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn prepare(&mut self, target: RasterTarget, primitives: &[Primitive]) {
         self.configure_surface(target);
+        self.release_prepared_resources();
         if primitives.is_empty() {
-            self.resources = None;
             return;
         }
 
@@ -324,6 +326,7 @@ pub(super) async fn request_headless_gpu(backend: Backend) -> Result<GpuDeviceSt
         device,
         queue,
         surface: None,
+        pending_destructions: 0,
         #[cfg(not(target_arch = "wasm32"))]
         resources: None,
     })
@@ -380,6 +383,7 @@ async fn request_surface_gpu(
         device,
         queue,
         surface: Some(GpuSurfaceState { surface, config }),
+        pending_destructions: 0,
         #[cfg(not(target_arch = "wasm32"))]
         resources: None,
     })

@@ -799,6 +799,8 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub pending_destructions: u64",
             "pub approximate_gpu_memory_bytes: Option<u64>",
             "pub gpu_frame_ms: Option<f32>",
+            "pub struct DevicePoll",
+            "pub destroyed_resources: u64",
         ],
     );
     require_contains(
@@ -817,7 +819,28 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
         findings,
         "ARCH-RENDER-STATS",
         "src/render/gpu.rs",
-        &["pub(super) fn prepared_resource_stats(&self) -> GpuResourceStats"],
+        &[
+            "mod lifecycle;",
+            "pub(super) fn prepared_resource_stats(&self) -> GpuResourceStats",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STATS",
+        "src/render/gpu/lifecycle.rs",
+        &[
+            "pub(in crate::render) fn pending_destructions(&self) -> u64",
+            "pub(in crate::render) fn poll_device(&mut self) -> (u64, bool)",
+            "pub(in crate::render) fn release_prepared_resources(&mut self)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STATS",
+        "src/render.rs",
+        &["pub fn poll_device(&mut self) -> DevicePoll"],
     );
     require_contains(
         root,
@@ -827,6 +850,7 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
         &[
             "m1_cpu_resource_lifetime_counters_return_to_baseline",
             "m1_headless_gpu_resource_counters_return_to_baseline_after_empty_reprepare",
+            "poll.pending_destructions_before",
         ],
     );
     require_contains(
@@ -846,6 +870,7 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "docs/specs/public-api.md",
         &[
             "pub struct RendererStats",
+            "pub struct DevicePoll",
             "pub buffers: u64",
             "pub target_height: u32",
         ],

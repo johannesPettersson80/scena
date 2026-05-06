@@ -11,8 +11,8 @@ mod prepare;
 
 use crate::assets::{Assets, EnvironmentHandle};
 use crate::diagnostics::{
-    Backend, BuildError, Capabilities, ChangeKind, NotPreparedReason, PrepareError, RenderError,
-    RenderOutcome, RendererStats,
+    Backend, BuildError, Capabilities, ChangeKind, DevicePoll, NotPreparedReason, PrepareError,
+    RenderError, RenderOutcome, RendererStats,
 };
 use crate::geometry::Primitive;
 use crate::material::Color;
@@ -211,6 +211,7 @@ impl Renderer {
         scene: &mut Scene,
         assets: Option<&Assets<F>>,
     ) -> Result<(), PrepareError> {
+        self.poll_device();
         validate_target_size(self.target.width, self.target.height).map_err(|()| {
             PrepareError::InvalidTargetSize {
                 width: self.target.width,
@@ -233,12 +234,14 @@ impl Renderer {
         if let Some(gpu) = &mut self.gpu {
             gpu.prepare(self.target, &primitives);
             let stats = gpu.prepared_resource_stats();
+            let pending_destructions = gpu.pending_destructions();
             self.stats.buffers = stats.buffers;
             self.stats.textures = stats.textures;
             self.stats.render_targets = stats.render_targets;
             self.stats.pipelines = stats.pipelines;
             self.stats.bind_groups = stats.bind_groups;
             self.stats.shader_modules = stats.shader_modules;
+            self.stats.pending_destructions = pending_destructions;
             self.stats.approximate_gpu_memory_bytes = (stats.approximate_gpu_memory_bytes > 0)
                 .then_some(stats.approximate_gpu_memory_bytes);
         }
@@ -293,6 +296,7 @@ impl Renderer {
                 );
             }
         }
+        self.poll_device();
 
         self.stats.frames_rendered = self.stats.frames_rendered.saturating_add(1);
         self.stats.draw_calls = primitive_count;
@@ -338,6 +342,27 @@ impl Renderer {
 
     pub fn stats(&self) -> RendererStats {
         self.stats
+    }
+
+    pub fn poll_device(&mut self) -> DevicePoll {
+        let before = self.stats.pending_destructions;
+        let (destroyed_resources, gpu_polled) = self
+            .gpu
+            .as_mut()
+            .map(|gpu| gpu.poll_device())
+            .unwrap_or((before, false));
+        let after = self
+            .gpu
+            .as_ref()
+            .map(|gpu| gpu.pending_destructions())
+            .unwrap_or(0);
+        self.stats.pending_destructions = after;
+        DevicePoll {
+            pending_destructions_before: before,
+            pending_destructions_after: after,
+            destroyed_resources,
+            gpu_polled,
+        }
     }
 
     pub fn capabilities(&self) -> &Capabilities {
@@ -441,6 +466,15 @@ impl Renderer {
         }
 
         Ok(prepared)
+    }
+}
+
+impl Drop for Renderer {
+    fn drop(&mut self) {
+        if let Some(gpu) = &mut self.gpu {
+            gpu.release_prepared_resources();
+            let _ = gpu.poll_device();
+        }
     }
 }
 

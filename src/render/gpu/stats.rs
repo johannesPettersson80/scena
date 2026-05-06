@@ -15,6 +15,18 @@ pub(in crate::render) struct GpuResourceStats {
     pub(in crate::render) approximate_gpu_memory_bytes: u64,
 }
 
+impl GpuResourceStats {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(in crate::render) fn destruction_records(self) -> u64 {
+        self.buffers
+            + self.textures
+            + self.render_targets
+            + self.pipelines
+            + self.bind_groups
+            + self.shader_modules
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) fn estimate_prepared_resource_stats(
     target: RasterTarget,
@@ -65,6 +77,7 @@ mod tests {
         assert_eq!(stats.pipelines, 1);
         assert_eq!(stats.bind_groups, 1);
         assert_eq!(stats.shader_modules, 1);
+        assert_eq!(stats.destruction_records(), 8);
         assert!(stats.approximate_gpu_memory_bytes > 0);
     }
 
@@ -79,5 +92,6 @@ mod tests {
         let stats = estimate_prepared_resource_stats(target, 0, false);
 
         assert_eq!(stats, GpuResourceStats::default());
+        assert_eq!(stats.destruction_records(), 0);
     }
 }

@@ -420,13 +420,32 @@ fn m1_headless_gpu_resource_counters_return_to_baseline_after_empty_reprepare() 
         renderer
             .prepare(&mut empty_scene)
             .expect("empty gpu scene prepares and releases resources");
+        let queued = renderer.stats();
+        assert_eq!(queued.buffers, baseline.buffers);
+        assert_eq!(queued.textures, baseline.textures);
+        assert_eq!(queued.render_targets, baseline.render_targets);
+        assert_eq!(queued.pipelines, baseline.pipelines);
+        assert_eq!(queued.bind_groups, baseline.bind_groups);
+        assert_eq!(queued.shader_modules, baseline.shader_modules);
+        assert!(queued.pending_destructions > baseline.pending_destructions);
+        assert_eq!(
+            queued.approximate_gpu_memory_bytes,
+            baseline.approximate_gpu_memory_bytes
+        );
+
+        let poll = renderer.poll_device();
+        assert!(poll.gpu_polled);
+        assert_eq!(
+            poll.pending_destructions_before,
+            queued.pending_destructions
+        );
+        assert_eq!(poll.destroyed_resources, queued.pending_destructions);
+        assert_eq!(
+            poll.pending_destructions_after,
+            baseline.pending_destructions
+        );
+
         let released = renderer.stats();
-        assert_eq!(released.buffers, baseline.buffers);
-        assert_eq!(released.textures, baseline.textures);
-        assert_eq!(released.render_targets, baseline.render_targets);
-        assert_eq!(released.pipelines, baseline.pipelines);
-        assert_eq!(released.bind_groups, baseline.bind_groups);
-        assert_eq!(released.shader_modules, baseline.shader_modules);
         assert_eq!(released.pending_destructions, baseline.pending_destructions);
         assert_eq!(
             released.approximate_gpu_memory_bytes,
