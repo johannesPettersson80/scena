@@ -15,8 +15,9 @@ pub mod render;
 pub mod scene;
 
 pub use assets::{
-    AssetPath, Assets, EnvironmentHandle, GeometryHandle, MaterialHandle, ModelHandle,
-    RetainPolicy, SceneAsset, TextureDesc, TextureHandle,
+    AssetPath, Assets, EnvironmentDerivative, EnvironmentDesc, EnvironmentHandle, GeometryHandle,
+    MaterialHandle, ModelHandle, RetainPolicy, SceneAsset, TextureDesc, TextureHandle,
+    WasmEnvironmentDelivery,
 };
 pub use diagnostics::{
     AlphaPipelineStatus, AssetError, Backend, BuildError, Capabilities, ChangeKind, Error,

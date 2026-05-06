@@ -3,6 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
 
+use sha2::{Digest, Sha256};
+
 fn main() {
     let outcome = match parse_command(env::args().skip(1).collect()) {
         Ok(Command::Doctor(mode)) => run_doctor(mode),
@@ -128,6 +130,7 @@ fn run_docs_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_markdown_links(root, findings);
     check_for_stale_doc_terms(root, findings);
     check_required_doc_contracts(root, findings);
+    check_default_environment_manifest(root, findings);
 }
 
 fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
@@ -555,6 +558,12 @@ fn check_asset_api_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "color_space: TextureColorSpace",
             "Result<TextureHandle, AssetError>",
             "pub fn create_material(&self, material: impl Into<MaterialDesc>) -> MaterialHandle",
+            "pub struct EnvironmentDesc",
+            "pub struct EnvironmentDerivative",
+            "pub enum WasmEnvironmentDelivery",
+            "pub fn default_environment(&self) -> EnvironmentHandle",
+            "pub async fn load_environment",
+            "pub fn environment(&self, handle: EnvironmentHandle) -> Option<EnvironmentDesc>",
         ],
     );
     require_contains(
@@ -1088,6 +1097,195 @@ fn check_agent_validation(root: &Path, findings: &mut Vec<Finding>) {
     );
 }
 
+fn check_default_environment_manifest(root: &Path, findings: &mut Vec<Finding>) {
+    let manifest_rel = "tests/assets/environment/default-environment.toml";
+    let manifest_path = root.join(manifest_rel);
+    let Ok(text) = fs::read_to_string(&manifest_path) else {
+        findings.push(Finding::new(
+            "VISUAL-DEFAULT-ENV",
+            format!("missing required default environment manifest {manifest_rel}"),
+        ));
+        return;
+    };
+
+    require_manifest_value(findings, manifest_rel, &text, "name", "neutral-studio");
+    require_manifest_value(findings, manifest_rel, &text, "license", "CC0-1.0");
+    require_manifest_value(findings, manifest_rel, &text, "wasm_delivery", "bundled");
+    require_manifest_u32(findings, manifest_rel, &text, "cubemap_resolution", 256);
+    require_manifest_u32(findings, manifest_rel, &text, "brdf_lut_size", 256);
+
+    let Some(source_path) = quoted_manifest_assignment(&text, "source_path") else {
+        findings.push(Finding::new(
+            "VISUAL-DEFAULT-ENV",
+            format!("{manifest_rel} is missing source_path"),
+        ));
+        return;
+    };
+    let Some(source_sha256) = quoted_manifest_assignment(&text, "source_sha256") else {
+        findings.push(Finding::new(
+            "VISUAL-DEFAULT-ENV",
+            format!("{manifest_rel} is missing source_sha256"),
+        ));
+        return;
+    };
+    let Some(generator) = quoted_manifest_assignment(&text, "generator") else {
+        findings.push(Finding::new(
+            "VISUAL-DEFAULT-ENV",
+            format!("{manifest_rel} is missing generator"),
+        ));
+        return;
+    };
+    if !generator.contains(&source_path) {
+        findings.push(Finding::new(
+            "VISUAL-DEFAULT-ENV",
+            format!("{manifest_rel} generator does not reference source_path"),
+        ));
+    }
+    check_manifest_file_hash(root, findings, manifest_rel, &source_path, &source_sha256);
+
+    let derivatives = derivative_manifest_entries(&text);
+    if derivatives.len() < 2 {
+        findings.push(Finding::new(
+            "VISUAL-DEFAULT-ENV",
+            format!("{manifest_rel} must declare at least cubemap and BRDF LUT derivatives"),
+        ));
+    }
+    for (path, sha256) in derivatives {
+        check_manifest_file_hash(root, findings, manifest_rel, &path, &sha256);
+    }
+}
+
+fn require_manifest_value(
+    findings: &mut Vec<Finding>,
+    manifest_rel: &str,
+    text: &str,
+    key: &str,
+    expected: &str,
+) {
+    match quoted_manifest_assignment(text, key) {
+        Some(value) if value == expected => {}
+        Some(value) => findings.push(Finding::new(
+            "VISUAL-DEFAULT-ENV",
+            format!("{manifest_rel} {key} is '{value}', expected '{expected}'"),
+        )),
+        None => findings.push(Finding::new(
+            "VISUAL-DEFAULT-ENV",
+            format!("{manifest_rel} is missing {key}"),
+        )),
+    }
+}
+
+fn require_manifest_u32(
+    findings: &mut Vec<Finding>,
+    manifest_rel: &str,
+    text: &str,
+    key: &str,
+    expected: u32,
+) {
+    match u32_manifest_assignment(text, key) {
+        Some(value) if value == expected => {}
+        Some(value) => findings.push(Finding::new(
+            "VISUAL-DEFAULT-ENV",
+            format!("{manifest_rel} {key} is {value}, expected {expected}"),
+        )),
+        None => findings.push(Finding::new(
+            "VISUAL-DEFAULT-ENV",
+            format!("{manifest_rel} is missing {key}"),
+        )),
+    }
+}
+
+fn check_manifest_file_hash(
+    root: &Path,
+    findings: &mut Vec<Finding>,
+    manifest_rel: &str,
+    rel: &str,
+    expected_sha256: &str,
+) {
+    if !is_lower_hex_sha256(expected_sha256) {
+        findings.push(Finding::new(
+            "VISUAL-DEFAULT-ENV",
+            format!("{manifest_rel} records invalid SHA-256 for {rel}"),
+        ));
+        return;
+    }
+
+    let path = root.join(rel);
+    if !path.is_file() {
+        findings.push(Finding::new(
+            "VISUAL-DEFAULT-ENV",
+            format!("{manifest_rel} references missing file {rel}"),
+        ));
+        return;
+    }
+
+    match sha256_hex(&path) {
+        Ok(actual) if actual == expected_sha256 => {}
+        Ok(actual) => findings.push(Finding::new(
+            "VISUAL-DEFAULT-ENV",
+            format!("{manifest_rel} SHA-256 mismatch for {rel}: got {actual}"),
+        )),
+        Err(error) => findings.push(Finding::new(
+            "VISUAL-DEFAULT-ENV",
+            format!("could not hash {rel}: {error}"),
+        )),
+    }
+}
+
+fn derivative_manifest_entries(text: &str) -> Vec<(String, String)> {
+    let mut entries = Vec::new();
+    let mut current_path = None;
+    for line in text.lines().map(str::trim) {
+        if line == "[[derivative]]" {
+            current_path = None;
+            continue;
+        }
+        if let Some(path) = quoted_assignment(line, "path") {
+            current_path = Some(path);
+            continue;
+        }
+        if let Some(sha256) = quoted_assignment(line, "sha256")
+            && let Some(path) = current_path.take()
+        {
+            entries.push((path, sha256));
+        }
+    }
+    entries
+}
+
+fn quoted_manifest_assignment(text: &str, key: &str) -> Option<String> {
+    text.lines()
+        .map(str::trim)
+        .find_map(|line| quoted_assignment(line, key))
+}
+
+fn u32_manifest_assignment(text: &str, key: &str) -> Option<u32> {
+    let prefix = format!("{key} = ");
+    text.lines()
+        .map(str::trim)
+        .find_map(|line| line.strip_prefix(&prefix))
+        .and_then(|value| value.parse().ok())
+}
+
+fn quoted_assignment(line: &str, key: &str) -> Option<String> {
+    let prefix = format!("{key} = \"");
+    line.strip_prefix(&prefix)
+        .and_then(|value| value.strip_suffix('"'))
+        .map(str::to_string)
+}
+
+fn is_lower_hex_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn sha256_hex(path: &Path) -> std::io::Result<String> {
+    let digest = Sha256::digest(fs::read(path)?);
+    Ok(format!("{digest:x}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1206,6 +1404,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_prepare_asset_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn default_environment_manifest_is_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_default_environment_manifest(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

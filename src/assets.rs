@@ -9,6 +9,23 @@ use crate::diagnostics::AssetError;
 use crate::geometry::GeometryDesc;
 use crate::material::{MaterialDesc, TextureColorSpace};
 
+const DEFAULT_ENVIRONMENT_NAME: &str = "neutral-studio";
+const DEFAULT_ENVIRONMENT_SOURCE_PATH: &str =
+    "tests/assets/environment/neutral-studio.placeholder.hdr";
+const DEFAULT_ENVIRONMENT_SOURCE_SHA256: &str =
+    "b95916ffe38d8825bbf701fd2a6efe56983e1f7d241856426440869138e3973e";
+const DEFAULT_ENVIRONMENT_LICENSE: &str = "CC0-1.0";
+const DEFAULT_ENVIRONMENT_GENERATOR: &str =
+    "xtask generate-default-env --input tests/assets/environment/neutral-studio.placeholder.hdr";
+const DEFAULT_ENVIRONMENT_CUBEMAP_PATH: &str =
+    "tests/assets/environment/generated/neutral-studio-cubemap.placeholder.ktx2";
+const DEFAULT_ENVIRONMENT_CUBEMAP_SHA256: &str =
+    "34e3022c45dfbd2d620b8fddbb689f32e167476fbfc71de1dc6caa8d1eba29ca";
+const DEFAULT_ENVIRONMENT_BRDF_LUT_PATH: &str =
+    "tests/assets/environment/generated/brdf-lut-256.placeholder.rgba16f";
+const DEFAULT_ENVIRONMENT_BRDF_LUT_SHA256: &str =
+    "406473f29aedf38f405c80ff1c4ef1a20910aa63500ec18b3b7582b7b2b29243";
+
 new_key_type! {
     pub struct ModelHandle;
     pub struct GeometryHandle;
@@ -39,6 +56,31 @@ pub struct TextureDesc {
     color_space: TextureColorSpace,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WasmEnvironmentDelivery {
+    Bundled,
+    SeparateFetch,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnvironmentDerivative {
+    path: AssetPath,
+    sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnvironmentDesc {
+    name: String,
+    source_path: AssetPath,
+    source_sha256: Option<String>,
+    license: Option<String>,
+    generator: Option<String>,
+    cubemap_resolution: u32,
+    brdf_lut_size: u32,
+    wasm_delivery: WasmEnvironmentDelivery,
+    derivatives: Vec<EnvironmentDerivative>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct TextureCacheKey {
     path: AssetPath,
@@ -58,7 +100,9 @@ struct AssetStorage {
     geometries: SlotMap<GeometryHandle, GeometryDesc>,
     materials: SlotMap<MaterialHandle, MaterialDesc>,
     textures: SlotMap<TextureHandle, TextureDesc>,
+    environments: SlotMap<EnvironmentHandle, EnvironmentDesc>,
     texture_lookup: BTreeMap<TextureCacheKey, TextureHandle>,
+    environment_lookup: BTreeMap<AssetPath, EnvironmentHandle>,
 }
 
 impl Assets<()> {
@@ -82,7 +126,9 @@ impl<F> Assets<F> {
                 geometries: SlotMap::with_key(),
                 materials: SlotMap::with_key(),
                 textures: SlotMap::with_key(),
+                environments: SlotMap::with_key(),
                 texture_lookup: BTreeMap::new(),
+                environment_lookup: BTreeMap::new(),
             })),
         }
     }
@@ -149,6 +195,38 @@ impl<F> Assets<F> {
         self.storage().textures.get(handle).cloned()
     }
 
+    pub fn default_environment(&self) -> EnvironmentHandle {
+        self.insert_environment(EnvironmentDesc::neutral_studio())
+    }
+
+    pub async fn load_environment(
+        &self,
+        path: impl Into<AssetPath>,
+    ) -> Result<EnvironmentHandle, AssetError> {
+        let path = path.into();
+        let environment = if path.as_str() == DEFAULT_ENVIRONMENT_SOURCE_PATH {
+            EnvironmentDesc::neutral_studio()
+        } else {
+            EnvironmentDesc::from_source_path(path)
+        };
+        Ok(self.insert_environment(environment))
+    }
+
+    pub fn environment(&self, handle: EnvironmentHandle) -> Option<EnvironmentDesc> {
+        self.storage().environments.get(handle).cloned()
+    }
+
+    fn insert_environment(&self, environment: EnvironmentDesc) -> EnvironmentHandle {
+        let cache_key = environment.source_path.clone();
+        let mut storage = self.storage();
+        if let Some(handle) = storage.environment_lookup.get(&cache_key) {
+            return *handle;
+        }
+        let handle = storage.environments.insert(environment);
+        storage.environment_lookup.insert(cache_key, handle);
+        handle
+    }
+
     fn storage(&self) -> MutexGuard<'_, AssetStorage> {
         self.storage
             .lock()
@@ -188,4 +266,98 @@ impl TextureDesc {
     pub const fn color_space(&self) -> TextureColorSpace {
         self.color_space
     }
+}
+
+impl EnvironmentDesc {
+    pub fn neutral_studio() -> Self {
+        Self {
+            name: DEFAULT_ENVIRONMENT_NAME.to_string(),
+            source_path: AssetPath::from(DEFAULT_ENVIRONMENT_SOURCE_PATH),
+            source_sha256: Some(DEFAULT_ENVIRONMENT_SOURCE_SHA256.to_string()),
+            license: Some(DEFAULT_ENVIRONMENT_LICENSE.to_string()),
+            generator: Some(DEFAULT_ENVIRONMENT_GENERATOR.to_string()),
+            cubemap_resolution: 256,
+            brdf_lut_size: 256,
+            wasm_delivery: WasmEnvironmentDelivery::Bundled,
+            derivatives: vec![
+                EnvironmentDerivative {
+                    path: AssetPath::from(DEFAULT_ENVIRONMENT_CUBEMAP_PATH),
+                    sha256: DEFAULT_ENVIRONMENT_CUBEMAP_SHA256.to_string(),
+                },
+                EnvironmentDerivative {
+                    path: AssetPath::from(DEFAULT_ENVIRONMENT_BRDF_LUT_PATH),
+                    sha256: DEFAULT_ENVIRONMENT_BRDF_LUT_SHA256.to_string(),
+                },
+            ],
+        }
+    }
+
+    pub fn from_source_path(path: impl Into<AssetPath>) -> Self {
+        let path = path.into();
+        Self {
+            name: environment_name_from_path(&path).to_string(),
+            source_path: path,
+            source_sha256: None,
+            license: None,
+            generator: None,
+            cubemap_resolution: 0,
+            brdf_lut_size: 0,
+            wasm_delivery: WasmEnvironmentDelivery::SeparateFetch,
+            derivatives: Vec::new(),
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn source_path(&self) -> &AssetPath {
+        &self.source_path
+    }
+
+    pub fn source_sha256(&self) -> Option<&str> {
+        self.source_sha256.as_deref()
+    }
+
+    pub fn license(&self) -> Option<&str> {
+        self.license.as_deref()
+    }
+
+    pub fn generator(&self) -> Option<&str> {
+        self.generator.as_deref()
+    }
+
+    pub const fn cubemap_resolution(&self) -> u32 {
+        self.cubemap_resolution
+    }
+
+    pub const fn brdf_lut_size(&self) -> u32 {
+        self.brdf_lut_size
+    }
+
+    pub const fn wasm_delivery(&self) -> WasmEnvironmentDelivery {
+        self.wasm_delivery
+    }
+
+    pub fn derivatives(&self) -> &[EnvironmentDerivative] {
+        &self.derivatives
+    }
+}
+
+impl EnvironmentDerivative {
+    pub fn path(&self) -> &AssetPath {
+        &self.path
+    }
+
+    pub fn sha256(&self) -> &str {
+        &self.sha256
+    }
+}
+
+fn environment_name_from_path(path: &AssetPath) -> &str {
+    path.as_str()
+        .rsplit('/')
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(path.as_str())
 }

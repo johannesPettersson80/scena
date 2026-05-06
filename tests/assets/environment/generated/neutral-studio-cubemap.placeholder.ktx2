@@ -1,0 +1,4 @@
+scena neutral studio cubemap placeholder
+
+This metadata fixture reserves the generated cubemap path for M1 manifest validation. It is
+not a renderer-consumable KTX2 file.

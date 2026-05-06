@@ -1,9 +1,10 @@
 use scena::{
     Aabb, AlphaMode, AlphaPipelineStatus, AssetPath, Assets, Color,
-    DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES, DEFAULT_STROKE_WIDTH_PX, EnvironmentHandle, GeometryDesc,
-    GeometryHandle, GeometryTopology, MaterialDesc, MaterialHandle, MaterialKind, ModelHandle,
-    NodeKind, OutputStageStatus, PerspectiveCamera, PrepareError, Primitive, Renderer, Scene,
-    SceneAsset, TextureColorSpace, TextureDesc, TextureHandle, Tonemapper, Transform, Vec3, Vertex,
+    DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES, DEFAULT_STROKE_WIDTH_PX, EnvironmentDesc,
+    EnvironmentHandle, GeometryDesc, GeometryHandle, GeometryTopology, MaterialDesc,
+    MaterialHandle, MaterialKind, ModelHandle, NodeKind, OutputStageStatus, PerspectiveCamera,
+    PrepareError, Primitive, Renderer, Scene, SceneAsset, TextureColorSpace, TextureDesc,
+    TextureHandle, Tonemapper, Transform, Vec3, Vertex, WasmEnvironmentDelivery,
 };
 
 fn assert_handle<T: Copy + Eq + std::fmt::Debug>() {}
@@ -29,6 +30,15 @@ fn assert_all_pixels(frame: &[u8], width: u32, height: u32, expected: [u8; 4]) {
             "pixel {index} should match fullscreen constant-color output"
         );
     }
+}
+
+fn assert_lower_hex_sha256(value: &str) {
+    assert_eq!(value.len(), 64);
+    assert!(
+        value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    );
 }
 
 fn rendered_fullscreen_center_pixel(color: Color) -> [u8; 4] {
@@ -229,6 +239,72 @@ fn asset_taxonomy_reserves_distinct_typed_handles() {
 
     let scene_asset = SceneAsset::empty();
     assert!(format!("{scene_asset:?}").contains("SceneAsset"));
+}
+
+#[test]
+fn default_environment_manifest_fields_are_structured_and_loadable() {
+    let environment = EnvironmentDesc::neutral_studio();
+
+    assert_eq!(environment.name(), "neutral-studio");
+    assert_eq!(
+        environment.source_path().as_str(),
+        "tests/assets/environment/neutral-studio.placeholder.hdr"
+    );
+    assert_lower_hex_sha256(
+        environment
+            .source_sha256()
+            .expect("default environment pins source hash"),
+    );
+    assert_eq!(environment.license(), Some("CC0-1.0"));
+    assert_eq!(
+        environment.generator(),
+        Some(
+            "xtask generate-default-env --input tests/assets/environment/neutral-studio.placeholder.hdr"
+        )
+    );
+    assert_eq!(environment.cubemap_resolution(), 256);
+    assert_eq!(environment.brdf_lut_size(), 256);
+    assert_eq!(
+        environment.wasm_delivery(),
+        WasmEnvironmentDelivery::Bundled
+    );
+    assert_eq!(environment.derivatives().len(), 2);
+    assert_eq!(
+        environment.derivatives()[0].path().as_str(),
+        "tests/assets/environment/generated/neutral-studio-cubemap.placeholder.ktx2"
+    );
+    assert_eq!(
+        environment.derivatives()[1].path().as_str(),
+        "tests/assets/environment/generated/brdf-lut-256.placeholder.rgba16f"
+    );
+    for derivative in environment.derivatives() {
+        assert_lower_hex_sha256(derivative.sha256());
+    }
+
+    let assets = Assets::new();
+    let default = assets.default_environment();
+    assert_eq!(assets.environment(default), Some(environment.clone()));
+
+    let loaded = pollster::block_on(assets.load_environment("environments/factory.hdr"))
+        .expect("environment request is recorded");
+    let duplicate = pollster::block_on(assets.load_environment("environments/factory.hdr"))
+        .expect("duplicate environment request is recorded");
+    assert_eq!(loaded, duplicate);
+    assert_eq!(
+        assets
+            .environment(loaded)
+            .expect("environment descriptor is stored")
+            .source_path()
+            .as_str(),
+        "environments/factory.hdr"
+    );
+
+    let fresh_assets = Assets::new();
+    let default_by_path =
+        pollster::block_on(fresh_assets.load_environment(environment.source_path().as_str()))
+            .expect("default environment path is recognized");
+    assert_eq!(fresh_assets.environment(default_by_path), Some(environment));
+    assert_eq!(fresh_assets.default_environment(), default_by_path);
 }
 
 #[test]
