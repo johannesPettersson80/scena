@@ -149,6 +149,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_shadow_map_contracts(root, findings);
     check_depth_prepass_contracts(root, findings);
     check_reversed_z_contracts(root, findings);
+    check_webgl2_depth_contracts(root, findings);
     check_m2_leak_stats_contracts(root, findings);
     check_camera_depth_contracts(root, findings);
     check_render_alpha_contracts(root, findings);
@@ -1718,6 +1719,57 @@ fn check_reversed_z_contracts(root: &Path, findings: &mut Vec<Finding>) {
     );
 }
 
+fn check_webgl2_depth_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-WEBGL2-DEPTH",
+        "src/diagnostics/capabilities.rs",
+        &[
+            "pub fn diagnostics(self) -> Vec<Diagnostic>",
+            "self.backend == Backend::WebGl2",
+            "DiagnosticCode::WebGl2DepthCompatibility",
+            "near/far ranges",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-WEBGL2-DEPTH",
+        "src/diagnostics.rs",
+        &["WebGl2DepthCompatibility"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-WEBGL2-DEPTH",
+        "tests/m2_lighting_depth_clipping.rs",
+        &[
+            "webgl2_depth_capability_reports_structured_compatibility_warning",
+            "Capabilities::for_attached_gpu_backend(Backend::WebGl2).diagnostics()",
+            "DiagnosticCode::WebGl2DepthCompatibility",
+            "near/far",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-WEBGL2-DEPTH",
+        "docs/specs/public-api.md",
+        &[
+            "Capabilities::diagnostics()",
+            "DiagnosticCode::WebGl2DepthCompatibility",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-WEBGL2-DEPTH",
+        "docs/checklists/m2-lighting-depth-clipping.md",
+        &["WebGL2 depth compatibility warnings", "ARCH-WEBGL2-DEPTH"],
+    );
+}
+
 fn check_m2_leak_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
     require_contains(
         root,
@@ -2676,6 +2728,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_reversed_z_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn webgl2_depth_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_webgl2_depth_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

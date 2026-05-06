@@ -444,6 +444,21 @@ fn capability_matrix_reports_reversed_z_depth_support_and_webgl2_fallback() {
 }
 
 #[test]
+fn webgl2_depth_capability_reports_structured_compatibility_warning() {
+    let diagnostics = Capabilities::for_attached_gpu_backend(Backend::WebGl2).diagnostics();
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::WebGl2DepthCompatibility
+            && diagnostic.severity == DiagnosticSeverity::Warning
+            && diagnostic.message.contains("WebGL2")
+            && diagnostic
+                .help
+                .as_deref()
+                .is_some_and(|help| help.contains("near/far"))
+    }));
+}
+
+#[test]
 fn m2_resource_counters_return_to_baseline_after_empty_prepare() {
     let assets = Assets::new();
     let environment =

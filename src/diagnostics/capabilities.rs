@@ -1,3 +1,5 @@
+use super::{Diagnostic, DiagnosticCode};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Backend {
     Headless,
@@ -94,6 +96,20 @@ impl Capabilities {
             directional_shadow_pcf_kernel: 3,
             reversed_z_depth: reversed_z_depth_status(backend),
         }
+    }
+
+    pub fn diagnostics(self) -> Vec<Diagnostic> {
+        let mut diagnostics = Vec::new();
+        if self.backend == Backend::WebGl2
+            && self.reversed_z_depth == CapabilityStatus::FeatureDisabled
+        {
+            diagnostics.push(Diagnostic::warning(
+                DiagnosticCode::WebGl2DepthCompatibility,
+                "WebGL2 uses the compatibility depth profile without reversed-Z depth",
+                "tighten camera near/far ranges and keep large scenes camera-relative when targeting WebGL2",
+            ));
+        }
+        diagnostics
     }
 }
 
