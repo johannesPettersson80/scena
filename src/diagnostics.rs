@@ -151,6 +151,29 @@ pub enum LookupError {
     CameraNotFound(CameraKey),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Diagnostic {
+    pub code: DiagnosticCode,
+    pub severity: DiagnosticSeverity,
+    pub message: String,
+    pub help: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiagnosticCode {
+    LargeScenePrecisionRisk,
+    DepthPrecisionRisk,
+    WebGl2DepthCompatibility,
+    DestructionQueuePressure,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiagnosticSeverity {
+    Info,
+    Warning,
+    Error,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct RendererStats {
     pub buffers: u64,
@@ -185,6 +208,21 @@ pub struct RendererStats {
     pub target_height: u32,
     pub directional_shadow_map_resolution: Option<u32>,
     pub directional_shadow_pcf_kernel: Option<u8>,
+}
+
+impl Diagnostic {
+    pub fn warning(
+        code: DiagnosticCode,
+        message: impl Into<String>,
+        help: impl Into<String>,
+    ) -> Self {
+        Self {
+            code,
+            severity: DiagnosticSeverity::Warning,
+            message: message.into(),
+            help: Some(help.into()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

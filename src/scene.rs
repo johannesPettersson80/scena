@@ -288,6 +288,21 @@ impl Scene {
         })
     }
 
+    pub(crate) fn node_transforms(&self) -> impl Iterator<Item = (NodeKey, Transform)> + '_ {
+        self.nodes.iter().map(|(key, node)| (key, node.transform))
+    }
+
+    pub(crate) fn camera_nodes(&self) -> impl Iterator<Item = (NodeKey, CameraKey, &Camera)> + '_ {
+        self.nodes.iter().filter_map(|(node_key, node)| {
+            let NodeKind::Camera(camera_key) = node.kind else {
+                return None;
+            };
+            self.cameras
+                .get(camera_key)
+                .map(|camera| (node_key, camera_key, camera))
+        })
+    }
+
     fn insert_camera(
         &mut self,
         parent: NodeKey,

@@ -1,9 +1,10 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use scena::{
-    Angle, AssetError, Assets, Color, DepthRange, DirectionalLight, EnvironmentSourceKind, Light,
-    NodeKind, OrthographicCamera, PerspectiveCamera, PointLight, PrepareError, Primitive, Renderer,
-    Scene, SpotLight, Transform, Vec3, Vertex,
+    Angle, AssetError, Assets, Color, DepthRange, DiagnosticCode, DiagnosticSeverity,
+    DirectionalLight, EnvironmentSourceKind, Light, NodeKind, OrthographicCamera,
+    PerspectiveCamera, PointLight, PrepareError, Primitive, Renderer, Scene, SpotLight, Transform,
+    Vec3, Vertex,
 };
 
 fn pixel_at(frame: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
@@ -379,6 +380,51 @@ fn fxaa_pass_runs_after_aces_without_second_tonemap() {
         right_edge[0] > 0,
         "FXAA smooths the dark edge pixel without changing solid black"
     );
+}
+
+#[test]
+fn prepare_emits_structured_depth_precision_warnings() {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default().with_depth_range(DepthRange::new(0.001, 200.0)),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("camera becomes active");
+    scene
+        .add_empty(
+            scene.root(),
+            Transform {
+                translation: Vec3::new(10_000.0, 0.0, 0.0),
+                ..Transform::default()
+            },
+        )
+        .expect("large-offset node inserts");
+    let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+
+    renderer.prepare(&mut scene).expect("scene prepares");
+    let diagnostics = renderer.diagnostics();
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::DepthPrecisionRisk
+            && diagnostic.severity == DiagnosticSeverity::Warning
+            && diagnostic
+                .help
+                .as_deref()
+                .is_some_and(|help| help.contains("fit_sphere"))
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == DiagnosticCode::LargeScenePrecisionRisk
+            && diagnostic.severity == DiagnosticSeverity::Warning
+            && diagnostic
+                .help
+                .as_deref()
+                .is_some_and(|help| help.contains("camera-relative"))
+    }));
 }
 
 #[test]

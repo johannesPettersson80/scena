@@ -153,6 +153,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_render_alpha_contracts(root, findings);
     check_output_stage_contracts(root, findings);
     check_fxaa_output_contracts(root, findings);
+    check_diagnostics_contracts(root, findings);
     check_renderer_stats_contracts(root, findings);
     check_solid_kiss(root, findings);
     check_backend_vocabulary(root, findings);
@@ -864,6 +865,102 @@ fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "ARCH-FXAA-OUTPUT",
         "docs/checklists/m2-lighting-depth-clipping.md",
         &["FXAA pass attached", "ARCH-FXAA-OUTPUT"],
+    );
+}
+
+fn check_diagnostics_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIAGNOSTICS",
+        "src/diagnostics.rs",
+        &[
+            "pub struct Diagnostic",
+            "pub code: DiagnosticCode",
+            "pub severity: DiagnosticSeverity",
+            "pub message: String",
+            "pub help: Option<String>",
+            "pub enum DiagnosticCode",
+            "LargeScenePrecisionRisk",
+            "DepthPrecisionRisk",
+            "WebGl2DepthCompatibility",
+            "pub enum DiagnosticSeverity",
+            "pub fn warning",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIAGNOSTICS",
+        "src/lib.rs",
+        &["Diagnostic", "DiagnosticCode", "DiagnosticSeverity"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIAGNOSTICS",
+        "src/render.rs",
+        &[
+            "diagnostics: Vec<Diagnostic>",
+            "self.diagnostics.clear()",
+            "prepare::collect_precision_diagnostics(scene, self.target.backend)",
+            "pub fn diagnostics(&self) -> &[Diagnostic]",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIAGNOSTICS",
+        "src/render/prepare.rs",
+        &[
+            "pub(super) fn collect_precision_diagnostics",
+            "LARGE_SCENE_TRANSLATION_WARNING: f32 = 10_000.0",
+            "DEPTH_RANGE_RATIO_WARNING: f32 = 100_000.0",
+            "DiagnosticCode::LargeScenePrecisionRisk",
+            "DiagnosticCode::DepthPrecisionRisk",
+            "DiagnosticCode::WebGl2DepthCompatibility",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIAGNOSTICS",
+        "src/scene.rs",
+        &[
+            "pub(crate) fn node_transforms",
+            "pub(crate) fn camera_nodes",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIAGNOSTICS",
+        "tests/m2_lighting_depth_clipping.rs",
+        &[
+            "prepare_emits_structured_depth_precision_warnings",
+            "DiagnosticCode::DepthPrecisionRisk",
+            "DiagnosticCode::LargeScenePrecisionRisk",
+            "DiagnosticSeverity::Warning",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIAGNOSTICS",
+        "docs/specs/public-api.md",
+        &[
+            "pub struct Diagnostic",
+            "LargeScenePrecisionRisk",
+            "DepthPrecisionRisk",
+            "far/near ratio greater than",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIAGNOSTICS",
+        "docs/checklists/m2-lighting-depth-clipping.md",
+        &["Large-scene precision diagnostics", "ARCH-DIAGNOSTICS"],
     );
 }
 
@@ -2390,6 +2487,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_fxaa_output_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn diagnostics_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_diagnostics_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

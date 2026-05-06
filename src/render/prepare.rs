@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 
 use crate::assets::{Assets, EnvironmentDesc};
-use crate::diagnostics::{Backend, Capabilities, PrepareError};
+use crate::diagnostics::{Backend, Capabilities, Diagnostic, DiagnosticCode, PrepareError};
 use crate::geometry::{GeometryDesc, GeometryTopology, Primitive, Vertex};
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
-use crate::scene::{Light, NodeKey, Scene};
+use crate::scene::{Camera, Light, NodeKey, Scene};
 
 use super::RasterTarget;
 
@@ -119,6 +119,57 @@ pub(super) fn collect_lighting_stats(
     })
 }
 
+pub(super) fn collect_precision_diagnostics(scene: &Scene, backend: Backend) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for (node, transform) in scene.node_transforms() {
+        let magnitude = transform
+            .translation
+            .x
+            .abs()
+            .max(transform.translation.y.abs())
+            .max(transform.translation.z.abs());
+        if magnitude >= LARGE_SCENE_TRANSLATION_WARNING {
+            diagnostics.push(Diagnostic::warning(
+                DiagnosticCode::LargeScenePrecisionRisk,
+                format!(
+                    "node {node:?} is {magnitude:.1} scene units from the origin; f32 transform precision may be visible"
+                ),
+                "use camera-relative rendering or an origin-shift policy for large-world scenes",
+            ));
+        }
+    }
+
+    for (node, _camera, camera) in scene.camera_nodes() {
+        let (near, far) = match camera {
+            Camera::Perspective(camera) => (camera.near, camera.far),
+            Camera::Orthographic(camera) => (camera.near, camera.far),
+        };
+        if near > 0.0 && far.is_finite() && near.is_finite() {
+            let ratio = far / near;
+            if ratio > DEPTH_RANGE_RATIO_WARNING {
+                diagnostics.push(Diagnostic::warning(
+                    DiagnosticCode::DepthPrecisionRisk,
+                    format!(
+                        "camera node {node:?} has far/near ratio {ratio:.0}; depth precision may cause z-fighting"
+                    ),
+                    "use DepthRange::fit_sphere for focused views or tighten camera near/far planes",
+                ));
+            }
+        }
+    }
+
+    if backend == Backend::WebGl2 {
+        diagnostics.push(Diagnostic::warning(
+            DiagnosticCode::WebGl2DepthCompatibility,
+            "WebGL2 disables reversed-Z depth and uses the compatibility depth profile",
+            "expect reduced far/near precision; tighten camera depth ranges for WebGL2 scenes",
+        ));
+    }
+
+    diagnostics
+}
+
 pub(super) fn collect_depth_prepass_stats(primitives: &[Primitive]) -> PreparedDepthStats {
     if primitives.is_empty() {
         PreparedDepthStats::default()
@@ -129,6 +180,9 @@ pub(super) fn collect_depth_prepass_stats(primitives: &[Primitive]) -> PreparedD
         }
     }
 }
+
+const LARGE_SCENE_TRANSLATION_WARNING: f32 = 10_000.0;
+const DEPTH_RANGE_RATIO_WARNING: f32 = 100_000.0;
 
 pub(super) fn collect_environment_prepare_stats(
     environment: Option<&EnvironmentDesc>,

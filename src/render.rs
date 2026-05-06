@@ -11,8 +11,8 @@ mod prepare;
 
 use crate::assets::{Assets, EnvironmentHandle};
 use crate::diagnostics::{
-    Backend, BuildError, Capabilities, ChangeKind, DevicePoll, NotPreparedReason, PrepareError,
-    RenderError, RenderOutcome, RendererStats,
+    Backend, BuildError, Capabilities, ChangeKind, DevicePoll, Diagnostic, NotPreparedReason,
+    PrepareError, RenderError, RenderOutcome, RendererStats,
 };
 use crate::geometry::Primitive;
 use crate::material::Color;
@@ -33,6 +33,7 @@ pub struct Renderer {
     // before every pixel is ACES+sRGB encoded into `frame`.
     linear_frame: Option<Vec<Color>>,
     stats: RendererStats,
+    diagnostics: Vec<Diagnostic>,
     capabilities: Capabilities,
     gpu: Option<GpuDeviceState>,
     output: OutputTransform,
@@ -186,6 +187,7 @@ impl Renderer {
                 target_height: height,
                 ..RendererStats::default()
             },
+            diagnostics: Vec::new(),
             capabilities,
             gpu,
             output: OutputTransform::default(),
@@ -214,12 +216,14 @@ impl Renderer {
         assets: Option<&Assets<F>>,
     ) -> Result<(), PrepareError> {
         self.poll_device();
+        self.diagnostics.clear();
         validate_target_size(self.target.width, self.target.height).map_err(|()| {
             PrepareError::InvalidTargetSize {
                 width: self.target.width,
                 height: self.target.height,
             }
         })?;
+        let diagnostics = prepare::collect_precision_diagnostics(scene, self.target.backend);
         let mut environment_prepare_stats = prepare::PreparedEnvironmentStats::default();
         let environment_count = match self.environment {
             Some(environment) => {
@@ -275,6 +279,7 @@ impl Renderer {
             target_revision: self.target_revision,
             primitives,
         });
+        self.diagnostics = diagnostics;
         Ok(())
     }
 
@@ -367,6 +372,10 @@ impl Renderer {
 
     pub fn stats(&self) -> RendererStats {
         self.stats
+    }
+
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
     }
 
     pub fn poll_device(&mut self) -> DevicePoll {

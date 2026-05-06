@@ -21,8 +21,8 @@ pub use assets::{
 };
 pub use diagnostics::{
     AlphaPipelineStatus, AssetError, Backend, BuildError, Capabilities, ChangeKind, DevicePoll,
-    Error, LookupError, NotPreparedReason, OutputStageStatus, PrepareError, RenderError,
-    RenderOutcome, RendererStats,
+    Diagnostic, DiagnosticCode, DiagnosticSeverity, Error, LookupError, NotPreparedReason,
+    OutputStageStatus, PrepareError, RenderError, RenderOutcome, RendererStats,
 };
 pub use geometry::{
     Aabb, GeometryDesc, GeometryError, GeometryTopology, GeometryVertex, Primitive, Vertex,
