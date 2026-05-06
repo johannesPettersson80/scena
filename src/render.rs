@@ -6,7 +6,9 @@ use std::sync::Weak;
 
 mod gpu;
 mod output;
+mod prepare;
 
+use crate::assets::Assets;
 use crate::diagnostics::{
     Backend, BuildError, Capabilities, ChangeKind, NotPreparedReason, PrepareError, RenderError,
     RenderOutcome, RendererStats,
@@ -41,6 +43,7 @@ struct PreparedSceneState {
     scene: Weak<()>,
     structure_revision: u64,
     target_revision: u64,
+    primitives: Vec<Primitive>,
 }
 
 /// Row-major render target dimensions used for CPU frame and accumulator indexing.
@@ -186,21 +189,38 @@ impl Renderer {
     }
 
     pub fn prepare(&mut self, scene: &mut Scene) -> Result<(), PrepareError> {
+        self.prepare_inner::<()>(scene, None)
+    }
+
+    pub fn prepare_with_assets<F>(
+        &mut self,
+        scene: &mut Scene,
+        assets: &Assets<F>,
+    ) -> Result<(), PrepareError> {
+        self.prepare_inner(scene, Some(assets))
+    }
+
+    fn prepare_inner<F>(
+        &mut self,
+        scene: &mut Scene,
+        assets: Option<&Assets<F>>,
+    ) -> Result<(), PrepareError> {
         validate_target_size(self.target.width, self.target.height).map_err(|()| {
             PrepareError::InvalidTargetSize {
                 width: self.target.width,
                 height: self.target.height,
             }
         })?;
+        let primitives = prepare::collect_prepared_primitives(scene, assets)?;
+        if let Some(gpu) = &mut self.gpu {
+            gpu.prepare(self.target, &primitives);
+        }
         self.prepared = Some(PreparedSceneState {
             scene: scene.identity(),
             structure_revision: scene.structure_revision(),
             target_revision: self.target_revision,
+            primitives,
         });
-        let primitives = collect_primitives(scene);
-        if let Some(gpu) = &mut self.gpu {
-            gpu.prepare(self.target, &primitives);
-        }
         Ok(())
     }
 
@@ -209,37 +229,36 @@ impl Renderer {
         scene: &Scene,
         camera: CameraKey,
     ) -> Result<RenderOutcome, RenderError> {
-        self.require_prepared(scene)?;
+        self.prepared_state(scene)?;
         if scene.camera(camera).is_none() {
             return Err(RenderError::CameraNotFound(camera));
         }
 
-        let primitives = count_primitives(scene);
+        let primitives = self.prepared_state(scene)?.primitives.clone();
+        let primitive_count = primitives.len() as u64;
         if self.gpu.is_some() {
             self.draw_gpu()?;
         } else {
             self.clear(Color::BLACK);
-            for renderable in scene.renderables() {
-                for primitive in renderable.primitives() {
-                    self.draw_primitive(primitive);
-                }
+            for primitive in &primitives {
+                self.draw_primitive(primitive);
             }
         }
 
         self.stats.frames_rendered = self.stats.frames_rendered.saturating_add(1);
-        self.stats.draw_calls = primitives;
-        self.stats.primitives = primitives;
+        self.stats.draw_calls = primitive_count;
+        self.stats.primitives = primitive_count;
 
         Ok(RenderOutcome {
             width: self.target.width,
             height: self.target.height,
-            draw_calls: primitives,
-            primitives,
+            draw_calls: primitive_count,
+            primitives: primitive_count,
         })
     }
 
     pub fn render_active(&mut self, scene: &Scene) -> Result<RenderOutcome, RenderError> {
-        self.require_prepared(scene)?;
+        self.prepared_state(scene)?;
         let camera = scene.active_camera().ok_or(RenderError::NoActiveCamera)?;
         self.render(scene, camera)
     }
@@ -315,7 +334,7 @@ impl Renderer {
         }
     }
 
-    fn require_prepared(&self, scene: &Scene) -> Result<(), RenderError> {
+    fn prepared_state(&self, scene: &Scene) -> Result<&PreparedSceneState, RenderError> {
         let prepared = self.prepared.as_ref().ok_or(RenderError::NotPrepared {
             reason: NotPreparedReason::NeverPrepared,
         })?;
@@ -347,7 +366,7 @@ impl Renderer {
             });
         }
 
-        Ok(())
+        Ok(prepared)
     }
 
     fn clear(&mut self, color: Color) {
@@ -427,20 +446,6 @@ impl RasterTarget {
     fn pixel_index(self, x: u32, y: u32) -> usize {
         (y as usize) * (self.width as usize) + (x as usize)
     }
-}
-
-fn count_primitives(scene: &Scene) -> u64 {
-    scene
-        .renderables()
-        .map(|renderable| renderable.primitives().len() as u64)
-        .sum()
-}
-
-fn collect_primitives(scene: &Scene) -> Vec<Primitive> {
-    scene
-        .renderables()
-        .flat_map(|renderable| renderable.primitives().iter().cloned())
-        .collect()
 }
 
 fn backend_for_attached_surface(kind: SurfaceKind) -> Backend {

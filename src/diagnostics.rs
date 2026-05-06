@@ -3,9 +3,12 @@
 use std::error;
 use std::fmt;
 
+use crate::assets::{GeometryHandle, MaterialHandle};
+use crate::geometry::GeometryTopology;
+use crate::material::{AlphaMode, MaterialKind};
 use crate::scene::{CameraKey, NodeKey};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Error {
     Build(BuildError),
     Asset(AssetError),
@@ -53,9 +56,38 @@ pub enum AssetError {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PrepareError {
-    InvalidTargetSize { width: u32, height: u32 },
+    InvalidTargetSize {
+        width: u32,
+        height: u32,
+    },
+    AssetsRequired {
+        node: NodeKey,
+    },
+    GeometryNotFound {
+        node: NodeKey,
+        geometry: GeometryHandle,
+    },
+    MaterialNotFound {
+        node: NodeKey,
+        material: MaterialHandle,
+    },
+    UnsupportedGeometryTopology {
+        node: NodeKey,
+        topology: GeometryTopology,
+    },
+    UnsupportedMaterialKind {
+        node: NodeKey,
+        kind: MaterialKind,
+    },
+    UnsupportedAlphaMode {
+        node: NodeKey,
+        alpha_mode: AlphaMode,
+    },
+    UnsupportedModelNode {
+        node: NodeKey,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -263,6 +295,48 @@ impl fmt::Display for PrepareError {
         match self {
             Self::InvalidTargetSize { width, height } => {
                 write!(formatter, "invalid render target size {width}x{height}")
+            }
+            Self::AssetsRequired { node } => {
+                write!(
+                    formatter,
+                    "node {node:?} references asset handles; call prepare_with_assets"
+                )
+            }
+            Self::GeometryNotFound { node, geometry } => {
+                write!(
+                    formatter,
+                    "node {node:?} references missing geometry handle {geometry:?}"
+                )
+            }
+            Self::MaterialNotFound { node, material } => {
+                write!(
+                    formatter,
+                    "node {node:?} references missing material handle {material:?}"
+                )
+            }
+            Self::UnsupportedGeometryTopology { node, topology } => {
+                write!(
+                    formatter,
+                    "node {node:?} uses unsupported geometry topology {topology:?}"
+                )
+            }
+            Self::UnsupportedMaterialKind { node, kind } => {
+                write!(
+                    formatter,
+                    "node {node:?} uses unsupported material kind {kind:?}"
+                )
+            }
+            Self::UnsupportedAlphaMode { node, alpha_mode } => {
+                write!(
+                    formatter,
+                    "node {node:?} uses unsupported alpha mode {alpha_mode:?}"
+                )
+            }
+            Self::UnsupportedModelNode { node } => {
+                write!(
+                    formatter,
+                    "node {node:?} is a model node; model preparation is not implemented"
+                )
             }
         }
     }

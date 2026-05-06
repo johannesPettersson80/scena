@@ -261,9 +261,26 @@ impl Scene {
     pub(crate) fn renderables(&self) -> impl Iterator<Item = &RenderableNode> {
         self.nodes.values().filter_map(|node| match &node.kind {
             NodeKind::Renderable(renderable) => Some(renderable),
-            // M1 mesh/model nodes are typed scene handles. Renderer integration lands when
-            // the M1 geometry/material passes resolve handles through Assets during prepare().
             NodeKind::Empty | NodeKind::Mesh(_) | NodeKind::Model(_) | NodeKind::Camera(_) => None,
+        })
+    }
+
+    pub(crate) fn mesh_nodes(&self) -> impl Iterator<Item = (NodeKey, MeshNode)> + '_ {
+        self.nodes.iter().filter_map(|(key, node)| match node.kind {
+            NodeKind::Mesh(mesh) => Some((key, mesh)),
+            NodeKind::Empty
+            | NodeKind::Renderable(_)
+            | NodeKind::Model(_)
+            | NodeKind::Camera(_) => None,
+        })
+    }
+
+    pub(crate) fn model_nodes(&self) -> impl Iterator<Item = NodeKey> + '_ {
+        self.nodes.iter().filter_map(|(key, node)| match node.kind {
+            NodeKind::Model(_) => Some(key),
+            NodeKind::Empty | NodeKind::Renderable(_) | NodeKind::Mesh(_) | NodeKind::Camera(_) => {
+                None
+            }
         })
     }
 
@@ -369,6 +386,10 @@ impl MeshBuilder<'_> {
     }
 
     /// Overrides the local transform. The default is [`Transform::IDENTITY`].
+    ///
+    /// The M1 foundation renderer records this transform on the node, but mesh render
+    /// preparation still treats geometry positions as already in clip-facing scene space.
+    /// Transform application lands with the broader scene transform dirty-state work.
     pub fn transform(mut self, transform: Transform) -> Self {
         self.transform = transform;
         self

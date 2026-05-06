@@ -135,6 +135,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_source_scope(root, findings);
     check_module_boundaries(root, findings);
     check_asset_api_contracts(root, findings);
+    check_prepare_asset_contracts(root, findings);
     check_render_alpha_contracts(root, findings);
     check_solid_kiss(root, findings);
     check_backend_vocabulary(root, findings);
@@ -699,6 +700,70 @@ fn check_render_alpha_contracts(root: &Path, findings: &mut Vec<Finding>) {
     );
 }
 
+fn check_prepare_asset_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-ASSETS",
+        "src/render.rs",
+        &[
+            "pub fn prepare_with_assets",
+            "prepare::collect_prepared_primitives",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-ASSETS",
+        "src/render/prepare.rs",
+        &[
+            "fn collect_prepared_primitives",
+            "PrepareError::AssetsRequired",
+            "fn append_geometry_primitives",
+            "fn forward_opaque_color",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-ASSETS",
+        "src/diagnostics.rs",
+        &[
+            "AssetsRequired",
+            "GeometryNotFound",
+            "MaterialNotFound",
+            "UnsupportedGeometryTopology",
+            "UnsupportedMaterialKind",
+            "UnsupportedAlphaMode",
+            "UnsupportedModelNode",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-ASSETS",
+        "src/scene.rs",
+        &["pub(crate) fn mesh_nodes", "pub(crate) fn model_nodes"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-ASSETS",
+        "tests/m1_geometry_materials.rs",
+        &[
+            "prepare_with_assets_renders_scene_mesh_unlit_geometry",
+            "prepare_without_assets_rejects_asset_backed_mesh_nodes",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-ASSETS",
+        "docs/specs/public-api.md",
+        &["pub fn prepare_with_assets<F>"],
+    );
+}
+
 fn check_material_desc_fields_private(root: &Path, findings: &mut Vec<Finding>) {
     let path = root.join("src/material.rs");
     let Ok(text) = fs::read_to_string(path) else {
@@ -1117,6 +1182,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_render_alpha_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn prepare_asset_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_prepare_asset_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

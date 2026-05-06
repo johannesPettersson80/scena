@@ -2,8 +2,8 @@ use scena::{
     Aabb, AlphaMode, AlphaPipelineStatus, AssetPath, Assets, Color,
     DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES, DEFAULT_STROKE_WIDTH_PX, EnvironmentHandle, GeometryDesc,
     GeometryHandle, GeometryTopology, MaterialDesc, MaterialHandle, MaterialKind, ModelHandle,
-    NodeKind, OutputStageStatus, PerspectiveCamera, Primitive, Renderer, Scene, SceneAsset,
-    TextureColorSpace, TextureDesc, TextureHandle, Tonemapper, Transform, Vec3, Vertex,
+    NodeKind, OutputStageStatus, PerspectiveCamera, PrepareError, Primitive, Renderer, Scene,
+    SceneAsset, TextureColorSpace, TextureDesc, TextureHandle, Tonemapper, Transform, Vec3, Vertex,
 };
 
 fn assert_handle<T: Copy + Eq + std::fmt::Debug>() {}
@@ -62,6 +62,21 @@ fn scene_with_fullscreen_triangle(color: Color) -> (Scene, scena::CameraKey) {
     (scene, camera)
 }
 
+fn scene_with_camera() -> (Scene, scena::CameraKey) {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("camera can become active");
+    (scene, camera)
+}
+
 fn scene_with_fullscreen_primitives(primitives: Vec<Primitive>) -> (Scene, scena::CameraKey) {
     let mut scene = Scene::new();
     let camera = scene
@@ -96,6 +111,28 @@ fn fullscreen_triangle(color: Color) -> Primitive {
             color,
         },
     ])
+}
+
+fn fullscreen_triangle_geometry() -> GeometryDesc {
+    GeometryDesc::try_new(
+        GeometryTopology::Triangles,
+        vec![
+            scena::GeometryVertex {
+                position: Vec3::new(-2.0, -2.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            scena::GeometryVertex {
+                position: Vec3::new(4.0, -2.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            scena::GeometryVertex {
+                position: Vec3::new(-2.0, 4.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+        ],
+        vec![0, 1, 2],
+    )
+    .expect("fullscreen test geometry is valid")
 }
 
 #[test]
@@ -187,6 +224,137 @@ fn headless_alpha_blends_in_linear_before_output_encoding() {
     renderer.render(&scene, camera).expect("render succeeds");
 
     assert_all_pixels(renderer.frame_rgba8(), 4, 4, [158, 0, 159, 255]);
+}
+
+#[test]
+fn prepare_with_assets_renders_scene_mesh_unlit_geometry() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(fullscreen_triangle_geometry());
+    let material =
+        assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(1.0, 0.0, 0.0)));
+    let (mut scene, camera) = scene_with_camera();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("mesh node inserts");
+    let mut renderer = Renderer::headless(4, 4).expect("headless renderer builds");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("asset-backed mesh prepares");
+    renderer.render(&scene, camera).expect("render succeeds");
+
+    assert_all_pixels(renderer.frame_rgba8(), 4, 4, [216, 0, 9, 255]);
+}
+
+#[test]
+fn prepare_without_assets_rejects_asset_backed_mesh_nodes() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(fullscreen_triangle_geometry());
+    let material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+    let (mut scene, _camera) = scene_with_camera();
+    let mesh_node = scene
+        .mesh(geometry, material)
+        .add()
+        .expect("mesh node inserts");
+    let mut renderer = Renderer::headless(4, 4).expect("headless renderer builds");
+
+    assert!(matches!(
+        renderer.prepare(&mut scene),
+        Err(PrepareError::AssetsRequired { node }) if node == mesh_node
+    ));
+}
+
+#[test]
+fn prepare_with_assets_rejects_unsupported_mesh_inputs_structurally() {
+    let assets = Assets::new();
+    let valid_geometry = assets.create_geometry(fullscreen_triangle_geometry());
+    let valid_material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+    let line_geometry =
+        assets.create_geometry(GeometryDesc::line(Vec3::ZERO, Vec3::new(1.0, 0.0, 0.0)));
+    let line_material = assets.create_material(MaterialDesc::line(Color::WHITE, 1.0));
+    let blend_material = assets.create_material(
+        MaterialDesc::unlit(Color::from_linear_rgba(1.0, 0.0, 0.0, 0.5))
+            .with_alpha_mode(AlphaMode::Blend),
+    );
+    let mask_material = assets.create_material(
+        MaterialDesc::unlit(Color::from_linear_rgba(1.0, 0.0, 0.0, 0.25))
+            .with_alpha_mode(AlphaMode::Mask { cutoff: 0.5 }),
+    );
+
+    let (node, error) = prepare_mesh_error(&assets, GeometryHandle::default(), valid_material);
+    assert!(matches!(
+        error,
+        PrepareError::GeometryNotFound { node: error_node, geometry }
+            if error_node == node && geometry == GeometryHandle::default()
+    ));
+
+    let (node, error) = prepare_mesh_error(&assets, valid_geometry, MaterialHandle::default());
+    assert!(matches!(
+        error,
+        PrepareError::MaterialNotFound { node: error_node, material }
+            if error_node == node && material == MaterialHandle::default()
+    ));
+
+    let (node, error) = prepare_mesh_error(&assets, line_geometry, valid_material);
+    assert!(matches!(
+        error,
+        PrepareError::UnsupportedGeometryTopology { node: error_node, topology: GeometryTopology::Lines }
+            if error_node == node
+    ));
+
+    let (node, error) = prepare_mesh_error(&assets, valid_geometry, line_material);
+    assert!(matches!(
+        error,
+        PrepareError::UnsupportedMaterialKind { node: error_node, kind: MaterialKind::Line }
+            if error_node == node
+    ));
+
+    let (node, error) = prepare_mesh_error(&assets, valid_geometry, blend_material);
+    assert!(matches!(
+        error,
+        PrepareError::UnsupportedAlphaMode { node: error_node, alpha_mode: AlphaMode::Blend }
+            if error_node == node
+    ));
+
+    let (node, error) = prepare_mesh_error(&assets, valid_geometry, mask_material);
+    assert!(matches!(
+        error,
+        PrepareError::UnsupportedAlphaMode {
+            node: error_node,
+            alpha_mode: AlphaMode::Mask { cutoff }
+        } if error_node == node && cutoff == 0.5
+    ));
+
+    let (mut scene, _camera) = scene_with_camera();
+    let model_node = scene
+        .model(ModelHandle::default())
+        .add()
+        .expect("model node inserts");
+    let mut renderer = Renderer::headless(4, 4).expect("headless renderer builds");
+    assert!(matches!(
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect_err("model nodes are not part of M1 forward opaque prepare"),
+        PrepareError::UnsupportedModelNode { node } if node == model_node
+    ));
+}
+
+fn prepare_mesh_error(
+    assets: &Assets,
+    geometry: GeometryHandle,
+    material: MaterialHandle,
+) -> (scena::NodeKey, PrepareError) {
+    let (mut scene, _camera) = scene_with_camera();
+    let node = scene
+        .mesh(geometry, material)
+        .add()
+        .expect("mesh node inserts");
+    let mut renderer = Renderer::headless(4, 4).expect("headless renderer builds");
+    let error = renderer
+        .prepare_with_assets(&mut scene, assets)
+        .expect_err("mesh input should be rejected structurally");
+    (node, error)
 }
 
 #[test]
