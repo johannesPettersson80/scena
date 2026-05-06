@@ -18,13 +18,13 @@ const DEFAULT_ENVIRONMENT_LICENSE: &str = "CC0-1.0";
 const DEFAULT_ENVIRONMENT_GENERATOR: &str =
     "xtask generate-default-env --input tests/assets/environment/neutral-studio.placeholder.hdr";
 const DEFAULT_ENVIRONMENT_CUBEMAP_PATH: &str =
-    "tests/assets/environment/generated/neutral-studio-cubemap.placeholder.ktx2";
+    "tests/assets/environment/generated/neutral-studio-cubemap.ktx2";
 const DEFAULT_ENVIRONMENT_CUBEMAP_SHA256: &str =
-    "34e3022c45dfbd2d620b8fddbb689f32e167476fbfc71de1dc6caa8d1eba29ca";
+    "e6c9093c4dc8efd2fa9f46be2a41d5bc97e977240dd81eccbc8cbc50e5181f24";
 const DEFAULT_ENVIRONMENT_BRDF_LUT_PATH: &str =
-    "tests/assets/environment/generated/brdf-lut-256.placeholder.rgba16f";
+    "tests/assets/environment/generated/brdf-lut-256.rgba16f";
 const DEFAULT_ENVIRONMENT_BRDF_LUT_SHA256: &str =
-    "406473f29aedf38f405c80ff1c4ef1a20910aa63500ec18b3b7582b7b2b29243";
+    "08a2a2c32fe45ccf0d799db947a729269aaf58ec0c933c3e6e8dd99784789ef7";
 
 new_key_type! {
     pub struct ModelHandle;

@@ -1,4 +1,0 @@
-scena default BRDF LUT placeholder
-
-This metadata fixture reserves the generated BRDF LUT path for M1 manifest validation. It is
-not a renderer-consumable RGBA16F file.

@@ -7,12 +7,12 @@ generator = "xtask generate-default-env --input tests/assets/environment/neutral
 cubemap_resolution = 256
 brdf_lut_size = 256
 wasm_delivery = "bundled"
-status = "metadata-placeholder"
+status = "generated-fixture"
 
 [[derivative]]
-path = "tests/assets/environment/generated/neutral-studio-cubemap.placeholder.ktx2"
-sha256 = "34e3022c45dfbd2d620b8fddbb689f32e167476fbfc71de1dc6caa8d1eba29ca"
+path = "tests/assets/environment/generated/neutral-studio-cubemap.ktx2"
+sha256 = "e6c9093c4dc8efd2fa9f46be2a41d5bc97e977240dd81eccbc8cbc50e5181f24"
 
 [[derivative]]
-path = "tests/assets/environment/generated/brdf-lut-256.placeholder.rgba16f"
-sha256 = "406473f29aedf38f405c80ff1c4ef1a20910aa63500ec18b3b7582b7b2b29243"
+path = "tests/assets/environment/generated/brdf-lut-256.rgba16f"
+sha256 = "08a2a2c32fe45ccf0d799db947a729269aaf58ec0c933c3e6e8dd99784789ef7"

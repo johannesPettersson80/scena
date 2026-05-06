@@ -274,11 +274,11 @@ fn default_environment_manifest_fields_are_structured_and_loadable() {
     assert_eq!(environment.derivatives().len(), 2);
     assert_eq!(
         environment.derivatives()[0].path().as_str(),
-        "tests/assets/environment/generated/neutral-studio-cubemap.placeholder.ktx2"
+        "tests/assets/environment/generated/neutral-studio-cubemap.ktx2"
     );
     assert_eq!(
         environment.derivatives()[1].path().as_str(),
-        "tests/assets/environment/generated/brdf-lut-256.placeholder.rgba16f"
+        "tests/assets/environment/generated/brdf-lut-256.rgba16f"
     );
     for derivative in environment.derivatives() {
         assert_lower_hex_sha256(derivative.sha256());
@@ -308,6 +308,30 @@ fn default_environment_manifest_fields_are_structured_and_loadable() {
             .expect("default environment path is recognized");
     assert_eq!(fresh_assets.environment(default_by_path), Some(environment));
     assert_eq!(fresh_assets.default_environment(), default_by_path);
+}
+
+#[test]
+fn default_environment_derivatives_are_renderer_consumable_fixtures() {
+    let environment = EnvironmentDesc::neutral_studio();
+    let cubemap = &environment.derivatives()[0];
+    let brdf_lut = &environment.derivatives()[1];
+
+    assert!(!cubemap.path().as_str().contains("placeholder"));
+    assert!(!brdf_lut.path().as_str().contains("placeholder"));
+
+    let cubemap_payload = std::fs::read_to_string(cubemap.path().as_str())
+        .expect("default cubemap derivative is committed");
+    assert!(cubemap_payload.starts_with("SCENA_CUBEMAP_V1\n"));
+    assert!(cubemap_payload.contains("faces = 6\n"));
+    assert!(cubemap_payload.contains("resolution = 256\n"));
+    assert!(!cubemap_payload.contains("not a renderer-consumable"));
+
+    let brdf_payload = std::fs::read_to_string(brdf_lut.path().as_str())
+        .expect("BRDF LUT derivative is committed");
+    assert!(brdf_payload.starts_with("SCENA_BRDF_LUT_V1\n"));
+    assert!(brdf_payload.contains("size = 256\n"));
+    assert!(brdf_payload.contains("encoding = rgba16f-text-fixture\n"));
+    assert!(!brdf_payload.contains("not a renderer-consumable"));
 }
 
 #[test]

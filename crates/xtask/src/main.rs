@@ -1303,6 +1303,7 @@ fn check_default_environment_manifest(root: &Path, findings: &mut Vec<Finding>) 
     require_manifest_value(findings, manifest_rel, &text, "name", "neutral-studio");
     require_manifest_value(findings, manifest_rel, &text, "license", "CC0-1.0");
     require_manifest_value(findings, manifest_rel, &text, "wasm_delivery", "bundled");
+    require_manifest_value(findings, manifest_rel, &text, "status", "generated-fixture");
     require_manifest_u32(findings, manifest_rel, &text, "cubemap_resolution", 256);
     require_manifest_u32(findings, manifest_rel, &text, "brdf_lut_size", 256);
 
@@ -1343,7 +1344,39 @@ fn check_default_environment_manifest(root: &Path, findings: &mut Vec<Finding>) 
         ));
     }
     for (path, sha256) in derivatives {
+        if path.contains("placeholder") {
+            findings.push(Finding::new(
+                "VISUAL-DEFAULT-ENV",
+                format!("{manifest_rel} derivative {path} still points at a placeholder file"),
+            ));
+        }
+        check_default_environment_derivative_payload(root, findings, manifest_rel, &path);
         check_manifest_file_hash(root, findings, manifest_rel, &path, &sha256);
+    }
+}
+
+fn check_default_environment_derivative_payload(
+    root: &Path,
+    findings: &mut Vec<Finding>,
+    manifest_rel: &str,
+    path: &str,
+) {
+    let Ok(text) = fs::read_to_string(root.join(path)) else {
+        return;
+    };
+    if text.contains("not a renderer-consumable") {
+        findings.push(Finding::new(
+            "VISUAL-DEFAULT-ENV",
+            format!("{manifest_rel} derivative {path} declares itself non-consumable"),
+        ));
+    }
+    let valid_magic =
+        text.starts_with("SCENA_CUBEMAP_V1\n") || text.starts_with("SCENA_BRDF_LUT_V1\n");
+    if !valid_magic {
+        findings.push(Finding::new(
+            "VISUAL-DEFAULT-ENV",
+            format!("{manifest_rel} derivative {path} is missing a scena environment magic header"),
+        ));
     }
 }
 
