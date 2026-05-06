@@ -2075,7 +2075,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         findings,
         "ARCH-M3A-SCENE-IMPORT",
         "Cargo.toml",
-        &["serde_json"],
+        &["serde_json", "wasm-bindgen-futures", "Response"],
     );
     require_contains(
         root,
@@ -2083,11 +2083,27 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "ARCH-M3A-SCENE-IMPORT",
         "src/assets.rs",
         &[
+            "mod fetch;",
             "mod gltf;",
+            "pub use fetch::{AssetFetcher, DefaultAssetFetcher}",
             "pub use gltf::{SceneAsset, SceneAssetNode}",
             "scene_lookup: BTreeMap<AssetPath, SceneAsset>",
             "pub async fn load_scene",
             "SceneAsset::from_gltf_source",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/assets/fetch.rs",
+        &[
+            "pub trait AssetFetcher",
+            "pub type DefaultAssetFetcher",
+            "pub struct FileAssetFetcher",
+            "pub struct BrowserAssetFetcher",
+            "window.fetch_with_str",
+            "wasm_bindgen_futures::JsFuture",
         ],
     );
     require_contains(
@@ -2179,6 +2195,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "replace_import_returns_fresh_import_and_stales_old_lookups",
             "scene_import_reports_duplicate_names_and_escaped_paths",
             "camera_frame_and_look_at_helpers_update_view_and_require_prepare",
+            "assets_load_scene_uses_fetcher_trait_and_deduplicates_by_asset_path",
             "ImportOptions::gltf_default",
             "Root/A\\\\/B",
             "UnsupportedRequiredExtension",

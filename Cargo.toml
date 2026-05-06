@@ -23,7 +23,9 @@ wgpu = { version = "29.0.3", features = ["webgl"] }
 pollster = "0.4.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3.82"
 wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3.82", features = [
     "CanvasRenderingContext2d",
     "Document",
@@ -31,6 +33,7 @@ web-sys = { version = "0.3.82", features = [
     "HtmlCanvasElement",
     "HtmlElement",
     "ImageData",
+    "Response",
     "Window",
 ] }
 

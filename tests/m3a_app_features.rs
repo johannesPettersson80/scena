@@ -1,8 +1,14 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use scena::{
-    Aabb, AssetError, Assets, Camera, ChangeKind, ImportOptions, LookupError, NodeKind,
-    NotPreparedReason, PerspectiveCamera, Quat, RenderError, Renderer, Scene, Transform, Vec3,
+    Aabb, AssetError, AssetFetcher, AssetPath, Assets, Camera, ChangeKind, ImportOptions,
+    LookupError, NodeKind, NotPreparedReason, PerspectiveCamera, Quat, RenderError, Renderer,
+    Scene, Transform, Vec3,
+};
+use std::future::{Ready, ready};
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
 };
 
 #[test]
@@ -32,6 +38,47 @@ fn assets_load_scene_caches_gltf_asset_and_rejects_required_extensions() {
         AssetError::UnsupportedRequiredExtension {
             path: "tests/assets/gltf/unsupported_required_extension.gltf".to_string(),
             extension: "KHR_materials_clearcoat".to_string(),
+        }
+    );
+}
+
+#[test]
+fn assets_load_scene_uses_fetcher_trait_and_deduplicates_by_asset_path() {
+    let fetcher = MemoryFetcher::new(
+        "memory://scene.gltf",
+        r#"{
+            "asset": { "version": "2.0" },
+            "nodes": [
+                { "name": "FetchedRoot" },
+                { "name": "FetchedChild" }
+            ]
+        }"#,
+    );
+    let assets = Assets::with_fetcher(fetcher.clone());
+
+    let scene = pollster::block_on(assets.load_scene("memory://scene.gltf"))
+        .expect("scene loads from custom fetcher");
+    let duplicate = pollster::block_on(assets.load_scene("memory://scene.gltf"))
+        .expect("scene cache hit does not refetch");
+
+    assert_eq!(scene, duplicate);
+    assert_eq!(scene.path().as_str(), "memory://scene.gltf");
+    assert_eq!(
+        scene
+            .nodes()
+            .iter()
+            .filter_map(scena::SceneAssetNode::name)
+            .collect::<Vec<_>>(),
+        vec!["FetchedRoot", "FetchedChild"]
+    );
+    assert_eq!(fetcher.calls(), 1);
+
+    let missing = pollster::block_on(assets.load_scene("memory://missing.gltf"))
+        .expect_err("custom fetcher reports structured missing asset");
+    assert_eq!(
+        missing,
+        AssetError::NotFound {
+            path: "memory://missing.gltf".to_string()
         }
     );
 }
@@ -275,4 +322,40 @@ fn normalize(value: Vec3) -> Vec3 {
 
 fn sub_vec3(left: Vec3, right: Vec3) -> Vec3 {
     Vec3::new(left.x - right.x, left.y - right.y, left.z - right.z)
+}
+
+#[derive(Clone)]
+struct MemoryFetcher {
+    path: AssetPath,
+    source: Arc<str>,
+    calls: Arc<AtomicUsize>,
+}
+
+impl MemoryFetcher {
+    fn new(path: impl Into<AssetPath>, source: impl Into<Arc<str>>) -> Self {
+        Self {
+            path: path.into(),
+            source: source.into(),
+            calls: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn calls(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
+impl AssetFetcher for MemoryFetcher {
+    type Future<'a> = Ready<Result<Vec<u8>, AssetError>>;
+
+    fn fetch<'a>(&'a self, path: &'a AssetPath) -> Self::Future<'a> {
+        if path == &self.path {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            ready(Ok(self.source.as_bytes().to_vec()))
+        } else {
+            ready(Err(AssetError::NotFound {
+                path: path.as_str().to_string(),
+            }))
+        }
+    }
 }

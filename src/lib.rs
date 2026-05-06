@@ -14,10 +14,14 @@ pub mod platform;
 pub mod render;
 pub mod scene;
 
+#[cfg(target_arch = "wasm32")]
+pub use assets::BrowserAssetFetcher;
+#[cfg(not(target_arch = "wasm32"))]
+pub use assets::FileAssetFetcher;
 pub use assets::{
-    AssetPath, Assets, EnvironmentDerivative, EnvironmentDesc, EnvironmentHandle,
-    EnvironmentSourceKind, GeometryHandle, MaterialHandle, ModelHandle, RetainPolicy, SceneAsset,
-    SceneAssetNode, TextureDesc, TextureHandle, WasmEnvironmentDelivery,
+    AssetFetcher, AssetPath, Assets, DefaultAssetFetcher, EnvironmentDerivative, EnvironmentDesc,
+    EnvironmentHandle, EnvironmentSourceKind, GeometryHandle, MaterialHandle, ModelHandle,
+    RetainPolicy, SceneAsset, SceneAssetNode, TextureDesc, TextureHandle, WasmEnvironmentDelivery,
 };
 pub use diagnostics::{
     AlphaPipelineStatus, AssetError, Backend, BuildError, Capabilities, CapabilityStatus,

@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::assets::{AssetPath, Assets, SceneAsset};
+use crate::assets::{AssetFetcher, AssetPath, Assets, SceneAsset};
 use crate::diagnostics::{ImportError, InstantiateError, LookupError};
 
 use super::{NodeKey, NodeKind, Scene, Transform};
@@ -79,7 +79,7 @@ impl Scene {
         Ok(import)
     }
 
-    pub async fn import<F>(
+    pub async fn import<F: AssetFetcher>(
         &mut self,
         assets: &Assets<F>,
         path: impl Into<AssetPath>,
@@ -88,7 +88,7 @@ impl Scene {
             .await
     }
 
-    pub async fn import_with<F>(
+    pub async fn import_with<F: AssetFetcher>(
         &mut self,
         assets: &Assets<F>,
         path: impl Into<AssetPath>,
