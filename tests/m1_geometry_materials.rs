@@ -1,9 +1,9 @@
 use scena::{
-    Aabb, AlphaMode, AssetPath, Assets, Color, DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES,
-    DEFAULT_STROKE_WIDTH_PX, EnvironmentHandle, GeometryDesc, GeometryHandle, GeometryTopology,
-    MaterialDesc, MaterialHandle, MaterialKind, ModelHandle, NodeKind, OutputStageStatus,
-    PerspectiveCamera, Primitive, Renderer, Scene, SceneAsset, TextureColorSpace, TextureDesc,
-    TextureHandle, Tonemapper, Transform, Vec3, Vertex,
+    Aabb, AlphaMode, AlphaPipelineStatus, AssetPath, Assets, Color,
+    DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES, DEFAULT_STROKE_WIDTH_PX, EnvironmentHandle, GeometryDesc,
+    GeometryHandle, GeometryTopology, MaterialDesc, MaterialHandle, MaterialKind, ModelHandle,
+    NodeKind, OutputStageStatus, PerspectiveCamera, Primitive, Renderer, Scene, SceneAsset,
+    TextureColorSpace, TextureDesc, TextureHandle, Tonemapper, Transform, Vec3, Vertex,
 };
 
 fn assert_handle<T: Copy + Eq + std::fmt::Debug>() {}
@@ -15,6 +15,16 @@ fn center_pixel(frame: &[u8], width: u32, height: u32) -> [u8; 4] {
     frame[offset..offset + 4]
         .try_into()
         .expect("pixel slice has four channels")
+}
+
+fn assert_all_pixels(frame: &[u8], width: u32, height: u32, expected: [u8; 4]) {
+    assert_eq!(frame.len(), (width as usize) * (height as usize) * 4);
+    for (index, pixel) in frame.chunks_exact(4).enumerate() {
+        assert_eq!(
+            pixel, expected,
+            "pixel {index} should match fullscreen constant-color output"
+        );
+    }
 }
 
 fn scene_with_fullscreen_triangle(color: Color) -> (Scene, scena::CameraKey) {
@@ -50,6 +60,42 @@ fn scene_with_fullscreen_triangle(color: Color) -> (Scene, scena::CameraKey) {
         )
         .expect("fullscreen triangle inserts");
     (scene, camera)
+}
+
+fn scene_with_fullscreen_primitives(primitives: Vec<Primitive>) -> (Scene, scena::CameraKey) {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("camera can become active");
+    scene
+        .add_renderable(scene.root(), primitives, Transform::default())
+        .expect("fullscreen primitives insert");
+    (scene, camera)
+}
+
+fn fullscreen_triangle(color: Color) -> Primitive {
+    // This oversized triangle contains the whole NDC unit square after viewport mapping.
+    Primitive::triangle([
+        Vertex {
+            position: Vec3::new(-2.0, -2.0, 0.0),
+            color,
+        },
+        Vertex {
+            position: Vec3::new(4.0, -2.0, 0.0),
+            color,
+        },
+        Vertex {
+            position: Vec3::new(-2.0, 4.0, 0.0),
+            color,
+        },
+    ])
 }
 
 #[test]
@@ -106,6 +152,10 @@ fn headless_output_stage_applies_aces_srgb_and_exposure_without_reprepare() {
         renderer.capabilities().output_stage,
         OutputStageStatus::AcesSrgb
     );
+    assert_eq!(
+        renderer.capabilities().alpha_pipeline,
+        AlphaPipelineStatus::LinearSourceOver
+    );
     assert_eq!(renderer.tonemapper(), Tonemapper::Aces);
     assert_eq!(renderer.exposure_ev(), 0.0);
 
@@ -126,12 +176,30 @@ fn headless_output_stage_applies_aces_srgb_and_exposure_without_reprepare() {
 }
 
 #[test]
+fn headless_alpha_blends_in_linear_before_output_encoding() {
+    let (mut scene, camera) = scene_with_fullscreen_primitives(vec![
+        fullscreen_triangle(Color::from_linear_rgba(0.0, 0.0, 1.0, 1.0)),
+        fullscreen_triangle(Color::from_linear_rgba(1.0, 0.0, 0.0, 0.5)),
+    ]);
+    let mut renderer = Renderer::headless(4, 4).expect("headless renderer builds");
+    renderer.prepare(&mut scene).expect("prepare succeeds");
+
+    renderer.render(&scene, camera).expect("render succeeds");
+
+    assert_all_pixels(renderer.frame_rgba8(), 4, 4, [158, 0, 159, 255]);
+}
+
+#[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn gpu_output_stage_divergence_is_explicit_in_capabilities() {
     if let Ok(renderer) = Renderer::headless_gpu(4, 4) {
         assert_eq!(
             renderer.capabilities().output_stage,
             OutputStageStatus::BackendPassthrough
+        );
+        assert_eq!(
+            renderer.capabilities().alpha_pipeline,
+            AlphaPipelineStatus::BackendPassthrough
         );
     }
 }

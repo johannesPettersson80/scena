@@ -135,6 +135,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_source_scope(root, findings);
     check_module_boundaries(root, findings);
     check_asset_api_contracts(root, findings);
+    check_render_alpha_contracts(root, findings);
     check_solid_kiss(root, findings);
     check_backend_vocabulary(root, findings);
     check_unit_test_first_governance(root, findings);
@@ -658,6 +659,46 @@ fn check_asset_api_contracts(root: &Path, findings: &mut Vec<Finding>) {
     );
 }
 
+fn check_render_alpha_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-ALPHA",
+        "src/diagnostics.rs",
+        &[
+            "pub enum AlphaPipelineStatus",
+            "LinearSourceOver",
+            "BackendPassthrough",
+            "pub alpha_pipeline: AlphaPipelineStatus",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-ALPHA",
+        "src/render.rs",
+        &[
+            "linear_frame: Option<Vec<Color>>",
+            "linear_frame: (!has_gpu).then(|| vec![Color::BLACK; target.pixel_len()])",
+            "fn blend_source_over(source: Color, destination: Color) -> Color",
+            "let blended = blend_source_over(color, linear_frame[pixel_index])",
+            "linear_frame[pixel_index] = blended",
+            "&self.output.encode_rgba8(blended)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-ALPHA",
+        "tests/m1_geometry_materials.rs",
+        &[
+            "headless_alpha_blends_in_linear_before_output_encoding",
+            "AlphaPipelineStatus::LinearSourceOver",
+            "AlphaPipelineStatus::BackendPassthrough",
+        ],
+    );
+}
+
 fn check_material_desc_fields_private(root: &Path, findings: &mut Vec<Finding>) {
     let path = root.join("src/material.rs");
     let Ok(text) = fs::read_to_string(path) else {
@@ -1066,6 +1107,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_asset_api_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn render_alpha_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_render_alpha_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

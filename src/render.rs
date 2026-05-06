@@ -25,6 +25,9 @@ pub struct Renderer {
     target: RasterTarget,
     prepared: Option<PreparedSceneState>,
     frame: Vec<u8>,
+    // CPU-only linear scene-referred straight-alpha accumulator. Stores the source of truth
+    // before every pixel is ACES+sRGB encoded into `frame`.
+    linear_frame: Option<Vec<Color>>,
     stats: RendererStats,
     capabilities: Capabilities,
     gpu: Option<GpuDeviceState>,
@@ -40,6 +43,7 @@ struct PreparedSceneState {
     target_revision: u64,
 }
 
+/// Row-major render target dimensions used for CPU frame and accumulator indexing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RasterTarget {
     width: u32,
@@ -150,9 +154,10 @@ impl Renderer {
     ) -> Result<Self, BuildError> {
         validate_target_size(width, height)
             .map_err(|()| BuildError::InvalidTargetSize { width, height })?;
+        let has_gpu = gpu.is_some();
         let capabilities = if surface_attached {
             Capabilities::for_attached_gpu_backend(backend)
-        } else if gpu.is_some() {
+        } else if has_gpu {
             Capabilities::for_gpu_backend(backend)
         } else {
             Capabilities::for_backend(backend)
@@ -166,6 +171,7 @@ impl Renderer {
             target,
             prepared: None,
             frame: vec![0; target.byte_len()],
+            linear_frame: (!has_gpu).then(|| vec![Color::BLACK; target.pixel_len()]),
             stats: RendererStats {
                 target_width: width,
                 target_height: height,
@@ -246,6 +252,9 @@ impl Renderer {
                 self.target.width = width;
                 self.target.height = height;
                 self.frame.resize(self.target.byte_len(), 0);
+                if let Some(linear_frame) = &mut self.linear_frame {
+                    linear_frame.resize(self.target.pixel_len(), Color::BLACK);
+                }
                 self.stats.target_width = width;
                 self.stats.target_height = height;
                 self.target_revision = self.target_revision.saturating_add(1);
@@ -343,7 +352,12 @@ impl Renderer {
 
     fn clear(&mut self, color: Color) {
         let rgba = self.output.encode_rgba8(color);
-        for pixel in self.frame.chunks_exact_mut(4) {
+        let linear_frame = self
+            .linear_frame
+            .as_mut()
+            .expect("CPU renderer owns a linear accumulator");
+        for (linear, pixel) in linear_frame.iter_mut().zip(self.frame.chunks_exact_mut(4)) {
+            *linear = color;
             pixel.copy_from_slice(&rgba);
         }
     }
@@ -388,14 +402,30 @@ impl Renderer {
     }
 
     fn write_pixel(&mut self, x: u32, y: u32, color: Color) {
-        let index = ((y * self.target.width + x) * 4) as usize;
-        self.frame[index..index + 4].copy_from_slice(&self.output.encode_rgba8(color));
+        let pixel_index = self.target.pixel_index(x, y);
+        let linear_frame = self
+            .linear_frame
+            .as_mut()
+            .expect("CPU renderer owns a linear accumulator");
+        let blended = blend_source_over(color, linear_frame[pixel_index]);
+        linear_frame[pixel_index] = blended;
+
+        let byte_index = pixel_index * 4;
+        self.frame[byte_index..byte_index + 4].copy_from_slice(&self.output.encode_rgba8(blended));
     }
 }
 
 impl RasterTarget {
+    fn pixel_len(self) -> usize {
+        (self.width as usize) * (self.height as usize)
+    }
+
     fn byte_len(self) -> usize {
-        (self.width as usize) * (self.height as usize) * 4
+        self.pixel_len() * 4
+    }
+
+    fn pixel_index(self, x: u32, y: u32) -> usize {
+        (y as usize) * (self.width as usize) + (x as usize)
     }
 }
 
@@ -451,6 +481,46 @@ fn mix_color(a: Color, b: Color, c: Color, w0: f32, w1: f32, w2: f32) -> Color {
         a.b * w0 + b.b * w1 + c.b * w2,
         a.a * w0 + b.a * w1 + c.a * w2,
     )
+}
+
+fn blend_source_over(source: Color, destination: Color) -> Color {
+    let source_alpha = clamp_alpha_or(source.a, 1.0);
+    let destination_alpha = clamp_alpha_or(destination.a, 1.0);
+    if source_alpha == 1.0 {
+        return Color::from_linear_rgba(source.r, source.g, source.b, 1.0);
+    }
+    if source_alpha <= 0.0 {
+        return destination;
+    }
+
+    let inverse_source_alpha = 1.0 - source_alpha;
+    let output_alpha = source_alpha + destination_alpha * inverse_source_alpha;
+    // RGB is intentionally unclamped so HDR linear input can reach the ACES output stage.
+    let premultiplied_r =
+        source.r * source_alpha + destination.r * destination_alpha * inverse_source_alpha;
+    let premultiplied_g =
+        source.g * source_alpha + destination.g * destination_alpha * inverse_source_alpha;
+    let premultiplied_b =
+        source.b * source_alpha + destination.b * destination_alpha * inverse_source_alpha;
+
+    if output_alpha <= f32::EPSILON {
+        Color::from_linear_rgba(0.0, 0.0, 0.0, 0.0)
+    } else {
+        Color::from_linear_rgba(
+            premultiplied_r / output_alpha,
+            premultiplied_g / output_alpha,
+            premultiplied_b / output_alpha,
+            output_alpha,
+        )
+    }
+}
+
+fn clamp_alpha_or(value: f32, fallback: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        fallback
+    }
 }
 
 fn validate_target_size(width: u32, height: u32) -> Result<(), ()> {

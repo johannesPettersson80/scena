@@ -107,18 +107,28 @@ pub enum Backend {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum OutputStageStatus {
     AcesSrgb,
     BackendPassthrough,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AlphaPipelineStatus {
+    LinearSourceOver,
+    BackendPassthrough,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Capabilities {
     pub backend: Backend,
     pub color_target_format: &'static str,
     pub gpu_device: bool,
     pub surface_attached: bool,
     pub output_stage: OutputStageStatus,
+    pub alpha_pipeline: AlphaPipelineStatus,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -330,6 +340,7 @@ impl Capabilities {
             gpu_device: false,
             surface_attached: false,
             output_stage: OutputStageStatus::AcesSrgb,
+            alpha_pipeline: AlphaPipelineStatus::LinearSourceOver,
         }
     }
 
@@ -340,6 +351,7 @@ impl Capabilities {
             gpu_device: true,
             surface_attached: false,
             output_stage: OutputStageStatus::BackendPassthrough,
+            alpha_pipeline: AlphaPipelineStatus::BackendPassthrough,
         }
     }
 
@@ -350,6 +362,7 @@ impl Capabilities {
             gpu_device: true,
             surface_attached: true,
             output_stage: OutputStageStatus::BackendPassthrough,
+            alpha_pipeline: AlphaPipelineStatus::BackendPassthrough,
         }
     }
 }

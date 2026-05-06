@@ -19,8 +19,9 @@ pub use assets::{
     RetainPolicy, SceneAsset, TextureDesc, TextureHandle,
 };
 pub use diagnostics::{
-    AssetError, Backend, BuildError, Capabilities, ChangeKind, Error, LookupError,
-    NotPreparedReason, OutputStageStatus, PrepareError, RenderError, RenderOutcome, RendererStats,
+    AlphaPipelineStatus, AssetError, Backend, BuildError, Capabilities, ChangeKind, Error,
+    LookupError, NotPreparedReason, OutputStageStatus, PrepareError, RenderError, RenderOutcome,
+    RendererStats,
 };
 pub use geometry::{
     Aabb, GeometryDesc, GeometryError, GeometryTopology, GeometryVertex, Primitive, Vertex,
