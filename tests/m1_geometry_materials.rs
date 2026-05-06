@@ -366,6 +366,52 @@ fn m1_cpu_resource_lifetime_counters_return_to_baseline() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn m1_headless_gpu_resource_counters_return_to_baseline_after_empty_reprepare() {
+    if let Ok(mut renderer) = Renderer::headless_gpu(4, 4) {
+        let baseline = renderer.stats();
+        assert_eq!(baseline.buffers, 0);
+        assert_eq!(baseline.textures, 0);
+        assert_eq!(baseline.render_targets, 0);
+        assert_eq!(baseline.pipelines, 0);
+        assert_eq!(baseline.bind_groups, 0);
+        assert_eq!(baseline.shader_modules, 0);
+        assert_eq!(baseline.pending_destructions, 0);
+        assert_eq!(baseline.approximate_gpu_memory_bytes, None);
+
+        let (mut scene, camera) = scene_with_fullscreen_triangle(Color::WHITE);
+        renderer.prepare(&mut scene).expect("gpu scene prepares");
+        let prepared = renderer.stats();
+        assert!(prepared.buffers >= 3);
+        assert_eq!(prepared.textures, 1);
+        assert_eq!(prepared.render_targets, 1);
+        assert!(prepared.pipelines >= 1);
+        assert_eq!(prepared.bind_groups, 1);
+        assert_eq!(prepared.shader_modules, 1);
+        assert_eq!(prepared.pending_destructions, 0);
+        assert!(prepared.approximate_gpu_memory_bytes.unwrap_or_default() > 0);
+        renderer.render(&scene, camera).expect("gpu scene renders");
+
+        let (mut empty_scene, _empty_camera) = scene_with_camera();
+        renderer
+            .prepare(&mut empty_scene)
+            .expect("empty gpu scene prepares and releases resources");
+        let released = renderer.stats();
+        assert_eq!(released.buffers, baseline.buffers);
+        assert_eq!(released.textures, baseline.textures);
+        assert_eq!(released.render_targets, baseline.render_targets);
+        assert_eq!(released.pipelines, baseline.pipelines);
+        assert_eq!(released.bind_groups, baseline.bind_groups);
+        assert_eq!(released.shader_modules, baseline.shader_modules);
+        assert_eq!(released.pending_destructions, baseline.pending_destructions);
+        assert_eq!(
+            released.approximate_gpu_memory_bytes,
+            baseline.approximate_gpu_memory_bytes
+        );
+    }
+}
+
+#[test]
 fn renderer_environment_is_structural_and_validated_during_prepare() {
     let assets = Assets::new();
     let environment = assets.default_environment();

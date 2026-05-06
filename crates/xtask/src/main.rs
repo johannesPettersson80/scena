@@ -805,8 +805,39 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "ARCH-RENDER-STATS",
+        "src/render/gpu/stats.rs",
+        &[
+            "pub(in crate::render) struct GpuResourceStats",
+            "fn estimate_prepared_resource_stats",
+            "approximate_gpu_memory_bytes",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STATS",
+        "src/render/gpu.rs",
+        &["pub(super) fn prepared_resource_stats(&self) -> GpuResourceStats"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STATS",
         "tests/m1_geometry_materials.rs",
-        &["m1_cpu_resource_lifetime_counters_return_to_baseline"],
+        &[
+            "m1_cpu_resource_lifetime_counters_return_to_baseline",
+            "m1_headless_gpu_resource_counters_return_to_baseline_after_empty_reprepare",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STATS",
+        "src/render/gpu/stats.rs",
+        &[
+            "estimates_prepared_headless_gpu_resource_counters",
+            "estimates_empty_headless_gpu_resource_counters_at_baseline",
+        ],
     );
     require_contains(
         root,

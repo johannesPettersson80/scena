@@ -232,6 +232,15 @@ impl Renderer {
         let primitives = prepare::collect_prepared_primitives(self.target, scene, assets)?;
         if let Some(gpu) = &mut self.gpu {
             gpu.prepare(self.target, &primitives);
+            let stats = gpu.prepared_resource_stats();
+            self.stats.buffers = stats.buffers;
+            self.stats.textures = stats.textures;
+            self.stats.render_targets = stats.render_targets;
+            self.stats.pipelines = stats.pipelines;
+            self.stats.bind_groups = stats.bind_groups;
+            self.stats.shader_modules = stats.shader_modules;
+            self.stats.approximate_gpu_memory_bytes = (stats.approximate_gpu_memory_bytes > 0)
+                .then_some(stats.approximate_gpu_memory_bytes);
         }
         self.stats.environments = environment_count;
         self.prepared = Some(PreparedSceneState {
@@ -373,8 +382,11 @@ impl Renderer {
                 .gpu
                 .as_mut()
                 .expect("draw_gpu is called only when a GPU device exists");
-            gpu.render_to_frame(self.target, self.output.exposure_ev(), &mut self.frame)?;
-            self.stats.gpu_submissions = self.stats.gpu_submissions.saturating_add(1);
+            let submitted =
+                gpu.render_to_frame(self.target, self.output.exposure_ev(), &mut self.frame)?;
+            if submitted {
+                self.stats.gpu_submissions = self.stats.gpu_submissions.saturating_add(1);
+            }
             Ok(())
         }
 

@@ -56,7 +56,7 @@ fn rrt_and_odt_fit(value: f32) -> f32 {
 }
 "#;
 
-const OUTPUT_UNIFORM_BYTE_LEN: u64 = 16;
+pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 16;
 
 pub(super) fn create_output_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {

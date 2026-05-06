@@ -3,6 +3,7 @@ use std::sync::mpsc;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod output;
+mod stats;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::diagnostics::RenderError;
@@ -18,6 +19,9 @@ use self::output::{
     GPU_TRIANGLE_SHADER, create_output_bind_group, create_output_bind_group_layout,
     create_output_uniform_buffer, encode_output_uniform,
 };
+pub(super) use self::stats::GpuResourceStats;
+#[cfg(not(target_arch = "wasm32"))]
+use self::stats::estimate_prepared_resource_stats;
 use super::RasterTarget;
 
 #[allow(dead_code)]
@@ -53,12 +57,18 @@ struct GpuPreparedResources {
     surface_pipeline: Option<wgpu::RenderPipeline>,
     padded_bytes_per_row: u32,
     unpadded_bytes_per_row: u32,
+    stats: GpuResourceStats,
 }
 
 impl GpuDeviceState {
     #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn prepare(&mut self, target: RasterTarget, primitives: &[Primitive]) {
         self.configure_surface(target);
+        if primitives.is_empty() {
+            self.resources = None;
+            return;
+        }
+
         let vertex_bytes = encode_vertices(primitives);
         let vertex_buffer_size = vertex_bytes.len().max(4) as u64;
         let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -110,6 +120,11 @@ impl GpuDeviceState {
                 &output_bind_group_layout,
             )
         });
+        let stats = estimate_prepared_resource_stats(
+            target,
+            vertex_bytes.len() / VERTEX_BYTE_LEN,
+            surface_pipeline.is_some(),
+        );
 
         self.resources = Some(GpuPreparedResources {
             target,
@@ -124,6 +139,7 @@ impl GpuDeviceState {
             surface_pipeline,
             padded_bytes_per_row,
             unpadded_bytes_per_row,
+            stats,
         });
     }
 
@@ -143,20 +159,17 @@ impl GpuDeviceState {
         target: RasterTarget,
         exposure_ev: f32,
         frame: &mut Vec<u8>,
-    ) -> Result<(), RenderError> {
-        if self
-            .resources
-            .as_ref()
-            .is_none_or(|resources| resources.target != target)
-        {
+    ) -> Result<bool, RenderError> {
+        let Some(resources) = self.resources.as_ref() else {
+            frame.resize(target.byte_len(), 0);
+            frame.fill(0);
+            return Ok(false);
+        };
+        if resources.target != target {
             return Err(RenderError::GpuResourcesNotPrepared {
                 backend: target.backend,
             });
         }
-        let resources = self
-            .resources
-            .as_ref()
-            .expect("resources are checked before rendering");
         self.queue.write_buffer(
             &resources.output_uniform,
             0,
@@ -266,7 +279,20 @@ impl GpuDeviceState {
         drop(mapped);
         resources.readback.unmap();
 
-        Ok(())
+        Ok(true)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(super) fn prepared_resource_stats(&self) -> GpuResourceStats {
+        self.resources
+            .as_ref()
+            .map(|resources| resources.stats)
+            .unwrap_or_default()
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(super) fn prepared_resource_stats(&self) -> GpuResourceStats {
+        GpuResourceStats::default()
     }
 
     fn configure_surface(&mut self, target: RasterTarget) {
