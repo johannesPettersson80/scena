@@ -143,6 +143,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_prepare_asset_contracts(root, findings);
     check_environment_lifecycle_contracts(root, findings);
     check_scene_light_contracts(root, findings);
+    check_camera_depth_contracts(root, findings);
     check_render_alpha_contracts(root, findings);
     check_output_stage_contracts(root, findings);
     check_renderer_stats_contracts(root, findings);
@@ -190,6 +191,7 @@ const REQUIRED_DOCS: &[&str] = &[
 const REQUIRED_SOURCE_MODULES: &[&str] = &[
     "src/lib.rs",
     "src/scene.rs",
+    "src/scene/camera.rs",
     "src/scene/lights.rs",
     "src/assets.rs",
     "src/geometry.rs",
@@ -1092,6 +1094,63 @@ fn check_scene_light_contracts(root: &Path, findings: &mut Vec<Finding>) {
     );
 }
 
+fn check_camera_depth_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-CAMERA-DEPTH",
+        "src/scene.rs",
+        &[
+            "mod camera;",
+            "pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera}",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-CAMERA-DEPTH",
+        "src/scene/camera.rs",
+        &[
+            "pub enum Camera",
+            "pub struct PerspectiveCamera",
+            "pub struct OrthographicCamera",
+            "pub struct DepthRange",
+            "pub const fn new(near: f32, far: f32) -> Self",
+            "pub const fn fit_sphere(center_distance: f32, radius: f32) -> Self",
+            "pub const fn contains_interval(self, near: f32, far: f32) -> bool",
+            "pub const fn with_depth_range(mut self, range: DepthRange) -> Self",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-CAMERA-DEPTH",
+        "src/lib.rs",
+        &["DepthRange", "PerspectiveCamera", "OrthographicCamera"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-CAMERA-DEPTH",
+        "tests/m2_lighting_depth_clipping.rs",
+        &[
+            "camera_depth_fit_helpers_cover_unit_cube_reference_distances",
+            "DepthRange::fit_sphere",
+            "with_depth_range",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-CAMERA-DEPTH",
+        "docs/checklists/m2-lighting-depth-clipping.md",
+        &[
+            "Camera depth-range and depth-fit helpers",
+            "DepthRange::fit_sphere",
+        ],
+    );
+}
+
 fn check_material_desc_fields_private(root: &Path, findings: &mut Vec<Finding>) {
     let path = root.join("src/material.rs");
     let Ok(text) = fs::read_to_string(path) else {
@@ -1883,6 +1942,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_scene_light_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn camera_depth_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_camera_depth_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

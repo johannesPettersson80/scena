@@ -36,8 +36,8 @@ pub use platform::NativeWindowHandle;
 pub use platform::{PlatformSurface, SurfaceEvent, SurfaceKind, SurfaceSize};
 pub use render::{Renderer, Tonemapper};
 pub use scene::{
-    Angle, Camera, CameraKey, DirectionalLight, Light, LightBuilder, LightKey, MeshBuilder,
-    MeshNode, ModelBuilder, ModelNode, Node, NodeKey, NodeKind, OrthographicCamera,
+    Angle, Camera, CameraKey, DepthRange, DirectionalLight, Light, LightBuilder, LightKey,
+    MeshBuilder, MeshNode, ModelBuilder, ModelNode, Node, NodeKey, NodeKind, OrthographicCamera,
     PerspectiveCamera, PointLight, Quat, Scene, SpotLight, Transform, Vec3,
 };
 

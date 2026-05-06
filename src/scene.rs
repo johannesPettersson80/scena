@@ -10,7 +10,9 @@ use crate::assets::{GeometryHandle, MaterialHandle, ModelHandle};
 use crate::diagnostics::LookupError;
 use crate::geometry::Primitive;
 
+mod camera;
 mod lights;
+pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
 pub use lights::{DirectionalLight, Light, LightBuilder, PointLight, SpotLight};
 
 new_key_type! {
@@ -82,30 +84,6 @@ pub struct ModelBuilder<'scene> {
     parent: NodeKey,
     transform: Transform,
     model: ModelHandle,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Camera {
-    Perspective(PerspectiveCamera),
-    Orthographic(OrthographicCamera),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PerspectiveCamera {
-    pub vertical_fov: Angle,
-    pub aspect: f32,
-    pub near: f32,
-    pub far: f32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct OrthographicCamera {
-    pub left: f32,
-    pub right: f32,
-    pub bottom: f32,
-    pub top: f32,
-    pub near: f32,
-    pub far: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -442,30 +420,6 @@ impl ModelBuilder<'_> {
             NodeKind::Model(ModelNode { model: self.model }),
             self.transform,
         )
-    }
-}
-
-impl Default for PerspectiveCamera {
-    fn default() -> Self {
-        Self {
-            vertical_fov: Angle::from_degrees(60.0),
-            aspect: 1.0,
-            near: 0.01,
-            far: 1000.0,
-        }
-    }
-}
-
-impl Default for OrthographicCamera {
-    fn default() -> Self {
-        Self {
-            left: -1.0,
-            right: 1.0,
-            bottom: -1.0,
-            top: 1.0,
-            near: -1.0,
-            far: 1.0,
-        }
     }
 }
 

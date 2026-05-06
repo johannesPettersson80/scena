@@ -1,7 +1,8 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use scena::{
-    Angle, Color, DirectionalLight, Light, NodeKind, PointLight, Scene, SpotLight, Transform, Vec3,
+    Angle, Color, DepthRange, DirectionalLight, Light, NodeKind, OrthographicCamera,
+    PerspectiveCamera, PointLight, Scene, SpotLight, Transform, Vec3,
 };
 
 #[test]
@@ -111,4 +112,30 @@ fn scene_light_components_are_typed_and_node_owned() {
                 && light.inner_cone_angle() == Angle::from_degrees(12.0)
                 && light.outer_cone_angle() == Angle::from_degrees(30.0)
     ));
+}
+
+#[test]
+fn camera_depth_fit_helpers_cover_unit_cube_reference_distances() {
+    let unit_cube_radius = 3.0_f32.sqrt() * 0.5;
+
+    for center_distance in [1.0, 100.0, 10_000.0] {
+        let range = DepthRange::fit_sphere(center_distance, unit_cube_radius);
+        assert!(range.near() > 0.0);
+        assert!(range.far() > range.near());
+        assert!(range.contains_interval(
+            center_distance - unit_cube_radius,
+            center_distance + unit_cube_radius
+        ));
+
+        let perspective = PerspectiveCamera::default().with_depth_range(range);
+        assert_eq!(perspective.near, range.near());
+        assert_eq!(perspective.far, range.far());
+
+        let orthographic = OrthographicCamera::default().with_depth_range(range);
+        assert_eq!(orthographic.near, range.near());
+        assert_eq!(orthographic.far, range.far());
+    }
+
+    let fallback = DepthRange::fit_sphere(f32::NAN, -1.0);
+    assert_eq!(fallback, DepthRange::new(0.01, 1000.0));
 }
