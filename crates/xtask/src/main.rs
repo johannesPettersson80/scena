@@ -715,11 +715,18 @@ fn check_render_alpha_contracts(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "ARCH-RENDER-ALPHA",
+        "src/render/gpu.rs",
+        &["blend: Some(wgpu::BlendState::ALPHA_BLENDING)"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-ALPHA",
         "tests/m1_geometry_materials.rs",
         &[
             "headless_alpha_blends_in_linear_before_output_encoding",
+            "headless_gpu_alpha_blends_sorted_asset_meshes_when_available",
             "AlphaPipelineStatus::LinearSourceOver",
-            "AlphaPipelineStatus::BackendPassthrough",
         ],
     );
 }
@@ -943,6 +950,7 @@ fn check_prepare_asset_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "prepare_with_assets_renders_line_material_as_screen_space_stroke",
             "prepare_with_assets_renders_wireframe_material_triangle_edges",
             "prepare_with_assets_renders_edge_material_without_coplanar_internal_edges",
+            "headless_gpu_renders_technical_material_primitives_when_available",
             "prepare_with_assets_rejects_unsupported_mesh_inputs_structurally",
         ],
     );

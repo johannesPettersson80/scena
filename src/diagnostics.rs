@@ -478,7 +478,7 @@ impl Capabilities {
             gpu_device: true,
             surface_attached: false,
             output_stage: OutputStageStatus::AcesSrgb,
-            alpha_pipeline: AlphaPipelineStatus::BackendPassthrough,
+            alpha_pipeline: AlphaPipelineStatus::LinearSourceOver,
         }
     }
 
@@ -489,7 +489,7 @@ impl Capabilities {
             gpu_device: true,
             surface_attached: true,
             output_stage: OutputStageStatus::AcesSrgb,
-            alpha_pipeline: AlphaPipelineStatus::BackendPassthrough,
+            alpha_pipeline: AlphaPipelineStatus::LinearSourceOver,
         }
     }
 }

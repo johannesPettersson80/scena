@@ -700,6 +700,53 @@ fn prepare_with_assets_sorts_blend_meshes_back_to_front_before_render() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn headless_gpu_alpha_blends_sorted_asset_meshes_when_available() {
+    assert_eq!(
+        Capabilities::for_gpu_backend(Backend::HeadlessGpu).alpha_pipeline,
+        AlphaPipelineStatus::LinearSourceOver
+    );
+
+    let assets = Assets::new();
+    let background = assets.create_geometry(fullscreen_triangle_geometry_at(0.0));
+    let near = assets.create_geometry(fullscreen_triangle_geometry_at(0.2));
+    let far = assets.create_geometry(fullscreen_triangle_geometry_at(0.8));
+    let blue = assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(0.0, 0.0, 1.0)));
+    let red_blend = assets.create_material(
+        MaterialDesc::unlit(Color::from_linear_rgba(1.0, 0.0, 0.0, 0.5))
+            .with_alpha_mode(AlphaMode::Blend),
+    );
+    let green_blend = assets.create_material(
+        MaterialDesc::unlit(Color::from_linear_rgba(0.0, 1.0, 0.0, 0.5))
+            .with_alpha_mode(AlphaMode::Blend),
+    );
+    let (mut scene, camera) = scene_with_camera();
+    scene
+        .mesh(background, blue)
+        .add()
+        .expect("background mesh inserts");
+    scene
+        .mesh(near, red_blend)
+        .add()
+        .expect("near transparent mesh inserts first");
+    scene
+        .mesh(far, green_blend)
+        .add()
+        .expect("far transparent mesh inserts second");
+
+    if let Ok(mut renderer) = Renderer::headless_gpu(4, 4) {
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("blend meshes prepare for gpu");
+        renderer
+            .render(&scene, camera)
+            .expect("gpu blend mesh renders");
+
+        assert_all_pixels(renderer.frame_rgba8(), 4, 4, [163, 116, 116, 255]);
+    }
+}
+
+#[test]
 fn prepare_with_assets_renders_line_material_as_screen_space_stroke() {
     let assets = Assets::new();
     let geometry = assets.create_geometry(GeometryDesc::line(
@@ -778,6 +825,78 @@ fn prepare_with_assets_renders_edge_material_without_coplanar_internal_edges() {
         [206, 206, 206, 255]
     );
     assert_eq!(pixel_at(renderer.frame_rgba8(), 16, 7, 7), [0, 0, 0, 255]);
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn headless_gpu_renders_technical_material_primitives_when_available() {
+    if let Ok(mut renderer) = Renderer::headless_gpu(16, 16) {
+        let assets = Assets::new();
+        let line_geometry = assets.create_geometry(GeometryDesc::line(
+            Vec3::new(-2.0, 0.0, 0.0),
+            Vec3::new(2.0, 0.0, 0.0),
+        ));
+        let line_material = assets.create_material(MaterialDesc::line(Color::WHITE, 1.0));
+        let (mut scene, camera) = scene_with_camera();
+        scene
+            .mesh(line_geometry, line_material)
+            .add()
+            .expect("line mesh inserts");
+
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("line material prepares for gpu");
+        renderer.render(&scene, camera).expect("gpu line renders");
+        assert_eq!(
+            pixel_at(renderer.frame_rgba8(), 16, 8, 7),
+            [206, 206, 206, 255]
+        );
+
+        let assets = Assets::new();
+        let wire_geometry = assets.create_geometry(flat_square_geometry());
+        let wire_material = assets.create_material(MaterialDesc::wireframe(Color::WHITE, 1.0));
+        let (mut scene, camera) = scene_with_camera();
+        scene
+            .mesh(wire_geometry, wire_material)
+            .add()
+            .expect("wireframe mesh inserts");
+
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("wireframe material prepares for gpu");
+        renderer
+            .render(&scene, camera)
+            .expect("gpu wireframe renders");
+        assert_eq!(
+            pixel_at(renderer.frame_rgba8(), 16, 8, 13),
+            [206, 206, 206, 255]
+        );
+        assert_eq!(
+            pixel_at(renderer.frame_rgba8(), 16, 7, 7),
+            [206, 206, 206, 255]
+        );
+
+        let assets = Assets::new();
+        let edge_geometry = assets.create_geometry(flat_square_geometry());
+        let edge_material = assets.create_material(MaterialDesc::edge(Color::WHITE, 1.0));
+        let (mut scene, camera) = scene_with_camera();
+        scene
+            .mesh(edge_geometry, edge_material)
+            .add()
+            .expect("edge mesh inserts");
+
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("edge material prepares for gpu");
+        renderer
+            .render(&scene, camera)
+            .expect("gpu edge material renders");
+        assert_eq!(
+            pixel_at(renderer.frame_rgba8(), 16, 8, 13),
+            [206, 206, 206, 255]
+        );
+        assert_eq!(pixel_at(renderer.frame_rgba8(), 16, 7, 7), [0, 0, 0, 255]);
+    }
 }
 
 #[test]
@@ -895,7 +1014,7 @@ fn headless_gpu_output_stage_applies_aces_srgb_for_pinned_white_fixture() {
         );
         assert_eq!(
             renderer.capabilities().alpha_pipeline,
-            AlphaPipelineStatus::BackendPassthrough
+            AlphaPipelineStatus::LinearSourceOver
         );
 
         renderer.prepare(&mut scene).expect("gpu scene prepares");
