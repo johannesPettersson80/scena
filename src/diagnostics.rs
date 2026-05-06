@@ -8,6 +8,9 @@ use crate::geometry::GeometryTopology;
 use crate::material::{AlphaMode, MaterialKind};
 use crate::scene::{CameraKey, NodeKey};
 
+mod capabilities;
+pub use capabilities::{AlphaPipelineStatus, Backend, Capabilities, OutputStageStatus};
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Error {
     Build(BuildError),
@@ -144,41 +147,6 @@ pub enum LookupError {
     CameraNotFound(CameraKey),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Backend {
-    Headless,
-    HeadlessGpu,
-    SurfaceDescriptor,
-    NativeSurface,
-    WebGpu,
-    WebGl2,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum OutputStageStatus {
-    AcesSrgb,
-    BackendPassthrough,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum AlphaPipelineStatus {
-    LinearSourceOver,
-    BackendPassthrough,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub struct Capabilities {
-    pub backend: Backend,
-    pub color_target_format: &'static str,
-    pub gpu_device: bool,
-    pub surface_attached: bool,
-    pub output_stage: OutputStageStatus,
-    pub alpha_pipeline: AlphaPipelineStatus,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct RendererStats {
     pub buffers: u64,
@@ -190,6 +158,7 @@ pub struct RendererStats {
     pub shader_modules: u64,
     pub environments: u64,
     pub scene_imports: u64,
+    pub shadow_maps: u64,
     pub live_logical_handles: u64,
     pub pending_destructions: u64,
     pub frames_rendered: u64,
@@ -204,6 +173,8 @@ pub struct RendererStats {
     pub primitives: u64,
     pub target_width: u32,
     pub target_height: u32,
+    pub directional_shadow_map_resolution: Option<u32>,
+    pub directional_shadow_pcf_kernel: Option<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -462,42 +433,3 @@ impl error::Error for AssetError {}
 impl error::Error for PrepareError {}
 impl error::Error for RenderError {}
 impl error::Error for LookupError {}
-
-impl Capabilities {
-    pub const fn headless() -> Self {
-        Self::for_backend(Backend::Headless)
-    }
-
-    pub const fn for_backend(backend: Backend) -> Self {
-        Self {
-            backend,
-            color_target_format: "Rgba8UnormSrgb",
-            gpu_device: false,
-            surface_attached: false,
-            output_stage: OutputStageStatus::AcesSrgb,
-            alpha_pipeline: AlphaPipelineStatus::LinearSourceOver,
-        }
-    }
-
-    pub const fn for_gpu_backend(backend: Backend) -> Self {
-        Self {
-            backend,
-            color_target_format: "Rgba8UnormSrgb",
-            gpu_device: true,
-            surface_attached: false,
-            output_stage: OutputStageStatus::AcesSrgb,
-            alpha_pipeline: AlphaPipelineStatus::LinearSourceOver,
-        }
-    }
-
-    pub const fn for_attached_gpu_backend(backend: Backend) -> Self {
-        Self {
-            backend,
-            color_target_format: "Rgba8UnormSrgb",
-            gpu_device: true,
-            surface_attached: true,
-            output_stage: OutputStageStatus::AcesSrgb,
-            alpha_pipeline: AlphaPipelineStatus::LinearSourceOver,
-        }
-    }
-}

@@ -230,14 +230,19 @@ impl Renderer {
             }
             None => 0,
         };
+        let lighting_stats = prepare::collect_lighting_stats(scene)?;
         let primitives = prepare::collect_prepared_primitives(self.target, scene, assets)?;
         let logical_stats =
             prepare::collect_logical_resource_stats(scene, assets, environment_count);
         self.stats.materials = logical_stats.materials;
         self.stats.environments = logical_stats.environments;
         self.stats.live_logical_handles = logical_stats.live_logical_handles;
+        self.stats.shadow_maps = lighting_stats.shadow_maps;
+        self.stats.directional_shadow_map_resolution =
+            lighting_stats.directional_shadow_map_resolution;
+        self.stats.directional_shadow_pcf_kernel = lighting_stats.directional_shadow_pcf_kernel;
         if let Some(gpu) = &mut self.gpu {
-            gpu.prepare(self.target, &primitives);
+            gpu.prepare(self.target, &primitives, lighting_stats);
             let stats = gpu.prepared_resource_stats();
             let pending_destructions = gpu.pending_destructions();
             self.stats.buffers = stats.buffers;

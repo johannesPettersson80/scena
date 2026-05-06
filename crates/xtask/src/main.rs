@@ -144,6 +144,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_environment_lifecycle_contracts(root, findings);
     check_scene_light_contracts(root, findings);
     check_directional_shadow_contracts(root, findings);
+    check_shadow_map_contracts(root, findings);
     check_camera_depth_contracts(root, findings);
     check_render_alpha_contracts(root, findings);
     check_output_stage_contracts(root, findings);
@@ -194,10 +195,12 @@ const REQUIRED_SOURCE_MODULES: &[&str] = &[
     "src/scene.rs",
     "src/scene/camera.rs",
     "src/scene/lights.rs",
+    "src/diagnostics/capabilities.rs",
     "src/assets.rs",
     "src/geometry.rs",
     "src/material.rs",
     "src/render.rs",
+    "src/render/gpu/vertices.rs",
     "src/render/prepare/strokes.rs",
     "src/animation.rs",
     "src/controls.rs",
@@ -685,7 +688,7 @@ fn check_render_alpha_contracts(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "ARCH-RENDER-ALPHA",
-        "src/diagnostics.rs",
+        "src/diagnostics/capabilities.rs",
         &[
             "pub enum AlphaPipelineStatus",
             "LinearSourceOver",
@@ -776,7 +779,7 @@ fn check_output_stage_contracts(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "ARCH-OUTPUT-STAGE",
-        "src/diagnostics.rs",
+        "src/diagnostics/capabilities.rs",
         &[
             "pub enum OutputStageStatus",
             "output_stage: OutputStageStatus::AcesSrgb",
@@ -808,10 +811,13 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub shader_modules: u64",
             "pub environments: u64",
             "pub scene_imports: u64",
+            "pub shadow_maps: u64",
             "pub live_logical_handles: u64",
             "pub pending_destructions: u64",
             "pub approximate_gpu_memory_bytes: Option<u64>",
             "pub gpu_frame_ms: Option<f32>",
+            "pub directional_shadow_map_resolution: Option<u32>",
+            "pub directional_shadow_pcf_kernel: Option<u8>",
             "pub struct DevicePoll",
             "pub destroyed_resources: u64",
         ],
@@ -868,6 +874,7 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
         &[
             "pub fn poll_device(&mut self) -> DevicePoll",
             "self.stats.live_logical_handles = logical_stats.live_logical_handles",
+            "self.stats.shadow_maps = lighting_stats.shadow_maps",
         ],
     );
     require_contains(
@@ -900,6 +907,7 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
         &[
             "pub struct RendererStats",
             "pub struct DevicePoll",
+            "shadow_maps",
             "live_logical_handles",
             "pub buffers: u64",
             "pub target_height: u32",
@@ -1114,7 +1122,7 @@ fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec<Finding>) 
         "ARCH-DIRECTIONAL-SHADOW",
         "src/render/prepare.rs",
         &[
-            "fn validate_lighting(scene: &Scene) -> Result<(), PrepareError>",
+            "pub(super) fn collect_lighting_stats(scene: &Scene) -> Result<PreparedLightingStats, PrepareError>",
             "scene.light_nodes()",
             "light.casts_shadows()",
             "PrepareError::MultipleShadowedDirectionalLights",
@@ -1150,6 +1158,88 @@ fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec<Finding>) 
             "One opt-in shadowed directional light",
             "with_shadows(true)",
         ],
+    );
+}
+
+fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-SHADOW-MAP",
+        "src/diagnostics.rs",
+        &[
+            "pub shadow_maps: u64",
+            "pub directional_shadow_map_resolution: Option<u32>",
+            "pub directional_shadow_pcf_kernel: Option<u8>",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SHADOW-MAP",
+        "src/diagnostics/capabilities.rs",
+        &[
+            "pub directional_shadow_map_default_size: u32",
+            "pub directional_shadow_map_max_size: u32",
+            "pub directional_shadow_pcf_kernel: u8",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SHADOW-MAP",
+        "src/render/prepare.rs",
+        &[
+            "DIRECTIONAL_SHADOW_MAP_RESOLUTION: u32 = 2048",
+            "DIRECTIONAL_SHADOW_PCF_KERNEL: u8 = 3",
+            "pub(super) struct PreparedLightingStats",
+            "shadow_maps: 1",
+            "directional_shadow_pcf_kernel: Some(DIRECTIONAL_SHADOW_PCF_KERNEL)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SHADOW-MAP",
+        "src/render/gpu.rs",
+        &[
+            "create_shadow_texture",
+            "wgpu::TextureFormat::Depth32Float",
+            "wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING",
+            "scena.m2.directional_shadow_map",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SHADOW-MAP",
+        "src/render/gpu/stats.rs",
+        &[
+            "shadow_maps: u64",
+            "textures: 1 + shadow_maps",
+            "render_targets: 1 + shadow_maps",
+            "DIRECTIONAL_SHADOW_MAP_BYTES",
+            "estimates_single_shadow_map_resource_counters",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SHADOW-MAP",
+        "tests/m2_lighting_depth_clipping.rs",
+        &[
+            "single_shadow_map_records_pcf3x3_prepare_stats",
+            "directional_shadow_map_default_size",
+            "stats.shadow_maps",
+            "directional_shadow_pcf_kernel",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SHADOW-MAP",
+        "docs/checklists/m2-lighting-depth-clipping.md",
+        &["Single shadow map with PCF 3x3", "ARCH-SHADOW-MAP"],
     );
 }
 
@@ -1491,7 +1581,7 @@ fn check_backend_vocabulary(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "ARCH-BACKEND-VOCAB",
-        "src/diagnostics.rs",
+        "src/diagnostics/capabilities.rs",
         &["WebGpu", "WebGl2"],
     );
     forbid_contains(
@@ -2011,6 +2101,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_directional_shadow_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn shadow_map_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_shadow_map_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

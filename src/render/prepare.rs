@@ -10,13 +10,21 @@ use super::RasterTarget;
 
 mod strokes;
 
+pub(super) const DIRECTIONAL_SHADOW_MAP_RESOLUTION: u32 = 2048;
+pub(super) const DIRECTIONAL_SHADOW_PCF_KERNEL: u8 = 3;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct PreparedLightingStats {
+    pub(super) shadow_maps: u64,
+    pub(super) directional_shadow_map_resolution: Option<u32>,
+    pub(super) directional_shadow_pcf_kernel: Option<u8>,
+}
+
 pub(super) fn collect_prepared_primitives<F>(
     target: RasterTarget,
     scene: &Scene,
     assets: Option<&Assets<F>>,
 ) -> Result<Vec<Primitive>, PrepareError> {
-    validate_lighting(scene)?;
-
     if let Some(model_node) = scene.model_nodes().next() {
         return Err(PrepareError::UnsupportedModelNode { node: model_node });
     }
@@ -65,7 +73,7 @@ pub(super) fn collect_prepared_primitives<F>(
     Ok(primitives)
 }
 
-fn validate_lighting(scene: &Scene) -> Result<(), PrepareError> {
+pub(super) fn collect_lighting_stats(scene: &Scene) -> Result<PreparedLightingStats, PrepareError> {
     let mut first_shadowed_directional = None;
     for (node, _light_key, light) in scene.light_nodes() {
         let Light::Directional(light) = light else {
@@ -82,7 +90,15 @@ fn validate_lighting(scene: &Scene) -> Result<(), PrepareError> {
         }
         first_shadowed_directional = Some(node);
     }
-    Ok(())
+    Ok(if first_shadowed_directional.is_some() {
+        PreparedLightingStats {
+            shadow_maps: 1,
+            directional_shadow_map_resolution: Some(DIRECTIONAL_SHADOW_MAP_RESOLUTION),
+            directional_shadow_pcf_kernel: Some(DIRECTIONAL_SHADOW_PCF_KERNEL),
+        }
+    } else {
+        PreparedLightingStats::default()
+    })
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

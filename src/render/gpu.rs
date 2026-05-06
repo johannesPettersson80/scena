@@ -5,12 +5,14 @@ mod lifecycle;
 #[cfg(not(target_arch = "wasm32"))]
 mod output;
 mod stats;
+#[cfg(not(target_arch = "wasm32"))]
+mod vertices;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::diagnostics::RenderError;
 use crate::diagnostics::{Backend, BuildError};
 #[cfg(not(target_arch = "wasm32"))]
-use crate::geometry::{Primitive, Vertex};
+use crate::geometry::Primitive;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::platform::BoxedNativeWindow;
 use crate::platform::SurfaceSize;
@@ -23,7 +25,10 @@ use self::output::{
 pub(super) use self::stats::GpuResourceStats;
 #[cfg(not(target_arch = "wasm32"))]
 use self::stats::estimate_prepared_resource_stats;
+#[cfg(not(target_arch = "wasm32"))]
+use self::vertices::{VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN, encode_vertices};
 use super::RasterTarget;
+use super::prepare::PreparedLightingStats;
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -54,6 +59,8 @@ struct GpuPreparedResources {
     vertex_buffer: wgpu::Buffer,
     output_uniform: wgpu::Buffer,
     output_bind_group: wgpu::BindGroup,
+    _shadow_texture: Option<wgpu::Texture>,
+    _shadow_view: Option<wgpu::TextureView>,
     vertex_count: u32,
     offscreen_pipeline: wgpu::RenderPipeline,
     surface_pipeline: Option<wgpu::RenderPipeline>,
@@ -64,7 +71,12 @@ struct GpuPreparedResources {
 
 impl GpuDeviceState {
     #[cfg(not(target_arch = "wasm32"))]
-    pub(super) fn prepare(&mut self, target: RasterTarget, primitives: &[Primitive]) {
+    pub(super) fn prepare(
+        &mut self,
+        target: RasterTarget,
+        primitives: &[Primitive],
+        lighting_stats: PreparedLightingStats,
+    ) {
         self.configure_surface(target);
         self.release_prepared_resources();
         if primitives.is_empty() {
@@ -113,6 +125,13 @@ impl GpuDeviceState {
         let output_uniform = create_output_uniform_buffer(&self.device);
         let output_bind_group =
             create_output_bind_group(&self.device, &output_bind_group_layout, &output_uniform);
+        let shadow_texture = create_shadow_texture(
+            &self.device,
+            lighting_stats.directional_shadow_map_resolution,
+        );
+        let shadow_view = shadow_texture
+            .as_ref()
+            .map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()));
         let offscreen_pipeline =
             create_unlit_pipeline(&self.device, GPU_COLOR_FORMAT, &output_bind_group_layout);
         let surface_pipeline = self.surface.as_ref().map(|surface| {
@@ -126,6 +145,7 @@ impl GpuDeviceState {
             target,
             vertex_bytes.len() / VERTEX_BYTE_LEN,
             surface_pipeline.is_some(),
+            lighting_stats.shadow_maps,
         );
 
         self.resources = Some(GpuPreparedResources {
@@ -136,6 +156,8 @@ impl GpuDeviceState {
             vertex_buffer,
             output_uniform,
             output_bind_group,
+            _shadow_texture: shadow_texture,
+            _shadow_view: shadow_view,
             vertex_count: (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32,
             offscreen_pipeline,
             surface_pipeline,
@@ -150,8 +172,10 @@ impl GpuDeviceState {
         &mut self,
         target: RasterTarget,
         primitives: &[crate::geometry::Primitive],
+        lighting_stats: PreparedLightingStats,
     ) {
         let _ = primitives;
+        let _ = lighting_stats;
         self.configure_surface(target);
     }
 
@@ -429,22 +453,6 @@ const BYTES_PER_PIXEL: u32 = 4;
 #[cfg(not(target_arch = "wasm32"))]
 const GPU_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 #[cfg(not(target_arch = "wasm32"))]
-const VERTEX_BYTE_LEN: usize = 7 * std::mem::size_of::<f32>();
-#[cfg(not(target_arch = "wasm32"))]
-const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] = [
-    wgpu::VertexAttribute {
-        format: wgpu::VertexFormat::Float32x3,
-        offset: 0,
-        shader_location: 0,
-    },
-    wgpu::VertexAttribute {
-        format: wgpu::VertexFormat::Float32x4,
-        offset: 3 * std::mem::size_of::<f32>() as u64,
-        shader_location: 1,
-    },
-];
-
-#[cfg(not(target_arch = "wasm32"))]
 fn align_to(value: u32, alignment: u32) -> u32 {
     value.div_ceil(alignment) * alignment
 }
@@ -497,27 +505,21 @@ fn create_unlit_pipeline(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn encode_vertices(primitives: &[Primitive]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(primitives.len() * 3 * VERTEX_BYTE_LEN);
-    for primitive in primitives {
-        for vertex in primitive.vertices() {
-            encode_vertex(&mut bytes, *vertex);
-        }
-    }
-    bytes
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn encode_vertex(bytes: &mut Vec<u8>, vertex: Vertex) {
-    for value in [
-        vertex.position.x,
-        vertex.position.y,
-        vertex.position.z,
-        vertex.color.r,
-        vertex.color.g,
-        vertex.color.b,
-        vertex.color.a,
-    ] {
-        bytes.extend_from_slice(&value.to_ne_bytes());
-    }
+fn create_shadow_texture(device: &wgpu::Device, resolution: Option<u32>) -> Option<wgpu::Texture> {
+    resolution.map(|size| {
+        device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("scena.m2.directional_shadow_map"),
+            size: wgpu::Extent3d {
+                width: size,
+                height: size,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        })
+    })
 }

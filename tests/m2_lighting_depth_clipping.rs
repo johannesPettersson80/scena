@@ -2,7 +2,8 @@
 
 use scena::{
     Angle, Color, DepthRange, DirectionalLight, Light, NodeKind, OrthographicCamera,
-    PerspectiveCamera, PointLight, PrepareError, Renderer, Scene, SpotLight, Transform, Vec3,
+    PerspectiveCamera, PointLight, PrepareError, Primitive, Renderer, Scene, SpotLight, Transform,
+    Vec3,
 };
 
 #[test]
@@ -178,4 +179,36 @@ fn shadowed_directional_light_is_opt_in_and_single_owner() {
         error,
         PrepareError::MultipleShadowedDirectionalLights { first, second }
     );
+}
+
+#[test]
+fn single_shadow_map_records_pcf3x3_prepare_stats() {
+    let mut scene = Scene::new();
+    scene
+        .directional_light(DirectionalLight::default().with_shadows(true))
+        .add()
+        .expect("shadowed directional light inserts");
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![Primitive::unlit_triangle()],
+            Transform::default(),
+        )
+        .expect("shadow caster inserts");
+
+    let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+    assert_eq!(
+        renderer.capabilities().directional_shadow_map_default_size,
+        2048
+    );
+    assert_eq!(renderer.capabilities().directional_shadow_pcf_kernel, 3);
+
+    renderer
+        .prepare(&mut scene)
+        .expect("one shadow map prepares");
+    let stats = renderer.stats();
+
+    assert_eq!(stats.shadow_maps, 1);
+    assert_eq!(stats.directional_shadow_map_resolution, Some(2048));
+    assert_eq!(stats.directional_shadow_pcf_kernel, Some(3));
 }

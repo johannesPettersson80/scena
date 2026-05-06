@@ -1,5 +1,7 @@
 #[cfg(not(target_arch = "wasm32"))]
-use super::{BYTES_PER_PIXEL, VERTEX_BYTE_LEN, align_to, output};
+use super::vertices::VERTEX_BYTE_LEN;
+#[cfg(not(target_arch = "wasm32"))]
+use super::{BYTES_PER_PIXEL, align_to, output};
 
 #[cfg(not(target_arch = "wasm32"))]
 use super::super::RasterTarget;
@@ -32,6 +34,7 @@ pub(super) fn estimate_prepared_resource_stats(
     target: RasterTarget,
     vertex_count: usize,
     has_surface_pipeline: bool,
+    shadow_maps: u64,
 ) -> GpuResourceStats {
     if vertex_count == 0 {
         return GpuResourceStats::default();
@@ -44,17 +47,25 @@ pub(super) fn estimate_prepared_resource_stats(
     let vertex_bytes = (vertex_count * VERTEX_BYTE_LEN).max(4) as u64;
     let uniform_bytes = output::OUTPUT_UNIFORM_BYTE_LEN;
     let pipelines = 1 + u64::from(has_surface_pipeline);
+    let shadow_map_bytes = shadow_maps.saturating_mul(DIRECTIONAL_SHADOW_MAP_BYTES);
 
     GpuResourceStats {
         buffers: 3,
-        textures: 1,
-        render_targets: 1,
+        textures: 1 + shadow_maps,
+        render_targets: 1 + shadow_maps,
         pipelines,
         bind_groups: 1,
         shader_modules: pipelines,
-        approximate_gpu_memory_bytes: texture_bytes + readback_bytes + vertex_bytes + uniform_bytes,
+        approximate_gpu_memory_bytes: texture_bytes
+            + readback_bytes
+            + vertex_bytes
+            + uniform_bytes
+            + shadow_map_bytes,
     }
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+const DIRECTIONAL_SHADOW_MAP_BYTES: u64 = 2048 * 2048 * 4;
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
@@ -69,7 +80,7 @@ mod tests {
             backend: Backend::HeadlessGpu,
         };
 
-        let stats = estimate_prepared_resource_stats(target, 3, false);
+        let stats = estimate_prepared_resource_stats(target, 3, false, 0);
 
         assert_eq!(stats.buffers, 3);
         assert_eq!(stats.textures, 1);
@@ -89,9 +100,25 @@ mod tests {
             backend: Backend::HeadlessGpu,
         };
 
-        let stats = estimate_prepared_resource_stats(target, 0, false);
+        let stats = estimate_prepared_resource_stats(target, 0, false, 0);
 
         assert_eq!(stats, GpuResourceStats::default());
         assert_eq!(stats.destruction_records(), 0);
+    }
+
+    #[test]
+    fn estimates_single_shadow_map_resource_counters() {
+        let target = RasterTarget {
+            width: 4,
+            height: 4,
+            backend: Backend::HeadlessGpu,
+        };
+
+        let stats = estimate_prepared_resource_stats(target, 3, false, 1);
+
+        assert_eq!(stats.textures, 2);
+        assert_eq!(stats.render_targets, 2);
+        assert_eq!(stats.destruction_records(), 10);
+        assert!(stats.approximate_gpu_memory_bytes >= 2048 * 2048 * 4);
     }
 }
