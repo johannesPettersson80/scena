@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 use scena::{
     Backend, BuildError, CameraKey, Color, NotPreparedReason, PerspectiveCamera, PlatformSurface,
     Primitive, RenderError, Renderer, Scene, SurfaceEvent, Transform, Vec3, Vertex,

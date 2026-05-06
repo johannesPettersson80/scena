@@ -132,6 +132,7 @@ fn run_docs_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_required_doc_contracts(root, findings);
     check_default_environment_manifest(root, findings);
     check_visual_fixture_metadata(root, findings);
+    check_m1_browser_rendered_output(root, findings);
 }
 
 fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
@@ -1352,6 +1353,45 @@ fn check_visual_fixture_metadata(root: &Path, findings: &mut Vec<Finding>) {
     );
 }
 
+fn check_m1_browser_rendered_output(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M1",
+        "Cargo.toml",
+        &[
+            "wasm-bindgen",
+            "wasm-bindgen-test",
+            "CanvasRenderingContext2d",
+            "ImageData",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M1",
+        "tests/m1_browser_rendered_output.rs",
+        &[
+            "wasm_bindgen_test_configure!(run_in_browser)",
+            "fn m1_browser_wasm_renders_color_and_alpha_to_canvas",
+            "Renderer::headless(4, 4)",
+            "put_image_data",
+            "get_image_data",
+            "[158, 0, 159, 255]",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M1",
+        "docs/checklists/m1-geometry-materials.md",
+        &[
+            "m1_browser_rendered_output",
+            "Rust/WASM browser rendered-output proof",
+        ],
+    );
+}
+
 fn require_manifest_value(
     findings: &mut Vec<Finding>,
     manifest_rel: &str,
@@ -1651,6 +1691,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_visual_fixture_metadata(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn m1_browser_rendered_output_is_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_m1_browser_rendered_output(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 use scena::{
     Aabb, AlphaMode, AlphaPipelineStatus, AssetPath, Assets, Backend, Capabilities, Color,
     DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES, DEFAULT_STROKE_WIDTH_PX, EnvironmentDesc,
