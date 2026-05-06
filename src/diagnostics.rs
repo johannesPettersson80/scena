@@ -8,6 +8,7 @@ use crate::scene::{CameraKey, NodeKey};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     Build(BuildError),
+    Asset(AssetError),
     Prepare(PrepareError),
     Render(RenderError),
     Lookup(LookupError),
@@ -22,6 +23,34 @@ pub enum BuildError {
     RequestDevice { backend: Backend },
     SurfaceUnsupported { backend: Backend },
     UnsupportedBackend { backend: Backend },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AssetError {
+    NotFound {
+        path: String,
+    },
+    Io {
+        path: String,
+        reason: String,
+    },
+    Parse {
+        path: String,
+        reason: String,
+    },
+    UnsupportedRequiredExtension {
+        path: String,
+        extension: String,
+    },
+    UnsupportedOptionalExtensionUsed {
+        path: String,
+        extension: String,
+        help: String,
+    },
+    ReloadRequiresRetain {
+        path: String,
+        help: &'static str,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,6 +139,12 @@ impl From<BuildError> for Error {
     }
 }
 
+impl From<AssetError> for Error {
+    fn from(error: AssetError) -> Self {
+        Self::Asset(error)
+    }
+}
+
 impl From<PrepareError> for Error {
     fn from(error: PrepareError) -> Self {
         Self::Prepare(error)
@@ -132,6 +167,7 @@ impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Build(error) => error.fmt(formatter),
+            Self::Asset(error) => error.fmt(formatter),
             Self::Prepare(error) => error.fmt(formatter),
             Self::Render(error) => error.fmt(formatter),
             Self::Lookup(error) => error.fmt(formatter),
@@ -171,6 +207,35 @@ impl fmt::Display for BuildError {
                     formatter,
                     "backend {backend:?} is not supported on this target"
                 )
+            }
+        }
+    }
+}
+
+impl fmt::Display for AssetError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotFound { path } => write!(formatter, "asset was not found: {path}"),
+            Self::Io { path, reason } => {
+                write!(formatter, "failed to read asset {path}: {reason}")
+            }
+            Self::Parse { path, reason } => {
+                write!(formatter, "failed to parse asset {path}: {reason}")
+            }
+            Self::UnsupportedRequiredExtension { path, extension } => write!(
+                formatter,
+                "asset {path} requires unsupported extension {extension}"
+            ),
+            Self::UnsupportedOptionalExtensionUsed {
+                path,
+                extension,
+                help,
+            } => write!(
+                formatter,
+                "asset {path} uses unsupported optional extension {extension}: {help}"
+            ),
+            Self::ReloadRequiresRetain { path, help } => {
+                write!(formatter, "asset {path} cannot be reloaded: {help}")
             }
         }
     }
@@ -241,6 +306,7 @@ impl fmt::Display for LookupError {
 
 impl error::Error for Error {}
 impl error::Error for BuildError {}
+impl error::Error for AssetError {}
 impl error::Error for PrepareError {}
 impl error::Error for RenderError {}
 impl error::Error for LookupError {}

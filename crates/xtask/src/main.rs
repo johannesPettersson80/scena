@@ -134,6 +134,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     require_files(root, findings, "ARCH-REQUIRED", REQUIRED_SOURCE_MODULES);
     check_source_scope(root, findings);
     check_module_boundaries(root, findings);
+    check_asset_api_contracts(root, findings);
     check_solid_kiss(root, findings);
     check_backend_vocabulary(root, findings);
     check_unit_test_first_governance(root, findings);
@@ -522,6 +523,29 @@ fn check_module_boundaries(root: &Path, findings: &mut Vec<Finding>) {
     }
 }
 
+fn check_asset_api_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-ASSET-API",
+        "src/assets.rs",
+        &[
+            "pub async fn load_texture",
+            "&self,",
+            "color_space: TextureColorSpace",
+            "Result<TextureHandle, AssetError>",
+            "pub fn create_material(&self, material: impl Into<MaterialDesc>) -> MaterialHandle",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ASSET-API",
+        "src/diagnostics.rs",
+        &["pub enum AssetError", "UnsupportedRequiredExtension"],
+    );
+}
+
 fn check_solid_kiss(root: &Path, findings: &mut Vec<Finding>) {
     require_contains(
         root,
@@ -874,5 +898,15 @@ mod tests {
     fn source_scope_terms_match_whole_tokens() {
         assert!(contains_scope_term("a robot module", "robot"));
         assert!(!contains_scope_term("a roboticist module", "robot"));
+    }
+
+    #[test]
+    fn asset_api_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_asset_api_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
     }
 }

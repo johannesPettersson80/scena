@@ -14,13 +14,18 @@ pub mod platform;
 pub mod render;
 pub mod scene;
 
-pub use assets::{Assets, RetainPolicy};
+pub use assets::{
+    AssetPath, Assets, EnvironmentHandle, GeometryHandle, MaterialHandle, ModelHandle,
+    RetainPolicy, SceneAsset, TextureDesc, TextureHandle,
+};
 pub use diagnostics::{
-    Backend, BuildError, Capabilities, ChangeKind, Error, LookupError, NotPreparedReason,
-    PrepareError, RenderError, RenderOutcome, RendererStats,
+    AssetError, Backend, BuildError, Capabilities, ChangeKind, Error, LookupError,
+    NotPreparedReason, PrepareError, RenderError, RenderOutcome, RendererStats,
 };
 pub use geometry::{Primitive, Vertex};
-pub use material::Color;
+pub use material::{
+    AlphaMode, Color, ColorParseError, MaterialDesc, MaterialKind, TextureColorSpace,
+};
 #[cfg(not(target_arch = "wasm32"))]
 pub use platform::NativeWindowHandle;
 pub use platform::{PlatformSurface, SurfaceEvent, SurfaceKind, SurfaceSize};
