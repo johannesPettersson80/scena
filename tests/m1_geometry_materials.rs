@@ -193,6 +193,32 @@ fn fullscreen_triangle_geometry_at(z: f32) -> GeometryDesc {
     .expect("fullscreen test geometry is valid")
 }
 
+fn flat_square_geometry() -> GeometryDesc {
+    GeometryDesc::try_new(
+        GeometryTopology::Triangles,
+        vec![
+            scena::GeometryVertex {
+                position: Vec3::new(-0.75, -0.75, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            scena::GeometryVertex {
+                position: Vec3::new(0.75, -0.75, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            scena::GeometryVertex {
+                position: Vec3::new(0.75, 0.75, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            scena::GeometryVertex {
+                position: Vec3::new(-0.75, 0.75, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+        ],
+        vec![0, 1, 2, 0, 2, 3],
+    )
+    .expect("flat square test geometry is valid")
+}
+
 #[test]
 fn asset_taxonomy_reserves_distinct_typed_handles() {
     assert_handle::<ModelHandle>();
@@ -428,6 +454,59 @@ fn prepare_with_assets_renders_line_material_as_screen_space_stroke() {
     );
     assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 4, 2), [0, 0, 0, 255]);
     assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 4, 4), [0, 0, 0, 255]);
+}
+
+#[test]
+fn prepare_with_assets_renders_wireframe_material_triangle_edges() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(flat_square_geometry());
+    let material = assets.create_material(MaterialDesc::wireframe(Color::WHITE, 1.0));
+    let (mut scene, camera) = scene_with_camera();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("wireframe mesh inserts");
+    let mut renderer = Renderer::headless(16, 16).expect("headless renderer builds");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("wireframe material prepares");
+    renderer.render(&scene, camera).expect("wireframe renders");
+
+    assert_eq!(
+        pixel_at(renderer.frame_rgba8(), 16, 8, 13),
+        [206, 206, 206, 255]
+    );
+    assert_eq!(
+        pixel_at(renderer.frame_rgba8(), 16, 7, 7),
+        [206, 206, 206, 255]
+    );
+}
+
+#[test]
+fn prepare_with_assets_renders_edge_material_without_coplanar_internal_edges() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(flat_square_geometry());
+    let material = assets.create_material(MaterialDesc::edge(Color::WHITE, 1.0));
+    let (mut scene, camera) = scene_with_camera();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("edge mesh inserts");
+    let mut renderer = Renderer::headless(16, 16).expect("headless renderer builds");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("edge material prepares");
+    renderer
+        .render(&scene, camera)
+        .expect("edge material renders");
+
+    assert_eq!(
+        pixel_at(renderer.frame_rgba8(), 16, 8, 13),
+        [206, 206, 206, 255]
+    );
+    assert_eq!(pixel_at(renderer.frame_rgba8(), 16, 7, 7), [0, 0, 0, 255]);
 }
 
 #[test]

@@ -725,6 +725,9 @@ fn check_prepare_asset_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "total_cmp",
             "fn average_depth",
             "fn append_line_primitives",
+            "fn append_wireframe_primitives",
+            "fn append_edge_primitives",
+            "struct EdgeCandidate",
             "fn append_line_segment",
             "fn screen_x_to_ndc",
         ],
@@ -761,6 +764,8 @@ fn check_prepare_asset_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "prepare_without_assets_rejects_asset_backed_mesh_nodes",
             "prepare_with_assets_sorts_blend_meshes_back_to_front_before_render",
             "prepare_with_assets_renders_line_material_as_screen_space_stroke",
+            "prepare_with_assets_renders_wireframe_material_triangle_edges",
+            "prepare_with_assets_renders_edge_material_without_coplanar_internal_edges",
             "prepare_with_assets_rejects_unsupported_mesh_inputs_structurally",
         ],
     );

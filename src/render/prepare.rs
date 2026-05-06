@@ -1,7 +1,11 @@
+use std::collections::BTreeMap;
+
 use crate::assets::Assets;
 use crate::diagnostics::PrepareError;
 use crate::geometry::{GeometryDesc, GeometryTopology, Primitive, Vertex};
-use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
+use crate::material::{
+    AlphaMode, Color, DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES, MaterialDesc, MaterialKind,
+};
 use crate::scene::{NodeKey, Scene, Vec3};
 
 use super::RasterTarget;
@@ -79,9 +83,14 @@ fn append_geometry_primitives(
     transparent_primitives: &mut Vec<TransparentPrimitive>,
 ) -> Result<(), PrepareError> {
     match geometry.topology() {
-        GeometryTopology::Triangles => {
-            append_triangle_primitives(node, geometry, material, primitives, transparent_primitives)
-        }
+        GeometryTopology::Triangles => append_triangle_primitives(
+            node,
+            geometry,
+            material,
+            target,
+            primitives,
+            transparent_primitives,
+        ),
         GeometryTopology::Lines => {
             append_line_primitives(node, geometry, material, target, primitives)
         }
@@ -92,14 +101,24 @@ fn append_triangle_primitives(
     node: NodeKey,
     geometry: &GeometryDesc,
     material: &MaterialDesc,
+    target: RasterTarget,
     primitives: &mut Vec<Primitive>,
     transparent_primitives: &mut Vec<TransparentPrimitive>,
 ) -> Result<(), PrepareError> {
-    if matches!(material.kind(), MaterialKind::Line) {
-        return Err(PrepareError::UnsupportedMaterialKind {
-            node,
-            kind: material.kind(),
-        });
+    match material.kind() {
+        MaterialKind::Unlit | MaterialKind::PbrMetallicRoughness => {}
+        MaterialKind::Line => {
+            return Err(PrepareError::UnsupportedMaterialKind {
+                node,
+                kind: material.kind(),
+            });
+        }
+        MaterialKind::Wireframe => {
+            return append_wireframe_primitives(node, geometry, material, target, primitives);
+        }
+        MaterialKind::Edge => {
+            return append_edge_primitives(node, geometry, material, target, primitives);
+        }
     }
 
     let material_pass = material_pass(node, material)?;
@@ -133,6 +152,96 @@ fn append_triangle_primitives(
     }
 
     Ok(())
+}
+
+fn append_wireframe_primitives(
+    node: NodeKey,
+    geometry: &GeometryDesc,
+    material: &MaterialDesc,
+    target: RasterTarget,
+    primitives: &mut Vec<Primitive>,
+) -> Result<(), PrepareError> {
+    let (color, width_px) = technical_stroke_material(node, material)?;
+    let vertices = geometry.vertices();
+    for triangle in geometry.indices().chunks_exact(3) {
+        for (start, end) in triangle_edges(triangle) {
+            append_line_segment(
+                vertices[start as usize].position,
+                vertices[end as usize].position,
+                color,
+                width_px,
+                target,
+                primitives,
+            );
+        }
+    }
+    Ok(())
+}
+
+fn append_edge_primitives(
+    node: NodeKey,
+    geometry: &GeometryDesc,
+    material: &MaterialDesc,
+    target: RasterTarget,
+    primitives: &mut Vec<Primitive>,
+) -> Result<(), PrepareError> {
+    let (color, width_px) = technical_stroke_material(node, material)?;
+    let threshold = material
+        .edge_angle_threshold_degrees()
+        .unwrap_or(DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES);
+    let mut edges: BTreeMap<(u32, u32), EdgeCandidate> = BTreeMap::new();
+    for triangle in geometry.indices().chunks_exact(3) {
+        let normal = triangle_normal(geometry, triangle);
+        for (start, end) in triangle_edges(triangle) {
+            let key = ordered_edge_key(start, end);
+            edges
+                .entry(key)
+                .and_modify(|edge| edge.add_face(normal))
+                .or_insert_with(|| EdgeCandidate::new(start, end, normal));
+        }
+    }
+
+    let vertices = geometry.vertices();
+    for edge in edges.values() {
+        if edge.is_visible(threshold) {
+            append_line_segment(
+                vertices[edge.start as usize].position,
+                vertices[edge.end as usize].position,
+                color,
+                width_px,
+                target,
+                primitives,
+            );
+        }
+    }
+    Ok(())
+}
+
+fn technical_stroke_material(
+    node: NodeKey,
+    material: &MaterialDesc,
+) -> Result<(Color, f32), PrepareError> {
+    if !matches!(
+        material.kind(),
+        MaterialKind::Line | MaterialKind::Wireframe | MaterialKind::Edge
+    ) {
+        return Err(PrepareError::UnsupportedMaterialKind {
+            node,
+            kind: material.kind(),
+        });
+    }
+
+    let mut color = material.base_color();
+    match material.alpha_mode() {
+        AlphaMode::Opaque => color.a = 1.0,
+        AlphaMode::Mask { .. } | AlphaMode::Blend => {
+            return Err(PrepareError::UnsupportedAlphaMode {
+                node,
+                alpha_mode: material.alpha_mode(),
+            });
+        }
+    }
+    Ok((color, material.stroke_width_px().unwrap_or(1.0)))
 }
 
 fn append_line_primitives(
@@ -205,17 +314,7 @@ fn line_material(node: NodeKey, material: &MaterialDesc) -> Result<(Color, f32),
         }
     }
 
-    let mut color = material.base_color();
-    match material.alpha_mode() {
-        AlphaMode::Opaque => color.a = 1.0,
-        AlphaMode::Mask { .. } | AlphaMode::Blend => {
-            return Err(PrepareError::UnsupportedAlphaMode {
-                node,
-                alpha_mode: material.alpha_mode(),
-            });
-        }
-    }
-    Ok((color, material.stroke_width_px().unwrap_or(1.0)))
+    technical_stroke_material(node, material)
 }
 
 fn average_depth(primitive: &Primitive) -> f32 {
@@ -260,6 +359,92 @@ fn append_line_segment(
         Vertex { position: c, color },
         Vertex { position: d, color },
     ]));
+}
+
+fn triangle_edges(triangle: &[u32]) -> [(u32, u32); 3] {
+    [
+        (triangle[0], triangle[1]),
+        (triangle[1], triangle[2]),
+        (triangle[2], triangle[0]),
+    ]
+}
+
+fn ordered_edge_key(start: u32, end: u32) -> (u32, u32) {
+    if start <= end {
+        (start, end)
+    } else {
+        (end, start)
+    }
+}
+
+struct EdgeCandidate {
+    start: u32,
+    end: u32,
+    first_normal: Vec3,
+    second_normal: Option<Vec3>,
+    face_count: u8,
+}
+
+impl EdgeCandidate {
+    fn new(start: u32, end: u32, normal: Vec3) -> Self {
+        Self {
+            start,
+            end,
+            first_normal: normal,
+            second_normal: None,
+            face_count: 1,
+        }
+    }
+
+    fn add_face(&mut self, normal: Vec3) {
+        self.face_count = self.face_count.saturating_add(1);
+        if self.second_normal.is_none() {
+            self.second_normal = Some(normal);
+        }
+    }
+
+    fn is_visible(&self, threshold_degrees: f32) -> bool {
+        if self.face_count != 2 {
+            return true;
+        }
+        let Some(second_normal) = self.second_normal else {
+            return true;
+        };
+        angle_degrees(self.first_normal, second_normal) > threshold_degrees
+    }
+}
+
+fn triangle_normal(geometry: &GeometryDesc, triangle: &[u32]) -> Vec3 {
+    let vertices = geometry.vertices();
+    let a = vertices[triangle[0] as usize].position;
+    let b = vertices[triangle[1] as usize].position;
+    let c = vertices[triangle[2] as usize].position;
+    normalize(cross(sub(b, a), sub(c, a))).unwrap_or(vertices[triangle[0] as usize].normal)
+}
+
+fn angle_degrees(left: Vec3, right: Vec3) -> f32 {
+    dot(left, right).clamp(-1.0, 1.0).acos().to_degrees()
+}
+
+fn sub(left: Vec3, right: Vec3) -> Vec3 {
+    Vec3::new(left.x - right.x, left.y - right.y, left.z - right.z)
+}
+
+fn cross(left: Vec3, right: Vec3) -> Vec3 {
+    Vec3::new(
+        left.y * right.z - left.z * right.y,
+        left.z * right.x - left.x * right.z,
+        left.x * right.y - left.y * right.x,
+    )
+}
+
+fn dot(left: Vec3, right: Vec3) -> f32 {
+    left.x * right.x + left.y * right.y + left.z * right.z
+}
+
+fn normalize(value: Vec3) -> Option<Vec3> {
+    let length = dot(value, value).sqrt();
+    (length > f32::EPSILON).then(|| Vec3::new(value.x / length, value.y / length, value.z / length))
 }
 
 #[derive(Clone, Copy)]
