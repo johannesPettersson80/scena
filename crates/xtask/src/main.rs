@@ -142,6 +142,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_asset_api_contracts(root, findings);
     check_prepare_asset_contracts(root, findings);
     check_environment_lifecycle_contracts(root, findings);
+    check_scene_light_contracts(root, findings);
     check_render_alpha_contracts(root, findings);
     check_output_stage_contracts(root, findings);
     check_renderer_stats_contracts(root, findings);
@@ -189,6 +190,7 @@ const REQUIRED_DOCS: &[&str] = &[
 const REQUIRED_SOURCE_MODULES: &[&str] = &[
     "src/lib.rs",
     "src/scene.rs",
+    "src/scene/lights.rs",
     "src/assets.rs",
     "src/geometry.rs",
     "src/material.rs",
@@ -1033,6 +1035,63 @@ fn check_environment_lifecycle_contracts(root: &Path, findings: &mut Vec<Finding
     );
 }
 
+fn check_scene_light_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-SCENE-LIGHTS",
+        "src/scene.rs",
+        &[
+            "pub struct LightKey",
+            "mod lights;",
+            "pub use lights::{DirectionalLight, Light, LightBuilder, PointLight, SpotLight}",
+            "NodeKind::Light",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SCENE-LIGHTS",
+        "src/scene/lights.rs",
+        &[
+            "pub enum Light",
+            "pub struct DirectionalLight",
+            "pub struct PointLight",
+            "pub struct SpotLight",
+            "pub fn directional_light(&mut self, light: DirectionalLight) -> LightBuilder<'_>",
+            "pub fn point_light(&mut self, light: PointLight) -> LightBuilder<'_>",
+            "pub fn spot_light(&mut self, light: SpotLight) -> LightBuilder<'_>",
+            "pub fn light(&self, light: LightKey) -> Option<&Light>",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SCENE-LIGHTS",
+        "src/lib.rs",
+        &[
+            "DirectionalLight",
+            "LightBuilder",
+            "LightKey",
+            "PointLight",
+            "SpotLight",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SCENE-LIGHTS",
+        "tests/m2_lighting_depth_clipping.rs",
+        &[
+            "scene_light_components_are_typed_and_node_owned",
+            ".directional_light",
+            ".point_light",
+            ".spot_light",
+            "NodeKind::Light",
+        ],
+    );
+}
+
 fn check_material_desc_fields_private(root: &Path, findings: &mut Vec<Finding>) {
     let path = root.join("src/material.rs");
     let Ok(text) = fs::read_to_string(path) else {
@@ -1814,6 +1873,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_environment_lifecycle_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn scene_light_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_scene_light_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

@@ -10,9 +10,13 @@ use crate::assets::{GeometryHandle, MaterialHandle, ModelHandle};
 use crate::diagnostics::LookupError;
 use crate::geometry::Primitive;
 
+mod lights;
+pub use lights::{DirectionalLight, Light, LightBuilder, PointLight, SpotLight};
+
 new_key_type! {
     pub struct NodeKey;
     pub struct CameraKey;
+    pub struct LightKey;
 }
 
 #[derive(Debug)]
@@ -20,6 +24,7 @@ pub struct Scene {
     identity: Arc<()>,
     nodes: SlotMap<NodeKey, Node>,
     cameras: SlotMap<CameraKey, Camera>,
+    lights: SlotMap<LightKey, Light>,
     root: NodeKey,
     active_camera: Option<CameraKey>,
     structure_revision: u64,
@@ -41,6 +46,7 @@ pub enum NodeKind {
     Mesh(MeshNode),
     Model(ModelNode),
     Camera(CameraKey),
+    Light(LightKey),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -137,6 +143,7 @@ impl Scene {
             identity: Arc::new(()),
             nodes,
             cameras: SlotMap::with_key(),
+            lights: SlotMap::with_key(),
             root,
             active_camera: None,
             structure_revision: 0,
@@ -261,7 +268,11 @@ impl Scene {
     pub(crate) fn renderables(&self) -> impl Iterator<Item = &RenderableNode> {
         self.nodes.values().filter_map(|node| match &node.kind {
             NodeKind::Renderable(renderable) => Some(renderable),
-            NodeKind::Empty | NodeKind::Mesh(_) | NodeKind::Model(_) | NodeKind::Camera(_) => None,
+            NodeKind::Empty
+            | NodeKind::Mesh(_)
+            | NodeKind::Model(_)
+            | NodeKind::Camera(_)
+            | NodeKind::Light(_) => None,
         })
     }
 
@@ -271,16 +282,19 @@ impl Scene {
             NodeKind::Empty
             | NodeKind::Renderable(_)
             | NodeKind::Model(_)
-            | NodeKind::Camera(_) => None,
+            | NodeKind::Camera(_)
+            | NodeKind::Light(_) => None,
         })
     }
 
     pub(crate) fn model_nodes(&self) -> impl Iterator<Item = NodeKey> + '_ {
         self.nodes.iter().filter_map(|(key, node)| match node.kind {
             NodeKind::Model(_) => Some(key),
-            NodeKind::Empty | NodeKind::Renderable(_) | NodeKind::Mesh(_) | NodeKind::Camera(_) => {
-                None
-            }
+            NodeKind::Empty
+            | NodeKind::Renderable(_)
+            | NodeKind::Mesh(_)
+            | NodeKind::Camera(_)
+            | NodeKind::Light(_) => None,
         })
     }
 

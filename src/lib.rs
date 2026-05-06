@@ -36,8 +36,9 @@ pub use platform::NativeWindowHandle;
 pub use platform::{PlatformSurface, SurfaceEvent, SurfaceKind, SurfaceSize};
 pub use render::{Renderer, Tonemapper};
 pub use scene::{
-    Angle, Camera, CameraKey, MeshBuilder, MeshNode, ModelBuilder, ModelNode, Node, NodeKey,
-    NodeKind, OrthographicCamera, PerspectiveCamera, Quat, Scene, Transform, Vec3,
+    Angle, Camera, CameraKey, DirectionalLight, Light, LightBuilder, LightKey, MeshBuilder,
+    MeshNode, ModelBuilder, ModelNode, Node, NodeKey, NodeKind, OrthographicCamera,
+    PerspectiveCamera, PointLight, Quat, Scene, SpotLight, Transform, Vec3,
 };
 
 /// Crate-level result type for APIs that can return any structured `scena` error.
