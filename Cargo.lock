@@ -805,6 +805,7 @@ version = "0.0.0"
 dependencies = [
  "pollster",
  "raw-window-handle",
+ "serde_json",
  "slotmap",
  "wasm-bindgen",
  "wasm-bindgen-test",

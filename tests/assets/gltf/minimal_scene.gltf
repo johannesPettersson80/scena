@@ -1,0 +1,25 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "scena-m3a-test-fixture"
+  },
+  "extensionsUsed": [
+    "KHR_materials_unlit"
+  ],
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "Default",
+      "nodes": [0]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Root",
+      "children": [1]
+    },
+    {
+      "name": "Child"
+    }
+  ]
+}

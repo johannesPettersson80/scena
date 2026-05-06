@@ -157,6 +157,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_camera_depth_contracts(root, findings);
     check_origin_shift_contracts(root, findings);
     check_clipping_contracts(root, findings);
+    check_m3a_scene_import_contracts(root, findings);
     check_render_alpha_contracts(root, findings);
     check_output_stage_contracts(root, findings);
     check_fxaa_output_contracts(root, findings);
@@ -2064,6 +2065,103 @@ fn check_origin_shift_contracts(root: &Path, findings: &mut Vec<Finding>) {
     );
 }
 
+fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "Cargo.toml",
+        &["serde_json"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/assets.rs",
+        &[
+            "mod gltf;",
+            "pub use gltf::{SceneAsset, SceneAssetNode}",
+            "scene_lookup: BTreeMap<AssetPath, SceneAsset>",
+            "pub async fn load_scene",
+            "SceneAsset::from_gltf_source",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/assets/gltf.rs",
+        &[
+            "pub struct SceneAsset",
+            "pub struct SceneAssetNode",
+            "pub(super) fn from_gltf_source",
+            "UnsupportedRequiredExtension",
+            "KHR_lights_punctual",
+            "KHR_materials_unlit",
+            "KHR_materials_emissive_strength",
+            "KHR_texture_transform",
+            "KHR_mesh_quantization",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/scene.rs",
+        &["mod import;", "pub use import::SceneImport"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/scene/import.rs",
+        &[
+            "pub struct SceneImport",
+            "pub fn instantiate(",
+            "scene_asset: &SceneAsset",
+            "pub fn node(&self, name: &str)",
+            "pub fn first_node(&self, name: &str)",
+            "pub fn nodes_named",
+            "pub fn path(&self, path: &str)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/diagnostics.rs",
+        &[
+            "InstantiateError",
+            "NodeNameNotFound",
+            "AmbiguousNodeName",
+            "PathNotFound",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "tests/m3a_app_features.rs",
+        &[
+            "assets_load_scene_caches_gltf_asset_and_rejects_required_extensions",
+            "scene_instantiate_creates_import_hierarchy_and_name_lookups",
+            "UnsupportedRequiredExtension",
+            "import.path(\"Root/Child\")",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "docs/checklists/m3a-app-features.md",
+        &[
+            "assets_load_scene_caches_gltf_asset_and_rejects_required_extensions",
+            "scene_instantiate_creates_import_hierarchy_and_name_lookups",
+            "ARCH-M3A-SCENE-IMPORT",
+        ],
+    );
+}
+
 fn check_material_desc_fields_private(root: &Path, findings: &mut Vec<Finding>) {
     let path = root.join("src/material.rs");
     let Ok(text) = fs::read_to_string(path) else {
@@ -3107,6 +3205,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_clipping_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn m3a_scene_import_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_m3a_scene_import_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

@@ -1,6 +1,8 @@
 //! Asset fetchers, caches, glTF/GLB parsing, texture decoding, and asset handles.
 
 use std::collections::BTreeMap;
+#[cfg(not(target_arch = "wasm32"))]
+use std::fs;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use slotmap::{SlotMap, new_key_type};
@@ -8,6 +10,9 @@ use slotmap::{SlotMap, new_key_type};
 use crate::diagnostics::AssetError;
 use crate::geometry::GeometryDesc;
 use crate::material::{MaterialDesc, TextureColorSpace};
+
+mod gltf;
+pub use gltf::{SceneAsset, SceneAssetNode};
 
 const DEFAULT_ENVIRONMENT_NAME: &str = "neutral-studio";
 const DEFAULT_ENVIRONMENT_SOURCE_PATH: &str =
@@ -40,11 +45,6 @@ pub enum RetainPolicy {
     Never,
     OnContextLossOnly,
     Always,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SceneAsset {
-    _private: (),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -108,6 +108,7 @@ struct AssetStorage {
     materials: SlotMap<MaterialHandle, MaterialDesc>,
     textures: SlotMap<TextureHandle, TextureDesc>,
     environments: SlotMap<EnvironmentHandle, EnvironmentDesc>,
+    scene_lookup: BTreeMap<AssetPath, SceneAsset>,
     texture_lookup: BTreeMap<TextureCacheKey, TextureHandle>,
     environment_lookup: BTreeMap<AssetPath, EnvironmentHandle>,
 }
@@ -134,6 +135,7 @@ impl<F> Assets<F> {
                 materials: SlotMap::with_key(),
                 textures: SlotMap::with_key(),
                 environments: SlotMap::with_key(),
+                scene_lookup: BTreeMap::new(),
                 texture_lookup: BTreeMap::new(),
                 environment_lookup: BTreeMap::new(),
             })),
@@ -228,6 +230,18 @@ impl<F> Assets<F> {
         self.storage().environments.get(handle).cloned()
     }
 
+    pub async fn load_scene(&self, path: impl Into<AssetPath>) -> Result<SceneAsset, AssetError> {
+        let path = path.into();
+        if let Some(scene) = self.storage().scene_lookup.get(&path).cloned() {
+            return Ok(scene);
+        }
+
+        let source = read_scene_source(&path)?;
+        let scene = SceneAsset::from_gltf_source(path.clone(), &source)?;
+        self.storage().scene_lookup.insert(path, scene.clone());
+        Ok(scene)
+    }
+
     fn insert_environment(&self, environment: EnvironmentDesc) -> EnvironmentHandle {
         let cache_key = environment.source_path.clone();
         let mut storage = self.storage();
@@ -243,12 +257,6 @@ impl<F> Assets<F> {
         self.storage
             .lock()
             .expect("asset storage mutex should not be poisoned")
-    }
-}
-
-impl SceneAsset {
-    pub const fn empty() -> Self {
-        Self { _private: () }
     }
 }
 
@@ -407,4 +415,21 @@ fn parse_equirectangular_hdr_dimensions(path: &AssetPath) -> Option<(u32, u32)> 
     let width = width.parse().ok()?;
     let height = height.parse().ok()?;
     (width > 0 && height > 0).then_some((width, height))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read_scene_source(path: &AssetPath) -> Result<String, AssetError> {
+    fs::read_to_string(path.as_str()).map_err(|error| AssetError::Io {
+        path: path.as_str().to_string(),
+        reason: error.to_string(),
+    })
+}
+
+#[cfg(target_arch = "wasm32")]
+fn read_scene_source(path: &AssetPath) -> Result<String, AssetError> {
+    Err(AssetError::Io {
+        path: path.as_str().to_string(),
+        reason: "default Assets<()> cannot fetch glTF scenes on wasm; install a browser fetcher"
+            .to_string(),
+    })
 }

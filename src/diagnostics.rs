@@ -17,6 +17,7 @@ pub use capabilities::{
 pub enum Error {
     Build(BuildError),
     Asset(AssetError),
+    Instantiate(InstantiateError),
     Prepare(PrepareError),
     Render(RenderError),
     Lookup(LookupError),
@@ -120,6 +121,11 @@ pub enum RenderError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InstantiateError {
+    InvalidChildIndex { parent: usize, child: usize },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NotPreparedReason {
     NeverPrepared,
     DifferentScene,
@@ -150,6 +156,9 @@ pub enum ChangeKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LookupError {
     NodeNotFound(NodeKey),
+    NodeNameNotFound { name: String },
+    AmbiguousNodeName { name: String, matches: Vec<NodeKey> },
+    PathNotFound { path: String },
     CameraNotFound(CameraKey),
     ClippingPlaneNotFound(ClippingPlaneKey),
 }
@@ -256,6 +265,12 @@ impl From<AssetError> for Error {
     }
 }
 
+impl From<InstantiateError> for Error {
+    fn from(error: InstantiateError) -> Self {
+        Self::Instantiate(error)
+    }
+}
+
 impl From<PrepareError> for Error {
     fn from(error: PrepareError) -> Self {
         Self::Prepare(error)
@@ -279,6 +294,7 @@ impl fmt::Display for Error {
         match self {
             Self::Build(error) => error.fmt(formatter),
             Self::Asset(error) => error.fmt(formatter),
+            Self::Instantiate(error) => error.fmt(formatter),
             Self::Prepare(error) => error.fmt(formatter),
             Self::Render(error) => error.fmt(formatter),
             Self::Lookup(error) => error.fmt(formatter),
@@ -354,6 +370,17 @@ impl fmt::Display for AssetError {
             Self::ReloadRequiresRetain { path, help } => {
                 write!(formatter, "asset {path} cannot be reloaded: {help}")
             }
+        }
+    }
+}
+
+impl fmt::Display for InstantiateError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidChildIndex { parent, child } => write!(
+                formatter,
+                "glTF node {parent} references invalid child node index {child}"
+            ),
         }
     }
 }
@@ -479,6 +506,17 @@ impl fmt::Display for LookupError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NodeNotFound(_) => write!(formatter, "node key does not exist in the scene"),
+            Self::NodeNameNotFound { name } => {
+                write!(formatter, "imported scene has no node named '{name}'")
+            }
+            Self::AmbiguousNodeName { name, matches } => write!(
+                formatter,
+                "imported scene node name '{name}' is ambiguous across {} nodes",
+                matches.len()
+            ),
+            Self::PathNotFound { path } => {
+                write!(formatter, "imported scene path '{path}' was not found")
+            }
             Self::CameraNotFound(_) => write!(formatter, "camera key does not exist in the scene"),
             Self::ClippingPlaneNotFound(_) => {
                 write!(formatter, "clipping plane key does not exist in the scene")
@@ -490,6 +528,7 @@ impl fmt::Display for LookupError {
 impl error::Error for Error {}
 impl error::Error for BuildError {}
 impl error::Error for AssetError {}
+impl error::Error for InstantiateError {}
 impl error::Error for PrepareError {}
 impl error::Error for RenderError {}
 impl error::Error for LookupError {}

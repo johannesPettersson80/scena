@@ -15,6 +15,7 @@ path = "src/lib.rs"
 
 [dependencies]
 raw-window-handle = "0.6.2"
+serde_json = "1"
 slotmap = "1.0"
 wgpu = { version = "29.0.3", features = ["webgl"] }
 
