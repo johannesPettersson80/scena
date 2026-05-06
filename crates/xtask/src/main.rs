@@ -1207,13 +1207,21 @@ fn check_environment_lifecycle_contracts(root: &Path, findings: &mut Vec<Finding
         &[
             "environment: Option<EnvironmentHandle>",
             "environment_revision: u64",
-            "pub fn environment(&self) -> Option<EnvironmentHandle>",
-            "pub fn set_environment(&mut self, environment: EnvironmentHandle)",
-            "pub fn clear_environment(&mut self)",
             "PrepareError::EnvironmentAssetsRequired",
             "PrepareError::EnvironmentNotFound",
             "NotPreparedReason::EnvironmentChanged",
             "ChangeKind::Environment",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENVIRONMENT-LIFECYCLE",
+        "src/render/settings.rs",
+        &[
+            "pub fn environment(&self) -> Option<EnvironmentHandle>",
+            "pub fn set_environment(&mut self, environment: EnvironmentHandle)",
+            "pub fn clear_environment(&mut self)",
         ],
     );
     require_contains(
@@ -2183,7 +2191,13 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         findings,
         "ARCH-M3A-SCENE-IMPORT",
         "src/scene/picking.rs",
-        &["pub fn pick(", "pickable_renderables", "pick_scene"],
+        &[
+            "pub fn pick(",
+            "pickable_renderables",
+            "pick_scene",
+            "pub fn interaction(&self)",
+            "pub fn interaction_mut(&mut self)",
+        ],
     );
     require_contains(
         root,
@@ -2195,9 +2209,30 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub struct Viewport",
             "pub enum HitTarget",
             "pub struct Hit",
+            "pub struct InteractionContext",
+            "pub struct InteractionStyle",
+            "set_hover",
+            "set_primary_selection",
             "pub(crate) fn pick_scene",
             "HitTarget::Node",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/render.rs",
+        &[
+            "hover_style: InteractionStyle",
+            "selection_style: InteractionStyle",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/render/settings.rs",
+        &["pub fn set_hover_style", "pub fn set_selection_style"],
     );
     require_contains(
         root,
@@ -2277,6 +2312,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "import_options_apply_gltf_node_transforms_and_source_units",
             "scene_import_reports_local_and_world_bounds_for_imported_meshes",
             "scene_pick_returns_typed_hit_target_for_renderable_triangle",
+            "interaction_context_and_renderer_styles_are_explicit",
             "mesh_material_vertex_color_scene.gltf",
             "transform_options_scene.gltf",
             "ImportOptions::gltf_default",

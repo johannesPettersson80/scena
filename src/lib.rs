@@ -36,7 +36,7 @@ pub use material::{
     AlphaMode, Color, ColorParseError, DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES,
     DEFAULT_STROKE_WIDTH_PX, MaterialDesc, MaterialKind, TextureColorSpace,
 };
-pub use picking::{CursorPosition, Hit, HitTarget, Viewport};
+pub use picking::{CursorPosition, Hit, HitTarget, InteractionContext, InteractionStyle, Viewport};
 #[cfg(not(target_arch = "wasm32"))]
 pub use platform::NativeWindowHandle;
 pub use platform::{PlatformSurface, SurfaceEvent, SurfaceKind, SurfaceSize};

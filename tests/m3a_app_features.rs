@@ -2,8 +2,8 @@
 
 use scena::{
     Aabb, AssetError, AssetFetcher, AssetPath, Assets, Camera, ChangeKind, Color, CursorPosition,
-    GeometryTopology, HitTarget, ImportOptions, LookupError, MaterialKind, NodeKind,
-    NotPreparedReason, PerspectiveCamera, Primitive, Quat, RenderError, Renderer, Scene,
+    GeometryTopology, HitTarget, ImportOptions, InteractionStyle, LookupError, MaterialKind,
+    NodeKind, NotPreparedReason, PerspectiveCamera, Primitive, Quat, RenderError, Renderer, Scene,
     SourceCoordinateSystem, SourceUnits, Transform, Vec3, Viewport,
 };
 use std::future::{Ready, ready};
@@ -215,6 +215,42 @@ fn scene_pick_returns_typed_hit_target_for_renderable_triangle() {
             .expect("corner pick succeeds"),
         None
     );
+}
+
+#[test]
+fn interaction_context_and_renderer_styles_are_explicit() {
+    let mut scene = Scene::new();
+    let node = scene
+        .add_renderable(
+            scene.root(),
+            vec![Primitive::unlit_triangle()],
+            Transform::default(),
+        )
+        .expect("renderable node inserts");
+
+    assert_eq!(scene.interaction().hover(), None);
+    assert_eq!(scene.interaction().primary_selection(), None);
+    scene
+        .interaction_mut()
+        .set_hover(Some(HitTarget::Node(node)));
+    scene
+        .interaction_mut()
+        .set_primary_selection(Some(HitTarget::Node(node)));
+
+    assert_eq!(scene.interaction().hover(), Some(HitTarget::Node(node)));
+    assert_eq!(
+        scene.interaction().primary_selection(),
+        Some(HitTarget::Node(node))
+    );
+
+    let hover = InteractionStyle::outline(Color::from_linear_rgb(1.0, 0.8, 0.0), 3.0);
+    let selection = InteractionStyle::outline(Color::from_linear_rgb(0.1, 0.4, 1.0), 4.0);
+    let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+    renderer.set_hover_style(hover);
+    renderer.set_selection_style(selection);
+
+    assert_eq!(renderer.hover_style(), hover);
+    assert_eq!(renderer.selection_style(), selection);
 }
 
 #[test]

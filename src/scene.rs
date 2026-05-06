@@ -9,6 +9,7 @@ use slotmap::{SlotMap, new_key_type};
 use crate::assets::{GeometryHandle, MaterialHandle, ModelHandle};
 use crate::diagnostics::LookupError;
 use crate::geometry::Primitive;
+use crate::picking::InteractionContext;
 
 mod camera;
 mod import;
@@ -37,6 +38,7 @@ pub struct Scene {
     origin_shift: Vec3,
     root: NodeKey,
     active_camera: Option<CameraKey>,
+    interaction: InteractionContext,
     structure_revision: u64,
     not_sync: PhantomData<Cell<()>>,
 }
@@ -146,6 +148,7 @@ impl Scene {
             origin_shift: Vec3::ZERO,
             root,
             active_camera: None,
+            interaction: InteractionContext::default(),
             structure_revision: 0,
             not_sync: PhantomData,
         }

@@ -8,6 +8,7 @@ mod cpu;
 mod gpu;
 mod output;
 mod prepare;
+mod settings;
 
 use crate::assets::{Assets, EnvironmentHandle};
 use crate::diagnostics::{
@@ -16,6 +17,7 @@ use crate::diagnostics::{
 };
 use crate::geometry::Primitive;
 use crate::material::Color;
+use crate::picking::InteractionStyle;
 use crate::platform::{PlatformSurface, PlatformSurfaceAttachment, SurfaceEvent, SurfaceKind};
 use crate::scene::{CameraKey, ClippingPlane, Scene};
 
@@ -37,6 +39,8 @@ pub struct Renderer {
     capabilities: Capabilities,
     gpu: Option<GpuDeviceState>,
     output: OutputTransform,
+    hover_style: InteractionStyle,
+    selection_style: InteractionStyle,
     environment: Option<EnvironmentHandle>,
     environment_revision: u64,
     target_revision: u64,
@@ -192,6 +196,8 @@ impl Renderer {
             capabilities,
             gpu,
             output: OutputTransform::default(),
+            hover_style: InteractionStyle::default(),
+            selection_style: InteractionStyle::default(),
             environment: None,
             environment_revision: 0,
             target_revision: 0,
@@ -405,40 +411,6 @@ impl Renderer {
 
     pub fn capabilities(&self) -> &Capabilities {
         &self.capabilities
-    }
-
-    pub fn exposure_ev(&self) -> f32 {
-        self.output.exposure_ev()
-    }
-
-    pub fn set_exposure_ev(&mut self, exposure_ev: f32) {
-        self.output.set_exposure_ev(exposure_ev);
-    }
-
-    pub fn tonemapper(&self) -> Tonemapper {
-        self.output.tonemapper()
-    }
-
-    pub fn set_tonemapper(&mut self, tonemapper: Tonemapper) {
-        self.output.set_tonemapper(tonemapper);
-    }
-
-    pub fn environment(&self) -> Option<EnvironmentHandle> {
-        self.environment
-    }
-
-    pub fn set_environment(&mut self, environment: EnvironmentHandle) {
-        if self.environment != Some(environment) {
-            self.environment = Some(environment);
-            self.environment_revision = self.environment_revision.saturating_add(1);
-        }
-    }
-
-    pub fn clear_environment(&mut self) {
-        if self.environment.is_some() {
-            self.environment = None;
-            self.environment_revision = self.environment_revision.saturating_add(1);
-        }
     }
 
     pub fn has_gpu_device(&self) -> bool {

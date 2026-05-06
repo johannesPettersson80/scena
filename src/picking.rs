@@ -2,6 +2,7 @@
 
 use crate::diagnostics::LookupError;
 use crate::geometry::Primitive;
+use crate::material::Color;
 use crate::scene::{CameraKey, NodeKey, Quat, Scene, Transform, Vec3};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -35,6 +36,18 @@ pub struct Hit {
     pub distance: f32,
     pub world_position: Vec3,
     pub normal: Option<Vec3>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct InteractionStyle {
+    color: Color,
+    outline_width_px: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct InteractionContext {
+    hover: Option<HitTarget>,
+    primary_selection: Option<HitTarget>,
 }
 
 impl CursorPosition {
@@ -80,6 +93,55 @@ impl Viewport {
 impl Hit {
     pub const fn target(&self) -> HitTarget {
         self.target
+    }
+}
+
+impl InteractionStyle {
+    pub const fn outline(color: Color, outline_width_px: f32) -> Self {
+        Self {
+            color,
+            outline_width_px: positive_or(outline_width_px, 2.0),
+        }
+    }
+
+    pub const fn color(self) -> Color {
+        self.color
+    }
+
+    pub const fn outline_width_px(self) -> f32 {
+        self.outline_width_px
+    }
+}
+
+impl Default for InteractionStyle {
+    fn default() -> Self {
+        Self::outline(Color::WHITE, 2.0)
+    }
+}
+
+impl InteractionContext {
+    pub const fn hover(&self) -> Option<HitTarget> {
+        self.hover
+    }
+
+    pub fn set_hover(&mut self, hover: Option<HitTarget>) {
+        self.hover = hover;
+    }
+
+    pub const fn primary_selection(&self) -> Option<HitTarget> {
+        self.primary_selection
+    }
+
+    pub fn set_primary_selection(&mut self, primary_selection: Option<HitTarget>) {
+        self.primary_selection = primary_selection;
+    }
+}
+
+const fn positive_or(value: f32, fallback: f32) -> f32 {
+    if !value.is_finite() || value <= 0.0 {
+        fallback
+    } else {
+        value
     }
 }
 

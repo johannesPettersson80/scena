@@ -1,5 +1,5 @@
 use crate::diagnostics::LookupError;
-use crate::picking::{CursorPosition, Hit, Viewport};
+use crate::picking::{CursorPosition, Hit, InteractionContext, Viewport};
 
 use super::{CameraKey, NodeKey, NodeKind, RenderableNode, Scene, Transform};
 
@@ -26,5 +26,13 @@ impl Scene {
                 | NodeKind::Camera(_)
                 | NodeKind::Light(_) => None,
             })
+    }
+
+    pub fn interaction(&self) -> &InteractionContext {
+        &self.interaction
+    }
+
+    pub fn interaction_mut(&mut self) -> &mut InteractionContext {
+        &mut self.interaction
     }
 }
