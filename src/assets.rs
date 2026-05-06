@@ -62,6 +62,11 @@ pub enum WasmEnvironmentDelivery {
     SeparateFetch,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnvironmentSourceKind {
+    EquirectangularHdr,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnvironmentDerivative {
     path: AssetPath,
@@ -72,6 +77,8 @@ pub struct EnvironmentDerivative {
 pub struct EnvironmentDesc {
     name: String,
     source_path: AssetPath,
+    source_kind: EnvironmentSourceKind,
+    source_dimensions: Option<(u32, u32)>,
     source_sha256: Option<String>,
     license: Option<String>,
     generator: Option<String>,
@@ -206,8 +213,13 @@ impl<F> Assets<F> {
         let path = path.into();
         let environment = if path.as_str() == DEFAULT_ENVIRONMENT_SOURCE_PATH {
             EnvironmentDesc::neutral_studio()
+        } else if is_equirectangular_hdr_path(&path) {
+            EnvironmentDesc::from_equirectangular_hdr_path(path)
         } else {
-            EnvironmentDesc::from_source_path(path)
+            return Err(AssetError::UnsupportedEnvironmentFormat {
+                path: path.as_str().to_string(),
+                help: "use Radiance .hdr equirectangular input for the M2 environment path",
+            });
         };
         Ok(self.insert_environment(environment))
     }
@@ -273,6 +285,8 @@ impl EnvironmentDesc {
         Self {
             name: DEFAULT_ENVIRONMENT_NAME.to_string(),
             source_path: AssetPath::from(DEFAULT_ENVIRONMENT_SOURCE_PATH),
+            source_kind: EnvironmentSourceKind::EquirectangularHdr,
+            source_dimensions: None,
             source_sha256: Some(DEFAULT_ENVIRONMENT_SOURCE_SHA256.to_string()),
             license: Some(DEFAULT_ENVIRONMENT_LICENSE.to_string()),
             generator: Some(DEFAULT_ENVIRONMENT_GENERATOR.to_string()),
@@ -292,11 +306,14 @@ impl EnvironmentDesc {
         }
     }
 
-    pub fn from_source_path(path: impl Into<AssetPath>) -> Self {
+    pub fn from_equirectangular_hdr_path(path: impl Into<AssetPath>) -> Self {
         let path = path.into();
+        let source_dimensions = parse_equirectangular_hdr_dimensions(&path);
         Self {
             name: environment_name_from_path(&path).to_string(),
             source_path: path,
+            source_kind: EnvironmentSourceKind::EquirectangularHdr,
+            source_dimensions,
             source_sha256: None,
             license: None,
             generator: None,
@@ -313,6 +330,18 @@ impl EnvironmentDesc {
 
     pub fn source_path(&self) -> &AssetPath {
         &self.source_path
+    }
+
+    pub const fn source_kind(&self) -> EnvironmentSourceKind {
+        self.source_kind
+    }
+
+    pub const fn source_dimensions(&self) -> Option<(u32, u32)> {
+        self.source_dimensions
+    }
+
+    pub const fn is_equirectangular_hdr(&self) -> bool {
+        matches!(self.source_kind, EnvironmentSourceKind::EquirectangularHdr)
     }
 
     pub fn source_sha256(&self) -> Option<&str> {
@@ -360,4 +389,22 @@ fn environment_name_from_path(path: &AssetPath) -> &str {
         .next()
         .filter(|name| !name.is_empty())
         .unwrap_or(path.as_str())
+}
+
+fn is_equirectangular_hdr_path(path: &AssetPath) -> bool {
+    path.as_str().to_ascii_lowercase().ends_with(".hdr")
+}
+
+fn parse_equirectangular_hdr_dimensions(path: &AssetPath) -> Option<(u32, u32)> {
+    let stem = path
+        .as_str()
+        .rsplit('/')
+        .next()
+        .unwrap_or(path.as_str())
+        .strip_suffix(".hdr")?;
+    let dimensions = stem.rsplit('_').next()?;
+    let (width, height) = dimensions.split_once('x')?;
+    let width = width.parse().ok()?;
+    let height = height.parse().ok()?;
+    (width > 0 && height > 0).then_some((width, height))
 }

@@ -1,9 +1,9 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use scena::{
-    Angle, Color, DepthRange, DirectionalLight, Light, NodeKind, OrthographicCamera,
-    PerspectiveCamera, PointLight, PrepareError, Primitive, Renderer, Scene, SpotLight, Transform,
-    Vec3,
+    Angle, AssetError, Assets, Color, DepthRange, DirectionalLight, EnvironmentSourceKind, Light,
+    NodeKind, OrthographicCamera, PerspectiveCamera, PointLight, PrepareError, Primitive, Renderer,
+    Scene, SpotLight, Transform, Vec3,
 };
 
 #[test]
@@ -211,4 +211,39 @@ fn single_shadow_map_records_pcf3x3_prepare_stats() {
     assert_eq!(stats.shadow_maps, 1);
     assert_eq!(stats.directional_shadow_map_resolution, Some(2048));
     assert_eq!(stats.directional_shadow_pcf_kernel, Some(3));
+}
+
+#[test]
+fn equirectangular_hdr_environment_loading_records_source_contract() {
+    let assets = Assets::new();
+    let environment =
+        pollster::block_on(assets.load_environment("tests/assets/environment/studio_1024x512.hdr"))
+            .expect("equirectangular HDR environment loads");
+    let duplicate =
+        pollster::block_on(assets.load_environment("tests/assets/environment/studio_1024x512.hdr"))
+            .expect("duplicate equirectangular HDR environment loads");
+    assert_eq!(environment, duplicate);
+
+    let desc = assets
+        .environment(environment)
+        .expect("environment descriptor is stored");
+    assert_eq!(
+        desc.source_kind(),
+        EnvironmentSourceKind::EquirectangularHdr
+    );
+    assert!(desc.is_equirectangular_hdr());
+    assert_eq!(desc.source_dimensions(), Some((1024, 512)));
+    assert_eq!(desc.cubemap_resolution(), 0);
+    assert_eq!(desc.brdf_lut_size(), 0);
+    assert!(desc.derivatives().is_empty());
+
+    let error = pollster::block_on(assets.load_environment("tests/assets/environment/studio.exr"))
+        .expect_err("unsupported environment format is rejected");
+    assert_eq!(
+        error,
+        AssetError::UnsupportedEnvironmentFormat {
+            path: "tests/assets/environment/studio.exr".to_string(),
+            help: "use Radiance .hdr equirectangular input for the M2 environment path",
+        }
+    );
 }

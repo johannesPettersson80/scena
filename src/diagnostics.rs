@@ -53,6 +53,10 @@ pub enum AssetError {
         extension: String,
         help: String,
     },
+    UnsupportedEnvironmentFormat {
+        path: String,
+        help: &'static str,
+    },
     ReloadRequiresRetain {
         path: String,
         help: &'static str,
@@ -294,6 +298,12 @@ impl fmt::Display for AssetError {
                 formatter,
                 "asset {path} uses unsupported optional extension {extension}: {help}"
             ),
+            Self::UnsupportedEnvironmentFormat { path, help } => {
+                write!(
+                    formatter,
+                    "environment {path} uses an unsupported format: {help}"
+                )
+            }
             Self::ReloadRequiresRetain { path, help } => {
                 write!(formatter, "asset {path} cannot be reloaded: {help}")
             }

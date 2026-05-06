@@ -142,6 +142,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_asset_api_contracts(root, findings);
     check_prepare_asset_contracts(root, findings);
     check_environment_lifecycle_contracts(root, findings);
+    check_equirectangular_hdr_environment_contracts(root, findings);
     check_scene_light_contracts(root, findings);
     check_directional_shadow_contracts(root, findings);
     check_shadow_map_contracts(root, findings);
@@ -574,10 +575,14 @@ fn check_asset_api_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub fn create_material(&self, material: impl Into<MaterialDesc>) -> MaterialHandle",
             "pub struct EnvironmentDesc",
             "pub struct EnvironmentDerivative",
+            "pub enum EnvironmentSourceKind",
             "pub enum WasmEnvironmentDelivery",
             "pub fn default_environment(&self) -> EnvironmentHandle",
             "pub async fn load_environment",
             "pub fn environment(&self, handle: EnvironmentHandle) -> Option<EnvironmentDesc>",
+            "pub const fn source_kind(&self) -> EnvironmentSourceKind",
+            "pub const fn source_dimensions(&self) -> Option<(u32, u32)>",
+            "pub const fn is_equirectangular_hdr(&self) -> bool",
         ],
     );
     require_contains(
@@ -585,7 +590,11 @@ fn check_asset_api_contracts(root: &Path, findings: &mut Vec<Finding>) {
         findings,
         "ARCH-ASSET-API",
         "src/diagnostics.rs",
-        &["pub enum AssetError", "UnsupportedRequiredExtension"],
+        &[
+            "pub enum AssetError",
+            "UnsupportedRequiredExtension",
+            "UnsupportedEnvironmentFormat",
+        ],
     );
     require_contains(
         root,
@@ -1051,6 +1060,50 @@ fn check_environment_lifecycle_contracts(root: &Path, findings: &mut Vec<Finding
         &[
             "render_default_cube_with_default_environment",
             "validate_default_cube_luminance_and_silhouette",
+        ],
+    );
+}
+
+fn check_equirectangular_hdr_environment_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-HDR",
+        "src/assets.rs",
+        &[
+            "EnvironmentSourceKind::EquirectangularHdr",
+            "EnvironmentDesc::from_equirectangular_hdr_path",
+            "is_equirectangular_hdr_path",
+            "parse_equirectangular_hdr_dimensions",
+            "AssetError::UnsupportedEnvironmentFormat",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-HDR",
+        "src/lib.rs",
+        &["EnvironmentSourceKind"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-HDR",
+        "tests/m2_lighting_depth_clipping.rs",
+        &[
+            "equirectangular_hdr_environment_loading_records_source_contract",
+            "EnvironmentSourceKind::EquirectangularHdr",
+            "UnsupportedEnvironmentFormat",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-HDR",
+        "docs/checklists/m2-lighting-depth-clipping.md",
+        &[
+            "Equirectangular HDR environment loading",
+            "EnvironmentSourceKind",
         ],
     );
 }
@@ -2081,6 +2134,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_environment_lifecycle_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn equirectangular_hdr_environment_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_equirectangular_hdr_environment_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }
