@@ -211,7 +211,7 @@ impl Renderer {
                 height: self.target.height,
             }
         })?;
-        let primitives = prepare::collect_prepared_primitives(scene, assets)?;
+        let primitives = prepare::collect_prepared_primitives(self.target, scene, assets)?;
         if let Some(gpu) = &mut self.gpu {
             gpu.prepare(self.target, &primitives);
         }

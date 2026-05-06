@@ -2,9 +2,12 @@ use crate::assets::Assets;
 use crate::diagnostics::PrepareError;
 use crate::geometry::{GeometryDesc, GeometryTopology, Primitive, Vertex};
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
-use crate::scene::{NodeKey, Scene};
+use crate::scene::{NodeKey, Scene, Vec3};
+
+use super::RasterTarget;
 
 pub(super) fn collect_prepared_primitives<F>(
+    target: RasterTarget,
     scene: &Scene,
     assets: Option<&Assets<F>>,
 ) -> Result<Vec<Primitive>, PrepareError> {
@@ -38,6 +41,7 @@ pub(super) fn collect_prepared_primitives<F>(
             node,
             &geometry,
             &material,
+            target,
             &mut primitives,
             &mut transparent_primitives,
         )?;
@@ -70,13 +74,31 @@ fn append_geometry_primitives(
     node: NodeKey,
     geometry: &GeometryDesc,
     material: &MaterialDesc,
+    target: RasterTarget,
     primitives: &mut Vec<Primitive>,
     transparent_primitives: &mut Vec<TransparentPrimitive>,
 ) -> Result<(), PrepareError> {
-    if geometry.topology() != GeometryTopology::Triangles {
-        return Err(PrepareError::UnsupportedGeometryTopology {
+    match geometry.topology() {
+        GeometryTopology::Triangles => {
+            append_triangle_primitives(node, geometry, material, primitives, transparent_primitives)
+        }
+        GeometryTopology::Lines => {
+            append_line_primitives(node, geometry, material, target, primitives)
+        }
+    }
+}
+
+fn append_triangle_primitives(
+    node: NodeKey,
+    geometry: &GeometryDesc,
+    material: &MaterialDesc,
+    primitives: &mut Vec<Primitive>,
+    transparent_primitives: &mut Vec<TransparentPrimitive>,
+) -> Result<(), PrepareError> {
+    if matches!(material.kind(), MaterialKind::Line) {
+        return Err(PrepareError::UnsupportedMaterialKind {
             node,
-            topology: geometry.topology(),
+            kind: material.kind(),
         });
     }
 
@@ -113,6 +135,28 @@ fn append_geometry_primitives(
     Ok(())
 }
 
+fn append_line_primitives(
+    node: NodeKey,
+    geometry: &GeometryDesc,
+    material: &MaterialDesc,
+    target: RasterTarget,
+    primitives: &mut Vec<Primitive>,
+) -> Result<(), PrepareError> {
+    let (color, width_px) = line_material(node, material)?;
+    let vertices = geometry.vertices();
+    for segment in geometry.indices().chunks_exact(2) {
+        append_line_segment(
+            vertices[segment[0] as usize].position,
+            vertices[segment[1] as usize].position,
+            color,
+            width_px,
+            target,
+            primitives,
+        );
+    }
+    Ok(())
+}
+
 fn material_pass(node: NodeKey, material: &MaterialDesc) -> Result<MaterialPass, PrepareError> {
     match material.kind() {
         MaterialKind::Unlit | MaterialKind::PbrMetallicRoughness => {}
@@ -144,9 +188,127 @@ fn material_pass(node: NodeKey, material: &MaterialDesc) -> Result<MaterialPass,
     }
 }
 
+fn line_material(node: NodeKey, material: &MaterialDesc) -> Result<(Color, f32), PrepareError> {
+    match material.kind() {
+        MaterialKind::Line => {}
+        MaterialKind::Unlit | MaterialKind::PbrMetallicRoughness => {
+            return Err(PrepareError::UnsupportedGeometryTopology {
+                node,
+                topology: GeometryTopology::Lines,
+            });
+        }
+        MaterialKind::Wireframe | MaterialKind::Edge => {
+            return Err(PrepareError::UnsupportedMaterialKind {
+                node,
+                kind: material.kind(),
+            });
+        }
+    }
+
+    let mut color = material.base_color();
+    match material.alpha_mode() {
+        AlphaMode::Opaque => color.a = 1.0,
+        AlphaMode::Mask { .. } | AlphaMode::Blend => {
+            return Err(PrepareError::UnsupportedAlphaMode {
+                node,
+                alpha_mode: material.alpha_mode(),
+            });
+        }
+    }
+    Ok((color, material.stroke_width_px().unwrap_or(1.0)))
+}
+
 fn average_depth(primitive: &Primitive) -> f32 {
     // M1 foundation depth uses local-space z. Node transforms and view projection are not
     // applied until the scene transform/camera dirty-state work lands.
     let vertices = primitive.vertices();
     (vertices[0].position.z + vertices[1].position.z + vertices[2].position.z) / 3.0
+}
+
+fn append_line_segment(
+    start: Vec3,
+    end: Vec3,
+    color: Color,
+    width_px: f32,
+    target: RasterTarget,
+    primitives: &mut Vec<Primitive>,
+) {
+    let start = ScreenPoint::from_vec3(start, target);
+    let end = ScreenPoint::from_vec3(end, target);
+    let delta_x = end.x - start.x;
+    let delta_y = end.y - start.y;
+    let length = (delta_x * delta_x + delta_y * delta_y).sqrt();
+    if length <= f32::EPSILON {
+        return;
+    }
+
+    let half_width = width_px * 0.5;
+    let normal_x = -delta_y / length * half_width;
+    let normal_y = delta_x / length * half_width;
+    let a = start.offset(normal_x, normal_y).to_vec3(target);
+    let b = end.offset(normal_x, normal_y).to_vec3(target);
+    let c = end.offset(-normal_x, -normal_y).to_vec3(target);
+    let d = start.offset(-normal_x, -normal_y).to_vec3(target);
+
+    primitives.push(Primitive::triangle([
+        Vertex { position: a, color },
+        Vertex { position: b, color },
+        Vertex { position: c, color },
+    ]));
+    primitives.push(Primitive::triangle([
+        Vertex { position: a, color },
+        Vertex { position: c, color },
+        Vertex { position: d, color },
+    ]));
+}
+
+#[derive(Clone, Copy)]
+struct ScreenPoint {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+impl ScreenPoint {
+    fn from_vec3(position: Vec3, target: RasterTarget) -> Self {
+        let width = target.width.saturating_sub(1) as f32;
+        let height = target.height.saturating_sub(1) as f32;
+        Self {
+            x: (position.x * 0.5 + 0.5) * width,
+            y: (1.0 - (position.y * 0.5 + 0.5)) * height,
+            z: position.z,
+        }
+    }
+
+    fn offset(self, x: f32, y: f32) -> Self {
+        Self {
+            x: self.x + x,
+            y: self.y + y,
+            z: self.z,
+        }
+    }
+
+    fn to_vec3(self, target: RasterTarget) -> Vec3 {
+        Vec3::new(
+            screen_x_to_ndc(self.x, target),
+            screen_y_to_ndc(self.y, target),
+            self.z,
+        )
+    }
+}
+
+fn screen_x_to_ndc(x: f32, target: RasterTarget) -> f32 {
+    if target.width <= 1 {
+        0.0
+    } else {
+        (x / target.width.saturating_sub(1) as f32 - 0.5) * 2.0
+    }
+}
+
+fn screen_y_to_ndc(y: f32, target: RasterTarget) -> f32 {
+    if target.height <= 1 {
+        0.0
+    } else {
+        ((1.0 - y / target.height.saturating_sub(1) as f32) - 0.5) * 2.0
+    }
 }

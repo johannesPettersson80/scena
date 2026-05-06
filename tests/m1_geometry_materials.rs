@@ -403,6 +403,34 @@ fn prepare_with_assets_sorts_blend_meshes_back_to_front_before_render() {
 }
 
 #[test]
+fn prepare_with_assets_renders_line_material_as_screen_space_stroke() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::line(
+        Vec3::new(-2.0, 0.0, 0.0),
+        Vec3::new(2.0, 0.0, 0.0),
+    ));
+    let material = assets.create_material(MaterialDesc::line(Color::WHITE, 1.0));
+    let (mut scene, camera) = scene_with_camera();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("line mesh inserts");
+    let mut renderer = Renderer::headless(8, 8).expect("headless renderer builds");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("line material prepares");
+    renderer.render(&scene, camera).expect("line renders");
+
+    assert_eq!(
+        pixel_at(renderer.frame_rgba8(), 8, 4, 3),
+        [206, 206, 206, 255]
+    );
+    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 4, 2), [0, 0, 0, 255]);
+    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 4, 4), [0, 0, 0, 255]);
+}
+
+#[test]
 fn prepare_without_assets_rejects_asset_backed_mesh_nodes() {
     let assets = Assets::new();
     let geometry = assets.create_geometry(fullscreen_triangle_geometry());
