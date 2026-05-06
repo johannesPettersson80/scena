@@ -6,6 +6,7 @@ use std::sync::{Arc, Weak};
 
 use slotmap::{SlotMap, new_key_type};
 
+use crate::assets::{GeometryHandle, MaterialHandle, ModelHandle};
 use crate::diagnostics::LookupError;
 use crate::geometry::Primitive;
 
@@ -37,12 +38,44 @@ pub struct Node {
 pub enum NodeKind {
     Empty,
     Renderable(RenderableNode),
+    Mesh(MeshNode),
+    Model(ModelNode),
     Camera(CameraKey),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenderableNode {
     primitives: Vec<Primitive>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MeshNode {
+    geometry: GeometryHandle,
+    material: MaterialHandle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModelNode {
+    model: ModelHandle,
+}
+
+/// Builder returned by [`Scene::mesh`].
+#[must_use = "mesh builders do nothing until add() is called"]
+pub struct MeshBuilder<'scene> {
+    scene: &'scene mut Scene,
+    parent: NodeKey,
+    transform: Transform,
+    geometry: GeometryHandle,
+    material: MaterialHandle,
+}
+
+/// Builder returned by [`Scene::model`].
+#[must_use = "model builders do nothing until add() is called"]
+pub struct ModelBuilder<'scene> {
+    scene: &'scene mut Scene,
+    parent: NodeKey,
+    transform: Transform,
+    model: ModelHandle,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -157,6 +190,35 @@ impl Scene {
         )
     }
 
+    /// Starts a mesh-node builder under the scene root.
+    ///
+    /// Use [`MeshBuilder::parent`] and [`MeshBuilder::transform`] to override the default
+    /// root parent and identity transform, then call [`MeshBuilder::add`] to insert the node.
+    pub fn mesh(&mut self, geometry: GeometryHandle, material: MaterialHandle) -> MeshBuilder<'_> {
+        let parent = self.root;
+        MeshBuilder {
+            scene: self,
+            parent,
+            transform: Transform::default(),
+            geometry,
+            material,
+        }
+    }
+
+    /// Starts a model-node builder under the scene root.
+    ///
+    /// Use [`ModelBuilder::parent`] and [`ModelBuilder::transform`] to override the default
+    /// root parent and identity transform, then call [`ModelBuilder::add`] to insert the node.
+    pub fn model(&mut self, model: ModelHandle) -> ModelBuilder<'_> {
+        let parent = self.root;
+        ModelBuilder {
+            scene: self,
+            parent,
+            transform: Transform::default(),
+            model,
+        }
+    }
+
     pub fn add_perspective_camera(
         &mut self,
         parent: NodeKey,
@@ -199,7 +261,9 @@ impl Scene {
     pub(crate) fn renderables(&self) -> impl Iterator<Item = &RenderableNode> {
         self.nodes.values().filter_map(|node| match &node.kind {
             NodeKind::Renderable(renderable) => Some(renderable),
-            NodeKind::Empty | NodeKind::Camera(_) => None,
+            // M1 mesh/model nodes are typed scene handles. Renderer integration lands when
+            // the M1 geometry/material passes resolve handles through Assets during prepare().
+            NodeKind::Empty | NodeKind::Mesh(_) | NodeKind::Model(_) | NodeKind::Camera(_) => None,
         })
     }
 
@@ -275,6 +339,74 @@ impl Node {
 impl RenderableNode {
     pub fn primitives(&self) -> &[Primitive] {
         &self.primitives
+    }
+}
+
+impl MeshNode {
+    /// Returns the typed geometry handle referenced by this mesh node.
+    pub const fn geometry(&self) -> GeometryHandle {
+        self.geometry
+    }
+
+    /// Returns the typed material handle referenced by this mesh node.
+    pub const fn material(&self) -> MaterialHandle {
+        self.material
+    }
+}
+
+impl ModelNode {
+    /// Returns the typed model handle referenced by this model node.
+    pub const fn model(&self) -> ModelHandle {
+        self.model
+    }
+}
+
+impl MeshBuilder<'_> {
+    /// Overrides the parent node. The parent is validated when [`Self::add`] is called.
+    pub fn parent(mut self, parent: NodeKey) -> Self {
+        self.parent = parent;
+        self
+    }
+
+    /// Overrides the local transform. The default is [`Transform::IDENTITY`].
+    pub fn transform(mut self, transform: Transform) -> Self {
+        self.transform = transform;
+        self
+    }
+
+    /// Inserts the mesh node and returns its typed node key.
+    pub fn add(self) -> Result<NodeKey, LookupError> {
+        self.scene.insert_node(
+            self.parent,
+            NodeKind::Mesh(MeshNode {
+                geometry: self.geometry,
+                material: self.material,
+            }),
+            self.transform,
+        )
+    }
+}
+
+impl ModelBuilder<'_> {
+    /// Overrides the parent node. The parent is validated when [`Self::add`] is called.
+    pub fn parent(mut self, parent: NodeKey) -> Self {
+        self.parent = parent;
+        self
+    }
+
+    /// Overrides the local transform. The default is [`Transform::IDENTITY`].
+    pub fn transform(mut self, transform: Transform) -> Self {
+        self.transform = transform;
+        self
+    }
+
+    /// Inserts the model node and returns its typed node key.
+    pub fn add(self) -> Result<NodeKey, LookupError> {
+        self.scene.insert_node(
+            self.parent,
+            NodeKind::Model(ModelNode { model: self.model }),
+            self.transform,
+        )
     }
 }
 

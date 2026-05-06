@@ -1,7 +1,7 @@
 use scena::{
     AlphaMode, AssetPath, Assets, Color, EnvironmentHandle, GeometryHandle, MaterialDesc,
-    MaterialHandle, MaterialKind, ModelHandle, SceneAsset, TextureColorSpace, TextureDesc,
-    TextureHandle,
+    MaterialHandle, MaterialKind, ModelHandle, NodeKind, Scene, SceneAsset, TextureColorSpace,
+    TextureDesc, TextureHandle, Transform, Vec3,
 };
 
 fn assert_handle<T: Copy + Eq + std::fmt::Debug>() {}
@@ -83,4 +83,57 @@ fn assets_load_texture_records_color_space_and_deduplicates_cache_key() {
         assets.texture(linear).map(|texture| texture.color_space()),
         Some(TextureColorSpace::Linear)
     );
+}
+
+#[test]
+fn scene_mesh_builder_inserts_typed_mesh_node() {
+    let assets = Assets::new();
+    // Geometry creation lands with built-in geometry; this sentinel only proves the
+    // scene-side typed-handle insertion path.
+    let geometry = GeometryHandle::default();
+    let material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+    let mut scene = Scene::new();
+
+    let node = scene
+        .mesh(geometry, material)
+        .transform(Transform {
+            translation: Vec3::new(1.0, 2.0, 3.0),
+            ..Transform::default()
+        })
+        .add()
+        .expect("mesh node inserts under root");
+
+    let node = scene.node(node).expect("mesh node exists");
+    assert_eq!(node.transform().translation, Vec3::new(1.0, 2.0, 3.0));
+    match node.kind() {
+        NodeKind::Mesh(mesh) => {
+            assert_eq!(mesh.geometry(), geometry);
+            assert_eq!(mesh.material(), material);
+        }
+        other => panic!("expected mesh node, got {other:?}"),
+    }
+}
+
+#[test]
+fn scene_model_builder_inserts_typed_model_node_under_parent() {
+    let mut scene = Scene::new();
+    let parent = scene
+        .add_empty(scene.root(), Transform::default())
+        .expect("parent inserts");
+    // Model loading lands with glTF/model assets; this sentinel only proves the
+    // scene-side typed-handle insertion path.
+    let model = ModelHandle::default();
+
+    let node = scene
+        .model(model)
+        .parent(parent)
+        .add()
+        .expect("model node inserts under parent");
+
+    let node = scene.node(node).expect("model node exists");
+    assert_eq!(node.parent(), Some(parent));
+    match node.kind() {
+        NodeKind::Model(model_node) => assert_eq!(model_node.model(), model),
+        other => panic!("expected model node, got {other:?}"),
+    }
 }
