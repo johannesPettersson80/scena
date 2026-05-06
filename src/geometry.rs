@@ -415,6 +415,27 @@ impl Aabb {
             && point.y <= self.max.y
             && point.z <= self.max.z
     }
+
+    pub fn center(self) -> Vec3 {
+        Vec3::new(
+            (self.min.x + self.max.x) * 0.5,
+            (self.min.y + self.max.y) * 0.5,
+            (self.min.z + self.max.z) * 0.5,
+        )
+    }
+
+    pub fn half_extent(self) -> Vec3 {
+        Vec3::new(
+            (self.max.x - self.min.x).abs() * 0.5,
+            (self.max.y - self.min.y).abs() * 0.5,
+            (self.max.z - self.min.z).abs() * 0.5,
+        )
+    }
+
+    pub fn bounding_sphere_radius(self) -> f32 {
+        let half = self.half_extent();
+        (half.x * half.x + half.y * half.y + half.z * half.z).sqrt()
+    }
 }
 
 impl Primitive {

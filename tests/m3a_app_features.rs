@@ -1,8 +1,8 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use scena::{
-    AssetError, Assets, ChangeKind, ImportOptions, LookupError, NodeKind, NotPreparedReason,
-    PerspectiveCamera, RenderError, Renderer, Scene, Transform,
+    Aabb, AssetError, Assets, Camera, ChangeKind, ImportOptions, LookupError, NodeKind,
+    NotPreparedReason, PerspectiveCamera, Quat, RenderError, Renderer, Scene, Transform, Vec3,
 };
 
 #[test]
@@ -168,4 +168,111 @@ fn scene_import_reports_duplicate_names_and_escaped_paths() {
         import.node("A/B").expect("unique slash name lookup"),
         slash_node
     );
+}
+
+#[test]
+fn camera_frame_and_look_at_helpers_update_view_and_require_prepare() {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    let target = scene
+        .add_empty(
+            scene.root(),
+            Transform {
+                translation: Vec3::new(3.0, 2.0, -5.0),
+                ..Transform::default()
+            },
+        )
+        .expect("target node inserts");
+    let bounds = Aabb::new(Vec3::new(-2.0, -1.0, -3.0), Vec3::new(4.0, 5.0, 1.0));
+    let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+    renderer.prepare(&mut scene).expect("scene prepares");
+
+    scene
+        .frame(camera, bounds)
+        .expect("camera frames imported bounds");
+
+    let camera_node = scene.camera_node(camera).expect("camera node is queryable");
+    let framed_transform = scene
+        .node(camera_node)
+        .expect("camera node exists")
+        .transform();
+    let framed_camera = match scene.camera(camera).expect("camera descriptor exists") {
+        Camera::Perspective(camera) => *camera,
+        Camera::Orthographic(_) => panic!("test inserted a perspective camera"),
+    };
+    let center = Vec3::new(1.0, 2.0, -1.0);
+    let radius = (3.0_f32 * 3.0 + 3.0 * 3.0 + 2.0 * 2.0).sqrt();
+    let distance = framed_transform.translation.z - center.z;
+
+    assert_vec3_near(
+        framed_transform.translation,
+        Vec3::new(1.0, 2.0, center.z + distance),
+    );
+    assert!(distance > radius);
+    assert!(framed_camera.near <= distance - radius);
+    assert!(framed_camera.far >= distance + radius);
+
+    scene
+        .look_at(camera, target)
+        .expect("camera looks at target node");
+    let looked_transform = scene
+        .node(camera_node)
+        .expect("camera node exists")
+        .transform();
+    let forward = rotate_vec3(looked_transform.rotation, Vec3::new(0.0, 0.0, -1.0));
+    let expected_forward = normalize(sub_vec3(
+        scene
+            .node(target)
+            .expect("target exists")
+            .transform()
+            .translation,
+        looked_transform.translation,
+    ));
+
+    assert_vec3_near(forward, expected_forward);
+    assert!(matches!(
+        renderer.render(&scene, camera),
+        Err(RenderError::NotPrepared {
+            reason: NotPreparedReason::SceneChanged {
+                change: ChangeKind::SceneStructure,
+                ..
+            },
+        })
+    ));
+}
+
+fn assert_vec3_near(actual: Vec3, expected: Vec3) {
+    const EPSILON: f32 = 0.0001;
+    assert!(
+        (actual.x - expected.x).abs() <= EPSILON
+            && (actual.y - expected.y).abs() <= EPSILON
+            && (actual.z - expected.z).abs() <= EPSILON,
+        "expected {actual:?} to be within {EPSILON} of {expected:?}"
+    );
+}
+
+fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
+    let tx = 2.0 * (rotation.y * vector.z - rotation.z * vector.y);
+    let ty = 2.0 * (rotation.z * vector.x - rotation.x * vector.z);
+    let tz = 2.0 * (rotation.x * vector.y - rotation.y * vector.x);
+    Vec3::new(
+        vector.x + rotation.w * tx + (rotation.y * tz - rotation.z * ty),
+        vector.y + rotation.w * ty + (rotation.z * tx - rotation.x * tz),
+        vector.z + rotation.w * tz + (rotation.x * ty - rotation.y * tx),
+    )
+}
+
+fn normalize(value: Vec3) -> Vec3 {
+    let length = (value.x * value.x + value.y * value.y + value.z * value.z).sqrt();
+    Vec3::new(value.x / length, value.y / length, value.z / length)
+}
+
+fn sub_vec3(left: Vec3, right: Vec3) -> Vec3 {
+    Vec3::new(left.x - right.x, left.y - right.y, left.z - right.z)
 }

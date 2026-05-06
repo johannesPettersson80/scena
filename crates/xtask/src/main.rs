@@ -2112,7 +2112,20 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         findings,
         "ARCH-M3A-SCENE-IMPORT",
         "src/scene.rs",
-        &["mod import;", "ImportOptions", "SceneImport"],
+        &["mod import;", "mod view;", "ImportOptions", "SceneImport"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/scene/view.rs",
+        &[
+            "pub fn camera_node",
+            "pub fn frame(&mut self, camera: CameraKey, bounds: Aabb)",
+            "pub fn look_at(&mut self, camera: CameraKey, target: NodeKey)",
+            "DepthRange::fit_sphere",
+            "set_node_transform_and_mark_changed",
+        ],
     );
     require_contains(
         root,
@@ -2165,6 +2178,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "scene_import_convenience_uses_gltf_default_options",
             "replace_import_returns_fresh_import_and_stales_old_lookups",
             "scene_import_reports_duplicate_names_and_escaped_paths",
+            "camera_frame_and_look_at_helpers_update_view_and_require_prepare",
             "ImportOptions::gltf_default",
             "Root/A\\\\/B",
             "UnsupportedRequiredExtension",
