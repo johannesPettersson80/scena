@@ -152,6 +152,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_camera_depth_contracts(root, findings);
     check_render_alpha_contracts(root, findings);
     check_output_stage_contracts(root, findings);
+    check_fxaa_output_contracts(root, findings);
     check_renderer_stats_contracts(root, findings);
     check_solid_kiss(root, findings);
     check_backend_vocabulary(root, findings);
@@ -808,6 +809,64 @@ fn check_output_stage_contracts(root: &Path, findings: &mut Vec<Finding>) {
     );
 }
 
+fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-FXAA-OUTPUT",
+        "src/diagnostics.rs",
+        &["pub fxaa_passes: u64"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-FXAA-OUTPUT",
+        "src/render.rs",
+        &[
+            "fxaa_scratch: Vec<u8>",
+            "output::apply_fxaa_rgba8(self.target, &mut self.frame, &mut self.fxaa_scratch)",
+            "self.stats.fxaa_passes",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-FXAA-OUTPUT",
+        "src/render/output.rs",
+        &[
+            "pub(super) fn apply_fxaa_rgba8",
+            "luma_from_srgb8",
+            "FXAA_LUMA_THRESHOLD",
+            "fn aces_tonemap",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-FXAA-OUTPUT",
+        "tests/m2_lighting_depth_clipping.rs",
+        &[
+            "fxaa_pass_runs_after_aces_without_second_tonemap",
+            "stats.fxaa_passes",
+            "[206, 206, 206, 255]",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-FXAA-OUTPUT",
+        "docs/specs/public-api.md",
+        &["pub fxaa_passes: u64", "tonemapper again"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-FXAA-OUTPUT",
+        "docs/checklists/m2-lighting-depth-clipping.md",
+        &["FXAA pass attached", "ARCH-FXAA-OUTPUT"],
+    );
+}
+
 fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
     require_contains(
         root,
@@ -831,6 +890,7 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub shadow_maps: u64",
             "pub depth_prepass_passes: u64",
             "pub depth_prepass_draws: u64",
+            "pub fxaa_passes: u64",
             "pub live_logical_handles: u64",
             "pub pending_destructions: u64",
             "pub approximate_gpu_memory_bytes: Option<u64>",
@@ -937,6 +997,7 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "shadow_maps",
             "depth_prepass_passes",
             "depth_prepass_draws",
+            "fxaa_passes",
             "live_logical_handles",
             "pub buffers: u64",
             "pub target_height: u32",
@@ -2005,8 +2066,8 @@ fn check_visual_fixture_metadata(root: &Path, findings: &mut Vec<Finding>) {
             "status = \"reference\"",
             "max_abs_diff = 0",
             "center_rgba = [119, 177, 204, 255]",
-            "nonblack_pixels = 81",
-            "rgba_hash = \"fnv1a64:af9cc2a215b85783\"",
+            "nonblack_pixels = 109",
+            "rgba_hash = \"fnv1a64:1b305a55001a2b13\"",
         ],
     );
     require_contains(
@@ -2319,6 +2380,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_output_stage_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn fxaa_output_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_fxaa_output_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

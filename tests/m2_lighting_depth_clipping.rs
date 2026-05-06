@@ -3,8 +3,63 @@
 use scena::{
     Angle, AssetError, Assets, Color, DepthRange, DirectionalLight, EnvironmentSourceKind, Light,
     NodeKind, OrthographicCamera, PerspectiveCamera, PointLight, PrepareError, Primitive, Renderer,
-    Scene, SpotLight, Transform, Vec3,
+    Scene, SpotLight, Transform, Vec3, Vertex,
 };
+
+fn pixel_at(frame: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
+    let offset = ((y * width + x) * 4) as usize;
+    frame[offset..offset + 4]
+        .try_into()
+        .expect("pixel slice has four channels")
+}
+
+fn split_screen_fxaa_scene() -> Scene {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("camera becomes active");
+    let white_left_half = [
+        Primitive::triangle([
+            Vertex {
+                position: Vec3::new(-1.0, -1.0, 0.0),
+                color: Color::WHITE,
+            },
+            Vertex {
+                position: Vec3::new(0.0, -1.0, 0.0),
+                color: Color::WHITE,
+            },
+            Vertex {
+                position: Vec3::new(0.0, 1.0, 0.0),
+                color: Color::WHITE,
+            },
+        ]),
+        Primitive::triangle([
+            Vertex {
+                position: Vec3::new(-1.0, -1.0, 0.0),
+                color: Color::WHITE,
+            },
+            Vertex {
+                position: Vec3::new(0.0, 1.0, 0.0),
+                color: Color::WHITE,
+            },
+            Vertex {
+                position: Vec3::new(-1.0, 1.0, 0.0),
+                color: Color::WHITE,
+            },
+        ]),
+    ];
+    scene
+        .add_renderable(scene.root(), white_left_half.to_vec(), Transform::default())
+        .expect("split-screen primitive inserts");
+    scene
+}
 
 #[test]
 fn scene_light_components_are_typed_and_node_owned() {
@@ -293,6 +348,37 @@ fn depth_prepass_is_prepared_for_opaque_scene_geometry() {
     let released = renderer.stats();
     assert_eq!(released.depth_prepass_passes, 0);
     assert_eq!(released.depth_prepass_draws, 0);
+}
+
+#[test]
+fn fxaa_pass_runs_after_aces_without_second_tonemap() {
+    let mut scene = split_screen_fxaa_scene();
+    let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+
+    renderer.prepare(&mut scene).expect("scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("active camera renders split-screen fixture");
+
+    let stats = renderer.stats();
+    assert_eq!(stats.fxaa_passes, 1);
+    assert_eq!(
+        pixel_at(renderer.frame_rgba8(), 8, 1, 4),
+        [206, 206, 206, 255]
+    );
+    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 6, 4), [0, 0, 0, 255]);
+
+    let left_edge = pixel_at(renderer.frame_rgba8(), 8, 3, 4);
+    let right_edge = pixel_at(renderer.frame_rgba8(), 8, 4, 4);
+    assert_eq!(
+        left_edge,
+        [206, 206, 206, 255],
+        "FXAA keeps bright edge pixels at ACES white instead of tonemapping twice"
+    );
+    assert!(
+        right_edge[0] > 0,
+        "FXAA smooths the dark edge pixel without changing solid black"
+    );
 }
 
 #[test]

@@ -1,5 +1,7 @@
 use crate::material::Color;
 
+use super::RasterTarget;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct OutputTransform {
     exposure_ev: f32,
@@ -102,11 +104,83 @@ fn mul_mat3_vec3(matrix: [[f32; 3]; 3], vector: [f32; 3]) -> [f32; 3] {
     ]
 }
 
+pub(super) fn apply_fxaa_rgba8(target: RasterTarget, frame: &mut [u8], scratch: &mut [u8]) -> u64 {
+    if target.width < 3 || target.height < 3 {
+        return 0;
+    }
+    debug_assert_eq!(frame.len(), target.byte_len());
+    debug_assert_eq!(scratch.len(), target.byte_len());
+    scratch.copy_from_slice(frame);
+
+    for y in 1..target.height - 1 {
+        for x in 1..target.width - 1 {
+            let center = pixel_offset(target, x, y);
+            let samples = [
+                pixel_offset(target, x - 1, y - 1),
+                pixel_offset(target, x, y - 1),
+                pixel_offset(target, x + 1, y - 1),
+                pixel_offset(target, x - 1, y),
+                center,
+                pixel_offset(target, x + 1, y),
+                pixel_offset(target, x - 1, y + 1),
+                pixel_offset(target, x, y + 1),
+                pixel_offset(target, x + 1, y + 1),
+            ];
+            let center_luma = luma_from_srgb8(&scratch[center..center + 4]);
+            let lumas = samples.map(|offset| luma_from_srgb8(&scratch[offset..offset + 4]));
+            let min_luma = lumas.into_iter().fold(f32::INFINITY, f32::min);
+            let max_luma = lumas.into_iter().fold(f32::NEG_INFINITY, f32::max);
+            if max_luma - min_luma < FXAA_LUMA_THRESHOLD {
+                continue;
+            }
+            if center_luma - min_luma > FXAA_LOCAL_MIN_EPSILON {
+                continue;
+            }
+            let bright_neighbors = lumas
+                .into_iter()
+                .filter(|luma| *luma - center_luma >= FXAA_LUMA_THRESHOLD)
+                .count();
+            if bright_neighbors < 3 {
+                continue;
+            }
+            average_kernel_rgba8(scratch, frame, center, samples);
+        }
+    }
+
+    1
+}
+
+fn pixel_offset(target: RasterTarget, x: u32, y: u32) -> usize {
+    target.pixel_index(x, y) * 4
+}
+
+fn luma_from_srgb8(pixel: &[u8]) -> f32 {
+    f32::from(pixel[0]) * 0.299 + f32::from(pixel[1]) * 0.587 + f32::from(pixel[2]) * 0.114
+}
+
+fn average_kernel_rgba8(
+    source: &[u8],
+    target: &mut [u8],
+    output_offset: usize,
+    sample_offsets: [usize; 9],
+) {
+    for channel in 0..4 {
+        let sum: u16 = sample_offsets
+            .into_iter()
+            .map(|offset| u16::from(source[offset + channel]))
+            .sum();
+        target[output_offset + channel] = (sum / 9) as u8;
+    }
+}
+
 const ACES_INPUT_MATRIX: [[f32; 3]; 3] = [
     [0.597_19, 0.354_58, 0.048_23],
     [0.076, 0.908_34, 0.015_66],
     [0.028_4, 0.133_83, 0.837_77],
 ];
+
+const FXAA_LUMA_THRESHOLD: f32 = 16.0;
+const FXAA_LOCAL_MIN_EPSILON: f32 = 1.0;
 
 const ACES_OUTPUT_MATRIX: [[f32; 3]; 3] = [
     [1.604_75, -0.531_08, -0.073_67],

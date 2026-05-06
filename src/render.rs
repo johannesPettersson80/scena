@@ -28,6 +28,7 @@ pub struct Renderer {
     target: RasterTarget,
     prepared: Option<PreparedSceneState>,
     frame: Vec<u8>,
+    fxaa_scratch: Vec<u8>,
     // CPU-only linear scene-referred straight-alpha accumulator. Stores the source of truth
     // before every pixel is ACES+sRGB encoded into `frame`.
     linear_frame: Option<Vec<Color>>,
@@ -178,6 +179,7 @@ impl Renderer {
             target,
             prepared: None,
             frame: vec![0; target.byte_len()],
+            fxaa_scratch: vec![0; target.byte_len()],
             linear_frame: (!has_gpu).then(|| vec![Color::BLACK; target.pixel_len()]),
             stats: RendererStats {
                 target_width: width,
@@ -316,6 +318,8 @@ impl Renderer {
                 );
             }
         }
+        self.stats.fxaa_passes =
+            output::apply_fxaa_rgba8(self.target, &mut self.frame, &mut self.fxaa_scratch);
         self.poll_device();
 
         self.stats.frames_rendered = self.stats.frames_rendered.saturating_add(1);
@@ -345,6 +349,7 @@ impl Renderer {
                 self.target.width = width;
                 self.target.height = height;
                 self.frame.resize(self.target.byte_len(), 0);
+                self.fxaa_scratch.resize(self.target.byte_len(), 0);
                 if let Some(linear_frame) = &mut self.linear_frame {
                     linear_frame.resize(self.target.pixel_len(), Color::BLACK);
                 }

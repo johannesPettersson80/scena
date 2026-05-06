@@ -665,8 +665,8 @@ fn rendered_cpu_checkerboard_neutral_and_color_checker_samples_are_pinned() {
         pixel_at(renderer.frame_rgba8(), 8, 2, 2),
         [206, 206, 206, 255]
     );
-    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 6, 2), [0, 0, 0, 255]);
-    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 2, 6), [0, 0, 0, 255]);
+    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 6, 2), [68, 68, 68, 255]);
+    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 2, 6), [68, 68, 68, 255]);
     assert_eq!(
         pixel_at(renderer.frame_rgba8(), 8, 6, 6),
         [206, 206, 206, 255]
@@ -854,8 +854,8 @@ fn prepare_with_assets_renders_line_material_as_screen_space_stroke() {
         pixel_at(renderer.frame_rgba8(), 8, 4, 3),
         [206, 206, 206, 255]
     );
-    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 4, 2), [0, 0, 0, 255]);
-    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 4, 4), [0, 0, 0, 255]);
+    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 4, 2), [68, 68, 68, 255]);
+    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 4, 4), [68, 68, 68, 255]);
 }
 
 #[test]
