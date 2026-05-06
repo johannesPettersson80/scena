@@ -322,7 +322,7 @@ impl Renderer {
                 .gpu
                 .as_mut()
                 .expect("draw_gpu is called only when a GPU device exists");
-            gpu.render_to_frame(self.target, &mut self.frame)?;
+            gpu.render_to_frame(self.target, self.output.exposure_ev(), &mut self.frame)?;
             self.stats.gpu_submissions = self.stats.gpu_submissions.saturating_add(1);
             Ok(())
         }

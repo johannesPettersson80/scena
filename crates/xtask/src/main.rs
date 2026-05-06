@@ -729,11 +729,22 @@ fn check_output_stage_contracts(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "ARCH-OUTPUT-STAGE",
+        "src/render/gpu/output.rs",
+        &[
+            "fn aces_tonemap(color: vec3<f32>) -> vec3<f32>",
+            "fn rrt_and_odt_fit(value: f32) -> f32",
+            "exposure_multiplier: f32",
+            "fn encode_output_uniform",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-OUTPUT-STAGE",
         "src/render/gpu.rs",
         &[
             "GPU_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb",
-            "fn aces_tonemap(color: vec3<f32>) -> vec3<f32>",
-            "fn rrt_and_odt_fit(value: f32) -> f32",
+            "pass.set_bind_group(0, output_bind_group, &[])",
         ],
     );
     require_contains(

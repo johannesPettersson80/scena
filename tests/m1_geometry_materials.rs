@@ -765,6 +765,15 @@ fn headless_gpu_output_stage_applies_aces_srgb_for_pinned_white_fixture() {
             center_pixel(renderer.frame_rgba8(), 4, 4),
             [206, 206, 206, 255]
         );
+
+        renderer.set_exposure_ev(2.0);
+        renderer
+            .render_active(&scene)
+            .expect("gpu exposure update renders without reprepare");
+        assert_eq!(
+            center_pixel(renderer.frame_rgba8(), 4, 4),
+            [245, 245, 245, 255]
+        );
     }
 }
 

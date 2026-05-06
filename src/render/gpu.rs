@@ -2,6 +2,9 @@
 use std::sync::mpsc;
 
 #[cfg(not(target_arch = "wasm32"))]
+mod output;
+
+#[cfg(not(target_arch = "wasm32"))]
 use crate::diagnostics::RenderError;
 use crate::diagnostics::{Backend, BuildError};
 #[cfg(not(target_arch = "wasm32"))]
@@ -10,6 +13,11 @@ use crate::geometry::{Primitive, Vertex};
 use crate::platform::BoxedNativeWindow;
 use crate::platform::SurfaceSize;
 
+#[cfg(not(target_arch = "wasm32"))]
+use self::output::{
+    GPU_TRIANGLE_SHADER, create_output_bind_group, create_output_bind_group_layout,
+    create_output_uniform_buffer, encode_output_uniform,
+};
 use super::RasterTarget;
 
 #[allow(dead_code)]
@@ -38,6 +46,8 @@ struct GpuPreparedResources {
     view: wgpu::TextureView,
     readback: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
+    output_uniform: wgpu::Buffer,
+    output_bind_group: wgpu::BindGroup,
     vertex_count: u32,
     offscreen_pipeline: wgpu::RenderPipeline,
     surface_pipeline: Option<wgpu::RenderPipeline>,
@@ -87,11 +97,19 @@ impl GpuDeviceState {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        let offscreen_pipeline = create_unlit_pipeline(&self.device, GPU_COLOR_FORMAT);
-        let surface_pipeline = self
-            .surface
-            .as_ref()
-            .map(|surface| create_unlit_pipeline(&self.device, surface.config.format));
+        let output_bind_group_layout = create_output_bind_group_layout(&self.device);
+        let output_uniform = create_output_uniform_buffer(&self.device);
+        let output_bind_group =
+            create_output_bind_group(&self.device, &output_bind_group_layout, &output_uniform);
+        let offscreen_pipeline =
+            create_unlit_pipeline(&self.device, GPU_COLOR_FORMAT, &output_bind_group_layout);
+        let surface_pipeline = self.surface.as_ref().map(|surface| {
+            create_unlit_pipeline(
+                &self.device,
+                surface.config.format,
+                &output_bind_group_layout,
+            )
+        });
 
         self.resources = Some(GpuPreparedResources {
             target,
@@ -99,6 +117,8 @@ impl GpuDeviceState {
             view,
             readback,
             vertex_buffer,
+            output_uniform,
+            output_bind_group,
             vertex_count: (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32,
             offscreen_pipeline,
             surface_pipeline,
@@ -121,6 +141,7 @@ impl GpuDeviceState {
     pub(super) fn render_to_frame(
         &mut self,
         target: RasterTarget,
+        exposure_ev: f32,
         frame: &mut Vec<u8>,
     ) -> Result<(), RenderError> {
         if self
@@ -136,6 +157,11 @@ impl GpuDeviceState {
             .resources
             .as_ref()
             .expect("resources are checked before rendering");
+        self.queue.write_buffer(
+            &resources.output_uniform,
+            0,
+            &encode_output_uniform(exposure_ev),
+        );
         let surface_output =
             self.surface
                 .as_ref()
@@ -163,6 +189,7 @@ impl GpuDeviceState {
             &mut encoder,
             &resources.view,
             &resources.vertex_buffer,
+            &resources.output_bind_group,
             resources.vertex_count,
             &resources.offscreen_pipeline,
             "scena.headless_gpu.render_pass",
@@ -174,6 +201,7 @@ impl GpuDeviceState {
                 &mut encoder,
                 surface_view,
                 &resources.vertex_buffer,
+                &resources.output_bind_group,
                 resources.vertex_count,
                 surface_pipeline,
                 "scena.surface.render_pass",
@@ -336,6 +364,7 @@ fn encode_unlit_pass(
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
     vertex_buffer: &wgpu::Buffer,
+    output_bind_group: &wgpu::BindGroup,
     vertex_count: u32,
     pipeline: &wgpu::RenderPipeline,
     label: &'static str,
@@ -358,6 +387,7 @@ fn encode_unlit_pass(
         multiview_mask: None,
     });
     pass.set_pipeline(pipeline);
+    pass.set_bind_group(0, output_bind_group, &[]);
     pass.set_vertex_buffer(0, vertex_buffer.slice(..));
     if vertex_count > 0 {
         pass.draw(0..vertex_count, 0..1);
@@ -383,56 +413,6 @@ const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] = [
         shader_location: 1,
     },
 ];
-#[cfg(not(target_arch = "wasm32"))]
-const GPU_TRIANGLE_SHADER: &str = r#"
-struct VertexIn {
-    @location(0) position: vec3<f32>,
-    @location(1) color: vec4<f32>,
-};
-
-struct VertexOut {
-    @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
-};
-
-@vertex
-fn vs_main(in: VertexIn) -> VertexOut {
-    var out: VertexOut;
-    out.position = vec4<f32>(in.position, 1.0);
-    out.color = in.color;
-    return out;
-}
-
-@fragment
-fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-    return vec4<f32>(aces_tonemap(in.color.rgb), in.color.a);
-}
-
-fn aces_tonemap(color: vec3<f32>) -> vec3<f32> {
-    let input = vec3<f32>(
-        dot(vec3<f32>(0.59719, 0.35458, 0.04823), color),
-        dot(vec3<f32>(0.076, 0.90834, 0.01566), color),
-        dot(vec3<f32>(0.0284, 0.13383, 0.83777), color),
-    );
-    let fitted = vec3<f32>(
-        rrt_and_odt_fit(input.r),
-        rrt_and_odt_fit(input.g),
-        rrt_and_odt_fit(input.b),
-    );
-    let output = vec3<f32>(
-        dot(vec3<f32>(1.60475, -0.53108, -0.07367), fitted),
-        dot(vec3<f32>(-0.10208, 1.10813, -0.00605), fitted),
-        dot(vec3<f32>(-0.00327, -0.07276, 1.07602), fitted),
-    );
-    return clamp(output, vec3<f32>(0.0), vec3<f32>(1.0));
-}
-
-fn rrt_and_odt_fit(value: f32) -> f32 {
-    let numerator = value * (value + 0.0245786) - 0.000090537;
-    let denominator = value * (0.983729 * value + 0.432951) + 0.238081;
-    return numerator / denominator;
-}
-"#;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn align_to(value: u32, alignment: u32) -> u32 {
@@ -443,6 +423,7 @@ fn align_to(value: u32, alignment: u32) -> u32 {
 fn create_unlit_pipeline(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
+    output_bind_group_layout: &wgpu::BindGroupLayout,
 ) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("scena.m0.unlit_triangle"),
@@ -450,7 +431,7 @@ fn create_unlit_pipeline(
     });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("scena.m0.pipeline_layout"),
-        bind_group_layouts: &[],
+        bind_group_layouts: &[Some(output_bind_group_layout)],
         immediate_size: 0,
     });
     let vertex_buffer = wgpu::VertexBufferLayout {
