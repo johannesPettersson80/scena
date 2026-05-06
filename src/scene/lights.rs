@@ -14,6 +14,7 @@ pub enum Light {
 pub struct DirectionalLight {
     color: Color,
     illuminance_lux: f32,
+    casts_shadows: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -112,6 +113,7 @@ impl Default for DirectionalLight {
         Self {
             color: Color::WHITE,
             illuminance_lux: 10_000.0,
+            casts_shadows: false,
         }
     }
 }
@@ -125,6 +127,10 @@ impl DirectionalLight {
         self.illuminance_lux
     }
 
+    pub const fn casts_shadows(self) -> bool {
+        self.casts_shadows
+    }
+
     pub const fn with_color(mut self, color: Color) -> Self {
         self.color = color;
         self
@@ -132,6 +138,11 @@ impl DirectionalLight {
 
     pub const fn with_illuminance_lux(mut self, illuminance_lux: f32) -> Self {
         self.illuminance_lux = non_negative_or(illuminance_lux, 10_000.0);
+        self
+    }
+
+    pub const fn with_shadows(mut self, enabled: bool) -> Self {
+        self.casts_shadows = enabled;
         self
     }
 }

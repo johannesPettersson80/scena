@@ -94,6 +94,10 @@ pub enum PrepareError {
     UnsupportedModelNode {
         node: NodeKey,
     },
+    MultipleShadowedDirectionalLights {
+        first: NodeKey,
+        second: NodeKey,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -386,6 +390,10 @@ impl fmt::Display for PrepareError {
                     "node {node:?} is a model node; model preparation is not implemented"
                 )
             }
+            Self::MultipleShadowedDirectionalLights { first, second } => write!(
+                formatter,
+                "only one shadowed directional light is supported; nodes {first:?} and {second:?} both cast shadows"
+            ),
         }
     }
 }

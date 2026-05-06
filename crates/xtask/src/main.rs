@@ -143,6 +143,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_prepare_asset_contracts(root, findings);
     check_environment_lifecycle_contracts(root, findings);
     check_scene_light_contracts(root, findings);
+    check_directional_shadow_contracts(root, findings);
     check_camera_depth_contracts(root, findings);
     check_render_alpha_contracts(root, findings);
     check_output_stage_contracts(root, findings);
@@ -197,6 +198,7 @@ const REQUIRED_SOURCE_MODULES: &[&str] = &[
     "src/geometry.rs",
     "src/material.rs",
     "src/render.rs",
+    "src/render/prepare/strokes.rs",
     "src/animation.rs",
     "src/controls.rs",
     "src/picking.rs",
@@ -929,6 +931,14 @@ fn check_prepare_asset_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "TransparentPrimitive",
             "total_cmp",
             "fn average_depth",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-ASSETS",
+        "src/render/prepare/strokes.rs",
+        &[
             "fn append_line_primitives",
             "fn append_wireframe_primitives",
             "fn append_edge_primitives",
@@ -1060,10 +1070,13 @@ fn check_scene_light_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub struct DirectionalLight",
             "pub struct PointLight",
             "pub struct SpotLight",
+            "casts_shadows: bool",
             "pub fn directional_light(&mut self, light: DirectionalLight) -> LightBuilder<'_>",
             "pub fn point_light(&mut self, light: PointLight) -> LightBuilder<'_>",
             "pub fn spot_light(&mut self, light: SpotLight) -> LightBuilder<'_>",
             "pub fn light(&self, light: LightKey) -> Option<&Light>",
+            "pub const fn casts_shadows",
+            "pub const fn with_shadows",
         ],
     );
     require_contains(
@@ -1090,6 +1103,52 @@ fn check_scene_light_contracts(root: &Path, findings: &mut Vec<Finding>) {
             ".point_light",
             ".spot_light",
             "NodeKind::Light",
+        ],
+    );
+}
+
+fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIRECTIONAL-SHADOW",
+        "src/render/prepare.rs",
+        &[
+            "fn validate_lighting(scene: &Scene) -> Result<(), PrepareError>",
+            "scene.light_nodes()",
+            "light.casts_shadows()",
+            "PrepareError::MultipleShadowedDirectionalLights",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIRECTIONAL-SHADOW",
+        "src/diagnostics.rs",
+        &[
+            "MultipleShadowedDirectionalLights",
+            "only one shadowed directional light",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIRECTIONAL-SHADOW",
+        "tests/m2_lighting_depth_clipping.rs",
+        &[
+            "shadowed_directional_light_is_opt_in_and_single_owner",
+            "with_shadows(true)",
+            "MultipleShadowedDirectionalLights",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIRECTIONAL-SHADOW",
+        "docs/checklists/m2-lighting-depth-clipping.md",
+        &[
+            "One opt-in shadowed directional light",
+            "with_shadows(true)",
         ],
     );
 }
@@ -1942,6 +2001,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_scene_light_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn directional_shadow_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_directional_shadow_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

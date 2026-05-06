@@ -2,7 +2,7 @@
 
 use scena::{
     Angle, Color, DepthRange, DirectionalLight, Light, NodeKind, OrthographicCamera,
-    PerspectiveCamera, PointLight, Scene, SpotLight, Transform, Vec3,
+    PerspectiveCamera, PointLight, PrepareError, Renderer, Scene, SpotLight, Transform, Vec3,
 };
 
 #[test]
@@ -138,4 +138,44 @@ fn camera_depth_fit_helpers_cover_unit_cube_reference_distances() {
 
     let fallback = DepthRange::fit_sphere(f32::NAN, -1.0);
     assert_eq!(fallback, DepthRange::new(0.01, 1000.0));
+}
+
+#[test]
+fn shadowed_directional_light_is_opt_in_and_single_owner() {
+    assert!(!DirectionalLight::default().casts_shadows());
+    assert!(
+        DirectionalLight::default()
+            .with_shadows(true)
+            .casts_shadows()
+    );
+
+    let mut single_scene = Scene::new();
+    single_scene
+        .directional_light(DirectionalLight::default().with_shadows(true))
+        .add()
+        .expect("first shadowed directional light inserts");
+    Renderer::headless(4, 4)
+        .expect("renderer builds")
+        .prepare(&mut single_scene)
+        .expect("one shadowed directional light is allowed");
+
+    let mut scene = Scene::new();
+    let first = scene
+        .directional_light(DirectionalLight::default().with_shadows(true))
+        .add()
+        .expect("first shadowed directional light inserts");
+    let second = scene
+        .directional_light(DirectionalLight::default().with_shadows(true))
+        .add()
+        .expect("second shadowed directional light inserts");
+
+    let error = Renderer::headless(4, 4)
+        .expect("renderer builds")
+        .prepare(&mut scene)
+        .expect_err("second shadowed directional light is rejected");
+
+    assert_eq!(
+        error,
+        PrepareError::MultipleShadowedDirectionalLights { first, second }
+    );
 }

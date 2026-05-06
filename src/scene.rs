@@ -276,6 +276,18 @@ impl Scene {
         })
     }
 
+    pub(crate) fn light_nodes(&self) -> impl Iterator<Item = (NodeKey, LightKey, Light)> + '_ {
+        self.nodes.iter().filter_map(|(node_key, node)| {
+            let NodeKind::Light(light_key) = node.kind else {
+                return None;
+            };
+            self.lights
+                .get(light_key)
+                .copied()
+                .map(|light| (node_key, light_key, light))
+        })
+    }
+
     fn insert_camera(
         &mut self,
         parent: NodeKey,
