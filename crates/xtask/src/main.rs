@@ -367,6 +367,19 @@ fn check_required_doc_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub enum Error",
             "pub enum SurfaceEvent",
             "Color::from_linear_rgb",
+            "`MaterialDesc` is an immutable descriptor value",
+            "Texture slots store `TextureHandle` values only",
+            "MaterialDesc::unlit(base_color);",
+            "MaterialDesc::pbr_metallic_roughness(base_color, metallic, roughness);",
+            "material.with_base_color_texture(texture);",
+            "material.with_normal_texture(texture);",
+            "material.with_metallic_roughness_texture(texture);",
+            "material.with_occlusion_texture(texture);",
+            "material.with_emissive_texture(texture);",
+            "material.with_alpha_mode(alpha_mode);",
+            "material.with_emissive(color);",
+            "material.with_emissive_strength(strength);",
+            "material.with_double_sided(true);",
         ],
     );
     require_contains(
@@ -544,6 +557,131 @@ fn check_asset_api_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "src/diagnostics.rs",
         &["pub enum AssetError", "UnsupportedRequiredExtension"],
     );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ASSET-API",
+        "src/material.rs",
+        &[
+            "pub struct MaterialDesc",
+            "pub enum MaterialKind",
+            "Unlit",
+            "PbrMetallicRoughness",
+            "pub const fn pbr_metallic_roughness",
+            "pub const fn with_base_color_texture",
+            "pub const fn with_normal_texture",
+            "pub const fn with_metallic_roughness_texture",
+            "pub const fn with_occlusion_texture",
+            "pub const fn with_emissive_texture",
+            "pub const fn with_alpha_mode",
+            "pub const fn with_emissive(",
+            "pub const fn with_emissive_strength",
+            "pub const fn with_double_sided",
+            "pub const fn kind(&self) -> MaterialKind",
+            "pub const fn base_color(&self) -> Color",
+            "pub const fn base_color_texture(&self) -> Option<TextureHandle>",
+            "pub const fn normal_texture(&self) -> Option<TextureHandle>",
+            "pub const fn metallic_roughness_texture(&self) -> Option<TextureHandle>",
+            "pub const fn occlusion_texture(&self) -> Option<TextureHandle>",
+            "pub const fn emissive_texture(&self) -> Option<TextureHandle>",
+            "pub const fn alpha_mode(&self) -> AlphaMode",
+            "pub const fn emissive(&self) -> Color",
+            "pub const fn emissive_strength(&self) -> f32",
+            "pub const fn metallic_factor(&self) -> f32",
+            "pub const fn roughness_factor(&self) -> f32",
+            "pub const fn double_sided(&self) -> bool",
+            "metallic_factor: clamp_unit_or",
+            "roughness_factor: clamp_unit_or",
+            "cutoff: clamp_unit_or",
+            "self.emissive_strength = non_negative_or",
+        ],
+    );
+    check_material_desc_fields_private(root, findings);
+    forbid_contains(
+        root,
+        findings,
+        "ARCH-ASSET-API",
+        "src/material.rs",
+        &[
+            "pub kind:",
+            "pub base_color:",
+            "pub base_color_texture:",
+            "pub normal_texture:",
+            "pub metallic_roughness_texture:",
+            "pub occlusion_texture:",
+            "pub emissive_texture:",
+            "pub alpha_mode:",
+            "pub emissive:",
+            "pub emissive_strength:",
+            "pub metallic_factor:",
+            "pub roughness_factor:",
+            "pub double_sided:",
+            "pub struct MaterialTexture",
+            "pub enum MaterialTexture",
+            "pub type MaterialTexture",
+            "pub trait MaterialTexture",
+            "pub fn basic(",
+            "pub const fn basic(",
+            "Basic",
+            "basic(",
+            "Basic,",
+        ],
+    );
+    forbid_contains(
+        root,
+        findings,
+        "ARCH-ASSET-API",
+        "src/lib.rs",
+        &["MaterialTexture", "Basic", "basic"],
+    );
+}
+
+fn check_material_desc_fields_private(root: &Path, findings: &mut Vec<Finding>) {
+    let path = root.join("src/material.rs");
+    let Ok(text) = fs::read_to_string(path) else {
+        return;
+    };
+
+    for field in public_fields_in_struct(&text, "MaterialDesc") {
+        findings.push(Finding::new(
+            "ARCH-ASSET-API",
+            format!("src/material.rs MaterialDesc exposes public field '{field}'"),
+        ));
+    }
+}
+
+fn public_fields_in_struct(text: &str, struct_name: &str) -> Vec<String> {
+    let Some(body) = braced_body_after(text, &format!("struct {struct_name}")) else {
+        return Vec::new();
+    };
+
+    body.lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("pub ") || line.starts_with("pub("))
+        .map(|line| line.trim_end_matches(',').to_string())
+        .collect()
+}
+
+fn braced_body_after<'a>(text: &'a str, marker: &str) -> Option<&'a str> {
+    let marker_start = text.find(marker)?;
+    let search_start = marker_start + marker.len();
+    let brace_start = text[search_start..].find('{')? + search_start;
+    let mut depth = 0usize;
+
+    for (offset, character) in text[brace_start..].char_indices() {
+        match character {
+            '{' => depth += 1,
+            '}' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(&text[brace_start + 1..brace_start + offset]);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
 }
 
 fn check_solid_kiss(root: &Path, findings: &mut Vec<Finding>) {
@@ -908,5 +1046,21 @@ mod tests {
         check_asset_api_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn public_fields_in_struct_detects_material_desc_visibility_regressions() {
+        let source = r#"
+            pub struct MaterialDesc {
+                kind: MaterialKind,
+                pub base_color: Color,
+                pub(crate) roughness_factor: f32,
+            }
+        "#;
+
+        assert_eq!(
+            public_fields_in_struct(source, "MaterialDesc"),
+            vec!["pub base_color: Color", "pub(crate) roughness_factor: f32"]
+        );
     }
 }

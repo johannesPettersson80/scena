@@ -22,12 +22,19 @@ fn asset_taxonomy_reserves_distinct_typed_handles() {
 fn material_descriptor_defaults_are_explicit() {
     let material = MaterialDesc::default();
 
-    assert_eq!(material.kind, MaterialKind::PbrMetallicRoughness);
-    assert_eq!(material.base_color, Color::WHITE);
-    assert_eq!(material.alpha_mode, AlphaMode::Opaque);
-    assert_eq!(material.emissive, Color::BLACK);
-    assert_eq!(material.metallic_factor, 0.0);
-    assert_eq!(material.roughness_factor, 1.0);
+    assert_eq!(material.kind(), MaterialKind::PbrMetallicRoughness);
+    assert_eq!(material.base_color(), Color::WHITE);
+    assert_eq!(material.alpha_mode(), AlphaMode::Opaque);
+    assert_eq!(material.emissive(), Color::BLACK);
+    assert_eq!(material.emissive_strength(), 1.0);
+    assert_eq!(material.metallic_factor(), 0.0);
+    assert_eq!(material.roughness_factor(), 1.0);
+    assert!(!material.double_sided());
+    assert_eq!(material.base_color_texture(), None);
+    assert_eq!(material.normal_texture(), None);
+    assert_eq!(material.metallic_roughness_texture(), None);
+    assert_eq!(material.occlusion_texture(), None);
+    assert_eq!(material.emissive_texture(), None);
 }
 
 #[test]
@@ -52,6 +59,103 @@ fn assets_create_material_stores_descriptor_by_typed_handle() {
     let retrieved: Option<MaterialDesc> = assets.material(handle);
 
     assert_eq!(retrieved, Some(material));
+}
+
+#[test]
+fn unlit_material_descriptor_sets_non_pbr_defaults() {
+    const MATERIAL: MaterialDesc = MaterialDesc::unlit(Color::from_linear_rgb(0.25, 0.5, 0.75));
+
+    assert_eq!(MATERIAL.kind(), MaterialKind::Unlit);
+    assert_eq!(
+        MATERIAL.base_color(),
+        Color::from_linear_rgb(0.25, 0.5, 0.75)
+    );
+    assert_eq!(MATERIAL.metallic_factor(), 0.0);
+    assert_eq!(MATERIAL.roughness_factor(), 1.0);
+    assert_eq!(MATERIAL.alpha_mode(), AlphaMode::Opaque);
+}
+
+#[test]
+fn pbr_material_factors_are_const_and_sanitized() {
+    const CLAMPED: MaterialDesc = MaterialDesc::pbr_metallic_roughness(Color::WHITE, 2.0, -1.0);
+
+    assert_eq!(CLAMPED.kind(), MaterialKind::PbrMetallicRoughness);
+    assert_eq!(CLAMPED.metallic_factor(), 1.0);
+    assert_eq!(CLAMPED.roughness_factor(), 0.0);
+
+    let sanitized_nan = MaterialDesc::pbr_metallic_roughness(Color::WHITE, f32::NAN, f32::NAN);
+    assert_eq!(sanitized_nan.metallic_factor(), 0.0);
+    assert_eq!(sanitized_nan.roughness_factor(), 1.0);
+    assert!(!sanitized_nan.metallic_factor().is_nan());
+    assert!(!sanitized_nan.roughness_factor().is_nan());
+}
+
+#[test]
+fn material_texture_slot_helpers_store_handles_without_color_space_duplication() {
+    let assets = Assets::new();
+    let albedo =
+        pollster::block_on(assets.load_texture("paint_basecolor.png", TextureColorSpace::Srgb))
+            .expect("albedo request is recorded");
+    let normal =
+        pollster::block_on(assets.load_texture("paint_normal.png", TextureColorSpace::Linear))
+            .expect("normal request is recorded");
+    let metallic_roughness = pollster::block_on(
+        assets.load_texture("paint_metallic_roughness.png", TextureColorSpace::Linear),
+    )
+    .expect("metallic roughness request is recorded");
+    let occlusion =
+        pollster::block_on(assets.load_texture("paint_occlusion.png", TextureColorSpace::Linear))
+            .expect("occlusion request is recorded");
+    let emissive =
+        pollster::block_on(assets.load_texture("paint_emissive.png", TextureColorSpace::Srgb))
+            .expect("emissive request is recorded");
+
+    let material = MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.2, 0.8)
+        .with_base_color_texture(albedo)
+        .with_normal_texture(normal)
+        .with_metallic_roughness_texture(metallic_roughness)
+        .with_occlusion_texture(occlusion)
+        .with_emissive_texture(emissive);
+
+    assert_eq!(material.base_color_texture(), Some(albedo));
+    assert_eq!(material.normal_texture(), Some(normal));
+    assert_eq!(
+        material.metallic_roughness_texture(),
+        Some(metallic_roughness)
+    );
+    assert_eq!(material.occlusion_texture(), Some(occlusion));
+    assert_eq!(material.emissive_texture(), Some(emissive));
+}
+
+#[test]
+fn alpha_and_emissive_helpers_sanitize_descriptor_values() {
+    const MASKED: MaterialDesc = MaterialDesc::unlit(Color::WHITE)
+        .with_alpha_mode(AlphaMode::Mask { cutoff: 0.4 })
+        .with_emissive(Color::from_linear_rgb(0.1, 0.2, 0.3))
+        .with_emissive_strength(2.5)
+        .with_double_sided(true);
+
+    assert_eq!(MASKED.alpha_mode(), AlphaMode::Mask { cutoff: 0.4 });
+    assert_eq!(MASKED.emissive(), Color::from_linear_rgb(0.1, 0.2, 0.3));
+    assert_eq!(MASKED.emissive_strength(), 2.5);
+    assert!(MASKED.double_sided());
+
+    const HIGH_CUTOFF: MaterialDesc =
+        MaterialDesc::unlit(Color::WHITE).with_alpha_mode(AlphaMode::Mask { cutoff: 2.0 });
+    const NAN_CUTOFF: MaterialDesc =
+        MaterialDesc::unlit(Color::WHITE).with_alpha_mode(AlphaMode::Mask { cutoff: f32::NAN });
+    const NEGATIVE_EMISSIVE: MaterialDesc =
+        MaterialDesc::unlit(Color::WHITE).with_emissive_strength(-2.0);
+    const NAN_EMISSIVE: MaterialDesc =
+        MaterialDesc::unlit(Color::WHITE).with_emissive_strength(f32::NAN);
+
+    assert_eq!(HIGH_CUTOFF.alpha_mode(), AlphaMode::Mask { cutoff: 1.0 });
+    assert_eq!(NAN_CUTOFF.alpha_mode(), AlphaMode::Mask { cutoff: 0.5 });
+    assert_eq!(NEGATIVE_EMISSIVE.emissive_strength(), 0.0);
+    assert_eq!(NAN_EMISSIVE.emissive_strength(), 1.0);
+
+    let transparent = MASKED.with_alpha_mode(AlphaMode::Blend);
+    assert_eq!(transparent.alpha_mode(), AlphaMode::Blend);
 }
 
 #[test]
