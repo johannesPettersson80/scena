@@ -20,7 +20,7 @@ pub use assets::{
 };
 pub use diagnostics::{
     AssetError, Backend, BuildError, Capabilities, ChangeKind, Error, LookupError,
-    NotPreparedReason, PrepareError, RenderError, RenderOutcome, RendererStats,
+    NotPreparedReason, OutputStageStatus, PrepareError, RenderError, RenderOutcome, RendererStats,
 };
 pub use geometry::{
     Aabb, GeometryDesc, GeometryError, GeometryTopology, GeometryVertex, Primitive, Vertex,
@@ -31,7 +31,7 @@ pub use material::{
 #[cfg(not(target_arch = "wasm32"))]
 pub use platform::NativeWindowHandle;
 pub use platform::{PlatformSurface, SurfaceEvent, SurfaceKind, SurfaceSize};
-pub use render::Renderer;
+pub use render::{Renderer, Tonemapper};
 pub use scene::{
     Angle, Camera, CameraKey, MeshBuilder, MeshNode, ModelBuilder, ModelNode, Node, NodeKey,
     NodeKind, OrthographicCamera, PerspectiveCamera, Quat, Scene, Transform, Vec3,

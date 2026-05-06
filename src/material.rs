@@ -51,19 +51,6 @@ impl Color {
         let b = parse_hex_channel(&value[4..6])?;
         Ok(Self::from_srgb_u8(r, g, b))
     }
-
-    pub(crate) fn to_rgba8(self) -> [u8; 4] {
-        [
-            linear_channel_to_u8(self.r),
-            linear_channel_to_u8(self.g),
-            linear_channel_to_u8(self.b),
-            linear_channel_to_u8(self.a),
-        ]
-    }
-}
-
-fn linear_channel_to_u8(value: f32) -> u8 {
-    (value.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
 fn srgb_channel_to_linear(value: f32) -> f32 {

@@ -1,10 +1,55 @@
 use scena::{
     Aabb, AlphaMode, AssetPath, Assets, Color, EnvironmentHandle, GeometryDesc, GeometryHandle,
-    GeometryTopology, MaterialDesc, MaterialHandle, MaterialKind, ModelHandle, NodeKind, Scene,
-    SceneAsset, TextureColorSpace, TextureDesc, TextureHandle, Transform, Vec3,
+    GeometryTopology, MaterialDesc, MaterialHandle, MaterialKind, ModelHandle, NodeKind,
+    OutputStageStatus, PerspectiveCamera, Primitive, Renderer, Scene, SceneAsset,
+    TextureColorSpace, TextureDesc, TextureHandle, Tonemapper, Transform, Vec3, Vertex,
 };
 
 fn assert_handle<T: Copy + Eq + std::fmt::Debug>() {}
+
+fn center_pixel(frame: &[u8], width: u32, height: u32) -> [u8; 4] {
+    let x = width / 2;
+    let y = height / 2;
+    let offset = ((y * width + x) * 4) as usize;
+    frame[offset..offset + 4]
+        .try_into()
+        .expect("pixel slice has four channels")
+}
+
+fn scene_with_fullscreen_triangle(color: Color) -> (Scene, scena::CameraKey) {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("camera can become active");
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![Primitive::triangle([
+                Vertex {
+                    position: Vec3::new(-1.0, -1.0, 0.0),
+                    color,
+                },
+                Vertex {
+                    position: Vec3::new(3.0, -1.0, 0.0),
+                    color,
+                },
+                Vertex {
+                    position: Vec3::new(-1.0, 3.0, 0.0),
+                    color,
+                },
+            ])],
+            Transform::default(),
+        )
+        .expect("fullscreen triangle inserts");
+    (scene, camera)
+}
 
 #[test]
 fn asset_taxonomy_reserves_distinct_typed_handles() {
@@ -48,6 +93,46 @@ fn color_constructors_make_source_color_space_explicit() {
         Color::from_srgb_u8(255, 128, 0)
     );
     assert!(Color::from_hex_srgb("ff8000").is_err());
+}
+
+#[test]
+fn headless_output_stage_applies_aces_srgb_and_exposure_without_reprepare() {
+    let (mut scene, camera) = scene_with_fullscreen_triangle(Color::WHITE);
+    let mut renderer = Renderer::headless(4, 4).expect("headless renderer builds");
+    renderer.prepare(&mut scene).expect("prepare succeeds");
+
+    assert_eq!(
+        renderer.capabilities().output_stage,
+        OutputStageStatus::AcesSrgb
+    );
+    assert_eq!(renderer.tonemapper(), Tonemapper::Aces);
+    assert_eq!(renderer.exposure_ev(), 0.0);
+
+    renderer.render(&scene, camera).expect("render succeeds");
+    assert_eq!(
+        center_pixel(renderer.frame_rgba8(), 4, 4),
+        [206, 206, 206, 255]
+    );
+
+    renderer.set_exposure_ev(2.0);
+    renderer
+        .render_active(&scene)
+        .expect("exposure is a steady-state update");
+    assert_eq!(
+        center_pixel(renderer.frame_rgba8(), 4, 4),
+        [245, 245, 245, 255]
+    );
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn gpu_output_stage_divergence_is_explicit_in_capabilities() {
+    if let Ok(renderer) = Renderer::headless_gpu(4, 4) {
+        assert_eq!(
+            renderer.capabilities().output_stage,
+            OutputStageStatus::BackendPassthrough
+        );
+    }
 }
 
 #[test]

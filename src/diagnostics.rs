@@ -107,11 +107,18 @@ pub enum Backend {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputStageStatus {
+    AcesSrgb,
+    BackendPassthrough,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Capabilities {
     pub backend: Backend,
     pub color_target_format: &'static str,
     pub gpu_device: bool,
     pub surface_attached: bool,
+    pub output_stage: OutputStageStatus,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -322,6 +329,7 @@ impl Capabilities {
             color_target_format: "Rgba8UnormSrgb",
             gpu_device: false,
             surface_attached: false,
+            output_stage: OutputStageStatus::AcesSrgb,
         }
     }
 
@@ -331,6 +339,7 @@ impl Capabilities {
             color_target_format: "Rgba8UnormSrgb",
             gpu_device: true,
             surface_attached: false,
+            output_stage: OutputStageStatus::BackendPassthrough,
         }
     }
 
@@ -340,6 +349,7 @@ impl Capabilities {
             color_target_format: "Rgba8UnormSrgb",
             gpu_device: true,
             surface_attached: true,
+            output_stage: OutputStageStatus::BackendPassthrough,
         }
     }
 }

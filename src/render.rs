@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 use std::sync::Weak;
 
 mod gpu;
+mod output;
 
 use crate::diagnostics::{
     Backend, BuildError, Capabilities, ChangeKind, NotPreparedReason, PrepareError, RenderError,
@@ -16,6 +17,8 @@ use crate::platform::{PlatformSurface, PlatformSurfaceAttachment, SurfaceEvent, 
 use crate::scene::{CameraKey, Scene};
 
 use self::gpu::GpuDeviceState;
+use self::output::OutputTransform;
+pub use self::output::Tonemapper;
 
 #[derive(Debug)]
 pub struct Renderer {
@@ -25,6 +28,7 @@ pub struct Renderer {
     stats: RendererStats,
     capabilities: Capabilities,
     gpu: Option<GpuDeviceState>,
+    output: OutputTransform,
     target_revision: u64,
     not_sync: PhantomData<Cell<()>>,
 }
@@ -169,6 +173,7 @@ impl Renderer {
             },
             capabilities,
             gpu,
+            output: OutputTransform::default(),
             target_revision: 0,
             not_sync: PhantomData,
         })
@@ -261,6 +266,22 @@ impl Renderer {
         &self.capabilities
     }
 
+    pub fn exposure_ev(&self) -> f32 {
+        self.output.exposure_ev()
+    }
+
+    pub fn set_exposure_ev(&mut self, exposure_ev: f32) {
+        self.output.set_exposure_ev(exposure_ev);
+    }
+
+    pub fn tonemapper(&self) -> Tonemapper {
+        self.output.tonemapper()
+    }
+
+    pub fn set_tonemapper(&mut self, tonemapper: Tonemapper) {
+        self.output.set_tonemapper(tonemapper);
+    }
+
     pub fn has_gpu_device(&self) -> bool {
         self.gpu.is_some()
     }
@@ -321,7 +342,7 @@ impl Renderer {
     }
 
     fn clear(&mut self, color: Color) {
-        let rgba = color.to_rgba8();
+        let rgba = self.output.encode_rgba8(color);
         for pixel in self.frame.chunks_exact_mut(4) {
             pixel.copy_from_slice(&rgba);
         }
@@ -368,7 +389,7 @@ impl Renderer {
 
     fn write_pixel(&mut self, x: u32, y: u32, color: Color) {
         let index = ((y * self.target.width + x) * 4) as usize;
-        self.frame[index..index + 4].copy_from_slice(&color.to_rgba8());
+        self.frame[index..index + 4].copy_from_slice(&self.output.encode_rgba8(color));
     }
 }
 
