@@ -1,0 +1,12 @@
+[package]
+name = "scena"
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "A Rust-native scene-graph renderer intended as an easy, production-safe Three.js replacement."
+readme = "README.md"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
