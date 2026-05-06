@@ -131,6 +131,7 @@ fn run_docs_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_for_stale_doc_terms(root, findings);
     check_required_doc_contracts(root, findings);
     check_default_environment_manifest(root, findings);
+    check_visual_fixture_metadata(root, findings);
 }
 
 fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
@@ -1155,6 +1156,40 @@ fn check_default_environment_manifest(root: &Path, findings: &mut Vec<Finding>) 
     }
 }
 
+fn check_visual_fixture_metadata(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "VISUAL-FIXTURE-METADATA",
+        "tests/visual/fixtures/m1-headless-core.toml",
+        &[
+            "[suite]",
+            "name = \"m1-headless-core\"",
+            "format = \"ppm\"",
+            "encoding = \"srgb8\"",
+            "artifact_dir = \"target/gate-artifacts/m1-visual\"",
+            "name = \"primitive-fullscreen\"",
+            "name = \"unlit-asset-mesh\"",
+            "name = \"pbr-asset-mesh\"",
+            "name = \"transparent-blend\"",
+            "name = \"line-material\"",
+            "name = \"wire-edge-materials\"",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-FIXTURE-METADATA",
+        "tests/m1_visual_proof.rs",
+        &[
+            "m1_headless_visual_artifacts_cover_core_material_paths",
+            "write_ppm_artifact",
+            "target/gate-artifacts/m1-visual",
+            "include_str!(\"visual/fixtures/m1-headless-core.toml\")",
+        ],
+    );
+}
+
 fn require_manifest_value(
     findings: &mut Vec<Finding>,
     manifest_rel: &str,
@@ -1414,6 +1449,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_default_environment_manifest(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn visual_fixture_metadata_is_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_visual_fixture_metadata(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

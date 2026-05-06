@@ -1,0 +1,32 @@
+[suite]
+name = "m1-headless-core"
+format = "ppm"
+encoding = "srgb8"
+width = 16
+height = 16
+artifact_dir = "target/gate-artifacts/m1-visual"
+status = "artifact-proof"
+
+[[fixture]]
+name = "primitive-fullscreen"
+required_surface = "headless-cpu"
+
+[[fixture]]
+name = "unlit-asset-mesh"
+required_surface = "headless-cpu"
+
+[[fixture]]
+name = "pbr-asset-mesh"
+required_surface = "headless-cpu"
+
+[[fixture]]
+name = "transparent-blend"
+required_surface = "headless-cpu"
+
+[[fixture]]
+name = "line-material"
+required_surface = "headless-cpu"
+
+[[fixture]]
+name = "wire-edge-materials"
+required_surface = "headless-cpu"
