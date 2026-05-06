@@ -1,5 +1,5 @@
 use scena::{
-    Aabb, AlphaMode, AlphaPipelineStatus, AssetPath, Assets, Color,
+    Aabb, AlphaMode, AlphaPipelineStatus, AssetPath, Assets, Backend, Capabilities, Color,
     DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES, DEFAULT_STROKE_WIDTH_PX, EnvironmentDesc,
     EnvironmentHandle, GeometryDesc, GeometryHandle, GeometryTopology, MaterialDesc,
     MaterialHandle, MaterialKind, ModelHandle, NodeKind, OutputStageStatus, PerspectiveCamera,
@@ -741,15 +741,29 @@ fn prepare_mesh_error(
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn gpu_output_stage_divergence_is_explicit_in_capabilities() {
-    if let Ok(renderer) = Renderer::headless_gpu(4, 4) {
+fn headless_gpu_output_stage_applies_aces_srgb_for_pinned_white_fixture() {
+    assert_eq!(
+        Capabilities::for_gpu_backend(Backend::HeadlessGpu).output_stage,
+        OutputStageStatus::AcesSrgb
+    );
+
+    if let Ok(mut renderer) = Renderer::headless_gpu(4, 4) {
+        let (mut scene, camera) = scene_with_fullscreen_triangle(Color::WHITE);
         assert_eq!(
             renderer.capabilities().output_stage,
-            OutputStageStatus::BackendPassthrough
+            OutputStageStatus::AcesSrgb
         );
         assert_eq!(
             renderer.capabilities().alpha_pipeline,
             AlphaPipelineStatus::BackendPassthrough
+        );
+
+        renderer.prepare(&mut scene).expect("gpu scene prepares");
+        renderer.render(&scene, camera).expect("gpu scene renders");
+
+        assert_eq!(
+            center_pixel(renderer.frame_rgba8(), 4, 4),
+            [206, 206, 206, 255]
         );
     }
 }

@@ -141,6 +141,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_asset_api_contracts(root, findings);
     check_prepare_asset_contracts(root, findings);
     check_render_alpha_contracts(root, findings);
+    check_output_stage_contracts(root, findings);
     check_renderer_stats_contracts(root, findings);
     check_solid_kiss(root, findings);
     check_backend_vocabulary(root, findings);
@@ -708,6 +709,49 @@ fn check_render_alpha_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "AlphaPipelineStatus::LinearSourceOver",
             "AlphaPipelineStatus::BackendPassthrough",
         ],
+    );
+}
+
+fn check_output_stage_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-OUTPUT-STAGE",
+        "src/render/output.rs",
+        &[
+            "fn aces_tonemap",
+            "fn rrt_and_odt_fit",
+            "ACES_INPUT_MATRIX",
+            "ACES_OUTPUT_MATRIX",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-OUTPUT-STAGE",
+        "src/render/gpu.rs",
+        &[
+            "GPU_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb",
+            "fn aces_tonemap(color: vec3<f32>) -> vec3<f32>",
+            "fn rrt_and_odt_fit(value: f32) -> f32",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-OUTPUT-STAGE",
+        "src/diagnostics.rs",
+        &[
+            "pub enum OutputStageStatus",
+            "output_stage: OutputStageStatus::AcesSrgb",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-OUTPUT-STAGE",
+        "tests/m1_geometry_materials.rs",
+        &["headless_gpu_output_stage_applies_aces_srgb_for_pinned_white_fixture"],
     );
 }
 
@@ -1473,6 +1517,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_render_alpha_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn output_stage_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_output_stage_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

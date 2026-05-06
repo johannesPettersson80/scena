@@ -405,7 +405,32 @@ fn vs_main(in: VertexIn) -> VertexOut {
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-    return in.color;
+    return vec4<f32>(aces_tonemap(in.color.rgb), in.color.a);
+}
+
+fn aces_tonemap(color: vec3<f32>) -> vec3<f32> {
+    let input = vec3<f32>(
+        dot(vec3<f32>(0.59719, 0.35458, 0.04823), color),
+        dot(vec3<f32>(0.076, 0.90834, 0.01566), color),
+        dot(vec3<f32>(0.0284, 0.13383, 0.83777), color),
+    );
+    let fitted = vec3<f32>(
+        rrt_and_odt_fit(input.r),
+        rrt_and_odt_fit(input.g),
+        rrt_and_odt_fit(input.b),
+    );
+    let output = vec3<f32>(
+        dot(vec3<f32>(1.60475, -0.53108, -0.07367), fitted),
+        dot(vec3<f32>(-0.10208, 1.10813, -0.00605), fitted),
+        dot(vec3<f32>(-0.00327, -0.07276, 1.07602), fitted),
+    );
+    return clamp(output, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+fn rrt_and_odt_fit(value: f32) -> f32 {
+    let numerator = value * (value + 0.0245786) - 0.000090537;
+    let denominator = value * (0.983729 * value + 0.432951) + 0.238081;
+    return numerator / denominator;
 }
 "#;
 

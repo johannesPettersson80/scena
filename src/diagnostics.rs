@@ -440,7 +440,7 @@ impl Capabilities {
             color_target_format: "Rgba8UnormSrgb",
             gpu_device: true,
             surface_attached: false,
-            output_stage: OutputStageStatus::BackendPassthrough,
+            output_stage: OutputStageStatus::AcesSrgb,
             alpha_pipeline: AlphaPipelineStatus::BackendPassthrough,
         }
     }
@@ -451,7 +451,7 @@ impl Capabilities {
             color_target_format: "Rgba8UnormSrgb",
             gpu_device: true,
             surface_attached: true,
-            output_stage: OutputStageStatus::BackendPassthrough,
+            output_stage: OutputStageStatus::AcesSrgb,
             alpha_pipeline: AlphaPipelineStatus::BackendPassthrough,
         }
     }
