@@ -720,7 +720,10 @@ fn check_prepare_asset_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "fn collect_prepared_primitives",
             "PrepareError::AssetsRequired",
             "fn append_geometry_primitives",
-            "fn forward_opaque_color",
+            "fn material_pass",
+            "TransparentPrimitive",
+            "total_cmp",
+            "fn average_depth",
         ],
     );
     require_contains(
@@ -753,6 +756,8 @@ fn check_prepare_asset_contracts(root: &Path, findings: &mut Vec<Finding>) {
         &[
             "prepare_with_assets_renders_scene_mesh_unlit_geometry",
             "prepare_without_assets_rejects_asset_backed_mesh_nodes",
+            "prepare_with_assets_sorts_blend_meshes_back_to_front_before_render",
+            "prepare_with_assets_rejects_unsupported_mesh_inputs_structurally",
         ],
     );
     require_contains(

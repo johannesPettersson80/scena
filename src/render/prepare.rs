@@ -16,6 +16,7 @@ pub(super) fn collect_prepared_primitives<F>(
         .renderables()
         .flat_map(|renderable| renderable.primitives().iter().cloned())
         .collect();
+    let mut transparent_primitives = Vec::new();
 
     for (node, mesh) in scene.mesh_nodes() {
         let Some(assets) = assets else {
@@ -33,10 +34,36 @@ pub(super) fn collect_prepared_primitives<F>(
                 node,
                 material: mesh.material(),
             })?;
-        append_geometry_primitives(node, &geometry, &material, &mut primitives)?;
+        append_geometry_primitives(
+            node,
+            &geometry,
+            &material,
+            &mut primitives,
+            &mut transparent_primitives,
+        )?;
     }
 
+    // Descending depth: larger local-space z is treated as farther for the M1 foundation.
+    transparent_primitives
+        .sort_by(|left: &TransparentPrimitive, right| right.depth.total_cmp(&left.depth));
+    primitives.extend(
+        transparent_primitives
+            .into_iter()
+            .map(|transparent| transparent.primitive),
+    );
+
     Ok(primitives)
+}
+
+struct TransparentPrimitive {
+    depth: f32,
+    primitive: Primitive,
+}
+
+#[derive(Clone, Copy)]
+enum MaterialPass {
+    Opaque(Color),
+    Blend(Color),
 }
 
 fn append_geometry_primitives(
@@ -44,6 +71,7 @@ fn append_geometry_primitives(
     geometry: &GeometryDesc,
     material: &MaterialDesc,
     primitives: &mut Vec<Primitive>,
+    transparent_primitives: &mut Vec<TransparentPrimitive>,
 ) -> Result<(), PrepareError> {
     if geometry.topology() != GeometryTopology::Triangles {
         return Err(PrepareError::UnsupportedGeometryTopology {
@@ -52,11 +80,14 @@ fn append_geometry_primitives(
         });
     }
 
-    let color = forward_opaque_color(node, material)?;
+    let material_pass = material_pass(node, material)?;
 
     for triangle in geometry.indices().chunks_exact(3) {
         let vertices = geometry.vertices();
-        primitives.push(Primitive::triangle([
+        let color = match material_pass {
+            MaterialPass::Opaque(color) | MaterialPass::Blend(color) => color,
+        };
+        let primitive = Primitive::triangle([
             Vertex {
                 position: vertices[triangle[0] as usize].position,
                 color,
@@ -69,13 +100,20 @@ fn append_geometry_primitives(
                 position: vertices[triangle[2] as usize].position,
                 color,
             },
-        ]));
+        ]);
+        match material_pass {
+            MaterialPass::Opaque(_) => primitives.push(primitive),
+            MaterialPass::Blend(_) => transparent_primitives.push(TransparentPrimitive {
+                depth: average_depth(&primitive),
+                primitive,
+            }),
+        }
     }
 
     Ok(())
 }
 
-fn forward_opaque_color(node: NodeKey, material: &MaterialDesc) -> Result<Color, PrepareError> {
+fn material_pass(node: NodeKey, material: &MaterialDesc) -> Result<MaterialPass, PrepareError> {
     match material.kind() {
         MaterialKind::Unlit | MaterialKind::PbrMetallicRoughness => {}
         MaterialKind::Line | MaterialKind::Wireframe | MaterialKind::Edge => {
@@ -96,11 +134,19 @@ fn forward_opaque_color(node: NodeKey, material: &MaterialDesc) -> Result<Color,
     match material.alpha_mode() {
         AlphaMode::Opaque => {
             color.a = 1.0;
-            Ok(color)
+            Ok(MaterialPass::Opaque(color))
         }
-        AlphaMode::Mask { .. } | AlphaMode::Blend => Err(PrepareError::UnsupportedAlphaMode {
+        AlphaMode::Blend => Ok(MaterialPass::Blend(color)),
+        AlphaMode::Mask { .. } => Err(PrepareError::UnsupportedAlphaMode {
             node,
             alpha_mode: material.alpha_mode(),
         }),
     }
+}
+
+fn average_depth(primitive: &Primitive) -> f32 {
+    // M1 foundation depth uses local-space z. Node transforms and view projection are not
+    // applied until the scene transform/camera dirty-state work lands.
+    let vertices = primitive.vertices();
+    (vertices[0].position.z + vertices[1].position.z + vertices[2].position.z) / 3.0
 }

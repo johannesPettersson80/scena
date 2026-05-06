@@ -114,19 +114,23 @@ fn fullscreen_triangle(color: Color) -> Primitive {
 }
 
 fn fullscreen_triangle_geometry() -> GeometryDesc {
+    fullscreen_triangle_geometry_at(0.0)
+}
+
+fn fullscreen_triangle_geometry_at(z: f32) -> GeometryDesc {
     GeometryDesc::try_new(
         GeometryTopology::Triangles,
         vec![
             scena::GeometryVertex {
-                position: Vec3::new(-2.0, -2.0, 0.0),
+                position: Vec3::new(-2.0, -2.0, z),
                 normal: Vec3::new(0.0, 0.0, 1.0),
             },
             scena::GeometryVertex {
-                position: Vec3::new(4.0, -2.0, 0.0),
+                position: Vec3::new(4.0, -2.0, z),
                 normal: Vec3::new(0.0, 0.0, 1.0),
             },
             scena::GeometryVertex {
-                position: Vec3::new(-2.0, 4.0, 0.0),
+                position: Vec3::new(-2.0, 4.0, z),
                 normal: Vec3::new(0.0, 0.0, 1.0),
             },
         ],
@@ -248,6 +252,46 @@ fn prepare_with_assets_renders_scene_mesh_unlit_geometry() {
 }
 
 #[test]
+fn prepare_with_assets_sorts_blend_meshes_back_to_front_before_render() {
+    let assets = Assets::new();
+    let background = assets.create_geometry(fullscreen_triangle_geometry_at(0.0));
+    let near = assets.create_geometry(fullscreen_triangle_geometry_at(0.2));
+    let far = assets.create_geometry(fullscreen_triangle_geometry_at(0.8));
+    let blue = assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(0.0, 0.0, 1.0)));
+    let red_blend = assets.create_material(
+        MaterialDesc::unlit(Color::from_linear_rgba(1.0, 0.0, 0.0, 0.5))
+            .with_alpha_mode(AlphaMode::Blend),
+    );
+    let green_blend = assets.create_material(
+        MaterialDesc::unlit(Color::from_linear_rgba(0.0, 1.0, 0.0, 0.5))
+            .with_alpha_mode(AlphaMode::Blend),
+    );
+    let (mut scene, camera) = scene_with_camera();
+    scene
+        .mesh(background, blue)
+        .add()
+        .expect("background mesh inserts");
+    scene
+        .mesh(near, red_blend)
+        .add()
+        .expect("near transparent mesh inserts first");
+    scene
+        .mesh(far, green_blend)
+        .add()
+        .expect("far transparent mesh inserts second");
+    let mut renderer = Renderer::headless(4, 4).expect("headless renderer builds");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("blend meshes prepare");
+    renderer.render(&scene, camera).expect("render succeeds");
+
+    // Sorted draw order is blue opaque -> far green 50% -> near red 50%, giving linear
+    // (0.5, 0.25, 0.25, 1.0) before ACES+sRGB output encoding.
+    assert_all_pixels(renderer.frame_rgba8(), 4, 4, [163, 116, 116, 255]);
+}
+
+#[test]
 fn prepare_without_assets_rejects_asset_backed_mesh_nodes() {
     let assets = Assets::new();
     let geometry = assets.create_geometry(fullscreen_triangle_geometry());
@@ -273,10 +317,6 @@ fn prepare_with_assets_rejects_unsupported_mesh_inputs_structurally() {
     let line_geometry =
         assets.create_geometry(GeometryDesc::line(Vec3::ZERO, Vec3::new(1.0, 0.0, 0.0)));
     let line_material = assets.create_material(MaterialDesc::line(Color::WHITE, 1.0));
-    let blend_material = assets.create_material(
-        MaterialDesc::unlit(Color::from_linear_rgba(1.0, 0.0, 0.0, 0.5))
-            .with_alpha_mode(AlphaMode::Blend),
-    );
     let mask_material = assets.create_material(
         MaterialDesc::unlit(Color::from_linear_rgba(1.0, 0.0, 0.0, 0.25))
             .with_alpha_mode(AlphaMode::Mask { cutoff: 0.5 }),
@@ -307,13 +347,6 @@ fn prepare_with_assets_rejects_unsupported_mesh_inputs_structurally() {
     assert!(matches!(
         error,
         PrepareError::UnsupportedMaterialKind { node: error_node, kind: MaterialKind::Line }
-            if error_node == node
-    ));
-
-    let (node, error) = prepare_mesh_error(&assets, valid_geometry, blend_material);
-    assert!(matches!(
-        error,
-        PrepareError::UnsupportedAlphaMode { node: error_node, alpha_mode: AlphaMode::Blend }
             if error_node == node
     ));
 
