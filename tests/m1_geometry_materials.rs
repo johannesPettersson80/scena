@@ -11,6 +11,10 @@ fn assert_handle<T: Copy + Eq + std::fmt::Debug>() {}
 fn center_pixel(frame: &[u8], width: u32, height: u32) -> [u8; 4] {
     let x = width / 2;
     let y = height / 2;
+    pixel_at(frame, width, x, y)
+}
+
+fn pixel_at(frame: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
     let offset = ((y * width + x) * 4) as usize;
     frame[offset..offset + 4]
         .try_into()
@@ -25,6 +29,14 @@ fn assert_all_pixels(frame: &[u8], width: u32, height: u32, expected: [u8; 4]) {
             "pixel {index} should match fullscreen constant-color output"
         );
     }
+}
+
+fn rendered_fullscreen_center_pixel(color: Color) -> [u8; 4] {
+    let (mut scene, camera) = scene_with_fullscreen_triangle(color);
+    let mut renderer = Renderer::headless(4, 4).expect("headless renderer builds");
+    renderer.prepare(&mut scene).expect("prepare succeeds");
+    renderer.render(&scene, camera).expect("render succeeds");
+    center_pixel(renderer.frame_rgba8(), 4, 4)
 }
 
 fn scene_with_fullscreen_triangle(color: Color) -> (Scene, scena::CameraKey) {
@@ -111,6 +123,48 @@ fn fullscreen_triangle(color: Color) -> Primitive {
             color,
         },
     ])
+}
+
+fn quad_primitives(x0: f32, y0: f32, x1: f32, y1: f32, color: Color) -> [Primitive; 2] {
+    [
+        Primitive::triangle([
+            Vertex {
+                position: Vec3::new(x0, y0, 0.0),
+                color,
+            },
+            Vertex {
+                position: Vec3::new(x1, y0, 0.0),
+                color,
+            },
+            Vertex {
+                position: Vec3::new(x1, y1, 0.0),
+                color,
+            },
+        ]),
+        Primitive::triangle([
+            Vertex {
+                position: Vec3::new(x0, y0, 0.0),
+                color,
+            },
+            Vertex {
+                position: Vec3::new(x1, y1, 0.0),
+                color,
+            },
+            Vertex {
+                position: Vec3::new(x0, y1, 0.0),
+                color,
+            },
+        ]),
+    ]
+}
+
+fn scene_with_checkerboard() -> (Scene, scena::CameraKey) {
+    let mut primitives = Vec::new();
+    primitives.extend(quad_primitives(-2.0, 0.0, 0.0, 2.0, Color::WHITE));
+    primitives.extend(quad_primitives(0.0, 0.0, 2.0, 2.0, Color::BLACK));
+    primitives.extend(quad_primitives(-2.0, -2.0, 0.0, 0.0, Color::BLACK));
+    primitives.extend(quad_primitives(0.0, -2.0, 2.0, 0.0, Color::WHITE));
+    scene_with_fullscreen_primitives(primitives)
 }
 
 fn fullscreen_triangle_geometry() -> GeometryDesc {
@@ -214,6 +268,63 @@ fn headless_output_stage_applies_aces_srgb_and_exposure_without_reprepare() {
         center_pixel(renderer.frame_rgba8(), 4, 4),
         [245, 245, 245, 255]
     );
+}
+
+#[test]
+fn rendered_cpu_checkerboard_neutral_and_color_checker_samples_are_pinned() {
+    let (mut checkerboard, camera) = scene_with_checkerboard();
+    let mut renderer = Renderer::headless(8, 8).expect("headless renderer builds");
+    renderer
+        .prepare(&mut checkerboard)
+        .expect("checkerboard prepares");
+    renderer
+        .render(&checkerboard, camera)
+        .expect("checkerboard renders");
+    assert_eq!(
+        pixel_at(renderer.frame_rgba8(), 8, 2, 2),
+        [206, 206, 206, 255]
+    );
+    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 6, 2), [0, 0, 0, 255]);
+    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 2, 6), [0, 0, 0, 255]);
+    assert_eq!(
+        pixel_at(renderer.frame_rgba8(), 8, 6, 6),
+        [206, 206, 206, 255]
+    );
+
+    assert_eq!(
+        rendered_fullscreen_center_pixel(Color::BLACK),
+        [0, 0, 0, 255]
+    );
+    assert_eq!(
+        rendered_fullscreen_center_pixel(Color::WHITE),
+        [206, 206, 206, 255]
+    );
+    assert_eq!(
+        rendered_fullscreen_center_pixel(Color::from_linear_rgb(0.18, 0.18, 0.18)),
+        [91, 91, 91, 255]
+    );
+    assert_eq!(
+        rendered_fullscreen_center_pixel(Color::from_srgb(0.5, 0.5, 0.5)),
+        [103, 103, 103, 255]
+    );
+
+    let color_checker = [
+        (
+            Color::from_linear_rgb(0.436, 0.246, 0.164),
+            [153, 114, 90, 255],
+        ),
+        (
+            Color::from_linear_rgb(0.051, 0.101, 0.411),
+            [27, 59, 145, 255],
+        ),
+        (
+            Color::from_linear_rgb(0.063, 0.239, 0.088),
+            [38, 109, 57, 255],
+        ),
+    ];
+    for (color, expected) in color_checker {
+        assert_eq!(rendered_fullscreen_center_pixel(color), expected);
+    }
 }
 
 #[test]
