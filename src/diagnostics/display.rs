@@ -256,6 +256,7 @@ impl fmt::Display for LookupError {
             Self::PathNotFound { path } => {
                 write!(formatter, "imported scene path '{path}' was not found")
             }
+            Self::StaleImport => write!(formatter, "scene import has been invalidated"),
             Self::CameraNotFound(_) => write!(formatter, "camera key does not exist in the scene"),
             Self::ClippingPlaneNotFound(_) => {
                 write!(formatter, "clipping plane key does not exist in the scene")

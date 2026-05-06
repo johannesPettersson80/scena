@@ -1,14 +1,17 @@
 use std::collections::BTreeSet;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::assets::{AssetPath, Assets, SceneAsset};
 use crate::diagnostics::{ImportError, InstantiateError, LookupError};
 
 use super::{NodeKey, NodeKind, Scene, Transform};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct SceneImport {
     roots: Vec<NodeKey>,
     records: Vec<ImportedNode>,
+    live: Arc<AtomicBool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -61,6 +64,7 @@ impl Scene {
         let mut import = SceneImport {
             roots: Vec::new(),
             records: Vec::new(),
+            live: Arc::new(AtomicBool::new(true)),
         };
         for source_index in roots {
             let node = self.instantiate_scene_asset_node(
@@ -93,6 +97,15 @@ impl Scene {
         let scene_asset = assets.load_scene(path).await?;
         self.instantiate_with(&scene_asset, options)
             .map_err(Into::into)
+    }
+
+    pub fn replace_import(
+        &mut self,
+        import: &SceneImport,
+        scene_asset: &SceneAsset,
+    ) -> Result<SceneImport, InstantiateError> {
+        import.mark_stale();
+        self.instantiate(scene_asset)
     }
 
     fn instantiate_scene_asset_node(
@@ -151,6 +164,7 @@ impl ImportOptions {
 
 impl SceneImport {
     pub fn node(&self, name: &str) -> Result<NodeKey, LookupError> {
+        self.ensure_live()?;
         let matches = self.nodes_named(name).collect::<Vec<_>>();
         match matches.as_slice() {
             [] => Err(LookupError::NodeNameNotFound {
@@ -165,6 +179,9 @@ impl SceneImport {
     }
 
     pub fn first_node(&self, name: &str) -> Option<NodeKey> {
+        if !self.is_live() {
+            return None;
+        }
         self.nodes_named(name).next()
     }
 
@@ -179,6 +196,7 @@ impl SceneImport {
     }
 
     pub fn path(&self, path: &str) -> Result<NodeKey, LookupError> {
+        self.ensure_live()?;
         let mut segments = path.split('/');
         let Some(first) = segments.next().filter(|segment| !segment.is_empty()) else {
             return Err(LookupError::PathNotFound {
@@ -211,5 +229,21 @@ impl SceneImport {
 
     pub fn roots(&self) -> &[NodeKey] {
         &self.roots
+    }
+
+    fn ensure_live(&self) -> Result<(), LookupError> {
+        if self.is_live() {
+            Ok(())
+        } else {
+            Err(LookupError::StaleImport)
+        }
+    }
+
+    fn is_live(&self) -> bool {
+        self.live.load(Ordering::Acquire)
+    }
+
+    fn mark_stale(&self) {
+        self.live.store(false, Ordering::Release);
     }
 }

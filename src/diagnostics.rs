@@ -164,6 +164,7 @@ pub enum LookupError {
     NodeNameNotFound { name: String },
     AmbiguousNodeName { name: String, matches: Vec<NodeKey> },
     PathNotFound { path: String },
+    StaleImport,
     CameraNotFound(CameraKey),
     ClippingPlaneNotFound(ClippingPlaneKey),
 }

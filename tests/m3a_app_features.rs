@@ -1,6 +1,9 @@
 #![cfg(not(target_arch = "wasm32"))]
 
-use scena::{AssetError, Assets, ImportOptions, NodeKind, Scene};
+use scena::{
+    AssetError, Assets, ChangeKind, ImportOptions, LookupError, NodeKind, NotPreparedReason,
+    PerspectiveCamera, RenderError, Renderer, Scene, Transform,
+};
 
 #[test]
 fn assets_load_scene_caches_gltf_asset_and_rejects_required_extensions() {
@@ -95,4 +98,45 @@ fn scene_import_convenience_uses_gltf_default_options() {
     let import = pollster::block_on(sugar.import(&assets, "tests/assets/gltf/minimal_scene.gltf"))
         .expect("scene import convenience uses glTF defaults");
     assert!(import.first_node("Child").is_some());
+}
+
+#[test]
+fn replace_import_returns_fresh_import_and_stales_old_lookups() {
+    let assets = Assets::new();
+    let scene_asset = pollster::block_on(assets.load_scene("tests/assets/gltf/minimal_scene.gltf"))
+        .expect("minimal glTF scene loads");
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("scene asset instantiates");
+    let old_root = import.node("Root").expect("old root lookup succeeds");
+    let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+    renderer.prepare(&mut scene).expect("scene prepares");
+
+    let replacement = scene
+        .replace_import(&import, &scene_asset)
+        .expect("import replacement succeeds");
+    let new_root = replacement.node("Root").expect("new root lookup succeeds");
+
+    assert_ne!(new_root, old_root);
+    assert!(matches!(import.node("Root"), Err(LookupError::StaleImport)));
+    let error = renderer
+        .render(&scene, camera)
+        .expect_err("replacement marks renderer state as needing prepare");
+    assert!(matches!(
+        error,
+        RenderError::NotPrepared {
+            reason: NotPreparedReason::SceneChanged {
+                change: ChangeKind::SceneStructure,
+                ..
+            },
+        }
+    ));
 }
