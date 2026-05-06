@@ -2137,6 +2137,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub fn first_node(&self, name: &str)",
             "pub fn nodes_named",
             "pub fn path(&self, path: &str)",
+            "fn path_segments(path: &str)",
         ],
     );
     require_contains(
@@ -2163,7 +2164,9 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "scene_instantiate_creates_import_hierarchy_and_name_lookups",
             "scene_import_convenience_uses_gltf_default_options",
             "replace_import_returns_fresh_import_and_stales_old_lookups",
+            "scene_import_reports_duplicate_names_and_escaped_paths",
             "ImportOptions::gltf_default",
+            "Root/A\\\\/B",
             "UnsupportedRequiredExtension",
             "import.path(\"Root/Child\")",
         ],

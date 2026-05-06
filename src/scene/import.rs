@@ -197,8 +197,10 @@ impl SceneImport {
 
     pub fn path(&self, path: &str) -> Result<NodeKey, LookupError> {
         self.ensure_live()?;
-        let mut segments = path.split('/');
-        let Some(first) = segments.next().filter(|segment| !segment.is_empty()) else {
+        let segments = path_segments(path).ok_or_else(|| LookupError::PathNotFound {
+            path: path.to_string(),
+        })?;
+        let Some((first, rest)) = segments.split_first() else {
             return Err(LookupError::PathNotFound {
                 path: path.to_string(),
             });
@@ -212,7 +214,7 @@ impl SceneImport {
                 path: path.to_string(),
             })?;
 
-        for segment in segments {
+        for segment in rest {
             current = self
                 .records
                 .iter()
@@ -246,4 +248,32 @@ impl SceneImport {
     fn mark_stale(&self) {
         self.live.store(false, Ordering::Release);
     }
+}
+
+fn path_segments(path: &str) -> Option<Vec<String>> {
+    let mut segments = Vec::new();
+    let mut current = String::new();
+    let mut escaped = false;
+
+    for character in path.chars() {
+        if escaped {
+            current.push(character);
+            escaped = false;
+        } else if character == '\\' {
+            escaped = true;
+        } else if character == '/' {
+            if current.is_empty() {
+                return None;
+            }
+            segments.push(std::mem::take(&mut current));
+        } else {
+            current.push(character);
+        }
+    }
+
+    if escaped || current.is_empty() {
+        return None;
+    }
+    segments.push(current);
+    Some(segments)
 }

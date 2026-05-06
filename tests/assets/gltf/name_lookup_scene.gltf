@@ -1,0 +1,28 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "scena-m3a-test-fixture"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "Default",
+      "nodes": [0]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Root",
+      "children": [1, 2, 3]
+    },
+    {
+      "name": "A/B"
+    },
+    {
+      "name": "Dup"
+    },
+    {
+      "name": "Dup"
+    }
+  ]
+}

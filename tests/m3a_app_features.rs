@@ -140,3 +140,32 @@ fn replace_import_returns_fresh_import_and_stales_old_lookups() {
         }
     ));
 }
+
+#[test]
+fn scene_import_reports_duplicate_names_and_escaped_paths() {
+    let assets = Assets::new();
+    let scene_asset =
+        pollster::block_on(assets.load_scene("tests/assets/gltf/name_lookup_scene.gltf"))
+            .expect("name lookup glTF scene loads");
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("name lookup scene instantiates");
+
+    let duplicate = import
+        .node("Dup")
+        .expect_err("unique lookup rejects duplicate node names");
+    assert!(matches!(
+        duplicate,
+        LookupError::AmbiguousNodeName { ref name, ref matches }
+            if name == "Dup" && matches.len() == 2
+    ));
+
+    let slash_node = import
+        .path("Root/A\\/B")
+        .expect("escaped slash path lookup succeeds");
+    assert_eq!(
+        import.node("A/B").expect("unique slash name lookup"),
+        slash_node
+    );
+}
