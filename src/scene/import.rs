@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
-use crate::assets::SceneAsset;
-use crate::diagnostics::{InstantiateError, LookupError};
+use crate::assets::{AssetPath, Assets, SceneAsset};
+use crate::diagnostics::{ImportError, InstantiateError, LookupError};
 
 use super::{NodeKey, NodeKind, Scene, Transform};
 
@@ -9,6 +9,24 @@ use super::{NodeKey, NodeKind, Scene, Transform};
 pub struct SceneImport {
     roots: Vec<NodeKey>,
     records: Vec<ImportedNode>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ImportOptions {
+    source_units: SourceUnits,
+    source_coordinate_system: SourceCoordinateSystem,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SourceUnits {
+    #[default]
+    Meters,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SourceCoordinateSystem {
+    #[default]
+    GltfYUpRightHanded,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +40,14 @@ impl Scene {
     pub fn instantiate(
         &mut self,
         scene_asset: &SceneAsset,
+    ) -> Result<SceneImport, InstantiateError> {
+        self.instantiate_with(scene_asset, ImportOptions::gltf_default())
+    }
+
+    pub fn instantiate_with(
+        &mut self,
+        scene_asset: &SceneAsset,
+        _options: ImportOptions,
     ) -> Result<SceneImport, InstantiateError> {
         let nodes = scene_asset.nodes();
         let mut child_indices = BTreeSet::new();
@@ -47,6 +73,26 @@ impl Scene {
             import.roots.push(node);
         }
         Ok(import)
+    }
+
+    pub async fn import<F>(
+        &mut self,
+        assets: &Assets<F>,
+        path: impl Into<AssetPath>,
+    ) -> Result<SceneImport, ImportError> {
+        self.import_with(assets, path, ImportOptions::gltf_default())
+            .await
+    }
+
+    pub async fn import_with<F>(
+        &mut self,
+        assets: &Assets<F>,
+        path: impl Into<AssetPath>,
+        options: ImportOptions,
+    ) -> Result<SceneImport, ImportError> {
+        let scene_asset = assets.load_scene(path).await?;
+        self.instantiate_with(&scene_asset, options)
+            .map_err(Into::into)
     }
 
     fn instantiate_scene_asset_node(
@@ -83,6 +129,23 @@ impl Scene {
             self.instantiate_scene_asset_node(scene_asset, *child, node, Some(node), records)?;
         }
         Ok(node)
+    }
+}
+
+impl ImportOptions {
+    pub const fn gltf_default() -> Self {
+        Self {
+            source_units: SourceUnits::Meters,
+            source_coordinate_system: SourceCoordinateSystem::GltfYUpRightHanded,
+        }
+    }
+
+    pub const fn source_units(self) -> SourceUnits {
+        self.source_units
+    }
+
+    pub const fn source_coordinate_system(self) -> SourceCoordinateSystem {
+        self.source_coordinate_system
     }
 }
 

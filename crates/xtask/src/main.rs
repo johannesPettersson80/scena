@@ -1485,10 +1485,14 @@ fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec<Finding>) 
         findings,
         "ARCH-DIRECTIONAL-SHADOW",
         "src/diagnostics.rs",
-        &[
-            "MultipleShadowedDirectionalLights",
-            "only one shadowed directional light",
-        ],
+        &["MultipleShadowedDirectionalLights"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIRECTIONAL-SHADOW",
+        "src/diagnostics/display.rs",
+        &["only one shadowed directional light"],
     );
     require_contains(
         root,
@@ -2108,7 +2112,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         findings,
         "ARCH-M3A-SCENE-IMPORT",
         "src/scene.rs",
-        &["mod import;", "pub use import::SceneImport"],
+        &["mod import;", "ImportOptions", "SceneImport"],
     );
     require_contains(
         root,
@@ -2116,8 +2120,15 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "ARCH-M3A-SCENE-IMPORT",
         "src/scene/import.rs",
         &[
+            "pub struct ImportOptions",
+            "pub enum SourceUnits",
+            "pub enum SourceCoordinateSystem",
+            "pub const fn gltf_default() -> Self",
             "pub struct SceneImport",
             "pub fn instantiate(",
+            "pub fn instantiate_with(",
+            "pub async fn import<",
+            "pub async fn import_with<",
             "scene_asset: &SceneAsset",
             "pub fn node(&self, name: &str)",
             "pub fn first_node(&self, name: &str)",
@@ -2132,6 +2143,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "src/diagnostics.rs",
         &[
             "InstantiateError",
+            "ImportError",
             "NodeNameNotFound",
             "AmbiguousNodeName",
             "PathNotFound",
@@ -2145,6 +2157,8 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         &[
             "assets_load_scene_caches_gltf_asset_and_rejects_required_extensions",
             "scene_instantiate_creates_import_hierarchy_and_name_lookups",
+            "scene_import_convenience_uses_gltf_default_options",
+            "ImportOptions::gltf_default",
             "UnsupportedRequiredExtension",
             "import.path(\"Root/Child\")",
         ],

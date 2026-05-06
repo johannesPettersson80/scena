@@ -21,7 +21,7 @@ pub use assets::{
 };
 pub use diagnostics::{
     AlphaPipelineStatus, AssetError, Backend, BuildError, Capabilities, CapabilityStatus,
-    ChangeKind, DevicePoll, Diagnostic, DiagnosticCode, DiagnosticSeverity, Error,
+    ChangeKind, DevicePoll, Diagnostic, DiagnosticCode, DiagnosticSeverity, Error, ImportError,
     InstantiateError, LookupError, NotPreparedReason, OutputStageStatus, PrepareError, RenderError,
     RenderOutcome, RendererStats,
 };
@@ -38,9 +38,10 @@ pub use platform::{PlatformSurface, SurfaceEvent, SurfaceKind, SurfaceSize};
 pub use render::{Renderer, Tonemapper};
 pub use scene::{
     Angle, Camera, CameraKey, ClippingPlane, ClippingPlaneKey, ClippingPlaneSet, DepthRange,
-    DirectionalLight, Light, LightBuilder, LightKey, MeshBuilder, MeshNode, ModelBuilder,
-    ModelNode, Node, NodeKey, NodeKind, OrthographicCamera, PerspectiveCamera, PointLight, Quat,
-    Scene, SceneImport, SpotLight, Transform, Vec3,
+    DirectionalLight, ImportOptions, Light, LightBuilder, LightKey, MeshBuilder, MeshNode,
+    ModelBuilder, ModelNode, Node, NodeKey, NodeKind, OrthographicCamera, PerspectiveCamera,
+    PointLight, Quat, Scene, SceneImport, SourceCoordinateSystem, SourceUnits, SpotLight,
+    Transform, Vec3,
 };
 
 /// Crate-level result type for APIs that can return any structured `scena` error.

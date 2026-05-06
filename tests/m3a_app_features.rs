@@ -1,6 +1,6 @@
 #![cfg(not(target_arch = "wasm32"))]
 
-use scena::{AssetError, Assets, NodeKind, Scene};
+use scena::{AssetError, Assets, ImportOptions, NodeKind, Scene};
 
 #[test]
 fn assets_load_scene_caches_gltf_asset_and_rejects_required_extensions() {
@@ -68,4 +68,31 @@ fn scene_instantiate_creates_import_hierarchy_and_name_lookups() {
         scene.node(child).expect("child node exists").kind(),
         &NodeKind::Empty
     );
+}
+
+#[test]
+fn scene_import_convenience_uses_gltf_default_options() {
+    let assets = Assets::new();
+    let scene_asset = pollster::block_on(assets.load_scene("tests/assets/gltf/minimal_scene.gltf"))
+        .expect("minimal glTF scene loads");
+
+    let mut from_asset = Scene::new();
+    let import = from_asset
+        .instantiate_with(&scene_asset, ImportOptions::gltf_default())
+        .expect("scene asset instantiates with explicit options");
+    assert!(import.node("Root").is_ok());
+
+    let mut from_path = Scene::new();
+    let import = pollster::block_on(from_path.import_with(
+        &assets,
+        "tests/assets/gltf/minimal_scene.gltf",
+        ImportOptions::gltf_default(),
+    ))
+    .expect("scene imports with explicit options");
+    assert!(import.path("Root/Child").is_ok());
+
+    let mut sugar = Scene::new();
+    let import = pollster::block_on(sugar.import(&assets, "tests/assets/gltf/minimal_scene.gltf"))
+        .expect("scene import convenience uses glTF defaults");
+    assert!(import.first_node("Child").is_some());
 }

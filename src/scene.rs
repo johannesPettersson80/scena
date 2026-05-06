@@ -14,7 +14,7 @@ mod camera;
 mod import;
 mod lights;
 pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
-pub use import::SceneImport;
+pub use import::{ImportOptions, SceneImport, SourceCoordinateSystem, SourceUnits};
 pub use lights::{DirectionalLight, Light, LightBuilder, PointLight, SpotLight};
 
 new_key_type! {
