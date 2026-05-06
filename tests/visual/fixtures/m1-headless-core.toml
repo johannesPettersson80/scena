@@ -5,6 +5,9 @@ encoding = "srgb8"
 width = 16
 height = 16
 artifact_dir = "target/gate-artifacts/m1-visual"
+reference = "tests/visual/references/m1-headless-core.toml"
+reference_mode = "sampled-rgba"
+max_abs_diff = 0
 status = "artifact-proof"
 
 [[fixture]]

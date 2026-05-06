@@ -1425,6 +1425,9 @@ fn check_visual_fixture_metadata(root: &Path, findings: &mut Vec<Finding>) {
             "format = \"ppm\"",
             "encoding = \"srgb8\"",
             "artifact_dir = \"target/gate-artifacts/m1-visual\"",
+            "reference = \"tests/visual/references/m1-headless-core.toml\"",
+            "reference_mode = \"sampled-rgba\"",
+            "max_abs_diff = 0",
             "name = \"primitive-fullscreen\"",
             "name = \"unlit-asset-mesh\"",
             "name = \"pbr-asset-mesh\"",
@@ -1440,12 +1443,30 @@ fn check_visual_fixture_metadata(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "VISUAL-FIXTURE-METADATA",
+        "tests/visual/references/m1-headless-core.toml",
+        &[
+            "[suite]",
+            "status = \"reference\"",
+            "max_abs_diff = 0",
+            "center_rgba = [119, 177, 204, 255]",
+            "nonblack_pixels = 81",
+            "rgba_hash = \"fnv1a64:af9cc2a215b85783\"",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-FIXTURE-METADATA",
         "tests/m1_visual_proof.rs",
         &[
             "m1_headless_visual_artifacts_cover_core_material_paths",
+            "m1_headless_reference_tolerances_match_current_fixtures",
             "write_ppm_artifact",
             "target/gate-artifacts/m1-visual",
             "include_str!(\"visual/fixtures/m1-headless-core.toml\")",
+            "include_str!(\"visual/references/m1-headless-core.toml\")",
+            "rgba_within_tolerance",
+            "rgba_fnv1a64",
         ],
     );
 }

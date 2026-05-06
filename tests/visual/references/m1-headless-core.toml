@@ -1,0 +1,63 @@
+[suite]
+name = "m1-headless-core"
+format = "sampled-rgba"
+encoding = "srgb8"
+width = 16
+height = 16
+status = "reference"
+
+[[reference]]
+name = "primitive-fullscreen"
+max_abs_diff = 0
+center_rgba = [119, 177, 204, 255]
+corner_rgba = [119, 177, 204, 255]
+nonblack_pixels = 256
+rgba_hash = "fnv1a64:5e3954d596f48d25"
+
+[[reference]]
+name = "unlit-asset-mesh"
+max_abs_diff = 0
+center_rgba = [216, 68, 45, 255]
+corner_rgba = [216, 68, 45, 255]
+nonblack_pixels = 256
+rgba_hash = "fnv1a64:a9be295470ea6b25"
+
+[[reference]]
+name = "pbr-asset-mesh"
+max_abs_diff = 0
+center_rgba = [189, 190, 191, 255]
+corner_rgba = [189, 190, 191, 255]
+nonblack_pixels = 256
+rgba_hash = "fnv1a64:74c67718cf921925"
+
+[[reference]]
+name = "transparent-blend"
+max_abs_diff = 0
+center_rgba = [158, 0, 159, 255]
+corner_rgba = [158, 0, 159, 255]
+nonblack_pixels = 256
+rgba_hash = "fnv1a64:3e7927eecabf2325"
+
+[[reference]]
+name = "line-material"
+max_abs_diff = 0
+center_rgba = [0, 0, 0, 255]
+corner_rgba = [0, 0, 0, 255]
+nonblack_pixels = 13
+rgba_hash = "fnv1a64:51ff3d562036c613"
+
+[[reference]]
+name = "wire-edge-materials"
+max_abs_diff = 0
+center_rgba = [0, 0, 0, 255]
+corner_rgba = [0, 0, 0, 255]
+nonblack_pixels = 55
+rgba_hash = "fnv1a64:be7de18eef6ef70d"
+
+[[reference]]
+name = "default-cube"
+max_abs_diff = 0
+center_rgba = [206, 206, 206, 255]
+corner_rgba = [0, 0, 0, 255]
+nonblack_pixels = 81
+rgba_hash = "fnv1a64:af9cc2a215b85783"

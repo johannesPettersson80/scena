@@ -9,6 +9,8 @@ use scena::{
 };
 
 const M1_HEADLESS_FIXTURE_METADATA: &str = include_str!("visual/fixtures/m1-headless-core.toml");
+const M1_HEADLESS_REFERENCE_METADATA: &str =
+    include_str!("visual/references/m1-headless-core.toml");
 
 #[test]
 fn m1_headless_visual_artifacts_cover_core_material_paths() {
@@ -40,12 +42,57 @@ fn m1_headless_visual_artifacts_cover_core_material_paths() {
     }
 }
 
+#[test]
+fn m1_headless_reference_tolerances_match_current_fixtures() {
+    let references = reference_specs();
+    let mut mismatches = Vec::new();
+
+    for fixture in visual_fixtures() {
+        let reference = references
+            .iter()
+            .find(|reference| reference.name == fixture.name)
+            .unwrap_or_else(|| panic!("missing reference metadata for {}", fixture.name));
+        let frame = (fixture.render)();
+        let center = pixel_at(&frame, fixture.width, fixture.width / 2, fixture.height / 2);
+        let corner = pixel_at(&frame, fixture.width, 0, 0);
+        let nonblack_pixels = nonblack_pixel_count(&frame);
+        let rgba_hash = rgba_fnv1a64(&frame);
+
+        if !rgba_within_tolerance(center, reference.center_rgba, reference.max_abs_diff)
+            || !rgba_within_tolerance(corner, reference.corner_rgba, reference.max_abs_diff)
+            || nonblack_pixels != reference.nonblack_pixels
+            || rgba_hash != reference.rgba_hash
+        {
+            mismatches.push(format!(
+                "{}: center={:?} corner={:?} nonblack_pixels={} rgba_hash=\"{}\"",
+                fixture.name, center, corner, nonblack_pixels, rgba_hash
+            ));
+        }
+    }
+
+    assert!(
+        mismatches.is_empty(),
+        "visual reference mismatches:\n{}",
+        mismatches.join("\n")
+    );
+}
+
 struct VisualFixture {
     name: &'static str,
     width: u32,
     height: u32,
     render: fn() -> Vec<u8>,
     validate: fn(&[u8], u32, u32),
+}
+
+#[derive(Debug, Clone)]
+struct ReferenceSpec {
+    name: String,
+    max_abs_diff: u8,
+    center_rgba: [u8; 4],
+    corner_rgba: [u8; 4],
+    nonblack_pixels: usize,
+    rgba_hash: String,
 }
 
 fn visual_fixtures() -> [VisualFixture; 7] {
@@ -322,6 +369,101 @@ fn validate_default_cube_luminance_and_silhouette(frame: &[u8], width: u32, heig
         pixel_at(frame, width, width - 1, height - 1),
         [0, 0, 0, 255]
     );
+}
+
+fn reference_specs() -> Vec<ReferenceSpec> {
+    let mut references = Vec::new();
+    let mut current: Option<ReferenceSpec> = None;
+
+    for line in M1_HEADLESS_REFERENCE_METADATA.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line == "[[reference]]" {
+            if let Some(reference) = current.take() {
+                references.push(reference);
+            }
+            current = Some(ReferenceSpec {
+                name: String::new(),
+                max_abs_diff: 0,
+                center_rgba: [0; 4],
+                corner_rgba: [0; 4],
+                nonblack_pixels: 0,
+                rgba_hash: String::new(),
+            });
+            continue;
+        }
+
+        let Some(reference) = current.as_mut() else {
+            continue;
+        };
+        if let Some(value) = line.strip_prefix("name = ") {
+            reference.name = parse_quoted(value);
+        } else if let Some(value) = line.strip_prefix("max_abs_diff = ") {
+            reference.max_abs_diff = value.parse().expect("max_abs_diff is a u8");
+        } else if let Some(value) = line.strip_prefix("center_rgba = ") {
+            reference.center_rgba = parse_rgba(value);
+        } else if let Some(value) = line.strip_prefix("corner_rgba = ") {
+            reference.corner_rgba = parse_rgba(value);
+        } else if let Some(value) = line.strip_prefix("nonblack_pixels = ") {
+            reference.nonblack_pixels = value.parse().expect("nonblack_pixels is a usize");
+        } else if let Some(value) = line.strip_prefix("rgba_hash = ") {
+            reference.rgba_hash = parse_quoted(value);
+        }
+    }
+
+    if let Some(reference) = current {
+        references.push(reference);
+    }
+    references
+}
+
+fn parse_quoted(value: &str) -> String {
+    value
+        .trim()
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .expect("quoted string value")
+        .to_owned()
+}
+
+fn parse_rgba(value: &str) -> [u8; 4] {
+    let value = value
+        .trim()
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .expect("RGBA array");
+    let channels: Vec<u8> = value
+        .split(',')
+        .map(|channel| channel.trim().parse().expect("RGBA channel is u8"))
+        .collect();
+    channels
+        .try_into()
+        .expect("RGBA reference contains four channels")
+}
+
+fn rgba_within_tolerance(actual: [u8; 4], expected: [u8; 4], max_abs_diff: u8) -> bool {
+    actual
+        .into_iter()
+        .zip(expected)
+        .all(|(actual, expected)| actual.abs_diff(expected) <= max_abs_diff)
+}
+
+fn nonblack_pixel_count(frame: &[u8]) -> usize {
+    frame
+        .chunks_exact(4)
+        .filter(|pixel| pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0)
+        .count()
+}
+
+fn rgba_fnv1a64(frame: &[u8]) -> String {
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in frame {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("fnv1a64:{hash:016x}")
 }
 
 fn pixel_at(frame: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
