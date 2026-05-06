@@ -198,6 +198,7 @@ fn parse_mesh_primitive(
         vertex_colors,
     )
     .map_err(|error| parse_error(path, format!("invalid glTF geometry: {error:?}")))?;
+    let bounds = geometry.bounds();
     let geometry = storage.geometries.insert(geometry);
     let material = primitive
         .get("material")
@@ -208,6 +209,7 @@ fn parse_mesh_primitive(
     Ok(SceneAssetMesh {
         geometry,
         material,
+        bounds,
         uses_vertex_colors,
     })
 }

@@ -145,6 +145,43 @@ fn gltf_loader_creates_geometry_material_texture_and_vertex_color_contracts() {
 }
 
 #[test]
+fn scene_import_reports_local_and_world_bounds_for_imported_meshes() {
+    let assets = Assets::new();
+    let scene_asset = pollster::block_on(
+        assets.load_scene("tests/assets/gltf/mesh_material_vertex_color_scene.gltf"),
+    )
+    .expect("mesh glTF scene loads");
+    let mut scene = Scene::new();
+
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("mesh scene instantiates");
+    let node = import
+        .node("ColoredTriangle")
+        .expect("mesh node lookup succeeds");
+    scene
+        .set_transform(
+            node,
+            Transform {
+                translation: Vec3::new(2.0, 3.0, 4.0),
+                scale: Vec3::new(2.0, 2.0, 2.0),
+                ..Transform::default()
+            },
+        )
+        .expect("mesh transform updates");
+
+    let local = import.bounds_local().expect("import has local bounds");
+    let world = import
+        .bounds_world(&scene)
+        .expect("import has world bounds");
+
+    assert_vec3_near(local.min, Vec3::new(-0.5, -0.5, 0.0));
+    assert_vec3_near(local.max, Vec3::new(0.5, 0.5, 0.0));
+    assert_vec3_near(world.min, Vec3::new(1.0, 2.0, 4.0));
+    assert_vec3_near(world.max, Vec3::new(3.0, 4.0, 4.0));
+}
+
+#[test]
 fn import_options_apply_gltf_node_transforms_and_source_units() {
     let assets = Assets::new();
     let scene_asset =

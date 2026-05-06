@@ -4,8 +4,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::assets::{AssetFetcher, AssetPath, Assets, SceneAsset};
 use crate::diagnostics::{ImportError, InstantiateError, LookupError};
+use crate::geometry::Aabb;
 
-use super::{MeshNode, NodeKey, NodeKind, Scene, Transform, Vec3};
+use super::{MeshNode, NodeKey, NodeKind, Quat, Scene, Transform, Vec3};
 
 #[derive(Debug, Clone)]
 pub struct SceneImport {
@@ -35,11 +36,12 @@ pub enum SourceCoordinateSystem {
     ZUpRightHanded,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct ImportedNode {
     node: NodeKey,
     parent: Option<NodeKey>,
     name: Option<String>,
+    bounds: Option<Aabb>,
 }
 
 impl Scene {
@@ -138,6 +140,7 @@ impl Scene {
                 })
             })
             .unwrap_or(NodeKind::Empty);
+        let bounds = source_node.mesh().map(|mesh| mesh.bounds());
         let node = self
             .insert_node(
                 parent,
@@ -149,6 +152,7 @@ impl Scene {
             node,
             parent: imported_parent,
             name: source_node.name().map(str::to_string),
+            bounds,
         });
         for child in source_node.children() {
             if scene_asset.nodes().get(*child).is_none() {
@@ -314,6 +318,30 @@ impl SceneImport {
         &self.roots
     }
 
+    pub fn bounds_local(&self) -> Option<Aabb> {
+        if !self.is_live() {
+            return None;
+        }
+        self.records
+            .iter()
+            .filter_map(|record| record.bounds)
+            .fold(None, |bounds, next| Some(union_optional(bounds, next)))
+    }
+
+    pub fn bounds_world(&self, scene: &Scene) -> Option<Aabb> {
+        if !self.is_live() {
+            return None;
+        }
+        self.records
+            .iter()
+            .filter_map(|record| {
+                let bounds = record.bounds?;
+                let transform = scene.node(record.node)?.transform();
+                Some(transform_aabb(bounds, transform))
+            })
+            .fold(None, |bounds, next| Some(union_optional(bounds, next)))
+    }
+
     fn ensure_live(&self) -> Result<(), LookupError> {
         if self.is_live() {
             Ok(())
@@ -329,6 +357,87 @@ impl SceneImport {
     fn mark_stale(&self) {
         self.live.store(false, Ordering::Release);
     }
+}
+
+fn union_optional(current: Option<Aabb>, next: Aabb) -> Aabb {
+    match current {
+        Some(current) => union_aabb(current, next),
+        None => next,
+    }
+}
+
+fn union_aabb(left: Aabb, right: Aabb) -> Aabb {
+    Aabb::new(
+        Vec3::new(
+            left.min.x.min(right.min.x),
+            left.min.y.min(right.min.y),
+            left.min.z.min(right.min.z),
+        ),
+        Vec3::new(
+            left.max.x.max(right.max.x),
+            left.max.y.max(right.max.y),
+            left.max.z.max(right.max.z),
+        ),
+    )
+}
+
+fn transform_aabb(bounds: Aabb, transform: Transform) -> Aabb {
+    let corners = [
+        Vec3::new(bounds.min.x, bounds.min.y, bounds.min.z),
+        Vec3::new(bounds.max.x, bounds.min.y, bounds.min.z),
+        Vec3::new(bounds.min.x, bounds.max.y, bounds.min.z),
+        Vec3::new(bounds.max.x, bounds.max.y, bounds.min.z),
+        Vec3::new(bounds.min.x, bounds.min.y, bounds.max.z),
+        Vec3::new(bounds.max.x, bounds.min.y, bounds.max.z),
+        Vec3::new(bounds.min.x, bounds.max.y, bounds.max.z),
+        Vec3::new(bounds.max.x, bounds.max.y, bounds.max.z),
+    ];
+    let mut transformed = transform_point(corners[0], transform);
+    let mut result = Aabb::new(transformed, transformed);
+    for corner in &corners[1..] {
+        transformed = transform_point(*corner, transform);
+        result = union_aabb(result, Aabb::new(transformed, transformed));
+    }
+    result
+}
+
+fn transform_point(point: Vec3, transform: Transform) -> Vec3 {
+    let scaled = Vec3::new(
+        point.x * transform.scale.x,
+        point.y * transform.scale.y,
+        point.z * transform.scale.z,
+    );
+    add_vec3(
+        rotate_vec3(transform.rotation, scaled),
+        transform.translation,
+    )
+}
+
+fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
+    let length_squared = rotation.x * rotation.x
+        + rotation.y * rotation.y
+        + rotation.z * rotation.z
+        + rotation.w * rotation.w;
+    if length_squared <= f32::EPSILON || !length_squared.is_finite() {
+        return vector;
+    }
+    let inverse_length = length_squared.sqrt().recip();
+    let qx = rotation.x * inverse_length;
+    let qy = rotation.y * inverse_length;
+    let qz = rotation.z * inverse_length;
+    let qw = rotation.w * inverse_length;
+    let tx = 2.0 * (qy * vector.z - qz * vector.y);
+    let ty = 2.0 * (qz * vector.x - qx * vector.z);
+    let tz = 2.0 * (qx * vector.y - qy * vector.x);
+    Vec3::new(
+        vector.x + qw * tx + (qy * tz - qz * ty),
+        vector.y + qw * ty + (qz * tx - qx * tz),
+        vector.z + qw * tz + (qx * ty - qy * tx),
+    )
+}
+
+fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
+    Vec3::new(left.x + right.x, left.y + right.y, left.z + right.z)
 }
 
 fn path_segments(path: &str) -> Option<Vec<String>> {

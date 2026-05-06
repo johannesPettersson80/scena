@@ -3,6 +3,7 @@ use std::sync::Arc;
 use serde_json::Value as JsonValue;
 
 use crate::diagnostics::AssetError;
+use crate::geometry::Aabb;
 use crate::scene::{Quat, Transform, Vec3};
 
 use self::accessor::{parse_accessors, parse_buffer_views, parse_buffers};
@@ -35,10 +36,11 @@ pub struct SceneAssetNode {
     mesh: Option<SceneAssetMesh>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SceneAssetMesh {
     geometry: GeometryHandle,
     material: MaterialHandle,
+    bounds: Aabb,
     uses_vertex_colors: bool,
 }
 
@@ -164,6 +166,10 @@ impl SceneAssetMesh {
 
     pub const fn material(self) -> MaterialHandle {
         self.material
+    }
+
+    pub const fn bounds(self) -> Aabb {
+        self.bounds
     }
 
     pub const fn uses_vertex_colors(self) -> bool {
