@@ -297,6 +297,7 @@ struct DeformationInputs<'scene> {
 enum MaterialPass {
     Opaque,
     Blend,
+    Mask { cutoff: f32 },
 }
 
 fn append_geometry_primitives(
@@ -434,6 +435,15 @@ fn append_triangle_primitives(
                 depth: average_depth(&primitive),
                 primitive,
             }),
+            MaterialPass::Mask { cutoff } => {
+                if primitive
+                    .vertices()
+                    .iter()
+                    .any(|vertex| vertex.color.a >= cutoff)
+                {
+                    primitives.push(primitive);
+                }
+            }
         }
     }
 
@@ -454,10 +464,7 @@ fn material_pass(node: NodeKey, material: &MaterialDesc) -> Result<MaterialPass,
     match material.alpha_mode() {
         AlphaMode::Opaque => Ok(MaterialPass::Opaque),
         AlphaMode::Blend => Ok(MaterialPass::Blend),
-        AlphaMode::Mask { .. } => Err(PrepareError::UnsupportedAlphaMode {
-            node,
-            alpha_mode: material.alpha_mode(),
-        }),
+        AlphaMode::Mask { cutoff } => Ok(MaterialPass::Mask { cutoff }),
     }
 }
 

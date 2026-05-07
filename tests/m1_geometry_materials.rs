@@ -1042,14 +1042,23 @@ fn prepare_with_assets_rejects_unsupported_mesh_inputs_structurally() {
             if error_node == node
     ));
 
-    let (node, error) = prepare_mesh_error(&assets, valid_geometry, mask_material);
-    assert!(matches!(
-        error,
-        PrepareError::UnsupportedAlphaMode {
-            node: error_node,
-            alpha_mode: AlphaMode::Mask { cutoff }
-        } if error_node == node && cutoff == 0.5
-    ));
+    let (mut masked_scene, camera) = scene_with_camera();
+    masked_scene
+        .mesh(valid_geometry, mask_material)
+        .add()
+        .expect("masked mesh inserts");
+    let mut masked_renderer = Renderer::headless(4, 4).expect("headless renderer builds");
+    masked_renderer
+        .prepare_with_assets(&mut masked_scene, &assets)
+        .expect("alpha mask prepares as an opaque cutoff pass");
+    assert_eq!(
+        masked_renderer
+            .render(&masked_scene, camera)
+            .expect("masked scene renders")
+            .draw_calls,
+        0,
+        "constant alpha below cutoff should discard the prepared primitive"
+    );
 
     let (mut scene, _camera) = scene_with_camera();
     let model_node = scene

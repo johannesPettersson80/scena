@@ -87,6 +87,7 @@ async function main() {
     "static-batching",
     "layers-helper-on-top",
     "beginner-diagnostics",
+    "material-textures",
   ];
   const results = [];
   try {

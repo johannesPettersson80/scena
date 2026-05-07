@@ -3,7 +3,8 @@ use std::future::{Ready, ready};
 
 use scena::{
     AlphaMode, AssetError, AssetFetcher, AssetLoadControl, AssetLoadProgress, AssetPath, Assets,
-    GltfDecoderPolicy, GltfExtensionStatus, TextureColorSpace, TextureFilter, TextureWrap,
+    GltfDecoderPolicy, GltfExtensionStatus, MaterialDesc, NotPreparedReason, RenderError, Renderer,
+    RetainPolicy, Scene, TextureColorSpace, TextureFilter, TextureWrap, Transform,
 };
 
 #[test]
@@ -489,6 +490,99 @@ fn m8_cancelled_scene_load_does_not_cache_partial_asset_state() {
         .expect("later uncancelled load should fetch and cache normally");
     assert!(!loaded.cache_hit());
     assert_eq!(loaded.asset().nodes()[0].name(), Some("LoadedAfterCancel"));
+}
+
+#[test]
+fn m8_asset_resource_lifetime_counters_return_to_baseline_after_reload_cycle() {
+    let mut assets = Assets::new();
+    assets.set_retain_policy(RetainPolicy::Always);
+    let albedo = pollster::block_on(
+        assets.load_texture("textures/m8-lifetime-albedo.png", TextureColorSpace::Srgb),
+    )
+    .expect("albedo texture records");
+    let normal = pollster::block_on(
+        assets.load_texture("textures/m8-lifetime-normal.png", TextureColorSpace::Linear),
+    )
+    .expect("normal texture records");
+    let metallic_roughness = pollster::block_on(assets.load_texture(
+        "textures/m8-lifetime-metallic-roughness.png",
+        TextureColorSpace::Linear,
+    ))
+    .expect("metallic roughness texture records");
+    let occlusion = pollster::block_on(assets.load_texture(
+        "textures/m8-lifetime-occlusion.png",
+        TextureColorSpace::Linear,
+    ))
+    .expect("occlusion texture records");
+    let emissive = pollster::block_on(
+        assets.load_texture("textures/m8-lifetime-emissive.png", TextureColorSpace::Srgb),
+    )
+    .expect("emissive texture records");
+    let environment = assets.default_environment();
+    let scene_asset = pollster::block_on(
+        assets.load_scene("tests/assets/gltf/mesh_material_vertex_color_scene.gltf"),
+    )
+    .expect("scene fixture loads");
+    let reloaded = pollster::block_on(assets.reload_scene(&scene_asset))
+        .expect("retained scene fixture reloads");
+
+    let geometry = assets.create_geometry(scena::GeometryDesc::box_xyz(0.25, 0.25, 0.25));
+    let material = assets.create_material(
+        MaterialDesc::pbr_metallic_roughness(scena::Color::WHITE, 0.1, 0.8)
+            .with_base_color_texture(albedo)
+            .with_normal_texture(normal)
+            .with_metallic_roughness_texture(metallic_roughness)
+            .with_occlusion_texture(occlusion)
+            .with_emissive_texture(emissive),
+    );
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("scene fixture instantiates");
+    scene
+        .mesh(geometry, material)
+        .transform(Transform::at(scena::Vec3::new(0.25, 0.0, 0.0)))
+        .add()
+        .expect("textured mesh inserts");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = Renderer::headless(64, 64).expect("renderer builds");
+    let baseline = renderer.stats();
+
+    renderer.set_environment(environment);
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("asset-heavy scene prepares");
+    let prepared = renderer.stats();
+    assert!(prepared.textures >= 5);
+    assert!(prepared.materials >= 1);
+    assert_eq!(prepared.environments, 1);
+    assert!(prepared.live_logical_handles > baseline.live_logical_handles);
+
+    scene
+        .replace_import(&import, &reloaded)
+        .expect("reload replacement succeeds");
+    assert!(matches!(
+        renderer.render(&scene, camera),
+        Err(RenderError::NotPrepared {
+            reason: NotPreparedReason::SceneChanged { .. }
+        })
+    ));
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("reloaded scene prepares");
+
+    renderer.clear_environment();
+    let mut empty_scene = Scene::new();
+    empty_scene.add_default_camera().expect("camera inserts");
+    renderer
+        .prepare(&mut empty_scene)
+        .expect("empty scene prepares after resource release");
+    let released = renderer.stats();
+    assert_eq!(released.textures, baseline.textures);
+    assert_eq!(released.materials, baseline.materials);
+    assert_eq!(released.environments, baseline.environments);
+    assert_eq!(released.live_logical_handles, baseline.live_logical_handles);
+    assert_eq!(released.pending_destructions, baseline.pending_destructions);
 }
 
 #[derive(Clone)]

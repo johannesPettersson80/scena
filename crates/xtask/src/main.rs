@@ -4905,7 +4905,7 @@ fn check_m7_ergonomics_contracts(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "ERGONOMICS-M7",
-        "src/browser_probe/workflows.rs",
+        "src/browser_probe/workflows/ergonomics.rs",
         &[
             "camera-framing",
             "anchor-alignment",
@@ -5043,7 +5043,35 @@ fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Vec<Finding>)
             "m8_scene_load_progress_reports_fetch_parse_cache_and_external_buffers",
             "m8_ktx2_basisu_texture_requires_feature_or_explicit_decoder_policy",
             "m8_ktx2_basisu_feature_loads_compressed_texture_descriptor",
+            "m8_asset_resource_lifetime_counters_return_to_baseline_after_reload_cycle",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "tests/m8_visual_proof.rs",
+        &[
+            "m8_headless_visual_artifacts_cover_material_texture_environment_paths",
+            "target/gate-artifacts/m8-visual",
+            "m8-base-color-alpha",
+            "m8-texture-slots",
+            "m8-environment-color-management",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/browser_probe/workflows/ergonomics.rs",
+        &["material-textures"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "tests/browser/m6_rust_wasm_renderer_probe.js",
+        &["material-textures"],
     );
 }
 
@@ -5917,6 +5945,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_gltf_asset_matrix_contract(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn m8_assets_materials_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_m8_assets_materials_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }
