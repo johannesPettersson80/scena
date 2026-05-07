@@ -2525,6 +2525,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "interaction_context_and_renderer_styles_are_explicit",
             "instance_sets_have_stable_ids_mutations_and_cpu_fallback",
             "offscreen_target_readback_is_explicit_and_owned",
+            "m3a_resource_lifetime_counters_return_to_baseline_for_imports_targets_and_instances",
             "labels_use_sdf_msdf_descriptors_and_billboard_render_path",
             "InstanceCullingPolicy::CpuBoundingBoxFallback",
             "LabelRasterization::Msdf",

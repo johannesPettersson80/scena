@@ -830,6 +830,94 @@ fn offscreen_target_readback_is_explicit_and_owned() {
 }
 
 #[test]
+fn m3a_resource_lifetime_counters_return_to_baseline_for_imports_targets_and_instances() {
+    let assets = Assets::new();
+    let scene_asset = pollster::block_on(
+        assets.load_scene("tests/assets/gltf/mesh_material_vertex_color_scene.gltf"),
+    )
+    .expect("imported mesh scene loads");
+    let imported_mesh = scene_asset.nodes()[0]
+        .mesh()
+        .expect("fixture has mesh payload");
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("imported scene instantiates");
+    let imported_bounds = import.bounds_world(&scene).expect("import has bounds");
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform {
+                translation: Vec3::new(0.0, 0.0, 3.0),
+                ..Transform::default()
+            },
+        )
+        .expect("camera inserts");
+    scene
+        .frame(camera, imported_bounds)
+        .expect("camera frames imported bounds");
+    let instances = scene
+        .add_instance_set(
+            scene.root(),
+            imported_mesh.geometry(),
+            imported_mesh.material(),
+            Transform::default(),
+        )
+        .expect("instance set inserts");
+    scene
+        .push_instance(instances, Transform::default())
+        .expect("instance inserts");
+    scene
+        .add_label(
+            scene.root(),
+            LabelDesc::sdf("serial")
+                .with_size(0.5)
+                .with_billboard(LabelBillboard::ScreenAligned),
+            Transform::default(),
+        )
+        .expect("label inserts");
+
+    let mut renderer = Renderer::offscreen(OffscreenTarget::new(16, 16).expect("target is valid"))
+        .expect("offscreen renderer builds");
+    let baseline = renderer.stats();
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("M3a imported/instance/label scene prepares");
+    renderer
+        .render(&scene, camera)
+        .expect("M3a imported/instance/label scene renders");
+    let readback = renderer.read_pixels();
+    assert_eq!(readback.width(), 16);
+    assert_eq!(readback.height(), 16);
+    assert!(readback.rgba8().iter().any(|channel| *channel != 0));
+
+    let prepared = renderer.stats();
+    assert_eq!(prepared.render_targets, baseline.render_targets);
+    assert!(prepared.materials >= 1);
+    assert!(prepared.live_logical_handles >= 2);
+    assert_eq!(prepared.pending_destructions, baseline.pending_destructions);
+
+    let mut empty_scene = Scene::new();
+    empty_scene
+        .add_perspective_camera(
+            empty_scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("empty scene camera inserts");
+    renderer
+        .prepare(&mut empty_scene)
+        .expect("empty scene reprepare releases M3a logical handles");
+    let released = renderer.stats();
+    assert_eq!(released.materials, baseline.materials);
+    assert_eq!(released.render_targets, baseline.render_targets);
+    assert_eq!(released.live_logical_handles, baseline.live_logical_handles);
+    assert_eq!(released.pending_destructions, baseline.pending_destructions);
+}
+
+#[test]
 fn labels_use_sdf_msdf_descriptors_and_billboard_render_path() {
     let mut scene = Scene::new();
     let camera = scene
