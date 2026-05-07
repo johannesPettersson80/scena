@@ -27,6 +27,7 @@ jobs:
           cargo fmt --check
           cargo clippy --all-targets -- -D warnings
           cargo test
+          cargo test --test m9_platform_release
           cargo check --examples
           cargo run -p xtask -- doctor --full
       - name: Docs
@@ -147,6 +148,7 @@ jobs:
       - name: Compile and test
         run: |
           cargo test --all-targets
+          cargo test --test m9_platform_release
           cargo check --examples
           cargo run -p xtask -- release-lane-artifact macos-metal
       - name: Upload gate artifacts
@@ -166,6 +168,7 @@ jobs:
       - name: Compile and test
         run: |
           cargo test --all-targets
+          cargo test --test m9_platform_release
           cargo check --examples
           cargo run -p xtask -- release-lane-artifact windows-dx12
       - name: Upload gate artifacts

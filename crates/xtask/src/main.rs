@@ -4492,6 +4492,7 @@ fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>) {
             "npx playwright install chromium --with-deps",
             "cargo install wasm-pack --version 0.14.0",
             "npm run wasm:size",
+            "cargo test --test m9_platform_release",
             "cargo run -p xtask -- doctor --full",
             "release-lane-artifact",
             "target/gate-artifacts/**",
@@ -4563,6 +4564,26 @@ fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>) {
         "RELEASE-CI-M9",
         "crates/xtask/src/main.rs",
         &["release-lane-artifact", "scena.release_lane.v1"],
+    );
+    require_contains(
+        root,
+        findings,
+        "RELEASE-CI-M9",
+        "tests/m9_platform_release.rs",
+        &[
+            "m9_platform_rendered_output_suite_writes_release_artifacts",
+            "m9_capability_matrix_artifact_covers_required_lanes",
+            "m9_surface_context_loss_artifact_records_required_sequence",
+            "m9-benchmarks.json",
+            "m9-capability-matrix.json",
+            "scena.m9.platform_render.v1",
+            "scena.capabilities.v1",
+            "linux-native-vulkan",
+            "macos-metal",
+            "windows-dx12",
+            "default-scene.ppm",
+            "static-gltf.ppm",
+        ],
     );
 }
 
