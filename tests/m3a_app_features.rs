@@ -946,6 +946,118 @@ fn gltf_loader_fetches_external_buffers_relative_to_scene_path() {
 }
 
 #[test]
+fn gltf_loader_preserves_multi_primitive_meshes_as_child_mesh_nodes() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(
+        "memory://multi-primitive.gltf",
+        r#"{
+            "asset": { "version": "2.0" },
+            "nodes": [
+                { "name": "MultiPrimitiveNode", "mesh": 0 }
+            ],
+            "meshes": [
+                {
+                    "primitives": [
+                        {
+                            "attributes": { "POSITION": 0 },
+                            "indices": 1,
+                            "material": 0
+                        },
+                        {
+                            "attributes": { "POSITION": 0 },
+                            "indices": 2,
+                            "material": 1
+                        }
+                    ]
+                }
+            ],
+            "materials": [
+                {
+                    "pbrMetallicRoughness": {
+                        "baseColorFactor": [1.0, 0.0, 0.0, 1.0]
+                    }
+                },
+                {
+                    "pbrMetallicRoughness": {
+                        "baseColorFactor": [0.0, 1.0, 0.0, 1.0]
+                    }
+                }
+            ],
+            "buffers": [
+                {
+                    "byteLength": 48,
+                    "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAAAAAEAAgAAAAEAAgA="
+                }
+            ],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+                { "buffer": 0, "byteOffset": 36, "byteLength": 6 },
+                { "buffer": 0, "byteOffset": 42, "byteLength": 6 }
+            ],
+            "accessors": [
+                {
+                    "bufferView": 0,
+                    "componentType": 5126,
+                    "count": 3,
+                    "type": "VEC3"
+                },
+                {
+                    "bufferView": 1,
+                    "componentType": 5123,
+                    "count": 3,
+                    "type": "SCALAR"
+                },
+                {
+                    "bufferView": 2,
+                    "componentType": 5123,
+                    "count": 3,
+                    "type": "SCALAR"
+                }
+            ]
+        }"#,
+    ));
+
+    let scene_asset = pollster::block_on(assets.load_scene("memory://multi-primitive.gltf"))
+        .expect("multi-primitive glTF scene loads");
+    let node = &scene_asset.nodes()[0];
+    let meshes = node.meshes();
+
+    assert_eq!(scene_asset.mesh_count(), 2);
+    assert_eq!(meshes.len(), 2);
+    assert_eq!(
+        assets
+            .material(meshes[0].material())
+            .expect("first primitive material exists")
+            .base_color(),
+        Color::from_linear_rgba(1.0, 0.0, 0.0, 1.0)
+    );
+    assert_eq!(
+        assets
+            .material(meshes[1].material())
+            .expect("second primitive material exists")
+            .base_color(),
+        Color::from_linear_rgba(0.0, 1.0, 0.0, 1.0)
+    );
+
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("multi-primitive scene instantiates");
+    let parent = import
+        .node("MultiPrimitiveNode")
+        .expect("source node lookup resolves to parent");
+    let parent_node = scene.node(parent).expect("import parent exists");
+
+    assert!(matches!(parent_node.kind(), NodeKind::Empty));
+    assert_eq!(parent_node.children().len(), 2);
+    for child in parent_node.children() {
+        assert!(matches!(
+            scene.node(*child).expect("primitive child exists").kind(),
+            NodeKind::Mesh(_)
+        ));
+    }
+}
+
+#[test]
 fn import_options_apply_gltf_node_transforms_and_source_units() {
     let assets = Assets::new();
     let scene_asset =

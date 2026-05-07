@@ -10,12 +10,14 @@ use crate::scene::{Angle, DirectionalLight, Light, PointLight, Quat, SpotLight, 
 
 use self::accessor::{parse_accessors, parse_buffer_views, parse_buffers};
 use self::anchors::parse_node_anchors;
+use self::external::external_buffer_paths;
 use self::glb::{is_glb, parse_glb};
 use self::read::{parse_materials, parse_meshes, parse_textures};
 use super::{AssetPath, AssetStorage, GeometryHandle, MaterialHandle};
 
 mod accessor;
 mod anchors;
+mod external;
 mod glb;
 mod read;
 
@@ -40,7 +42,7 @@ pub struct SceneAssetNode {
     name: Option<String>,
     children: Vec<usize>,
     transform: Transform,
-    mesh: Option<SceneAssetMesh>,
+    meshes: Vec<SceneAssetMesh>,
     light: Option<SceneAssetLight>,
     anchors: Vec<SceneAssetAnchor>,
 }
@@ -144,35 +146,7 @@ impl SceneAsset {
         path: &AssetPath,
         bytes: &[u8],
     ) -> Result<Vec<(usize, AssetPath)>, AssetError> {
-        let json = if is_glb(bytes) {
-            parse_glb(path, bytes)?.0
-        } else {
-            std::str::from_utf8(bytes)
-                .map_err(|error| AssetError::Parse {
-                    path: path.as_str().to_string(),
-                    reason: format!("expected UTF-8 glTF JSON source: {error}"),
-                })?
-                .to_string()
-        };
-        let json: JsonValue = serde_json::from_str(&json).map_err(|error| AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: error.to_string(),
-        })?;
-        Ok(json
-            .get("buffers")
-            .and_then(JsonValue::as_array)
-            .map(|buffers| {
-                buffers
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, buffer)| {
-                        let uri = buffer.get("uri").and_then(JsonValue::as_str)?;
-                        (!uri.starts_with("data:"))
-                            .then(|| (index, resolve_relative_path(path, uri)))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default())
+        external_buffer_paths(path, bytes)
     }
 
     fn from_gltf_json(
@@ -216,7 +190,7 @@ impl SceneAsset {
         let nodes = parse_gltf_nodes(&json, &meshes, &lights);
         let clips = parse_gltf_clips(&json);
         let node_count = nodes.len();
-        let mesh_count = meshes.len();
+        let mesh_count = meshes.iter().map(Vec::len).sum();
         Ok(Self {
             inner: Arc::new(SceneAssetData {
                 path,
@@ -281,7 +255,11 @@ impl SceneAssetNode {
     }
 
     pub fn mesh(&self) -> Option<SceneAssetMesh> {
-        self.mesh
+        self.meshes.first().copied()
+    }
+
+    pub fn meshes(&self) -> &[SceneAssetMesh] {
+        &self.meshes
     }
 
     pub fn light(&self) -> Option<SceneAssetLight> {
@@ -365,19 +343,9 @@ fn string_array_field(json: &JsonValue, field: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn resolve_relative_path(base: &AssetPath, uri: &str) -> AssetPath {
-    if uri.starts_with("data:") || uri.starts_with('/') || uri.contains("://") {
-        return AssetPath::from(uri);
-    }
-    let Some((directory, _file)) = base.as_str().rsplit_once('/') else {
-        return AssetPath::from(uri);
-    };
-    AssetPath::from(format!("{directory}/{uri}"))
-}
-
 fn parse_gltf_nodes(
     json: &JsonValue,
-    meshes: &[SceneAssetMesh],
+    meshes: &[Vec<SceneAssetMesh>],
     lights: &[SceneAssetLight],
 ) -> Vec<SceneAssetNode> {
     json.get("nodes")
@@ -402,11 +370,12 @@ fn parse_gltf_nodes(
                         })
                         .unwrap_or_default(),
                     transform: parse_node_transform(node),
-                    mesh: node
+                    meshes: node
                         .get("mesh")
                         .and_then(JsonValue::as_u64)
                         .and_then(|mesh| meshes.get(mesh as usize))
-                        .copied(),
+                        .cloned()
+                        .unwrap_or_default(),
                     light: node
                         .get("extensions")
                         .and_then(|extensions| extensions.get("KHR_lights_punctual"))

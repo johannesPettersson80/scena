@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::animation::AnimationClipKey;
-use crate::assets::{AssetFetcher, AssetPath, Assets, SceneAsset};
+use crate::assets::{AssetFetcher, AssetPath, Assets, SceneAsset, SceneAssetMesh};
 use crate::diagnostics::{ImportError, InstantiateError, LookupError};
 use crate::geometry::Aabb;
 
@@ -163,16 +163,23 @@ impl Scene {
             },
         )?;
         let transform = build.options.convert_transform(source_node.transform());
-        let kind = source_node.mesh().map(|mesh| {
-            NodeKind::Mesh(MeshNode {
-                geometry: mesh.geometry(),
-                material: mesh.material(),
-            })
+        let meshes = source_node.meshes();
+        let bounds = meshes.iter().fold(None, |bounds, mesh| {
+            Some(union_optional(bounds, mesh.bounds()))
         });
-        let bounds = source_node.mesh().map(|mesh| mesh.bounds());
-        let node = match (kind, source_node.light()) {
-            (Some(kind), _) => self.insert_node(parent, kind, transform),
-            (None, Some(light)) => match light.light() {
+        let node = match (meshes, source_node.light()) {
+            ([mesh], _) => self.insert_node(parent, mesh_node_kind(*mesh), transform),
+            ([_, _, ..], _) => {
+                let node = self.insert_node(parent, NodeKind::Empty, transform);
+                if let Ok(parent) = node {
+                    for mesh in meshes {
+                        self.insert_node(parent, mesh_node_kind(*mesh), Transform::IDENTITY)
+                            .expect("multi-primitive parent was inserted by this scene");
+                    }
+                }
+                node
+            }
+            ([], Some(light)) => match light.light() {
                 super::Light::Directional(light) => self
                     .directional_light(light)
                     .parent(parent)
@@ -189,7 +196,7 @@ impl Scene {
                     .transform(transform)
                     .add(),
             },
-            (None, None) => self.insert_node(parent, NodeKind::Empty, transform),
+            ([], None) => self.insert_node(parent, NodeKind::Empty, transform),
         }
         .expect("import parent was inserted by this scene");
         build.records.push(ImportedNode {
@@ -229,6 +236,13 @@ impl Scene {
         }
         Ok(node)
     }
+}
+
+fn mesh_node_kind(mesh: SceneAssetMesh) -> NodeKind {
+    NodeKind::Mesh(MeshNode {
+        geometry: mesh.geometry(),
+        material: mesh.material(),
+    })
 }
 
 impl ImportAnchor {

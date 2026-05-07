@@ -119,27 +119,31 @@ pub(super) fn parse_meshes(
     accessors: &[GltfAccessor],
     materials: &[MaterialHandle],
     storage: &mut AssetStorage,
-) -> Result<Vec<SceneAssetMesh>, AssetError> {
+) -> Result<Vec<Vec<SceneAssetMesh>>, AssetError> {
     json.get("meshes")
         .and_then(JsonValue::as_array)
         .map(|meshes| {
             meshes
                 .iter()
                 .map(|mesh| {
-                    let primitive = mesh
+                    let primitives = mesh
                         .get("primitives")
                         .and_then(JsonValue::as_array)
-                        .and_then(|primitives| primitives.first())
                         .ok_or_else(|| parse_error(path, "glTF mesh has no primitives"))?;
-                    parse_mesh_primitive(
-                        path,
-                        primitive,
-                        buffers,
-                        buffer_views,
-                        accessors,
-                        materials,
-                        storage,
-                    )
+                    primitives
+                        .iter()
+                        .map(|primitive| {
+                            parse_mesh_primitive(
+                                path,
+                                primitive,
+                                buffers,
+                                buffer_views,
+                                accessors,
+                                materials,
+                                storage,
+                            )
+                        })
+                        .collect()
                 })
                 .collect()
         })

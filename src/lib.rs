@@ -22,8 +22,8 @@ pub use assets::FileAssetFetcher;
 pub use assets::{
     AssetFetcher, AssetPath, Assets, DefaultAssetFetcher, EnvironmentDerivative, EnvironmentDesc,
     EnvironmentHandle, EnvironmentSourceKind, GeometryHandle, MaterialHandle, ModelHandle,
-    RetainPolicy, SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetLight, SceneAssetNode,
-    TextureDesc, TextureHandle, WasmEnvironmentDelivery,
+    RetainPolicy, SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetLight, SceneAssetMesh,
+    SceneAssetNode, TextureDesc, TextureHandle, WasmEnvironmentDelivery,
 };
 pub use diagnostics::{
     AlphaPipelineStatus, AssetError, Backend, BuildError, Capabilities, CapabilityStatus,
