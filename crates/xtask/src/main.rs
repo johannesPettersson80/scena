@@ -2263,8 +2263,22 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "ARCH-M3A-SCENE-IMPORT",
         "src/render.rs",
         &[
+            "mod offscreen;",
             "hover_style: InteractionStyle",
             "selection_style: InteractionStyle",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/render/offscreen.rs",
+        &[
+            "pub struct OffscreenTarget",
+            "pub struct PixelReadback",
+            "pub fn offscreen",
+            "pub fn read_pixels",
+            "pub fn into_rgba8",
         ],
     );
     require_contains(
@@ -2354,6 +2368,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "scene_pick_returns_typed_hit_target_for_renderable_triangle",
             "interaction_context_and_renderer_styles_are_explicit",
             "instance_sets_have_stable_ids_mutations_and_cpu_fallback",
+            "offscreen_target_readback_is_explicit_and_owned",
             "InstanceCullingPolicy::CpuBoundingBoxFallback",
             "mesh_material_vertex_color_scene.gltf",
             "transform_options_scene.gltf",

@@ -1,11 +1,11 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use scena::{
-    Aabb, AssetError, AssetFetcher, AssetPath, Assets, Camera, ChangeKind, Color, CursorPosition,
-    GeometryDesc, GeometryTopology, GeometryVertex, HitTarget, ImportOptions,
+    Aabb, AssetError, AssetFetcher, AssetPath, Assets, BuildError, Camera, ChangeKind, Color,
+    CursorPosition, GeometryDesc, GeometryTopology, GeometryVertex, HitTarget, ImportOptions,
     InstanceCullingPolicy, InteractionStyle, LookupError, MaterialDesc, MaterialKind, NodeKind,
-    NotPreparedReason, PerspectiveCamera, Primitive, Quat, RenderError, Renderer, Scene,
-    SourceCoordinateSystem, SourceUnits, Transform, Vec3, Viewport,
+    NotPreparedReason, OffscreenTarget, PerspectiveCamera, Primitive, Quat, RenderError, Renderer,
+    Scene, SourceCoordinateSystem, SourceUnits, Transform, Vec3, Viewport,
 };
 use std::future::{Ready, ready};
 use std::sync::{
@@ -353,6 +353,46 @@ fn instance_sets_have_stable_ids_mutations_and_cpu_fallback() {
                 change: ChangeKind::SceneStructure,
                 ..
             },
+        })
+    ));
+}
+
+#[test]
+fn offscreen_target_readback_is_explicit_and_owned() {
+    let target = OffscreenTarget::new(4, 4).expect("offscreen target validates");
+    let mut renderer = Renderer::offscreen(target).expect("offscreen renderer builds");
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![Primitive::unlit_triangle()],
+            Transform::default(),
+        )
+        .expect("renderable inserts");
+
+    renderer.prepare(&mut scene).expect("scene prepares");
+    renderer
+        .render(&scene, camera)
+        .expect("offscreen render succeeds");
+
+    let readback = renderer.read_pixels();
+    assert_eq!(readback.width(), 4);
+    assert_eq!(readback.height(), 4);
+    assert_eq!(readback.rgba8().len(), 4 * 4 * 4);
+    assert_eq!(readback.rgba8(), renderer.frame_rgba8());
+    assert!(readback.rgba8().iter().any(|channel| *channel != 0));
+    assert!(matches!(
+        OffscreenTarget::new(0, 4),
+        Err(BuildError::InvalidTargetSize {
+            width: 0,
+            height: 4
         })
     ));
 }

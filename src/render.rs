@@ -6,6 +6,7 @@ use std::sync::Weak;
 
 mod cpu;
 mod gpu;
+mod offscreen;
 mod output;
 mod prepare;
 mod settings;
@@ -22,6 +23,7 @@ use crate::platform::{PlatformSurface, PlatformSurfaceAttachment, SurfaceEvent, 
 use crate::scene::{CameraKey, ClippingPlane, Scene};
 
 use self::gpu::GpuDeviceState;
+pub use self::offscreen::{OffscreenTarget, PixelReadback};
 use self::output::OutputTransform;
 pub use self::output::Tonemapper;
 

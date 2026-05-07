@@ -40,7 +40,7 @@ pub use picking::{CursorPosition, Hit, HitTarget, InteractionContext, Interactio
 #[cfg(not(target_arch = "wasm32"))]
 pub use platform::NativeWindowHandle;
 pub use platform::{PlatformSurface, SurfaceEvent, SurfaceKind, SurfaceSize};
-pub use render::{Renderer, Tonemapper};
+pub use render::{OffscreenTarget, PixelReadback, Renderer, Tonemapper};
 pub use scene::{
     Angle, Camera, CameraKey, ClippingPlane, ClippingPlaneKey, ClippingPlaneSet, DepthRange,
     DirectionalLight, ImportOptions, Instance, InstanceCullingPolicy, InstanceId, InstanceSet,
