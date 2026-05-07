@@ -210,6 +210,7 @@ fn run_release_readiness() -> Result<(), Vec<Finding>> {
 fn check_release_readiness(root: &Path, findings: &mut Vec<Finding>) {
     check_release_readiness_adr(root, findings);
     check_release_readiness_checklists(root, findings);
+    check_release_readiness_artifact_env(root, findings);
 }
 
 fn check_release_readiness_adr(root: &Path, findings: &mut Vec<Finding>) {
@@ -257,6 +258,79 @@ fn check_release_readiness_checklists(root: &Path, findings: &mut Vec<Finding>) 
             }
         }
     }
+}
+
+fn check_release_readiness_artifact_env(root: &Path, findings: &mut Vec<Finding>) {
+    let Ok(configured_root) = env::var("SCENA_RELEASE_ARTIFACT_ROOT") else {
+        return;
+    };
+    let configured_path = PathBuf::from(configured_root);
+    let artifact_root = if configured_path.is_absolute() {
+        configured_path
+    } else {
+        root.join(configured_path)
+    };
+    check_release_artifact_bundle(&artifact_root, findings);
+}
+
+fn check_release_artifact_bundle(artifact_root: &Path, findings: &mut Vec<Finding>) {
+    if !artifact_root.is_dir() {
+        findings.push(Finding::new(
+            "RELEASE-READY-ARTIFACTS",
+            format!("missing release artifact root {}", artifact_root.display()),
+        ));
+        return;
+    }
+
+    let mut files = Vec::new();
+    if let Err(error) = collect_files_with_extensions(artifact_root, &["json", "ppm"], &mut files) {
+        findings.push(Finding::new(
+            "RELEASE-READY-ARTIFACTS",
+            format!("could not collect release artifacts: {error}"),
+        ));
+        return;
+    }
+
+    for suffix in REQUIRED_RELEASE_ARTIFACT_SUFFIXES {
+        if !files.iter().any(|path| path_ends_with(path, suffix)) {
+            findings.push(Finding::new(
+                "RELEASE-READY-ARTIFACTS",
+                format!("downloaded release artifacts are missing {suffix}"),
+            ));
+        }
+    }
+}
+
+const REQUIRED_RELEASE_ARTIFACT_SUFFIXES: &[&str] = &[
+    "release-lanes/linux-native-vulkan.json",
+    "release-lanes/linux-webgl2-chromium.json",
+    "release-lanes/linux-webgpu-chromium.json",
+    "release-lanes/wasm32-unknown-unknown.json",
+    "release-lanes/macos-metal.json",
+    "release-lanes/windows-dx12.json",
+    "m6-rust-wasm-renderer-probe.json",
+    "m9-wasm-size.json",
+    "m9-platform/m9-capability-matrix.json",
+    "m9-platform/m9-benchmarks.json",
+    "m9-platform/linux-native-vulkan/rendered-output.json",
+    "m9-platform/linux-native-vulkan/capabilities.json",
+    "m9-platform/linux-native-vulkan/surface-context-loss.json",
+    "m9-platform/linux-native-vulkan/default-scene.ppm",
+    "m9-platform/linux-native-vulkan/static-gltf.ppm",
+    "m9-platform/macos-metal/rendered-output.json",
+    "m9-platform/macos-metal/capabilities.json",
+    "m9-platform/macos-metal/surface-context-loss.json",
+    "m9-platform/macos-metal/default-scene.ppm",
+    "m9-platform/macos-metal/static-gltf.ppm",
+    "m9-platform/windows-dx12/rendered-output.json",
+    "m9-platform/windows-dx12/capabilities.json",
+    "m9-platform/windows-dx12/surface-context-loss.json",
+    "m9-platform/windows-dx12/default-scene.ppm",
+    "m9-platform/windows-dx12/static-gltf.ppm",
+];
+
+fn path_ends_with(path: &Path, suffix: &str) -> bool {
+    path.to_string_lossy().replace('\\', "/").ends_with(suffix)
 }
 
 fn build_claim_audit(root: &Path) -> Result<serde_json::Value, String> {
@@ -4596,6 +4670,8 @@ fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>) {
             "cargo publish",
             "gh release create",
             "cargo run -p xtask -- release-readiness",
+            "actions/download-artifact@v4",
+            "SCENA_RELEASE_ARTIFACT_ROOT",
             "needs:",
             "release-lane-artifact",
         ],
@@ -4682,6 +4758,7 @@ fn check_m10_claim_audit_contract(root: &Path, findings: &mut Vec<Finding>) {
             "scena.m10.claim_audit.v1",
             "required_final_gates",
             "release-readiness",
+            "REQUIRED_RELEASE_ARTIFACT_SUFFIXES",
         ],
     );
     require_contains(
@@ -6145,6 +6222,23 @@ mod tests {
                 .message
                 .contains("m10-threejs-replacement-acceptance.md")),
             "open M10 checklist gates must block release readiness"
+        );
+    }
+
+    #[test]
+    fn release_readiness_reports_missing_downloaded_artifacts() {
+        let mut findings = Vec::new();
+
+        check_release_artifact_bundle(
+            Path::new("target/xtask-release-readiness-test/missing"),
+            &mut findings,
+        );
+
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.message.contains("missing release artifact root")),
+            "downloaded release artifact root must be required when configured"
         );
     }
 

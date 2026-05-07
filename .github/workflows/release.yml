@@ -165,7 +165,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.93.1
+      - name: Download release lane artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: target/release-artifacts
       - name: Release readiness
+        env:
+          SCENA_RELEASE_ARTIFACT_ROOT: target/release-artifacts
         run: cargo run -p xtask -- release-readiness
       - name: Clean publish dry run
         run: cargo publish --dry-run
