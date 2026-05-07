@@ -85,6 +85,26 @@ fn white_triangle() -> Primitive {
     ])
 }
 
+fn has_tonemapped_white_scene_pixel(frame: &[u8]) -> bool {
+    frame.chunks_exact(4).any(|pixel| {
+        let [r, g, b, a] = [pixel[0], pixel[1], pixel[2], pixel[3]];
+        let max_delta = r.abs_diff(g).max(r.abs_diff(b)).max(g.abs_diff(b));
+        (190..=220).contains(&r)
+            && (190..=220).contains(&g)
+            && (190..=220).contains(&b)
+            && max_delta <= 3
+            && a == 255
+    })
+}
+
+#[test]
+fn tonemapped_white_scene_pixel_check_tracks_visual_contract() {
+    assert!(has_tonemapped_white_scene_pixel(&[206, 206, 206, 255]));
+    assert!(!has_tonemapped_white_scene_pixel(&[255, 255, 255, 255]));
+    assert!(!has_tonemapped_white_scene_pixel(&[206, 80, 40, 255]));
+    assert!(!has_tonemapped_white_scene_pixel(&[206, 206, 206, 0]));
+}
+
 #[test]
 fn surface_descriptors_and_attached_surfaces_are_explicit() {
     let descriptor = PlatformSurface::native_window(80, 60);
@@ -190,11 +210,9 @@ fn headless_gpu_triangle_render_uses_scene_vertex_data_when_available() {
             renderer.render(&scene, camera).expect("render succeeds");
 
             assert!(
-                renderer
-                    .frame_rgba8()
-                    .chunks_exact(4)
-                    .any(|pixel| pixel[0] >= 250 && pixel[1] >= 250 && pixel[2] >= 250),
-                "GPU frame should contain the white scene triangle, not a hard-coded shader triangle"
+                has_tonemapped_white_scene_pixel(renderer.frame_rgba8()),
+                "GPU frame should contain a neutral ACES/sRGB white scene triangle, not a \
+                 hard-coded colored shader triangle"
             );
         }
         Err(BuildError::NoAdapter { backend }) => {
