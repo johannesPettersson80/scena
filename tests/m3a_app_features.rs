@@ -481,6 +481,111 @@ fn gltf_required_punctual_lights_instantiate_as_scene_lights() {
     assert_eq!(point.range(), Some(12.0));
 }
 
+#[test]
+fn gltf_required_texture_transform_and_mesh_quantization_are_realized() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(
+        "memory://transform-quantized.gltf",
+        r#"{
+            "asset": { "version": "2.0" },
+            "extensionsUsed": [
+                "KHR_materials_unlit",
+                "KHR_texture_transform",
+                "KHR_mesh_quantization"
+            ],
+            "extensionsRequired": [
+                "KHR_texture_transform",
+                "KHR_mesh_quantization"
+            ],
+            "nodes": [
+                { "name": "QuantizedTriangle", "mesh": 0 }
+            ],
+            "meshes": [
+                {
+                    "primitives": [
+                        {
+                            "attributes": { "POSITION": 0 },
+                            "indices": 1,
+                            "material": 0
+                        }
+                    ]
+                }
+            ],
+            "materials": [
+                {
+                    "pbrMetallicRoughness": {
+                        "baseColorTexture": {
+                            "index": 0,
+                            "extensions": {
+                                "KHR_texture_transform": {
+                                    "offset": [0.25, 0.5],
+                                    "rotation": 1.5707964,
+                                    "scale": [2.0, 3.0],
+                                    "texCoord": 1
+                                }
+                            }
+                        }
+                    },
+                    "extensions": { "KHR_materials_unlit": {} }
+                }
+            ],
+            "textures": [
+                { "source": 0 }
+            ],
+            "images": [
+                { "uri": "textures/quantized.png" }
+            ],
+            "buffers": [
+                {
+                    "byteLength": 24,
+                    "uri": "data:application/octet-stream;base64,AYABgAAA/38BgAAAAAD/fwAAAAABAAIA"
+                }
+            ],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0, "byteLength": 18 },
+                { "buffer": 0, "byteOffset": 18, "byteLength": 6 }
+            ],
+            "accessors": [
+                {
+                    "bufferView": 0,
+                    "componentType": 5122,
+                    "count": 3,
+                    "type": "VEC3",
+                    "normalized": true
+                },
+                {
+                    "bufferView": 1,
+                    "componentType": 5123,
+                    "count": 3,
+                    "type": "SCALAR"
+                }
+            ]
+        }"#,
+    ));
+
+    let scene_asset = pollster::block_on(assets.load_scene("memory://transform-quantized.gltf"))
+        .expect("texture-transform and quantized glTF loads");
+    let mesh = scene_asset.nodes()[0]
+        .mesh()
+        .expect("quantized mesh payload is registered");
+    let geometry = assets
+        .geometry(mesh.geometry())
+        .expect("quantized geometry handle resolves");
+    let material = assets
+        .material(mesh.material())
+        .expect("texture-transform material handle resolves");
+    let transform = material
+        .base_color_texture_transform()
+        .expect("base-color texture transform is recorded");
+
+    assert_eq!(transform.offset(), [0.25, 0.5]);
+    assert_eq!(transform.scale(), [2.0, 3.0]);
+    assert_eq!(transform.tex_coord(), Some(1));
+    assert!((transform.rotation_radians() - 1.5707964).abs() <= 0.0001);
+    assert_vec3_near(geometry.vertices()[0].position, Vec3::new(-1.0, -1.0, 0.0));
+    assert_vec3_near(geometry.vertices()[1].position, Vec3::new(1.0, -1.0, 0.0));
+    assert_vec3_near(geometry.vertices()[2].position, Vec3::new(0.0, 1.0, 0.0));
+}
+
 #[cfg(feature = "obj")]
 #[test]
 fn obj_feature_load_geometry_parses_triangle_faces() {

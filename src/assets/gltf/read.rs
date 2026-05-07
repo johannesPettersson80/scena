@@ -2,7 +2,7 @@ use serde_json::Value as JsonValue;
 
 use crate::diagnostics::AssetError;
 use crate::geometry::{GeometryDesc, GeometryTopology, GeometryVertex};
-use crate::material::{AlphaMode, Color, MaterialDesc, TextureColorSpace};
+use crate::material::{AlphaMode, Color, MaterialDesc, TextureColorSpace, TextureTransform};
 use crate::scene::Vec3;
 
 use super::super::{
@@ -68,12 +68,17 @@ pub(super) fn parse_materials(
                     } else {
                         MaterialDesc::pbr_metallic_roughness(base_color, metallic, roughness)
                     };
-                    if let Some(texture) = pbr
-                        .get("baseColorTexture")
-                        .and_then(|texture| optional_usize(texture, "index"))
-                        .and_then(|index| textures.get(index))
-                    {
-                        desc = desc.with_base_color_texture(*texture);
+                    if let Some(base_color_texture) = pbr.get("baseColorTexture") {
+                        if let Some(texture) = base_color_texture
+                            .get("index")
+                            .and_then(JsonValue::as_u64)
+                            .and_then(|index| textures.get(index as usize))
+                        {
+                            desc = desc.with_base_color_texture(*texture);
+                        }
+                        if let Some(transform) = parse_texture_transform(base_color_texture) {
+                            desc = desc.with_base_color_texture_transform(transform);
+                        }
                     }
                     if let Some(emissive) = color3_factor(material, "emissiveFactor") {
                         desc = desc.with_emissive(emissive);
@@ -248,6 +253,21 @@ fn number_field(value: &JsonValue, field: &str) -> Option<f32> {
         .map(|value| value as f32)
 }
 
+fn parse_texture_transform(texture_info: &JsonValue) -> Option<TextureTransform> {
+    let extension = texture_info
+        .get("extensions")?
+        .get("KHR_texture_transform")?;
+    Some(TextureTransform::new(
+        vec2_factor(extension, "offset", [0.0, 0.0]),
+        number_field(extension, "rotation").unwrap_or(0.0),
+        vec2_factor(extension, "scale", [1.0, 1.0]),
+        extension
+            .get("texCoord")
+            .and_then(JsonValue::as_u64)
+            .and_then(|value| u32::try_from(value).ok()),
+    ))
+}
+
 fn color_factor(value: &JsonValue, field: &str, fallback: Color) -> Color {
     let Some(values) = value.get(field).and_then(JsonValue::as_array) else {
         return fallback;
@@ -267,6 +287,16 @@ fn color3_factor(value: &JsonValue, field: &str) -> Option<Color> {
         array_f32(values, 1).unwrap_or(0.0),
         array_f32(values, 2).unwrap_or(0.0),
     ))
+}
+
+fn vec2_factor(value: &JsonValue, field: &str, fallback: [f32; 2]) -> [f32; 2] {
+    let Some(values) = value.get(field).and_then(JsonValue::as_array) else {
+        return fallback;
+    };
+    [
+        array_f32(values, 0).unwrap_or(fallback[0]),
+        array_f32(values, 1).unwrap_or(fallback[1]),
+    ]
 }
 
 fn array_f32(values: &[JsonValue], index: usize) -> Option<f32> {

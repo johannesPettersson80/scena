@@ -2208,6 +2208,9 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "parse_buffer_views",
             "parse_accessors",
             "read_color_accessor",
+            "read_normalized_components",
+            "normalized",
+            "GL_SHORT",
             "GL_UNSIGNED_SHORT",
             "base64::engine::general_purpose::STANDARD",
         ],
@@ -2220,10 +2223,24 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         &[
             "parse_materials",
             "parse_meshes",
+            "parse_texture_transform",
+            "TextureTransform::new",
             "GeometryDesc::try_new_with_vertex_colors",
             "TextureColorSpace::Srgb",
             "KHR_materials_unlit",
             "KHR_materials_emissive_strength",
+            "KHR_texture_transform",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/material.rs",
+        &[
+            "pub struct TextureTransform",
+            "pub const fn base_color_texture_transform",
+            "pub const fn with_base_color_texture_transform",
         ],
     );
     require_contains(
@@ -2476,6 +2493,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "scene_import_rejects_invalid_anchor_extras_data",
             "scene_import_clip_lookups_are_import_local_and_stale",
             "gltf_required_punctual_lights_instantiate_as_scene_lights",
+            "gltf_required_texture_transform_and_mesh_quantization_are_realized",
             "obj_feature_load_geometry_parses_triangle_faces",
             "scene_pick_returns_typed_hit_target_for_renderable_triangle",
             "interaction_context_and_renderer_styles_are_explicit",

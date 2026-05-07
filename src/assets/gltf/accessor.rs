@@ -90,6 +90,10 @@ pub(super) fn parse_accessors(
                         component_type: required_u32(path, accessor, "componentType")?,
                         count: required_usize(path, accessor, "count")?,
                         kind: required_string(path, accessor, "type")?.to_string(),
+                        normalized: accessor
+                            .get("normalized")
+                            .and_then(JsonValue::as_bool)
+                            .unwrap_or(false),
                     })
                 })
                 .collect()
@@ -105,12 +109,12 @@ pub(super) fn read_vec3_accessor(
     accessors: &[GltfAccessor],
 ) -> Result<Vec<Vec3>, AssetError> {
     let accessor = required_accessor(path, accessor_index, accessors)?;
-    if accessor.component_type != GL_FLOAT || accessor.kind != "VEC3" {
-        return Err(parse_error(path, "expected FLOAT VEC3 accessor"));
+    if accessor.kind != "VEC3" {
+        return Err(parse_error(path, "expected VEC3 accessor"));
     }
     (0..accessor.count)
         .map(|index| {
-            let values = read_f32_components(path, accessor, index, 3, buffers, buffer_views)?;
+            let values = read_vec3_components(path, accessor, index, buffers, buffer_views)?;
             Ok(Vec3::new(values[0], values[1], values[2]))
         })
         .collect()
@@ -205,6 +209,76 @@ fn read_f32_components(
         .collect()
 }
 
+fn read_vec3_components(
+    path: &AssetPath,
+    accessor: &GltfAccessor,
+    index: usize,
+    buffers: &[Vec<u8>],
+    buffer_views: &[GltfBufferView],
+) -> Result<Vec<f32>, AssetError> {
+    match accessor.component_type {
+        GL_FLOAT => read_f32_components(path, accessor, index, 3, buffers, buffer_views),
+        GL_BYTE | GL_UNSIGNED_BYTE | GL_SHORT | GL_UNSIGNED_SHORT if accessor.normalized => {
+            read_normalized_components(path, accessor, index, 3, buffers, buffer_views)
+        }
+        _ => Err(parse_error(
+            path,
+            "expected FLOAT VEC3 accessor or normalized integer VEC3 accessor",
+        )),
+    }
+}
+
+fn read_normalized_components(
+    path: &AssetPath,
+    accessor: &GltfAccessor,
+    index: usize,
+    component_count: usize,
+    buffers: &[Vec<u8>],
+    buffer_views: &[GltfBufferView],
+) -> Result<Vec<f32>, AssetError> {
+    let component_size = match accessor.component_type {
+        GL_BYTE | GL_UNSIGNED_BYTE => 1,
+        GL_SHORT | GL_UNSIGNED_SHORT => 2,
+        _ => return Err(parse_error(path, "unsupported normalized component type")),
+    };
+    let offset = accessor_element_offset(
+        path,
+        accessor,
+        index,
+        component_count * component_size,
+        buffer_views,
+    )?;
+    let view = required_buffer_view(path, accessor, buffer_views)?;
+    let buffer = buffers
+        .get(view.buffer)
+        .ok_or_else(|| parse_error(path, "bufferView references missing buffer"))?;
+    (0..component_count)
+        .map(|component| {
+            let start = offset + component * component_size;
+            let bytes = buffer
+                .get(start..start + component_size)
+                .ok_or_else(|| parse_error(path, "accessor reads past buffer end"))?;
+            Ok(match accessor.component_type {
+                GL_BYTE => f32::from(i8::from_le_bytes([bytes[0]])).max(-127.0) / 127.0,
+                GL_UNSIGNED_BYTE => f32::from(bytes[0]) / 255.0,
+                GL_SHORT => {
+                    f32::from(i16::from_le_bytes(
+                        bytes.try_into().expect("slice length checked above"),
+                    ))
+                    .max(-32767.0)
+                        / 32767.0
+                }
+                GL_UNSIGNED_SHORT => {
+                    f32::from(u16::from_le_bytes(
+                        bytes.try_into().expect("slice length checked above"),
+                    )) / 65535.0
+                }
+                _ => unreachable!("component type checked above"),
+            })
+        })
+        .collect()
+}
+
 fn read_index_component(
     path: &AssetPath,
     accessor: &GltfAccessor,
@@ -292,10 +366,13 @@ pub(super) struct GltfAccessor {
     component_type: u32,
     count: usize,
     kind: String,
+    normalized: bool,
 }
 
 const GL_FLOAT: u32 = 5126;
+const GL_BYTE: u32 = 5120;
 const GL_UNSIGNED_BYTE: u32 = 5121;
+const GL_SHORT: u32 = 5122;
 const GL_UNSIGNED_SHORT: u32 = 5123;
 const GL_UNSIGNED_INT: u32 = 5125;
 

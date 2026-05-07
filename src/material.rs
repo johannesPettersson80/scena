@@ -90,6 +90,14 @@ pub enum TextureColorSpace {
     Srgb,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextureTransform {
+    offset: [f32; 2],
+    rotation_radians: f32,
+    scale: [f32; 2],
+    tex_coord: Option<u32>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Discriminant for [`MaterialDesc`]; selects the shading model and which metadata fields apply.
 pub enum MaterialKind {
@@ -127,8 +135,41 @@ pub struct MaterialDesc {
     metallic_factor: f32,
     roughness_factor: f32,
     double_sided: bool,
+    base_color_texture_transform: Option<TextureTransform>,
     stroke_width_px: Option<f32>,
     edge_angle_threshold_degrees: Option<f32>,
+}
+
+impl TextureTransform {
+    pub const fn new(
+        offset: [f32; 2],
+        rotation_radians: f32,
+        scale: [f32; 2],
+        tex_coord: Option<u32>,
+    ) -> Self {
+        Self {
+            offset,
+            rotation_radians,
+            scale,
+            tex_coord,
+        }
+    }
+
+    pub const fn offset(self) -> [f32; 2] {
+        self.offset
+    }
+
+    pub const fn rotation_radians(self) -> f32 {
+        self.rotation_radians
+    }
+
+    pub const fn scale(self) -> [f32; 2] {
+        self.scale
+    }
+
+    pub const fn tex_coord(self) -> Option<u32> {
+        self.tex_coord
+    }
 }
 
 impl MaterialDesc {
@@ -147,6 +188,7 @@ impl MaterialDesc {
             metallic_factor: 0.0,
             roughness_factor: 1.0,
             double_sided: false,
+            base_color_texture_transform: None,
             stroke_width_px: None,
             edge_angle_threshold_degrees: None,
         }
@@ -171,6 +213,7 @@ impl MaterialDesc {
             metallic_factor: clamp_unit_or(metallic_factor, 0.0),
             roughness_factor: clamp_unit_or(roughness_factor, 1.0),
             double_sided: false,
+            base_color_texture_transform: None,
             stroke_width_px: None,
             edge_angle_threshold_degrees: None,
         }
@@ -221,6 +264,7 @@ impl MaterialDesc {
             metallic_factor: 0.0,
             roughness_factor: 1.0,
             double_sided: false,
+            base_color_texture_transform: None,
             stroke_width_px: Some(positive_or(width_px, DEFAULT_STROKE_WIDTH_PX)),
             edge_angle_threshold_degrees,
         }
@@ -236,6 +280,10 @@ impl MaterialDesc {
 
     pub const fn base_color_texture(&self) -> Option<TextureHandle> {
         self.base_color_texture
+    }
+
+    pub const fn base_color_texture_transform(&self) -> Option<TextureTransform> {
+        self.base_color_texture_transform
     }
 
     pub const fn normal_texture(&self) -> Option<TextureHandle> {
@@ -323,6 +371,11 @@ impl MaterialDesc {
 
     pub const fn with_base_color_texture(mut self, texture: TextureHandle) -> Self {
         self.base_color_texture = Some(texture);
+        self
+    }
+
+    pub const fn with_base_color_texture_transform(mut self, transform: TextureTransform) -> Self {
+        self.base_color_texture_transform = Some(transform);
         self
     }
 
