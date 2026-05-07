@@ -150,7 +150,12 @@ impl Scene {
                 };
                 transform.rotation = value;
             }
-            AnimationTarget::Weights => return false,
+            AnimationTarget::Weights => {
+                let Some(weights) = channel.sample_weights(time_seconds) else {
+                    return false;
+                };
+                return self.set_morph_weights_unchecked(channel.target_node(), weights);
+            }
         }
         if before == transform {
             return false;

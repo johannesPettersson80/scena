@@ -2639,6 +2639,7 @@ fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub fn rebind",
             "pub fn sample_vec3",
             "pub fn sample_quat",
+            "pub fn sample_weights",
             "pub(crate) fn play",
             "pub(crate) fn pause",
             "pub(crate) fn stop",
@@ -2675,6 +2676,7 @@ fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "AnimationTarget::Translation",
             "AnimationTarget::Rotation",
             "AnimationTarget::Scale",
+            "AnimationTarget::Weights",
             "pub(crate) fn live_flag",
             "pub fn channels(&self)",
             "pub const fn duration_seconds",
@@ -2697,9 +2699,50 @@ fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub fn update_animation",
             "AnimationError::StaleMixer",
             "AnimationTarget::Translation",
+            "AnimationTarget::Rotation",
             "AnimationTarget::Scale",
+            "AnimationTarget::Weights",
             "structure_revision",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3B-ANIMATION",
+        "src/scene/morphs.rs",
+        &[
+            "pub fn morph_weights",
+            "pub fn set_morph_weights",
+            "set_initial_morph_weights",
+            "set_morph_weights_unchecked",
+            "structure_revision",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3B-ANIMATION",
+        "src/geometry.rs",
+        &["InvalidMorphTargetVertexCount", "GeometryMorphTarget"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3B-ANIMATION",
+        "src/geometry/morph.rs",
+        &[
+            "pub struct GeometryMorphTarget",
+            "pub fn with_morph_targets",
+            "pub fn morphed_vertices",
+            "InvalidMorphTargetVertexCount",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3B-ANIMATION",
+        "src/assets/gltf/read.rs",
+        &["\"targets\"", "GeometryMorphTarget::new", "\"weights\""],
     );
     require_contains(
         root,
@@ -2718,6 +2761,7 @@ fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "playing_paused_and_seek_animation_dirty_prepared_render_state",
             "replace_import_invalidates_animation_mixers_with_stale_error",
             "gltf_animation_supports_rotation_scale_weights_and_normalizes_quaternions",
+            "morph_target_weights_channel_updates_scene_morph_weights",
             "AnimationLoopMode::Repeat",
             "AnimationPlaybackState::Playing",
             "AnimationError::StaleMixer",

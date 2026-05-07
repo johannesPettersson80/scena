@@ -1,7 +1,7 @@
 use serde_json::Value as JsonValue;
 
 use crate::diagnostics::AssetError;
-use crate::geometry::{GeometryDesc, GeometryTopology, GeometryVertex};
+use crate::geometry::{GeometryDesc, GeometryMorphTarget, GeometryTopology, GeometryVertex};
 use crate::material::{AlphaMode, Color, MaterialDesc, TextureColorSpace, TextureTransform};
 use crate::scene::Vec3;
 
@@ -126,6 +126,17 @@ pub(super) fn parse_meshes(
             meshes
                 .iter()
                 .map(|mesh| {
+                    let mesh_weights = mesh
+                        .get("weights")
+                        .and_then(JsonValue::as_array)
+                        .map(|weights| {
+                            weights
+                                .iter()
+                                .filter_map(JsonValue::as_f64)
+                                .map(|value| value as f32)
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
                     let primitives = mesh
                         .get("primitives")
                         .and_then(JsonValue::as_array)
@@ -133,15 +144,16 @@ pub(super) fn parse_meshes(
                     primitives
                         .iter()
                         .map(|primitive| {
-                            parse_mesh_primitive(
+                            let mut inputs = PrimitiveParseInputs {
                                 path,
-                                primitive,
                                 buffers,
                                 buffer_views,
                                 accessors,
                                 materials,
+                                mesh_weights: &mesh_weights,
                                 storage,
-                            )
+                            };
+                            parse_mesh_primitive(primitive, &mut inputs)
                         })
                         .collect()
                 })
@@ -150,41 +162,91 @@ pub(super) fn parse_meshes(
         .unwrap_or_else(|| Ok(Vec::new()))
 }
 
+struct PrimitiveParseInputs<'a, 'storage> {
+    path: &'a AssetPath,
+    buffers: &'a [Vec<u8>],
+    buffer_views: &'a [GltfBufferView],
+    accessors: &'a [GltfAccessor],
+    materials: &'a [MaterialHandle],
+    mesh_weights: &'a [f32],
+    storage: &'storage mut AssetStorage,
+}
+
 fn parse_mesh_primitive(
-    path: &AssetPath,
     primitive: &JsonValue,
-    buffers: &[Vec<u8>],
-    buffer_views: &[GltfBufferView],
-    accessors: &[GltfAccessor],
-    materials: &[MaterialHandle],
-    storage: &mut AssetStorage,
+    inputs: &mut PrimitiveParseInputs<'_, '_>,
 ) -> Result<SceneAssetMesh, AssetError> {
+    let path = inputs.path;
     let attributes = primitive
         .get("attributes")
         .ok_or_else(|| parse_error(path, "glTF primitive is missing attributes"))?;
     let positions = read_vec3_accessor(
         path,
         required_usize(path, attributes, "POSITION")?,
-        buffers,
-        buffer_views,
-        accessors,
+        inputs.buffers,
+        inputs.buffer_views,
+        inputs.accessors,
     )?;
     let normals = attributes
         .get("NORMAL")
         .and_then(JsonValue::as_u64)
-        .map(|index| read_vec3_accessor(path, index as usize, buffers, buffer_views, accessors))
+        .map(|index| {
+            read_vec3_accessor(
+                path,
+                index as usize,
+                inputs.buffers,
+                inputs.buffer_views,
+                inputs.accessors,
+            )
+        })
         .transpose()?
         .unwrap_or_else(|| vec![Vec3::new(0.0, 0.0, 1.0); positions.len()]);
     let vertex_colors = attributes
         .get("COLOR_0")
         .and_then(JsonValue::as_u64)
-        .map(|index| read_color_accessor(path, index as usize, buffers, buffer_views, accessors))
+        .map(|index| {
+            read_color_accessor(
+                path,
+                index as usize,
+                inputs.buffers,
+                inputs.buffer_views,
+                inputs.accessors,
+            )
+        })
         .transpose()?
         .unwrap_or_else(|| vec![Color::WHITE; positions.len()]);
+    let morph_targets = primitive
+        .get("targets")
+        .and_then(JsonValue::as_array)
+        .map(|targets| {
+            targets
+                .iter()
+                .map(|target| {
+                    let position_accessor = required_usize(path, target, "POSITION")?;
+                    read_vec3_accessor(
+                        path,
+                        position_accessor,
+                        inputs.buffers,
+                        inputs.buffer_views,
+                        inputs.accessors,
+                    )
+                    .map(GeometryMorphTarget::new)
+                })
+                .collect()
+        })
+        .unwrap_or_else(|| Ok(Vec::new()))?;
     let indices = primitive
         .get("indices")
         .and_then(JsonValue::as_u64)
-        .map(|index| read_indices_accessor(path, index as usize, buffers, buffer_views, accessors))
+        .map(|index| {
+            read_indices_accessor(
+                path,
+                index as usize,
+                inputs.buffers,
+                inputs.buffer_views,
+                inputs.accessors,
+            )
+        })
         .transpose()?
         .unwrap_or_else(|| (0..positions.len() as u32).collect());
     if normals.len() != positions.len() {
@@ -206,20 +268,22 @@ fn parse_mesh_primitive(
         indices,
         vertex_colors,
     )
+    .and_then(|geometry| geometry.with_morph_targets(morph_targets))
     .map_err(|error| parse_error(path, format!("invalid glTF geometry: {error:?}")))?;
     let bounds = geometry.bounds();
-    let geometry = storage.geometries.insert(geometry);
+    let geometry = inputs.storage.geometries.insert(geometry);
     let material = primitive
         .get("material")
         .and_then(JsonValue::as_u64)
-        .and_then(|index| materials.get(index as usize))
+        .and_then(|index| inputs.materials.get(index as usize))
         .copied()
-        .unwrap_or_else(|| storage.materials.insert(MaterialDesc::default()));
+        .unwrap_or_else(|| inputs.storage.materials.insert(MaterialDesc::default()));
     Ok(SceneAssetMesh {
         geometry,
         material,
         bounds,
         uses_vertex_colors,
+        morph_weights: inputs.mesh_weights.to_vec(),
     })
 }
 

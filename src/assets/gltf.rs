@@ -50,12 +50,13 @@ pub struct SceneAssetNode {
     anchors: Vec<SceneAssetAnchor>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SceneAssetMesh {
     geometry: GeometryHandle,
     material: MaterialHandle,
     bounds: Aabb,
     uses_vertex_colors: bool,
+    morph_weights: Vec<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -257,8 +258,8 @@ impl SceneAssetNode {
         self.transform
     }
 
-    pub fn mesh(&self) -> Option<SceneAssetMesh> {
-        self.meshes.first().copied()
+    pub fn mesh(&self) -> Option<&SceneAssetMesh> {
+        self.meshes.first()
     }
 
     pub fn meshes(&self) -> &[SceneAssetMesh] {
@@ -275,20 +276,24 @@ impl SceneAssetNode {
 }
 
 impl SceneAssetMesh {
-    pub const fn geometry(self) -> GeometryHandle {
+    pub const fn geometry(&self) -> GeometryHandle {
         self.geometry
     }
 
-    pub const fn material(self) -> MaterialHandle {
+    pub const fn material(&self) -> MaterialHandle {
         self.material
     }
 
-    pub const fn bounds(self) -> Aabb {
+    pub const fn bounds(&self) -> Aabb {
         self.bounds
     }
 
-    pub const fn uses_vertex_colors(self) -> bool {
+    pub const fn uses_vertex_colors(&self) -> bool {
         self.uses_vertex_colors
+    }
+
+    pub fn morph_weights(&self) -> &[f32] {
+        &self.morph_weights
     }
 }
 

@@ -3,6 +3,9 @@
 use crate::material::Color;
 use crate::scene::Vec3;
 
+mod morph;
+pub use morph::GeometryMorphTarget;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GeometryTopology {
     Triangles,
@@ -24,6 +27,11 @@ pub enum GeometryError {
         vertex_count: usize,
         color_count: usize,
     },
+    InvalidMorphTargetVertexCount {
+        vertex_count: usize,
+        target_index: usize,
+        target_count: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -44,6 +52,7 @@ pub struct GeometryDesc {
     vertices: Vec<GeometryVertex>,
     indices: Vec<u32>,
     vertex_colors: Vec<Color>,
+    morph_targets: Vec<GeometryMorphTarget>,
     bounds: Aabb,
 }
 
@@ -106,6 +115,7 @@ impl GeometryDesc {
             vertices,
             indices,
             vertex_colors,
+            morph_targets: Vec::new(),
             bounds,
         })
     }

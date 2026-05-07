@@ -292,6 +292,53 @@ fn gltf_animation_supports_rotation_scale_weights_and_normalizes_quaternions() {
     );
 }
 
+#[test]
+fn morph_target_weights_channel_updates_scene_morph_weights() {
+    let assets = Assets::with_fetcher(MultiMemoryFetcher::new(vec![
+        (
+            AssetPath::from("memory://models/morph-weight.gltf"),
+            morph_weight_gltf().into_bytes(),
+        ),
+        (
+            AssetPath::from("memory://models/morph.bin"),
+            morph_weight_buffer(),
+        ),
+    ]));
+    let scene_asset = pollster::block_on(assets.load_scene("memory://models/morph-weight.gltf"))
+        .expect("morph-weight glTF loads");
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("morph-weight import instantiates");
+    let morphing = import.node("Morphing").expect("morphing node resolves");
+    let mixer = scene
+        .create_animation_mixer(&import, "MorphWeight")
+        .expect("morph mixer creates");
+
+    assert_eq!(
+        scene.morph_weights(morphing).expect("morph weights exist"),
+        &[0.0]
+    );
+    scene
+        .seek_animation(mixer, 1.0)
+        .expect("morph weight seek samples");
+    assert_eq!(
+        scene.morph_weights(morphing).expect("morph weights update"),
+        &[1.0]
+    );
+
+    let mesh = scene_asset.nodes()[0]
+        .mesh()
+        .expect("morph fixture has mesh");
+    let geometry = assets
+        .geometry(mesh.geometry())
+        .expect("morph geometry resolves");
+    let morphed = geometry
+        .morphed_vertices(scene.morph_weights(morphing).expect("weights exist"))
+        .expect("morph target applies");
+    assert_vec3_near(morphed[2].position, Vec3::new(0.0, 1.0, 0.5));
+}
+
 fn animated_translation_assets() -> Assets<MultiMemoryFetcher> {
     Assets::with_fetcher(MultiMemoryFetcher::new(vec![
         (
@@ -303,6 +350,78 @@ fn animated_translation_assets() -> Assets<MultiMemoryFetcher> {
             animated_translation_buffer(),
         ),
     ]))
+}
+
+fn morph_weight_gltf() -> String {
+    r#"{
+        "asset": { "version": "2.0" },
+        "nodes": [
+            { "name": "Morphing", "mesh": 0 }
+        ],
+        "meshes": [
+            {
+                "weights": [0.0],
+                "primitives": [
+                    {
+                        "attributes": { "POSITION": 0 },
+                        "indices": 1,
+                        "targets": [
+                            { "POSITION": 2 }
+                        ]
+                    }
+                ]
+            }
+        ],
+        "animations": [
+            {
+                "name": "MorphWeight",
+                "samplers": [
+                    { "input": 3, "output": 4, "interpolation": "LINEAR" }
+                ],
+                "channels": [
+                    { "sampler": 0, "target": { "node": 0, "path": "weights" } }
+                ]
+            }
+        ],
+        "buffers": [
+            { "byteLength": 94, "uri": "morph.bin" }
+        ],
+        "bufferViews": [
+            { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+            { "buffer": 0, "byteOffset": 36, "byteLength": 6 },
+            { "buffer": 0, "byteOffset": 42, "byteLength": 36 },
+            { "buffer": 0, "byteOffset": 78, "byteLength": 8 },
+            { "buffer": 0, "byteOffset": 86, "byteLength": 8 }
+        ],
+        "accessors": [
+            { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+            { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" },
+            { "bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC3" },
+            { "bufferView": 3, "componentType": 5126, "count": 2, "type": "SCALAR" },
+            { "bufferView": 4, "componentType": 5126, "count": 2, "type": "SCALAR" }
+        ]
+    }"#
+    .to_string()
+}
+
+fn morph_weight_buffer() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for value in [
+        -0.5_f32, -0.5, 0.0, 0.5, -0.5, 0.0, 0.0, 0.5, 0.0, // base positions
+    ] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0_u16, 1, 2] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [
+        0.0_f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, // morph deltas
+        0.0, 1.0, // input times
+        0.0, 1.0, // output weights
+    ] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes
 }
 
 fn animated_targets_gltf() -> String {

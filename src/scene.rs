@@ -1,6 +1,7 @@
 //! Scene graph, typed keys, transforms, bounds, anchors, clipping, and queries.
 
 use std::cell::Cell;
+use std::collections::BTreeMap;
 use std::marker::PhantomData;
 use std::sync::{Arc, Weak};
 
@@ -20,6 +21,7 @@ mod labels;
 mod lights;
 mod materials;
 mod mixers;
+mod morphs;
 mod picking;
 mod render_nodes;
 mod transforms;
@@ -51,6 +53,7 @@ pub struct Scene {
     instance_sets: SlotMap<InstanceSetKey, InstanceSet>,
     animation_mixers: SlotMap<AnimationMixerKey, AnimationMixer>,
     labels: SlotMap<LabelKey, LabelDesc>,
+    morph_weights: BTreeMap<NodeKey, Vec<f32>>,
     clipping_planes: SlotMap<ClippingPlaneKey, ClippingPlane>,
     active_clipping_planes: ClippingPlaneSet,
     origin_shift: Vec3,
@@ -166,6 +169,7 @@ impl Scene {
             instance_sets: SlotMap::with_key(),
             animation_mixers: SlotMap::with_key(),
             labels: SlotMap::with_key(),
+            morph_weights: BTreeMap::new(),
             clipping_planes: SlotMap::with_key(),
             active_clipping_planes: ClippingPlaneSet::new(),
             origin_shift: Vec3::ZERO,

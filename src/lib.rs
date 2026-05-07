@@ -37,7 +37,8 @@ pub use diagnostics::{
     RendererStats,
 };
 pub use geometry::{
-    Aabb, GeometryDesc, GeometryError, GeometryTopology, GeometryVertex, Primitive, Vertex,
+    Aabb, GeometryDesc, GeometryError, GeometryMorphTarget, GeometryTopology, GeometryVertex,
+    Primitive, Vertex,
 };
 pub use material::{
     AlphaMode, Color, ColorParseError, DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES,

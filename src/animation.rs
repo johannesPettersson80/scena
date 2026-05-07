@@ -229,6 +229,18 @@ impl AnimationChannel {
             time_seconds,
         )
     }
+
+    pub fn sample_weights(&self, time_seconds: f32) -> Option<Vec<f32>> {
+        let AnimationOutput::Weights(values) = &self.output else {
+            return None;
+        };
+        sample_weights(
+            &self.input_seconds,
+            values,
+            self.interpolation,
+            time_seconds,
+        )
+    }
 }
 
 impl AnimationSourceChannel {
@@ -432,6 +444,42 @@ fn sample_quat(
         }
     }
     values.last().copied().map(normalize_quat)
+}
+
+fn sample_weights(
+    times: &[f32],
+    values: &[Vec<f32>],
+    interpolation: AnimationInterpolation,
+    time_seconds: f32,
+) -> Option<Vec<f32>> {
+    if times.is_empty() || values.is_empty() {
+        return None;
+    }
+    if time_seconds <= times[0] {
+        return values.first().cloned();
+    }
+    if time_seconds >= *times.last()? {
+        return values.last().cloned();
+    }
+    for index in 0..times.len().saturating_sub(1) {
+        let start = times[index];
+        let end = times[index + 1];
+        if time_seconds <= end {
+            let left = values.get(index)?;
+            let right = values.get(index + 1)?;
+            if interpolation == AnimationInterpolation::Step {
+                return Some(left.clone());
+            }
+            let amount = ((time_seconds - start) / (end - start)).clamp(0.0, 1.0);
+            return Some(
+                left.iter()
+                    .zip(right)
+                    .map(|(left, right)| left + (right - left) * amount)
+                    .collect(),
+            );
+        }
+    }
+    values.last().cloned()
 }
 
 fn lerp_vec3(left: Vec3, right: Vec3, amount: f32) -> Vec3 {

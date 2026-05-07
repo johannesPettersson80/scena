@@ -85,6 +85,7 @@ pub(super) fn collect_prepared_primitives<F>(
             node,
             &geometry,
             &material,
+            scene.morph_weights(node),
             PrimitiveBakeParams {
                 target,
                 transform,
@@ -120,6 +121,7 @@ pub(super) fn collect_prepared_primitives<F>(
                 node,
                 &geometry,
                 &material,
+                None,
                 PrimitiveBakeParams {
                     target,
                     transform: compose_transform(node_transform, instance.transform()),
@@ -292,6 +294,7 @@ fn append_geometry_primitives(
     node: NodeKey,
     geometry: &GeometryDesc,
     material: &MaterialDesc,
+    morph_weights: Option<&[f32]>,
     params: PrimitiveBakeParams<'_>,
     primitives: &mut Vec<Primitive>,
     transparent_primitives: &mut Vec<TransparentPrimitive>,
@@ -301,6 +304,7 @@ fn append_geometry_primitives(
             node,
             geometry,
             material,
+            morph_weights,
             params,
             primitives,
             transparent_primitives,
@@ -315,6 +319,7 @@ fn append_triangle_primitives(
     node: NodeKey,
     geometry: &GeometryDesc,
     material: &MaterialDesc,
+    morph_weights: Option<&[f32]>,
     params: PrimitiveBakeParams<'_>,
     primitives: &mut Vec<Primitive>,
     transparent_primitives: &mut Vec<TransparentPrimitive>,
@@ -348,9 +353,12 @@ fn append_triangle_primitives(
     }
 
     let material_pass = material_pass(node, material)?;
+    let morphed_vertices = morph_weights.and_then(|weights| geometry.morphed_vertices(weights));
+    let vertices = morphed_vertices
+        .as_deref()
+        .unwrap_or_else(|| geometry.vertices());
 
     for triangle in geometry.indices().chunks_exact(3) {
-        let vertices = geometry.vertices();
         let position_a = transform_position(
             vertices[triangle[0] as usize].position,
             params.transform,

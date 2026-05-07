@@ -193,13 +193,21 @@ impl Scene {
             Some(union_optional(bounds, mesh.bounds()))
         });
         let node = match (meshes, source_node.light()) {
-            ([mesh], _) => self.insert_node(parent, mesh_node_kind(*mesh), transform),
+            ([mesh], _) => {
+                let node = self.insert_node(parent, mesh_node_kind(mesh), transform);
+                if let Ok(node) = node {
+                    self.set_initial_morph_weights(node, mesh.morph_weights());
+                }
+                node
+            }
             ([_, _, ..], _) => {
                 let node = self.insert_node(parent, NodeKind::Empty, transform);
                 if let Ok(parent) = node {
                     for mesh in meshes {
-                        self.insert_node(parent, mesh_node_kind(*mesh), Transform::IDENTITY)
+                        let child = self
+                            .insert_node(parent, mesh_node_kind(mesh), Transform::IDENTITY)
                             .expect("multi-primitive parent was inserted by this scene");
+                        self.set_initial_morph_weights(child, mesh.morph_weights());
                     }
                 }
                 node
@@ -311,7 +319,7 @@ impl SceneImport {
     }
 }
 
-fn mesh_node_kind(mesh: SceneAssetMesh) -> NodeKind {
+fn mesh_node_kind(mesh: &SceneAssetMesh) -> NodeKind {
     NodeKind::Mesh(MeshNode {
         geometry: mesh.geometry(),
         material: mesh.material(),
