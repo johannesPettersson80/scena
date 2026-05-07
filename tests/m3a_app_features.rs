@@ -346,6 +346,56 @@ fn scene_import_clip_lookups_are_import_local_and_stale() {
 }
 
 #[test]
+fn gltf_required_punctual_lights_instantiate_as_scene_lights() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(
+        "memory://lights.gltf",
+        r#"{
+            "asset": { "version": "2.0" },
+            "extensionsUsed": ["KHR_lights_punctual"],
+            "extensionsRequired": ["KHR_lights_punctual"],
+            "extensions": {
+                "KHR_lights_punctual": {
+                    "lights": [
+                        {
+                            "name": "InspectionLamp",
+                            "type": "point",
+                            "color": [0.25, 0.5, 1.0],
+                            "intensity": 42.0,
+                            "range": 12.0
+                        }
+                    ]
+                }
+            },
+            "nodes": [
+                {
+                    "name": "LampNode",
+                    "extensions": {
+                        "KHR_lights_punctual": { "light": 0 }
+                    }
+                }
+            ]
+        }"#,
+    ));
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://lights.gltf")).expect("light glTF loads");
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("light scene instantiates");
+    let node = import.node("LampNode").expect("light node lookup succeeds");
+
+    let NodeKind::Light(light_key) = scene.node(node).expect("light node exists").kind() else {
+        panic!("KHR_lights_punctual node should instantiate as a scene light");
+    };
+    let scena::Light::Point(point) = *scene.light(*light_key).expect("point light exists") else {
+        panic!("test fixture declares a point light");
+    };
+    assert_eq!(point.color(), Color::from_linear_rgb(0.25, 0.5, 1.0));
+    assert_eq!(point.intensity_candela(), 42.0);
+    assert_eq!(point.range(), Some(12.0));
+}
+
+#[test]
 fn scene_pick_returns_typed_hit_target_for_renderable_triangle() {
     let mut scene = Scene::new();
     let camera = scene

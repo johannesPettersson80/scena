@@ -4,13 +4,16 @@ use serde_json::Value as JsonValue;
 
 use crate::diagnostics::AssetError;
 use crate::geometry::Aabb;
-use crate::scene::{Quat, Transform, Vec3};
+use crate::material::Color;
+use crate::scene::{Angle, DirectionalLight, Light, PointLight, Quat, SpotLight, Transform, Vec3};
 
 use self::accessor::{parse_accessors, parse_buffer_views, parse_buffers};
+use self::glb::{is_glb, parse_glb};
 use self::read::{parse_materials, parse_meshes, parse_textures};
 use super::{AssetPath, AssetStorage, GeometryHandle, MaterialHandle};
 
 mod accessor;
+mod glb;
 mod read;
 
 #[derive(Debug, Clone)]
@@ -35,6 +38,7 @@ pub struct SceneAssetNode {
     children: Vec<usize>,
     transform: Transform,
     mesh: Option<SceneAssetMesh>,
+    light: Option<SceneAssetLight>,
     anchors: Vec<SceneAssetAnchor>,
 }
 
@@ -50,6 +54,11 @@ pub struct SceneAssetMesh {
 pub struct SceneAssetAnchor {
     name: String,
     transform: Transform,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SceneAssetLight {
+    light: Light,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -133,7 +142,8 @@ impl SceneAsset {
             &materials,
             storage,
         )?;
-        let nodes = parse_gltf_nodes(&json, &meshes);
+        let lights = parse_punctual_lights(&json);
+        let nodes = parse_gltf_nodes(&json, &meshes, &lights);
         let clips = parse_gltf_clips(&json);
         let node_count = nodes.len();
         let mesh_count = meshes.len();
@@ -179,84 +189,6 @@ impl SceneAsset {
     }
 }
 
-fn is_glb(bytes: &[u8]) -> bool {
-    bytes.starts_with(&GLB_MAGIC.to_le_bytes())
-}
-
-fn parse_glb(path: &AssetPath, bytes: &[u8]) -> Result<(String, Option<Vec<u8>>), AssetError> {
-    if bytes.len() < GLB_HEADER_LEN {
-        return Err(glb_error(path, "GLB file is shorter than its header"));
-    }
-    let magic = read_u32_le(path, bytes, 0)?;
-    let version = read_u32_le(path, bytes, 4)?;
-    let length = read_u32_le(path, bytes, 8)? as usize;
-    if magic != GLB_MAGIC {
-        return Err(glb_error(path, "invalid GLB magic"));
-    }
-    if version != 2 {
-        return Err(glb_error(path, "expected GLB version 2"));
-    }
-    if length > bytes.len() {
-        return Err(glb_error(path, "GLB declared length exceeds fetched bytes"));
-    }
-
-    let mut offset = GLB_HEADER_LEN;
-    let mut json = None;
-    let mut binary = None;
-    while offset + GLB_CHUNK_HEADER_LEN <= length {
-        let chunk_length = read_u32_le(path, bytes, offset)? as usize;
-        let chunk_type = read_u32_le(path, bytes, offset + 4)?;
-        offset += GLB_CHUNK_HEADER_LEN;
-        let end = offset
-            .checked_add(chunk_length)
-            .ok_or_else(|| glb_error(path, "GLB chunk length overflow"))?;
-        if end > length {
-            return Err(glb_error(path, "GLB chunk exceeds declared length"));
-        }
-        let chunk = &bytes[offset..end];
-        match chunk_type {
-            GLB_JSON_CHUNK => {
-                json = Some(
-                    std::str::from_utf8(chunk).map_err(|error| AssetError::Parse {
-                        path: path.as_str().to_string(),
-                        reason: format!("invalid GLB JSON chunk UTF-8: {error}"),
-                    })?,
-                );
-            }
-            GLB_BIN_CHUNK => {
-                binary = Some(chunk.to_vec());
-            }
-            _ => {}
-        }
-        offset = end;
-    }
-
-    let json = json.ok_or_else(|| glb_error(path, "GLB is missing JSON chunk"))?;
-    Ok((json.to_string(), binary))
-}
-
-fn read_u32_le(path: &AssetPath, bytes: &[u8], offset: usize) -> Result<u32, AssetError> {
-    let chunk = bytes
-        .get(offset..offset + 4)
-        .ok_or_else(|| glb_error(path, "unexpected end of GLB while reading u32"))?;
-    Ok(u32::from_le_bytes(
-        chunk.try_into().expect("slice length checked above"),
-    ))
-}
-
-fn glb_error(path: &AssetPath, reason: impl Into<String>) -> AssetError {
-    AssetError::Parse {
-        path: path.as_str().to_string(),
-        reason: reason.into(),
-    }
-}
-
-const GLB_MAGIC: u32 = 0x4654_6C67;
-const GLB_JSON_CHUNK: u32 = 0x4E4F_534A;
-const GLB_BIN_CHUNK: u32 = 0x004E_4942;
-const GLB_HEADER_LEN: usize = 12;
-const GLB_CHUNK_HEADER_LEN: usize = 8;
-
 impl PartialEq for SceneAsset {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner) || self.inner.path == other.inner.path
@@ -280,6 +212,10 @@ impl SceneAssetNode {
 
     pub fn mesh(&self) -> Option<SceneAssetMesh> {
         self.mesh
+    }
+
+    pub fn light(&self) -> Option<SceneAssetLight> {
+        self.light
     }
 
     pub fn anchors(&self) -> &[SceneAssetAnchor] {
@@ -312,6 +248,12 @@ impl SceneAssetAnchor {
 
     pub fn transform(&self) -> Transform {
         self.transform
+    }
+}
+
+impl SceneAssetLight {
+    pub const fn light(self) -> Light {
+        self.light
     }
 }
 
@@ -349,7 +291,11 @@ fn string_array_field(json: &JsonValue, field: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn parse_gltf_nodes(json: &JsonValue, meshes: &[SceneAssetMesh]) -> Vec<SceneAssetNode> {
+fn parse_gltf_nodes(
+    json: &JsonValue,
+    meshes: &[SceneAssetMesh],
+    lights: &[SceneAssetLight],
+) -> Vec<SceneAssetNode> {
     json.get("nodes")
         .and_then(JsonValue::as_array)
         .map(|nodes| {
@@ -377,11 +323,86 @@ fn parse_gltf_nodes(json: &JsonValue, meshes: &[SceneAssetMesh]) -> Vec<SceneAss
                         .and_then(JsonValue::as_u64)
                         .and_then(|mesh| meshes.get(mesh as usize))
                         .copied(),
+                    light: node
+                        .get("extensions")
+                        .and_then(|extensions| extensions.get("KHR_lights_punctual"))
+                        .and_then(|extension| extension.get("light"))
+                        .and_then(JsonValue::as_u64)
+                        .and_then(|light| lights.get(light as usize))
+                        .copied(),
                     anchors: parse_node_anchors(node),
                 })
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn parse_punctual_lights(json: &JsonValue) -> Vec<SceneAssetLight> {
+    json.get("extensions")
+        .and_then(|extensions| extensions.get("KHR_lights_punctual"))
+        .and_then(|extension| extension.get("lights"))
+        .and_then(JsonValue::as_array)
+        .map(|lights| lights.iter().filter_map(parse_punctual_light).collect())
+        .unwrap_or_default()
+}
+
+fn parse_punctual_light(light: &JsonValue) -> Option<SceneAssetLight> {
+    let color = color3_field(light, "color", Color::WHITE);
+    let intensity = number_field(light, "intensity").unwrap_or(1.0);
+    let range = number_field(light, "range");
+    let light = match light.get("type").and_then(JsonValue::as_str)? {
+        "directional" => Light::Directional(
+            DirectionalLight::default()
+                .with_color(color)
+                .with_illuminance_lux(intensity),
+        ),
+        "point" => {
+            let mut point = PointLight::default()
+                .with_color(color)
+                .with_intensity_candela(intensity);
+            if let Some(range) = range {
+                point = point.with_range(range);
+            }
+            Light::Point(point)
+        }
+        "spot" => {
+            let spot_json = light.get("spot").unwrap_or(&JsonValue::Null);
+            let mut spot = SpotLight::default()
+                .with_color(color)
+                .with_intensity_candela(intensity)
+                .with_inner_cone_angle(Angle::from_radians(
+                    number_field(spot_json, "innerConeAngle").unwrap_or(0.0),
+                ))
+                .with_outer_cone_angle(Angle::from_radians(
+                    number_field(spot_json, "outerConeAngle")
+                        .unwrap_or(std::f32::consts::FRAC_PI_4),
+                ));
+            if let Some(range) = range {
+                spot = spot.with_range(range);
+            }
+            Light::Spot(spot)
+        }
+        _ => return None,
+    };
+    Some(SceneAssetLight { light })
+}
+
+fn number_field(value: &JsonValue, field: &str) -> Option<f32> {
+    value
+        .get(field)
+        .and_then(JsonValue::as_f64)
+        .map(|value| value as f32)
+}
+
+fn color3_field(value: &JsonValue, field: &str, fallback: Color) -> Color {
+    let Some(values) = value.get(field).and_then(JsonValue::as_array) else {
+        return fallback;
+    };
+    Color::from_linear_rgb(
+        array_f32(values, 0).unwrap_or(fallback.r),
+        array_f32(values, 1).unwrap_or(fallback.g),
+        array_f32(values, 2).unwrap_or(fallback.b),
+    )
 }
 
 fn parse_node_anchors(node: &JsonValue) -> Vec<SceneAssetAnchor> {

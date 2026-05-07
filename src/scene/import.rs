@@ -162,23 +162,36 @@ impl Scene {
                 child: source_index,
             },
         )?;
-        let kind = source_node
-            .mesh()
-            .map(|mesh| {
-                NodeKind::Mesh(MeshNode {
-                    geometry: mesh.geometry(),
-                    material: mesh.material(),
-                })
+        let transform = build.options.convert_transform(source_node.transform());
+        let kind = source_node.mesh().map(|mesh| {
+            NodeKind::Mesh(MeshNode {
+                geometry: mesh.geometry(),
+                material: mesh.material(),
             })
-            .unwrap_or(NodeKind::Empty);
+        });
         let bounds = source_node.mesh().map(|mesh| mesh.bounds());
-        let node = self
-            .insert_node(
-                parent,
-                kind,
-                build.options.convert_transform(source_node.transform()),
-            )
-            .expect("import parent was inserted by this scene");
+        let node = match (kind, source_node.light()) {
+            (Some(kind), _) => self.insert_node(parent, kind, transform),
+            (None, Some(light)) => match light.light() {
+                super::Light::Directional(light) => self
+                    .directional_light(light)
+                    .parent(parent)
+                    .transform(transform)
+                    .add(),
+                super::Light::Point(light) => self
+                    .point_light(light)
+                    .parent(parent)
+                    .transform(transform)
+                    .add(),
+                super::Light::Spot(light) => self
+                    .spot_light(light)
+                    .parent(parent)
+                    .transform(transform)
+                    .add(),
+            },
+            (None, None) => self.insert_node(parent, NodeKind::Empty, transform),
+        }
+        .expect("import parent was inserted by this scene");
         build.records.push(ImportedNode {
             node,
             parent: imported_parent,
