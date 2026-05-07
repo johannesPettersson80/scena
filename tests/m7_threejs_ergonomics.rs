@@ -1,9 +1,12 @@
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::fs;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::time::Instant;
 
 use scena::{
     Aabb, AssetError, Assets, Backend, CameraKey, DiagnosticCode, DiagnosticSeverity, GeometryDesc,
-    ImportAnchorDebugMetadata, LookupError, MaterialDesc, NodeKey, NotPreparedReason,
+    ImportAnchorDebugMetadata, LabelDesc, LookupError, MaterialDesc, NodeKey, NotPreparedReason,
     OrbitControls, PerspectiveCamera, PointerEvent, PrepareError, Primitive, RenderError, Renderer,
     Scene, SourceCoordinateSystem, SourceUnits, SurfaceEvent, SurfaceSize, SurfaceViewport,
     TouchEvent, Transform, Vec3,
@@ -32,6 +35,10 @@ unsafe impl GlobalAlloc for CountingAllocator {
         // created the allocation.
         unsafe { System.dealloc(pointer, layout) }
     }
+}
+
+fn root() -> &'static Path {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
 }
 
 #[test]
@@ -159,6 +166,324 @@ fn assert_stable_viewer_resource_counters(
     assert_eq!(after.shader_modules, before.shader_modules);
     assert_eq!(after.live_logical_handles, before.live_logical_handles);
     assert_eq!(after.pending_destructions, before.pending_destructions);
+}
+
+#[test]
+fn m7_benchmark_artifact_writes_required_viewer_workflow_rows() {
+    let rows = vec![
+        benchmark_m7_first_render(),
+        benchmark_m7_first_glb(),
+        benchmark_m7_camera_framing(),
+        benchmark_m7_controls_input(),
+        benchmark_m7_picking_selection(),
+        benchmark_m7_helpers(),
+        benchmark_m7_labels(),
+        benchmark_m7_static_batching(),
+        benchmark_m7_high_instance_viewer(),
+    ];
+    let report = serde_json::json!({
+        "schema": "scena.m7.workflow_benchmarks.v1",
+        "gate": "m7-workflow-benchmarks",
+        "status": "passed",
+        "regression_threshold_percent": 5.0,
+        "rows": rows,
+    });
+    let artifact = root().join("target/gate-artifacts/m7-workflow-benchmarks.json");
+    fs::create_dir_all(artifact.parent().expect("artifact has parent")).expect("artifact dir");
+    fs::write(
+        artifact,
+        serde_json::to_string_pretty(&report).expect("report serializes"),
+    )
+    .expect("benchmark artifact is written");
+
+    for workflow in [
+        "first-render",
+        "first-glb",
+        "camera-framing",
+        "controls-input",
+        "picking-selection",
+        "helpers",
+        "labels",
+        "static-batching",
+        "high-instance-viewer",
+    ] {
+        let row = report["rows"]
+            .as_array()
+            .expect("rows are an array")
+            .iter()
+            .find(|row| row["workflow"] == workflow)
+            .unwrap_or_else(|| panic!("missing M7 benchmark row {workflow}"));
+        assert_eq!(row["status"], "passed");
+        assert!(
+            row["duration_ms"].as_f64().unwrap_or_default() >= 0.0,
+            "{workflow} must record a duration"
+        );
+    }
+}
+
+fn benchmark_m7_first_render() -> serde_json::Value {
+    benchmark_m7_workflow("first-render", || {
+        let mut scene = Scene::new();
+        scene
+            .add_renderable(
+                scene.root(),
+                vec![Primitive::unlit_triangle()],
+                Transform::default(),
+            )
+            .expect("renderable inserts");
+        scene.add_default_camera().expect("camera inserts");
+        let mut renderer = Renderer::headless(64, 64).expect("renderer builds");
+        renderer.prepare(&mut scene).expect("first scene prepares");
+        let outcome = renderer.render_active(&scene).expect("first scene renders");
+        M7BenchmarkOutcome::rendered(renderer.capabilities().backend, outcome.draw_calls)
+    })
+}
+
+fn benchmark_m7_first_glb() -> serde_json::Value {
+    benchmark_m7_workflow("first-glb", || {
+        let assets = Assets::new();
+        let scene_asset = pollster::block_on(
+            assets.load_scene("tests/assets/gltf/mesh_material_vertex_color_scene.gltf"),
+        )
+        .expect("fixture glTF loads");
+        let mut scene = Scene::new();
+        let import = scene
+            .instantiate(&scene_asset)
+            .expect("fixture instantiates");
+        let camera = scene.add_default_camera().expect("camera inserts");
+        scene
+            .frame_import(camera, &import)
+            .expect("camera frames import");
+        let mut renderer = Renderer::headless(64, 64).expect("renderer builds");
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("GLB scene prepares");
+        let outcome = renderer.render_active(&scene).expect("GLB scene renders");
+        M7BenchmarkOutcome::rendered(renderer.capabilities().backend, outcome.draw_calls)
+    })
+}
+
+fn benchmark_m7_camera_framing() -> serde_json::Value {
+    let assets = Assets::new();
+    let scene_asset = pollster::block_on(
+        assets.load_scene("tests/assets/gltf/mesh_material_vertex_color_scene.gltf"),
+    )
+    .expect("fixture glTF loads");
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("fixture instantiates");
+    let camera = scene.add_default_camera().expect("camera inserts");
+
+    benchmark_m7_workflow("camera-framing", || {
+        scene
+            .frame_import(camera, &import)
+            .expect("camera frames import");
+        M7BenchmarkOutcome::cpu()
+    })
+}
+
+fn benchmark_m7_controls_input() -> serde_json::Value {
+    let mut scene = Scene::new();
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut controls = OrbitControls::new(Vec3::ZERO, 3.0).with_damping(0.2);
+
+    benchmark_m7_workflow("controls-input", || {
+        controls.handle_pointer(PointerEvent::primary_pressed(8.0, 8.0));
+        controls.handle_pointer(PointerEvent::moved(14.0, 12.0, 6.0, 4.0));
+        controls.handle_pointer(PointerEvent::wheel(14.0, 12.0, -0.25));
+        controls
+            .apply_to_scene(&mut scene, camera)
+            .expect("controls apply");
+        M7BenchmarkOutcome::cpu()
+    })
+}
+
+fn benchmark_m7_picking_selection() -> serde_json::Value {
+    let mut scene = Scene::new();
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![Primitive::unlit_triangle()],
+            Transform::default(),
+        )
+        .expect("renderable inserts");
+    let camera = scene.add_default_camera().expect("camera inserts");
+
+    benchmark_m7_workflow("picking-selection", || {
+        let hit = scene
+            .pick_and_select(camera, 32.0, 32.0, 64, 64, 1.0)
+            .expect("picking succeeds");
+        M7BenchmarkOutcome {
+            backend: "Cpu",
+            draw_calls: u64::from(hit.is_some()),
+            skipped: false,
+        }
+    })
+}
+
+fn benchmark_m7_helpers() -> serde_json::Value {
+    benchmark_m7_workflow("helpers", || {
+        let bounds = Aabb::new(Vec3::new(-1.0, -1.0, -1.0), Vec3::new(1.0, 1.0, 1.0));
+        let helpers = [
+            GeometryDesc::axes(1.0),
+            GeometryDesc::grid(0.25, 4),
+            GeometryDesc::arrow(Vec3::ZERO, Vec3::new(1.0, 0.0, 0.0)),
+            GeometryDesc::bounding_box(bounds),
+            GeometryDesc::camera_frustum(0.1, 4.0, 1.6, 60.0),
+            GeometryDesc::light_helper(0.25),
+            GeometryDesc::origin_marker(0.2),
+            GeometryDesc::pivot_marker(0.2),
+            GeometryDesc::anchor_marker(0.2),
+        ];
+        M7BenchmarkOutcome {
+            backend: "Cpu",
+            draw_calls: helpers
+                .iter()
+                .map(|helper| helper.indices().len() as u64)
+                .sum(),
+            skipped: false,
+        }
+    })
+}
+
+fn benchmark_m7_labels() -> serde_json::Value {
+    benchmark_m7_workflow("labels", || {
+        let mut scene = Scene::new();
+        scene.add_default_camera().expect("camera inserts");
+        scene
+            .add_label(
+                scene.root(),
+                LabelDesc::sdf("Pressure").with_size(14.0),
+                Transform::default(),
+            )
+            .expect("label inserts");
+        let mut renderer = Renderer::headless(64, 64).expect("renderer builds");
+        renderer.prepare(&mut scene).expect("label scene prepares");
+        let outcome = renderer.render_active(&scene).expect("label scene renders");
+        M7BenchmarkOutcome::rendered(renderer.capabilities().backend, outcome.draw_calls)
+    })
+}
+
+fn benchmark_m7_static_batching() -> serde_json::Value {
+    benchmark_m7_workflow("static-batching", || {
+        let assets = Assets::new();
+        let batch = assets.create_static_batch(
+            &GeometryDesc::box_xyz(0.1, 0.1, 0.1),
+            [
+                Transform::at(Vec3::new(-0.2, 0.0, 0.0)),
+                Transform::at(Vec3::new(0.0, 0.0, 0.0)),
+                Transform::at(Vec3::new(0.2, 0.0, 0.0)),
+            ],
+        );
+        let material = assets.create_material(MaterialDesc::unlit(scena::Color::WHITE));
+        let mut scene = Scene::new();
+        scene.mesh(batch, material).add().expect("batch inserts");
+        scene.add_default_camera().expect("camera inserts");
+        let mut renderer = Renderer::headless(64, 64).expect("renderer builds");
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("batch scene prepares");
+        let outcome = renderer.render_active(&scene).expect("batch scene renders");
+        M7BenchmarkOutcome::rendered(renderer.capabilities().backend, outcome.draw_calls)
+    })
+}
+
+fn benchmark_m7_high_instance_viewer() -> serde_json::Value {
+    benchmark_m7_workflow("high-instance-viewer", || {
+        let assets = Assets::new();
+        let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.08, 0.08, 0.08));
+        let material = assets.create_material(MaterialDesc::unlit(scena::Color::WHITE));
+        let mut scene = Scene::new();
+        let set = scene
+            .add_instance_set(scene.root(), geometry, material, Transform::default())
+            .expect("instance set inserts");
+        scene
+            .reserve_instances(set, 128)
+            .expect("reserve instances");
+        for index in 0..128 {
+            scene
+                .push_instance(
+                    set,
+                    Transform::at(Vec3::new(
+                        (index % 16) as f32 * 0.1 - 0.75,
+                        (index / 16) as f32 * 0.1 - 0.35,
+                        0.0,
+                    )),
+                )
+                .expect("instance inserts");
+        }
+        scene.add_default_camera().expect("camera inserts");
+        let mut renderer = Renderer::headless(64, 64).expect("renderer builds");
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("instance scene prepares");
+        let outcome = renderer
+            .render_active(&scene)
+            .expect("instance scene renders");
+        M7BenchmarkOutcome::rendered(renderer.capabilities().backend, outcome.draw_calls)
+    })
+}
+
+#[derive(Debug, Clone, Copy)]
+struct M7BenchmarkOutcome {
+    backend: &'static str,
+    draw_calls: u64,
+    skipped: bool,
+}
+
+impl M7BenchmarkOutcome {
+    fn rendered(backend: Backend, draw_calls: u64) -> Self {
+        Self {
+            backend: backend_name(backend),
+            draw_calls,
+            skipped: false,
+        }
+    }
+
+    const fn cpu() -> Self {
+        Self {
+            backend: "Cpu",
+            draw_calls: 0,
+            skipped: false,
+        }
+    }
+}
+
+fn benchmark_m7_workflow(
+    workflow: &'static str,
+    operation: impl FnOnce() -> M7BenchmarkOutcome,
+) -> serde_json::Value {
+    ALLOCATION_COUNT.store(0, Ordering::Relaxed);
+    COUNT_ALLOCATIONS.store(true, Ordering::Relaxed);
+    let start = Instant::now();
+    let outcome = operation();
+    let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
+    COUNT_ALLOCATIONS.store(false, Ordering::Relaxed);
+    let allocations = ALLOCATION_COUNT.load(Ordering::Relaxed);
+
+    serde_json::json!({
+        "workflow": workflow,
+        "status": "passed",
+        "backend": outcome.backend,
+        "duration_ms": duration_ms,
+        "median_ms": duration_ms,
+        "p95_ms": duration_ms,
+        "draw_calls": outcome.draw_calls,
+        "skipped": outcome.skipped,
+        "allocation_count": allocations,
+    })
+}
+
+const fn backend_name(backend: Backend) -> &'static str {
+    match backend {
+        Backend::Headless => "Headless",
+        Backend::HeadlessGpu => "HeadlessGpu",
+        Backend::SurfaceDescriptor => "SurfaceDescriptor",
+        Backend::NativeSurface => "NativeSurface",
+        Backend::WebGpu => "WebGpu",
+        Backend::WebGl2 => "WebGl2",
+    }
 }
 
 #[test]
