@@ -29,12 +29,15 @@ pub use assets::{
     RetainPolicy, SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetLight, SceneAssetMesh,
     SceneAssetNode, TextureDesc, TextureHandle, WasmEnvironmentDelivery,
 };
+pub use controls::{
+    OrbitControlAction, OrbitControls, PointerButton, PointerEvent, PointerEventKind,
+};
 pub use diagnostics::{
     AlphaPipelineStatus, AnimationError, AssetError, Backend, BuildError, Capabilities,
     CapabilityStatus, ChangeKind, DevicePoll, Diagnostic, DiagnosticCode, DiagnosticSeverity,
-    Error, ImportDiagnosticOverlay, ImportDiagnosticOverlayKind, ImportError, InstantiateError,
-    LookupError, NotPreparedReason, OutputStageStatus, PrepareError, RenderError, RenderOutcome,
-    RendererStats,
+    Error, HardwareTier, ImportDiagnosticOverlay, ImportDiagnosticOverlayKind, ImportError,
+    InstantiateError, LookupError, NotPreparedReason, OutputStageStatus, PrepareError, RenderError,
+    RenderOutcome, RendererStats,
 };
 pub use geometry::{
     Aabb, GeometryDesc, GeometryError, GeometryMorphTarget, GeometrySkin, GeometryTopology,
@@ -48,15 +51,18 @@ pub use picking::{CursorPosition, Hit, HitTarget, InteractionContext, Interactio
 #[cfg(not(target_arch = "wasm32"))]
 pub use platform::NativeWindowHandle;
 pub use platform::{PlatformSurface, SurfaceEvent, SurfaceKind, SurfaceSize};
-pub use render::{OffscreenTarget, PixelReadback, Renderer, Tonemapper};
+pub use render::{
+    OffscreenTarget, PixelReadback, Profile, Quality, RenderMode, Renderer, RendererOptions,
+    Tonemapper,
+};
 pub use scene::{
     Angle, Camera, CameraKey, ClippingPlane, ClippingPlaneKey, ClippingPlaneSet, DepthRange,
     DirectionalLight, ImportAnchor, ImportClip, ImportOptions, ImportPivot, Instance,
     InstanceCullingPolicy, InstanceId, InstanceSet, InstanceSetKey, LabelBillboard, LabelDesc,
     LabelKey, LabelRasterization, Light, LightBuilder, LightKey, MeshBuilder, MeshNode,
     ModelBuilder, ModelNode, Node, NodeKey, NodeKind, OrthographicCamera, PerspectiveCamera,
-    PointLight, Quat, Scene, SceneImport, SceneSkinBinding, SourceCoordinateSystem, SourceUnits,
-    SpotLight, Transform, Vec3,
+    PointLight, Quat, Scene, SceneDirtyState, SceneImport, SceneSkinBinding,
+    SourceCoordinateSystem, SourceUnits, SpotLight, Transform, Vec3,
 };
 
 /// Crate-level result type for APIs that can return any structured `scena` error.

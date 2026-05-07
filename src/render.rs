@@ -4,28 +4,32 @@ use std::cell::Cell;
 use std::marker::PhantomData;
 use std::sync::Weak;
 
+mod build;
 mod cpu;
+mod culling;
 mod gpu;
 mod offscreen;
 mod output;
 mod prepare;
 mod settings;
+mod surface;
 
 use crate::assets::{Assets, EnvironmentHandle};
 use crate::diagnostics::{
-    Backend, BuildError, Capabilities, ChangeKind, DevicePoll, Diagnostic, NotPreparedReason,
-    PrepareError, RenderError, RenderOutcome, RendererStats,
+    Backend, Capabilities, ChangeKind, DevicePoll, Diagnostic, NotPreparedReason, PrepareError,
+    RenderError, RenderOutcome, RendererStats,
 };
 use crate::geometry::Primitive;
 use crate::material::Color;
 use crate::picking::InteractionStyle;
-use crate::platform::{PlatformSurface, PlatformSurfaceAttachment, SurfaceEvent, SurfaceKind};
+use crate::platform::SurfaceKind;
 use crate::scene::{CameraKey, ClippingPlane, Scene};
 
 use self::gpu::GpuDeviceState;
 pub use self::offscreen::{OffscreenTarget, PixelReadback};
 use self::output::OutputTransform;
 pub use self::output::Tonemapper;
+pub use self::settings::{Profile, Quality, RenderMode, RendererOptions};
 
 #[derive(Debug)]
 pub struct Renderer {
@@ -41,6 +45,14 @@ pub struct Renderer {
     capabilities: Capabilities,
     gpu: Option<GpuDeviceState>,
     output: OutputTransform,
+    profile: Profile,
+    quality: Quality,
+    render_mode: RenderMode,
+    render_generation: u64,
+    last_rendered_generation: Option<u64>,
+    surface_lost: Option<bool>,
+    context_lost: Option<bool>,
+    device_lost: Option<bool>,
     hover_style: InteractionStyle,
     selection_style: InteractionStyle,
     environment: Option<EnvironmentHandle>,
@@ -68,145 +80,6 @@ struct RasterTarget {
 }
 
 impl Renderer {
-    pub fn headless(width: u32, height: u32) -> Result<Self, BuildError> {
-        Self::from_raster_target(width, height, Backend::Headless, None, false)
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn headless_gpu(width: u32, height: u32) -> Result<Self, BuildError> {
-        validate_target_size(width, height)
-            .map_err(|()| BuildError::InvalidTargetSize { width, height })?;
-        let gpu = pollster::block_on(gpu::request_headless_gpu(Backend::HeadlessGpu))?;
-        Self::from_raster_target(width, height, Backend::HeadlessGpu, Some(gpu), false)
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    pub fn headless_gpu(width: u32, height: u32) -> Result<Self, BuildError> {
-        validate_target_size(width, height)
-            .map_err(|()| BuildError::InvalidTargetSize { width, height })?;
-        Err(BuildError::UnsupportedBackend {
-            backend: Backend::HeadlessGpu,
-        })
-    }
-
-    pub fn from_surface(surface: PlatformSurface) -> Result<Self, BuildError> {
-        let (kind, size, attachment) = surface.into_parts();
-        match attachment {
-            PlatformSurfaceAttachment::Descriptor => Self::from_raster_target(
-                size.width,
-                size.height,
-                Backend::SurfaceDescriptor,
-                None,
-                false,
-            ),
-            #[cfg(not(target_arch = "wasm32"))]
-            PlatformSurfaceAttachment::NativeWindow(window) => {
-                let backend = backend_for_attached_surface(kind);
-                let gpu =
-                    pollster::block_on(gpu::request_native_surface_gpu(backend, size, window))?;
-                Self::from_raster_target(size.width, size.height, backend, Some(gpu), true)
-            }
-            #[cfg(target_arch = "wasm32")]
-            PlatformSurfaceAttachment::BrowserWebGpuCanvas(_)
-            | PlatformSurfaceAttachment::BrowserWebGl2Canvas(_) => {
-                let backend = backend_for_attached_surface(kind);
-                Err(BuildError::AsyncSurfaceRequired { backend })
-            }
-        }
-    }
-
-    pub async fn from_surface_async(surface: PlatformSurface) -> Result<Self, BuildError> {
-        let (kind, size, attachment) = surface.into_parts();
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            match attachment {
-                PlatformSurfaceAttachment::Descriptor => {
-                    return Self::from_raster_target(
-                        size.width,
-                        size.height,
-                        Backend::SurfaceDescriptor,
-                        None,
-                        false,
-                    );
-                }
-                PlatformSurfaceAttachment::BrowserWebGpuCanvas(canvas)
-                | PlatformSurfaceAttachment::BrowserWebGl2Canvas(canvas) => {
-                    let _ = canvas;
-                    let backend = backend_for_attached_surface(kind);
-                    return Err(BuildError::UnsupportedBackend { backend });
-                }
-            }
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let gpu = match attachment {
-                PlatformSurfaceAttachment::Descriptor => {
-                    return Self::from_raster_target(
-                        size.width,
-                        size.height,
-                        Backend::SurfaceDescriptor,
-                        None,
-                        false,
-                    );
-                }
-                PlatformSurfaceAttachment::NativeWindow(window) => {
-                    let backend = backend_for_attached_surface(kind);
-                    gpu::request_native_surface_gpu(backend, size, window).await?
-                }
-            };
-            let backend = backend_for_attached_surface(kind);
-            Self::from_raster_target(size.width, size.height, backend, Some(gpu), true)
-        }
-    }
-
-    fn from_raster_target(
-        width: u32,
-        height: u32,
-        backend: Backend,
-        gpu: Option<GpuDeviceState>,
-        surface_attached: bool,
-    ) -> Result<Self, BuildError> {
-        validate_target_size(width, height)
-            .map_err(|()| BuildError::InvalidTargetSize { width, height })?;
-        let has_gpu = gpu.is_some();
-        let capabilities = if surface_attached {
-            Capabilities::for_attached_gpu_backend(backend)
-        } else if has_gpu {
-            Capabilities::for_gpu_backend(backend)
-        } else {
-            Capabilities::for_backend(backend)
-        };
-        let target = RasterTarget {
-            width,
-            height,
-            backend,
-        };
-        Ok(Self {
-            target,
-            prepared: None,
-            frame: vec![0; target.byte_len()],
-            fxaa_scratch: vec![0; target.byte_len()],
-            linear_frame: (!has_gpu).then(|| vec![Color::BLACK; target.pixel_len()]),
-            stats: RendererStats {
-                target_width: width,
-                target_height: height,
-                ..RendererStats::default()
-            },
-            diagnostics: Vec::new(),
-            capabilities,
-            gpu,
-            output: OutputTransform::default(),
-            hover_style: InteractionStyle::default(),
-            selection_style: InteractionStyle::default(),
-            environment: None,
-            environment_revision: 0,
-            target_revision: 0,
-            not_sync: PhantomData,
-        })
-    }
-
     pub fn prepare(&mut self, scene: &mut Scene) -> Result<(), PrepareError> {
         self.prepare_inner::<()>(scene, None)
     }
@@ -250,6 +123,8 @@ impl Renderer {
         };
         let lighting_stats = prepare::collect_lighting_stats(scene, self.target.backend)?;
         let primitives = prepare::collect_prepared_primitives(self.target, scene, assets)?;
+        let culled_primitives = culling::cull_cpu_frustum(primitives);
+        let primitives = culled_primitives.visible;
         let depth_stats = prepare::collect_depth_prepass_stats(&primitives, self.target.backend);
         let logical_stats =
             prepare::collect_logical_resource_stats(scene, assets, environment_count);
@@ -265,6 +140,7 @@ impl Renderer {
         self.stats.directional_shadow_map_resolution =
             lighting_stats.directional_shadow_map_resolution;
         self.stats.directional_shadow_pcf_kernel = lighting_stats.directional_shadow_pcf_kernel;
+        self.stats.culled_objects = culled_primitives.culled;
         if let Some(gpu) = &mut self.gpu {
             gpu.prepare(self.target, &primitives, lighting_stats, depth_stats);
             let stats = gpu.prepared_resource_stats();
@@ -289,6 +165,8 @@ impl Renderer {
             primitives,
             clipping_planes: scene.active_clipping_plane_values().collect(),
         });
+        self.render_generation = self.render_generation.saturating_add(1);
+        self.last_rendered_generation = None;
         self.diagnostics = diagnostics;
         Ok(())
     }
@@ -298,9 +176,23 @@ impl Renderer {
         scene: &Scene,
         camera: CameraKey,
     ) -> Result<RenderOutcome, RenderError> {
+        self.loss_error()?;
         self.prepared_state(scene)?;
         if scene.camera(camera).is_none() {
             return Err(RenderError::CameraNotFound(camera));
+        }
+
+        if self.render_mode == RenderMode::OnChange
+            && self.last_rendered_generation == Some(self.render_generation)
+        {
+            self.stats.skipped_frames = self.stats.skipped_frames.saturating_add(1);
+            return Ok(RenderOutcome {
+                width: self.target.width,
+                height: self.target.height,
+                draw_calls: 0,
+                primitives: 0,
+                skipped: true,
+            });
         }
 
         let primitives = self.prepared_state(scene)?.primitives.clone();
@@ -343,12 +235,14 @@ impl Renderer {
         self.stats.draw_calls = primitive_count;
         self.stats.triangles = primitive_count;
         self.stats.primitives = primitive_count;
+        self.last_rendered_generation = Some(self.render_generation);
 
         Ok(RenderOutcome {
             width: self.target.width,
             height: self.target.height,
             draw_calls: primitive_count,
             primitives: primitive_count,
+            skipped: false,
         })
     }
 
@@ -356,26 +250,6 @@ impl Renderer {
         self.prepared_state(scene)?;
         let camera = scene.active_camera().ok_or(RenderError::NoActiveCamera)?;
         self.render(scene, camera)
-    }
-
-    pub fn handle_surface_event(&mut self, event: SurfaceEvent) -> Result<(), RenderError> {
-        match event {
-            SurfaceEvent::Resize { width, height } => {
-                validate_target_size(width, height)
-                    .map_err(|()| RenderError::InvalidSurfaceSize { width, height })?;
-                self.target.width = width;
-                self.target.height = height;
-                self.frame.resize(self.target.byte_len(), 0);
-                self.fxaa_scratch.resize(self.target.byte_len(), 0);
-                if let Some(linear_frame) = &mut self.linear_frame {
-                    linear_frame.resize(self.target.pixel_len(), Color::BLACK);
-                }
-                self.stats.target_width = width;
-                self.stats.target_height = height;
-                self.target_revision = self.target_revision.saturating_add(1);
-            }
-        }
-        Ok(())
     }
 
     pub fn frame_rgba8(&self) -> &[u8] {
@@ -426,11 +300,15 @@ impl Renderer {
                 .gpu
                 .as_mut()
                 .expect("draw_gpu is called only when a GPU device exists");
-            let submitted =
+            let (submitted, culling_dispatches) =
                 gpu.render_to_frame(self.target, self.output.exposure_ev(), &mut self.frame)?;
             if submitted {
                 self.stats.gpu_submissions = self.stats.gpu_submissions.saturating_add(1);
             }
+            self.stats.gpu_culling_dispatches = self
+                .stats
+                .gpu_culling_dispatches
+                .saturating_add(culling_dispatches);
             Ok(())
         }
 
@@ -511,7 +389,7 @@ impl RasterTarget {
     }
 }
 
-fn backend_for_attached_surface(kind: SurfaceKind) -> Backend {
+pub(super) fn backend_for_attached_surface(kind: SurfaceKind) -> Backend {
     match kind {
         SurfaceKind::NativeWindow => Backend::NativeSurface,
         SurfaceKind::BrowserWebGpuCanvas => Backend::WebGpu,
@@ -519,7 +397,7 @@ fn backend_for_attached_surface(kind: SurfaceKind) -> Backend {
     }
 }
 
-fn validate_target_size(width: u32, height: u32) -> Result<(), ()> {
+pub(super) fn validate_target_size(width: u32, height: u32) -> Result<(), ()> {
     if width == 0 || height == 0 {
         Err(())
     } else {

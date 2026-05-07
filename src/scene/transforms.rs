@@ -15,6 +15,7 @@ impl Scene {
         if node.transform != transform {
             node.transform = transform;
             self.structure_revision = self.structure_revision.saturating_add(1);
+            self.transform_revision = self.transform_revision.saturating_add(1);
         }
         Ok(())
     }

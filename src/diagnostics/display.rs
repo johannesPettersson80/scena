@@ -211,6 +211,16 @@ impl fmt::Display for PrepareError {
                     "node {node:?} has invalid skin geometry: {reason}"
                 )
             }
+            Self::BackendCapabilityMismatch {
+                feature,
+                backend,
+                help,
+            } => {
+                write!(
+                    formatter,
+                    "backend {backend:?} cannot provide required feature {feature}: {help}"
+                )
+            }
         }
     }
 }
@@ -223,6 +233,21 @@ impl fmt::Display for RenderError {
             Self::CameraNotFound(_) => write!(formatter, "camera key does not exist in the scene"),
             Self::InvalidSurfaceSize { width, height } => {
                 write!(formatter, "invalid surface size {width}x{height}")
+            }
+            Self::SurfaceLost { recoverable } => {
+                write!(
+                    formatter,
+                    "render surface was lost; recoverable={recoverable}"
+                )
+            }
+            Self::ContextLost { recoverable } => {
+                write!(
+                    formatter,
+                    "render context was lost; recoverable={recoverable}"
+                )
+            }
+            Self::GpuDeviceLost { recoverable } => {
+                write!(formatter, "GPU device was lost; recoverable={recoverable}")
             }
             Self::GpuResourcesNotPrepared { backend } => {
                 write!(formatter, "GPU resources for {backend:?} were not prepared")

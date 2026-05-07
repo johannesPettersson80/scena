@@ -37,6 +37,7 @@ pub(super) fn estimate_prepared_resource_stats(
     shadow_maps: u64,
     shadow_map_resolution: Option<u32>,
     depth_prepass_passes: u64,
+    has_compute_culling: bool,
 ) -> GpuResourceStats {
     if vertex_count == 0 {
         return GpuResourceStats::default();
@@ -48,7 +49,9 @@ pub(super) fn estimate_prepared_resource_stats(
     let readback_bytes = u64::from(padded_bytes_per_row) * u64::from(target.height);
     let vertex_bytes = (vertex_count * VERTEX_BYTE_LEN).max(4) as u64;
     let uniform_bytes = output::OUTPUT_UNIFORM_BYTE_LEN;
-    let pipelines = 1 + u64::from(has_surface_pipeline) + depth_prepass_passes;
+    let compute_culling_pipelines = u64::from(has_compute_culling);
+    let pipelines =
+        1 + u64::from(has_surface_pipeline) + depth_prepass_passes + compute_culling_pipelines;
     let shadow_map_bytes = shadow_map_resolution
         .map(|resolution| {
             let edge = u64::from(resolution);
@@ -94,7 +97,7 @@ mod tests {
             backend: Backend::HeadlessGpu,
         };
 
-        let stats = estimate_prepared_resource_stats(target, 3, false, 0, None, 0);
+        let stats = estimate_prepared_resource_stats(target, 3, false, 0, None, 0, false);
 
         assert_eq!(stats.buffers, 3);
         assert_eq!(stats.textures, 1);
@@ -114,7 +117,7 @@ mod tests {
             backend: Backend::HeadlessGpu,
         };
 
-        let stats = estimate_prepared_resource_stats(target, 0, false, 0, None, 0);
+        let stats = estimate_prepared_resource_stats(target, 0, false, 0, None, 0, false);
 
         assert_eq!(stats, GpuResourceStats::default());
         assert_eq!(stats.destruction_records(), 0);
@@ -128,7 +131,7 @@ mod tests {
             backend: Backend::HeadlessGpu,
         };
 
-        let stats = estimate_prepared_resource_stats(target, 3, false, 1, Some(2048), 0);
+        let stats = estimate_prepared_resource_stats(target, 3, false, 1, Some(2048), 0, false);
 
         assert_eq!(stats.textures, 2);
         assert_eq!(stats.render_targets, 2);
@@ -144,7 +147,7 @@ mod tests {
             backend: Backend::HeadlessGpu,
         };
 
-        let stats = estimate_prepared_resource_stats(target, 3, false, 0, None, 1);
+        let stats = estimate_prepared_resource_stats(target, 3, false, 0, None, 1, false);
 
         assert_eq!(stats.textures, 2);
         assert_eq!(stats.render_targets, 2);
@@ -152,5 +155,20 @@ mod tests {
         assert_eq!(stats.shader_modules, 2);
         assert_eq!(stats.destruction_records(), 12);
         assert!(stats.approximate_gpu_memory_bytes >= 4 * 4 * 4);
+    }
+
+    #[test]
+    fn estimates_compute_culling_pipeline_resource_counters() {
+        let target = RasterTarget {
+            width: 4,
+            height: 4,
+            backend: Backend::HeadlessGpu,
+        };
+
+        let stats = estimate_prepared_resource_stats(target, 3, false, 0, None, 0, true);
+
+        assert_eq!(stats.pipelines, 2);
+        assert_eq!(stats.shader_modules, 2);
+        assert_eq!(stats.destruction_records(), 10);
     }
 }

@@ -15,6 +15,7 @@ use crate::picking::InteractionContext;
 
 mod builders;
 mod camera;
+mod dirty;
 mod import;
 mod instances;
 mod labels;
@@ -22,12 +23,14 @@ mod lights;
 mod materials;
 mod mixers;
 mod morphs;
+mod origin;
 mod picking;
 mod render_nodes;
 mod skinning;
 mod transforms;
 mod view;
 pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
+pub use dirty::SceneDirtyState;
 pub use import::{
     ImportAnchor, ImportClip, ImportOptions, ImportPivot, SceneImport, SourceCoordinateSystem,
     SourceUnits,
@@ -64,6 +67,7 @@ pub struct Scene {
     active_camera: Option<CameraKey>,
     interaction: InteractionContext,
     structure_revision: u64,
+    transform_revision: u64,
     not_sync: PhantomData<Cell<()>>,
 }
 
@@ -181,6 +185,7 @@ impl Scene {
             active_camera: None,
             interaction: InteractionContext::default(),
             structure_revision: 0,
+            transform_revision: 0,
             not_sync: PhantomData,
         }
     }
@@ -300,17 +305,6 @@ impl Scene {
 
     pub fn clipping_planes(&self) -> &ClippingPlaneSet {
         &self.active_clipping_planes
-    }
-
-    pub fn set_origin_shift(&mut self, origin_shift: Vec3) {
-        if self.origin_shift != origin_shift {
-            self.origin_shift = origin_shift;
-            self.structure_revision = self.structure_revision.saturating_add(1);
-        }
-    }
-
-    pub fn origin_shift(&self) -> Vec3 {
-        self.origin_shift
     }
 
     pub(crate) fn identity(&self) -> Weak<()> {

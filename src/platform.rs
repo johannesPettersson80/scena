@@ -14,9 +14,17 @@ pub enum SurfaceKind {
     BrowserWebGl2Canvas,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SurfaceEvent {
     Resize { width: u32, height: u32 },
+    ScaleFactorChanged { scale_factor: f64 },
+    Occluded { occluded: bool },
+    Hidden,
+    Shown,
+    Lost,
+    ContextLost { recoverable: bool },
+    ContextRestored,
+    DeviceLost { recoverable: bool },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

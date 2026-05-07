@@ -1,6 +1,9 @@
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::mpsc;
 
+mod build;
+#[cfg(not(target_arch = "wasm32"))]
+mod culling;
 #[cfg(not(target_arch = "wasm32"))]
 mod depth;
 mod lifecycle;
@@ -13,13 +16,11 @@ mod stats;
 mod vertices;
 
 #[cfg(not(target_arch = "wasm32"))]
+use crate::diagnostics::Backend;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::diagnostics::RenderError;
-use crate::diagnostics::{Backend, BuildError};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::geometry::Primitive;
-#[cfg(not(target_arch = "wasm32"))]
-use crate::platform::BoxedNativeWindow;
-use crate::platform::SurfaceSize;
 
 #[cfg(not(target_arch = "wasm32"))]
 use self::output::{
@@ -49,8 +50,11 @@ pub(super) struct GpuDeviceState {
     resources: Option<GpuPreparedResources>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) use build::{request_headless_gpu, request_native_surface_gpu};
+
 #[derive(Debug)]
-struct GpuSurfaceState {
+pub(super) struct GpuSurfaceState {
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
 }
@@ -72,6 +76,8 @@ struct GpuPreparedResources {
     #[allow(dead_code)]
     shadow_view: Option<wgpu::TextureView>,
     depth_prepass: Option<depth::DepthPrepassResources>,
+    culling_pipeline: Option<wgpu::ComputePipeline>,
+    culling_workgroups: u32,
     vertex_count: u32,
     offscreen_pipeline: wgpu::RenderPipeline,
     surface_pipeline: Option<wgpu::RenderPipeline>,
@@ -147,6 +153,11 @@ impl GpuDeviceState {
         let depth_prepass = (depth_stats.passes > 0).then(|| {
             depth::create_depth_prepass_resources(&self.device, target, depth_stats.reversed_z)
         });
+        let culling_pipeline = matches!(
+            target.backend,
+            Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu
+        )
+        .then(|| culling::create_culling_pipeline(&self.device));
         let offscreen_pipeline =
             create_unlit_pipeline(&self.device, GPU_COLOR_FORMAT, &output_bind_group_layout);
         let surface_pipeline = self.surface.as_ref().map(|surface| {
@@ -163,6 +174,7 @@ impl GpuDeviceState {
             lighting_stats.shadow_maps,
             lighting_stats.directional_shadow_map_resolution,
             depth_stats.passes,
+            culling_pipeline.is_some(),
         );
 
         self.resources = Some(GpuPreparedResources {
@@ -176,6 +188,8 @@ impl GpuDeviceState {
             shadow_texture,
             shadow_view,
             depth_prepass,
+            culling_pipeline,
+            culling_workgroups: (primitives.len() as u32).max(1).div_ceil(64),
             vertex_count: (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32,
             offscreen_pipeline,
             surface_pipeline,
@@ -205,11 +219,11 @@ impl GpuDeviceState {
         target: RasterTarget,
         exposure_ev: f32,
         frame: &mut Vec<u8>,
-    ) -> Result<bool, RenderError> {
+    ) -> Result<(bool, u64), RenderError> {
         let Some(resources) = self.resources.as_ref() else {
             frame.resize(target.byte_len(), 0);
             frame.fill(0);
-            return Ok(false);
+            return Ok((false, 0));
         };
         if resources.target != target {
             return Err(RenderError::GpuResourcesNotPrepared {
@@ -244,6 +258,16 @@ impl GpuDeviceState {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("scena.headless_gpu.encoder"),
             });
+        let culling_dispatches = if let Some(culling_pipeline) = &resources.culling_pipeline {
+            culling::encode_culling_dispatch(
+                &mut encoder,
+                culling_pipeline,
+                resources.culling_workgroups,
+            );
+            1
+        } else {
+            0
+        };
         if let Some(depth_prepass) = &resources.depth_prepass {
             depth::encode_depth_prepass(
                 &mut encoder,
@@ -333,7 +357,7 @@ impl GpuDeviceState {
         drop(mapped);
         resources.readback.unmap();
 
-        Ok(true)
+        Ok((true, culling_dispatches))
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -358,87 +382,6 @@ impl GpuDeviceState {
             surface.surface.configure(&self.device, &surface.config);
         }
     }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub(super) async fn request_headless_gpu(backend: Backend) -> Result<GpuDeviceState, BuildError> {
-    let instance = wgpu::Instance::default();
-    let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions::default())
-        .await
-        .map_err(|_| BuildError::NoAdapter { backend })?;
-    let (device, queue) = adapter
-        .request_device(&wgpu::DeviceDescriptor::default())
-        .await
-        .map_err(|_| BuildError::RequestDevice { backend })?;
-
-    Ok(GpuDeviceState {
-        instance,
-        adapter,
-        device,
-        queue,
-        surface: None,
-        pending_destructions: 0,
-        #[cfg(not(target_arch = "wasm32"))]
-        resources: None,
-    })
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub(super) async fn request_native_surface_gpu(
-    backend: Backend,
-    size: SurfaceSize,
-    window: BoxedNativeWindow,
-) -> Result<GpuDeviceState, BuildError> {
-    request_surface_gpu(backend, size, wgpu::SurfaceTarget::from(window)).await
-}
-
-#[cfg(target_arch = "wasm32")]
-#[allow(dead_code)]
-pub(super) async fn request_browser_surface_gpu(
-    backend: crate::diagnostics::Backend,
-    size: crate::platform::SurfaceSize,
-    canvas: web_sys::HtmlCanvasElement,
-) -> Result<GpuDeviceState, crate::diagnostics::BuildError> {
-    request_surface_gpu(backend, size, wgpu::SurfaceTarget::Canvas(canvas)).await
-}
-
-#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-async fn request_surface_gpu(
-    backend: Backend,
-    size: SurfaceSize,
-    target: wgpu::SurfaceTarget<'static>,
-) -> Result<GpuDeviceState, BuildError> {
-    let instance = wgpu::Instance::default();
-    let surface = instance
-        .create_surface(target)
-        .map_err(|_| BuildError::CreateSurface { backend })?;
-    let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            compatible_surface: Some(&surface),
-            ..wgpu::RequestAdapterOptions::default()
-        })
-        .await
-        .map_err(|_| BuildError::NoAdapter { backend })?;
-    let (device, queue) = adapter
-        .request_device(&wgpu::DeviceDescriptor::default())
-        .await
-        .map_err(|_| BuildError::RequestDevice { backend })?;
-    let config = surface
-        .get_default_config(&adapter, size.width, size.height)
-        .ok_or(BuildError::SurfaceUnsupported { backend })?;
-    surface.configure(&device, &config);
-
-    Ok(GpuDeviceState {
-        instance,
-        adapter,
-        device,
-        queue,
-        surface: Some(GpuSurfaceState { surface, config }),
-        pending_destructions: 0,
-        #[cfg(not(target_arch = "wasm32"))]
-        resources: None,
-    })
 }
 
 #[cfg(not(target_arch = "wasm32"))]

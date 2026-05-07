@@ -9,7 +9,7 @@ use crate::scene::{CameraKey, ClippingPlaneKey, InstanceSetKey, LabelKey, NodeKe
 mod capabilities;
 mod display;
 pub use capabilities::{
-    AlphaPipelineStatus, Backend, Capabilities, CapabilityStatus, OutputStageStatus,
+    AlphaPipelineStatus, Backend, Capabilities, CapabilityStatus, HardwareTier, OutputStageStatus,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -119,6 +119,11 @@ pub enum PrepareError {
         node: NodeKey,
         reason: String,
     },
+    BackendCapabilityMismatch {
+        feature: &'static str,
+        backend: Backend,
+        help: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,6 +132,9 @@ pub enum RenderError {
     NoActiveCamera,
     CameraNotFound(CameraKey),
     InvalidSurfaceSize { width: u32, height: u32 },
+    SurfaceLost { recoverable: bool },
+    ContextLost { recoverable: bool },
+    GpuDeviceLost { recoverable: bool },
     GpuResourcesNotPrepared { backend: Backend },
     GpuReadback { backend: Backend },
 }
@@ -276,6 +284,7 @@ pub struct RendererStats {
     pub draw_calls: u64,
     pub triangles: u64,
     pub culled_objects: u64,
+    pub gpu_culling_dispatches: u64,
     pub skipped_frames: u64,
     pub gpu_submissions: u64,
     pub approximate_gpu_memory_bytes: Option<u64>,
@@ -355,6 +364,7 @@ pub struct RenderOutcome {
     pub height: u32,
     pub draw_calls: u64,
     pub primitives: u64,
+    pub skipped: bool,
 }
 
 impl From<BuildError> for Error {

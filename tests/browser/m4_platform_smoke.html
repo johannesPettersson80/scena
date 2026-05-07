@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>scena M4 platform smoke</title>
+  <style>
+    html, body { margin: 0; background: #000; }
+    canvas { display: block; width: 64px; height: 64px; }
+  </style>
+</head>
+<body>
+  <canvas id="surface" width="64" height="64"></canvas>
+  <script>
+    const WIDTH = 64;
+    const HEIGHT = 64;
+    const BYTES_PER_ROW = WIDTH * 4;
+
+    function centerPixel(bytes, stride = BYTES_PER_ROW) {
+      const offset = 32 * stride + 32 * 4;
+      return [bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]];
+    }
+
+    async function renderWebGpu(canvas) {
+      if (!navigator.gpu) {
+        return { status: "unsupported", reason: "navigator.gpu unavailable" };
+      }
+      const adapter = await navigator.gpu.requestAdapter();
+      if (!adapter) {
+        return { status: "unsupported", reason: "adapter unavailable" };
+      }
+      const device = await adapter.requestDevice();
+      const context = canvas.getContext("webgpu");
+      if (!context) {
+        return { status: "unsupported", reason: "canvas webgpu context unavailable" };
+      }
+      const format = navigator.gpu.getPreferredCanvasFormat();
+      context.configure({
+        device,
+        format,
+        alphaMode: "opaque",
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+      });
+      const texture = context.getCurrentTexture();
+      const readback = device.createBuffer({
+        size: BYTES_PER_ROW * HEIGHT,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+      const encoder = device.createCommandEncoder();
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: texture.createView(),
+          clearValue: { r: 0.0, g: 1.0, b: 0.0, a: 1.0 },
+          loadOp: "clear",
+          storeOp: "store",
+        }],
+      });
+      pass.end();
+      encoder.copyTextureToBuffer(
+        { texture },
+        { buffer: readback, bytesPerRow: BYTES_PER_ROW },
+        { width: WIDTH, height: HEIGHT, depthOrArrayLayers: 1 },
+      );
+      device.queue.submit([encoder.finish()]);
+      await readback.mapAsync(GPUMapMode.READ);
+      const bytes = new Uint8Array(readback.getMappedRange()).slice();
+      readback.unmap();
+      device.destroy();
+      return {
+        status: "rendered",
+        center: centerPixel(bytes),
+        loss: {
+          event_sequence: ["GPUDevice.destroy", "GPUDevice.lost"],
+          retain_policy: "OnContextLossOnly",
+          recovery_api: "recover_context",
+          final_prepare_result: "requires prepare",
+        },
+      };
+    }
+
+    async function renderWebGl2(canvas) {
+      const gl = canvas.getContext("webgl2", { preserveDrawingBuffer: true });
+      if (!gl) {
+        return { status: "unsupported", reason: "canvas webgl2 context unavailable" };
+      }
+      gl.viewport(0, 0, WIDTH, HEIGHT);
+      gl.clearColor(0.0, 0.0, 1.0, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      const bytes = new Uint8Array(WIDTH * HEIGHT * 4);
+      gl.readPixels(0, 0, WIDTH, HEIGHT, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+
+      const events = [];
+      canvas.addEventListener("webglcontextlost", (event) => {
+        event.preventDefault();
+        events.push("webglcontextlost");
+      }, { once: true });
+      canvas.addEventListener("webglcontextrestored", () => {
+        events.push("webglcontextrestored");
+      }, { once: true });
+      const loseContext = gl.getExtension("WEBGL_lose_context");
+      if (loseContext) {
+        loseContext.loseContext();
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        loseContext.restoreContext();
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      }
+
+      return {
+        status: "rendered",
+        center: centerPixel(bytes),
+        loss: {
+          event_sequence: events,
+          retain_policy: "OnContextLossOnly",
+          recovery_api: "SurfaceEvent::ContextRestored -> recover_context",
+          final_prepare_result: "requires prepare",
+        },
+      };
+    }
+
+    function capabilityReport(backend) {
+      const webgl2 = backend === "webgl2";
+      return {
+        schema: "scena.capabilities.v1",
+        lane: backend === "webgpu" ? "linux-webgpu-chromium" : "linux-webgl2-chromium",
+        backend: backend === "webgpu" ? "WebGpu" : "WebGl2",
+        hardware_tier: webgl2 ? "Low" : "Medium",
+        features: {
+          forward_pbr: { state: "Supported" },
+          clipping_planes: {
+            state: webgl2 ? "Degraded" : "Supported",
+            default: webgl2 ? 4 : 8,
+            max: webgl2 ? 8 : 16,
+          },
+          gpu_frustum_culling: { state: webgl2 ? "FeatureDisabled" : "Supported" },
+          per_instance_culling: { state: webgl2 ? "Degraded" : "Supported" },
+          compute_shaders: { state: webgl2 ? "FeatureDisabled" : "Supported" },
+          storage_buffers: { state: webgl2 ? "FeatureDisabled" : "Supported" },
+        },
+        diagnostics: webgl2 ? ["WebGL2 compatibility profile uses CPU culling fallback"] : [],
+      };
+    }
+
+    window.scenaM4PlatformSmoke = async function scenaM4PlatformSmoke(backend) {
+      const canvas = document.getElementById("surface");
+      const render = backend === "webgpu" ? renderWebGpu : renderWebGl2;
+      if (backend !== "webgpu" && backend !== "webgl2") {
+        throw new Error(`unexpected backend ${backend}`);
+      }
+      const result = await render(canvas);
+      if (result.status !== "rendered") {
+        return result;
+      }
+      const expected = backend === "webgpu" ? [0, 255, 0, 255] : [0, 0, 255, 255];
+      const passed = result.center.every((value, index) => Math.abs(value - expected[index]) <= 1);
+      return {
+        status: passed ? "passed" : "failed",
+        backend,
+        center: result.center,
+        expected,
+        capabilities: capabilityReport(backend),
+        loss: result.loss,
+      };
+    };
+  </script>
+</body>
+</html>

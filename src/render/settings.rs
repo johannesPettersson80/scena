@@ -3,7 +3,83 @@ use crate::picking::InteractionStyle;
 
 use super::{Renderer, Tonemapper};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum Profile {
+    #[default]
+    Auto,
+    Quality,
+    Balanced,
+    Compatibility,
+    Industrial,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum Quality {
+    Low,
+    #[default]
+    Medium,
+    High,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum RenderMode {
+    #[default]
+    Manual,
+    OnChange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RendererOptions {
+    profile: Profile,
+    quality: Option<Quality>,
+    render_mode: Option<RenderMode>,
+}
+
+impl RendererOptions {
+    pub const fn with_profile(mut self, profile: Profile) -> Self {
+        self.profile = profile;
+        self
+    }
+
+    pub const fn with_quality(mut self, quality: Quality) -> Self {
+        self.quality = Some(quality);
+        self
+    }
+
+    pub const fn with_render_mode(mut self, render_mode: RenderMode) -> Self {
+        self.render_mode = Some(render_mode);
+        self
+    }
+
+    pub const fn profile(self) -> Profile {
+        self.profile
+    }
+
+    pub const fn explicit_quality(self) -> Option<Quality> {
+        self.quality
+    }
+
+    pub const fn explicit_render_mode(self) -> Option<RenderMode> {
+        self.render_mode
+    }
+}
+
 impl Renderer {
+    pub fn profile(&self) -> Profile {
+        self.profile
+    }
+
+    pub fn quality(&self) -> Quality {
+        self.quality
+    }
+
+    pub fn render_mode(&self) -> RenderMode {
+        self.render_mode
+    }
+
     pub fn exposure_ev(&self) -> f32 {
         self.output.exposure_ev()
     }

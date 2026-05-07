@@ -12,6 +12,7 @@ resolver = "3"
 
 [lib]
 path = "src/lib.rs"
+crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 base64 = "0.22"
@@ -22,6 +23,9 @@ wgpu = { version = "29.0.3", features = ["webgl"] }
 
 [features]
 default = []
+controls = []
+controls-winit = ["controls"]
+controls-web = ["controls"]
 obj = []
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
