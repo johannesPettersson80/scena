@@ -4661,7 +4661,20 @@ fn check_m7_ergonomics_contracts(root: &Path, findings: &mut Vec<Finding>) {
         findings,
         "ERGONOMICS-M7",
         "src/assets.rs",
-        &["create_static_batch", "create_static_batch_with_report"],
+        &[
+            "create_static_batch",
+            "create_static_batch_with_report",
+            "assets.material(texture)",
+            "assets.geometry(material)",
+            "assets.texture(material)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/scene.rs",
+        &["scene.mesh(geometry, texture)"],
     );
     require_contains(
         root,

@@ -188,10 +188,6 @@ impl<F> Assets<F> {
         (handle, report)
     }
 
-    pub fn geometry(&self, handle: GeometryHandle) -> Option<GeometryDesc> {
-        self.storage().geometries.get(handle).cloned()
-    }
-
     /// Returns a cloned material descriptor for a typed material handle.
     ///
     /// ```compile_fail
@@ -202,6 +198,18 @@ impl<F> Assets<F> {
     /// ```
     pub fn material(&self, handle: MaterialHandle) -> Option<MaterialDesc> {
         self.storage().materials.get(handle).cloned()
+    }
+
+    /// Returns a cloned geometry descriptor for a typed geometry handle.
+    ///
+    /// ```compile_fail
+    /// # use scena::{Assets, MaterialHandle};
+    /// # let assets = Assets::new();
+    /// # let material: MaterialHandle = todo!();
+    /// let _ = assets.geometry(material);
+    /// ```
+    pub fn geometry(&self, handle: GeometryHandle) -> Option<GeometryDesc> {
+        self.storage().geometries.get(handle).cloned()
     }
 
     pub async fn load_texture(
@@ -234,6 +242,14 @@ impl<F> Assets<F> {
         Ok(handle)
     }
 
+    /// Returns a cloned texture descriptor for a typed texture handle.
+    ///
+    /// ```compile_fail
+    /// # use scena::{Assets, MaterialHandle};
+    /// # let assets = Assets::new();
+    /// # let material: MaterialHandle = todo!();
+    /// let _ = assets.texture(material);
+    /// ```
     pub fn texture(&self, handle: TextureHandle) -> Option<TextureDesc> {
         self.storage().textures.get(handle).cloned()
     }

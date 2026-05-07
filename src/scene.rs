@@ -227,6 +227,14 @@ impl Scene {
     ///
     /// Use [`MeshBuilder::parent`] and [`MeshBuilder::transform`] to override the default
     /// root parent and identity transform, then call [`MeshBuilder::add`] to insert the node.
+    ///
+    /// ```compile_fail
+    /// # use scena::{GeometryHandle, Scene, TextureHandle};
+    /// # let mut scene = Scene::new();
+    /// # let geometry: GeometryHandle = todo!();
+    /// # let texture: TextureHandle = todo!();
+    /// let _ = scene.mesh(geometry, texture);
+    /// ```
     pub fn mesh(&mut self, geometry: GeometryHandle, material: MaterialHandle) -> MeshBuilder<'_> {
         let parent = self.root;
         MeshBuilder {
