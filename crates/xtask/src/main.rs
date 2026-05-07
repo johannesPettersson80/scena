@@ -12,6 +12,7 @@ fn main() {
         Ok(Command::Doctor(mode)) => run_doctor(mode),
         Ok(Command::ClaimAudit) => run_claim_audit(),
         Ok(Command::ReleaseLaneArtifact(lane)) => run_release_lane_artifact(&lane),
+        Ok(Command::ReleaseReadiness) => run_release_readiness(),
         Ok(Command::Help) => {
             print_usage();
             Ok(())
@@ -43,6 +44,7 @@ enum Command {
     Doctor(DoctorMode),
     ClaimAudit,
     ReleaseLaneArtifact(String),
+    ReleaseReadiness,
     Help,
 }
 
@@ -80,9 +82,16 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
         return Err("release-lane-artifact expects exactly one lane argument".to_string());
     }
 
+    if args.first().map(String::as_str) == Some("release-readiness") {
+        if args.len() == 1 {
+            return Ok(Command::ReleaseReadiness);
+        }
+        return Err("release-readiness accepts no arguments".to_string());
+    }
+
     if args.first().map(String::as_str) != Some("doctor") {
         return Err(format!(
-            "unknown command '{}'; expected 'doctor', 'claim-audit', or 'release-lane-artifact'",
+            "unknown command '{}'; expected 'doctor', 'claim-audit', 'release-lane-artifact', or 'release-readiness'",
             args.first().map(String::as_str).unwrap_or("")
         ));
     }
@@ -108,7 +117,7 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
 
 fn print_usage() {
     println!(
-        "Usage:\n  cargo run -p xtask -- doctor --docs\n  cargo run -p xtask -- doctor --architecture\n  cargo run -p xtask -- doctor --full\n  cargo run -p xtask -- claim-audit\n  cargo run -p xtask -- release-lane-artifact <lane>"
+        "Usage:\n  cargo run -p xtask -- doctor --docs\n  cargo run -p xtask -- doctor --architecture\n  cargo run -p xtask -- doctor --full\n  cargo run -p xtask -- claim-audit\n  cargo run -p xtask -- release-lane-artifact <lane>\n  cargo run -p xtask -- release-readiness"
     );
 }
 
@@ -186,6 +195,70 @@ fn run_claim_audit() -> Result<(), Vec<Finding>> {
     Ok(())
 }
 
+fn run_release_readiness() -> Result<(), Vec<Finding>> {
+    let root = repo_root().map_err(|message| vec![Finding::new("RELEASE-READY-ROOT", message)])?;
+    let mut findings = Vec::new();
+    check_release_readiness(&root, &mut findings);
+    if findings.is_empty() {
+        println!("scena release readiness: pass");
+        Ok(())
+    } else {
+        Err(findings)
+    }
+}
+
+fn check_release_readiness(root: &Path, findings: &mut Vec<Finding>) {
+    check_release_readiness_adr(root, findings);
+    check_release_readiness_checklists(root, findings);
+}
+
+fn check_release_readiness_adr(root: &Path, findings: &mut Vec<Finding>) {
+    let rel = "docs/decisions/ADR-0005-local-release-candidate-deferrals.md";
+    let path = root.join(rel);
+    let Ok(text) = fs::read_to_string(&path) else {
+        findings.push(Finding::new(
+            "RELEASE-READY-M10",
+            format!("could not read {rel}"),
+        ));
+        return;
+    };
+    if text.contains("Status: Accepted.")
+        && text.contains("local release-candidate deferrals")
+        && text.contains("blocking for public v1.0")
+    {
+        findings.push(Finding::new(
+            "RELEASE-READY-M10",
+            "ADR-0005 still records blocking local release-candidate deferrals",
+        ));
+    }
+}
+
+fn check_release_readiness_checklists(root: &Path, findings: &mut Vec<Finding>) {
+    for rel in [
+        "docs/checklists/m9-platform-ci-release-parity.md",
+        "docs/checklists/m10-threejs-replacement-acceptance.md",
+        "docs/checklists/threejs-replacement-index.md",
+    ] {
+        let path = root.join(rel);
+        let Ok(text) = fs::read_to_string(&path) else {
+            findings.push(Finding::new(
+                "RELEASE-READY-M10",
+                format!("could not read {rel}"),
+            ));
+            continue;
+        };
+        for (index, line) in text.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("- [ ]") {
+                findings.push(Finding::new(
+                    "RELEASE-READY-M10",
+                    format!("{rel}:{} has open release gate: {trimmed}", index + 1),
+                ));
+            }
+        }
+    }
+}
+
 fn build_claim_audit(root: &Path) -> Result<serde_json::Value, String> {
     let mut files = Vec::new();
     for path in claim_audit_paths(root)? {
@@ -228,6 +301,7 @@ fn build_claim_audit(root: &Path) -> Result<serde_json::Value, String> {
             "browser WebGPU/WebGL2 rendered-output proof",
             "native platform rendered-output proof",
             "clean cargo publish --dry-run",
+            "cargo run -p xtask -- release-readiness",
             "external review reports",
             "named maintainer sign-off"
         ]
@@ -4521,6 +4595,7 @@ fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>) {
             "cargo publish --dry-run",
             "cargo publish",
             "gh release create",
+            "cargo run -p xtask -- release-readiness",
             "needs:",
             "release-lane-artifact",
         ],
@@ -4606,6 +4681,7 @@ fn check_m10_claim_audit_contract(root: &Path, findings: &mut Vec<Finding>) {
             "m10-claim-audit.json",
             "scena.m10.claim_audit.v1",
             "required_final_gates",
+            "release-readiness",
         ],
     );
     require_contains(
@@ -5636,6 +5712,10 @@ mod tests {
             parse_command(vec!["release-lane-artifact".into(), "macos-metal".into()]),
             Ok(Command::ReleaseLaneArtifact("macos-metal".into()))
         );
+        assert_eq!(
+            parse_command(vec!["release-readiness".into()]),
+            Ok(Command::ReleaseReadiness)
+        );
     }
 
     #[test]
@@ -6045,6 +6125,27 @@ mod tests {
                 "missing release artifact upload {artifact_name}"
             );
         }
+    }
+
+    #[test]
+    fn release_readiness_blocks_open_release_deferrals() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_release_readiness(&root, &mut findings);
+
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.message.contains("ADR-0005 still records blocking")),
+            "open ADR-0005 deferrals must block release readiness"
+        );
+        assert!(
+            findings.iter().any(|finding| finding
+                .message
+                .contains("m10-threejs-replacement-acceptance.md")),
+            "open M10 checklist gates must block release readiness"
+        );
     }
 
     #[test]
