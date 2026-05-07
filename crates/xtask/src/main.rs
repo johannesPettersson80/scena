@@ -4777,6 +4777,7 @@ fn check_m7_ergonomics_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "ImportAnchorDebugMetadata",
             "with_damping",
             "m7_beginner_scene_diagnostics_explain_invisible_setups",
+            "m7_error_display_snapshots_cover_beginner_recovery_paths",
             "create_static_batch_with_report",
             "picking_debug_instances",
             "m7_scene_inspection_feature_reports_reproducible_metadata",
@@ -5770,6 +5771,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_gltf_asset_matrix_contract(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn m7_ergonomics_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_m7_ergonomics_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

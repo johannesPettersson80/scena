@@ -1,8 +1,9 @@
 use scena::{
-    Aabb, Assets, DiagnosticCode, DiagnosticSeverity, GeometryDesc, ImportAnchorDebugMetadata,
-    LookupError, MaterialDesc, OrbitControls, PerspectiveCamera, PointerEvent, Primitive,
-    RenderError, Renderer, Scene, SourceCoordinateSystem, SourceUnits, SurfaceEvent, SurfaceSize,
-    SurfaceViewport, TouchEvent, Transform, Vec3,
+    Aabb, AssetError, Assets, Backend, CameraKey, DiagnosticCode, DiagnosticSeverity, GeometryDesc,
+    ImportAnchorDebugMetadata, LookupError, MaterialDesc, NodeKey, NotPreparedReason,
+    OrbitControls, PerspectiveCamera, PointerEvent, PrepareError, Primitive, RenderError, Renderer,
+    Scene, SourceCoordinateSystem, SourceUnits, SurfaceEvent, SurfaceSize, SurfaceViewport,
+    TouchEvent, Transform, Vec3,
 };
 
 #[test]
@@ -372,6 +373,172 @@ fn m7_beginner_scene_diagnostics_explain_invisible_setups() {
                 .as_deref()
                 .is_some_and(|help| help.contains("set_environment"))
     }));
+}
+
+#[test]
+fn m7_error_display_snapshots_cover_beginner_recovery_paths() {
+    let snapshots = vec![
+        (
+            "missing_camera",
+            RenderError::NoActiveCamera.to_string(),
+            RenderError::NoActiveCamera.help(),
+        ),
+        (
+            "not_prepared",
+            RenderError::NotPrepared {
+                reason: NotPreparedReason::NeverPrepared,
+            }
+            .to_string(),
+            RenderError::NotPrepared {
+                reason: NotPreparedReason::NeverPrepared,
+            }
+            .help(),
+        ),
+        (
+            "invalid_camera_handle",
+            LookupError::CameraNotFound(CameraKey::default()).to_string(),
+            LookupError::CameraNotFound(CameraKey::default()).help(),
+        ),
+        (
+            "ambiguous_anchor",
+            LookupError::AmbiguousAnchorName {
+                name: "mount".to_string(),
+                hosts: vec![NodeKey::default(), NodeKey::default()],
+            }
+            .to_string(),
+            LookupError::AmbiguousAnchorName {
+                name: "mount".to_string(),
+                hosts: vec![NodeKey::default(), NodeKey::default()],
+            }
+            .help(),
+        ),
+        (
+            "stale_import",
+            LookupError::StaleImport.to_string(),
+            LookupError::StaleImport.help(),
+        ),
+        (
+            "unsupported_texture_format",
+            AssetError::UnsupportedTextureFormat {
+                path: "asset.ktx2".to_string(),
+                help: "enable feature ktx2",
+            }
+            .to_string(),
+            AssetError::UnsupportedTextureFormat {
+                path: "asset.ktx2".to_string(),
+                help: "enable feature ktx2",
+            }
+            .help(),
+        ),
+        (
+            "surface_lost",
+            RenderError::SurfaceLost { recoverable: true }.to_string(),
+            RenderError::SurfaceLost { recoverable: true }.help(),
+        ),
+        (
+            "backend_capability_mismatch",
+            PrepareError::BackendCapabilityMismatch {
+                feature: "compute culling",
+                backend: Backend::WebGl2,
+                help: "use CPU culling fallback".to_string(),
+            }
+            .to_string(),
+            PrepareError::BackendCapabilityMismatch {
+                feature: "compute culling",
+                backend: Backend::WebGl2,
+                help: "use CPU culling fallback".to_string(),
+            }
+            .help(),
+        ),
+    ];
+
+    assert_eq!(
+        snapshots,
+        vec![
+            (
+                "missing_camera",
+                "scene has no active camera".to_string(),
+                "call Scene::add_default_camera or Scene::set_active_camera"
+            ),
+            (
+                "not_prepared",
+                "renderer is not prepared: prepare has not been called".to_string(),
+                "call Renderer::prepare after scene, target, or renderer changes"
+            ),
+            (
+                "invalid_camera_handle",
+                "camera key does not exist in the scene".to_string(),
+                "use a CameraKey created by this Scene"
+            ),
+            (
+                "ambiguous_anchor",
+                "imported scene anchor name 'mount' is ambiguous across 2 host nodes".to_string(),
+                "call anchors_named or anchors_for to choose a host node"
+            ),
+            (
+                "stale_import",
+                "scene import has been invalidated".to_string(),
+                "re-resolve nodes, anchors, and clips from the replacement SceneImport"
+            ),
+            (
+                "unsupported_texture_format",
+                "texture asset.ktx2 uses an unsupported format: enable feature ktx2".to_string(),
+                "use a supported texture format such as PNG, JPEG, or WebP, or enable a decoder feature when one exists"
+            ),
+            (
+                "surface_lost",
+                "render surface was lost; recoverable=true".to_string(),
+                "call recover_surface, then prepare again"
+            ),
+            (
+                "backend_capability_mismatch",
+                "backend WebGl2 cannot provide required feature compute culling: use CPU culling fallback".to_string(),
+                "query renderer.capabilities and choose a compatible quality/profile path"
+            ),
+        ]
+    );
+
+    let scene = Scene::new();
+    let renderer = Renderer::headless(32, 32).expect("renderer builds");
+    let diagnostic_snapshots = renderer
+        .diagnose_scene(&scene)
+        .into_iter()
+        .map(|diagnostic| {
+            (
+                diagnostic.code,
+                diagnostic.severity,
+                diagnostic.message,
+                diagnostic.help.expect("beginner diagnostics include help"),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        diagnostic_snapshots,
+        vec![
+            (
+                DiagnosticCode::MissingActiveCamera,
+                DiagnosticSeverity::Error,
+                "scene has no active camera".to_string(),
+                "call Scene::add_default_camera or Scene::set_active_camera before rendering"
+                    .to_string(),
+            ),
+            (
+                DiagnosticCode::InvisibleScene,
+                DiagnosticSeverity::Warning,
+                "scene has no visible drawables for the active camera".to_string(),
+                "check node visibility, parent visibility, camera layer masks, or add a mesh/renderable node"
+                    .to_string(),
+            ),
+            (
+                DiagnosticCode::MissingLightingOrEnvironment,
+                DiagnosticSeverity::Warning,
+                "scene has no active light nodes and no renderer environment".to_string(),
+                "call renderer.set_environment for image-based lighting or add a scene light for lit materials"
+                    .to_string(),
+            ),
+        ]
+    );
 }
 
 #[cfg(feature = "inspection")]
