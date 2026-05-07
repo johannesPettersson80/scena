@@ -3,6 +3,7 @@ import init, {
   m6RenderWebgpuProbe,
   m6RenderSurfaceLifecycleProbe,
   m6RenderBenchmarkProbe,
+  m6RenderStateLifecycleProbe,
   m6RenderWorkflowProbe,
 } from "/pkg/scena.js";
 
@@ -102,3 +103,10 @@ window.scenaM6RustWasmBenchmarkProbe = async function scenaM6RustWasmBenchmarkPr
     m6RenderBenchmarkProbe(canvas, backend),
   );
 };
+
+window.scenaM6RustWasmStateLifecycleProbe =
+  async function scenaM6RustWasmStateLifecycleProbe(backend) {
+    return runProbe(backend, "state-lifetime-idle", (canvas) =>
+      m6RenderStateLifecycleProbe(canvas, backend),
+    );
+  };

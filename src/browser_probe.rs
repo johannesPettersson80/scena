@@ -50,6 +50,15 @@ pub async fn m6_render_benchmark_probe(
     probes::render_benchmark_probe(canvas, backend).await
 }
 
+#[wasm_bindgen(js_name = m6RenderStateLifecycleProbe)]
+pub async fn m6_render_state_lifecycle_probe(
+    canvas: HtmlCanvasElement,
+    backend: String,
+) -> Result<String, JsValue> {
+    let backend = parse_browser_backend(&backend)?;
+    probes::render_state_lifecycle_probe(canvas, backend).await
+}
+
 async fn render_probe(canvas: HtmlCanvasElement, backend: Backend) -> Result<String, JsValue> {
     let assets = Assets::new();
     let (mut scene, camera) = scene_with_triangle();

@@ -11,6 +11,10 @@ use crate::{
     RendererOptions, RetainPolicy, SurfaceEvent,
 };
 
+mod state_lifecycle;
+
+pub(super) use state_lifecycle::render_state_lifecycle_probe;
+
 pub(super) async fn render_surface_lifecycle_probe(
     canvas: HtmlCanvasElement,
     backend: Backend,

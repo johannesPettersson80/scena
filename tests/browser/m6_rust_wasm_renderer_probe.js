@@ -55,6 +55,43 @@ function serve(browserRoot, pkgRoot, fixtureRoot) {
   });
 }
 
+const STATE_LIFECYCLE_EVENTS = [
+  "resource-lifetime",
+  "idle-render-skipped",
+  "dirty-transform",
+  "dirty-material",
+  "dirty-instance",
+  "dirty-camera",
+  "dirty-resize-dpr",
+  "dirty-hover-selection",
+  "dirty-animation-mixer",
+  "context-recovery",
+];
+
+function assertStateLifecycleProbe(backend, result) {
+  const events = new Set(result.event_sequence || []);
+  for (const event of STATE_LIFECYCLE_EVENTS) {
+    if (!events.has(event)) {
+      throw new Error(
+        `${backend} state lifecycle probe did not record required event ${event}: ${JSON.stringify(result)}`,
+      );
+    }
+  }
+  if (!result.resource_lifetime || result.resource_lifetime.pending_returned_to_baseline !== true) {
+    throw new Error(
+      `${backend} state lifecycle probe did not prove resource-lifetime baseline recovery: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    !result.allocation_steady_state ||
+    result.allocation_steady_state.idle_render_skipped !== true
+  ) {
+    throw new Error(
+      `${backend} state lifecycle probe did not prove idle-render-skipped behavior: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
 async function main() {
   const { chromium } = loadPlaywright();
   const browserRoot = __dirname;
@@ -147,6 +184,17 @@ async function main() {
           `${backend} browser benchmark probe failed: ${JSON.stringify(benchmarkResult)}`,
         );
       }
+      const stateLifecycleResult = await page.evaluate(
+        (name) => window.scenaM6RustWasmStateLifecycleProbe(name),
+        backend,
+      );
+      results.push(stateLifecycleResult);
+      if (stateLifecycleResult.status !== "passed") {
+        throw new Error(
+          `${backend} browser state lifecycle probe failed: ${JSON.stringify(stateLifecycleResult)}`,
+        );
+      }
+      assertStateLifecycleProbe(backend, stateLifecycleResult);
       await page.close();
     }
   } finally {

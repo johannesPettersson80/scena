@@ -4347,6 +4347,7 @@ fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Finding>) {
             "m6RenderWorkflowProbe",
             "m6RenderSurfaceLifecycleProbe",
             "m6RenderBenchmarkProbe",
+            "m6RenderStateLifecycleProbe",
             "Renderer::from_surface_async",
             "prepare_with_assets",
             "Renderer::render",
@@ -4362,6 +4363,25 @@ fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Finding>) {
             "scena.m6.browser_surface_lifecycle_probe.v1",
             "scena.m6.browser_benchmark_probe.v1",
             "surface-context-lifecycle",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "src/browser_probe/probes/state_lifecycle.rs",
+        &[
+            "scena.m6.browser_state_lifecycle_probe.v1",
+            "dirty-transform",
+            "dirty-material",
+            "dirty-instance",
+            "dirty-camera",
+            "dirty-resize-dpr",
+            "dirty-hover-selection",
+            "dirty-animation-mixer",
+            "context-recovery",
+            "resource-lifetime",
+            "idle-render-skipped",
         ],
     );
     require_contains(
@@ -4401,6 +4421,7 @@ fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Finding>) {
             "scenaM6RustWasmWorkflowProbe",
             "scenaM6RustWasmLifecycleProbe",
             "scenaM6RustWasmBenchmarkProbe",
+            "scenaM6RustWasmStateLifecycleProbe",
             "/fixtures/",
             "webgl2",
             "webgpu",
@@ -4424,10 +4445,12 @@ fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Finding>) {
             "m6RenderWorkflowProbe",
             "m6RenderSurfaceLifecycleProbe",
             "m6RenderBenchmarkProbe",
+            "m6RenderStateLifecycleProbe",
             "readWebGl2Pixels",
             "scenaM6RustWasmWorkflowProbe",
             "scenaM6RustWasmLifecycleProbe",
             "scenaM6RustWasmBenchmarkProbe",
+            "scenaM6RustWasmStateLifecycleProbe",
             "nonblack",
         ],
     );
@@ -4440,6 +4463,9 @@ fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Finding>) {
             "wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe",
             "node tests/browser/m6_rust_wasm_renderer_probe.js",
             "VISUAL-BROWSER-M6",
+            "dirty-transform",
+            "resource-lifetime",
+            "idle-render-skipped",
         ],
     );
 }
@@ -5944,6 +5970,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_m2_browser_rendered_output(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn m6_browser_renderer_probe_is_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_m6_browser_renderer_probe(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }
