@@ -267,6 +267,17 @@ impl fmt::Display for LookupError {
                 "imported scene anchor name '{name}' is ambiguous across {} host nodes",
                 hosts.len()
             ),
+            Self::ClipNotFound { name } => {
+                write!(
+                    formatter,
+                    "imported scene has no animation clip named '{name}'"
+                )
+            }
+            Self::AmbiguousClipName { name, matches } => write!(
+                formatter,
+                "imported scene animation clip name '{name}' is ambiguous across {} clips",
+                matches.len()
+            ),
             Self::PathNotFound { path } => {
                 write!(formatter, "imported scene path '{path}' was not found")
             }

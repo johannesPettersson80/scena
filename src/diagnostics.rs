@@ -1,5 +1,6 @@
 //! Structured errors, debug overlays, capability reports, and renderer stats.
 
+use crate::animation::AnimationClipKey;
 use crate::assets::{EnvironmentHandle, GeometryHandle, MaterialHandle};
 use crate::geometry::GeometryTopology;
 use crate::material::{AlphaMode, MaterialKind};
@@ -162,11 +163,30 @@ pub enum ChangeKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LookupError {
     NodeNotFound(NodeKey),
-    NodeNameNotFound { name: String },
-    AmbiguousNodeName { name: String, matches: Vec<NodeKey> },
-    AnchorNotFound { name: String },
-    AmbiguousAnchorName { name: String, hosts: Vec<NodeKey> },
-    PathNotFound { path: String },
+    NodeNameNotFound {
+        name: String,
+    },
+    AmbiguousNodeName {
+        name: String,
+        matches: Vec<NodeKey>,
+    },
+    AnchorNotFound {
+        name: String,
+    },
+    AmbiguousAnchorName {
+        name: String,
+        hosts: Vec<NodeKey>,
+    },
+    ClipNotFound {
+        name: String,
+    },
+    AmbiguousClipName {
+        name: String,
+        matches: Vec<AnimationClipKey>,
+    },
+    PathNotFound {
+        path: String,
+    },
     StaleImport,
     CameraNotFound(CameraKey),
     ClippingPlaneNotFound(ClippingPlaneKey),

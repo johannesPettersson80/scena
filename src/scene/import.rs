@@ -2,17 +2,22 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::animation::AnimationClipKey;
 use crate::assets::{AssetFetcher, AssetPath, Assets, SceneAsset};
 use crate::diagnostics::{ImportError, InstantiateError, LookupError};
 use crate::geometry::Aabb;
 
-use super::{MeshNode, NodeKey, NodeKind, Quat, Scene, Transform, Vec3};
+use self::bounds::{transform_aabb, union_optional};
+use super::{MeshNode, NodeKey, NodeKind, Scene, Transform, Vec3};
+
+mod bounds;
 
 #[derive(Debug, Clone)]
 pub struct SceneImport {
     roots: Vec<NodeKey>,
     records: Vec<ImportedNode>,
     anchors: Vec<ImportAnchor>,
+    clips: Vec<ImportClip>,
     live: Arc<AtomicBool>,
 }
 
@@ -21,6 +26,12 @@ pub struct ImportAnchor {
     name: String,
     node: NodeKey,
     transform: Transform,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportClip {
+    key: AnimationClipKey,
+    name: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -85,6 +96,14 @@ impl Scene {
             roots: Vec::new(),
             records: Vec::new(),
             anchors: Vec::new(),
+            clips: scene_asset
+                .clips()
+                .iter()
+                .map(|clip| ImportClip {
+                    key: AnimationClipKey::fresh(),
+                    name: clip.name().map(str::to_string),
+                })
+                .collect(),
             live: Arc::new(AtomicBool::new(true)),
         };
         for source_index in roots {
@@ -204,6 +223,16 @@ impl ImportAnchor {
 
     pub const fn transform(&self) -> Transform {
         self.transform
+    }
+}
+
+impl ImportClip {
+    pub const fn key(&self) -> AnimationClipKey {
+        self.key
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
     }
 }
 
@@ -351,6 +380,38 @@ impl SceneImport {
         &self.roots
     }
 
+    pub fn clip(&self, name: &str) -> Result<&ImportClip, LookupError> {
+        self.ensure_live()?;
+        let matches = self.clips_named(name).collect::<Vec<_>>();
+        match matches.as_slice() {
+            [] => Err(LookupError::ClipNotFound {
+                name: name.to_string(),
+            }),
+            [clip] => Ok(*clip),
+            _ => Err(LookupError::AmbiguousClipName {
+                name: name.to_string(),
+                matches: matches.iter().map(|clip| clip.key()).collect(),
+            }),
+        }
+    }
+
+    pub fn first_clip(&self, name: &str) -> Option<&ImportClip> {
+        if !self.is_live() {
+            return None;
+        }
+        self.clips_named(name).next()
+    }
+
+    pub fn clips_named<'import>(
+        &'import self,
+        name: &str,
+    ) -> impl Iterator<Item = &'import ImportClip> + 'import {
+        let name = name.to_string();
+        self.clips
+            .iter()
+            .filter(move |clip| clip.name() == Some(name.as_str()))
+    }
+
     pub fn anchor(&self, name: &str) -> Result<&ImportAnchor, LookupError> {
         self.ensure_live()?;
         let matches = self.anchors_named(name).collect::<Vec<_>>();
@@ -422,87 +483,6 @@ impl SceneImport {
     fn mark_stale(&self) {
         self.live.store(false, Ordering::Release);
     }
-}
-
-fn union_optional(current: Option<Aabb>, next: Aabb) -> Aabb {
-    match current {
-        Some(current) => union_aabb(current, next),
-        None => next,
-    }
-}
-
-fn union_aabb(left: Aabb, right: Aabb) -> Aabb {
-    Aabb::new(
-        Vec3::new(
-            left.min.x.min(right.min.x),
-            left.min.y.min(right.min.y),
-            left.min.z.min(right.min.z),
-        ),
-        Vec3::new(
-            left.max.x.max(right.max.x),
-            left.max.y.max(right.max.y),
-            left.max.z.max(right.max.z),
-        ),
-    )
-}
-
-fn transform_aabb(bounds: Aabb, transform: Transform) -> Aabb {
-    let corners = [
-        Vec3::new(bounds.min.x, bounds.min.y, bounds.min.z),
-        Vec3::new(bounds.max.x, bounds.min.y, bounds.min.z),
-        Vec3::new(bounds.min.x, bounds.max.y, bounds.min.z),
-        Vec3::new(bounds.max.x, bounds.max.y, bounds.min.z),
-        Vec3::new(bounds.min.x, bounds.min.y, bounds.max.z),
-        Vec3::new(bounds.max.x, bounds.min.y, bounds.max.z),
-        Vec3::new(bounds.min.x, bounds.max.y, bounds.max.z),
-        Vec3::new(bounds.max.x, bounds.max.y, bounds.max.z),
-    ];
-    let mut transformed = transform_point(corners[0], transform);
-    let mut result = Aabb::new(transformed, transformed);
-    for corner in &corners[1..] {
-        transformed = transform_point(*corner, transform);
-        result = union_aabb(result, Aabb::new(transformed, transformed));
-    }
-    result
-}
-
-fn transform_point(point: Vec3, transform: Transform) -> Vec3 {
-    let scaled = Vec3::new(
-        point.x * transform.scale.x,
-        point.y * transform.scale.y,
-        point.z * transform.scale.z,
-    );
-    add_vec3(
-        rotate_vec3(transform.rotation, scaled),
-        transform.translation,
-    )
-}
-
-fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
-    let length_squared = rotation.x * rotation.x
-        + rotation.y * rotation.y
-        + rotation.z * rotation.z
-        + rotation.w * rotation.w;
-    if length_squared <= f32::EPSILON || !length_squared.is_finite() {
-        return vector;
-    }
-    let inverse_length = length_squared.sqrt().recip();
-    let qx = rotation.x * inverse_length;
-    let qy = rotation.y * inverse_length;
-    let qz = rotation.z * inverse_length;
-    let qw = rotation.w * inverse_length;
-    let tx = 2.0 * (qy * vector.z - qz * vector.y);
-    let ty = 2.0 * (qz * vector.x - qx * vector.z);
-    let tz = 2.0 * (qx * vector.y - qy * vector.x);
-    Vec3::new(
-        vector.x + qw * tx + (qy * tz - qz * ty),
-        vector.y + qw * ty + (qz * tx - qx * tz),
-        vector.z + qw * tz + (qx * ty - qy * tx),
-    )
-}
-
-fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(left.x + right.x, left.y + right.y, left.z + right.z)
 }
 
 fn path_segments(path: &str) -> Option<Vec<String>> {

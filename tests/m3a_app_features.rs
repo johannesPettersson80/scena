@@ -299,6 +299,53 @@ fn scene_import_anchor_lookups_parse_gltf_extras_and_stale() {
 }
 
 #[test]
+fn scene_import_clip_lookups_are_import_local_and_stale() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(
+        "memory://clips.gltf",
+        r#"{
+            "asset": { "version": "2.0" },
+            "nodes": [{ "name": "Root" }],
+            "animations": [
+                { "name": "Spin" },
+                { "name": "Pulse" },
+                { "name": "Spin" }
+            ]
+        }"#,
+    ));
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://clips.gltf")).expect("clip glTF loads");
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("clip scene instantiates");
+
+    let pulse = import.clip("Pulse").expect("unique clip lookup succeeds");
+    assert_eq!(pulse.name(), Some("Pulse"));
+    assert_eq!(
+        import.first_clip("Spin").expect("first spin exists").name(),
+        Some("Spin")
+    );
+    assert_eq!(import.clips_named("Spin").count(), 2);
+    assert!(matches!(
+        import.clip("Spin"),
+        Err(LookupError::AmbiguousClipName { ref name, ref matches })
+            if name == "Spin" && matches.len() == 2
+    ));
+
+    let replacement = scene
+        .replace_import(&import, &scene_asset)
+        .expect("replacement succeeds");
+    assert_ne!(
+        replacement.clip("Pulse").expect("fresh clip exists").key(),
+        pulse.key()
+    );
+    assert!(matches!(
+        import.clip("Pulse"),
+        Err(LookupError::StaleImport)
+    ));
+}
+
+#[test]
 fn scene_pick_returns_typed_hit_target_for_renderable_triangle() {
     let mut scene = Scene::new();
     let camera = scene

@@ -21,7 +21,9 @@ mod picking;
 mod render_nodes;
 mod view;
 pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
-pub use import::{ImportAnchor, ImportOptions, SceneImport, SourceCoordinateSystem, SourceUnits};
+pub use import::{
+    ImportAnchor, ImportClip, ImportOptions, SceneImport, SourceCoordinateSystem, SourceUnits,
+};
 pub use instances::{Instance, InstanceCullingPolicy, InstanceId, InstanceSet};
 pub use labels::{LabelBillboard, LabelDesc, LabelRasterization};
 pub use lights::{DirectionalLight, Light, LightBuilder, PointLight, SpotLight};

@@ -14,6 +14,7 @@ pub mod platform;
 pub mod render;
 pub mod scene;
 
+pub use animation::AnimationClipKey;
 #[cfg(target_arch = "wasm32")]
 pub use assets::BrowserAssetFetcher;
 #[cfg(not(target_arch = "wasm32"))]
@@ -21,8 +22,8 @@ pub use assets::FileAssetFetcher;
 pub use assets::{
     AssetFetcher, AssetPath, Assets, DefaultAssetFetcher, EnvironmentDerivative, EnvironmentDesc,
     EnvironmentHandle, EnvironmentSourceKind, GeometryHandle, MaterialHandle, ModelHandle,
-    RetainPolicy, SceneAsset, SceneAssetAnchor, SceneAssetNode, TextureDesc, TextureHandle,
-    WasmEnvironmentDelivery,
+    RetainPolicy, SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetNode, TextureDesc,
+    TextureHandle, WasmEnvironmentDelivery,
 };
 pub use diagnostics::{
     AlphaPipelineStatus, AssetError, Backend, BuildError, Capabilities, CapabilityStatus,
@@ -44,11 +45,11 @@ pub use platform::{PlatformSurface, SurfaceEvent, SurfaceKind, SurfaceSize};
 pub use render::{OffscreenTarget, PixelReadback, Renderer, Tonemapper};
 pub use scene::{
     Angle, Camera, CameraKey, ClippingPlane, ClippingPlaneKey, ClippingPlaneSet, DepthRange,
-    DirectionalLight, ImportAnchor, ImportOptions, Instance, InstanceCullingPolicy, InstanceId,
-    InstanceSet, InstanceSetKey, LabelBillboard, LabelDesc, LabelKey, LabelRasterization, Light,
-    LightBuilder, LightKey, MeshBuilder, MeshNode, ModelBuilder, ModelNode, Node, NodeKey,
-    NodeKind, OrthographicCamera, PerspectiveCamera, PointLight, Quat, Scene, SceneImport,
-    SourceCoordinateSystem, SourceUnits, SpotLight, Transform, Vec3,
+    DirectionalLight, ImportAnchor, ImportClip, ImportOptions, Instance, InstanceCullingPolicy,
+    InstanceId, InstanceSet, InstanceSetKey, LabelBillboard, LabelDesc, LabelKey,
+    LabelRasterization, Light, LightBuilder, LightKey, MeshBuilder, MeshNode, ModelBuilder,
+    ModelNode, Node, NodeKey, NodeKind, OrthographicCamera, PerspectiveCamera, PointLight, Quat,
+    Scene, SceneImport, SourceCoordinateSystem, SourceUnits, SpotLight, Transform, Vec3,
 };
 
 /// Crate-level result type for APIs that can return any structured `scena` error.

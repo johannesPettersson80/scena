@@ -24,6 +24,7 @@ struct SceneAssetData {
     node_count: usize,
     mesh_count: usize,
     nodes: Vec<SceneAssetNode>,
+    clips: Vec<SceneAssetClip>,
     extensions_used: Vec<String>,
     extensions_required: Vec<String>,
 }
@@ -51,6 +52,11 @@ pub struct SceneAssetAnchor {
     transform: Transform,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct SceneAssetClip {
+    name: Option<String>,
+}
+
 impl SceneAsset {
     pub fn empty() -> Self {
         Self {
@@ -59,6 +65,7 @@ impl SceneAsset {
                 node_count: 0,
                 mesh_count: 0,
                 nodes: Vec::new(),
+                clips: Vec::new(),
                 extensions_used: Vec::new(),
                 extensions_required: Vec::new(),
             }),
@@ -127,6 +134,7 @@ impl SceneAsset {
             storage,
         )?;
         let nodes = parse_gltf_nodes(&json, &meshes);
+        let clips = parse_gltf_clips(&json);
         let node_count = nodes.len();
         let mesh_count = meshes.len();
         Ok(Self {
@@ -135,6 +143,7 @@ impl SceneAsset {
                 node_count,
                 mesh_count,
                 nodes,
+                clips,
                 extensions_used,
                 extensions_required,
             }),
@@ -155,6 +164,10 @@ impl SceneAsset {
 
     pub fn nodes(&self) -> &[SceneAssetNode] {
         &self.inner.nodes
+    }
+
+    pub fn clips(&self) -> &[SceneAssetClip] {
+        &self.inner.clips
     }
 
     pub fn extensions_used(&self) -> &[String] {
@@ -302,6 +315,12 @@ impl SceneAssetAnchor {
     }
 }
 
+impl SceneAssetClip {
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+}
+
 fn validate_gltf_version(path: &AssetPath, json: &JsonValue) -> Result<(), AssetError> {
     let version = json
         .get("asset")
@@ -379,6 +398,23 @@ fn parse_node_anchors(node: &JsonValue) -> Vec<SceneAssetAnchor> {
                         name: name.to_string(),
                         transform: parse_node_transform(anchor),
                     })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_gltf_clips(json: &JsonValue) -> Vec<SceneAssetClip> {
+    json.get("animations")
+        .and_then(JsonValue::as_array)
+        .map(|animations| {
+            animations
+                .iter()
+                .map(|animation| SceneAssetClip {
+                    name: animation
+                        .get("name")
+                        .and_then(JsonValue::as_str)
+                        .map(str::to_string),
                 })
                 .collect()
         })
