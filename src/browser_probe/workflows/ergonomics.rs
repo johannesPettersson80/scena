@@ -4,7 +4,7 @@ use wasm_bindgen::prelude::JsValue;
 use super::{WorkflowScene, add_default_camera};
 use crate::{
     Aabb, AlphaMode, Assets, Color, DiagnosticSeverity, DirectionalLight, GeometryDesc,
-    MaterialDesc, Primitive, Renderer, Scene, SourceCoordinateSystem, SourceUnits,
+    MaterialDesc, Primitive, Renderer, RetainPolicy, Scene, SourceCoordinateSystem, SourceUnits,
     TextureColorSpace, TextureTransform, Transform, Vec3,
 };
 
@@ -17,6 +17,7 @@ pub(super) async fn build_ergonomics_scene(workflow: &str) -> Result<WorkflowSce
         "layers-helper-on-top" => layers_helper_on_top_scene(),
         "beginner-diagnostics" => beginner_diagnostics_scene(),
         "material-textures" => material_textures_scene().await,
+        "asset-cache-reload" => asset_cache_reload_scene().await,
         other => Err(JsValue::from_str(&format!(
             "unknown M6 browser workflow probe: {other}"
         ))),
@@ -326,6 +327,70 @@ async fn material_textures_scene() -> Result<WorkflowScene, JsValue> {
             "alpha": "Blend",
             "double_sided": true,
             "texture_transform": true,
+        }),
+    })
+}
+
+async fn asset_cache_reload_scene() -> Result<WorkflowScene, JsValue> {
+    let mut assets = Assets::new();
+    assets.set_retain_policy(RetainPolicy::Always);
+    let first = assets
+        .load_scene_with_report("/fixtures/gltf/mesh_material_vertex_color_scene.gltf")
+        .await
+        .map_err(|error| JsValue::from_str(&format!("browser first load failed: {error:?}")))?;
+    let cached = assets
+        .load_scene_with_report("/fixtures/gltf/mesh_material_vertex_color_scene.gltf")
+        .await
+        .map_err(|error| JsValue::from_str(&format!("browser cached load failed: {error:?}")))?;
+    let reloaded = assets
+        .reload_scene(first.asset())
+        .await
+        .map_err(|error| JsValue::from_str(&format!("browser reload failed: {error:?}")))?;
+    let texture_a = assets
+        .load_texture(
+            "/fixtures/textures/browser-cache.png",
+            TextureColorSpace::Srgb,
+        )
+        .await
+        .map_err(|error| JsValue::from_str(&format!("browser texture A failed: {error:?}")))?;
+    let texture_b = assets
+        .load_texture(
+            "/fixtures/textures/browser-cache.png",
+            TextureColorSpace::Srgb,
+        )
+        .await
+        .map_err(|error| JsValue::from_str(&format!("browser texture B failed: {error:?}")))?;
+    let texture_linear = assets
+        .load_texture(
+            "/fixtures/textures/browser-cache.png",
+            TextureColorSpace::Linear,
+        )
+        .await
+        .map_err(|error| JsValue::from_str(&format!("browser texture linear failed: {error:?}")))?;
+
+    let mut scene = Scene::new();
+    let import = scene.instantiate(&reloaded).map_err(|error| {
+        JsValue::from_str(&format!("browser reload instantiate failed: {error:?}"))
+    })?;
+    let camera = add_default_camera(&mut scene)?;
+    if let Some(bounds) = import.bounds_world(&scene) {
+        scene.frame(camera, bounds).map_err(|error| {
+            JsValue::from_str(&format!("browser cache frame failed: {error:?}"))
+        })?;
+    }
+    Ok(WorkflowScene {
+        assets,
+        scene,
+        camera,
+        metadata: json!({
+            "first_cache_hit": first.cache_hit(),
+            "cached_cache_hit": cached.cache_hit(),
+            "first_fetched_bytes": first.fetched_bytes(),
+            "cached_fetched_bytes": cached.fetched_bytes(),
+            "reload_node_count": reloaded.node_count(),
+            "texture_dedup": texture_a == texture_b,
+            "texture_color_space_split": texture_a != texture_linear,
+            "retain_policy": "Always",
         }),
     })
 }

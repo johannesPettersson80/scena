@@ -5044,6 +5044,25 @@ fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Vec<Finding>)
             "m8_ktx2_basisu_texture_requires_feature_or_explicit_decoder_policy",
             "m8_ktx2_basisu_feature_loads_compressed_texture_descriptor",
             "m8_asset_resource_lifetime_counters_return_to_baseline_after_reload_cycle",
+            "m8_khronos_material_texture_samples_cover_promoted_extensions",
+            "m8_real_world_fixture_matrix_covers_asset_edge_cases",
+            "m8_native_fetcher_cache_dedup_reload_retain_and_external_buffers_are_explicit",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "docs/assets/gltf-asset-matrix.md",
+        &[
+            "Khronos `AlphaBlendModeTest`",
+            "Khronos `TextureSettingsTest`",
+            "Khronos `TextureTransformTest`",
+            "Khronos `UnlitTest`",
+            "`memory://real-world/material-degradation.gltf`",
+            "`memory://real-world/external/scene.gltf`",
+            "`memory://real-world/embedded.glb`",
+            "`memory://real-world/missing-texture.gltf`",
         ],
     );
     require_contains(
@@ -5064,14 +5083,14 @@ fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Vec<Finding>)
         findings,
         "ASSETS-M8",
         "src/browser_probe/workflows/ergonomics.rs",
-        &["material-textures"],
+        &["material-textures", "asset-cache-reload"],
     );
     require_contains(
         root,
         findings,
         "ASSETS-M8",
         "tests/browser/m6_rust_wasm_renderer_probe.js",
-        &["material-textures"],
+        &["material-textures", "asset-cache-reload"],
     );
 }
 

@@ -3,8 +3,9 @@ use std::future::{Ready, ready};
 
 use scena::{
     AlphaMode, AssetError, AssetFetcher, AssetLoadControl, AssetLoadProgress, AssetPath, Assets,
-    GltfDecoderPolicy, GltfExtensionStatus, MaterialDesc, NotPreparedReason, RenderError, Renderer,
-    RetainPolicy, Scene, TextureColorSpace, TextureFilter, TextureWrap, Transform,
+    GltfDecoderPolicy, GltfExtensionStatus, MaterialDesc, MaterialKind, NotPreparedReason,
+    RenderError, Renderer, RetainPolicy, Scene, TextureColorSpace, TextureFilter, TextureWrap,
+    Transform,
 };
 
 #[test]
@@ -583,6 +584,407 @@ fn m8_asset_resource_lifetime_counters_return_to_baseline_after_reload_cycle() {
     assert_eq!(released.environments, baseline.environments);
     assert_eq!(released.live_logical_handles, baseline.live_logical_handles);
     assert_eq!(released.pending_destructions, baseline.pending_destructions);
+}
+
+#[test]
+fn m8_khronos_material_texture_samples_cover_promoted_extensions() {
+    let assets = Assets::new();
+
+    let alpha = pollster::block_on(assets.load_scene_with_report(
+        "tests/assets/gltf/khronos/AlphaBlendModeTest/AlphaBlendModeTest.gltf",
+    ))
+    .expect("Khronos alpha material sample loads");
+    assert_eq!(alpha.external_buffers(), 1);
+    let alpha_materials = scene_materials(alpha.asset(), &assets);
+    assert!(
+        alpha_materials
+            .iter()
+            .any(|material| material.alpha_mode() == AlphaMode::Blend)
+    );
+    assert!(
+        alpha_materials
+            .iter()
+            .any(|material| material.alpha_mode() == AlphaMode::Mask { cutoff: 0.25 })
+    );
+    assert!(
+        alpha_materials
+            .iter()
+            .any(|material| material.alpha_mode() == AlphaMode::Mask { cutoff: 0.75 })
+    );
+    assert!(
+        alpha_materials
+            .iter()
+            .any(|material| material.normal_texture().is_some())
+    );
+    assert!(
+        alpha_materials
+            .iter()
+            .any(|material| material.occlusion_texture().is_some())
+    );
+    assert!(
+        alpha_materials
+            .iter()
+            .any(|material| material.metallic_roughness_texture().is_some())
+    );
+
+    let settings = pollster::block_on(assets.load_scene_with_report(
+        "tests/assets/gltf/khronos/TextureSettingsTest/TextureSettingsTest.gltf",
+    ))
+    .expect("Khronos texture settings sample loads");
+    assert_eq!(settings.external_buffers(), 1);
+    let settings_textures = scene_texture_descs(settings.asset(), &assets);
+    assert!(settings_textures.iter().any(|texture| {
+        texture.sampler().wrap_t() == TextureWrap::MirroredRepeat
+            && texture.sampler().min_filter() == Some(TextureFilter::NearestMipmapLinear)
+    }));
+    assert!(
+        settings_textures
+            .iter()
+            .any(|texture| texture.sampler().wrap_s() == TextureWrap::ClampToEdge)
+    );
+
+    let transform = pollster::block_on(assets.load_scene_with_report(
+        "tests/assets/gltf/khronos/TextureTransformTest/TextureTransformTest.gltf",
+    ))
+    .expect("Khronos texture transform sample loads");
+    assert_eq!(transform.external_buffers(), 1);
+    assert!(
+        transform
+            .asset()
+            .extensions_used()
+            .iter()
+            .any(|extension| extension == "KHR_texture_transform")
+    );
+    let transform_materials = scene_materials(transform.asset(), &assets);
+    assert!(transform_materials.iter().any(|material| {
+        material
+            .base_color_texture_transform()
+            .is_some_and(|transform| transform.offset() == [0.5, 0.0])
+    }));
+    assert!(transform_materials.iter().any(|material| {
+        material
+            .base_color_texture_transform()
+            .is_some_and(|transform| transform.rotation_radians() > 0.29)
+    }));
+    assert!(transform_materials.iter().any(|material| {
+        material
+            .base_color_texture_transform()
+            .is_some_and(|transform| transform.scale() == [1.5, 1.5])
+    }));
+
+    let unlit = pollster::block_on(
+        assets.load_scene_with_report("tests/assets/gltf/khronos/UnlitTest/UnlitTest.gltf"),
+    )
+    .expect("Khronos unlit sample loads");
+    assert_eq!(unlit.external_buffers(), 1);
+    assert!(
+        unlit
+            .asset()
+            .extensions_required()
+            .iter()
+            .any(|extension| extension == "KHR_materials_unlit")
+    );
+    assert!(
+        scene_materials(unlit.asset(), &assets)
+            .iter()
+            .any(|material| material.kind() == MaterialKind::Unlit)
+    );
+}
+
+#[test]
+fn m8_real_world_fixture_matrix_covers_asset_edge_cases() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![
+        (
+            AssetPath::from("memory://real-world/material-degradation.gltf"),
+            br#"{
+                "asset": { "version": "2.0" },
+                "extensionsUsed": [
+                    "KHR_materials_clearcoat",
+                    "KHR_materials_transmission",
+                    "KHR_materials_ior",
+                    "KHR_materials_volume",
+                    "KHR_materials_variants",
+                    "KHR_texture_basisu",
+                    "KHR_draco_mesh_compression",
+                    "EXT_meshopt_compression"
+                ],
+                "nodes": [{ "name": "RealWorldOptionalExtensions" }]
+            }"#
+            .to_vec(),
+        ),
+        (
+            AssetPath::from("memory://real-world/draco-required.gltf"),
+            required_extension_gltf("KHR_draco_mesh_compression").into_bytes(),
+        ),
+        (
+            AssetPath::from("memory://real-world/meshopt-required.gltf"),
+            required_extension_gltf("EXT_meshopt_compression").into_bytes(),
+        ),
+        (
+            AssetPath::from("memory://real-world/missing-texture.gltf"),
+            missing_texture_gltf().to_vec(),
+        ),
+        (
+            AssetPath::from("memory://real-world/external/scene.gltf"),
+            external_buffer_gltf("triangle.bin").into_bytes(),
+        ),
+        (
+            AssetPath::from("memory://real-world/external/triangle.bin"),
+            external_triangle_buffer(),
+        ),
+        (
+            AssetPath::from("memory://real-world/embedded.glb"),
+            minimal_glb_triangle_scene(),
+        ),
+    ]));
+
+    let degraded =
+        pollster::block_on(assets.load_scene("memory://real-world/material-degradation.gltf"))
+            .expect("optional real-world extension fixture loads with diagnostics");
+    for extension in [
+        "KHR_materials_clearcoat",
+        "KHR_materials_transmission",
+        "KHR_materials_ior",
+        "KHR_materials_volume",
+        "KHR_materials_variants",
+        "KHR_texture_basisu",
+        "KHR_draco_mesh_compression",
+        "EXT_meshopt_compression",
+    ] {
+        assert!(
+            degraded
+                .extension_diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.extension() == extension),
+            "{extension} should have explicit degradation/support metadata",
+        );
+    }
+
+    for (path, extension) in [
+        (
+            "memory://real-world/draco-required.gltf",
+            "KHR_draco_mesh_compression",
+        ),
+        (
+            "memory://real-world/meshopt-required.gltf",
+            "EXT_meshopt_compression",
+        ),
+    ] {
+        let error = pollster::block_on(assets.load_scene(path))
+            .expect_err("required compressed mesh extension must fail explicitly");
+        assert!(matches!(
+            error,
+            AssetError::UnsupportedRequiredExtension {
+                extension: ref rejected,
+                ..
+            } if rejected == extension
+        ));
+    }
+
+    let missing = pollster::block_on(assets.load_scene("memory://real-world/missing-texture.gltf"))
+        .expect_err("missing texture slot must fail explicitly");
+    assert!(matches!(missing, AssetError::MissingTexture { .. }));
+
+    let external = pollster::block_on(
+        assets.load_scene_with_report("memory://real-world/external/scene.gltf"),
+    )
+    .expect("relative external-buffer fixture loads");
+    assert_eq!(external.external_buffers(), 1);
+    assert_eq!(external.asset().mesh_count(), 1);
+
+    let embedded = pollster::block_on(assets.load_scene("memory://real-world/embedded.glb"))
+        .expect("embedded GLB fixture loads");
+    assert_eq!(embedded.mesh_count(), 1);
+}
+
+#[test]
+fn m8_native_fetcher_cache_dedup_reload_retain_and_external_buffers_are_explicit() {
+    let mut assets = Assets::new();
+    assets.set_retain_policy(RetainPolicy::Always);
+
+    let first = pollster::block_on(
+        assets.load_scene_with_report("tests/assets/gltf/mesh_material_vertex_color_scene.gltf"),
+    )
+    .expect("native file fetcher loads fixture");
+    assert!(!first.cache_hit());
+    assert!(first.fetched_bytes() > 0);
+
+    let cached = pollster::block_on(
+        assets.load_scene_with_report("tests/assets/gltf/mesh_material_vertex_color_scene.gltf"),
+    )
+    .expect("native file fetcher reuses cached scene");
+    assert!(cached.cache_hit());
+    assert_eq!(cached.fetched_bytes(), 0);
+    assert_eq!(cached.asset().path(), first.asset().path());
+
+    let reloaded =
+        pollster::block_on(assets.reload_scene(first.asset())).expect("retained source reloads");
+    assert_eq!(reloaded.path(), first.asset().path());
+    assert_eq!(reloaded.node_count(), first.asset().node_count());
+
+    let albedo_a = pollster::block_on(
+        assets.load_texture("textures/native-cache.png", TextureColorSpace::Srgb),
+    )
+    .expect("texture descriptor loads");
+    let albedo_b = pollster::block_on(
+        assets.load_texture("textures/native-cache.png", TextureColorSpace::Srgb),
+    )
+    .expect("texture descriptor cache hit");
+    let albedo_linear = pollster::block_on(
+        assets.load_texture("textures/native-cache.png", TextureColorSpace::Linear),
+    )
+    .expect("same texture path under linear color space has separate cache identity");
+    assert_eq!(albedo_a, albedo_b);
+    assert_ne!(albedo_a, albedo_linear);
+
+    let external = pollster::block_on(assets.load_scene_with_report(
+        "tests/assets/gltf/khronos/TextureTransformTest/TextureTransformTest.gltf",
+    ))
+    .expect("native file fetcher reports relative external buffer");
+    assert_eq!(external.external_buffers(), 1);
+    assert!(external.fetched_bytes() > first.fetched_bytes());
+}
+
+fn scene_materials<F>(scene: &scena::SceneAsset, assets: &Assets<F>) -> Vec<MaterialDesc> {
+    scene
+        .nodes()
+        .iter()
+        .flat_map(|node| node.meshes())
+        .filter_map(|mesh| assets.material(mesh.material()))
+        .collect()
+}
+
+fn scene_texture_descs<F>(
+    scene: &scena::SceneAsset,
+    assets: &Assets<F>,
+) -> Vec<scena::TextureDesc> {
+    scene_materials(scene, assets)
+        .into_iter()
+        .flat_map(|material| {
+            [
+                material.base_color_texture(),
+                material.normal_texture(),
+                material.metallic_roughness_texture(),
+                material.occlusion_texture(),
+                material.emissive_texture(),
+            ]
+        })
+        .flatten()
+        .filter_map(|texture| assets.texture(texture))
+        .collect()
+}
+
+fn required_extension_gltf(extension: &str) -> String {
+    format!(
+        r#"{{
+            "asset": {{ "version": "2.0" }},
+            "extensionsUsed": ["{extension}"],
+            "extensionsRequired": ["{extension}"],
+            "nodes": [{{ "name": "RequiredExtension" }}]
+        }}"#
+    )
+}
+
+fn missing_texture_gltf() -> &'static [u8] {
+    br#"{
+        "asset": { "version": "2.0" },
+        "materials": [{
+            "pbrMetallicRoughness": {
+                "baseColorTexture": { "index": 4 }
+            }
+        }],
+        "meshes": [{
+            "primitives": [{
+                "attributes": { "POSITION": 0 },
+                "material": 0
+            }]
+        }],
+        "nodes": [{ "name": "MissingTexture", "mesh": 0 }],
+        "buffers": [{ "byteLength": 36, "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAAA" }],
+        "bufferViews": [{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }],
+        "accessors": [{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }]
+    }"#
+}
+
+fn external_buffer_gltf(buffer_uri: &str) -> String {
+    format!(
+        r#"{{
+            "asset": {{ "version": "2.0" }},
+            "nodes": [{{ "name": "ExternalTriangle", "mesh": 0 }}],
+            "meshes": [{{
+                "primitives": [{{
+                    "attributes": {{ "POSITION": 0 }},
+                    "indices": 1
+                }}]
+            }}],
+            "buffers": [{{ "byteLength": 42, "uri": "{buffer_uri}" }}],
+            "bufferViews": [
+                {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},
+                {{ "buffer": 0, "byteOffset": 36, "byteLength": 6 }}
+            ],
+            "accessors": [
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }}
+            ]
+        }}"#
+    )
+}
+
+fn external_triangle_buffer() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for value in [-0.5_f32, -0.5, 0.0, 0.5, -0.5, 0.0, 0.0, 0.5, 0.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0_u16, 1, 2] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes
+}
+
+fn minimal_glb_triangle_scene() -> Vec<u8> {
+    let mut bin = external_triangle_buffer();
+    let buffer_byte_length = bin.len();
+    pad_to_four(&mut bin, 0);
+
+    let json = format!(
+        r#"{{
+            "asset": {{ "version": "2.0" }},
+            "buffers": [{{ "byteLength": {buffer_byte_length} }}],
+            "bufferViews": [
+                {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},
+                {{ "buffer": 0, "byteOffset": 36, "byteLength": 6 }}
+            ],
+            "accessors": [
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }}
+            ],
+            "meshes": [
+                {{ "primitives": [{{ "attributes": {{ "POSITION": 0 }}, "indices": 1 }}] }}
+            ],
+            "nodes": [{{ "name": "EmbeddedGlbTriangle", "mesh": 0 }}]
+        }}"#
+    );
+    let mut json = json.into_bytes();
+    pad_to_four(&mut json, b' ');
+
+    let length = 12 + 8 + json.len() + 8 + bin.len();
+    let mut glb = Vec::with_capacity(length);
+    glb.extend_from_slice(&0x4654_6C67_u32.to_le_bytes());
+    glb.extend_from_slice(&2_u32.to_le_bytes());
+    glb.extend_from_slice(&(length as u32).to_le_bytes());
+    glb.extend_from_slice(&(json.len() as u32).to_le_bytes());
+    glb.extend_from_slice(&0x4E4F_534A_u32.to_le_bytes());
+    glb.extend_from_slice(&json);
+    glb.extend_from_slice(&(bin.len() as u32).to_le_bytes());
+    glb.extend_from_slice(&0x004E_4942_u32.to_le_bytes());
+    glb.extend_from_slice(&bin);
+    glb
+}
+
+fn pad_to_four(bytes: &mut Vec<u8>, pad: u8) {
+    while !bytes.len().is_multiple_of(4) {
+        bytes.push(pad);
+    }
 }
 
 #[derive(Clone)]

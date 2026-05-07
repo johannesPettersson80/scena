@@ -88,6 +88,7 @@ async function main() {
     "layers-helper-on-top",
     "beginner-diagnostics",
     "material-textures",
+    "asset-cache-reload",
   ];
   const results = [];
   try {

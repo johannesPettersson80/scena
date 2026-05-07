@@ -48,3 +48,45 @@ name = "BrainStem"
 path = "BrainStem/BrainStem.gltf"
 binary = ["BrainStem/BrainStem0.bin"]
 contract = "larger skinning and animation hierarchy"
+
+[[asset]]
+name = "AlphaBlendModeTest"
+path = "AlphaBlendModeTest/AlphaBlendModeTest.gltf"
+binary = ["AlphaBlendModeTest/AlphaBlendModeTest.bin"]
+images = [
+  "AlphaBlendModeTest/AlphaBlendLabels.png",
+  "AlphaBlendModeTest/MatBed_baseColor.jpg",
+  "AlphaBlendModeTest/MatBed_normal.jpg",
+  "AlphaBlendModeTest/MatBed_occlusionRoughnessMetallic.jpg",
+]
+contract = "alpha blend, alpha mask cutoffs, normal/occlusion/metallic-roughness/base-color texture slots"
+
+[[asset]]
+name = "TextureSettingsTest"
+path = "TextureSettingsTest/TextureSettingsTest.gltf"
+binary = ["TextureSettingsTest/TextureSettingsTest0.bin"]
+images = [
+  "TextureSettingsTest/CheckAndX.png",
+  "TextureSettingsTest/CheckAndX_V.png",
+  "TextureSettingsTest/TextureTestLabels.png",
+]
+contract = "texture sampler filters, clamp/repeat/mirrored wrap modes, and double-sided metadata"
+
+[[asset]]
+name = "TextureTransformTest"
+path = "TextureTransformTest/TextureTransformTest.gltf"
+binary = ["TextureTransformTest/TextureTransformTest.bin"]
+images = [
+  "TextureTransformTest/Arrow.png",
+  "TextureTransformTest/Correct.png",
+  "TextureTransformTest/Error.png",
+  "TextureTransformTest/NotSupported.png",
+  "TextureTransformTest/UV.png",
+]
+contract = "KHR_texture_transform offset, rotation, scale, and alternate texcoord metadata"
+
+[[asset]]
+name = "UnlitTest"
+path = "UnlitTest/UnlitTest.gltf"
+binary = ["UnlitTest/UnlitTest.bin"]
+contract = "KHR_materials_unlit required extension material mapping"
