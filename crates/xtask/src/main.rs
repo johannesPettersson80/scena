@@ -4791,6 +4791,7 @@ fn check_m7_ergonomics_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "with_damping",
             "m7_beginner_scene_diagnostics_explain_invisible_setups",
             "m7_error_display_snapshots_cover_beginner_recovery_paths",
+            "m7_viewer_operations_dirty_prepare_without_persistent_resource_growth",
             "create_static_batch_with_report",
             "picking_debug_instances",
             "m7_scene_inspection_feature_reports_reproducible_metadata",

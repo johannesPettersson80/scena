@@ -1,3 +1,6 @@
+use std::alloc::{GlobalAlloc, Layout, System};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
 use scena::{
     Aabb, AssetError, Assets, Backend, CameraKey, DiagnosticCode, DiagnosticSeverity, GeometryDesc,
     ImportAnchorDebugMetadata, LookupError, MaterialDesc, NodeKey, NotPreparedReason,
@@ -5,6 +8,31 @@ use scena::{
     Scene, SourceCoordinateSystem, SourceUnits, SurfaceEvent, SurfaceSize, SurfaceViewport,
     TouchEvent, Transform, Vec3,
 };
+
+#[global_allocator]
+static ALLOCATOR: CountingAllocator = CountingAllocator;
+
+static COUNT_ALLOCATIONS: AtomicBool = AtomicBool::new(false);
+static ALLOCATION_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+struct CountingAllocator;
+
+unsafe impl GlobalAlloc for CountingAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        if COUNT_ALLOCATIONS.load(Ordering::Relaxed) {
+            ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
+        }
+        // SAFETY: this allocator only counts allocation calls and delegates all allocation
+        // semantics to the system allocator with the original layout.
+        unsafe { System.alloc(layout) }
+    }
+
+    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
+        // SAFETY: the pointer and layout are forwarded unchanged to the allocator that
+        // created the allocation.
+        unsafe { System.dealloc(pointer, layout) }
+    }
+}
 
 #[test]
 fn m7_transform_helpers_and_frame_import_avoid_manual_matrix_math() {
@@ -56,6 +84,81 @@ fn m7_transform_helpers_and_frame_import_avoid_manual_matrix_math() {
             .translation,
         Vec3::new(4.0, 5.0, 6.0)
     );
+}
+
+#[test]
+fn m7_viewer_operations_dirty_prepare_without_persistent_resource_growth() {
+    let mut scene = Scene::new();
+    let camera = scene.add_default_camera().expect("default camera inserts");
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![Primitive::unlit_triangle()],
+            Transform::default(),
+        )
+        .expect("renderable inserts");
+    let mut renderer = Renderer::headless(64, 64).expect("renderer builds");
+    renderer.prepare(&mut scene).expect("initial prepare");
+    renderer.render(&scene, camera).expect("warm render");
+    let baseline = renderer.stats();
+
+    let mut controls = OrbitControls::new(Vec3::ZERO, 2.0);
+    assert_eq!(
+        controls.handle_pointer(PointerEvent::primary_pressed(32.0, 32.0)),
+        scena::OrbitControlAction::BeginOrbit
+    );
+    ALLOCATION_COUNT.store(0, Ordering::Relaxed);
+    COUNT_ALLOCATIONS.store(true, Ordering::Relaxed);
+    let control_action = controls.handle_pointer(PointerEvent::moved(34.0, 31.0, 2.0, -1.0));
+    COUNT_ALLOCATIONS.store(false, Ordering::Relaxed);
+    assert_eq!(control_action, scena::OrbitControlAction::Orbit);
+    assert_eq!(
+        ALLOCATION_COUNT.load(Ordering::Relaxed),
+        0,
+        "steady orbit pointer handling should not allocate"
+    );
+
+    controls
+        .apply_to_scene(&mut scene, camera)
+        .expect("controls update camera");
+    assert!(matches!(
+        renderer.render(&scene, camera),
+        Err(RenderError::NotPrepared {
+            reason: NotPreparedReason::SceneChanged { .. }
+        })
+    ));
+    renderer
+        .prepare(&mut scene)
+        .expect("reprepare after controls");
+    assert_stable_viewer_resource_counters(baseline, renderer.stats());
+
+    scene
+        .pick_and_select(camera, 32.0, 32.0, 64, 64, 1.0)
+        .expect("picking computes")
+        .expect("center pick hits");
+    assert!(matches!(
+        renderer.render(&scene, camera),
+        Err(RenderError::NotPrepared {
+            reason: NotPreparedReason::SceneChanged { .. }
+        })
+    ));
+    renderer.prepare(&mut scene).expect("reprepare after pick");
+    assert_stable_viewer_resource_counters(baseline, renderer.stats());
+}
+
+fn assert_stable_viewer_resource_counters(
+    before: scena::RendererStats,
+    after: scena::RendererStats,
+) {
+    assert_eq!(after.buffers, before.buffers);
+    assert_eq!(after.textures, before.textures);
+    assert_eq!(after.materials, before.materials);
+    assert_eq!(after.render_targets, before.render_targets);
+    assert_eq!(after.pipelines, before.pipelines);
+    assert_eq!(after.bind_groups, before.bind_groups);
+    assert_eq!(after.shader_modules, before.shader_modules);
+    assert_eq!(after.live_logical_handles, before.live_logical_handles);
+    assert_eq!(after.pending_destructions, before.pending_destructions);
 }
 
 #[test]
