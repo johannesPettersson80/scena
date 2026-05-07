@@ -1,6 +1,6 @@
 //! Structured errors, debug overlays, capability reports, and renderer stats.
 
-use crate::animation::AnimationClipKey;
+use crate::animation::{AnimationClipKey, AnimationMixerKey};
 use crate::assets::{EnvironmentHandle, GeometryHandle, MaterialHandle};
 use crate::geometry::{Aabb, GeometryTopology};
 use crate::material::{AlphaMode, MaterialKind};
@@ -21,6 +21,7 @@ pub enum Error {
     Prepare(PrepareError),
     Render(RenderError),
     Lookup(LookupError),
+    Animation(AnimationError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -198,6 +199,13 @@ pub enum LookupError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AnimationError {
+    ClipNotFound { name: String },
+    MixerNotFound(AnimationMixerKey),
+    StaleMixer(AnimationMixerKey),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diagnostic {
     pub code: DiagnosticCode,
     pub severity: DiagnosticSeverity,
@@ -358,6 +366,12 @@ impl From<AssetError> for Error {
 impl From<ImportError> for Error {
     fn from(error: ImportError) -> Self {
         Self::Import(error)
+    }
+}
+
+impl From<AnimationError> for Error {
+    fn from(error: AnimationError) -> Self {
+        Self::Animation(error)
     }
 }
 

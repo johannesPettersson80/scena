@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use serde_json::Value as JsonValue;
 
+use crate::animation::{AnimationSourceChannel, AnimationSourceClip};
 use crate::diagnostics::AssetError;
 use crate::geometry::Aabb;
 use crate::material::Color;
@@ -10,6 +11,7 @@ use crate::scene::{Angle, DirectionalLight, Light, PointLight, Quat, SpotLight, 
 
 use self::accessor::{parse_accessors, parse_buffer_views, parse_buffers};
 use self::anchors::parse_node_anchors;
+use self::animation::parse_gltf_clips;
 use self::external::external_buffer_paths;
 use self::glb::{is_glb, parse_glb};
 use self::read::{parse_materials, parse_meshes, parse_textures};
@@ -17,6 +19,7 @@ use super::{AssetPath, AssetStorage, GeometryHandle, MaterialHandle};
 
 mod accessor;
 mod anchors;
+mod animation;
 mod external;
 mod glb;
 mod read;
@@ -69,7 +72,7 @@ pub struct SceneAssetLight {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SceneAssetClip {
-    name: Option<String>,
+    clip: AnimationSourceClip,
 }
 
 impl SceneAsset {
@@ -188,7 +191,7 @@ impl SceneAsset {
         )?;
         let lights = parse_punctual_lights(&json);
         let nodes = parse_gltf_nodes(&json, &meshes, &lights);
-        let clips = parse_gltf_clips(&json);
+        let clips = parse_gltf_clips(&path, &json, &buffers, &buffer_views, &accessors)?;
         let node_count = nodes.len();
         let mesh_count = meshes.iter().map(Vec::len).sum();
         Ok(Self {
@@ -311,7 +314,19 @@ impl SceneAssetLight {
 
 impl SceneAssetClip {
     pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+        self.clip.name()
+    }
+
+    pub fn channels(&self) -> &[AnimationSourceChannel] {
+        self.clip.channels()
+    }
+
+    pub const fn duration_seconds(&self) -> f32 {
+        self.clip.duration_seconds()
+    }
+
+    pub(crate) fn clip(&self) -> &AnimationSourceClip {
+        &self.clip
     }
 }
 
@@ -456,23 +471,6 @@ fn color3_field(value: &JsonValue, field: &str, fallback: Color) -> Color {
         array_f32(values, 1).unwrap_or(fallback.g),
         array_f32(values, 2).unwrap_or(fallback.b),
     )
-}
-
-fn parse_gltf_clips(json: &JsonValue) -> Vec<SceneAssetClip> {
-    json.get("animations")
-        .and_then(JsonValue::as_array)
-        .map(|animations| {
-            animations
-                .iter()
-                .map(|animation| SceneAssetClip {
-                    name: animation
-                        .get("name")
-                        .and_then(JsonValue::as_str)
-                        .map(str::to_string),
-                })
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 pub(super) fn parse_node_transform(node: &JsonValue) -> Transform {

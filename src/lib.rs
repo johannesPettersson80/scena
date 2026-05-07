@@ -14,7 +14,11 @@ pub mod platform;
 pub mod render;
 pub mod scene;
 
-pub use animation::AnimationClipKey;
+pub use animation::{
+    AnimationChannel, AnimationClip, AnimationClipKey, AnimationInterpolation, AnimationLoopMode,
+    AnimationMixer, AnimationMixerKey, AnimationOutput, AnimationPlaybackState,
+    AnimationSourceChannel, AnimationSourceClip, AnimationTarget,
+};
 #[cfg(target_arch = "wasm32")]
 pub use assets::BrowserAssetFetcher;
 #[cfg(not(target_arch = "wasm32"))]
@@ -26,9 +30,9 @@ pub use assets::{
     SceneAssetNode, TextureDesc, TextureHandle, WasmEnvironmentDelivery,
 };
 pub use diagnostics::{
-    AlphaPipelineStatus, AssetError, Backend, BuildError, Capabilities, CapabilityStatus,
-    ChangeKind, DevicePoll, Diagnostic, DiagnosticCode, DiagnosticSeverity, Error,
-    ImportDiagnosticOverlay, ImportDiagnosticOverlayKind, ImportError, InstantiateError,
+    AlphaPipelineStatus, AnimationError, AssetError, Backend, BuildError, Capabilities,
+    CapabilityStatus, ChangeKind, DevicePoll, Diagnostic, DiagnosticCode, DiagnosticSeverity,
+    Error, ImportDiagnosticOverlay, ImportDiagnosticOverlayKind, ImportError, InstantiateError,
     LookupError, NotPreparedReason, OutputStageStatus, PrepareError, RenderError, RenderOutcome,
     RendererStats,
 };

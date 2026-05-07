@@ -158,6 +158,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_origin_shift_contracts(root, findings);
     check_clipping_contracts(root, findings);
     check_m3a_scene_import_contracts(root, findings);
+    check_m3b_animation_contracts(root, findings);
     check_render_alpha_contracts(root, findings);
     check_output_stage_contracts(root, findings);
     check_fxaa_output_contracts(root, findings);
@@ -2613,6 +2614,110 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "assets_load_scene_caches_gltf_asset_and_rejects_required_extensions",
             "scene_instantiate_creates_import_hierarchy_and_name_lookups",
             "ARCH-M3A-SCENE-IMPORT",
+        ],
+    );
+}
+
+fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3B-ANIMATION",
+        "src/animation.rs",
+        &[
+            "pub struct AnimationMixerKey",
+            "pub enum AnimationPlaybackState",
+            "pub enum AnimationLoopMode",
+            "pub enum AnimationTarget",
+            "pub enum AnimationInterpolation",
+            "pub struct AnimationClip",
+            "pub struct AnimationSourceClip",
+            "pub struct AnimationChannel",
+            "pub struct AnimationSourceChannel",
+            "pub struct AnimationMixer",
+            "pub enum AnimationOutput",
+            "pub fn rebind",
+            "pub fn sample_vec3",
+            "pub(crate) fn play",
+            "pub(crate) fn pause",
+            "pub(crate) fn stop",
+            "pub(crate) fn seek",
+            "pub(crate) fn advance",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3B-ANIMATION",
+        "src/assets/gltf/animation.rs",
+        &[
+            "pub(super) fn parse_gltf_clips",
+            "parse_animation_channel",
+            "\"translation\"",
+            "\"rotation\"",
+            "\"scale\"",
+            "\"weights\"",
+            "read_f32_accessor",
+            "read_vec3_accessor",
+            "read_vec4_accessor",
+            "AnimationInterpolation::CubicSpline",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3B-ANIMATION",
+        "src/scene/import.rs",
+        &[
+            "clip.clip().rebind",
+            "convert_animation_vec3",
+            "AnimationTarget::Translation",
+            "AnimationTarget::Scale",
+            "pub(crate) fn live_flag",
+            "pub fn channels(&self)",
+            "pub const fn duration_seconds",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3B-ANIMATION",
+        "src/scene/mixers.rs",
+        &[
+            "pub fn create_animation_mixer",
+            "pub fn animation_mixer",
+            "pub fn play_animation",
+            "pub fn pause_animation",
+            "pub fn stop_animation",
+            "pub fn seek_animation",
+            "pub fn set_animation_speed",
+            "pub fn set_animation_loop_mode",
+            "pub fn update_animation",
+            "AnimationError::StaleMixer",
+            "AnimationTarget::Translation",
+            "AnimationTarget::Scale",
+            "structure_revision",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3B-ANIMATION",
+        "src/diagnostics.rs",
+        &["pub enum AnimationError", "StaleMixer"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3B-ANIMATION",
+        "tests/m3b_gltf_animation.rs",
+        &[
+            "mixer_controls_rebind_translation_channels_to_import_local_nodes",
+            "playing_paused_and_seek_animation_dirty_prepared_render_state",
+            "replace_import_invalidates_animation_mixers_with_stale_error",
+            "AnimationLoopMode::Repeat",
+            "AnimationPlaybackState::Playing",
+            "AnimationError::StaleMixer",
         ],
     );
 }

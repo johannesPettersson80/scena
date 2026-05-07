@@ -2,8 +2,8 @@ use std::error;
 use std::fmt;
 
 use super::{
-    AssetError, BuildError, Error, ImportError, InstantiateError, LookupError, NotPreparedReason,
-    PrepareError, RenderError,
+    AnimationError, AssetError, BuildError, Error, ImportError, InstantiateError, LookupError,
+    NotPreparedReason, PrepareError, RenderError,
 };
 
 impl fmt::Display for Error {
@@ -16,6 +16,7 @@ impl fmt::Display for Error {
             Self::Prepare(error) => error.fmt(formatter),
             Self::Render(error) => error.fmt(formatter),
             Self::Lookup(error) => error.fmt(formatter),
+            Self::Animation(error) => error.fmt(formatter),
         }
     }
 }
@@ -295,6 +296,24 @@ impl fmt::Display for LookupError {
     }
 }
 
+impl fmt::Display for AnimationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ClipNotFound { name } => {
+                write!(
+                    formatter,
+                    "imported scene has no animation clip named '{name}'"
+                )
+            }
+            Self::MixerNotFound(_) => write!(formatter, "animation mixer key does not exist"),
+            Self::StaleMixer(_) => write!(
+                formatter,
+                "animation mixer is stale because its source import was replaced"
+            ),
+        }
+    }
+}
+
 impl error::Error for Error {}
 impl error::Error for BuildError {}
 impl error::Error for AssetError {}
@@ -303,3 +322,4 @@ impl error::Error for InstantiateError {}
 impl error::Error for PrepareError {}
 impl error::Error for RenderError {}
 impl error::Error for LookupError {}
+impl error::Error for AnimationError {}

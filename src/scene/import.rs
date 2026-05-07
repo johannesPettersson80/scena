@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use crate::animation::AnimationClipKey;
+use crate::animation::{AnimationClip, AnimationClipKey, AnimationTarget};
 use crate::assets::{AssetFetcher, AssetPath, Assets, SceneAsset, SceneAssetMesh};
 use crate::diagnostics::{
     ImportDiagnosticOverlay, ImportDiagnosticOverlayKind, ImportError, InstantiateError,
@@ -34,8 +34,7 @@ pub struct ImportAnchor {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImportClip {
-    key: AnimationClipKey,
-    name: Option<String>,
+    clip: AnimationClip,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -68,6 +67,7 @@ pub enum SourceCoordinateSystem {
 
 #[derive(Debug, Clone, PartialEq)]
 struct ImportedNode {
+    source_index: usize,
     node: NodeKey,
     parent: Option<NodeKey>,
     name: Option<String>,
@@ -108,14 +108,7 @@ impl Scene {
             roots: Vec::new(),
             records: Vec::new(),
             anchors: Vec::new(),
-            clips: scene_asset
-                .clips()
-                .iter()
-                .map(|clip| ImportClip {
-                    key: AnimationClipKey::fresh(),
-                    name: clip.name().map(str::to_string),
-                })
-                .collect(),
+            clips: Vec::new(),
             diagnostic_overlays: Vec::new(),
             live: Arc::new(AtomicBool::new(true)),
         };
@@ -131,6 +124,24 @@ impl Scene {
                 self.instantiate_scene_asset_node(source_index, self.root, None, &mut build)?;
             import.roots.push(node);
         }
+        import.clips = scene_asset
+            .clips()
+            .iter()
+            .map(|clip| {
+                let rebased = clip.clip().rebind(
+                    AnimationClipKey::fresh(),
+                    |source_index| {
+                        import
+                            .records
+                            .iter()
+                            .find(|record| record.source_index == source_index)
+                            .map(|record| record.node)
+                    },
+                    |target, value| options.convert_animation_vec3(target, value),
+                );
+                ImportClip { clip: rebased }
+            })
+            .collect();
         Ok(import)
     }
 
@@ -214,6 +225,7 @@ impl Scene {
         }
         .expect("import parent was inserted by this scene");
         build.records.push(ImportedNode {
+            source_index,
             node,
             parent: imported_parent,
             name: source_node.name().map(str::to_string),
@@ -293,6 +305,12 @@ impl Scene {
     }
 }
 
+impl SceneImport {
+    pub(crate) fn live_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.live)
+    }
+}
+
 fn mesh_node_kind(mesh: SceneAssetMesh) -> NodeKind {
     NodeKind::Mesh(MeshNode {
         geometry: mesh.geometry(),
@@ -316,11 +334,23 @@ impl ImportAnchor {
 
 impl ImportClip {
     pub const fn key(&self) -> AnimationClipKey {
-        self.key
+        self.clip.key()
     }
 
     pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+        self.clip.name()
+    }
+
+    pub fn channels(&self) -> &[crate::animation::AnimationChannel] {
+        self.clip.channels()
+    }
+
+    pub const fn duration_seconds(&self) -> f32 {
+        self.clip.duration_seconds()
+    }
+
+    pub(crate) fn clip(&self) -> AnimationClip {
+        self.clip.clone()
     }
 }
 
@@ -377,6 +407,19 @@ impl ImportOptions {
             scale: self
                 .source_coordinate_system
                 .convert_scale(scale_vec3(transform.scale, unit_scale)),
+        }
+    }
+
+    fn convert_animation_vec3(self, target: AnimationTarget, value: Vec3) -> Vec3 {
+        let unit_scale = self.source_units.meters_per_unit();
+        match target {
+            AnimationTarget::Translation => self
+                .source_coordinate_system
+                .convert_vec3(scale_vec3(value, unit_scale)),
+            AnimationTarget::Scale => self
+                .source_coordinate_system
+                .convert_scale(scale_vec3(value, unit_scale)),
+            AnimationTarget::Rotation | AnimationTarget::Weights => value,
         }
     }
 }

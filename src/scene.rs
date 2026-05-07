@@ -6,6 +6,7 @@ use std::sync::{Arc, Weak};
 
 use slotmap::{SlotMap, new_key_type};
 
+use crate::animation::{AnimationMixer, AnimationMixerKey};
 use crate::assets::{GeometryHandle, MaterialHandle, ModelHandle};
 use crate::diagnostics::LookupError;
 use crate::geometry::Primitive;
@@ -18,8 +19,10 @@ mod instances;
 mod labels;
 mod lights;
 mod materials;
+mod mixers;
 mod picking;
 mod render_nodes;
+mod transforms;
 mod view;
 pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
 pub use import::{
@@ -46,6 +49,7 @@ pub struct Scene {
     cameras: SlotMap<CameraKey, Camera>,
     lights: SlotMap<LightKey, Light>,
     instance_sets: SlotMap<InstanceSetKey, InstanceSet>,
+    animation_mixers: SlotMap<AnimationMixerKey, AnimationMixer>,
     labels: SlotMap<LabelKey, LabelDesc>,
     clipping_planes: SlotMap<ClippingPlaneKey, ClippingPlane>,
     active_clipping_planes: ClippingPlaneSet,
@@ -160,6 +164,7 @@ impl Scene {
             cameras: SlotMap::with_key(),
             lights: SlotMap::with_key(),
             instance_sets: SlotMap::with_key(),
+            animation_mixers: SlotMap::with_key(),
             labels: SlotMap::with_key(),
             clipping_planes: SlotMap::with_key(),
             active_clipping_planes: ClippingPlaneSet::new(),
@@ -263,22 +268,6 @@ impl Scene {
         transform: Transform,
     ) -> Result<CameraKey, LookupError> {
         self.insert_camera(parent, Camera::Orthographic(camera), transform)
-    }
-
-    pub fn set_transform(
-        &mut self,
-        node: NodeKey,
-        transform: Transform,
-    ) -> Result<(), LookupError> {
-        let node = self
-            .nodes
-            .get_mut(node)
-            .ok_or(LookupError::NodeNotFound(node))?;
-        if node.transform != transform {
-            node.transform = transform;
-            self.structure_revision = self.structure_revision.saturating_add(1);
-        }
-        Ok(())
     }
 
     pub fn add_clipping_plane(&mut self, plane: ClippingPlane) -> ClippingPlaneKey {

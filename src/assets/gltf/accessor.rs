@@ -136,6 +136,44 @@ pub(super) fn read_vec3_accessor(
         .collect()
 }
 
+pub(super) fn read_f32_accessor(
+    path: &AssetPath,
+    accessor_index: usize,
+    buffers: &[Vec<u8>],
+    buffer_views: &[GltfBufferView],
+    accessors: &[GltfAccessor],
+) -> Result<Vec<f32>, AssetError> {
+    let accessor = required_accessor(path, accessor_index, accessors)?;
+    if accessor.component_type != GL_FLOAT || accessor.kind != "SCALAR" {
+        return Err(parse_error(path, "expected FLOAT SCALAR accessor"));
+    }
+    (0..accessor.count)
+        .map(|index| {
+            read_f32_components(path, accessor, index, 1, buffers, buffer_views)
+                .map(|values| values[0])
+        })
+        .collect()
+}
+
+pub(super) fn read_vec4_accessor(
+    path: &AssetPath,
+    accessor_index: usize,
+    buffers: &[Vec<u8>],
+    buffer_views: &[GltfBufferView],
+    accessors: &[GltfAccessor],
+) -> Result<Vec<[f32; 4]>, AssetError> {
+    let accessor = required_accessor(path, accessor_index, accessors)?;
+    if accessor.component_type != GL_FLOAT || accessor.kind != "VEC4" {
+        return Err(parse_error(path, "expected FLOAT VEC4 accessor"));
+    }
+    (0..accessor.count)
+        .map(|index| {
+            let values = read_f32_components(path, accessor, index, 4, buffers, buffer_views)?;
+            Ok([values[0], values[1], values[2], values[3]])
+        })
+        .collect()
+}
+
 pub(super) fn read_color_accessor(
     path: &AssetPath,
     accessor_index: usize,
