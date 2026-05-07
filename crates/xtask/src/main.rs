@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -392,6 +393,7 @@ fn run_docs_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_m1_browser_rendered_output(root, findings);
     check_m2_browser_rendered_output(root, findings);
     check_m6_browser_renderer_probe(root, findings);
+    check_gltf_asset_matrix_contract(root, findings);
     check_m9_ci_release_lanes(root, findings);
     check_m10_claim_audit_contract(root, findings);
 }
@@ -4898,6 +4900,332 @@ fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Vec<Finding>)
     );
 }
 
+fn check_gltf_asset_matrix_contract(root: &Path, findings: &mut Vec<Finding>) {
+    const RULE: &str = "ASSET-MATRIX-M8";
+    let matrix_rel = "docs/assets/gltf-asset-matrix.md";
+    let manifest_rel = "tests/assets/gltf/khronos/manifest.toml";
+
+    let Ok(matrix) = fs::read_to_string(root.join(matrix_rel)) else {
+        findings.push(Finding::new(RULE, format!("could not read {matrix_rel}")));
+        return;
+    };
+
+    for required in [
+        "Source/License",
+        "Expected Diagnostics",
+        "Rendered Output Reference",
+        "fail with a structured error",
+        "silent fallback",
+    ] {
+        if !matrix.contains(required) {
+            findings.push(Finding::new(
+                RULE,
+                format!("{matrix_rel} is missing asset-matrix contract text '{required}'"),
+            ));
+        }
+    }
+
+    let rows = gltf_asset_matrix_rows(&matrix);
+    if rows.is_empty() {
+        findings.push(Finding::new(
+            RULE,
+            format!("{matrix_rel} has no asset rows"),
+        ));
+        return;
+    }
+
+    let mut listed_local_fixtures = BTreeSet::new();
+    let mut listed_khronos_assets = BTreeSet::new();
+
+    for row in rows {
+        if row.len() != 7 {
+            findings.push(Finding::new(
+                RULE,
+                format!(
+                    "{matrix_rel} row '{}' must have 7 columns: asset, source/license, features, expected result, expected diagnostics, rendered-output reference, evidence",
+                    row.join(" | ")
+                ),
+            ));
+            continue;
+        }
+
+        let asset = row[0].trim();
+        let source_license = row[1].trim();
+        let features = row[2].trim();
+        let expected = row[3].trim();
+        let diagnostics = row[4].trim();
+        let rendered_output = row[5].trim();
+        let evidence = row[6].trim();
+        let row_text = row.join(" | ");
+
+        if contains_placeholder(&row_text) {
+            findings.push(Finding::new(
+                RULE,
+                format!("{matrix_rel} row contains placeholder text: {row_text}"),
+            ));
+        }
+        if source_license.is_empty()
+            || !(source_license.to_ascii_lowercase().contains("license")
+                || source_license.to_ascii_lowercase().contains("test-only"))
+        {
+            findings.push(Finding::new(
+                RULE,
+                format!("{matrix_rel} row '{asset}' must name source and license/test-only status"),
+            ));
+        }
+        if features.is_empty() {
+            findings.push(Finding::new(
+                RULE,
+                format!("{matrix_rel} row '{asset}' must name covered features"),
+            ));
+        }
+        if !expected_result_is_explicit(expected) {
+            findings.push(Finding::new(
+                RULE,
+                format!(
+                    "{matrix_rel} row '{asset}' must expect pass, degrade, fail, or defer explicitly"
+                ),
+            ));
+        }
+        if diagnostics.is_empty() || diagnostics.eq_ignore_ascii_case("none") {
+            findings.push(Finding::new(
+                RULE,
+                format!(
+                    "{matrix_rel} row '{asset}' must record expected diagnostics or the explicit 'none expected' contract"
+                ),
+            ));
+        }
+        if rendered_output.is_empty()
+            || rendered_output.eq_ignore_ascii_case("n/a")
+            || contains_placeholder(rendered_output)
+        {
+            findings.push(Finding::new(
+                RULE,
+                format!(
+                    "{matrix_rel} row '{asset}' must name rendered-output proof or an explicit structured non-visual/deferred reason"
+                ),
+            ));
+        }
+        if evidence.is_empty() || contains_placeholder(evidence) {
+            findings.push(Finding::new(
+                RULE,
+                format!("{matrix_rel} row '{asset}' must link executable evidence"),
+            ));
+        }
+
+        for evidence_path in backtick_values(evidence) {
+            if is_local_evidence_path(&evidence_path) && !root.join(&evidence_path).is_file() {
+                findings.push(Finding::new(
+                    RULE,
+                    format!("{matrix_rel} row '{asset}' links missing evidence {evidence_path}"),
+                ));
+            }
+        }
+
+        for rendered_path in backtick_values(rendered_output) {
+            if is_local_evidence_path(&rendered_path) && !root.join(&rendered_path).exists() {
+                findings.push(Finding::new(
+                    RULE,
+                    format!(
+                        "{matrix_rel} row '{asset}' links missing rendered-output reference {rendered_path}"
+                    ),
+                ));
+            }
+        }
+
+        if let Some(local_fixture) = first_backtick_value(asset)
+            && local_fixture.starts_with("tests/assets/gltf/")
+            && !local_fixture.contains("/khronos/")
+        {
+            listed_local_fixtures.insert(local_fixture.clone());
+            if !root.join(&local_fixture).is_file() {
+                findings.push(Finding::new(
+                    RULE,
+                    format!("{matrix_rel} lists missing fixture {local_fixture}"),
+                ));
+            }
+        }
+
+        if let Some(memory_fixture) = first_backtick_value(asset)
+            && memory_fixture.starts_with("memory://")
+        {
+            let source_lower = source_license.to_ascii_lowercase();
+            if !(source_lower.contains("generated") && source_lower.contains("test-only")) {
+                findings.push(Finding::new(
+                    RULE,
+                    format!(
+                        "{matrix_rel} memory fixture '{memory_fixture}' must be marked generated test-only"
+                    ),
+                ));
+            }
+        }
+
+        if asset.starts_with("Khronos ") {
+            if let Some(name) = first_backtick_value(asset) {
+                listed_khronos_assets.insert(name);
+            } else {
+                findings.push(Finding::new(
+                    RULE,
+                    format!("{matrix_rel} Khronos row '{asset}' must backtick the asset name"),
+                ));
+            }
+            let source_lower = source_license.to_ascii_lowercase();
+            if !(source_lower.contains("khronos") && source_lower.contains("license")) {
+                findings.push(Finding::new(
+                    RULE,
+                    format!("{matrix_rel} Khronos row '{asset}' must name Khronos license source"),
+                ));
+            }
+        }
+    }
+
+    for fixture in direct_gltf_fixture_paths(root) {
+        if !listed_local_fixtures.contains(&fixture) {
+            findings.push(Finding::new(
+                RULE,
+                format!("{matrix_rel} is missing direct glTF fixture row for {fixture}"),
+            ));
+        }
+    }
+
+    let Ok(manifest) = fs::read_to_string(root.join(manifest_rel)) else {
+        findings.push(Finding::new(RULE, format!("could not read {manifest_rel}")));
+        return;
+    };
+
+    for required in ["repository = ", "commit = ", "license_reference = "] {
+        if !manifest.contains(required) {
+            findings.push(Finding::new(
+                RULE,
+                format!("{manifest_rel} is missing required source metadata '{required}'"),
+            ));
+        }
+    }
+
+    for name in khronos_manifest_asset_names(&manifest) {
+        if !listed_khronos_assets.contains(&name) {
+            findings.push(Finding::new(
+                RULE,
+                format!("{matrix_rel} is missing Khronos asset row for {name}"),
+            ));
+        }
+    }
+
+    for rel in khronos_manifest_file_paths(&manifest) {
+        let full_rel = format!("tests/assets/gltf/khronos/{rel}");
+        if !root.join(&full_rel).is_file() {
+            findings.push(Finding::new(
+                RULE,
+                format!("{manifest_rel} references missing Khronos fixture file {full_rel}"),
+            ));
+        }
+    }
+}
+
+fn gltf_asset_matrix_rows(text: &str) -> Vec<Vec<String>> {
+    text.lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|') && line.ends_with('|'))
+        .filter_map(|line| {
+            let cells = line
+                .trim_matches('|')
+                .split('|')
+                .map(|cell| cell.trim().to_string())
+                .collect::<Vec<_>>();
+            match cells.first().map(String::as_str) {
+                Some("Asset/Fixture") => None,
+                Some(value) if value.chars().all(|ch| ch == '-') => None,
+                Some(_) => Some(cells),
+                None => None,
+            }
+        })
+        .collect()
+}
+
+fn direct_gltf_fixture_paths(root: &Path) -> Vec<String> {
+    let dir = root.join("tests/assets/gltf");
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+
+    let mut fixtures = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("gltf") {
+                return None;
+            }
+            Some(format!(
+                "tests/assets/gltf/{}",
+                entry.file_name().to_string_lossy()
+            ))
+        })
+        .collect::<Vec<_>>();
+    fixtures.sort();
+    fixtures
+}
+
+fn khronos_manifest_asset_names(text: &str) -> Vec<String> {
+    text.lines()
+        .map(str::trim)
+        .filter_map(|line| quoted_assignment(line, "name"))
+        .collect()
+}
+
+fn khronos_manifest_file_paths(text: &str) -> Vec<String> {
+    text.lines()
+        .map(str::trim)
+        .filter_map(|line| quoted_assignment(line, "path").or_else(|| quoted_array_item(line)))
+        .collect()
+}
+
+fn quoted_array_item(line: &str) -> Option<String> {
+    line.strip_prefix('"')
+        .and_then(|value| value.trim_end_matches(',').strip_suffix('"'))
+        .map(str::to_string)
+}
+
+fn expected_result_is_explicit(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    lower.starts_with("pass")
+        || lower.starts_with("degrade")
+        || lower.starts_with("fail")
+        || lower.starts_with("defer")
+}
+
+fn contains_placeholder(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    lower.contains("todo")
+        || lower.contains("tbd")
+        || lower.contains("placeholder")
+        || lower.contains("unknown")
+}
+
+fn is_local_evidence_path(value: &str) -> bool {
+    value.starts_with("tests/")
+        || value.starts_with("docs/")
+        || value.starts_with("examples/")
+        || value.starts_with("target/gate-artifacts/")
+}
+
+fn first_backtick_value(value: &str) -> Option<String> {
+    backtick_values(value).into_iter().next()
+}
+
+fn backtick_values(value: &str) -> Vec<String> {
+    let mut values = Vec::new();
+    let mut remainder = value;
+    while let Some(start) = remainder.find('`') {
+        let after_start = &remainder[start + 1..];
+        let Some(end) = after_start.find('`') else {
+            break;
+        };
+        values.push(after_start[..end].to_string());
+        remainder = &after_start[end + 1..];
+    }
+    values
+}
+
 fn require_manifest_value(
     findings: &mut Vec<Finding>,
     manifest_rel: &str,
@@ -5432,6 +5760,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_m9_ci_release_lanes(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn m8_gltf_asset_matrix_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_gltf_asset_matrix_contract(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }
