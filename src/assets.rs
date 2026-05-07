@@ -262,8 +262,23 @@ impl<F: AssetFetcher> Assets<F> {
         }
 
         let bytes = self.fetcher.fetch(&path).await?;
+        let external_paths = SceneAsset::external_buffer_paths(&path, &bytes)?;
+        let mut external_buffers = BTreeMap::new();
+        for (index, external_path) in external_paths {
+            let bytes = self.fetcher.fetch(&external_path).await?;
+            external_buffers.insert(index, bytes);
+        }
         let mut storage = self.storage();
-        let scene = SceneAsset::from_gltf_bytes(path.clone(), &bytes, &mut storage)?;
+        let scene = if external_buffers.is_empty() {
+            SceneAsset::from_gltf_bytes(path.clone(), &bytes, &mut storage)?
+        } else {
+            SceneAsset::from_gltf_bytes_with_external_buffers(
+                path.clone(),
+                &bytes,
+                &external_buffers,
+                &mut storage,
+            )?
+        };
         storage.scene_lookup.insert(path, scene.clone());
         Ok(scene)
     }

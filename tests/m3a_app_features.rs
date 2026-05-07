@@ -8,6 +8,7 @@ use scena::{
     OffscreenTarget, PerspectiveCamera, Primitive, Quat, RenderError, Renderer, Scene,
     SourceCoordinateSystem, SourceUnits, Transform, Vec3, Viewport,
 };
+use std::collections::BTreeMap;
 use std::future::{Ready, ready};
 use std::sync::{
     Arc,
@@ -875,6 +876,76 @@ fn labels_use_sdf_msdf_descriptors_and_billboard_render_path() {
 }
 
 #[test]
+fn gltf_loader_fetches_external_buffers_relative_to_scene_path() {
+    let fetcher = MultiMemoryFetcher::new(vec![
+        (
+            AssetPath::from("memory://models/external-buffer.gltf"),
+            br#"{
+                "asset": { "version": "2.0" },
+                "nodes": [
+                    { "name": "ExternalTriangle", "mesh": 0 }
+                ],
+                "meshes": [
+                    {
+                        "primitives": [
+                            {
+                                "attributes": { "POSITION": 0 },
+                                "indices": 1
+                            }
+                        ]
+                    }
+                ],
+                "buffers": [
+                    {
+                        "byteLength": 42,
+                        "uri": "triangle.bin"
+                    }
+                ],
+                "bufferViews": [
+                    { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+                    { "buffer": 0, "byteOffset": 36, "byteLength": 6 }
+                ],
+                "accessors": [
+                    {
+                        "bufferView": 0,
+                        "componentType": 5126,
+                        "count": 3,
+                        "type": "VEC3"
+                    },
+                    {
+                        "bufferView": 1,
+                        "componentType": 5123,
+                        "count": 3,
+                        "type": "SCALAR"
+                    }
+                ]
+            }"#
+            .to_vec(),
+        ),
+        (
+            AssetPath::from("memory://models/triangle.bin"),
+            external_triangle_buffer(),
+        ),
+    ]);
+    let assets = Assets::with_fetcher(fetcher.clone());
+
+    let scene_asset = pollster::block_on(assets.load_scene("memory://models/external-buffer.gltf"))
+        .expect("external-buffer glTF scene loads");
+    let mesh = scene_asset.nodes()[0]
+        .mesh()
+        .expect("external-buffer mesh payload is registered");
+    let geometry = assets
+        .geometry(mesh.geometry())
+        .expect("external-buffer geometry handle resolves");
+
+    assert_eq!(fetcher.calls(), 2);
+    assert_vec3_near(geometry.vertices()[0].position, Vec3::new(-0.5, -0.5, 0.0));
+    assert_vec3_near(geometry.vertices()[1].position, Vec3::new(0.5, -0.5, 0.0));
+    assert_vec3_near(geometry.vertices()[2].position, Vec3::new(0.0, 0.5, 0.0));
+    assert_eq!(geometry.indices(), [0, 1, 2]);
+}
+
+#[test]
 fn import_options_apply_gltf_node_transforms_and_source_units() {
     let assets = Assets::new();
     let scene_asset =
@@ -1200,6 +1271,17 @@ fn fullscreen_triangle_geometry() -> GeometryDesc {
     .expect("fullscreen triangle geometry is valid")
 }
 
+fn external_triangle_buffer() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for value in [-0.5_f32, -0.5, 0.0, 0.5, -0.5, 0.0, 0.0, 0.5, 0.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0_u16, 1, 2] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes
+}
+
 #[derive(Clone)]
 struct MemoryFetcher {
     path: AssetPath,
@@ -1228,6 +1310,40 @@ impl AssetFetcher for MemoryFetcher {
         if path == &self.path {
             self.calls.fetch_add(1, Ordering::SeqCst);
             ready(Ok(self.source.as_bytes().to_vec()))
+        } else {
+            ready(Err(AssetError::NotFound {
+                path: path.as_str().to_string(),
+            }))
+        }
+    }
+}
+
+#[derive(Clone)]
+struct MultiMemoryFetcher {
+    sources: Arc<BTreeMap<AssetPath, Vec<u8>>>,
+    calls: Arc<AtomicUsize>,
+}
+
+impl MultiMemoryFetcher {
+    fn new(entries: Vec<(AssetPath, Vec<u8>)>) -> Self {
+        Self {
+            sources: Arc::new(entries.into_iter().collect()),
+            calls: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn calls(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
+impl AssetFetcher for MultiMemoryFetcher {
+    type Future<'a> = Ready<Result<Vec<u8>, AssetError>>;
+
+    fn fetch<'a>(&'a self, path: &'a AssetPath) -> Self::Future<'a> {
+        if let Some(bytes) = self.sources.get(path) {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            ready(Ok(bytes.clone()))
         } else {
             ready(Err(AssetError::NotFound {
                 path: path.as_str().to_string(),

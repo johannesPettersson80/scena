@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use base64::Engine;
 use serde_json::Value as JsonValue;
 
@@ -11,6 +13,7 @@ pub(super) fn parse_buffers(
     path: &AssetPath,
     json: &JsonValue,
     binary_chunk: Option<&[u8]>,
+    external_buffers: &BTreeMap<usize, Vec<u8>>,
 ) -> Result<Vec<Vec<u8>>, AssetError> {
     json.get("buffers")
         .and_then(JsonValue::as_array)
@@ -18,7 +21,9 @@ pub(super) fn parse_buffers(
             buffers
                 .iter()
                 .enumerate()
-                .map(|(index, buffer)| parse_buffer(path, index, buffer, binary_chunk))
+                .map(|(index, buffer)| {
+                    parse_buffer(path, index, buffer, binary_chunk, external_buffers)
+                })
                 .collect()
         })
         .unwrap_or_else(|| Ok(Vec::new()))
@@ -29,9 +34,20 @@ fn parse_buffer(
     index: usize,
     buffer: &JsonValue,
     binary_chunk: Option<&[u8]>,
+    external_buffers: &BTreeMap<usize, Vec<u8>>,
 ) -> Result<Vec<u8>, AssetError> {
     if let Some(uri) = buffer.get("uri").and_then(JsonValue::as_str) {
-        return decode_data_uri(path, uri);
+        if uri.starts_with("data:") {
+            return decode_data_uri(path, uri);
+        }
+        let byte_length = required_usize(path, buffer, "byteLength")?;
+        let bytes = external_buffers
+            .get(&index)
+            .ok_or_else(|| parse_error(path, "external glTF buffer was not fetched"))?;
+        return bytes
+            .get(..byte_length)
+            .map(<[u8]>::to_vec)
+            .ok_or_else(|| parse_error(path, "external glTF buffer is shorter than byteLength"));
     }
     let byte_length = required_usize(path, buffer, "byteLength")?;
     let Some(binary_chunk) = binary_chunk else {

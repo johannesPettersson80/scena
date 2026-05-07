@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use serde_json::Value as JsonValue;
@@ -89,7 +90,7 @@ impl SceneAsset {
         source: &str,
         storage: &mut AssetStorage,
     ) -> Result<Self, AssetError> {
-        Self::from_gltf_json(path, source, None, storage)
+        Self::from_gltf_json(path, source, None, &BTreeMap::new(), storage)
     }
 
     pub(super) fn from_gltf_bytes(
@@ -106,13 +107,79 @@ impl SceneAsset {
         }
 
         let (json, binary_chunk) = parse_glb(&path, bytes)?;
-        Self::from_gltf_json(path, &json, binary_chunk.as_deref(), storage)
+        Self::from_gltf_json(
+            path,
+            &json,
+            binary_chunk.as_deref(),
+            &BTreeMap::new(),
+            storage,
+        )
+    }
+
+    pub(super) fn from_gltf_bytes_with_external_buffers(
+        path: AssetPath,
+        bytes: &[u8],
+        external_buffers: &BTreeMap<usize, Vec<u8>>,
+        storage: &mut AssetStorage,
+    ) -> Result<Self, AssetError> {
+        if !is_glb(bytes) {
+            let source = std::str::from_utf8(bytes).map_err(|error| AssetError::Parse {
+                path: path.as_str().to_string(),
+                reason: format!("expected UTF-8 glTF JSON source: {error}"),
+            })?;
+            return Self::from_gltf_json(path, source, None, external_buffers, storage);
+        }
+
+        let (json, binary_chunk) = parse_glb(&path, bytes)?;
+        Self::from_gltf_json(
+            path,
+            &json,
+            binary_chunk.as_deref(),
+            external_buffers,
+            storage,
+        )
+    }
+
+    pub(super) fn external_buffer_paths(
+        path: &AssetPath,
+        bytes: &[u8],
+    ) -> Result<Vec<(usize, AssetPath)>, AssetError> {
+        let json = if is_glb(bytes) {
+            parse_glb(path, bytes)?.0
+        } else {
+            std::str::from_utf8(bytes)
+                .map_err(|error| AssetError::Parse {
+                    path: path.as_str().to_string(),
+                    reason: format!("expected UTF-8 glTF JSON source: {error}"),
+                })?
+                .to_string()
+        };
+        let json: JsonValue = serde_json::from_str(&json).map_err(|error| AssetError::Parse {
+            path: path.as_str().to_string(),
+            reason: error.to_string(),
+        })?;
+        Ok(json
+            .get("buffers")
+            .and_then(JsonValue::as_array)
+            .map(|buffers| {
+                buffers
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, buffer)| {
+                        let uri = buffer.get("uri").and_then(JsonValue::as_str)?;
+                        (!uri.starts_with("data:"))
+                            .then(|| (index, resolve_relative_path(path, uri)))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default())
     }
 
     fn from_gltf_json(
         path: AssetPath,
         source: &str,
         binary_chunk: Option<&[u8]>,
+        external_buffers: &BTreeMap<usize, Vec<u8>>,
         storage: &mut AssetStorage,
     ) -> Result<Self, AssetError> {
         let json: JsonValue = serde_json::from_str(source).map_err(|error| AssetError::Parse {
@@ -131,7 +198,7 @@ impl SceneAsset {
             }
         }
 
-        let buffers = parse_buffers(&path, &json, binary_chunk)?;
+        let buffers = parse_buffers(&path, &json, binary_chunk, external_buffers)?;
         let buffer_views = parse_buffer_views(&path, &json)?;
         let accessors = parse_accessors(&path, &json)?;
         let textures = parse_textures(&path, &json, storage);
@@ -296,6 +363,16 @@ fn string_array_field(json: &JsonValue, field: &str) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn resolve_relative_path(base: &AssetPath, uri: &str) -> AssetPath {
+    if uri.starts_with("data:") || uri.starts_with('/') || uri.contains("://") {
+        return AssetPath::from(uri);
+    }
+    let Some((directory, _file)) = base.as_str().rsplit_once('/') else {
+        return AssetPath::from(uri);
+    };
+    AssetPath::from(format!("{directory}/{uri}"))
 }
 
 fn parse_gltf_nodes(
