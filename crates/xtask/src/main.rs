@@ -4901,6 +4901,34 @@ fn check_m7_ergonomics_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "m7-industrial-static-scene",
         ],
     );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/browser_probe/workflows.rs",
+        &[
+            "camera-framing",
+            "anchor-alignment",
+            "coordinate-units",
+            "static-batching",
+            "layers-helper-on-top",
+            "beginner-diagnostics",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "tests/browser/m6_rust_wasm_renderer_probe.js",
+        &[
+            "camera-framing",
+            "anchor-alignment",
+            "coordinate-units",
+            "static-batching",
+            "layers-helper-on-top",
+            "beginner-diagnostics",
+        ],
+    );
 }
 
 fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Vec<Finding>) {

@@ -2,8 +2,9 @@ use serde_json::json;
 use wasm_bindgen::prelude::JsValue;
 
 use crate::{
-    AnimationPlaybackState, Assets, Color, CursorPosition, GeometryDesc, HitTarget, LabelDesc,
-    MaterialDesc, PerspectiveCamera, Primitive, Scene, Transform, Vec3, Vertex, Viewport,
+    Aabb, AnimationPlaybackState, Assets, Color, CursorPosition, DiagnosticSeverity, GeometryDesc,
+    HitTarget, LabelDesc, MaterialDesc, PerspectiveCamera, Primitive, Renderer, Scene,
+    SourceCoordinateSystem, SourceUnits, Transform, Vec3, Vertex, Viewport,
 };
 
 pub(super) struct WorkflowScene {
@@ -21,6 +22,12 @@ pub(super) async fn build_workflow_scene(workflow: &str) -> Result<WorkflowScene
         "animation" => animation_scene().await,
         "labels-helpers" => Ok(labels_helpers_scene()?),
         "industrial-static-scene" => Ok(industrial_static_scene()?),
+        "camera-framing" => Ok(camera_framing_scene()?),
+        "anchor-alignment" => anchor_alignment_scene().await,
+        "coordinate-units" => Ok(coordinate_units_scene()?),
+        "static-batching" => Ok(static_batching_scene()?),
+        "layers-helper-on-top" => Ok(layers_helper_on_top_scene()?),
+        "beginner-diagnostics" => Ok(beginner_diagnostics_scene()?),
         other => Err(JsValue::from_str(&format!(
             "unknown M6 browser workflow probe: {other}"
         ))),
@@ -220,6 +227,224 @@ fn industrial_static_scene() -> Result<WorkflowScene, JsValue> {
         scene,
         camera,
         metadata: json!({ "profile": "industrial-static-scene", "grid": true }),
+    })
+}
+
+fn camera_framing_scene() -> Result<WorkflowScene, JsValue> {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.2, 0.4, 0.4));
+    let material = assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(70, 160, 240)));
+    let mut scene = Scene::new();
+    let inspected_part = scene
+        .mesh(geometry, material)
+        .add()
+        .map_err(|error| JsValue::from_str(&format!("camera framing mesh failed: {error:?}")))?;
+    let camera = add_default_camera(&mut scene)?;
+    let bounds = Aabb::new(Vec3::new(-0.6, -0.2, -0.2), Vec3::new(0.6, 0.2, 0.2));
+    scene
+        .frame(camera, bounds)
+        .map_err(|error| JsValue::from_str(&format!("camera frame failed: {error:?}")))?;
+    scene
+        .look_at(camera, inspected_part)
+        .map_err(|error| JsValue::from_str(&format!("camera look_at failed: {error:?}")))?;
+    Ok(WorkflowScene {
+        assets,
+        scene,
+        camera,
+        metadata: json!({ "bounds": "box", "framed": true, "look_at": true }),
+    })
+}
+
+async fn anchor_alignment_scene() -> Result<WorkflowScene, JsValue> {
+    let assets = Assets::new();
+    let scene_asset = assets
+        .load_scene("/fixtures/gltf/anchor_debug_scene.gltf")
+        .await
+        .map_err(|error| JsValue::from_str(&format!("anchor fixture load failed: {error:?}")))?;
+    let marker_geometry = assets.create_geometry(GeometryDesc::anchor_marker(0.2));
+    let marker_material =
+        assets.create_material(MaterialDesc::line(Color::from_srgb_u8(255, 220, 70), 1.0));
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .map_err(|error| JsValue::from_str(&format!("anchor instantiate failed: {error:?}")))?;
+    let marker = scene
+        .mesh(marker_geometry, marker_material)
+        .add()
+        .map_err(|error| JsValue::from_str(&format!("anchor marker failed: {error:?}")))?;
+    scene
+        .snap_anchor(
+            marker,
+            import
+                .anchor("inspection")
+                .map_err(|error| JsValue::from_str(&format!("anchor lookup failed: {error:?}")))?,
+        )
+        .map_err(|error| JsValue::from_str(&format!("anchor snap failed: {error:?}")))?;
+    let anchor_debug = import
+        .anchor_debug_metadata()
+        .map_err(|error| JsValue::from_str(&format!("anchor debug failed: {error:?}")))?;
+    let camera = add_default_camera(&mut scene)?;
+    if let Some(bounds) = import.bounds_world(&scene) {
+        scene
+            .frame(camera, bounds)
+            .map_err(|error| JsValue::from_str(&format!("anchor frame failed: {error:?}")))?;
+    }
+    Ok(WorkflowScene {
+        assets,
+        scene,
+        camera,
+        metadata: json!({ "anchor": "inspection", "anchor_debug_count": anchor_debug.len() }),
+    })
+}
+
+fn coordinate_units_scene() -> Result<WorkflowScene, JsValue> {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.12, 0.12, 0.12));
+    let material = assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(120, 230, 90)));
+    let cad_position_mm = Vec3::new(250.0, 0.0, 100.0);
+    let meters_per_unit = SourceUnits::Millimeters.meters_per_unit();
+    let y_up_position = SourceCoordinateSystem::ZUpRightHanded.convert_position(cad_position_mm);
+    let render_position = Vec3::new(
+        y_up_position.x * meters_per_unit,
+        y_up_position.y * meters_per_unit,
+        y_up_position.z * meters_per_unit,
+    );
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .transform(Transform::at(render_position))
+        .add()
+        .map_err(|error| JsValue::from_str(&format!("converted mesh failed: {error:?}")))?;
+    let camera = add_default_camera(&mut scene)?;
+    scene
+        .look_at_point(camera, render_position)
+        .map_err(|error| JsValue::from_str(&format!("converted look_at failed: {error:?}")))?;
+    Ok(WorkflowScene {
+        assets,
+        scene,
+        camera,
+        metadata: json!({
+            "source_units": "millimeters",
+            "coordinate_system": "ZUpRightHanded",
+            "meters_per_unit": meters_per_unit,
+        }),
+    })
+}
+
+fn static_batching_scene() -> Result<WorkflowScene, JsValue> {
+    let assets = Assets::new();
+    let source = GeometryDesc::box_xyz(0.12, 0.12, 0.12);
+    let transforms = (0..12).map(|index| {
+        Transform::at(Vec3::new(
+            (index % 6) as f32 * 0.18 - 0.45,
+            (index / 6) as f32 * 0.18 - 0.09,
+            0.0,
+        ))
+    });
+    let (batch, report) = assets.create_static_batch_with_report(&source, transforms);
+    let material = assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(240, 200, 60)));
+    let mut scene = Scene::new();
+    scene
+        .mesh(batch, material)
+        .add()
+        .map_err(|error| JsValue::from_str(&format!("static batch mesh failed: {error:?}")))?;
+    let camera = add_default_camera(&mut scene)?;
+    Ok(WorkflowScene {
+        assets,
+        scene,
+        camera,
+        metadata: json!({
+            "instances": report.instance_count(),
+            "vertices": report.output_vertices(),
+            "requires_prepare_after_rebuild": report.requires_prepare_after_rebuild(),
+            "picking_debug_instances": report.picking_debug_instances(),
+        }),
+    })
+}
+
+fn layers_helper_on_top_scene() -> Result<WorkflowScene, JsValue> {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.3, 0.3, 0.3));
+    let visible_material =
+        assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(80, 170, 255)));
+    let helper_material =
+        assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(255, 230, 80)));
+    let mut scene = Scene::new();
+    let machine = scene
+        .mesh(geometry, visible_material)
+        .transform(Transform::at(Vec3::new(-0.25, 0.0, 0.0)))
+        .add()
+        .map_err(|error| JsValue::from_str(&format!("machine mesh failed: {error:?}")))?;
+    let helper = scene
+        .mesh(geometry, helper_material)
+        .transform(Transform::at(Vec3::new(0.25, 0.0, 0.0)).scale_by(0.5))
+        .add()
+        .map_err(|error| JsValue::from_str(&format!("helper mesh failed: {error:?}")))?;
+    let hidden = scene
+        .mesh(geometry, visible_material)
+        .transform(Transform::at(Vec3::new(0.0, 0.4, 0.0)))
+        .add()
+        .map_err(|error| JsValue::from_str(&format!("hidden mesh failed: {error:?}")))?;
+    scene
+        .add_tag(machine, "operational")
+        .map_err(|error| JsValue::from_str(&format!("tag failed: {error:?}")))?;
+    scene
+        .set_layer_mask(machine, 0b0001)
+        .map_err(|error| JsValue::from_str(&format!("machine layer failed: {error:?}")))?;
+    scene
+        .set_layer_mask(helper, 0b0001)
+        .map_err(|error| JsValue::from_str(&format!("helper layer failed: {error:?}")))?;
+    scene
+        .set_layer_mask(hidden, 0b0010)
+        .map_err(|error| JsValue::from_str(&format!("hidden layer failed: {error:?}")))?;
+    scene
+        .set_visible(hidden, false)
+        .map_err(|error| JsValue::from_str(&format!("hidden visibility failed: {error:?}")))?;
+    scene
+        .set_render_group(helper, 10)
+        .map_err(|error| JsValue::from_str(&format!("helper group failed: {error:?}")))?;
+    scene
+        .set_helper_on_top(helper, true)
+        .map_err(|error| JsValue::from_str(&format!("helper on top failed: {error:?}")))?;
+    let camera = add_default_camera(&mut scene)?;
+    scene
+        .set_camera_layer_mask(camera, 0b0001)
+        .map_err(|error| JsValue::from_str(&format!("camera layer failed: {error:?}")))?;
+    Ok(WorkflowScene {
+        assets,
+        scene,
+        camera,
+        metadata: json!({
+            "tagged_operational": 1,
+            "helper_on_top": true,
+            "camera_layer_mask": 1,
+        }),
+    })
+}
+
+fn beginner_diagnostics_scene() -> Result<WorkflowScene, JsValue> {
+    let assets = Assets::new();
+    let mut scene = Scene::new();
+    let diagnostic_renderer = Renderer::headless(16, 16)
+        .map_err(|error| JsValue::from_str(&format!("diagnostic renderer failed: {error:?}")))?;
+    let errors = diagnostic_renderer
+        .diagnose_scene(&scene)
+        .into_iter()
+        .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+        .count();
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![Primitive::unlit_triangle()],
+            Transform::default(),
+        )
+        .map_err(|error| JsValue::from_str(&format!("diagnostic triangle failed: {error:?}")))?;
+    let camera = add_default_camera(&mut scene)?;
+    Ok(WorkflowScene {
+        assets,
+        scene,
+        camera,
+        metadata: json!({ "initial_error_diagnostics": errors, "recovered": true }),
     })
 }
 

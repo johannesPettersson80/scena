@@ -81,6 +81,12 @@ async function main() {
     "animation",
     "labels-helpers",
     "industrial-static-scene",
+    "camera-framing",
+    "anchor-alignment",
+    "coordinate-units",
+    "static-batching",
+    "layers-helper-on-top",
+    "beginner-diagnostics",
   ];
   const results = [];
   try {
