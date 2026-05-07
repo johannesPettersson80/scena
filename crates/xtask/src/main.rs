@@ -2189,10 +2189,12 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         &[
             "mod import;",
             "mod instances;",
+            "mod labels;",
             "mod picking;",
             "mod view;",
             "ImportOptions",
             "InstanceSetKey",
+            "LabelKey",
             "SceneImport",
         ],
     );
@@ -2231,6 +2233,22 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "ARCH-M3A-SCENE-IMPORT",
+        "src/scene/labels.rs",
+        &[
+            "pub struct LabelDesc",
+            "pub enum LabelRasterization",
+            "pub enum LabelBillboard",
+            "pub fn sdf",
+            "pub fn msdf",
+            "pub fn add_label",
+            "pub fn set_label_text",
+            "LabelNotFound",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
         "src/picking.rs",
         &[
             "pub struct CursorPosition",
@@ -2252,9 +2270,22 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "src/render/prepare.rs",
         &[
             "scene.instance_set_nodes()",
+            "labels::append_label_primitives",
             "compose_transform",
             "instance_set.geometry()",
             "instance_set.material()",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/render/prepare/labels.rs",
+        &[
+            "pub(super) fn append_label_primitives",
+            "scene.label_nodes()",
+            "LabelBillboard::ScreenAligned",
+            "Primitive::triangle",
         ],
     );
     require_contains(
@@ -2369,7 +2400,9 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "interaction_context_and_renderer_styles_are_explicit",
             "instance_sets_have_stable_ids_mutations_and_cpu_fallback",
             "offscreen_target_readback_is_explicit_and_owned",
+            "labels_use_sdf_msdf_descriptors_and_billboard_render_path",
             "InstanceCullingPolicy::CpuBoundingBoxFallback",
+            "LabelRasterization::Msdf",
             "mesh_material_vertex_color_scene.gltf",
             "transform_options_scene.gltf",
             "ImportOptions::gltf_default",

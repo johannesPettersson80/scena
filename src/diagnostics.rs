@@ -3,7 +3,7 @@
 use crate::assets::{EnvironmentHandle, GeometryHandle, MaterialHandle};
 use crate::geometry::GeometryTopology;
 use crate::material::{AlphaMode, MaterialKind};
-use crate::scene::{CameraKey, ClippingPlaneKey, InstanceSetKey, NodeKey};
+use crate::scene::{CameraKey, ClippingPlaneKey, InstanceSetKey, LabelKey, NodeKey};
 
 mod capabilities;
 mod display;
@@ -168,6 +168,7 @@ pub enum LookupError {
     CameraNotFound(CameraKey),
     ClippingPlaneNotFound(ClippingPlaneKey),
     InstanceSetNotFound(InstanceSetKey),
+    LabelNotFound(LabelKey),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

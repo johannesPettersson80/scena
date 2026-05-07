@@ -3,9 +3,10 @@
 use scena::{
     Aabb, AssetError, AssetFetcher, AssetPath, Assets, BuildError, Camera, ChangeKind, Color,
     CursorPosition, GeometryDesc, GeometryTopology, GeometryVertex, HitTarget, ImportOptions,
-    InstanceCullingPolicy, InteractionStyle, LookupError, MaterialDesc, MaterialKind, NodeKind,
-    NotPreparedReason, OffscreenTarget, PerspectiveCamera, Primitive, Quat, RenderError, Renderer,
-    Scene, SourceCoordinateSystem, SourceUnits, Transform, Vec3, Viewport,
+    InstanceCullingPolicy, InteractionStyle, LabelBillboard, LabelDesc, LabelRasterization,
+    LookupError, MaterialDesc, MaterialKind, NodeKind, NotPreparedReason, OffscreenTarget,
+    PerspectiveCamera, Primitive, Quat, RenderError, Renderer, Scene, SourceCoordinateSystem,
+    SourceUnits, Transform, Vec3, Viewport,
 };
 use std::future::{Ready, ready};
 use std::sync::{
@@ -393,6 +394,52 @@ fn offscreen_target_readback_is_explicit_and_owned() {
         Err(BuildError::InvalidTargetSize {
             width: 0,
             height: 4
+        })
+    ));
+}
+
+#[test]
+fn labels_use_sdf_msdf_descriptors_and_billboard_render_path() {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    let label_desc = LabelDesc::sdf("Pump A")
+        .with_color(Color::from_linear_rgb(0.0, 1.0, 0.0))
+        .with_size(0.5)
+        .with_billboard(LabelBillboard::ScreenAligned);
+    let label = scene
+        .add_label(scene.root(), label_desc.clone(), Transform::default())
+        .expect("label inserts");
+
+    assert_eq!(scene.label(label), Some(&label_desc));
+    assert_eq!(label_desc.rasterization(), LabelRasterization::Sdf);
+    assert_eq!(label_desc.billboard(), LabelBillboard::ScreenAligned);
+    assert_eq!(
+        LabelDesc::msdf("Pump B").rasterization(),
+        LabelRasterization::Msdf
+    );
+
+    let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+    renderer.prepare(&mut scene).expect("label scene prepares");
+    let outcome = renderer.render(&scene, camera).expect("label renders");
+    assert_eq!(outcome.primitives, 2);
+    assert!(renderer.frame_rgba8().iter().any(|channel| *channel != 0));
+
+    scene
+        .set_label_text(label, "Pump A selected")
+        .expect("label text mutates");
+    assert!(matches!(
+        renderer.render(&scene, camera),
+        Err(RenderError::NotPrepared {
+            reason: NotPreparedReason::SceneChanged {
+                change: ChangeKind::SceneStructure,
+                ..
+            },
         })
     ));
 }

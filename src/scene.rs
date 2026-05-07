@@ -15,12 +15,15 @@ mod builders;
 mod camera;
 mod import;
 mod instances;
+mod labels;
 mod lights;
 mod picking;
+mod render_nodes;
 mod view;
 pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
 pub use import::{ImportOptions, SceneImport, SourceCoordinateSystem, SourceUnits};
 pub use instances::{Instance, InstanceCullingPolicy, InstanceId, InstanceSet};
+pub use labels::{LabelBillboard, LabelDesc, LabelRasterization};
 pub use lights::{DirectionalLight, Light, LightBuilder, PointLight, SpotLight};
 
 new_key_type! {
@@ -29,6 +32,7 @@ new_key_type! {
     pub struct LightKey;
     pub struct ClippingPlaneKey;
     pub struct InstanceSetKey;
+    pub struct LabelKey;
 }
 
 #[derive(Debug)]
@@ -38,6 +42,7 @@ pub struct Scene {
     cameras: SlotMap<CameraKey, Camera>,
     lights: SlotMap<LightKey, Light>,
     instance_sets: SlotMap<InstanceSetKey, InstanceSet>,
+    labels: SlotMap<LabelKey, LabelDesc>,
     clipping_planes: SlotMap<ClippingPlaneKey, ClippingPlane>,
     active_clipping_planes: ClippingPlaneSet,
     origin_shift: Vec3,
@@ -63,6 +68,7 @@ pub enum NodeKind {
     Mesh(MeshNode),
     Model(ModelNode),
     InstanceSet(InstanceSetKey),
+    Label(LabelKey),
     Camera(CameraKey),
     Light(LightKey),
 }
@@ -150,6 +156,7 @@ impl Scene {
             cameras: SlotMap::with_key(),
             lights: SlotMap::with_key(),
             instance_sets: SlotMap::with_key(),
+            labels: SlotMap::with_key(),
             clipping_planes: SlotMap::with_key(),
             active_clipping_planes: ClippingPlaneSet::new(),
             origin_shift: Vec3::ZERO,
@@ -310,18 +317,6 @@ impl Scene {
         self.structure_revision
     }
 
-    pub(crate) fn renderables(&self) -> impl Iterator<Item = (&RenderableNode, Transform)> {
-        self.nodes.values().filter_map(|node| match &node.kind {
-            NodeKind::Renderable(renderable) => Some((renderable, node.transform)),
-            NodeKind::Empty
-            | NodeKind::Mesh(_)
-            | NodeKind::Model(_)
-            | NodeKind::InstanceSet(_)
-            | NodeKind::Camera(_)
-            | NodeKind::Light(_) => None,
-        })
-    }
-
     pub(crate) fn mesh_nodes(&self) -> impl Iterator<Item = (NodeKey, MeshNode, Transform)> + '_ {
         self.nodes.iter().filter_map(|(key, node)| match node.kind {
             NodeKind::Mesh(mesh) => Some((key, mesh, node.transform)),
@@ -329,6 +324,7 @@ impl Scene {
             | NodeKind::Renderable(_)
             | NodeKind::Model(_)
             | NodeKind::InstanceSet(_)
+            | NodeKind::Label(_)
             | NodeKind::Camera(_)
             | NodeKind::Light(_) => None,
         })
@@ -354,8 +350,22 @@ impl Scene {
             | NodeKind::Renderable(_)
             | NodeKind::Mesh(_)
             | NodeKind::InstanceSet(_)
+            | NodeKind::Label(_)
             | NodeKind::Camera(_)
             | NodeKind::Light(_) => None,
+        })
+    }
+
+    pub(crate) fn label_nodes(
+        &self,
+    ) -> impl Iterator<Item = (NodeKey, LabelKey, &LabelDesc, Transform)> + '_ {
+        self.nodes.iter().filter_map(|(node_key, node)| {
+            let NodeKind::Label(label) = node.kind else {
+                return None;
+            };
+            self.labels
+                .get(label)
+                .map(|label_desc| (node_key, label, label_desc, node.transform))
         })
     }
 

@@ -264,6 +264,7 @@ impl fmt::Display for LookupError {
             Self::InstanceSetNotFound(_) => {
                 write!(formatter, "instance set key does not exist in the scene")
             }
+            Self::LabelNotFound(_) => write!(formatter, "label key does not exist in the scene"),
         }
     }
 }

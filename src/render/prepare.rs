@@ -13,6 +13,7 @@ use self::transforms::{
 };
 use super::RasterTarget;
 
+mod labels;
 mod lighting;
 mod resources;
 mod strokes;
@@ -61,6 +62,7 @@ pub(super) fn collect_prepared_primitives<F>(
                 .map(move |primitive| transform_primitive(primitive, transform, origin_shift))
         })
         .collect();
+    labels::append_label_primitives(scene, origin_shift, &mut primitives);
     let mut transparent_primitives = Vec::new();
 
     for (node, mesh, transform) in scene.mesh_nodes() {
