@@ -11,7 +11,7 @@ use scena::{
 use std::collections::BTreeMap;
 use std::future::{Ready, ready};
 use std::sync::{
-    Arc,
+    Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
 };
 
@@ -1058,6 +1058,76 @@ fn gltf_loader_preserves_multi_primitive_meshes_as_child_mesh_nodes() {
 }
 
 #[test]
+fn reload_scene_requires_retain_and_reprepare_after_replace_import() {
+    let fetcher = MutableSceneFetcher::new(
+        "memory://reload.gltf",
+        r#"{
+            "asset": { "version": "2.0" },
+            "nodes": [{ "name": "Before" }]
+        }"#,
+    );
+    let assets = Assets::with_fetcher(fetcher.clone());
+    let first = pollster::block_on(assets.load_scene("memory://reload.gltf"))
+        .expect("initial reload scene loads");
+
+    let retain_error = pollster::block_on(assets.reload_scene(&first))
+        .expect_err("reload without RetainPolicy::Always is rejected");
+    assert!(matches!(
+        retain_error,
+        AssetError::ReloadRequiresRetain { ref path, .. } if path == "memory://reload.gltf"
+    ));
+
+    fetcher.set_source(
+        r#"{
+            "asset": { "version": "2.0" },
+            "nodes": [{ "name": "After" }]
+        }"#,
+    );
+    let mut assets = assets;
+    assets.set_retain_policy(scena::RetainPolicy::Always);
+    let second = pollster::block_on(assets.reload_scene(&first)).expect("retained scene reloads");
+
+    let mut scene = Scene::new();
+    let import = scene.instantiate(&first).expect("first import succeeds");
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    let mut renderer = Renderer::headless(4, 4).expect("headless renderer builds");
+    renderer
+        .prepare(&mut scene)
+        .expect("initial scene prepares");
+    renderer
+        .render(&scene, camera)
+        .expect("initial prepared scene renders");
+
+    let replacement = scene
+        .replace_import(&import, &second)
+        .expect("replacement import succeeds");
+    assert!(matches!(
+        import.node("Before"),
+        Err(LookupError::StaleImport)
+    ));
+    assert!(replacement.node("After").is_ok());
+    assert!(matches!(
+        renderer.render(&scene, camera),
+        Err(RenderError::NotPrepared {
+            reason: NotPreparedReason::SceneChanged { .. }
+        })
+    ));
+
+    renderer
+        .prepare(&mut scene)
+        .expect("replacement scene re-prepares");
+    renderer
+        .render(&scene, camera)
+        .expect("replacement scene renders after prepare");
+}
+
+#[test]
 fn import_options_apply_gltf_node_transforms_and_source_units() {
     let assets = Assets::new();
     let scene_asset =
@@ -1456,6 +1526,49 @@ impl AssetFetcher for MultiMemoryFetcher {
         if let Some(bytes) = self.sources.get(path) {
             self.calls.fetch_add(1, Ordering::SeqCst);
             ready(Ok(bytes.clone()))
+        } else {
+            ready(Err(AssetError::NotFound {
+                path: path.as_str().to_string(),
+            }))
+        }
+    }
+}
+
+#[derive(Clone)]
+struct MutableSceneFetcher {
+    path: AssetPath,
+    source: Arc<Mutex<Vec<u8>>>,
+    calls: Arc<AtomicUsize>,
+}
+
+impl MutableSceneFetcher {
+    fn new(path: impl Into<AssetPath>, source: impl AsRef<[u8]>) -> Self {
+        Self {
+            path: path.into(),
+            source: Arc::new(Mutex::new(source.as_ref().to_vec())),
+            calls: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn set_source(&self, source: impl AsRef<[u8]>) {
+        *self
+            .source
+            .lock()
+            .expect("mutable test fetcher source lock is not poisoned") = source.as_ref().to_vec();
+    }
+}
+
+impl AssetFetcher for MutableSceneFetcher {
+    type Future<'a> = Ready<Result<Vec<u8>, AssetError>>;
+
+    fn fetch<'a>(&'a self, path: &'a AssetPath) -> Self::Future<'a> {
+        if path == &self.path {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            ready(Ok(self
+                .source
+                .lock()
+                .expect("mutable test fetcher source lock is not poisoned")
+                .clone()))
         } else {
             ready(Err(AssetError::NotFound {
                 path: path.as_str().to_string(),

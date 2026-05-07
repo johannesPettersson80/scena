@@ -2113,6 +2113,9 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "SceneAssetMesh",
             "scene_lookup: BTreeMap<AssetPath, SceneAsset>",
             "pub async fn load_scene",
+            "pub async fn reload_scene",
+            "RetainPolicy::Always",
+            "ReloadRequiresRetain",
             "SceneAsset::from_gltf_bytes",
         ],
     );
@@ -2508,6 +2511,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "glb_loader_reads_binary_chunk_mesh_materials_and_instantiates",
             "gltf_loader_fetches_external_buffers_relative_to_scene_path",
             "gltf_loader_preserves_multi_primitive_meshes_as_child_mesh_nodes",
+            "reload_scene_requires_retain_and_reprepare_after_replace_import",
             "import_options_apply_gltf_node_transforms_and_source_units",
             "scene_import_reports_local_and_world_bounds_for_imported_meshes",
             "scene_import_anchor_lookups_parse_gltf_extras_and_stale",

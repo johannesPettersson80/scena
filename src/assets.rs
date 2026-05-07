@@ -263,6 +263,26 @@ impl<F: AssetFetcher> Assets<F> {
             return Ok(scene);
         }
 
+        let scene = self.parse_scene_uncached(path.clone()).await?;
+        self.storage().scene_lookup.insert(path, scene.clone());
+        Ok(scene)
+    }
+
+    pub async fn reload_scene(&self, scene: &SceneAsset) -> Result<SceneAsset, AssetError> {
+        let path = scene.path().clone();
+        if self.retain_policy != RetainPolicy::Always {
+            return Err(AssetError::ReloadRequiresRetain {
+                path: path.as_str().to_string(),
+                help: "set RetainPolicy::Always before reloading scene assets",
+            });
+        }
+
+        let scene = self.parse_scene_uncached(path.clone()).await?;
+        self.storage().scene_lookup.insert(path, scene.clone());
+        Ok(scene)
+    }
+
+    async fn parse_scene_uncached(&self, path: AssetPath) -> Result<SceneAsset, AssetError> {
         let bytes = self.fetcher.fetch(&path).await?;
         let external_paths = SceneAsset::external_buffer_paths(&path, &bytes)?;
         let mut external_buffers = BTreeMap::new();
@@ -281,7 +301,6 @@ impl<F: AssetFetcher> Assets<F> {
                 &mut storage,
             )?
         };
-        storage.scene_lookup.insert(path, scene.clone());
         Ok(scene)
     }
 }
