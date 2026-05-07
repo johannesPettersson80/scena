@@ -2557,6 +2557,20 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "ARCH-M3A-SCENE-IMPORT",
+        "tests/m3a_browser_rendered_output.rs",
+        &[
+            "wasm_bindgen_test_configure!(run_in_browser)",
+            "m3a_browser_wasm_renders_import_and_interaction_paths_to_canvas",
+            "render_glb_import_frame",
+            "render_interaction_frame",
+            "browser_canvas_roundtrip",
+            "minimal_glb_triangle_scene",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
         "docs/checklists/m3a-app-features.md",
         &[
             "assets_load_scene_caches_gltf_asset_and_rejects_required_extensions",
