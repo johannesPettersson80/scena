@@ -2091,7 +2091,13 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         findings,
         "ARCH-M3A-SCENE-IMPORT",
         "Cargo.toml",
-        &["base64", "serde_json", "wasm-bindgen-futures", "Response"],
+        &[
+            "base64",
+            "serde_json",
+            "wasm-bindgen-futures",
+            "Response",
+            "obj = []",
+        ],
     );
     require_contains(
         root,
@@ -2101,6 +2107,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         &[
             "mod fetch;",
             "mod gltf;",
+            "mod obj;",
             "pub use fetch::{AssetFetcher, DefaultAssetFetcher}",
             "pub use gltf::{SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetLight, SceneAssetNode}",
             "scene_lookup: BTreeMap<AssetPath, SceneAsset>",
@@ -2120,6 +2127,18 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub struct BrowserAssetFetcher",
             "window.fetch_with_str",
             "wasm_bindgen_futures::JsFuture",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/assets/obj.rs",
+        &[
+            "pub async fn load_geometry",
+            "parse_obj_geometry",
+            "mtllib",
+            "GeometryTopology::Triangles",
         ],
     );
     require_contains(
@@ -2441,6 +2460,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "scene_import_anchor_lookups_parse_gltf_extras_and_stale",
             "scene_import_clip_lookups_are_import_local_and_stale",
             "gltf_required_punctual_lights_instantiate_as_scene_lights",
+            "obj_feature_load_geometry_parses_triangle_faces",
             "scene_pick_returns_typed_hit_target_for_renderable_triangle",
             "interaction_context_and_renderer_styles_are_explicit",
             "instance_sets_have_stable_ids_mutations_and_cpu_fallback",

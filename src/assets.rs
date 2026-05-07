@@ -11,6 +11,8 @@ use crate::material::{MaterialDesc, TextureColorSpace};
 
 mod fetch;
 mod gltf;
+#[cfg(feature = "obj")]
+mod obj;
 #[cfg(target_arch = "wasm32")]
 pub use fetch::BrowserAssetFetcher;
 #[cfg(not(target_arch = "wasm32"))]

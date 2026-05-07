@@ -395,6 +395,34 @@ fn gltf_required_punctual_lights_instantiate_as_scene_lights() {
     assert_eq!(point.range(), Some(12.0));
 }
 
+#[cfg(feature = "obj")]
+#[test]
+fn obj_feature_load_geometry_parses_triangle_faces() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(
+        "memory://triangle.obj",
+        r#"
+            mtllib triangle.mtl
+            v -0.5 -0.5 0.0
+            v 0.5 -0.5 0.0
+            v 0.0 0.5 0.0
+            vn 0.0 0.0 1.0
+            f 1//1 2//1 3//1
+        "#,
+    ));
+
+    let geometry = pollster::block_on(assets.load_geometry("memory://triangle.obj"))
+        .expect("OBJ geometry loads");
+    let geometry = assets
+        .geometry(geometry)
+        .expect("OBJ geometry handle resolves");
+
+    assert_eq!(geometry.topology(), GeometryTopology::Triangles);
+    assert_eq!(geometry.vertices().len(), 3);
+    assert_eq!(geometry.indices(), [0, 1, 2]);
+    assert_vec3_near(geometry.bounds().min, Vec3::new(-0.5, -0.5, 0.0));
+    assert_vec3_near(geometry.bounds().max, Vec3::new(0.5, 0.5, 0.0));
+}
+
 #[test]
 fn scene_pick_returns_typed_hit_target_for_renderable_triangle() {
     let mut scene = Scene::new();
