@@ -4800,6 +4800,28 @@ fn check_m7_ergonomics_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "m7_scene_inspection_feature_reports_reproducible_metadata",
         ],
     );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "tests/m7_visual_proof.rs",
+        &[
+            "m7_headless_visual_artifacts_cover_ergonomics_workflows",
+            "target/gate-artifacts/m7-visual",
+            "m7-first-render",
+            "m7-first-glb",
+            "m7-camera-frame",
+            "m7-picking-selection",
+            "m7-helpers",
+            "m7-labels",
+            "m7-controls",
+            "m7-layers-helper-on-top",
+            "m7-static-batching",
+            "m7-anchor-alignment",
+            "m7-coordinate-units",
+            "m7-industrial-static-scene",
+        ],
+    );
 }
 
 fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Vec<Finding>) {
