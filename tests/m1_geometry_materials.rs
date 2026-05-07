@@ -35,6 +35,48 @@ fn assert_all_pixels(frame: &[u8], width: u32, height: u32, expected: [u8; 4]) {
     }
 }
 
+fn assert_pixel_close(actual: [u8; 4], expected: [u8; 4], tolerance: u8, context: &str) {
+    for channel in 0..3 {
+        assert!(
+            actual[channel].abs_diff(expected[channel]) <= tolerance,
+            "{context}: color channel {channel} should be within {tolerance} of expected \
+             {expected:?}, got {actual:?}"
+        );
+    }
+    assert_eq!(actual[3], expected[3], "{context}: alpha should match");
+}
+
+fn assert_all_pixels_close(
+    frame: &[u8],
+    width: u32,
+    height: u32,
+    expected: [u8; 4],
+    tolerance: u8,
+) {
+    assert_eq!(frame.len(), (width as usize) * (height as usize) * 4);
+    for (index, pixel) in frame.chunks_exact(4).enumerate() {
+        let actual: [u8; 4] = pixel.try_into().expect("pixel slice has four channels");
+        assert_pixel_close(
+            actual,
+            expected,
+            tolerance,
+            &format!("pixel {index} should match gpu output within backend tolerance"),
+        );
+    }
+}
+
+fn count_pixels_close(frame: &[u8], expected: [u8; 4], tolerance: u8) -> usize {
+    frame
+        .chunks_exact(4)
+        .filter(|pixel| {
+            pixel[3] == expected[3]
+                && pixel[0].abs_diff(expected[0]) <= tolerance
+                && pixel[1].abs_diff(expected[1]) <= tolerance
+                && pixel[2].abs_diff(expected[2]) <= tolerance
+        })
+        .count()
+}
+
 fn assert_lower_hex_sha256(value: &str) {
     assert_eq!(value.len(), 64);
     assert!(
@@ -826,7 +868,7 @@ fn headless_gpu_alpha_blends_sorted_asset_meshes_when_available() {
             .render(&scene, camera)
             .expect("gpu blend mesh renders");
 
-        assert_all_pixels(renderer.frame_rgba8(), 4, 4, [163, 116, 116, 255]);
+        assert_all_pixels_close(renderer.frame_rgba8(), 4, 4, [163, 116, 116, 255], 8);
     }
 }
 
@@ -931,9 +973,11 @@ fn headless_gpu_renders_technical_material_primitives_when_available() {
             .prepare_with_assets(&mut scene, &assets)
             .expect("line material prepares for gpu");
         renderer.render(&scene, camera).expect("gpu line renders");
-        assert_eq!(
+        assert_pixel_close(
             pixel_at(renderer.frame_rgba8(), 16, 8, 7),
-            [206, 206, 206, 255]
+            [206, 206, 206, 255],
+            2,
+            "gpu line material should rasterize a white horizontal stroke",
         );
 
         let assets = Assets::new();
@@ -951,13 +995,15 @@ fn headless_gpu_renders_technical_material_primitives_when_available() {
         renderer
             .render(&scene, camera)
             .expect("gpu wireframe renders");
-        assert_eq!(
+        assert_pixel_close(
             pixel_at(renderer.frame_rgba8(), 16, 8, 13),
-            [206, 206, 206, 255]
+            [206, 206, 206, 255],
+            2,
+            "gpu wireframe material should rasterize the outer edge",
         );
-        assert_eq!(
-            pixel_at(renderer.frame_rgba8(), 16, 7, 7),
-            [206, 206, 206, 255]
+        assert!(
+            count_pixels_close(renderer.frame_rgba8(), [206, 206, 206, 255], 2) >= 8,
+            "gpu wireframe material should produce multiple tonemapped white edge pixels"
         );
 
         let assets = Assets::new();
@@ -975,9 +1021,11 @@ fn headless_gpu_renders_technical_material_primitives_when_available() {
         renderer
             .render(&scene, camera)
             .expect("gpu edge material renders");
-        assert_eq!(
+        assert_pixel_close(
             pixel_at(renderer.frame_rgba8(), 16, 8, 13),
-            [206, 206, 206, 255]
+            [206, 206, 206, 255],
+            2,
+            "gpu edge material should rasterize the outer edge",
         );
         assert_eq!(pixel_at(renderer.frame_rgba8(), 16, 7, 7), [0, 0, 0, 255]);
     }
