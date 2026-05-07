@@ -2105,7 +2105,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub use gltf::{SceneAsset, SceneAssetNode}",
             "scene_lookup: BTreeMap<AssetPath, SceneAsset>",
             "pub async fn load_scene",
-            "SceneAsset::from_gltf_source",
+            "SceneAsset::from_gltf_bytes",
         ],
     );
     require_contains(
@@ -2131,7 +2131,10 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub struct SceneAsset",
             "pub struct SceneAssetNode",
             "pub struct SceneAssetMesh",
+            "pub(super) fn from_gltf_bytes",
             "pub(super) fn from_gltf_source",
+            "fn parse_glb",
+            "GLB_BIN_CHUNK",
             "pub fn mesh_count",
             "pub fn transform(&self)",
             "pub fn mesh(&self)",
@@ -2153,6 +2156,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "src/assets/gltf/accessor.rs",
         &[
             "parse_buffers",
+            "binary_chunk",
             "parse_buffer_views",
             "parse_accessors",
             "read_color_accessor",
@@ -2394,6 +2398,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "camera_frame_and_look_at_helpers_update_view_and_require_prepare",
             "assets_load_scene_uses_fetcher_trait_and_deduplicates_by_asset_path",
             "gltf_loader_creates_geometry_material_texture_and_vertex_color_contracts",
+            "glb_loader_reads_binary_chunk_mesh_materials_and_instantiates",
             "import_options_apply_gltf_node_transforms_and_source_units",
             "scene_import_reports_local_and_world_bounds_for_imported_meshes",
             "scene_pick_returns_typed_hit_target_for_renderable_triangle",

@@ -148,6 +148,40 @@ fn gltf_loader_creates_geometry_material_texture_and_vertex_color_contracts() {
 }
 
 #[test]
+fn glb_loader_reads_binary_chunk_mesh_materials_and_instantiates() {
+    let assets = Assets::with_fetcher(BinaryFetcher::new(
+        "memory://triangle.glb",
+        minimal_glb_triangle_scene(),
+    ));
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://triangle.glb")).expect("GLB scene loads");
+
+    let mesh = scene_asset.nodes()[0]
+        .mesh()
+        .expect("GLB node records mesh payload");
+    let geometry = assets
+        .geometry(mesh.geometry())
+        .expect("GLB geometry is registered");
+    let material = assets
+        .material(mesh.material())
+        .expect("GLB material is registered");
+
+    assert_eq!(scene_asset.mesh_count(), 1);
+    assert_eq!(geometry.vertices().len(), 3);
+    assert_eq!(geometry.indices(), [0, 1, 2]);
+    assert_eq!(
+        material.base_color(),
+        Color::from_linear_rgba(0.2, 0.8, 0.1, 1.0)
+    );
+
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("GLB scene instantiates");
+    assert!(import.node("GlbTriangle").is_ok());
+}
+
+#[test]
 fn scene_import_reports_local_and_world_bounds_for_imported_meshes() {
     let assets = Assets::new();
     let scene_asset = pollster::block_on(
@@ -803,5 +837,92 @@ impl AssetFetcher for MemoryFetcher {
                 path: path.as_str().to_string(),
             }))
         }
+    }
+}
+
+#[derive(Clone)]
+struct BinaryFetcher {
+    path: AssetPath,
+    bytes: Arc<Vec<u8>>,
+    calls: Arc<AtomicUsize>,
+}
+
+impl BinaryFetcher {
+    fn new(path: impl Into<AssetPath>, bytes: Vec<u8>) -> Self {
+        Self {
+            path: path.into(),
+            bytes: Arc::new(bytes),
+            calls: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+}
+
+impl AssetFetcher for BinaryFetcher {
+    type Future<'a> = Ready<Result<Vec<u8>, AssetError>>;
+
+    fn fetch<'a>(&'a self, path: &'a AssetPath) -> Self::Future<'a> {
+        if path == &self.path {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            ready(Ok((*self.bytes).clone()))
+        } else {
+            ready(Err(AssetError::NotFound {
+                path: path.as_str().to_string(),
+            }))
+        }
+    }
+}
+
+fn minimal_glb_triangle_scene() -> Vec<u8> {
+    let mut bin = Vec::new();
+    for value in [-0.5_f32, -0.5, 0.0, 0.5, -0.5, 0.0, 0.0, 0.5, 0.0] {
+        bin.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0_u16, 1, 2] {
+        bin.extend_from_slice(&value.to_le_bytes());
+    }
+    let buffer_byte_length = bin.len();
+    pad_to_four(&mut bin, 0);
+
+    let json = format!(
+        r#"{{
+            "asset": {{ "version": "2.0" }},
+            "buffers": [{{ "byteLength": {buffer_byte_length} }}],
+            "bufferViews": [
+                {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},
+                {{ "buffer": 0, "byteOffset": 36, "byteLength": 6 }}
+            ],
+            "accessors": [
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }}
+            ],
+            "materials": [
+                {{ "pbrMetallicRoughness": {{ "baseColorFactor": [0.2, 0.8, 0.1, 1.0] }} }}
+            ],
+            "meshes": [
+                {{ "primitives": [{{ "attributes": {{ "POSITION": 0 }}, "indices": 1, "material": 0 }}] }}
+            ],
+            "nodes": [{{ "name": "GlbTriangle", "mesh": 0 }}]
+        }}"#
+    );
+    let mut json = json.into_bytes();
+    pad_to_four(&mut json, b' ');
+
+    let length = 12 + 8 + json.len() + 8 + bin.len();
+    let mut glb = Vec::with_capacity(length);
+    glb.extend_from_slice(&0x4654_6C67_u32.to_le_bytes());
+    glb.extend_from_slice(&2_u32.to_le_bytes());
+    glb.extend_from_slice(&(length as u32).to_le_bytes());
+    glb.extend_from_slice(&(json.len() as u32).to_le_bytes());
+    glb.extend_from_slice(&0x4E4F_534A_u32.to_le_bytes());
+    glb.extend_from_slice(&json);
+    glb.extend_from_slice(&(bin.len() as u32).to_le_bytes());
+    glb.extend_from_slice(&0x004E_4942_u32.to_le_bytes());
+    glb.extend_from_slice(&bin);
+    glb
+}
+
+fn pad_to_four(bytes: &mut Vec<u8>, pad: u8) {
+    while !bytes.len().is_multiple_of(4) {
+        bytes.push(pad);
     }
 }

@@ -10,19 +10,46 @@ use super::super::AssetPath;
 pub(super) fn parse_buffers(
     path: &AssetPath,
     json: &JsonValue,
+    binary_chunk: Option<&[u8]>,
 ) -> Result<Vec<Vec<u8>>, AssetError> {
     json.get("buffers")
         .and_then(JsonValue::as_array)
         .map(|buffers| {
             buffers
                 .iter()
-                .map(|buffer| {
-                    let uri = required_string(path, buffer, "uri")?;
-                    decode_data_uri(path, uri)
-                })
+                .enumerate()
+                .map(|(index, buffer)| parse_buffer(path, index, buffer, binary_chunk))
                 .collect()
         })
         .unwrap_or_else(|| Ok(Vec::new()))
+}
+
+fn parse_buffer(
+    path: &AssetPath,
+    index: usize,
+    buffer: &JsonValue,
+    binary_chunk: Option<&[u8]>,
+) -> Result<Vec<u8>, AssetError> {
+    if let Some(uri) = buffer.get("uri").and_then(JsonValue::as_str) {
+        return decode_data_uri(path, uri);
+    }
+    let byte_length = required_usize(path, buffer, "byteLength")?;
+    let Some(binary_chunk) = binary_chunk else {
+        return Err(parse_error(
+            path,
+            "glTF buffer without uri requires a GLB binary chunk",
+        ));
+    };
+    if index != 0 {
+        return Err(parse_error(
+            path,
+            "only the first GLB buffer may be backed by the binary chunk",
+        ));
+    }
+    let bytes = binary_chunk
+        .get(..byte_length)
+        .ok_or_else(|| parse_error(path, "GLB binary chunk is shorter than buffer byteLength"))?;
+    Ok(bytes.to_vec())
 }
 
 pub(super) fn parse_buffer_views(

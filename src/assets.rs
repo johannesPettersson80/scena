@@ -260,12 +260,8 @@ impl<F: AssetFetcher> Assets<F> {
         }
 
         let bytes = self.fetcher.fetch(&path).await?;
-        let source = String::from_utf8(bytes).map_err(|error| AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: format!("expected UTF-8 glTF JSON source: {error}"),
-        })?;
         let mut storage = self.storage();
-        let scene = SceneAsset::from_gltf_source(path.clone(), &source, &mut storage)?;
+        let scene = SceneAsset::from_gltf_bytes(path.clone(), &bytes, &mut storage)?;
         storage.scene_lookup.insert(path, scene.clone());
         Ok(scene)
     }
