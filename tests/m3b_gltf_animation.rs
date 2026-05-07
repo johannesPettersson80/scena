@@ -193,6 +193,12 @@ fn playing_paused_and_seek_animation_dirty_prepared_render_state() {
         .seek_animation(mixer, 1.0)
         .expect("paused seek samples once");
     assert_scene_changed(&mut renderer, &scene, camera);
+
+    renderer
+        .prepare(&mut scene)
+        .expect("scene re-prepares after seek");
+    scene.stop_animation(mixer).expect("stop resets pose once");
+    assert_scene_changed(&mut renderer, &scene, camera);
 }
 
 #[test]
@@ -219,6 +225,73 @@ fn replace_import_invalidates_animation_mixers_with_stale_error() {
     );
 }
 
+#[test]
+fn gltf_animation_supports_rotation_scale_weights_and_normalizes_quaternions() {
+    let assets = Assets::with_fetcher(MultiMemoryFetcher::new(vec![
+        (
+            AssetPath::from("memory://models/animated-targets.gltf"),
+            animated_targets_gltf().into_bytes(),
+        ),
+        (
+            AssetPath::from("memory://models/targets.bin"),
+            animated_targets_buffer(),
+        ),
+    ]));
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://models/animated-targets.gltf"))
+            .expect("animated-targets glTF loads");
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("animated-targets import instantiates");
+    let rotating = import.node("Rotating").expect("rotating node resolves");
+    let scaling = import.node("Scaling").expect("scaling node resolves");
+    let weighted = import.node("Weighted").expect("weighted node resolves");
+    let clip = import.clip("Targets").expect("targets clip resolves");
+
+    assert_eq!(
+        clip.channels()
+            .iter()
+            .map(|channel| (channel.target_node(), channel.target()))
+            .collect::<Vec<_>>(),
+        vec![
+            (rotating, AnimationTarget::Rotation),
+            (scaling, AnimationTarget::Scale),
+            (weighted, AnimationTarget::Weights),
+        ]
+    );
+
+    let mixer = scene
+        .create_animation_mixer(&import, "Targets")
+        .expect("targets mixer creates");
+    scene
+        .seek_animation(mixer, 1.0)
+        .expect("seek samples target channels");
+
+    let rotation = scene
+        .node(rotating)
+        .expect("rotating node exists")
+        .transform()
+        .rotation;
+    let rotation_len = (rotation.x * rotation.x
+        + rotation.y * rotation.y
+        + rotation.z * rotation.z
+        + rotation.w * rotation.w)
+        .sqrt();
+    assert!(
+        (rotation_len - 1.0).abs() <= 0.0001,
+        "sampled quaternion output must be normalized"
+    );
+    assert_vec3_near(
+        scene
+            .node(scaling)
+            .expect("scaling node exists")
+            .transform()
+            .scale,
+        Vec3::new(2.0, 3.0, 4.0),
+    );
+}
+
 fn animated_translation_assets() -> Assets<MultiMemoryFetcher> {
     Assets::with_fetcher(MultiMemoryFetcher::new(vec![
         (
@@ -230,6 +303,64 @@ fn animated_translation_assets() -> Assets<MultiMemoryFetcher> {
             animated_translation_buffer(),
         ),
     ]))
+}
+
+fn animated_targets_gltf() -> String {
+    r#"{
+        "asset": { "version": "2.0" },
+        "nodes": [
+            { "name": "Root", "children": [1, 2, 3] },
+            { "name": "Rotating" },
+            { "name": "Scaling" },
+            { "name": "Weighted" }
+        ],
+        "animations": [
+            {
+                "name": "Targets",
+                "samplers": [
+                    { "input": 0, "output": 1, "interpolation": "CUBICSPLINE" },
+                    { "input": 0, "output": 2, "interpolation": "STEP" },
+                    { "input": 0, "output": 3, "interpolation": "LINEAR" }
+                ],
+                "channels": [
+                    { "sampler": 0, "target": { "node": 1, "path": "rotation" } },
+                    { "sampler": 1, "target": { "node": 2, "path": "scale" } },
+                    { "sampler": 2, "target": { "node": 3, "path": "weights" } }
+                ]
+            }
+        ],
+        "buffers": [
+            { "byteLength": 72, "uri": "targets.bin" }
+        ],
+        "bufferViews": [
+            { "buffer": 0, "byteOffset": 0, "byteLength": 8 },
+            { "buffer": 0, "byteOffset": 8, "byteLength": 32 },
+            { "buffer": 0, "byteOffset": 40, "byteLength": 24 },
+            { "buffer": 0, "byteOffset": 64, "byteLength": 8 }
+        ],
+        "accessors": [
+            { "bufferView": 0, "componentType": 5126, "count": 2, "type": "SCALAR" },
+            { "bufferView": 1, "componentType": 5126, "count": 2, "type": "VEC4" },
+            { "bufferView": 2, "componentType": 5126, "count": 2, "type": "VEC3" },
+            { "bufferView": 3, "componentType": 5126, "count": 2, "type": "SCALAR" }
+        ]
+    }"#
+    .to_string()
+}
+
+fn animated_targets_buffer() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for value in [
+        0.0_f32, 1.0, // input times
+        0.0, 0.0, 0.0, 1.0, // first rotation
+        0.0, 0.0, 2.0, 0.0, // second rotation deliberately non-normalized
+        1.0, 1.0, 1.0, // first scale
+        2.0, 3.0, 4.0, // second scale
+        0.0, 1.0, // weights
+    ] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes
 }
 
 fn animated_translation_gltf() -> String {

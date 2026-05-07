@@ -144,7 +144,13 @@ impl Scene {
                 };
                 transform.scale = value;
             }
-            AnimationTarget::Rotation | AnimationTarget::Weights => return false,
+            AnimationTarget::Rotation => {
+                let Some(value) = channel.sample_quat(time_seconds) else {
+                    return false;
+                };
+                transform.rotation = value;
+            }
+            AnimationTarget::Weights => return false,
         }
         if before == transform {
             return false;

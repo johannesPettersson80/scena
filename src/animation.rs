@@ -217,6 +217,18 @@ impl AnimationChannel {
             time_seconds,
         )
     }
+
+    pub fn sample_quat(&self, time_seconds: f32) -> Option<Quat> {
+        let AnimationOutput::Quat(values) = &self.output else {
+            return None;
+        };
+        sample_quat(
+            &self.input_seconds,
+            values,
+            self.interpolation,
+            time_seconds,
+        )
+    }
 }
 
 impl AnimationSourceChannel {
@@ -368,6 +380,9 @@ fn sample_vec3(
     if time_seconds <= times[0] {
         return values.first().copied();
     }
+    if time_seconds >= *times.last()? {
+        return values.last().copied();
+    }
     for index in 0..times.len().saturating_sub(1) {
         let start = times[index];
         let end = times[index + 1];
@@ -386,10 +401,91 @@ fn sample_vec3(
     values.last().copied()
 }
 
+fn sample_quat(
+    times: &[f32],
+    values: &[Quat],
+    interpolation: AnimationInterpolation,
+    time_seconds: f32,
+) -> Option<Quat> {
+    if times.is_empty() || values.is_empty() {
+        return None;
+    }
+    if time_seconds <= times[0] {
+        return values.first().copied().map(normalize_quat);
+    }
+    if time_seconds >= *times.last()? {
+        return values.last().copied().map(normalize_quat);
+    }
+    for index in 0..times.len().saturating_sub(1) {
+        let start = times[index];
+        let end = times[index + 1];
+        if time_seconds <= end {
+            let left = normalize_quat(*values.get(index)?);
+            let right = normalize_quat(*values.get(index + 1)?);
+            return Some(match interpolation {
+                AnimationInterpolation::Step => left,
+                AnimationInterpolation::Linear | AnimationInterpolation::CubicSpline => {
+                    let amount = ((time_seconds - start) / (end - start)).clamp(0.0, 1.0);
+                    slerp_quat(left, right, amount)
+                }
+            });
+        }
+    }
+    values.last().copied().map(normalize_quat)
+}
+
 fn lerp_vec3(left: Vec3, right: Vec3, amount: f32) -> Vec3 {
     Vec3::new(
         left.x + (right.x - left.x) * amount,
         left.y + (right.y - left.y) * amount,
         left.z + (right.z - left.z) * amount,
     )
+}
+
+fn normalize_quat(value: Quat) -> Quat {
+    let length =
+        (value.x * value.x + value.y * value.y + value.z * value.z + value.w * value.w).sqrt();
+    if length <= f32::EPSILON || !length.is_finite() {
+        return Quat::IDENTITY;
+    }
+    Quat {
+        x: value.x / length,
+        y: value.y / length,
+        z: value.z / length,
+        w: value.w / length,
+    }
+}
+
+fn slerp_quat(left: Quat, right: Quat, amount: f32) -> Quat {
+    let mut right = right;
+    let mut dot = left.x * right.x + left.y * right.y + left.z * right.z + left.w * right.w;
+    if dot < 0.0 {
+        dot = -dot;
+        right = Quat {
+            x: -right.x,
+            y: -right.y,
+            z: -right.z,
+            w: -right.w,
+        };
+    }
+    if dot > 0.9995 {
+        return normalize_quat(Quat {
+            x: left.x + (right.x - left.x) * amount,
+            y: left.y + (right.y - left.y) * amount,
+            z: left.z + (right.z - left.z) * amount,
+            w: left.w + (right.w - left.w) * amount,
+        });
+    }
+    let theta_0 = dot.acos();
+    let theta = theta_0 * amount;
+    let sin_theta = theta.sin();
+    let sin_theta_0 = theta_0.sin();
+    let left_scale = theta.cos() - dot * sin_theta / sin_theta_0;
+    let right_scale = sin_theta / sin_theta_0;
+    normalize_quat(Quat {
+        x: left.x * left_scale + right.x * right_scale,
+        y: left.y * left_scale + right.y * right_scale,
+        z: left.z * left_scale + right.z * right_scale,
+        w: left.w * left_scale + right.w * right_scale,
+    })
 }
