@@ -4730,6 +4730,21 @@ fn check_m7_ergonomics_contracts(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "ERGONOMICS-M7",
+        "README.md",
+        &[
+            "## Happy Path",
+            "examples/camera_framing.rs",
+            "examples/anchor_alignment.rs",
+            "examples/coordinate_units.rs",
+            "examples/static_batching.rs",
+            "examples/layers_visibility.rs",
+            "examples/beginner_diagnostics.rs",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
         "examples/first_visible_render.rs",
         &["add_default_camera", "render_active"],
     );
@@ -4762,6 +4777,70 @@ fn check_m7_ergonomics_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "ERGONOMICS-M7",
         "examples/orbit_controls_browser_adapter.rs",
         &["browser_pointer_drag", "browser_wheel", "browser_pinch"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "examples/camera_framing.rs",
+        &["scene.frame(", "scene.look_at(", "render_active"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "examples/anchor_alignment.rs",
+        &[
+            "snap_anchor",
+            "anchor(\"inspection\")",
+            "anchor_debug_metadata",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "examples/coordinate_units.rs",
+        &[
+            "SourceUnits::Millimeters",
+            "SourceCoordinateSystem::ZUpRightHanded",
+            "meters_per_unit",
+            "convert_position",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "examples/static_batching.rs",
+        &[
+            "create_static_batch_with_report",
+            "requires_prepare_after_rebuild",
+            "picking_debug_instances",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "examples/layers_visibility.rs",
+        &[
+            "set_layer_mask",
+            "set_camera_layer_mask",
+            "set_render_group",
+            "set_helper_on_top",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "examples/beginner_diagnostics.rs",
+        &[
+            "diagnose_scene",
+            "DiagnosticSeverity::Error",
+            "add_default_camera",
+        ],
     );
     require_contains(
         root,

@@ -30,6 +30,7 @@ mockup.
 - [Try It Locally](#try-it-locally)
 - [Install](#install)
 - [Quick Start](#quick-start)
+- [Happy Path](#happy-path)
 - [Core Workflow](#core-workflow)
 - [Feature Map](#feature-map)
 - [Architecture](#architecture)
@@ -142,6 +143,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+## Happy Path
+
+The first-page workflow is build a scene, prepare it explicitly, then render prepared
+state. The public examples below are the short paths to the major viewer jobs:
+
+| Job | Example |
+|---|---|
+| Show the first visible scene | [`examples/first_visible_render.rs`](examples/first_visible_render.rs) |
+| Load and frame a model | [`examples/glb_model_viewer.rs`](examples/glb_model_viewer.rs) |
+| Frame bounds and reset the view | [`examples/camera_framing.rs`](examples/camera_framing.rs) |
+| Orbit, pan, zoom, and focus a camera | [`examples/orbit_controls.rs`](examples/orbit_controls.rs) |
+| Pick, hover, and select a node | [`examples/picking_selection_hover.rs`](examples/picking_selection_hover.rs) |
+| Align helper geometry to imported anchors | [`examples/anchor_alignment.rs`](examples/anchor_alignment.rs) |
+| Convert CAD-style units and coordinate systems | [`examples/coordinate_units.rs`](examples/coordinate_units.rs) |
+| Batch repeated static geometry | [`examples/static_batching.rs`](examples/static_batching.rs) |
+| Control layers, visibility, render groups, and helper-on-top | [`examples/layers_visibility.rs`](examples/layers_visibility.rs) |
+| Recover from beginner diagnostics | [`examples/beginner_diagnostics.rs`](examples/beginner_diagnostics.rs) |
+
 ## Core Workflow
 
 `scena` keeps expensive or fallible lifecycle work out of `render()`:
@@ -205,7 +224,13 @@ All examples compile with `cargo check --examples`.
 |---|---|
 | [`primitive_shapes.rs`](examples/primitive_shapes.rs) | built-in geometry and material setup |
 | [`glb_model_viewer.rs`](examples/glb_model_viewer.rs) | loading and instantiating a glTF scene |
+| [`camera_framing.rs`](examples/camera_framing.rs) | framing scene bounds and looking at a selected node |
 | [`picking_selection_hover.rs`](examples/picking_selection_hover.rs) | picking and interaction styling |
+| [`anchor_alignment.rs`](examples/anchor_alignment.rs) | snapping scene helpers to imported glTF anchors |
+| [`coordinate_units.rs`](examples/coordinate_units.rs) | explicit source unit and coordinate-system conversion |
+| [`static_batching.rs`](examples/static_batching.rs) | repeated non-instanced geometry with prepare-time batch metadata |
+| [`layers_visibility.rs`](examples/layers_visibility.rs) | layers, camera masks, visibility, render groups, and helper-on-top |
+| [`beginner_diagnostics.rs`](examples/beginner_diagnostics.rs) | structured diagnostics and recovery hints |
 | [`instancing.rs`](examples/instancing.rs) | typed instance sets and reserved capacity |
 | [`labels_helpers.rs`](examples/labels_helpers.rs) | labels and helper geometry |
 | [`animation.rs`](examples/animation.rs) | glTF animation mixer playback |
