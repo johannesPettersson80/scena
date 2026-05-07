@@ -1,0 +1,18 @@
+{
+  "name": "scena-release-gates",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": "20.20.0",
+    "npm": "10.8.2"
+  },
+  "devDependencies": {
+    "binaryen": "129.0.0",
+    "brotli-cli": "2.1.1",
+    "playwright": "1.59.1"
+  },
+  "scripts": {
+    "browser:m6": "node tests/browser/m6_rust_wasm_renderer_probe.js",
+    "wasm:size": "node tests/release/m9_wasm_size_gate.js"
+  }
+}

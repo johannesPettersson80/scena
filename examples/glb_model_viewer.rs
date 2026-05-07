@@ -1,4 +1,4 @@
-use scena::{Assets, PerspectiveCamera, Renderer, Scene, Transform};
+use scena::{Assets, Renderer, Scene};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let assets = Assets::new();
@@ -7,12 +7,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut scene = Scene::new();
     let import = scene.instantiate(&scene_asset)?;
-    let camera = scene.add_perspective_camera(
-        scene.root(),
-        PerspectiveCamera::default(),
-        Transform::default(),
-    )?;
-    scene.set_active_camera(camera)?;
+    let camera = scene.add_default_camera()?;
+    scene.frame_import(camera, &import)?;
 
     let mut renderer = Renderer::headless(320, 240)?;
     renderer.prepare_with_assets(&mut scene, &assets)?;

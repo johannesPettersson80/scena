@@ -1,14 +1,17 @@
 //! Primitive meshes, generated helper geometry, technical lines, arrows, grids, and labels.
 
 use crate::material::Color;
-use crate::scene::Vec3;
+use crate::scene::{Quat, Transform, Vec3};
 
 mod bounds;
+mod helpers;
 mod morph;
 mod primitive;
 mod skinning;
+mod static_batch;
 pub use morph::GeometryMorphTarget;
 pub use skinning::{GeometrySkin, SkinningMatrix};
+pub use static_batch::StaticBatchReport;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GeometryTopology {
@@ -414,6 +417,32 @@ impl GeometryDesc {
         )
     }
 
+    pub fn static_batch(
+        source: &GeometryDesc,
+        transforms: impl IntoIterator<Item = Transform>,
+    ) -> Self {
+        let transforms = transforms.into_iter().collect::<Vec<_>>();
+        if transforms.is_empty() {
+            return source.clone();
+        }
+
+        let mut vertices = Vec::with_capacity(source.vertices.len() * transforms.len());
+        let mut indices = Vec::with_capacity(source.indices.len() * transforms.len());
+        let mut vertex_colors = Vec::with_capacity(source.vertex_colors.len() * transforms.len());
+        for transform in transforms {
+            let base = vertices.len() as u32;
+            vertices.extend(source.vertices.iter().map(|vertex| GeometryVertex {
+                position: transform_point(vertex.position, transform),
+                normal: rotate_vec3(transform.rotation, vertex.normal),
+            }));
+            indices.extend(source.indices.iter().map(|index| base + *index));
+            vertex_colors.extend(source.vertex_colors.iter().copied());
+        }
+
+        Self::try_new_with_vertex_colors(source.topology, vertices, indices, vertex_colors)
+            .expect("static batching preserves valid source geometry topology and indices")
+    }
+
     pub fn topology(&self) -> GeometryTopology {
         self.topology
     }
@@ -470,4 +499,37 @@ fn normalize(value: Vec3) -> Vec3 {
     } else {
         scale(value, 1.0 / length)
     }
+}
+
+fn transform_point(point: Vec3, transform: Transform) -> Vec3 {
+    let scaled = Vec3::new(
+        point.x * transform.scale.x,
+        point.y * transform.scale.y,
+        point.z * transform.scale.z,
+    );
+    let rotated = rotate_vec3(transform.rotation, scaled);
+    add(rotated, transform.translation)
+}
+
+fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
+    let length_squared = rotation.x * rotation.x
+        + rotation.y * rotation.y
+        + rotation.z * rotation.z
+        + rotation.w * rotation.w;
+    if length_squared <= f32::EPSILON || !length_squared.is_finite() {
+        return vector;
+    }
+    let inverse_length = length_squared.sqrt().recip();
+    let qx = rotation.x * inverse_length;
+    let qy = rotation.y * inverse_length;
+    let qz = rotation.z * inverse_length;
+    let qw = rotation.w * inverse_length;
+    let tx = 2.0 * (qy * vector.z - qz * vector.y);
+    let ty = 2.0 * (qz * vector.x - qx * vector.z);
+    let tz = 2.0 * (qx * vector.y - qy * vector.x);
+    Vec3::new(
+        vector.x + qw * tx + (qy * tz - qz * ty),
+        vector.y + qw * ty + (qz * tx - qx * tz),
+        vector.z + qw * tz + (qx * ty - qy * tx),
+    )
 }

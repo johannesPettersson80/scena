@@ -80,6 +80,24 @@ impl fmt::Display for AssetError {
                 formatter,
                 "asset {path} uses unsupported optional extension {extension}: {help}"
             ),
+            Self::MissingTexture {
+                path,
+                material_slot,
+                texture_index,
+                help,
+            } => write!(
+                formatter,
+                "asset {path} references missing texture index {texture_index} in material slot {material_slot}: {help}"
+            ),
+            Self::UnsupportedTextureFormat { path, help } => {
+                write!(
+                    formatter,
+                    "texture {path} uses an unsupported format: {help}"
+                )
+            }
+            Self::Cancelled { path, help } => {
+                write!(formatter, "asset load for {path} was cancelled: {help}")
+            }
             Self::UnsupportedEnvironmentFormat { path, help } => {
                 write!(
                     formatter,
@@ -330,6 +348,18 @@ impl fmt::Display for LookupError {
             ),
             Self::PathNotFound { path } => {
                 write!(formatter, "imported scene path '{path}' was not found")
+            }
+            Self::InvalidViewport { width, height } => {
+                write!(
+                    formatter,
+                    "viewport {width}x{height} is invalid; width and height must be non-zero"
+                )
+            }
+            Self::ImportHasNoBounds => {
+                write!(
+                    formatter,
+                    "imported scene has no renderable bounds to frame"
+                )
             }
             Self::StaleImport => write!(formatter, "scene import has been invalidated"),
             Self::NodeIsNotMesh { node } => write!(formatter, "node {node:?} is not a mesh node"),

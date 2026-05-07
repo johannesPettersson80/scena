@@ -6,38 +6,32 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use slotmap::{SlotMap, new_key_type};
 
 use crate::diagnostics::AssetError;
-use crate::geometry::GeometryDesc;
+use crate::geometry::{GeometryDesc, StaticBatchReport};
 use crate::material::{MaterialDesc, TextureColorSpace};
+use crate::scene::Transform;
 
+mod environment;
 mod fetch;
 mod gltf;
+mod load;
 #[cfg(feature = "obj")]
 mod obj;
+pub use environment::{
+    EnvironmentDerivative, EnvironmentDesc, EnvironmentSourceKind, WasmEnvironmentDelivery,
+};
 #[cfg(target_arch = "wasm32")]
 pub use fetch::BrowserAssetFetcher;
 #[cfg(not(target_arch = "wasm32"))]
 pub use fetch::FileAssetFetcher;
 pub use fetch::{AssetFetcher, DefaultAssetFetcher};
 pub use gltf::{
-    SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetLight, SceneAssetMesh, SceneAssetNode,
+    GltfDecoderPolicy, GltfExtensionDiagnostic, GltfExtensionStatus, SceneAsset, SceneAssetAnchor,
+    SceneAssetClip, SceneAssetLight, SceneAssetMesh, SceneAssetNode,
 };
+pub use load::{AssetLoadControl, AssetLoadProgress, AssetLoadReport};
 
-const DEFAULT_ENVIRONMENT_NAME: &str = "neutral-studio";
-const DEFAULT_ENVIRONMENT_SOURCE_PATH: &str =
-    "tests/assets/environment/neutral-studio.placeholder.hdr";
-const DEFAULT_ENVIRONMENT_SOURCE_SHA256: &str =
-    "b95916ffe38d8825bbf701fd2a6efe56983e1f7d241856426440869138e3973e";
-const DEFAULT_ENVIRONMENT_LICENSE: &str = "CC0-1.0";
-const DEFAULT_ENVIRONMENT_GENERATOR: &str =
-    "xtask generate-default-env --input tests/assets/environment/neutral-studio.placeholder.hdr";
-const DEFAULT_ENVIRONMENT_CUBEMAP_PATH: &str =
-    "tests/assets/environment/generated/neutral-studio-cubemap.ktx2";
-const DEFAULT_ENVIRONMENT_CUBEMAP_SHA256: &str =
-    "e6c9093c4dc8efd2fa9f46be2a41d5bc97e977240dd81eccbc8cbc50e5181f24";
-const DEFAULT_ENVIRONMENT_BRDF_LUT_PATH: &str =
-    "tests/assets/environment/generated/brdf-lut-256.rgba16f";
-const DEFAULT_ENVIRONMENT_BRDF_LUT_SHA256: &str =
-    "08a2a2c32fe45ccf0d799db947a729269aaf58ec0c933c3e6e8dd99784789ef7";
+use self::environment::{DEFAULT_ENVIRONMENT_SOURCE_PATH, is_equirectangular_hdr_path};
+use self::load::{AssetLoadTelemetry, check_cancelled};
 
 new_key_type! {
     pub struct ModelHandle;
@@ -62,44 +56,49 @@ pub struct AssetPath(String);
 pub struct TextureDesc {
     path: AssetPath,
     color_space: TextureColorSpace,
+    sampler: TextureSamplerDesc,
+    source_format: TextureSourceFormat,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WasmEnvironmentDelivery {
-    Bundled,
-    SeparateFetch,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TextureSourceFormat {
+    Png,
+    Jpeg,
+    Webp,
+    Ktx2Basisu,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EnvironmentSourceKind {
-    EquirectangularHdr,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TextureFilter {
+    Nearest,
+    Linear,
+    NearestMipmapNearest,
+    LinearMipmapNearest,
+    NearestMipmapLinear,
+    LinearMipmapLinear,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EnvironmentDerivative {
-    path: AssetPath,
-    sha256: String,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TextureWrap {
+    ClampToEdge,
+    MirroredRepeat,
+    Repeat,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EnvironmentDesc {
-    name: String,
-    source_path: AssetPath,
-    source_kind: EnvironmentSourceKind,
-    source_dimensions: Option<(u32, u32)>,
-    source_sha256: Option<String>,
-    license: Option<String>,
-    generator: Option<String>,
-    cubemap_resolution: u32,
-    brdf_lut_size: u32,
-    wasm_delivery: WasmEnvironmentDelivery,
-    derivatives: Vec<EnvironmentDerivative>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TextureSamplerDesc {
+    mag_filter: Option<TextureFilter>,
+    min_filter: Option<TextureFilter>,
+    wrap_s: TextureWrap,
+    wrap_t: TextureWrap,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct TextureCacheKey {
     path: AssetPath,
     color_space: TextureColorSpace,
+    sampler: TextureSamplerDesc,
+    source_format: TextureSourceFormat,
 }
 
 /// Asset source and cache owner.
@@ -170,6 +169,25 @@ impl<F> Assets<F> {
         self.storage().geometries.insert(geometry)
     }
 
+    pub fn create_static_batch(
+        &self,
+        source: &GeometryDesc,
+        transforms: impl IntoIterator<Item = Transform>,
+    ) -> GeometryHandle {
+        self.create_geometry(GeometryDesc::static_batch(source, transforms))
+    }
+
+    pub fn create_static_batch_with_report(
+        &self,
+        source: &GeometryDesc,
+        transforms: impl IntoIterator<Item = Transform>,
+    ) -> (GeometryHandle, StaticBatchReport) {
+        let transforms = transforms.into_iter().collect::<Vec<_>>();
+        let report = GeometryDesc::static_batch_report(source, transforms.len());
+        let handle = self.create_geometry(GeometryDesc::static_batch(source, transforms));
+        (handle, report)
+    }
+
     pub fn geometry(&self, handle: GeometryHandle) -> Option<GeometryDesc> {
         self.storage().geometries.get(handle).cloned()
     }
@@ -192,9 +210,12 @@ impl<F> Assets<F> {
         color_space: TextureColorSpace,
     ) -> Result<TextureHandle, AssetError> {
         let path = path.into();
+        let source_format = validate_texture_source_format(&path)?;
         let cache_key = TextureCacheKey {
             path: path.clone(),
             color_space,
+            sampler: TextureSamplerDesc::default(),
+            source_format,
         };
         let mut storage = self.storage();
         if let Some(handle) = storage.texture_lookup.get(&cache_key) {
@@ -203,7 +224,12 @@ impl<F> Assets<F> {
 
         // M1 stores the split cache entries. The contract-required warning for the same
         // path under another color space will use diagnostics once that surface exists.
-        let handle = storage.textures.insert(TextureDesc { path, color_space });
+        let handle = storage.textures.insert(TextureDesc {
+            path,
+            color_space,
+            sampler: cache_key.sampler,
+            source_format,
+        });
         storage.texture_lookup.insert(cache_key, handle);
         Ok(handle)
     }
@@ -239,7 +265,7 @@ impl<F> Assets<F> {
     }
 
     fn insert_environment(&self, environment: EnvironmentDesc) -> EnvironmentHandle {
-        let cache_key = environment.source_path.clone();
+        let cache_key = environment.source_path().clone();
         let mut storage = self.storage();
         if let Some(handle) = storage.environment_lookup.get(&cache_key) {
             return *handle;
@@ -258,14 +284,37 @@ impl<F> Assets<F> {
 
 impl<F: AssetFetcher> Assets<F> {
     pub async fn load_scene(&self, path: impl Into<AssetPath>) -> Result<SceneAsset, AssetError> {
-        let path = path.into();
-        if let Some(scene) = self.storage().scene_lookup.get(&path).cloned() {
-            return Ok(scene);
-        }
+        Ok(self.load_scene_with_report(path).await?.into_asset())
+    }
 
-        let scene = self.parse_scene_uncached(path.clone()).await?;
-        self.storage().scene_lookup.insert(path, scene.clone());
-        Ok(scene)
+    pub async fn load_scene_with_report(
+        &self,
+        path: impl Into<AssetPath>,
+    ) -> Result<AssetLoadReport<SceneAsset>, AssetError> {
+        self.load_scene_report_inner(path.into(), None, None).await
+    }
+
+    pub async fn load_scene_with_progress<P>(
+        &self,
+        path: impl Into<AssetPath>,
+        mut progress: P,
+    ) -> Result<AssetLoadReport<SceneAsset>, AssetError>
+    where
+        P: FnMut(AssetLoadProgress),
+    {
+        self.load_scene_report_inner(path.into(), None, Some(&mut progress))
+            .await
+    }
+
+    pub async fn load_scene_controlled(
+        &self,
+        path: impl Into<AssetPath>,
+        control: &AssetLoadControl,
+    ) -> Result<SceneAsset, AssetError> {
+        Ok(self
+            .load_scene_report_inner(path.into(), Some(control), None)
+            .await?
+            .into_asset())
     }
 
     pub async fn reload_scene(&self, scene: &SceneAsset) -> Result<SceneAsset, AssetError> {
@@ -277,19 +326,116 @@ impl<F: AssetFetcher> Assets<F> {
             });
         }
 
-        let scene = self.parse_scene_uncached(path.clone()).await?;
+        let mut progress_events = Vec::new();
+        let mut progress = None;
+        let (scene, _telemetry) = self
+            .parse_scene_uncached(path.clone(), None, &mut progress_events, &mut progress)
+            .await?;
         self.storage().scene_lookup.insert(path, scene.clone());
         Ok(scene)
     }
 
-    async fn parse_scene_uncached(&self, path: AssetPath) -> Result<SceneAsset, AssetError> {
+    async fn load_scene_report_inner(
+        &self,
+        path: AssetPath,
+        control: Option<&AssetLoadControl>,
+        mut progress: Option<&mut dyn FnMut(AssetLoadProgress)>,
+    ) -> Result<AssetLoadReport<SceneAsset>, AssetError> {
+        let mut progress_events = Vec::new();
+        load::emit_progress(
+            &mut progress_events,
+            &mut progress,
+            AssetLoadProgress::LoadStarted { path: path.clone() },
+        );
+        check_cancelled(&path, control)?;
+        if let Some(scene) = self.storage().scene_lookup.get(&path).cloned() {
+            load::emit_progress(
+                &mut progress_events,
+                &mut progress,
+                AssetLoadProgress::CacheHit { path: path.clone() },
+            );
+            return Ok(AssetLoadReport {
+                asset: scene,
+                path,
+                cache_hit: true,
+                fetched_bytes: 0,
+                external_buffers: 0,
+                progress_events,
+            });
+        }
+
+        let (scene, telemetry) = self
+            .parse_scene_uncached(path.clone(), control, &mut progress_events, &mut progress)
+            .await?;
+        load::emit_progress(
+            &mut progress_events,
+            &mut progress,
+            AssetLoadProgress::Parsed {
+                path: path.clone(),
+                nodes: scene.node_count(),
+                meshes: scene.mesh_count(),
+            },
+        );
+        check_cancelled(&path, control)?;
+        self.storage()
+            .scene_lookup
+            .insert(path.clone(), scene.clone());
+        load::emit_progress(
+            &mut progress_events,
+            &mut progress,
+            AssetLoadProgress::Cached { path: path.clone() },
+        );
+        Ok(AssetLoadReport {
+            asset: scene,
+            path,
+            cache_hit: false,
+            fetched_bytes: telemetry.fetched_bytes,
+            external_buffers: telemetry.external_buffers,
+            progress_events,
+        })
+    }
+
+    async fn parse_scene_uncached(
+        &self,
+        path: AssetPath,
+        control: Option<&AssetLoadControl>,
+        progress_events: &mut Vec<AssetLoadProgress>,
+        progress: &mut Option<&mut dyn FnMut(AssetLoadProgress)>,
+    ) -> Result<(SceneAsset, AssetLoadTelemetry), AssetError> {
+        check_cancelled(&path, control)?;
         let bytes = self.fetcher.fetch(&path).await?;
+        load::emit_progress(
+            progress_events,
+            progress,
+            AssetLoadProgress::AssetFetched {
+                path: path.clone(),
+                bytes: bytes.len(),
+            },
+        );
+        check_cancelled(&path, control)?;
         let external_paths = SceneAsset::external_buffer_paths(&path, &bytes)?;
         let mut external_buffers = BTreeMap::new();
+        let mut telemetry = AssetLoadTelemetry {
+            fetched_bytes: bytes.len(),
+            external_buffers: 0,
+        };
         for (index, external_path) in external_paths {
+            check_cancelled(&path, control)?;
             let bytes = self.fetcher.fetch(&external_path).await?;
+            load::emit_progress(
+                progress_events,
+                progress,
+                AssetLoadProgress::ExternalBufferFetched {
+                    path: external_path.clone(),
+                    index,
+                    bytes: bytes.len(),
+                },
+            );
+            telemetry.fetched_bytes = telemetry.fetched_bytes.saturating_add(bytes.len());
+            telemetry.external_buffers = telemetry.external_buffers.saturating_add(1);
             external_buffers.insert(index, bytes);
         }
+        check_cancelled(&path, control)?;
         let mut storage = self.storage();
         let scene = if external_buffers.is_empty() {
             SceneAsset::from_gltf_bytes(path.clone(), &bytes, &mut storage)?
@@ -301,7 +447,7 @@ impl<F: AssetFetcher> Assets<F> {
                 &mut storage,
             )?
         };
-        Ok(scene)
+        Ok((scene, telemetry))
     }
 }
 
@@ -331,133 +477,80 @@ impl TextureDesc {
     pub const fn color_space(&self) -> TextureColorSpace {
         self.color_space
     }
+
+    pub const fn sampler(&self) -> TextureSamplerDesc {
+        self.sampler
+    }
+
+    pub const fn source_format(&self) -> TextureSourceFormat {
+        self.source_format
+    }
 }
 
-impl EnvironmentDesc {
-    pub fn neutral_studio() -> Self {
+impl TextureSamplerDesc {
+    pub const fn new(
+        mag_filter: Option<TextureFilter>,
+        min_filter: Option<TextureFilter>,
+        wrap_s: TextureWrap,
+        wrap_t: TextureWrap,
+    ) -> Self {
         Self {
-            name: DEFAULT_ENVIRONMENT_NAME.to_string(),
-            source_path: AssetPath::from(DEFAULT_ENVIRONMENT_SOURCE_PATH),
-            source_kind: EnvironmentSourceKind::EquirectangularHdr,
-            source_dimensions: None,
-            source_sha256: Some(DEFAULT_ENVIRONMENT_SOURCE_SHA256.to_string()),
-            license: Some(DEFAULT_ENVIRONMENT_LICENSE.to_string()),
-            generator: Some(DEFAULT_ENVIRONMENT_GENERATOR.to_string()),
-            cubemap_resolution: 256,
-            brdf_lut_size: 256,
-            wasm_delivery: WasmEnvironmentDelivery::Bundled,
-            derivatives: vec![
-                EnvironmentDerivative {
-                    path: AssetPath::from(DEFAULT_ENVIRONMENT_CUBEMAP_PATH),
-                    sha256: DEFAULT_ENVIRONMENT_CUBEMAP_SHA256.to_string(),
-                },
-                EnvironmentDerivative {
-                    path: AssetPath::from(DEFAULT_ENVIRONMENT_BRDF_LUT_PATH),
-                    sha256: DEFAULT_ENVIRONMENT_BRDF_LUT_SHA256.to_string(),
-                },
-            ],
+            mag_filter,
+            min_filter,
+            wrap_s,
+            wrap_t,
         }
     }
 
-    pub fn from_equirectangular_hdr_path(path: impl Into<AssetPath>) -> Self {
-        let path = path.into();
-        let source_dimensions = parse_equirectangular_hdr_dimensions(&path);
+    pub const fn mag_filter(self) -> Option<TextureFilter> {
+        self.mag_filter
+    }
+
+    pub const fn min_filter(self) -> Option<TextureFilter> {
+        self.min_filter
+    }
+
+    pub const fn wrap_s(self) -> TextureWrap {
+        self.wrap_s
+    }
+
+    pub const fn wrap_t(self) -> TextureWrap {
+        self.wrap_t
+    }
+}
+
+impl Default for TextureSamplerDesc {
+    fn default() -> Self {
         Self {
-            name: environment_name_from_path(&path).to_string(),
-            source_path: path,
-            source_kind: EnvironmentSourceKind::EquirectangularHdr,
-            source_dimensions,
-            source_sha256: None,
-            license: None,
-            generator: None,
-            cubemap_resolution: 0,
-            brdf_lut_size: 0,
-            wasm_delivery: WasmEnvironmentDelivery::SeparateFetch,
-            derivatives: Vec::new(),
+            mag_filter: None,
+            min_filter: None,
+            wrap_s: TextureWrap::Repeat,
+            wrap_t: TextureWrap::Repeat,
         }
     }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn source_path(&self) -> &AssetPath {
-        &self.source_path
-    }
-
-    pub const fn source_kind(&self) -> EnvironmentSourceKind {
-        self.source_kind
-    }
-
-    pub const fn source_dimensions(&self) -> Option<(u32, u32)> {
-        self.source_dimensions
-    }
-
-    pub const fn is_equirectangular_hdr(&self) -> bool {
-        matches!(self.source_kind, EnvironmentSourceKind::EquirectangularHdr)
-    }
-
-    pub fn source_sha256(&self) -> Option<&str> {
-        self.source_sha256.as_deref()
-    }
-
-    pub fn license(&self) -> Option<&str> {
-        self.license.as_deref()
-    }
-
-    pub fn generator(&self) -> Option<&str> {
-        self.generator.as_deref()
-    }
-
-    pub const fn cubemap_resolution(&self) -> u32 {
-        self.cubemap_resolution
-    }
-
-    pub const fn brdf_lut_size(&self) -> u32 {
-        self.brdf_lut_size
-    }
-
-    pub const fn wasm_delivery(&self) -> WasmEnvironmentDelivery {
-        self.wasm_delivery
-    }
-
-    pub fn derivatives(&self) -> &[EnvironmentDerivative] {
-        &self.derivatives
-    }
 }
 
-impl EnvironmentDerivative {
-    pub fn path(&self) -> &AssetPath {
-        &self.path
+pub(crate) fn validate_texture_source_format(
+    path: &AssetPath,
+) -> Result<TextureSourceFormat, AssetError> {
+    let lower = path.as_str().to_ascii_lowercase();
+    if lower.ends_with(".png") || lower.starts_with("data:image/png") {
+        return Ok(TextureSourceFormat::Png);
     }
-
-    pub fn sha256(&self) -> &str {
-        &self.sha256
+    if lower.ends_with(".jpg") || lower.ends_with(".jpeg") || lower.starts_with("data:image/jpeg") {
+        return Ok(TextureSourceFormat::Jpeg);
     }
-}
-
-fn environment_name_from_path(path: &AssetPath) -> &str {
-    path.as_str()
-        .rsplit('/')
-        .next()
-        .filter(|name| !name.is_empty())
-        .unwrap_or(path.as_str())
-}
-
-fn is_equirectangular_hdr_path(path: &AssetPath) -> bool {
-    path.as_str().to_ascii_lowercase().ends_with(".hdr")
-}
-
-fn parse_equirectangular_hdr_dimensions(path: &AssetPath) -> Option<(u32, u32)> {
-    let stem = path
-        .as_str()
-        .rsplit('/')
-        .next()
-        .unwrap_or(path.as_str())
-        .strip_suffix(".hdr")?;
-    let dimensions = stem.rsplit('_').next()?;
-    let (width, height) = dimensions.split_once('x')?;
-    let width = width.parse().ok()?;
-    let height = height.parse().ok()?;
-    (width > 0 && height > 0).then_some((width, height))
+    if lower.ends_with(".webp") || lower.starts_with("data:image/webp") {
+        return Ok(TextureSourceFormat::Webp);
+    }
+    #[cfg(feature = "ktx2")]
+    {
+        if lower.ends_with(".ktx2") || lower.starts_with("data:image/ktx2") {
+            return Ok(TextureSourceFormat::Ktx2Basisu);
+        }
+    }
+    Err(AssetError::UnsupportedTextureFormat {
+        path: path.as_str().to_string(),
+        help: "supported texture format set is PNG, JPEG, and WebP; compressed texture decoders need an explicit feature/policy",
+    })
 }

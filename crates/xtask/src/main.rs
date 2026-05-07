@@ -3,11 +3,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
 
+use serde_json::json;
 use sha2::{Digest, Sha256};
 
 fn main() {
     let outcome = match parse_command(env::args().skip(1).collect()) {
         Ok(Command::Doctor(mode)) => run_doctor(mode),
+        Ok(Command::ClaimAudit) => run_claim_audit(),
+        Ok(Command::ReleaseLaneArtifact(lane)) => run_release_lane_artifact(&lane),
         Ok(Command::Help) => {
             print_usage();
             Ok(())
@@ -37,6 +40,8 @@ enum DoctorMode {
 #[derive(Debug, PartialEq, Eq)]
 enum Command {
     Doctor(DoctorMode),
+    ClaimAudit,
+    ReleaseLaneArtifact(String),
     Help,
 }
 
@@ -60,9 +65,23 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
         return Ok(Command::Help);
     }
 
+    if args.first().map(String::as_str) == Some("claim-audit") {
+        if args.len() == 1 {
+            return Ok(Command::ClaimAudit);
+        }
+        return Err("claim-audit accepts no arguments".to_string());
+    }
+
+    if args.first().map(String::as_str) == Some("release-lane-artifact") {
+        if args.len() == 2 {
+            return Ok(Command::ReleaseLaneArtifact(args[1].clone()));
+        }
+        return Err("release-lane-artifact expects exactly one lane argument".to_string());
+    }
+
     if args.first().map(String::as_str) != Some("doctor") {
         return Err(format!(
-            "unknown command '{}'; expected 'doctor'",
+            "unknown command '{}'; expected 'doctor', 'claim-audit', or 'release-lane-artifact'",
             args.first().map(String::as_str).unwrap_or("")
         ));
     }
@@ -88,8 +107,245 @@ fn parse_command(args: Vec<String>) -> Result<Command, String> {
 
 fn print_usage() {
     println!(
-        "Usage:\n  cargo run -p xtask -- doctor --docs\n  cargo run -p xtask -- doctor --architecture\n  cargo run -p xtask -- doctor --full"
+        "Usage:\n  cargo run -p xtask -- doctor --docs\n  cargo run -p xtask -- doctor --architecture\n  cargo run -p xtask -- doctor --full\n  cargo run -p xtask -- claim-audit\n  cargo run -p xtask -- release-lane-artifact <lane>"
     );
+}
+
+fn run_release_lane_artifact(lane: &str) -> Result<(), Vec<Finding>> {
+    let root = repo_root().map_err(|message| vec![Finding::new("RELEASE-LANE-ROOT", message)])?;
+    let artifact = release_lane_artifact(lane)
+        .map_err(|message| vec![Finding::new("RELEASE-LANE", message)])?;
+    let artifact_dir = root.join("target/gate-artifacts/release-lanes");
+    if let Err(error) = fs::create_dir_all(&artifact_dir) {
+        return Err(vec![Finding::new(
+            "RELEASE-LANE",
+            format!("failed to create {}: {error}", artifact_dir.display()),
+        )]);
+    }
+    let artifact_path = artifact_dir.join(format!("{lane}.json"));
+    let body = serde_json::to_string_pretty(&artifact)
+        .map_err(|error| vec![Finding::new("RELEASE-LANE", error.to_string())])?;
+    if let Err(error) = fs::write(&artifact_path, format!("{body}\n")) {
+        return Err(vec![Finding::new(
+            "RELEASE-LANE",
+            format!("failed to write {}: {error}", artifact_path.display()),
+        )]);
+    }
+    println!("{}", artifact_path.display());
+    Ok(())
+}
+
+fn release_lane_artifact(lane: &str) -> Result<serde_json::Value, String> {
+    let (os, backend) = match lane {
+        "linux-native-vulkan" => ("ubuntu-24.04", "NativeSurface"),
+        "linux-webgl2-chromium" => ("ubuntu-24.04", "WebGl2"),
+        "linux-webgpu-chromium" => ("ubuntu-24.04", "WebGpu"),
+        "macos-metal" => ("macos-15", "Metal"),
+        "windows-dx12" => ("windows-2025", "Dx12"),
+        "wasm32-unknown-unknown" => ("ubuntu-24.04", "Wasm"),
+        _ => return Err(format!("unknown release lane '{lane}'")),
+    };
+    Ok(json!({
+        "schema": "scena.release_lane.v1",
+        "lane": lane,
+        "os": os,
+        "backend": backend,
+        "rustc": "1.93.1",
+        "status": "command-recorded",
+        "artifacts": [
+            "target/gate-artifacts"
+        ],
+        "note": "This schema artifact records lane execution. Rendered-output proof is required separately for visual release gates."
+    }))
+}
+
+fn run_claim_audit() -> Result<(), Vec<Finding>> {
+    let root = repo_root().map_err(|message| vec![Finding::new("CLAIM-AUDIT-ROOT", message)])?;
+    let artifact = match build_claim_audit(&root) {
+        Ok(artifact) => artifact,
+        Err(error) => return Err(vec![Finding::new("CLAIM-AUDIT", error)]),
+    };
+    let artifact_dir = root.join("target/gate-artifacts");
+    if let Err(error) = fs::create_dir_all(&artifact_dir) {
+        return Err(vec![Finding::new(
+            "CLAIM-AUDIT",
+            format!("failed to create target/gate-artifacts: {error}"),
+        )]);
+    }
+    let artifact_path = artifact_dir.join("m10-claim-audit.json");
+    let body = serde_json::to_string_pretty(&artifact)
+        .map_err(|error| vec![Finding::new("CLAIM-AUDIT", error.to_string())])?;
+    if let Err(error) = fs::write(&artifact_path, format!("{body}\n")) {
+        return Err(vec![Finding::new(
+            "CLAIM-AUDIT",
+            format!("failed to write {}: {error}", artifact_path.display()),
+        )]);
+    }
+    println!("{}", artifact_path.display());
+    Ok(())
+}
+
+fn build_claim_audit(root: &Path) -> Result<serde_json::Value, String> {
+    let mut files = Vec::new();
+    for path in claim_audit_paths(root)? {
+        let relative = path
+            .strip_prefix(root)
+            .map_err(|error| error.to_string())?
+            .to_string_lossy()
+            .replace('\\', "/");
+        let source = fs::read_to_string(&path).map_err(|error| error.to_string())?;
+        let categories = claim_categories(&source);
+        files.push(json!({
+            "path": relative,
+            "sha256": sha256_hex(&path).map_err(|error| error.to_string())?,
+            "evidence_categories": categories,
+            "evidence": categories
+                .iter()
+                .map(|category| json!({
+                    "category": category,
+                    "links": evidence_links_for_category(category),
+                }))
+                .collect::<Vec<_>>(),
+        }));
+    }
+    Ok(json!({
+        "schema": "scena.m10.claim_audit.v1",
+        "status": "generated-with-evidence-index",
+        "scope": [
+            "repo-root markdown",
+            "docs markdown",
+            "examples rust"
+        ],
+        "files": files,
+        "required_final_gates": [
+            "cargo fmt --check",
+            "cargo clippy --all-targets -- -D warnings",
+            "cargo test",
+            "cargo check --examples",
+            "cargo run -p xtask -- doctor --full",
+            "RUSTDOCFLAGS=\"-D warnings\" cargo doc --no-deps --all-features",
+            "browser WebGPU/WebGL2 rendered-output proof",
+            "native platform rendered-output proof",
+            "clean cargo publish --dry-run",
+            "external review reports",
+            "named maintainer sign-off"
+        ]
+    }))
+}
+
+fn claim_audit_paths(root: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut paths = Vec::new();
+    for name in ["README.md", "CHANGELOG.md", "AGENTS.md"] {
+        let path = root.join(name);
+        if path.is_file() {
+            paths.push(path);
+        }
+    }
+    collect_files_with_extensions(&root.join("docs"), &["md"], &mut paths)?;
+    collect_files_with_extensions(&root.join("examples"), &["rs"], &mut paths)?;
+    paths.sort();
+    Ok(paths)
+}
+
+fn collect_files_with_extensions(
+    dir: &Path,
+    extensions: &[&str],
+    paths: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(dir).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files_with_extensions(&path, extensions, paths)?;
+        } else if path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extensions.contains(&extension))
+        {
+            paths.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn claim_categories(source: &str) -> Vec<&'static str> {
+    let mut categories = Vec::new();
+    for (needle, category) in [
+        ("Scene", "public-api"),
+        ("Renderer", "public-api"),
+        ("glTF", "assets-gltf"),
+        ("WebGPU", "browser-platform"),
+        ("WebGL2", "browser-platform"),
+        ("Metal", "native-platform"),
+        ("DX12", "native-platform"),
+        ("screenshot", "visual-proof"),
+        ("benchmark", "performance"),
+        ("doctor", "doctor"),
+        ("non-goal", "scope-non-goal"),
+        ("physics", "scope-non-goal"),
+        ("simulation", "scope-non-goal"),
+        ("prepare", "render-lifecycle"),
+        ("render", "render-lifecycle"),
+    ] {
+        if source.contains(needle) && !categories.contains(&category) {
+            categories.push(category);
+        }
+    }
+    categories
+}
+
+fn evidence_links_for_category(category: &str) -> Vec<&'static str> {
+    match category {
+        "public-api" => vec![
+            "docs/specs/public-api.md",
+            "tests/m0_foundation.rs",
+            "tests/m5_release.rs",
+        ],
+        "assets-gltf" => vec![
+            "docs/specs/asset-gltf-contract.md",
+            "tests/m3a_app_features.rs",
+            "tests/m3b_gltf_animation.rs",
+            "tests/m8_assets_materials_ecosystem.rs",
+        ],
+        "browser-platform" => vec![
+            "docs/checklists/m6-browser-renderer-parity.md",
+            "tests/m6_browser_renderer_parity.rs",
+            "tests/browser/m6_rust_wasm_renderer_probe.js",
+        ],
+        "native-platform" => vec![
+            "docs/specs/platform-capabilities.md",
+            "docs/decisions/ADR-0005-local-release-candidate-deferrals.md",
+            ".github/workflows/ci.yml",
+            ".github/workflows/release.yml",
+        ],
+        "visual-proof" => vec![
+            "docs/specs/visual-quality-contract.md",
+            "tests/m1_visual_proof.rs",
+            "tests/m2_visual_proof.rs",
+            "tests/m3a_visual_proof.rs",
+            "tests/m3b_visual_proof.rs",
+        ],
+        "performance" => vec![
+            "docs/specs/release-gates.md",
+            "tests/m4_performance_platform.rs",
+            "tests/m5_release.rs",
+        ],
+        "doctor" => vec!["docs/specs/doctor-contract.md", "crates/xtask/src/main.rs"],
+        "scope-non-goal" => vec![
+            "docs/decisions/ADR-0001-renderer-not-engine.md",
+            "docs/specs/module-boundaries.md",
+            "AGENTS.md",
+        ],
+        "render-lifecycle" => vec![
+            "docs/specs/render-lifecycle.md",
+            "docs/decisions/ADR-0002-explicit-prepare-lifecycle.md",
+            "tests/m0_foundation.rs",
+        ],
+        _ => Vec::new(),
+    }
 }
 
 fn run_doctor(mode: DoctorMode) -> Result<(), Vec<Finding>> {
@@ -135,6 +391,9 @@ fn run_docs_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_m2_visual_fixture_metadata(root, findings);
     check_m1_browser_rendered_output(root, findings);
     check_m2_browser_rendered_output(root, findings);
+    check_m6_browser_renderer_probe(root, findings);
+    check_m9_ci_release_lanes(root, findings);
+    check_m10_claim_audit_contract(root, findings);
 }
 
 fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
@@ -161,6 +420,8 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_m3b_animation_contracts(root, findings);
     check_m4_platform_contracts(root, findings);
     check_m5_release_contracts(root, findings);
+    check_m7_ergonomics_contracts(root, findings);
+    check_m8_assets_materials_contracts(root, findings);
     check_render_alpha_contracts(root, findings);
     check_output_stage_contracts(root, findings);
     check_fxaa_output_contracts(root, findings);
@@ -217,11 +478,14 @@ const REQUIRED_SOURCE_MODULES: &[&str] = &[
     "src/scene.rs",
     "src/scene/camera.rs",
     "src/scene/dirty.rs",
+    "src/scene/inspection.rs",
     "src/scene/lights.rs",
     "src/scene/origin.rs",
     "src/scene/skinning.rs",
     "src/diagnostics/capabilities.rs",
     "src/assets.rs",
+    "src/assets/environment.rs",
+    "src/assets/load.rs",
     "src/assets/gltf/accessor/skin.rs",
     "src/assets/gltf/skins.rs",
     "src/assets/gltf/transform.rs",
@@ -229,6 +493,7 @@ const REQUIRED_SOURCE_MODULES: &[&str] = &[
     "src/geometry/bounds.rs",
     "src/geometry/primitive.rs",
     "src/geometry/skinning.rs",
+    "src/geometry/static_batch.rs",
     "src/material.rs",
     "src/render.rs",
     "src/render/build.rs",
@@ -612,13 +877,21 @@ fn check_asset_api_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "color_space: TextureColorSpace",
             "Result<TextureHandle, AssetError>",
             "pub fn create_material(&self, material: impl Into<MaterialDesc>) -> MaterialHandle",
+            "pub fn default_environment(&self) -> EnvironmentHandle",
+            "pub async fn load_environment",
+            "pub fn environment(&self, handle: EnvironmentHandle) -> Option<EnvironmentDesc>",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ASSET-API",
+        "src/assets/environment.rs",
+        &[
             "pub struct EnvironmentDesc",
             "pub struct EnvironmentDerivative",
             "pub enum EnvironmentSourceKind",
             "pub enum WasmEnvironmentDelivery",
-            "pub fn default_environment(&self) -> EnvironmentHandle",
-            "pub async fn load_environment",
-            "pub fn environment(&self, handle: EnvironmentHandle) -> Option<EnvironmentDesc>",
             "pub const fn source_kind(&self) -> EnvironmentSourceKind",
             "pub const fn source_dimensions(&self) -> Option<(u32, u32)>",
             "pub const fn is_equirectangular_hdr(&self) -> bool",
@@ -778,7 +1051,7 @@ fn check_render_alpha_contracts(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "ARCH-RENDER-ALPHA",
-        "src/render/gpu.rs",
+        "src/render/gpu/pipeline.rs",
         &["blend: Some(wgpu::BlendState::ALPHA_BLENDING)"],
     );
     require_contains(
@@ -823,7 +1096,7 @@ fn check_output_stage_contracts(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "ARCH-OUTPUT-STAGE",
-        "src/render/gpu.rs",
+        "src/render/gpu/pipeline.rs",
         &[
             "GPU_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb",
             "pass.set_bind_group(0, output_bind_group, &[])",
@@ -1302,14 +1575,20 @@ fn check_equirectangular_hdr_environment_contracts(root: &Path, findings: &mut V
         root,
         findings,
         "ARCH-ENV-HDR",
-        "src/assets.rs",
+        "src/assets/environment.rs",
         &[
             "EnvironmentSourceKind::EquirectangularHdr",
-            "EnvironmentDesc::from_equirectangular_hdr_path",
+            "pub fn from_equirectangular_hdr_path",
             "is_equirectangular_hdr_path",
             "parse_equirectangular_hdr_dimensions",
-            "AssetError::UnsupportedEnvironmentFormat",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-HDR",
+        "src/assets.rs",
+        &["AssetError::UnsupportedEnvironmentFormat"],
     );
     require_contains(
         root,
@@ -2213,6 +2492,18 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "parse_node_anchors",
             "parse_node_transform",
             "UnsupportedRequiredExtension",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/assets/gltf/extensions.rs",
+        &[
+            "pub enum GltfExtensionStatus",
+            "pub struct GltfExtensionDiagnostic",
+            "pub(super) fn is_v1_required_gltf_extension",
+            "pub(super) fn collect_extension_diagnostics",
             "KHR_lights_punctual",
             "KHR_materials_unlit",
             "KHR_materials_emissive_strength",
@@ -2492,12 +2783,8 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub struct ImportOptions",
             "pub enum SourceUnits",
             "pub enum SourceCoordinateSystem",
-            "pub const fn gltf_default() -> Self",
             "Centimeters",
             "ZUpRightHanded",
-            "pub const fn with_source_units",
-            "pub const fn with_source_coordinate_system",
-            "fn convert_transform",
             "pub struct SceneImport",
             "pub struct ImportAnchor",
             "pub struct ImportClip",
@@ -2519,6 +2806,29 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "ImportDiagnosticOverlayKind::Anchor",
             "ImportDiagnosticOverlayKind::Pivot",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/scene/import/options.rs",
+        &[
+            "pub const fn gltf_default() -> Self",
+            "pub const fn with_source_units",
+            "pub const fn with_source_coordinate_system",
+            "pub(super) fn convert_transform",
+            "AnimationTarget::Translation",
+            "AnimationTarget::Rotation",
+            "AnimationTarget::Scale",
+            "AnimationTarget::Weights",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/scene/import/accessors.rs",
+        &["pub fn channels(&self)", "pub const fn duration_seconds"],
     );
     require_contains(
         root,
@@ -2735,14 +3045,28 @@ fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "resolve_import_skin_bindings",
             "SceneSkinBinding::new",
             "convert_animation_vec3",
+            "pub(crate) fn live_flag",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3B-ANIMATION",
+        "src/scene/import/options.rs",
+        &[
+            "convert_animation_vec3",
             "AnimationTarget::Translation",
             "AnimationTarget::Rotation",
             "AnimationTarget::Scale",
             "AnimationTarget::Weights",
-            "pub(crate) fn live_flag",
-            "pub fn channels(&self)",
-            "pub const fn duration_seconds",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3B-ANIMATION",
+        "src/scene/import/accessors.rs",
+        &["pub fn channels(&self)", "pub const fn duration_seconds"],
     );
     require_contains(
         root,
@@ -3997,6 +4321,583 @@ fn check_m2_browser_rendered_output(root: &Path, findings: &mut Vec<Finding>) {
     );
 }
 
+fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "Cargo.toml",
+        &[
+            "browser-probe",
+            "WebGl2RenderingContext",
+            "WebGlProgram",
+            "WebGlShader",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "src/browser_probe.rs",
+        &[
+            "m6RenderWebgl2Probe",
+            "m6RenderWebgpuProbe",
+            "m6RenderWorkflowProbe",
+            "m6RenderSurfaceLifecycleProbe",
+            "m6RenderBenchmarkProbe",
+            "Renderer::from_surface_async",
+            "prepare_with_assets",
+            "Renderer::render",
+            "scena.m6.browser_renderer_probe.v1",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "src/browser_probe/probes.rs",
+        &[
+            "scena.m6.browser_surface_lifecycle_probe.v1",
+            "scena.m6.browser_benchmark_probe.v1",
+            "surface-context-lifecycle",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "src/browser_probe/workflows.rs",
+        &[
+            "model-viewer",
+            "instancing",
+            "picking-selection",
+            "animation",
+            "labels-helpers",
+            "industrial-static-scene",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "src/render/gpu/build.rs",
+        &[
+            "create_browser_canvas_surface",
+            "WebCanvasWindowHandle",
+            "WebDisplayHandle",
+            "raw_display_handle: Some(raw_display_handle)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "tests/browser/m6_rust_wasm_renderer_probe.js",
+        &[
+            "m6-rust-wasm-renderer-probe",
+            "scenaM6RustWasmRendererProbe",
+            "scenaM6RustWasmWorkflowProbe",
+            "scenaM6RustWasmLifecycleProbe",
+            "scenaM6RustWasmBenchmarkProbe",
+            "/fixtures/",
+            "webgl2",
+            "webgpu",
+            "m6-rust-wasm-renderer-probe.json",
+            "model-viewer",
+            "instancing",
+            "picking-selection",
+            "animation",
+            "labels-helpers",
+            "industrial-static-scene",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "tests/browser/m6_rust_wasm_renderer_probe_page.js",
+        &[
+            "m6RenderWebgl2Probe",
+            "m6RenderWebgpuProbe",
+            "m6RenderWorkflowProbe",
+            "m6RenderSurfaceLifecycleProbe",
+            "m6RenderBenchmarkProbe",
+            "readWebGl2Pixels",
+            "scenaM6RustWasmWorkflowProbe",
+            "scenaM6RustWasmLifecycleProbe",
+            "scenaM6RustWasmBenchmarkProbe",
+            "nonblack",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "docs/checklists/m6-browser-renderer-parity.md",
+        &[
+            "wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe",
+            "node tests/browser/m6_rust_wasm_renderer_probe.js",
+            "VISUAL-BROWSER-M6",
+        ],
+    );
+}
+
+fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "RELEASE-CI-M9",
+        ".github/workflows/ci.yml",
+        &[
+            "linux-native-vulkan",
+            "linux-browser-webgl2",
+            "linux-browser-webgpu",
+            "wasm32",
+            "macos-metal",
+            "windows-dx12",
+            "dtolnay/rust-toolchain@1.93.1",
+            "node-version: \"20.20.0\"",
+            "PLAYWRIGHT_VERSION: \"1.59.1\"",
+            "BINARYEN_VERSION: \"129.0.0\"",
+            "BROTLI_CLI_VERSION: \"2.1.1\"",
+            "npm ci",
+            "npx playwright install chromium --with-deps",
+            "cargo install wasm-pack --version 0.14.0",
+            "npm run wasm:size",
+            "cargo run -p xtask -- doctor --full",
+            "release-lane-artifact",
+            "target/gate-artifacts/**",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "RELEASE-CI-M9",
+        ".github/workflows/release.yml",
+        &[
+            "linux-native-vulkan",
+            "linux-browser-webgl2",
+            "linux-browser-webgpu",
+            "wasm32-unknown-unknown",
+            "macos-metal",
+            "windows-dx12",
+            "cargo publish --dry-run",
+            "cargo publish",
+            "gh release create",
+            "needs:",
+            "release-lane-artifact",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "RELEASE-CI-M9",
+        "package.json",
+        &[
+            "\"node\": \"20.20.0\"",
+            "\"npm\": \"10.8.2\"",
+            "\"playwright\": \"1.59.1\"",
+            "\"binaryen\": \"129.0.0\"",
+            "\"brotli-cli\": \"2.1.1\"",
+            "\"browser:m6\"",
+            "\"wasm:size\"",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "RELEASE-CI-M9",
+        "package-lock.json",
+        &["\"playwright\": \"1.59.1\"", "\"version\": \"1.59.1\""],
+    );
+    require_contains(
+        root,
+        findings,
+        "RELEASE-CI-M9",
+        "Cargo.toml",
+        &[
+            "repository = \"https://github.com/johannesPettersson80/scena\"",
+            "authors = [\"Johannes Pettersson <johannes_salomon@hotmail.com>\"]",
+            "documentation = \"https://docs.rs/scena\"",
+            "license = \"MIT OR Apache-2.0\"",
+            "readme = \"README.md\"",
+            "keywords = [\"renderer\", \"scene-graph\", \"gltf\", \"webgpu\", \"wasm\"]",
+            "categories = [\"graphics\", \"rendering\", \"wasm\"]",
+            "CHANGELOG.md",
+            "docs/api/m5-semver-baseline.toml",
+            "[package.metadata.docs.rs]",
+            "wasm32-unknown-unknown",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "RELEASE-CI-M9",
+        "crates/xtask/src/main.rs",
+        &["release-lane-artifact", "scena.release_lane.v1"],
+    );
+}
+
+fn check_m10_claim_audit_contract(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "CLAIM-AUDIT-M10",
+        "crates/xtask/src/main.rs",
+        &[
+            "claim-audit",
+            "m10-claim-audit.json",
+            "scena.m10.claim_audit.v1",
+            "required_final_gates",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "CLAIM-AUDIT-M10",
+        "docs/checklists/m10-threejs-replacement-acceptance.md",
+        &["m10-claim-audit.json", "claim audit"],
+    );
+    require_contains(
+        root,
+        findings,
+        "CLAIM-AUDIT-M10",
+        "docs/api/m10-public-api-diff.md",
+        &[
+            "M10 Public API Diff From M5 Baseline",
+            "Renderer::diagnose_scene",
+            "AssetLoadControl",
+            "AssetError::UnsupportedTextureFormat",
+            "Semver Decision",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "CLAIM-AUDIT-M10",
+        "docs/release-notes/v1.0.0-rc.md",
+        &[
+            "Release Candidate Notes",
+            "Remaining Release Blockers",
+            "does not claim to replace game engines",
+        ],
+    );
+}
+
+fn check_m7_ergonomics_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/controls.rs",
+        &[
+            "with_damping",
+            "focus",
+            "apply_to_scene",
+            "damping_factor",
+            "TouchEvent",
+            "pub const fn wheel",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/platform.rs",
+        &["SurfaceViewport", "ViewportChanged", "device_pixel_ratio"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/scene/picking.rs",
+        &["pick_pointer", "pick_and_select", "InvalidViewport"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/scene/visibility.rs",
+        &[
+            "set_camera_layer_mask",
+            "camera_layer_mask",
+            "visible_for_active_camera",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/scene/import.rs",
+        &[
+            "ImportAnchorDebugMetadata",
+            "YUpLeftHanded",
+            "ZUpLeftHanded",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/scene/import/options.rs",
+        &["meters_per_unit", "convert_position"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/scene/inspection.rs",
+        &[
+            "pub struct SceneInspectionReport",
+            "pub struct SceneNodeInspection",
+            "pub fn inspect(&self)",
+            "visible_drawable_count",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/assets.rs",
+        &["create_static_batch", "create_static_batch_with_report"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/geometry.rs",
+        &["pub fn static_batch", "transform_point"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/geometry/static_batch.rs",
+        &[
+            "pub struct StaticBatchReport",
+            "pub fn static_batch_report",
+            "requires_prepare_after_rebuild",
+            "picking_debug_instances",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/geometry/helpers.rs",
+        &[
+            "pub fn bounding_box",
+            "pub fn camera_frustum",
+            "pub fn light_helper",
+            "pub fn anchor_marker",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/diagnostics/help.rs",
+        &["add_default_camera", "anchors_named", "recover_context"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/render.rs",
+        &[
+            "pub fn diagnose_scene",
+            "MissingActiveCamera",
+            "InvisibleScene",
+            "MissingLightingOrEnvironment",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "examples/first_visible_render.rs",
+        &["add_default_camera", "render_active"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "examples/orbit_controls.rs",
+        &[
+            "OrbitControls",
+            "with_damping",
+            "apply_to_scene",
+            "TouchEvent",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "examples/orbit_controls_native_adapter.rs",
+        &[
+            "NativeMouseButton",
+            "native_press",
+            "PointerEvent::released",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "examples/orbit_controls_browser_adapter.rs",
+        &["browser_pointer_drag", "browser_wheel", "browser_pinch"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "examples/glb_model_viewer.rs",
+        &["load_scene", "frame_import", "prepare_with_assets"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "examples/scene_inspection.rs",
+        &["scene.inspect", "visible_drawable_count", "node.kind()"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "tests/m7_threejs_ergonomics.rs",
+        &[
+            "create_static_batch",
+            "pick_and_select",
+            "set_camera_layer_mask",
+            "SurfaceViewport",
+            "ImportAnchorDebugMetadata",
+            "with_damping",
+            "m7_beginner_scene_diagnostics_explain_invisible_setups",
+            "create_static_batch_with_report",
+            "picking_debug_instances",
+            "m7_scene_inspection_feature_reports_reproducible_metadata",
+        ],
+    );
+}
+
+fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/assets/gltf/read.rs",
+        &[
+            "normalTexture",
+            "metallicRoughnessTexture",
+            "occlusionTexture",
+            "emissiveTexture",
+            "with_normal_texture_transform",
+            "with_metallic_roughness_texture_transform",
+            "with_occlusion_texture_transform",
+            "with_emissive_texture_transform",
+            "TextureColorSpace::Linear",
+            "TextureColorSpace::Srgb",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/assets/gltf/read/textures.rs",
+        &[
+            "AssetError::MissingTexture",
+            "validate_texture_source_format",
+            "basisu_texture_source_format",
+            "KHR_texture_basisu",
+            "TextureSourceFormat::Ktx2Basisu",
+            "parse_sampler",
+            "TextureWrap::MirroredRepeat",
+            "TextureFilter::LinearMipmapLinear",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/assets.rs",
+        &[
+            "validate_texture_source_format",
+            "UnsupportedTextureFormat",
+            "TextureSourceFormat",
+            "source_format",
+            "load_scene_with_progress",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/assets/load.rs",
+        &[
+            "pub struct AssetLoadControl",
+            "pub struct AssetLoadReport",
+            "pub enum AssetLoadProgress",
+            "progress_events",
+            "emit_progress",
+            "AssetError::Cancelled",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/assets.rs",
+        &["load_scene_with_report", "load_scene_controlled"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/assets/gltf/extensions.rs",
+        &[
+            "pub enum GltfDecoderPolicy",
+            "decoder_policy",
+            "basis-universal",
+            "feature: \"ktx2\"",
+            "KHR_materials_clearcoat",
+            "KHR_materials_transmission",
+            "KHR_materials_ior",
+            "KHR_materials_volume",
+            "KHR_texture_basisu",
+            "KHR_draco_mesh_compression",
+            "EXT_meshopt_compression",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "tests/m8_assets_materials_ecosystem.rs",
+        &[
+            "m8_missing_texture_slots_fail_with_actionable_asset_error",
+            "GltfDecoderPolicy::FeatureFlag",
+            "GltfDecoderPolicy::External",
+            "normal_texture",
+            "normal_texture_transform",
+            "metallic_roughness_texture",
+            "occlusion_texture",
+            "emissive_texture",
+            "emissive_texture_transform",
+            "TextureWrap::MirroredRepeat",
+            "TextureFilter::LinearMipmapLinear",
+            "GltfExtensionStatus::Degraded",
+            "m8_unsupported_texture_formats_fail_before_silent_handles_are_created",
+            "m8_scene_load_reports_cache_fetch_and_external_buffer_metadata",
+            "m8_cancelled_scene_load_does_not_cache_partial_asset_state",
+            "m8_scene_load_progress_reports_fetch_parse_cache_and_external_buffers",
+            "m8_ktx2_basisu_texture_requires_feature_or_explicit_decoder_policy",
+            "m8_ktx2_basisu_feature_loads_compressed_texture_descriptor",
+        ],
+    );
+}
+
 fn require_manifest_value(
     findings: &mut Vec<Finding>,
     manifest_rel: &str,
@@ -4150,11 +5051,46 @@ mod tests {
             parse_command(vec!["doctor".into()]),
             Ok(Command::Doctor(DoctorMode::Full))
         );
+        assert_eq!(
+            parse_command(vec!["claim-audit".into()]),
+            Ok(Command::ClaimAudit)
+        );
+        assert_eq!(
+            parse_command(vec!["release-lane-artifact".into(), "macos-metal".into()]),
+            Ok(Command::ReleaseLaneArtifact("macos-metal".into()))
+        );
     }
 
     #[test]
     fn rejects_unknown_command() {
         assert!(parse_command(vec!["check".into()]).is_err());
+    }
+
+    #[test]
+    fn release_lane_artifacts_use_release_schema() {
+        let artifact =
+            release_lane_artifact("linux-webgpu-chromium").expect("known lane is accepted");
+
+        assert_eq!(artifact["schema"], "scena.release_lane.v1");
+        assert_eq!(artifact["lane"], "linux-webgpu-chromium");
+        assert_eq!(artifact["backend"], "WebGpu");
+        assert!(release_lane_artifact("unknown").is_err());
+    }
+
+    #[test]
+    fn claim_categories_map_to_evidence_links() {
+        let categories = claim_categories("Scene Renderer glTF WebGPU benchmark doctor");
+
+        assert!(categories.contains(&"public-api"));
+        assert!(categories.contains(&"assets-gltf"));
+        assert!(categories.contains(&"browser-platform"));
+        assert!(categories.contains(&"performance"));
+        assert!(categories.contains(&"doctor"));
+        assert!(
+            evidence_links_for_category("assets-gltf")
+                .iter()
+                .any(|link| link.ends_with("m8_assets_materials_ecosystem.rs"))
+        );
     }
 
     #[test]
@@ -4486,6 +5422,16 @@ mod tests {
         let mut findings = Vec::new();
 
         check_m2_browser_rendered_output(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn m9_release_metadata_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_m9_ci_release_lanes(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
     }

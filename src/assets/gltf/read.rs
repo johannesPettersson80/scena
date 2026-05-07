@@ -7,49 +7,23 @@ use crate::geometry::{
 use crate::material::{AlphaMode, Color, MaterialDesc, TextureColorSpace, TextureTransform};
 use crate::scene::Vec3;
 
-use super::super::{
-    AssetPath, AssetStorage, MaterialHandle, TextureCacheKey, TextureDesc, TextureHandle,
-};
+use self::textures::{GltfTexture, texture_slot};
+use super::super::{AssetPath, AssetStorage, MaterialHandle};
 use super::SceneAssetMesh;
 use super::accessor::{
-    GltfAccessor, GltfBufferView, optional_usize, parse_error, read_color_accessor,
-    read_indices_accessor, read_joints_accessor, read_vec3_accessor, read_weights_accessor,
-    required_usize,
+    GltfAccessor, GltfBufferView, parse_error, read_color_accessor, read_indices_accessor,
+    read_joints_accessor, read_vec3_accessor, read_weights_accessor, required_usize,
 };
+pub(super) use textures::parse_textures;
 
-pub(super) fn parse_textures(
+mod textures;
+
+pub(super) fn parse_materials(
     path: &AssetPath,
     json: &JsonValue,
     storage: &mut AssetStorage,
-) -> Vec<TextureHandle> {
-    let images = json
-        .get("images")
-        .and_then(JsonValue::as_array)
-        .cloned()
-        .unwrap_or_default();
-    json.get("textures")
-        .and_then(JsonValue::as_array)
-        .map(|textures| {
-            textures
-                .iter()
-                .filter_map(|texture| {
-                    let source = optional_usize(texture, "source")?;
-                    let uri = images
-                        .get(source)
-                        .and_then(|image| image.get("uri"))
-                        .and_then(JsonValue::as_str)?;
-                    Some(insert_texture(storage, resolve_relative_path(path, uri)))
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-pub(super) fn parse_materials(
-    json: &JsonValue,
-    storage: &mut AssetStorage,
-    textures: &[TextureHandle],
-) -> Vec<MaterialHandle> {
+    textures: &[GltfTexture],
+) -> Result<Vec<MaterialHandle>, AssetError> {
     json.get("materials")
         .and_then(JsonValue::as_array)
         .map(|materials| {
@@ -72,15 +46,79 @@ pub(super) fn parse_materials(
                         MaterialDesc::pbr_metallic_roughness(base_color, metallic, roughness)
                     };
                     if let Some(base_color_texture) = pbr.get("baseColorTexture") {
-                        if let Some(texture) = base_color_texture
-                            .get("index")
-                            .and_then(JsonValue::as_u64)
-                            .and_then(|index| textures.get(index as usize))
-                        {
-                            desc = desc.with_base_color_texture(*texture);
+                        if let Some(texture) = texture_slot(
+                            path,
+                            "baseColorTexture",
+                            base_color_texture,
+                            textures,
+                            storage,
+                            TextureColorSpace::Srgb,
+                        )? {
+                            desc = desc.with_base_color_texture(texture);
                         }
                         if let Some(transform) = parse_texture_transform(base_color_texture) {
                             desc = desc.with_base_color_texture_transform(transform);
+                        }
+                    }
+                    if let Some(metallic_roughness_texture) = pbr.get("metallicRoughnessTexture") {
+                        if let Some(texture) = texture_slot(
+                            path,
+                            "metallicRoughnessTexture",
+                            metallic_roughness_texture,
+                            textures,
+                            storage,
+                            TextureColorSpace::Linear,
+                        )? {
+                            desc = desc.with_metallic_roughness_texture(texture);
+                        }
+                        if let Some(transform) = parse_texture_transform(metallic_roughness_texture)
+                        {
+                            desc = desc.with_metallic_roughness_texture_transform(transform);
+                        }
+                    }
+                    if let Some(normal_texture) = material.get("normalTexture") {
+                        if let Some(texture) = texture_slot(
+                            path,
+                            "normalTexture",
+                            normal_texture,
+                            textures,
+                            storage,
+                            TextureColorSpace::Linear,
+                        )? {
+                            desc = desc.with_normal_texture(texture);
+                        }
+                        if let Some(transform) = parse_texture_transform(normal_texture) {
+                            desc = desc.with_normal_texture_transform(transform);
+                        }
+                    }
+                    if let Some(occlusion_texture) = material.get("occlusionTexture") {
+                        if let Some(texture) = texture_slot(
+                            path,
+                            "occlusionTexture",
+                            occlusion_texture,
+                            textures,
+                            storage,
+                            TextureColorSpace::Linear,
+                        )? {
+                            desc = desc.with_occlusion_texture(texture);
+                        }
+                        if let Some(transform) = parse_texture_transform(occlusion_texture) {
+                            desc = desc.with_occlusion_texture_transform(transform);
+                        }
+                    }
+                    if let Some(emissive_texture) = material.get("emissiveTexture") {
+                        if let Some(texture) = texture_slot(
+                            path,
+                            "emissiveTexture",
+                            emissive_texture,
+                            textures,
+                            storage,
+                            TextureColorSpace::Srgb,
+                        )? {
+                            desc = desc.with_emissive_texture(texture);
+                        }
+                        if let Some(transform) = parse_texture_transform(emissive_texture) {
+                            desc = desc.with_emissive_texture_transform(transform);
                         }
                     }
                     if let Some(emissive) = color3_factor(material, "emissiveFactor") {
@@ -107,11 +145,11 @@ pub(super) fn parse_materials(
                     {
                         desc = desc.with_double_sided(true);
                     }
-                    storage.materials.insert(desc)
+                    Ok(storage.materials.insert(desc))
                 })
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_else(|| Ok(Vec::new()))
 }
 
 pub(super) fn parse_meshes(
@@ -320,33 +358,6 @@ fn parse_mesh_primitive(
         uses_vertex_colors,
         morph_weights: inputs.mesh_weights.to_vec(),
     })
-}
-
-fn insert_texture(storage: &mut AssetStorage, path: AssetPath) -> TextureHandle {
-    let cache_key = TextureCacheKey {
-        path,
-        color_space: TextureColorSpace::Srgb,
-    };
-    if let Some(handle) = storage.texture_lookup.get(&cache_key) {
-        return *handle;
-    }
-    let texture = TextureDesc {
-        path: cache_key.path.clone(),
-        color_space: cache_key.color_space,
-    };
-    let handle = storage.textures.insert(texture);
-    storage.texture_lookup.insert(cache_key, handle);
-    handle
-}
-
-fn resolve_relative_path(base: &AssetPath, uri: &str) -> AssetPath {
-    if uri.starts_with("data:") || uri.starts_with('/') || uri.contains("://") {
-        return AssetPath::from(uri);
-    }
-    let Some((directory, _file)) = base.as_str().rsplit_once('/') else {
-        return AssetPath::from(uri);
-    };
-    AssetPath::from(format!("{directory}/{uri}"))
 }
 
 fn number_field(value: &JsonValue, field: &str) -> Option<f32> {

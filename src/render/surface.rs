@@ -14,6 +14,10 @@ impl Renderer {
             SurfaceEvent::Resize { width, height } => {
                 self.resize_target(width, height)?;
             }
+            SurfaceEvent::ViewportChanged(viewport) => {
+                let size = viewport.physical_size();
+                self.resize_target(size.width, size.height)?;
+            }
             SurfaceEvent::ScaleFactorChanged { .. } | SurfaceEvent::Occluded { .. } => {
                 self.target_revision = self.target_revision.saturating_add(1);
             }

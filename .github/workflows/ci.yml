@@ -1,0 +1,177 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+env:
+  RUST_TOOLCHAIN: "1.93.1"
+  WASM_PACK_VERSION: "0.14.0"
+  NODE_VERSION: "20.20.0"
+  NPM_VERSION: "10.8.2"
+  PLAYWRIGHT_VERSION: "1.59.1"
+  BINARYEN_VERSION: "129.0.0"
+  BROTLI_CLI_VERSION: "2.1.1"
+
+jobs:
+  linux-native-vulkan:
+    name: Linux native/headless
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.93.1
+      - name: Cargo gates
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+          cargo check --examples
+          cargo run -p xtask -- doctor --full
+      - name: Docs
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
+      - name: Release lane artifact
+        run: cargo run -p xtask -- release-lane-artifact linux-native-vulkan
+      - name: Upload gate artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-native-vulkan-gate-artifacts
+          path: target/gate-artifacts/**
+          if-no-files-found: ignore
+
+  linux-browser-webgl2:
+    name: Linux browser WebGL2
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.93.1
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.20.0"
+          cache: npm
+      - name: Install pinned browser driver
+        run: |
+          npm ci
+          npx playwright install chromium --with-deps
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --version 0.14.0 --locked
+      - name: Browser proof
+        run: |
+          wasm-pack test --headless --chrome --test m6_browser_renderer_parity
+          wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe
+          npm run browser:m6
+          cargo run -p xtask -- release-lane-artifact linux-webgl2-chromium
+      - name: Upload browser artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-browser-webgl2-gate-artifacts
+          path: target/gate-artifacts/**
+          if-no-files-found: error
+
+  linux-browser-webgpu:
+    name: Linux browser WebGPU
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.93.1
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.20.0"
+          cache: npm
+      - name: Install pinned browser driver
+        run: |
+          npm ci
+          npx playwright install chromium --with-deps
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --version 0.14.0 --locked
+      - name: Browser WebGPU proof through Rust/WASM
+        run: |
+          wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe
+          npm run browser:m6
+          cargo run -p xtask -- release-lane-artifact linux-webgpu-chromium
+      - name: Upload browser artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-browser-webgpu-gate-artifacts
+          path: target/gate-artifacts/**
+          if-no-files-found: error
+
+  wasm32:
+    name: wasm32 compile and package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.93.1
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.20.0"
+          cache: npm
+      - name: Install pinned size-gate tools
+        run: npm ci
+      - name: WASM compile
+        run: cargo check --target wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --version 0.14.0 --locked
+      - name: WASM release build
+        run: wasm-pack build --release --target web --out-dir target/m9-browser-pkg
+      - name: WASM size gate
+        run: npm run wasm:size
+      - name: Release lane artifact
+        run: cargo run -p xtask -- release-lane-artifact wasm32-unknown-unknown
+      - name: Upload WASM package
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wasm32-package
+          path: |
+            target/m9-browser-pkg/**
+            target/gate-artifacts/m9-wasm-size.json
+          if-no-files-found: error
+
+  macos-metal:
+    name: macOS Metal
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.93.1
+      - name: Compile and test
+        run: |
+          cargo test --all-targets
+          cargo check --examples
+          cargo run -p xtask -- release-lane-artifact macos-metal
+      - name: Upload gate artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-metal-gate-artifacts
+          path: target/gate-artifacts/**
+          if-no-files-found: ignore
+
+  windows-dx12:
+    name: Windows DX12
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.93.1
+      - name: Compile and test
+        run: |
+          cargo test --all-targets
+          cargo check --examples
+          cargo run -p xtask -- release-lane-artifact windows-dx12
+      - name: Upload gate artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-dx12-gate-artifacts
+          path: target/gate-artifacts/**
+          if-no-files-found: ignore

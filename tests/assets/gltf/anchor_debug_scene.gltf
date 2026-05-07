@@ -1,0 +1,36 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "scena-m7-anchor-debug-fixture"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [0]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Root",
+      "extras": {
+        "scena": {
+          "anchors": [
+            { "name": "mount" },
+            { "name": "inspection", "translation": [0.0, 0.1, 0.0] }
+          ]
+        }
+      },
+      "children": [1]
+    },
+    {
+      "name": "Child",
+      "extras": {
+        "scena": {
+          "anchors": [
+            { "name": "pivot", "translation": [0.1, 0.0, 0.0] }
+          ]
+        }
+      }
+    }
+  ]
+}

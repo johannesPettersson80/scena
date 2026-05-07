@@ -1,7 +1,10 @@
 use crate::diagnostics::LookupError;
 use crate::geometry::Aabb;
 
-use super::{Camera, CameraKey, NodeKey, NodeKind, Quat, Scene, Transform, Vec3};
+use super::{
+    Camera, CameraKey, ImportAnchor, NodeKey, NodeKind, PerspectiveCamera, Quat, Scene,
+    SceneImport, Transform, Vec3,
+};
 
 impl Scene {
     /// Returns the scene node that owns a camera descriptor.
@@ -67,11 +70,31 @@ impl Scene {
         self.set_node_transform_and_mark_changed(camera_node, transform)
     }
 
+    /// Adds a perspective camera under the root and makes it active.
+    pub fn add_default_camera(&mut self) -> Result<CameraKey, LookupError> {
+        let camera = self.add_perspective_camera(
+            self.root(),
+            PerspectiveCamera::default(),
+            Transform::at(Vec3::new(0.0, 0.0, 2.0)),
+        )?;
+        self.set_active_camera(camera)?;
+        Ok(camera)
+    }
+
+    /// Frames the world-space bounds of an imported scene.
+    pub fn frame_import(
+        &mut self,
+        camera: CameraKey,
+        import: &SceneImport,
+    ) -> Result<(), LookupError> {
+        let bounds = import
+            .bounds_world(self)
+            .ok_or(LookupError::ImportHasNoBounds)?;
+        self.frame(camera, bounds)
+    }
+
     /// Rotates the selected camera node so its local -Z axis points at `target`.
     pub fn look_at(&mut self, camera: CameraKey, target: NodeKey) -> Result<(), LookupError> {
-        let camera_node = self
-            .camera_node(camera)
-            .ok_or(LookupError::CameraNotFound(camera))?;
         if !self.cameras.contains_key(camera) {
             return Err(LookupError::CameraNotFound(camera));
         }
@@ -81,6 +104,21 @@ impl Scene {
             .ok_or(LookupError::NodeNotFound(target))?
             .transform
             .translation;
+        self.look_at_point(camera, target_position)
+    }
+
+    /// Rotates the selected camera node so its local -Z axis points at a world-space point.
+    pub fn look_at_point(
+        &mut self,
+        camera: CameraKey,
+        target_position: Vec3,
+    ) -> Result<(), LookupError> {
+        let camera_node = self
+            .camera_node(camera)
+            .ok_or(LookupError::CameraNotFound(camera))?;
+        if !self.cameras.contains_key(camera) {
+            return Err(LookupError::CameraNotFound(camera));
+        }
         let mut camera_transform = self
             .nodes
             .get(camera_node)
@@ -93,6 +131,47 @@ impl Scene {
 
         camera_transform.rotation = look_rotation(forward, Vec3::new(0.0, 1.0, 0.0));
         self.set_node_transform_and_mark_changed(camera_node, camera_transform)
+    }
+
+    pub fn center_on(&mut self, node: NodeKey, center: Vec3) -> Result<(), LookupError> {
+        let mut transform = self
+            .nodes
+            .get(node)
+            .ok_or(LookupError::NodeNotFound(node))?
+            .transform;
+        transform.translation = center;
+        self.set_node_transform_and_mark_changed(node, transform)
+    }
+
+    pub fn align_to(&mut self, node: NodeKey, transform: Transform) -> Result<(), LookupError> {
+        self.set_node_transform_and_mark_changed(node, transform)
+    }
+
+    pub fn snap_anchor(&mut self, node: NodeKey, anchor: &ImportAnchor) -> Result<(), LookupError> {
+        self.align_to(node, anchor.transform())
+    }
+
+    pub fn fit_inside(
+        &mut self,
+        node: NodeKey,
+        source: Aabb,
+        target: Aabb,
+    ) -> Result<(), LookupError> {
+        let source_half = source.half_extent();
+        let target_half = target.half_extent();
+        let scale = positive_min([
+            target_half.x / source_half.x.max(f32::EPSILON),
+            target_half.y / source_half.y.max(f32::EPSILON),
+            target_half.z / source_half.z.max(f32::EPSILON),
+        ]);
+        let mut transform = self
+            .nodes
+            .get(node)
+            .ok_or(LookupError::NodeNotFound(node))?
+            .transform;
+        transform.translation = target.center();
+        transform.scale = Vec3::new(scale, scale, scale);
+        self.set_node_transform_and_mark_changed(node, transform)
     }
 
     fn set_node_transform_and_mark_changed(
@@ -197,4 +276,12 @@ fn subtract_vec3(left: Vec3, right: Vec3) -> Vec3 {
 
 fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
     Vec3::new(value.x * scale, value.y * scale, value.z * scale)
+}
+
+fn positive_min(values: [f32; 3]) -> f32 {
+    values
+        .into_iter()
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .min_by(f32::total_cmp)
+        .unwrap_or(1.0)
 }

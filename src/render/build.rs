@@ -8,7 +8,6 @@ use crate::material::Color;
 use crate::picking::InteractionStyle;
 use crate::platform::{PlatformSurface, PlatformSurfaceAttachment};
 
-#[cfg(not(target_arch = "wasm32"))]
 use super::gpu;
 use super::gpu::GpuDeviceState;
 use super::{
@@ -110,11 +109,29 @@ impl Renderer {
                         options,
                     );
                 }
-                PlatformSurfaceAttachment::BrowserWebGpuCanvas(canvas)
-                | PlatformSurfaceAttachment::BrowserWebGl2Canvas(canvas) => {
-                    let _ = canvas;
+                PlatformSurfaceAttachment::BrowserWebGpuCanvas(canvas) => {
                     let backend = backend_for_attached_surface(kind);
-                    return Err(BuildError::UnsupportedBackend { backend });
+                    let gpu = gpu::request_browser_surface_gpu(backend, size, canvas).await?;
+                    return Self::from_raster_target(
+                        size.width,
+                        size.height,
+                        backend,
+                        Some(gpu),
+                        true,
+                        options,
+                    );
+                }
+                PlatformSurfaceAttachment::BrowserWebGl2Canvas(canvas) => {
+                    let backend = backend_for_attached_surface(kind);
+                    let gpu = gpu::request_browser_surface_gpu(backend, size, canvas).await?;
+                    return Self::from_raster_target(
+                        size.width,
+                        size.height,
+                        backend,
+                        Some(gpu),
+                        true,
+                        options,
+                    );
                 }
             }
         }

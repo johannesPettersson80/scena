@@ -5,7 +5,6 @@ impl GpuDeviceState {
         self.pending_destructions
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub(in crate::render) fn release_prepared_resources(&mut self) {
         if let Some(resources) = self.resources.take() {
             self.pending_destructions = self
@@ -13,9 +12,6 @@ impl GpuDeviceState {
                 .saturating_add(resources.stats.destruction_records());
         }
     }
-
-    #[cfg(target_arch = "wasm32")]
-    pub(in crate::render) fn release_prepared_resources(&mut self) {}
 
     #[cfg(not(target_arch = "wasm32"))]
     pub(in crate::render) fn poll_device(&mut self) -> (u64, bool) {

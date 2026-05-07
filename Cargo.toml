@@ -4,6 +4,8 @@ version = "1.0.0"
 edition = "2024"
 rust-version = "1.90"
 license = "MIT OR Apache-2.0"
+authors = ["Johannes Pettersson <johannes_salomon@hotmail.com>"]
+repository = "https://github.com/johannesPettersson80/scena"
 description = "A Rust-native scene-graph renderer with typed scene state, glTF assets, and explicit prepare/render lifecycles."
 readme = "README.md"
 documentation = "https://docs.rs/scena"
@@ -14,6 +16,7 @@ include = [
     "tests/**",
     "examples/**",
     "docs/**",
+    "docs/api/m5-semver-baseline.toml",
     "README.md",
     "CHANGELOG.md",
     "LICENSE-*",
@@ -29,6 +32,11 @@ resolver = "3"
 path = "src/lib.rs"
 crate-type = ["rlib", "cdylib"]
 
+[[example]]
+name = "scene_inspection"
+path = "examples/scene_inspection.rs"
+required-features = ["inspection"]
+
 [dependencies]
 base64 = "0.22"
 raw-window-handle = "0.6.2"
@@ -41,7 +49,14 @@ default = []
 controls = []
 controls-winit = ["controls"]
 controls-web = ["controls"]
+browser-probe = []
+inspection = []
+ktx2 = []
 obj = []
+
+[package.metadata.docs.rs]
+all-features = true
+targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 pollster = "0.4.0"
@@ -58,6 +73,11 @@ web-sys = { version = "0.3.82", features = [
     "HtmlElement",
     "ImageData",
     "Response",
+    "WebGl2RenderingContext",
+    "WebGlBuffer",
+    "WebGlProgram",
+    "WebGlShader",
+    "console",
     "Window",
 ] }
 

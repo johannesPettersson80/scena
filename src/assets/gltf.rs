@@ -12,6 +12,8 @@ use crate::scene::{Angle, DirectionalLight, Light, PointLight, SpotLight, Transf
 use self::accessor::{parse_accessors, parse_buffer_views, parse_buffers};
 use self::anchors::parse_node_anchors;
 use self::animation::parse_gltf_clips;
+pub use self::extensions::{GltfDecoderPolicy, GltfExtensionDiagnostic, GltfExtensionStatus};
+use self::extensions::{collect_extension_diagnostics, is_v1_required_gltf_extension};
 use self::external::external_buffer_paths;
 use self::glb::{is_glb, parse_glb};
 use self::read::{parse_materials, parse_meshes, parse_textures};
@@ -23,6 +25,7 @@ use super::{AssetPath, AssetStorage, GeometryHandle, MaterialHandle};
 mod accessor;
 mod anchors;
 mod animation;
+mod extensions;
 mod external;
 mod glb;
 mod read;
@@ -44,6 +47,7 @@ struct SceneAssetData {
     clips: Vec<SceneAssetClip>,
     extensions_used: Vec<String>,
     extensions_required: Vec<String>,
+    extension_diagnostics: Vec<GltfExtensionDiagnostic>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -95,6 +99,7 @@ impl SceneAsset {
                 clips: Vec::new(),
                 extensions_used: Vec::new(),
                 extensions_required: Vec::new(),
+                extension_diagnostics: Vec::new(),
             }),
         }
     }
@@ -183,12 +188,13 @@ impl SceneAsset {
                 });
             }
         }
+        let extension_diagnostics = collect_extension_diagnostics(&extensions_used);
 
         let buffers = parse_buffers(&path, &json, binary_chunk, external_buffers)?;
         let buffer_views = parse_buffer_views(&path, &json)?;
         let accessors = parse_accessors(&path, &json)?;
         let textures = parse_textures(&path, &json, storage);
-        let materials = parse_materials(&json, storage, &textures);
+        let materials = parse_materials(&path, &json, storage, &textures)?;
         let meshes = parse_meshes(
             &path,
             &json,
@@ -214,6 +220,7 @@ impl SceneAsset {
                 clips,
                 extensions_used,
                 extensions_required,
+                extension_diagnostics,
             }),
         })
     }
@@ -248,6 +255,10 @@ impl SceneAsset {
 
     pub fn extensions_required(&self) -> &[String] {
         &self.inner.extensions_required
+    }
+
+    pub fn extension_diagnostics(&self) -> &[GltfExtensionDiagnostic] {
+        &self.inner.extension_diagnostics
     }
 }
 
@@ -505,15 +516,4 @@ fn array_f32(values: &[JsonValue], index: usize) -> Option<f32> {
         .get(index)
         .and_then(JsonValue::as_f64)
         .map(|value| value as f32)
-}
-
-fn is_v1_required_gltf_extension(extension: &str) -> bool {
-    matches!(
-        extension,
-        "KHR_lights_punctual"
-            | "KHR_materials_unlit"
-            | "KHR_materials_emissive_strength"
-            | "KHR_texture_transform"
-            | "KHR_mesh_quantization"
-    )
 }

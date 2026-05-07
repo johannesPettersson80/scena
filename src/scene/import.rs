@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use crate::animation::{AnimationClip, AnimationClipKey, AnimationTarget};
+use crate::animation::{AnimationClip, AnimationClipKey};
 use crate::assets::{AssetFetcher, AssetPath, Assets, SceneAsset, SceneAssetMesh};
 use crate::diagnostics::{
     ImportDiagnosticOverlay, ImportDiagnosticOverlayKind, ImportError, InstantiateError,
@@ -10,10 +10,12 @@ use crate::diagnostics::{
 use crate::geometry::Aabb;
 
 use self::bounds::union_optional;
-use super::{MeshNode, NodeKey, NodeKind, Scene, SceneSkinBinding, Transform, Vec3};
+use super::{MeshNode, NodeKey, NodeKind, Scene, SceneSkinBinding, Transform};
 
+mod accessors;
 mod bounds;
 mod lookups;
+mod options;
 
 #[derive(Debug, Clone)]
 pub struct SceneImport {
@@ -27,6 +29,13 @@ pub struct SceneImport {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImportAnchor {
+    name: String,
+    node: NodeKey,
+    transform: Transform,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportAnchorDebugMetadata {
     name: String,
     node: NodeKey,
     transform: Transform,
@@ -62,7 +71,9 @@ pub enum SourceUnits {
 pub enum SourceCoordinateSystem {
     #[default]
     GltfYUpRightHanded,
+    YUpLeftHanded,
     ZUpRightHanded,
+    ZUpLeftHanded,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -389,140 +400,4 @@ fn mesh_node_kind(mesh: &SceneAssetMesh) -> NodeKind {
         geometry: mesh.geometry(),
         material: mesh.material(),
     })
-}
-
-impl ImportAnchor {
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub const fn node(&self) -> NodeKey {
-        self.node
-    }
-
-    pub const fn transform(&self) -> Transform {
-        self.transform
-    }
-}
-
-impl ImportClip {
-    pub const fn key(&self) -> AnimationClipKey {
-        self.clip.key()
-    }
-
-    pub fn name(&self) -> Option<&str> {
-        self.clip.name()
-    }
-
-    pub fn channels(&self) -> &[crate::animation::AnimationChannel] {
-        self.clip.channels()
-    }
-
-    pub const fn duration_seconds(&self) -> f32 {
-        self.clip.duration_seconds()
-    }
-
-    pub(crate) fn clip(&self) -> AnimationClip {
-        self.clip.clone()
-    }
-}
-
-impl ImportPivot {
-    pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
-    }
-
-    pub const fn node(&self) -> NodeKey {
-        self.node
-    }
-
-    pub const fn transform(&self) -> Transform {
-        self.transform
-    }
-}
-
-impl ImportOptions {
-    pub const fn gltf_default() -> Self {
-        Self {
-            source_units: SourceUnits::Meters,
-            source_coordinate_system: SourceCoordinateSystem::GltfYUpRightHanded,
-        }
-    }
-
-    pub const fn source_units(self) -> SourceUnits {
-        self.source_units
-    }
-
-    pub const fn with_source_units(mut self, units: SourceUnits) -> Self {
-        self.source_units = units;
-        self
-    }
-
-    pub const fn source_coordinate_system(self) -> SourceCoordinateSystem {
-        self.source_coordinate_system
-    }
-
-    pub const fn with_source_coordinate_system(
-        mut self,
-        coordinate_system: SourceCoordinateSystem,
-    ) -> Self {
-        self.source_coordinate_system = coordinate_system;
-        self
-    }
-
-    fn convert_transform(self, transform: Transform) -> Transform {
-        let unit_scale = self.source_units.meters_per_unit();
-        Transform {
-            translation: self
-                .source_coordinate_system
-                .convert_vec3(scale_vec3(transform.translation, unit_scale)),
-            rotation: transform.rotation,
-            scale: self
-                .source_coordinate_system
-                .convert_scale(scale_vec3(transform.scale, unit_scale)),
-        }
-    }
-
-    fn convert_animation_vec3(self, target: AnimationTarget, value: Vec3) -> Vec3 {
-        let unit_scale = self.source_units.meters_per_unit();
-        match target {
-            AnimationTarget::Translation => self
-                .source_coordinate_system
-                .convert_vec3(scale_vec3(value, unit_scale)),
-            AnimationTarget::Scale => self
-                .source_coordinate_system
-                .convert_scale(scale_vec3(value, unit_scale)),
-            AnimationTarget::Rotation | AnimationTarget::Weights => value,
-        }
-    }
-}
-
-impl SourceUnits {
-    const fn meters_per_unit(self) -> f32 {
-        match self {
-            Self::Meters => 1.0,
-            Self::Centimeters => 0.01,
-            Self::Millimeters => 0.001,
-        }
-    }
-}
-
-impl SourceCoordinateSystem {
-    const fn convert_vec3(self, value: Vec3) -> Vec3 {
-        match self {
-            Self::GltfYUpRightHanded => value,
-            Self::ZUpRightHanded => Vec3::new(value.x, value.z, -value.y),
-        }
-    }
-
-    const fn convert_scale(self, value: Vec3) -> Vec3 {
-        match self {
-            Self::GltfYUpRightHanded => value,
-            Self::ZUpRightHanded => Vec3::new(value.x, value.z, value.y),
-        }
-    }
-}
-
-const fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
-    Vec3::new(value.x * scale, value.y * scale, value.z * scale)
 }

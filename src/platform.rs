@@ -17,6 +17,7 @@ pub enum SurfaceKind {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SurfaceEvent {
     Resize { width: u32, height: u32 },
+    ViewportChanged(SurfaceViewport),
     ScaleFactorChanged { scale_factor: f64 },
     Occluded { occluded: bool },
     Hidden,
@@ -31,6 +32,13 @@ pub enum SurfaceEvent {
 pub struct SurfaceSize {
     pub width: u32,
     pub height: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SurfaceViewport {
+    logical_width: f32,
+    logical_height: f32,
+    device_pixel_ratio: f32,
 }
 
 pub enum PlatformSurface {
@@ -187,6 +195,45 @@ impl PlatformSurface {
         };
         (kind, size, attachment)
     }
+}
+
+impl SurfaceViewport {
+    pub fn new(logical_width: f32, logical_height: f32, device_pixel_ratio: f32) -> Option<Self> {
+        (logical_width.is_finite()
+            && logical_height.is_finite()
+            && device_pixel_ratio.is_finite()
+            && logical_width > 0.0
+            && logical_height > 0.0
+            && device_pixel_ratio > 0.0)
+            .then_some(Self {
+                logical_width,
+                logical_height,
+                device_pixel_ratio,
+            })
+    }
+
+    pub const fn logical_width(self) -> f32 {
+        self.logical_width
+    }
+
+    pub const fn logical_height(self) -> f32 {
+        self.logical_height
+    }
+
+    pub const fn device_pixel_ratio(self) -> f32 {
+        self.device_pixel_ratio
+    }
+
+    pub fn physical_size(self) -> SurfaceSize {
+        SurfaceSize {
+            width: logical_to_physical(self.logical_width, self.device_pixel_ratio),
+            height: logical_to_physical(self.logical_height, self.device_pixel_ratio),
+        }
+    }
+}
+
+fn logical_to_physical(logical: f32, device_pixel_ratio: f32) -> u32 {
+    (logical * device_pixel_ratio).round().max(1.0) as u32
 }
 
 impl fmt::Debug for PlatformSurface {

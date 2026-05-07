@@ -1,7 +1,7 @@
 //! Scene graph, typed keys, transforms, bounds, anchors, clipping, and queries.
 
 use std::cell::Cell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::marker::PhantomData;
 use std::sync::{Arc, Weak};
 
@@ -17,10 +17,13 @@ mod builders;
 mod camera;
 mod dirty;
 mod import;
+#[cfg(feature = "inspection")]
+mod inspection;
 mod instances;
 mod labels;
 mod lights;
 mod materials;
+mod math;
 mod mixers;
 mod morphs;
 mod origin;
@@ -29,15 +32,19 @@ mod render_nodes;
 mod skinning;
 mod transforms;
 mod view;
+mod visibility;
 pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
 pub use dirty::SceneDirtyState;
 pub use import::{
-    ImportAnchor, ImportClip, ImportOptions, ImportPivot, SceneImport, SourceCoordinateSystem,
-    SourceUnits,
+    ImportAnchor, ImportAnchorDebugMetadata, ImportClip, ImportOptions, ImportPivot, SceneImport,
+    SourceCoordinateSystem, SourceUnits,
 };
+#[cfg(feature = "inspection")]
+pub use inspection::{SceneInspectionReport, SceneNodeInspection};
 pub use instances::{Instance, InstanceCullingPolicy, InstanceId, InstanceSet};
 pub use labels::{LabelBillboard, LabelDesc, LabelRasterization};
 pub use lights::{DirectionalLight, Light, LightBuilder, PointLight, SpotLight};
+pub use math::{Angle, Quat, Transform, Vec3};
 pub use skinning::SceneSkinBinding;
 
 new_key_type! {
@@ -65,6 +72,7 @@ pub struct Scene {
     origin_shift: Vec3,
     root: NodeKey,
     active_camera: Option<CameraKey>,
+    camera_layer_masks: BTreeMap<CameraKey, u64>,
     interaction: InteractionContext,
     structure_revision: u64,
     transform_revision: u64,
@@ -77,6 +85,11 @@ pub struct Node {
     children: Vec<NodeKey>,
     transform: Transform,
     kind: NodeKind,
+    visible: bool,
+    tags: BTreeSet<String>,
+    layer_mask: u64,
+    render_group: i16,
+    helper_on_top: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -127,33 +140,6 @@ pub struct ModelBuilder<'scene> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Transform {
-    pub translation: Vec3,
-    pub rotation: Quat,
-    pub scale: Vec3,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Vec3 {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Quat {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-    pub w: f32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Angle {
-    radians: f32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ClippingPlane {
     normal: Vec3,
     distance: f32,
@@ -183,6 +169,7 @@ impl Scene {
             origin_shift: Vec3::ZERO,
             root,
             active_camera: None,
+            camera_layer_masks: BTreeMap::new(),
             interaction: InteractionContext::default(),
             structure_revision: 0,
             transform_revision: 0,
@@ -318,9 +305,12 @@ impl Scene {
 
     pub(crate) fn mesh_nodes(&self) -> impl Iterator<Item = (NodeKey, MeshNode, Transform)> + '_ {
         self.nodes.iter().filter_map(|(key, node)| match node.kind {
-            NodeKind::Mesh(mesh) => Some((key, mesh, node.transform)),
+            NodeKind::Mesh(mesh) if self.visible_for_active_camera(key) => {
+                Some((key, mesh, node.transform))
+            }
             NodeKind::Empty
             | NodeKind::Renderable(_)
+            | NodeKind::Mesh(_)
             | NodeKind::Model(_)
             | NodeKind::InstanceSet(_)
             | NodeKind::Label(_)
@@ -336,6 +326,9 @@ impl Scene {
             let NodeKind::InstanceSet(instance_set) = node.kind else {
                 return None;
             };
+            if !self.visible_for_active_camera(node_key) {
+                return None;
+            }
             self.instance_sets
                 .get(instance_set)
                 .map(|instance_set| (node_key, instance_set, node.transform))
@@ -344,10 +337,11 @@ impl Scene {
 
     pub(crate) fn model_nodes(&self) -> impl Iterator<Item = NodeKey> + '_ {
         self.nodes.iter().filter_map(|(key, node)| match node.kind {
-            NodeKind::Model(_) => Some(key),
+            NodeKind::Model(_) if self.visible_for_active_camera(key) => Some(key),
             NodeKind::Empty
             | NodeKind::Renderable(_)
             | NodeKind::Mesh(_)
+            | NodeKind::Model(_)
             | NodeKind::InstanceSet(_)
             | NodeKind::Label(_)
             | NodeKind::Camera(_)
@@ -362,6 +356,9 @@ impl Scene {
             let NodeKind::Label(label) = node.kind else {
                 return None;
             };
+            if !self.visible_for_active_camera(node_key) {
+                return None;
+            }
             self.labels
                 .get(label)
                 .map(|label_desc| (node_key, label, label_desc, node.transform))
@@ -375,6 +372,9 @@ impl Scene {
             let NodeKind::Light(light_key) = node.kind else {
                 return None;
             };
+            if !self.visible_for_active_camera(node_key) {
+                return None;
+            }
             self.lights
                 .get(light_key)
                 .copied()
@@ -415,6 +415,7 @@ impl Scene {
             self.cameras.remove(camera);
             return Err(error);
         }
+        self.camera_layer_masks.insert(camera, u64::MAX);
         Ok(camera)
     }
 
@@ -433,6 +434,11 @@ impl Scene {
             children: Vec::new(),
             transform,
             kind,
+            visible: true,
+            tags: BTreeSet::new(),
+            layer_mask: u64::MAX,
+            render_group: 0,
+            helper_on_top: false,
         });
         self.nodes[parent].children.push(node);
         self.structure_revision = self.structure_revision.saturating_add(1);
@@ -453,6 +459,11 @@ impl Node {
             children: Vec::new(),
             transform: Transform::IDENTITY,
             kind: NodeKind::Empty,
+            visible: true,
+            tags: BTreeSet::new(),
+            layer_mask: u64::MAX,
+            render_group: 0,
+            helper_on_top: false,
         }
     }
 
@@ -470,6 +481,26 @@ impl Node {
 
     pub fn kind(&self) -> &NodeKind {
         &self.kind
+    }
+
+    pub const fn visible(&self) -> bool {
+        self.visible
+    }
+
+    pub fn tags(&self) -> impl Iterator<Item = &str> {
+        self.tags.iter().map(String::as_str)
+    }
+
+    pub const fn layer_mask(&self) -> u64 {
+        self.layer_mask
+    }
+
+    pub const fn render_group(&self) -> i16 {
+        self.render_group
+    }
+
+    pub const fn helper_on_top(&self) -> bool {
+        self.helper_on_top
     }
 }
 
@@ -495,29 +526,6 @@ impl ModelNode {
     /// Returns the typed model handle referenced by this model node.
     pub const fn model(&self) -> ModelHandle {
         self.model
-    }
-}
-
-impl Transform {
-    pub const IDENTITY: Self = Self {
-        translation: Vec3::ZERO,
-        rotation: Quat::IDENTITY,
-        scale: Vec3::ONE,
-    };
-}
-
-impl Default for Transform {
-    fn default() -> Self {
-        Self::IDENTITY
-    }
-}
-
-impl Vec3 {
-    pub const ZERO: Self = Self::new(0.0, 0.0, 0.0);
-    pub const ONE: Self = Self::new(1.0, 1.0, 1.0);
-
-    pub const fn new(x: f32, y: f32, z: f32) -> Self {
-        Self { x, y, z }
     }
 }
 
@@ -552,28 +560,5 @@ impl ClippingPlaneSet {
 
     pub fn planes(&self) -> &[ClippingPlaneKey] {
         &self.planes
-    }
-}
-
-impl Quat {
-    pub const IDENTITY: Self = Self {
-        x: 0.0,
-        y: 0.0,
-        z: 0.0,
-        w: 1.0,
-    };
-}
-
-impl Angle {
-    pub fn from_degrees(degrees: f32) -> Self {
-        Self::from_radians(degrees.to_radians())
-    }
-
-    pub const fn from_radians(radians: f32) -> Self {
-        Self { radians }
-    }
-
-    pub const fn radians(self) -> f32 {
-        self.radians
     }
 }

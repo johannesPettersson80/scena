@@ -8,6 +8,7 @@ use crate::scene::{CameraKey, ClippingPlaneKey, InstanceSetKey, LabelKey, NodeKe
 
 mod capabilities;
 mod display;
+mod help;
 pub use capabilities::{
     AlphaPipelineStatus, Backend, Capabilities, CapabilityStatus, HardwareTier, OutputStageStatus,
 };
@@ -56,6 +57,20 @@ pub enum AssetError {
         path: String,
         extension: String,
         help: String,
+    },
+    MissingTexture {
+        path: String,
+        material_slot: String,
+        texture_index: usize,
+        help: &'static str,
+    },
+    UnsupportedTextureFormat {
+        path: String,
+        help: &'static str,
+    },
+    Cancelled {
+        path: String,
+        help: &'static str,
     },
     UnsupportedEnvironmentFormat {
         path: String,
@@ -220,6 +235,11 @@ pub enum LookupError {
     PathNotFound {
         path: String,
     },
+    InvalidViewport {
+        width: u32,
+        height: u32,
+    },
+    ImportHasNoBounds,
     StaleImport,
     NodeIsNotMesh {
         node: NodeKey,
@@ -247,6 +267,9 @@ pub struct Diagnostic {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagnosticCode {
+    MissingActiveCamera,
+    InvisibleScene,
+    MissingLightingOrEnvironment,
     LargeScenePrecisionRisk,
     DepthPrecisionRisk,
     WebGl2DepthCompatibility,
@@ -316,6 +339,15 @@ pub struct RendererStats {
 }
 
 impl Diagnostic {
+    pub fn info(code: DiagnosticCode, message: impl Into<String>, help: impl Into<String>) -> Self {
+        Self {
+            code,
+            severity: DiagnosticSeverity::Info,
+            message: message.into(),
+            help: Some(help.into()),
+        }
+    }
+
     pub fn warning(
         code: DiagnosticCode,
         message: impl Into<String>,
@@ -324,6 +356,19 @@ impl Diagnostic {
         Self {
             code,
             severity: DiagnosticSeverity::Warning,
+            message: message.into(),
+            help: Some(help.into()),
+        }
+    }
+
+    pub fn error(
+        code: DiagnosticCode,
+        message: impl Into<String>,
+        help: impl Into<String>,
+    ) -> Self {
+        Self {
+            code,
+            severity: DiagnosticSeverity::Error,
             message: message.into(),
             help: Some(help.into()),
         }

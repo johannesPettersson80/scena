@@ -4,7 +4,7 @@ use crate::diagnostics::{ImportDiagnosticOverlay, LookupError};
 use crate::geometry::Aabb;
 
 use super::bounds::{transform_aabb, union_optional};
-use super::{ImportAnchor, ImportClip, ImportPivot, SceneImport};
+use super::{ImportAnchor, ImportAnchorDebugMetadata, ImportClip, ImportPivot, SceneImport};
 use crate::scene::{NodeKey, Scene, Transform};
 
 impl SceneImport {
@@ -144,6 +144,29 @@ impl SceneImport {
                 hosts: matches.iter().map(|anchor| anchor.node()).collect(),
             }),
         }
+    }
+
+    pub fn anchors(&self) -> Result<&[ImportAnchor], LookupError> {
+        self.ensure_live()?;
+        Ok(&self.anchors)
+    }
+
+    pub fn anchors_for(&self, node: NodeKey) -> Result<Vec<&ImportAnchor>, LookupError> {
+        self.ensure_live()?;
+        Ok(self
+            .anchors
+            .iter()
+            .filter(|anchor| anchor.node() == node)
+            .collect())
+    }
+
+    pub fn anchor_debug_metadata(&self) -> Result<Vec<ImportAnchorDebugMetadata>, LookupError> {
+        self.ensure_live()?;
+        Ok(self
+            .anchors
+            .iter()
+            .map(ImportAnchorDebugMetadata::from)
+            .collect())
     }
 
     pub fn first_anchor(&self, name: &str) -> Option<&ImportAnchor> {

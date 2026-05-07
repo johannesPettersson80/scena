@@ -4,86 +4,87 @@
 [![rust](https://img.shields.io/badge/rust-1.90%2B-orange)](Cargo.toml)
 [![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 
-`scena` is a Rust-native scene-graph renderer for model viewers, glTF/GLB
-applications, CAD-style viewers, industrial visualization, digital-twin UIs, and
-headless rendering proof.
+`scena` is a Rust-native scene-graph renderer for model viewers, glTF/GLB applications,
+CAD-style viewers, industrial visualization, digital-twin UIs, and deterministic
+rendered-output tests.
 
-It is designed to give Rust applications the common Three.js scene-graph workflow with
-typed scene state, explicit asset ownership, explicit prepare/render lifecycle, structured
-diagnostics, and reproducible visual gates.
+It brings the practical Three.js scene workflow into Rust with typed scene state, explicit
+asset ownership, an explicit `prepare()` / `render()` lifecycle, structured diagnostics,
+and release gates that prove visual behavior instead of relying on screenshots by hand.
 
-`scena` is not a game engine, simulation engine, robotics stack, PLC/domain layer,
-physics engine, or process-semantics runtime.
+![scena rendered-output proof strip](docs/assets/readme/render-proof-strip.png)
+
+The strip above is generated from local rendered-output gate artifacts. It is intentionally
+small and deterministic: the README shows what the renderer proves today, not a marketing
+mockup.
+
+| In One Minute | Details |
+|---|---|
+| Best for | Rust apps that need inspectable 3D scenes, glTF assets, model-viewer behavior, picking, labels, animation, and reproducible visual tests |
+| Not for | game-engine loops, physics, robotics, PLC/domain logic, simulation, or process semantics |
+| Current state | local v1.0 release candidate with public-release deferrals recorded in [`ADR-0005`](docs/decisions/ADR-0005-local-release-candidate-deferrals.md) |
 
 ## Contents
 
-- [Status](#status)
 - [Why scena](#why-scena)
-- [Tech Stack](#tech-stack)
+- [Try It Locally](#try-it-locally)
 - [Install](#install)
-- [Getting Started](#getting-started)
-- [Configuration](#configuration)
 - [Quick Start](#quick-start)
-- [Core Model](#core-model)
-- [What Works](#what-works)
+- [Core Workflow](#core-workflow)
+- [Feature Map](#feature-map)
+- [Architecture](#architecture)
 - [Examples](#examples)
+- [Status](#status)
 - [Platform Compatibility](#platform-compatibility)
 - [Release Evidence](#release-evidence)
+- [Configuration](#configuration)
 - [Project Structure](#project-structure)
 - [Documentation Map](#documentation-map)
 - [Security](#security)
 - [Development](#development)
-- [What Is Next](#what-is-next)
+- [FAQ](#faq)
+- [Roadmap](#roadmap)
 - [Acknowledgements](#acknowledgements)
 - [License](#license)
 
-## Status
-
-This repository is at a local v1.0 release-candidate baseline, not a published v1.0
-release:
-
-- crate version: `1.0.0`;
-- minimum Rust version: `1.90`;
-- local implementation checklist: M0 through M5 complete with publication-lane deferrals
-  recorded in
-  [`ADR-0005`](docs/decisions/ADR-0005-local-release-candidate-deferrals.md);
-- local package proof: `cargo publish --dry-run --allow-dirty` passed on the release-candidate
-  tree;
-- API baseline: [`docs/api/m5-public-api-baseline.txt`](docs/api/m5-public-api-baseline.txt).
-
-This checkout has local Linux/headless/browser evidence. The release-gates contract also
-defines macOS and Windows smoke lanes; those require CI or matching hardware and are not
-represented by a GitHub badge in this repository yet. Tagging, pushing, GitHub CI, and
-crates.io publication are separate operator steps. Before publication, the clean release
-commit must rerun plain `cargo publish --dry-run` and close or supersede
-[`ADR-0005`](docs/decisions/ADR-0005-local-release-candidate-deferrals.md).
-
 ## Why scena
 
-Three.js is excellent in JavaScript. Rust applications need a renderer with different
-failure modes:
+Three.js is excellent in JavaScript. Rust applications need different failure modes:
 
-| Need | `scena` approach |
+| Three.js-style need | `scena` contract |
 |---|---|
-| Avoid stringly scene contracts | typed keys, handles, descriptors, and errors |
-| Avoid hidden first-frame work | explicit `prepare()` before `render()` |
-| Keep assets and GPU resources separate | `Assets` fetches/parses; `Renderer` uploads/prepares |
-| Prove visual behavior | headless, browser, WASM, screenshot, and capability gates |
-| Keep app semantics out of the renderer | no simulation, robotics, PLC, process, physics, or game-loop logic |
+| Create a graph of cameras, lights, meshes, labels, and imported models | `Scene` owns scene graph state through typed keys |
+| Load and reuse model/texture data | `Assets` owns fetching, parsing, cache, retain, reload, and deduplication |
+| Draw predictably without first-frame surprises | `Renderer::prepare*` uploads/prepares; `render*` only draws prepared state |
+| Catch wrong handles and stale imports | typed handles plus structured `LookupError`, `ImportError`, `PrepareError`, and `RenderError` |
+| Ship visual behavior with confidence | deterministic headless artifacts, browser smoke, WASM checks, benchmarks, and source-derived doctor rules |
 
-The current codebase is a renderer foundation and release candidate, not proof that every
-Three.js ecosystem feature already exists.
+`scena` is intentionally a renderer, not an application semantics layer. The host
+application owns business logic, simulation state, robotics logic, process state, and game
+rules.
 
-## Tech Stack
+## Try It Locally
 
-| Layer | Technology |
-|---|---|
-| Language | Rust 2024 edition |
-| GPU/render backend | `wgpu` for native/headless GPU paths, with explicit WebGPU/WebGL2 capability lanes |
-| Browser/WASM | `wasm-bindgen`, `web-sys`, `wasm-pack`, and Playwright proof scripts |
-| Asset format | glTF/GLB first; FBX conversion via external `FBX2glTF` workflow |
-| Handles/storage | typed slot-map keys through `slotmap` |
-| Test/proof surface | Rust tests, doctests, browser smoke scripts, headless artifacts, doctor rules |
+```bash
+git clone https://github.com/johannesPettersson80/scena.git scena
+cd scena
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+cargo run --example headless_ci
+```
+
+Compile every public example:
+
+```bash
+cargo check --examples
+```
+
+Run the source-derived guardrail:
+
+```bash
+cargo run -p xtask -- doctor --full
+```
 
 ## Install
 
@@ -93,67 +94,23 @@ After publication:
 cargo add scena
 ```
 
-From this repository:
+From a sibling checkout:
 
 ```toml
 [dependencies]
 scena = { path = "../scena" }
 ```
 
-Optional features:
+Supported feature flags:
 
 | Feature | Purpose |
 |---|---|
 | `controls` | platform-neutral orbit/pointer control types |
 | `controls-winit` | enables the controls feature for native hosts |
 | `controls-web` | enables the controls feature for browser hosts |
+| `inspection` | enables `Scene::inspect()` metadata for debugging and reproducible examples |
+| `ktx2` | enables KTX2/Basis texture descriptors for `KHR_texture_basisu` assets |
 | `obj` | reserves the OBJ import feature path |
-
-## Getting Started
-
-Clone the repository and run the fast local checks:
-
-```bash
-git clone <repo-url> scena
-cd scena
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
-```
-
-Compile the example suite:
-
-```bash
-cargo check --examples
-```
-
-Run a headless example:
-
-```bash
-cargo run --example headless_ci
-```
-
-Run the source-derived doctor:
-
-```bash
-cargo run -p xtask -- doctor --full
-```
-
-## Configuration
-
-`scena` has no required runtime service, database, or API key. Configuration is handled
-through Cargo features, renderer options, explicit surface descriptors, and asset retain
-policy.
-
-Common knobs:
-
-| API | Use |
-|---|---|
-| `RendererOptions::with_profile(Profile::Industrial)` | deterministic low-idle static viewer behavior |
-| `RendererOptions::with_render_mode(RenderMode::OnChange)` | skip clean frames when nothing visible changed |
-| `RendererOptions::with_quality(Quality::High)` | explicit quality override |
-| `Assets::set_retain_policy(RetainPolicy::Always)` | retain source/decoded data for reload and robust recovery |
-| `Renderer::handle_surface_event(SurfaceEvent::...)` | explicit resize, DPR, visibility, surface, context, and device-loss handling |
 
 ## Quick Start
 
@@ -185,24 +142,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`prepare()` is required before rendering. Asset fetching and parsing belong to `Assets`.
-GPU upload, pipeline specialization, batching, capability checks, and render statistics
-belong to `Renderer::prepare`. `render()` draws prepared state and returns structured
-errors instead of silently fetching, uploading, compiling, or guessing.
+## Core Workflow
 
-## Core Model
+`scena` keeps expensive or fallible lifecycle work out of `render()`:
 
-| Owner | Responsibility |
+1. Build or mutate `Scene`.
+2. Load or create resources in `Assets`.
+3. Call `Renderer::prepare(&mut scene)` or `Renderer::prepare_with_assets(&mut scene, &assets)`.
+4. Call `render()` or `render_active()` for prepared frames.
+5. Re-run `prepare()` after structural scene, asset, target, context, or renderer changes.
+
+This is the central contract: `render()` draws prepared state. It does not fetch assets,
+parse files, upload structural GPU resources, compile first-use pipelines, or silently
+guess missing state.
+
+## Feature Map
+
+| Area | Current release-candidate surface |
 |---|---|
-| `Scene` | scene graph, nodes, transforms, cameras, lights, clipping, picking, imports, animation mixers, labels, instances, and interaction state |
-| `Assets` | fetchers, caches, glTF/GLB parsing, decoded metadata, retain policy, reload, and logical handles |
-| `Renderer` | device/surface state, prepared resource tables, render passes, diagnostics, capability reports, stats, and deferred destruction |
-| `SceneImport` | import-local roots, names, paths, anchors, clips, pivots, bounds, and stale-import checks |
+| Scene graph | typed nodes, transforms, cameras, lights, clipping planes, imports, labels, instances, picking, and animation mixers |
+| Geometry | primitives, manual buffers, boxes, line/wire/edge expansion, bounds, skinning, morph targets, and instance sets |
+| Materials | unlit, PBR metallic-roughness, vertex colors, alpha blending, textures, line/wire/edge materials, ACES plus sRGB output, FXAA |
+| Assets | glTF/GLB first, cache/dedup/reload, external buffers, selected Khronos samples, anchors, import-local lookup, source units, coordinate conversion |
+| Rendering | headless CPU, headless/native wgpu foundation, explicit prepare/render lifecycle, render-on-change, offscreen targets, readback, stats, diagnostics |
+| Interaction | typed picking results, hover/selection styles, viewport-aware cursor positions, platform-neutral orbit controls |
+| Platform | native descriptor and attached-window paths, browser surface intent, WASM compile/package checks, surface/context/device loss events |
+| Quality | doctor rules, public API baseline, visual artifacts, browser API smoke, benchmarks, allocation gates, release-candidate deferral ADR |
 
-Typed handles such as `NodeKey`, `GeometryHandle`, `MaterialHandle`, `TextureHandle`,
-`EnvironmentHandle`, `AnimationMixerKey`, and `HitTarget` prevent wrong-kind API usage at
-compile time. Stale or missing handles return structured `LookupError`, `PrepareError`,
-`RenderError`, or asset/import-specific errors.
+The implementation is deliberately renderer-focused. Application semantics remain in the
+host application.
+
+## Architecture
 
 ```mermaid
 flowchart LR
@@ -216,28 +186,16 @@ flowchart LR
     Renderer --> Output[Frame, stats, diagnostics]
 ```
 
-## What Works
+| Owner | Responsibility |
+|---|---|
+| `Scene` | scene graph, node transforms, cameras, lights, labels, clipping, picking targets, imports, animation mixers, and dirty state |
+| `Assets` | fetchers, caches, glTF/GLB parsing, decoded metadata, retain policy, reload, and logical handles |
+| `Renderer` | device/surface state, prepared resource tables, render passes, diagnostics, capability reports, stats, and deferred destruction |
+| `SceneImport` | import-local roots, names, paths, anchors, clips, pivots, bounds, and stale-import checks |
 
-The current implementation includes:
-
-- resource-free and asset-backed headless rendering paths;
-- primitive geometry helpers, PBR/unlit/line/wireframe/edge materials, alpha handling, ACES
-  plus sRGB output, FXAA, and deterministic headless visual fixtures;
-- glTF/GLB scene loading, import-local name/path/anchor/clip lookup, external buffers,
-  source unit/coordinate conversion, selected Khronos sample coverage, skinning,
-  morph targets, and animation mixer controls;
-- directional, point, and spot lights, one explicit shadowed directional light, depth
-  prepass counters, reversed-Z capability reporting, origin shifting, and clipping planes;
-- picking, hover/selection styles, labels, instances, offscreen targets/readback,
-  render-on-change, CPU culling fallback, GPU culling dispatch hooks, surface/context loss
-  handling, and platform-neutral orbit controls;
-- `renderer.stats()`, `renderer.diagnostics()`, `renderer.capabilities()`,
-  `renderer.set_debug()`, and `poll_device()` lifecycle diagnostics;
-- `scena-convert`, a small FBX-to-glTF/GLB workflow wrapper around `FBX2glTF` or a
-  compatible converter.
-
-The implementation is intentionally renderer-focused. Application semantics remain in the
-host application.
+Typed handles such as `NodeKey`, `GeometryHandle`, `MaterialHandle`, `TextureHandle`,
+`EnvironmentHandle`, `AnimationMixerKey`, and `HitTarget` prevent wrong-kind API usage at
+compile time. Stale or missing handles return structured errors.
 
 ## Examples
 
@@ -255,6 +213,24 @@ All examples compile with `cargo check --examples`.
 | [`browser_canvas.rs`](examples/browser_canvas.rs) | browser canvas descriptor setup |
 | [`headless_ci.rs`](examples/headless_ci.rs) | deterministic headless rendering for CI |
 | [`industrial_static_scene.rs`](examples/industrial_static_scene.rs) | low-idle static viewer profile |
+
+## Status
+
+This repository is at a local v1.0 release-candidate baseline, not a published v1.0
+release:
+
+| Item | Current state |
+|---|---|
+| Crate version | `1.0.0` |
+| Minimum Rust | `1.90` |
+| Local implementation checklist | M0 through M5 complete |
+| API baseline | [`docs/api/m5-public-api-baseline.txt`](docs/api/m5-public-api-baseline.txt) |
+| Publication-lane deferrals | [`ADR-0005`](docs/decisions/ADR-0005-local-release-candidate-deferrals.md) |
+| Local package proof | `cargo publish --dry-run --allow-dirty` passed on the release-candidate tree |
+
+This checkout has local Linux/headless/browser Rust/WASM evidence. Public tag, GitHub
+release, GitHub CI run URLs, crates.io publication, macOS Metal proof, Windows DX12 proof,
+and clean-tree publish proof remain separate operator/release steps.
 
 ## Platform Compatibility
 
@@ -276,12 +252,8 @@ state invalid until the caller runs `prepare()` again.
 
 Local v1.0 gates are defined in [`docs/specs/release-gates.md`](docs/specs/release-gates.md)
 and summarized in [`docs/checklists/acceptance-index.md`](docs/checklists/acceptance-index.md).
-The command list below is the local gate set for this checkout. The full release contract
-also names macOS, Windows, WebGPU, and WebGL2 release lanes so CI can make platform proof
-visible before publication. Current local deferrals are recorded in
-[`ADR-0005`](docs/decisions/ADR-0005-local-release-candidate-deferrals.md).
-
-The final local gate set includes:
+The command list below is the local gate set for this checkout. Current local deferrals are
+recorded in [`ADR-0005`](docs/decisions/ADR-0005-local-release-candidate-deferrals.md).
 
 ```bash
 cargo fmt --check
@@ -305,6 +277,20 @@ Generated local gate artifacts include:
   artifact that does not yet prove full Rust attached-canvas rendering
 
 `target/gate-artifacts/` is generated output and is not part of the source package.
+
+## Configuration
+
+`scena` has no required runtime service, database, or API key. Configuration is handled
+through Cargo features, renderer options, explicit surface descriptors, and asset retain
+policy.
+
+| API | Use |
+|---|---|
+| `RendererOptions::with_profile(Profile::Industrial)` | deterministic low-idle static viewer behavior |
+| `RendererOptions::with_render_mode(RenderMode::OnChange)` | skip clean frames when nothing visible changed |
+| `RendererOptions::with_quality(Quality::High)` | explicit quality override |
+| `Assets::set_retain_policy(RetainPolicy::Always)` | retain source/decoded data for reload and robust recovery |
+| `Renderer::handle_surface_event(SurfaceEvent::...)` | explicit resize, DPR, visibility, surface, context, and device-loss handling |
 
 ## Project Structure
 
@@ -378,7 +364,30 @@ cargo run -p xtask -- doctor --full
 The doctor is a guardrail for known silent-failure families. It does not replace unit
 tests, rendered-output proof, browser checks, release gates, or review.
 
-## What Is Next
+## FAQ
+
+**Is `scena` published?**
+Not yet. This checkout is a local v1.0 release candidate. `ADR-0005` tracks the proof still
+required before a public tag, GitHub release, or crates.io upload.
+
+**Can I replace Three.js with it today?**
+For the implemented Rust scene-graph, headless, glTF, picking, labels, animation, and
+diagnostic workflows, yes as a release-candidate API. For full browser attached-canvas
+parity with Three.js deployment ergonomics, not yet.
+
+**Why is `prepare()` explicit?**
+Because first-use fetch, parse, upload, pipeline, batching, and capability failures should
+happen in a predictable lifecycle step instead of hiding inside `render()`.
+
+**Does it include physics, simulation, robotics, PLC logic, or game-engine systems?**
+No. Those belong in the host application or a separate engine. `scena` owns rendering,
+assets, scene graph state, interaction surfaces, diagnostics, and visual proof.
+
+**Why show generated gate artifacts instead of a polished marketing render?**
+Because the README should prove the current renderer honestly. The preview image comes from
+local rendered-output gates and is meant to stay aligned with what tests actually verify.
+
+## Roadmap
 
 The v1.0 foundation intentionally leaves larger ecosystem features for later releases:
 

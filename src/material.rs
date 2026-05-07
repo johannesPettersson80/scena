@@ -136,6 +136,10 @@ pub struct MaterialDesc {
     roughness_factor: f32,
     double_sided: bool,
     base_color_texture_transform: Option<TextureTransform>,
+    normal_texture_transform: Option<TextureTransform>,
+    metallic_roughness_texture_transform: Option<TextureTransform>,
+    occlusion_texture_transform: Option<TextureTransform>,
+    emissive_texture_transform: Option<TextureTransform>,
     stroke_width_px: Option<f32>,
     edge_angle_threshold_degrees: Option<f32>,
 }
@@ -189,6 +193,10 @@ impl MaterialDesc {
             roughness_factor: 1.0,
             double_sided: false,
             base_color_texture_transform: None,
+            normal_texture_transform: None,
+            metallic_roughness_texture_transform: None,
+            occlusion_texture_transform: None,
+            emissive_texture_transform: None,
             stroke_width_px: None,
             edge_angle_threshold_degrees: None,
         }
@@ -214,6 +222,10 @@ impl MaterialDesc {
             roughness_factor: clamp_unit_or(roughness_factor, 1.0),
             double_sided: false,
             base_color_texture_transform: None,
+            normal_texture_transform: None,
+            metallic_roughness_texture_transform: None,
+            occlusion_texture_transform: None,
+            emissive_texture_transform: None,
             stroke_width_px: None,
             edge_angle_threshold_degrees: None,
         }
@@ -265,6 +277,10 @@ impl MaterialDesc {
             roughness_factor: 1.0,
             double_sided: false,
             base_color_texture_transform: None,
+            normal_texture_transform: None,
+            metallic_roughness_texture_transform: None,
+            occlusion_texture_transform: None,
+            emissive_texture_transform: None,
             stroke_width_px: Some(positive_or(width_px, DEFAULT_STROKE_WIDTH_PX)),
             edge_angle_threshold_degrees,
         }
@@ -290,16 +306,32 @@ impl MaterialDesc {
         self.normal_texture
     }
 
+    pub const fn normal_texture_transform(&self) -> Option<TextureTransform> {
+        self.normal_texture_transform
+    }
+
     pub const fn metallic_roughness_texture(&self) -> Option<TextureHandle> {
         self.metallic_roughness_texture
+    }
+
+    pub const fn metallic_roughness_texture_transform(&self) -> Option<TextureTransform> {
+        self.metallic_roughness_texture_transform
     }
 
     pub const fn occlusion_texture(&self) -> Option<TextureHandle> {
         self.occlusion_texture
     }
 
+    pub const fn occlusion_texture_transform(&self) -> Option<TextureTransform> {
+        self.occlusion_texture_transform
+    }
+
     pub const fn emissive_texture(&self) -> Option<TextureHandle> {
         self.emissive_texture
+    }
+
+    pub const fn emissive_texture_transform(&self) -> Option<TextureTransform> {
+        self.emissive_texture_transform
     }
 
     pub const fn alpha_mode(&self) -> AlphaMode {
@@ -384,8 +416,21 @@ impl MaterialDesc {
         self
     }
 
+    pub const fn with_normal_texture_transform(mut self, transform: TextureTransform) -> Self {
+        self.normal_texture_transform = Some(transform);
+        self
+    }
+
     pub const fn with_metallic_roughness_texture(mut self, texture: TextureHandle) -> Self {
         self.metallic_roughness_texture = Some(texture);
+        self
+    }
+
+    pub const fn with_metallic_roughness_texture_transform(
+        mut self,
+        transform: TextureTransform,
+    ) -> Self {
+        self.metallic_roughness_texture_transform = Some(transform);
         self
     }
 
@@ -394,8 +439,18 @@ impl MaterialDesc {
         self
     }
 
+    pub const fn with_occlusion_texture_transform(mut self, transform: TextureTransform) -> Self {
+        self.occlusion_texture_transform = Some(transform);
+        self
+    }
+
     pub const fn with_emissive_texture(mut self, texture: TextureHandle) -> Self {
         self.emissive_texture = Some(texture);
+        self
+    }
+
+    pub const fn with_emissive_texture_transform(mut self, transform: TextureTransform) -> Self {
+        self.emissive_texture_transform = Some(transform);
         self
     }
 

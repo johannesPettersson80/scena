@@ -7,33 +7,34 @@ mod culling;
 #[cfg(not(target_arch = "wasm32"))]
 mod depth;
 mod lifecycle;
-#[cfg(not(target_arch = "wasm32"))]
 mod output;
+mod pipeline;
 #[cfg(not(target_arch = "wasm32"))]
 mod shadow;
 mod stats;
-#[cfg(not(target_arch = "wasm32"))]
 mod vertices;
+#[cfg(target_arch = "wasm32")]
+mod webgl2;
 
-#[cfg(not(target_arch = "wasm32"))]
 use crate::diagnostics::Backend;
-#[cfg(not(target_arch = "wasm32"))]
 use crate::diagnostics::RenderError;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::geometry::Primitive;
 
-#[cfg(not(target_arch = "wasm32"))]
 use self::output::{
-    GPU_TRIANGLE_SHADER, create_output_bind_group, create_output_bind_group_layout,
-    create_output_uniform_buffer, encode_output_uniform,
+    create_output_bind_group, create_output_bind_group_layout, create_output_uniform_buffer,
+    encode_output_uniform,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use self::pipeline::{BYTES_PER_PIXEL, GPU_COLOR_FORMAT};
+use self::pipeline::{create_unlit_pipeline, encode_unlit_pass};
 #[cfg(not(target_arch = "wasm32"))]
 use self::shadow::create_shadow_texture;
 pub(super) use self::stats::GpuResourceStats;
 #[cfg(not(target_arch = "wasm32"))]
-use self::stats::{align_to, estimate_prepared_resource_stats};
-#[cfg(not(target_arch = "wasm32"))]
-use self::vertices::{VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN, encode_vertices};
+use self::stats::align_to;
+use self::stats::estimate_prepared_resource_stats;
+use self::vertices::{VERTEX_BYTE_LEN, encode_vertices};
 use super::RasterTarget;
 use super::prepare::{PreparedDepthStats, PreparedLightingStats};
 
@@ -46,10 +47,13 @@ pub(super) struct GpuDeviceState {
     queue: wgpu::Queue,
     surface: Option<GpuSurfaceState>,
     pending_destructions: u64,
-    #[cfg(not(target_arch = "wasm32"))]
     resources: Option<GpuPreparedResources>,
+    #[cfg(target_arch = "wasm32")]
+    browser_canvas: Option<web_sys::HtmlCanvasElement>,
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(super) use build::request_browser_surface_gpu;
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) use build::{request_headless_gpu, request_native_surface_gpu};
 
@@ -83,6 +87,19 @@ struct GpuPreparedResources {
     surface_pipeline: Option<wgpu::RenderPipeline>,
     padded_bytes_per_row: u32,
     unpadded_bytes_per_row: u32,
+    stats: GpuResourceStats,
+}
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Debug)]
+struct GpuPreparedResources {
+    target: RasterTarget,
+    vertex_buffer: wgpu::Buffer,
+    output_uniform: wgpu::Buffer,
+    output_bind_group: wgpu::BindGroup,
+    surface_pipeline: wgpu::RenderPipeline,
+    vertex_count: u32,
+    webgl2_vertices: Vec<f32>,
     stats: GpuResourceStats,
 }
 
@@ -207,10 +224,62 @@ impl GpuDeviceState {
         lighting_stats: PreparedLightingStats,
         depth_stats: PreparedDepthStats,
     ) {
-        let _ = primitives;
         let _ = lighting_stats;
         let _ = depth_stats;
         self.configure_surface(target);
+        self.release_prepared_resources();
+        let Some(surface) = self.surface.as_ref() else {
+            return;
+        };
+        if primitives.is_empty() {
+            return;
+        }
+
+        let vertex_bytes = encode_vertices(primitives);
+        let webgl2_vertices = webgl2::encode_vertices(primitives);
+        let vertex_buffer_size = vertex_bytes.len().max(4) as u64;
+        let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("scena.browser.scene_vertices"),
+            size: vertex_buffer_size,
+            usage: wgpu::BufferUsages::VERTEX,
+            mapped_at_creation: true,
+        });
+        if !vertex_bytes.is_empty() {
+            let mut mapped = vertex_buffer.slice(..).get_mapped_range_mut();
+            mapped.copy_from_slice(&vertex_bytes);
+        }
+        vertex_buffer.unmap();
+
+        let output_bind_group_layout = create_output_bind_group_layout(&self.device);
+        let output_uniform = create_output_uniform_buffer(&self.device);
+        let output_bind_group =
+            create_output_bind_group(&self.device, &output_bind_group_layout, &output_uniform);
+        let surface_pipeline = create_unlit_pipeline(
+            &self.device,
+            surface.config.format,
+            &output_bind_group_layout,
+        );
+        let vertex_count = (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32;
+        let stats = estimate_prepared_resource_stats(
+            target,
+            vertex_count as usize,
+            true,
+            0,
+            None,
+            0,
+            false,
+        );
+
+        self.resources = Some(GpuPreparedResources {
+            target,
+            vertex_buffer,
+            output_uniform,
+            output_bind_group,
+            surface_pipeline,
+            vertex_count,
+            webgl2_vertices,
+            stats,
+        });
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -360,7 +429,6 @@ impl GpuDeviceState {
         Ok((true, culling_dispatches))
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn prepared_resource_stats(&self) -> GpuResourceStats {
         self.resources
             .as_ref()
@@ -369,8 +437,74 @@ impl GpuDeviceState {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub(super) fn prepared_resource_stats(&self) -> GpuResourceStats {
-        GpuResourceStats::default()
+    pub(super) fn render_to_surface(
+        &mut self,
+        target: RasterTarget,
+        exposure_ev: f32,
+    ) -> Result<bool, RenderError> {
+        let Some(resources) = self.resources.as_ref() else {
+            return Err(RenderError::GpuResourcesNotPrepared {
+                backend: target.backend,
+            });
+        };
+        if resources.target != target {
+            return Err(RenderError::GpuResourcesNotPrepared {
+                backend: target.backend,
+            });
+        }
+        let Some(surface) = self.surface.as_ref() else {
+            return Err(RenderError::GpuResourcesNotPrepared {
+                backend: target.backend,
+            });
+        };
+        if target.backend == Backend::WebGl2 {
+            let Some(canvas) = self.browser_canvas.as_ref() else {
+                return Err(RenderError::GpuResourcesNotPrepared {
+                    backend: target.backend,
+                });
+            };
+            webgl2::render_canvas(canvas, &resources.webgl2_vertices).map_err(|_| {
+                RenderError::GpuResourcesNotPrepared {
+                    backend: target.backend,
+                }
+            })?;
+            return Ok(true);
+        }
+        self.queue.write_buffer(
+            &resources.output_uniform,
+            0,
+            &encode_output_uniform(exposure_ev),
+        );
+        let surface_output = match surface.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(output)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(output) => output,
+            wgpu::CurrentSurfaceTexture::Timeout
+            | wgpu::CurrentSurfaceTexture::Occluded
+            | wgpu::CurrentSurfaceTexture::Outdated
+            | wgpu::CurrentSurfaceTexture::Lost
+            | wgpu::CurrentSurfaceTexture::Validation => return Ok(false),
+        };
+        let surface_view = surface_output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("scena.browser.encoder"),
+            });
+        encode_unlit_pass(
+            &mut encoder,
+            &surface_view,
+            &resources.vertex_buffer,
+            &resources.output_bind_group,
+            resources.vertex_count,
+            &resources.surface_pipeline,
+            "scena.browser.surface_pass",
+        );
+        self.queue.submit(Some(encoder.finish()));
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        surface_output.present();
+        Ok(true)
     }
 
     fn configure_surface(&mut self, target: RasterTarget) {
@@ -382,91 +516,4 @@ impl GpuDeviceState {
             surface.surface.configure(&self.device, &surface.config);
         }
     }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn encode_unlit_pass(
-    encoder: &mut wgpu::CommandEncoder,
-    view: &wgpu::TextureView,
-    vertex_buffer: &wgpu::Buffer,
-    output_bind_group: &wgpu::BindGroup,
-    vertex_count: u32,
-    pipeline: &wgpu::RenderPipeline,
-    label: &'static str,
-) {
-    let color_attachment = Some(wgpu::RenderPassColorAttachment {
-        view,
-        depth_slice: None,
-        resolve_target: None,
-        ops: wgpu::Operations {
-            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-            store: wgpu::StoreOp::Store,
-        },
-    });
-    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some(label),
-        color_attachments: &[color_attachment],
-        depth_stencil_attachment: None,
-        timestamp_writes: None,
-        occlusion_query_set: None,
-        multiview_mask: None,
-    });
-    pass.set_pipeline(pipeline);
-    pass.set_bind_group(0, output_bind_group, &[]);
-    pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-    if vertex_count > 0 {
-        pass.draw(0..vertex_count, 0..1);
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-const BYTES_PER_PIXEL: u32 = 4;
-#[cfg(not(target_arch = "wasm32"))]
-const GPU_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
-
-#[cfg(not(target_arch = "wasm32"))]
-fn create_unlit_pipeline(
-    device: &wgpu::Device,
-    format: wgpu::TextureFormat,
-    output_bind_group_layout: &wgpu::BindGroupLayout,
-) -> wgpu::RenderPipeline {
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("scena.m0.unlit_triangle"),
-        source: wgpu::ShaderSource::Wgsl(GPU_TRIANGLE_SHADER.into()),
-    });
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("scena.m0.pipeline_layout"),
-        bind_group_layouts: &[Some(output_bind_group_layout)],
-        immediate_size: 0,
-    });
-    let vertex_buffer = wgpu::VertexBufferLayout {
-        array_stride: VERTEX_BYTE_LEN as u64,
-        step_mode: wgpu::VertexStepMode::Vertex,
-        attributes: &VERTEX_ATTRIBUTES,
-    };
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("scena.m0.unlit_triangle_pipeline"),
-        layout: Some(&pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &shader,
-            entry_point: Some("vs_main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            buffers: &[vertex_buffer],
-        },
-        primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: Some("fs_main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        multiview_mask: None,
-        cache: None,
-    })
 }

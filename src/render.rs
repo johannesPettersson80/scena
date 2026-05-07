@@ -16,8 +16,8 @@ mod surface;
 
 use crate::assets::{Assets, EnvironmentHandle};
 use crate::diagnostics::{
-    Backend, Capabilities, ChangeKind, DebugOverlay, DevicePoll, Diagnostic, NotPreparedReason,
-    PrepareError, RenderError, RenderOutcome, RendererStats,
+    Backend, Capabilities, ChangeKind, DebugOverlay, DevicePoll, Diagnostic, DiagnosticCode,
+    NotPreparedReason, PrepareError, RenderError, RenderOutcome, RendererStats,
 };
 use crate::geometry::Primitive;
 use crate::material::Color;
@@ -256,6 +256,35 @@ impl Renderer {
         self.render(scene, camera)
     }
 
+    pub fn diagnose_scene(&self, scene: &Scene) -> Vec<Diagnostic> {
+        let mut diagnostics = Vec::new();
+        if scene.active_camera().is_none() {
+            diagnostics.push(Diagnostic::error(
+                DiagnosticCode::MissingActiveCamera,
+                "scene has no active camera",
+                "call Scene::add_default_camera or Scene::set_active_camera before rendering",
+            ));
+        }
+
+        if scene.visible_drawable_count() == 0 {
+            diagnostics.push(Diagnostic::warning(
+                DiagnosticCode::InvisibleScene,
+                "scene has no visible drawables for the active camera",
+                "check node visibility, parent visibility, camera layer masks, or add a mesh/renderable node",
+            ));
+        }
+
+        if scene.light_nodes().count() == 0 && self.environment.is_none() {
+            diagnostics.push(Diagnostic::warning(
+                DiagnosticCode::MissingLightingOrEnvironment,
+                "scene has no active light nodes and no renderer environment",
+                "call renderer.set_environment for image-based lighting or add a scene light for lit materials",
+            ));
+        }
+
+        diagnostics
+    }
+
     pub fn frame_rgba8(&self) -> &[u8] {
         &self.frame
     }
@@ -318,9 +347,14 @@ impl Renderer {
 
         #[cfg(target_arch = "wasm32")]
         {
-            Err(RenderError::GpuResourcesNotPrepared {
-                backend: self.target.backend,
-            })
+            let gpu = self
+                .gpu
+                .as_mut()
+                .expect("draw_gpu is called only when a GPU device exists");
+            if gpu.render_to_surface(self.target, self.output.exposure_ev())? {
+                self.stats.gpu_submissions = self.stats.gpu_submissions.saturating_add(1);
+            }
+            Ok(())
         }
     }
 
