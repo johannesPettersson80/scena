@@ -219,6 +219,86 @@ fn scene_import_reports_local_and_world_bounds_for_imported_meshes() {
 }
 
 #[test]
+fn scene_import_anchor_lookups_parse_gltf_extras_and_stale() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(
+        "memory://anchors.gltf",
+        r#"{
+            "asset": { "version": "2.0" },
+            "nodes": [
+                {
+                    "name": "Root",
+                    "children": [1],
+                    "extras": {
+                        "scena": {
+                            "anchors": [
+                                { "name": "mount", "translation": [100.0, 0.0, 0.0] }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Child",
+                    "extras": {
+                        "scena": {
+                            "anchors": [
+                                { "name": "mount" },
+                                { "name": "inspect", "translation": [0.0, 50.0, 0.0] }
+                            ]
+                        }
+                    }
+                }
+            ]
+        }"#,
+    ));
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://anchors.gltf")).expect("anchor glTF loads");
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate_with(
+            &scene_asset,
+            ImportOptions::gltf_default().with_source_units(SourceUnits::Centimeters),
+        )
+        .expect("anchor scene instantiates");
+
+    let root = import.node("Root").expect("root lookup succeeds");
+    let child = import.node("Child").expect("child lookup succeeds");
+    let inspect = import
+        .anchor("inspect")
+        .expect("unique anchor lookup succeeds");
+    assert_eq!(inspect.node(), child);
+    assert_eq!(inspect.name(), "inspect");
+    assert_vec3_near(inspect.transform().translation, Vec3::new(0.0, 0.5, 0.0));
+    assert_eq!(
+        import
+            .first_anchor("mount")
+            .expect("first mount exists")
+            .node(),
+        root
+    );
+    assert_eq!(
+        import
+            .anchors_named("mount")
+            .map(|anchor| anchor.node())
+            .collect::<Vec<_>>(),
+        vec![root, child]
+    );
+    assert!(matches!(
+        import.anchor("mount"),
+        Err(LookupError::AmbiguousAnchorName { ref name, ref hosts })
+            if name == "mount" && hosts == &vec![root, child]
+    ));
+
+    let replacement = scene
+        .replace_import(&import, &scene_asset)
+        .expect("replacement succeeds");
+    assert!(replacement.anchor("inspect").is_ok());
+    assert!(matches!(
+        import.anchor("inspect"),
+        Err(LookupError::StaleImport)
+    ));
+}
+
+#[test]
 fn scene_pick_returns_typed_hit_target_for_renderable_triangle() {
     let mut scene = Scene::new();
     let camera = scene

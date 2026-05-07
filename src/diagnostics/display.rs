@@ -120,6 +120,12 @@ impl fmt::Display for InstantiateError {
                 formatter,
                 "glTF node {parent} references invalid child node index {child}"
             ),
+            Self::InvalidAnchorExtras { node, reason } => {
+                write!(
+                    formatter,
+                    "glTF node {node} has invalid anchor extras: {reason}"
+                )
+            }
         }
     }
 }
@@ -252,6 +258,14 @@ impl fmt::Display for LookupError {
                 formatter,
                 "imported scene node name '{name}' is ambiguous across {} nodes",
                 matches.len()
+            ),
+            Self::AnchorNotFound { name } => {
+                write!(formatter, "imported scene has no anchor named '{name}'")
+            }
+            Self::AmbiguousAnchorName { name, hosts } => write!(
+                formatter,
+                "imported scene anchor name '{name}' is ambiguous across {} host nodes",
+                hosts.len()
             ),
             Self::PathNotFound { path } => {
                 write!(formatter, "imported scene path '{path}' was not found")

@@ -16,7 +16,7 @@ pub use fetch::BrowserAssetFetcher;
 #[cfg(not(target_arch = "wasm32"))]
 pub use fetch::FileAssetFetcher;
 pub use fetch::{AssetFetcher, DefaultAssetFetcher};
-pub use gltf::{SceneAsset, SceneAssetNode};
+pub use gltf::{SceneAsset, SceneAssetAnchor, SceneAssetNode};
 
 const DEFAULT_ENVIRONMENT_NAME: &str = "neutral-studio";
 const DEFAULT_ENVIRONMENT_SOURCE_PATH: &str =

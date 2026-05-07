@@ -128,6 +128,7 @@ pub enum RenderError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstantiateError {
     InvalidChildIndex { parent: usize, child: usize },
+    InvalidAnchorExtras { node: String, reason: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -163,6 +164,8 @@ pub enum LookupError {
     NodeNotFound(NodeKey),
     NodeNameNotFound { name: String },
     AmbiguousNodeName { name: String, matches: Vec<NodeKey> },
+    AnchorNotFound { name: String },
+    AmbiguousAnchorName { name: String, hosts: Vec<NodeKey> },
     PathNotFound { path: String },
     StaleImport,
     CameraNotFound(CameraKey),

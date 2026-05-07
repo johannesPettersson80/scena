@@ -12,7 +12,15 @@ use super::{MeshNode, NodeKey, NodeKind, Quat, Scene, Transform, Vec3};
 pub struct SceneImport {
     roots: Vec<NodeKey>,
     records: Vec<ImportedNode>,
+    anchors: Vec<ImportAnchor>,
     live: Arc<AtomicBool>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportAnchor {
+    name: String,
+    node: NodeKey,
+    transform: Transform,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -44,6 +52,13 @@ struct ImportedNode {
     bounds: Option<Aabb>,
 }
 
+struct ImportBuild<'a> {
+    scene_asset: &'a SceneAsset,
+    options: ImportOptions,
+    records: &'a mut Vec<ImportedNode>,
+    anchors: &'a mut Vec<ImportAnchor>,
+}
+
 impl Scene {
     pub fn instantiate(
         &mut self,
@@ -69,17 +84,18 @@ impl Scene {
         let mut import = SceneImport {
             roots: Vec::new(),
             records: Vec::new(),
+            anchors: Vec::new(),
             live: Arc::new(AtomicBool::new(true)),
         };
         for source_index in roots {
-            let node = self.instantiate_scene_asset_node(
+            let mut build = ImportBuild {
                 scene_asset,
-                source_index,
-                self.root,
-                None,
                 options,
-                &mut import.records,
-            )?;
+                records: &mut import.records,
+                anchors: &mut import.anchors,
+            };
+            let node =
+                self.instantiate_scene_asset_node(source_index, self.root, None, &mut build)?;
             import.roots.push(node);
         }
         Ok(import)
@@ -116,21 +132,17 @@ impl Scene {
 
     fn instantiate_scene_asset_node(
         &mut self,
-        scene_asset: &SceneAsset,
         source_index: usize,
         parent: NodeKey,
         imported_parent: Option<NodeKey>,
-        options: ImportOptions,
-        records: &mut Vec<ImportedNode>,
+        build: &mut ImportBuild<'_>,
     ) -> Result<NodeKey, InstantiateError> {
-        let source_node =
-            scene_asset
-                .nodes()
-                .get(source_index)
-                .ok_or(InstantiateError::InvalidChildIndex {
-                    parent: source_index,
-                    child: source_index,
-                })?;
+        let source_node = build.scene_asset.nodes().get(source_index).ok_or(
+            InstantiateError::InvalidChildIndex {
+                parent: source_index,
+                child: source_index,
+            },
+        )?;
         let kind = source_node
             .mesh()
             .map(|mesh| {
@@ -145,32 +157,53 @@ impl Scene {
             .insert_node(
                 parent,
                 kind,
-                options.convert_transform(source_node.transform()),
+                build.options.convert_transform(source_node.transform()),
             )
             .expect("import parent was inserted by this scene");
-        records.push(ImportedNode {
+        build.records.push(ImportedNode {
             node,
             parent: imported_parent,
             name: source_node.name().map(str::to_string),
             bounds,
         });
+        let mut anchor_names = BTreeSet::new();
+        for anchor in source_node.anchors() {
+            if !anchor_names.insert(anchor.name()) {
+                return Err(InstantiateError::InvalidAnchorExtras {
+                    node: source_node.name().unwrap_or("<unnamed>").to_string(),
+                    reason: format!("duplicate anchor '{}'", anchor.name()),
+                });
+            }
+            build.anchors.push(ImportAnchor {
+                name: anchor.name().to_string(),
+                node,
+                transform: build.options.convert_transform(anchor.transform()),
+            });
+        }
         for child in source_node.children() {
-            if scene_asset.nodes().get(*child).is_none() {
+            if build.scene_asset.nodes().get(*child).is_none() {
                 return Err(InstantiateError::InvalidChildIndex {
                     parent: source_index,
                     child: *child,
                 });
             }
-            self.instantiate_scene_asset_node(
-                scene_asset,
-                *child,
-                node,
-                Some(node),
-                options,
-                records,
-            )?;
+            self.instantiate_scene_asset_node(*child, node, Some(node), build)?;
         }
         Ok(node)
+    }
+}
+
+impl ImportAnchor {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn node(&self) -> NodeKey {
+        self.node
+    }
+
+    pub const fn transform(&self) -> Transform {
+        self.transform
     }
 }
 
@@ -316,6 +349,38 @@ impl SceneImport {
 
     pub fn roots(&self) -> &[NodeKey] {
         &self.roots
+    }
+
+    pub fn anchor(&self, name: &str) -> Result<&ImportAnchor, LookupError> {
+        self.ensure_live()?;
+        let matches = self.anchors_named(name).collect::<Vec<_>>();
+        match matches.as_slice() {
+            [] => Err(LookupError::AnchorNotFound {
+                name: name.to_string(),
+            }),
+            [anchor] => Ok(*anchor),
+            _ => Err(LookupError::AmbiguousAnchorName {
+                name: name.to_string(),
+                hosts: matches.iter().map(|anchor| anchor.node()).collect(),
+            }),
+        }
+    }
+
+    pub fn first_anchor(&self, name: &str) -> Option<&ImportAnchor> {
+        if !self.is_live() {
+            return None;
+        }
+        self.anchors_named(name).next()
+    }
+
+    pub fn anchors_named<'import>(
+        &'import self,
+        name: &str,
+    ) -> impl Iterator<Item = &'import ImportAnchor> + 'import {
+        let name = name.to_string();
+        self.anchors
+            .iter()
+            .filter(move |anchor| anchor.name() == name.as_str())
     }
 
     pub fn bounds_local(&self) -> Option<Aabb> {

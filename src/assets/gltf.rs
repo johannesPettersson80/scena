@@ -34,6 +34,7 @@ pub struct SceneAssetNode {
     children: Vec<usize>,
     transform: Transform,
     mesh: Option<SceneAssetMesh>,
+    anchors: Vec<SceneAssetAnchor>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -42,6 +43,12 @@ pub struct SceneAssetMesh {
     material: MaterialHandle,
     bounds: Aabb,
     uses_vertex_colors: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SceneAssetAnchor {
+    name: String,
+    transform: Transform,
 }
 
 impl SceneAsset {
@@ -261,6 +268,10 @@ impl SceneAssetNode {
     pub fn mesh(&self) -> Option<SceneAssetMesh> {
         self.mesh
     }
+
+    pub fn anchors(&self) -> &[SceneAssetAnchor] {
+        &self.anchors
+    }
 }
 
 impl SceneAssetMesh {
@@ -278,6 +289,16 @@ impl SceneAssetMesh {
 
     pub const fn uses_vertex_colors(self) -> bool {
         self.uses_vertex_colors
+    }
+}
+
+impl SceneAssetAnchor {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn transform(&self) -> Transform {
+        self.transform
     }
 }
 
@@ -337,6 +358,27 @@ fn parse_gltf_nodes(json: &JsonValue, meshes: &[SceneAssetMesh]) -> Vec<SceneAss
                         .and_then(JsonValue::as_u64)
                         .and_then(|mesh| meshes.get(mesh as usize))
                         .copied(),
+                    anchors: parse_node_anchors(node),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_node_anchors(node: &JsonValue) -> Vec<SceneAssetAnchor> {
+    node.get("extras")
+        .and_then(|extras| extras.get("scena"))
+        .and_then(|scena| scena.get("anchors"))
+        .and_then(JsonValue::as_array)
+        .map(|anchors| {
+            anchors
+                .iter()
+                .filter_map(|anchor| {
+                    let name = anchor.get("name").and_then(JsonValue::as_str)?;
+                    Some(SceneAssetAnchor {
+                        name: name.to_string(),
+                        transform: parse_node_transform(anchor),
+                    })
                 })
                 .collect()
         })
