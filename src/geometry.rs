@@ -3,8 +3,12 @@
 use crate::material::Color;
 use crate::scene::Vec3;
 
+mod bounds;
 mod morph;
+mod primitive;
+mod skinning;
 pub use morph::GeometryMorphTarget;
+pub use skinning::{GeometrySkin, SkinningMatrix};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GeometryTopology {
@@ -32,6 +36,23 @@ pub enum GeometryError {
         target_index: usize,
         target_count: usize,
     },
+    InvalidSkinJointVertexCount {
+        vertex_count: usize,
+        joint_count: usize,
+    },
+    InvalidSkinWeightVertexCount {
+        vertex_count: usize,
+        weight_count: usize,
+    },
+    InvalidSkinSourceVertexCount {
+        vertex_count: usize,
+        source_count: usize,
+    },
+    InvalidSkinJointIndex {
+        vertex_index: usize,
+        joint: usize,
+        joint_count: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -53,6 +74,7 @@ pub struct GeometryDesc {
     indices: Vec<u32>,
     vertex_colors: Vec<Color>,
     morph_targets: Vec<GeometryMorphTarget>,
+    skin: Option<GeometrySkin>,
     bounds: Aabb,
 }
 
@@ -116,6 +138,7 @@ impl GeometryDesc {
             indices,
             vertex_colors,
             morph_targets: Vec::new(),
+            skin: None,
             bounds,
         })
     }
@@ -420,84 +443,6 @@ impl GeometryDesc {
             })
             .collect();
         Self::new(GeometryTopology::Lines, vertices, indices)
-    }
-}
-
-impl Aabb {
-    pub const fn new(min: Vec3, max: Vec3) -> Self {
-        Self { min, max }
-    }
-
-    pub fn from_vertices(vertices: &[GeometryVertex]) -> Option<Self> {
-        let first = vertices.first()?;
-        let mut min = first.position;
-        let mut max = first.position;
-        for vertex in &vertices[1..] {
-            min.x = min.x.min(vertex.position.x);
-            min.y = min.y.min(vertex.position.y);
-            min.z = min.z.min(vertex.position.z);
-            max.x = max.x.max(vertex.position.x);
-            max.y = max.y.max(vertex.position.y);
-            max.z = max.z.max(vertex.position.z);
-        }
-        Some(Self { min, max })
-    }
-
-    pub fn contains(&self, point: Vec3) -> bool {
-        point.x >= self.min.x
-            && point.y >= self.min.y
-            && point.z >= self.min.z
-            && point.x <= self.max.x
-            && point.y <= self.max.y
-            && point.z <= self.max.z
-    }
-
-    pub fn center(self) -> Vec3 {
-        Vec3::new(
-            (self.min.x + self.max.x) * 0.5,
-            (self.min.y + self.max.y) * 0.5,
-            (self.min.z + self.max.z) * 0.5,
-        )
-    }
-
-    pub fn half_extent(self) -> Vec3 {
-        Vec3::new(
-            (self.max.x - self.min.x).abs() * 0.5,
-            (self.max.y - self.min.y).abs() * 0.5,
-            (self.max.z - self.min.z).abs() * 0.5,
-        )
-    }
-
-    pub fn bounding_sphere_radius(self) -> f32 {
-        let half = self.half_extent();
-        (half.x * half.x + half.y * half.y + half.z * half.z).sqrt()
-    }
-}
-
-impl Primitive {
-    pub fn triangle(vertices: [Vertex; 3]) -> Self {
-        Self { vertices }
-    }
-
-    pub fn unlit_triangle() -> Self {
-        Self::triangle([
-            Vertex {
-                position: Vec3::new(-0.6, -0.5, 0.0),
-                color: Color::from_linear_rgb(1.0, 0.2, 0.1),
-            },
-            Vertex {
-                position: Vec3::new(0.6, -0.5, 0.0),
-                color: Color::from_linear_rgb(0.1, 0.8, 0.2),
-            },
-            Vertex {
-                position: Vec3::new(0.0, 0.6, 0.0),
-                color: Color::from_linear_rgb(0.1, 0.3, 1.0),
-            },
-        ])
-    }
-
-    pub fn vertices(&self) -> &[Vertex; 3] {
-        &self.vertices
     }
 }
 

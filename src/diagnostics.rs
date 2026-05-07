@@ -115,6 +115,10 @@ pub enum PrepareError {
         first: NodeKey,
         second: NodeKey,
     },
+    InvalidSkinGeometry {
+        node: NodeKey,
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,6 +134,8 @@ pub enum RenderError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstantiateError {
     InvalidChildIndex { parent: usize, child: usize },
+    InvalidSkinIndex { node: usize, skin: usize },
+    InvalidSkinJointIndex { skin: usize, joint: usize },
     InvalidAnchorExtras { node: String, reason: String },
 }
 

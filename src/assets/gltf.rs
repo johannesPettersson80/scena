@@ -7,7 +7,7 @@ use crate::animation::{AnimationSourceChannel, AnimationSourceClip};
 use crate::diagnostics::AssetError;
 use crate::geometry::Aabb;
 use crate::material::Color;
-use crate::scene::{Angle, DirectionalLight, Light, PointLight, Quat, SpotLight, Transform, Vec3};
+use crate::scene::{Angle, DirectionalLight, Light, PointLight, SpotLight, Transform};
 
 use self::accessor::{parse_accessors, parse_buffer_views, parse_buffers};
 use self::anchors::parse_node_anchors;
@@ -15,6 +15,9 @@ use self::animation::parse_gltf_clips;
 use self::external::external_buffer_paths;
 use self::glb::{is_glb, parse_glb};
 use self::read::{parse_materials, parse_meshes, parse_textures};
+pub use self::skins::SceneAssetSkin;
+use self::skins::parse_skins;
+use self::transform::parse_node_transform;
 use super::{AssetPath, AssetStorage, GeometryHandle, MaterialHandle};
 
 mod accessor;
@@ -23,6 +26,8 @@ mod animation;
 mod external;
 mod glb;
 mod read;
+mod skins;
+mod transform;
 
 #[derive(Debug, Clone)]
 pub struct SceneAsset {
@@ -35,6 +40,7 @@ struct SceneAssetData {
     node_count: usize,
     mesh_count: usize,
     nodes: Vec<SceneAssetNode>,
+    skins: Vec<SceneAssetSkin>,
     clips: Vec<SceneAssetClip>,
     extensions_used: Vec<String>,
     extensions_required: Vec<String>,
@@ -46,6 +52,7 @@ pub struct SceneAssetNode {
     children: Vec<usize>,
     transform: Transform,
     meshes: Vec<SceneAssetMesh>,
+    skin: Option<usize>,
     light: Option<SceneAssetLight>,
     anchors: Vec<SceneAssetAnchor>,
 }
@@ -84,6 +91,7 @@ impl SceneAsset {
                 node_count: 0,
                 mesh_count: 0,
                 nodes: Vec::new(),
+                skins: Vec::new(),
                 clips: Vec::new(),
                 extensions_used: Vec::new(),
                 extensions_required: Vec::new(),
@@ -190,6 +198,7 @@ impl SceneAsset {
             &materials,
             storage,
         )?;
+        let skins = parse_skins(&path, &json, &buffers, &buffer_views, &accessors)?;
         let lights = parse_punctual_lights(&json);
         let nodes = parse_gltf_nodes(&json, &meshes, &lights);
         let clips = parse_gltf_clips(&path, &json, &buffers, &buffer_views, &accessors)?;
@@ -201,6 +210,7 @@ impl SceneAsset {
                 node_count,
                 mesh_count,
                 nodes,
+                skins,
                 clips,
                 extensions_used,
                 extensions_required,
@@ -222,6 +232,10 @@ impl SceneAsset {
 
     pub fn nodes(&self) -> &[SceneAssetNode] {
         &self.inner.nodes
+    }
+
+    pub fn skins(&self) -> &[SceneAssetSkin] {
+        &self.inner.skins
     }
 
     pub fn clips(&self) -> &[SceneAssetClip] {
@@ -264,6 +278,10 @@ impl SceneAssetNode {
 
     pub fn meshes(&self) -> &[SceneAssetMesh] {
         &self.meshes
+    }
+
+    pub const fn skin(&self) -> Option<usize> {
+        self.skin
     }
 
     pub fn light(&self) -> Option<SceneAssetLight> {
@@ -396,6 +414,10 @@ fn parse_gltf_nodes(
                         .and_then(|mesh| meshes.get(mesh as usize))
                         .cloned()
                         .unwrap_or_default(),
+                    skin: node
+                        .get("skin")
+                        .and_then(JsonValue::as_u64)
+                        .and_then(|skin| usize::try_from(skin).ok()),
                     light: node
                         .get("extensions")
                         .and_then(|extensions| extensions.get("KHR_lights_punctual"))
@@ -476,37 +498,6 @@ fn color3_field(value: &JsonValue, field: &str, fallback: Color) -> Color {
         array_f32(values, 1).unwrap_or(fallback.g),
         array_f32(values, 2).unwrap_or(fallback.b),
     )
-}
-
-pub(super) fn parse_node_transform(node: &JsonValue) -> Transform {
-    Transform {
-        translation: vec3_field(node, "translation", Vec3::ZERO),
-        rotation: quat_field(node, "rotation", Quat::IDENTITY),
-        scale: vec3_field(node, "scale", Vec3::ONE),
-    }
-}
-
-fn vec3_field(node: &JsonValue, field: &str, fallback: Vec3) -> Vec3 {
-    let Some(values) = node.get(field).and_then(JsonValue::as_array) else {
-        return fallback;
-    };
-    Vec3::new(
-        array_f32(values, 0).unwrap_or(fallback.x),
-        array_f32(values, 1).unwrap_or(fallback.y),
-        array_f32(values, 2).unwrap_or(fallback.z),
-    )
-}
-
-fn quat_field(node: &JsonValue, field: &str, fallback: Quat) -> Quat {
-    let Some(values) = node.get(field).and_then(JsonValue::as_array) else {
-        return fallback;
-    };
-    Quat {
-        x: array_f32(values, 0).unwrap_or(fallback.x),
-        y: array_f32(values, 1).unwrap_or(fallback.y),
-        z: array_f32(values, 2).unwrap_or(fallback.z),
-        w: array_f32(values, 3).unwrap_or(fallback.w),
-    }
 }
 
 fn array_f32(values: &[JsonValue], index: usize) -> Option<f32> {

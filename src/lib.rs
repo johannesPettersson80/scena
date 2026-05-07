@@ -37,8 +37,8 @@ pub use diagnostics::{
     RendererStats,
 };
 pub use geometry::{
-    Aabb, GeometryDesc, GeometryError, GeometryMorphTarget, GeometryTopology, GeometryVertex,
-    Primitive, Vertex,
+    Aabb, GeometryDesc, GeometryError, GeometryMorphTarget, GeometrySkin, GeometryTopology,
+    GeometryVertex, Primitive, SkinningMatrix, Vertex,
 };
 pub use material::{
     AlphaMode, Color, ColorParseError, DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES,
@@ -55,8 +55,8 @@ pub use scene::{
     InstanceCullingPolicy, InstanceId, InstanceSet, InstanceSetKey, LabelBillboard, LabelDesc,
     LabelKey, LabelRasterization, Light, LightBuilder, LightKey, MeshBuilder, MeshNode,
     ModelBuilder, ModelNode, Node, NodeKey, NodeKind, OrthographicCamera, PerspectiveCamera,
-    PointLight, Quat, Scene, SceneImport, SourceCoordinateSystem, SourceUnits, SpotLight,
-    Transform, Vec3,
+    PointLight, Quat, Scene, SceneImport, SceneSkinBinding, SourceCoordinateSystem, SourceUnits,
+    SpotLight, Transform, Vec3,
 };
 
 /// Crate-level result type for APIs that can return any structured `scena` error.

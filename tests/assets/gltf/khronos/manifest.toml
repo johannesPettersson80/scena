@@ -1,0 +1,50 @@
+[source]
+repository = "https://github.com/KhronosGroup/glTF-Sample-Assets"
+commit = "2bac6f8c57bf471df0d2a1e8a8ec023c7801dddf"
+variant = "glTF"
+license_reference = "Upstream LICENSES directory in glTF-Sample-Assets"
+
+[[asset]]
+name = "RiggedSimple"
+path = "RiggedSimple/RiggedSimple.gltf"
+binary = ["RiggedSimple/RiggedSimple0.bin"]
+contract = "skin, animation channels, inverse bind matrices"
+
+[[asset]]
+name = "SimpleSkin"
+path = "SimpleSkin/SimpleSkin.gltf"
+binary = [
+  "SimpleSkin/SimpleSkin_animation.bin",
+  "SimpleSkin/SimpleSkin_geometry.bin",
+  "SimpleSkin/SimpleSkin_inverseBindMatrices.bin",
+  "SimpleSkin/SimpleSkin_skinningData.bin",
+]
+contract = "minimal skinning fixture"
+
+[[asset]]
+name = "SimpleMorph"
+path = "SimpleMorph/SimpleMorph.gltf"
+binary = [
+  "SimpleMorph/SimpleMorph_animation.bin",
+  "SimpleMorph/SimpleMorph_geometry.bin",
+]
+contract = "minimal morph-target fixture"
+
+[[asset]]
+name = "MorphCube"
+upstream_name = "AnimatedMorphCube"
+path = "MorphCube/AnimatedMorphCube.gltf"
+binary = ["MorphCube/AnimatedMorphCube.bin"]
+contract = "animated morph-target fixture"
+
+[[asset]]
+name = "RiggedFigure"
+path = "RiggedFigure/RiggedFigure.gltf"
+binary = ["RiggedFigure/RiggedFigure0.bin"]
+contract = "skinning with matrix/TRS node hierarchy"
+
+[[asset]]
+name = "BrainStem"
+path = "BrainStem/BrainStem.gltf"
+binary = ["BrainStem/BrainStem0.bin"]
+contract = "larger skinning and animation hierarchy"

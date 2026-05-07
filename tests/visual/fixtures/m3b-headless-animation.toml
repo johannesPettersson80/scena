@@ -1,0 +1,25 @@
+[suite]
+name = "m3b-headless-animation"
+format = "ppm"
+encoding = "srgb8"
+width = 48
+height = 48
+artifact_dir = "target/gate-artifacts/m3b-visual"
+reference_mode = "visible-output"
+max_abs_diff = 0
+status = "artifact-proof"
+
+[[fixture]]
+name = "m3b-khronos-simple-skin"
+required_surface = "headless-cpu"
+contract = "Khronos SimpleSkin renders through glTF skin binding and CPU skin deformation"
+
+[[fixture]]
+name = "m3b-khronos-simple-morph"
+required_surface = "headless-cpu"
+contract = "Khronos AnimatedMorphCube renders after morph weight animation sampling"
+
+[[fixture]]
+name = "m3b-khronos-rigged-simple"
+required_surface = "headless-cpu"
+contract = "Khronos RiggedSimple renders after skeleton animation sampling"

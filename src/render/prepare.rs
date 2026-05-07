@@ -2,7 +2,7 @@ use crate::assets::{Assets, EnvironmentDesc};
 use crate::diagnostics::{
     Backend, Capabilities, CapabilityStatus, Diagnostic, DiagnosticCode, PrepareError,
 };
-use crate::geometry::{GeometryDesc, GeometryTopology, Primitive, Vertex};
+use crate::geometry::{GeometryDesc, GeometryTopology, Primitive, SkinningMatrix, Vertex};
 use crate::material::{AlphaMode, MaterialDesc, MaterialKind};
 use crate::scene::{Camera, Light, NodeKey, Scene, Transform, Vec3};
 
@@ -85,7 +85,10 @@ pub(super) fn collect_prepared_primitives<F>(
             node,
             &geometry,
             &material,
-            scene.morph_weights(node),
+            DeformationInputs {
+                morph_weights: scene.morph_weights(node),
+                skin_matrices: scene.skin_matrices(node).as_deref(),
+            },
             PrimitiveBakeParams {
                 target,
                 transform,
@@ -121,7 +124,7 @@ pub(super) fn collect_prepared_primitives<F>(
                 node,
                 &geometry,
                 &material,
-                None,
+                DeformationInputs::default(),
                 PrimitiveBakeParams {
                     target,
                     transform: compose_transform(node_transform, instance.transform()),
@@ -284,6 +287,12 @@ struct PrimitiveBakeParams<'lights> {
     lights: &'lights PreparedLights,
 }
 
+#[derive(Clone, Copy, Default)]
+struct DeformationInputs<'scene> {
+    morph_weights: Option<&'scene [f32]>,
+    skin_matrices: Option<&'scene [SkinningMatrix]>,
+}
+
 #[derive(Clone, Copy)]
 enum MaterialPass {
     Opaque,
@@ -294,7 +303,7 @@ fn append_geometry_primitives(
     node: NodeKey,
     geometry: &GeometryDesc,
     material: &MaterialDesc,
-    morph_weights: Option<&[f32]>,
+    deformation: DeformationInputs<'_>,
     params: PrimitiveBakeParams<'_>,
     primitives: &mut Vec<Primitive>,
     transparent_primitives: &mut Vec<TransparentPrimitive>,
@@ -304,7 +313,7 @@ fn append_geometry_primitives(
             node,
             geometry,
             material,
-            morph_weights,
+            deformation,
             params,
             primitives,
             transparent_primitives,
@@ -319,7 +328,7 @@ fn append_triangle_primitives(
     node: NodeKey,
     geometry: &GeometryDesc,
     material: &MaterialDesc,
-    morph_weights: Option<&[f32]>,
+    deformation: DeformationInputs<'_>,
     params: PrimitiveBakeParams<'_>,
     primitives: &mut Vec<Primitive>,
     transparent_primitives: &mut Vec<TransparentPrimitive>,
@@ -353,10 +362,28 @@ fn append_triangle_primitives(
     }
 
     let material_pass = material_pass(node, material)?;
-    let morphed_vertices = morph_weights.and_then(|weights| geometry.morphed_vertices(weights));
-    let vertices = morphed_vertices
+    let morphed_vertices = deformation
+        .morph_weights
+        .and_then(|weights| geometry.morphed_vertices(weights));
+    let base_vertices = morphed_vertices
         .as_deref()
         .unwrap_or_else(|| geometry.vertices());
+    let skinned_vertices = match deformation.skin_matrices {
+        Some(matrices) => geometry
+            .skinned_vertices(base_vertices, matrices)
+            .map_err(|error| PrepareError::InvalidSkinGeometry {
+                node,
+                reason: format!("{error:?}"),
+            })?,
+        None if geometry.skin().is_some() => {
+            return Err(PrepareError::InvalidSkinGeometry {
+                node,
+                reason: "skinned geometry is missing a scene skin binding".to_string(),
+            });
+        }
+        None => None,
+    };
+    let vertices = skinned_vertices.as_deref().unwrap_or(base_vertices);
 
     for triangle in geometry.indices().chunks_exact(3) {
         let position_a = transform_position(

@@ -9,6 +9,9 @@ use crate::scene::Vec3;
 
 use super::super::AssetPath;
 
+mod skin;
+pub(super) use skin::{read_joints_accessor, read_mat4_accessor, read_weights_accessor};
+
 pub(super) fn parse_buffers(
     path: &AssetPath,
     json: &JsonValue,

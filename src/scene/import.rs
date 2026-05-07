@@ -10,7 +10,7 @@ use crate::diagnostics::{
 use crate::geometry::Aabb;
 
 use self::bounds::union_optional;
-use super::{MeshNode, NodeKey, NodeKind, Scene, Transform, Vec3};
+use super::{MeshNode, NodeKey, NodeKind, Scene, SceneSkinBinding, Transform, Vec3};
 
 mod bounds;
 mod lookups;
@@ -80,6 +80,14 @@ struct ImportBuild<'a> {
     records: &'a mut Vec<ImportedNode>,
     anchors: &'a mut Vec<ImportAnchor>,
     diagnostic_overlays: &'a mut Vec<ImportDiagnosticOverlay>,
+    pending_skin_bindings: &'a mut Vec<PendingSkinBinding>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PendingSkinBinding {
+    node: NodeKey,
+    source_node: usize,
+    skin: usize,
 }
 
 impl Scene {
@@ -112,6 +120,7 @@ impl Scene {
             diagnostic_overlays: Vec::new(),
             live: Arc::new(AtomicBool::new(true)),
         };
+        let mut pending_skin_bindings = Vec::new();
         for source_index in roots {
             let mut build = ImportBuild {
                 scene_asset,
@@ -119,11 +128,17 @@ impl Scene {
                 records: &mut import.records,
                 anchors: &mut import.anchors,
                 diagnostic_overlays: &mut import.diagnostic_overlays,
+                pending_skin_bindings: &mut pending_skin_bindings,
             };
             let node =
                 self.instantiate_scene_asset_node(source_index, self.root, None, &mut build)?;
             import.roots.push(node);
         }
+        self.resolve_import_skin_bindings(
+            scene_asset,
+            &import.records,
+            pending_skin_bindings.as_slice(),
+        )?;
         import.clips = scene_asset
             .clips()
             .iter()
@@ -189,6 +204,7 @@ impl Scene {
         )?;
         let transform = build.options.convert_transform(source_node.transform());
         let meshes = source_node.meshes();
+        let skin = source_node.skin();
         let bounds = meshes.iter().fold(None, |bounds, mesh| {
             Some(union_optional(bounds, mesh.bounds()))
         });
@@ -197,6 +213,13 @@ impl Scene {
                 let node = self.insert_node(parent, mesh_node_kind(mesh), transform);
                 if let Ok(node) = node {
                     self.set_initial_morph_weights(node, mesh.morph_weights());
+                    if let Some(skin) = skin {
+                        build.pending_skin_bindings.push(PendingSkinBinding {
+                            node,
+                            source_node: source_index,
+                            skin,
+                        });
+                    }
                 }
                 node
             }
@@ -208,6 +231,13 @@ impl Scene {
                             .insert_node(parent, mesh_node_kind(mesh), Transform::IDENTITY)
                             .expect("multi-primitive parent was inserted by this scene");
                         self.set_initial_morph_weights(child, mesh.morph_weights());
+                        if let Some(skin) = skin {
+                            build.pending_skin_bindings.push(PendingSkinBinding {
+                                node: child,
+                                source_node: source_index,
+                                skin,
+                            });
+                        }
                     }
                 }
                 node
@@ -310,6 +340,41 @@ impl Scene {
             self.instantiate_scene_asset_node(*child, node, Some(node), build)?;
         }
         Ok(node)
+    }
+
+    fn resolve_import_skin_bindings(
+        &mut self,
+        scene_asset: &SceneAsset,
+        records: &[ImportedNode],
+        pending: &[PendingSkinBinding],
+    ) -> Result<(), InstantiateError> {
+        for pending in pending {
+            let skin = scene_asset.skins().get(pending.skin).ok_or(
+                InstantiateError::InvalidSkinIndex {
+                    node: pending.source_node,
+                    skin: pending.skin,
+                },
+            )?;
+            let joints = skin
+                .joints()
+                .iter()
+                .map(|source_joint| {
+                    records
+                        .iter()
+                        .find(|record| record.source_index == *source_joint)
+                        .map(|record| record.node)
+                        .ok_or(InstantiateError::InvalidSkinJointIndex {
+                            skin: pending.skin,
+                            joint: *source_joint,
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            self.set_initial_skin_binding(
+                pending.node,
+                SceneSkinBinding::new(joints, skin.inverse_bind_matrices().to_vec()),
+            );
+        }
+        Ok(())
     }
 }
 

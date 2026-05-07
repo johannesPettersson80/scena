@@ -24,6 +24,7 @@ mod mixers;
 mod morphs;
 mod picking;
 mod render_nodes;
+mod skinning;
 mod transforms;
 mod view;
 pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
@@ -34,6 +35,7 @@ pub use import::{
 pub use instances::{Instance, InstanceCullingPolicy, InstanceId, InstanceSet};
 pub use labels::{LabelBillboard, LabelDesc, LabelRasterization};
 pub use lights::{DirectionalLight, Light, LightBuilder, PointLight, SpotLight};
+pub use skinning::SceneSkinBinding;
 
 new_key_type! {
     pub struct NodeKey;
@@ -54,6 +56,7 @@ pub struct Scene {
     animation_mixers: SlotMap<AnimationMixerKey, AnimationMixer>,
     labels: SlotMap<LabelKey, LabelDesc>,
     morph_weights: BTreeMap<NodeKey, Vec<f32>>,
+    skin_bindings: BTreeMap<NodeKey, SceneSkinBinding>,
     clipping_planes: SlotMap<ClippingPlaneKey, ClippingPlane>,
     active_clipping_planes: ClippingPlaneSet,
     origin_shift: Vec3,
@@ -170,6 +173,7 @@ impl Scene {
             animation_mixers: SlotMap::with_key(),
             labels: SlotMap::with_key(),
             morph_weights: BTreeMap::new(),
+            skin_bindings: BTreeMap::new(),
             clipping_planes: SlotMap::with_key(),
             active_clipping_planes: ClippingPlaneSet::new(),
             origin_shift: Vec3::ZERO,

@@ -1,7 +1,9 @@
 use serde_json::Value as JsonValue;
 
 use crate::diagnostics::AssetError;
-use crate::geometry::{GeometryDesc, GeometryMorphTarget, GeometryTopology, GeometryVertex};
+use crate::geometry::{
+    GeometryDesc, GeometryMorphTarget, GeometrySkin, GeometryTopology, GeometryVertex,
+};
 use crate::material::{AlphaMode, Color, MaterialDesc, TextureColorSpace, TextureTransform};
 use crate::scene::Vec3;
 
@@ -11,7 +13,8 @@ use super::super::{
 use super::SceneAssetMesh;
 use super::accessor::{
     GltfAccessor, GltfBufferView, optional_usize, parse_error, read_color_accessor,
-    read_indices_accessor, read_vec3_accessor, required_usize,
+    read_indices_accessor, read_joints_accessor, read_vec3_accessor, read_weights_accessor,
+    required_usize,
 };
 
 pub(super) fn parse_textures(
@@ -215,6 +218,34 @@ fn parse_mesh_primitive(
         })
         .transpose()?
         .unwrap_or_else(|| vec![Color::WHITE; positions.len()]);
+    let skin = match (
+        attributes.get("JOINTS_0").and_then(JsonValue::as_u64),
+        attributes.get("WEIGHTS_0").and_then(JsonValue::as_u64),
+    ) {
+        (Some(joints), Some(weights)) => Some(GeometrySkin::new(
+            read_joints_accessor(
+                path,
+                joints as usize,
+                inputs.buffers,
+                inputs.buffer_views,
+                inputs.accessors,
+            )?,
+            read_weights_accessor(
+                path,
+                weights as usize,
+                inputs.buffers,
+                inputs.buffer_views,
+                inputs.accessors,
+            )?,
+        )),
+        (None, None) => None,
+        _ => {
+            return Err(parse_error(
+                path,
+                "JOINTS_0 and WEIGHTS_0 must be provided together for skinned geometry",
+            ));
+        }
+    };
     let morph_targets = primitive
         .get("targets")
         .and_then(JsonValue::as_array)
@@ -269,6 +300,10 @@ fn parse_mesh_primitive(
         vertex_colors,
     )
     .and_then(|geometry| geometry.with_morph_targets(morph_targets))
+    .and_then(|geometry| match skin {
+        Some(skin) => geometry.with_skin(skin),
+        None => Ok(geometry),
+    })
     .map_err(|error| parse_error(path, format!("invalid glTF geometry: {error:?}")))?;
     let bounds = geometry.bounds();
     let geometry = inputs.storage.geometries.insert(geometry);

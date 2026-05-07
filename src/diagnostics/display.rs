@@ -121,6 +121,16 @@ impl fmt::Display for InstantiateError {
                 formatter,
                 "glTF node {parent} references invalid child node index {child}"
             ),
+            Self::InvalidSkinIndex { node, skin } => {
+                write!(
+                    formatter,
+                    "glTF node {node} references invalid skin index {skin}"
+                )
+            }
+            Self::InvalidSkinJointIndex { skin, joint } => write!(
+                formatter,
+                "glTF skin {skin} references invalid joint node index {joint}"
+            ),
             Self::InvalidAnchorExtras { node, reason } => {
                 write!(
                     formatter,
@@ -195,6 +205,12 @@ impl fmt::Display for PrepareError {
                 formatter,
                 "only one shadowed directional light is supported; nodes {first:?} and {second:?} both cast shadows"
             ),
+            Self::InvalidSkinGeometry { node, reason } => {
+                write!(
+                    formatter,
+                    "node {node:?} has invalid skin geometry: {reason}"
+                )
+            }
         }
     }
 }
