@@ -2541,6 +2541,22 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "ARCH-M3A-SCENE-IMPORT",
+        "tests/m3a_visual_proof.rs",
+        &[
+            "m3a_headless_visual_artifacts_cover_import_interaction_instances_labels_and_readback",
+            "target/gate-artifacts/m3a-visual",
+            "m3a-glb-model-viewer",
+            "m3a-picking-selection",
+            "m3a-instancing",
+            "m3a-labels",
+            "m3a-offscreen-readback",
+            "write_ppm_artifact",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
         "docs/checklists/m3a-app-features.md",
         &[
             "assets_load_scene_caches_gltf_asset_and_rejects_required_extensions",
