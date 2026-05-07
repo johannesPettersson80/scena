@@ -40,7 +40,7 @@ jobs:
         with:
           name: linux-native-vulkan-gate-artifacts
           path: target/gate-artifacts/**
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   linux-browser-webgl2:
     name: Linux browser WebGL2
@@ -157,7 +157,7 @@ jobs:
         with:
           name: macos-metal-gate-artifacts
           path: target/gate-artifacts/**
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   windows-dx12:
     name: Windows DX12
@@ -177,4 +177,4 @@ jobs:
         with:
           name: windows-dx12-gate-artifacts
           path: target/gate-artifacts/**
-          if-no-files-found: ignore
+          if-no-files-found: error

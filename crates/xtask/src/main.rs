@@ -4496,7 +4496,15 @@ fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>) {
             "cargo run -p xtask -- doctor --full",
             "release-lane-artifact",
             "target/gate-artifacts/**",
+            "if-no-files-found: error",
         ],
+    );
+    forbid_contains(
+        root,
+        findings,
+        "RELEASE-CI-M9",
+        ".github/workflows/ci.yml",
+        &["if-no-files-found: ignore"],
     );
     require_contains(
         root,
@@ -6013,6 +6021,30 @@ mod tests {
         check_m9_ci_release_lanes(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn m9_release_artifact_uploads_fail_closed() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let workflow = fs::read_to_string(root.join(".github/workflows/ci.yml"))
+            .expect("CI workflow must be readable");
+
+        assert!(
+            !workflow.contains("if-no-files-found: ignore"),
+            "release artifact uploads must fail when required evidence is missing"
+        );
+        for artifact_name in [
+            "linux-native-vulkan-gate-artifacts",
+            "linux-browser-webgl2-gate-artifacts",
+            "linux-browser-webgpu-gate-artifacts",
+            "macos-metal-gate-artifacts",
+            "windows-dx12-gate-artifacts",
+        ] {
+            assert!(
+                workflow.contains(artifact_name),
+                "missing release artifact upload {artifact_name}"
+            );
+        }
     }
 
     #[test]
