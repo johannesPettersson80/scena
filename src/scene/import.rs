@@ -1,16 +1,19 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use crate::animation::AnimationClipKey;
 use crate::assets::{AssetFetcher, AssetPath, Assets, SceneAsset, SceneAssetMesh};
-use crate::diagnostics::{ImportError, InstantiateError, LookupError};
+use crate::diagnostics::{
+    ImportDiagnosticOverlay, ImportDiagnosticOverlayKind, ImportError, InstantiateError,
+};
 use crate::geometry::Aabb;
 
-use self::bounds::{transform_aabb, union_optional};
+use self::bounds::union_optional;
 use super::{MeshNode, NodeKey, NodeKind, Scene, Transform, Vec3};
 
 mod bounds;
+mod lookups;
 
 #[derive(Debug, Clone)]
 pub struct SceneImport {
@@ -18,6 +21,7 @@ pub struct SceneImport {
     records: Vec<ImportedNode>,
     anchors: Vec<ImportAnchor>,
     clips: Vec<ImportClip>,
+    diagnostic_overlays: Vec<ImportDiagnosticOverlay>,
     live: Arc<AtomicBool>,
 }
 
@@ -32,6 +36,13 @@ pub struct ImportAnchor {
 pub struct ImportClip {
     key: AnimationClipKey,
     name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportPivot {
+    name: Option<String>,
+    node: NodeKey,
+    transform: Transform,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -68,6 +79,7 @@ struct ImportBuild<'a> {
     options: ImportOptions,
     records: &'a mut Vec<ImportedNode>,
     anchors: &'a mut Vec<ImportAnchor>,
+    diagnostic_overlays: &'a mut Vec<ImportDiagnosticOverlay>,
 }
 
 impl Scene {
@@ -104,6 +116,7 @@ impl Scene {
                     name: clip.name().map(str::to_string),
                 })
                 .collect(),
+            diagnostic_overlays: Vec::new(),
             live: Arc::new(AtomicBool::new(true)),
         };
         for source_index in roots {
@@ -112,6 +125,7 @@ impl Scene {
                 options,
                 records: &mut import.records,
                 anchors: &mut import.anchors,
+                diagnostic_overlays: &mut import.diagnostic_overlays,
             };
             let node =
                 self.instantiate_scene_asset_node(source_index, self.root, None, &mut build)?;
@@ -205,6 +219,30 @@ impl Scene {
             name: source_node.name().map(str::to_string),
             bounds,
         });
+        let label = source_node.name().map(str::to_string);
+        build.diagnostic_overlays.push(ImportDiagnosticOverlay::new(
+            ImportDiagnosticOverlayKind::Origin,
+            node,
+            transform,
+            None,
+            label.clone(),
+        ));
+        build.diagnostic_overlays.push(ImportDiagnosticOverlay::new(
+            ImportDiagnosticOverlayKind::Axes,
+            node,
+            transform,
+            None,
+            label.clone(),
+        ));
+        if let Some(bounds) = bounds {
+            build.diagnostic_overlays.push(ImportDiagnosticOverlay::new(
+                ImportDiagnosticOverlayKind::Bounds,
+                node,
+                Transform::IDENTITY,
+                Some(bounds),
+                label.clone(),
+            ));
+        }
         let mut anchor_names = BTreeSet::new();
         for anchor in source_node.anchors() {
             if let Some(reason) = anchor.invalid_reason() {
@@ -219,11 +257,28 @@ impl Scene {
                     reason: format!("duplicate anchor '{}'", anchor.name()),
                 });
             }
+            let anchor_transform = build.options.convert_transform(anchor.transform());
             build.anchors.push(ImportAnchor {
                 name: anchor.name().to_string(),
                 node,
-                transform: build.options.convert_transform(anchor.transform()),
+                transform: anchor_transform,
             });
+            build.diagnostic_overlays.push(ImportDiagnosticOverlay::new(
+                ImportDiagnosticOverlayKind::Anchor,
+                node,
+                anchor_transform,
+                None,
+                Some(anchor.name().to_string()),
+            ));
+            if anchor.name() == "pivot" {
+                build.diagnostic_overlays.push(ImportDiagnosticOverlay::new(
+                    ImportDiagnosticOverlayKind::Pivot,
+                    node,
+                    anchor_transform,
+                    None,
+                    Some(anchor.name().to_string()),
+                ));
+            }
         }
         for child in source_node.children() {
             if build.scene_asset.nodes().get(*child).is_none() {
@@ -266,6 +321,20 @@ impl ImportClip {
 
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref()
+    }
+}
+
+impl ImportPivot {
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub const fn node(&self) -> NodeKey {
+        self.node
+    }
+
+    pub const fn transform(&self) -> Transform {
+        self.transform
     }
 }
 
@@ -340,208 +409,4 @@ impl SourceCoordinateSystem {
 
 const fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
     Vec3::new(value.x * scale, value.y * scale, value.z * scale)
-}
-
-impl SceneImport {
-    pub fn node(&self, name: &str) -> Result<NodeKey, LookupError> {
-        self.ensure_live()?;
-        let matches = self.nodes_named(name).collect::<Vec<_>>();
-        match matches.as_slice() {
-            [] => Err(LookupError::NodeNameNotFound {
-                name: name.to_string(),
-            }),
-            [node] => Ok(*node),
-            _ => Err(LookupError::AmbiguousNodeName {
-                name: name.to_string(),
-                matches,
-            }),
-        }
-    }
-
-    pub fn first_node(&self, name: &str) -> Option<NodeKey> {
-        if !self.is_live() {
-            return None;
-        }
-        self.nodes_named(name).next()
-    }
-
-    pub fn nodes_named<'import>(
-        &'import self,
-        name: &'import str,
-    ) -> impl Iterator<Item = NodeKey> + 'import {
-        self.records
-            .iter()
-            .filter(move |record| record.name.as_deref() == Some(name))
-            .map(|record| record.node)
-    }
-
-    pub fn path(&self, path: &str) -> Result<NodeKey, LookupError> {
-        self.ensure_live()?;
-        let segments = path_segments(path).ok_or_else(|| LookupError::PathNotFound {
-            path: path.to_string(),
-        })?;
-        let Some((first, rest)) = segments.split_first() else {
-            return Err(LookupError::PathNotFound {
-                path: path.to_string(),
-            });
-        };
-        let mut current = self
-            .records
-            .iter()
-            .find(|record| record.parent.is_none() && record.name.as_deref() == Some(first))
-            .map(|record| record.node)
-            .ok_or_else(|| LookupError::PathNotFound {
-                path: path.to_string(),
-            })?;
-
-        for segment in rest {
-            current = self
-                .records
-                .iter()
-                .find(|record| {
-                    record.parent == Some(current) && record.name.as_deref() == Some(segment)
-                })
-                .map(|record| record.node)
-                .ok_or_else(|| LookupError::PathNotFound {
-                    path: path.to_string(),
-                })?;
-        }
-        Ok(current)
-    }
-
-    pub fn roots(&self) -> &[NodeKey] {
-        &self.roots
-    }
-
-    pub fn clip(&self, name: &str) -> Result<&ImportClip, LookupError> {
-        self.ensure_live()?;
-        let matches = self.clips_named(name).collect::<Vec<_>>();
-        match matches.as_slice() {
-            [] => Err(LookupError::ClipNotFound {
-                name: name.to_string(),
-            }),
-            [clip] => Ok(*clip),
-            _ => Err(LookupError::AmbiguousClipName {
-                name: name.to_string(),
-                matches: matches.iter().map(|clip| clip.key()).collect(),
-            }),
-        }
-    }
-
-    pub fn first_clip(&self, name: &str) -> Option<&ImportClip> {
-        if !self.is_live() {
-            return None;
-        }
-        self.clips_named(name).next()
-    }
-
-    pub fn clips_named<'import>(
-        &'import self,
-        name: &str,
-    ) -> impl Iterator<Item = &'import ImportClip> + 'import {
-        let name = name.to_string();
-        self.clips
-            .iter()
-            .filter(move |clip| clip.name() == Some(name.as_str()))
-    }
-
-    pub fn anchor(&self, name: &str) -> Result<&ImportAnchor, LookupError> {
-        self.ensure_live()?;
-        let matches = self.anchors_named(name).collect::<Vec<_>>();
-        match matches.as_slice() {
-            [] => Err(LookupError::AnchorNotFound {
-                name: name.to_string(),
-            }),
-            [anchor] => Ok(*anchor),
-            _ => Err(LookupError::AmbiguousAnchorName {
-                name: name.to_string(),
-                hosts: matches.iter().map(|anchor| anchor.node()).collect(),
-            }),
-        }
-    }
-
-    pub fn first_anchor(&self, name: &str) -> Option<&ImportAnchor> {
-        if !self.is_live() {
-            return None;
-        }
-        self.anchors_named(name).next()
-    }
-
-    pub fn anchors_named<'import>(
-        &'import self,
-        name: &str,
-    ) -> impl Iterator<Item = &'import ImportAnchor> + 'import {
-        let name = name.to_string();
-        self.anchors
-            .iter()
-            .filter(move |anchor| anchor.name() == name.as_str())
-    }
-
-    pub fn bounds_local(&self) -> Option<Aabb> {
-        if !self.is_live() {
-            return None;
-        }
-        self.records
-            .iter()
-            .filter_map(|record| record.bounds)
-            .fold(None, |bounds, next| Some(union_optional(bounds, next)))
-    }
-
-    pub fn bounds_world(&self, scene: &Scene) -> Option<Aabb> {
-        if !self.is_live() {
-            return None;
-        }
-        self.records
-            .iter()
-            .filter_map(|record| {
-                let bounds = record.bounds?;
-                let transform = scene.node(record.node)?.transform();
-                Some(transform_aabb(bounds, transform))
-            })
-            .fold(None, |bounds, next| Some(union_optional(bounds, next)))
-    }
-
-    fn ensure_live(&self) -> Result<(), LookupError> {
-        if self.is_live() {
-            Ok(())
-        } else {
-            Err(LookupError::StaleImport)
-        }
-    }
-
-    fn is_live(&self) -> bool {
-        self.live.load(Ordering::Acquire)
-    }
-
-    fn mark_stale(&self) {
-        self.live.store(false, Ordering::Release);
-    }
-}
-
-fn path_segments(path: &str) -> Option<Vec<String>> {
-    let mut segments = Vec::new();
-    let mut current = String::new();
-    let mut escaped = false;
-
-    for character in path.chars() {
-        if escaped {
-            current.push(character);
-            escaped = false;
-        } else if character == '\\' {
-            escaped = true;
-        } else if character == '/' {
-            if current.is_empty() {
-                return None;
-            }
-            segments.push(std::mem::take(&mut current));
-        } else {
-            current.push(character);
-        }
-    }
-
-    if escaped || current.is_empty() {
-        return None;
-    }
-    segments.push(current);
-    Some(segments)
 }

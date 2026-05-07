@@ -17,12 +17,14 @@ mod import;
 mod instances;
 mod labels;
 mod lights;
+mod materials;
 mod picking;
 mod render_nodes;
 mod view;
 pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
 pub use import::{
-    ImportAnchor, ImportClip, ImportOptions, SceneImport, SourceCoordinateSystem, SourceUnits,
+    ImportAnchor, ImportClip, ImportOptions, ImportPivot, SceneImport, SourceCoordinateSystem,
+    SourceUnits,
 };
 pub use instances::{Instance, InstanceCullingPolicy, InstanceId, InstanceSet};
 pub use labels::{LabelBillboard, LabelDesc, LabelRasterization};
@@ -272,7 +274,10 @@ impl Scene {
             .nodes
             .get_mut(node)
             .ok_or(LookupError::NodeNotFound(node))?;
-        node.transform = transform;
+        if node.transform != transform {
+            node.transform = transform;
+            self.structure_revision = self.structure_revision.saturating_add(1);
+        }
         Ok(())
     }
 
@@ -317,6 +322,7 @@ impl Scene {
 
     pub(crate) fn structure_revision(&self) -> u64 {
         self.structure_revision
+            .saturating_add(self.interaction.revision())
     }
 
     pub(crate) fn mesh_nodes(&self) -> impl Iterator<Item = (NodeKey, MeshNode, Transform)> + '_ {

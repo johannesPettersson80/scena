@@ -2,9 +2,9 @@
 
 use crate::animation::AnimationClipKey;
 use crate::assets::{EnvironmentHandle, GeometryHandle, MaterialHandle};
-use crate::geometry::GeometryTopology;
+use crate::geometry::{Aabb, GeometryTopology};
 use crate::material::{AlphaMode, MaterialKind};
-use crate::scene::{CameraKey, ClippingPlaneKey, InstanceSetKey, LabelKey, NodeKey};
+use crate::scene::{CameraKey, ClippingPlaneKey, InstanceSetKey, LabelKey, NodeKey, Transform};
 
 mod capabilities;
 mod display;
@@ -188,6 +188,9 @@ pub enum LookupError {
         path: String,
     },
     StaleImport,
+    NodeIsNotMesh {
+        node: NodeKey,
+    },
     CameraNotFound(CameraKey),
     ClippingPlaneNotFound(ClippingPlaneKey),
     InstanceSetNotFound(InstanceSetKey),
@@ -215,6 +218,24 @@ pub enum DiagnosticSeverity {
     Info,
     Warning,
     Error,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportDiagnosticOverlay {
+    kind: ImportDiagnosticOverlayKind,
+    node: NodeKey,
+    transform: Transform,
+    bounds: Option<Aabb>,
+    label: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportDiagnosticOverlayKind {
+    Origin,
+    Axes,
+    Bounds,
+    Anchor,
+    Pivot,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -265,6 +286,44 @@ impl Diagnostic {
             message: message.into(),
             help: Some(help.into()),
         }
+    }
+}
+
+impl ImportDiagnosticOverlay {
+    pub fn new(
+        kind: ImportDiagnosticOverlayKind,
+        node: NodeKey,
+        transform: Transform,
+        bounds: Option<Aabb>,
+        label: Option<String>,
+    ) -> Self {
+        Self {
+            kind,
+            node,
+            transform,
+            bounds,
+            label,
+        }
+    }
+
+    pub const fn kind(&self) -> ImportDiagnosticOverlayKind {
+        self.kind
+    }
+
+    pub const fn node(&self) -> NodeKey {
+        self.node
+    }
+
+    pub const fn transform(&self) -> Transform {
+        self.transform
+    }
+
+    pub const fn bounds(&self) -> Option<Aabb> {
+        self.bounds
+    }
+
+    pub fn label(&self) -> Option<&str> {
+        self.label.as_deref()
     }
 }
 

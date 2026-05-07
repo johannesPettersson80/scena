@@ -48,6 +48,7 @@ pub struct InteractionStyle {
 pub struct InteractionContext {
     hover: Option<HitTarget>,
     primary_selection: Option<HitTarget>,
+    revision: u64,
 }
 
 impl CursorPosition {
@@ -125,7 +126,10 @@ impl InteractionContext {
     }
 
     pub fn set_hover(&mut self, hover: Option<HitTarget>) {
-        self.hover = hover;
+        if self.hover != hover {
+            self.hover = hover;
+            self.revision = self.revision.saturating_add(1);
+        }
     }
 
     pub const fn primary_selection(&self) -> Option<HitTarget> {
@@ -133,7 +137,14 @@ impl InteractionContext {
     }
 
     pub fn set_primary_selection(&mut self, primary_selection: Option<HitTarget>) {
-        self.primary_selection = primary_selection;
+        if self.primary_selection != primary_selection {
+            self.primary_selection = primary_selection;
+            self.revision = self.revision.saturating_add(1);
+        }
+    }
+
+    pub(crate) const fn revision(&self) -> u64 {
+        self.revision
     }
 }
 

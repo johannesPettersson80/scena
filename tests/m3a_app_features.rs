@@ -2,11 +2,11 @@
 
 use scena::{
     Aabb, AssetError, AssetFetcher, AssetPath, Assets, BuildError, Camera, ChangeKind, Color,
-    CursorPosition, GeometryDesc, GeometryTopology, GeometryVertex, HitTarget, ImportOptions,
-    InstanceCullingPolicy, InstantiateError, InteractionStyle, LabelBillboard, LabelDesc,
-    LabelRasterization, LookupError, MaterialDesc, MaterialKind, NodeKind, NotPreparedReason,
-    OffscreenTarget, PerspectiveCamera, Primitive, Quat, RenderError, Renderer, Scene,
-    SourceCoordinateSystem, SourceUnits, Transform, Vec3, Viewport,
+    CursorPosition, GeometryDesc, GeometryTopology, GeometryVertex, HitTarget,
+    ImportDiagnosticOverlayKind, ImportOptions, InstanceCullingPolicy, InstantiateError,
+    InteractionStyle, LabelBillboard, LabelDesc, LabelRasterization, LookupError, MaterialDesc,
+    MaterialKind, NodeKind, NotPreparedReason, OffscreenTarget, PerspectiveCamera, Primitive, Quat,
+    RenderError, Renderer, Scene, SourceCoordinateSystem, SourceUnits, Transform, Vec3, Viewport,
 };
 use std::collections::BTreeMap;
 use std::future::{Ready, ready};
@@ -1279,6 +1279,227 @@ fn import_options_apply_gltf_node_transforms_and_source_units() {
 }
 
 #[test]
+fn source_coordinate_conversion_preserves_right_handed_basis_for_winding() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(
+        "memory://z-up-basis.gltf",
+        r#"{
+            "asset": { "version": "2.0" },
+            "nodes": [
+                { "name": "Root", "children": [1, 2, 3] },
+                { "name": "BasisX", "translation": [1.0, 0.0, 0.0] },
+                { "name": "BasisY", "translation": [0.0, 1.0, 0.0] },
+                { "name": "BasisZ", "translation": [0.0, 0.0, 1.0] }
+            ]
+        }"#,
+    ));
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://z-up-basis.gltf")).expect("basis loads");
+    let mut scene = Scene::new();
+
+    let import = scene
+        .instantiate_with(
+            &scene_asset,
+            ImportOptions::gltf_default()
+                .with_source_coordinate_system(SourceCoordinateSystem::ZUpRightHanded),
+        )
+        .expect("Z-up basis instantiates");
+    let x = scene
+        .node(import.node("BasisX").expect("BasisX lookup succeeds"))
+        .expect("BasisX node exists")
+        .transform()
+        .translation;
+    let y = scene
+        .node(import.node("BasisY").expect("BasisY lookup succeeds"))
+        .expect("BasisY node exists")
+        .transform()
+        .translation;
+    let z = scene
+        .node(import.node("BasisZ").expect("BasisZ lookup succeeds"))
+        .expect("BasisZ node exists")
+        .transform()
+        .translation;
+
+    assert_vec3_near(x, Vec3::new(1.0, 0.0, 0.0));
+    assert_vec3_near(y, Vec3::new(0.0, 0.0, -1.0));
+    assert_vec3_near(z, Vec3::new(0.0, 1.0, 0.0));
+    assert!(
+        dot_vec3(cross_vec3(x, y), z) > 0.999,
+        "Z-up conversion must preserve a right-handed basis so front-face winding can remain stable"
+    );
+}
+
+#[test]
+fn scene_import_exposes_named_pivots_and_diagnostic_overlays() {
+    let fetcher = MultiMemoryFetcher::new(vec![
+        (
+            AssetPath::from("memory://models/pivot-overlay.gltf"),
+            br#"{
+                "asset": { "version": "2.0" },
+                "nodes": [
+                    {
+                        "name": "RotatingArm",
+                        "mesh": 0,
+                        "extras": {
+                            "scena": {
+                                "anchors": [
+                                    { "name": "pivot", "translation": [25.0, 0.0, 0.0] },
+                                    { "name": "inspection", "translation": [0.0, 10.0, 0.0] }
+                                ]
+                            }
+                        }
+                    }
+                ],
+                "meshes": [
+                    {
+                        "primitives": [
+                            {
+                                "attributes": { "POSITION": 0 },
+                                "indices": 1
+                            }
+                        ]
+                    }
+                ],
+                "buffers": [
+                    {
+                        "byteLength": 42,
+                        "uri": "pivot.bin"
+                    }
+                ],
+                "bufferViews": [
+                    { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+                    { "buffer": 0, "byteOffset": 36, "byteLength": 6 }
+                ],
+                "accessors": [
+                    {
+                        "bufferView": 0,
+                        "componentType": 5126,
+                        "count": 3,
+                        "type": "VEC3"
+                    },
+                    {
+                        "bufferView": 1,
+                        "componentType": 5123,
+                        "count": 3,
+                        "type": "SCALAR"
+                    }
+                ]
+            }"#
+            .to_vec(),
+        ),
+        (
+            AssetPath::from("memory://models/pivot.bin"),
+            external_triangle_buffer(),
+        ),
+    ]);
+    let assets = Assets::with_fetcher(fetcher);
+    let scene_asset = pollster::block_on(assets.load_scene("memory://models/pivot-overlay.gltf"))
+        .expect("pivot-overlay glTF loads");
+    let mut scene = Scene::new();
+
+    let import = scene
+        .instantiate_with(
+            &scene_asset,
+            ImportOptions::gltf_default().with_source_units(SourceUnits::Centimeters),
+        )
+        .expect("pivot-overlay scene instantiates");
+    let arm = import.node("RotatingArm").expect("arm lookup succeeds");
+    let pivot = import.pivot("RotatingArm").expect("pivot lookup succeeds");
+    assert_eq!(pivot.node(), arm);
+    assert_eq!(pivot.name(), Some("pivot"));
+    assert_vec3_near(pivot.transform().translation, Vec3::new(0.25, 0.0, 0.0));
+
+    let overlays = import
+        .diagnostic_overlays()
+        .expect("diagnostic overlays are available for live import");
+    for expected in [
+        ImportDiagnosticOverlayKind::Origin,
+        ImportDiagnosticOverlayKind::Axes,
+        ImportDiagnosticOverlayKind::Bounds,
+        ImportDiagnosticOverlayKind::Anchor,
+        ImportDiagnosticOverlayKind::Pivot,
+    ] {
+        assert!(
+            overlays
+                .iter()
+                .any(|overlay| overlay.node() == arm && overlay.kind() == expected),
+            "missing {expected:?} overlay for imported node"
+        );
+    }
+}
+
+#[test]
+fn prepared_render_requires_reprepare_after_transform_changes() {
+    let (mut scene, camera, target) = scene_with_renderable();
+    let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+    renderer.prepare(&mut scene).expect("scene prepares");
+    renderer
+        .render(&scene, camera)
+        .expect("prepared scene renders before mutation");
+
+    scene
+        .set_transform(
+            target,
+            Transform {
+                translation: Vec3::new(0.25, 0.0, 0.0),
+                ..Transform::default()
+            },
+        )
+        .expect("transform mutation succeeds");
+
+    assert!(matches!(
+        renderer.render(&scene, camera),
+        Err(RenderError::NotPrepared {
+            reason: NotPreparedReason::SceneChanged {
+                change: ChangeKind::SceneStructure,
+                ..
+            },
+        })
+    ));
+}
+
+#[test]
+fn prepared_render_requires_reprepare_after_material_and_interaction_changes() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(fullscreen_triangle_geometry());
+    let red = assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(1.0, 0.0, 0.0)));
+    let green = assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(0.0, 1.0, 0.0)));
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    let mesh = scene.mesh(geometry, red).add().expect("mesh inserts");
+    let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("mesh scene prepares");
+
+    scene
+        .set_mesh_material(mesh, green)
+        .expect("mesh material assignment succeeds");
+    assert_scene_changed(&mut renderer, &scene, camera);
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("mesh scene re-prepares after material change");
+    scene
+        .interaction_mut()
+        .set_hover(Some(HitTarget::Node(mesh)));
+    assert_scene_changed(&mut renderer, &scene, camera);
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("mesh scene re-prepares after hover change");
+    scene
+        .interaction_mut()
+        .set_primary_selection(Some(HitTarget::Node(mesh)));
+    assert_scene_changed(&mut renderer, &scene, camera);
+}
+
+#[test]
 fn scene_instantiate_creates_import_hierarchy_and_name_lookups() {
     let assets = Assets::new();
     let scene_asset = pollster::block_on(assets.load_scene("tests/assets/gltf/minimal_scene.gltf"))
@@ -1499,6 +1720,18 @@ fn assert_vec3_near(actual: Vec3, expected: Vec3) {
     );
 }
 
+fn assert_scene_changed(renderer: &mut Renderer, scene: &Scene, camera: scena::CameraKey) {
+    assert!(matches!(
+        renderer.render(scene, camera),
+        Err(RenderError::NotPrepared {
+            reason: NotPreparedReason::SceneChanged {
+                change: ChangeKind::SceneStructure,
+                ..
+            },
+        })
+    ));
+}
+
 fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
     let tx = 2.0 * (rotation.y * vector.z - rotation.z * vector.y);
     let ty = 2.0 * (rotation.z * vector.x - rotation.x * vector.z);
@@ -1517,6 +1750,37 @@ fn normalize(value: Vec3) -> Vec3 {
 
 fn sub_vec3(left: Vec3, right: Vec3) -> Vec3 {
     Vec3::new(left.x - right.x, left.y - right.y, left.z - right.z)
+}
+
+fn cross_vec3(left: Vec3, right: Vec3) -> Vec3 {
+    Vec3::new(
+        left.y * right.z - left.z * right.y,
+        left.z * right.x - left.x * right.z,
+        left.x * right.y - left.y * right.x,
+    )
+}
+
+fn dot_vec3(left: Vec3, right: Vec3) -> f32 {
+    left.x * right.x + left.y * right.y + left.z * right.z
+}
+
+fn scene_with_renderable() -> (Scene, scena::CameraKey, scena::NodeKey) {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    let target = scene
+        .add_renderable(
+            scene.root(),
+            vec![Primitive::unlit_triangle()],
+            Transform::default(),
+        )
+        .expect("renderable inserts");
+    (scene, camera, target)
 }
 
 fn fullscreen_triangle_geometry() -> GeometryDesc {

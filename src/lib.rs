@@ -27,9 +27,10 @@ pub use assets::{
 };
 pub use diagnostics::{
     AlphaPipelineStatus, AssetError, Backend, BuildError, Capabilities, CapabilityStatus,
-    ChangeKind, DevicePoll, Diagnostic, DiagnosticCode, DiagnosticSeverity, Error, ImportError,
-    InstantiateError, LookupError, NotPreparedReason, OutputStageStatus, PrepareError, RenderError,
-    RenderOutcome, RendererStats,
+    ChangeKind, DevicePoll, Diagnostic, DiagnosticCode, DiagnosticSeverity, Error,
+    ImportDiagnosticOverlay, ImportDiagnosticOverlayKind, ImportError, InstantiateError,
+    LookupError, NotPreparedReason, OutputStageStatus, PrepareError, RenderError, RenderOutcome,
+    RendererStats,
 };
 pub use geometry::{
     Aabb, GeometryDesc, GeometryError, GeometryTopology, GeometryVertex, Primitive, Vertex,
@@ -45,11 +46,12 @@ pub use platform::{PlatformSurface, SurfaceEvent, SurfaceKind, SurfaceSize};
 pub use render::{OffscreenTarget, PixelReadback, Renderer, Tonemapper};
 pub use scene::{
     Angle, Camera, CameraKey, ClippingPlane, ClippingPlaneKey, ClippingPlaneSet, DepthRange,
-    DirectionalLight, ImportAnchor, ImportClip, ImportOptions, Instance, InstanceCullingPolicy,
-    InstanceId, InstanceSet, InstanceSetKey, LabelBillboard, LabelDesc, LabelKey,
-    LabelRasterization, Light, LightBuilder, LightKey, MeshBuilder, MeshNode, ModelBuilder,
-    ModelNode, Node, NodeKey, NodeKind, OrthographicCamera, PerspectiveCamera, PointLight, Quat,
-    Scene, SceneImport, SourceCoordinateSystem, SourceUnits, SpotLight, Transform, Vec3,
+    DirectionalLight, ImportAnchor, ImportClip, ImportOptions, ImportPivot, Instance,
+    InstanceCullingPolicy, InstanceId, InstanceSet, InstanceSetKey, LabelBillboard, LabelDesc,
+    LabelKey, LabelRasterization, Light, LightBuilder, LightKey, MeshBuilder, MeshNode,
+    ModelBuilder, ModelNode, Node, NodeKey, NodeKind, OrthographicCamera, PerspectiveCamera,
+    PointLight, Quat, Scene, SceneImport, SourceCoordinateSystem, SourceUnits, SpotLight,
+    Transform, Vec3,
 };
 
 /// Crate-level result type for APIs that can return any structured `scena` error.
