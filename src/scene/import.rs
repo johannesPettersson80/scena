@@ -200,6 +200,12 @@ impl Scene {
         });
         let mut anchor_names = BTreeSet::new();
         for anchor in source_node.anchors() {
+            if let Some(reason) = anchor.invalid_reason() {
+                return Err(InstantiateError::InvalidAnchorExtras {
+                    node: source_node.name().unwrap_or("<unnamed>").to_string(),
+                    reason: reason.to_string(),
+                });
+            }
             if !anchor_names.insert(anchor.name()) {
                 return Err(InstantiateError::InvalidAnchorExtras {
                     node: source_node.name().unwrap_or("<unnamed>").to_string(),

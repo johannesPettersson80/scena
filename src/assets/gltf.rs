@@ -8,11 +8,13 @@ use crate::material::Color;
 use crate::scene::{Angle, DirectionalLight, Light, PointLight, Quat, SpotLight, Transform, Vec3};
 
 use self::accessor::{parse_accessors, parse_buffer_views, parse_buffers};
+use self::anchors::parse_node_anchors;
 use self::glb::{is_glb, parse_glb};
 use self::read::{parse_materials, parse_meshes, parse_textures};
 use super::{AssetPath, AssetStorage, GeometryHandle, MaterialHandle};
 
 mod accessor;
+mod anchors;
 mod glb;
 mod read;
 
@@ -54,6 +56,7 @@ pub struct SceneAssetMesh {
 pub struct SceneAssetAnchor {
     name: String,
     transform: Transform,
+    invalid_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -249,6 +252,10 @@ impl SceneAssetAnchor {
     pub fn transform(&self) -> Transform {
         self.transform
     }
+
+    pub(crate) fn invalid_reason(&self) -> Option<&str> {
+        self.invalid_reason.as_deref()
+    }
 }
 
 impl SceneAssetLight {
@@ -405,26 +412,6 @@ fn color3_field(value: &JsonValue, field: &str, fallback: Color) -> Color {
     )
 }
 
-fn parse_node_anchors(node: &JsonValue) -> Vec<SceneAssetAnchor> {
-    node.get("extras")
-        .and_then(|extras| extras.get("scena"))
-        .and_then(|scena| scena.get("anchors"))
-        .and_then(JsonValue::as_array)
-        .map(|anchors| {
-            anchors
-                .iter()
-                .filter_map(|anchor| {
-                    let name = anchor.get("name").and_then(JsonValue::as_str)?;
-                    Some(SceneAssetAnchor {
-                        name: name.to_string(),
-                        transform: parse_node_transform(anchor),
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 fn parse_gltf_clips(json: &JsonValue) -> Vec<SceneAssetClip> {
     json.get("animations")
         .and_then(JsonValue::as_array)
@@ -442,7 +429,7 @@ fn parse_gltf_clips(json: &JsonValue) -> Vec<SceneAssetClip> {
         .unwrap_or_default()
 }
 
-fn parse_node_transform(node: &JsonValue) -> Transform {
+pub(super) fn parse_node_transform(node: &JsonValue) -> Transform {
     Transform {
         translation: vec3_field(node, "translation", Vec3::ZERO),
         rotation: quat_field(node, "rotation", Quat::IDENTITY),

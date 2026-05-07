@@ -2160,6 +2160,7 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub fn transform(&self)",
             "pub fn mesh(&self)",
             "pub fn anchors(&self)",
+            "pub(crate) fn invalid_reason",
             "pub fn clips(&self)",
             "pub fn light(&self)",
             "pub const fn bounds",
@@ -2174,6 +2175,19 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "KHR_materials_emissive_strength",
             "KHR_texture_transform",
             "KHR_mesh_quantization",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/assets/gltf/anchors.rs",
+        &[
+            "pub(super) fn parse_node_anchors",
+            "validate_anchor_extras",
+            "validate_number_array",
+            "anchor rotation quaternion must be normalized",
+            "anchor scale components must not be zero",
         ],
     );
     require_contains(
@@ -2458,6 +2472,8 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "import_options_apply_gltf_node_transforms_and_source_units",
             "scene_import_reports_local_and_world_bounds_for_imported_meshes",
             "scene_import_anchor_lookups_parse_gltf_extras_and_stale",
+            "scene_import_rejects_duplicate_anchor_names_on_same_host",
+            "scene_import_rejects_invalid_anchor_extras_data",
             "scene_import_clip_lookups_are_import_local_and_stale",
             "gltf_required_punctual_lights_instantiate_as_scene_lights",
             "obj_feature_load_geometry_parses_triangle_faces",

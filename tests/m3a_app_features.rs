@@ -3,10 +3,10 @@
 use scena::{
     Aabb, AssetError, AssetFetcher, AssetPath, Assets, BuildError, Camera, ChangeKind, Color,
     CursorPosition, GeometryDesc, GeometryTopology, GeometryVertex, HitTarget, ImportOptions,
-    InstanceCullingPolicy, InteractionStyle, LabelBillboard, LabelDesc, LabelRasterization,
-    LookupError, MaterialDesc, MaterialKind, NodeKind, NotPreparedReason, OffscreenTarget,
-    PerspectiveCamera, Primitive, Quat, RenderError, Renderer, Scene, SourceCoordinateSystem,
-    SourceUnits, Transform, Vec3, Viewport,
+    InstanceCullingPolicy, InstantiateError, InteractionStyle, LabelBillboard, LabelDesc,
+    LabelRasterization, LookupError, MaterialDesc, MaterialKind, NodeKind, NotPreparedReason,
+    OffscreenTarget, PerspectiveCamera, Primitive, Quat, RenderError, Renderer, Scene,
+    SourceCoordinateSystem, SourceUnits, Transform, Vec3, Viewport,
 };
 use std::future::{Ready, ready};
 use std::sync::{
@@ -296,6 +296,92 @@ fn scene_import_anchor_lookups_parse_gltf_extras_and_stale() {
         import.anchor("inspect"),
         Err(LookupError::StaleImport)
     ));
+}
+
+#[test]
+fn scene_import_rejects_duplicate_anchor_names_on_same_host() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(
+        "memory://duplicate-anchor.gltf",
+        r#"{
+            "asset": { "version": "2.0" },
+            "nodes": [
+                {
+                    "name": "Root",
+                    "extras": {
+                        "scena": {
+                            "anchors": [
+                                { "name": "mount" },
+                                { "name": "mount", "translation": [1.0, 0.0, 0.0] }
+                            ]
+                        }
+                    }
+                }
+            ]
+        }"#,
+    ));
+    let scene_asset = pollster::block_on(assets.load_scene("memory://duplicate-anchor.gltf"))
+        .expect("duplicate-anchor glTF parses before instantiate validation");
+    let mut scene = Scene::new();
+
+    let error = scene
+        .instantiate(&scene_asset)
+        .expect_err("duplicate same-host anchors are rejected");
+
+    assert!(matches!(
+        error,
+        InstantiateError::InvalidAnchorExtras { ref node, ref reason }
+            if node == "Root" && reason.contains("duplicate anchor 'mount'")
+    ));
+}
+
+#[test]
+fn scene_import_rejects_invalid_anchor_extras_data() {
+    for (suffix, anchor_json, reason_fragment) in [
+        ("blank-name", r#"{ "name": "   " }"#, "name"),
+        (
+            "bad-rotation",
+            r#"{ "name": "bad-rotation", "rotation": [0.0, 0.0, 0.0, 2.0] }"#,
+            "normalized",
+        ),
+        (
+            "zero-scale",
+            r#"{ "name": "zero-scale", "scale": [1.0, 0.0, 1.0] }"#,
+            "scale",
+        ),
+    ] {
+        let path = format!("memory://invalid-anchor-{suffix}.gltf");
+        let source = format!(
+            r#"{{
+                "asset": {{ "version": "2.0" }},
+                "nodes": [
+                    {{
+                        "name": "Root",
+                        "extras": {{
+                            "scena": {{
+                                "anchors": [
+                                    {anchor_json}
+                                ]
+                            }}
+                        }}
+                    }}
+                ]
+            }}"#
+        );
+        let assets = Assets::with_fetcher(MemoryFetcher::new(path.as_str(), source));
+        let scene_asset = pollster::block_on(assets.load_scene(path.as_str()))
+            .expect("invalid anchor glTF loads");
+        let mut scene = Scene::new();
+
+        let error = scene
+            .instantiate(&scene_asset)
+            .expect_err("invalid anchor extras are rejected during instantiation");
+
+        assert!(matches!(
+            error,
+            InstantiateError::InvalidAnchorExtras { ref node, ref reason }
+                if node == "Root" && reason.contains(reason_fragment)
+        ));
+    }
 }
 
 #[test]
