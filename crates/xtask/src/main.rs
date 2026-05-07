@@ -1012,12 +1012,20 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "ARCH-RENDER-STATS",
         "src/render/prepare.rs",
         &[
-            "pub(super) struct PreparedLogicalResourceStats",
             "pub(super) struct PreparedEnvironmentStats",
             "pub(super) struct PreparedDepthStats",
-            "pub(super) fn collect_logical_resource_stats",
             "pub(super) fn collect_environment_prepare_stats",
             "pub(super) fn collect_depth_prepass_stats",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STATS",
+        "src/render/prepare/resources.rs",
+        &[
+            "pub(in crate::render) struct PreparedLogicalResourceStats",
+            "pub(in crate::render) fn collect_logical_resource_stats",
             "material.base_color_texture()",
             "live_logical_handles",
         ],
@@ -2180,9 +2188,11 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "src/scene.rs",
         &[
             "mod import;",
+            "mod instances;",
             "mod picking;",
             "mod view;",
             "ImportOptions",
+            "InstanceSetKey",
             "SceneImport",
         ],
     );
@@ -2203,6 +2213,24 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "ARCH-M3A-SCENE-IMPORT",
+        "src/scene/instances.rs",
+        &[
+            "pub struct InstanceId",
+            "pub enum InstanceCullingPolicy",
+            "CpuBoundingBoxFallback",
+            "pub struct InstanceSet",
+            "pub fn add_instance_set",
+            "pub fn reserve_instances",
+            "pub fn push_instance",
+            "pub fn remove_instance",
+            "pub fn clear_instances",
+            "pub fn instances(&self)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
         "src/picking.rs",
         &[
             "pub struct CursorPosition",
@@ -2215,6 +2243,18 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "set_primary_selection",
             "pub(crate) fn pick_scene",
             "HitTarget::Node",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/render/prepare.rs",
+        &[
+            "scene.instance_set_nodes()",
+            "compose_transform",
+            "instance_set.geometry()",
+            "instance_set.material()",
         ],
     );
     require_contains(
@@ -2313,6 +2353,8 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "scene_import_reports_local_and_world_bounds_for_imported_meshes",
             "scene_pick_returns_typed_hit_target_for_renderable_triangle",
             "interaction_context_and_renderer_styles_are_explicit",
+            "instance_sets_have_stable_ids_mutations_and_cpu_fallback",
+            "InstanceCullingPolicy::CpuBoundingBoxFallback",
             "mesh_material_vertex_color_scene.gltf",
             "transform_options_scene.gltf",
             "ImportOptions::gltf_default",

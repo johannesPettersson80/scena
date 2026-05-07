@@ -2,8 +2,9 @@
 
 use scena::{
     Aabb, AssetError, AssetFetcher, AssetPath, Assets, Camera, ChangeKind, Color, CursorPosition,
-    GeometryTopology, HitTarget, ImportOptions, InteractionStyle, LookupError, MaterialKind,
-    NodeKind, NotPreparedReason, PerspectiveCamera, Primitive, Quat, RenderError, Renderer, Scene,
+    GeometryDesc, GeometryTopology, GeometryVertex, HitTarget, ImportOptions,
+    InstanceCullingPolicy, InteractionStyle, LookupError, MaterialDesc, MaterialKind, NodeKind,
+    NotPreparedReason, PerspectiveCamera, Primitive, Quat, RenderError, Renderer, Scene,
     SourceCoordinateSystem, SourceUnits, Transform, Vec3, Viewport,
 };
 use std::future::{Ready, ready};
@@ -251,6 +252,109 @@ fn interaction_context_and_renderer_styles_are_explicit() {
 
     assert_eq!(renderer.hover_style(), hover);
     assert_eq!(renderer.selection_style(), selection);
+}
+
+#[test]
+fn instance_sets_have_stable_ids_mutations_and_cpu_fallback() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(fullscreen_triangle_geometry());
+    let material =
+        assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(0.0, 1.0, 0.0)));
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    let set = scene
+        .add_instance_set(scene.root(), geometry, material, Transform::default())
+        .expect("instance set inserts");
+
+    assert_eq!(
+        scene
+            .instance_set(set)
+            .expect("instance set exists")
+            .culling_policy(),
+        InstanceCullingPolicy::CpuBoundingBoxFallback
+    );
+
+    scene
+        .reserve_instances(set, 2)
+        .expect("instance reserve succeeds");
+    let first = scene
+        .push_instance(
+            set,
+            Transform {
+                translation: Vec3::new(-0.25, 0.0, 0.0),
+                ..Transform::default()
+            },
+        )
+        .expect("first instance inserts");
+    let second = scene
+        .push_instance(
+            set,
+            Transform {
+                translation: Vec3::new(0.25, 0.0, 0.0),
+                ..Transform::default()
+            },
+        )
+        .expect("second instance inserts");
+
+    assert_ne!(first, second);
+    assert!(scene.instance_set(set).expect("set exists").contains(first));
+    assert_eq!(
+        scene
+            .instance_set(set)
+            .expect("set exists")
+            .instances()
+            .map(|instance| instance.id())
+            .collect::<Vec<_>>(),
+        vec![first, second]
+    );
+
+    let removed = scene
+        .remove_instance(set, first)
+        .expect("remove lookup succeeds")
+        .expect("first instance is removed");
+    assert_eq!(removed.id(), first);
+    let third = scene
+        .push_instance(set, Transform::default())
+        .expect("third instance inserts");
+    assert_ne!(third, first);
+    assert_eq!(
+        scene
+            .instance_set(set)
+            .expect("set exists")
+            .instances()
+            .map(|instance| instance.id())
+            .collect::<Vec<_>>(),
+        vec![second, third]
+    );
+
+    let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("instanced scene prepares");
+    let outcome = renderer
+        .render(&scene, camera)
+        .expect("instanced scene renders");
+    assert_eq!(outcome.primitives, 2);
+    assert_eq!(renderer.stats().draw_calls, 2);
+    assert!(renderer.frame_rgba8().iter().any(|channel| *channel != 0));
+
+    scene.clear_instances(set).expect("clear succeeds");
+    assert!(scene.instance_set(set).expect("set exists").is_empty());
+    assert!(matches!(
+        renderer.render(&scene, camera),
+        Err(RenderError::NotPrepared {
+            reason: NotPreparedReason::SceneChanged {
+                change: ChangeKind::SceneStructure,
+                ..
+            },
+        })
+    ));
 }
 
 #[test]
@@ -555,6 +659,28 @@ fn normalize(value: Vec3) -> Vec3 {
 
 fn sub_vec3(left: Vec3, right: Vec3) -> Vec3 {
     Vec3::new(left.x - right.x, left.y - right.y, left.z - right.z)
+}
+
+fn fullscreen_triangle_geometry() -> GeometryDesc {
+    GeometryDesc::try_new(
+        GeometryTopology::Triangles,
+        vec![
+            GeometryVertex {
+                position: Vec3::new(-1.0, -1.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            GeometryVertex {
+                position: Vec3::new(3.0, -1.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            GeometryVertex {
+                position: Vec3::new(-1.0, 3.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+        ],
+        vec![0, 1, 2],
+    )
+    .expect("fullscreen triangle geometry is valid")
 }
 
 #[derive(Clone)]

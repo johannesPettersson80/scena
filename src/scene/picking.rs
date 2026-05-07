@@ -23,6 +23,7 @@ impl Scene {
                 NodeKind::Empty
                 | NodeKind::Mesh(_)
                 | NodeKind::Model(_)
+                | NodeKind::InstanceSet(_)
                 | NodeKind::Camera(_)
                 | NodeKind::Light(_) => None,
             })

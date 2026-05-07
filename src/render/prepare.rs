@@ -1,18 +1,22 @@
-use std::collections::HashSet;
-
 use crate::assets::{Assets, EnvironmentDesc};
 use crate::diagnostics::{
     Backend, Capabilities, CapabilityStatus, Diagnostic, DiagnosticCode, PrepareError,
 };
 use crate::geometry::{GeometryDesc, GeometryTopology, Primitive, Vertex};
 use crate::material::{AlphaMode, MaterialDesc, MaterialKind};
-use crate::scene::{Camera, Light, NodeKey, Quat, Scene, Transform, Vec3};
+use crate::scene::{Camera, Light, NodeKey, Scene, Transform, Vec3};
 
 use self::lighting::{PreparedLights, material_color};
+pub(super) use self::resources::collect_logical_resource_stats;
+use self::transforms::{
+    compose_transform, subtract_vec3, transform_normal, transform_position, transform_primitive,
+};
 use super::RasterTarget;
 
 mod lighting;
+mod resources;
 mod strokes;
+mod transforms;
 
 pub(super) const DIRECTIONAL_SHADOW_PCF_KERNEL: u8 = 3;
 
@@ -88,6 +92,42 @@ pub(super) fn collect_prepared_primitives<F>(
             &mut primitives,
             &mut transparent_primitives,
         )?;
+    }
+
+    for (node, instance_set, node_transform) in scene.instance_set_nodes() {
+        let Some(assets) = assets else {
+            return Err(PrepareError::AssetsRequired { node });
+        };
+        let geometry =
+            assets
+                .geometry(instance_set.geometry())
+                .ok_or(PrepareError::GeometryNotFound {
+                    node,
+                    geometry: instance_set.geometry(),
+                })?;
+        let material =
+            assets
+                .material(instance_set.material())
+                .ok_or(PrepareError::MaterialNotFound {
+                    node,
+                    material: instance_set.material(),
+                })?;
+
+        for instance in instance_set.instances() {
+            append_geometry_primitives(
+                node,
+                &geometry,
+                &material,
+                PrimitiveBakeParams {
+                    target,
+                    transform: compose_transform(node_transform, instance.transform()),
+                    origin_shift,
+                    lights: &lights,
+                },
+                &mut primitives,
+                &mut transparent_primitives,
+            )?;
+        }
     }
 
     // Descending depth: larger local-space z is treated as farther for the M1 foundation.
@@ -224,62 +264,6 @@ pub(super) fn collect_environment_prepare_stats(
             brdf_luts: 1,
         },
         Some(_) | None => PreparedEnvironmentStats::default(),
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(super) struct PreparedLogicalResourceStats {
-    pub(super) materials: u64,
-    pub(super) textures: u64,
-    pub(super) environments: u64,
-    pub(super) live_logical_handles: u64,
-}
-
-pub(super) fn collect_logical_resource_stats<F>(
-    scene: &Scene,
-    assets: Option<&Assets<F>>,
-    environment_count: u64,
-) -> PreparedLogicalResourceStats {
-    let mut geometries = HashSet::new();
-    let mut materials = HashSet::new();
-    let mut textures = HashSet::new();
-
-    for (_node, mesh, _transform) in scene.mesh_nodes() {
-        geometries.insert(mesh.geometry());
-        materials.insert(mesh.material());
-
-        let Some(assets) = assets else {
-            continue;
-        };
-        let Some(material) = assets.material(mesh.material()) else {
-            continue;
-        };
-        for texture in [
-            material.base_color_texture(),
-            material.normal_texture(),
-            material.metallic_roughness_texture(),
-            material.occlusion_texture(),
-            material.emissive_texture(),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            if assets.texture(texture).is_some() {
-                textures.insert(texture);
-            }
-        }
-    }
-
-    let materials = materials.len() as u64;
-    let textures = textures.len() as u64;
-    let environments = environment_count;
-    let live_logical_handles = geometries.len() as u64 + materials + textures + environments;
-
-    PreparedLogicalResourceStats {
-        materials,
-        textures,
-        environments,
-        live_logical_handles,
     }
 }
 
@@ -457,89 +441,4 @@ fn average_depth(primitive: &Primitive) -> f32 {
     // sorting remain separate dirty-state work.
     let vertices = primitive.vertices();
     (vertices[0].position.z + vertices[1].position.z + vertices[2].position.z) / 3.0
-}
-
-fn transform_primitive(
-    primitive: &Primitive,
-    transform: Transform,
-    origin_shift: Vec3,
-) -> Primitive {
-    let [a, b, c] = primitive.vertices();
-    Primitive::triangle([
-        transform_vertex(*a, transform, origin_shift),
-        transform_vertex(*b, transform, origin_shift),
-        transform_vertex(*c, transform, origin_shift),
-    ])
-}
-
-fn transform_vertex(vertex: Vertex, transform: Transform, origin_shift: Vec3) -> Vertex {
-    Vertex {
-        position: transform_position(vertex.position, transform, origin_shift),
-        color: vertex.color,
-    }
-}
-
-fn transform_position(position: Vec3, transform: Transform, origin_shift: Vec3) -> Vec3 {
-    let scaled = Vec3::new(
-        position.x * transform.scale.x,
-        position.y * transform.scale.y,
-        position.z * transform.scale.z,
-    );
-    let rotated = rotate_vec3(transform.rotation, scaled);
-    subtract_vec3(add_vec3(rotated, transform.translation), origin_shift)
-}
-
-fn transform_normal(normal: Vec3, transform: Transform) -> Vec3 {
-    normalize_or(
-        rotate_vec3(transform.rotation, normal),
-        Vec3::new(0.0, 0.0, 1.0),
-    )
-}
-
-fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
-    let length_squared = rotation.x * rotation.x
-        + rotation.y * rotation.y
-        + rotation.z * rotation.z
-        + rotation.w * rotation.w;
-    if length_squared <= f32::EPSILON || !length_squared.is_finite() {
-        return vector;
-    }
-    let inverse_length = length_squared.sqrt().recip();
-    let qx = rotation.x * inverse_length;
-    let qy = rotation.y * inverse_length;
-    let qz = rotation.z * inverse_length;
-    let qw = rotation.w * inverse_length;
-    let tx = 2.0 * (qy * vector.z - qz * vector.y);
-    let ty = 2.0 * (qz * vector.x - qx * vector.z);
-    let tz = 2.0 * (qx * vector.y - qy * vector.x);
-    Vec3::new(
-        vector.x + qw * tx + (qy * tz - qz * ty),
-        vector.y + qw * ty + (qz * tx - qx * tz),
-        vector.z + qw * tz + (qx * ty - qy * tx),
-    )
-}
-
-fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(left.x + right.x, left.y + right.y, left.z + right.z)
-}
-
-fn subtract_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(left.x - right.x, left.y - right.y, left.z - right.z)
-}
-
-fn dot_vec3(left: Vec3, right: Vec3) -> f32 {
-    left.x * right.x + left.y * right.y + left.z * right.z
-}
-
-fn length_vec3(vector: Vec3) -> f32 {
-    dot_vec3(vector, vector).sqrt()
-}
-
-fn normalize_or(vector: Vec3, fallback: Vec3) -> Vec3 {
-    let length = length_vec3(vector);
-    if length <= f32::EPSILON || !length.is_finite() {
-        fallback
-    } else {
-        Vec3::new(vector.x / length, vector.y / length, vector.z / length)
-    }
 }

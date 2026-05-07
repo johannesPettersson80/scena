@@ -11,13 +11,16 @@ use crate::diagnostics::LookupError;
 use crate::geometry::Primitive;
 use crate::picking::InteractionContext;
 
+mod builders;
 mod camera;
 mod import;
+mod instances;
 mod lights;
 mod picking;
 mod view;
 pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
 pub use import::{ImportOptions, SceneImport, SourceCoordinateSystem, SourceUnits};
+pub use instances::{Instance, InstanceCullingPolicy, InstanceId, InstanceSet};
 pub use lights::{DirectionalLight, Light, LightBuilder, PointLight, SpotLight};
 
 new_key_type! {
@@ -25,6 +28,7 @@ new_key_type! {
     pub struct CameraKey;
     pub struct LightKey;
     pub struct ClippingPlaneKey;
+    pub struct InstanceSetKey;
 }
 
 #[derive(Debug)]
@@ -33,6 +37,7 @@ pub struct Scene {
     nodes: SlotMap<NodeKey, Node>,
     cameras: SlotMap<CameraKey, Camera>,
     lights: SlotMap<LightKey, Light>,
+    instance_sets: SlotMap<InstanceSetKey, InstanceSet>,
     clipping_planes: SlotMap<ClippingPlaneKey, ClippingPlane>,
     active_clipping_planes: ClippingPlaneSet,
     origin_shift: Vec3,
@@ -57,6 +62,7 @@ pub enum NodeKind {
     Renderable(RenderableNode),
     Mesh(MeshNode),
     Model(ModelNode),
+    InstanceSet(InstanceSetKey),
     Camera(CameraKey),
     Light(LightKey),
 }
@@ -143,6 +149,7 @@ impl Scene {
             nodes,
             cameras: SlotMap::with_key(),
             lights: SlotMap::with_key(),
+            instance_sets: SlotMap::with_key(),
             clipping_planes: SlotMap::with_key(),
             active_clipping_planes: ClippingPlaneSet::new(),
             origin_shift: Vec3::ZERO,
@@ -309,6 +316,7 @@ impl Scene {
             NodeKind::Empty
             | NodeKind::Mesh(_)
             | NodeKind::Model(_)
+            | NodeKind::InstanceSet(_)
             | NodeKind::Camera(_)
             | NodeKind::Light(_) => None,
         })
@@ -320,8 +328,22 @@ impl Scene {
             NodeKind::Empty
             | NodeKind::Renderable(_)
             | NodeKind::Model(_)
+            | NodeKind::InstanceSet(_)
             | NodeKind::Camera(_)
             | NodeKind::Light(_) => None,
+        })
+    }
+
+    pub(crate) fn instance_set_nodes(
+        &self,
+    ) -> impl Iterator<Item = (NodeKey, &InstanceSet, Transform)> + '_ {
+        self.nodes.iter().filter_map(|(node_key, node)| {
+            let NodeKind::InstanceSet(instance_set) = node.kind else {
+                return None;
+            };
+            self.instance_sets
+                .get(instance_set)
+                .map(|instance_set| (node_key, instance_set, node.transform))
         })
     }
 
@@ -331,6 +353,7 @@ impl Scene {
             NodeKind::Empty
             | NodeKind::Renderable(_)
             | NodeKind::Mesh(_)
+            | NodeKind::InstanceSet(_)
             | NodeKind::Camera(_)
             | NodeKind::Light(_) => None,
         })
@@ -463,58 +486,6 @@ impl ModelNode {
     /// Returns the typed model handle referenced by this model node.
     pub const fn model(&self) -> ModelHandle {
         self.model
-    }
-}
-
-impl MeshBuilder<'_> {
-    /// Overrides the parent node. The parent is validated when [`Self::add`] is called.
-    pub fn parent(mut self, parent: NodeKey) -> Self {
-        self.parent = parent;
-        self
-    }
-
-    /// Overrides the local transform. The default is [`Transform::IDENTITY`].
-    ///
-    /// Mesh geometry is transformed during render preparation, including the active scene
-    /// origin shift used for large-scene precision.
-    pub fn transform(mut self, transform: Transform) -> Self {
-        self.transform = transform;
-        self
-    }
-
-    /// Inserts the mesh node and returns its typed node key.
-    pub fn add(self) -> Result<NodeKey, LookupError> {
-        self.scene.insert_node(
-            self.parent,
-            NodeKind::Mesh(MeshNode {
-                geometry: self.geometry,
-                material: self.material,
-            }),
-            self.transform,
-        )
-    }
-}
-
-impl ModelBuilder<'_> {
-    /// Overrides the parent node. The parent is validated when [`Self::add`] is called.
-    pub fn parent(mut self, parent: NodeKey) -> Self {
-        self.parent = parent;
-        self
-    }
-
-    /// Overrides the local transform. The default is [`Transform::IDENTITY`].
-    pub fn transform(mut self, transform: Transform) -> Self {
-        self.transform = transform;
-        self
-    }
-
-    /// Inserts the model node and returns its typed node key.
-    pub fn add(self) -> Result<NodeKey, LookupError> {
-        self.scene.insert_node(
-            self.parent,
-            NodeKind::Model(ModelNode { model: self.model }),
-            self.transform,
-        )
     }
 }
 
