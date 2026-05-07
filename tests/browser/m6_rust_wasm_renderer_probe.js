@@ -68,6 +68,29 @@ const STATE_LIFECYCLE_EVENTS = [
   "context-recovery",
 ];
 
+function configuredBackends() {
+  return (process.env.SCENA_BROWSER_BACKENDS || "webgl2,webgpu")
+    .split(",")
+    .map((backend) => backend.trim())
+    .filter(Boolean);
+}
+
+function unavailableResult(backend, error) {
+  return {
+    backend,
+    status: "unavailable",
+    error: String(error && error.message ? error.message : error),
+  };
+}
+
+function isAllowedUnavailable(backend, error) {
+  if (process.env.SCENA_BROWSER_ALLOW_UNAVAILABLE !== "1") {
+    return false;
+  }
+  const message = String(error && error.message ? error.message : error);
+  return backend === "webgpu" && message.includes("NoAdapter");
+}
+
 function assertStateLifecycleProbe(backend, result) {
   const events = new Set(result.event_sequence || []);
   for (const event of STATE_LIFECYCLE_EVENTS) {
@@ -129,7 +152,7 @@ async function main() {
   ];
   const results = [];
   try {
-    for (const backend of ["webgl2", "webgpu"]) {
+    for (const backend of configuredBackends()) {
       const page = await browser.newPage({ viewport: { width: 96, height: 96 } });
       const consoleMessages = [];
       page.on("console", (message) => {
@@ -141,61 +164,72 @@ async function main() {
         }
         throw error;
       });
-      await page.goto(url);
-      const result = await page.evaluate((name) => window.scenaM6RustWasmRendererProbe(name), backend);
-      results.push(result);
-      if (result.status !== "passed") {
-        throw new Error(`${backend} Rust/WASM renderer probe failed: ${JSON.stringify(result)}`);
-      }
-      for (const workflow of workflows) {
-        let workflowResult;
-        try {
-          workflowResult = await page.evaluate(
-            ({ backend, workflow }) => window.scenaM6RustWasmWorkflowProbe(backend, workflow),
-            { backend, workflow },
-          );
-        } catch (error) {
-          throw new Error(`${backend} ${workflow}: ${error.message}`);
+      try {
+        await page.goto(url);
+        const result = await page.evaluate(
+          (name) => window.scenaM6RustWasmRendererProbe(name),
+          backend,
+        );
+        results.push(result);
+        if (result.status !== "passed") {
+          throw new Error(`${backend} Rust/WASM renderer probe failed: ${JSON.stringify(result)}`);
         }
-        results.push(workflowResult);
-        if (workflowResult.status !== "passed") {
+        for (const workflow of workflows) {
+          let workflowResult;
+          try {
+            workflowResult = await page.evaluate(
+              ({ backend, workflow }) => window.scenaM6RustWasmWorkflowProbe(backend, workflow),
+              { backend, workflow },
+            );
+          } catch (error) {
+            throw new Error(`${backend} ${workflow}: ${error.message}`);
+          }
+          results.push(workflowResult);
+          if (workflowResult.status !== "passed") {
+            throw new Error(
+              `${backend} ${workflow} Rust/WASM renderer probe failed: ${JSON.stringify(workflowResult)}`,
+            );
+          }
+        }
+        const lifecycleResult = await page.evaluate(
+          (name) => window.scenaM6RustWasmLifecycleProbe(name),
+          backend,
+        );
+        results.push(lifecycleResult);
+        if (lifecycleResult.status !== "passed") {
           throw new Error(
-            `${backend} ${workflow} Rust/WASM renderer probe failed: ${JSON.stringify(workflowResult)}`,
+            `${backend} surface/context lifecycle probe failed: ${JSON.stringify(lifecycleResult)}`,
           );
         }
-      }
-      const lifecycleResult = await page.evaluate(
-        (name) => window.scenaM6RustWasmLifecycleProbe(name),
-        backend,
-      );
-      results.push(lifecycleResult);
-      if (lifecycleResult.status !== "passed") {
-        throw new Error(
-          `${backend} surface/context lifecycle probe failed: ${JSON.stringify(lifecycleResult)}`,
+        const benchmarkResult = await page.evaluate(
+          (name) => window.scenaM6RustWasmBenchmarkProbe(name),
+          backend,
         );
-      }
-      const benchmarkResult = await page.evaluate(
-        (name) => window.scenaM6RustWasmBenchmarkProbe(name),
-        backend,
-      );
-      results.push(benchmarkResult);
-      if (benchmarkResult.status !== "passed") {
-        throw new Error(
-          `${backend} browser benchmark probe failed: ${JSON.stringify(benchmarkResult)}`,
+        results.push(benchmarkResult);
+        if (benchmarkResult.status !== "passed") {
+          throw new Error(
+            `${backend} browser benchmark probe failed: ${JSON.stringify(benchmarkResult)}`,
+          );
+        }
+        const stateLifecycleResult = await page.evaluate(
+          (name) => window.scenaM6RustWasmStateLifecycleProbe(name),
+          backend,
         );
+        results.push(stateLifecycleResult);
+        if (stateLifecycleResult.status !== "passed") {
+          throw new Error(
+            `${backend} browser state lifecycle probe failed: ${JSON.stringify(stateLifecycleResult)}`,
+          );
+        }
+        assertStateLifecycleProbe(backend, stateLifecycleResult);
+      } catch (error) {
+        if (!isAllowedUnavailable(backend, error)) {
+          throw error;
+        }
+        results.push(unavailableResult(backend, error));
+      } finally {
+        await page.close();
       }
-      const stateLifecycleResult = await page.evaluate(
-        (name) => window.scenaM6RustWasmStateLifecycleProbe(name),
-        backend,
-      );
-      results.push(stateLifecycleResult);
-      if (stateLifecycleResult.status !== "passed") {
-        throw new Error(
-          `${backend} browser state lifecycle probe failed: ${JSON.stringify(stateLifecycleResult)}`,
-        );
-      }
-      assertStateLifecycleProbe(backend, stateLifecycleResult);
-      await page.close();
     }
   } finally {
     await browser.close();
@@ -204,7 +238,7 @@ async function main() {
 
   const artifact = {
     gate: "m6-rust-wasm-renderer-probe",
-    status: "passed",
+    status: results.some((result) => result.status === "unavailable") ? "unavailable" : "passed",
     renderer: "scena Rust/WASM",
     results,
   };

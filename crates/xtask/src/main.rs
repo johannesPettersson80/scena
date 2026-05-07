@@ -299,6 +299,19 @@ fn check_release_artifact_bundle(artifact_root: &Path, findings: &mut Vec<Findin
             ));
         }
     }
+
+    for suffix in REQUIRED_PASSED_STATUS_ARTIFACT_SUFFIXES {
+        let matches = files
+            .iter()
+            .filter(|path| path_ends_with(path, suffix))
+            .collect::<Vec<_>>();
+        if matches.is_empty() {
+            continue;
+        }
+        for path in matches {
+            require_json_status_passed(path, suffix, findings);
+        }
+    }
 }
 
 const REQUIRED_RELEASE_ARTIFACT_SUFFIXES: &[&str] = &[
@@ -328,6 +341,34 @@ const REQUIRED_RELEASE_ARTIFACT_SUFFIXES: &[&str] = &[
     "m9-platform/windows-dx12/default-scene.ppm",
     "m9-platform/windows-dx12/static-gltf.ppm",
 ];
+
+const REQUIRED_PASSED_STATUS_ARTIFACT_SUFFIXES: &[&str] = &[
+    "m6-rust-wasm-renderer-probe.json",
+    "m9-platform/m9-capability-matrix.json",
+];
+
+fn require_json_status_passed(path: &Path, suffix: &str, findings: &mut Vec<Finding>) {
+    let Ok(text) = fs::read_to_string(path) else {
+        findings.push(Finding::new(
+            "RELEASE-READY-ARTIFACTS",
+            format!("could not read downloaded artifact {}", path.display()),
+        ));
+        return;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+        findings.push(Finding::new(
+            "RELEASE-READY-ARTIFACTS",
+            format!("downloaded artifact {} is not valid JSON", path.display()),
+        ));
+        return;
+    };
+    if value.get("status").and_then(serde_json::Value::as_str) != Some("passed") {
+        findings.push(Finding::new(
+            "RELEASE-READY-ARTIFACTS",
+            format!("downloaded release artifact {suffix} does not have status 'passed'"),
+        ));
+    }
+}
 
 fn path_ends_with(path: &Path, suffix: &str) -> bool {
     path.to_string_lossy().replace('\\', "/").ends_with(suffix)
@@ -4573,6 +4614,9 @@ fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Finding>) {
             "/fixtures/",
             "webgl2",
             "webgpu",
+            "SCENA_BROWSER_BACKENDS",
+            "SCENA_BROWSER_ALLOW_UNAVAILABLE",
+            "NoAdapter",
             "m6-rust-wasm-renderer-probe.json",
             "model-viewer",
             "instancing",
@@ -4632,6 +4676,7 @@ fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>) {
             "macos-metal",
             "windows-dx12",
             "dtolnay/rust-toolchain@1.93.1",
+            "components: rustfmt, clippy",
             "node-version: \"20.20.0\"",
             "PLAYWRIGHT_VERSION: \"1.59.1\"",
             "BINARYEN_VERSION: \"129.0.0\"",
@@ -4641,6 +4686,9 @@ fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>) {
             "cargo install wasm-pack --version 0.14.0",
             "npm run wasm:size",
             "cargo test --test m9_platform_release",
+            "SCENA_BROWSER_BACKENDS: webgl2",
+            "SCENA_BROWSER_BACKENDS: webgpu",
+            "SCENA_BROWSER_ALLOW_UNAVAILABLE: \"1\"",
             "cargo run -p xtask -- doctor --full",
             "release-lane-artifact",
             "target/gate-artifacts/**",
@@ -4672,6 +4720,9 @@ fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>) {
             "cargo run -p xtask -- release-readiness",
             "actions/download-artifact@v4",
             "SCENA_RELEASE_ARTIFACT_ROOT",
+            "SCENA_BROWSER_BACKENDS: webgl2",
+            "SCENA_BROWSER_BACKENDS: webgpu",
+            "components: rustfmt, clippy",
             "needs:",
             "release-lane-artifact",
         ],
@@ -6239,6 +6290,29 @@ mod tests {
                 .iter()
                 .any(|finding| finding.message.contains("missing release artifact root")),
             "downloaded release artifact root must be required when configured"
+        );
+    }
+
+    #[test]
+    fn release_readiness_rejects_unavailable_browser_artifact() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let artifact_root = root.join("target/xtask-release-readiness-test/unavailable-browser");
+        let artifact_dir = artifact_root.join("browser");
+        fs::create_dir_all(&artifact_dir).expect("test artifact dir");
+        fs::write(
+            artifact_dir.join("m6-rust-wasm-renderer-probe.json"),
+            r#"{"status":"unavailable"}"#,
+        )
+        .expect("test artifact write");
+        let mut findings = Vec::new();
+
+        check_release_artifact_bundle(&artifact_root, &mut findings);
+
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.message.contains("does not have status 'passed'")),
+            "release readiness must reject unavailable browser proof artifacts"
         );
     }
 

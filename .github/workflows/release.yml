@@ -18,6 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.93.1
+        with:
+          components: rustfmt, clippy
       - name: Native release lane
         run: |
           cargo fmt --check
@@ -40,12 +42,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.93.1
         with:
+          components: rustfmt, clippy
           targets: wasm32-unknown-unknown
       - uses: actions/setup-node@v4
         with:
           node-version: "20.20.0"
           cache: npm
       - name: Browser WebGL2 release lane
+        env:
+          SCENA_BROWSER_BACKENDS: webgl2
         run: |
           npm ci
           npx playwright install chromium --with-deps
@@ -67,12 +72,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.93.1
         with:
+          components: rustfmt, clippy
           targets: wasm32-unknown-unknown
       - uses: actions/setup-node@v4
         with:
           node-version: "20.20.0"
           cache: npm
       - name: Browser WebGPU release lane
+        env:
+          SCENA_BROWSER_BACKENDS: webgpu
         run: |
           npm ci
           npx playwright install chromium --with-deps
@@ -93,6 +101,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.93.1
         with:
+          components: rustfmt, clippy
           targets: wasm32-unknown-unknown
       - uses: actions/setup-node@v4
         with:
@@ -120,6 +129,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.93.1
+        with:
+          components: rustfmt, clippy
       - name: macOS release lane
         run: |
           cargo test --all-targets
@@ -137,6 +148,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.93.1
+        with:
+          components: rustfmt, clippy
       - name: Windows release lane
         run: |
           cargo test --all-targets
@@ -165,6 +178,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.93.1
+        with:
+          components: rustfmt, clippy
       - name: Download release lane artifacts
         uses: actions/download-artifact@v4
         with:

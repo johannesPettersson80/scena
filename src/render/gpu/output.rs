@@ -56,7 +56,7 @@ fn rrt_and_odt_fit(value: f32) -> f32 {
 }
 "#;
 
-pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 16;
+pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 32;
 
 pub(super) fn create_output_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -104,10 +104,28 @@ pub(super) fn encode_output_uniform(exposure_ev: f32) -> [u8; OUTPUT_UNIFORM_BYT
     } else {
         0.0
     };
-    let values = [2.0_f32.powf(exposure_ev), 0.0, 0.0, 0.0];
+    let values = [2.0_f32.powf(exposure_ev), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
     let mut bytes = [0; OUTPUT_UNIFORM_BYTE_LEN as usize];
     for (index, value) in values.into_iter().enumerate() {
         bytes[index * 4..index * 4 + 4].copy_from_slice(&value.to_ne_bytes());
     }
     bytes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_uniform_buffer_matches_wgsl_uniform_layout() {
+        assert_eq!(
+            OUTPUT_UNIFORM_BYTE_LEN, 32,
+            "OutputUniform has an f32 followed by a vec3<f32>; the vec3 starts at 16-byte \
+             alignment and the struct rounds up to 32 bytes on Metal/wgpu"
+        );
+        assert_eq!(
+            encode_output_uniform(0.0).len(),
+            OUTPUT_UNIFORM_BYTE_LEN as usize
+        );
+    }
 }
