@@ -1,4 +1,5 @@
 use crate::assets::EnvironmentHandle;
+use crate::diagnostics::DebugOverlay;
 use crate::picking::InteractionStyle;
 
 use super::{Renderer, Tonemapper};
@@ -94,6 +95,17 @@ impl Renderer {
 
     pub fn set_tonemapper(&mut self, tonemapper: Tonemapper) {
         self.output.set_tonemapper(tonemapper);
+    }
+
+    pub fn debug_overlay(&self) -> DebugOverlay {
+        self.debug_overlay
+    }
+
+    pub fn set_debug(&mut self, overlay: DebugOverlay) {
+        if self.debug_overlay != overlay {
+            self.debug_overlay = overlay;
+            self.debug_revision = self.debug_revision.saturating_add(1);
+        }
     }
 
     pub fn hover_style(&self) -> InteractionStyle {

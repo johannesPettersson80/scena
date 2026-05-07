@@ -16,8 +16,8 @@ mod surface;
 
 use crate::assets::{Assets, EnvironmentHandle};
 use crate::diagnostics::{
-    Backend, Capabilities, ChangeKind, DevicePoll, Diagnostic, NotPreparedReason, PrepareError,
-    RenderError, RenderOutcome, RendererStats,
+    Backend, Capabilities, ChangeKind, DebugOverlay, DevicePoll, Diagnostic, NotPreparedReason,
+    PrepareError, RenderError, RenderOutcome, RendererStats,
 };
 use crate::geometry::Primitive;
 use crate::material::Color;
@@ -50,6 +50,8 @@ pub struct Renderer {
     render_mode: RenderMode,
     render_generation: u64,
     last_rendered_generation: Option<u64>,
+    debug_overlay: DebugOverlay,
+    debug_revision: u64,
     surface_lost: Option<bool>,
     context_lost: Option<bool>,
     device_lost: Option<bool>,
@@ -67,6 +69,7 @@ struct PreparedSceneState {
     structure_revision: u64,
     environment_revision: u64,
     target_revision: u64,
+    debug_revision: u64,
     primitives: Vec<Primitive>,
     clipping_planes: Vec<ClippingPlane>,
 }
@@ -162,6 +165,7 @@ impl Renderer {
             structure_revision: scene.structure_revision(),
             environment_revision: self.environment_revision,
             target_revision: self.target_revision,
+            debug_revision: self.debug_revision,
             primitives,
             clipping_planes: scene.active_clipping_plane_values().collect(),
         });
@@ -358,6 +362,16 @@ impl Renderer {
                     prepared_revision: prepared.target_revision,
                     current_revision: self.target_revision,
                     change: ChangeKind::RenderTarget,
+                },
+            });
+        }
+
+        if prepared.debug_revision != self.debug_revision {
+            return Err(RenderError::NotPrepared {
+                reason: NotPreparedReason::RendererChanged {
+                    prepared_revision: prepared.debug_revision,
+                    current_revision: self.debug_revision,
+                    change: ChangeKind::DebugOverlay,
                 },
             });
         }

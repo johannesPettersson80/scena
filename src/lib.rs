@@ -34,10 +34,10 @@ pub use controls::{
 };
 pub use diagnostics::{
     AlphaPipelineStatus, AnimationError, AssetError, Backend, BuildError, Capabilities,
-    CapabilityStatus, ChangeKind, DevicePoll, Diagnostic, DiagnosticCode, DiagnosticSeverity,
-    Error, HardwareTier, ImportDiagnosticOverlay, ImportDiagnosticOverlayKind, ImportError,
-    InstantiateError, LookupError, NotPreparedReason, OutputStageStatus, PrepareError, RenderError,
-    RenderOutcome, RendererStats,
+    CapabilityStatus, ChangeKind, DebugOverlay, DevicePoll, Diagnostic, DiagnosticCode,
+    DiagnosticSeverity, Error, HardwareTier, ImportDiagnosticOverlay, ImportDiagnosticOverlayKind,
+    ImportError, InstantiateError, LookupError, NotPreparedReason, OutputStageStatus, PrepareError,
+    RenderError, RenderOutcome, RendererStats,
 };
 pub use geometry::{
     Aabb, GeometryDesc, GeometryError, GeometryMorphTarget, GeometrySkin, GeometryTopology,

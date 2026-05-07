@@ -285,6 +285,14 @@ impl fmt::Display for NotPreparedReason {
                 formatter,
                 "render target changed after prepare ({prepared_revision} -> {current_revision}, {change:?})"
             ),
+            Self::RendererChanged {
+                prepared_revision,
+                current_revision,
+                change,
+            } => write!(
+                formatter,
+                "renderer setting changed after prepare ({prepared_revision} -> {current_revision}, {change:?}); call prepare again"
+            ),
         }
     }
 }

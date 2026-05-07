@@ -166,6 +166,11 @@ pub enum NotPreparedReason {
         current_revision: u64,
         change: ChangeKind,
     },
+    RendererChanged {
+        prepared_revision: u64,
+        current_revision: u64,
+        change: ChangeKind,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -173,6 +178,19 @@ pub enum ChangeKind {
     SceneStructure,
     Environment,
     RenderTarget,
+    DebugOverlay,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum DebugOverlay {
+    #[default]
+    None,
+    Wireframe,
+    Normals,
+    BoundingBoxes,
+    ShadowMap,
+    LightCount,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

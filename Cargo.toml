@@ -1,10 +1,25 @@
 [package]
 name = "scena"
-version = "0.0.0"
+version = "1.0.0"
 edition = "2024"
+rust-version = "1.90"
 license = "MIT OR Apache-2.0"
 description = "A Rust-native scene-graph renderer intended as an easy, production-safe Three.js replacement."
 readme = "README.md"
+documentation = "https://docs.rs/scena"
+keywords = ["renderer", "scene-graph", "gltf", "webgpu", "wasm"]
+categories = ["graphics", "rendering", "wasm"]
+include = [
+    "src/**",
+    "tests/**",
+    "examples/**",
+    "docs/**",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE-*",
+    "Cargo.toml",
+    "Cargo.lock",
+]
 
 [workspace]
 members = [".", "crates/xtask"]

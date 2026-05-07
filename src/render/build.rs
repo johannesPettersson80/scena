@@ -1,7 +1,9 @@
 use std::cell::Cell;
 use std::marker::PhantomData;
 
-use crate::diagnostics::{Backend, BuildError, Capabilities, HardwareTier, RendererStats};
+use crate::diagnostics::{
+    Backend, BuildError, Capabilities, DebugOverlay, HardwareTier, RendererStats,
+};
 use crate::material::Color;
 use crate::picking::InteractionStyle;
 use crate::platform::{PlatformSurface, PlatformSurfaceAttachment};
@@ -186,6 +188,8 @@ impl Renderer {
             render_mode,
             render_generation: 0,
             last_rendered_generation: None,
+            debug_overlay: DebugOverlay::None,
+            debug_revision: 0,
             surface_lost: None,
             context_lost: None,
             device_lost: None,
