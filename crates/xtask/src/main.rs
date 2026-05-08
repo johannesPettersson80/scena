@@ -11117,6 +11117,63 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_test_first_agents_governance_regression() {
+        // TEST-FIRST-AGENTS: AGENTS.md must keep the Unit-Test-First Rule + the
+        // "fail for the expected reason" + the "name the test-first proof" governance
+        // text so contributors do not regress to write-then-test.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/test-first-agents-stub");
+        let agents_path = fixture_root.join("AGENTS.md");
+        fs::create_dir_all(fixture_root.as_path()).expect("fixture dir");
+        fs::write(&agents_path, "# AGENTS\n\nNo test-first rule here.\n").expect("agents fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "TEST-FIRST-AGENTS",
+            "AGENTS.md",
+            &[
+                "## Unit Test First Rule",
+                "Run the focused test and confirm it fails for the expected reason",
+                "Do not mark a checklist implementation item complete without naming the test-first proof",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "TEST-FIRST-AGENTS"
+                    && finding.message.contains("Unit Test First Rule")
+            }),
+            "doctor must reject AGENTS.md that drops the unit-test-first governance \
+             contract: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_default_environment_manifest_missing_field_regression() {
+        // VISUAL-DEFAULT-ENV: tests/assets/environment/default-environment.toml must
+        // declare name = "neutral-studio" (and the rest of the manifest contract).
+        // A stub without the canonical name regresses the rule.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/default-environment-stub");
+        let manifest_path = fixture_root.join("tests/assets/environment/default-environment.toml");
+        fs::create_dir_all(manifest_path.parent().expect("manifest parent")).expect("fixture dir");
+        fs::write(&manifest_path, "# placeholder default environment\n").expect("manifest fixture");
+        let mut findings = Vec::new();
+
+        check_default_environment_manifest(&fixture_root, &mut findings);
+
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.rule == "VISUAL-DEFAULT-ENV"),
+            "doctor must reject the default-environment manifest when its required \
+             fields are missing: {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");

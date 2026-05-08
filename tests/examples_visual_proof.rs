@@ -14,9 +14,9 @@ use std::path::PathBuf;
 
 use scena::{
     Aabb, AnimationPlaybackState, Assets, Color, ConnectOptions, ConnectionAlignment,
-    ConnectorFrame, CursorPosition, GeometryDesc, InteractionStyle, LabelDesc, MaterialDesc,
-    PerspectiveCamera, Profile, Renderer, RendererOptions, Scene, SourceCoordinateSystem,
-    SourceUnits, Transform, Vec3, Viewport,
+    ConnectionError, ConnectorFrame, CursorPosition, GeometryDesc, InteractionStyle, LabelDesc,
+    MaterialDesc, PerspectiveCamera, Profile, Renderer, RendererOptions, Scene,
+    SourceCoordinateSystem, SourceUnits, Transform, Vec3, Viewport,
 };
 
 const ARTIFACT_WIDTH: u32 = 256;
@@ -944,6 +944,96 @@ fn examples_visual_industrial_connector_assembly_renders_to_ppm() {
 
     write_artifact(
         "industrial_connector_assembly",
+        ARTIFACT_WIDTH,
+        ARTIFACT_HEIGHT,
+        frame,
+    );
+}
+
+#[test]
+fn examples_visual_coordinate_connector_repair_renders_repaired_assembly_to_ppm() {
+    // Mirror examples/coordinate_connector_repair.rs: import the connector_zup
+    // fixture with the WRONG handedness (YUpLeftHanded), assert the connect call
+    // fails closed with ConnectionError::HandednessMismatch, then re-import with
+    // the correct ZUpRightHanded coordinate system and connect successfully. Plus
+    // a visible marker so the otherwise-anchor-only fixture renders nonblack.
+    let assets = Assets::new();
+    let scene_asset =
+        pollster::block_on(assets.load_scene("tests/assets/gltf/connector_zup_scene.gltf"))
+            .expect("connector_zup fixture loads");
+
+    let mut scene = Scene::new();
+    let source = scene
+        .add_empty(scene.root(), Transform::IDENTITY)
+        .expect("source empty inserts");
+
+    let wrong_import = scene
+        .instantiate_with(
+            &scene_asset,
+            scena::ImportOptions::gltf_default()
+                .with_source_coordinate_system(SourceCoordinateSystem::YUpLeftHanded),
+        )
+        .expect("wrong-handedness instantiates");
+    let error = scene
+        .connect(
+            ConnectorFrame::new(source, Transform::IDENTITY).named("source"),
+            ConnectorFrame::from_import_connector(
+                wrong_import.connector("z-up-mount").expect("z-up-mount"),
+            ),
+            ConnectOptions::default(),
+        )
+        .expect_err("left-handed import must be repaired before connecting");
+    match error {
+        ConnectionError::HandednessMismatch { .. } => {}
+        other => panic!("expected HandednessMismatch error, got {other:?}"),
+    }
+
+    let repaired_import = scene
+        .instantiate_with(
+            &scene_asset,
+            scena::ImportOptions::gltf_default()
+                .with_source_coordinate_system(SourceCoordinateSystem::ZUpRightHanded),
+        )
+        .expect("repaired instantiates");
+    scene
+        .connect(
+            ConnectorFrame::new(source, Transform::IDENTITY).named("source"),
+            ConnectorFrame::from_import_connector(
+                repaired_import.connector("z-up-mount").expect("z-up-mount"),
+            ),
+            ConnectOptions::default(),
+        )
+        .expect("repaired connect succeeds");
+
+    let marker = assets.create_geometry(GeometryDesc::box_xyz(0.5, 0.5, 0.5));
+    let marker_material =
+        assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(110, 220, 160)));
+    scene
+        .mesh(marker, marker_material)
+        .add()
+        .expect("repair marker inserts");
+    let camera = scene.add_default_camera().expect("default camera inserts");
+    scene
+        .frame_all_with_assets(camera, &assets)
+        .expect("frame_all succeeds");
+
+    let mut renderer =
+        Renderer::headless(ARTIFACT_WIDTH, ARTIFACT_HEIGHT).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("coordinate_connector_repair scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("coordinate_connector_repair scene renders");
+
+    let frame = renderer.frame_rgba8();
+    assert!(
+        count_nonblack_pixels(frame) > 0,
+        "coordinate_connector_repair example must render at least one nonblack pixel"
+    );
+
+    write_artifact(
+        "coordinate_connector_repair",
         ARTIFACT_WIDTH,
         ARTIFACT_HEIGHT,
         frame,
