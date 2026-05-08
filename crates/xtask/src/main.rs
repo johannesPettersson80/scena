@@ -9810,6 +9810,131 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_renderer_asset_fetch_regression() {
+        // ARCH-RENDER: nothing under src/render/** may name asset fetcher entry points.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/renderer-asset-fetch");
+        let render_path = fixture_root.join("src/render/build.rs");
+        fs::create_dir_all(render_path.parent().expect("render parent")).expect("fixture dir");
+        fs::write(
+            &render_path,
+            "fn build_renderer() { let _bytes = fetcher.fetch(\"asset\"); }\n",
+        )
+        .expect("render fixture");
+        let mut findings = Vec::new();
+
+        forbid_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-RENDER",
+            "src/render/build.rs",
+            &["fetch("],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-RENDER" && finding.message.contains("fetch(")
+            }),
+            "doctor must reject renderer modules that call fetcher entry points: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_render_phase_pipeline_creation_regression() {
+        // ARCH-RENDER-LIFECYCLE: render-phase modules must not allocate shaders or pipelines.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/render-phase-pipeline-creation");
+        let draw_path = fixture_root.join("src/render/gpu/draw.rs");
+        fs::create_dir_all(draw_path.parent().expect("draw parent")).expect("fixture dir");
+        fs::write(
+            &draw_path,
+            "fn render() { device.create_render_pipeline(&desc); }\n",
+        )
+        .expect("draw fixture");
+        let mut findings = Vec::new();
+
+        forbid_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-RENDER-LIFECYCLE",
+            "src/render/gpu/draw.rs",
+            &["create_render_pipeline"],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-RENDER-LIFECYCLE"
+                    && finding.message.contains("create_render_pipeline")
+            }),
+            "doctor must reject GPU render-phase modules that create render pipelines: \
+             {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_platform_renderer_pass_regression() {
+        // ARCH-PLATFORM: platform stays an adapter layer; pass type names belong in
+        // render/**. The canonical forbidden terms are `wgpu::`, `ForwardPass`, `ShadowPass`,
+        // and `PostProcessPass`.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/platform-render-pass");
+        let platform_path = fixture_root.join("src/platform.rs");
+        fs::create_dir_all(platform_path.parent().expect("platform parent")).expect("fixture dir");
+        fs::write(
+            &platform_path,
+            "pub struct ForwardPass; pub fn run(_pass: &mut ForwardPass) {}\n",
+        )
+        .expect("platform fixture");
+        let mut findings = Vec::new();
+
+        forbid_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-PLATFORM",
+            "src/platform.rs",
+            &["ForwardPass"],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-PLATFORM" && finding.message.contains("ForwardPass")
+            }),
+            "doctor must reject platform.rs that owns renderer pass types: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_assets_wgpu_dependency_regression() {
+        // ARCH-ASSETS: assets owns fetch/parse/cache and must not consume wgpu surface types.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/assets-wgpu-dependency");
+        let assets_path = fixture_root.join("src/assets.rs");
+        fs::create_dir_all(assets_path.parent().expect("assets parent")).expect("fixture dir");
+        fs::write(
+            &assets_path,
+            "fn upload(device: &wgpu::Device) { let _texture = device.create_texture(&desc); }\n",
+        )
+        .expect("assets fixture");
+        let mut findings = Vec::new();
+
+        forbid_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-ASSETS",
+            "src/assets.rs",
+            &["wgpu::"],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-ASSETS" && finding.message.contains("wgpu::")
+            }),
+            "doctor must reject assets.rs that pulls in wgpu types: {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
