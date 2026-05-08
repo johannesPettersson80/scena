@@ -49,7 +49,9 @@ pub(super) use self::stats::GpuResourceStats;
 #[cfg(not(target_arch = "wasm32"))]
 use self::stats::align_to;
 use self::stats::{PreparedResourceEstimateInput, estimate_prepared_resource_stats};
-use self::vertices::{PrimitiveDrawBatch, VERTEX_BYTE_LEN, encode_draw_batches, encode_vertices};
+use self::vertices::{
+    DrawUniformValue, PrimitiveDrawBatch, VERTEX_BYTE_LEN, encode_draw_batches, encode_vertices,
+};
 use super::RasterTarget;
 use super::prepare::{
     PreparedDepthStats, PreparedGpuLightUniform, PreparedLightingStats, PreparedMaterialSlot,
@@ -103,6 +105,12 @@ struct GpuPreparedResources {
     culling_workgroups: u32,
     vertex_count: u32,
     draw_batches: Vec<PrimitiveDrawBatch>,
+    // ARCH-RENDER-WORLD-BAKE: collected per-draw world_from_model / normal_from_model values
+    // are stored alongside the draw batches so the dynamic-uniform-offset path can consume
+    // them in the follow-up commit; today the GPU pipeline still relies on `prepared_primitive`
+    // baking vertices into world space.
+    #[allow(dead_code)]
+    draw_uniforms: Vec<DrawUniformValue>,
     offscreen_pipeline: wgpu::RenderPipeline,
     surface_pipeline: Option<wgpu::RenderPipeline>,
     padded_bytes_per_row: u32,
@@ -123,6 +131,11 @@ struct GpuPreparedResources {
     surface_pipeline: wgpu::RenderPipeline,
     vertex_count: u32,
     draw_batches: Vec<PrimitiveDrawBatch>,
+    // ARCH-RENDER-WORLD-BAKE: see the headless variant — the WebGL2/WebGPU browser path
+    // also retains per-draw world_from_model / normal_from_model values for the dynamic
+    // uniform path that lands in the follow-up commit.
+    #[allow(dead_code)]
+    draw_uniforms: Vec<DrawUniformValue>,
     webgl2_vertices: Vec<f32>,
     stats: GpuResourceStats,
 }
@@ -166,7 +179,7 @@ impl GpuDeviceState {
         }
 
         let vertex_bytes = encode_vertices(primitives);
-        let (draw_batches, _draw_uniforms) = encode_draw_batches(primitives);
+        let (draw_batches, draw_uniforms) = encode_draw_batches(primitives);
         let vertex_buffer_size = vertex_bytes.len().max(4) as u64;
         let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("scena.m0.scene_vertices"),
@@ -285,6 +298,7 @@ impl GpuDeviceState {
             culling_workgroups: (primitives.len() as u32).max(1).div_ceil(64),
             vertex_count: (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32,
             draw_batches,
+            draw_uniforms,
             offscreen_pipeline,
             surface_pipeline,
             padded_bytes_per_row,
@@ -313,7 +327,7 @@ impl GpuDeviceState {
             return;
         }
         let vertex_bytes = encode_vertices(primitives);
-        let (draw_batches, _draw_uniforms) = encode_draw_batches(primitives);
+        let (draw_batches, draw_uniforms) = encode_draw_batches(primitives);
         let webgl2_vertices = webgl2::encode_vertices(primitives);
         if target.backend == Backend::WebGl2 {
             let Some(canvas) = self.browser_canvas.as_ref() else {
@@ -397,6 +411,7 @@ impl GpuDeviceState {
             surface_pipeline,
             vertex_count,
             draw_batches,
+            draw_uniforms,
             webgl2_vertices,
             stats,
         });
