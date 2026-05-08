@@ -10210,6 +10210,66 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_environment_lifecycle_missing_revision_regression() {
+        // ARCH-ENVIRONMENT-LIFECYCLE: src/render.rs must track the bound environment plus
+        // its revision so reload/dirty propagation stays observable.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/environment-lifecycle-stub");
+        let render_path = fixture_root.join("src/render.rs");
+        fs::create_dir_all(render_path.parent().expect("render parent")).expect("fixture dir");
+        fs::write(&render_path, "pub struct Renderer {}\n").expect("render fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-ENVIRONMENT-LIFECYCLE",
+            "src/render.rs",
+            &[
+                "environment: Option<EnvironmentHandle>",
+                "environment_revision: u64",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-ENVIRONMENT-LIFECYCLE"
+                    && finding.message.contains("environment_revision")
+            }),
+            "doctor must reject Renderer types that drop the environment revision \
+             contract: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_scene_lights_missing_typed_key_regression() {
+        // ARCH-SCENE-LIGHTS: src/scene.rs must expose the typed LightKey handle plus
+        // the lights submodule so light entries do not become string lookups.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/scene-lights-stub");
+        let scene_path = fixture_root.join("src/scene.rs");
+        fs::create_dir_all(scene_path.parent().expect("scene parent")).expect("fixture dir");
+        fs::write(&scene_path, "pub struct Scene { pub root: NodeKey }\n").expect("scene fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-SCENE-LIGHTS",
+            "src/scene.rs",
+            &["pub struct LightKey", "mod lights;"],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-SCENE-LIGHTS" && finding.message.contains("LightKey")
+            }),
+            "doctor must reject scene.rs that drops the typed light-key contract: \
+             {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
