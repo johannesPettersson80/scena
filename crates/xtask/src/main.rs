@@ -10891,6 +10891,80 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_ergonomics_m7_missing_controls_contract_regression() {
+        // ERGONOMICS-M7: src/controls.rs must expose the orbit-controls contract terms
+        // (with_damping, focus, apply_to_scene, damping_factor, TouchEvent, wheel) so
+        // controls keep the ergonomic shape examples expect.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/ergonomics-m7-stub");
+        let controls_path = fixture_root.join("src/controls.rs");
+        fs::create_dir_all(controls_path.parent().expect("controls parent")).expect("fixture dir");
+        fs::write(&controls_path, "pub struct OrbitControls {}\n").expect("controls fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ERGONOMICS-M7",
+            "src/controls.rs",
+            &[
+                "with_damping",
+                "focus",
+                "apply_to_scene",
+                "damping_factor",
+                "TouchEvent",
+                "pub const fn wheel",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ERGONOMICS-M7" && finding.message.contains("apply_to_scene")
+            }),
+            "doctor must reject controls.rs that drops the orbit-controls ergonomic \
+             contract: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_assets_m8_missing_color_space_regression() {
+        // ASSETS-M8 (color space): src/assets/gltf/read.rs must mention both linear and
+        // sRGB texture color spaces so glTF imports tag every material texture's color
+        // pipeline correctly.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/assets-m8-color-space-stub");
+        let read_path = fixture_root.join("src/assets/gltf/read.rs");
+        fs::create_dir_all(read_path.parent().expect("read parent")).expect("fixture dir");
+        fs::write(
+            &read_path,
+            "pub fn baseColorTexture() {}\npub fn normalTexture() {}\n\
+             pub fn metallicRoughnessTexture() {}\npub fn occlusionTexture() {}\n\
+             pub fn emissiveTexture() {}\npub fn with_normal_texture_transform() {}\n\
+             pub fn with_metallic_roughness_texture_transform() {}\n\
+             pub fn with_occlusion_texture_transform() {}\n\
+             pub fn with_emissive_texture_transform() {}\n",
+        )
+        .expect("read fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ASSETS-M8",
+            "src/assets/gltf/read.rs",
+            &["TextureColorSpace::Linear", "TextureColorSpace::Srgb"],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ASSETS-M8" && finding.message.contains("TextureColorSpace")
+            }),
+            "doctor must reject assets/gltf/read.rs that drops the texture color-space \
+             contract: {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");

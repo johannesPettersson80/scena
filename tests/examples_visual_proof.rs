@@ -736,6 +736,82 @@ fn examples_visual_connect_objects_renders_assembled_pair_to_ppm() {
 }
 
 #[test]
+fn examples_visual_imported_anchor_connection_renders_to_ppm() {
+    // Mirror examples/imported_anchor_connection.rs: two imports of the anchor-debug
+    // glTF scene connected by their named inspection anchors via
+    // ConnectorFrame::from_import_anchor + connect_by_key, then framed via
+    // frame_import on the target.
+    let assets = Assets::new();
+    let scene_asset =
+        pollster::block_on(assets.load_scene("tests/assets/gltf/anchor_debug_scene.gltf"))
+            .expect("anchor debug scene loads");
+
+    let mut scene = Scene::new();
+    let source = scene
+        .instantiate(&scene_asset)
+        .expect("source instantiates");
+    let target = scene
+        .instantiate(&scene_asset)
+        .expect("target instantiates");
+    scene
+        .set_transform(target.roots()[0], Transform::at(Vec3::new(1.0, 0.0, 0.0)))
+        .expect("target transform succeeds");
+
+    let source_anchor = scene
+        .add_connector(
+            ConnectorFrame::from_import_anchor(source.anchor("inspection").expect("source anchor"))
+                .with_kind("mount"),
+        )
+        .expect("source connector inserts");
+    let target_anchor = scene
+        .add_connector(
+            ConnectorFrame::from_import_anchor(target.anchor("inspection").expect("target anchor"))
+                .with_kind("mount"),
+        )
+        .expect("target connector inserts");
+    scene
+        .connect_by_key(source_anchor, target_anchor, ConnectOptions::default())
+        .expect("connect_by_key succeeds");
+
+    // Add a small visible marker so the scene has nonblack pixels — the anchor-only
+    // imports themselves carry no mesh content and the upstream example similarly
+    // doesn't render visible geometry.
+    let marker = assets.create_geometry(GeometryDesc::box_xyz(0.4, 0.4, 0.4));
+    let marker_material =
+        assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(120, 200, 255)));
+    scene
+        .mesh(marker, marker_material)
+        .add()
+        .expect("anchor visualisation marker inserts");
+
+    let camera = scene.add_default_camera().expect("default camera inserts");
+    scene
+        .frame_all_with_assets(camera, &assets)
+        .expect("frame_all succeeds");
+    let mut renderer =
+        Renderer::headless(ARTIFACT_WIDTH, ARTIFACT_HEIGHT).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("imported_anchor_connection scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("imported_anchor_connection scene renders");
+
+    let frame = renderer.frame_rgba8();
+    assert!(
+        count_nonblack_pixels(frame) > 0,
+        "imported_anchor_connection example must render at least one nonblack pixel"
+    );
+
+    write_artifact(
+        "imported_anchor_connection",
+        ARTIFACT_WIDTH,
+        ARTIFACT_HEIGHT,
+        frame,
+    );
+}
+
+#[test]
 fn examples_visual_headless_ci_renders_default_scene_to_ppm() {
     // examples/headless_ci.rs exercises the deterministic headless rendering
     // path; the proof is "the deterministic frame produces non-black pixels".
