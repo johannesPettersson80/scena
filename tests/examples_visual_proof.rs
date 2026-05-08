@@ -299,6 +299,46 @@ fn examples_visual_coordinate_units_renders_converted_position_to_ppm() {
 }
 
 #[test]
+fn examples_visual_static_batching_renders_repeated_boxes_to_ppm() {
+    // Mirror examples/static_batching.rs: 12 transforms baked through
+    // create_static_batch_with_report and rendered as a single mesh batch.
+    let assets = Assets::new();
+    let source = GeometryDesc::box_xyz(0.12, 0.12, 0.12);
+    let transforms = (0..12).map(|index| {
+        Transform::at(Vec3::new(
+            (index % 6) as f32 * 0.18 - 0.45,
+            (index / 6) as f32 * 0.18 - 0.09,
+            0.0,
+        ))
+    });
+    let (batch, _report) = assets.create_static_batch_with_report(&source, transforms);
+    let material = assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(240, 200, 60)));
+    let mut scene = Scene::new();
+    scene
+        .mesh(batch, material)
+        .add()
+        .expect("static-batch mesh inserts");
+    scene.add_default_camera().expect("default camera inserts");
+
+    let mut renderer =
+        Renderer::headless(ARTIFACT_WIDTH, ARTIFACT_HEIGHT).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("static_batching scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("static_batching scene renders");
+
+    let frame = renderer.frame_rgba8();
+    assert!(
+        count_nonblack_pixels(frame) > 0,
+        "static_batching example must render at least one nonblack pixel"
+    );
+
+    write_artifact("static_batching", ARTIFACT_WIDTH, ARTIFACT_HEIGHT, frame);
+}
+
+#[test]
 fn examples_visual_headless_ci_renders_default_scene_to_ppm() {
     // examples/headless_ci.rs exercises the deterministic headless rendering
     // path; the proof is "the deterministic frame produces non-black pixels".
