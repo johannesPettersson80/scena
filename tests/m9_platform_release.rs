@@ -735,6 +735,7 @@ fn write_dedicated_4k_benchmark_artifact() -> serde_json::Value {
         "baseline_comparison": baseline_comparison,
         "rows": rows,
     });
+    fs::create_dir_all(platform_dir()).expect("platform artifact dir for headless-4k");
     write_json(&platform_dir().join("m9-benchmarks-4k.json"), &artifact);
     artifact
 }
