@@ -13,9 +13,10 @@ use std::fs;
 use std::path::PathBuf;
 
 use scena::{
-    Aabb, AnimationPlaybackState, Assets, Color, ConnectOptions, ConnectorFrame, CursorPosition,
-    GeometryDesc, InteractionStyle, LabelDesc, MaterialDesc, PerspectiveCamera, Profile, Renderer,
-    RendererOptions, Scene, SourceCoordinateSystem, SourceUnits, Transform, Vec3, Viewport,
+    Aabb, AnimationPlaybackState, Assets, Color, ConnectOptions, ConnectionAlignment,
+    ConnectorFrame, CursorPosition, GeometryDesc, InteractionStyle, LabelDesc, MaterialDesc,
+    PerspectiveCamera, Profile, Renderer, RendererOptions, Scene, SourceCoordinateSystem,
+    SourceUnits, Transform, Vec3, Viewport,
 };
 
 const ARTIFACT_WIDTH: u32 = 256;
@@ -861,6 +862,92 @@ fn examples_visual_anchor_alignment_renders_anchor_marker_to_ppm() {
     );
 
     write_artifact("anchor_alignment", ARTIFACT_WIDTH, ARTIFACT_HEIGHT, frame);
+}
+
+#[test]
+fn examples_visual_industrial_connector_assembly_renders_to_ppm() {
+    // Mirror examples/industrial_connector_assembly.rs: three imports of the
+    // connector-debug glTF chained pump → base and sensor → pump via named
+    // "mount" connectors with ConnectionAlignment::ForwardToBack and a small
+    // mate offset, plus a visible marker so the otherwise-anchor-only fixture
+    // produces nonblack pixels under frame_all_with_assets.
+    let assets = Assets::new();
+    let part_asset =
+        pollster::block_on(assets.load_scene("tests/assets/gltf/connector_debug_scene.gltf"))
+            .expect("connector debug scene loads");
+
+    let mut scene = Scene::new();
+    let base = scene.instantiate(&part_asset).expect("base instantiates");
+    let pump = scene.instantiate(&part_asset).expect("pump instantiates");
+    let sensor = scene.instantiate(&part_asset).expect("sensor instantiates");
+
+    scene
+        .set_transform(base.roots()[0], Transform::at(Vec3::new(0.0, 0.0, 0.0)))
+        .expect("base transform succeeds");
+    scene
+        .set_transform(pump.roots()[0], Transform::at(Vec3::new(1.0, 0.0, 0.0)))
+        .expect("pump transform succeeds");
+    scene
+        .set_transform(sensor.roots()[0], Transform::at(Vec3::new(2.0, 0.0, 0.0)))
+        .expect("sensor transform succeeds");
+    scene
+        .lock_node_for_connections(base.roots()[0])
+        .expect("lock base succeeds");
+
+    let base_mount =
+        ConnectorFrame::from_import_connector(base.connector("mount").expect("base mount"));
+    let pump_mount =
+        ConnectorFrame::from_import_connector(pump.connector("mount").expect("pump mount"));
+    let sensor_mount =
+        ConnectorFrame::from_import_connector(sensor.connector("mount").expect("sensor mount"));
+    let options = ConnectOptions::default().with_alignment(ConnectionAlignment::ForwardToBack);
+    scene
+        .connect(pump_mount.clone(), base_mount, options)
+        .expect("pump-base connect succeeds");
+    scene
+        .connect(
+            sensor_mount,
+            pump_mount,
+            options.with_mate_offset(Transform::at(Vec3::new(0.4, 0.0, 0.0))),
+        )
+        .expect("sensor-pump connect succeeds");
+
+    // Anchor-only fixture has no mesh content; add a visible marker so frame_all
+    // produces nonblack pixels.
+    let marker = assets.create_geometry(GeometryDesc::box_xyz(0.5, 0.5, 0.5));
+    let marker_material =
+        assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(220, 180, 70)));
+    scene
+        .mesh(marker, marker_material)
+        .add()
+        .expect("assembly marker inserts");
+
+    let camera = scene.add_default_camera().expect("default camera inserts");
+    scene
+        .frame_all_with_assets(camera, &assets)
+        .expect("frame_all succeeds");
+
+    let mut renderer =
+        Renderer::headless(ARTIFACT_WIDTH, ARTIFACT_HEIGHT).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("industrial_connector_assembly scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("industrial_connector_assembly scene renders");
+
+    let frame = renderer.frame_rgba8();
+    assert!(
+        count_nonblack_pixels(frame) > 0,
+        "industrial_connector_assembly example must render at least one nonblack pixel"
+    );
+
+    write_artifact(
+        "industrial_connector_assembly",
+        ARTIFACT_WIDTH,
+        ARTIFACT_HEIGHT,
+        frame,
+    );
 }
 
 #[test]

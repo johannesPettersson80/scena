@@ -11039,6 +11039,84 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_visual_browser_m6_missing_probe_exports_regression() {
+        // VISUAL-BROWSER-M6: src/browser_probe.rs must expose the wasm_bindgen probe
+        // entry points (m6Render*Probe) plus the Renderer::from_surface_async +
+        // prepare_with_assets + Renderer::render shape that distinguishes Rust/WASM
+        // probe proof from JavaScript-only smoke tests.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/visual-browser-m6-stub");
+        let probe_path = fixture_root.join("src/browser_probe.rs");
+        fs::create_dir_all(probe_path.parent().expect("browser probe parent"))
+            .expect("fixture dir");
+        fs::write(
+            &probe_path,
+            "//! Stub browser probe.\npub fn m6_passthrough() {}\n",
+        )
+        .expect("browser probe fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "VISUAL-BROWSER-M6",
+            "src/browser_probe.rs",
+            &[
+                "m6RenderWebgl2Probe",
+                "m6RenderWebgpuProbe",
+                "m6RenderWorkflowProbe",
+                "Renderer::from_surface_async",
+                "scena.m6.browser_renderer_probe.v1",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "VISUAL-BROWSER-M6"
+                    && finding.message.contains("from_surface_async")
+            }),
+            "doctor must reject browser_probe.rs that drops the Rust/WASM Renderer \
+             attached-canvas contract: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_environment_lifecycle_missing_handle_regression() {
+        // ARCH-ENVIRONMENT-LIFECYCLE (handle): src/render.rs must store the bound
+        // EnvironmentHandle alongside the revision counter so reload propagation
+        // stays observable. The earlier batch covered the revision counter; this
+        // fixture ensures the typed-handle field cannot disappear silently.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/environment-lifecycle-handle-stub");
+        let render_path = fixture_root.join("src/render.rs");
+        fs::create_dir_all(render_path.parent().expect("render parent")).expect("fixture dir");
+        fs::write(
+            &render_path,
+            "pub struct Renderer { pub environment_revision: u64 }\n",
+        )
+        .expect("render fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-ENVIRONMENT-LIFECYCLE",
+            "src/render.rs",
+            &["environment: Option<EnvironmentHandle>"],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-ENVIRONMENT-LIFECYCLE"
+                    && finding.message.contains("EnvironmentHandle")
+            }),
+            "doctor must reject Renderer types that drop the typed EnvironmentHandle \
+             field: {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
