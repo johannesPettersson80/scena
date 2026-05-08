@@ -9935,6 +9935,154 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_output_stage_missing_aces_tonemap_regression() {
+        // ARCH-OUTPUT-STAGE: the renderer output stage must implement ACES; a stub
+        // src/render/output.rs that drops the tonemap helpers regresses the contract.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/output-stage-no-aces");
+        let output_path = fixture_root.join("src/render/output.rs");
+        fs::create_dir_all(output_path.parent().expect("output parent")).expect("fixture dir");
+        fs::write(
+            &output_path,
+            "// no aces helpers here\npub fn passthrough() {}\n",
+        )
+        .expect("output fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-OUTPUT-STAGE",
+            "src/render/output.rs",
+            &[
+                "fn aces_tonemap",
+                "fn rrt_and_odt_fit",
+                "ACES_INPUT_MATRIX",
+                "ACES_OUTPUT_MATRIX",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-OUTPUT-STAGE" && finding.message.contains("fn aces_tonemap")
+            }),
+            "doctor must reject output stages that drop ACES tonemap helpers: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_render_alpha_missing_linear_source_over_regression() {
+        // ARCH-RENDER-ALPHA: capabilities.rs must expose AlphaPipelineStatus with the
+        // LinearSourceOver and BackendPassthrough variants. A stub that drops them
+        // regresses the contract.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/render-alpha-stub");
+        let capabilities_path = fixture_root.join("src/diagnostics/capabilities.rs");
+        fs::create_dir_all(capabilities_path.parent().expect("capabilities parent"))
+            .expect("fixture dir");
+        fs::write(&capabilities_path, "pub struct Capabilities {}\n")
+            .expect("capabilities fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-RENDER-ALPHA",
+            "src/diagnostics/capabilities.rs",
+            &[
+                "pub enum AlphaPipelineStatus",
+                "LinearSourceOver",
+                "BackendPassthrough",
+                "pub alpha_pipeline: AlphaPipelineStatus",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-RENDER-ALPHA" && finding.message.contains("LinearSourceOver")
+            }),
+            "doctor must reject capabilities that drop the alpha-pipeline contract: \
+             {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_diagnostics_missing_typed_code_regression() {
+        // ARCH-DIAGNOSTICS: diagnostic.rs must expose Diagnostic with code, severity,
+        // and message. A stub without typed code regresses the contract.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/diagnostics-untyped");
+        let diagnostic_path = fixture_root.join("src/diagnostics/diagnostic.rs");
+        fs::create_dir_all(diagnostic_path.parent().expect("diagnostic parent"))
+            .expect("fixture dir");
+        fs::write(
+            &diagnostic_path,
+            "pub struct Diagnostic { pub message: String }\n",
+        )
+        .expect("diagnostic fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-DIAGNOSTICS",
+            "src/diagnostics/diagnostic.rs",
+            &[
+                "pub struct Diagnostic",
+                "pub code: DiagnosticCode",
+                "pub severity: DiagnosticSeverity",
+                "pub message: String",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-DIAGNOSTICS" && finding.message.contains("DiagnosticCode")
+            }),
+            "doctor must reject Diagnostic types that drop the typed code/severity \
+             contract: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_renderer_stats_missing_required_counters_regression() {
+        // ARCH-RENDER-STATS: diagnostics.rs must expose RendererStats with the required
+        // resource-lifetime counters. A stub that drops them regresses the contract.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/renderer-stats-stub");
+        let diagnostics_path = fixture_root.join("src/diagnostics.rs");
+        fs::create_dir_all(diagnostics_path.parent().expect("diagnostics parent"))
+            .expect("fixture dir");
+        fs::write(
+            &diagnostics_path,
+            "pub struct RendererStats { pub frames_rendered: u64 }\n",
+        )
+        .expect("diagnostics fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-RENDER-STATS",
+            "src/diagnostics.rs",
+            &[
+                "pub struct RendererStats",
+                "pub buffers: u64",
+                "pub textures: u64",
+                "pub materials: u64",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-RENDER-STATS" && finding.message.contains("pub buffers: u64")
+            }),
+            "doctor must reject RendererStats that drops the resource-lifetime counter \
+             contract: {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
