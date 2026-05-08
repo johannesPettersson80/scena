@@ -13,9 +13,9 @@ use std::fs;
 use std::path::PathBuf;
 
 use scena::{
-    Aabb, Assets, Color, CursorPosition, GeometryDesc, InteractionStyle, LabelDesc, MaterialDesc,
-    PerspectiveCamera, Renderer, Scene, SourceCoordinateSystem, SourceUnits, Transform, Vec3,
-    Viewport,
+    Aabb, AnimationPlaybackState, Assets, Color, CursorPosition, GeometryDesc, InteractionStyle,
+    LabelDesc, MaterialDesc, PerspectiveCamera, Renderer, Scene, SourceCoordinateSystem,
+    SourceUnits, Transform, Vec3, Viewport,
 };
 
 const ARTIFACT_WIDTH: u32 = 256;
@@ -519,6 +519,65 @@ fn examples_visual_picking_selection_hover_renders_styled_pick_to_ppm() {
         ARTIFACT_HEIGHT,
         frame,
     );
+}
+
+#[test]
+fn examples_visual_animation_renders_morph_clip_at_frame_to_ppm() {
+    // Mirror examples/animation.rs: load the Khronos AnimatedMorphCube glTF, create
+    // and play the "Square" mixer, advance one 60Hz frame, then render. Proves the
+    // animation mixer + glTF morph-target path produces visible pixels end-to-end.
+    let assets = Assets::new();
+    let scene_asset = pollster::block_on(
+        assets.load_scene("tests/assets/gltf/khronos/MorphCube/AnimatedMorphCube.gltf"),
+    )
+    .expect("morph cube fixture loads");
+
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("morph cube instantiates");
+    let mixer = scene
+        .create_animation_mixer(&import, "Square")
+        .expect("Square mixer creates");
+    scene
+        .play_animation(mixer)
+        .expect("play animation succeeds");
+    scene
+        .update_animation(mixer, 1.0 / 60.0)
+        .expect("update_animation succeeds");
+
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::at(Vec3::new(0.0, 0.0, 3.0)),
+        )
+        .expect("camera inserts");
+    scene.set_active_camera(camera).expect("active camera sets");
+
+    let mut renderer =
+        Renderer::headless(ARTIFACT_WIDTH, ARTIFACT_HEIGHT).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("animation scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("animation scene renders");
+
+    let state = scene.animation_mixer(mixer).expect("mixer query").state();
+    assert_eq!(
+        state,
+        AnimationPlaybackState::Playing,
+        "animation example must record the mixer as playing after update"
+    );
+
+    let frame = renderer.frame_rgba8();
+    assert!(
+        count_nonblack_pixels(frame) > 0,
+        "animation example must render at least one nonblack pixel"
+    );
+
+    write_artifact("animation", ARTIFACT_WIDTH, ARTIFACT_HEIGHT, frame);
 }
 
 #[test]
