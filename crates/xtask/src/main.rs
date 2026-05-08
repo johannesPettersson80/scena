@@ -10144,6 +10144,72 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_depth_prepass_missing_counters_regression() {
+        // ARCH-DEPTH-PREPASS: diagnostics.rs must expose the depth-prepass counter
+        // contract so the doctor can prove the prepass actually executed.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/depth-prepass-stub");
+        let diagnostics_path = fixture_root.join("src/diagnostics.rs");
+        fs::create_dir_all(diagnostics_path.parent().expect("diagnostics parent"))
+            .expect("fixture dir");
+        fs::write(
+            &diagnostics_path,
+            "pub struct RendererStats { pub frames_rendered: u64 }\n",
+        )
+        .expect("diagnostics fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-DEPTH-PREPASS",
+            "src/diagnostics.rs",
+            &[
+                "pub depth_prepass_passes: u64",
+                "pub depth_prepass_draws: u64",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-DEPTH-PREPASS"
+                    && finding.message.contains("depth_prepass_passes")
+            }),
+            "doctor must reject diagnostics.rs that drops the depth-prepass counter \
+             contract: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_origin_shift_missing_field_regression() {
+        // ARCH-ORIGIN-SHIFT: src/scene.rs must expose origin_shift as a Vec3 field so
+        // large-scene precision shifts stay observable.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/origin-shift-stub");
+        let scene_path = fixture_root.join("src/scene.rs");
+        fs::create_dir_all(scene_path.parent().expect("scene parent")).expect("fixture dir");
+        fs::write(&scene_path, "pub struct Scene { pub root: NodeKey }\n").expect("scene fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-ORIGIN-SHIFT",
+            "src/scene.rs",
+            &["origin_shift: Vec3"],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-ORIGIN-SHIFT"
+                    && finding.message.contains("origin_shift: Vec3")
+            }),
+            "doctor must reject scene.rs that drops the origin_shift Vec3 contract: \
+             {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
