@@ -812,6 +812,58 @@ fn examples_visual_imported_anchor_connection_renders_to_ppm() {
 }
 
 #[test]
+fn examples_visual_anchor_alignment_renders_anchor_marker_to_ppm() {
+    // Mirror examples/anchor_alignment.rs: load the anchor-debug glTF, snap an
+    // anchor-marker mesh to its named "inspection" anchor, then frame the imported
+    // anchor and a small visible marker via frame_all_with_assets so the PPM
+    // proves the snap_anchor + ConnectorFrame::from_import_anchor path lands the
+    // marker at the right position. The upstream example uses frame_import which
+    // panics on the anchor-only fixture; we use frame_all_with_assets instead.
+    let assets = Assets::new();
+    let scene_asset =
+        pollster::block_on(assets.load_scene("tests/assets/gltf/anchor_debug_scene.gltf"))
+            .expect("anchor debug scene loads");
+    let marker_geometry = assets.create_geometry(GeometryDesc::anchor_marker(0.2));
+    let marker_material =
+        assets.create_material(MaterialDesc::line(Color::from_srgb_u8(255, 220, 70), 1.0));
+
+    let mut scene = Scene::new();
+    let import = scene.instantiate(&scene_asset).expect("scene instantiates");
+    let marker = scene
+        .mesh(marker_geometry, marker_material)
+        .add()
+        .expect("marker mesh inserts");
+    scene
+        .snap_anchor(
+            marker,
+            import.anchor("inspection").expect("inspection anchor"),
+        )
+        .expect("snap_anchor succeeds");
+
+    let camera = scene.add_default_camera().expect("default camera inserts");
+    scene
+        .frame_all_with_assets(camera, &assets)
+        .expect("frame_all succeeds");
+
+    let mut renderer =
+        Renderer::headless(ARTIFACT_WIDTH, ARTIFACT_HEIGHT).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("anchor_alignment scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("anchor_alignment scene renders");
+
+    let frame = renderer.frame_rgba8();
+    assert!(
+        count_nonblack_pixels(frame) > 0,
+        "anchor_alignment example must render at least one nonblack pixel"
+    );
+
+    write_artifact("anchor_alignment", ARTIFACT_WIDTH, ARTIFACT_HEIGHT, frame);
+}
+
+#[test]
 fn examples_visual_headless_ci_renders_default_scene_to_ppm() {
     // examples/headless_ci.rs exercises the deterministic headless rendering
     // path; the proof is "the deterministic frame produces non-black pixels".

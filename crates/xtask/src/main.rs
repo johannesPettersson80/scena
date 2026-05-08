@@ -10965,6 +10965,80 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_asset_api_missing_color_space_parameter_regression() {
+        // ARCH-ASSET-API: src/assets.rs must keep the explicit
+        // load_texture(color_space: TextureColorSpace) signature so callers cannot
+        // accidentally load a texture into the wrong color pipeline.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/asset-api-stub");
+        let assets_path = fixture_root.join("src/assets.rs");
+        fs::create_dir_all(assets_path.parent().expect("assets parent")).expect("fixture dir");
+        fs::write(
+            &assets_path,
+            "pub struct Assets {}\nimpl Assets { pub async fn load_texture(&self) {} }\n",
+        )
+        .expect("assets fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-ASSET-API",
+            "src/assets.rs",
+            &[
+                "pub async fn load_texture",
+                "color_space: TextureColorSpace",
+                "Result<TextureHandle, AssetError>",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-ASSET-API" && finding.message.contains("color_space")
+            }),
+            "doctor must reject assets.rs that drops the explicit color_space parameter: \
+             {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_prepare_assets_missing_collect_call_regression() {
+        // ARCH-PREPARE-ASSETS: src/render.rs must route prepare_with_assets through
+        // prepare::collect_prepared_primitives so the prepare phase stays the single
+        // place that owns asset-aware primitive collection.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/prepare-assets-stub");
+        let render_path = fixture_root.join("src/render.rs");
+        fs::create_dir_all(render_path.parent().expect("render parent")).expect("fixture dir");
+        fs::write(
+            &render_path,
+            "pub struct Renderer {}\nimpl Renderer { pub fn prepare_with_assets(&self) {} }\n",
+        )
+        .expect("render fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-PREPARE-ASSETS",
+            "src/render.rs",
+            &[
+                "pub fn prepare_with_assets",
+                "prepare::collect_prepared_primitives",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-PREPARE-ASSETS"
+                    && finding.message.contains("collect_prepared_primitives")
+            }),
+            "doctor must reject render.rs that drops the prepare::collect_prepared_primitives \
+             routing: {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
