@@ -10709,6 +10709,115 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_m3a_scene_import_missing_dependencies_regression() {
+        // ARCH-M3A-SCENE-IMPORT: Cargo.toml must keep the base64/serde_json/wasm-bindgen
+        // -futures/Response/obj feature-flag dependencies that the M3a scene importer
+        // relies on. A stub Cargo.toml without them regresses the contract.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/m3a-scene-import-stub");
+        let cargo_path = fixture_root.join("Cargo.toml");
+        fs::create_dir_all(cargo_path.parent().expect("cargo parent")).expect("fixture dir");
+        fs::write(
+            &cargo_path,
+            "[package]\nname = \"scena\"\nversion = \"0.0.0\"\n",
+        )
+        .expect("cargo fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-M3A-SCENE-IMPORT",
+            "Cargo.toml",
+            &[
+                "base64",
+                "serde_json",
+                "wasm-bindgen-futures",
+                "Response",
+                "obj = []",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-M3A-SCENE-IMPORT" && finding.message.contains("base64")
+            }),
+            "doctor must reject Cargo.toml that drops the M3a scene-import dependency \
+             contract: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_assets_m8_missing_texture_role_imports_regression() {
+        // ASSETS-M8: src/assets/gltf/read.rs must parse all five glTF material texture
+        // roles plus their KHR_texture_transform variants. A stub that drops them
+        // regresses the contract.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/assets-m8-stub");
+        let read_path = fixture_root.join("src/assets/gltf/read.rs");
+        fs::create_dir_all(read_path.parent().expect("read parent")).expect("fixture dir");
+        fs::write(&read_path, "pub fn read_baseColorTexture() {}\n").expect("read fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ASSETS-M8",
+            "src/assets/gltf/read.rs",
+            &[
+                "normalTexture",
+                "metallicRoughnessTexture",
+                "occlusionTexture",
+                "emissiveTexture",
+                "with_normal_texture_transform",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ASSETS-M8" && finding.message.contains("normalTexture")
+            }),
+            "doctor must reject assets/gltf/read.rs that drops the five glTF texture \
+             role imports: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_solid_catch_all_type_regression() {
+        // ARCH-SOLID-CATCH-ALL: source modules must not declare catch-all types like
+        // Manager, Engine, World, or broad Context. A stub that names one regresses
+        // the contract.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/solid-catch-all-stub");
+        let scope_path = fixture_root.join("src/scope.rs");
+        fs::create_dir_all(scope_path.parent().expect("scope parent")).expect("fixture dir");
+        // Use a simple needle the rule will reject; the rule's source scan in
+        // check_solid_kiss looks for Manager/Engine/World/broad Context names.
+        fs::write(
+            &scope_path,
+            "pub struct GlobalManager {}\npub struct WorldEngine {}\n",
+        )
+        .expect("scope fixture");
+        let mut findings = Vec::new();
+
+        forbid_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-SOLID-CATCH-ALL",
+            "src/scope.rs",
+            &["GlobalManager"],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-SOLID-CATCH-ALL" && finding.message.contains("GlobalManager")
+            }),
+            "doctor must reject source modules that name catch-all Manager/Engine \
+             types: {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
