@@ -107,6 +107,30 @@ impl fmt::Display for AssetError {
             Self::ReloadRequiresRetain { path, help } => {
                 write!(formatter, "asset {path} cannot be reloaded: {help}")
             }
+            Self::GeometryHandleNotFound { geometry } => {
+                write!(
+                    formatter,
+                    "geometry handle {geometry:?} was not found in Assets"
+                )
+            }
+            Self::MaterialHandleNotFound { material } => {
+                write!(
+                    formatter,
+                    "material handle {material:?} was not found in Assets"
+                )
+            }
+            Self::TextureHandleNotFound { texture } => {
+                write!(
+                    formatter,
+                    "texture handle {texture:?} was not found in Assets"
+                )
+            }
+            Self::EnvironmentHandleNotFound { environment } => {
+                write!(
+                    formatter,
+                    "environment handle {environment:?} was not found in Assets"
+                )
+            }
         }
     }
 }
@@ -155,6 +179,13 @@ impl fmt::Display for InstantiateError {
                     "glTF node {node} has invalid anchor extras: {reason}"
                 )
             }
+            Self::UnsupportedCoordinateSystem {
+                coordinate_system,
+                reason,
+            } => write!(
+                formatter,
+                "source coordinate system {coordinate_system:?} is not supported for this import: {reason}"
+            ),
         }
     }
 }
@@ -181,6 +212,17 @@ impl fmt::Display for PrepareError {
                 write!(
                     formatter,
                     "node {node:?} references missing material handle {material:?}"
+                )
+            }
+            Self::TextureNotFound {
+                node,
+                material,
+                texture,
+                slot,
+            } => {
+                write!(
+                    formatter,
+                    "node {node:?} material {material:?} references missing texture handle {texture:?} in slot {slot}"
                 )
             }
             Self::EnvironmentAssetsRequired { environment } => {
@@ -335,6 +377,14 @@ impl fmt::Display for LookupError {
                 "imported scene anchor name '{name}' is ambiguous across {} host nodes",
                 hosts.len()
             ),
+            Self::ConnectorNotFound { name } => {
+                write!(formatter, "imported scene has no connector named '{name}'")
+            }
+            Self::AmbiguousConnectorName { name, hosts } => write!(
+                formatter,
+                "imported scene connector name '{name}' is ambiguous across {} host nodes",
+                hosts.len()
+            ),
             Self::ClipNotFound { name } => {
                 write!(
                     formatter,
@@ -363,6 +413,16 @@ impl fmt::Display for LookupError {
             }
             Self::StaleImport => write!(formatter, "scene import has been invalidated"),
             Self::NodeIsNotMesh { node } => write!(formatter, "node {node:?} is not a mesh node"),
+            Self::NonInvertibleParentTransform { node, parent } => write!(
+                formatter,
+                "node {node:?} cannot be placed in world space because parent {parent:?} has a non-invertible transform"
+            ),
+            Self::GeometryNotFound { node, .. } => {
+                write!(
+                    formatter,
+                    "geometry for mesh node {node:?} was not found in Assets"
+                )
+            }
             Self::CameraNotFound(_) => write!(formatter, "camera key does not exist in the scene"),
             Self::ClippingPlaneNotFound(_) => {
                 write!(formatter, "clipping plane key does not exist in the scene")

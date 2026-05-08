@@ -3,20 +3,25 @@ use wasm_bindgen::prelude::JsValue;
 
 use super::{WorkflowScene, add_default_camera};
 use crate::{
-    Aabb, AlphaMode, Assets, Color, DiagnosticSeverity, DirectionalLight, GeometryDesc,
-    MaterialDesc, Primitive, Renderer, RetainPolicy, Scene, SourceCoordinateSystem, SourceUnits,
-    TextureColorSpace, TextureTransform, Transform, Vec3,
+    Aabb, AlphaMode, Assets, Color, ConnectOptions, ConnectorFrame, DiagnosticSeverity,
+    DirectionalLight, GeometryDesc, MaterialDesc, Primitive, Renderer, RetainPolicy, Scene,
+    SourceCoordinateSystem, SourceUnits, TextureColorSpace, TextureTransform, Transform, Vec3,
 };
+
+mod viewer;
 
 pub(super) async fn build_ergonomics_scene(workflow: &str) -> Result<WorkflowScene, JsValue> {
     match workflow {
         "camera-framing" => camera_framing_scene(),
         "anchor-alignment" => anchor_alignment_scene().await,
+        "connector-before" => connector_connection_scene(false),
+        "connector-after" => connector_connection_scene(true),
         "coordinate-units" => coordinate_units_scene(),
         "static-batching" => static_batching_scene(),
         "layers-helper-on-top" => layers_helper_on_top_scene(),
         "beginner-diagnostics" => beginner_diagnostics_scene(),
         "material-textures" => material_textures_scene().await,
+        "textured-connector-viewer" => viewer::textured_connector_viewer_scene().await,
         "asset-cache-reload" => asset_cache_reload_scene().await,
         other => Err(JsValue::from_str(&format!(
             "unknown M6 browser workflow probe: {other}"
@@ -88,6 +93,53 @@ async fn anchor_alignment_scene() -> Result<WorkflowScene, JsValue> {
         scene,
         camera,
         metadata: json!({ "anchor": "inspection", "anchor_debug_count": anchor_debug.len() }),
+    })
+}
+
+fn connector_connection_scene(connected: bool) -> Result<WorkflowScene, JsValue> {
+    let assets = Assets::new();
+    let source_geometry = assets.create_geometry(GeometryDesc::box_xyz(0.28, 0.2, 0.2));
+    let target_geometry = assets.create_geometry(GeometryDesc::box_xyz(0.28, 0.2, 0.2));
+    let source_material =
+        assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(255, 70, 40)));
+    let target_material =
+        assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(40, 120, 255)));
+    let mut scene = Scene::new();
+    let source = scene
+        .mesh(source_geometry, source_material)
+        .transform(Transform::at(Vec3::new(-0.65, 0.0, 0.0)))
+        .add()
+        .map_err(|error| JsValue::from_str(&format!("source connector mesh failed: {error:?}")))?;
+    let target = scene
+        .mesh(target_geometry, target_material)
+        .transform(Transform::at(Vec3::new(0.45, 0.0, 0.0)))
+        .add()
+        .map_err(|error| JsValue::from_str(&format!("target connector mesh failed: {error:?}")))?;
+    let mut connection_line = None;
+    if connected {
+        let preview = scene
+            .connect(
+                ConnectorFrame::new(source, Transform::at(Vec3::new(0.14, 0.0, 0.0)))
+                    .named("source-face"),
+                ConnectorFrame::new(target, Transform::at(Vec3::new(-0.14, 0.0, 0.0)))
+                    .named("target-face"),
+                ConnectOptions::default(),
+            )
+            .map_err(|error| JsValue::from_str(&format!("connector solve failed: {error:?}")))?;
+        connection_line = Some(preview.connection_line());
+    }
+    let camera = add_default_camera(&mut scene)?;
+    Ok(WorkflowScene {
+        assets,
+        scene,
+        camera,
+        metadata: json!({
+            "connected": connected,
+            "connection_line": connection_line.map(|line| json!({
+                "start": [line.start().x, line.start().y, line.start().z],
+                "end": [line.end().x, line.end().y, line.end().z],
+            })),
+        }),
     })
 }
 
@@ -244,40 +296,38 @@ fn beginner_diagnostics_scene() -> Result<WorkflowScene, JsValue> {
 
 async fn material_textures_scene() -> Result<WorkflowScene, JsValue> {
     let assets = Assets::new();
+    let red_png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
     let base = assets
-        .load_texture("/fixtures/textures/m8-base.png", TextureColorSpace::Srgb)
+        .load_texture(red_png, TextureColorSpace::Srgb)
         .await
         .map_err(|error| JsValue::from_str(&format!("base texture failed: {error:?}")))?;
     let normal = assets
-        .load_texture(
-            "/fixtures/textures/m8-normal.png",
-            TextureColorSpace::Linear,
-        )
+        .load_texture(red_png, TextureColorSpace::Linear)
         .await
         .map_err(|error| JsValue::from_str(&format!("normal texture failed: {error:?}")))?;
     let metallic_roughness = assets
-        .load_texture(
-            "/fixtures/textures/m8-metallic-roughness.png",
-            TextureColorSpace::Linear,
-        )
+        .load_texture(red_png, TextureColorSpace::Linear)
         .await
         .map_err(|error| {
             JsValue::from_str(&format!("metallic-roughness texture failed: {error:?}"))
         })?;
     let occlusion = assets
-        .load_texture(
-            "/fixtures/textures/m8-occlusion.png",
-            TextureColorSpace::Linear,
-        )
+        .load_texture(red_png, TextureColorSpace::Linear)
         .await
         .map_err(|error| JsValue::from_str(&format!("occlusion texture failed: {error:?}")))?;
     let emissive = assets
-        .load_texture(
-            "/fixtures/textures/m8-emissive.png",
-            TextureColorSpace::Srgb,
-        )
+        .load_texture(red_png, TextureColorSpace::Srgb)
         .await
         .map_err(|error| JsValue::from_str(&format!("emissive texture failed: {error:?}")))?;
+    let decoded_base_color_texture = assets
+        .texture(base)
+        .is_some_and(|texture| texture.has_decoded_pixels());
+    let decoded_normal_texture = assets
+        .texture(normal)
+        .is_some_and(|texture| texture.has_decoded_pixels());
+    let decoded_emissive_texture = assets
+        .texture(emissive)
+        .is_some_and(|texture| texture.has_decoded_pixels());
 
     let material = assets.create_material(
         MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(170, 210, 255), 0.2, 0.65)
@@ -324,6 +374,9 @@ async fn material_textures_scene() -> Result<WorkflowScene, JsValue> {
             "metallic_roughness_texture": true,
             "occlusion_texture": true,
             "emissive_texture": true,
+            "decoded_base_color_texture": decoded_base_color_texture,
+            "decoded_normal_texture": decoded_normal_texture,
+            "decoded_emissive_texture": decoded_emissive_texture,
             "alpha": "Blend",
             "double_sided": true,
             "texture_transform": true,

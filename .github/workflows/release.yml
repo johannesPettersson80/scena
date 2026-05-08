@@ -25,10 +25,13 @@ jobs:
           cargo fmt --check
           cargo clippy --all-targets -- -D warnings
           cargo test
-          cargo check --examples
+          bash scripts/release_lane_command.sh linux-native-vulkan cargo test --test m9_platform_release
+          bash scripts/release_lane_command.sh headless-cpu cargo test --test m9_platform_release
+          bash scripts/release_lane_command.sh linux-native-vulkan cargo check --examples
           RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
           cargo run -p xtask -- doctor --full
           cargo run -p xtask -- release-lane-artifact linux-native-vulkan
+          cargo run -p xtask -- release-lane-artifact headless-cpu
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -56,8 +59,8 @@ jobs:
           npx playwright install chromium --with-deps
           cargo install wasm-pack --version 0.14.0 --locked
           wasm-pack test --headless --chrome --test m6_browser_renderer_parity
-          wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe
-          npm run browser:m6
+          bash scripts/release_lane_command.sh linux-webgl2-chromium wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe
+          bash scripts/release_lane_command.sh linux-webgl2-chromium npm run browser:m6
           cargo run -p xtask -- release-lane-artifact linux-webgl2-chromium
       - uses: actions/upload-artifact@v4
         if: always()
@@ -85,8 +88,8 @@ jobs:
           npm ci
           npx playwright install chromium --with-deps
           cargo install wasm-pack --version 0.14.0 --locked
-          wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe
-          npm run browser:m6
+          bash scripts/release_lane_command.sh linux-webgpu-chromium wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe
+          bash scripts/release_lane_command.sh linux-webgpu-chromium npm run browser:m6
           cargo run -p xtask -- release-lane-artifact linux-webgpu-chromium
       - uses: actions/upload-artifact@v4
         if: always()
@@ -112,8 +115,8 @@ jobs:
           npm ci
           cargo check --target wasm32-unknown-unknown
           cargo install wasm-pack --version 0.14.0 --locked
-          wasm-pack build --release --target web --out-dir target/m9-browser-pkg
-          npm run wasm:size
+          bash scripts/release_lane_command.sh wasm32-unknown-unknown wasm-pack build --release --target web --out-dir target/m9-browser-pkg . --features browser-probe
+          bash scripts/release_lane_command.sh wasm32-unknown-unknown npm run wasm:size
           cargo run -p xtask -- release-lane-artifact wasm32-unknown-unknown
       - uses: actions/upload-artifact@v4
         if: always()
@@ -134,7 +137,8 @@ jobs:
       - name: macOS release lane
         run: |
           cargo test --all-targets
-          cargo check --examples
+          bash scripts/release_lane_command.sh macos-metal cargo test --test m9_platform_release
+          bash scripts/release_lane_command.sh macos-metal cargo check --examples
           cargo run -p xtask -- release-lane-artifact macos-metal
       - uses: actions/upload-artifact@v4
         if: always()
@@ -151,14 +155,30 @@ jobs:
         with:
           components: rustfmt, clippy
       - name: Windows release lane
+        shell: bash
         run: |
           cargo test --all-targets
-          cargo check --examples
+          bash scripts/release_lane_command.sh windows-dx12 cargo test --test m9_platform_release
+          bash scripts/release_lane_command.sh windows-dx12 cargo check --examples
           cargo run -p xtask -- release-lane-artifact windows-dx12
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: release-windows-dx12
+          path: target/gate-artifacts/**
+          if-no-files-found: error
+
+  headless-4k-performance:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.93.1
+      - name: Dedicated 4K benchmark
+        run: cargo test --release --test m9_platform_release m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact -- --ignored
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-headless-4k-performance
           path: target/gate-artifacts/**
           if-no-files-found: error
 
@@ -170,6 +190,7 @@ jobs:
       - wasm32-unknown-unknown
       - macos-metal
       - windows-dx12
+      - headless-4k-performance
     runs-on: ubuntu-24.04
     environment: crates-io
     if: startsWith(github.ref, 'refs/tags/v')

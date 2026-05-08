@@ -4,7 +4,7 @@ use web_sys::HtmlCanvasElement;
 
 use super::report::{capabilities_json, diagnostics_json, stats_json};
 use super::workflows::{
-    animation_scene, instancing_scene_with_count, picking_selection_scene, scene_with_triangle,
+    animation_scene, build_workflow_scene, instancing_scene_with_count, picking_selection_scene,
 };
 use crate::{
     Assets, Backend, NotPreparedReason, PlatformSurface, RenderError, RenderMode, Renderer,
@@ -19,9 +19,11 @@ pub(super) async fn render_surface_lifecycle_probe(
     canvas: HtmlCanvasElement,
     backend: Backend,
 ) -> Result<String, JsValue> {
-    let mut assets = Assets::new();
+    let workflow_scene = build_workflow_scene("material-textures").await?;
+    let mut assets = workflow_scene.assets;
     assets.set_retain_policy(RetainPolicy::OnContextLossOnly);
-    let (mut scene, camera) = scene_with_triangle();
+    let mut scene = workflow_scene.scene;
+    let camera = workflow_scene.camera;
     let mut renderer = Renderer::from_surface_async(browser_surface(
         &canvas,
         backend,
@@ -129,6 +131,8 @@ pub(super) async fn render_surface_lifecycle_probe(
         "draw_calls": final_outcome.render.draw_calls,
         "primitives": final_outcome.render.primitives,
         "stats": stats_json(stats),
+        "material_texture_bindings": stats.material_texture_bindings,
+        "material_sampler_bindings": stats.material_sampler_bindings,
         "gpu_submissions": stats.gpu_submissions,
         "prepared_buffers": stats.buffers,
         "prepared_pipelines": stats.pipelines,

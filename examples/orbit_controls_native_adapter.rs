@@ -1,4 +1,6 @@
-use scena::{OrbitControls, PointerEvent, Primitive, Renderer, Scene, Transform, Vec3};
+use scena::{
+    Assets, Color, GeometryDesc, MaterialDesc, OrbitControls, PointerEvent, Renderer, Scene, Vec3,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeMouseButton {
@@ -18,12 +20,12 @@ fn native_drag(x: f32, y: f32, delta_x: f32, delta_y: f32) -> PointerEvent {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.8, 0.45, 0.35));
+    let material = assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(90, 180, 220)));
+
     let mut scene = Scene::new();
-    scene.add_renderable(
-        scene.root(),
-        vec![Primitive::unlit_triangle()],
-        Transform::default(),
-    )?;
+    scene.mesh(geometry, material).add()?;
     let camera = scene.add_default_camera()?;
 
     let mut controls = OrbitControls::new(Vec3::ZERO, 2.0).with_damping(0.15);
@@ -35,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     controls.apply_to_scene(&mut scene, camera)?;
 
     let mut renderer = Renderer::headless(320, 240)?;
-    renderer.prepare(&mut scene)?;
+    renderer.prepare_with_assets(&mut scene, &assets)?;
     renderer.render_active(&scene)?;
     Ok(())
 }

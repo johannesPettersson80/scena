@@ -4,7 +4,10 @@ use crate::diagnostics::{ImportDiagnosticOverlay, LookupError};
 use crate::geometry::Aabb;
 
 use super::bounds::{transform_aabb, union_optional};
-use super::{ImportAnchor, ImportAnchorDebugMetadata, ImportClip, ImportPivot, SceneImport};
+use super::{
+    ImportAnchor, ImportAnchorDebugMetadata, ImportClip, ImportConnector, ImportPivot, SceneImport,
+    SourceCoordinateSystem, SourceUnits,
+};
 use crate::scene::{NodeKey, Scene, Transform};
 
 impl SceneImport {
@@ -78,6 +81,14 @@ impl SceneImport {
         &self.roots
     }
 
+    pub const fn source_units(&self) -> SourceUnits {
+        self.source_units
+    }
+
+    pub const fn source_coordinate_system(&self) -> SourceCoordinateSystem {
+        self.source_coordinate_system
+    }
+
     pub fn pivot(&self, node_name: &str) -> Result<ImportPivot, LookupError> {
         self.ensure_live()?;
         let node = self.node(node_name)?;
@@ -121,6 +132,15 @@ impl SceneImport {
         self.clips_named(name).next()
     }
 
+    pub fn replacement_clip(&self, previous: &ImportClip) -> Result<&ImportClip, LookupError> {
+        let Some(name) = previous.name() else {
+            return Err(LookupError::ClipNotFound {
+                name: "<unnamed>".to_string(),
+            });
+        };
+        self.clip(name)
+    }
+
     pub fn clips_named<'import>(
         &'import self,
         name: &str,
@@ -149,6 +169,40 @@ impl SceneImport {
     pub fn anchors(&self) -> Result<&[ImportAnchor], LookupError> {
         self.ensure_live()?;
         Ok(&self.anchors)
+    }
+
+    pub fn replacement_anchor(
+        &self,
+        previous: &ImportAnchor,
+    ) -> Result<&ImportAnchor, LookupError> {
+        self.anchor(previous.name())
+    }
+
+    pub fn connector(&self, name: &str) -> Result<&ImportConnector, LookupError> {
+        self.ensure_live()?;
+        let matches = self.connectors_named(name).collect::<Vec<_>>();
+        match matches.as_slice() {
+            [] => Err(LookupError::ConnectorNotFound {
+                name: name.to_string(),
+            }),
+            [connector] => Ok(*connector),
+            _ => Err(LookupError::AmbiguousConnectorName {
+                name: name.to_string(),
+                hosts: matches.iter().map(|connector| connector.node()).collect(),
+            }),
+        }
+    }
+
+    pub fn connectors(&self) -> Result<&[ImportConnector], LookupError> {
+        self.ensure_live()?;
+        Ok(&self.connectors)
+    }
+
+    pub fn replacement_connector(
+        &self,
+        previous: &ImportConnector,
+    ) -> Result<&ImportConnector, LookupError> {
+        self.connector(previous.name())
     }
 
     pub fn anchors_for(&self, node: NodeKey) -> Result<Vec<&ImportAnchor>, LookupError> {
@@ -186,6 +240,16 @@ impl SceneImport {
             .filter(move |anchor| anchor.name() == name.as_str())
     }
 
+    pub fn connectors_named<'import>(
+        &'import self,
+        name: &str,
+    ) -> impl Iterator<Item = &'import ImportConnector> + 'import {
+        let name = name.to_string();
+        self.connectors
+            .iter()
+            .filter(move |connector| connector.name() == name.as_str())
+    }
+
     pub fn bounds_local(&self) -> Option<Aabb> {
         if !self.is_live() {
             return None;
@@ -204,7 +268,7 @@ impl SceneImport {
             .iter()
             .filter_map(|record| {
                 let bounds = record.bounds?;
-                let transform = scene.node(record.node)?.transform();
+                let transform = scene.world_transform(record.node)?;
                 Some(transform_aabb(bounds, transform))
             })
             .fold(None, |bounds, next| Some(union_optional(bounds, next)))

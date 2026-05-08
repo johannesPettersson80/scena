@@ -1,6 +1,9 @@
 const fs = require("fs");
+const crypto = require("crypto");
 const http = require("http");
 const path = require("path");
+
+const MODEL_VIEWER_FIXTURE = "/fixtures/gltf/non_ndc_camera_scene.gltf";
 
 function loadPlaywright() {
   return require("playwright");
@@ -83,12 +86,55 @@ function unavailableResult(backend, error) {
   };
 }
 
+function fixturePath(fixtureRoot, source) {
+  if (!source || !source.startsWith("/fixtures/")) {
+    throw new Error(`fixture source must use /fixtures/ prefix, got ${source}`);
+  }
+  const root = path.resolve(fixtureRoot);
+  const relative = path.normalize(source.slice("/fixtures/".length));
+  const file = path.resolve(root, relative);
+  if (!file.startsWith(`${root}${path.sep}`)) {
+    throw new Error(`fixture source escapes fixture root: ${source}`);
+  }
+  return file;
+}
+
+function fixtureSha256(fixtureRoot, source) {
+  return crypto.createHash("sha256").update(fs.readFileSync(fixturePath(fixtureRoot, source))).digest("hex");
+}
+
+function attachFixtureHash(fixtureRoot, result) {
+  const source = result.metadata && result.metadata.source;
+  if (!source) {
+    return;
+  }
+  const fixture_sha256 = fixtureSha256(fixtureRoot, source);
+  result.fixture_sha256 = fixture_sha256;
+  result.screenshot_metadata = result.screenshot_metadata || {};
+  result.screenshot_metadata.fixture_sha256 = fixture_sha256;
+}
+
 function isAllowedUnavailable(backend, error) {
   if (process.env.SCENA_BROWSER_ALLOW_UNAVAILABLE !== "1") {
     return false;
   }
   const message = String(error && error.message ? error.message : error);
   return backend === "webgpu" && message.includes("NoAdapter");
+}
+
+function assertNoScenaGpuValidationErrors(backend, consoleMessages) {
+  const validationErrors = consoleMessages.filter(
+    (message) =>
+      message.includes("scena wgpu uncaptured error") ||
+      message.includes("Error while parsing WGSL") ||
+      message.includes("Invalid ShaderModule") ||
+      message.includes("Invalid RenderPipeline"),
+  );
+  if (validationErrors.length > 0) {
+    throw new Error(
+      `${backend} browser GPU validation errors were reported:\n${validationErrors.join("\n")}`,
+    );
+  }
 }
 
 function assertStateLifecycleProbe(backend, result) {
@@ -111,6 +157,247 @@ function assertStateLifecycleProbe(backend, result) {
   ) {
     throw new Error(
       `${backend} state lifecycle probe did not prove idle-render-skipped behavior: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+function assertSurfaceLifecycleProbe(backend, result) {
+  const events = new Set(result.event_sequence || []);
+  for (const event of [
+    "context-lost",
+    "context-restored",
+    "recover-context",
+    "render-after-context-recovery",
+    "device-lost",
+    "recover-device",
+    "render-after-device-recovery",
+    "final-render",
+  ]) {
+    if (!events.has(event)) {
+      throw new Error(
+        `${backend} surface lifecycle probe did not record ${event}: ${JSON.stringify(result)}`,
+      );
+    }
+  }
+  if (!result.stats || result.stats.material_texture_bindings < 5 || result.stats.textures < 2) {
+    throw new Error(
+      `${backend} surface lifecycle probe did not recover a textured material scene: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    !result.context_recovered ||
+    result.context_recovered.draw_calls <= 0 ||
+    !result.device_recovered ||
+    result.device_recovered.draw_calls <= 0
+  ) {
+    throw new Error(
+      `${backend} surface lifecycle probe did not render after context/device recovery: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+function assertModelViewerProof(backend, result) {
+  const metadata = result.metadata || {};
+  if (metadata.source !== MODEL_VIEWER_FIXTURE) {
+    throw new Error(
+      `${backend} model-viewer proof used unexpected fixture ${metadata.source}: ${JSON.stringify(result)}`,
+    );
+  }
+  if (metadata.proof_class !== "camera-framed-non-ndc" || metadata.framed !== true) {
+    throw new Error(
+      `${backend} model-viewer proof did not record camera-framed non-NDC metadata: ${JSON.stringify(result)}`,
+    );
+  }
+  if (!/^[0-9a-f]{64}$/.test(result.fixture_sha256 || "")) {
+    throw new Error(`${backend} model-viewer proof did not record fixture_sha256`);
+  }
+  if (
+    !result.screenshot_metadata ||
+    result.screenshot_metadata.fixture_sha256 !== result.fixture_sha256 ||
+    result.screenshot_metadata.backend !== backend ||
+    result.screenshot_metadata.workflow !== "model-viewer" ||
+    result.screenshot_metadata.width <= 0 ||
+    result.screenshot_metadata.height <= 0 ||
+    result.screenshot_metadata.device_pixel_ratio <= 0
+  ) {
+    throw new Error(
+      `${backend} model-viewer proof did not include complete screenshot_metadata: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    typeof result.canvas_data_url !== "string" ||
+    !result.canvas_data_url.startsWith("data:image/png;base64,") ||
+    result.canvas_data_url.length < 100
+  ) {
+    throw new Error(`${backend} model-viewer proof did not capture a PNG canvas data URL`);
+  }
+  if (!result.pixels || result.pixels.nonblack <= 0 || !result.screenshot_metadata.pixel_statistics) {
+    throw new Error(
+      `${backend} model-viewer proof did not include nonblack pixel statistics: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+function assertDepthOverlapProof(backend, result) {
+  const metadata = result.metadata || {};
+  const center = result.pixels && result.pixels.center;
+  if (metadata.proof_class !== "depth-overlap-near-wins" || !Array.isArray(center)) {
+    throw new Error(
+      `${backend} depth-overlap proof did not record required metadata and center pixel: ${JSON.stringify(result)}`,
+    );
+  }
+  if (center[1] <= center[0] + 20) {
+    throw new Error(
+      `${backend} depth-overlap proof did not keep the nearer green triangle visible over later red geometry: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+function assertMaterialTextureProof(backend, result) {
+  const metadata = result.metadata || {};
+  if (
+    metadata.decoded_base_color_texture !== true ||
+    metadata.decoded_normal_texture !== true ||
+    metadata.decoded_emissive_texture !== true ||
+    metadata.texture_transform !== true
+  ) {
+    throw new Error(
+      `${backend} material-textures proof did not use decoded Rust/WASM texture pixels: ${JSON.stringify(result)}`,
+    );
+  }
+  if (!result.stats || result.stats.material_texture_bindings < 5) {
+    throw new Error(
+      `${backend} material-textures proof did not report material texture bindings: ${JSON.stringify(result)}`,
+    );
+  }
+  if (!result.pixels || result.pixels.nonblack <= 0) {
+    throw new Error(
+      `${backend} material-textures proof did not render visible material pixels: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+function assertPunctualLightProof(backend, result, channel, workflow) {
+  const metadata = result.metadata || {};
+  const center = result.pixels && result.pixels.center;
+  const channelIndex = { red: 0, green: 1, blue: 2 }[channel];
+  if (
+    metadata.proof_class !== "browser-pbr-punctual-light" ||
+    metadata.light_kind !== channel ||
+    metadata.material_kind !== "pbr-metallic-roughness" ||
+    !Array.isArray(center)
+  ) {
+    throw new Error(
+      `${backend} ${workflow} proof did not record PBR punctual-light metadata and center pixel: ${JSON.stringify(result)}`,
+    );
+  }
+  const otherChannels = [0, 1, 2].filter((index) => index !== channelIndex);
+  if (
+    center[channelIndex] <= center[otherChannels[0]] + 20 ||
+    center[channelIndex] <= center[otherChannels[1]] + 20
+  ) {
+    throw new Error(
+      `${backend} ${workflow} did not tint PBR output through the ${channel} light lane: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+function assertNormalMapProof(backend, result) {
+  const metadata = result.metadata || {};
+  const normalMapPixels = metadata.normal_map_pixels || {};
+  if (
+    metadata.proof_class !== "browser-pbr-normal-map" ||
+    normalMapPixels.flat_normal !== true ||
+    normalMapPixels.inverted_normal !== true ||
+    !result.pixels ||
+    !Array.isArray(result.pixels.flat) ||
+    !Array.isArray(result.pixels.inverted)
+  ) {
+    throw new Error(
+      `${backend} pbr-normal-map proof did not record normal-map metadata and sample pixels: ${JSON.stringify(result)}`,
+    );
+  }
+  const flat = result.pixels.flat;
+  const inverted = result.pixels.inverted;
+  if (
+    flat[0] <= inverted[0] + 20 ||
+    flat[1] <= inverted[1] + 20 ||
+    flat[2] <= inverted[2] + 20
+  ) {
+    throw new Error(
+      `${backend} pbr-normal-map did not prove tangent-space normal texture changes PBR lighting: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+function assertEnvironmentLightProof(backend, result) {
+  const metadata = result.metadata || {};
+  const center = result.pixels && result.pixels.center;
+  if (
+    metadata.proof_class !== "browser-pbr-environment-light" ||
+    metadata.environment_kind !== "inline-radiance-hdr" ||
+    metadata.material_kind !== "pbr-metallic-roughness" ||
+    !Array.isArray(center)
+  ) {
+    throw new Error(
+      `${backend} pbr-environment proof did not record environment-light metadata and center pixel: ${JSON.stringify(result)}`,
+    );
+  }
+  if (center[2] <= center[0] + 20 || center[2] <= center[1] + 10) {
+    throw new Error(
+      `${backend} pbr-environment did not tint PBR output through the active HDR environment: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+function assertShadowVisibilityProof(backend, result) {
+  const metadata = result.metadata || {};
+  const lit = result.pixels && result.pixels.flat;
+  const shadowed = result.pixels && result.pixels.inverted;
+  if (
+    metadata.proof_class !== "browser-pbr-directional-shadow-visibility" ||
+    metadata.shadow_source !== "prepared-visibility" ||
+    metadata.material_kind !== "pbr-metallic-roughness" ||
+    !Array.isArray(lit) ||
+    !Array.isArray(shadowed)
+  ) {
+    throw new Error(
+      `${backend} pbr-shadow-visibility proof did not record shadow metadata and sample pixels: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    shadowed[0] + 15 >= lit[0] ||
+    shadowed[1] + 15 >= lit[1] ||
+    shadowed[2] + 15 >= lit[2]
+  ) {
+    throw new Error(
+      `${backend} pbr-shadow-visibility did not darken the prepared shadow receiver: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+function assertTexturedConnectorViewerProof(backend, result) {
+  const metadata = result.metadata || {};
+  if (
+    metadata.decoded_base_color_texture !== true ||
+    metadata.connected !== true ||
+    metadata.framed !== true ||
+    metadata.picked !== true ||
+    metadata.selected !== true ||
+    !metadata.connection_line
+  ) {
+    throw new Error(
+      `${backend} textured-connector-viewer did not prove load/place/connect/frame/pick/render workflow: ${JSON.stringify(result)}`,
+    );
+  }
+  if (!result.stats || result.stats.material_texture_bindings < 1) {
+    throw new Error(
+      `${backend} textured-connector-viewer did not report a material texture binding: ${JSON.stringify(result)}`,
+    );
+  }
+  if (!result.pixels || result.pixels.nonblack <= 0) {
+    throw new Error(
+      `${backend} textured-connector-viewer did not render visible textured assembly pixels: ${JSON.stringify(result)}`,
     );
   }
 }
@@ -141,13 +428,22 @@ async function main() {
     "animation",
     "labels-helpers",
     "industrial-static-scene",
+    "depth-overlap",
+    "pbr-point-light",
+    "pbr-spot-light",
+    "pbr-normal-map",
+    "pbr-environment",
+    "pbr-shadow-visibility",
     "camera-framing",
     "anchor-alignment",
+    "connector-before",
+    "connector-after",
     "coordinate-units",
     "static-batching",
     "layers-helper-on-top",
     "beginner-diagnostics",
     "material-textures",
+    "textured-connector-viewer",
     "asset-cache-reload",
   ];
   const results = [];
@@ -174,6 +470,7 @@ async function main() {
         if (result.status !== "passed") {
           throw new Error(`${backend} Rust/WASM renderer probe failed: ${JSON.stringify(result)}`);
         }
+        const workflowResults = new Map();
         for (const workflow of workflows) {
           let workflowResult;
           try {
@@ -184,12 +481,47 @@ async function main() {
           } catch (error) {
             throw new Error(`${backend} ${workflow}: ${error.message}`);
           }
+          attachFixtureHash(fixtureRoot, workflowResult);
           results.push(workflowResult);
           if (workflowResult.status !== "passed") {
             throw new Error(
               `${backend} ${workflow} Rust/WASM renderer probe failed: ${JSON.stringify(workflowResult)}`,
             );
           }
+          workflowResults.set(workflow, workflowResult);
+        }
+        assertModelViewerProof(backend, workflowResults.get("model-viewer"));
+        assertDepthOverlapProof(backend, workflowResults.get("depth-overlap"));
+        assertPunctualLightProof(
+          backend,
+          workflowResults.get("pbr-point-light"),
+          "green",
+          "pbr-point-light",
+        );
+        assertPunctualLightProof(
+          backend,
+          workflowResults.get("pbr-spot-light"),
+          "blue",
+          "pbr-spot-light",
+        );
+        assertNormalMapProof(backend, workflowResults.get("pbr-normal-map"));
+        assertEnvironmentLightProof(backend, workflowResults.get("pbr-environment"));
+        assertShadowVisibilityProof(backend, workflowResults.get("pbr-shadow-visibility"));
+        assertMaterialTextureProof(backend, workflowResults.get("material-textures"));
+        assertTexturedConnectorViewerProof(
+          backend,
+          workflowResults.get("textured-connector-viewer"),
+        );
+        const connectorBefore = workflowResults.get("connector-before");
+        const connectorAfter = workflowResults.get("connector-after");
+        if (
+          !connectorBefore ||
+          !connectorAfter ||
+          connectorBefore.canvas_data_url === connectorAfter.canvas_data_url
+        ) {
+          throw new Error(
+            `${backend} connector before/after workflow did not change rendered output`,
+          );
         }
         const lifecycleResult = await page.evaluate(
           (name) => window.scenaM6RustWasmLifecycleProbe(name),
@@ -201,6 +533,7 @@ async function main() {
             `${backend} surface/context lifecycle probe failed: ${JSON.stringify(lifecycleResult)}`,
           );
         }
+        assertSurfaceLifecycleProbe(backend, lifecycleResult);
         const benchmarkResult = await page.evaluate(
           (name) => window.scenaM6RustWasmBenchmarkProbe(name),
           backend,
@@ -222,6 +555,7 @@ async function main() {
           );
         }
         assertStateLifecycleProbe(backend, stateLifecycleResult);
+        assertNoScenaGpuValidationErrors(backend, consoleMessages);
       } catch (error) {
         if (!isAllowedUnavailable(backend, error)) {
           throw error;

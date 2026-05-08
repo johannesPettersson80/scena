@@ -34,7 +34,7 @@ fn scene_with_triangle() -> (Scene, CameraKey) {
         .add_perspective_camera(
             scene.root(),
             PerspectiveCamera::default(),
-            Transform::default(),
+            Transform::at(Vec3::new(0.0, 0.0, 2.0)),
         )
         .expect("camera inserts under root");
     scene
@@ -56,7 +56,7 @@ fn scene_with_primitive(primitive: Primitive) -> (Scene, CameraKey) {
         .add_perspective_camera(
             scene.root(),
             PerspectiveCamera::default(),
-            Transform::default(),
+            Transform::at(Vec3::new(0.0, 0.0, 2.0)),
         )
         .expect("camera inserts under root");
     scene

@@ -34,7 +34,7 @@ impl Default for PerspectiveCamera {
     fn default() -> Self {
         Self {
             vertical_fov: Angle::from_degrees(60.0),
-            aspect: 1.0,
+            aspect: 0.0,
             near: DepthRange::DEFAULT.near,
             far: DepthRange::DEFAULT.far,
         }
@@ -42,6 +42,11 @@ impl Default for PerspectiveCamera {
 }
 
 impl PerspectiveCamera {
+    pub const fn with_aspect(mut self, aspect: f32) -> Self {
+        self.aspect = aspect;
+        self
+    }
+
     pub const fn with_depth_range(mut self, range: DepthRange) -> Self {
         self.near = range.near;
         self.far = range.far;

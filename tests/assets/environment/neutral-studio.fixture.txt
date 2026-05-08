@@ -1,0 +1,5 @@
+SCENA_ENVIRONMENT_FIXTURE_V1
+name = neutral-studio
+kind = cpu-preview-environment
+license = CC0-1.0
+note = textual metadata for the default preview environment; not HDR input and not IBL proof.

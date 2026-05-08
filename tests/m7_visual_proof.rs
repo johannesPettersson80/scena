@@ -4,15 +4,21 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use scena::{
-    Aabb, Assets, Color, CursorPosition, GeometryDesc, HitTarget, LabelDesc, MaterialDesc,
-    OrbitControls, Primitive, Renderer, Scene, SourceCoordinateSystem, SourceUnits, Transform,
-    Vec3, Viewport,
+    Aabb, Assets, Color, ConnectOptions, ConnectorFrame, GeometryDesc, LabelDesc, MaterialDesc,
+    OrbitControls, Renderer, Scene, SourceCoordinateSystem, SourceUnits, Transform, Vec3,
 };
 
 #[test]
 fn m7_headless_visual_artifacts_cover_ergonomics_workflows() {
     let artifact_dir = artifact_dir();
     fs::create_dir_all(&artifact_dir).expect("artifact directory can be created");
+    let connector_before = render_connector_connection(false);
+    let connector_after = render_connector_connection(true);
+
+    assert_ne!(
+        connector_before.rgba, connector_after.rgba,
+        "connector before/after proof must show a rendered placement change"
+    );
 
     for artifact in [
         render_first_render(),
@@ -25,6 +31,8 @@ fn m7_headless_visual_artifacts_cover_ergonomics_workflows() {
         render_layers_helper_on_top(),
         render_static_batching(),
         render_anchor_alignment(),
+        connector_before,
+        connector_after,
         render_coordinate_units(),
         render_industrial_static_scene(),
     ] {
@@ -44,16 +52,17 @@ fn m7_headless_visual_artifacts_cover_ergonomics_workflows() {
 }
 
 fn render_first_render() -> VisualArtifact {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.6, 0.4, 0.3));
+    let material =
+        assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(0.2, 0.65, 1.0)));
     let mut scene = Scene::new();
-    scene
-        .add_renderable(
-            scene.root(),
-            vec![Primitive::unlit_triangle()],
-            Transform::default(),
-        )
-        .expect("renderable inserts");
+    scene.mesh(geometry, material).add().expect("mesh inserts");
     let camera = scene.add_default_camera().expect("camera inserts");
-    render_scene("m7-first-render", scene, camera)
+    scene
+        .frame_all_with_assets(camera, &assets)
+        .expect("camera frames mesh");
+    render_scene_with_assets("m7-first-render", scene, camera, &assets)
 }
 
 fn render_first_glb() -> VisualArtifact {
@@ -90,28 +99,27 @@ fn render_camera_frame() -> VisualArtifact {
 }
 
 fn render_picking_selection() -> VisualArtifact {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.6, 0.4, 0.3));
+    let material =
+        assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(0.2, 0.65, 1.0)));
     let mut scene = Scene::new();
-    let node = scene
-        .add_renderable(
-            scene.root(),
-            vec![Primitive::unlit_triangle()],
-            Transform::default(),
-        )
-        .expect("pickable inserts");
+    scene.mesh(geometry, material).add().expect("mesh inserts");
     let camera = scene.add_default_camera().expect("camera inserts");
+    scene
+        .frame_all_with_assets(camera, &assets)
+        .expect("camera frames mesh");
     let hit = scene
-        .pick(
+        .pick_and_select_with_assets(
             camera,
-            CursorPosition::logical(24.0, 24.0),
-            Viewport::new(48, 48, 1.0).expect("viewport validates"),
+            scena::CursorPosition::physical(24.0, 24.0),
+            scena::Viewport::new(48, 48, 1.0).expect("viewport validates"),
+            &assets,
         )
         .expect("pick succeeds")
         .expect("pick hits");
-    assert!(matches!(hit.target(), HitTarget::Node(hit_node) if hit_node == node));
-    scene
-        .interaction_mut()
-        .set_primary_selection(Some(HitTarget::Node(node)));
-    render_scene("m7-picking-selection", scene, camera)
+    assert_eq!(scene.interaction().primary_selection(), Some(hit.target()));
+    render_scene_with_assets("m7-picking-selection", scene, camera, &assets)
 }
 
 fn render_helpers() -> VisualArtifact {
@@ -150,46 +158,48 @@ fn render_labels() -> VisualArtifact {
 }
 
 fn render_controls() -> VisualArtifact {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.6, 0.4, 0.3));
+    let material =
+        assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(0.2, 0.65, 1.0)));
     let mut scene = Scene::new();
-    scene
-        .add_renderable(
-            scene.root(),
-            vec![Primitive::unlit_triangle()],
-            Transform::default(),
-        )
-        .expect("renderable inserts");
+    scene.mesh(geometry, material).add().expect("mesh inserts");
     let camera = scene.add_default_camera().expect("camera inserts");
     OrbitControls::new(Vec3::ZERO, 2.5)
         .with_damping(0.2)
         .focus(Vec3::ZERO, 2.0)
         .apply_to_scene(&mut scene, camera)
         .expect("controls apply");
-    render_scene("m7-controls", scene, camera)
+    render_scene_with_assets("m7-controls", scene, camera, &assets)
 }
 
 fn render_layers_helper_on_top() -> VisualArtifact {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.45, 0.3, 0.25));
+    let visible_material =
+        assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(0.2, 0.8, 1.0)));
+    let hidden_material =
+        assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(1.0, 0.2, 0.1)));
     let mut scene = Scene::new();
     let visible = scene
-        .add_renderable(
-            scene.root(),
-            vec![Primitive::unlit_triangle()],
-            Transform::default(),
-        )
-        .expect("visible node inserts");
+        .mesh(geometry, visible_material)
+        .add()
+        .expect("visible mesh inserts");
     let hidden = scene
-        .add_renderable(
-            scene.root(),
-            vec![Primitive::unlit_triangle()],
-            Transform::at(Vec3::new(0.3, 0.0, 0.0)),
-        )
-        .expect("hidden node inserts");
+        .mesh(geometry, hidden_material)
+        .transform(Transform::at(Vec3::new(0.3, 0.0, 0.0)))
+        .add()
+        .expect("hidden mesh inserts");
     scene.set_layer_mask(hidden, 0b0010).expect("layer mask");
     scene.set_helper_on_top(visible, true).expect("helper flag");
     let camera = scene.add_default_camera().expect("camera inserts");
     scene
+        .frame_all_with_assets(camera, &assets)
+        .expect("camera frames meshes");
+    scene
         .set_camera_layer_mask(camera, 0b0001)
         .expect("camera layer mask");
-    render_scene("m7-layers-helper-on-top", scene, camera)
+    render_scene_with_assets("m7-layers-helper-on-top", scene, camera, &assets)
 }
 
 fn render_static_batching() -> VisualArtifact {
@@ -233,6 +243,45 @@ fn render_anchor_alignment() -> VisualArtifact {
         .expect("marker snaps to anchor");
     let camera = scene.add_default_camera().expect("camera inserts");
     render_scene_with_assets("m7-anchor-alignment", scene, camera, &assets)
+}
+
+fn render_connector_connection(connected: bool) -> VisualArtifact {
+    let assets = Assets::new();
+    let source_geometry = assets.create_geometry(GeometryDesc::box_xyz(0.28, 0.2, 0.2));
+    let target_geometry = assets.create_geometry(GeometryDesc::box_xyz(0.28, 0.2, 0.2));
+    let source_material =
+        assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(1.0, 0.2, 0.1)));
+    let target_material =
+        assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(0.1, 0.45, 1.0)));
+    let mut scene = Scene::new();
+    let source = scene
+        .mesh(source_geometry, source_material)
+        .transform(Transform::at(Vec3::new(-0.65, 0.0, 0.0)))
+        .add()
+        .expect("source part inserts");
+    let target = scene
+        .mesh(target_geometry, target_material)
+        .transform(Transform::at(Vec3::new(0.45, 0.0, 0.0)))
+        .add()
+        .expect("target part inserts");
+    if connected {
+        scene
+            .connect(
+                ConnectorFrame::new(source, Transform::at(Vec3::new(0.14, 0.0, 0.0)))
+                    .named("source-face"),
+                ConnectorFrame::new(target, Transform::at(Vec3::new(-0.14, 0.0, 0.0)))
+                    .named("target-face"),
+                ConnectOptions::default(),
+            )
+            .expect("connector placement solves before visual proof");
+    }
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let name = if connected {
+        "m7-connector-after"
+    } else {
+        "m7-connector-before"
+    };
+    render_scene_with_assets(name, scene, camera, &assets)
 }
 
 fn render_coordinate_units() -> VisualArtifact {

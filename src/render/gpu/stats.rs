@@ -16,6 +16,19 @@ pub(in crate::render) struct GpuResourceStats {
     pub(in crate::render) approximate_gpu_memory_bytes: u64,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(super) struct PreparedResourceEstimateInput {
+    pub(super) target: RasterTarget,
+    pub(super) vertex_count: usize,
+    pub(super) has_surface_pipeline: bool,
+    pub(super) shadow_maps: u64,
+    pub(super) shadow_map_resolution: Option<u32>,
+    pub(super) depth_prepass_passes: u64,
+    pub(super) has_compute_culling: bool,
+    pub(super) material_texture_count: u64,
+    pub(super) material_texture_bytes: u64,
+}
+
 impl GpuResourceStats {
     pub(in crate::render) fn destruction_records(self) -> u64 {
         self.buffers
@@ -28,14 +41,20 @@ impl GpuResourceStats {
 }
 
 pub(super) fn estimate_prepared_resource_stats(
-    target: RasterTarget,
-    vertex_count: usize,
-    has_surface_pipeline: bool,
-    shadow_maps: u64,
-    shadow_map_resolution: Option<u32>,
-    depth_prepass_passes: u64,
-    has_compute_culling: bool,
+    input: PreparedResourceEstimateInput,
 ) -> GpuResourceStats {
+    let PreparedResourceEstimateInput {
+        target,
+        vertex_count,
+        has_surface_pipeline,
+        shadow_maps,
+        shadow_map_resolution,
+        depth_prepass_passes,
+        has_compute_culling,
+        material_texture_count,
+        material_texture_bytes,
+    } = input;
+
     if vertex_count == 0 {
         return GpuResourceStats::default();
     }
@@ -89,26 +108,28 @@ pub(super) fn estimate_prepared_resource_stats(
         #[cfg(target_arch = "wasm32")]
         buffers: 2,
         #[cfg(not(target_arch = "wasm32"))]
-        textures: 1 + shadow_maps + depth_prepass_passes,
+        textures: 1 + material_texture_count + shadow_maps + depth_prepass_passes,
         #[cfg(target_arch = "wasm32")]
-        textures: 0,
+        textures: material_texture_count,
         #[cfg(not(target_arch = "wasm32"))]
         render_targets: 1 + shadow_maps + depth_prepass_passes,
         #[cfg(target_arch = "wasm32")]
         render_targets: 1,
         pipelines,
-        bind_groups: 1,
+        bind_groups: 1 + material_texture_count,
         shader_modules: pipelines,
         #[cfg(not(target_arch = "wasm32"))]
         approximate_gpu_memory_bytes: texture_bytes
             + readback_bytes
             + vertex_bytes
             + uniform_bytes
+            + material_texture_bytes
             + shadow_map_bytes
             + depth_prepass_bytes,
         #[cfg(target_arch = "wasm32")]
         approximate_gpu_memory_bytes: vertex_bytes
             + uniform_bytes
+            + material_texture_bytes
             + shadow_map_bytes
             + depth_prepass_bytes,
     }
@@ -132,15 +153,15 @@ mod tests {
             backend: Backend::HeadlessGpu,
         };
 
-        let stats = estimate_prepared_resource_stats(target, 3, false, 0, None, 0, false);
+        let stats = estimate_prepared_resource_stats(estimate_input(target, 3));
 
         assert_eq!(stats.buffers, 3);
-        assert_eq!(stats.textures, 1);
+        assert_eq!(stats.textures, 2);
         assert_eq!(stats.render_targets, 1);
         assert_eq!(stats.pipelines, 1);
-        assert_eq!(stats.bind_groups, 1);
+        assert_eq!(stats.bind_groups, 2);
         assert_eq!(stats.shader_modules, 1);
-        assert_eq!(stats.destruction_records(), 8);
+        assert_eq!(stats.destruction_records(), 10);
         assert!(stats.approximate_gpu_memory_bytes > 0);
     }
 
@@ -152,7 +173,7 @@ mod tests {
             backend: Backend::HeadlessGpu,
         };
 
-        let stats = estimate_prepared_resource_stats(target, 0, false, 0, None, 0, false);
+        let stats = estimate_prepared_resource_stats(estimate_input(target, 0));
 
         assert_eq!(stats, GpuResourceStats::default());
         assert_eq!(stats.destruction_records(), 0);
@@ -166,11 +187,15 @@ mod tests {
             backend: Backend::HeadlessGpu,
         };
 
-        let stats = estimate_prepared_resource_stats(target, 3, false, 1, Some(2048), 0, false);
+        let stats = estimate_prepared_resource_stats(PreparedResourceEstimateInput {
+            shadow_maps: 1,
+            shadow_map_resolution: Some(2048),
+            ..estimate_input(target, 3)
+        });
 
-        assert_eq!(stats.textures, 2);
+        assert_eq!(stats.textures, 3);
         assert_eq!(stats.render_targets, 2);
-        assert_eq!(stats.destruction_records(), 10);
+        assert_eq!(stats.destruction_records(), 12);
         assert!(stats.approximate_gpu_memory_bytes >= 2048 * 2048 * 4);
     }
 
@@ -182,13 +207,16 @@ mod tests {
             backend: Backend::HeadlessGpu,
         };
 
-        let stats = estimate_prepared_resource_stats(target, 3, false, 0, None, 1, false);
+        let stats = estimate_prepared_resource_stats(PreparedResourceEstimateInput {
+            depth_prepass_passes: 1,
+            ..estimate_input(target, 3)
+        });
 
-        assert_eq!(stats.textures, 2);
+        assert_eq!(stats.textures, 3);
         assert_eq!(stats.render_targets, 2);
         assert_eq!(stats.pipelines, 2);
         assert_eq!(stats.shader_modules, 2);
-        assert_eq!(stats.destruction_records(), 12);
+        assert_eq!(stats.destruction_records(), 14);
         assert!(stats.approximate_gpu_memory_bytes >= 4 * 4 * 4);
     }
 
@@ -200,10 +228,27 @@ mod tests {
             backend: Backend::HeadlessGpu,
         };
 
-        let stats = estimate_prepared_resource_stats(target, 3, false, 0, None, 0, true);
+        let stats = estimate_prepared_resource_stats(PreparedResourceEstimateInput {
+            has_compute_culling: true,
+            ..estimate_input(target, 3)
+        });
 
         assert_eq!(stats.pipelines, 2);
         assert_eq!(stats.shader_modules, 2);
-        assert_eq!(stats.destruction_records(), 10);
+        assert_eq!(stats.destruction_records(), 12);
+    }
+
+    fn estimate_input(target: RasterTarget, vertex_count: usize) -> PreparedResourceEstimateInput {
+        PreparedResourceEstimateInput {
+            target,
+            vertex_count,
+            has_surface_pipeline: false,
+            shadow_maps: 0,
+            shadow_map_resolution: None,
+            depth_prepass_passes: 0,
+            has_compute_culling: false,
+            material_texture_count: 1,
+            material_texture_bytes: 4,
+        }
     }
 }

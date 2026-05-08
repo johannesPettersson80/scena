@@ -12,6 +12,7 @@ use scena::{
 const M2_HEADLESS_FIXTURE_METADATA: &str = include_str!("visual/fixtures/m2-headless-core.toml");
 const M2_HEADLESS_REFERENCE_METADATA: &str =
     include_str!("visual/references/m2-headless-core.toml");
+const CAMERA_DISTANCE_FOR_NDC_FIXTURES: f32 = 1.732_050_8;
 
 #[test]
 fn m2_headless_visual_artifacts_cover_lighting_depth_and_clipping() {
@@ -313,7 +314,7 @@ fn scene_with_camera() -> (Scene, scena::CameraKey) {
         .add_perspective_camera(
             scene.root(),
             PerspectiveCamera::default(),
-            Transform::default(),
+            Transform::at(Vec3::new(0.0, 0.0, CAMERA_DISTANCE_FOR_NDC_FIXTURES)),
         )
         .expect("camera inserts");
     scene
@@ -345,8 +346,15 @@ fn fullscreen_triangle_geometry() -> GeometryDesc {
 }
 
 fn validate_direct_lights(proof: &VisualProof) {
-    assert_eq!(pixel_at(&proof.frame, 16, 8, 8), [216, 0, 9, 255]);
-    assert_eq!(proof.stats.depth_prepass_passes, 1);
+    let pixel = pixel_at(&proof.frame, 16, 8, 8);
+    assert!(
+        pixel[0] > 100 && pixel[1] <= 1 && pixel[2] <= 2 && pixel[3] == 255,
+        "direct-light fixture should stay red-dominant after PBR preview shading, got {pixel:?}",
+    );
+    assert_eq!(
+        proof.stats.depth_prepass_passes, 0,
+        "single-primitive visual fixtures should use the trivial-scene depth-prepass skip path"
+    );
 }
 
 fn validate_shadowed_directional_light(proof: &VisualProof) {

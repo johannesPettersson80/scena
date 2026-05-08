@@ -14,11 +14,13 @@ pub(in crate::assets::gltf) struct GltfTexture {
     path: AssetPath,
     sampler: TextureSamplerDesc,
     uses_basisu: bool,
+    source_bytes: Option<Vec<u8>>,
 }
 
 pub(in crate::assets::gltf) fn parse_textures(
     path: &AssetPath,
     json: &JsonValue,
+    external_images: &std::collections::BTreeMap<AssetPath, Vec<u8>>,
     _storage: &mut AssetStorage,
 ) -> Vec<GltfTexture> {
     let images = json
@@ -48,10 +50,12 @@ pub(in crate::assets::gltf) fn parse_textures(
                         .and_then(|index| samplers.get(index as usize))
                         .copied()
                         .unwrap_or_default();
+                    let image_path = resolve_relative_path(path, uri);
                     Some(GltfTexture {
-                        path: resolve_relative_path(path, uri),
+                        path: image_path.clone(),
                         sampler,
                         uses_basisu: basisu_source.is_some(),
+                        source_bytes: external_images.get(&image_path).cloned(),
                     })
                 })
                 .collect()
@@ -90,7 +94,8 @@ pub(super) fn texture_slot(
         color_space,
         texture.sampler,
         source_format,
-    )))
+        texture.source_bytes.as_deref(),
+    )?))
 }
 
 fn insert_texture(
@@ -99,7 +104,8 @@ fn insert_texture(
     color_space: TextureColorSpace,
     sampler: TextureSamplerDesc,
     source_format: TextureSourceFormat,
-) -> TextureHandle {
+    source_bytes: Option<&[u8]>,
+) -> Result<TextureHandle, AssetError> {
     let cache_key = TextureCacheKey {
         path,
         color_space,
@@ -107,17 +113,29 @@ fn insert_texture(
         source_format,
     };
     if let Some(handle) = storage.texture_lookup.get(&cache_key) {
-        return *handle;
+        if source_bytes.is_some() {
+            let texture = storage
+                .textures
+                .get_mut(*handle)
+                .ok_or_else(|| AssetError::Parse {
+                    path: cache_key.path.as_str().to_string(),
+                    reason: "texture cache lookup pointed at a missing texture descriptor"
+                        .to_string(),
+                })?;
+            texture.decode_missing_pixels_from_bytes(source_bytes)?;
+        }
+        return Ok(*handle);
     }
-    let texture = TextureDesc {
-        path: cache_key.path.clone(),
-        color_space: cache_key.color_space,
-        sampler: cache_key.sampler,
-        source_format: cache_key.source_format,
-    };
+    let texture = TextureDesc::new_with_bytes(
+        cache_key.path.clone(),
+        cache_key.color_space,
+        cache_key.sampler,
+        cache_key.source_format,
+        source_bytes,
+    )?;
     let handle = storage.textures.insert(texture);
     storage.texture_lookup.insert(cache_key, handle);
-    handle
+    Ok(handle)
 }
 
 #[cfg(not(feature = "ktx2"))]

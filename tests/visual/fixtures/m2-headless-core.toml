@@ -13,16 +13,22 @@ status = "artifact-proof"
 [[fixture]]
 name = "direct-lights-pbr"
 required_surface = "headless-cpu"
+proof_class = "harness-smoke"
+production_claim = false
 contract = "PBR mesh output responds to scene direct-light color"
 
 [[fixture]]
 name = "shadowed-directional-light"
 required_surface = "headless-cpu"
+proof_class = "harness-smoke"
+production_claim = false
 contract = "one shadowed directional light records shadow-map and PCF resources"
 
 [[fixture]]
 name = "ibl-environment"
 required_surface = "headless-cpu"
+proof_class = "harness-smoke"
+production_claim = false
 contract = "equirectangular HDR environment prepares cubemap, prefilter, and BRDF LUT resources"
 
 [[fixture]]

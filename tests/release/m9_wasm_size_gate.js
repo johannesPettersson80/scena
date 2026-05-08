@@ -4,6 +4,7 @@ const { execFileSync } = require("child_process");
 
 const root = process.cwd();
 const input = path.join(root, "target", "m9-browser-pkg", "scena_bg.wasm");
+const jsGlue = path.join(root, "target", "m9-browser-pkg", "scena.js");
 const artifactDir = path.join(root, "target", "gate-artifacts");
 const optimized = path.join(artifactDir, "scena_bg.opt.wasm");
 const compressed = `${optimized}.br`;
@@ -22,6 +23,25 @@ function packageVersion(name) {
 fs.mkdirSync(artifactDir, { recursive: true });
 if (!fs.existsSync(input)) {
   throw new Error(`missing WASM input: ${input}`);
+}
+if (!fs.existsSync(jsGlue)) {
+  throw new Error(`missing WASM JS glue: ${jsGlue}`);
+}
+
+const jsGlueSource = fs.readFileSync(jsGlue, "utf8");
+const requiredProbeExports = [
+  "m6RenderWebgl2Probe",
+  "m6RenderWebgpuProbe",
+  "m6RenderWorkflowProbe",
+  "m6RenderStateLifecycleProbe",
+];
+const missingProbeExports = requiredProbeExports.filter(
+  (name) => !jsGlueSource.includes(name),
+);
+if (missingProbeExports.length > 0) {
+  throw new Error(
+    `WASM size gate must measure the browser-probe renderer bundle; missing exports: ${missingProbeExports.join(", ")}`,
+  );
 }
 
 execFileSync(bin("wasm-opt"), [
@@ -44,6 +64,10 @@ const artifact = {
   schema: "scena.m9.wasm_size.v1",
   status: fs.statSync(compressed).size <= limitBytes ? "passed" : "failed",
   input,
+  js_glue: jsGlue,
+  required_features: ["browser-probe"],
+  required_probe_exports: requiredProbeExports,
+  feature_enabled_probe_exports_present: true,
   optimized,
   compressed,
   raw_wasm_bytes: fs.statSync(input).size,

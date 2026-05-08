@@ -1,17 +1,23 @@
 //! Structured errors, debug overlays, capability reports, and renderer stats.
 
 use crate::animation::{AnimationClipKey, AnimationMixerKey};
-use crate::assets::{EnvironmentHandle, GeometryHandle, MaterialHandle};
+use crate::assets::{EnvironmentHandle, GeometryHandle, MaterialHandle, TextureHandle};
 use crate::geometry::{Aabb, GeometryTopology};
 use crate::material::{AlphaMode, MaterialKind};
-use crate::scene::{CameraKey, ClippingPlaneKey, InstanceSetKey, LabelKey, NodeKey, Transform};
+use crate::scene::{
+    CameraKey, ClippingPlaneKey, InstanceSetKey, LabelKey, NodeKey, SourceCoordinateSystem,
+    SourceUnits, Transform,
+};
 
 mod capabilities;
+mod diagnostic;
 mod display;
 mod help;
 pub use capabilities::{
-    AlphaPipelineStatus, Backend, Capabilities, CapabilityStatus, HardwareTier, OutputStageStatus,
+    AdapterLimitsReport, AlphaPipelineStatus, Backend, Capabilities, CapabilityReport,
+    CapabilityStatus, GpuAdapterReport, HardwareTier, OutputStageStatus,
 };
+pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Error {
@@ -80,6 +86,18 @@ pub enum AssetError {
         path: String,
         help: &'static str,
     },
+    GeometryHandleNotFound {
+        geometry: GeometryHandle,
+    },
+    MaterialHandleNotFound {
+        material: MaterialHandle,
+    },
+    TextureHandleNotFound {
+        texture: TextureHandle,
+    },
+    EnvironmentHandleNotFound {
+        environment: EnvironmentHandle,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,6 +122,12 @@ pub enum PrepareError {
     MaterialNotFound {
         node: NodeKey,
         material: MaterialHandle,
+    },
+    TextureNotFound {
+        node: NodeKey,
+        material: MaterialHandle,
+        texture: TextureHandle,
+        slot: &'static str,
     },
     EnvironmentAssetsRequired {
         environment: EnvironmentHandle,
@@ -156,10 +180,26 @@ pub enum RenderError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstantiateError {
-    InvalidChildIndex { parent: usize, child: usize },
-    InvalidSkinIndex { node: usize, skin: usize },
-    InvalidSkinJointIndex { skin: usize, joint: usize },
-    InvalidAnchorExtras { node: String, reason: String },
+    InvalidChildIndex {
+        parent: usize,
+        child: usize,
+    },
+    InvalidSkinIndex {
+        node: usize,
+        skin: usize,
+    },
+    InvalidSkinJointIndex {
+        skin: usize,
+        joint: usize,
+    },
+    InvalidAnchorExtras {
+        node: String,
+        reason: String,
+    },
+    UnsupportedCoordinateSystem {
+        coordinate_system: SourceCoordinateSystem,
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -225,6 +265,13 @@ pub enum LookupError {
         name: String,
         hosts: Vec<NodeKey>,
     },
+    ConnectorNotFound {
+        name: String,
+    },
+    AmbiguousConnectorName {
+        name: String,
+        hosts: Vec<NodeKey>,
+    },
     ClipNotFound {
         name: String,
     },
@@ -244,6 +291,14 @@ pub enum LookupError {
     NodeIsNotMesh {
         node: NodeKey,
     },
+    NonInvertibleParentTransform {
+        node: NodeKey,
+        parent: NodeKey,
+    },
+    GeometryNotFound {
+        node: NodeKey,
+        geometry: GeometryHandle,
+    },
     CameraNotFound(CameraKey),
     ClippingPlaneNotFound(ClippingPlaneKey),
     InstanceSetNotFound(InstanceSetKey),
@@ -257,32 +312,6 @@ pub enum AnimationError {
     StaleMixer(AnimationMixerKey),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Diagnostic {
-    pub code: DiagnosticCode,
-    pub severity: DiagnosticSeverity,
-    pub message: String,
-    pub help: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DiagnosticCode {
-    MissingActiveCamera,
-    InvisibleScene,
-    MissingLightingOrEnvironment,
-    LargeScenePrecisionRisk,
-    DepthPrecisionRisk,
-    WebGl2DepthCompatibility,
-    DestructionQueuePressure,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DiagnosticSeverity {
-    Info,
-    Warning,
-    Error,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImportDiagnosticOverlay {
     kind: ImportDiagnosticOverlayKind,
@@ -290,6 +319,8 @@ pub struct ImportDiagnosticOverlay {
     transform: Transform,
     bounds: Option<Aabb>,
     label: Option<String>,
+    source_units: SourceUnits,
+    source_coordinate_system: SourceCoordinateSystem,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -298,6 +329,7 @@ pub enum ImportDiagnosticOverlayKind {
     Axes,
     Bounds,
     Anchor,
+    Connector,
     Pivot,
 }
 
@@ -306,6 +338,9 @@ pub struct RendererStats {
     pub buffers: u64,
     pub textures: u64,
     pub materials: u64,
+    pub material_bindings: u64,
+    pub material_texture_bindings: u64,
+    pub material_sampler_bindings: u64,
     pub render_targets: u64,
     pub pipelines: u64,
     pub bind_groups: u64,
@@ -338,43 +373,6 @@ pub struct RendererStats {
     pub directional_shadow_pcf_kernel: Option<u8>,
 }
 
-impl Diagnostic {
-    pub fn info(code: DiagnosticCode, message: impl Into<String>, help: impl Into<String>) -> Self {
-        Self {
-            code,
-            severity: DiagnosticSeverity::Info,
-            message: message.into(),
-            help: Some(help.into()),
-        }
-    }
-
-    pub fn warning(
-        code: DiagnosticCode,
-        message: impl Into<String>,
-        help: impl Into<String>,
-    ) -> Self {
-        Self {
-            code,
-            severity: DiagnosticSeverity::Warning,
-            message: message.into(),
-            help: Some(help.into()),
-        }
-    }
-
-    pub fn error(
-        code: DiagnosticCode,
-        message: impl Into<String>,
-        help: impl Into<String>,
-    ) -> Self {
-        Self {
-            code,
-            severity: DiagnosticSeverity::Error,
-            message: message.into(),
-            help: Some(help.into()),
-        }
-    }
-}
-
 impl ImportDiagnosticOverlay {
     pub fn new(
         kind: ImportDiagnosticOverlayKind,
@@ -389,7 +387,19 @@ impl ImportDiagnosticOverlay {
             transform,
             bounds,
             label,
+            source_units: SourceUnits::Meters,
+            source_coordinate_system: SourceCoordinateSystem::GltfYUpRightHanded,
         }
+    }
+
+    pub const fn with_source_metadata(
+        mut self,
+        units: SourceUnits,
+        coordinate_system: SourceCoordinateSystem,
+    ) -> Self {
+        self.source_units = units;
+        self.source_coordinate_system = coordinate_system;
+        self
     }
 
     pub const fn kind(&self) -> ImportDiagnosticOverlayKind {
@@ -410,6 +420,14 @@ impl ImportDiagnosticOverlay {
 
     pub fn label(&self) -> Option<&str> {
         self.label.as_deref()
+    }
+
+    pub const fn source_units(&self) -> SourceUnits {
+        self.source_units
+    }
+
+    pub const fn source_coordinate_system(&self) -> SourceCoordinateSystem {
+        self.source_coordinate_system
     }
 }
 

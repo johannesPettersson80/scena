@@ -29,13 +29,20 @@ jobs:
           cargo fmt --check
           cargo clippy --all-targets -- -D warnings
           cargo test
-          cargo test --test m9_platform_release
-          cargo check --examples
+          cargo test --features inspection --test m7_threejs_ergonomics m7_scene_inspection
+          cargo test --features ktx2 --test m8_assets_materials_ecosystem m8_ktx2_basisu_feature_loads_compressed_texture_descriptor
+          bash scripts/release_lane_command.sh linux-native-vulkan cargo test --test m9_platform_release
+          bash scripts/release_lane_command.sh headless-cpu cargo test --test m9_platform_release
+          bash scripts/release_lane_command.sh linux-native-vulkan cargo check --examples
+          cargo check --example scene_inspection --features inspection
           cargo run -p xtask -- doctor --full
+          cargo run -p xtask -- claim-audit
       - name: Docs
         run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
       - name: Release lane artifact
-        run: cargo run -p xtask -- release-lane-artifact linux-native-vulkan
+        run: |
+          cargo run -p xtask -- release-lane-artifact linux-native-vulkan
+          cargo run -p xtask -- release-lane-artifact headless-cpu
       - name: Upload gate artifacts
         uses: actions/upload-artifact@v4
         if: always()
@@ -68,8 +75,8 @@ jobs:
           SCENA_BROWSER_BACKENDS: webgl2
         run: |
           wasm-pack test --headless --chrome --test m6_browser_renderer_parity
-          wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe
-          npm run browser:m6
+          bash scripts/release_lane_command.sh linux-webgl2-chromium wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe
+          bash scripts/release_lane_command.sh linux-webgl2-chromium npm run browser:m6
           cargo run -p xtask -- release-lane-artifact linux-webgl2-chromium
       - name: Upload browser artifacts
         uses: actions/upload-artifact@v4
@@ -103,8 +110,8 @@ jobs:
           SCENA_BROWSER_BACKENDS: webgpu
           SCENA_BROWSER_ALLOW_UNAVAILABLE: "1"
         run: |
-          wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe
-          npm run browser:m6
+          bash scripts/release_lane_command.sh linux-webgpu-chromium wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe
+          bash scripts/release_lane_command.sh linux-webgpu-chromium npm run browser:m6
           cargo run -p xtask -- release-lane-artifact linux-webgpu-chromium
       - name: Upload browser artifacts
         uses: actions/upload-artifact@v4
@@ -134,9 +141,9 @@ jobs:
       - name: Install wasm-pack
         run: cargo install wasm-pack --version 0.14.0 --locked
       - name: WASM release build
-        run: wasm-pack build --release --target web --out-dir target/m9-browser-pkg
+        run: bash scripts/release_lane_command.sh wasm32-unknown-unknown wasm-pack build --release --target web --out-dir target/m9-browser-pkg . --features browser-probe
       - name: WASM size gate
-        run: npm run wasm:size
+        run: bash scripts/release_lane_command.sh wasm32-unknown-unknown npm run wasm:size
       - name: Release lane artifact
         run: cargo run -p xtask -- release-lane-artifact wasm32-unknown-unknown
       - name: Upload WASM package
@@ -157,11 +164,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.93.1
         with:
           components: rustfmt, clippy
-      - name: Compile and test
+      - name: Platform parity gates
         run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
           cargo test --all-targets
-          cargo test --test m9_platform_release
-          cargo check --examples
+          bash scripts/release_lane_command.sh macos-metal cargo test --test m9_platform_release
+          bash scripts/release_lane_command.sh macos-metal cargo check --examples
+          cargo run -p xtask -- doctor --full
+      - name: Docs
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --no-deps --all-features
+      - name: Release lane artifact
+        run: |
           cargo run -p xtask -- release-lane-artifact macos-metal
       - name: Upload gate artifacts
         uses: actions/upload-artifact@v4
@@ -179,11 +195,21 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.93.1
         with:
           components: rustfmt, clippy
-      - name: Compile and test
+      - name: Platform parity gates
+        shell: bash
         run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
           cargo test --all-targets
-          cargo test --test m9_platform_release
-          cargo check --examples
+          bash scripts/release_lane_command.sh windows-dx12 cargo test --test m9_platform_release
+          bash scripts/release_lane_command.sh windows-dx12 cargo check --examples
+          cargo run -p xtask -- doctor --full
+      - name: Docs
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --no-deps --all-features
+      - name: Release lane artifact
+        run: |
           cargo run -p xtask -- release-lane-artifact windows-dx12
       - name: Upload gate artifacts
         uses: actions/upload-artifact@v4
@@ -192,3 +218,42 @@ jobs:
           name: windows-dx12-gate-artifacts
           path: target/gate-artifacts/**
           if-no-files-found: error
+
+  headless-4k-performance:
+    name: Headless 4K performance
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.93.1
+      - name: Dedicated 4K benchmark
+        run: cargo test --release --test m9_platform_release m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact -- --ignored
+      - name: Upload 4K benchmark artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: headless-4k-performance-gate-artifacts
+          path: target/gate-artifacts/**
+          if-no-files-found: error
+
+  premerge-release-readiness:
+    name: Pre-merge release readiness
+    runs-on: ubuntu-24.04
+    needs:
+      - linux-native-vulkan
+      - linux-browser-webgl2
+      - linux-browser-webgpu
+      - wasm32
+      - macos-metal
+      - windows-dx12
+      - headless-4k-performance
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.93.1
+      - name: Download release lane artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: target/release-artifacts
+      - name: Release readiness drift check
+        env:
+          SCENA_RELEASE_ARTIFACT_ROOT: target/release-artifacts
+        run: cargo run -p xtask -- release-readiness

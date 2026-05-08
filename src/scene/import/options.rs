@@ -1,5 +1,5 @@
 use crate::animation::AnimationTarget;
-use crate::scene::{Transform, Vec3};
+use crate::scene::{Angle, Quat, Transform, Vec3};
 
 use super::{ImportOptions, SourceCoordinateSystem, SourceUnits};
 
@@ -34,11 +34,14 @@ impl ImportOptions {
 
     pub(super) fn convert_transform(self, transform: Transform) -> Transform {
         let unit_scale = self.source_units.meters_per_unit();
+        let converted_basis = self
+            .source_coordinate_system
+            .convert_connector_transform(transform);
         Transform {
             translation: self
                 .source_coordinate_system
                 .convert_vec3(scale_vec3(transform.translation, unit_scale)),
-            rotation: transform.rotation,
+            rotation: converted_basis.rotation,
             scale: self
                 .source_coordinate_system
                 .convert_scale(scale_vec3(transform.scale, unit_scale)),
@@ -65,6 +68,8 @@ impl SourceUnits {
             Self::Meters => 1.0,
             Self::Centimeters => 0.01,
             Self::Millimeters => 0.001,
+            Self::Inches => 0.0254,
+            Self::Feet => 0.3048,
         }
     }
 }
@@ -76,6 +81,25 @@ impl SourceCoordinateSystem {
 
     pub const fn convert_scale_vector(self, value: Vec3) -> Vec3 {
         self.convert_scale(value)
+    }
+
+    pub fn convert_connector_transform(self, transform: Transform) -> Transform {
+        if self.has_negative_determinant() {
+            return transform;
+        }
+        Transform {
+            translation: self.convert_vec3(transform.translation),
+            rotation: self.convert_rotation(transform.rotation),
+            scale: self.convert_scale(transform.scale),
+        }
+    }
+
+    pub const fn has_negative_determinant(self) -> bool {
+        matches!(self, Self::YUpLeftHanded | Self::ZUpLeftHanded)
+    }
+
+    pub const fn is_left_handed(self) -> bool {
+        self.has_negative_determinant()
     }
 
     const fn convert_vec3(self, value: Vec3) -> Vec3 {
@@ -93,8 +117,59 @@ impl SourceCoordinateSystem {
             Self::ZUpRightHanded | Self::ZUpLeftHanded => Vec3::new(value.x, value.z, value.y),
         }
     }
+
+    fn convert_rotation(self, rotation: Quat) -> Quat {
+        let Some(basis) = self.basis_rotation() else {
+            return rotation;
+        };
+        multiply_quat(basis, multiply_quat(rotation, inverse_unit_quat(basis)))
+    }
+
+    fn basis_rotation(self) -> Option<Quat> {
+        match self {
+            Self::GltfYUpRightHanded => None,
+            Self::YUpLeftHanded | Self::ZUpLeftHanded => None,
+            Self::ZUpRightHanded => Some(Quat::from_axis_angle(
+                Vec3::new(1.0, 0.0, 0.0),
+                Angle::from_degrees(-90.0),
+            )),
+        }
+    }
 }
 
 const fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
     Vec3::new(value.x * scale, value.y * scale, value.z * scale)
+}
+
+fn multiply_quat(left: Quat, right: Quat) -> Quat {
+    normalize_quat(Quat {
+        x: left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
+        y: left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,
+        z: left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w,
+        w: left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z,
+    })
+}
+
+fn inverse_unit_quat(rotation: Quat) -> Quat {
+    Quat {
+        x: -rotation.x,
+        y: -rotation.y,
+        z: -rotation.z,
+        w: rotation.w,
+    }
+}
+
+fn normalize_quat(value: Quat) -> Quat {
+    let length_squared =
+        value.x * value.x + value.y * value.y + value.z * value.z + value.w * value.w;
+    if length_squared <= f32::EPSILON || !length_squared.is_finite() {
+        return Quat::IDENTITY;
+    }
+    let inverse_length = length_squared.sqrt().recip();
+    Quat {
+        x: value.x * inverse_length,
+        y: value.y * inverse_length,
+        z: value.z * inverse_length,
+        w: value.w * inverse_length,
+    }
 }

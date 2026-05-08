@@ -1,51 +1,60 @@
-use crate::assets::{Assets, EnvironmentDesc};
-use crate::diagnostics::{
-    Backend, Capabilities, CapabilityStatus, Diagnostic, DiagnosticCode, PrepareError,
+use crate::assets::{Assets, TextureHandle};
+use crate::diagnostics::PrepareError;
+use crate::geometry::{
+    GeometryDesc, GeometryTopology, Primitive, PrimitiveVertexAttributes, Vertex,
 };
-use crate::geometry::{GeometryDesc, GeometryTopology, Primitive, SkinningMatrix, Vertex};
-use crate::material::{AlphaMode, MaterialDesc, MaterialKind};
-use crate::scene::{Camera, Light, NodeKey, Scene, Transform, Vec3};
+use crate::material::{MaterialDesc, MaterialKind};
+use crate::scene::{NodeKey, Scene};
 
-use self::lighting::{PreparedLights, material_color};
-pub(super) use self::resources::collect_logical_resource_stats;
+pub(super) use self::diagnostics::{
+    collect_asset_camera_visibility_diagnostics, collect_camera_projection_diagnostics,
+    collect_camera_visibility_diagnostics, collect_precision_diagnostics,
+};
+use self::environment::PreparedEnvironmentLighting;
+pub(super) use self::environment::collect_environment_lighting;
+use self::lighting::{MaterialShadingInput, PreparedLights, material_color};
+pub(super) use self::lighting::{PreparedGpuLightUniform, collect_gpu_light_uniform};
+use self::materials::{
+    MaterialPass, base_color_texture_sample, emissive_texture_sample, material_pass,
+    metallic_roughness_texture_sample, multiply_color, normal_texture_sample,
+    occlusion_texture_sample, render_material_slot, validate_material_texture_handles,
+};
+pub(super) use self::resources::{
+    PreparedMaterialSlot, collect_backend_material_slots, collect_logical_resource_stats,
+};
+use self::shadows::{collect_shadow_occluders, directional_shadow_factor};
+pub(super) use self::stats::{
+    PreparedDepthStats, PreparedLightingStats, collect_depth_prepass_stats,
+    collect_environment_prepare_stats, collect_lighting_stats,
+};
+use self::tangents::{accumulate_vertex_tangents, authored_vertex_tangents};
 use self::transforms::{
-    compose_transform, subtract_vec3, transform_normal, transform_position, transform_primitive,
+    compose_transform, transform_normal, transform_position, transform_primitive,
 };
-use super::RasterTarget;
+use self::types::{DeformationInputs, PrimitiveBakeParams, PrimitiveSinks, TransparentPrimitive};
+use super::{RasterTarget, camera::CameraProjection};
 
+mod diagnostics;
+mod environment;
 mod labels;
 mod lighting;
+mod materials;
 mod resources;
+mod shadows;
+mod stats;
 mod strokes;
+mod tangents;
 mod transforms;
-
-pub(super) const DIRECTIONAL_SHADOW_PCF_KERNEL: u8 = 3;
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(super) struct PreparedLightingStats {
-    pub(super) shadow_maps: u64,
-    pub(super) directional_shadow_map_resolution: Option<u32>,
-    pub(super) directional_shadow_pcf_kernel: Option<u8>,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(super) struct PreparedEnvironmentStats {
-    pub(super) cubemaps: u64,
-    pub(super) prefilter_passes: u64,
-    pub(super) brdf_luts: u64,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(super) struct PreparedDepthStats {
-    pub(super) passes: u64,
-    pub(super) draws: u64,
-    pub(super) reversed_z: bool,
-}
+mod types;
 
 pub(super) fn collect_prepared_primitives<F>(
     target: RasterTarget,
     scene: &Scene,
     assets: Option<&Assets<F>>,
+    camera_projection: Option<&CameraProjection>,
+    backend_sampled_base_color_textures: &[TextureHandle],
+    backend_material_slots: &[crate::assets::MaterialHandle],
+    environment_lighting: PreparedEnvironmentLighting,
 ) -> Result<Vec<Primitive>, PrepareError> {
     if let Some(model_node) = scene.model_nodes().next() {
         return Err(PrepareError::UnsupportedModelNode { node: model_node });
@@ -53,6 +62,7 @@ pub(super) fn collect_prepared_primitives<F>(
 
     let origin_shift = scene.origin_shift();
     let lights = PreparedLights::from_scene(scene, origin_shift);
+    let shadow_occluders = collect_shadow_occluders(scene, assets, origin_shift)?;
     let mut primitives: Vec<Primitive> = scene
         .renderables()
         .flat_map(|(renderable, transform)| {
@@ -81,10 +91,15 @@ pub(super) fn collect_prepared_primitives<F>(
                 node,
                 material: mesh.material(),
             })?;
+        validate_material_texture_handles(node, mesh.material(), &material, assets)?;
         append_geometry_primitives(
-            node,
-            &geometry,
-            &material,
+            GeometryPrimitiveSource {
+                node,
+                material_handle: mesh.material(),
+                geometry: &geometry,
+                material: &material,
+                assets,
+            },
             DeformationInputs {
                 morph_weights: scene.morph_weights(node),
                 skin_matrices: scene.skin_matrices(node).as_deref(),
@@ -94,9 +109,16 @@ pub(super) fn collect_prepared_primitives<F>(
                 transform,
                 origin_shift,
                 lights: &lights,
+                shadow_occluders: &shadow_occluders,
+                camera_projection,
+                backend_sampled_base_color_textures,
+                backend_material_slots,
+                environment_lighting,
             },
-            &mut primitives,
-            &mut transparent_primitives,
+            PrimitiveSinks {
+                primitives: &mut primitives,
+                transparent_primitives: &mut transparent_primitives,
+            },
         )?;
     }
 
@@ -118,21 +140,33 @@ pub(super) fn collect_prepared_primitives<F>(
                     node,
                     material: instance_set.material(),
                 })?;
+        validate_material_texture_handles(node, instance_set.material(), &material, assets)?;
 
         for instance in instance_set.instances() {
             append_geometry_primitives(
-                node,
-                &geometry,
-                &material,
+                GeometryPrimitiveSource {
+                    node,
+                    material_handle: instance_set.material(),
+                    geometry: &geometry,
+                    material: &material,
+                    assets,
+                },
                 DeformationInputs::default(),
                 PrimitiveBakeParams {
                     target,
                     transform: compose_transform(node_transform, instance.transform()),
                     origin_shift,
                     lights: &lights,
+                    shadow_occluders: &shadow_occluders,
+                    camera_projection,
+                    backend_sampled_base_color_textures,
+                    backend_material_slots,
+                    environment_lighting,
                 },
-                &mut primitives,
-                &mut transparent_primitives,
+                PrimitiveSinks {
+                    primitives: &mut primitives,
+                    transparent_primitives: &mut transparent_primitives,
+                },
             )?;
         }
     }
@@ -149,244 +183,106 @@ pub(super) fn collect_prepared_primitives<F>(
     Ok(primitives)
 }
 
-pub(super) fn collect_lighting_stats(
-    scene: &Scene,
-    backend: Backend,
-) -> Result<PreparedLightingStats, PrepareError> {
-    let mut first_shadowed_directional = None;
-    for (node, _light_key, light, _transform) in scene.light_nodes() {
-        let Light::Directional(light) = light else {
-            continue;
-        };
-        if !light.casts_shadows() {
-            continue;
-        }
-        if let Some(first) = first_shadowed_directional {
-            return Err(PrepareError::MultipleShadowedDirectionalLights {
-                first,
-                second: node,
-            });
-        }
-        first_shadowed_directional = Some(node);
-    }
-    Ok(if first_shadowed_directional.is_some() {
-        let capabilities = Capabilities::for_backend(backend);
-        PreparedLightingStats {
-            shadow_maps: 1,
-            directional_shadow_map_resolution: Some(
-                capabilities.directional_shadow_map_default_size,
-            ),
-            directional_shadow_pcf_kernel: Some(DIRECTIONAL_SHADOW_PCF_KERNEL),
-        }
-    } else {
-        PreparedLightingStats::default()
-    })
-}
-
-pub(super) fn collect_precision_diagnostics(scene: &Scene, backend: Backend) -> Vec<Diagnostic> {
-    let mut diagnostics = Vec::new();
-
-    for (node, transform) in scene.node_transforms() {
-        let relative_translation = subtract_vec3(transform.translation, scene.origin_shift());
-        let absolute_magnitude = transform
-            .translation
-            .x
-            .abs()
-            .max(transform.translation.y.abs())
-            .max(transform.translation.z.abs());
-        let magnitude = relative_translation
-            .x
-            .abs()
-            .max(relative_translation.y.abs())
-            .max(relative_translation.z.abs());
-        if absolute_magnitude >= LARGE_SCENE_TRANSLATION_WARNING
-            && magnitude >= LARGE_SCENE_TRANSLATION_WARNING
-        {
-            diagnostics.push(Diagnostic::warning(
-                DiagnosticCode::LargeScenePrecisionRisk,
-                format!(
-                    "node {node:?} is {magnitude:.1} scene units from the origin; f32 transform precision may be visible"
-                ),
-                "use camera-relative rendering or an origin-shift policy for large-world scenes",
-            ));
-        }
-    }
-
-    for (node, _camera, camera) in scene.camera_nodes() {
-        let (near, far) = match camera {
-            Camera::Perspective(camera) => (camera.near, camera.far),
-            Camera::Orthographic(camera) => (camera.near, camera.far),
-        };
-        if near > 0.0 && far.is_finite() && near.is_finite() {
-            let ratio = far / near;
-            if ratio > DEPTH_RANGE_RATIO_WARNING {
-                diagnostics.push(Diagnostic::warning(
-                    DiagnosticCode::DepthPrecisionRisk,
-                    format!(
-                        "camera node {node:?} has far/near ratio {ratio:.0}; depth precision may cause z-fighting"
-                    ),
-                    "use DepthRange::fit_sphere for focused views or tighten camera near/far planes",
-                ));
-            }
-        }
-    }
-
-    if backend == Backend::WebGl2 {
-        diagnostics.push(Diagnostic::warning(
-            DiagnosticCode::WebGl2DepthCompatibility,
-            "WebGL2 disables reversed-Z depth and uses the compatibility depth profile",
-            "expect reduced far/near precision; tighten camera depth ranges for WebGL2 scenes",
-        ));
-    }
-
-    diagnostics
-}
-
-pub(super) fn collect_depth_prepass_stats(
-    primitives: &[Primitive],
-    backend: Backend,
-) -> PreparedDepthStats {
-    if primitives.is_empty() {
-        PreparedDepthStats::default()
-    } else {
-        let capabilities = Capabilities::for_backend(backend);
-        PreparedDepthStats {
-            passes: 1,
-            draws: primitives.len() as u64,
-            reversed_z: capabilities.reversed_z_depth == CapabilityStatus::Supported,
-        }
-    }
-}
-
-const LARGE_SCENE_TRANSLATION_WARNING: f32 = 10_000.0;
-const DEPTH_RANGE_RATIO_WARNING: f32 = 100_000.0;
-
-pub(super) fn collect_environment_prepare_stats(
-    environment: Option<&EnvironmentDesc>,
-) -> PreparedEnvironmentStats {
-    match environment {
-        Some(environment) if environment.is_equirectangular_hdr() => PreparedEnvironmentStats {
-            cubemaps: 1,
-            prefilter_passes: 1,
-            brdf_luts: 1,
-        },
-        Some(_) | None => PreparedEnvironmentStats::default(),
-    }
-}
-
-struct TransparentPrimitive {
-    depth: f32,
-    primitive: Primitive,
-}
-
-#[derive(Clone, Copy)]
-struct PrimitiveBakeParams<'lights> {
-    target: RasterTarget,
-    transform: Transform,
-    origin_shift: Vec3,
-    lights: &'lights PreparedLights,
-}
-
-#[derive(Clone, Copy, Default)]
-struct DeformationInputs<'scene> {
-    morph_weights: Option<&'scene [f32]>,
-    skin_matrices: Option<&'scene [SkinningMatrix]>,
-}
-
-#[derive(Clone, Copy)]
-enum MaterialPass {
-    Opaque,
-    Blend,
-    Mask { cutoff: f32 },
-}
-
-fn append_geometry_primitives(
+struct GeometryPrimitiveSource<'a, F> {
     node: NodeKey,
-    geometry: &GeometryDesc,
-    material: &MaterialDesc,
+    material_handle: crate::assets::MaterialHandle,
+    geometry: &'a GeometryDesc,
+    material: &'a MaterialDesc,
+    assets: &'a Assets<F>,
+}
+
+fn append_geometry_primitives<F>(
+    source: GeometryPrimitiveSource<'_, F>,
     deformation: DeformationInputs<'_>,
     params: PrimitiveBakeParams<'_>,
-    primitives: &mut Vec<Primitive>,
-    transparent_primitives: &mut Vec<TransparentPrimitive>,
+    sinks: PrimitiveSinks<'_>,
 ) -> Result<(), PrepareError> {
-    match geometry.topology() {
-        GeometryTopology::Triangles => append_triangle_primitives(
-            node,
-            geometry,
-            material,
-            deformation,
-            params,
-            primitives,
-            transparent_primitives,
+    match source.geometry.topology() {
+        GeometryTopology::Triangles => {
+            append_triangle_primitives(source, deformation, params, sinks)
+        }
+        GeometryTopology::Lines => strokes::append_line_primitives(
+            source.node,
+            source.geometry,
+            source.material,
+            params.target,
+            sinks.primitives,
         ),
-        GeometryTopology::Lines => {
-            strokes::append_line_primitives(node, geometry, material, params.target, primitives)
-        }
     }
 }
 
-fn append_triangle_primitives(
-    node: NodeKey,
-    geometry: &GeometryDesc,
-    material: &MaterialDesc,
+fn append_triangle_primitives<F>(
+    source: GeometryPrimitiveSource<'_, F>,
     deformation: DeformationInputs<'_>,
     params: PrimitiveBakeParams<'_>,
-    primitives: &mut Vec<Primitive>,
-    transparent_primitives: &mut Vec<TransparentPrimitive>,
+    sinks: PrimitiveSinks<'_>,
 ) -> Result<(), PrepareError> {
-    match material.kind() {
+    match source.material.kind() {
         MaterialKind::Unlit | MaterialKind::PbrMetallicRoughness => {}
         MaterialKind::Line => {
             return Err(PrepareError::UnsupportedMaterialKind {
-                node,
-                kind: material.kind(),
+                node: source.node,
+                kind: source.material.kind(),
             });
         }
         MaterialKind::Wireframe => {
             return strokes::append_wireframe_primitives(
-                node,
-                geometry,
-                material,
+                source.node,
+                source.geometry,
+                source.material,
                 params.target,
-                primitives,
+                sinks.primitives,
             );
         }
         MaterialKind::Edge => {
             return strokes::append_edge_primitives(
-                node,
-                geometry,
-                material,
+                source.node,
+                source.geometry,
+                source.material,
                 params.target,
-                primitives,
+                sinks.primitives,
             );
         }
     }
 
-    let material_pass = material_pass(node, material)?;
+    let material_pass = material_pass(source.node, source.material)?;
     let morphed_vertices = deformation
         .morph_weights
-        .and_then(|weights| geometry.morphed_vertices(weights));
+        .and_then(|weights| source.geometry.morphed_vertices(weights));
     let base_vertices = morphed_vertices
         .as_deref()
-        .unwrap_or_else(|| geometry.vertices());
+        .unwrap_or_else(|| source.geometry.vertices());
     let skinned_vertices = match deformation.skin_matrices {
-        Some(matrices) => geometry
+        Some(matrices) => source
+            .geometry
             .skinned_vertices(base_vertices, matrices)
             .map_err(|error| PrepareError::InvalidSkinGeometry {
-                node,
+                node: source.node,
                 reason: format!("{error:?}"),
             })?,
-        None if geometry.skin().is_some() => {
+        None if source.geometry.skin().is_some() => {
             return Err(PrepareError::InvalidSkinGeometry {
-                node,
+                node: source.node,
                 reason: "skinned geometry is missing a scene skin binding".to_string(),
             });
         }
         None => None,
     };
     let vertices = skinned_vertices.as_deref().unwrap_or(base_vertices);
+    let tex_coords0 = source.geometry.tex_coords0();
+    let vertex_tangents =
+        authored_vertex_tangents(source.geometry.tangents(), vertices, params.transform)
+            .unwrap_or_else(|| {
+                accumulate_vertex_tangents(
+                    vertices,
+                    source.geometry.indices(),
+                    tex_coords0,
+                    params.transform,
+                    params.origin_shift,
+                )
+            });
 
-    for triangle in geometry.indices().chunks_exact(3) {
+    for triangle in source.geometry.indices().chunks_exact(3) {
         let position_a = transform_position(
             vertices[triangle[0] as usize].position,
             params.transform,
@@ -402,37 +298,139 @@ fn append_triangle_primitives(
             params.transform,
             params.origin_shift,
         );
-        let normal_a = transform_normal(vertices[triangle[0] as usize].normal, params.transform);
-        let normal_b = transform_normal(vertices[triangle[1] as usize].normal, params.transform);
-        let normal_c = transform_normal(vertices[triangle[2] as usize].normal, params.transform);
-        let vertex_colors = geometry.vertex_colors();
-        let primitive = Primitive::triangle([
-            Vertex {
-                position: position_a,
-                color: multiply_color(
-                    material_color(material, position_a, normal_a, params.lights),
-                    vertex_colors[triangle[0] as usize],
-                ),
-            },
-            Vertex {
-                position: position_b,
-                color: multiply_color(
-                    material_color(material, position_b, normal_b, params.lights),
-                    vertex_colors[triangle[1] as usize],
-                ),
-            },
-            Vertex {
-                position: position_c,
-                color: multiply_color(
-                    material_color(material, position_c, normal_c, params.lights),
-                    vertex_colors[triangle[2] as usize],
-                ),
-            },
-        ]);
+        let geometric_normal_a =
+            transform_normal(vertices[triangle[0] as usize].normal, params.transform);
+        let geometric_normal_b =
+            transform_normal(vertices[triangle[1] as usize].normal, params.transform);
+        let geometric_normal_c =
+            transform_normal(vertices[triangle[2] as usize].normal, params.transform);
+        let vertex_colors = source.geometry.vertex_colors();
+        let uv_a = tex_coords0[triangle[0] as usize];
+        let uv_b = tex_coords0[triangle[1] as usize];
+        let uv_c = tex_coords0[triangle[2] as usize];
+        let tangent_a = vertex_tangents[triangle[0] as usize];
+        let tangent_b = vertex_tangents[triangle[1] as usize];
+        let tangent_c = vertex_tangents[triangle[2] as usize];
+        let shadow_visibility_a =
+            directional_shadow_factor(position_a, params.lights, params.shadow_occluders);
+        let shadow_visibility_b =
+            directional_shadow_factor(position_b, params.lights, params.shadow_occluders);
+        let shadow_visibility_c =
+            directional_shadow_factor(position_c, params.lights, params.shadow_occluders);
+        let shaded_normal_a =
+            normal_texture_sample(source.assets, source.material, uv_a, geometric_normal_a);
+        let shaded_normal_b =
+            normal_texture_sample(source.assets, source.material, uv_b, geometric_normal_b);
+        let shaded_normal_c =
+            normal_texture_sample(source.assets, source.material, uv_c, geometric_normal_c);
+        let render_material_slot =
+            render_material_slot(source.material_handle, params.backend_material_slots);
+        let backend_shaded_material = render_material_slot != 0;
+        let shade_vertex = |position, normal, uv, vertex_color, shadow_visibility| {
+            if backend_shaded_material {
+                vertex_color
+            } else {
+                multiply_color(
+                    material_color(
+                        source.material,
+                        params.lights,
+                        MaterialShadingInput {
+                            position,
+                            normal,
+                            camera_position: params
+                                .camera_projection
+                                .map(CameraProjection::camera_position),
+                            base_color_texture: base_color_texture_sample(
+                                source.assets,
+                                source.material,
+                                uv,
+                                params.backend_sampled_base_color_textures,
+                            ),
+                            metallic_roughness_texture: metallic_roughness_texture_sample(
+                                source.assets,
+                                source.material,
+                                uv,
+                            ),
+                            occlusion_texture: occlusion_texture_sample(
+                                source.assets,
+                                source.material,
+                                uv,
+                            ),
+                            emissive_texture: emissive_texture_sample(
+                                source.assets,
+                                source.material,
+                                uv,
+                            ),
+                            environment: params.environment_lighting,
+                            directional_shadow_factor: shadow_visibility,
+                        },
+                    ),
+                    vertex_color,
+                )
+            }
+        };
+        let primitive = Primitive::triangle_with_attributes(
+            [
+                Vertex {
+                    position: position_a,
+                    color: shade_vertex(
+                        position_a,
+                        shaded_normal_a,
+                        uv_a,
+                        vertex_colors[triangle[0] as usize],
+                        shadow_visibility_a,
+                    ),
+                },
+                Vertex {
+                    position: position_b,
+                    color: shade_vertex(
+                        position_b,
+                        shaded_normal_b,
+                        uv_b,
+                        vertex_colors[triangle[1] as usize],
+                        shadow_visibility_b,
+                    ),
+                },
+                Vertex {
+                    position: position_c,
+                    color: shade_vertex(
+                        position_c,
+                        shaded_normal_c,
+                        uv_c,
+                        vertex_colors[triangle[2] as usize],
+                        shadow_visibility_c,
+                    ),
+                },
+            ],
+            [
+                PrimitiveVertexAttributes {
+                    normal: geometric_normal_a,
+                    tex_coord0: uv_a,
+                    tangent: tangent_a.tangent,
+                    tangent_handedness: tangent_a.handedness,
+                    shadow_visibility: shadow_visibility_a,
+                },
+                PrimitiveVertexAttributes {
+                    normal: geometric_normal_b,
+                    tex_coord0: uv_b,
+                    tangent: tangent_b.tangent,
+                    tangent_handedness: tangent_b.handedness,
+                    shadow_visibility: shadow_visibility_b,
+                },
+                PrimitiveVertexAttributes {
+                    normal: geometric_normal_c,
+                    tex_coord0: uv_c,
+                    tangent: tangent_c.tangent,
+                    tangent_handedness: tangent_c.handedness,
+                    shadow_visibility: shadow_visibility_c,
+                },
+            ],
+        )
+        .with_render_material_slot(render_material_slot);
         match material_pass {
-            MaterialPass::Opaque => primitives.push(primitive),
-            MaterialPass::Blend => transparent_primitives.push(TransparentPrimitive {
-                depth: average_depth(&primitive),
+            MaterialPass::Opaque => sinks.primitives.push(primitive),
+            MaterialPass::Blend => sinks.transparent_primitives.push(TransparentPrimitive {
+                depth: average_sort_depth(&primitive, params.camera_projection),
                 primitive,
             }),
             MaterialPass::Mask { cutoff } => {
@@ -441,7 +439,7 @@ fn append_triangle_primitives(
                     .iter()
                     .any(|vertex| vertex.color.a >= cutoff)
                 {
-                    primitives.push(primitive);
+                    sinks.primitives.push(primitive);
                 }
             }
         }
@@ -450,39 +448,22 @@ fn append_triangle_primitives(
     Ok(())
 }
 
-fn material_pass(node: NodeKey, material: &MaterialDesc) -> Result<MaterialPass, PrepareError> {
-    match material.kind() {
-        MaterialKind::Unlit | MaterialKind::PbrMetallicRoughness => {}
-        MaterialKind::Line | MaterialKind::Wireframe | MaterialKind::Edge => {
-            return Err(PrepareError::UnsupportedMaterialKind {
-                node,
-                kind: material.kind(),
-            });
+fn average_sort_depth(primitive: &Primitive, camera_projection: Option<&CameraProjection>) -> f32 {
+    if let Some(camera_projection) = camera_projection {
+        let vertices = primitive.vertices();
+        let mut depth_sum = 0.0;
+        let mut depth_count = 0;
+        for vertex in vertices {
+            if let Some(depth) = camera_projection.camera_depth(vertex.position) {
+                depth_sum += depth;
+                depth_count += 1;
+            }
+        }
+        if depth_count > 0 {
+            return depth_sum / depth_count as f32;
         }
     }
 
-    match material.alpha_mode() {
-        AlphaMode::Opaque => Ok(MaterialPass::Opaque),
-        AlphaMode::Blend => Ok(MaterialPass::Blend),
-        AlphaMode::Mask { cutoff } => Ok(MaterialPass::Mask { cutoff }),
-    }
-}
-
-fn multiply_color(
-    left: crate::material::Color,
-    right: crate::material::Color,
-) -> crate::material::Color {
-    crate::material::Color::from_linear_rgba(
-        left.r * right.r,
-        left.g * right.g,
-        left.b * right.b,
-        left.a * right.a,
-    )
-}
-
-fn average_depth(primitive: &Primitive) -> f32 {
-    // M1/M2 depth sorting uses prepared scene-space z. View projection and camera-space
-    // sorting remain separate dirty-state work.
     let vertices = primitive.vertices();
     (vertices[0].position.z + vertices[1].position.z + vertices[2].position.z) / 3.0
 }

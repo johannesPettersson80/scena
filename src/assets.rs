@@ -3,11 +3,12 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use base64::Engine;
 use slotmap::{SlotMap, new_key_type};
 
 use crate::diagnostics::AssetError;
 use crate::geometry::{GeometryDesc, StaticBatchReport};
-use crate::material::{MaterialDesc, TextureColorSpace};
+use crate::material::{Color, MaterialDesc, TextureColorSpace};
 use crate::scene::Transform;
 
 mod environment;
@@ -16,6 +17,7 @@ mod gltf;
 mod load;
 #[cfg(feature = "obj")]
 mod obj;
+mod texture;
 pub use environment::{
     EnvironmentDerivative, EnvironmentDesc, EnvironmentSourceKind, WasmEnvironmentDelivery,
 };
@@ -29,9 +31,13 @@ pub use gltf::{
     SceneAssetClip, SceneAssetLight, SceneAssetMesh, SceneAssetNode,
 };
 pub use load::{AssetLoadControl, AssetLoadProgress, AssetLoadReport};
+pub use texture::{
+    TextureDesc, TextureFilter, TextureSamplerDesc, TextureSourceFormat, TextureWrap,
+};
 
 use self::environment::{DEFAULT_ENVIRONMENT_SOURCE_PATH, is_equirectangular_hdr_path};
 use self::load::{AssetLoadTelemetry, check_cancelled};
+use self::texture::{TextureCacheKey, validate_texture_source_format};
 
 new_key_type! {
     pub struct ModelHandle;
@@ -51,55 +57,6 @@ pub enum RetainPolicy {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AssetPath(String);
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TextureDesc {
-    path: AssetPath,
-    color_space: TextureColorSpace,
-    sampler: TextureSamplerDesc,
-    source_format: TextureSourceFormat,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TextureSourceFormat {
-    Png,
-    Jpeg,
-    Webp,
-    Ktx2Basisu,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TextureFilter {
-    Nearest,
-    Linear,
-    NearestMipmapNearest,
-    LinearMipmapNearest,
-    NearestMipmapLinear,
-    LinearMipmapLinear,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TextureWrap {
-    ClampToEdge,
-    MirroredRepeat,
-    Repeat,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TextureSamplerDesc {
-    mag_filter: Option<TextureFilter>,
-    min_filter: Option<TextureFilter>,
-    wrap_s: TextureWrap,
-    wrap_t: TextureWrap,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct TextureCacheKey {
-    path: AssetPath,
-    color_space: TextureColorSpace,
-    sampler: TextureSamplerDesc,
-    source_format: TextureSourceFormat,
-}
 
 /// Asset source and cache owner.
 #[derive(Debug, Clone)]
@@ -165,6 +122,23 @@ impl<F> Assets<F> {
         self.storage().materials.insert(material.into())
     }
 
+    #[cfg(test)]
+    pub(crate) fn create_texture_for_test(
+        &self,
+        path: impl Into<AssetPath>,
+        color_space: TextureColorSpace,
+        source_format: TextureSourceFormat,
+        source_bytes: Option<&[u8]>,
+    ) -> Result<TextureHandle, AssetError> {
+        Ok(self.storage().textures.insert(TextureDesc::new_with_bytes(
+            path.into(),
+            color_space,
+            TextureSamplerDesc::default(),
+            source_format,
+            source_bytes,
+        )?))
+    }
+
     pub fn create_geometry(&self, geometry: GeometryDesc) -> GeometryHandle {
         self.storage().geometries.insert(geometry)
     }
@@ -200,6 +174,11 @@ impl<F> Assets<F> {
         self.storage().materials.get(handle).cloned()
     }
 
+    pub fn try_material(&self, handle: MaterialHandle) -> Result<MaterialDesc, AssetError> {
+        self.material(handle)
+            .ok_or(AssetError::MaterialHandleNotFound { material: handle })
+    }
+
     /// Returns a cloned geometry descriptor for a typed geometry handle.
     ///
     /// ```compile_fail
@@ -212,11 +191,19 @@ impl<F> Assets<F> {
         self.storage().geometries.get(handle).cloned()
     }
 
+    pub fn try_geometry(&self, handle: GeometryHandle) -> Result<GeometryDesc, AssetError> {
+        self.geometry(handle)
+            .ok_or(AssetError::GeometryHandleNotFound { geometry: handle })
+    }
+
     pub async fn load_texture(
         &self,
         path: impl Into<AssetPath>,
         color_space: TextureColorSpace,
-    ) -> Result<TextureHandle, AssetError> {
+    ) -> Result<TextureHandle, AssetError>
+    where
+        F: AssetFetcher,
+    {
         let path = path.into();
         let source_format = validate_texture_source_format(&path)?;
         let cache_key = TextureCacheKey {
@@ -225,19 +212,35 @@ impl<F> Assets<F> {
             sampler: TextureSamplerDesc::default(),
             source_format,
         };
-        let mut storage = self.storage();
-        if let Some(handle) = storage.texture_lookup.get(&cache_key) {
-            return Ok(*handle);
+        if let Some(handle) = self.cached_texture_if_decoded(&cache_key) {
+            return Ok(handle);
         }
+        let source_bytes = self
+            .fetch_optional_texture_bytes(&path, source_format)
+            .await?;
 
-        // M1 stores the split cache entries. The contract-required warning for the same
-        // path under another color space will use diagnostics once that surface exists.
-        let handle = storage.textures.insert(TextureDesc {
+        let mut storage = self.storage();
+        if let Some(handle) = storage.texture_lookup.get(&cache_key).copied() {
+            if source_bytes.is_some() {
+                storage
+                    .textures
+                    .get_mut(handle)
+                    .ok_or_else(|| AssetError::Parse {
+                        path: path.as_str().to_string(),
+                        reason: "texture cache lookup pointed at a missing texture descriptor"
+                            .to_string(),
+                    })?
+                    .decode_missing_pixels_from_bytes(source_bytes.as_deref())?;
+            }
+            return Ok(handle);
+        }
+        let handle = storage.textures.insert(TextureDesc::new_with_bytes(
             path,
             color_space,
-            sampler: cache_key.sampler,
+            cache_key.sampler,
             source_format,
-        });
+            source_bytes.as_deref(),
+        )?);
         storage.texture_lookup.insert(cache_key, handle);
         Ok(handle)
     }
@@ -254,6 +257,18 @@ impl<F> Assets<F> {
         self.storage().textures.get(handle).cloned()
     }
 
+    pub fn try_texture(&self, handle: TextureHandle) -> Result<TextureDesc, AssetError> {
+        self.texture(handle)
+            .ok_or(AssetError::TextureHandleNotFound { texture: handle })
+    }
+
+    pub(crate) fn sample_texture(&self, handle: TextureHandle, uv: [f32; 2]) -> Option<Color> {
+        self.storage()
+            .textures
+            .get(handle)
+            .and_then(|texture| texture.sample_nearest(uv))
+    }
+
     pub fn default_environment(&self) -> EnvironmentHandle {
         self.insert_environment(EnvironmentDesc::neutral_studio())
     }
@@ -261,12 +276,31 @@ impl<F> Assets<F> {
     pub async fn load_environment(
         &self,
         path: impl Into<AssetPath>,
-    ) -> Result<EnvironmentHandle, AssetError> {
+    ) -> Result<EnvironmentHandle, AssetError>
+    where
+        F: AssetFetcher,
+    {
         let path = path.into();
+        if let Some(handle) = self.storage().environment_lookup.get(&path).copied() {
+            return Ok(handle);
+        }
         let environment = if path.as_str() == DEFAULT_ENVIRONMENT_SOURCE_PATH {
             EnvironmentDesc::neutral_studio()
         } else if is_equirectangular_hdr_path(&path) {
-            EnvironmentDesc::from_equirectangular_hdr_path(path)
+            if let Some(source_bytes) = embedded_environment_bytes(&path)? {
+                EnvironmentDesc::from_equirectangular_hdr_bytes(path.clone(), &source_bytes)?
+            } else {
+                match self.fetcher.fetch(&path).await {
+                    Ok(source_bytes) => EnvironmentDesc::from_equirectangular_hdr_bytes(
+                        path.clone(),
+                        &source_bytes,
+                    )?,
+                    Err(AssetError::NotFound { .. } | AssetError::Io { .. }) => {
+                        EnvironmentDesc::from_equirectangular_hdr_path(path.clone())
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
         } else {
             return Err(AssetError::UnsupportedEnvironmentFormat {
                 path: path.as_str().to_string(),
@@ -278,6 +312,16 @@ impl<F> Assets<F> {
 
     pub fn environment(&self, handle: EnvironmentHandle) -> Option<EnvironmentDesc> {
         self.storage().environments.get(handle).cloned()
+    }
+
+    pub fn try_environment(
+        &self,
+        handle: EnvironmentHandle,
+    ) -> Result<EnvironmentDesc, AssetError> {
+        self.environment(handle)
+            .ok_or(AssetError::EnvironmentHandleNotFound {
+                environment: handle,
+            })
     }
 
     fn insert_environment(&self, environment: EnvironmentDesc) -> EnvironmentHandle {
@@ -296,6 +340,66 @@ impl<F> Assets<F> {
             .lock()
             .expect("asset storage mutex should not be poisoned")
     }
+
+    fn cached_texture_if_decoded(&self, cache_key: &TextureCacheKey) -> Option<TextureHandle> {
+        let storage = self.storage();
+        let handle = *storage.texture_lookup.get(cache_key)?;
+        let texture = storage.textures.get(handle)?;
+        (!texture_format_has_cpu_decoder(cache_key.source_format) || texture.has_decoded_pixels())
+            .then_some(handle)
+    }
+
+    async fn fetch_optional_texture_bytes(
+        &self,
+        path: &AssetPath,
+        source_format: TextureSourceFormat,
+    ) -> Result<Option<Vec<u8>>, AssetError>
+    where
+        F: AssetFetcher,
+    {
+        if !texture_format_has_cpu_decoder(source_format) || path.as_str().starts_with("data:") {
+            return Ok(None);
+        }
+        match self.fetcher.fetch(path).await {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(AssetError::NotFound { .. } | AssetError::Io { .. }) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+}
+
+fn embedded_environment_bytes(path: &AssetPath) -> Result<Option<Vec<u8>>, AssetError> {
+    if !path.as_str().starts_with("data:") {
+        return Ok(None);
+    }
+    let Some((_, encoded)) = path.as_str().split_once(";base64,") else {
+        return Err(AssetError::Parse {
+            path: path.as_str().to_string(),
+            reason:
+                "only base64 Radiance HDR data URIs are supported for embedded environment decoding"
+                    .to_string(),
+        });
+    };
+    let encoded = encoded
+        .split_once('#')
+        .map_or(encoded, |(payload, _fragment)| payload);
+    let encoded = encoded
+        .split_once('?')
+        .map_or(encoded, |(payload, _query)| payload);
+    base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map(Some)
+        .map_err(|error| AssetError::Parse {
+            path: path.as_str().to_string(),
+            reason: format!("invalid embedded environment base64: {error}"),
+        })
+}
+
+const fn texture_format_has_cpu_decoder(source_format: TextureSourceFormat) -> bool {
+    matches!(
+        source_format,
+        TextureSourceFormat::Png | TextureSourceFormat::Jpeg
+    )
 }
 
 impl<F: AssetFetcher> Assets<F> {
@@ -344,11 +448,26 @@ impl<F: AssetFetcher> Assets<F> {
 
         let mut progress_events = Vec::new();
         let mut progress = None;
-        let (scene, _telemetry) = self
+        let reloaded = match self
             .parse_scene_uncached(path.clone(), None, &mut progress_events, &mut progress)
-            .await?;
-        self.storage().scene_lookup.insert(path, scene.clone());
-        Ok(scene)
+            .await
+        {
+            Ok((scene, _telemetry)) => scene,
+            Err(AssetError::NotFound { .. } | AssetError::Io { .. }) => {
+                let Some(bytes) = scene.retained_source_bytes() else {
+                    return Err(AssetError::ReloadRequiresRetain {
+                        path: path.as_str().to_string(),
+                        help: "retained source bytes are unavailable; reload needs the original source to be fetchable",
+                    });
+                };
+                let mut storage = self.storage();
+                SceneAsset::from_gltf_bytes(path.clone(), bytes, &mut storage)?
+                    .with_retained_source_bytes(bytes)
+            }
+            Err(error) => return Err(error),
+        };
+        self.storage().scene_lookup.insert(path, reloaded.clone());
+        Ok(reloaded)
     }
 
     async fn load_scene_report_inner(
@@ -430,7 +549,9 @@ impl<F: AssetFetcher> Assets<F> {
         );
         check_cancelled(&path, control)?;
         let external_paths = SceneAsset::external_buffer_paths(&path, &bytes)?;
+        let external_image_paths = SceneAsset::external_image_paths(&path, &bytes)?;
         let mut external_buffers = BTreeMap::new();
+        let mut external_images = BTreeMap::new();
         let mut telemetry = AssetLoadTelemetry {
             fetched_bytes: bytes.len(),
             external_buffers: 0,
@@ -451,18 +572,38 @@ impl<F: AssetFetcher> Assets<F> {
             telemetry.external_buffers = telemetry.external_buffers.saturating_add(1);
             external_buffers.insert(index, bytes);
         }
+        for external_path in external_image_paths {
+            if external_images.contains_key(&external_path) {
+                continue;
+            }
+            if validate_texture_source_format(&external_path).is_err() {
+                continue;
+            }
+            check_cancelled(&path, control)?;
+            let bytes = match self.fetcher.fetch(&external_path).await {
+                Ok(bytes) => bytes,
+                Err(AssetError::NotFound { .. } | AssetError::Io { .. }) => continue,
+                Err(error) => return Err(error),
+            };
+            telemetry.fetched_bytes = telemetry.fetched_bytes.saturating_add(bytes.len());
+            external_images.insert(external_path, bytes);
+        }
         check_cancelled(&path, control)?;
         let mut storage = self.storage();
-        let scene = if external_buffers.is_empty() {
+        let mut scene = if external_buffers.is_empty() && external_images.is_empty() {
             SceneAsset::from_gltf_bytes(path.clone(), &bytes, &mut storage)?
         } else {
-            SceneAsset::from_gltf_bytes_with_external_buffers(
+            SceneAsset::from_gltf_bytes_with_external_resources(
                 path.clone(),
                 &bytes,
                 &external_buffers,
+                &external_images,
                 &mut storage,
             )?
         };
+        if self.retain_policy == RetainPolicy::Always {
+            scene = scene.with_retained_source_bytes(&bytes);
+        }
         Ok((scene, telemetry))
     }
 }
@@ -483,90 +624,4 @@ impl From<String> for AssetPath {
     fn from(value: String) -> Self {
         Self(value)
     }
-}
-
-impl TextureDesc {
-    pub fn path(&self) -> &AssetPath {
-        &self.path
-    }
-
-    pub const fn color_space(&self) -> TextureColorSpace {
-        self.color_space
-    }
-
-    pub const fn sampler(&self) -> TextureSamplerDesc {
-        self.sampler
-    }
-
-    pub const fn source_format(&self) -> TextureSourceFormat {
-        self.source_format
-    }
-}
-
-impl TextureSamplerDesc {
-    pub const fn new(
-        mag_filter: Option<TextureFilter>,
-        min_filter: Option<TextureFilter>,
-        wrap_s: TextureWrap,
-        wrap_t: TextureWrap,
-    ) -> Self {
-        Self {
-            mag_filter,
-            min_filter,
-            wrap_s,
-            wrap_t,
-        }
-    }
-
-    pub const fn mag_filter(self) -> Option<TextureFilter> {
-        self.mag_filter
-    }
-
-    pub const fn min_filter(self) -> Option<TextureFilter> {
-        self.min_filter
-    }
-
-    pub const fn wrap_s(self) -> TextureWrap {
-        self.wrap_s
-    }
-
-    pub const fn wrap_t(self) -> TextureWrap {
-        self.wrap_t
-    }
-}
-
-impl Default for TextureSamplerDesc {
-    fn default() -> Self {
-        Self {
-            mag_filter: None,
-            min_filter: None,
-            wrap_s: TextureWrap::Repeat,
-            wrap_t: TextureWrap::Repeat,
-        }
-    }
-}
-
-pub(crate) fn validate_texture_source_format(
-    path: &AssetPath,
-) -> Result<TextureSourceFormat, AssetError> {
-    let lower = path.as_str().to_ascii_lowercase();
-    if lower.ends_with(".png") || lower.starts_with("data:image/png") {
-        return Ok(TextureSourceFormat::Png);
-    }
-    if lower.ends_with(".jpg") || lower.ends_with(".jpeg") || lower.starts_with("data:image/jpeg") {
-        return Ok(TextureSourceFormat::Jpeg);
-    }
-    if lower.ends_with(".webp") || lower.starts_with("data:image/webp") {
-        return Ok(TextureSourceFormat::Webp);
-    }
-    #[cfg(feature = "ktx2")]
-    {
-        if lower.ends_with(".ktx2") || lower.starts_with("data:image/ktx2") {
-            return Ok(TextureSourceFormat::Ktx2Basisu);
-        }
-    }
-    Err(AssetError::UnsupportedTextureFormat {
-        path: path.as_str().to_string(),
-        help: "supported texture format set is PNG, JPEG, and WebP; compressed texture decoders need an explicit feature/policy",
-    })
 }

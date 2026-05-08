@@ -1,11 +1,26 @@
 use crate::material::Color;
 use crate::scene::Vec3;
 
-use super::{Primitive, Vertex};
+use super::{Primitive, PrimitiveVertexAttributes, Vertex};
 
 impl Primitive {
     pub fn triangle(vertices: [Vertex; 3]) -> Self {
-        Self { vertices }
+        Self {
+            vertices,
+            attributes: [PrimitiveVertexAttributes::default(); 3],
+            render_material_slot: 0,
+        }
+    }
+
+    pub(crate) fn triangle_with_attributes(
+        vertices: [Vertex; 3],
+        attributes: [PrimitiveVertexAttributes; 3],
+    ) -> Self {
+        Self {
+            vertices,
+            attributes,
+            render_material_slot: 0,
+        }
     }
 
     pub fn unlit_triangle() -> Self {
@@ -27,5 +42,18 @@ impl Primitive {
 
     pub fn vertices(&self) -> &[Vertex; 3] {
         &self.vertices
+    }
+
+    pub(crate) fn vertex_attributes(&self) -> &[PrimitiveVertexAttributes; 3] {
+        &self.attributes
+    }
+
+    pub(crate) fn with_render_material_slot(mut self, slot: u32) -> Self {
+        self.render_material_slot = slot;
+        self
+    }
+
+    pub(crate) fn render_material_slot(&self) -> u32 {
+        self.render_material_slot
     }
 }

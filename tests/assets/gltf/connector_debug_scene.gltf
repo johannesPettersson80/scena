@@ -1,0 +1,29 @@
+{
+  "asset": { "version": "2.0" },
+  "nodes": [
+    {
+      "name": "Socket",
+      "extras": {
+        "scena": {
+          "connectors": [
+            {
+              "name": "mount",
+              "kind": "mount",
+              "translation": [0.0, 0.1, 0.0],
+              "allowedMates": ["socket"],
+              "tags": ["assembly", "front"],
+              "snapTolerance": 0.025,
+              "clearanceHint": 0.01,
+              "rollPolicy": "chooseNearest",
+              "polarity": "plug",
+              "metadata": {
+                "author": "fixture",
+                "revision": 3
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

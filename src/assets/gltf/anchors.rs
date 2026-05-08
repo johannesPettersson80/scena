@@ -1,6 +1,46 @@
+use std::collections::BTreeSet;
+
 use serde_json::Value as JsonValue;
 
-use super::{SceneAssetAnchor, parse_node_transform};
+use crate::scene::{SourceUnits, Transform};
+
+use super::parse_node_transform;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SceneAssetAnchor {
+    name: String,
+    tags: BTreeSet<String>,
+    label: Option<String>,
+    source_units: Option<SourceUnits>,
+    transform: Transform,
+    invalid_reason: Option<String>,
+}
+
+impl SceneAssetAnchor {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn tags(&self) -> &BTreeSet<String> {
+        &self.tags
+    }
+
+    pub fn label(&self) -> Option<&str> {
+        self.label.as_deref()
+    }
+
+    pub const fn source_units(&self) -> Option<SourceUnits> {
+        self.source_units
+    }
+
+    pub fn transform(&self) -> Transform {
+        self.transform
+    }
+
+    pub(crate) fn invalid_reason(&self) -> Option<&str> {
+        self.invalid_reason.as_deref()
+    }
+}
 
 pub(super) fn parse_node_anchors(node: &JsonValue) -> Vec<SceneAssetAnchor> {
     node.get("extras")
@@ -16,6 +56,12 @@ pub(super) fn parse_node_anchors(node: &JsonValue) -> Vec<SceneAssetAnchor> {
                         .and_then(JsonValue::as_str)
                         .unwrap_or_default()
                         .to_string(),
+                    tags: parse_tags(anchor),
+                    label: anchor
+                        .get("label")
+                        .and_then(JsonValue::as_str)
+                        .map(str::to_string),
+                    source_units: parse_source_units(anchor),
                     transform: parse_node_transform(anchor),
                     invalid_reason: validate_anchor_extras(anchor),
                 })
@@ -55,7 +101,60 @@ fn validate_anchor_extras(anchor: &JsonValue) -> Option<String> {
             return Some("anchor rotation quaternion must be normalized".to_string());
         }
     }
+    if let Some(reason) = validate_tags(anchor) {
+        return Some(reason);
+    }
+    if anchor
+        .get("label")
+        .is_some_and(|label| !matches!(label.as_str(), Some(text) if !text.trim().is_empty()))
+    {
+        return Some("anchor label must be a non-empty string when present".to_string());
+    }
+    if anchor.get("units").is_some() && parse_source_units(anchor).is_none() {
+        return Some(
+            "anchor units must be meters, centimeters, millimeters, inches, or feet".to_string(),
+        );
+    }
 
+    None
+}
+
+fn parse_source_units(anchor: &JsonValue) -> Option<SourceUnits> {
+    match anchor.get("units").and_then(JsonValue::as_str)? {
+        "meter" | "meters" | "m" => Some(SourceUnits::Meters),
+        "centimeter" | "centimeters" | "cm" => Some(SourceUnits::Centimeters),
+        "millimeter" | "millimeters" | "mm" => Some(SourceUnits::Millimeters),
+        "inch" | "inches" | "in" => Some(SourceUnits::Inches),
+        "foot" | "feet" | "ft" => Some(SourceUnits::Feet),
+        _ => None,
+    }
+}
+
+fn parse_tags(anchor: &JsonValue) -> BTreeSet<String> {
+    anchor
+        .get("tags")
+        .and_then(JsonValue::as_array)
+        .map(|tags| {
+            tags.iter()
+                .filter_map(JsonValue::as_str)
+                .filter(|tag| !tag.trim().is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn validate_tags(anchor: &JsonValue) -> Option<String> {
+    let tags = anchor.get("tags")?;
+    let Some(tags) = tags.as_array() else {
+        return Some("anchor tags must be an array of non-empty strings".to_string());
+    };
+    if tags
+        .iter()
+        .any(|tag| !matches!(tag.as_str(), Some(text) if !text.trim().is_empty()))
+    {
+        return Some("anchor tags must be an array of non-empty strings".to_string());
+    }
     None
 }
 

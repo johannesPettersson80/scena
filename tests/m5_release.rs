@@ -31,6 +31,8 @@ fn m5_debug_overlay_api_is_public_and_requires_prepare_after_change() {
     assert_eq!(renderer.debug_overlay(), DebugOverlay::None);
     renderer.set_debug(DebugOverlay::Wireframe);
     assert_eq!(renderer.debug_overlay(), DebugOverlay::Wireframe);
+    renderer.set_debug_overlay(DebugOverlay::BoundingBoxes);
+    assert_eq!(renderer.debug_overlay(), DebugOverlay::BoundingBoxes);
 
     renderer.prepare(&mut scene).expect("scene prepares");
     renderer
@@ -70,6 +72,8 @@ fn m5_release_surface_files_and_examples_are_present() {
         "examples/browser_canvas.rs",
         "examples/headless_ci.rs",
         "examples/industrial_static_scene.rs",
+        "examples/industrial_connector_assembly.rs",
+        "examples/coordinate_connector_repair.rs",
     ];
 
     for rel in required_files {
@@ -81,7 +85,7 @@ fn m5_release_surface_files_and_examples_are_present() {
 fn m5_package_metadata_is_ready_for_dry_run() {
     let manifest = fs::read_to_string(root().join("Cargo.toml")).expect("Cargo.toml is readable");
     for needle in [
-        "version = \"1.0.0\"",
+        "version = \"1.0.0-rc.0\"",
         "rust-version = ",
         "license = \"MIT OR Apache-2.0\"",
         "documentation = \"https://docs.rs/scena\"",
@@ -113,6 +117,8 @@ fn m5_public_api_baseline_names_frozen_contracts() {
         "AnimationError",
         "SceneImport",
         "SurfaceEvent",
+        "Scene::pick_with_assets",
+        "Scene::pick_and_select_with_assets",
     ] {
         assert!(baseline.contains(needle), "baseline missing {needle}");
     }
@@ -290,12 +296,14 @@ fn benchmark_resource_free_static_viewer() -> serde_json::Value {
 
 fn benchmark_standard_model_viewer_gltf() -> serde_json::Value {
     let assets = scena::Assets::new();
-    let scene_asset = pollster::block_on(assets.load_scene("tests/assets/gltf/minimal_scene.gltf"))
-        .expect("minimal glTF loads");
+    let scene_asset = pollster::block_on(
+        assets.load_scene("tests/assets/gltf/mesh_material_vertex_color_scene.gltf"),
+    )
+    .expect("mesh glTF loads");
     let mut scene = Scene::new();
     scene
         .instantiate(&scene_asset)
-        .expect("minimal glTF instantiates");
+        .expect("mesh glTF instantiates");
     benchmark_scene("standard-model-viewer-gltf", 128, 128, scene, Some(&assets))
 }
 

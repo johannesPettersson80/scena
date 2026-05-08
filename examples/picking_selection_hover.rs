@@ -1,20 +1,17 @@
 use scena::{
-    Color, CursorPosition, HitTarget, InteractionStyle, PerspectiveCamera, Primitive, Renderer,
-    Scene, Transform, Viewport,
+    Assets, Color, CursorPosition, GeometryDesc, InteractionStyle, MaterialDesc, Renderer, Scene,
+    Viewport,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.7, 0.45, 0.35));
+    let material = assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(64, 160, 255)));
+
     let mut scene = Scene::new();
-    let node = scene.add_renderable(
-        scene.root(),
-        vec![Primitive::unlit_triangle()],
-        Transform::default(),
-    )?;
-    let camera = scene.add_perspective_camera(
-        scene.root(),
-        PerspectiveCamera::default(),
-        Transform::default(),
-    )?;
+    scene.mesh(geometry, material).add()?;
+    let camera = scene.add_default_camera()?;
+    scene.frame_all_with_assets(camera, &assets)?;
     scene.set_active_camera(camera)?;
 
     let mut renderer = Renderer::headless(128, 128)?;
@@ -26,15 +23,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Color::from_srgb_u8(64, 160, 255),
         3.0,
     ));
-    renderer.prepare(&mut scene)?;
+    renderer.prepare_with_assets(&mut scene, &assets)?;
 
-    let viewport = Viewport::new(128, 128, 1.0).expect("valid viewport");
-    if let Some(hit) = scene.pick(camera, CursorPosition::physical(64.0, 64.0), viewport)? {
-        scene.interaction_mut().set_hover(Some(hit.target()));
-        scene
-            .interaction_mut()
-            .set_primary_selection(Some(HitTarget::Node(node)));
-    }
+    let viewport = Viewport::new(128, 128, 1.0).expect("static viewport is valid");
+    scene.pick_and_select_with_assets(
+        camera,
+        CursorPosition::physical(64.0, 64.0),
+        viewport,
+        &assets,
+    )?;
     println!("hover={:?}", scene.interaction().hover());
     Ok(())
 }

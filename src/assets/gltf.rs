@@ -10,11 +10,14 @@ use crate::material::Color;
 use crate::scene::{Angle, DirectionalLight, Light, PointLight, SpotLight, Transform};
 
 use self::accessor::{parse_accessors, parse_buffer_views, parse_buffers};
+pub use self::anchors::SceneAssetAnchor;
 use self::anchors::parse_node_anchors;
 use self::animation::parse_gltf_clips;
+pub use self::connectors::SceneAssetConnector;
+use self::connectors::parse_node_connectors;
 pub use self::extensions::{GltfDecoderPolicy, GltfExtensionDiagnostic, GltfExtensionStatus};
 use self::extensions::{collect_extension_diagnostics, is_v1_required_gltf_extension};
-use self::external::external_buffer_paths;
+use self::external::{external_buffer_paths, external_image_paths};
 use self::glb::{is_glb, parse_glb};
 use self::read::{parse_materials, parse_meshes, parse_textures};
 pub use self::skins::SceneAssetSkin;
@@ -25,6 +28,7 @@ use super::{AssetPath, AssetStorage, GeometryHandle, MaterialHandle};
 mod accessor;
 mod anchors;
 mod animation;
+mod connectors;
 mod extensions;
 mod external;
 mod glb;
@@ -48,6 +52,7 @@ struct SceneAssetData {
     extensions_used: Vec<String>,
     extensions_required: Vec<String>,
     extension_diagnostics: Vec<GltfExtensionDiagnostic>,
+    retained_source_bytes: Option<Arc<[u8]>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -59,6 +64,7 @@ pub struct SceneAssetNode {
     skin: Option<usize>,
     light: Option<SceneAssetLight>,
     anchors: Vec<SceneAssetAnchor>,
+    connectors: Vec<SceneAssetConnector>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -68,13 +74,6 @@ pub struct SceneAssetMesh {
     bounds: Aabb,
     uses_vertex_colors: bool,
     morph_weights: Vec<f32>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct SceneAssetAnchor {
-    name: String,
-    transform: Transform,
-    invalid_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -100,6 +99,7 @@ impl SceneAsset {
                 extensions_used: Vec::new(),
                 extensions_required: Vec::new(),
                 extension_diagnostics: Vec::new(),
+                retained_source_bytes: None,
             }),
         }
     }
@@ -109,7 +109,14 @@ impl SceneAsset {
         source: &str,
         storage: &mut AssetStorage,
     ) -> Result<Self, AssetError> {
-        Self::from_gltf_json(path, source, None, &BTreeMap::new(), storage)
+        Self::from_gltf_json(
+            path,
+            source,
+            None,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            storage,
+        )
     }
 
     pub(super) fn from_gltf_bytes(
@@ -131,14 +138,16 @@ impl SceneAsset {
             &json,
             binary_chunk.as_deref(),
             &BTreeMap::new(),
+            &BTreeMap::new(),
             storage,
         )
     }
 
-    pub(super) fn from_gltf_bytes_with_external_buffers(
+    pub(super) fn from_gltf_bytes_with_external_resources(
         path: AssetPath,
         bytes: &[u8],
         external_buffers: &BTreeMap<usize, Vec<u8>>,
+        external_images: &BTreeMap<AssetPath, Vec<u8>>,
         storage: &mut AssetStorage,
     ) -> Result<Self, AssetError> {
         if !is_glb(bytes) {
@@ -146,7 +155,14 @@ impl SceneAsset {
                 path: path.as_str().to_string(),
                 reason: format!("expected UTF-8 glTF JSON source: {error}"),
             })?;
-            return Self::from_gltf_json(path, source, None, external_buffers, storage);
+            return Self::from_gltf_json(
+                path,
+                source,
+                None,
+                external_buffers,
+                external_images,
+                storage,
+            );
         }
 
         let (json, binary_chunk) = parse_glb(&path, bytes)?;
@@ -155,6 +171,7 @@ impl SceneAsset {
             &json,
             binary_chunk.as_deref(),
             external_buffers,
+            external_images,
             storage,
         )
     }
@@ -166,11 +183,19 @@ impl SceneAsset {
         external_buffer_paths(path, bytes)
     }
 
+    pub(super) fn external_image_paths(
+        path: &AssetPath,
+        bytes: &[u8],
+    ) -> Result<Vec<AssetPath>, AssetError> {
+        external_image_paths(path, bytes)
+    }
+
     fn from_gltf_json(
         path: AssetPath,
         source: &str,
         binary_chunk: Option<&[u8]>,
         external_buffers: &BTreeMap<usize, Vec<u8>>,
+        external_images: &BTreeMap<AssetPath, Vec<u8>>,
         storage: &mut AssetStorage,
     ) -> Result<Self, AssetError> {
         let json: JsonValue = serde_json::from_str(source).map_err(|error| AssetError::Parse {
@@ -193,7 +218,7 @@ impl SceneAsset {
         let buffers = parse_buffers(&path, &json, binary_chunk, external_buffers)?;
         let buffer_views = parse_buffer_views(&path, &json)?;
         let accessors = parse_accessors(&path, &json)?;
-        let textures = parse_textures(&path, &json, storage);
+        let textures = parse_textures(&path, &json, external_images, storage);
         let materials = parse_materials(&path, &json, storage, &textures)?;
         let meshes = parse_meshes(
             &path,
@@ -221,6 +246,7 @@ impl SceneAsset {
                 extensions_used,
                 extensions_required,
                 extension_diagnostics,
+                retained_source_bytes: None,
             }),
         })
     }
@@ -259,6 +285,23 @@ impl SceneAsset {
 
     pub fn extension_diagnostics(&self) -> &[GltfExtensionDiagnostic] {
         &self.inner.extension_diagnostics
+    }
+
+    pub fn retained_source_bytes_len(&self) -> Option<usize> {
+        self.inner
+            .retained_source_bytes
+            .as_ref()
+            .map(|bytes| bytes.len())
+    }
+
+    pub(super) fn retained_source_bytes(&self) -> Option<&[u8]> {
+        self.inner.retained_source_bytes.as_deref()
+    }
+
+    pub(super) fn with_retained_source_bytes(mut self, bytes: &[u8]) -> Self {
+        Arc::make_mut(&mut self.inner).retained_source_bytes =
+            Some(Arc::<[u8]>::from(bytes.to_vec()));
+        self
     }
 }
 
@@ -302,6 +345,10 @@ impl SceneAssetNode {
     pub fn anchors(&self) -> &[SceneAssetAnchor] {
         &self.anchors
     }
+
+    pub fn connectors(&self) -> &[SceneAssetConnector] {
+        &self.connectors
+    }
 }
 
 impl SceneAssetMesh {
@@ -323,20 +370,6 @@ impl SceneAssetMesh {
 
     pub fn morph_weights(&self) -> &[f32] {
         &self.morph_weights
-    }
-}
-
-impl SceneAssetAnchor {
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn transform(&self) -> Transform {
-        self.transform
-    }
-
-    pub(crate) fn invalid_reason(&self) -> Option<&str> {
-        self.invalid_reason.as_deref()
     }
 }
 
@@ -437,6 +470,7 @@ fn parse_gltf_nodes(
                         .and_then(|light| lights.get(light as usize))
                         .copied(),
                     anchors: parse_node_anchors(node),
+                    connectors: parse_node_connectors(node),
                 })
                 .collect()
         })

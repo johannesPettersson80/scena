@@ -193,6 +193,7 @@ impl OrbitControls {
                 self.target.z + offset.z,
             )),
         )?;
+        scene.ensure_camera_depth_reaches(camera, self.distance)?;
         scene.look_at_point(camera, self.target)
     }
 

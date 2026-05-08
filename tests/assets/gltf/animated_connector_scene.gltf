@@ -1,0 +1,55 @@
+{
+  "asset": { "version": "2.0" },
+  "nodes": [
+    {
+      "name": "PartRoot",
+      "children": [1]
+    },
+    {
+      "name": "AnimatedMount",
+      "extras": {
+        "scena": {
+          "connectors": [
+            {
+              "name": "mount",
+              "kind": "mount",
+              "translation": [0.5, 0.0, 0.0]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "animations": [
+    {
+      "name": "MoveMount",
+      "samplers": [
+        {
+          "input": 0,
+          "output": 1,
+          "interpolation": "LINEAR"
+        }
+      ],
+      "channels": [
+        {
+          "sampler": 0,
+          "target": { "node": 1, "path": "translation" }
+        }
+      ]
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 32,
+      "uri": "data:application/octet-stream;base64,AAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAA="
+    }
+  ],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 8 },
+    { "buffer": 0, "byteOffset": 8, "byteLength": 24 }
+  ],
+  "accessors": [
+    { "bufferView": 0, "componentType": 5126, "count": 2, "type": "SCALAR" },
+    { "bufferView": 1, "componentType": 5126, "count": 2, "type": "VEC3" }
+  ]
+}

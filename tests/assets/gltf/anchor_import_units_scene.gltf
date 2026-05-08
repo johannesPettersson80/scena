@@ -1,0 +1,17 @@
+{
+  "asset": { "version": "2.0" },
+  "nodes": [
+    {
+      "name": "ImportUnitAnchors",
+      "extras": {
+        "scena": {
+          "anchors": [
+            { "name": "one_meter", "translation": [1000.0, 0.0, 0.0] },
+            { "name": "one_foot", "translation": [12.0, 0.0, 0.0] },
+            { "name": "two_feet", "translation": [2.0, 0.0, 0.0] }
+          ]
+        }
+      }
+    }
+  ]
+}

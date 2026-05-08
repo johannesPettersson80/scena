@@ -41,7 +41,7 @@ fn scene_with_camera() -> (Scene, CameraKey) {
         .add_perspective_camera(
             scene.root(),
             scena::PerspectiveCamera::default(),
-            Transform::default(),
+            Transform::at(Vec3::new(0.0, 0.0, 2.0)),
         )
         .expect("camera inserts under root");
     scene
@@ -64,7 +64,32 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
         .capabilities();
     assert_eq!(headless.backend, Backend::Headless);
     assert_eq!(headless.hardware_tier, HardwareTier::Low);
-    assert_eq!(headless.forward_pbr, CapabilityStatus::Supported);
+    assert_eq!(headless.forward_pbr, CapabilityStatus::Degraded);
+    assert_eq!(
+        headless.directional_shadows,
+        CapabilityStatus::Degraded,
+        "shadow-map allocation metadata is not visible shadow rendering proof"
+    );
+    assert_eq!(
+        headless.point_shadows,
+        CapabilityStatus::FeatureDisabled,
+        "point-light shadow maps are not implemented and must not be implied by light support"
+    );
+    assert_eq!(
+        headless.spot_shadows,
+        CapabilityStatus::FeatureDisabled,
+        "spot-light shadow maps are not implemented and must not be implied by light support"
+    );
+    assert_eq!(
+        headless.bloom,
+        CapabilityStatus::FeatureDisabled,
+        "bloom is not implemented and must not be implied by the FXAA/output stage"
+    );
+    assert_eq!(
+        headless.screen_space_ambient_occlusion,
+        CapabilityStatus::FeatureDisabled,
+        "SSAO/GTAO is not implemented and must not be implied by depth support"
+    );
     assert_eq!(
         headless.gpu_frustum_culling,
         CapabilityStatus::FeatureDisabled
@@ -82,6 +107,20 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
     assert_eq!(webgl2.default_clipping_planes, 4);
     assert_eq!(webgl2.ibl_cubemap_default_size, 128);
     assert_eq!(
+        webgl2.texture_compression_basisu,
+        CapabilityStatus::FeatureDisabled
+    );
+    assert_eq!(
+        webgl2.hardware_instancing,
+        CapabilityStatus::FeatureDisabled
+    );
+    assert_eq!(
+        webgl2.fragment_high_precision,
+        CapabilityStatus::FeatureDisabled
+    );
+    assert_eq!(webgl2.uniform_buffers, CapabilityStatus::FeatureDisabled);
+    assert_eq!(webgl2.uniform_buffer_max_bytes, 16_384);
+    assert_eq!(
         webgl2.gpu_frustum_culling,
         CapabilityStatus::FeatureDisabled
     );
@@ -90,9 +129,43 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
 
     let webgpu = scena::Capabilities::for_attached_gpu_backend(Backend::WebGpu);
     assert_eq!(webgpu.hardware_tier, HardwareTier::Medium);
-    assert_eq!(webgpu.gpu_frustum_culling, CapabilityStatus::Supported);
+    assert_eq!(webgpu.forward_pbr, CapabilityStatus::Degraded);
+    assert_eq!(
+        webgpu.gpu_frustum_culling,
+        CapabilityStatus::FeatureDisabled
+    );
     assert_eq!(webgpu.per_instance_culling, CapabilityStatus::Supported);
     assert_eq!(webgpu.compute_shaders, CapabilityStatus::Supported);
+
+    let diagnostics = webgpu.diagnostics();
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == scena::DiagnosticCode::ForwardPbrDegraded
+            && diagnostic.message.contains("PBR")
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == scena::DiagnosticCode::DirectionalShadowsDegraded
+            && diagnostic.message.contains("Directional shadows")
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == scena::DiagnosticCode::PointShadowsDisabled
+            && diagnostic.message.contains("Point shadows")
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == scena::DiagnosticCode::SpotShadowsDisabled
+            && diagnostic.message.contains("Spot shadows")
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == scena::DiagnosticCode::BloomDisabled
+            && diagnostic.message.contains("Bloom")
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == scena::DiagnosticCode::AmbientOcclusionDisabled
+            && diagnostic.message.contains("ambient occlusion")
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == scena::DiagnosticCode::GpuCullingDisabled
+            && diagnostic.message.contains("GPU culling")
+    }));
 }
 
 #[test]
@@ -206,7 +279,7 @@ fn cpu_frustum_culling_drops_offscreen_renderables_before_draw() {
         .add_perspective_camera(
             scene.root(),
             scena::PerspectiveCamera::default(),
-            Transform::default(),
+            Transform::at(Vec3::new(0.0, 0.0, 2.0)),
         )
         .expect("camera inserts");
     scene
@@ -247,7 +320,7 @@ fn per_instance_cpu_culling_keeps_visible_instances_and_counts_culled_ones() {
         .add_perspective_camera(
             scene.root(),
             scena::PerspectiveCamera::default(),
-            Transform::default(),
+            Transform::at(Vec3::new(0.0, 0.0, 2.0)),
         )
         .expect("camera inserts");
     scene
@@ -289,9 +362,9 @@ fn gpu_capable_renderer_records_compute_culling_dispatch_when_available() {
 
             assert_eq!(
                 renderer.capabilities().gpu_frustum_culling,
-                CapabilityStatus::Supported
+                CapabilityStatus::FeatureDisabled
             );
-            assert_eq!(renderer.stats().gpu_culling_dispatches, 1);
+            assert_eq!(renderer.stats().gpu_culling_dispatches, 0);
         }
         Err(scena::BuildError::NoAdapter { backend })
         | Err(scena::BuildError::RequestDevice { backend }) => {

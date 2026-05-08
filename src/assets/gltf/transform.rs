@@ -12,7 +12,9 @@ pub(super) fn parse_node_transform(node: &JsonValue) -> Transform {
     }
     Transform {
         translation: vec3_field(node, "translation", Vec3::ZERO),
-        rotation: quat_field(node, "rotation", Quat::IDENTITY),
+        rotation: quat_field(node, "rotation")
+            .or_else(|| basis_rotation(node))
+            .unwrap_or(Quat::IDENTITY),
         scale: vec3_field(node, "scale", Vec3::ONE),
     }
 }
@@ -54,16 +56,14 @@ fn vec3_field(node: &JsonValue, field: &str, fallback: Vec3) -> Vec3 {
     )
 }
 
-fn quat_field(node: &JsonValue, field: &str, fallback: Quat) -> Quat {
-    let Some(values) = node.get(field).and_then(JsonValue::as_array) else {
-        return fallback;
-    };
-    Quat {
-        x: array_f32(values, 0).unwrap_or(fallback.x),
-        y: array_f32(values, 1).unwrap_or(fallback.y),
-        z: array_f32(values, 2).unwrap_or(fallback.z),
-        w: array_f32(values, 3).unwrap_or(fallback.w),
-    }
+fn quat_field(node: &JsonValue, field: &str) -> Option<Quat> {
+    let values = node.get(field).and_then(JsonValue::as_array)?;
+    Some(normalize_quat(Quat {
+        x: array_f32(values, 0)?,
+        y: array_f32(values, 1)?,
+        z: array_f32(values, 2)?,
+        w: array_f32(values, 3)?,
+    }))
 }
 
 fn array_f32(values: &[JsonValue], index: usize) -> Option<f32> {
@@ -120,6 +120,23 @@ fn quat_from_rotation_columns(x: Vec3, y: Vec3, z: Vec3) -> Quat {
     normalize_quat(quat)
 }
 
+fn basis_rotation(node: &JsonValue) -> Option<Quat> {
+    let forward = normalize_vec3(optional_vec3_field(node, "forward")?)?;
+    let authored_up = normalize_vec3(optional_vec3_field(node, "up")?)?;
+    let right = normalize_vec3(cross_vec3(forward, authored_up))?;
+    let up = normalize_vec3(cross_vec3(right, forward))?;
+    Some(quat_from_rotation_columns(forward, up, right))
+}
+
+fn optional_vec3_field(node: &JsonValue, field: &str) -> Option<Vec3> {
+    let values = node.get(field).and_then(JsonValue::as_array)?;
+    Some(Vec3::new(
+        array_f32(values, 0)?,
+        array_f32(values, 1)?,
+        array_f32(values, 2)?,
+    ))
+}
+
 fn normalize_quat(value: Quat) -> Quat {
     let length =
         (value.x * value.x + value.y * value.y + value.z * value.z + value.w * value.w).sqrt();
@@ -136,6 +153,26 @@ fn normalize_quat(value: Quat) -> Quat {
 
 fn length_vec3(value: Vec3) -> f32 {
     (value.x * value.x + value.y * value.y + value.z * value.z).sqrt()
+}
+
+fn normalize_vec3(value: Vec3) -> Option<Vec3> {
+    let length = length_vec3(value);
+    if length <= f32::EPSILON || !length.is_finite() {
+        return None;
+    }
+    Some(Vec3::new(
+        value.x / length,
+        value.y / length,
+        value.z / length,
+    ))
+}
+
+const fn cross_vec3(left: Vec3, right: Vec3) -> Vec3 {
+    Vec3::new(
+        left.y * right.z - left.z * right.y,
+        left.z * right.x - left.x * right.z,
+        left.x * right.y - left.y * right.x,
+    )
 }
 
 fn scale_or_zero(value: Vec3, factor: f32) -> Vec3 {

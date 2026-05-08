@@ -7,20 +7,20 @@ max_abs_diff = 0
 [[reference]]
 name = "direct-lights-pbr"
 max_abs_diff = 0
-center_rgba = [216, 0, 9, 255]
-left_mid_rgba = [216, 0, 9, 255]
-right_mid_rgba = [216, 0, 9, 255]
+center_rgba = [116, 0, 1, 255]
+left_mid_rgba = [116, 0, 1, 255]
+right_mid_rgba = [116, 0, 1, 255]
 nonblack_pixels = 240
-rgba_hash = "fnv1a64:50d58e61016ef3a5"
+rgba_hash = "fnv1a64:0f16ca80a3f242a5"
 
 [[reference]]
 name = "shadowed-directional-light"
 max_abs_diff = 0
-center_rgba = [206, 206, 206, 255]
-left_mid_rgba = [206, 206, 206, 255]
-right_mid_rgba = [206, 206, 206, 255]
+center_rgba = [130, 130, 130, 255]
+left_mid_rgba = [130, 130, 130, 255]
+right_mid_rgba = [130, 130, 130, 255]
 nonblack_pixels = 240
-rgba_hash = "fnv1a64:14989755a652a465"
+rgba_hash = "fnv1a64:806ffe66e9ce9d68"
 
 [[reference]]
 name = "ibl-environment"
@@ -46,5 +46,5 @@ max_abs_diff = 0
 center_rgba = [206, 206, 206, 255]
 left_mid_rgba = [0, 0, 0, 255]
 right_mid_rgba = [206, 206, 206, 255]
-nonblack_pixels = 141
-rgba_hash = "fnv1a64:53e497bce0ce2aed"
+nonblack_pixels = 148
+rgba_hash = "fnv1a64:b7fab3e0ab0ca5ff"

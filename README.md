@@ -156,10 +156,22 @@ state. The public examples below are the short paths to the major viewer jobs:
 | Orbit, pan, zoom, and focus a camera | [`examples/orbit_controls.rs`](examples/orbit_controls.rs) |
 | Pick, hover, and select a node | [`examples/picking_selection_hover.rs`](examples/picking_selection_hover.rs) |
 | Align helper geometry to imported anchors | [`examples/anchor_alignment.rs`](examples/anchor_alignment.rs) |
+| Connect scene-authored objects by named connectors | [`examples/connect_objects.rs`](examples/connect_objects.rs) |
+| Connect two imported assets by named anchors | [`examples/imported_anchor_connection.rs`](examples/imported_anchor_connection.rs) |
+| Assemble imported parts with connector metadata | [`examples/industrial_connector_assembly.rs`](examples/industrial_connector_assembly.rs) |
+| Repair axis metadata before connecting | [`examples/coordinate_connector_repair.rs`](examples/coordinate_connector_repair.rs) |
 | Convert CAD-style units and coordinate systems | [`examples/coordinate_units.rs`](examples/coordinate_units.rs) |
 | Batch repeated static geometry | [`examples/static_batching.rs`](examples/static_batching.rs) |
 | Control layers, visibility, render groups, and helper-on-top | [`examples/layers_visibility.rs`](examples/layers_visibility.rs) |
 | Recover from beginner diagnostics | [`examples/beginner_diagnostics.rs`](examples/beginner_diagnostics.rs) |
+
+Placement guides:
+
+- [Place and connect objects without matrix math](docs/guides/place-and-connect-objects.md)
+- [Units, axes, and handedness](docs/guides/units-axes-handedness.md)
+- [Authoring glTF anchors and connectors](docs/guides/authoring-gltf-anchors-connectors.md)
+- [Migrating common Three.js workflows](docs/guides/migrating-from-threejs.md)
+- [Troubleshooting misplaced assets](docs/guides/troubleshooting-misplaced-assets.md)
 
 ## Core Workflow
 
@@ -180,10 +192,10 @@ guess missing state.
 | Area | Current release-candidate surface |
 |---|---|
 | Scene graph | typed nodes, transforms, cameras, lights, clipping planes, imports, labels, instances, picking, and animation mixers |
-| Geometry | primitives, manual buffers, boxes, line/wire/edge expansion, bounds, skinning, morph targets, and instance sets |
-| Materials | unlit, PBR metallic-roughness, vertex colors, alpha blending, textures, line/wire/edge materials, ACES plus sRGB output, FXAA |
+| Geometry | primitives, manual buffers, boxes, line/wire/edge expansion, bounds, UV0 retention, CPU skinning, CPU morph targets, and instance sets |
+| Materials | unlit, degraded CPU-side metallic-roughness preview, vertex colors, alpha blending, texture descriptors, line/wire/edge materials, ACES plus sRGB output, FXAA |
 | Assets | glTF/GLB first, cache/dedup/reload, external buffers, selected Khronos samples, anchors, import-local lookup, source units, coordinate conversion |
-| Rendering | headless CPU, headless/native wgpu foundation, explicit prepare/render lifecycle, render-on-change, offscreen targets, readback, stats, diagnostics |
+| Rendering | camera-projected headless CPU, headless/native wgpu foundation, explicit prepare/render lifecycle, render-on-change, offscreen targets, readback, stats, diagnostics |
 | Interaction | typed picking results, hover/selection styles, viewport-aware cursor positions, platform-neutral orbit controls |
 | Platform | native descriptor and attached-window paths, browser surface intent, WASM compile/package checks, surface/context/device loss events |
 | Quality | doctor rules, public API baseline, visual artifacts, browser API smoke, benchmarks, allocation gates, release-candidate deferral ADR |
@@ -227,6 +239,10 @@ All examples compile with `cargo check --examples`.
 | [`camera_framing.rs`](examples/camera_framing.rs) | framing scene bounds and looking at a selected node |
 | [`picking_selection_hover.rs`](examples/picking_selection_hover.rs) | picking and interaction styling |
 | [`anchor_alignment.rs`](examples/anchor_alignment.rs) | snapping scene helpers to imported glTF anchors |
+| [`connect_objects.rs`](examples/connect_objects.rs) | typed connector handles without raw matrix math |
+| [`imported_anchor_connection.rs`](examples/imported_anchor_connection.rs) | connecting imported glTF anchors by stable names |
+| [`industrial_connector_assembly.rs`](examples/industrial_connector_assembly.rs) | assembling imported parts with renderer-neutral connector metadata |
+| [`coordinate_connector_repair.rs`](examples/coordinate_connector_repair.rs) | catching handedness metadata before connector placement |
 | [`coordinate_units.rs`](examples/coordinate_units.rs) | explicit source unit and coordinate-system conversion |
 | [`static_batching.rs`](examples/static_batching.rs) | repeated non-instanced geometry with prepare-time batch metadata |
 | [`layers_visibility.rs`](examples/layers_visibility.rs) | layers, camera masks, visibility, render groups, and helper-on-top |
@@ -246,9 +262,9 @@ release:
 
 | Item | Current state |
 |---|---|
-| Crate version | `1.0.0` |
+| Crate version | `1.0.0-rc.0` |
 | Minimum Rust | `1.90` |
-| Local implementation checklist | M0 through M5 complete |
+| Local implementation checklist | M0 through M5 foundation complete; state-of-art replacement checklist remains open |
 | API baseline | [`docs/api/m5-public-api-baseline.txt`](docs/api/m5-public-api-baseline.txt) |
 | Publication-lane deferrals | [`ADR-0005`](docs/decisions/ADR-0005-local-release-candidate-deferrals.md) |
 | Local package proof | `cargo publish --dry-run --allow-dirty` passed on the release-candidate tree |
@@ -396,9 +412,10 @@ Not yet. This checkout is a local v1.0 release candidate. `ADR-0005` tracks the 
 required before a public tag, GitHub release, or crates.io upload.
 
 **Can I replace Three.js with it today?**
-For the implemented Rust scene-graph, headless, glTF, picking, labels, animation, and
-diagnostic workflows, yes as a release-candidate API. For full browser attached-canvas
-parity with Three.js deployment ergonomics, not yet.
+Not as a complete Three.js replacement. This release-candidate checkout is useful for the
+implemented Rust scene-graph, headless rendering, glTF import, picking, labels, animation,
+connector placement, and diagnostics workflows. Full PBR, IBL, visible shadows, complete
+WebGL2/WebGPU parity, and public release proof remain open gates.
 
 **Why is `prepare()` explicit?**
 Because first-use fetch, parse, upload, pipeline, batching, and capability failures should

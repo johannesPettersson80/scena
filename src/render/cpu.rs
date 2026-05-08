@@ -3,40 +3,80 @@ use crate::material::Color;
 use crate::scene::{ClippingPlane, Vec3};
 
 use super::RasterTarget;
+use super::camera::CameraProjection;
 use super::output::OutputTransform;
 
-pub(super) fn clear_cpu(
+pub(super) struct CpuFrame<'frame> {
     target: RasterTarget,
     output: OutputTransform,
-    linear_frame: &mut [Color],
-    frame: &mut [u8],
-    color: Color,
-) {
-    let rgba = output.encode_rgba8(color);
-    for (linear, pixel) in linear_frame.iter_mut().zip(frame.chunks_exact_mut(4)) {
+    linear_frame: &'frame mut [Color],
+    depth_frame: &'frame mut [f32],
+    frame: &'frame mut [u8],
+}
+
+impl<'frame> CpuFrame<'frame> {
+    pub(super) const fn new(
+        target: RasterTarget,
+        output: OutputTransform,
+        linear_frame: &'frame mut [Color],
+        depth_frame: &'frame mut [f32],
+        frame: &'frame mut [u8],
+    ) -> Self {
+        Self {
+            target,
+            output,
+            linear_frame,
+            depth_frame,
+            frame,
+        }
+    }
+}
+
+pub(super) fn clear_cpu(cpu_frame: &mut CpuFrame<'_>, color: Color) {
+    let rgba = cpu_frame.output.encode_rgba8(color);
+    for ((linear, depth), pixel) in cpu_frame
+        .linear_frame
+        .iter_mut()
+        .zip(cpu_frame.depth_frame.iter_mut())
+        .zip(cpu_frame.frame.chunks_exact_mut(4))
+    {
         *linear = color;
+        *depth = f32::INFINITY;
         pixel.copy_from_slice(&rgba);
     }
-    debug_assert_eq!(linear_frame.len(), target.pixel_len());
+    debug_assert_eq!(cpu_frame.linear_frame.len(), cpu_frame.target.pixel_len());
+    debug_assert_eq!(cpu_frame.depth_frame.len(), cpu_frame.target.pixel_len());
 }
 
 pub(super) fn draw_primitive_cpu(
-    target: RasterTarget,
-    output: OutputTransform,
-    linear_frame: &mut [Color],
-    frame: &mut [u8],
+    cpu_frame: &mut CpuFrame<'_>,
     primitive: &Primitive,
     clipping_planes: &[ClippingPlane],
+    camera: &CameraProjection,
 ) {
     let [a, b, c] = primitive.vertices();
-    let a = ScreenVertex::from_vertex(*a, target);
-    let b = ScreenVertex::from_vertex(*b, target);
-    let c = ScreenVertex::from_vertex(*c, target);
+    let Some(a) = ScreenVertex::from_vertex(*a, cpu_frame.target, camera) else {
+        return;
+    };
+    let Some(b) = ScreenVertex::from_vertex(*b, cpu_frame.target, camera) else {
+        return;
+    };
+    let Some(c) = ScreenVertex::from_vertex(*c, cpu_frame.target, camera) else {
+        return;
+    };
 
     let min_x = a.x.min(b.x).min(c.x).floor().max(0.0) as u32;
-    let max_x = a.x.max(b.x).max(c.x).ceil().min(target.width as f32 - 1.0) as u32;
+    let max_x =
+        a.x.max(b.x)
+            .max(c.x)
+            .ceil()
+            .min(cpu_frame.target.width as f32 - 1.0) as u32;
     let min_y = a.y.min(b.y).min(c.y).floor().max(0.0) as u32;
-    let max_y = a.y.max(b.y).max(c.y).ceil().min(target.height as f32 - 1.0) as u32;
+    let max_y =
+        a.y.max(b.y)
+            .max(c.y)
+            .ceil()
+            .min(cpu_frame.target.height as f32 - 1.0) as u32;
 
     let area = edge(a, b, c.x, c.y);
     if area.abs() <= f32::EPSILON {
@@ -56,7 +96,8 @@ pub(super) fn draw_primitive_cpu(
                     continue;
                 }
                 let color = mix_color(a.color, b.color, c.color, w0, w1, w2);
-                write_pixel(target, output, linear_frame, frame, x, y, color);
+                let depth = mix_depth(a.depth, b.depth, c.depth, w0, w1, w2);
+                write_pixel(cpu_frame, x, y, color, depth);
             }
         }
     }
@@ -66,20 +107,27 @@ pub(super) fn draw_primitive_cpu(
 struct ScreenVertex {
     x: f32,
     y: f32,
+    depth: f32,
     position: Vec3,
     color: Color,
 }
 
 impl ScreenVertex {
-    fn from_vertex(vertex: Vertex, target: RasterTarget) -> Self {
+    fn from_vertex(
+        vertex: Vertex,
+        target: RasterTarget,
+        camera: &CameraProjection,
+    ) -> Option<Self> {
+        let projected = camera.project(vertex.position)?;
         let width = target.width.saturating_sub(1) as f32;
         let height = target.height.saturating_sub(1) as f32;
-        Self {
-            x: (vertex.position.x * 0.5 + 0.5) * width,
-            y: (1.0 - (vertex.position.y * 0.5 + 0.5)) * height,
+        Some(Self {
+            x: (projected.ndc_x * 0.5 + 0.5) * width,
+            y: (1.0 - (projected.ndc_y * 0.5 + 0.5)) * height,
+            depth: projected.depth,
             position: vertex.position,
             color: vertex.color,
-        }
+        })
     }
 }
 
@@ -104,27 +152,33 @@ fn mix_position(a: Vec3, b: Vec3, c: Vec3, w0: f32, w1: f32, w2: f32) -> Vec3 {
     )
 }
 
+fn mix_depth(a: f32, b: f32, c: f32, w0: f32, w1: f32, w2: f32) -> f32 {
+    a * w0 + b * w1 + c * w2
+}
+
 fn is_clipped(position: Vec3, clipping_planes: &[ClippingPlane]) -> bool {
     clipping_planes
         .iter()
         .any(|plane| !plane.contains(position))
 }
 
-fn write_pixel(
-    target: RasterTarget,
-    output: OutputTransform,
-    linear_frame: &mut [Color],
-    frame: &mut [u8],
-    x: u32,
-    y: u32,
-    color: Color,
-) {
-    let pixel_index = target.pixel_index(x, y);
-    let blended = blend_source_over(color, linear_frame[pixel_index]);
-    linear_frame[pixel_index] = blended;
+fn write_pixel(cpu_frame: &mut CpuFrame<'_>, x: u32, y: u32, color: Color, depth: f32) {
+    if !depth.is_finite() {
+        return;
+    }
+    let pixel_index = cpu_frame.target.pixel_index(x, y);
+    if depth > cpu_frame.depth_frame[pixel_index] + f32::EPSILON {
+        return;
+    }
+    let blended = blend_source_over(color, cpu_frame.linear_frame[pixel_index]);
+    cpu_frame.linear_frame[pixel_index] = blended;
+    if clamp_alpha_or(color.a, 1.0) >= 1.0 - f32::EPSILON {
+        cpu_frame.depth_frame[pixel_index] = depth;
+    }
 
     let byte_index = pixel_index * 4;
-    frame[byte_index..byte_index + 4].copy_from_slice(&output.encode_rgba8(blended));
+    cpu_frame.frame[byte_index..byte_index + 4]
+        .copy_from_slice(&cpu_frame.output.encode_rgba8(blended));
 }
 
 fn blend_source_over(source: Color, destination: Color) -> Color {

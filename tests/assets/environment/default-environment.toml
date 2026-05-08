@@ -1,18 +1,18 @@
 [environment]
 name = "neutral-studio"
-source_path = "tests/assets/environment/neutral-studio.placeholder.hdr"
-source_sha256 = "b95916ffe38d8825bbf701fd2a6efe56983e1f7d241856426440869138e3973e"
+source_path = "tests/assets/environment/neutral-studio.fixture.txt"
+source_sha256 = "955af3ed33b2ad3d525ac8c0c1f83ed9c531a4317994eaa501531e5e35b90d13"
 license = "CC0-1.0"
-generator = "xtask generate-default-env --input tests/assets/environment/neutral-studio.placeholder.hdr"
+generator = "xtask generate-default-env-fixture --input tests/assets/environment/neutral-studio.fixture.txt"
 cubemap_resolution = 256
 brdf_lut_size = 256
 wasm_delivery = "bundled"
-status = "generated-fixture"
+status = "text-fixture-not-ibl-proof"
 
 [[derivative]]
-path = "tests/assets/environment/generated/neutral-studio-cubemap.ktx2"
-sha256 = "e6c9093c4dc8efd2fa9f46be2a41d5bc97e977240dd81eccbc8cbc50e5181f24"
+path = "tests/assets/environment/generated/neutral-studio-cubemap.fixture.toml"
+sha256 = "41189e81657848c028b0335a86901890f9a48744d9f51a3b5ff19d5b54ef86f8"
 
 [[derivative]]
-path = "tests/assets/environment/generated/brdf-lut-256.rgba16f"
-sha256 = "08a2a2c32fe45ccf0d799db947a729269aaf58ec0c933c3e6e8dd99784789ef7"
+path = "tests/assets/environment/generated/brdf-lut-256.fixture.toml"
+sha256 = "5d50ac6c5639f1d2344831dc648be932989f81af7a1bd8f2a0f9c94313be2563"

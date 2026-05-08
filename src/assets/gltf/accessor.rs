@@ -139,6 +139,25 @@ pub(super) fn read_vec3_accessor(
         .collect()
 }
 
+pub(super) fn read_vec2_accessor(
+    path: &AssetPath,
+    accessor_index: usize,
+    buffers: &[Vec<u8>],
+    buffer_views: &[GltfBufferView],
+    accessors: &[GltfAccessor],
+) -> Result<Vec<[f32; 2]>, AssetError> {
+    let accessor = required_accessor(path, accessor_index, accessors)?;
+    if accessor.kind != "VEC2" {
+        return Err(parse_error(path, "expected VEC2 accessor"));
+    }
+    (0..accessor.count)
+        .map(|index| {
+            let values = read_vec2_components(path, accessor, index, buffers, buffer_views)?;
+            Ok([values[0], values[1]])
+        })
+        .collect()
+}
+
 pub(super) fn read_f32_accessor(
     path: &AssetPath,
     accessor_index: usize,
@@ -281,6 +300,25 @@ fn read_vec3_components(
         _ => Err(parse_error(
             path,
             "expected FLOAT VEC3 accessor or normalized integer VEC3 accessor",
+        )),
+    }
+}
+
+fn read_vec2_components(
+    path: &AssetPath,
+    accessor: &GltfAccessor,
+    index: usize,
+    buffers: &[Vec<u8>],
+    buffer_views: &[GltfBufferView],
+) -> Result<Vec<f32>, AssetError> {
+    match accessor.component_type {
+        GL_FLOAT => read_f32_components(path, accessor, index, 2, buffers, buffer_views),
+        GL_BYTE | GL_UNSIGNED_BYTE | GL_SHORT | GL_UNSIGNED_SHORT if accessor.normalized => {
+            read_normalized_components(path, accessor, index, 2, buffers, buffer_views)
+        }
+        _ => Err(parse_error(
+            path,
+            "expected FLOAT VEC2 accessor or normalized integer VEC2 accessor",
         )),
     }
 }

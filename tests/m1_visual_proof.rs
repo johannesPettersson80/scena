@@ -11,6 +11,7 @@ use scena::{
 const M1_HEADLESS_FIXTURE_METADATA: &str = include_str!("visual/fixtures/m1-headless-core.toml");
 const M1_HEADLESS_REFERENCE_METADATA: &str =
     include_str!("visual/references/m1-headless-core.toml");
+const CAMERA_DISTANCE_FOR_NDC_FIXTURES: f32 = 1.732_050_8;
 
 #[test]
 fn m1_headless_visual_artifacts_cover_core_material_paths() {
@@ -283,7 +284,7 @@ fn scene_with_camera() -> (Scene, scena::CameraKey) {
         .add_perspective_camera(
             scene.root(),
             PerspectiveCamera::default(),
-            Transform::default(),
+            Transform::at(Vec3::new(0.0, 0.0, CAMERA_DISTANCE_FOR_NDC_FIXTURES)),
         )
         .expect("camera inserts");
     scene

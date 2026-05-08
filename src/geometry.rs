@@ -1,7 +1,7 @@
 //! Primitive meshes, generated helper geometry, technical lines, arrows, grids, and labels.
 
 use crate::material::Color;
-use crate::scene::{Quat, Transform, Vec3};
+use crate::scene::Vec3;
 
 mod bounds;
 mod helpers;
@@ -9,6 +9,7 @@ mod morph;
 mod primitive;
 mod skinning;
 mod static_batch;
+mod tangents;
 pub use morph::GeometryMorphTarget;
 pub use skinning::{GeometrySkin, SkinningMatrix};
 pub use static_batch::StaticBatchReport;
@@ -33,6 +34,14 @@ pub enum GeometryError {
     InvalidVertexColorCount {
         vertex_count: usize,
         color_count: usize,
+    },
+    InvalidTextureCoordinateCount {
+        vertex_count: usize,
+        tex_coord_count: usize,
+    },
+    InvalidTangentCount {
+        vertex_count: usize,
+        tangent_count: usize,
     },
     InvalidMorphTargetVertexCount {
         vertex_count: usize,
@@ -76,6 +85,8 @@ pub struct GeometryDesc {
     vertices: Vec<GeometryVertex>,
     indices: Vec<u32>,
     vertex_colors: Vec<Color>,
+    tex_coords0: Vec<[f32; 2]>,
+    tangents: Option<Vec<[f32; 4]>>,
     morph_targets: Vec<GeometryMorphTarget>,
     skin: Option<GeometrySkin>,
     bounds: Aabb,
@@ -87,9 +98,32 @@ pub struct Vertex {
     pub color: Color,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PrimitiveVertexAttributes {
+    pub(crate) normal: Vec3,
+    pub(crate) tex_coord0: [f32; 2],
+    pub(crate) tangent: Vec3,
+    pub(crate) tangent_handedness: f32,
+    pub(crate) shadow_visibility: f32,
+}
+
+impl Default for PrimitiveVertexAttributes {
+    fn default() -> Self {
+        Self {
+            normal: Vec3::new(0.0, 0.0, 1.0),
+            tex_coord0: [0.0, 0.0],
+            tangent: Vec3::new(1.0, 0.0, 0.0),
+            tangent_handedness: 1.0,
+            shadow_visibility: 1.0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Primitive {
     vertices: [Vertex; 3],
+    attributes: [PrimitiveVertexAttributes; 3],
+    render_material_slot: u32,
 }
 
 impl GeometryDesc {
@@ -108,6 +142,23 @@ impl GeometryDesc {
         indices: Vec<u32>,
         vertex_colors: Vec<Color>,
     ) -> Result<Self, GeometryError> {
+        let tex_coords0 = vec![[0.0, 0.0]; vertices.len()];
+        Self::try_new_with_vertex_colors_and_tex_coords(
+            topology,
+            vertices,
+            indices,
+            vertex_colors,
+            tex_coords0,
+        )
+    }
+
+    pub fn try_new_with_vertex_colors_and_tex_coords(
+        topology: GeometryTopology,
+        vertices: Vec<GeometryVertex>,
+        indices: Vec<u32>,
+        vertex_colors: Vec<Color>,
+        tex_coords0: Vec<[f32; 2]>,
+    ) -> Result<Self, GeometryError> {
         let Some(bounds) = Aabb::from_vertices(&vertices) else {
             return Err(GeometryError::EmptyVertices);
         };
@@ -115,6 +166,12 @@ impl GeometryDesc {
             return Err(GeometryError::InvalidVertexColorCount {
                 vertex_count: vertices.len(),
                 color_count: vertex_colors.len(),
+            });
+        }
+        if tex_coords0.len() != vertices.len() {
+            return Err(GeometryError::InvalidTextureCoordinateCount {
+                vertex_count: vertices.len(),
+                tex_coord_count: tex_coords0.len(),
             });
         }
         let valid_arity = match topology {
@@ -140,6 +197,8 @@ impl GeometryDesc {
             vertices,
             indices,
             vertex_colors,
+            tex_coords0,
+            tangents: None,
             morph_targets: Vec::new(),
             skin: None,
             bounds,
@@ -417,32 +476,6 @@ impl GeometryDesc {
         )
     }
 
-    pub fn static_batch(
-        source: &GeometryDesc,
-        transforms: impl IntoIterator<Item = Transform>,
-    ) -> Self {
-        let transforms = transforms.into_iter().collect::<Vec<_>>();
-        if transforms.is_empty() {
-            return source.clone();
-        }
-
-        let mut vertices = Vec::with_capacity(source.vertices.len() * transforms.len());
-        let mut indices = Vec::with_capacity(source.indices.len() * transforms.len());
-        let mut vertex_colors = Vec::with_capacity(source.vertex_colors.len() * transforms.len());
-        for transform in transforms {
-            let base = vertices.len() as u32;
-            vertices.extend(source.vertices.iter().map(|vertex| GeometryVertex {
-                position: transform_point(vertex.position, transform),
-                normal: rotate_vec3(transform.rotation, vertex.normal),
-            }));
-            indices.extend(source.indices.iter().map(|index| base + *index));
-            vertex_colors.extend(source.vertex_colors.iter().copied());
-        }
-
-        Self::try_new_with_vertex_colors(source.topology, vertices, indices, vertex_colors)
-            .expect("static batching preserves valid source geometry topology and indices")
-    }
-
     pub fn topology(&self) -> GeometryTopology {
         self.topology
     }
@@ -457,6 +490,10 @@ impl GeometryDesc {
 
     pub fn vertex_colors(&self) -> &[Color] {
         &self.vertex_colors
+    }
+
+    pub fn tex_coords0(&self) -> &[[f32; 2]] {
+        &self.tex_coords0
     }
 
     pub fn bounds(&self) -> Aabb {
@@ -499,37 +536,4 @@ fn normalize(value: Vec3) -> Vec3 {
     } else {
         scale(value, 1.0 / length)
     }
-}
-
-fn transform_point(point: Vec3, transform: Transform) -> Vec3 {
-    let scaled = Vec3::new(
-        point.x * transform.scale.x,
-        point.y * transform.scale.y,
-        point.z * transform.scale.z,
-    );
-    let rotated = rotate_vec3(transform.rotation, scaled);
-    add(rotated, transform.translation)
-}
-
-fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
-    let length_squared = rotation.x * rotation.x
-        + rotation.y * rotation.y
-        + rotation.z * rotation.z
-        + rotation.w * rotation.w;
-    if length_squared <= f32::EPSILON || !length_squared.is_finite() {
-        return vector;
-    }
-    let inverse_length = length_squared.sqrt().recip();
-    let qx = rotation.x * inverse_length;
-    let qy = rotation.y * inverse_length;
-    let qz = rotation.z * inverse_length;
-    let qw = rotation.w * inverse_length;
-    let tx = 2.0 * (qy * vector.z - qz * vector.y);
-    let ty = 2.0 * (qz * vector.x - qx * vector.z);
-    let tz = 2.0 * (qx * vector.y - qy * vector.x);
-    Vec3::new(
-        vector.x + qw * tx + (qy * tz - qz * ty),
-        vector.y + qw * ty + (qz * tx - qx * tz),
-        vector.z + qw * tz + (qx * ty - qy * tx),
-    )
 }

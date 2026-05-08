@@ -26,13 +26,7 @@ function createCanvas(backend, workflow = "triangle") {
   return canvas;
 }
 
-function readWebGl2Pixels(canvas) {
-  const gl = canvas.getContext("webgl2", { antialias: false });
-  if (!gl) {
-    return null;
-  }
-  const pixels = new Uint8Array(canvas.width * canvas.height * 4);
-  gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+function summarizePixels(width, height, pixels) {
   let nonblack = 0;
   let max = [0, 0, 0, 0];
   for (let index = 0; index < pixels.length; index += 4) {
@@ -46,12 +40,52 @@ function readWebGl2Pixels(canvas) {
       Math.max(max[3], pixels[index + 3]),
     ];
   }
-  const centerOffset = ((canvas.height / 2) * canvas.width + canvas.width / 2) * 4;
+  const sampleAt = (x, y) => {
+    const clampedX = Math.max(0, Math.min(width - 1, Math.floor(x)));
+    const clampedY = Math.max(0, Math.min(height - 1, Math.floor(y)));
+    const offset = (clampedY * width + clampedX) * 4;
+    return Array.from(pixels.slice(offset, offset + 4));
+  };
   return {
-    center: Array.from(pixels.slice(centerOffset, centerOffset + 4)),
+    center: sampleAt(width / 2, height / 2),
+    flat: sampleAt(width * 0.38, height / 2),
+    inverted: sampleAt(width * 0.62, height / 2),
     nonblack,
     max,
   };
+}
+
+function readWebGl2Pixels(canvas) {
+  const gl = canvas.getContext("webgl2", { antialias: false });
+  if (!gl) {
+    return null;
+  }
+  const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+  gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+  return summarizePixels(canvas.width, canvas.height, pixels);
+}
+
+function readCanvasPixels(canvas) {
+  const copy = document.createElement("canvas");
+  copy.width = canvas.width;
+  copy.height = canvas.height;
+  const context = copy.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    return null;
+  }
+  context.drawImage(canvas, 0, 0);
+  return summarizePixels(
+    copy.width,
+    copy.height,
+    context.getImageData(0, 0, copy.width, copy.height).data,
+  );
+}
+
+function readRenderedPixels(backend, canvas) {
+  if (backend === "webgl2") {
+    return readWebGl2Pixels(canvas) || readCanvasPixels(canvas);
+  }
+  return readCanvasPixels(canvas);
 }
 
 async function runProbe(backend, workflow, render) {
@@ -60,9 +94,20 @@ async function runProbe(backend, workflow, render) {
   const raw = await render(canvas);
   await new Promise((resolve) => requestAnimationFrame(() => resolve()));
   const result = JSON.parse(raw);
+  const pixelStatistics = readRenderedPixels(backend, canvas);
   result.workflow = workflow;
-  result.pixels = backend === "webgl2" ? readWebGl2Pixels(canvas) : null;
+  result.pixels = pixelStatistics;
   result.canvas_data_url = canvas.toDataURL("image/png");
+  result.screenshot_metadata = {
+    backend,
+    workflow,
+    adapter: result.gpu_device,
+    width: canvas.width,
+    height: canvas.height,
+    device_pixel_ratio: window.devicePixelRatio || 1,
+    canvas_mime: "image/png",
+    pixel_statistics: pixelStatistics,
+  };
   const benchmarkOk =
     workflow === "benchmark-idle" &&
     result.benchmark_metrics &&
@@ -71,7 +116,7 @@ async function runProbe(backend, workflow, render) {
   result.status =
     result.draw_calls > 0 &&
     result.gpu_submissions > 0 &&
-    (backend === "webgpu" || benchmarkOk || (result.pixels && result.pixels.nonblack > 0))
+    (benchmarkOk || (result.pixels && result.pixels.nonblack > 0))
       ? "passed"
       : "failed";
   return result;

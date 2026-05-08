@@ -1,5 +1,0 @@
-scena neutral studio default environment placeholder
-
-This metadata fixture reserves the default environment source path for M1 asset/API
-foundation tests. It is not the final renderer-consumable HDR source. The M1 checklist
-stays open until generated IBL bytes and rendered screenshot proof replace this placeholder.

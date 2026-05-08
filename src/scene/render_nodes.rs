@@ -6,7 +6,8 @@ impl Scene {
             .iter()
             .filter_map(|(node_key, node)| match &node.kind {
                 NodeKind::Renderable(renderable) if self.visible_for_active_camera(node_key) => {
-                    Some((renderable, node.transform))
+                    self.world_transform(node_key)
+                        .map(|transform| (renderable, transform))
                 }
                 NodeKind::Empty
                 | NodeKind::Renderable(_)

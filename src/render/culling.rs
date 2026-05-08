@@ -1,16 +1,21 @@
 use crate::geometry::Primitive;
 
+use super::camera::CameraProjection;
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct CulledPrimitives {
     pub(super) visible: Vec<Primitive>,
     pub(super) culled: u64,
 }
 
-pub(super) fn cull_cpu_frustum(primitives: Vec<Primitive>) -> CulledPrimitives {
+pub(super) fn cull_cpu_frustum(
+    primitives: Vec<Primitive>,
+    camera: Option<&CameraProjection>,
+) -> CulledPrimitives {
     let mut visible = Vec::with_capacity(primitives.len());
     let mut culled = 0_u64;
     for primitive in primitives {
-        if outside_clip_box(&primitive) {
+        if camera.is_some_and(|camera| outside_camera_clip_box(&primitive, camera)) {
             culled = culled.saturating_add(1);
         } else {
             visible.push(primitive);
@@ -19,14 +24,19 @@ pub(super) fn cull_cpu_frustum(primitives: Vec<Primitive>) -> CulledPrimitives {
     CulledPrimitives { visible, culled }
 }
 
-fn outside_clip_box(primitive: &Primitive) -> bool {
+fn outside_camera_clip_box(primitive: &Primitive, camera: &CameraProjection) -> bool {
     let vertices = primitive.vertices();
-    all(vertices, |coordinate| coordinate.position.x < -1.0)
-        || all(vertices, |coordinate| coordinate.position.x > 1.0)
-        || all(vertices, |coordinate| coordinate.position.y < -1.0)
-        || all(vertices, |coordinate| coordinate.position.y > 1.0)
-        || all(vertices, |coordinate| coordinate.position.z < -1.0)
-        || all(vertices, |coordinate| coordinate.position.z > 1.0)
+    let projected = vertices.map(|vertex| camera.project(vertex.position));
+    if projected.iter().all(Option::is_none) {
+        return true;
+    }
+    let [Some(a), Some(b), Some(c)] = projected else {
+        return false;
+    };
+    all(&[a, b, c], |coordinate| coordinate.ndc_x < -1.0)
+        || all(&[a, b, c], |coordinate| coordinate.ndc_x > 1.0)
+        || all(&[a, b, c], |coordinate| coordinate.ndc_y < -1.0)
+        || all(&[a, b, c], |coordinate| coordinate.ndc_y > 1.0)
 }
 
 fn all<T>(items: &[T; 3], predicate: impl Fn(&T) -> bool) -> bool {
@@ -42,7 +52,7 @@ mod tests {
     use super::cull_cpu_frustum;
 
     #[test]
-    fn cpu_frustum_culling_counts_only_fully_outside_primitives() {
+    fn cpu_frustum_culling_without_camera_keeps_world_space_primitives() {
         let visible = Primitive::unlit_triangle();
         let culled = Primitive::triangle([
             vertex(2.0, -0.5, 0.0),
@@ -50,10 +60,10 @@ mod tests {
             vertex(2.5, 0.5, 0.0),
         ]);
 
-        let result = cull_cpu_frustum(vec![visible.clone(), culled]);
+        let result = cull_cpu_frustum(vec![visible.clone(), culled.clone()], None);
 
-        assert_eq!(result.visible, vec![visible]);
-        assert_eq!(result.culled, 1);
+        assert_eq!(result.visible, vec![visible, culled]);
+        assert_eq!(result.culled, 0);
     }
 
     fn vertex(x: f32, y: f32, z: f32) -> Vertex {

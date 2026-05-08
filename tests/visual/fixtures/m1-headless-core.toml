@@ -13,18 +13,26 @@ status = "artifact-proof"
 [[fixture]]
 name = "primitive-fullscreen"
 required_surface = "headless-cpu"
+proof_class = "harness-smoke"
+production_claim = false
 
 [[fixture]]
 name = "unlit-asset-mesh"
 required_surface = "headless-cpu"
+proof_class = "harness-smoke"
+production_claim = false
 
 [[fixture]]
 name = "pbr-asset-mesh"
 required_surface = "headless-cpu"
+proof_class = "harness-smoke"
+production_claim = false
 
 [[fixture]]
 name = "transparent-blend"
 required_surface = "headless-cpu"
+proof_class = "harness-smoke"
+production_claim = false
 
 [[fixture]]
 name = "line-material"

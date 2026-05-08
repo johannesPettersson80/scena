@@ -1,11 +1,15 @@
 use std::collections::BTreeMap;
 use std::future::{Ready, ready};
+use std::io::Cursor;
+use std::sync::{Arc, Mutex};
 
+use base64::Engine;
 use scena::{
-    AlphaMode, AssetError, AssetFetcher, AssetLoadControl, AssetLoadProgress, AssetPath, Assets,
-    GltfDecoderPolicy, GltfExtensionStatus, MaterialDesc, MaterialKind, NotPreparedReason,
-    RenderError, Renderer, RetainPolicy, Scene, TextureColorSpace, TextureFilter, TextureWrap,
-    Transform,
+    AlphaMode, Angle, AssetError, AssetFetcher, AssetLoadControl, AssetLoadProgress, AssetPath,
+    Assets, Color, DirectionalLight, GeometryDesc, GltfDecoderPolicy, GltfExtensionStatus,
+    MaterialDesc, MaterialKind, NotPreparedReason, PointLight, RenderError, Renderer, RetainPolicy,
+    Scene, SpotLight, TextureColorSpace, TextureFilter, TextureSourceFormat, TextureWrap,
+    Transform, Vec3,
 };
 
 #[test]
@@ -111,6 +115,70 @@ fn m8_optional_real_world_gltf_extensions_report_degradation_metadata() {
 }
 
 #[test]
+fn m8_modern_optional_extensions_have_explicit_v1x_defer_metadata() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://modern-optional-extensions.gltf"),
+        br#"{
+            "asset": { "version": "2.0" },
+            "extensionsUsed": [
+                "KHR_materials_sheen",
+                "KHR_materials_specular",
+                "KHR_materials_iridescence",
+                "EXT_texture_webp"
+            ],
+            "nodes": [{ "name": "Root" }]
+        }"#
+        .to_vec(),
+    )]));
+
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://modern-optional-extensions.gltf"))
+            .expect("optional modern extensions load with degradation metadata");
+
+    for (extension, help_fragment) in [
+        ("KHR_materials_sheen", "material extension"),
+        ("KHR_materials_specular", "material extension"),
+        ("KHR_materials_iridescence", "material extension"),
+        ("EXT_texture_webp", "WebP texture extension"),
+    ] {
+        let diagnostic = scene_asset
+            .extension_diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.extension() == extension)
+            .unwrap_or_else(|| panic!("{extension} diagnostic exists"));
+        assert_eq!(diagnostic.status(), GltfExtensionStatus::Degraded);
+        assert_eq!(diagnostic.decoder_policy(), GltfDecoderPolicy::V1xDeferred);
+        assert!(
+            diagnostic.help().contains(help_fragment),
+            "{extension} needs extension-specific deferral help, got {:?}",
+            diagnostic.help()
+        );
+    }
+
+    for extension in [
+        "KHR_materials_sheen",
+        "KHR_materials_specular",
+        "KHR_materials_iridescence",
+        "EXT_texture_webp",
+    ] {
+        let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+            AssetPath::from(format!("memory://required-{extension}.gltf")),
+            required_extension_gltf(extension).into_bytes(),
+        )]));
+        let error =
+            pollster::block_on(assets.load_scene(format!("memory://required-{extension}.gltf")))
+                .expect_err("required v1.x extension must fail explicitly");
+        assert!(matches!(
+            error,
+            AssetError::UnsupportedRequiredExtension {
+                extension: ref rejected,
+                ..
+            } if rejected == extension
+        ));
+    }
+}
+
+#[test]
 fn m8_common_gltf_texture_slots_and_material_flags_are_preserved() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from("memory://textures.gltf"),
@@ -160,6 +228,9 @@ fn m8_common_gltf_texture_slots_and_material_flags_are_preserved() {
                     }
                 },
                 "emissiveFactor": [0.1, 0.2, 0.3],
+                "extensions": {
+                    "KHR_materials_emissive_strength": { "emissiveStrength": 2.5 }
+                },
                 "alphaMode": "MASK",
                 "alphaCutoff": 0.3,
                 "doubleSided": true
@@ -197,6 +268,8 @@ fn m8_common_gltf_texture_slots_and_material_flags_are_preserved() {
     assert!(material.emissive_texture().is_some());
     assert_eq!(material.alpha_mode(), AlphaMode::Mask { cutoff: 0.3 });
     assert!(material.double_sided());
+    assert_eq!(material.emissive(), Color::from_linear_rgb(0.1, 0.2, 0.3));
+    assert_eq!(material.emissive_strength(), 2.5);
     assert_eq!(material.metallic_factor(), 0.25);
     assert_eq!(material.roughness_factor(), 0.75);
 
@@ -243,6 +316,1294 @@ fn m8_common_gltf_texture_slots_and_material_flags_are_preserved() {
 }
 
 #[test]
+fn m8_gltf_data_uri_image_texture_descriptor_is_preserved() {
+    let image_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+    let gltf = format!(
+        r#"{{
+            "asset": {{ "version": "2.0" }},
+            "images": [{{ "uri": "{image_uri}" }}],
+            "textures": [{{ "source": 0, "sampler": 0 }}],
+            "samplers": [
+                {{ "magFilter": 9729, "minFilter": 9729, "wrapS": 10497, "wrapT": 10497 }}
+            ],
+            "materials": [{{
+                "pbrMetallicRoughness": {{
+                    "baseColorTexture": {{ "index": 0 }}
+                }},
+                "emissiveTexture": {{ "index": 0 }},
+                "emissiveFactor": [1.0, 1.0, 1.0]
+            }}],
+            "meshes": [{{
+                "primitives": [{{
+                    "attributes": {{ "POSITION": 0 }},
+                    "indices": 1,
+                    "material": 0
+                }}]
+            }}],
+            "nodes": [{{ "name": "EmbeddedTexture", "mesh": 0 }}],
+            "buffers": [{{ "byteLength": 126, "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AACAPwAAAAAAAAAAAACAPwAAAAAAAIA/AAAAAAAAgD8AAAAAAAAAAAAAgD8AAIA/AAABAAIA" }}],
+            "bufferViews": [
+                {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},
+                {{ "buffer": 0, "byteOffset": 120, "byteLength": 6 }}
+            ],
+            "accessors": [
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [0,0,0], "max": [1,1,0] }},
+                {{ "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }}
+            ]
+        }}"#
+    );
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://embedded-texture.gltf"),
+        gltf.into_bytes(),
+    )]));
+
+    let scene_asset = pollster::block_on(assets.load_scene("memory://embedded-texture.gltf"))
+        .expect("glTF with data URI image loads");
+    let mesh = scene_asset.nodes()[0].mesh().expect("mesh exists");
+    let material = assets.material(mesh.material()).expect("material exists");
+
+    assert_eq!(material.base_color_texture(), material.emissive_texture());
+    let texture = assets
+        .texture(
+            material
+                .base_color_texture()
+                .expect("base color texture handle"),
+        )
+        .expect("texture descriptor exists");
+    assert_eq!(texture.path().as_str(), image_uri);
+    assert_eq!(texture.color_space(), TextureColorSpace::Srgb);
+    assert_eq!(texture.source_format(), TextureSourceFormat::Png);
+    assert_eq!(texture.sampler().mag_filter(), Some(TextureFilter::Linear));
+    assert_eq!(texture.sampler().wrap_s(), TextureWrap::Repeat);
+}
+
+#[test]
+fn m8_gltf_texcoord0_is_preserved_for_material_texture_sampling_contract() {
+    let mut buffer = Vec::new();
+    for value in [-0.5_f32, -0.5, 0.0, 0.5, -0.5, 0.0, 0.0, 0.5, 0.0] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0.0_f32, 0.0, 1.0, 0.0, 0.5, 1.0] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0_u16, 1, 2] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    let encoded = base64::engine::general_purpose::STANDARD.encode(buffer);
+    let gltf = format!(
+        r#"{{
+            "asset": {{ "version": "2.0" }},
+            "images": [{{ "uri": "albedo.png" }}],
+            "textures": [{{ "source": 0 }}],
+            "materials": [{{
+                "pbrMetallicRoughness": {{
+                    "baseColorTexture": {{ "index": 0 }}
+                }}
+            }}],
+            "meshes": [{{
+                "primitives": [{{
+                    "attributes": {{ "POSITION": 0, "TEXCOORD_0": 1 }},
+                    "indices": 2,
+                    "material": 0
+                }}]
+            }}],
+            "nodes": [{{ "name": "TexturedTriangle", "mesh": 0 }}],
+            "buffers": [{{ "byteLength": 66, "uri": "data:application/octet-stream;base64,{encoded}" }}],
+            "bufferViews": [
+                {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},
+                {{ "buffer": 0, "byteOffset": 36, "byteLength": 24 }},
+                {{ "buffer": 0, "byteOffset": 60, "byteLength": 6 }}
+            ],
+            "accessors": [
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2" }},
+                {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
+            ]
+        }}"#
+    );
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://texcoord0.gltf"),
+        gltf.into_bytes(),
+    )]));
+
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://texcoord0.gltf")).expect("glTF loads");
+    let mesh = scene_asset.nodes()[0].mesh().expect("mesh exists");
+    let geometry = assets.geometry(mesh.geometry()).expect("geometry exists");
+
+    assert_eq!(
+        geometry.tex_coords0(),
+        &[[0.0, 0.0], [1.0, 0.0], [0.5, 1.0]]
+    );
+}
+
+#[test]
+fn m8_gltf_tangent_attribute_is_preserved_with_handedness() {
+    let mut buffer = Vec::new();
+    for value in [-0.5_f32, -0.5, 0.0, 0.5, -0.5, 0.0, 0.0, 0.5, 0.0] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [
+        1.0_f32, 0.0, 0.0, -1.0, //
+        0.0, 1.0, 0.0, 1.0, //
+        1.0, 0.0, 0.0, -1.0,
+    ] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0_u16, 1, 2] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    let encoded = base64::engine::general_purpose::STANDARD.encode(buffer);
+    let gltf = format!(
+        r#"{{
+            "asset": {{ "version": "2.0" }},
+            "meshes": [{{
+                "primitives": [{{
+                    "attributes": {{ "POSITION": 0, "TANGENT": 1 }},
+                    "indices": 2
+                }}]
+            }}],
+            "nodes": [{{ "name": "TangentTriangle", "mesh": 0 }}],
+            "buffers": [{{ "byteLength": 90, "uri": "data:application/octet-stream;base64,{encoded}" }}],
+            "bufferViews": [
+                {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},
+                {{ "buffer": 0, "byteOffset": 36, "byteLength": 48 }},
+                {{ "buffer": 0, "byteOffset": 84, "byteLength": 6 }}
+            ],
+            "accessors": [
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC4" }},
+                {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
+            ]
+        }}"#
+    );
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://tangent.gltf"),
+        gltf.into_bytes(),
+    )]));
+
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://tangent.gltf")).expect("glTF loads");
+    let mesh = scene_asset.nodes()[0].mesh().expect("mesh exists");
+    let geometry = assets.geometry(mesh.geometry()).expect("geometry exists");
+
+    assert_eq!(
+        geometry
+            .tangents()
+            .expect("authored tangents are preserved"),
+        &[
+            [1.0, 0.0, 0.0, -1.0],
+            [0.0, 1.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, -1.0],
+        ]
+    );
+}
+
+#[test]
+fn m8_data_uri_base_color_texture_affects_cpu_preview_pixels() {
+    let red_png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+    let mut buffer = Vec::new();
+    for value in [-0.6_f32, -0.6, 0.0, 0.6, -0.6, 0.0, 0.0, 0.6, 0.0] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0.0_f32, 0.0, 1.0, 0.0, 0.5, 1.0] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0_u16, 1, 2] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    let encoded = base64::engine::general_purpose::STANDARD.encode(buffer);
+    let gltf = format!(
+        r#"{{
+            "asset": {{ "version": "2.0" }},
+            "extensionsUsed": ["KHR_materials_unlit"],
+            "extensionsRequired": ["KHR_materials_unlit"],
+            "images": [{{ "uri": "{red_png}" }}],
+            "textures": [{{ "source": 0 }}],
+            "materials": [{{
+                "pbrMetallicRoughness": {{
+                    "baseColorTexture": {{ "index": 0 }}
+                }},
+                "extensions": {{ "KHR_materials_unlit": {{}} }}
+            }}],
+            "meshes": [{{
+                "primitives": [{{
+                    "attributes": {{ "POSITION": 0, "TEXCOORD_0": 1 }},
+                    "indices": 2,
+                    "material": 0
+                }}]
+            }}],
+            "nodes": [{{ "name": "TexturedTriangle", "mesh": 0 }}],
+            "buffers": [{{ "byteLength": 66, "uri": "data:application/octet-stream;base64,{encoded}" }}],
+            "bufferViews": [
+                {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},
+                {{ "buffer": 0, "byteOffset": 36, "byteLength": 24 }},
+                {{ "buffer": 0, "byteOffset": 60, "byteLength": 6 }}
+            ],
+            "accessors": [
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2" }},
+                {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
+            ]
+        }}"#
+    );
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://red-texture.gltf"),
+        gltf.into_bytes(),
+    )]));
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://red-texture.gltf")).expect("glTF loads");
+    let mut scene = Scene::new();
+    scene
+        .instantiate(&scene_asset)
+        .expect("textured scene instantiates");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = Renderer::headless(64, 64).expect("renderer builds");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("textured scene prepares");
+    renderer.render(&scene, camera).expect("scene renders");
+
+    let center = ((64 / 2) * 64 + (64 / 2)) as usize * 4;
+    let frame = renderer.frame_rgba8();
+    assert!(
+        frame[center] > 150 && frame[center + 1] < 80 && frame[center + 2] < 80,
+        "embedded red base-color texture should visibly affect CPU preview center pixel, got {:?}",
+        &frame[center..center + 4]
+    );
+}
+
+#[test]
+fn m8_external_png_base_color_texture_affects_cpu_preview_pixels() {
+    let red_png_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+    let red_png = base64::engine::general_purpose::STANDARD
+        .decode(red_png_base64)
+        .expect("fixture PNG base64 is valid");
+    let mut buffer = Vec::new();
+    for value in [-0.6_f32, -0.6, 0.0, 0.6, -0.6, 0.0, 0.0, 0.6, 0.0] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0.0_f32, 0.0, 1.0, 0.0, 0.5, 1.0] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0_u16, 1, 2] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    let encoded = base64::engine::general_purpose::STANDARD.encode(buffer);
+    let gltf = format!(
+        r#"{{
+            "asset": {{ "version": "2.0" }},
+            "extensionsUsed": ["KHR_materials_unlit"],
+            "extensionsRequired": ["KHR_materials_unlit"],
+            "images": [{{ "uri": "red.png" }}],
+            "textures": [{{ "source": 0 }}],
+            "materials": [{{
+                "pbrMetallicRoughness": {{
+                    "baseColorTexture": {{ "index": 0 }}
+                }},
+                "extensions": {{ "KHR_materials_unlit": {{}} }}
+            }}],
+            "meshes": [{{
+                "primitives": [{{
+                    "attributes": {{ "POSITION": 0, "TEXCOORD_0": 1 }},
+                    "indices": 2,
+                    "material": 0
+                }}]
+            }}],
+            "nodes": [{{ "name": "TexturedTriangle", "mesh": 0 }}],
+            "buffers": [{{ "byteLength": 66, "uri": "data:application/octet-stream;base64,{encoded}" }}],
+            "bufferViews": [
+                {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},
+                {{ "buffer": 0, "byteOffset": 36, "byteLength": 24 }},
+                {{ "buffer": 0, "byteOffset": 60, "byteLength": 6 }}
+            ],
+            "accessors": [
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2" }},
+                {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
+            ]
+        }}"#
+    );
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![
+        (
+            AssetPath::from("memory://external-texture/scene.gltf"),
+            gltf.into_bytes(),
+        ),
+        (
+            AssetPath::from("memory://external-texture/red.png"),
+            red_png,
+        ),
+    ]));
+    let scene_asset = pollster::block_on(assets.load_scene("memory://external-texture/scene.gltf"))
+        .expect("glTF loads");
+    let mut scene = Scene::new();
+    scene
+        .instantiate(&scene_asset)
+        .expect("textured scene instantiates");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = Renderer::headless(64, 64).expect("renderer builds");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("textured scene prepares");
+    renderer.render(&scene, camera).expect("scene renders");
+
+    let center = ((64 / 2) * 64 + (64 / 2)) as usize * 4;
+    let frame = renderer.frame_rgba8();
+    assert!(
+        frame[center] > 150 && frame[center + 1] < 80 && frame[center + 2] < 80,
+        "external red base-color texture should visibly affect CPU preview center pixel, got {:?}",
+        &frame[center..center + 4]
+    );
+}
+
+#[test]
+fn m8_reload_promotes_cached_texture_descriptor_when_external_png_arrives() {
+    let red_png_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+    let red_png = base64::engine::general_purpose::STANDARD
+        .decode(red_png_base64)
+        .expect("fixture PNG base64 is valid");
+    let mut buffer = Vec::new();
+    for value in [-0.6_f32, -0.6, 0.0, 0.6, -0.6, 0.0, 0.0, 0.6, 0.0] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0.0_f32, 0.0, 1.0, 0.0, 0.5, 1.0] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0_u16, 1, 2] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    let encoded = base64::engine::general_purpose::STANDARD.encode(buffer);
+    let gltf = format!(
+        r#"{{
+            "asset": {{ "version": "2.0" }},
+            "extensionsUsed": ["KHR_materials_unlit"],
+            "extensionsRequired": ["KHR_materials_unlit"],
+            "images": [{{ "uri": "red.png" }}],
+            "textures": [{{ "source": 0 }}],
+            "materials": [{{
+                "pbrMetallicRoughness": {{
+                    "baseColorTexture": {{ "index": 0 }}
+                }},
+                "extensions": {{ "KHR_materials_unlit": {{}} }}
+            }}],
+            "meshes": [{{
+                "primitives": [{{
+                    "attributes": {{ "POSITION": 0, "TEXCOORD_0": 1 }},
+                    "indices": 2,
+                    "material": 0
+                }}]
+            }}],
+            "nodes": [{{ "name": "ReloadTexturedTriangle", "mesh": 0 }}],
+            "buffers": [{{ "byteLength": 66, "uri": "data:application/octet-stream;base64,{encoded}" }}],
+            "bufferViews": [
+                {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},
+                {{ "buffer": 0, "byteOffset": 36, "byteLength": 24 }},
+                {{ "buffer": 0, "byteOffset": 60, "byteLength": 6 }}
+            ],
+            "accessors": [
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2" }},
+                {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
+            ]
+        }}"#
+    );
+    let fetcher = MutableMemoryFetcher::new(vec![(
+        AssetPath::from("memory://reload-texture/scene.gltf"),
+        gltf.into_bytes(),
+    )]);
+    let mut assets = Assets::with_fetcher(fetcher.clone());
+    assets.set_retain_policy(RetainPolicy::Always);
+
+    let first = pollster::block_on(assets.load_scene("memory://reload-texture/scene.gltf"))
+        .expect("scene loads without optional external image bytes");
+    let first_material = assets
+        .material(first.nodes()[0].mesh().expect("mesh exists").material())
+        .expect("material exists");
+    let first_texture = first_material
+        .base_color_texture()
+        .expect("base texture handle exists");
+    assert!(
+        !assets
+            .texture(first_texture)
+            .expect("texture descriptor exists")
+            .has_decoded_pixels(),
+        "first descriptor should be cached without decoded pixels when the external image is missing",
+    );
+
+    fetcher.insert(AssetPath::from("memory://reload-texture/red.png"), red_png);
+    let reloaded = pollster::block_on(assets.reload_scene(&first))
+        .expect("retained reload reparses after image bytes arrive");
+    let reloaded_material = assets
+        .material(
+            reloaded.nodes()[0]
+                .mesh()
+                .expect("reloaded mesh exists")
+                .material(),
+        )
+        .expect("reloaded material exists");
+    let reloaded_texture = reloaded_material
+        .base_color_texture()
+        .expect("reloaded base texture handle exists");
+
+    assert_eq!(
+        first_texture, reloaded_texture,
+        "reload should preserve texture cache identity while promoting decoded pixels",
+    );
+    assert!(
+        assets
+            .texture(reloaded_texture)
+            .expect("reloaded texture descriptor exists")
+            .has_decoded_pixels(),
+        "reload with available external PNG bytes must update the cached descriptor instead of keeping a silent descriptor-only fallback",
+    );
+
+    let mut scene = Scene::new();
+    scene
+        .instantiate(&reloaded)
+        .expect("reloaded textured scene instantiates");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = Renderer::headless(64, 64).expect("renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("reloaded textured scene prepares");
+    renderer.render(&scene, camera).expect("scene renders");
+    let center = ((64 / 2) * 64 + (64 / 2)) as usize * 4;
+    let frame = renderer.frame_rgba8();
+    assert!(
+        frame[center] > 150 && frame[center + 1] < 80 && frame[center + 2] < 80,
+        "reloaded decoded texture should visibly affect CPU preview center pixel, got {:?}",
+        &frame[center..center + 4]
+    );
+}
+
+#[test]
+fn m8_emissive_png_texture_affects_cpu_preview_pixels() {
+    let red_png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+    let mut buffer = Vec::new();
+    for value in [-0.6_f32, -0.6, 0.0, 0.6, -0.6, 0.0, 0.0, 0.6, 0.0] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0.0_f32, 0.0, 1.0, 0.0, 0.5, 1.0] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0_u16, 1, 2] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    let encoded = base64::engine::general_purpose::STANDARD.encode(buffer);
+    let gltf = format!(
+        r#"{{
+            "asset": {{ "version": "2.0" }},
+            "images": [{{ "uri": "{red_png}" }}],
+            "textures": [{{ "source": 0 }}],
+            "materials": [{{
+                "pbrMetallicRoughness": {{
+                    "baseColorFactor": [0.0, 0.0, 0.0, 1.0]
+                }},
+                "emissiveTexture": {{ "index": 0 }},
+                "emissiveFactor": [1.0, 1.0, 1.0]
+            }}],
+            "meshes": [{{
+                "primitives": [{{
+                    "attributes": {{ "POSITION": 0, "TEXCOORD_0": 1 }},
+                    "indices": 2,
+                    "material": 0
+                }}]
+            }}],
+            "nodes": [{{ "name": "EmissiveTexturedTriangle", "mesh": 0 }}],
+            "buffers": [{{ "byteLength": 66, "uri": "data:application/octet-stream;base64,{encoded}" }}],
+            "bufferViews": [
+                {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},
+                {{ "buffer": 0, "byteOffset": 36, "byteLength": 24 }},
+                {{ "buffer": 0, "byteOffset": 60, "byteLength": 6 }}
+            ],
+            "accessors": [
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2" }},
+                {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
+            ]
+        }}"#
+    );
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://emissive-texture.gltf"),
+        gltf.into_bytes(),
+    )]));
+    let scene_asset = pollster::block_on(assets.load_scene("memory://emissive-texture.gltf"))
+        .expect("emissive texture glTF loads");
+    let mut scene = Scene::new();
+    scene
+        .instantiate(&scene_asset)
+        .expect("emissive texture scene instantiates");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = Renderer::headless(64, 64).expect("renderer builds");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("emissive texture scene prepares");
+    renderer.render(&scene, camera).expect("scene renders");
+
+    let center = ((64 / 2) * 64 + (64 / 2)) as usize * 4;
+    let frame = renderer.frame_rgba8();
+    assert!(
+        frame[center] > 150 && frame[center + 1] < 80 && frame[center + 2] < 80,
+        "emissive red texture should modulate emissive output in the CPU preview path, got {:?}",
+        &frame[center..center + 4]
+    );
+}
+
+#[test]
+fn m8_retained_scene_source_bytes_allow_reload_when_fetcher_goes_offline() {
+    let scene_bytes = br#"{
+        "asset": { "version": "2.0" },
+        "nodes": [
+            { "name": "Root", "children": [1] },
+            { "name": "Child" }
+        ],
+        "scenes": [{ "nodes": [0] }],
+        "scene": 0
+    }"#
+    .to_vec();
+    let fetcher = MutableMemoryFetcher::new(vec![(
+        AssetPath::from("memory://retained-source/scene.gltf"),
+        scene_bytes.clone(),
+    )]);
+    let mut assets = Assets::with_fetcher(fetcher.clone());
+    assets.set_retain_policy(RetainPolicy::Always);
+
+    let first = pollster::block_on(assets.load_scene("memory://retained-source/scene.gltf"))
+        .expect("initial retained-source scene loads");
+    assert_eq!(first.retained_source_bytes_len(), Some(scene_bytes.len()));
+
+    fetcher.remove(&AssetPath::from("memory://retained-source/scene.gltf"));
+    let reloaded =
+        pollster::block_on(assets.reload_scene(&first)).expect("retained source bytes reload");
+
+    assert_eq!(reloaded.path(), first.path());
+    assert_eq!(reloaded.node_count(), first.node_count());
+    assert_eq!(
+        reloaded.retained_source_bytes_len(),
+        Some(scene_bytes.len())
+    );
+}
+
+#[test]
+fn m8_direct_load_texture_decodes_png_for_cpu_preview_pixels() {
+    let red_png_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+    let red_png = base64::engine::general_purpose::STANDARD
+        .decode(red_png_base64)
+        .expect("fixture PNG base64 is valid");
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://direct-texture/red.png"),
+        red_png,
+    )]));
+    let texture = pollster::block_on(
+        assets.load_texture("memory://direct-texture/red.png", TextureColorSpace::Srgb),
+    )
+    .expect("direct texture load succeeds");
+    assert!(
+        assets
+            .texture(texture)
+            .expect("texture descriptor exists")
+            .has_decoded_pixels(),
+        "direct load_texture should decode PNG bytes supplied by the asset fetcher",
+    );
+    let geometry = assets.create_geometry(
+        GeometryDesc::try_new_with_vertex_colors_and_tex_coords(
+            scena::GeometryTopology::Triangles,
+            vec![
+                scena::GeometryVertex {
+                    position: Vec3::new(-0.6, -0.6, 0.0),
+                    normal: Vec3::new(0.0, 0.0, 1.0),
+                },
+                scena::GeometryVertex {
+                    position: Vec3::new(0.6, -0.6, 0.0),
+                    normal: Vec3::new(0.0, 0.0, 1.0),
+                },
+                scena::GeometryVertex {
+                    position: Vec3::new(0.0, 0.6, 0.0),
+                    normal: Vec3::new(0.0, 0.0, 1.0),
+                },
+            ],
+            vec![0, 1, 2],
+            vec![Color::WHITE; 3],
+            vec![[0.0, 0.0], [1.0, 0.0], [0.5, 1.0]],
+        )
+        .expect("textured triangle geometry is valid"),
+    );
+    let material = assets.create_material(
+        MaterialDesc::unlit(Color::WHITE)
+            .with_base_color_texture(texture)
+            .with_double_sided(true),
+    );
+    let mut scene = Scene::new();
+    scene.mesh(geometry, material).add().expect("mesh inserts");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = Renderer::headless(64, 64).expect("renderer builds");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("direct textured scene prepares");
+    renderer.render(&scene, camera).expect("scene renders");
+
+    let center = ((64 / 2) * 64 + (64 / 2)) as usize * 4;
+    let frame = renderer.frame_rgba8();
+    assert!(
+        frame[center] > 150 && frame[center + 1] < 80 && frame[center + 2] < 80,
+        "directly loaded red base-color texture should affect CPU preview pixels, got {:?}",
+        &frame[center..center + 4]
+    );
+}
+
+#[test]
+fn m8_headless_gpu_samples_multiple_base_color_material_slots_when_available() {
+    let red_png = png_rgba8(1, 1, &[[255, 0, 0, 255]]);
+    let blue_png = png_rgba8(1, 1, &[[0, 0, 255, 255]]);
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![
+        (AssetPath::from("memory://gpu-slots/red.png"), red_png),
+        (AssetPath::from("memory://gpu-slots/blue.png"), blue_png),
+    ]));
+    let red_texture = pollster::block_on(
+        assets.load_texture("memory://gpu-slots/red.png", TextureColorSpace::Srgb),
+    )
+    .expect("red texture loads");
+    let blue_texture = pollster::block_on(
+        assets.load_texture("memory://gpu-slots/blue.png", TextureColorSpace::Srgb),
+    )
+    .expect("blue texture loads");
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.55, 0.55, 0.05));
+    let red_material = assets.create_material(
+        MaterialDesc::unlit(Color::WHITE)
+            .with_base_color_texture(red_texture)
+            .with_double_sided(true),
+    );
+    let blue_material = assets.create_material(
+        MaterialDesc::unlit(Color::WHITE)
+            .with_base_color_texture(blue_texture)
+            .with_double_sided(true),
+    );
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, red_material)
+        .transform(Transform::at(Vec3::new(-0.4, 0.0, 0.0)))
+        .add()
+        .expect("red mesh inserts");
+    scene
+        .mesh(geometry, blue_material)
+        .transform(Transform::at(Vec3::new(0.4, 0.0, 0.0)))
+        .add()
+        .expect("blue mesh inserts");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = match Renderer::headless_gpu(96, 64) {
+        Ok(renderer) => renderer,
+        Err(_) => return,
+    };
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("GPU textured scene prepares");
+    renderer.render(&scene, camera).expect("GPU scene renders");
+
+    let frame = renderer.frame_rgba8();
+    let left = sample_rgb(frame, 96, 64, 36, 32);
+    let right = sample_rgb(frame, 96, 64, 60, 32);
+    assert!(
+        left[0] > left[2] + 40,
+        "left material slot should sample the red texture on GPU, got {left:?}"
+    );
+    assert!(
+        right[2] > right[0] + 40,
+        "right material slot should sample the blue texture on GPU, got {right:?}"
+    );
+}
+
+#[test]
+fn m8_headless_gpu_applies_base_color_texture_transform_when_available() {
+    let strip_png = png_rgba8(2, 1, &[[255, 0, 0, 255], [0, 0, 255, 255]]);
+    let mut buffer = Vec::new();
+    for value in [-0.6_f32, -0.6, 0.0, 0.6, -0.6, 0.0, 0.0, 0.6, 0.0] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0.25_f32, 0.5, 0.25, 0.5, 0.25, 0.5] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0_u16, 1, 2] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    let encoded = base64::engine::general_purpose::STANDARD.encode(buffer);
+    let gltf = format!(
+        r#"{{
+            "asset": {{ "version": "2.0" }},
+            "extensionsUsed": ["KHR_materials_unlit", "KHR_texture_transform"],
+            "extensionsRequired": ["KHR_materials_unlit", "KHR_texture_transform"],
+            "images": [{{ "uri": "strip.png" }}],
+            "textures": [{{ "source": 0, "sampler": 0 }}],
+            "samplers": [{{ "magFilter": 9728, "minFilter": 9728, "wrapS": 33071, "wrapT": 33071 }}],
+            "materials": [{{
+                "pbrMetallicRoughness": {{
+                    "baseColorTexture": {{
+                        "index": 0,
+                        "extensions": {{ "KHR_texture_transform": {{ "offset": [0.5, 0.0] }} }}
+                    }}
+                }},
+                "extensions": {{ "KHR_materials_unlit": {{}} }}
+            }}],
+            "meshes": [{{
+                "primitives": [{{
+                    "attributes": {{ "POSITION": 0, "TEXCOORD_0": 1 }},
+                    "indices": 2,
+                    "material": 0
+                }}]
+            }}],
+            "nodes": [{{ "name": "TransformedTexturedTriangle", "mesh": 0 }}],
+            "buffers": [{{ "byteLength": 66, "uri": "data:application/octet-stream;base64,{encoded}" }}],
+            "bufferViews": [
+                {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},
+                {{ "buffer": 0, "byteOffset": 36, "byteLength": 24 }},
+                {{ "buffer": 0, "byteOffset": 60, "byteLength": 6 }}
+            ],
+            "accessors": [
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2" }},
+                {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
+            ]
+        }}"#
+    );
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![
+        (
+            AssetPath::from("memory://gpu-transform/scene.gltf"),
+            gltf.into_bytes(),
+        ),
+        (
+            AssetPath::from("memory://gpu-transform/strip.png"),
+            strip_png,
+        ),
+    ]));
+    let scene_asset = pollster::block_on(assets.load_scene("memory://gpu-transform/scene.gltf"))
+        .expect("texture transform glTF loads");
+    let mut scene = Scene::new();
+    scene
+        .instantiate(&scene_asset)
+        .expect("texture transform scene instantiates");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = match Renderer::headless_gpu(64, 64) {
+        Ok(renderer) => renderer,
+        Err(_) => return,
+    };
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("GPU texture transform scene prepares");
+    renderer.render(&scene, camera).expect("GPU scene renders");
+
+    let center = sample_rgb(renderer.frame_rgba8(), 64, 64, 32, 32);
+    assert!(
+        center[2] > center[0] + 40,
+        "GPU material uniform should apply KHR_texture_transform and sample the blue texel, got {center:?}"
+    );
+}
+
+#[test]
+fn m8_headless_gpu_samples_occlusion_and_emissive_material_slots_when_available() {
+    let occlusion_black = png_rgba8(1, 1, &[[0, 0, 0, 255]]);
+    let emissive_red = png_rgba8(1, 1, &[[255, 0, 0, 255]]);
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![
+        (
+            AssetPath::from("memory://gpu-material-roles/occlusion.png"),
+            occlusion_black,
+        ),
+        (
+            AssetPath::from("memory://gpu-material-roles/emissive.png"),
+            emissive_red,
+        ),
+    ]));
+    let occlusion = pollster::block_on(assets.load_texture(
+        "memory://gpu-material-roles/occlusion.png",
+        TextureColorSpace::Linear,
+    ))
+    .expect("occlusion texture loads");
+    let emissive = pollster::block_on(assets.load_texture(
+        "memory://gpu-material-roles/emissive.png",
+        TextureColorSpace::Srgb,
+    ))
+    .expect("emissive texture loads");
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.55, 0.55, 0.05));
+    let occluded_material = assets.create_material(
+        MaterialDesc::unlit(Color::WHITE)
+            .with_occlusion_texture(occlusion)
+            .with_double_sided(true),
+    );
+    let emissive_material = assets.create_material(
+        MaterialDesc::unlit(Color::BLACK)
+            .with_emissive(Color::from_linear_rgb(1.0, 0.0, 0.0))
+            .with_emissive_strength(4.0)
+            .with_emissive_texture(emissive)
+            .with_double_sided(true),
+    );
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, occluded_material)
+        .transform(Transform::at(Vec3::new(-0.4, 0.0, 0.0)))
+        .add()
+        .expect("occluded mesh inserts");
+    scene
+        .mesh(geometry, emissive_material)
+        .transform(Transform::at(Vec3::new(0.4, 0.0, 0.0)))
+        .add()
+        .expect("emissive mesh inserts");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = match Renderer::headless_gpu(96, 64) {
+        Ok(renderer) => renderer,
+        Err(_) => return,
+    };
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("GPU non-base texture role scene prepares");
+    renderer.render(&scene, camera).expect("GPU scene renders");
+
+    let frame = renderer.frame_rgba8();
+    let occluded = sample_rgb(frame, 96, 64, 36, 32);
+    let emissive = sample_rgb(frame, 96, 64, 60, 32);
+    assert!(
+        occluded[0] < 20 && occluded[1] < 20 && occluded[2] < 20,
+        "GPU shader should darken the left material through the occlusion texture, got {occluded:?}"
+    );
+    assert!(
+        emissive[0] > emissive[1] + 40 && emissive[0] > emissive[2] + 40,
+        "GPU shader should add the right material's emissive texture contribution, got {emissive:?}"
+    );
+}
+
+#[test]
+fn m8_headless_gpu_directional_light_uniform_tints_pbr_output_when_available() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.65, 0.65, 0.05));
+    let material = assets.create_material(
+        MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.8).with_double_sided(true),
+    );
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("PBR mesh inserts");
+    scene
+        .directional_light(
+            DirectionalLight::default()
+                .with_color(Color::from_linear_rgb(1.0, 0.0, 0.0))
+                .with_illuminance_lux(20_000.0),
+        )
+        .add()
+        .expect("directional light inserts");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = match Renderer::headless_gpu(64, 64) {
+        Ok(renderer) => renderer,
+        Err(_) => return,
+    };
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("GPU lit PBR scene prepares");
+    renderer.render(&scene, camera).expect("GPU scene renders");
+
+    let center = sample_rgb(renderer.frame_rgba8(), 64, 64, 32, 32);
+    assert!(
+        center[0] > center[1] + 30 && center[0] > center[2] + 30,
+        "prepared GPU directional light uniform should tint PBR output red, got {center:?}"
+    );
+}
+
+#[test]
+fn m8_headless_gpu_point_light_uniform_tints_pbr_output_when_available() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.65, 0.65, 0.05));
+    let material = assets.create_material(
+        MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.8).with_double_sided(true),
+    );
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("PBR mesh inserts");
+    scene
+        .point_light(
+            PointLight::default()
+                .with_color(Color::from_linear_rgb(0.0, 1.0, 0.0))
+                .with_intensity_candela(800.0)
+                .with_range(5.0),
+        )
+        .transform(Transform::at(Vec3::new(0.0, 0.0, 1.0)))
+        .add()
+        .expect("point light inserts");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = match Renderer::headless_gpu(64, 64) {
+        Ok(renderer) => renderer,
+        Err(_) => return,
+    };
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("GPU point-lit PBR scene prepares");
+    renderer.render(&scene, camera).expect("GPU scene renders");
+
+    let center = sample_rgb(renderer.frame_rgba8(), 64, 64, 32, 32);
+    assert!(
+        center[1] > center[0] + 30 && center[1] > center[2] + 30,
+        "prepared GPU point light uniform should tint PBR output green, got {center:?}"
+    );
+}
+
+#[test]
+fn m8_headless_gpu_spot_light_uniform_tints_pbr_output_when_available() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.65, 0.65, 0.05));
+    let material = assets.create_material(
+        MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.8).with_double_sided(true),
+    );
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("PBR mesh inserts");
+    scene
+        .spot_light(
+            SpotLight::default()
+                .with_color(Color::from_linear_rgb(0.0, 0.0, 1.0))
+                .with_intensity_candela(900.0)
+                .with_range(5.0)
+                .with_inner_cone_angle(Angle::from_degrees(20.0))
+                .with_outer_cone_angle(Angle::from_degrees(35.0)),
+        )
+        .transform(Transform::at(Vec3::new(0.0, 0.0, 1.0)))
+        .add()
+        .expect("spot light inserts");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = match Renderer::headless_gpu(64, 64) {
+        Ok(renderer) => renderer,
+        Err(_) => return,
+    };
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("GPU spot-lit PBR scene prepares");
+    renderer.render(&scene, camera).expect("GPU scene renders");
+
+    let center = sample_rgb(renderer.frame_rgba8(), 64, 64, 32, 32);
+    assert!(
+        center[2] > center[0] + 30 && center[2] > center[1] + 30,
+        "prepared GPU spot light uniform should tint PBR output blue, got {center:?}"
+    );
+}
+
+#[test]
+fn m8_headless_gpu_tangent_space_normal_map_changes_pbr_lighting_when_available() {
+    let flat_normal = png_rgba8(1, 1, &[[128, 128, 255, 255]]);
+    let inverted_normal = png_rgba8(1, 1, &[[128, 128, 0, 255]]);
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![
+        (
+            AssetPath::from("memory://gpu-normal-map/flat.png"),
+            flat_normal,
+        ),
+        (
+            AssetPath::from("memory://gpu-normal-map/inverted.png"),
+            inverted_normal,
+        ),
+    ]));
+    let flat = pollster::block_on(assets.load_texture(
+        "memory://gpu-normal-map/flat.png",
+        TextureColorSpace::Linear,
+    ))
+    .expect("flat normal texture loads");
+    let inverted = pollster::block_on(assets.load_texture(
+        "memory://gpu-normal-map/inverted.png",
+        TextureColorSpace::Linear,
+    ))
+    .expect("inverted normal texture loads");
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.55, 0.55, 0.05));
+    let lit_material = assets.create_material(
+        MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.8)
+            .with_normal_texture(flat)
+            .with_double_sided(true),
+    );
+    let inverted_material = assets.create_material(
+        MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.8)
+            .with_normal_texture(inverted)
+            .with_double_sided(true),
+    );
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, lit_material)
+        .transform(Transform::at(Vec3::new(-0.4, 0.0, 0.0)))
+        .add()
+        .expect("lit normal-map mesh inserts");
+    scene
+        .mesh(geometry, inverted_material)
+        .transform(Transform::at(Vec3::new(0.4, 0.0, 0.0)))
+        .add()
+        .expect("inverted normal-map mesh inserts");
+    scene
+        .directional_light(DirectionalLight::default().with_illuminance_lux(20_000.0))
+        .add()
+        .expect("directional light inserts");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = match Renderer::headless_gpu(96, 64) {
+        Ok(renderer) => renderer,
+        Err(_) => return,
+    };
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("GPU normal-map PBR scene prepares");
+    renderer.render(&scene, camera).expect("GPU scene renders");
+
+    let frame = renderer.frame_rgba8();
+    let flat = sample_rgb(frame, 96, 64, 36, 32);
+    let inverted = sample_rgb(frame, 96, 64, 60, 32);
+    assert!(
+        flat[0] > inverted[0] + 30 && flat[1] > inverted[1] + 30 && flat[2] > inverted[2] + 30,
+        "tangent-space normal map should turn the inverted-normal material away from the light; flat={flat:?} inverted={inverted:?}"
+    );
+}
+
+#[test]
+fn m8_headless_gpu_environment_uniform_tints_pbr_output_when_available() {
+    let environment_path = AssetPath::from("memory://gpu-studio-blue_2x1.hdr");
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        environment_path.clone(),
+        tiny_radiance_hdr_rgbe(2, 1, &[[16, 32, 255, 132], [16, 32, 255, 132]]),
+    )]));
+    let environment = pollster::block_on(assets.load_environment(environment_path.as_str()))
+        .expect("HDR environment loads");
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.65, 0.65, 0.05));
+    let material = assets.create_material(
+        MaterialDesc::pbr_metallic_roughness(Color::from_linear_rgb(0.04, 0.04, 0.04), 0.0, 0.7)
+            .with_double_sided(true),
+    );
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("environment-lit PBR mesh inserts");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = match Renderer::headless_gpu(64, 64) {
+        Ok(renderer) => renderer,
+        Err(_) => return,
+    };
+    renderer.set_environment(environment);
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("GPU environment-lit PBR scene prepares");
+    renderer.render(&scene, camera).expect("GPU scene renders");
+
+    let center = sample_rgb(renderer.frame_rgba8(), 64, 64, 32, 32);
+    assert!(
+        center[2] > center[0] + 20 && center[2] > center[1] + 10,
+        "prepared GPU environment uniform should tint PBR output blue, got {center:?}"
+    );
+}
+
+#[test]
+fn m8_environment_hdr_lights_pbr_preview_pixels() {
+    let environment_path = AssetPath::from("memory://studio-blue_2x1.hdr");
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        environment_path.clone(),
+        tiny_radiance_hdr_rgbe(2, 1, &[[24, 48, 128, 129], [24, 48, 128, 129]]),
+    )]));
+    let environment = pollster::block_on(assets.load_environment(environment_path.as_str()))
+        .expect("HDR environment loads");
+    let without_environment = render_environment_preview_center(&assets, None);
+    let with_environment = render_environment_preview_center(&assets, Some(environment));
+
+    assert!(
+        with_environment[2] > without_environment[2] + 10
+            && with_environment[2] > with_environment[0] + 10,
+        "active HDR environment should contribute blue IBL to PBR preview pixels, without={without_environment:?} with={with_environment:?}"
+    );
+}
+
+#[test]
+fn m8_environment_hdr_data_uri_lights_pbr_preview_pixels() {
+    let hdr_bytes = tiny_radiance_hdr_rgbe(2, 1, &[[24, 48, 128, 129], [24, 48, 128, 129]]);
+    let environment_path = format!(
+        "data:application/radiance-hdr;base64,{}#studio-blue_2x1.hdr",
+        base64::engine::general_purpose::STANDARD.encode(hdr_bytes)
+    );
+    let assets = Assets::new();
+    let environment = pollster::block_on(assets.load_environment(environment_path.as_str()))
+        .expect("inline HDR environment loads");
+    let without_environment = render_environment_preview_center(&assets, None);
+    let with_environment = render_environment_preview_center(&assets, Some(environment));
+
+    assert!(
+        with_environment[2] > without_environment[2] + 10
+            && with_environment[2] > with_environment[0] + 10,
+        "inline HDR environments should contribute blue IBL to PBR preview pixels, without={without_environment:?} with={with_environment:?}"
+    );
+}
+
+#[test]
+fn m8_direct_load_texture_decodes_jpeg_for_cpu_preview_pixels() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://direct-texture/base-color.jpg"),
+        include_bytes!("assets/gltf/khronos/AlphaBlendModeTest/MatBed_baseColor.jpg").to_vec(),
+    )]));
+    let texture = pollster::block_on(assets.load_texture(
+        "memory://direct-texture/base-color.jpg",
+        TextureColorSpace::Srgb,
+    ))
+    .expect("direct JPEG texture load succeeds");
+    let desc = assets.texture(texture).expect("texture descriptor exists");
+    assert_eq!(desc.source_format(), TextureSourceFormat::Jpeg);
+    assert!(
+        desc.has_decoded_pixels(),
+        "direct load_texture should decode JPEG bytes supplied by the asset fetcher",
+    );
+}
+
+#[test]
+fn m8_texture_sampler_clamp_to_edge_affects_cpu_preview_pixels() {
+    let strip_png = png_rgba8(2, 1, &[[255, 0, 0, 255], [0, 0, 255, 255]]);
+    let mut buffer = Vec::new();
+    for value in [-0.6_f32, -0.6, 0.0, 0.6, -0.6, 0.0, 0.0, 0.6, 0.0] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [-0.25_f32, 0.5, -0.25, 0.5, -0.25, 0.5] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [0_u16, 1, 2] {
+        buffer.extend_from_slice(&value.to_le_bytes());
+    }
+    let encoded = base64::engine::general_purpose::STANDARD.encode(buffer);
+    let gltf = format!(
+        r#"{{
+            "asset": {{ "version": "2.0" }},
+            "extensionsUsed": ["KHR_materials_unlit"],
+            "extensionsRequired": ["KHR_materials_unlit"],
+            "images": [{{ "uri": "strip.png" }}],
+            "textures": [{{ "source": 0, "sampler": 0 }}],
+            "samplers": [{{ "magFilter": 9728, "minFilter": 9728, "wrapS": 33071, "wrapT": 33071 }}],
+            "materials": [{{
+                "pbrMetallicRoughness": {{
+                    "baseColorTexture": {{ "index": 0 }}
+                }},
+                "extensions": {{ "KHR_materials_unlit": {{}} }}
+            }}],
+            "meshes": [{{
+                "primitives": [{{
+                    "attributes": {{ "POSITION": 0, "TEXCOORD_0": 1 }},
+                    "indices": 2,
+                    "material": 0
+                }}]
+            }}],
+            "nodes": [{{ "name": "ClampTexturedTriangle", "mesh": 0 }}],
+            "buffers": [{{ "byteLength": 66, "uri": "data:application/octet-stream;base64,{encoded}" }}],
+            "bufferViews": [
+                {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},
+                {{ "buffer": 0, "byteOffset": 36, "byteLength": 24 }},
+                {{ "buffer": 0, "byteOffset": 60, "byteLength": 6 }}
+            ],
+            "accessors": [
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2" }},
+                {{ "bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR" }}
+            ]
+        }}"#
+    );
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![
+        (
+            AssetPath::from("memory://sampler-clamp/scene.gltf"),
+            gltf.into_bytes(),
+        ),
+        (
+            AssetPath::from("memory://sampler-clamp/strip.png"),
+            strip_png,
+        ),
+    ]));
+    let scene_asset = pollster::block_on(assets.load_scene("memory://sampler-clamp/scene.gltf"))
+        .expect("sampler clamp glTF loads");
+    let mut scene = Scene::new();
+    scene
+        .instantiate(&scene_asset)
+        .expect("sampler clamp scene instantiates");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = Renderer::headless(64, 64).expect("renderer builds");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("sampler clamp scene prepares");
+    renderer.render(&scene, camera).expect("scene renders");
+
+    let center = ((64 / 2) * 64 + (64 / 2)) as usize * 4;
+    let frame = renderer.frame_rgba8();
+    assert!(
+        frame[center] > 150 && frame[center + 1] < 80 && frame[center + 2] < 80,
+        "CLAMP_TO_EDGE sampler should clamp negative U to the red edge texel, got {:?}",
+        &frame[center..center + 4]
+    );
+}
+
+#[test]
+fn m8_metallic_roughness_factors_affect_cpu_preview_pixels() {
+    let dielectric = render_center_rgb_for_material(MaterialDesc::pbr_metallic_roughness(
+        Color::from_srgb_u8(190, 190, 190),
+        0.0,
+        0.95,
+    ));
+    let polished_metal = render_center_rgb_for_material(MaterialDesc::pbr_metallic_roughness(
+        Color::from_srgb_u8(190, 190, 190),
+        1.0,
+        0.15,
+    ));
+
+    assert_ne!(
+        dielectric, polished_metal,
+        "metallic and roughness factors must visibly affect rendered pixels even in the degraded CPU preview path",
+    );
+}
+
+#[test]
+fn m8_normal_png_texture_affects_cpu_preview_pixels() {
+    let flat = render_center_rgb_for_normal_texture([128, 128, 255, 255]);
+    let inverted = render_center_rgb_for_normal_texture([128, 128, 0, 255]);
+
+    assert_ne!(
+        flat, inverted,
+        "normal texture pixels must affect CPU preview lighting instead of being silently ignored",
+    );
+    assert!(
+        flat[0] > inverted[0],
+        "front-facing normal map should receive more directional light than an inverted normal, flat={flat:?}, inverted={inverted:?}",
+    );
+}
+
+#[test]
+fn m8_metallic_roughness_png_texture_affects_cpu_preview_pixels() {
+    let rough_dielectric = render_center_rgb_for_metallic_roughness_texture([0, 255, 0, 255]);
+    let polished_metal = render_center_rgb_for_metallic_roughness_texture([0, 32, 255, 255]);
+
+    assert_ne!(
+        rough_dielectric, polished_metal,
+        "metallic-roughness texture G/B channels must affect CPU preview lighting instead of being silently ignored",
+    );
+}
+
+#[test]
+fn m8_occlusion_png_texture_affects_cpu_preview_pixels() {
+    let unoccluded = render_center_rgb_for_occlusion_texture([255, 255, 255, 255]);
+    let occluded = render_center_rgb_for_occlusion_texture([0, 0, 0, 255]);
+
+    assert_ne!(
+        unoccluded, occluded,
+        "occlusion texture pixels must affect the degraded CPU preview instead of being silently ignored",
+    );
+    assert!(
+        unoccluded[0] > occluded[0],
+        "white occlusion should keep more light than black occlusion, unoccluded={unoccluded:?}, occluded={occluded:?}",
+    );
+}
+
+#[test]
 fn m8_missing_texture_slots_fail_with_actionable_asset_error() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from("memory://missing-texture.gltf"),
@@ -278,6 +1639,33 @@ fn m8_missing_texture_slots_fail_with_actionable_asset_error() {
         } if material_slot == "baseColorTexture"
     ));
     assert!(error.help().contains("material slot"));
+}
+
+fn render_center_rgb_for_material(material: MaterialDesc) -> [u8; 3] {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.75, 0.75, 0.75));
+    let material = assets.create_material(material);
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .transform(Transform::at(Vec3::ZERO))
+        .add()
+        .expect("mesh inserts");
+    scene
+        .directional_light(DirectionalLight::default())
+        .add()
+        .expect("light inserts");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = Renderer::headless(48, 48).expect("renderer builds");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("scene prepares");
+    renderer.render(&scene, camera).expect("scene renders");
+
+    let center = ((48 / 2) * 48 + (48 / 2)) as usize * 4;
+    let frame = renderer.frame_rgba8();
+    [frame[center], frame[center + 1], frame[center + 2]]
 }
 
 #[test]
@@ -556,6 +1944,18 @@ fn m8_asset_resource_lifetime_counters_return_to_baseline_after_reload_cycle() {
     let prepared = renderer.stats();
     assert!(prepared.textures >= 5);
     assert!(prepared.materials >= 1);
+    assert!(
+        prepared.material_bindings >= 1,
+        "prepared PBR materials must create renderer-visible material binding records"
+    );
+    assert!(
+        prepared.material_texture_bindings >= 5,
+        "each PBR texture slot must become a renderer-visible texture binding record"
+    );
+    assert!(
+        prepared.material_sampler_bindings >= 5,
+        "each PBR texture slot must carry a sampler binding record"
+    );
     assert_eq!(prepared.environments, 1);
     assert!(prepared.live_logical_handles > baseline.live_logical_handles);
 
@@ -688,6 +2088,30 @@ fn m8_khronos_material_texture_samples_cover_promoted_extensions() {
         scene_materials(unlit.asset(), &assets)
             .iter()
             .any(|material| material.kind() == MaterialKind::Unlit)
+    );
+}
+
+#[test]
+fn m8_khronos_jpeg_textures_decode_for_degraded_material_preview() {
+    let assets = Assets::new();
+    let alpha = pollster::block_on(assets.load_scene_with_report(
+        "tests/assets/gltf/khronos/AlphaBlendModeTest/AlphaBlendModeTest.gltf",
+    ))
+    .expect("Khronos alpha material sample loads");
+
+    let jpeg_textures = scene_texture_descs(alpha.asset(), &assets)
+        .into_iter()
+        .filter(|texture| texture.source_format() == TextureSourceFormat::Jpeg)
+        .collect::<Vec<_>>();
+    assert!(
+        !jpeg_textures.is_empty(),
+        "AlphaBlendModeTest should exercise external JPEG material textures"
+    );
+    assert!(
+        jpeg_textures
+            .iter()
+            .all(scena::TextureDesc::has_decoded_pixels),
+        "external JPEG material textures must decode into CPU/degraded preview pixels"
     );
 }
 
@@ -843,6 +2267,189 @@ fn m8_native_fetcher_cache_dedup_reload_retain_and_external_buffers_are_explicit
     .expect("native file fetcher reports relative external buffer");
     assert_eq!(external.external_buffers(), 1);
     assert!(external.fetched_bytes() > first.fetched_bytes());
+}
+
+#[test]
+fn m8_checked_asset_lookups_report_typed_missing_handles() {
+    let owner = Assets::new();
+    let other = Assets::new();
+    let geometry = owner.create_geometry(GeometryDesc::box_xyz(0.25, 0.25, 0.25));
+    let material = owner.create_material(MaterialDesc::unlit(Color::WHITE));
+    let texture = pollster::block_on(owner.load_texture(
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
+        TextureColorSpace::Srgb,
+    ))
+    .expect("owner texture loads");
+    let environment = owner.default_environment();
+
+    assert!(owner.try_geometry(geometry).is_ok());
+    assert!(owner.try_material(material).is_ok());
+    assert!(owner.try_texture(texture).is_ok());
+    assert!(owner.try_environment(environment).is_ok());
+
+    assert!(matches!(
+        other.try_geometry(geometry),
+        Err(AssetError::GeometryHandleNotFound { geometry: missing }) if missing == geometry
+    ));
+    assert!(matches!(
+        other.try_material(material),
+        Err(AssetError::MaterialHandleNotFound { material: missing }) if missing == material
+    ));
+    assert!(matches!(
+        other.try_texture(texture),
+        Err(AssetError::TextureHandleNotFound { texture: missing }) if missing == texture
+    ));
+    assert!(matches!(
+        other.try_environment(environment),
+        Err(AssetError::EnvironmentHandleNotFound { environment: missing }) if missing == environment
+    ));
+}
+
+#[test]
+fn m8_prepare_rejects_material_texture_handles_from_wrong_assets() {
+    let texture_owner = Assets::new();
+    let foreign_texture = pollster::block_on(texture_owner.load_texture(
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
+        TextureColorSpace::Srgb,
+    ))
+    .expect("foreign texture loads");
+
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.5, 0.5, 0.5));
+    let material = assets.create_material(
+        MaterialDesc::unlit(Color::WHITE).with_base_color_texture(foreign_texture),
+    );
+    let mut scene = Scene::new();
+    let node = scene.mesh(geometry, material).add().expect("mesh inserts");
+    scene.add_default_camera().expect("camera inserts");
+    let mut renderer = Renderer::headless(32, 32).expect("renderer builds");
+
+    let error = renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect_err("foreign texture handles must not silently sample as white");
+
+    assert!(matches!(
+        error,
+        scena::PrepareError::TextureNotFound {
+            node: missing_node,
+            material: missing_material,
+            texture: missing_texture,
+            slot: "base_color",
+        } if missing_node == node && missing_material == material && missing_texture == foreign_texture
+    ));
+}
+
+fn render_center_rgb_for_normal_texture(pixel: [u8; 4]) -> [u8; 3] {
+    let png = png_rgba8(1, 1, &[pixel]);
+    let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+    let uri = format!("data:image/png;base64,{encoded}");
+    let assets = Assets::new();
+    let normal = pollster::block_on(assets.load_texture(uri, TextureColorSpace::Linear))
+        .expect("normal texture loads");
+    render_center_rgb_with_assets(
+        &assets,
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(190, 190, 190), 0.0, 0.75)
+            .with_normal_texture(normal),
+    )
+}
+
+fn render_center_rgb_for_metallic_roughness_texture(pixel: [u8; 4]) -> [u8; 3] {
+    let png = png_rgba8(1, 1, &[pixel]);
+    let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+    let uri = format!("data:image/png;base64,{encoded}");
+    let assets = Assets::new();
+    let texture = pollster::block_on(assets.load_texture(uri, TextureColorSpace::Linear))
+        .expect("metallic-roughness texture loads");
+    render_center_rgb_with_assets(
+        &assets,
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(190, 190, 190), 1.0, 1.0)
+            .with_metallic_roughness_texture(texture),
+    )
+}
+
+fn render_center_rgb_for_occlusion_texture(pixel: [u8; 4]) -> [u8; 3] {
+    let png = png_rgba8(1, 1, &[pixel]);
+    let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+    let uri = format!("data:image/png;base64,{encoded}");
+    let assets = Assets::new();
+    let texture = pollster::block_on(assets.load_texture(uri, TextureColorSpace::Linear))
+        .expect("occlusion texture loads");
+    render_center_rgb_with_assets(
+        &assets,
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(190, 190, 190), 0.0, 0.65)
+            .with_occlusion_texture(texture),
+    )
+}
+
+fn render_center_rgb_with_assets(assets: &Assets, material: MaterialDesc) -> [u8; 3] {
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.75, 0.75, 0.75));
+    let material = assets.create_material(material);
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .transform(Transform::at(Vec3::ZERO))
+        .add()
+        .expect("mesh inserts");
+    scene
+        .directional_light(DirectionalLight::default())
+        .add()
+        .expect("light inserts");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = Renderer::headless(48, 48).expect("renderer builds");
+
+    renderer
+        .prepare_with_assets(&mut scene, assets)
+        .expect("scene prepares");
+    renderer.render(&scene, camera).expect("scene renders");
+
+    let center = ((48 / 2) * 48 + (48 / 2)) as usize * 4;
+    let frame = renderer.frame_rgba8();
+    [frame[center], frame[center + 1], frame[center + 2]]
+}
+
+fn sample_rgb(frame: &[u8], width: u32, height: u32, x: u32, y: u32) -> [u8; 3] {
+    assert!(x < width);
+    assert!(y < height);
+    let offset = ((y * width + x) as usize) * 4;
+    [frame[offset], frame[offset + 1], frame[offset + 2]]
+}
+
+fn render_environment_preview_center<F>(
+    assets: &Assets<F>,
+    environment: Option<scena::EnvironmentHandle>,
+) -> [u8; 3] {
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.55, 0.55, 0.05));
+    let material = assets.create_material(
+        MaterialDesc::pbr_metallic_roughness(Color::from_linear_rgb(0.04, 0.04, 0.04), 0.0, 0.7)
+            .with_double_sided(true),
+    );
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("environment preview mesh inserts");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = Renderer::headless(64, 64).expect("CPU renderer builds");
+    if let Some(environment) = environment {
+        renderer.set_environment(environment);
+    }
+    renderer
+        .prepare_with_assets(&mut scene, assets)
+        .expect("environment preview prepares");
+    renderer
+        .render(&scene, camera)
+        .expect("environment preview renders");
+    sample_rgb(renderer.frame_rgba8(), 64, 64, 32, 32)
+}
+
+fn tiny_radiance_hdr_rgbe(width: u32, height: u32, pixels: &[[u8; 4]]) -> Vec<u8> {
+    assert_eq!(pixels.len(), (width * height) as usize);
+    let mut bytes =
+        format!("#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y {height} +X {width}\n").into_bytes();
+    for pixel in pixels {
+        bytes.extend_from_slice(pixel);
+    }
+    bytes
 }
 
 fn scene_materials<F>(scene: &scena::SceneAsset, assets: &Assets<F>) -> Vec<MaterialDesc> {
@@ -1013,6 +2620,67 @@ impl AssetFetcher for MemoryFetcher {
                 }),
         )
     }
+}
+
+#[derive(Clone)]
+struct MutableMemoryFetcher {
+    files: Arc<Mutex<BTreeMap<AssetPath, Vec<u8>>>>,
+}
+
+impl MutableMemoryFetcher {
+    fn new(files: Vec<(AssetPath, Vec<u8>)>) -> Self {
+        Self {
+            files: Arc::new(Mutex::new(files.into_iter().collect())),
+        }
+    }
+
+    fn insert(&self, path: AssetPath, bytes: Vec<u8>) {
+        self.files
+            .lock()
+            .expect("test fetcher mutex should not be poisoned")
+            .insert(path, bytes);
+    }
+
+    fn remove(&self, path: &AssetPath) {
+        self.files
+            .lock()
+            .expect("test fetcher mutex should not be poisoned")
+            .remove(path);
+    }
+}
+
+impl AssetFetcher for MutableMemoryFetcher {
+    type Future<'a> = Ready<Result<Vec<u8>, AssetError>>;
+
+    fn fetch<'a>(&'a self, path: &'a AssetPath) -> Self::Future<'a> {
+        ready(
+            self.files
+                .lock()
+                .expect("test fetcher mutex should not be poisoned")
+                .get(path)
+                .cloned()
+                .ok_or_else(|| AssetError::NotFound {
+                    path: path.as_str().to_string(),
+                }),
+        )
+    }
+}
+
+fn png_rgba8(width: u32, height: u32, pixels: &[[u8; 4]]) -> Vec<u8> {
+    assert_eq!(pixels.len(), (width * height) as usize);
+    let mut bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(Cursor::new(&mut bytes), width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().expect("PNG header writes");
+        let raw = pixels
+            .iter()
+            .flat_map(|pixel| pixel.iter().copied())
+            .collect::<Vec<_>>();
+        writer.write_image_data(&raw).expect("PNG payload writes");
+    }
+    bytes
 }
 
 fn basisu_material_gltf() -> &'static [u8] {

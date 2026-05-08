@@ -10,11 +10,15 @@ use slotmap::{SlotMap, new_key_type};
 use crate::animation::{AnimationMixer, AnimationMixerKey};
 use crate::assets::{GeometryHandle, MaterialHandle, ModelHandle};
 use crate::diagnostics::LookupError;
-use crate::geometry::Primitive;
+use crate::geometry::{Aabb, Primitive};
 use crate::picking::InteractionContext;
 
+mod anchors;
 mod builders;
 mod camera;
+mod camera_controls;
+mod clipping;
+mod connectors;
 mod dirty;
 mod import;
 #[cfg(feature = "inspection")]
@@ -32,15 +36,26 @@ mod render_nodes;
 mod skinning;
 mod transforms;
 mod view;
+mod view_math;
 mod visibility;
+pub use anchors::AnchorFrame;
 pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
+pub use clipping::{ClippingPlane, ClippingPlaneSet};
+pub use connectors::{
+    ConnectOptions, ConnectionAlignment, ConnectionError, ConnectionLineOverlay,
+    ConnectionParenting, ConnectionPreview, ConnectionRequest, ConnectionRoll, ConnectionWarning,
+    ConnectorFrame, ConnectorMetadata, ConnectorPolarity, ConnectorRollPolicy,
+};
 pub use dirty::SceneDirtyState;
 pub use import::{
-    ImportAnchor, ImportAnchorDebugMetadata, ImportClip, ImportOptions, ImportPivot, SceneImport,
-    SourceCoordinateSystem, SourceUnits,
+    ImportAnchor, ImportAnchorDebugMetadata, ImportClip, ImportConnector, ImportOptions,
+    ImportPivot, SceneImport, SourceCoordinateSystem, SourceUnits,
 };
 #[cfg(feature = "inspection")]
-pub use inspection::{SceneInspectionReport, SceneNodeInspection};
+pub use inspection::{
+    SceneCameraFrustumInspection, SceneDrawInspection, SceneInspectionReport,
+    SceneMaterialInspection, SceneNodeInspection, SceneNormalInspection, SceneTextureInspection,
+};
 pub use instances::{Instance, InstanceCullingPolicy, InstanceId, InstanceSet};
 pub use labels::{LabelBillboard, LabelDesc, LabelRasterization};
 pub use lights::{DirectionalLight, Light, LightBuilder, PointLight, SpotLight};
@@ -54,6 +69,8 @@ new_key_type! {
     pub struct ClippingPlaneKey;
     pub struct InstanceSetKey;
     pub struct LabelKey;
+    pub struct AnchorKey;
+    pub struct ConnectorKey;
 }
 
 #[derive(Debug)]
@@ -65,6 +82,10 @@ pub struct Scene {
     instance_sets: SlotMap<InstanceSetKey, InstanceSet>,
     animation_mixers: SlotMap<AnimationMixerKey, AnimationMixer>,
     labels: SlotMap<LabelKey, LabelDesc>,
+    anchors: SlotMap<AnchorKey, AnchorFrame>,
+    connectors: SlotMap<ConnectorKey, ConnectorFrame>,
+    connection_locked_nodes: BTreeSet<NodeKey>,
+    node_bounds: BTreeMap<NodeKey, Aabb>,
     morph_weights: BTreeMap<NodeKey, Vec<f32>>,
     skin_bindings: BTreeMap<NodeKey, SceneSkinBinding>,
     clipping_planes: SlotMap<ClippingPlaneKey, ClippingPlane>,
@@ -139,17 +160,6 @@ pub struct ModelBuilder<'scene> {
     model: ModelHandle,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ClippingPlane {
-    normal: Vec3,
-    distance: f32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct ClippingPlaneSet {
-    planes: Vec<ClippingPlaneKey>,
-}
-
 impl Scene {
     pub fn new() -> Self {
         let mut nodes = SlotMap::with_key();
@@ -162,6 +172,10 @@ impl Scene {
             instance_sets: SlotMap::with_key(),
             animation_mixers: SlotMap::with_key(),
             labels: SlotMap::with_key(),
+            anchors: SlotMap::with_key(),
+            connectors: SlotMap::with_key(),
+            connection_locked_nodes: BTreeSet::new(),
+            node_bounds: BTreeMap::new(),
             morph_weights: BTreeMap::new(),
             skin_bindings: BTreeMap::new(),
             clipping_planes: SlotMap::with_key(),
@@ -278,30 +292,6 @@ impl Scene {
         self.insert_camera(parent, Camera::Orthographic(camera), transform)
     }
 
-    pub fn add_clipping_plane(&mut self, plane: ClippingPlane) -> ClippingPlaneKey {
-        self.structure_revision = self.structure_revision.saturating_add(1);
-        self.clipping_planes.insert(plane)
-    }
-
-    pub fn clipping_plane(&self, plane: ClippingPlaneKey) -> Option<ClippingPlane> {
-        self.clipping_planes.get(plane).copied()
-    }
-
-    pub fn set_clipping_planes(&mut self, set: ClippingPlaneSet) -> Result<(), LookupError> {
-        for plane in set.planes() {
-            if !self.clipping_planes.contains_key(*plane) {
-                return Err(LookupError::ClippingPlaneNotFound(*plane));
-            }
-        }
-        self.active_clipping_planes = set;
-        self.structure_revision = self.structure_revision.saturating_add(1);
-        Ok(())
-    }
-
-    pub fn clipping_planes(&self) -> &ClippingPlaneSet {
-        &self.active_clipping_planes
-    }
-
     pub(crate) fn identity(&self) -> Weak<()> {
         Arc::downgrade(&self.identity)
     }
@@ -313,9 +303,9 @@ impl Scene {
 
     pub(crate) fn mesh_nodes(&self) -> impl Iterator<Item = (NodeKey, MeshNode, Transform)> + '_ {
         self.nodes.iter().filter_map(|(key, node)| match node.kind {
-            NodeKind::Mesh(mesh) if self.visible_for_active_camera(key) => {
-                Some((key, mesh, node.transform))
-            }
+            NodeKind::Mesh(mesh) if self.visible_for_active_camera(key) => self
+                .world_transform(key)
+                .map(|transform| (key, mesh, transform)),
             NodeKind::Empty
             | NodeKind::Renderable(_)
             | NodeKind::Mesh(_)
@@ -339,7 +329,10 @@ impl Scene {
             }
             self.instance_sets
                 .get(instance_set)
-                .map(|instance_set| (node_key, instance_set, node.transform))
+                .and_then(|instance_set| {
+                    self.world_transform(node_key)
+                        .map(|transform| (node_key, instance_set, transform))
+                })
         })
     }
 
@@ -367,9 +360,10 @@ impl Scene {
             if !self.visible_for_active_camera(node_key) {
                 return None;
             }
-            self.labels
-                .get(label)
-                .map(|label_desc| (node_key, label, label_desc, node.transform))
+            self.labels.get(label).and_then(|label_desc| {
+                self.world_transform(node_key)
+                    .map(|transform| (node_key, label, label_desc, transform))
+            })
         })
     }
 
@@ -383,15 +377,22 @@ impl Scene {
             if !self.visible_for_active_camera(node_key) {
                 return None;
             }
-            self.lights
-                .get(light_key)
-                .copied()
-                .map(|light| (node_key, light_key, light, node.transform))
+            self.lights.get(light_key).copied().and_then(|light| {
+                self.world_transform(node_key)
+                    .map(|transform| (node_key, light_key, light, transform))
+            })
         })
     }
 
     pub(crate) fn node_transforms(&self) -> impl Iterator<Item = (NodeKey, Transform)> + '_ {
         self.nodes.iter().map(|(key, node)| (key, node.transform))
+    }
+
+    pub(crate) fn mesh_bounds_nodes(&self) -> impl Iterator<Item = (NodeKey, Aabb)> + '_ {
+        self.node_bounds
+            .iter()
+            .filter(|(node, _)| self.visible_for_active_camera(**node))
+            .map(|(node, bounds)| (*node, *bounds))
     }
 
     pub(crate) fn camera_nodes(&self) -> impl Iterator<Item = (NodeKey, CameraKey, &Camera)> + '_ {
@@ -403,13 +404,6 @@ impl Scene {
                 .get(camera_key)
                 .map(|camera| (node_key, camera_key, camera))
         })
-    }
-
-    pub(crate) fn active_clipping_plane_values(&self) -> impl Iterator<Item = ClippingPlane> + '_ {
-        self.active_clipping_planes
-            .planes()
-            .iter()
-            .filter_map(|plane| self.clipping_plane(*plane))
     }
 
     fn insert_camera(
@@ -534,39 +528,5 @@ impl ModelNode {
     /// Returns the typed model handle referenced by this model node.
     pub const fn model(&self) -> ModelHandle {
         self.model
-    }
-}
-
-impl ClippingPlane {
-    pub const fn new(normal: Vec3, distance: f32) -> Self {
-        Self { normal, distance }
-    }
-
-    pub const fn normal(self) -> Vec3 {
-        self.normal
-    }
-
-    pub const fn distance(self) -> f32 {
-        self.distance
-    }
-
-    pub fn contains(self, point: Vec3) -> bool {
-        self.normal.x * point.x + self.normal.y * point.y + self.normal.z * point.z
-            >= -self.distance
-    }
-}
-
-impl ClippingPlaneSet {
-    pub fn new() -> Self {
-        Self { planes: Vec::new() }
-    }
-
-    pub fn with_plane(mut self, plane: ClippingPlaneKey) -> Self {
-        self.planes.push(plane);
-        self
-    }
-
-    pub fn planes(&self) -> &[ClippingPlaneKey] {
-        &self.planes
     }
 }

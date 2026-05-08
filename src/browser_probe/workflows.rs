@@ -2,6 +2,7 @@ use serde_json::json;
 use wasm_bindgen::prelude::JsValue;
 
 mod ergonomics;
+mod pbr;
 
 use crate::{
     AnimationPlaybackState, Assets, Color, CursorPosition, GeometryDesc, HitTarget, LabelDesc,
@@ -23,6 +24,12 @@ pub(super) async fn build_workflow_scene(workflow: &str) -> Result<WorkflowScene
         "animation" => animation_scene().await,
         "labels-helpers" => Ok(labels_helpers_scene()?),
         "industrial-static-scene" => Ok(industrial_static_scene()?),
+        "depth-overlap" => Ok(depth_overlap_scene()?),
+        "pbr-point-light" => Ok(pbr::point_light_scene()?),
+        "pbr-spot-light" => Ok(pbr::spot_light_scene()?),
+        "pbr-normal-map" => pbr::normal_map_scene().await,
+        "pbr-environment" => Ok(pbr::environment_scene()?),
+        "pbr-shadow-visibility" => Ok(pbr::shadow_visibility_scene()?),
         other => ergonomics::build_ergonomics_scene(other).await,
     }
 }
@@ -30,7 +37,7 @@ pub(super) async fn build_workflow_scene(workflow: &str) -> Result<WorkflowScene
 async fn model_viewer_scene() -> Result<WorkflowScene, JsValue> {
     let assets = Assets::new();
     let scene_asset = assets
-        .load_scene("/fixtures/gltf/mesh_material_vertex_color_scene.gltf")
+        .load_scene("/fixtures/gltf/non_ndc_camera_scene.gltf")
         .await
         .map_err(|error| JsValue::from_str(&format!("model-viewer load failed: {error:?}")))?;
     let mut scene = Scene::new();
@@ -48,9 +55,10 @@ async fn model_viewer_scene() -> Result<WorkflowScene, JsValue> {
         scene,
         camera,
         metadata: json!({
-            "source": "/fixtures/gltf/mesh_material_vertex_color_scene.gltf",
+            "source": "/fixtures/gltf/non_ndc_camera_scene.gltf",
             "roots": import.roots().len(),
             "framed": import.bounds_local().is_some(),
+            "proof_class": "camera-framed-non-ndc",
         }),
     })
 }
@@ -220,6 +228,59 @@ fn industrial_static_scene() -> Result<WorkflowScene, JsValue> {
         scene,
         camera,
         metadata: json!({ "profile": "industrial-static-scene", "grid": true }),
+    })
+}
+
+fn depth_overlap_scene() -> Result<WorkflowScene, JsValue> {
+    let assets = Assets::new();
+    let mut scene = Scene::new();
+    let camera = add_default_camera(&mut scene)?;
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![
+                Primitive::triangle([
+                    Vertex {
+                        position: Vec3::new(-0.6, -0.6, 0.35),
+                        color: Color::from_linear_rgb(0.0, 1.0, 0.0),
+                    },
+                    Vertex {
+                        position: Vec3::new(0.6, -0.6, 0.35),
+                        color: Color::from_linear_rgb(0.0, 1.0, 0.0),
+                    },
+                    Vertex {
+                        position: Vec3::new(0.0, 0.6, 0.35),
+                        color: Color::from_linear_rgb(0.0, 1.0, 0.0),
+                    },
+                ]),
+                Primitive::triangle([
+                    Vertex {
+                        position: Vec3::new(-0.6, -0.6, -0.35),
+                        color: Color::from_linear_rgb(1.0, 0.0, 0.0),
+                    },
+                    Vertex {
+                        position: Vec3::new(0.6, -0.6, -0.35),
+                        color: Color::from_linear_rgb(1.0, 0.0, 0.0),
+                    },
+                    Vertex {
+                        position: Vec3::new(0.0, 0.6, -0.35),
+                        color: Color::from_linear_rgb(1.0, 0.0, 0.0),
+                    },
+                ]),
+            ],
+            Transform::default(),
+        )
+        .map_err(|error| JsValue::from_str(&format!("depth overlap insert failed: {error:?}")))?;
+    Ok(WorkflowScene {
+        assets,
+        scene,
+        camera,
+        metadata: json!({
+            "proof_class": "depth-overlap-near-wins",
+            "near_color": "green",
+            "far_color": "red",
+            "submission_order": "near-then-far",
+        }),
     })
 }
 

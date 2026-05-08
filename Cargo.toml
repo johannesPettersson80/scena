@@ -1,6 +1,6 @@
 [package]
 name = "scena"
-version = "1.0.0"
+version = "1.0.0-rc.0"
 edition = "2024"
 rust-version = "1.90"
 license = "MIT OR Apache-2.0"
@@ -39,6 +39,8 @@ required-features = ["inspection"]
 
 [dependencies]
 base64 = "0.22"
+jpeg-decoder = { version = "0.3", default-features = false }
+png = "0.17"
 raw-window-handle = "0.6.2"
 serde_json = "1"
 slotmap = "1.0"
@@ -77,6 +79,7 @@ web-sys = { version = "0.3.82", features = [
     "WebGlBuffer",
     "WebGlProgram",
     "WebGlShader",
+    "WebGlTexture",
     "console",
     "Window",
 ] }

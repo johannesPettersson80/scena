@@ -63,4 +63,8 @@ impl Renderer {
             rgba8: self.frame.clone(),
         }
     }
+
+    pub fn screenshot_rgba8(&self) -> PixelReadback {
+        self.read_pixels()
+    }
 }

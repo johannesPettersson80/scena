@@ -11,6 +11,12 @@ use scena::{
     OffscreenTarget, PerspectiveCamera, Primitive, Renderer, Scene, Transform, Vec3, Viewport,
 };
 
+const CAMERA_DISTANCE_FOR_NDC_FIXTURES: f32 = 1.732_050_8;
+
+fn ndc_fixture_camera_transform() -> Transform {
+    Transform::at(Vec3::new(0.0, 0.0, CAMERA_DISTANCE_FOR_NDC_FIXTURES))
+}
+
 #[test]
 fn m3a_headless_visual_artifacts_cover_import_interaction_instances_labels_and_readback() {
     let artifact_dir = artifact_dir();
@@ -74,7 +80,7 @@ fn render_picking_selection_path() -> VisualArtifact {
         .add_perspective_camera(
             scene.root(),
             PerspectiveCamera::default(),
-            Transform::default(),
+            ndc_fixture_camera_transform(),
         )
         .expect("camera inserts");
     let node = scene
@@ -132,7 +138,7 @@ fn render_instancing_path() -> VisualArtifact {
         .add_perspective_camera(
             scene.root(),
             PerspectiveCamera::default(),
-            Transform::default(),
+            ndc_fixture_camera_transform(),
         )
         .expect("camera inserts");
     let set = scene
@@ -158,7 +164,7 @@ fn render_label_path() -> VisualArtifact {
         .add_perspective_camera(
             scene.root(),
             PerspectiveCamera::default(),
-            Transform::default(),
+            ndc_fixture_camera_transform(),
         )
         .expect("camera inserts");
     scene
@@ -180,7 +186,7 @@ fn render_offscreen_readback_path() -> VisualArtifact {
         .add_perspective_camera(
             scene.root(),
             PerspectiveCamera::default(),
-            Transform::default(),
+            ndc_fixture_camera_transform(),
         )
         .expect("camera inserts");
     scene

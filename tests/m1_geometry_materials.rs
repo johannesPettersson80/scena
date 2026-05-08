@@ -3,12 +3,14 @@
 use scena::{
     Aabb, AlphaMode, AlphaPipelineStatus, AssetPath, Assets, Backend, Capabilities, Color,
     DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES, DEFAULT_STROKE_WIDTH_PX, EnvironmentDesc,
-    EnvironmentHandle, GeometryDesc, GeometryHandle, GeometryTopology, MaterialDesc,
-    MaterialHandle, MaterialKind, ModelHandle, NodeKind, NotPreparedReason, OutputStageStatus,
-    PerspectiveCamera, PrepareError, Primitive, RenderError, Renderer, Scene, SceneAsset,
-    TextureColorSpace, TextureDesc, TextureHandle, Tonemapper, Transform, Vec3, Vertex,
+    EnvironmentHandle, EnvironmentSourceKind, GeometryDesc, GeometryHandle, GeometryTopology,
+    MaterialDesc, MaterialHandle, MaterialKind, ModelHandle, NodeKind, NotPreparedReason,
+    OutputStageStatus, PerspectiveCamera, PrepareError, Primitive, RenderError, Renderer, Scene,
+    SceneAsset, TextureColorSpace, TextureDesc, TextureHandle, Tonemapper, Transform, Vec3, Vertex,
     WasmEnvironmentDelivery,
 };
+
+const CAMERA_DISTANCE_FOR_NDC_FIXTURES: f32 = 1.732_050_8;
 
 fn assert_handle<T: Copy + Eq + std::fmt::Debug>() {}
 
@@ -100,7 +102,7 @@ fn scene_with_fullscreen_triangle(color: Color) -> (Scene, scena::CameraKey) {
         .add_perspective_camera(
             scene.root(),
             PerspectiveCamera::default(),
-            Transform::default(),
+            Transform::at(Vec3::new(0.0, 0.0, CAMERA_DISTANCE_FOR_NDC_FIXTURES)),
         )
         .expect("camera inserts");
     scene
@@ -111,15 +113,15 @@ fn scene_with_fullscreen_triangle(color: Color) -> (Scene, scena::CameraKey) {
             scene.root(),
             vec![Primitive::triangle([
                 Vertex {
-                    position: Vec3::new(-1.0, -1.0, 0.0),
+                    position: Vec3::new(-2.0, -2.0, 0.0),
                     color,
                 },
                 Vertex {
-                    position: Vec3::new(3.0, -1.0, 0.0),
+                    position: Vec3::new(4.0, -2.0, 0.0),
                     color,
                 },
                 Vertex {
-                    position: Vec3::new(-1.0, 3.0, 0.0),
+                    position: Vec3::new(-2.0, 4.0, 0.0),
                     color,
                 },
             ])],
@@ -135,7 +137,7 @@ fn scene_with_camera() -> (Scene, scena::CameraKey) {
         .add_perspective_camera(
             scene.root(),
             PerspectiveCamera::default(),
-            Transform::default(),
+            Transform::at(Vec3::new(0.0, 0.0, CAMERA_DISTANCE_FOR_NDC_FIXTURES)),
         )
         .expect("camera inserts");
     scene
@@ -150,7 +152,7 @@ fn scene_with_fullscreen_primitives(primitives: Vec<Primitive>) -> (Scene, scena
         .add_perspective_camera(
             scene.root(),
             PerspectiveCamera::default(),
-            Transform::default(),
+            Transform::at(Vec3::new(0.0, 0.0, CAMERA_DISTANCE_FOR_NDC_FIXTURES)),
         )
         .expect("camera inserts");
     scene
@@ -293,8 +295,13 @@ fn default_environment_manifest_fields_are_structured_and_loadable() {
     assert_eq!(environment.name(), "neutral-studio");
     assert_eq!(
         environment.source_path().as_str(),
-        "tests/assets/environment/neutral-studio.placeholder.hdr"
+        "tests/assets/environment/neutral-studio.fixture.txt"
     );
+    assert_eq!(
+        environment.source_kind(),
+        EnvironmentSourceKind::BundledPreviewFixture
+    );
+    assert!(!environment.is_equirectangular_hdr());
     assert_lower_hex_sha256(
         environment
             .source_sha256()
@@ -304,7 +311,7 @@ fn default_environment_manifest_fields_are_structured_and_loadable() {
     assert_eq!(
         environment.generator(),
         Some(
-            "xtask generate-default-env --input tests/assets/environment/neutral-studio.placeholder.hdr"
+            "xtask generate-default-env-fixture --input tests/assets/environment/neutral-studio.fixture.txt"
         )
     );
     assert_eq!(environment.cubemap_resolution(), 256);
@@ -316,11 +323,11 @@ fn default_environment_manifest_fields_are_structured_and_loadable() {
     assert_eq!(environment.derivatives().len(), 2);
     assert_eq!(
         environment.derivatives()[0].path().as_str(),
-        "tests/assets/environment/generated/neutral-studio-cubemap.ktx2"
+        "tests/assets/environment/generated/neutral-studio-cubemap.fixture.toml"
     );
     assert_eq!(
         environment.derivatives()[1].path().as_str(),
-        "tests/assets/environment/generated/brdf-lut-256.rgba16f"
+        "tests/assets/environment/generated/brdf-lut-256.fixture.toml"
     );
     for derivative in environment.derivatives() {
         assert_lower_hex_sha256(derivative.sha256());
@@ -789,8 +796,8 @@ fn prepare_with_assets_renders_scene_mesh_unlit_geometry() {
 fn prepare_with_assets_sorts_blend_meshes_back_to_front_before_render() {
     let assets = Assets::new();
     let background = assets.create_geometry(fullscreen_triangle_geometry_at(0.0));
-    let near = assets.create_geometry(fullscreen_triangle_geometry_at(0.2));
-    let far = assets.create_geometry(fullscreen_triangle_geometry_at(0.8));
+    let near = assets.create_geometry(fullscreen_triangle_geometry_at(0.8));
+    let far = assets.create_geometry(fullscreen_triangle_geometry_at(0.2));
     let blue = assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(0.0, 0.0, 1.0)));
     let red_blend = assets.create_material(
         MaterialDesc::unlit(Color::from_linear_rgba(1.0, 0.0, 0.0, 0.5))
@@ -826,6 +833,44 @@ fn prepare_with_assets_sorts_blend_meshes_back_to_front_before_render() {
 }
 
 #[test]
+fn prepare_with_assets_sorts_blend_meshes_by_camera_space_depth() {
+    let assets = Assets::new();
+    let background = assets.create_geometry(fullscreen_triangle_geometry_at(0.0));
+    let nearer = assets.create_geometry(fullscreen_triangle_geometry_at(0.8));
+    let farther = assets.create_geometry(fullscreen_triangle_geometry_at(0.2));
+    let blue = assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(0.0, 0.0, 1.0)));
+    let red_blend = assets.create_material(
+        MaterialDesc::unlit(Color::from_linear_rgba(1.0, 0.0, 0.0, 0.5))
+            .with_alpha_mode(AlphaMode::Blend),
+    );
+    let green_blend = assets.create_material(
+        MaterialDesc::unlit(Color::from_linear_rgba(0.0, 1.0, 0.0, 0.5))
+            .with_alpha_mode(AlphaMode::Blend),
+    );
+    let (mut scene, camera) = scene_with_camera();
+    scene
+        .mesh(background, blue)
+        .add()
+        .expect("background mesh inserts");
+    scene
+        .mesh(nearer, red_blend)
+        .add()
+        .expect("near transparent mesh inserts first");
+    scene
+        .mesh(farther, green_blend)
+        .add()
+        .expect("far transparent mesh inserts second");
+    let mut renderer = Renderer::headless(4, 4).expect("headless renderer builds");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("camera-space blend meshes prepare");
+    renderer.render(&scene, camera).expect("render succeeds");
+
+    assert_all_pixels(renderer.frame_rgba8(), 4, 4, [163, 116, 116, 255]);
+}
+
+#[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn headless_gpu_alpha_blends_sorted_asset_meshes_when_available() {
     assert_eq!(
@@ -835,8 +880,8 @@ fn headless_gpu_alpha_blends_sorted_asset_meshes_when_available() {
 
     let assets = Assets::new();
     let background = assets.create_geometry(fullscreen_triangle_geometry_at(0.0));
-    let near = assets.create_geometry(fullscreen_triangle_geometry_at(0.2));
-    let far = assets.create_geometry(fullscreen_triangle_geometry_at(0.8));
+    let near = assets.create_geometry(fullscreen_triangle_geometry_at(0.8));
+    let far = assets.create_geometry(fullscreen_triangle_geometry_at(0.2));
     let blue = assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(0.0, 0.0, 1.0)));
     let red_blend = assets.create_material(
         MaterialDesc::unlit(Color::from_linear_rgba(1.0, 0.0, 0.0, 0.5))

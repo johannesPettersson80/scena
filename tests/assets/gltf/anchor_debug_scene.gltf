@@ -16,7 +16,12 @@
         "scena": {
           "anchors": [
             { "name": "mount" },
-            { "name": "inspection", "translation": [0.0, 0.1, 0.0] }
+            {
+              "name": "inspection",
+              "translation": [0.0, 0.1, 0.0],
+              "tags": ["service", "visible"],
+              "label": "Inspection Port"
+            }
           ]
         }
       },

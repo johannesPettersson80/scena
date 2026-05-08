@@ -15,6 +15,7 @@ pub mod picking;
 pub mod platform;
 pub mod render;
 pub mod scene;
+pub mod viewer;
 
 pub use animation::{
     AnimationChannel, AnimationClip, AnimationClipKey, AnimationInterpolation, AnimationLoopMode,
@@ -38,11 +39,12 @@ pub use controls::{
     TouchEventKind,
 };
 pub use diagnostics::{
-    AlphaPipelineStatus, AnimationError, AssetError, Backend, BuildError, Capabilities,
-    CapabilityStatus, ChangeKind, DebugOverlay, DevicePoll, Diagnostic, DiagnosticCode,
-    DiagnosticSeverity, Error, HardwareTier, ImportDiagnosticOverlay, ImportDiagnosticOverlayKind,
-    ImportError, InstantiateError, LookupError, NotPreparedReason, OutputStageStatus, PrepareError,
-    RenderError, RenderOutcome, RendererStats,
+    AdapterLimitsReport, AlphaPipelineStatus, AnimationError, AssetError, Backend, BuildError,
+    Capabilities, CapabilityReport, CapabilityStatus, ChangeKind, DebugOverlay, DevicePoll,
+    Diagnostic, DiagnosticCode, DiagnosticSeverity, Error, GpuAdapterReport, HardwareTier,
+    ImportDiagnosticOverlay, ImportDiagnosticOverlayKind, ImportError, InstantiateError,
+    LookupError, NotPreparedReason, OutputStageStatus, PrepareError, RenderError, RenderOutcome,
+    RendererStats,
 };
 pub use geometry::{
     Aabb, GeometryDesc, GeometryError, GeometryMorphTarget, GeometrySkin, GeometryTopology,
@@ -61,16 +63,26 @@ pub use render::{
     Tonemapper,
 };
 pub use scene::{
-    Angle, Camera, CameraKey, ClippingPlane, ClippingPlaneKey, ClippingPlaneSet, DepthRange,
-    DirectionalLight, ImportAnchor, ImportAnchorDebugMetadata, ImportClip, ImportOptions,
-    ImportPivot, Instance, InstanceCullingPolicy, InstanceId, InstanceSet, InstanceSetKey,
-    LabelBillboard, LabelDesc, LabelKey, LabelRasterization, Light, LightBuilder, LightKey,
-    MeshBuilder, MeshNode, ModelBuilder, ModelNode, Node, NodeKey, NodeKind, OrthographicCamera,
-    PerspectiveCamera, PointLight, Quat, Scene, SceneDirtyState, SceneImport, SceneSkinBinding,
-    SourceCoordinateSystem, SourceUnits, SpotLight, Transform, Vec3,
+    AnchorFrame, AnchorKey, Angle, Camera, CameraKey, ClippingPlane, ClippingPlaneKey,
+    ClippingPlaneSet, ConnectOptions, ConnectionAlignment, ConnectionError, ConnectionLineOverlay,
+    ConnectionParenting, ConnectionPreview, ConnectionRequest, ConnectionRoll, ConnectionWarning,
+    ConnectorFrame, ConnectorKey, ConnectorMetadata, ConnectorPolarity, ConnectorRollPolicy,
+    DepthRange, DirectionalLight, ImportAnchor, ImportAnchorDebugMetadata, ImportClip,
+    ImportConnector, ImportOptions, ImportPivot, Instance, InstanceCullingPolicy, InstanceId,
+    InstanceSet, InstanceSetKey, LabelBillboard, LabelDesc, LabelKey, LabelRasterization, Light,
+    LightBuilder, LightKey, MeshBuilder, MeshNode, ModelBuilder, ModelNode, Node, NodeKey,
+    NodeKind, OrthographicCamera, PerspectiveCamera, PointLight, Quat, Scene, SceneDirtyState,
+    SceneImport, SceneSkinBinding, SourceCoordinateSystem, SourceUnits, SpotLight, Transform, Vec3,
 };
 #[cfg(feature = "inspection")]
-pub use scene::{SceneInspectionReport, SceneNodeInspection};
+pub use scene::{
+    SceneCameraFrustumInspection, SceneDrawInspection, SceneInspectionReport,
+    SceneMaterialInspection, SceneNodeInspection, SceneNormalInspection, SceneTextureInspection,
+};
+pub use viewer::{
+    FirstRender, HeadlessGltfViewer, HeadlessGltfViewerBuilder, first_render_gltf_headless,
+    headless_gltf_viewer,
+};
 
 /// Crate-level result type for APIs that can return any structured `scena` error.
 pub type Result<T> = std::result::Result<T, Error>;

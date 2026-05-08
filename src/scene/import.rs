@@ -2,36 +2,76 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use self::bounds::union_optional;
+use self::diagnostic_overlays::diagnostic_overlay;
+use self::handedness::reject_unproven_left_handed_mesh_import;
+use self::types::{ImportBuild, ImportedNode, PendingSkinBinding, mesh_node_kind};
+use self::units::convert_marker_units;
+use super::transforms::compose_transform;
+use super::{
+    ConnectorMetadata, ConnectorPolarity, ConnectorRollPolicy, NodeKey, NodeKind, Scene,
+    SceneSkinBinding, Transform,
+};
 use crate::animation::{AnimationClip, AnimationClipKey};
-use crate::assets::{AssetFetcher, AssetPath, Assets, SceneAsset, SceneAssetMesh};
+use crate::assets::{AssetFetcher, AssetPath, Assets, SceneAsset};
 use crate::diagnostics::{
     ImportDiagnosticOverlay, ImportDiagnosticOverlayKind, ImportError, InstantiateError,
 };
-use crate::geometry::Aabb;
-
-use self::bounds::union_optional;
-use super::{MeshNode, NodeKey, NodeKind, Scene, SceneSkinBinding, Transform};
 
 mod accessors;
 mod bounds;
+mod diagnostic_overlays;
+mod handedness;
 mod lookups;
 mod options;
+mod types;
+mod units;
 
 #[derive(Debug, Clone)]
 pub struct SceneImport {
     roots: Vec<NodeKey>,
     records: Vec<ImportedNode>,
     anchors: Vec<ImportAnchor>,
+    connectors: Vec<ImportConnector>,
     clips: Vec<ImportClip>,
     diagnostic_overlays: Vec<ImportDiagnosticOverlay>,
+    source_units: SourceUnits,
+    source_coordinate_system: SourceCoordinateSystem,
     live: Arc<AtomicBool>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct ImportAnchor {
     name: String,
     node: NodeKey,
+    placement_node: NodeKey,
     transform: Transform,
+    placement_transform: Transform,
+    tags: BTreeSet<String>,
+    label: Option<String>,
+    source_units: SourceUnits,
+    source_coordinate_system: SourceCoordinateSystem,
+    live: Arc<AtomicBool>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImportConnector {
+    name: String,
+    kind: Option<String>,
+    allowed_mates: Vec<String>,
+    tags: BTreeSet<String>,
+    snap_tolerance: Option<f32>,
+    clearance_hint: Option<f32>,
+    roll_policy: ConnectorRollPolicy,
+    polarity: Option<ConnectorPolarity>,
+    metadata: Option<ConnectorMetadata>,
+    node: NodeKey,
+    placement_node: NodeKey,
+    transform: Transform,
+    placement_transform: Transform,
+    source_units: SourceUnits,
+    source_coordinate_system: SourceCoordinateSystem,
+    live: Arc<AtomicBool>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -65,6 +105,8 @@ pub enum SourceUnits {
     Meters,
     Centimeters,
     Millimeters,
+    Inches,
+    Feet,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -74,31 +116,6 @@ pub enum SourceCoordinateSystem {
     YUpLeftHanded,
     ZUpRightHanded,
     ZUpLeftHanded,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct ImportedNode {
-    source_index: usize,
-    node: NodeKey,
-    parent: Option<NodeKey>,
-    name: Option<String>,
-    bounds: Option<Aabb>,
-}
-
-struct ImportBuild<'a> {
-    scene_asset: &'a SceneAsset,
-    options: ImportOptions,
-    records: &'a mut Vec<ImportedNode>,
-    anchors: &'a mut Vec<ImportAnchor>,
-    diagnostic_overlays: &'a mut Vec<ImportDiagnosticOverlay>,
-    pending_skin_bindings: &'a mut Vec<PendingSkinBinding>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct PendingSkinBinding {
-    node: NodeKey,
-    source_node: usize,
-    skin: usize,
 }
 
 impl Scene {
@@ -114,6 +131,7 @@ impl Scene {
         scene_asset: &SceneAsset,
         options: ImportOptions,
     ) -> Result<SceneImport, InstantiateError> {
+        reject_unproven_left_handed_mesh_import(scene_asset, options)?;
         let nodes = scene_asset.nodes();
         let mut child_indices = BTreeSet::new();
         for node in nodes {
@@ -127,8 +145,11 @@ impl Scene {
             roots: Vec::new(),
             records: Vec::new(),
             anchors: Vec::new(),
+            connectors: Vec::new(),
             clips: Vec::new(),
             diagnostic_overlays: Vec::new(),
+            source_units: options.source_units(),
+            source_coordinate_system: options.source_coordinate_system(),
             live: Arc::new(AtomicBool::new(true)),
         };
         let mut pending_skin_bindings = Vec::new();
@@ -136,13 +157,21 @@ impl Scene {
             let mut build = ImportBuild {
                 scene_asset,
                 options,
+                import_live: &import.live,
                 records: &mut import.records,
                 anchors: &mut import.anchors,
+                connectors: &mut import.connectors,
                 diagnostic_overlays: &mut import.diagnostic_overlays,
                 pending_skin_bindings: &mut pending_skin_bindings,
             };
-            let node =
-                self.instantiate_scene_asset_node(source_index, self.root, None, &mut build)?;
+            let node = self.instantiate_scene_asset_node(
+                source_index,
+                self.root,
+                None,
+                None,
+                Transform::IDENTITY,
+                &mut build,
+            )?;
             import.roots.push(node);
         }
         self.resolve_import_skin_bindings(
@@ -196,8 +225,11 @@ impl Scene {
         import: &SceneImport,
         scene_asset: &SceneAsset,
     ) -> Result<SceneImport, InstantiateError> {
+        let options = ImportOptions::gltf_default()
+            .with_source_units(import.source_units)
+            .with_source_coordinate_system(import.source_coordinate_system);
         import.mark_stale();
-        self.instantiate(scene_asset)
+        self.instantiate_with(scene_asset, options)
     }
 
     fn instantiate_scene_asset_node(
@@ -205,6 +237,8 @@ impl Scene {
         source_index: usize,
         parent: NodeKey,
         imported_parent: Option<NodeKey>,
+        import_root: Option<NodeKey>,
+        root_from_parent: Transform,
         build: &mut ImportBuild<'_>,
     ) -> Result<NodeKey, InstantiateError> {
         let source_node = build.scene_asset.nodes().get(source_index).ok_or(
@@ -241,6 +275,7 @@ impl Scene {
                         let child = self
                             .insert_node(parent, mesh_node_kind(mesh), Transform::IDENTITY)
                             .expect("multi-primitive parent was inserted by this scene");
+                        self.node_bounds.insert(child, mesh.bounds());
                         self.set_initial_morph_weights(child, mesh.morph_weights());
                         if let Some(skin) = skin {
                             build.pending_skin_bindings.push(PendingSkinBinding {
@@ -280,15 +315,23 @@ impl Scene {
             name: source_node.name().map(str::to_string),
             bounds,
         });
+        let placement_node = import_root.unwrap_or(node);
+        let root_from_node = match import_root {
+            Some(_) => compose_transform(root_from_parent, transform),
+            None => Transform::IDENTITY,
+        };
         let label = source_node.name().map(str::to_string);
-        build.diagnostic_overlays.push(ImportDiagnosticOverlay::new(
+        let overlay_options = build.options;
+        build.diagnostic_overlays.push(diagnostic_overlay(
+            overlay_options,
             ImportDiagnosticOverlayKind::Origin,
             node,
             transform,
             None,
             label.clone(),
         ));
-        build.diagnostic_overlays.push(ImportDiagnosticOverlay::new(
+        build.diagnostic_overlays.push(diagnostic_overlay(
+            overlay_options,
             ImportDiagnosticOverlayKind::Axes,
             node,
             transform,
@@ -296,7 +339,9 @@ impl Scene {
             label.clone(),
         ));
         if let Some(bounds) = bounds {
-            build.diagnostic_overlays.push(ImportDiagnosticOverlay::new(
+            self.node_bounds.insert(node, bounds);
+            build.diagnostic_overlays.push(diagnostic_overlay(
+                overlay_options,
                 ImportDiagnosticOverlayKind::Bounds,
                 node,
                 Transform::IDENTITY,
@@ -318,13 +363,32 @@ impl Scene {
                     reason: format!("duplicate anchor '{}'", anchor.name()),
                 });
             }
-            let anchor_transform = build.options.convert_transform(anchor.transform());
+            let anchor_units = anchor
+                .source_units()
+                .unwrap_or(build.options.source_units());
+            let anchor_transform = convert_marker_units(
+                anchor.transform(),
+                anchor_units,
+                build.options.source_units(),
+            );
+            let anchor_connection_transform = build
+                .options
+                .source_coordinate_system()
+                .convert_connector_transform(anchor_transform);
             build.anchors.push(ImportAnchor {
                 name: anchor.name().to_string(),
                 node,
+                placement_node,
                 transform: anchor_transform,
+                placement_transform: compose_transform(root_from_node, anchor_connection_transform),
+                tags: anchor.tags().clone(),
+                label: anchor.label().map(str::to_string),
+                source_units: anchor_units,
+                source_coordinate_system: build.options.source_coordinate_system(),
+                live: Arc::clone(build.import_live),
             });
-            build.diagnostic_overlays.push(ImportDiagnosticOverlay::new(
+            build.diagnostic_overlays.push(diagnostic_overlay(
+                overlay_options,
                 ImportDiagnosticOverlayKind::Anchor,
                 node,
                 anchor_transform,
@@ -332,7 +396,8 @@ impl Scene {
                 Some(anchor.name().to_string()),
             ));
             if anchor.name() == "pivot" {
-                build.diagnostic_overlays.push(ImportDiagnosticOverlay::new(
+                build.diagnostic_overlays.push(diagnostic_overlay(
+                    overlay_options,
                     ImportDiagnosticOverlayKind::Pivot,
                     node,
                     anchor_transform,
@@ -341,6 +406,59 @@ impl Scene {
                 ));
             }
         }
+        let mut connector_names = BTreeSet::new();
+        for connector in source_node.connectors() {
+            if let Some(reason) = connector.invalid_reason() {
+                return Err(InstantiateError::InvalidAnchorExtras {
+                    node: source_node.name().unwrap_or("<unnamed>").to_string(),
+                    reason: reason.to_string(),
+                });
+            }
+            if !connector_names.insert(connector.name()) {
+                return Err(InstantiateError::InvalidAnchorExtras {
+                    node: source_node.name().unwrap_or("<unnamed>").to_string(),
+                    reason: format!("duplicate connector '{}'", connector.name()),
+                });
+            }
+            let connector_transform = connector.transform();
+            let connector_connection_transform = build
+                .options
+                .source_coordinate_system()
+                .convert_connector_transform(connector_transform);
+            build.connectors.push(ImportConnector {
+                name: connector.name().to_string(),
+                kind: connector.kind().map(str::to_string),
+                allowed_mates: connector
+                    .allowed_mates()
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect(),
+                tags: connector.tags().clone(),
+                snap_tolerance: connector.snap_tolerance(),
+                clearance_hint: connector.clearance_hint(),
+                roll_policy: connector.roll_policy(),
+                polarity: connector.polarity(),
+                metadata: connector.metadata().cloned(),
+                node,
+                placement_node,
+                transform: connector_transform,
+                placement_transform: compose_transform(
+                    root_from_node,
+                    connector_connection_transform,
+                ),
+                source_units: build.options.source_units(),
+                source_coordinate_system: build.options.source_coordinate_system(),
+                live: Arc::clone(build.import_live),
+            });
+            build.diagnostic_overlays.push(diagnostic_overlay(
+                overlay_options,
+                ImportDiagnosticOverlayKind::Connector,
+                node,
+                connector_transform,
+                None,
+                Some(connector.name().to_string()),
+            ));
+        }
         for child in source_node.children() {
             if build.scene_asset.nodes().get(*child).is_none() {
                 return Err(InstantiateError::InvalidChildIndex {
@@ -348,7 +466,14 @@ impl Scene {
                     child: *child,
                 });
             }
-            self.instantiate_scene_asset_node(*child, node, Some(node), build)?;
+            self.instantiate_scene_asset_node(
+                *child,
+                node,
+                Some(node),
+                Some(placement_node),
+                root_from_node,
+                build,
+            )?;
         }
         Ok(node)
     }
@@ -387,17 +512,4 @@ impl Scene {
         }
         Ok(())
     }
-}
-
-impl SceneImport {
-    pub(crate) fn live_flag(&self) -> Arc<AtomicBool> {
-        Arc::clone(&self.live)
-    }
-}
-
-fn mesh_node_kind(mesh: &SceneAssetMesh) -> NodeKind {
-    NodeKind::Mesh(MeshNode {
-        geometry: mesh.geometry(),
-        material: mesh.material(),
-    })
 }

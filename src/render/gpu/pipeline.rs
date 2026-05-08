@@ -1,22 +1,26 @@
+use super::materials::MaterialTextureResources;
 use super::output::GPU_TRIANGLE_SHADER;
-use super::vertices::{VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
+use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) const BYTES_PER_PIXEL: u32 = 4;
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) const GPU_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
-pub(super) fn encode_unlit_pass(
-    encoder: &mut wgpu::CommandEncoder,
-    view: &wgpu::TextureView,
-    vertex_buffer: &wgpu::Buffer,
-    output_bind_group: &wgpu::BindGroup,
-    vertex_count: u32,
-    pipeline: &wgpu::RenderPipeline,
-    label: &'static str,
-) {
+pub(super) struct UnlitPass<'a> {
+    pub(super) view: &'a wgpu::TextureView,
+    pub(super) depth_view: Option<&'a wgpu::TextureView>,
+    pub(super) vertex_buffer: &'a wgpu::Buffer,
+    pub(super) output_bind_group: &'a wgpu::BindGroup,
+    pub(super) material_resources: &'a [MaterialTextureResources],
+    pub(super) draw_batches: &'a [PrimitiveDrawBatch],
+    pub(super) pipeline: &'a wgpu::RenderPipeline,
+    pub(super) label: &'static str,
+}
+
+pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: UnlitPass<'_>) {
     let color_attachment = Some(wgpu::RenderPassColorAttachment {
-        view,
+        view: inputs.view,
         depth_slice: None,
         resolve_target: None,
         ops: wgpu::Operations {
@@ -24,19 +28,41 @@ pub(super) fn encode_unlit_pass(
             store: wgpu::StoreOp::Store,
         },
     });
+    let depth_stencil_attachment =
+        inputs
+            .depth_view
+            .map(|view| wgpu::RenderPassDepthStencilAttachment {
+                view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            });
     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some(label),
+        label: Some(inputs.label),
         color_attachments: &[color_attachment],
-        depth_stencil_attachment: None,
+        depth_stencil_attachment,
         timestamp_writes: None,
         occlusion_query_set: None,
         multiview_mask: None,
     });
-    pass.set_pipeline(pipeline);
-    pass.set_bind_group(0, output_bind_group, &[]);
-    pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-    if vertex_count > 0 {
-        pass.draw(0..vertex_count, 0..1);
+    pass.set_pipeline(inputs.pipeline);
+    pass.set_bind_group(0, inputs.output_bind_group, &[]);
+    pass.set_vertex_buffer(0, inputs.vertex_buffer.slice(..));
+    let Some(fallback_material) = inputs.material_resources.first() else {
+        return;
+    };
+    for batch in inputs.draw_batches {
+        let material = inputs
+            .material_resources
+            .get(batch.material_slot as usize)
+            .unwrap_or(fallback_material);
+        pass.set_bind_group(1, &material.bind_group, &[]);
+        pass.draw(
+            batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
+            0..1,
+        );
     }
 }
 
@@ -44,6 +70,8 @@ pub(super) fn create_unlit_pipeline(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
     output_bind_group_layout: &wgpu::BindGroupLayout,
+    material_bind_group_layout: &wgpu::BindGroupLayout,
+    depth_compare: Option<wgpu::CompareFunction>,
 ) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("scena.m0.unlit_triangle"),
@@ -51,7 +79,10 @@ pub(super) fn create_unlit_pipeline(
     });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("scena.m0.pipeline_layout"),
-        bind_group_layouts: &[Some(output_bind_group_layout)],
+        bind_group_layouts: &[
+            Some(output_bind_group_layout),
+            Some(material_bind_group_layout),
+        ],
         immediate_size: 0,
     });
     let vertex_buffer = wgpu::VertexBufferLayout {
@@ -69,7 +100,13 @@ pub(super) fn create_unlit_pipeline(
             buffers: &[vertex_buffer],
         },
         primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
+        depth_stencil: depth_compare.map(|depth_compare| wgpu::DepthStencilState {
+            format: wgpu::TextureFormat::Depth32Float,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(depth_compare),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
         multisample: wgpu::MultisampleState::default(),
         fragment: Some(wgpu::FragmentState {
             module: &shader,
@@ -84,4 +121,36 @@ pub(super) fn create_unlit_pipeline(
         multiview_mask: None,
         cache: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn unlit_pipeline_source_wires_depth_state_into_visible_color_pass() {
+        let source = include_str!("pipeline.rs");
+        let implementation = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("pipeline implementation precedes tests");
+        assert!(
+            implementation.contains("RenderPassDepthStencilAttachment")
+                && implementation.contains("depth_stencil: depth_compare.map"),
+            "visible GPU color pass must use the prepared depth buffer when one exists"
+        );
+    }
+
+    #[test]
+    fn unlit_pipeline_binds_material_group_for_fragment_sampling() {
+        let source = include_str!("pipeline.rs");
+        let implementation = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("pipeline implementation precedes tests");
+        assert!(
+            implementation.contains("material_bind_group_layout")
+                && implementation.contains("material_resources")
+                && implementation.contains("pass.set_bind_group(1, &material.bind_group"),
+            "visible GPU color pass must bind material resources, not only camera uniforms"
+        );
+    }
 }

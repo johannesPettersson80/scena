@@ -1,5 +1,54 @@
+use std::f32::consts::PI;
+
+use crate::assets::EnvironmentDesc;
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
 use crate::scene::{Light, Quat, Scene, Transform, Vec3};
+
+use super::environment::PreparedEnvironmentLighting;
+
+#[derive(Clone, Copy)]
+pub(super) struct MaterialShadingInput {
+    pub(super) position: Vec3,
+    pub(super) normal: Vec3,
+    pub(super) camera_position: Option<Vec3>,
+    pub(super) base_color_texture: Color,
+    pub(super) metallic_roughness_texture: (f32, f32),
+    pub(super) occlusion_texture: f32,
+    pub(super) emissive_texture: Color,
+    pub(super) environment: PreparedEnvironmentLighting,
+    pub(super) directional_shadow_factor: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(in crate::render) struct PreparedGpuLightUniform {
+    pub(in crate::render) directional_light_direction_intensity: [f32; 4],
+    pub(in crate::render) directional_light_color_count: [f32; 4],
+    pub(in crate::render) point_light_position_intensity: [f32; 4],
+    pub(in crate::render) point_light_color_range: [f32; 4],
+    pub(in crate::render) spot_light_position_intensity: [f32; 4],
+    pub(in crate::render) spot_light_direction_cones: [f32; 4],
+    pub(in crate::render) spot_light_cone_range: [f32; 4],
+    pub(in crate::render) spot_light_color_range: [f32; 4],
+    pub(in crate::render) environment_diffuse_intensity: [f32; 4],
+    pub(in crate::render) environment_specular_intensity: [f32; 4],
+}
+
+impl Default for PreparedGpuLightUniform {
+    fn default() -> Self {
+        Self {
+            directional_light_direction_intensity: [0.0, 0.0, -1.0, 0.0],
+            directional_light_color_count: [1.0, 1.0, 1.0, 0.0],
+            point_light_position_intensity: [0.0, 0.0, 0.0, 0.0],
+            point_light_color_range: [1.0, 1.0, 1.0, 0.0],
+            spot_light_position_intensity: [0.0, 0.0, 0.0, 0.0],
+            spot_light_direction_cones: [0.0, 0.0, -1.0, 0.0],
+            spot_light_cone_range: [0.0, 0.0, 0.0, 0.0],
+            spot_light_color_range: [1.0, 1.0, 1.0, 0.0],
+            environment_diffuse_intensity: [0.0, 0.0, 0.0, 0.0],
+            environment_specular_intensity: [0.0, 0.0, 0.0, 0.0],
+        }
+    }
+}
 
 #[derive(Default)]
 pub(super) struct PreparedLights {
@@ -13,6 +62,7 @@ struct PreparedDirectionalLight {
     color: Color,
     direction: Vec3,
     illuminance_lux: f32,
+    casts_shadows: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -43,6 +93,7 @@ impl PreparedLights {
                     color: light.color(),
                     direction: light_direction(transform),
                     illuminance_lux: light.illuminance_lux(),
+                    casts_shadows: light.casts_shadows(),
                 }),
                 Light::Point(light) => lights.point.push(PreparedPointLight {
                     color: light.color(),
@@ -67,28 +118,107 @@ impl PreparedLights {
     fn has_direct_lights(&self) -> bool {
         !self.directional.is_empty() || !self.point.is_empty() || !self.spot.is_empty()
     }
+
+    pub(super) fn primary_shadow_ray_direction(&self) -> Option<Vec3> {
+        self.directional
+            .iter()
+            .find(|light| light.casts_shadows)
+            .map(|light| negate_vec3(light.direction))
+    }
+
+    pub(super) fn gpu_uniform(
+        &self,
+        environment: PreparedEnvironmentLighting,
+    ) -> PreparedGpuLightUniform {
+        let mut uniform = PreparedGpuLightUniform::default();
+        if let Some(light) = self.directional.first() {
+            uniform.directional_light_direction_intensity = [
+                light.direction.x,
+                light.direction.y,
+                light.direction.z,
+                (light.illuminance_lux / 10_000.0).clamp(0.0, 8.0),
+            ];
+            uniform.directional_light_color_count = [
+                light.color.r,
+                light.color.g,
+                light.color.b,
+                self.directional.len() as f32,
+            ];
+        }
+        if let Some(light) = self.point.first() {
+            uniform.point_light_position_intensity = [
+                light.position.x,
+                light.position.y,
+                light.position.z,
+                (light.intensity_candela / 100.0).clamp(0.0, 8.0),
+            ];
+            uniform.point_light_color_range = [
+                light.color.r,
+                light.color.g,
+                light.color.b,
+                light.range.unwrap_or(0.0).max(0.0),
+            ];
+        }
+        if let Some(light) = self.spot.first() {
+            uniform.spot_light_position_intensity = [
+                light.position.x,
+                light.position.y,
+                light.position.z,
+                (light.intensity_candela / 100.0).clamp(0.0, 8.0),
+            ];
+            uniform.spot_light_direction_cones =
+                [light.direction.x, light.direction.y, light.direction.z, 0.0];
+            uniform.spot_light_cone_range = [
+                light.inner_cone_cos,
+                light.outer_cone_cos,
+                light.range.unwrap_or(0.0).max(0.0),
+                self.spot.len() as f32,
+            ];
+            uniform.spot_light_color_range = [light.color.r, light.color.g, light.color.b, 0.0];
+        }
+        if environment.is_active() {
+            uniform.environment_diffuse_intensity = environment.gpu_diffuse_intensity();
+            uniform.environment_specular_intensity = environment.gpu_specular_intensity();
+        }
+        uniform
+    }
+}
+
+pub(in crate::render) fn collect_gpu_light_uniform(
+    scene: &Scene,
+    origin_shift: Vec3,
+    environment: Option<&EnvironmentDesc>,
+) -> PreparedGpuLightUniform {
+    PreparedLights::from_scene(scene, origin_shift)
+        .gpu_uniform(PreparedEnvironmentLighting::from_environment(environment))
 }
 
 pub(super) fn material_color(
     material: &MaterialDesc,
-    position: Vec3,
-    normal: Vec3,
     lights: &PreparedLights,
+    input: MaterialShadingInput,
 ) -> Color {
-    let base = material.base_color();
+    let base = multiply_color(material.base_color(), input.base_color_texture);
     let mut color = match material.kind() {
         MaterialKind::Unlit => base,
-        MaterialKind::PbrMetallicRoughness if lights.has_direct_lights() => {
-            shade_pbr_base_color(base, position, normal, lights)
+        MaterialKind::PbrMetallicRoughness
+            if lights.has_direct_lights() || input.environment.is_active() =>
+        {
+            let mut color = shade_pbr_base_color(material, base, lights, input);
+            let occlusion = input.occlusion_texture.clamp(0.0, 1.0);
+            color.r *= occlusion;
+            color.g *= occlusion;
+            color.b *= occlusion;
+            color
         }
         MaterialKind::PbrMetallicRoughness => base,
         MaterialKind::Line | MaterialKind::Wireframe | MaterialKind::Edge => base,
     };
     let emissive = material.emissive();
     let emissive_strength = material.emissive_strength();
-    color.r += emissive.r * emissive_strength;
-    color.g += emissive.g * emissive_strength;
-    color.b += emissive.b * emissive_strength;
+    color.r += emissive.r * input.emissive_texture.r * emissive_strength;
+    color.g += emissive.g * input.emissive_texture.g * emissive_strength;
+    color.b += emissive.b * input.emissive_texture.b * emissive_strength;
     match material.alpha_mode() {
         AlphaMode::Opaque => color.a = 1.0,
         AlphaMode::Blend => {}
@@ -98,30 +228,62 @@ pub(super) fn material_color(
 }
 
 fn shade_pbr_base_color(
+    material: &MaterialDesc,
     base: Color,
-    position: Vec3,
-    normal: Vec3,
     lights: &PreparedLights,
+    input: MaterialShadingInput,
 ) -> Color {
-    let normal = normalize_or(normal, Vec3::new(0.0, 0.0, 1.0));
-    let mut irradiance = Vec3::ZERO;
+    let normal = normalize_or(input.normal, Vec3::new(0.0, 0.0, 1.0));
+    let view = input
+        .camera_position
+        .map(|camera| {
+            normalize_or(
+                subtract_vec3(camera, input.position),
+                Vec3::new(0.0, 0.0, 1.0),
+            )
+        })
+        .unwrap_or(Vec3::new(0.0, 0.0, 1.0));
+    let base_rgb = Vec3::new(base.r, base.g, base.b);
+    let metallic = clamp_unit(material.metallic_factor() * input.metallic_roughness_texture.0);
+    let roughness =
+        (material.roughness_factor() * input.metallic_roughness_texture.1).clamp(0.04, 1.0);
+    let mut shaded = Vec3::ZERO;
 
     for light in &lights.directional {
         let incoming = negate_vec3(light.direction);
-        let strength = dot_vec3(normal, incoming).max(0.0)
-            * (light.illuminance_lux / 10_000.0).clamp(0.0, 8.0);
-        irradiance = add_vec3(irradiance, scale_color(light.color, strength));
+        let shadow_factor = if light.casts_shadows {
+            input.directional_shadow_factor.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        let radiance = scale_color(
+            light.color,
+            (light.illuminance_lux / 10_000.0).clamp(0.0, 8.0) * shadow_factor,
+        );
+        shaded = add_vec3(
+            shaded,
+            pbr_light_contribution(
+                base_rgb, metallic, roughness, normal, view, incoming, radiance,
+            ),
+        );
     }
     for light in &lights.point {
-        let to_light = subtract_vec3(light.position, position);
+        let to_light = subtract_vec3(light.position, input.position);
         let incoming = normalize_or(to_light, Vec3::ZERO);
-        let strength = dot_vec3(normal, incoming).max(0.0)
-            * (light.intensity_candela / 100.0).clamp(0.0, 8.0)
-            * distance_attenuation(to_light, light.range);
-        irradiance = add_vec3(irradiance, scale_color(light.color, strength));
+        let radiance = scale_color(
+            light.color,
+            (light.intensity_candela / 100.0).clamp(0.0, 8.0)
+                * distance_attenuation(to_light, light.range),
+        );
+        shaded = add_vec3(
+            shaded,
+            pbr_light_contribution(
+                base_rgb, metallic, roughness, normal, view, incoming, radiance,
+            ),
+        );
     }
     for light in &lights.spot {
-        let to_light = subtract_vec3(light.position, position);
+        let to_light = subtract_vec3(light.position, input.position);
         let incoming = normalize_or(to_light, Vec3::ZERO);
         let to_surface = negate_vec3(incoming);
         let cone = spot_cone_attenuation(
@@ -129,18 +291,87 @@ fn shade_pbr_base_color(
             light.inner_cone_cos,
             light.outer_cone_cos,
         );
-        let strength = dot_vec3(normal, incoming).max(0.0)
-            * (light.intensity_candela / 100.0).clamp(0.0, 8.0)
-            * distance_attenuation(to_light, light.range)
-            * cone;
-        irradiance = add_vec3(irradiance, scale_color(light.color, strength));
+        let radiance = scale_color(
+            light.color,
+            (light.intensity_candela / 100.0).clamp(0.0, 8.0)
+                * distance_attenuation(to_light, light.range)
+                * cone,
+        );
+        shaded = add_vec3(
+            shaded,
+            pbr_light_contribution(
+                base_rgb, metallic, roughness, normal, view, incoming, radiance,
+            ),
+        );
     }
+    shaded = add_vec3(
+        shaded,
+        input
+            .environment
+            .pbr_contribution(base_rgb, metallic, roughness, normal, view),
+    );
 
+    Color::from_linear_rgba(shaded.x, shaded.y, shaded.z, base.a)
+}
+
+fn multiply_color(left: Color, right: Color) -> Color {
     Color::from_linear_rgba(
-        base.r * irradiance.x,
-        base.g * irradiance.y,
-        base.b * irradiance.z,
-        base.a,
+        left.r * right.r,
+        left.g * right.g,
+        left.b * right.b,
+        left.a * right.a,
+    )
+}
+
+fn pbr_light_contribution(
+    base: Vec3,
+    metallic: f32,
+    roughness: f32,
+    normal: Vec3,
+    view: Vec3,
+    incoming: Vec3,
+    radiance: Vec3,
+) -> Vec3 {
+    let incoming = normalize_or(incoming, Vec3::ZERO);
+    let n_dot_l = dot_vec3(normal, incoming).max(0.0);
+    if n_dot_l <= f32::EPSILON {
+        return Vec3::ZERO;
+    }
+    let n_dot_v = dot_vec3(normal, view).max(0.001);
+    let half_vector = normalize_or(add_vec3(view, incoming), normal);
+    let n_dot_h = dot_vec3(normal, half_vector).max(0.0);
+    let v_dot_h = dot_vec3(view, half_vector).max(0.0);
+    let alpha = roughness * roughness;
+    let alpha_squared = alpha * alpha;
+    let distribution_denominator = n_dot_h * n_dot_h * (alpha_squared - 1.0) + 1.0;
+    let distribution =
+        alpha_squared / (PI * distribution_denominator * distribution_denominator).max(0.0001);
+    let k = ((roughness + 1.0) * (roughness + 1.0)) / 8.0;
+    let geometry = geometry_schlick_ggx(n_dot_v, k) * geometry_schlick_ggx(n_dot_l, k);
+    let f0 = mix_vec3(Vec3::new(0.04, 0.04, 0.04), base, metallic);
+    let fresnel = fresnel_schlick(v_dot_h, f0);
+    let specular_scale = distribution * geometry / (4.0 * n_dot_v * n_dot_l).max(0.0001);
+    let specular = scale_vec3(fresnel, specular_scale);
+    let diffuse_energy = scale_vec3(
+        subtract_vec3(Vec3::new(1.0, 1.0, 1.0), fresnel),
+        1.0 - metallic,
+    );
+    let diffuse = scale_vec3(multiply_vec3(diffuse_energy, base), PI.recip());
+    scale_vec3(
+        multiply_vec3(add_vec3(diffuse, specular), radiance),
+        n_dot_l,
+    )
+}
+
+fn geometry_schlick_ggx(n_dot: f32, k: f32) -> f32 {
+    n_dot / (n_dot * (1.0 - k) + k).max(0.0001)
+}
+
+fn fresnel_schlick(cos_theta: f32, f0: Vec3) -> Vec3 {
+    let factor = (1.0 - cos_theta.clamp(0.0, 1.0)).powi(5);
+    add_vec3(
+        f0,
+        scale_vec3(subtract_vec3(Vec3::new(1.0, 1.0, 1.0), f0), factor),
     )
 }
 
@@ -205,6 +436,27 @@ fn normalize_or(vector: Vec3, fallback: Vec3) -> Vec3 {
 
 fn scale_color(color: Color, scale: f32) -> Vec3 {
     Vec3::new(color.r * scale, color.g * scale, color.b * scale)
+}
+
+fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
+    Vec3::new(value.x * scale, value.y * scale, value.z * scale)
+}
+
+fn multiply_vec3(left: Vec3, right: Vec3) -> Vec3 {
+    Vec3::new(left.x * right.x, left.y * right.y, left.z * right.z)
+}
+
+fn mix_vec3(left: Vec3, right: Vec3, amount: f32) -> Vec3 {
+    let amount = clamp_unit(amount);
+    add_vec3(scale_vec3(left, 1.0 - amount), scale_vec3(right, amount))
+}
+
+fn clamp_unit(value: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
 }
 
 fn distance_attenuation(to_light: Vec3, range: Option<f32>) -> f32 {

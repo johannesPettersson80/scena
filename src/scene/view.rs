@@ -1,6 +1,12 @@
+use crate::assets::Assets;
 use crate::diagnostics::LookupError;
 use crate::geometry::Aabb;
 
+use super::transforms::{compose_transform, local_transform_from_world};
+use super::view_math::{
+    inverse_unit_quat, look_rotation, merge_optional_bounds, multiply_quat, normalize_or,
+    positive_min, positive_or, subtract_vec3, transform_aabb, union_aabb,
+};
 use super::{
     Camera, CameraKey, ImportAnchor, NodeKey, NodeKind, PerspectiveCamera, Quat, Scene,
     SceneImport, Transform, Vec3,
@@ -34,7 +40,7 @@ impl Scene {
             Camera::Perspective(camera) => {
                 let half_vertical_fov = camera.vertical_fov.radians() * 0.5;
                 let half_horizontal_fov =
-                    (half_vertical_fov.tan() * camera.aspect.max(0.001)).atan();
+                    (half_vertical_fov.tan() * positive_or(camera.aspect, 1.0)).atan();
                 let limiting_half_fov = half_vertical_fov.min(half_horizontal_fov).max(0.001);
                 let distance = radius / limiting_half_fov.tan() * FRAME_PADDING;
                 let depth_radius = radius * FRAME_PADDING;
@@ -67,6 +73,7 @@ impl Scene {
             }
         };
 
+        let transform = self.local_transform_for_world(camera_node, transform)?;
         self.set_node_transform_and_mark_changed(camera_node, transform)
     }
 
@@ -93,16 +100,160 @@ impl Scene {
         self.frame(camera, bounds)
     }
 
+    /// Frames all currently visible mesh bounds known to the scene.
+    pub fn frame_all(&mut self, camera: CameraKey) -> Result<(), LookupError> {
+        let bounds = self
+            .scene_bounds_world()
+            .ok_or(LookupError::ImportHasNoBounds)?;
+        self.frame(camera, bounds)
+    }
+
+    /// Frames all visible mesh and instance bounds, resolving direct geometry handles through
+    /// `Assets`.
+    pub fn frame_all_with_assets<F>(
+        &mut self,
+        camera: CameraKey,
+        assets: &Assets<F>,
+    ) -> Result<(), LookupError> {
+        let bounds = self
+            .scene_bounds_world()
+            .into_iter()
+            .chain(self.asset_backed_scene_bounds_world(assets))
+            .reduce(union_aabb)
+            .ok_or(LookupError::ImportHasNoBounds)?;
+        self.frame(camera, bounds)
+    }
+
+    /// Frames the world-space bounds of a node and any bounded descendants.
+    pub fn frame_node(&mut self, camera: CameraKey, node: NodeKey) -> Result<(), LookupError> {
+        if !self.nodes.contains_key(node) {
+            return Err(LookupError::NodeNotFound(node));
+        }
+        let bounds = self
+            .node_subtree_bounds_world(node)
+            .ok_or(LookupError::ImportHasNoBounds)?;
+        self.frame(camera, bounds)
+    }
+
+    /// Frames a node or bounded descendants, resolving direct geometry handles through
+    /// `Assets`.
+    pub fn frame_node_with_assets<F>(
+        &mut self,
+        camera: CameraKey,
+        node: NodeKey,
+        assets: &Assets<F>,
+    ) -> Result<(), LookupError> {
+        if !self.nodes.contains_key(node) {
+            return Err(LookupError::NodeNotFound(node));
+        }
+        let bounds = self
+            .node_subtree_bounds_world(node)
+            .into_iter()
+            .chain(self.asset_backed_node_subtree_bounds_world(node, assets))
+            .reduce(union_aabb)
+            .ok_or(LookupError::ImportHasNoBounds)?;
+        self.frame(camera, bounds)
+    }
+
+    fn scene_bounds_world(&self) -> Option<Aabb> {
+        self.mesh_bounds_nodes()
+            .filter_map(|(node, bounds)| {
+                let transform = self.world_transform(node)?;
+                Some(transform_aabb(bounds, transform))
+            })
+            .reduce(union_aabb)
+    }
+
+    fn node_subtree_bounds_world(&self, node: NodeKey) -> Option<Aabb> {
+        let node_ref = self.nodes.get(node)?;
+        let local_bounds = self.node_bounds.get(&node).and_then(|bounds| {
+            let transform = self.world_transform(node)?;
+            Some(transform_aabb(*bounds, transform))
+        });
+        node_ref
+            .children
+            .iter()
+            .filter_map(|child| self.node_subtree_bounds_world(*child))
+            .fold(local_bounds, |bounds, child_bounds| {
+                Some(match bounds {
+                    Some(bounds) => union_aabb(bounds, child_bounds),
+                    None => child_bounds,
+                })
+            })
+    }
+
+    fn asset_backed_scene_bounds_world<F>(&self, assets: &Assets<F>) -> Option<Aabb> {
+        let mut bounds = None;
+        for (node, node_ref) in self.nodes.iter() {
+            if !self.visible_for_active_camera(node) {
+                continue;
+            }
+            if let Some(node_bounds) = self.asset_backed_node_bounds_world(node, node_ref, assets) {
+                bounds = Some(merge_optional_bounds(bounds, node_bounds));
+            }
+        }
+        bounds
+    }
+
+    fn asset_backed_node_subtree_bounds_world<F>(
+        &self,
+        node: NodeKey,
+        assets: &Assets<F>,
+    ) -> Option<Aabb> {
+        let node_ref = self.nodes.get(node)?;
+        node_ref
+            .children
+            .iter()
+            .filter_map(|child| self.asset_backed_node_subtree_bounds_world(*child, assets))
+            .fold(
+                self.asset_backed_node_bounds_world(node, node_ref, assets),
+                |bounds, child_bounds| Some(merge_optional_bounds(bounds, child_bounds)),
+            )
+    }
+
+    fn asset_backed_node_bounds_world<F>(
+        &self,
+        node: NodeKey,
+        node_ref: &super::Node,
+        assets: &Assets<F>,
+    ) -> Option<Aabb> {
+        match &node_ref.kind {
+            NodeKind::Mesh(mesh) => {
+                let geometry = assets.geometry(mesh.geometry())?;
+                let transform = self.world_transform(node)?;
+                Some(transform_aabb(geometry.bounds(), transform))
+            }
+            NodeKind::InstanceSet(instance_set) => {
+                let instance_set = self.instance_sets.get(*instance_set)?;
+                let geometry = assets.geometry(instance_set.geometry())?;
+                let node_transform = self.world_transform(node)?;
+                instance_set
+                    .instances()
+                    .map(|instance| {
+                        transform_aabb(
+                            geometry.bounds(),
+                            compose_transform(node_transform, instance.transform()),
+                        )
+                    })
+                    .reduce(union_aabb)
+            }
+            NodeKind::Empty
+            | NodeKind::Renderable(_)
+            | NodeKind::Model(_)
+            | NodeKind::Label(_)
+            | NodeKind::Camera(_)
+            | NodeKind::Light(_) => None,
+        }
+    }
+
     /// Rotates the selected camera node so its local -Z axis points at `target`.
     pub fn look_at(&mut self, camera: CameraKey, target: NodeKey) -> Result<(), LookupError> {
         if !self.cameras.contains_key(camera) {
             return Err(LookupError::CameraNotFound(camera));
         }
         let target_position = self
-            .nodes
-            .get(target)
+            .world_transform(target)
             .ok_or(LookupError::NodeNotFound(target))?
-            .transform
             .translation;
         self.look_at_point(camera, target_position)
     }
@@ -119,31 +270,46 @@ impl Scene {
         if !self.cameras.contains_key(camera) {
             return Err(LookupError::CameraNotFound(camera));
         }
-        let mut camera_transform = self
+        let camera_node_desc = self
             .nodes
             .get(camera_node)
-            .ok_or(LookupError::CameraNotFound(camera))?
-            .transform;
+            .ok_or(LookupError::CameraNotFound(camera))?;
+        let mut camera_transform = camera_node_desc.transform;
+        let camera_parent = camera_node_desc.parent;
+        let camera_world = self
+            .world_transform(camera_node)
+            .ok_or(LookupError::CameraNotFound(camera))?;
         let forward = normalize_or(
-            subtract_vec3(target_position, camera_transform.translation),
+            subtract_vec3(target_position, camera_world.translation),
             Vec3::new(0.0, 0.0, -1.0),
         );
+        let desired_world_rotation = look_rotation(forward, Vec3::new(0.0, 1.0, 0.0));
 
-        camera_transform.rotation = look_rotation(forward, Vec3::new(0.0, 1.0, 0.0));
+        camera_transform.rotation = if let Some(parent) = camera_parent {
+            let parent_world = self
+                .world_transform(parent)
+                .ok_or(LookupError::NodeNotFound(parent))?;
+            multiply_quat(
+                inverse_unit_quat(parent_world.rotation),
+                desired_world_rotation,
+            )
+        } else {
+            desired_world_rotation
+        };
         self.set_node_transform_and_mark_changed(camera_node, camera_transform)
     }
 
     pub fn center_on(&mut self, node: NodeKey, center: Vec3) -> Result<(), LookupError> {
-        let mut transform = self
-            .nodes
-            .get(node)
-            .ok_or(LookupError::NodeNotFound(node))?
-            .transform;
-        transform.translation = center;
+        let mut world_transform = self
+            .world_transform(node)
+            .ok_or(LookupError::NodeNotFound(node))?;
+        world_transform.translation = center;
+        let transform = self.local_transform_for_world(node, world_transform)?;
         self.set_node_transform_and_mark_changed(node, transform)
     }
 
     pub fn align_to(&mut self, node: NodeKey, transform: Transform) -> Result<(), LookupError> {
+        let transform = self.local_transform_for_world(node, transform)?;
         self.set_node_transform_and_mark_changed(node, transform)
     }
 
@@ -164,14 +330,33 @@ impl Scene {
             target_half.y / source_half.y.max(f32::EPSILON),
             target_half.z / source_half.z.max(f32::EPSILON),
         ]);
-        let mut transform = self
+        let mut world_transform = self
+            .world_transform(node)
+            .ok_or(LookupError::NodeNotFound(node))?;
+        world_transform.translation = target.center();
+        world_transform.scale = Vec3::new(scale, scale, scale);
+        let transform = self.local_transform_for_world(node, world_transform)?;
+        self.set_node_transform_and_mark_changed(node, transform)
+    }
+
+    fn local_transform_for_world(
+        &self,
+        node: NodeKey,
+        world_transform: Transform,
+    ) -> Result<Transform, LookupError> {
+        let parent = self
             .nodes
             .get(node)
             .ok_or(LookupError::NodeNotFound(node))?
-            .transform;
-        transform.translation = target.center();
-        transform.scale = Vec3::new(scale, scale, scale);
-        self.set_node_transform_and_mark_changed(node, transform)
+            .parent;
+        let Some(parent) = parent else {
+            return Ok(world_transform);
+        };
+        let parent_world = self
+            .world_transform(parent)
+            .ok_or(LookupError::NodeNotFound(parent))?;
+        local_transform_from_world(parent_world, world_transform)
+            .ok_or(LookupError::NonInvertibleParentTransform { node, parent })
     }
 
     fn set_node_transform_and_mark_changed(
@@ -194,94 +379,3 @@ impl Scene {
 
 const FRAME_PADDING: f32 = 1.15;
 const MIN_FRAME_RADIUS: f32 = 0.5;
-
-fn look_rotation(forward: Vec3, up: Vec3) -> Quat {
-    let right = normalize_or(cross_vec3(forward, up), Vec3::new(1.0, 0.0, 0.0));
-    let up = cross_vec3(right, forward);
-    quat_from_basis(right, up, scale_vec3(forward, -1.0))
-}
-
-fn quat_from_basis(right: Vec3, up: Vec3, back: Vec3) -> Quat {
-    let trace = right.x + up.y + back.z;
-    let quat = if trace > 0.0 {
-        let scale = (trace + 1.0).sqrt() * 2.0;
-        Quat {
-            w: 0.25 * scale,
-            x: (up.z - back.y) / scale,
-            y: (back.x - right.z) / scale,
-            z: (right.y - up.x) / scale,
-        }
-    } else if right.x > up.y && right.x > back.z {
-        let scale = (1.0 + right.x - up.y - back.z).sqrt() * 2.0;
-        Quat {
-            w: (up.z - back.y) / scale,
-            x: 0.25 * scale,
-            y: (up.x + right.y) / scale,
-            z: (back.x + right.z) / scale,
-        }
-    } else if up.y > back.z {
-        let scale = (1.0 + up.y - right.x - back.z).sqrt() * 2.0;
-        Quat {
-            w: (back.x - right.z) / scale,
-            x: (up.x + right.y) / scale,
-            y: 0.25 * scale,
-            z: (back.y + up.z) / scale,
-        }
-    } else {
-        let scale = (1.0 + back.z - right.x - up.y).sqrt() * 2.0;
-        Quat {
-            w: (right.y - up.x) / scale,
-            x: (back.x + right.z) / scale,
-            y: (back.y + up.z) / scale,
-            z: 0.25 * scale,
-        }
-    };
-    normalize_quat(quat)
-}
-
-fn normalize_quat(quat: Quat) -> Quat {
-    let length = (quat.x * quat.x + quat.y * quat.y + quat.z * quat.z + quat.w * quat.w).sqrt();
-    if length <= f32::EPSILON || !length.is_finite() {
-        Quat::IDENTITY
-    } else {
-        Quat {
-            x: quat.x / length,
-            y: quat.y / length,
-            z: quat.z / length,
-            w: quat.w / length,
-        }
-    }
-}
-
-fn normalize_or(value: Vec3, fallback: Vec3) -> Vec3 {
-    let length = (value.x * value.x + value.y * value.y + value.z * value.z).sqrt();
-    if length <= f32::EPSILON || !length.is_finite() {
-        fallback
-    } else {
-        scale_vec3(value, 1.0 / length)
-    }
-}
-
-fn cross_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(
-        left.y * right.z - left.z * right.y,
-        left.z * right.x - left.x * right.z,
-        left.x * right.y - left.y * right.x,
-    )
-}
-
-fn subtract_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(left.x - right.x, left.y - right.y, left.z - right.z)
-}
-
-fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
-    Vec3::new(value.x * scale, value.y * scale, value.z * scale)
-}
-
-fn positive_min(values: [f32; 3]) -> f32 {
-    values
-        .into_iter()
-        .filter(|value| value.is_finite() && *value > 0.0)
-        .min_by(f32::total_cmp)
-        .unwrap_or(1.0)
-}

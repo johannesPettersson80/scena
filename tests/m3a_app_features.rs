@@ -268,7 +268,7 @@ fn scene_import_anchor_lookups_parse_gltf_extras_and_stale() {
         .expect("unique anchor lookup succeeds");
     assert_eq!(inspect.node(), child);
     assert_eq!(inspect.name(), "inspect");
-    assert_vec3_near(inspect.transform().translation, Vec3::new(0.0, 0.5, 0.0));
+    assert_vec3_near(inspect.transform().translation, Vec3::new(0.0, 50.0, 0.0));
     assert_eq!(
         import
             .first_anchor("mount")
@@ -622,7 +622,7 @@ fn scene_pick_returns_typed_hit_target_for_renderable_triangle() {
         .add_perspective_camera(
             scene.root(),
             PerspectiveCamera::default(),
-            Transform::default(),
+            Transform::at(Vec3::new(0.0, 0.0, 2.0)),
         )
         .expect("camera inserts");
     let target = scene
@@ -1406,7 +1406,7 @@ fn scene_import_exposes_named_pivots_and_diagnostic_overlays() {
     let pivot = import.pivot("RotatingArm").expect("pivot lookup succeeds");
     assert_eq!(pivot.node(), arm);
     assert_eq!(pivot.name(), Some("pivot"));
-    assert_vec3_near(pivot.transform().translation, Vec3::new(0.25, 0.0, 0.0));
+    assert_vec3_near(pivot.transform().translation, Vec3::new(25.0, 0.0, 0.0));
 
     let overlays = import
         .diagnostic_overlays()

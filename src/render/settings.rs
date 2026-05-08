@@ -86,7 +86,11 @@ impl Renderer {
     }
 
     pub fn set_exposure_ev(&mut self, exposure_ev: f32) {
+        let before = self.output.exposure_ev();
         self.output.set_exposure_ev(exposure_ev);
+        if self.output.exposure_ev() != before {
+            self.mark_output_changed();
+        }
     }
 
     pub fn tonemapper(&self) -> Tonemapper {
@@ -94,7 +98,10 @@ impl Renderer {
     }
 
     pub fn set_tonemapper(&mut self, tonemapper: Tonemapper) {
-        self.output.set_tonemapper(tonemapper);
+        if self.output.tonemapper() != tonemapper {
+            self.output.set_tonemapper(tonemapper);
+            self.mark_output_changed();
+        }
     }
 
     pub fn debug_overlay(&self) -> DebugOverlay {
@@ -102,6 +109,10 @@ impl Renderer {
     }
 
     pub fn set_debug(&mut self, overlay: DebugOverlay) {
+        self.set_debug_overlay(overlay);
+    }
+
+    pub fn set_debug_overlay(&mut self, overlay: DebugOverlay) {
         if self.debug_overlay != overlay {
             self.debug_overlay = overlay;
             self.debug_revision = self.debug_revision.saturating_add(1);
@@ -140,5 +151,9 @@ impl Renderer {
             self.environment = None;
             self.environment_revision = self.environment_revision.saturating_add(1);
         }
+    }
+
+    fn mark_output_changed(&mut self) {
+        self.render_generation = self.render_generation.saturating_add(1);
     }
 }

@@ -1,4 +1,4 @@
-use crate::geometry::{Primitive, Vertex};
+use crate::geometry::{Primitive, PrimitiveVertexAttributes, Vertex};
 use crate::scene::{Quat, Transform, Vec3};
 
 pub(super) fn transform_primitive(
@@ -7,11 +7,20 @@ pub(super) fn transform_primitive(
     origin_shift: Vec3,
 ) -> Primitive {
     let [a, b, c] = primitive.vertices();
-    Primitive::triangle([
-        transform_vertex(*a, transform, origin_shift),
-        transform_vertex(*b, transform, origin_shift),
-        transform_vertex(*c, transform, origin_shift),
-    ])
+    let [attributes_a, attributes_b, attributes_c] = primitive.vertex_attributes();
+    Primitive::triangle_with_attributes(
+        [
+            transform_vertex(*a, transform, origin_shift),
+            transform_vertex(*b, transform, origin_shift),
+            transform_vertex(*c, transform, origin_shift),
+        ],
+        [
+            transform_vertex_attributes(*attributes_a, transform),
+            transform_vertex_attributes(*attributes_b, transform),
+            transform_vertex_attributes(*attributes_c, transform),
+        ],
+    )
+    .with_render_material_slot(primitive.render_material_slot())
 }
 
 pub(super) fn compose_transform(parent: Transform, child: Transform) -> Transform {
@@ -59,6 +68,19 @@ fn transform_vertex(vertex: Vertex, transform: Transform, origin_shift: Vec3) ->
     Vertex {
         position: transform_position(vertex.position, transform, origin_shift),
         color: vertex.color,
+    }
+}
+
+fn transform_vertex_attributes(
+    attributes: PrimitiveVertexAttributes,
+    transform: Transform,
+) -> PrimitiveVertexAttributes {
+    PrimitiveVertexAttributes {
+        normal: transform_normal(attributes.normal, transform),
+        tex_coord0: attributes.tex_coord0,
+        tangent: transform_normal(attributes.tangent, transform),
+        tangent_handedness: attributes.tangent_handedness,
+        shadow_visibility: attributes.shadow_visibility,
     }
 }
 

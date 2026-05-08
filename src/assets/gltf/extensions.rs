@@ -87,11 +87,17 @@ fn optional_extension_help(extension: &str) -> &'static str {
         "KHR_materials_clearcoat"
         | "KHR_materials_transmission"
         | "KHR_materials_ior"
-        | "KHR_materials_volume" => {
+        | "KHR_materials_volume"
+        | "KHR_materials_sheen"
+        | "KHR_materials_specular"
+        | "KHR_materials_iridescence" => {
             "material extension is optional in this glTF and currently uses structured degradation; required usage fails during asset load"
         }
         "KHR_materials_variants" => {
             "material variants are v1.x-deferred and currently use structured degradation; metadata remains visible through extensions_used"
+        }
+        "EXT_texture_webp" => {
+            "WebP texture extension is v1.x-deferred; plain .webp image paths are accepted but EXT_texture_webp texture-source rebinding is not implemented"
         }
         "KHR_texture_basisu" => {
             if cfg!(feature = "ktx2") {
@@ -133,7 +139,11 @@ fn optional_extension_decoder_policy(extension: &str) -> GltfDecoderPolicy {
         | "KHR_materials_transmission"
         | "KHR_materials_ior"
         | "KHR_materials_volume"
-        | "KHR_materials_variants" => GltfDecoderPolicy::V1xDeferred,
+        | "KHR_materials_sheen"
+        | "KHR_materials_specular"
+        | "KHR_materials_iridescence"
+        | "KHR_materials_variants"
+        | "EXT_texture_webp" => GltfDecoderPolicy::V1xDeferred,
         _ => GltfDecoderPolicy::V1xDeferred,
     }
 }

@@ -7,24 +7,38 @@ struct VertexIn {
     @location(1) color: vec4<f32>,
 };
 
+struct CameraUniform {
+    world_from_model: mat4x4<f32>,
+    normal_from_model: mat4x4<f32>,
+    view_from_world: mat4x4<f32>,
+    clip_from_view: mat4x4<f32>,
+    clip_from_world: mat4x4<f32>,
+    exposure_padding: vec4<f32>,
+};
+
+@group(0) @binding(0)
+var<uniform> camera: CameraUniform;
+
 @vertex
 fn vs_main(in: VertexIn) -> @builtin(position) vec4<f32> {
-    return vec4<f32>(in.position, 1.0);
+    return camera.clip_from_view * camera.view_from_world * camera.world_from_model * vec4<f32>(in.position, 1.0);
 }
 "#;
 
 #[derive(Debug)]
 pub(super) struct DepthPrepassResources {
     texture: wgpu::Texture,
-    view: wgpu::TextureView,
+    pub(super) view: wgpu::TextureView,
     pipeline: wgpu::RenderPipeline,
     clear_depth: f32,
+    pub(super) color_compare: wgpu::CompareFunction,
 }
 
 pub(super) fn create_depth_prepass_resources(
     device: &wgpu::Device,
     target: RasterTarget,
     reversed_z: bool,
+    camera_bind_group_layout: &wgpu::BindGroupLayout,
 ) -> DepthPrepassResources {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("scena.m2.depth_prepass"),
@@ -47,13 +61,18 @@ pub(super) fn create_depth_prepass_resources(
     });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("scena.m2.depth_prepass_pipeline_layout"),
-        bind_group_layouts: &[],
+        bind_group_layouts: &[Some(camera_bind_group_layout)],
         immediate_size: 0,
     });
     let vertex_buffer = wgpu::VertexBufferLayout {
         array_stride: VERTEX_BYTE_LEN as u64,
         step_mode: wgpu::VertexStepMode::Vertex,
         attributes: &VERTEX_ATTRIBUTES,
+    };
+    let color_compare = if reversed_z {
+        wgpu::CompareFunction::GreaterEqual
+    } else {
+        wgpu::CompareFunction::LessEqual
     };
     let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("scena.m2.depth_prepass_pipeline"),
@@ -68,11 +87,7 @@ pub(super) fn create_depth_prepass_resources(
         depth_stencil: Some(wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
             depth_write_enabled: Some(true),
-            depth_compare: Some(if reversed_z {
-                wgpu::CompareFunction::GreaterEqual
-            } else {
-                wgpu::CompareFunction::LessEqual
-            }),
+            depth_compare: Some(color_compare),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
@@ -87,6 +102,7 @@ pub(super) fn create_depth_prepass_resources(
         view,
         pipeline,
         clear_depth: if reversed_z { 0.0 } else { 1.0 },
+        color_compare,
     }
 }
 
@@ -94,6 +110,7 @@ pub(super) fn encode_depth_prepass(
     encoder: &mut wgpu::CommandEncoder,
     resources: &DepthPrepassResources,
     vertex_buffer: &wgpu::Buffer,
+    camera_bind_group: &wgpu::BindGroup,
     vertex_count: u32,
 ) {
     let depth_attachment = Some(wgpu::RenderPassDepthStencilAttachment {
@@ -113,6 +130,7 @@ pub(super) fn encode_depth_prepass(
         multiview_mask: None,
     });
     pass.set_pipeline(&resources.pipeline);
+    pass.set_bind_group(0, camera_bind_group, &[]);
     pass.set_vertex_buffer(0, vertex_buffer.slice(..));
     pass.draw(0..vertex_count, 0..1);
 }

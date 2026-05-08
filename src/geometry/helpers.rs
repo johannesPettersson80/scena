@@ -95,6 +95,19 @@ impl GeometryDesc {
             vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         )
     }
+
+    pub fn normal_lines(source: &GeometryDesc, length: f32) -> Self {
+        let length = positive_or(length, 1.0);
+        let mut positions = Vec::with_capacity(source.vertices().len() * 2);
+        let mut indices = Vec::with_capacity(source.vertices().len() * 2);
+        for vertex in source.vertices() {
+            let base = positions.len() as u32;
+            positions.push(vertex.position);
+            positions.push(add_vec3(vertex.position, scale_vec3(vertex.normal, length)));
+            indices.extend_from_slice(&[base, base + 1]);
+        }
+        Self::lines_from_positions(positions, indices)
+    }
 }
 
 fn marker_cross(size: f32) -> GeometryDesc {
@@ -118,4 +131,12 @@ fn positive_or(value: f32, fallback: f32) -> f32 {
     } else {
         fallback
     }
+}
+
+fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
+    Vec3::new(left.x + right.x, left.y + right.y, left.z + right.z)
+}
+
+fn scale_vec3(value: Vec3, factor: f32) -> Vec3 {
+    Vec3::new(value.x * factor, value.y * factor, value.z * factor)
 }

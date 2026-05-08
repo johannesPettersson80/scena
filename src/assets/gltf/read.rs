@@ -12,7 +12,8 @@ use super::super::{AssetPath, AssetStorage, MaterialHandle};
 use super::SceneAssetMesh;
 use super::accessor::{
     GltfAccessor, GltfBufferView, parse_error, read_color_accessor, read_indices_accessor,
-    read_joints_accessor, read_vec3_accessor, read_weights_accessor, required_usize,
+    read_joints_accessor, read_vec2_accessor, read_vec3_accessor, read_vec4_accessor,
+    read_weights_accessor, required_usize,
 };
 pub(super) use textures::parse_textures;
 
@@ -256,6 +257,33 @@ fn parse_mesh_primitive(
         })
         .transpose()?
         .unwrap_or_else(|| vec![Color::WHITE; positions.len()]);
+    let tex_coords0 = attributes
+        .get("TEXCOORD_0")
+        .and_then(JsonValue::as_u64)
+        .map(|index| {
+            read_vec2_accessor(
+                path,
+                index as usize,
+                inputs.buffers,
+                inputs.buffer_views,
+                inputs.accessors,
+            )
+        })
+        .transpose()?
+        .unwrap_or_else(|| vec![[0.0, 0.0]; positions.len()]);
+    let tangents = attributes
+        .get("TANGENT")
+        .and_then(JsonValue::as_u64)
+        .map(|index| {
+            read_vec4_accessor(
+                path,
+                index as usize,
+                inputs.buffers,
+                inputs.buffer_views,
+                inputs.accessors,
+            )
+        })
+        .transpose()?;
     let skin = match (
         attributes.get("JOINTS_0").and_then(JsonValue::as_u64),
         attributes.get("WEIGHTS_0").and_then(JsonValue::as_u64),
@@ -324,6 +352,15 @@ fn parse_mesh_primitive(
             "NORMAL accessor count must match POSITION count",
         ));
     }
+    if tangents
+        .as_ref()
+        .is_some_and(|tangents| tangents.len() != positions.len())
+    {
+        return Err(parse_error(
+            path,
+            "TANGENT accessor count must match POSITION count",
+        ));
+    }
 
     let vertices = positions
         .into_iter()
@@ -331,12 +368,17 @@ fn parse_mesh_primitive(
         .map(|(position, normal)| GeometryVertex { position, normal })
         .collect::<Vec<_>>();
     let uses_vertex_colors = vertex_colors.iter().any(|color| *color != Color::WHITE);
-    let geometry = GeometryDesc::try_new_with_vertex_colors(
+    let geometry = GeometryDesc::try_new_with_vertex_colors_and_tex_coords(
         GeometryTopology::Triangles,
         vertices,
         indices,
         vertex_colors,
+        tex_coords0,
     )
+    .and_then(|geometry| match tangents {
+        Some(tangents) => geometry.with_tangents(tangents),
+        None => Ok(geometry),
+    })
     .and_then(|geometry| geometry.with_morph_targets(morph_targets))
     .and_then(|geometry| match skin {
         Some(skin) => geometry.with_skin(skin),

@@ -27,6 +27,12 @@ impl AssetError {
             Self::ReloadRequiresRetain { .. } => {
                 "set RetainPolicy::Always before loading assets that need hot reload"
             }
+            Self::GeometryHandleNotFound { .. }
+            | Self::MaterialHandleNotFound { .. }
+            | Self::TextureHandleNotFound { .. }
+            | Self::EnvironmentHandleNotFound { .. } => {
+                "use the same Assets collection that created the typed handle"
+            }
         }
     }
 }
@@ -40,6 +46,7 @@ impl PrepareError {
             }
             Self::GeometryNotFound { .. }
             | Self::MaterialNotFound { .. }
+            | Self::TextureNotFound { .. }
             | Self::EnvironmentNotFound { .. } => {
                 "keep the Assets collection that created the handle alive and pass it to prepare"
             }
@@ -102,6 +109,12 @@ impl LookupError {
             Self::AmbiguousAnchorName { .. } => {
                 "call anchors_named or anchors_for to choose a host node"
             }
+            Self::ConnectorNotFound { .. } => {
+                "call connectors_named or diagnostic overlays to inspect connectors"
+            }
+            Self::AmbiguousConnectorName { .. } => {
+                "call connectors_named or resolve by host node before connecting"
+            }
             Self::ClipNotFound { .. } => "call clips_named to inspect available animation clips",
             Self::AmbiguousClipName { .. } => "call clips_named to choose a specific clip",
             Self::PathNotFound { .. } => {
@@ -115,6 +128,12 @@ impl LookupError {
                 "re-resolve nodes, anchors, and clips from the replacement SceneImport"
             }
             Self::NodeIsNotMesh { .. } => "check NodeKind before using mesh-only helpers",
+            Self::NonInvertibleParentTransform { .. } => {
+                "use a finite non-zero parent scale before applying world-space placement helpers"
+            }
+            Self::GeometryNotFound { .. } => {
+                "call asset-aware helpers with the same Assets store that created or loaded the geometry"
+            }
             Self::CameraNotFound(_) => "use a CameraKey created by this Scene",
             Self::ClippingPlaneNotFound(_) => "use a ClippingPlaneKey created by this Scene",
             Self::InstanceSetNotFound(_) => "use an InstanceSetKey created by this Scene",

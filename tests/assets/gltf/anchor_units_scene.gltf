@@ -1,0 +1,17 @@
+{
+  "asset": { "version": "2.0" },
+  "nodes": [
+    {
+      "name": "UnitAnchors",
+      "extras": {
+        "scena": {
+          "anchors": [
+            { "name": "one_meter", "translation": [1000.0, 0.0, 0.0], "units": "millimeters" },
+            { "name": "one_foot", "translation": [12.0, 0.0, 0.0], "units": "inches" },
+            { "name": "two_feet", "translation": [2.0, 0.0, 0.0], "units": "feet" }
+          ]
+        }
+      }
+    }
+  ]
+}

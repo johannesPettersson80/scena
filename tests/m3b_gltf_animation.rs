@@ -226,6 +226,35 @@ fn replace_import_invalidates_animation_mixers_with_stale_error() {
 }
 
 #[test]
+fn replacement_import_rebinds_stable_animation_clip_names() {
+    let assets = animated_translation_assets();
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://models/animated-translation.gltf"))
+            .expect("animated glTF loads");
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("animated import instantiates");
+    let previous_clip = import.clip("MoveX").expect("clip resolves").clone();
+    let previous_target = previous_clip.channels()[0].target_node();
+
+    let replacement = scene
+        .replace_import(&import, &scene_asset)
+        .expect("replacement succeeds");
+    let replacement_clip = replacement
+        .replacement_clip(&previous_clip)
+        .expect("stable clip name rebinds after replacement");
+
+    assert_eq!(replacement_clip.name(), Some("MoveX"));
+    assert_ne!(replacement_clip.key(), previous_clip.key());
+    assert_ne!(
+        replacement_clip.channels()[0].target_node(),
+        previous_target,
+        "replacement clip must target replacement import-local nodes, not stale nodes"
+    );
+}
+
+#[test]
 fn gltf_animation_supports_rotation_scale_weights_and_normalizes_quaternions() {
     let assets = Assets::with_fetcher(MultiMemoryFetcher::new(vec![
         (

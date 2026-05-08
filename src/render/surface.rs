@@ -79,10 +79,15 @@ impl Renderer {
         if let Some(linear_frame) = &mut self.linear_frame {
             linear_frame.resize(self.target.pixel_len(), Color::BLACK);
         }
+        if let Some(depth_frame) = &mut self.depth_frame {
+            depth_frame.resize(self.target.pixel_len(), f32::INFINITY);
+        }
         if gpu.is_some() && self.linear_frame.is_some() {
             self.linear_frame = None;
+            self.depth_frame = None;
         } else if gpu.is_none() && self.linear_frame.is_none() {
             self.linear_frame = Some(vec![Color::BLACK; self.target.pixel_len()]);
+            self.depth_frame = Some(vec![f32::INFINITY; self.target.pixel_len()]);
         }
         self.gpu = gpu;
         self.capabilities = if attached {
@@ -122,6 +127,9 @@ impl Renderer {
                     .to_string(),
             }),
             Some(true) | None => {
+                if let Some(gpu) = &mut self.gpu {
+                    gpu.clear_prepared_resources_for_context_recovery();
+                }
                 self.context_lost = None;
                 self.device_lost = None;
                 self.target_revision = self.target_revision.saturating_add(1);
@@ -141,6 +149,9 @@ impl Renderer {
         self.fxaa_scratch.resize(self.target.byte_len(), 0);
         if let Some(linear_frame) = &mut self.linear_frame {
             linear_frame.resize(self.target.pixel_len(), Color::BLACK);
+        }
+        if let Some(depth_frame) = &mut self.depth_frame {
+            depth_frame.resize(self.target.pixel_len(), f32::INFINITY);
         }
         self.stats.target_width = width;
         self.stats.target_height = height;

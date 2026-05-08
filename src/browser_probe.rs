@@ -10,7 +10,7 @@ use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 use workflows::{build_workflow_scene, scene_with_triangle};
 
-use crate::{Assets, Backend, PlatformSurface, Renderer, Scene};
+use crate::{Assets, Backend, EnvironmentHandle, PlatformSurface, Renderer, Scene};
 
 #[wasm_bindgen(js_name = m6RenderWebgl2Probe)]
 pub async fn m6_render_webgl2_probe(canvas: HtmlCanvasElement) -> Result<String, JsValue> {
@@ -70,6 +70,7 @@ async fn render_probe(canvas: HtmlCanvasElement, backend: Backend) -> Result<Str
         &mut scene,
         camera,
         json!({}),
+        None,
     )
     .await
 }
@@ -80,6 +81,23 @@ async fn render_workflow_probe(
     workflow: &str,
 ) -> Result<String, JsValue> {
     let mut workflow_scene = build_workflow_scene(workflow).await?;
+    let environment = if let Some(path) = workflow_scene
+        .metadata
+        .get("environment_path")
+        .and_then(|value| value.as_str())
+    {
+        Some(
+            workflow_scene
+                .assets
+                .load_environment(path)
+                .await
+                .map_err(|error| {
+                    JsValue::from_str(&format!("environment load failed: {error:?}"))
+                })?,
+        )
+    } else {
+        None
+    };
     render_scene(
         canvas,
         backend,
@@ -88,6 +106,7 @@ async fn render_workflow_probe(
         &mut workflow_scene.scene,
         workflow_scene.camera,
         workflow_scene.metadata,
+        environment,
     )
     .await
 }
@@ -100,6 +119,7 @@ async fn render_scene(
     scene: &mut Scene,
     camera: crate::CameraKey,
     metadata: serde_json::Value,
+    environment: Option<EnvironmentHandle>,
 ) -> Result<String, JsValue> {
     let width = canvas.width();
     let height = canvas.height();
@@ -116,6 +136,9 @@ async fn render_scene(
     let mut renderer = Renderer::from_surface_async(surface)
         .await
         .map_err(|error| JsValue::from_str(&format!("build failed: {error:?}")))?;
+    if let Some(environment) = environment {
+        renderer.set_environment(environment);
+    }
 
     renderer
         .prepare_with_assets(scene, assets)

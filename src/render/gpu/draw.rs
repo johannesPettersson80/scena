@@ -1,0 +1,337 @@
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::mpsc;
+
+#[cfg(target_arch = "wasm32")]
+use crate::diagnostics::Backend;
+use crate::diagnostics::RenderError;
+
+use super::super::RasterTarget;
+use super::super::camera::CameraProjection;
+use super::GpuDeviceState;
+#[cfg(not(target_arch = "wasm32"))]
+use super::culling;
+use super::depth;
+use super::output::{OutputUniformUpload, encode_output_uniform};
+use super::pipeline::{UnlitPass, encode_unlit_pass};
+#[cfg(target_arch = "wasm32")]
+use super::webgl2;
+
+impl GpuDeviceState {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(in crate::render) fn render_to_frame(
+        &mut self,
+        target: RasterTarget,
+        exposure_ev: f32,
+        camera_projection: &CameraProjection,
+        frame: &mut Vec<u8>,
+    ) -> Result<(bool, u64), RenderError> {
+        let Some(resources) = self.resources.as_ref() else {
+            frame.resize(target.byte_len(), 0);
+            frame.fill(0);
+            return Ok((false, 0));
+        };
+        if resources.target != target {
+            return Err(RenderError::GpuResourcesNotPrepared {
+                backend: target.backend,
+            });
+        }
+        self.queue.write_buffer(
+            &resources.output_uniform,
+            0,
+            &encode_output_uniform(OutputUniformUpload {
+                exposure_ev,
+                world_from_model: identity_matrix(),
+                normal_from_model: identity_matrix(),
+                view_from_world: camera_projection
+                    .view_from_world_matrix()
+                    .unwrap_or_else(identity_matrix),
+                clip_from_view: camera_projection
+                    .clip_from_view_matrix()
+                    .unwrap_or_else(identity_matrix),
+                clip_from_world: camera_projection
+                    .clip_from_world_matrix()
+                    .unwrap_or_else(identity_matrix),
+                camera_position: camera_position_uniform(camera_projection),
+                viewport: [target.width as f32, target.height as f32],
+                near_far: camera_projection.near_far(),
+                color_management: [1.0, 0.0, 0.0, 0.0],
+                lighting: resources.light_uniform,
+            }),
+        );
+        let surface_output =
+            self.surface
+                .as_ref()
+                .and_then(|surface| match surface.surface.get_current_texture() {
+                    wgpu::CurrentSurfaceTexture::Success(output)
+                    | wgpu::CurrentSurfaceTexture::Suboptimal(output) => Some(output),
+                    wgpu::CurrentSurfaceTexture::Timeout
+                    | wgpu::CurrentSurfaceTexture::Occluded
+                    | wgpu::CurrentSurfaceTexture::Outdated
+                    | wgpu::CurrentSurfaceTexture::Lost
+                    | wgpu::CurrentSurfaceTexture::Validation => None,
+                });
+        let surface_view = surface_output.as_ref().map(|output| {
+            output
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default())
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("scena.headless_gpu.encoder"),
+            });
+        let culling_dispatches = if let Some(culling_pipeline) = &resources.culling_pipeline {
+            culling::encode_culling_dispatch(
+                &mut encoder,
+                culling_pipeline,
+                resources.culling_workgroups,
+            );
+            1
+        } else {
+            0
+        };
+        if let Some(depth_prepass) = &resources.depth_prepass {
+            depth::encode_depth_prepass(
+                &mut encoder,
+                depth_prepass,
+                &resources.vertex_buffer,
+                &resources.output_bind_group,
+                resources.vertex_count,
+            );
+        }
+        encode_unlit_pass(
+            &mut encoder,
+            UnlitPass {
+                view: &resources.view,
+                depth_view: resources
+                    .depth_prepass
+                    .as_ref()
+                    .map(|depth_prepass| &depth_prepass.view),
+                vertex_buffer: &resources.vertex_buffer,
+                output_bind_group: &resources.output_bind_group,
+                material_resources: &resources.material_resources,
+                draw_batches: &resources.draw_batches,
+                pipeline: &resources.offscreen_pipeline,
+                label: "scena.headless_gpu.render_pass",
+            },
+        );
+        if let (Some(surface_view), Some(surface_pipeline)) =
+            (surface_view.as_ref(), resources.surface_pipeline.as_ref())
+        {
+            encode_unlit_pass(
+                &mut encoder,
+                UnlitPass {
+                    view: surface_view,
+                    depth_view: resources
+                        .depth_prepass
+                        .as_ref()
+                        .map(|depth_prepass| &depth_prepass.view),
+                    vertex_buffer: &resources.vertex_buffer,
+                    output_bind_group: &resources.output_bind_group,
+                    material_resources: &resources.material_resources,
+                    draw_batches: &resources.draw_batches,
+                    pipeline: surface_pipeline,
+                    label: "scena.surface.render_pass",
+                },
+            );
+        }
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &resources.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &resources.readback,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(resources.padded_bytes_per_row),
+                    rows_per_image: None,
+                },
+            },
+            wgpu::Extent3d {
+                width: target.width,
+                height: target.height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit(Some(encoder.finish()));
+        if let Some(surface_output) = surface_output {
+            surface_output.present();
+        }
+
+        let readback = resources.readback.slice(..);
+        let (sender, receiver) = mpsc::channel();
+        readback.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map_err(|_| RenderError::GpuReadback {
+                backend: target.backend,
+            })?;
+        receiver
+            .recv()
+            .map_err(|_| RenderError::GpuReadback {
+                backend: target.backend,
+            })?
+            .map_err(|_| RenderError::GpuReadback {
+                backend: target.backend,
+            })?;
+
+        let mapped = readback.get_mapped_range();
+        if frame.len() != target.byte_len() {
+            frame.resize(target.byte_len(), 0);
+        }
+        for row in 0..target.height as usize {
+            let source_start = row * resources.padded_bytes_per_row as usize;
+            let source_end = source_start + resources.unpadded_bytes_per_row as usize;
+            let target_start = row * resources.unpadded_bytes_per_row as usize;
+            let target_end = target_start + resources.unpadded_bytes_per_row as usize;
+            frame[target_start..target_end].copy_from_slice(&mapped[source_start..source_end]);
+        }
+        drop(mapped);
+        resources.readback.unmap();
+
+        Ok((true, culling_dispatches))
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(in crate::render) fn render_to_surface(
+        &mut self,
+        target: RasterTarget,
+        exposure_ev: f32,
+        camera_projection: &CameraProjection,
+    ) -> Result<bool, RenderError> {
+        let Some(resources) = self.resources.as_ref() else {
+            return Err(RenderError::GpuResourcesNotPrepared {
+                backend: target.backend,
+            });
+        };
+        if resources.target != target {
+            return Err(RenderError::GpuResourcesNotPrepared {
+                backend: target.backend,
+            });
+        }
+        let Some(surface) = self.surface.as_ref() else {
+            return Err(RenderError::GpuResourcesNotPrepared {
+                backend: target.backend,
+            });
+        };
+        if target.backend == Backend::WebGl2 {
+            let Some(canvas) = self.browser_canvas.as_ref() else {
+                return Err(RenderError::GpuResourcesNotPrepared {
+                    backend: target.backend,
+                });
+            };
+            webgl2::render_canvas(
+                canvas,
+                &resources.webgl2_vertices,
+                &resources.draw_batches,
+                &identity_matrix(),
+                &identity_matrix(),
+                &camera_projection
+                    .view_from_world_matrix()
+                    .unwrap_or_else(identity_matrix),
+                &camera_projection
+                    .clip_from_view_matrix()
+                    .unwrap_or_else(identity_matrix),
+                &camera_projection
+                    .clip_from_world_matrix()
+                    .unwrap_or_else(identity_matrix),
+                camera_position_uniform(camera_projection),
+                [target.width as f32, target.height as f32],
+                camera_projection.near_far(),
+                2.0_f32.powf(exposure_ev),
+                [1.0, 0.0, 0.0, 0.0],
+                resources.light_uniform,
+            )
+            .map_err(|_| RenderError::GpuResourcesNotPrepared {
+                backend: target.backend,
+            })?;
+            return Ok(true);
+        }
+        self.queue.write_buffer(
+            &resources.output_uniform,
+            0,
+            &encode_output_uniform(OutputUniformUpload {
+                exposure_ev,
+                world_from_model: identity_matrix(),
+                normal_from_model: identity_matrix(),
+                view_from_world: camera_projection
+                    .view_from_world_matrix()
+                    .unwrap_or_else(identity_matrix),
+                clip_from_view: camera_projection
+                    .clip_from_view_matrix()
+                    .unwrap_or_else(identity_matrix),
+                clip_from_world: camera_projection
+                    .clip_from_world_matrix()
+                    .unwrap_or_else(identity_matrix),
+                camera_position: camera_position_uniform(camera_projection),
+                viewport: [target.width as f32, target.height as f32],
+                near_far: camera_projection.near_far(),
+                color_management: [1.0, 0.0, 0.0, 0.0],
+                lighting: resources.light_uniform,
+            }),
+        );
+        let surface_output = match surface.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(output)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(output) => output,
+            wgpu::CurrentSurfaceTexture::Timeout
+            | wgpu::CurrentSurfaceTexture::Occluded
+            | wgpu::CurrentSurfaceTexture::Outdated
+            | wgpu::CurrentSurfaceTexture::Lost
+            | wgpu::CurrentSurfaceTexture::Validation => return Ok(false),
+        };
+        let surface_view = surface_output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("scena.browser.encoder"),
+            });
+        if let Some(depth_prepass) = &resources.depth_prepass {
+            depth::encode_depth_prepass(
+                &mut encoder,
+                depth_prepass,
+                &resources.vertex_buffer,
+                &resources.output_bind_group,
+                resources.vertex_count,
+            );
+        }
+        encode_unlit_pass(
+            &mut encoder,
+            UnlitPass {
+                view: &surface_view,
+                depth_view: resources
+                    .depth_prepass
+                    .as_ref()
+                    .map(|depth_prepass| &depth_prepass.view),
+                vertex_buffer: &resources.vertex_buffer,
+                output_bind_group: &resources.output_bind_group,
+                material_resources: &resources.material_resources,
+                draw_batches: &resources.draw_batches,
+                pipeline: &resources.surface_pipeline,
+                label: "scena.browser.surface_pass",
+            },
+        );
+        self.queue.submit(Some(encoder.finish()));
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        surface_output.present();
+        Ok(true)
+    }
+}
+
+fn camera_position_uniform(camera_projection: &CameraProjection) -> [f32; 3] {
+    let position = camera_projection.camera_position();
+    [position.x, position.y, position.z]
+}
+
+fn identity_matrix() -> [f32; 16] {
+    [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ]
+}
