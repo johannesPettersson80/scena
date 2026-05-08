@@ -10579,6 +10579,136 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_direct_light_shading_missing_world_transform_iter_regression() {
+        // ARCH-DIRECT-LIGHT-SHADING: scene.rs must expose the world-transform light
+        // iterator so direct-light shading uses composed world transforms instead of
+        // local node transforms.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/direct-light-shading-stub");
+        let scene_path = fixture_root.join("src/scene.rs");
+        fs::create_dir_all(scene_path.parent().expect("scene parent")).expect("fixture dir");
+        fs::write(&scene_path, "pub struct Scene { pub root: NodeKey }\n").expect("scene fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-DIRECT-LIGHT-SHADING",
+            "src/scene.rs",
+            &[
+                "impl Iterator<Item = (NodeKey, LightKey, Light, Transform)>",
+                "self.world_transform(node_key)",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-DIRECT-LIGHT-SHADING"
+                    && finding.message.contains("world_transform")
+            }),
+            "doctor must reject scene.rs that drops the world-transform light iteration \
+             contract: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_environment_hdr_missing_loader_regression() {
+        // ARCH-ENV-HDR: src/assets/environment.rs must expose the equirectangular HDR
+        // loader so HDR fixtures can be parsed into PreparedEnvironmentLighting.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/environment-hdr-stub");
+        let environment_path = fixture_root.join("src/assets/environment.rs");
+        fs::create_dir_all(environment_path.parent().expect("environment parent"))
+            .expect("fixture dir");
+        fs::write(&environment_path, "pub struct EnvironmentDesc {}\n")
+            .expect("environment fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-ENV-HDR",
+            "src/assets/environment.rs",
+            &[
+                "EnvironmentSourceKind::EquirectangularHdr",
+                "pub fn from_equirectangular_hdr_path",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-ENV-HDR" && finding.message.contains("EquirectangularHdr")
+            }),
+            "doctor must reject assets/environment.rs that drops the equirectangular \
+             HDR loader contract: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_environment_ibl_prepare_missing_stats_regression() {
+        // ARCH-ENV-IBL-PREP: prepare/stats.rs must expose PreparedEnvironmentStats so
+        // the IBL prepare path stays observable through structured stats.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/env-ibl-prepare-stub");
+        let stats_path = fixture_root.join("src/render/prepare/stats.rs");
+        fs::create_dir_all(stats_path.parent().expect("stats parent")).expect("fixture dir");
+        fs::write(&stats_path, "pub struct LightingStats {}\n").expect("stats fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-ENV-IBL-PREP",
+            "src/render/prepare/stats.rs",
+            &["pub(in crate::render) struct PreparedEnvironmentStats"],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-ENV-IBL-PREP"
+                    && finding.message.contains("PreparedEnvironmentStats")
+            }),
+            "doctor must reject prepare/stats.rs that drops the PreparedEnvironmentStats \
+             contract: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_directional_shadow_missing_multiple_lights_error_regression() {
+        // ARCH-DIRECTIONAL-SHADOW: prepare/stats.rs must expose MultipleShadowedDirectionalLights
+        // so a scene with two shadow-casting directional lights fails closed instead of
+        // silently picking one.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/directional-shadow-stub");
+        let stats_path = fixture_root.join("src/render/prepare/stats.rs");
+        fs::create_dir_all(stats_path.parent().expect("stats parent")).expect("fixture dir");
+        fs::write(&stats_path, "pub struct LightingStats {}\n").expect("stats fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-DIRECTIONAL-SHADOW",
+            "src/render/prepare/stats.rs",
+            &[
+                "pub(in crate::render) fn collect_lighting_stats(",
+                "PrepareError::MultipleShadowedDirectionalLights",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-DIRECTIONAL-SHADOW"
+                    && finding
+                        .message
+                        .contains("MultipleShadowedDirectionalLights")
+            }),
+            "doctor must reject prepare/stats.rs that drops the directional-shadow \
+             multiple-lights error: {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");

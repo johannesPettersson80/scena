@@ -13,8 +13,9 @@ use std::fs;
 use std::path::PathBuf;
 
 use scena::{
-    Aabb, Assets, Color, GeometryDesc, LabelDesc, MaterialDesc, PerspectiveCamera, Renderer, Scene,
-    SourceCoordinateSystem, SourceUnits, Transform, Vec3,
+    Aabb, Assets, Color, CursorPosition, GeometryDesc, InteractionStyle, LabelDesc, MaterialDesc,
+    PerspectiveCamera, Renderer, Scene, SourceCoordinateSystem, SourceUnits, Transform, Vec3,
+    Viewport,
 };
 
 const ARTIFACT_WIDTH: u32 = 256;
@@ -453,6 +454,71 @@ fn examples_visual_labels_helpers_renders_axes_bounds_anchor_label_to_ppm() {
     );
 
     write_artifact("labels_helpers", ARTIFACT_WIDTH, ARTIFACT_HEIGHT, frame);
+}
+
+#[test]
+fn examples_visual_picking_selection_hover_renders_styled_pick_to_ppm() {
+    // Mirror examples/picking_selection_hover.rs: a single mesh, framed via
+    // frame_all_with_assets, then pick_and_select_with_assets at the viewport
+    // center. The artifact proves the picking + selection-style + hover-style path
+    // produces visible pixels with the typed CursorPosition + Viewport API.
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.7, 0.45, 0.35));
+    let material = assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(64, 160, 255)));
+
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("picked mesh inserts");
+    let camera = scene.add_default_camera().expect("default camera inserts");
+    scene
+        .frame_all_with_assets(camera, &assets)
+        .expect("frame_all succeeds");
+    scene.set_active_camera(camera).expect("active camera sets");
+
+    let mut renderer =
+        Renderer::headless(ARTIFACT_WIDTH, ARTIFACT_HEIGHT).expect("headless renderer builds");
+    renderer.set_hover_style(InteractionStyle::outline(
+        Color::from_srgb_u8(255, 210, 64),
+        2.0,
+    ));
+    renderer.set_selection_style(InteractionStyle::outline(
+        Color::from_srgb_u8(64, 160, 255),
+        3.0,
+    ));
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("picking_selection_hover scene prepares");
+    let viewport =
+        Viewport::new(ARTIFACT_WIDTH, ARTIFACT_HEIGHT, 1.0).expect("static viewport is valid");
+    scene
+        .pick_and_select_with_assets(
+            camera,
+            CursorPosition::physical(ARTIFACT_WIDTH as f32 / 2.0, ARTIFACT_HEIGHT as f32 / 2.0),
+            viewport,
+            &assets,
+        )
+        .expect("pick_and_select succeeds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("picking_selection_hover scene re-prepares after selection mutation");
+    renderer
+        .render_active(&scene)
+        .expect("picking_selection_hover scene renders");
+
+    let frame = renderer.frame_rgba8();
+    assert!(
+        count_nonblack_pixels(frame) > 0,
+        "picking_selection_hover example must render at least one nonblack pixel"
+    );
+
+    write_artifact(
+        "picking_selection_hover",
+        ARTIFACT_WIDTH,
+        ARTIFACT_HEIGHT,
+        frame,
+    );
 }
 
 #[test]
