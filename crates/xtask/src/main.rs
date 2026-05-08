@@ -10083,6 +10083,67 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_camera_depth_missing_perspective_camera_regression() {
+        // ARCH-CAMERA-DEPTH: src/scene/camera.rs must expose Camera/PerspectiveCamera/
+        // OrthographicCamera/DepthRange. A stub that drops them regresses the contract.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/camera-depth-stub");
+        let camera_path = fixture_root.join("src/scene/camera.rs");
+        fs::create_dir_all(camera_path.parent().expect("camera parent")).expect("fixture dir");
+        fs::write(&camera_path, "pub struct CameraStub {}\n").expect("camera fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-CAMERA-DEPTH",
+            "src/scene/camera.rs",
+            &[
+                "pub enum Camera",
+                "pub struct PerspectiveCamera",
+                "pub struct OrthographicCamera",
+                "pub struct DepthRange",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-CAMERA-DEPTH" && finding.message.contains("PerspectiveCamera")
+            }),
+            "doctor must reject camera modules that drop the typed-camera contract: \
+             {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_clipping_missing_clipping_plane_key_regression() {
+        // ARCH-CLIPPING: src/scene.rs must expose ClippingPlaneKey for typed clipping
+        // plane handles.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/clipping-stub");
+        let scene_path = fixture_root.join("src/scene.rs");
+        fs::create_dir_all(scene_path.parent().expect("scene parent")).expect("fixture dir");
+        fs::write(&scene_path, "pub struct Scene {}\n").expect("scene fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-CLIPPING",
+            "src/scene.rs",
+            &["pub struct ClippingPlaneKey"],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-CLIPPING" && finding.message.contains("ClippingPlaneKey")
+            }),
+            "doctor must reject scene modules that drop the typed clipping-plane handle: \
+             {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
