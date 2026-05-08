@@ -10503,6 +10503,82 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_webgl2_depth_missing_diagnostic_regression() {
+        // ARCH-WEBGL2-DEPTH: capabilities.rs must emit the WebGL2 depth-compatibility
+        // diagnostic so users see the reduced near/far precision warning.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/webgl2-depth-stub");
+        let capabilities_path = fixture_root.join("src/diagnostics/capabilities.rs");
+        fs::create_dir_all(capabilities_path.parent().expect("capabilities parent"))
+            .expect("fixture dir");
+        fs::write(
+            &capabilities_path,
+            "pub struct Capabilities { pub backend: Backend }\n",
+        )
+        .expect("capabilities fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-WEBGL2-DEPTH",
+            "src/diagnostics/capabilities.rs",
+            &[
+                "pub fn diagnostics(self) -> Vec<Diagnostic>",
+                "self.backend == Backend::WebGl2",
+                "DiagnosticCode::WebGl2DepthCompatibility",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-WEBGL2-DEPTH"
+                    && finding.message.contains("WebGl2DepthCompatibility")
+            }),
+            "doctor must reject capabilities.rs that drops the WebGL2 depth diagnostic: \
+             {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_solid_kiss_docs_missing_gate_regression() {
+        // ARCH-SOLID-KISS-DOCS: docs/specs/module-boundaries.md must enumerate the
+        // SOLID/KISS gate so the design rules stay anchored to a doc the doctor reads.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/solid-kiss-docs-stub");
+        let module_path = fixture_root.join("docs/specs/module-boundaries.md");
+        fs::create_dir_all(module_path.parent().expect("module boundaries parent"))
+            .expect("fixture dir");
+        fs::write(
+            &module_path,
+            "# Module Boundaries\n\nNo SOLID/KISS gate text here.\n",
+        )
+        .expect("module-boundaries fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-SOLID-KISS-DOCS",
+            "docs/specs/module-boundaries.md",
+            &[
+                "## SOLID/KISS Gate",
+                "Every public feature must name exactly one owner module",
+                "No catch-all `Manager`, `Engine`, `World`, or broad `Context` type",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-SOLID-KISS-DOCS"
+                    && finding.message.contains("SOLID/KISS Gate")
+            }),
+            "doctor must reject module-boundaries.md that drops the SOLID/KISS gate \
+             contract: {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
