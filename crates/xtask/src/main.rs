@@ -10407,6 +10407,102 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_fxaa_missing_pass_counter_regression() {
+        // ARCH-FXAA-OUTPUT: diagnostics.rs must expose fxaa_passes: u64 so the FXAA
+        // pass invocation count stays observable to release-readiness.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/fxaa-output-stub");
+        let diagnostics_path = fixture_root.join("src/diagnostics.rs");
+        fs::create_dir_all(diagnostics_path.parent().expect("diagnostics parent"))
+            .expect("fixture dir");
+        fs::write(
+            &diagnostics_path,
+            "pub struct RendererStats { pub frames_rendered: u64 }\n",
+        )
+        .expect("diagnostics fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-FXAA-OUTPUT",
+            "src/diagnostics.rs",
+            &["pub fxaa_passes: u64"],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-FXAA-OUTPUT" && finding.message.contains("fxaa_passes: u64")
+            }),
+            "doctor must reject diagnostics.rs that drops the FXAA pass counter: \
+             {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_reversed_z_missing_capability_field_regression() {
+        // ARCH-REVERSED-Z: capabilities.rs must expose reversed_z_depth as a typed
+        // CapabilityStatus and the const status helper that downgrades on WebGL2.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/reversed-z-stub");
+        let capabilities_path = fixture_root.join("src/diagnostics/capabilities.rs");
+        fs::create_dir_all(capabilities_path.parent().expect("capabilities parent"))
+            .expect("fixture dir");
+        fs::write(&capabilities_path, "pub struct Capabilities {}\n")
+            .expect("capabilities fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-REVERSED-Z",
+            "src/diagnostics/capabilities.rs",
+            &[
+                "pub reversed_z_depth: CapabilityStatus",
+                "const fn reversed_z_depth_status",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-REVERSED-Z" && finding.message.contains("reversed_z_depth")
+            }),
+            "doctor must reject capabilities.rs that drops the reversed_z_depth typed \
+             status contract: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_backend_vocabulary_missing_browser_canvas_regression() {
+        // ARCH-BACKEND-VOCAB: src/platform.rs must expose browser_webgpu_canvas /
+        // browser_webgl2_canvas constructors so the descriptor and attached-canvas
+        // backends share a stable vocabulary.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/backend-vocab-stub");
+        let platform_path = fixture_root.join("src/platform.rs");
+        fs::create_dir_all(platform_path.parent().expect("platform parent")).expect("fixture dir");
+        fs::write(&platform_path, "pub struct PlatformSurface {}\n").expect("platform fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-BACKEND-VOCAB",
+            "src/platform.rs",
+            &["browser_webgpu_canvas", "browser_webgl2_canvas"],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-BACKEND-VOCAB"
+                    && finding.message.contains("browser_webgpu_canvas")
+            }),
+            "doctor must reject platform.rs that drops the browser canvas backend \
+             vocabulary: {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
