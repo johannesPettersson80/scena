@@ -13,8 +13,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use scena::{
-    Aabb, Assets, Color, GeometryDesc, MaterialDesc, PerspectiveCamera, Renderer, Scene, Transform,
-    Vec3,
+    Aabb, Assets, Color, GeometryDesc, MaterialDesc, PerspectiveCamera, Renderer, Scene,
+    SourceCoordinateSystem, SourceUnits, Transform, Vec3,
 };
 
 const ARTIFACT_WIDTH: u32 = 256;
@@ -250,6 +250,52 @@ fn examples_visual_layers_visibility_renders_active_layer_to_ppm() {
     );
 
     write_artifact("layers_visibility", ARTIFACT_WIDTH, ARTIFACT_HEIGHT, frame);
+}
+
+#[test]
+fn examples_visual_coordinate_units_renders_converted_position_to_ppm() {
+    // Mirror examples/coordinate_units.rs: a CAD-authored Z-up millimeter position
+    // converted to scena Y-up meters, then framed by a default camera.
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.12, 0.12, 0.12));
+    let material = assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(120, 230, 90)));
+
+    let cad_position_mm = Vec3::new(250.0, 0.0, 100.0);
+    let meters_per_unit = SourceUnits::Millimeters.meters_per_unit();
+    let y_up_position = SourceCoordinateSystem::ZUpRightHanded.convert_position(cad_position_mm);
+    let render_position = Vec3::new(
+        y_up_position.x * meters_per_unit,
+        y_up_position.y * meters_per_unit,
+        y_up_position.z * meters_per_unit,
+    );
+
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .transform(Transform::at(render_position))
+        .add()
+        .expect("converted-position mesh inserts");
+    let camera = scene.add_default_camera().expect("default camera inserts");
+    scene
+        .look_at_point(camera, render_position)
+        .expect("look_at_point succeeds");
+
+    let mut renderer =
+        Renderer::headless(ARTIFACT_WIDTH, ARTIFACT_HEIGHT).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("coordinate_units scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("coordinate_units scene renders");
+
+    let frame = renderer.frame_rgba8();
+    assert!(
+        count_nonblack_pixels(frame) > 0,
+        "coordinate_units example must render at least one nonblack pixel"
+    );
+
+    write_artifact("coordinate_units", ARTIFACT_WIDTH, ARTIFACT_HEIGHT, frame);
 }
 
 #[test]
