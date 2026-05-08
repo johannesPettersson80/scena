@@ -13,7 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use scena::{
-    Aabb, Assets, Color, GeometryDesc, MaterialDesc, PerspectiveCamera, Renderer, Scene,
+    Aabb, Assets, Color, GeometryDesc, LabelDesc, MaterialDesc, PerspectiveCamera, Renderer, Scene,
     SourceCoordinateSystem, SourceUnits, Transform, Vec3,
 };
 
@@ -389,6 +389,70 @@ fn examples_visual_instancing_renders_instance_set_to_ppm() {
     );
 
     write_artifact("instancing", ARTIFACT_WIDTH, ARTIFACT_HEIGHT, frame);
+}
+
+#[test]
+fn examples_visual_labels_helpers_renders_axes_bounds_anchor_label_to_ppm() {
+    // Mirror examples/labels_helpers.rs: axes + bounding box + anchor marker + a
+    // single MSDF label, all rendered through the line material.
+    let assets = Assets::new();
+    let axes = assets.create_geometry(GeometryDesc::axes(1.0));
+    let bounds = assets.create_geometry(GeometryDesc::bounding_box(Aabb::new(
+        Vec3::new(-0.5, -0.5, -0.5),
+        Vec3::new(0.5, 0.5, 0.5),
+    )));
+    let anchor = assets.create_geometry(GeometryDesc::anchor_marker(0.15));
+    let material =
+        assets.create_material(MaterialDesc::line(Color::from_srgb_u8(200, 220, 255), 1.0));
+
+    let mut scene = Scene::new();
+    scene.mesh(axes, material).add().expect("axes mesh inserts");
+    scene
+        .mesh(bounds, material)
+        .add()
+        .expect("bounds mesh inserts");
+    scene
+        .mesh(anchor, material)
+        .add()
+        .expect("anchor mesh inserts");
+    let label = LabelDesc::msdf("origin")
+        .with_color(Color::from_srgb_u8(255, 255, 255))
+        .with_size(14.0);
+    scene
+        .add_label(
+            scene.root(),
+            label,
+            Transform {
+                translation: Vec3::new(0.0, 0.15, 0.0),
+                ..Transform::default()
+            },
+        )
+        .expect("label inserts");
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::at(Vec3::new(0.0, 0.0, 3.0)),
+        )
+        .expect("camera inserts");
+    scene.set_active_camera(camera).expect("active camera sets");
+
+    let mut renderer =
+        Renderer::headless(ARTIFACT_WIDTH, ARTIFACT_HEIGHT).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("labels_helpers scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("labels_helpers scene renders");
+
+    let frame = renderer.frame_rgba8();
+    assert!(
+        count_nonblack_pixels(frame) > 0,
+        "labels_helpers example must render at least one nonblack pixel"
+    );
+
+    write_artifact("labels_helpers", ARTIFACT_WIDTH, ARTIFACT_HEIGHT, frame);
 }
 
 #[test]
