@@ -339,6 +339,59 @@ fn examples_visual_static_batching_renders_repeated_boxes_to_ppm() {
 }
 
 #[test]
+fn examples_visual_instancing_renders_instance_set_to_ppm() {
+    // Mirror examples/instancing.rs: an instance set with reserve + push_instance,
+    // 10 boxes laid out along the x axis.
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.2, 0.2, 0.2));
+    let material = assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(70, 220, 160)));
+
+    let mut scene = Scene::new();
+    let set = scene
+        .add_instance_set(scene.root(), geometry, material, Transform::default())
+        .expect("instance set inserts");
+    scene
+        .reserve_instances(set, 16)
+        .expect("instance reserve succeeds");
+    for index in 0..10 {
+        scene
+            .push_instance(
+                set,
+                Transform {
+                    translation: Vec3::new(index as f32 * 0.24 - 1.0, 0.0, 0.0),
+                    ..Transform::default()
+                },
+            )
+            .expect("push_instance succeeds");
+    }
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::at(Vec3::new(0.0, 0.0, 3.0)),
+        )
+        .expect("camera inserts");
+    scene.set_active_camera(camera).expect("active camera sets");
+
+    let mut renderer =
+        Renderer::headless(ARTIFACT_WIDTH, ARTIFACT_HEIGHT).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("instancing scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("instancing scene renders");
+
+    let frame = renderer.frame_rgba8();
+    assert!(
+        count_nonblack_pixels(frame) > 0,
+        "instancing example must render at least one nonblack pixel"
+    );
+
+    write_artifact("instancing", ARTIFACT_WIDTH, ARTIFACT_HEIGHT, frame);
+}
+
+#[test]
 fn examples_visual_headless_ci_renders_default_scene_to_ppm() {
     // examples/headless_ci.rs exercises the deterministic headless rendering
     // path; the proof is "the deterministic frame produces non-black pixels".
