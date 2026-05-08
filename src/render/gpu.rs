@@ -166,7 +166,7 @@ impl GpuDeviceState {
         }
 
         let vertex_bytes = encode_vertices(primitives);
-        let draw_batches = encode_draw_batches(primitives);
+        let (draw_batches, _draw_uniforms) = encode_draw_batches(primitives);
         let vertex_buffer_size = vertex_bytes.len().max(4) as u64;
         let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("scena.m0.scene_vertices"),
@@ -313,7 +313,7 @@ impl GpuDeviceState {
             return;
         }
         let vertex_bytes = encode_vertices(primitives);
-        let draw_batches = encode_draw_batches(primitives);
+        let (draw_batches, _draw_uniforms) = encode_draw_batches(primitives);
         let webgl2_vertices = webgl2::encode_vertices(primitives);
         if target.backend == Backend::WebGl2 {
             let Some(canvas) = self.browser_canvas.as_ref() else {

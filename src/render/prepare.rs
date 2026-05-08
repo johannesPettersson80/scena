@@ -29,7 +29,7 @@ pub(super) use self::stats::{
 };
 use self::tangents::{accumulate_vertex_tangents, authored_vertex_tangents};
 use self::transforms::{
-    compose_transform, transform_normal, transform_position, transform_primitive,
+    compose_transform, prepared_primitive, transform_normal, transform_position,
 };
 use self::types::{DeformationInputs, PrimitiveBakeParams, PrimitiveSinks, TransparentPrimitive};
 use super::{RasterTarget, camera::CameraProjection};
@@ -69,7 +69,7 @@ pub(super) fn collect_prepared_primitives<F>(
             renderable
                 .primitives()
                 .iter()
-                .map(move |primitive| transform_primitive(primitive, transform, origin_shift))
+                .map(move |primitive| prepared_primitive(primitive, transform, origin_shift))
         })
         .collect();
     labels::append_label_primitives(scene, origin_shift, &mut primitives);

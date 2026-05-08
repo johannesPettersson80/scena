@@ -23,6 +23,101 @@ pub(super) fn transform_primitive(
     .with_render_material_slot(primitive.render_material_slot())
 }
 
+pub(super) fn prepared_primitive(
+    primitive: &Primitive,
+    transform: Transform,
+    origin_shift: Vec3,
+) -> Primitive {
+    let world_from_model = world_from_model_matrix(transform, origin_shift);
+    let normal_from_model = normal_from_model_matrix(transform);
+    transform_primitive(primitive, transform, origin_shift)
+        .with_world_from_model(world_from_model, normal_from_model)
+}
+
+pub(super) fn world_from_model_matrix(transform: Transform, origin_shift: Vec3) -> [f32; 16] {
+    let s = transform.scale;
+    let qx = transform.rotation.x;
+    let qy = transform.rotation.y;
+    let qz = transform.rotation.z;
+    let qw = transform.rotation.w;
+    let length_squared = qx * qx + qy * qy + qz * qz + qw * qw;
+    let (rx, ry, rz, rw) = if length_squared <= f32::EPSILON || !length_squared.is_finite() {
+        (0.0, 0.0, 0.0, 1.0)
+    } else {
+        let inverse_length = length_squared.sqrt().recip();
+        (
+            qx * inverse_length,
+            qy * inverse_length,
+            qz * inverse_length,
+            qw * inverse_length,
+        )
+    };
+    let xx = rx * rx;
+    let yy = ry * ry;
+    let zz = rz * rz;
+    let xy = rx * ry;
+    let xz = rx * rz;
+    let yz = ry * rz;
+    let wx = rw * rx;
+    let wy = rw * ry;
+    let wz = rw * rz;
+    let m00 = (1.0 - 2.0 * (yy + zz)) * s.x;
+    let m01 = (2.0 * (xy + wz)) * s.x;
+    let m02 = (2.0 * (xz - wy)) * s.x;
+    let m10 = (2.0 * (xy - wz)) * s.y;
+    let m11 = (1.0 - 2.0 * (xx + zz)) * s.y;
+    let m12 = (2.0 * (yz + wx)) * s.y;
+    let m20 = (2.0 * (xz + wy)) * s.z;
+    let m21 = (2.0 * (yz - wx)) * s.z;
+    let m22 = (1.0 - 2.0 * (xx + yy)) * s.z;
+    let tx = transform.translation.x - origin_shift.x;
+    let ty = transform.translation.y - origin_shift.y;
+    let tz = transform.translation.z - origin_shift.z;
+    [
+        m00, m01, m02, 0.0, m10, m11, m12, 0.0, m20, m21, m22, 0.0, tx, ty, tz, 1.0,
+    ]
+}
+
+pub(super) fn normal_from_model_matrix(transform: Transform) -> [f32; 16] {
+    let qx = transform.rotation.x;
+    let qy = transform.rotation.y;
+    let qz = transform.rotation.z;
+    let qw = transform.rotation.w;
+    let length_squared = qx * qx + qy * qy + qz * qz + qw * qw;
+    let (rx, ry, rz, rw) = if length_squared <= f32::EPSILON || !length_squared.is_finite() {
+        (0.0, 0.0, 0.0, 1.0)
+    } else {
+        let inverse_length = length_squared.sqrt().recip();
+        (
+            qx * inverse_length,
+            qy * inverse_length,
+            qz * inverse_length,
+            qw * inverse_length,
+        )
+    };
+    let xx = rx * rx;
+    let yy = ry * ry;
+    let zz = rz * rz;
+    let xy = rx * ry;
+    let xz = rx * rz;
+    let yz = ry * rz;
+    let wx = rw * rx;
+    let wy = rw * ry;
+    let wz = rw * rz;
+    let m00 = 1.0 - 2.0 * (yy + zz);
+    let m01 = 2.0 * (xy + wz);
+    let m02 = 2.0 * (xz - wy);
+    let m10 = 2.0 * (xy - wz);
+    let m11 = 1.0 - 2.0 * (xx + zz);
+    let m12 = 2.0 * (yz + wx);
+    let m20 = 2.0 * (xz + wy);
+    let m21 = 2.0 * (yz - wx);
+    let m22 = 1.0 - 2.0 * (xx + yy);
+    [
+        m00, m01, m02, 0.0, m10, m11, m12, 0.0, m20, m21, m22, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ]
+}
+
 pub(super) fn compose_transform(parent: Transform, child: Transform) -> Transform {
     let scaled_child_translation = Vec3::new(
         child.translation.x * parent.scale.x,

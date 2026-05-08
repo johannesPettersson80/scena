@@ -9,6 +9,8 @@ impl Primitive {
             vertices,
             attributes: [PrimitiveVertexAttributes::default(); 3],
             render_material_slot: 0,
+            world_from_model: identity_matrix4(),
+            normal_from_model: identity_matrix4(),
         }
     }
 
@@ -20,6 +22,8 @@ impl Primitive {
             vertices,
             attributes,
             render_material_slot: 0,
+            world_from_model: identity_matrix4(),
+            normal_from_model: identity_matrix4(),
         }
     }
 
@@ -56,4 +60,28 @@ impl Primitive {
     pub(crate) fn render_material_slot(&self) -> u32 {
         self.render_material_slot
     }
+
+    pub(crate) fn with_world_from_model(
+        mut self,
+        world_from_model: [f32; 16],
+        normal_from_model: [f32; 16],
+    ) -> Self {
+        self.world_from_model = world_from_model;
+        self.normal_from_model = normal_from_model;
+        self
+    }
+
+    pub(crate) fn world_from_model(&self) -> [f32; 16] {
+        self.world_from_model
+    }
+
+    pub(crate) fn normal_from_model(&self) -> [f32; 16] {
+        self.normal_from_model
+    }
+}
+
+const fn identity_matrix4() -> [f32; 16] {
+    [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ]
 }

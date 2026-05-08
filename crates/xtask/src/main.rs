@@ -73,6 +73,7 @@ fn finding_reference(rule: &str) -> &'static str {
         "docs/specs/release-gates.md"
     } else if rule.contains("STATE-OF-ART")
         || rule == "ARCH-RENDER-TRUTH"
+        || rule == "ARCH-RENDER-WORLD-BAKE"
         || rule == "BINARY-ASSET-TRUTH-P9"
     {
         "docs/checklists/state-of-art-threejs-replacement-plan.md"
@@ -1686,6 +1687,7 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_diagnostics_contracts(root, findings);
     check_renderer_stats_contracts(root, findings);
     check_renderer_truth_contracts(root, findings);
+    check_render_world_bake_contracts(root, findings);
     check_solid_kiss(root, findings);
     check_backend_vocabulary(root, findings);
     check_unit_test_first_governance(root, findings);
@@ -2803,6 +2805,63 @@ fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub buffers: u64",
             "pub target_height: u32",
             "logical `TextureHandle` values only",
+        ],
+    );
+}
+
+fn check_render_world_bake_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    // Per-draw model/normal uniforms: prepared primitives must carry world_from_model
+    // metadata via prepared_primitive(...) instead of being orchestrated through the bare
+    // transform_primitive(...) baker that drops the per-renderable transform on the floor.
+    // transforms.rs, shadows.rs, diagnostics.rs, and tangents.rs still call transform_primitive
+    // and transform_position internally for ray-cast, bounds, and tangent helpers — those
+    // call sites operate on local copies that never reach the GPU upload path.
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-WORLD-BAKE",
+        "src/render/prepare.rs",
+        &["prepared_primitive(primitive, transform, origin_shift)"],
+    );
+    forbid_contains(
+        root,
+        findings,
+        "ARCH-RENDER-WORLD-BAKE",
+        "src/render/prepare.rs",
+        &["transform_primitive(primitive, transform, origin_shift)"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-WORLD-BAKE",
+        "src/render/prepare/transforms.rs",
+        &[
+            "pub(super) fn prepared_primitive",
+            "pub(super) fn world_from_model_matrix",
+            "pub(super) fn normal_from_model_matrix",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-WORLD-BAKE",
+        "src/geometry/primitive.rs",
+        &[
+            "pub(crate) fn with_world_from_model",
+            "pub(crate) fn world_from_model",
+            "pub(crate) fn normal_from_model",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-WORLD-BAKE",
+        "src/render/gpu/vertices.rs",
+        &[
+            "pub(super) draw_uniform_index: u32",
+            "pub(super) struct DrawUniformValue",
+            "pub(super) world_from_model: [f32; 16]",
+            "pub(super) normal_from_model: [f32; 16]",
         ],
     );
 }
@@ -4653,7 +4712,7 @@ fn check_origin_shift_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "src/render/prepare.rs",
         &[
             "let origin_shift = scene.origin_shift()",
-            "transform_primitive",
+            "prepared_primitive",
             "transform_position",
         ],
     );
@@ -9738,6 +9797,48 @@ mod tests {
         check_prepare_asset_contracts(&root, &mut findings);
 
         assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn render_world_bake_contracts_are_source_enforced() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+
+        check_render_world_bake_contracts(&root, &mut findings);
+
+        assert_eq!(findings, Vec::new());
+    }
+
+    #[test]
+    fn doctor_rejects_world_baked_prepare_regression() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
+        let prepare_path = fixture_root.join("src/render/prepare.rs");
+        fs::create_dir_all(prepare_path.parent().expect("prepare parent")).expect("fixture dir");
+        fs::write(
+            &prepare_path,
+            "fn collect() { let _ = transform_primitive(primitive, transform, origin_shift); }\n",
+        )
+        .expect("prepare fixture");
+        let mut findings = Vec::new();
+
+        forbid_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-RENDER-WORLD-BAKE",
+            "src/render/prepare.rs",
+            &["transform_primitive(primitive, transform, origin_shift)"],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-RENDER-WORLD-BAKE"
+                    && finding.message.contains("transform_primitive")
+            }),
+            "doctor must reject prepare.rs that bakes per-renderable world transforms into \
+             vertex positions instead of stamping them through prepared_primitive(...): \
+             {findings:?}",
+        );
     }
 
     #[test]

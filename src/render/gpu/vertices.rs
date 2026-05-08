@@ -39,6 +39,13 @@ pub(super) struct PrimitiveDrawBatch {
     pub(super) start_vertex: u32,
     pub(super) vertex_count: u32,
     pub(super) material_slot: u32,
+    pub(super) draw_uniform_index: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct DrawUniformValue {
+    pub(super) world_from_model: [f32; 16],
+    pub(super) normal_from_model: [f32; 16],
 }
 
 pub(super) fn encode_vertices(primitives: &[Primitive]) -> Vec<u8> {
@@ -55,13 +62,32 @@ pub(super) fn encode_vertices(primitives: &[Primitive]) -> Vec<u8> {
     bytes
 }
 
-pub(super) fn encode_draw_batches(primitives: &[Primitive]) -> Vec<PrimitiveDrawBatch> {
+pub(super) fn encode_draw_batches(
+    primitives: &[Primitive],
+) -> (Vec<PrimitiveDrawBatch>, Vec<DrawUniformValue>) {
     let mut batches: Vec<PrimitiveDrawBatch> = Vec::new();
+    let mut draw_uniforms: Vec<DrawUniformValue> = Vec::new();
     for (index, primitive) in primitives.iter().enumerate() {
         let start_vertex = (index as u32).saturating_mul(3);
         let material_slot = primitive.render_material_slot();
+        let world_from_model = primitive.world_from_model();
+        let normal_from_model = primitive.normal_from_model();
+        let draw_uniform_index = match draw_uniforms
+            .iter()
+            .position(|value| value.world_from_model == world_from_model)
+        {
+            Some(existing) => existing as u32,
+            None => {
+                draw_uniforms.push(DrawUniformValue {
+                    world_from_model,
+                    normal_from_model,
+                });
+                (draw_uniforms.len() - 1) as u32
+            }
+        };
         if let Some(last) = batches.last_mut()
             && last.material_slot == material_slot
+            && last.draw_uniform_index == draw_uniform_index
             && last.start_vertex.saturating_add(last.vertex_count) == start_vertex
         {
             last.vertex_count = last.vertex_count.saturating_add(3);
@@ -71,9 +97,22 @@ pub(super) fn encode_draw_batches(primitives: &[Primitive]) -> Vec<PrimitiveDraw
             start_vertex,
             vertex_count: 3,
             material_slot,
+            draw_uniform_index,
         });
     }
-    batches
+    if draw_uniforms.is_empty() {
+        draw_uniforms.push(DrawUniformValue {
+            world_from_model: identity_matrix4(),
+            normal_from_model: identity_matrix4(),
+        });
+    }
+    (batches, draw_uniforms)
+}
+
+const fn identity_matrix4() -> [f32; 16] {
+    [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ]
 }
 
 fn encode_vertex(bytes: &mut Vec<u8>, vertex: Vertex, attributes: PrimitiveVertexAttributes) {
@@ -187,7 +226,7 @@ mod tests {
         let second = Primitive::unlit_triangle().with_render_material_slot(1);
         let third = Primitive::unlit_triangle().with_render_material_slot(2);
 
-        let batches = encode_draw_batches(&[first, second, third]);
+        let (batches, draw_uniforms) = encode_draw_batches(&[first, second, third]);
 
         assert_eq!(
             batches,
@@ -196,15 +235,63 @@ mod tests {
                     start_vertex: 0,
                     vertex_count: 6,
                     material_slot: 1,
+                    draw_uniform_index: 0,
                 },
                 PrimitiveDrawBatch {
                     start_vertex: 6,
                     vertex_count: 3,
                     material_slot: 2,
+                    draw_uniform_index: 0,
                 },
             ],
             "GPU draw encoding must preserve prepared per-material slots instead of drawing \
              every primitive with one global material bind group"
+        );
+        assert_eq!(
+            draw_uniforms.len(),
+            1,
+            "primitives sharing identity world_from_model collapse to a single draw-uniform slot",
+        );
+    }
+
+    #[test]
+    fn gpu_draw_batches_split_when_world_from_model_differs() {
+        let first = Primitive::unlit_triangle().with_render_material_slot(1);
+        let translated = Primitive::unlit_triangle()
+            .with_render_material_slot(1)
+            .with_world_from_model(
+                [
+                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 5.0, 0.0, 0.0, 1.0,
+                ],
+                [
+                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                ],
+            );
+
+        let (batches, draw_uniforms) = encode_draw_batches(&[first, translated]);
+
+        assert_eq!(
+            batches.len(),
+            2,
+            "primitives with distinct world_from_model must split into separate draw batches"
+        );
+        assert_eq!(
+            batches[0].draw_uniform_index, 0,
+            "the first batch maps to the first draw-uniform slot"
+        );
+        assert_eq!(
+            batches[1].draw_uniform_index, 1,
+            "the second batch indexes the new draw-uniform slot for the translated primitive"
+        );
+        assert_eq!(
+            draw_uniforms.len(),
+            2,
+            "each unique world_from_model must produce its own draw-uniform slot"
+        );
+        assert_eq!(
+            draw_uniforms[1].world_from_model[12], 5.0,
+            "the second draw-uniform slot must record the translated world transform exactly, \
+             not the per-vertex baked positions"
         );
     }
 }
