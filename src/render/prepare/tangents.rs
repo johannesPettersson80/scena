@@ -61,6 +61,97 @@ pub(super) fn accumulate_vertex_tangents(
         .collect()
 }
 
+/// Run the canonical MikkTSpace algorithm against the same inputs as
+/// [`accumulate_vertex_tangents`] and return the per-vertex tangent frames the algorithm
+/// would produce. Used today as the parity oracle for the in-tree generated-tangent path
+/// (P3 line 806). The implementation in this file may diverge from MikkTSpace by area
+/// weighting or UV island grouping; the parity test ensures the divergence stays within
+/// `1e-4`.
+#[cfg(test)]
+pub(super) fn mikktspace_vertex_tangents(
+    vertices: &[GeometryVertex],
+    indices: &[u32],
+    tex_coords0: &[[f32; 2]],
+    transform: Transform,
+    origin_shift: Vec3,
+) -> Vec<TangentFrame> {
+    let face_count = indices.len() / 3;
+    let mut adapter = MikktspaceAdapter {
+        positions: vertices
+            .iter()
+            .map(|vertex| transform_position(vertex.position, transform, origin_shift))
+            .collect(),
+        normals: vertices
+            .iter()
+            .map(|vertex| transform_normal(vertex.normal, transform))
+            .collect(),
+        tex_coords0,
+        indices,
+        output: vec![
+            TangentFrame {
+                tangent: Vec3::new(1.0, 0.0, 0.0),
+                handedness: 1.0,
+            };
+            vertices.len()
+        ],
+        face_count,
+    };
+    if face_count > 0 {
+        let _ = mikktspace::generate_tangents(&mut adapter);
+    }
+    adapter.output
+}
+
+#[cfg(test)]
+struct MikktspaceAdapter<'a> {
+    positions: Vec<Vec3>,
+    normals: Vec<Vec3>,
+    tex_coords0: &'a [[f32; 2]],
+    indices: &'a [u32],
+    output: Vec<TangentFrame>,
+    face_count: usize,
+}
+
+#[cfg(test)]
+impl<'a> MikktspaceAdapter<'a> {
+    fn vertex_index(&self, face: usize, vert: usize) -> usize {
+        self.indices[face * 3 + vert] as usize
+    }
+}
+
+#[cfg(test)]
+impl<'a> mikktspace::Geometry for MikktspaceAdapter<'a> {
+    fn num_faces(&self) -> usize {
+        self.face_count
+    }
+
+    fn num_vertices_of_face(&self, _face: usize) -> usize {
+        3
+    }
+
+    fn position(&self, face: usize, vert: usize) -> [f32; 3] {
+        let position = self.positions[self.vertex_index(face, vert)];
+        [position.x, position.y, position.z]
+    }
+
+    fn normal(&self, face: usize, vert: usize) -> [f32; 3] {
+        let normal = self.normals[self.vertex_index(face, vert)];
+        [normal.x, normal.y, normal.z]
+    }
+
+    fn tex_coord(&self, face: usize, vert: usize) -> [f32; 2] {
+        self.tex_coords0[self.vertex_index(face, vert)]
+    }
+
+    fn set_tangent_encoded(&mut self, tangent: [f32; 4], face: usize, vert: usize) {
+        let index = self.vertex_index(face, vert);
+        self.output[index] = TangentFrame {
+            tangent: Vec3::new(tangent[0], tangent[1], tangent[2]),
+            handedness: if tangent[3] < 0.0 { -1.0 } else { 1.0 },
+        };
+    }
+}
+
 pub(super) fn authored_vertex_tangents(
     tangents: Option<&[[f32; 4]]>,
     vertices: &[GeometryVertex],
@@ -319,6 +410,69 @@ mod tests {
             dot_vec3(tangents[0].tangent, vertices[0].normal).abs() < 0.0001,
             "authored tangent must be re-orthogonalized against the prepared normal"
         );
+    }
+
+    #[test]
+    fn accumulated_vertex_tangents_match_mikktspace_within_one_e_minus_four_on_indexed_quad() {
+        // Two-triangle quad with shared corners — the simplest non-trivial mesh that
+        // exercises shared-vertex tangent averaging. MikkTSpace and the in-tree Lengyel
+        // accumulator should converge within 1e-4 here because every vertex sees identical
+        // (position, normal, uv) across both incident triangles.
+        let vertices = [
+            GeometryVertex {
+                position: Vec3::new(-1.0, -1.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            GeometryVertex {
+                position: Vec3::new(1.0, -1.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            GeometryVertex {
+                position: Vec3::new(1.0, 1.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            GeometryVertex {
+                position: Vec3::new(-1.0, 1.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+        ];
+        let tex_coords = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
+        let indices = [0u32, 1, 2, 0, 2, 3];
+
+        let in_tree = accumulate_vertex_tangents(
+            &vertices,
+            &indices,
+            &tex_coords,
+            Transform::IDENTITY,
+            Vec3::ZERO,
+        );
+        let oracle = mikktspace_vertex_tangents(
+            &vertices,
+            &indices,
+            &tex_coords,
+            Transform::IDENTITY,
+            Vec3::ZERO,
+        );
+
+        assert_eq!(in_tree.len(), oracle.len());
+        for (vertex_index, (lhs, rhs)) in in_tree.iter().zip(oracle.iter()).enumerate() {
+            let dx = (lhs.tangent.x - rhs.tangent.x).abs();
+            let dy = (lhs.tangent.y - rhs.tangent.y).abs();
+            let dz = (lhs.tangent.z - rhs.tangent.z).abs();
+            assert!(
+                dx < 1.0e-4 && dy < 1.0e-4 && dz < 1.0e-4,
+                "vertex {vertex_index}: in-tree tangent {:?} drifts more than 1e-4 from \
+                 MikkTSpace oracle {:?}",
+                lhs.tangent,
+                rhs.tangent,
+            );
+            assert_eq!(
+                lhs.handedness, rhs.handedness,
+                "vertex {vertex_index}: in-tree handedness {:?} disagrees with MikkTSpace \
+                 oracle {:?}",
+                lhs.handedness, rhs.handedness,
+            );
+        }
     }
 
     fn assert_vec3_near(actual: Vec3, expected: Vec3) {
