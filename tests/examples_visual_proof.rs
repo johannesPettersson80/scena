@@ -13,7 +13,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use scena::{
-    Assets, Color, GeometryDesc, MaterialDesc, PerspectiveCamera, Renderer, Scene, Transform, Vec3,
+    Aabb, Assets, Color, GeometryDesc, MaterialDesc, PerspectiveCamera, Renderer, Scene, Transform,
+    Vec3,
 };
 
 const ARTIFACT_WIDTH: u32 = 256;
@@ -143,6 +144,112 @@ fn examples_visual_beginner_diagnostics_renders_recovery_scene_to_ppm() {
         ARTIFACT_HEIGHT,
         frame,
     );
+}
+
+#[test]
+fn examples_visual_camera_framing_renders_framed_part_to_ppm() {
+    // Mirror examples/camera_framing.rs: a single oriented part, framed via Aabb.
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.2, 0.4, 0.4));
+    let material = assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(70, 160, 240)));
+
+    let mut scene = Scene::new();
+    let inspected_part = scene
+        .mesh(geometry, material)
+        .add()
+        .expect("framed mesh inserts");
+    let camera = scene.add_default_camera().expect("default camera inserts");
+    let bounds = Aabb::new(Vec3::new(-0.6, -0.2, -0.2), Vec3::new(0.6, 0.2, 0.2));
+    scene.frame(camera, bounds).expect("frame succeeds");
+    scene
+        .look_at(camera, inspected_part)
+        .expect("look_at succeeds");
+
+    let mut renderer =
+        Renderer::headless(ARTIFACT_WIDTH, ARTIFACT_HEIGHT).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("camera_framing scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("camera_framing scene renders");
+
+    let frame = renderer.frame_rgba8();
+    assert!(
+        count_nonblack_pixels(frame) > 0,
+        "camera_framing example must render at least one nonblack pixel"
+    );
+
+    write_artifact("camera_framing", ARTIFACT_WIDTH, ARTIFACT_HEIGHT, frame);
+}
+
+#[test]
+fn examples_visual_layers_visibility_renders_active_layer_to_ppm() {
+    // Mirror examples/layers_visibility.rs: helper-on-top + hidden layer + tag-based
+    // selection, rendered through the camera layer mask.
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.3, 0.3, 0.3));
+    let visible_material =
+        assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(80, 170, 255)));
+    let helper_material =
+        assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(255, 230, 80)));
+
+    let mut scene = Scene::new();
+    let machine = scene
+        .mesh(geometry, visible_material)
+        .transform(Transform::at(Vec3::new(-0.25, 0.0, 0.0)))
+        .add()
+        .expect("machine mesh inserts");
+    let helper = scene
+        .mesh(geometry, helper_material)
+        .transform(Transform::at(Vec3::new(0.25, 0.0, 0.0)).scale_by(0.5))
+        .add()
+        .expect("helper mesh inserts");
+    let hidden = scene
+        .mesh(geometry, visible_material)
+        .transform(Transform::at(Vec3::new(0.0, 0.4, 0.0)))
+        .add()
+        .expect("hidden mesh inserts");
+    scene.add_tag(machine, "operational").expect("tag inserts");
+    scene
+        .set_layer_mask(machine, 0b0001)
+        .expect("machine layer set");
+    scene
+        .set_layer_mask(helper, 0b0001)
+        .expect("helper layer set");
+    scene
+        .set_layer_mask(hidden, 0b0010)
+        .expect("hidden layer set");
+    scene
+        .set_visible(hidden, false)
+        .expect("hidden visibility set");
+    scene
+        .set_render_group(helper, 10)
+        .expect("helper render group set");
+    scene
+        .set_helper_on_top(helper, true)
+        .expect("helper-on-top set");
+    let camera = scene.add_default_camera().expect("default camera inserts");
+    scene
+        .set_camera_layer_mask(camera, 0b0001)
+        .expect("camera layer mask set");
+
+    let mut renderer =
+        Renderer::headless(ARTIFACT_WIDTH, ARTIFACT_HEIGHT).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("layers_visibility scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("layers_visibility scene renders");
+
+    let frame = renderer.frame_rgba8();
+    assert!(
+        count_nonblack_pixels(frame) > 0,
+        "layers_visibility example must render at least one nonblack pixel"
+    );
+
+    write_artifact("layers_visibility", ARTIFACT_WIDTH, ARTIFACT_HEIGHT, frame);
 }
 
 #[test]
