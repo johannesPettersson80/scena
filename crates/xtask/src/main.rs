@@ -10374,6 +10374,39 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_release_ci_silent_artifact_upload_regression() {
+        // RELEASE-CI-M9: CI workflows must use `if-no-files-found: error` on artifact
+        // upload so a silent missing-artifacts upload doesn't pretend the lane passed.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/release-ci-silent-upload");
+        let workflow_path = fixture_root.join(".github/workflows/ci.yml");
+        fs::create_dir_all(workflow_path.parent().expect("workflow parent")).expect("fixture dir");
+        fs::write(
+            &workflow_path,
+            "jobs:\n  some-lane:\n    steps:\n      - uses: actions/upload-artifact@v4\n        with:\n          name: gate-artifacts\n          path: target/gate-artifacts/**\n          if-no-files-found: ignore\n",
+        )
+        .expect("workflow fixture");
+        let mut findings = Vec::new();
+
+        forbid_contains(
+            &fixture_root,
+            &mut findings,
+            "RELEASE-CI-M9",
+            ".github/workflows/ci.yml",
+            &["if-no-files-found: ignore"],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "RELEASE-CI-M9"
+                    && finding.message.contains("if-no-files-found: ignore")
+            }),
+            "doctor must reject CI workflows that silently ignore missing artifacts: \
+             {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
