@@ -10270,6 +10270,42 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_shadow_map_missing_counter_regression() {
+        // ARCH-SHADOW-MAP: diagnostics.rs must expose shadow_maps and the directional
+        // shadow-map resolution metadata so missing shadow infrastructure stays visible.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/shadow-map-stub");
+        let diagnostics_path = fixture_root.join("src/diagnostics.rs");
+        fs::create_dir_all(diagnostics_path.parent().expect("diagnostics parent"))
+            .expect("fixture dir");
+        fs::write(
+            &diagnostics_path,
+            "pub struct RendererStats { pub frames_rendered: u64 }\n",
+        )
+        .expect("diagnostics fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-SHADOW-MAP",
+            "src/diagnostics.rs",
+            &[
+                "pub shadow_maps: u64",
+                "pub directional_shadow_map_resolution: Option<u32>",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-SHADOW-MAP" && finding.message.contains("shadow_maps: u64")
+            }),
+            "doctor must reject diagnostics.rs that drops the shadow-map counter \
+             contract: {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
