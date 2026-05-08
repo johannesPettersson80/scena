@@ -13,9 +13,9 @@ use std::fs;
 use std::path::PathBuf;
 
 use scena::{
-    Aabb, AnimationPlaybackState, Assets, Color, CursorPosition, GeometryDesc, InteractionStyle,
-    LabelDesc, MaterialDesc, PerspectiveCamera, Renderer, Scene, SourceCoordinateSystem,
-    SourceUnits, Transform, Vec3, Viewport,
+    Aabb, AnimationPlaybackState, Assets, Color, ConnectOptions, ConnectorFrame, CursorPosition,
+    GeometryDesc, InteractionStyle, LabelDesc, MaterialDesc, PerspectiveCamera, Profile, Renderer,
+    RendererOptions, Scene, SourceCoordinateSystem, SourceUnits, Transform, Vec3, Viewport,
 };
 
 const ARTIFACT_WIDTH: u32 = 256;
@@ -603,6 +603,136 @@ fn examples_visual_glb_model_viewer_renders_imported_mesh_to_ppm() {
     );
 
     write_artifact("glb_model_viewer", ARTIFACT_WIDTH, ARTIFACT_HEIGHT, frame);
+}
+
+#[test]
+fn examples_visual_industrial_static_scene_renders_to_ppm() {
+    // Mirror examples/industrial_static_scene.rs: a floor grid plus three machine
+    // bodies with pipe connectors, framed via frame_all_with_assets and rendered
+    // through the Industrial render profile.
+    let assets = Assets::new();
+    let floor = assets.create_geometry(GeometryDesc::grid(3.0, 12));
+    let body = assets.create_geometry(GeometryDesc::box_xyz(0.36, 0.2, 0.18));
+    let pipe = assets.create_geometry(GeometryDesc::box_xyz(0.08, 0.08, 0.7));
+    let floor_material =
+        assets.create_material(MaterialDesc::line(Color::from_srgb_u8(90, 110, 130), 1.0));
+    let body_material =
+        assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(55, 150, 220)));
+    let pipe_material =
+        assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(205, 210, 220)));
+
+    let mut scene = Scene::new();
+    scene
+        .mesh(floor, floor_material)
+        .transform(Transform::at(Vec3::new(0.0, -0.35, 0.0)))
+        .add()
+        .expect("floor mesh inserts");
+    for x in [-0.45_f32, 0.0, 0.45] {
+        scene
+            .mesh(body, body_material)
+            .transform(Transform::at(Vec3::new(x, 0.0, 0.0)))
+            .add()
+            .expect("body mesh inserts");
+        scene
+            .mesh(pipe, pipe_material)
+            .transform(Transform::at(Vec3::new(x, -0.18, 0.0)))
+            .add()
+            .expect("pipe mesh inserts");
+    }
+    scene
+        .add_label(
+            scene.root(),
+            LabelDesc::sdf("Line A"),
+            Transform::at(Vec3::new(0.0, 0.34, 0.0)),
+        )
+        .expect("label inserts");
+    let camera = scene.add_default_camera().expect("default camera inserts");
+    scene
+        .frame_all_with_assets(camera, &assets)
+        .expect("frame_all succeeds");
+
+    let options = RendererOptions::default().with_profile(Profile::Industrial);
+    let mut renderer = Renderer::headless_with_options(ARTIFACT_WIDTH, ARTIFACT_HEIGHT, options)
+        .expect("headless renderer builds with industrial options");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("industrial_static_scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("industrial_static_scene renders");
+
+    let frame = renderer.frame_rgba8();
+    assert!(
+        count_nonblack_pixels(frame) > 0,
+        "industrial_static_scene example must render at least one nonblack pixel"
+    );
+
+    write_artifact(
+        "industrial_static_scene",
+        ARTIFACT_WIDTH,
+        ARTIFACT_HEIGHT,
+        frame,
+    );
+}
+
+#[test]
+fn examples_visual_connect_objects_renders_assembled_pair_to_ppm() {
+    // Mirror examples/connect_objects.rs: typed connector handles join two empties
+    // by named connectors, then we frame the assembly via frame_all_with_assets so
+    // the rendered output proves the connector solve placed both nodes inside the
+    // viewport.
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.4, 0.4, 0.4));
+    let motor_material =
+        assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(220, 110, 70)));
+    let pump_material =
+        assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(70, 180, 220)));
+
+    let mut scene = Scene::new();
+    let motor = scene
+        .mesh(geometry, motor_material)
+        .transform(Transform::IDENTITY)
+        .add()
+        .expect("motor mesh inserts");
+    let pump = scene
+        .mesh(geometry, pump_material)
+        .transform(Transform::at(Vec3::new(2.0, 0.0, 0.0)))
+        .add()
+        .expect("pump mesh inserts");
+    let motor_shaft = scene
+        .add_connector(
+            ConnectorFrame::new(motor, Transform::at(Vec3::new(0.5, 0.0, 0.0))).named("shaft"),
+        )
+        .expect("motor connector inserts");
+    let pump_drive = scene
+        .add_connector(
+            ConnectorFrame::new(pump, Transform::at(Vec3::new(-0.25, 0.0, 0.0))).named("drive"),
+        )
+        .expect("pump connector inserts");
+    scene
+        .connect_by_key(motor_shaft, pump_drive, ConnectOptions::default())
+        .expect("connect_by_key succeeds");
+    let camera = scene.add_default_camera().expect("default camera inserts");
+    scene
+        .frame_all_with_assets(camera, &assets)
+        .expect("frame_all succeeds");
+
+    let mut renderer =
+        Renderer::headless(ARTIFACT_WIDTH, ARTIFACT_HEIGHT).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("connect_objects scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("connect_objects scene renders");
+
+    let frame = renderer.frame_rgba8();
+    assert!(
+        count_nonblack_pixels(frame) > 0,
+        "connect_objects example must render at least one nonblack pixel"
+    );
+
+    write_artifact("connect_objects", ARTIFACT_WIDTH, ARTIFACT_HEIGHT, frame);
 }
 
 #[test]

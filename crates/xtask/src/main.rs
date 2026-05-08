@@ -10818,6 +10818,79 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_visual_fixture_metadata_missing_suite_regression() {
+        // VISUAL-FIXTURE-METADATA: tests/visual/fixtures/m1-headless-core.toml must
+        // declare the [suite] block with the name/format/encoding contract so the
+        // doctor can compare each rendered fixture against it.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/visual-fixture-metadata-stub");
+        let toml_path = fixture_root.join("tests/visual/fixtures/m1-headless-core.toml");
+        fs::create_dir_all(toml_path.parent().expect("toml parent")).expect("fixture dir");
+        fs::write(&toml_path, "# placeholder fixture metadata\n").expect("toml fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "VISUAL-FIXTURE-METADATA",
+            "tests/visual/fixtures/m1-headless-core.toml",
+            &[
+                "[suite]",
+                "name = \"m1-headless-core\"",
+                "format = \"ppm\"",
+                "encoding = \"srgb8\"",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "VISUAL-FIXTURE-METADATA" && finding.message.contains("[suite]")
+            }),
+            "doctor must reject m1 visual fixture TOML missing the suite contract: \
+             {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_release_ci_missing_lane_regression() {
+        // RELEASE-CI-M9: ci.yml must list every release lane name. A workflow that
+        // drops e.g. macos-metal regresses the contract that release-readiness can
+        // expect lane artifacts on every push.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/release-ci-missing-lane");
+        let workflow_path = fixture_root.join(".github/workflows/ci.yml");
+        fs::create_dir_all(workflow_path.parent().expect("workflow parent")).expect("fixture dir");
+        fs::write(
+            &workflow_path,
+            "jobs:\n  linux-native-vulkan:\n    runs-on: ubuntu-24.04\n",
+        )
+        .expect("workflow fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "RELEASE-CI-M9",
+            ".github/workflows/ci.yml",
+            &[
+                "linux-native-vulkan",
+                "linux-browser-webgl2",
+                "macos-metal",
+                "windows-dx12",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "RELEASE-CI-M9" && finding.message.contains("macos-metal")
+            }),
+            "doctor must reject CI workflows that drop a required release lane: \
+             {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
