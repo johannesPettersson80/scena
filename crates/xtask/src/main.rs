@@ -10341,6 +10341,39 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_m4_platform_missing_dirty_state_regression() {
+        // ARCH-M4-PLATFORM: src/scene/dirty.rs must expose SceneDirtyState plus the
+        // transform_revision counter so dirty propagation stays observable to render-
+        // on-change consumers.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/m4-platform-stub");
+        let dirty_path = fixture_root.join("src/scene/dirty.rs");
+        fs::create_dir_all(dirty_path.parent().expect("dirty parent")).expect("fixture dir");
+        fs::write(&dirty_path, "pub struct DirtyState {}\n").expect("dirty fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-M4-PLATFORM",
+            "src/scene/dirty.rs",
+            &[
+                "pub struct SceneDirtyState",
+                "transform_revision",
+                "pub fn dirty_state",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-M4-PLATFORM" && finding.message.contains("SceneDirtyState")
+            }),
+            "doctor must reject scene/dirty.rs that drops the SceneDirtyState contract: \
+             {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
