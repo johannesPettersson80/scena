@@ -10306,6 +10306,41 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_m3b_animation_missing_typed_keys_regression() {
+        // ARCH-M3B-ANIMATION: src/animation.rs must expose the typed animation handle and
+        // playback-state enums so animation lookups stay typed instead of stringly.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/m3b-animation-stub");
+        let animation_path = fixture_root.join("src/animation.rs");
+        fs::create_dir_all(animation_path.parent().expect("animation parent"))
+            .expect("fixture dir");
+        fs::write(&animation_path, "pub struct AnimationMixer {}\n").expect("animation fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-M3B-ANIMATION",
+            "src/animation.rs",
+            &[
+                "pub struct AnimationMixerKey",
+                "pub enum AnimationPlaybackState",
+                "pub enum AnimationLoopMode",
+                "pub enum AnimationTarget",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-M3B-ANIMATION"
+                    && finding.message.contains("AnimationMixerKey")
+            }),
+            "doctor must reject animation.rs that drops the typed mixer-key contract: \
+             {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
