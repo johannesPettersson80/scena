@@ -1,0 +1,13 @@
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.glb binary
+*.ktx2 binary
+*.rgba16f binary
+*.bin binary
+*.wasm binary
+*.br binary
+*.fixture.toml text eol=lf
+*.fixture.txt text eol=lf
+tests/assets/environment/generated/*.toml text eol=lf
