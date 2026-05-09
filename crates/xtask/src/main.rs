@@ -713,6 +713,13 @@ const REQUIRED_RELEASE_ARTIFACT_SUFFIXES: &[&str] = &[
     "m9-platform/windows-dx12/pbr-directional-red.ppm",
     "m9-platform/windows-dx12/pbr-point-green.ppm",
     "m9-platform/windows-dx12/pbr-spot-blue.ppm",
+    // Phase 6 paperwork: per docs/specs/release-reviews.md, the findings register and
+    // maintainer sign-off must accompany the release-lane artifacts before publish.
+    // Per-subagent <role>/<commit>.md reports are validated separately by
+    // RELEASE-REVIEWS-PRESENT in a follow-up batch; these two single-file contracts
+    // ride the existing missing-suffix path without scanning the reviews/ subtree.
+    "reviews/findings.json",
+    "reviews/maintainer-signoff.toml",
 ];
 
 const REQUIRED_PASSED_STATUS_ARTIFACT_SUFFIXES: &[&str] = &[
