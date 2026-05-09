@@ -12519,6 +12519,74 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_agents_md_missing_doctor_runbook_regression() {
+        // AGENTS-VALIDATION: AGENTS.md must instruct contributors to run
+        // `cargo run -p xtask -- doctor --full` and reference the
+        // scena-doctor skill. A workspace whose AGENTS.md drops either
+        // contract must surface a finding so the doctor entrypoint never
+        // becomes invisible to new agents.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/agents-md-missing-doctor");
+        fs::create_dir_all(&fixture_root).expect("fixture dir");
+        fs::write(
+            fixture_root.join("AGENTS.md"),
+            "# Stub AGENTS\n\nContributors should run tests.\n",
+        )
+        .expect("agents stub");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "AGENTS-VALIDATION",
+            "AGENTS.md",
+            &["cargo run -p xtask -- doctor --full", "Use `scena-doctor`"],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "AGENTS-VALIDATION"
+                    && finding
+                        .message
+                        .contains("cargo run -p xtask -- doctor --full")
+            }),
+            "doctor must reject AGENTS.md that drops the doctor runbook \
+             reference: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_source_file_with_out_of_scope_term_regression() {
+        // ARCH-SCOPE: scena is a renderer, not a domain engine. Source
+        // files referencing domain-specific terms (plc, robotics, robot,
+        // etc.) drift the project outside its non-goals. The fixture
+        // writes a source file containing "plc" and asserts the
+        // architecture doctor surfaces a renderer-forbidden-term finding.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/source-scope-out-of-scope");
+        let src_dir = fixture_root.join("src");
+        fs::create_dir_all(&src_dir).expect("src dir");
+        fs::write(
+            src_dir.join("foo.rs"),
+            "// Wires plc telemetry into the renderer.\npub fn run() {}\n",
+        )
+        .expect("foo source");
+        let mut findings = Vec::new();
+
+        check_source_scope(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-SCOPE"
+                    && finding.message.contains("src/foo.rs")
+                    && finding.message.contains("plc")
+            }),
+            "doctor must reject source files containing renderer-forbidden \
+             scope terms like 'plc': {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_required_module_layout_with_missing_files_regression() {
         // ARCH-REQUIRED: the architecture doctor must reject any workspace
         // checkout missing one of the canonical source modules listed in
