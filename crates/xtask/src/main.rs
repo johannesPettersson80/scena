@@ -11318,6 +11318,43 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_render_alpha_missing_linear_frame_path_regression() {
+        // ARCH-RENDER-ALPHA (CPU path): src/render.rs must keep the
+        // linear_frame: Option<Vec<Color>> field plus the cpu::clear_cpu and
+        // cpu::draw_primitive_cpu calls so CPU-rasterised alpha blending happens
+        // in linear space before the output stage. A stub Renderer that drops
+        // the field regresses the contract.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/render-alpha-linear-frame-stub");
+        let render_path = fixture_root.join("src/render.rs");
+        fs::create_dir_all(render_path.parent().expect("render parent")).expect("fixture dir");
+        fs::write(&render_path, "pub struct Renderer { pub frame: Vec<u8> }\n")
+            .expect("render fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-RENDER-ALPHA",
+            "src/render.rs",
+            &[
+                "linear_frame: Option<Vec<Color>>",
+                "cpu::clear_cpu",
+                "cpu::draw_primitive_cpu",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-RENDER-ALPHA" && finding.message.contains("linear_frame")
+            }),
+            "doctor must reject Renderer that drops the linear_frame CPU alpha-blend \
+             path: {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
