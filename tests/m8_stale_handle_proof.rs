@@ -47,6 +47,37 @@ fn m8_material_handle_from_other_store_returns_typed_error() {
 }
 
 #[test]
+fn m8_environment_handle_from_other_store_returns_typed_error() {
+    // Phase 2A — extends the per-handle stale-handle matrix to the
+    // EnvironmentHandle slot. Two independently constructed Assets
+    // stores must mint distinct EnvironmentHandle values, and a handle
+    // from `store_a.default_environment()` must surface the typed
+    // `AssetError::EnvironmentHandleNotFound` when consumed against
+    // `store_b`. Closes the environment row in the
+    // state-of-art-threejs-replacement-plan.md hot-reload preservation
+    // gate (line 1276) for the typed-handle dimension.
+    let store_a = Assets::new();
+    let store_b = Assets::new();
+    let environment = store_a.default_environment();
+
+    match store_b.try_environment(environment) {
+        Err(AssetError::EnvironmentHandleNotFound { .. }) => {}
+        other => panic!(
+            "environment handles from a foreign Assets store must surface \
+             AssetError::EnvironmentHandleNotFound, got {other:?}"
+        ),
+    }
+    assert!(
+        store_a.contains_environment(environment),
+        "environment is live in store_a"
+    );
+    assert!(
+        !store_b.contains_environment(environment),
+        "environment is NOT live in store_b — wrong-store case"
+    );
+}
+
+#[test]
 fn m8_assets_store_id_distinguishes_wrong_store_from_stale_handle() {
     // scena-api-ergonomics-reviewer Phase 6 finding F4 closure:
     // The *HandleNotFound diagnostic surface is the same shape for "wrong
