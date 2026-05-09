@@ -191,14 +191,14 @@ guess missing state.
 
 | Area | Current release-candidate surface |
 |---|---|
-| Scene graph | typed nodes, transforms, cameras, lights, clipping planes, imports, labels, instances, picking, and animation mixers |
-| Geometry | primitives, manual buffers, boxes, line/wire/edge expansion, bounds, UV0 retention, CPU skinning, CPU morph targets, and instance sets |
+| Scene graph | typed nodes, transforms, cameras, lights, clipping planes, imports, labels, instances, picking, animation mixers, and one-call `Scene::with_default_camera()` |
+| Geometry | primitives, manual buffers, boxes, line/wire/edge expansion, bounds, UV0 retention, CPU skinning, CPU morph targets (multi-target weights chunked correctly per glTF spec), and instance sets |
 | Materials | unlit, degraded CPU-side metallic-roughness preview, vertex colors, alpha blending, texture descriptors, line/wire/edge materials, ACES plus sRGB output, FXAA |
-| Assets | glTF/GLB first, cache/dedup/reload, external buffers, selected Khronos samples, anchors, import-local lookup, source units, coordinate conversion |
-| Rendering | camera-projected headless CPU, headless/native wgpu foundation, explicit prepare/render lifecycle, render-on-change, offscreen targets, readback, stats, diagnostics |
-| Interaction | typed picking results, hover/selection styles, viewport-aware cursor positions, platform-neutral orbit controls |
+| Assets | glTF/GLB first, cache/dedup/reload, external buffers, selected Khronos samples, anchors, import-local lookup, source units, coordinate conversion, `Assets::release_unreferenced()` for explicit eviction, and `AssetStoreId` + `Assets::contains_<kind>` predicates that distinguish wrong-store from stale-handle |
+| Rendering | camera-projected headless CPU, headless/native wgpu foundation, explicit prepare/render lifecycle, render-on-change, offscreen targets, readback, stats, diagnostics, `Renderer::headless_default()` zero-arg constructor, and `interactive_gltf_viewer(path, surface)` fluent builder |
+| Interaction | typed picking results, hover/selection styles, viewport-aware cursor positions, platform-neutral orbit controls, and an example demonstrating the independent hover / primary-select / pointer-leave states |
 | Platform | native descriptor and attached-window paths, browser surface intent, WASM compile/package checks, surface/context/device loss events |
-| Quality | doctor rules, public API baseline, visual artifacts, browser API smoke, benchmarks, allocation gates, release-candidate deferral ADR |
+| Quality | doctor rules, public API baseline, visual artifacts, browser API smoke, benchmarks, allocation gates, 64 dedicated bad-pattern doctor regression fixtures, six-role release-review schema with frontmatter + JSON-schema validators, and release-candidate deferral ADR |
 
 The implementation is deliberately renderer-focused. Application semantics remain in the
 host application.
@@ -264,11 +264,12 @@ release:
 |---|---|
 | Crate version | `1.0.0-rc.0` |
 | Minimum Rust | `1.90` |
-| Local implementation checklist | M0 through M5 foundation complete; M6/M7/M8 ergonomics + asset/material gates closed locally; state-of-art replacement checklist still names per-lane GPU evidence and external review work |
+| Local implementation checklist | M0 through M5 foundation complete; M6/M7/M8/M10-final-parity gates closed locally; state-of-art replacement plan ~92% closed (37 boxes open, mostly per-lane GPU evidence + per-lane CI evidence + the Phase 8 final-tag steps) |
+| Phase 6 review status | Six subagent review reports filed under `target/gate-artifacts/reviews/`; `findings.json` (`scena.release.findings.v1`) records 26 findings — 19 closed, 7 deferred (5 are v1.0 GPU-pipeline impl, 2 are CI-lane evidence) |
 | API baseline | [`docs/api/m5-public-api-baseline.txt`](docs/api/m5-public-api-baseline.txt) |
-| Publication-lane deferrals | [`ADR-0005`](docs/decisions/ADR-0005-local-release-candidate-deferrals.md) (closure path: [`ADR-0006`](docs/decisions/ADR-0006-Local-Release-Candidate-Closure.md)) |
+| Publication-lane deferrals | [`ADR-0005`](docs/decisions/ADR-0005-local-release-candidate-deferrals.md) (closure path: [`ADR-0006`](docs/decisions/ADR-0006-Local-Release-Candidate-Closure.md); helper: [`scripts/release_publish_dry_run.sh`](scripts/release_publish_dry_run.sh)) |
 | Release notes | rc.0 in [`docs/release-notes/v1.0.0-rc.md`](docs/release-notes/v1.0.0-rc.md); v1.0.0 draft in [`docs/release-notes/v1.0.0.md`](docs/release-notes/v1.0.0.md) (Draft until Phase 1B/1C/1D/3/6/8 close) |
-| Release-review schema | [`docs/specs/release-reviews.md`](docs/specs/release-reviews.md) defines the per-subagent report, findings register, and maintainer sign-off contracts that release-readiness fail-closes on |
+| Release-review schema | [`docs/specs/release-reviews.md`](docs/specs/release-reviews.md) defines the per-subagent report, findings register, and maintainer sign-off contracts that release-readiness fail-closes on (frontmatter parser + JSON-schema validators ship in `crates/xtask`) |
 | Local package proof | `cargo publish --dry-run --allow-dirty` passed on the release-candidate tree |
 
 This checkout has local Linux/headless/browser Rust/WASM evidence. Public tag, GitHub
