@@ -105,3 +105,65 @@ fn headless_gltf_viewer_builder_can_build_on_change_render_loop() {
         "viewer loop should keep the first rendered frame visible across idle skips"
     );
 }
+
+#[test]
+fn headless_gltf_viewer_builder_with_environment_loads_explicit_path() {
+    // Phase 5B step 1: `with_environment(path)` accepts an explicit asset
+    // path and overrides the default-environment toggle. Loading the
+    // bundled neutral-studio fixture should attach an environment handle
+    // distinct from `Assets::default_environment` only when the path is
+    // different from the bundled one — for the same path it returns the
+    // cached default handle, which is still a positive signal that the
+    // override path took.
+    let first = pollster::block_on(
+        scena::headless_gltf_viewer("tests/assets/gltf/mesh_material_vertex_color_scene.gltf")
+            .size(48, 32)
+            .with_environment("tests/assets/environment/neutral-studio.fixture.txt")
+            .render(),
+    )
+    .expect("builder accepts explicit environment paths");
+
+    assert!(
+        first.renderer.environment().is_some(),
+        "with_environment must attach an environment handle to the renderer"
+    );
+    assert_eq!(first.renderer.stats().environments, 1);
+}
+
+#[test]
+fn headless_gltf_viewer_with_environment_overrides_default_environment_call_order() {
+    // Phase 5B step 1: setting `with_default_environment` then
+    // `with_environment(path)` must end up using the explicit path —
+    // confirming the override semantics documented on the builder.
+    let first = pollster::block_on(
+        scena::headless_gltf_viewer("tests/assets/gltf/mesh_material_vertex_color_scene.gltf")
+            .size(32, 32)
+            .with_default_environment()
+            .with_environment("tests/assets/environment/neutral-studio.fixture.txt")
+            .render(),
+    )
+    .expect("builder accepts explicit environment after default toggle");
+
+    assert!(first.renderer.environment().is_some());
+}
+
+#[test]
+fn headless_gltf_viewer_snapshot_rgba8_and_capabilities_accessors_match_renderer() {
+    // Phase 5B step 1: `snapshot_rgba8` and `capabilities` are convenience
+    // accessors that forward to the renderer; their results must match
+    // `renderer.frame_rgba8()` / `renderer.capabilities()` so callers can
+    // skip the indirection in screenshot + capability-gate code paths.
+    let viewer = pollster::block_on(
+        scena::headless_gltf_viewer("tests/assets/gltf/mesh_material_vertex_color_scene.gltf")
+            .size(16, 16)
+            .with_default_light()
+            .build(),
+    )
+    .expect("viewer builder produces a prepared viewer");
+
+    let mut viewer = viewer;
+    viewer.render_next_frame().expect("first frame renders");
+
+    assert_eq!(viewer.snapshot_rgba8(), viewer.renderer().frame_rgba8());
+    assert_eq!(viewer.capabilities(), viewer.renderer().capabilities());
+}

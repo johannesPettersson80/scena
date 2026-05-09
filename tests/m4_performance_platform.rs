@@ -103,10 +103,7 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
     // Phase 1F: CPU rasterizer never samples array textures; the field
     // reports FeatureDisabled with zero layers so cap-matrix consumers can
     // distinguish CPU lanes from GPU lanes that meet the WebGPU minimum.
-    assert_eq!(
-        headless.texture_arrays,
-        CapabilityStatus::FeatureDisabled
-    );
+    assert_eq!(headless.texture_arrays, CapabilityStatus::FeatureDisabled);
     assert_eq!(headless.max_texture_array_layers, 0);
 
     let webgl2 = scena::Capabilities::for_backend(Backend::WebGl2);

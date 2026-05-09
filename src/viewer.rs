@@ -35,6 +35,7 @@ pub struct HeadlessGltfViewerBuilder {
     frame_import: bool,
     default_light: bool,
     default_environment: bool,
+    environment_path: Option<AssetPath>,
     renderer_options: RendererOptions,
 }
 
@@ -47,6 +48,7 @@ pub fn headless_gltf_viewer(path: impl Into<AssetPath>) -> HeadlessGltfViewerBui
         frame_import: true,
         default_light: false,
         default_environment: false,
+        environment_path: None,
         renderer_options: RendererOptions::default(),
     }
 }
@@ -68,6 +70,17 @@ impl HeadlessGltfViewerBuilder {
     /// Uses the bundled default environment before the first prepare/render.
     pub const fn with_default_environment(mut self) -> Self {
         self.default_environment = true;
+        self
+    }
+
+    /// Loads `path` as the environment before the first prepare/render. The
+    /// asset loader resolves equirectangular HDR sources and the bundled
+    /// neutral-studio fixture; any other format returns
+    /// `AssetError::UnsupportedEnvironmentFormat`. Setting an explicit
+    /// environment overrides any prior `with_default_environment()` call.
+    pub fn with_environment(mut self, path: impl Into<AssetPath>) -> Self {
+        self.environment_path = Some(path.into());
+        self.default_environment = false;
         self
     }
 
@@ -116,7 +129,10 @@ impl HeadlessGltfViewerBuilder {
 
         let mut renderer =
             Renderer::headless_with_options(self.width, self.height, self.renderer_options)?;
-        if self.default_environment {
+        if let Some(environment_path) = self.environment_path {
+            let environment = assets.load_environment(environment_path).await?;
+            renderer.set_environment(environment);
+        } else if self.default_environment {
             renderer.set_environment(assets.default_environment());
         }
         renderer.prepare_with_assets(&mut scene, &assets)?;
@@ -188,6 +204,20 @@ impl HeadlessGltfViewer {
     pub fn import(&self) -> &SceneImport {
         &self.import
     }
+
+    /// Returns the most recently rendered frame's interleaved RGBA8 bytes.
+    /// Convenience for screenshots and visual-proof artifacts; equivalent
+    /// to `viewer.renderer().frame_rgba8()`.
+    pub fn snapshot_rgba8(&self) -> &[u8] {
+        self.renderer.frame_rgba8()
+    }
+
+    /// Returns the renderer's capability snapshot. Forwards to the same
+    /// `Capabilities` struct that callers can also reach via
+    /// `viewer.renderer().capabilities()`.
+    pub fn capabilities(&self) -> &crate::Capabilities {
+        self.renderer.capabilities()
+    }
 }
 
 /// Owned interactive viewer state returned by [`InteractiveGltfViewerBuilder::build`].
@@ -216,6 +246,7 @@ pub struct InteractiveGltfViewerBuilder {
     frame_import: bool,
     default_light: bool,
     default_environment: bool,
+    environment_path: Option<AssetPath>,
     renderer_options: RendererOptions,
 }
 
@@ -236,6 +267,7 @@ pub fn interactive_gltf_viewer(
         frame_import: true,
         default_light: false,
         default_environment: false,
+        environment_path: None,
         renderer_options: RendererOptions::default(),
     }
 }
@@ -250,6 +282,15 @@ impl InteractiveGltfViewerBuilder {
     /// Uses the bundled default environment before the first prepare/render.
     pub const fn with_default_environment(mut self) -> Self {
         self.default_environment = true;
+        self
+    }
+
+    /// Loads `path` as the environment before the first prepare/render.
+    /// Mirrors `HeadlessGltfViewerBuilder::with_environment`; setting an
+    /// explicit path overrides any prior `with_default_environment()` call.
+    pub fn with_environment(mut self, path: impl Into<AssetPath>) -> Self {
+        self.environment_path = Some(path.into());
+        self.default_environment = false;
         self
     }
 
@@ -302,7 +343,10 @@ impl InteractiveGltfViewerBuilder {
         }
         let mut renderer =
             Renderer::from_surface_with_options(self.surface, self.renderer_options)?;
-        if self.default_environment {
+        if let Some(environment_path) = self.environment_path {
+            let environment = pollster::block_on(assets.load_environment(environment_path))?;
+            renderer.set_environment(environment);
+        } else if self.default_environment {
             renderer.set_environment(assets.default_environment());
         }
         renderer.prepare_with_assets(&mut scene, &assets)?;
@@ -330,7 +374,10 @@ impl InteractiveGltfViewerBuilder {
         }
         let mut renderer =
             Renderer::from_surface_async_with_options(self.surface, self.renderer_options).await?;
-        if self.default_environment {
+        if let Some(environment_path) = self.environment_path {
+            let environment = assets.load_environment(environment_path).await?;
+            renderer.set_environment(environment);
+        } else if self.default_environment {
             renderer.set_environment(assets.default_environment());
         }
         renderer.prepare_with_assets(&mut scene, &assets)?;
@@ -394,6 +441,20 @@ impl InteractiveGltfViewer {
     /// Renderer diagnostics emitted during prepare or render.
     pub fn diagnostics(&self) -> Vec<Diagnostic> {
         self.renderer.diagnostics().to_vec()
+    }
+
+    /// Returns the most recently rendered frame's interleaved RGBA8 bytes.
+    /// Convenience for screenshots and visual-proof artifacts; equivalent
+    /// to `viewer.renderer().frame_rgba8()`.
+    pub fn snapshot_rgba8(&self) -> &[u8] {
+        self.renderer.frame_rgba8()
+    }
+
+    /// Returns the renderer's capability snapshot. Forwards to the same
+    /// `Capabilities` struct that callers can also reach via
+    /// `viewer.renderer().capabilities()`.
+    pub fn capabilities(&self) -> &crate::Capabilities {
+        self.renderer.capabilities()
     }
 }
 
