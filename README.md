@@ -264,9 +264,11 @@ release:
 |---|---|
 | Crate version | `1.0.0-rc.0` |
 | Minimum Rust | `1.90` |
-| Local implementation checklist | M0 through M5 foundation complete; state-of-art replacement checklist remains open |
+| Local implementation checklist | M0 through M5 foundation complete; M6/M7/M8 ergonomics + asset/material gates closed locally; state-of-art replacement checklist still names per-lane GPU evidence and external review work |
 | API baseline | [`docs/api/m5-public-api-baseline.txt`](docs/api/m5-public-api-baseline.txt) |
-| Publication-lane deferrals | [`ADR-0005`](docs/decisions/ADR-0005-local-release-candidate-deferrals.md) |
+| Publication-lane deferrals | [`ADR-0005`](docs/decisions/ADR-0005-local-release-candidate-deferrals.md) (closure path: [`ADR-0006`](docs/decisions/ADR-0006-Local-Release-Candidate-Closure.md)) |
+| Release notes | rc.0 in [`docs/release-notes/v1.0.0-rc.md`](docs/release-notes/v1.0.0-rc.md); v1.0.0 draft in [`docs/release-notes/v1.0.0.md`](docs/release-notes/v1.0.0.md) (Draft until Phase 1B/1C/1D/3/6/8 close) |
+| Release-review schema | [`docs/specs/release-reviews.md`](docs/specs/release-reviews.md) defines the per-subagent report, findings register, and maintainer sign-off contracts that release-readiness fail-closes on |
 | Local package proof | `cargo publish --dry-run --allow-dirty` passed on the release-candidate tree |
 
 This checkout has local Linux/headless/browser Rust/WASM evidence. Public tag, GitHub
@@ -360,8 +362,10 @@ policy.
 | [`docs/specs/platform-capabilities.md`](docs/specs/platform-capabilities.md) | native/WebGPU/WebGL2/WASM capability and threading contracts |
 | [`docs/specs/visual-quality-contract.md`](docs/specs/visual-quality-contract.md) | color, environment, screenshot, browser, and tolerance rules |
 | [`docs/specs/doctor-contract.md`](docs/specs/doctor-contract.md) | source-derived drift and silent-failure guardrails |
+| [`docs/specs/release-reviews.md`](docs/specs/release-reviews.md) | subagent review report, findings register, and maintainer sign-off schemas (Phase 6 release-readiness paperwork) |
 | [`docs/checklists/`](docs/checklists/) | M0 through M5 execution and acceptance checklists |
-| [`docs/decisions/`](docs/decisions/) | accepted ADRs |
+| [`docs/decisions/`](docs/decisions/) | accepted ADRs (rc.0 framing in [`ADR-0005`](docs/decisions/ADR-0005-local-release-candidate-deferrals.md); closure path in [`ADR-0006`](docs/decisions/ADR-0006-Local-Release-Candidate-Closure.md)) |
+| [`docs/release-notes/`](docs/release-notes/) | release notes ([rc.0](docs/release-notes/v1.0.0-rc.md) is current; [v1.0.0 draft](docs/release-notes/v1.0.0.md) is filled at release time) |
 
 ## Security
 
