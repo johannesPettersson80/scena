@@ -27,12 +27,13 @@ pub use assets::BrowserAssetFetcher;
 #[cfg(not(target_arch = "wasm32"))]
 pub use assets::FileAssetFetcher;
 pub use assets::{
-    AssetFetcher, AssetLoadControl, AssetLoadProgress, AssetLoadReport, AssetPath, Assets,
-    DefaultAssetFetcher, EnvironmentDerivative, EnvironmentDesc, EnvironmentHandle,
-    EnvironmentSourceKind, GeometryHandle, GltfDecoderPolicy, GltfExtensionDiagnostic,
-    GltfExtensionStatus, MaterialHandle, ModelHandle, RetainPolicy, SceneAsset, SceneAssetAnchor,
-    SceneAssetClip, SceneAssetLight, SceneAssetMesh, SceneAssetNode, TextureDesc, TextureFilter,
-    TextureHandle, TextureSamplerDesc, TextureSourceFormat, TextureWrap, WasmEnvironmentDelivery,
+    AssetEvictionStats, AssetFetcher, AssetLoadControl, AssetLoadProgress, AssetLoadReport,
+    AssetPath, Assets, DefaultAssetFetcher, EnvironmentDerivative, EnvironmentDesc,
+    EnvironmentHandle, EnvironmentSourceKind, GeometryHandle, GltfDecoderPolicy,
+    GltfExtensionDiagnostic, GltfExtensionStatus, MaterialHandle, ModelHandle, RetainPolicy,
+    SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetLight, SceneAssetMesh, SceneAssetNode,
+    TextureDesc, TextureFilter, TextureHandle, TextureSamplerDesc, TextureSourceFormat,
+    TextureWrap, WasmEnvironmentDelivery,
 };
 pub use controls::{
     OrbitControlAction, OrbitControls, PointerButton, PointerEvent, PointerEventKind, TouchEvent,

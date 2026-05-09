@@ -58,6 +58,15 @@ pub enum RetainPolicy {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AssetPath(String);
 
+/// Per-store eviction counts returned by [`Assets::release_unreferenced`].
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct AssetEvictionStats {
+    pub geometries_evicted: u32,
+    pub materials_evicted: u32,
+    pub textures_evicted: u32,
+    pub environments_evicted: u32,
+}
+
 /// Asset source and cache owner.
 #[derive(Debug, Clone)]
 pub struct Assets<F = DefaultAssetFetcher> {
@@ -116,6 +125,101 @@ impl<F> Assets<F> {
 
     pub fn set_retain_policy(&mut self, policy: RetainPolicy) {
         self.retain_policy = policy;
+    }
+
+    /// Frees `GeometryDesc` / `MaterialDesc` / `TextureDesc` /
+    /// `EnvironmentDesc` slotmap entries that no cached `SceneAsset`,
+    /// material descriptor, or environment lookup still references.
+    ///
+    /// Long-running hot-reload sessions accumulate dead handles in the
+    /// asset slotmaps because [`Assets::reload_scene`] inserts fresh
+    /// entries for the replacement scene without evicting the prior
+    /// scene's geometry/material/texture entries; only the latest
+    /// `SceneAsset` per path is retained in `scene_lookup`. This helper
+    /// computes the transitive closure of handles still reachable from
+    /// `scene_lookup`, the materials those scenes' meshes reference, the
+    /// textures those materials reference, and the cached environment
+    /// lookup, then drops every other entry. Returns a per-store eviction
+    /// count.
+    ///
+    /// Closes scena-gltf-animation-reviewer Phase 6 finding F4.
+    pub fn release_unreferenced(&self) -> AssetEvictionStats {
+        let mut storage = self.storage();
+        let mut referenced_geometries: std::collections::BTreeSet<GeometryHandle> =
+            std::collections::BTreeSet::new();
+        let mut referenced_materials: std::collections::BTreeSet<MaterialHandle> =
+            std::collections::BTreeSet::new();
+        let mut referenced_textures: std::collections::BTreeSet<TextureHandle> =
+            std::collections::BTreeSet::new();
+        let mut referenced_environments: std::collections::BTreeSet<EnvironmentHandle> =
+            std::collections::BTreeSet::new();
+
+        for scene in storage.scene_lookup.values() {
+            for node in scene.nodes() {
+                for mesh in node.meshes() {
+                    referenced_geometries.insert(mesh.geometry());
+                    referenced_materials.insert(mesh.material());
+                }
+            }
+        }
+        for environment in storage.environment_lookup.values().copied() {
+            referenced_environments.insert(environment);
+        }
+        for material_handle in referenced_materials.iter().copied() {
+            if let Some(material) = storage.materials.get(material_handle) {
+                for handle in [
+                    material.base_color_texture(),
+                    material.normal_texture(),
+                    material.metallic_roughness_texture(),
+                    material.occlusion_texture(),
+                    material.emissive_texture(),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    referenced_textures.insert(handle);
+                }
+            }
+        }
+
+        let mut stats = AssetEvictionStats::default();
+
+        let geometry_keys: Vec<GeometryHandle> = storage.geometries.keys().collect();
+        for handle in geometry_keys {
+            if !referenced_geometries.contains(&handle) {
+                storage.geometries.remove(handle);
+                stats.geometries_evicted += 1;
+            }
+        }
+        let material_keys: Vec<MaterialHandle> = storage.materials.keys().collect();
+        for handle in material_keys {
+            if !referenced_materials.contains(&handle) {
+                storage.materials.remove(handle);
+                stats.materials_evicted += 1;
+            }
+        }
+        let texture_keys: Vec<TextureHandle> = storage.textures.keys().collect();
+        for handle in texture_keys {
+            if !referenced_textures.contains(&handle) {
+                storage.textures.remove(handle);
+                stats.textures_evicted += 1;
+            }
+        }
+        // Drop texture_lookup entries that pointed at evicted textures so
+        // a stable retained-reload identity does not resurrect a dead handle.
+        let live_textures: std::collections::BTreeSet<TextureHandle> =
+            storage.textures.keys().collect();
+        storage
+            .texture_lookup
+            .retain(|_, handle| live_textures.contains(handle));
+        let environment_keys: Vec<EnvironmentHandle> = storage.environments.keys().collect();
+        for handle in environment_keys {
+            if !referenced_environments.contains(&handle) {
+                storage.environments.remove(handle);
+                stats.environments_evicted += 1;
+            }
+        }
+        stats
     }
 
     pub fn create_material(&self, material: impl Into<MaterialDesc>) -> MaterialHandle {
