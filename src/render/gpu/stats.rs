@@ -14,6 +14,13 @@ pub(in crate::render) struct GpuResourceStats {
     pub(in crate::render) bind_groups: u64,
     pub(in crate::render) shader_modules: u64,
     pub(in crate::render) approximate_gpu_memory_bytes: u64,
+    /// Plan line 778 commit 2: distinct material bind groups consumed by
+    /// the unlit pass. Equals 1 when the renderer chose the batched
+    /// `texture_2d_array<f32>` path (single shared bind group serviced via
+    /// dynamic-offset uniforms) and equals the per-material slot count
+    /// otherwise (one bind group per slot, including the synthetic
+    /// fallback at index 0).
+    pub(in crate::render) material_bind_groups: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -26,6 +33,11 @@ pub(super) struct PreparedResourceEstimateInput {
     pub(super) depth_prepass_passes: u64,
     pub(super) material_texture_count: u64,
     pub(super) material_texture_bytes: u64,
+    /// Plan line 778 commit 2: distinct material bind groups in the
+    /// prepared resource set. The estimator records this so the
+    /// observable `RendererStats::material_bind_groups` reflects the
+    /// actual GPU shape rather than the per-material count.
+    pub(super) material_bind_groups: u32,
 }
 
 impl GpuResourceStats {
@@ -51,6 +63,7 @@ pub(super) fn estimate_prepared_resource_stats(
         depth_prepass_passes,
         material_texture_count,
         material_texture_bytes,
+        material_bind_groups,
     } = input;
 
     if vertex_count == 0 {
@@ -106,8 +119,13 @@ pub(super) fn estimate_prepared_resource_stats(
         #[cfg(target_arch = "wasm32")]
         render_targets: 1,
         pipelines,
-        bind_groups: 1 + material_texture_count,
+        // Plan line 778 commit 2: the unlit pass binds 1 output bind group
+        // + N material bind groups (1 when batched, slot count otherwise).
+        // Adding `material_bind_groups` keeps the resource estimate
+        // consistent with the actual GPU shape.
+        bind_groups: 1 + u64::from(material_bind_groups),
         shader_modules: pipelines,
+        material_bind_groups,
         #[cfg(not(target_arch = "wasm32"))]
         approximate_gpu_memory_bytes: texture_bytes
             + readback_bytes
@@ -220,6 +238,7 @@ mod tests {
             depth_prepass_passes: 0,
             material_texture_count: 1,
             material_texture_bytes: 4,
+            material_bind_groups: 1,
         }
     }
 }

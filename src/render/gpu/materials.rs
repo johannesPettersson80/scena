@@ -206,6 +206,20 @@ pub(super) fn material_texture_count(resources: &MaterialResources) -> u64 {
     }
 }
 
+/// Plan line 778 commit 2: count of distinct material bind groups consumed by
+/// `encode_unlit_pass`. Always 1 on the batched path (one shared bind group
+/// services every draw with dynamic-offset uniforms) and `slots.len()` on the
+/// per-material path. The renderer surfaces this through
+/// `RendererStats::material_bind_groups` so a "collapses to single bind"
+/// test can assert the path collapse without dragging in
+/// command-encoder introspection.
+pub(super) fn material_bind_group_count(resources: &MaterialResources) -> u32 {
+    match resources {
+        MaterialResources::PerMaterial(slots) => slots.len() as u32,
+        MaterialResources::Batched(_) => 1,
+    }
+}
+
 fn create_material_resource(
     device: &wgpu::Device,
     queue: &wgpu::Queue,

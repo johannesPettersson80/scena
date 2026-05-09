@@ -359,6 +359,15 @@ pub struct RendererStats {
     /// `material_batch_layers >= 2`. See
     /// `docs/specs/texture-array-batching-plan.md`.
     pub material_batch_layers: u32,
+    /// Plan line 778 step 2: actual material bind-group count consumed by
+    /// the GPU pipeline. Equals 1 when the renderer chose the batched
+    /// `texture_2d_array<f32>` path (one shared bind group services every
+    /// draw via dynamic-offset uniforms) and `material_count + 1` when
+    /// the per-material fall-back path is in use (one synthetic fallback +
+    /// one bind group per material slot). Drops to 0 only when the GPU
+    /// is absent (CPU rasterizer path). Closes the
+    /// `texture_array_batching_collapses_to_single_bind` proof.
+    pub material_bind_groups: u32,
     pub render_targets: u64,
     pub pipelines: u64,
     pub bind_groups: u64,

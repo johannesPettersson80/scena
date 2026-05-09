@@ -4,8 +4,10 @@ mod draw;
 mod draw_uniform;
 mod environment;
 mod lifecycle;
+mod material_batched;
 mod material_mips;
 mod material_uniform;
+mod material_upload;
 mod materials;
 mod output;
 mod pipeline;
@@ -29,12 +31,12 @@ mod webgl2_vertices;
 
 #[cfg(target_arch = "wasm32")]
 use crate::diagnostics::Backend;
-use crate::diagnostics::{AdapterLimitsReport, GpuAdapterReport};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::geometry::Primitive;
 
 use self::materials::{
-    create_material_bind_group_layout, create_material_resources, material_texture_byte_len,
+    create_material_bind_group_layout, create_material_resources, material_bind_group_count,
+    material_texture_byte_len, material_texture_count,
 };
 use self::output::{create_output_bind_group_layout, create_output_uniform_buffer};
 use self::pipeline::create_unlit_pipeline;
@@ -90,13 +92,9 @@ struct GpuPreparedResources {
     output_uniform: wgpu::Buffer,
     output_bind_group: wgpu::BindGroup,
     light_uniform: PreparedGpuLightUniform,
-    /// Phase 1B: directional-light view-projection matrix (orthographic) that
-    /// maps world-space → light-clip-space. Computed from the active
-    /// directional light direction + the AABB of shadow occluders in
-    /// `prepare/shadows.rs::directional_light_view_projection`. Consumed by
-    /// the shadow caster pass + fragment-shader shadow sampling.
+    /// Phase 1B: directional-light view-projection. See `prepare/shadows.rs`.
     light_from_world: [f32; 16],
-    material_resources: Vec<materials::MaterialTextureResources>,
+    material_resources: materials::MaterialResources,
     // Phase 1B/1C: directional shadow caster + env cubemap; always allocated
     // (1×1 placeholder when feature absent), gated by lighting uniform flags.
     shadow_caster: ShadowCasterResources,
@@ -112,13 +110,9 @@ struct GpuPreparedResources {
     #[allow(dead_code)]
     vertex_count: u32,
     draw_batches: Vec<PrimitiveDrawBatch>,
-    // Phase 1A.2: per-draw world_from_model / normal_from_model uniforms uploaded
-    // through draw_uniform_buffer + draw_bind_group with dynamic offsets. The GPU
-    // vertex stream carries MODEL-SPACE positions (encode_vertices applies the
-    // matrix inverse on CPU); the shader applies draw.world_from_model to recover
-    // world space. The buffer + Vec are retained on the resources struct so the
-    // GPU object lifetime tracks the prepared scene; the bind group is the live
-    // consumer at draw time. Closes scena-wgpu-architect Phase 6 finding F2.
+    // Phase 1A.2: per-draw uniforms via draw_uniform_buffer + draw_bind_group
+    // with dynamic offsets. Vertex stream carries model-space positions; the
+    // shader applies draw.world_from_model. Closes wgpu-architect F2.
     #[allow(dead_code)]
     draw_uniforms: Vec<DrawUniformValue>,
     #[allow(dead_code)]
@@ -143,7 +137,7 @@ struct GpuPreparedResources {
     /// native variant. Uploaded into the camera uniform's light_from_world
     /// slot.
     light_from_world: [f32; 16],
-    material_resources: Vec<materials::MaterialTextureResources>,
+    material_resources: materials::MaterialResources,
     // Phase 1B/1C (wasm32 mirror): shadow caster + env cubemap, always
     // allocated; same gating as the native variant.
     shadow_caster: ShadowCasterResources,
@@ -172,27 +166,6 @@ struct GpuPreparedResources {
 }
 
 impl GpuDeviceState {
-    pub(super) fn adapter_report(&self) -> GpuAdapterReport {
-        let info = self.adapter.get_info();
-        let limits = self.adapter.limits();
-        GpuAdapterReport {
-            name: info.name,
-            backend: format!("{:?}", info.backend),
-            device_type: format!("{:?}", info.device_type),
-            vendor: info.vendor,
-            device: info.device,
-            driver: info.driver,
-            driver_info: info.driver_info,
-            features: format!("{:?}", self.adapter.features()),
-            limits: AdapterLimitsReport {
-                max_texture_dimension_2d: limits.max_texture_dimension_2d,
-                max_bind_groups: limits.max_bind_groups,
-                max_uniform_buffer_binding_size: limits.max_uniform_buffer_binding_size,
-                max_vertex_attributes: limits.max_vertex_attributes,
-            },
-        }
-    }
-
     #[cfg(not(target_arch = "wasm32"))]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn prepare(
@@ -330,8 +303,9 @@ impl GpuDeviceState {
             shadow_maps: lighting_stats.shadow_maps,
             shadow_map_resolution: lighting_stats.directional_shadow_map_resolution,
             depth_prepass_passes: depth_stats.passes,
-            material_texture_count: material_resources.len() as u64,
+            material_texture_count: material_texture_count(&material_resources),
             material_texture_bytes: material_texture_byte_len(&material_resources),
+            material_bind_groups: material_bind_group_count(&material_resources),
         });
 
         self.resources = Some(GpuPreparedResources {
@@ -490,8 +464,9 @@ impl GpuDeviceState {
             shadow_maps: lighting_stats.shadow_maps,
             shadow_map_resolution: lighting_stats.directional_shadow_map_resolution,
             depth_prepass_passes: u64::from(depth_prepass.is_some()),
-            material_texture_count: material_resources.len() as u64,
+            material_texture_count: material_texture_count(&material_resources),
             material_texture_bytes: material_texture_byte_len(&material_resources),
+            material_bind_groups: material_bind_group_count(&material_resources),
         });
 
         self.resources = Some(GpuPreparedResources {

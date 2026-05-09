@@ -1,8 +1,31 @@
+use crate::diagnostics::{AdapterLimitsReport, GpuAdapterReport};
+
 use super::GpuDeviceState;
 #[cfg(target_arch = "wasm32")]
 use super::webgl2;
 
 impl GpuDeviceState {
+    pub(in crate::render) fn adapter_report(&self) -> GpuAdapterReport {
+        let info = self.adapter.get_info();
+        let limits = self.adapter.limits();
+        GpuAdapterReport {
+            name: info.name,
+            backend: format!("{:?}", info.backend),
+            device_type: format!("{:?}", info.device_type),
+            vendor: info.vendor,
+            device: info.device,
+            driver: info.driver,
+            driver_info: info.driver_info,
+            features: format!("{:?}", self.adapter.features()),
+            limits: AdapterLimitsReport {
+                max_texture_dimension_2d: limits.max_texture_dimension_2d,
+                max_bind_groups: limits.max_bind_groups,
+                max_uniform_buffer_binding_size: limits.max_uniform_buffer_binding_size,
+                max_vertex_attributes: limits.max_vertex_attributes,
+            },
+        }
+    }
+
     pub(in crate::render) fn pending_destructions(&self) -> u64 {
         self.pending_destructions
     }

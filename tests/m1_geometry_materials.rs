@@ -1107,6 +1107,175 @@ fn headless_gpu_renders_technical_material_primitives_when_available() {
     }
 }
 
+/// Plan line 778 commit 4: when two prepared materials share
+/// `(sampler, format, dimensions)` for every populated role, the renderer
+/// allocates one shared `texture_2d_array<f32>` per role and serves both
+/// draws from a single material bind group via dynamic-offset uniforms.
+/// This drops the observable `RendererStats::material_bind_groups` from
+/// `material_count + 1` (per-material fall-back: synthetic + 2) to `1`
+/// (batched).
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn texture_array_batching_collapses_to_single_bind() {
+    let Ok(mut renderer) = Renderer::headless_gpu(8, 8) else {
+        return;
+    };
+
+    let assets = Assets::new();
+    let albedo_red = pollster::block_on(assets.load_texture(
+        inline_pixel_png_uri([200, 60, 60, 255]),
+        TextureColorSpace::Srgb,
+    ))
+    .expect("inline red texture loads");
+    let albedo_blue = pollster::block_on(assets.load_texture(
+        inline_pixel_png_uri([60, 60, 200, 255]),
+        TextureColorSpace::Srgb,
+    ))
+    .expect("inline blue texture loads");
+    let geometry_a = assets.create_geometry(flat_square_geometry());
+    let geometry_b = assets.create_geometry(flat_square_geometry());
+    let material_red = assets
+        .create_material(MaterialDesc::unlit(Color::WHITE).with_base_color_texture(albedo_red));
+    let material_blue = assets
+        .create_material(MaterialDesc::unlit(Color::WHITE).with_base_color_texture(albedo_blue));
+
+    let (mut scene, _camera) = scene_with_camera();
+    scene
+        .mesh(geometry_a, material_red)
+        .add()
+        .expect("red mesh inserts");
+    scene
+        .mesh(geometry_b, material_blue)
+        .transform(Transform::at(Vec3::new(1.5, 0.0, 0.0)))
+        .add()
+        .expect("blue mesh inserts");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("two-material scene prepares for headless GPU");
+
+    let stats = renderer.stats();
+    assert!(
+        stats.material_batch_layers >= 2,
+        "two compatible materials should yield a 2+ layer texture_2d_array, \
+         got material_batch_layers={}",
+        stats.material_batch_layers
+    );
+    assert_eq!(
+        stats.material_bind_groups, 1,
+        "compatible materials must collapse into a single shared material bind group, \
+         got material_bind_groups={}",
+        stats.material_bind_groups
+    );
+}
+
+/// Plan line 778 commit 4 negative path: when materials disagree on
+/// `(sampler, format, dimensions)`, the batched path is unavailable and
+/// the renderer falls back to one bind group per material (plus the
+/// synthetic fallback at index 0). The stat reports
+/// `material_count + 1` distinct bind groups, proving the fall-back path
+/// is still wired correctly.
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn texture_array_batching_falls_back_when_dimensions_mismatch() {
+    let Ok(mut renderer) = Renderer::headless_gpu(8, 8) else {
+        return;
+    };
+
+    let assets = Assets::new();
+    // Red is 1x1, blue is 2x2 — dimension mismatch blocks array batching.
+    let albedo_red = pollster::block_on(assets.load_texture(
+        inline_pixel_png_uri([200, 60, 60, 255]),
+        TextureColorSpace::Srgb,
+    ))
+    .expect("inline 1x1 red texture loads");
+    let albedo_blue_2x2 = pollster::block_on(assets.load_texture(
+        inline_2x2_png_uri([60, 60, 200, 255]),
+        TextureColorSpace::Srgb,
+    ))
+    .expect("inline 2x2 blue texture loads");
+    let geometry_a = assets.create_geometry(flat_square_geometry());
+    let geometry_b = assets.create_geometry(flat_square_geometry());
+    let material_red = assets
+        .create_material(MaterialDesc::unlit(Color::WHITE).with_base_color_texture(albedo_red));
+    let material_blue = assets.create_material(
+        MaterialDesc::unlit(Color::WHITE).with_base_color_texture(albedo_blue_2x2),
+    );
+
+    let (mut scene, _camera) = scene_with_camera();
+    scene
+        .mesh(geometry_a, material_red)
+        .add()
+        .expect("red mesh inserts");
+    scene
+        .mesh(geometry_b, material_blue)
+        .transform(Transform::at(Vec3::new(1.5, 0.0, 0.0)))
+        .add()
+        .expect("blue mesh inserts");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("incompatible-material scene prepares for headless GPU");
+
+    let stats = renderer.stats();
+    assert_eq!(
+        stats.material_batch_layers, 0,
+        "dimension mismatch must mark the batch plan unbatchable, \
+         got material_batch_layers={}",
+        stats.material_batch_layers
+    );
+    assert_eq!(
+        stats.material_bind_groups, 3,
+        "per-material fall-back must allocate one bind group per material slot \
+         plus the synthetic fallback at index 0, got material_bind_groups={}",
+        stats.material_bind_groups
+    );
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn inline_pixel_png_uri(pixel: [u8; 4]) -> String {
+    let mut bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(std::io::Cursor::new(&mut bytes), 1, 1);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().expect("PNG header writes");
+        writer.write_image_data(&pixel).expect("PNG payload writes");
+    }
+    format!(
+        "data:image/png;base64,{}",
+        <base64::engine::general_purpose::GeneralPurpose as base64::Engine>::encode(
+            &base64::engine::general_purpose::STANDARD,
+            bytes,
+        )
+    )
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn inline_2x2_png_uri(pixel: [u8; 4]) -> String {
+    let mut bytes = Vec::new();
+    let pixels: [u8; 16] = [
+        pixel[0], pixel[1], pixel[2], pixel[3], pixel[0], pixel[1], pixel[2], pixel[3], pixel[0],
+        pixel[1], pixel[2], pixel[3], pixel[0], pixel[1], pixel[2], pixel[3],
+    ];
+    {
+        let mut encoder = png::Encoder::new(std::io::Cursor::new(&mut bytes), 2, 2);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().expect("PNG header writes");
+        writer
+            .write_image_data(&pixels)
+            .expect("PNG payload writes");
+    }
+    format!(
+        "data:image/png;base64,{}",
+        <base64::engine::general_purpose::GeneralPurpose as base64::Engine>::encode(
+            &base64::engine::general_purpose::STANDARD,
+            bytes,
+        )
+    )
+}
+
 #[test]
 fn prepare_without_assets_rejects_asset_backed_mesh_nodes() {
     let assets = Assets::new();

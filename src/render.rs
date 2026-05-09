@@ -210,10 +210,12 @@ impl Renderer {
             self.stats.bind_groups = stats.bind_groups;
             self.stats.shader_modules = stats.shader_modules;
             self.stats.pending_destructions = pending_destructions;
+            self.stats.material_bind_groups = stats.material_bind_groups;
             self.stats.approximate_gpu_memory_bytes = (stats.approximate_gpu_memory_bytes > 0)
                 .then_some(stats.approximate_gpu_memory_bytes);
         } else {
             self.stats.textures = logical_stats.textures;
+            self.stats.material_bind_groups = 0;
         }
         self.prepared = Some(PreparedSceneState {
             scene: scene.identity(),
