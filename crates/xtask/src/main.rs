@@ -11671,6 +11671,66 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_markdown_link_to_missing_target_regression() {
+        // DOCS-LINKS: a markdown link to a missing relative target must surface
+        // a finding so broken intra-doc references can never silently ship.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/markdown-broken-link");
+        let docs_dir = fixture_root.join("docs/specs");
+        fs::create_dir_all(&docs_dir).expect("docs dir");
+        fs::write(fixture_root.join("README.md"), "# Fixture readme\n").expect("readme stub");
+        fs::write(fixture_root.join("AGENTS.md"), "# Fixture agents\n").expect("agents stub");
+        fs::write(
+            docs_dir.join("broken.md"),
+            "# Broken link fixture\n\nSee [docs that do not exist](does-not-exist.md).\n",
+        )
+        .expect("broken-link fixture");
+        let mut findings = Vec::new();
+
+        check_markdown_links(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "DOCS-LINKS" && finding.message.contains("does-not-exist.md")
+            }),
+            "doctor must reject markdown documents that link to missing relative \
+             targets so broken intra-doc references can never ship: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_required_doc_missing_substring_regression() {
+        // DOCS-PUBLIC-API: docs/specs/public-api.md must keep the canonical
+        // public-API contract substrings; a stripped-down replacement must
+        // fail the required-doc-contract gate.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/required-doc-missing-substring");
+        let public_api_path = fixture_root.join("docs/specs/public-api.md");
+        fs::create_dir_all(public_api_path.parent().expect("docs/specs")).expect("docs dir");
+        fs::write(
+            &public_api_path,
+            "# Public API\n\nThis stub does not declare the prepare lifecycle, the \
+             RendererStats counter, or any material descriptor contract.\n",
+        )
+        .expect("public-api stub fixture");
+        let mut findings = Vec::new();
+
+        check_required_doc_contracts(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "DOCS-PUBLIC-API"
+                    && finding
+                        .message
+                        .contains("public-api.md is missing required contract text")
+            }),
+            "doctor must reject docs/specs/public-api.md when it drops a required \
+             public-API contract substring: {findings:?}",
+        );
+    }
+
+    #[test]
     fn environment_lifecycle_contracts_are_source_enforced() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let mut findings = Vec::new();
