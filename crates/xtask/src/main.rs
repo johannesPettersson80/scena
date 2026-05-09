@@ -5734,6 +5734,18 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "ARCH-M3A-SCENE-IMPORT",
+        "src/scene/import/load.rs",
+        &[
+            "pub async fn import<",
+            "pub async fn import_with<",
+            "pub fn replace_import(",
+            "mark_stale",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
         "src/scene/import.rs",
         &[
             "pub struct ImportOptions",
@@ -5750,10 +5762,6 @@ fn check_m3a_scene_import_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "pub struct ImportPivot",
             "pub fn instantiate(",
             "pub fn instantiate_with(",
-            "pub async fn import<",
-            "pub async fn import_with<",
-            "pub fn replace_import(",
-            "mark_stale",
             "node_bounds",
             "source_node.meshes()",
             "scene_asset: &SceneAsset",

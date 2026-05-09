@@ -1,31 +1,32 @@
 use std::collections::BTreeSet;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 
 use self::bounds::union_optional;
 use self::diagnostic_overlays::diagnostic_overlay;
 use self::handedness::reject_unproven_left_handed_mesh_import;
 use self::types::{ImportBuild, ImportedNode, PendingSkinBinding, mesh_node_kind};
 use self::units::convert_marker_units;
+pub(super) use self::variants::MeshVariantRecord;
 use super::transforms::compose_transform;
 use super::{
     ConnectorMetadata, ConnectorPolarity, ConnectorRollPolicy, NodeKey, NodeKind, Scene,
     SceneSkinBinding, Transform,
 };
 use crate::animation::{AnimationClip, AnimationClipKey};
-use crate::assets::{AssetFetcher, AssetPath, Assets, SceneAsset};
-use crate::diagnostics::{
-    ImportDiagnosticOverlay, ImportDiagnosticOverlayKind, ImportError, InstantiateError,
-};
+use crate::assets::SceneAsset;
+use crate::diagnostics::{ImportDiagnosticOverlay, ImportDiagnosticOverlayKind, InstantiateError};
 
 mod accessors;
 mod bounds;
 mod diagnostic_overlays;
 mod handedness;
+mod load;
 mod lookups;
 mod options;
 mod types;
 mod units;
+mod variants;
 
 #[derive(Debug, Clone)]
 pub struct SceneImport {
@@ -38,6 +39,10 @@ pub struct SceneImport {
     source_units: SourceUnits,
     source_coordinate_system: SourceCoordinateSystem,
     live: Arc<AtomicBool>,
+    // Phase 2B step 3: KHR_materials_variants runtime state.
+    pub(super) material_variants: Vec<String>,
+    pub(super) active_variant: Arc<Mutex<Option<u32>>>,
+    pub(super) variant_records: Vec<MeshVariantRecord>,
 }
 
 #[derive(Debug, Clone)]
@@ -151,6 +156,9 @@ impl Scene {
             source_units: options.source_units(),
             source_coordinate_system: options.source_coordinate_system(),
             live: Arc::new(AtomicBool::new(true)),
+            material_variants: scene_asset.material_variants().to_vec(),
+            active_variant: Arc::new(Mutex::new(None)),
+            variant_records: Vec::new(),
         };
         let mut pending_skin_bindings = Vec::new();
         for source_index in roots {
@@ -163,6 +171,7 @@ impl Scene {
                 connectors: &mut import.connectors,
                 diagnostic_overlays: &mut import.diagnostic_overlays,
                 pending_skin_bindings: &mut pending_skin_bindings,
+                variant_records: &mut import.variant_records,
             };
             let node = self.instantiate_scene_asset_node(
                 source_index,
@@ -200,38 +209,6 @@ impl Scene {
         Ok(import)
     }
 
-    pub async fn import<F: AssetFetcher>(
-        &mut self,
-        assets: &Assets<F>,
-        path: impl Into<AssetPath>,
-    ) -> Result<SceneImport, ImportError> {
-        self.import_with(assets, path, ImportOptions::gltf_default())
-            .await
-    }
-
-    pub async fn import_with<F: AssetFetcher>(
-        &mut self,
-        assets: &Assets<F>,
-        path: impl Into<AssetPath>,
-        options: ImportOptions,
-    ) -> Result<SceneImport, ImportError> {
-        let scene_asset = assets.load_scene(path).await?;
-        self.instantiate_with(&scene_asset, options)
-            .map_err(Into::into)
-    }
-
-    pub fn replace_import(
-        &mut self,
-        import: &SceneImport,
-        scene_asset: &SceneAsset,
-    ) -> Result<SceneImport, InstantiateError> {
-        let options = ImportOptions::gltf_default()
-            .with_source_units(import.source_units)
-            .with_source_coordinate_system(import.source_coordinate_system);
-        import.mark_stale();
-        self.instantiate_with(scene_asset, options)
-    }
-
     fn instantiate_scene_asset_node(
         &mut self,
         source_index: usize,
@@ -265,6 +242,13 @@ impl Scene {
                             skin,
                         });
                     }
+                    if !mesh.material_variant_bindings().is_empty() {
+                        build.variant_records.push(MeshVariantRecord {
+                            node,
+                            default_material: mesh.material(),
+                            bindings: mesh.material_variant_bindings().to_vec(),
+                        });
+                    }
                 }
                 node
             }
@@ -282,6 +266,13 @@ impl Scene {
                                 node: child,
                                 source_node: source_index,
                                 skin,
+                            });
+                        }
+                        if !mesh.material_variant_bindings().is_empty() {
+                            build.variant_records.push(MeshVariantRecord {
+                                node: child,
+                                default_material: mesh.material(),
+                                bindings: mesh.material_variant_bindings().to_vec(),
                             });
                         }
                     }

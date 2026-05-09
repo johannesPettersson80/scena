@@ -279,6 +279,14 @@ pub enum LookupError {
         name: String,
         matches: Vec<AnimationClipKey>,
     },
+    /// Phase 2B step 3: a variant name passed to
+    /// `Scene::set_active_variant` does not appear in the
+    /// `SceneImport::material_variants` list. Returned instead of
+    /// silently no-oping so callers know the asset doesn't carry
+    /// that KHR_materials_variants name.
+    VariantNotFound {
+        name: String,
+    },
     PathNotFound {
         path: String,
     },

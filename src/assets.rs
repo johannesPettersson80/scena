@@ -29,8 +29,8 @@ pub use fetch::BrowserAssetFetcher;
 pub use fetch::FileAssetFetcher;
 pub use fetch::{AssetFetcher, DefaultAssetFetcher};
 pub use gltf::{
-    GltfDecoderPolicy, GltfExtensionDiagnostic, GltfExtensionStatus, SceneAsset, SceneAssetAnchor,
-    SceneAssetClip, SceneAssetLight, SceneAssetMesh, SceneAssetNode,
+    GltfDecoderPolicy, GltfExtensionDiagnostic, GltfExtensionStatus, MaterialVariantBinding,
+    SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetLight, SceneAssetMesh, SceneAssetNode,
 };
 pub use load::{AssetLoadControl, AssetLoadProgress, AssetLoadReport};
 pub use texture::{

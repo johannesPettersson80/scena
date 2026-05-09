@@ -7,7 +7,7 @@ use std::sync::atomic::AtomicBool;
 use crate::assets::{SceneAsset, SceneAssetMesh};
 use crate::diagnostics::ImportDiagnosticOverlay;
 
-use super::{ImportAnchor, ImportConnector, ImportOptions};
+use super::{ImportAnchor, ImportConnector, ImportOptions, MeshVariantRecord};
 
 pub(super) struct ImportBuild<'a> {
     pub(super) scene_asset: &'a SceneAsset,
@@ -18,6 +18,10 @@ pub(super) struct ImportBuild<'a> {
     pub(super) connectors: &'a mut Vec<ImportConnector>,
     pub(super) diagnostic_overlays: &'a mut Vec<ImportDiagnosticOverlay>,
     pub(super) pending_skin_bindings: &'a mut Vec<PendingSkinBinding>,
+    /// Phase 2B step 3: per-imported-mesh-node variant binding records,
+    /// captured each time a SceneAssetMesh with non-empty
+    /// `material_variant_bindings()` lands a `MeshNode` in the scene.
+    pub(super) variant_records: &'a mut Vec<MeshVariantRecord>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

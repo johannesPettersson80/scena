@@ -121,6 +121,9 @@ impl LookupError {
             }
             Self::ClipNotFound { .. } => "call clips_named to inspect available animation clips",
             Self::AmbiguousClipName { .. } => "call clips_named to choose a specific clip",
+            Self::VariantNotFound { .. } => {
+                "call SceneImport::material_variants to inspect declared KHR_materials_variants names"
+            }
             Self::PathNotFound { .. } => {
                 "use SceneImport::path_segments when names contain slashes"
             }

@@ -30,10 +30,10 @@ pub use assets::{
     AssetEvictionStats, AssetFetcher, AssetLoadControl, AssetLoadProgress, AssetLoadReport,
     AssetPath, AssetStoreId, Assets, DefaultAssetFetcher, EnvironmentDerivative, EnvironmentDesc,
     EnvironmentHandle, EnvironmentSourceKind, GeometryHandle, GltfDecoderPolicy,
-    GltfExtensionDiagnostic, GltfExtensionStatus, MaterialHandle, ModelHandle, RetainPolicy,
-    SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetLight, SceneAssetMesh, SceneAssetNode,
-    TextureDesc, TextureFilter, TextureHandle, TextureSamplerDesc, TextureSourceFormat,
-    TextureWrap, WasmEnvironmentDelivery,
+    GltfExtensionDiagnostic, GltfExtensionStatus, MaterialHandle, MaterialVariantBinding,
+    ModelHandle, RetainPolicy, SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetLight,
+    SceneAssetMesh, SceneAssetNode, TextureDesc, TextureFilter, TextureHandle, TextureSamplerDesc,
+    TextureSourceFormat, TextureWrap, WasmEnvironmentDelivery,
 };
 pub use controls::{
     OrbitControlAction, OrbitControls, PointerButton, PointerEvent, PointerEventKind, TouchEvent,
