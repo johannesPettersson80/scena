@@ -440,8 +440,16 @@ required before a public tag, GitHub release, or crates.io upload.
 **Can I replace Three.js with it today?**
 Not as a complete Three.js replacement. This release-candidate checkout is useful for the
 implemented Rust scene-graph, headless rendering, glTF import, picking, labels, animation,
-connector placement, and diagnostics workflows. Full PBR, IBL, visible shadows, complete
-WebGL2/WebGPU parity, and public release proof remain open gates.
+connector placement, and diagnostics workflows. The native WGSL pipeline now ships real
+per-fragment IBL (cubemap diffuse + GGX-prefiltered specular composed against a 64×64
+split-sum BRDF LUT), real GPU-sampled directional shadow maps (depth-only caster pass +
+hardware-comparison sampler with depth bias and frustum-clamped UV), and per-draw
+model/normal uniforms behind a real DrawUniform bind group; the `Capabilities` matrix
+keeps `forward_pbr` and `directional_shadows` reported as `Degraded` until lane-specific
+rendered-output proof closes (tracked under
+[`ADR-0005`](docs/decisions/ADR-0005-local-release-candidate-deferrals.md)). Full WebGL2
+parity for IBL specular + shadow-map sampling, the per-backend visual-proof bundle, and
+public release proof remain the open gates.
 
 **Why is `prepare()` explicit?**
 Because first-use fetch, parse, upload, pipeline, batching, and capability failures should
