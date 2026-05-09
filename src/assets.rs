@@ -19,7 +19,9 @@ mod load;
 mod obj;
 mod texture;
 pub use environment::{
-    EnvironmentDerivative, EnvironmentDesc, EnvironmentSourceKind, WasmEnvironmentDelivery,
+    DEFAULT_ENVIRONMENT_CUBEMAP_FACE_RESOLUTION, ENVIRONMENT_CUBEMAP_FACE_NORMALS,
+    EnvironmentCubemapFaces, EnvironmentDerivative, EnvironmentDesc, EnvironmentSourceKind,
+    WasmEnvironmentDelivery,
 };
 #[cfg(target_arch = "wasm32")]
 pub use fetch::BrowserAssetFetcher;

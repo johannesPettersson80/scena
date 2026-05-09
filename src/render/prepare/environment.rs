@@ -1,12 +1,32 @@
+use std::sync::Arc;
+
 use crate::assets::EnvironmentDesc;
 use crate::scene::Vec3;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(in crate::render) struct PreparedEnvironmentLighting {
     diffuse_rgb: Vec3,
     specular_rgb: Vec3,
     intensity: f32,
+    /// Phase 1C step 1: real cubemap radiance, decoded at prepare time from
+    /// the active environment asset's six face-radiance values. The `Arc`
+    /// keeps `PreparedEnvironmentLighting::clone` allocation-free in the hot
+    /// CPU shading loops while still letting the GPU upload consume the same
+    /// pixel data without copying. The pipeline keeps a 1×1 placeholder bind
+    /// when this is `None` so the GPU bind group is always well-formed.
+    cubemap: Option<Arc<PreparedEnvironmentCubemap>>,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub(in crate::render) struct PreparedEnvironmentCubemap {
+    pub(in crate::render) resolution: u32,
+    pub(in crate::render) face_pixels: [Vec<f32>; 6],
+}
+
+// Visibility note: both PreparedEnvironmentLighting and
+// PreparedEnvironmentCubemap declare `pub(in crate::render)` to allow the
+// GPU upload path in `crate::render::gpu` to consume the prepared cubemap
+// while keeping these types out of the public crate surface.
 
 impl Default for PreparedEnvironmentLighting {
     fn default() -> Self {
@@ -14,14 +34,35 @@ impl Default for PreparedEnvironmentLighting {
             diffuse_rgb: Vec3::ZERO,
             specular_rgb: Vec3::ZERO,
             intensity: 0.0,
+            cubemap: None,
         }
     }
 }
 
 impl PreparedEnvironmentLighting {
     pub(in crate::render) fn from_environment(environment: Option<&EnvironmentDesc>) -> Self {
-        let Some(irradiance) = environment.and_then(EnvironmentDesc::preview_irradiance_rgb) else {
+        let Some(environment) = environment else {
             return Self::default();
+        };
+        // Phase 1C step 1: parse the cubemap regardless of whether the CPU
+        // shading path is going to consume scalar irradiance, so the GPU
+        // pipeline can sample real per-fragment radiance. The scalar
+        // diffuse/specular still come from `preview_irradiance_rgb` to keep
+        // CPU rasterizer parity with the pre-Phase-1C fixtures.
+        let cubemap_faces = environment.cubemap_faces();
+        let cubemap = cubemap_faces.map(|faces| {
+            Arc::new(PreparedEnvironmentCubemap {
+                resolution: faces.resolution(),
+                face_pixels: faces.build_face_pixels_rgba32f(),
+            })
+        });
+        let Some(irradiance) = environment.preview_irradiance_rgb() else {
+            return Self {
+                diffuse_rgb: Vec3::ZERO,
+                specular_rgb: Vec3::ZERO,
+                intensity: 0.0,
+                cubemap,
+            };
         };
         let diffuse_rgb = Vec3::new(
             sanitize_environment_channel(irradiance[0]),
@@ -32,16 +73,26 @@ impl PreparedEnvironmentLighting {
             && diffuse_rgb.y <= f32::EPSILON
             && diffuse_rgb.z <= f32::EPSILON
         {
-            return Self::default();
+            return Self {
+                diffuse_rgb: Vec3::ZERO,
+                specular_rgb: Vec3::ZERO,
+                intensity: 0.0,
+                cubemap,
+            };
         }
         Self {
             diffuse_rgb,
             specular_rgb: scale_vec3(diffuse_rgb, 1.5),
             intensity: 1.0,
+            cubemap,
         }
     }
 
-    pub(in crate::render::prepare) fn is_active(self) -> bool {
+    pub(in crate::render) fn cubemap(&self) -> Option<&PreparedEnvironmentCubemap> {
+        self.cubemap.as_deref()
+    }
+
+    pub(in crate::render::prepare) fn is_active(&self) -> bool {
         self.intensity > 0.0
             && (self.diffuse_rgb.x > f32::EPSILON
                 || self.diffuse_rgb.y > f32::EPSILON
@@ -51,7 +102,7 @@ impl PreparedEnvironmentLighting {
                 || self.specular_rgb.z > f32::EPSILON)
     }
 
-    pub(in crate::render::prepare) fn gpu_diffuse_intensity(self) -> [f32; 4] {
+    pub(in crate::render::prepare) fn gpu_diffuse_intensity(&self) -> [f32; 4] {
         [
             self.diffuse_rgb.x,
             self.diffuse_rgb.y,
@@ -60,7 +111,7 @@ impl PreparedEnvironmentLighting {
         ]
     }
 
-    pub(in crate::render::prepare) fn gpu_specular_intensity(self) -> [f32; 4] {
+    pub(in crate::render::prepare) fn gpu_specular_intensity(&self) -> [f32; 4] {
         [
             self.specular_rgb.x,
             self.specular_rgb.y,
@@ -70,7 +121,7 @@ impl PreparedEnvironmentLighting {
     }
 
     pub(in crate::render::prepare) fn pbr_contribution(
-        self,
+        &self,
         base: Vec3,
         metallic: f32,
         roughness: f32,

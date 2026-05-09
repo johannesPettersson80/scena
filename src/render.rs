@@ -163,7 +163,7 @@ impl Renderer {
             active_camera_projection.as_ref(),
             &backend_sampled_base_color_textures,
             &backend_material_handles,
-            environment_lighting,
+            environment_lighting.clone(),
         )?;
         let light_from_world = prepared_scene.light_from_world;
         let culled_primitives =
@@ -197,6 +197,7 @@ impl Renderer {
                 light_from_world,
                 depth_stats,
                 &backend_material_slots,
+                &environment_lighting,
             );
             let stats = gpu.prepared_resource_stats();
             let pending_destructions = gpu.pending_destructions();

@@ -10,8 +10,10 @@ pub(super) use self::diagnostics::{
     collect_asset_camera_visibility_diagnostics, collect_camera_projection_diagnostics,
     collect_camera_visibility_diagnostics, collect_precision_diagnostics,
 };
-use self::environment::PreparedEnvironmentLighting;
 pub(super) use self::environment::collect_environment_lighting;
+pub(in crate::render) use self::environment::{
+    PreparedEnvironmentCubemap, PreparedEnvironmentLighting,
+};
 use self::lighting::{MaterialShadingInput, PreparedLights, material_color};
 pub(super) use self::lighting::{PreparedGpuLightUniform, collect_gpu_light_uniform};
 use self::materials::{
@@ -123,7 +125,7 @@ pub(super) fn collect_prepared_primitives<F>(
                 camera_projection,
                 backend_sampled_base_color_textures,
                 backend_material_slots,
-                environment_lighting,
+                environment_lighting: environment_lighting.clone(),
             },
             PrimitiveSinks {
                 primitives: &mut primitives,
@@ -171,7 +173,7 @@ pub(super) fn collect_prepared_primitives<F>(
                     camera_projection,
                     backend_sampled_base_color_textures,
                     backend_material_slots,
-                    environment_lighting,
+                    environment_lighting: environment_lighting.clone(),
                 },
                 PrimitiveSinks {
                     primitives: &mut primitives,
@@ -366,7 +368,7 @@ fn append_triangle_primitives<F>(
                     material_color(
                         source.material,
                         params.lights,
-                        MaterialShadingInput {
+                        &MaterialShadingInput {
                             position,
                             normal,
                             camera_position: params
@@ -393,7 +395,7 @@ fn append_triangle_primitives<F>(
                                 source.material,
                                 uv,
                             ),
-                            environment: params.environment_lighting,
+                            environment: params.environment_lighting.clone(),
                             directional_shadow_factor: shadow_visibility,
                         },
                     ),

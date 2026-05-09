@@ -71,6 +71,16 @@ var shadow_map: texture_depth_2d;
 @group(0) @binding(2)
 var shadow_sampler: sampler_comparison;
 
+// Phase 1C step 1: real environment cubemap. Six faces of decoded radiance
+// drive diffuse via textureSampleLevel(environment_cubemap, environment_sampler,
+// normal, 0). The 1×1 placeholder is never sampled because
+// environment_diffuse_intensity.w gates whether IBL contributes at all.
+@group(0) @binding(3)
+var environment_cubemap: texture_cube<f32>;
+
+@group(0) @binding(4)
+var environment_sampler: sampler;
+
 @group(2) @binding(0)
 var<uniform> draw: DrawUniform;
 
@@ -264,7 +274,10 @@ fn pbr_environment_lighting(
     let f0 = vec3<f32>(0.04) * (1.0 - metallic) + base * metallic;
     let fresnel = fresnel_schlick(n_dot_v, f0);
     let diffuse_energy = (vec3<f32>(1.0) - fresnel) * (1.0 - metallic);
-    let diffuse = diffuse_energy * base * camera.lighting.environment_diffuse_intensity.rgb;
+    // Phase 1C step 1: GPU-sampled diffuse irradiance (mip 0). GGX prefilter
+    // mips and BRDF LUT specular ride in step 2.
+    let environment_radiance = textureSampleLevel(environment_cubemap, environment_sampler, normal, 0.0).rgb;
+    let diffuse = diffuse_energy * base * environment_radiance * camera.lighting.environment_diffuse_intensity.w;
     let specular_strength = clamp(1.25 - roughness * 0.75, 0.2, 1.25);
     let specular = fresnel * camera.lighting.environment_specular_intensity.rgb * specular_strength;
     let intensity = max(
@@ -367,82 +380,10 @@ fn rrt_and_odt_fit(value: f32) -> f32 {
 
 pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 464;
 
-/// One DrawUniform entry packs world_from_model + normal_from_model = 32
-/// floats = 128 bytes. WebGPU requires dynamic-offset uniform binding offsets
-/// to be aligned to `min_uniform_buffer_offset_alignment`, which is 256 on
-/// every wgpu adapter we target. We pad each entry up to 256 bytes so the
-/// runtime stride matches the alignment requirement; the trailing 128 bytes
-/// per entry are zero-padding.
-pub(super) const DRAW_UNIFORM_ENTRY_SIZE: u64 = 128;
-pub(super) const DRAW_UNIFORM_ENTRY_STRIDE: u64 = 256;
-
-pub(super) fn create_draw_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("scena.draw.bind_group_layout"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: true,
-                min_binding_size: std::num::NonZeroU64::new(DRAW_UNIFORM_ENTRY_SIZE),
-            },
-            count: None,
-        }],
-    })
-}
-
-pub(super) fn create_draw_uniform_buffer(device: &wgpu::Device, entry_count: u64) -> wgpu::Buffer {
-    let size = DRAW_UNIFORM_ENTRY_STRIDE.saturating_mul(entry_count.max(1));
-    device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("scena.draw.uniform"),
-        size,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    })
-}
-
-pub(super) fn create_draw_bind_group(
-    device: &wgpu::Device,
-    layout: &wgpu::BindGroupLayout,
-    uniform: &wgpu::Buffer,
-) -> wgpu::BindGroup {
-    device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("scena.draw.bind_group"),
-        layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                buffer: uniform,
-                offset: 0,
-                size: std::num::NonZeroU64::new(DRAW_UNIFORM_ENTRY_SIZE),
-            }),
-        }],
-    })
-}
-
-/// Encodes a `Vec<DrawUniformValue>` into a packed byte buffer where each
-/// entry occupies `DRAW_UNIFORM_ENTRY_STRIDE` bytes. The first
-/// `DRAW_UNIFORM_ENTRY_SIZE` bytes of each entry hold the world_from_model +
-/// normal_from_model matrices; the trailing bytes are zero padding required
-/// by `min_uniform_buffer_offset_alignment` for dynamic-offset binding.
-pub(super) fn encode_draw_uniform_bytes(
-    values: &[(/*world*/ [f32; 16], /*normal*/ [f32; 16])],
-) -> Vec<u8> {
-    let mut bytes = vec![0u8; values.len().max(1) * DRAW_UNIFORM_ENTRY_STRIDE as usize];
-    for (entry_index, (world_from_model, normal_from_model)) in values.iter().enumerate() {
-        let entry_offset = entry_index * DRAW_UNIFORM_ENTRY_STRIDE as usize;
-        for (i, value) in world_from_model.iter().enumerate() {
-            let byte_offset = entry_offset + i * 4;
-            bytes[byte_offset..byte_offset + 4].copy_from_slice(&value.to_ne_bytes());
-        }
-        for (i, value) in normal_from_model.iter().enumerate() {
-            let byte_offset = entry_offset + 64 + i * 4;
-            bytes[byte_offset..byte_offset + 4].copy_from_slice(&value.to_ne_bytes());
-        }
-    }
-    bytes
-}
+pub(super) use super::draw_uniform::{
+    DRAW_UNIFORM_ENTRY_STRIDE, create_draw_bind_group, create_draw_bind_group_layout,
+    create_draw_uniform_buffer, encode_draw_uniform_bytes,
+};
 
 pub(super) fn create_output_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -474,6 +415,24 @@ pub(super) fn create_output_bind_group_layout(device: &wgpu::Device) -> wgpu::Bi
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
                 count: None,
             },
+            // Phase 1C step 1: env cubemap. Placeholder when unset — gated
+            // on environment_diffuse_intensity.w in the fragment shader.
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::Cube,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
         ],
     })
 }
@@ -487,12 +446,15 @@ pub(super) fn create_output_uniform_buffer(device: &wgpu::Device) -> wgpu::Buffe
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn create_output_bind_group(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
     uniform: &wgpu::Buffer,
     shadow_view: &wgpu::TextureView,
     shadow_sampler: &wgpu::Sampler,
+    environment_cubemap_view: &wgpu::TextureView,
+    environment_sampler: &wgpu::Sampler,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("scena.output.bind_group"),
@@ -509,6 +471,14 @@ pub(super) fn create_output_bind_group(
             wgpu::BindGroupEntry {
                 binding: 2,
                 resource: wgpu::BindingResource::Sampler(shadow_sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(environment_cubemap_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: wgpu::BindingResource::Sampler(environment_sampler),
             },
         ],
     })

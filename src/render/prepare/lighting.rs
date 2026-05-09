@@ -6,7 +6,7 @@ use crate::scene::{Light, Quat, Scene, Transform, Vec3};
 
 use super::environment::PreparedEnvironmentLighting;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) struct MaterialShadingInput {
     pub(super) position: Vec3,
     pub(super) normal: Vec3,
@@ -196,7 +196,7 @@ pub(in crate::render) fn collect_gpu_light_uniform(
 pub(super) fn material_color(
     material: &MaterialDesc,
     lights: &PreparedLights,
-    input: MaterialShadingInput,
+    input: &MaterialShadingInput,
 ) -> Color {
     let base = multiply_color(material.base_color(), input.base_color_texture);
     let mut color = match material.kind() {
@@ -231,7 +231,7 @@ fn shade_pbr_base_color(
     material: &MaterialDesc,
     base: Color,
     lights: &PreparedLights,
-    input: MaterialShadingInput,
+    input: &MaterialShadingInput,
 ) -> Color {
     let normal = normalize_or(input.normal, Vec3::new(0.0, 0.0, 1.0));
     let view = input

@@ -4339,7 +4339,16 @@ fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mut Vec<Findi
         "src/render/prepare/environment.rs",
         &[
             "pub(in crate::render) struct PreparedEnvironmentLighting",
-            "EnvironmentDesc::preview_irradiance_rgb",
+            // Phase 1C step 1: prepare-side decoder reads the bundled cubemap
+            // through `EnvironmentDesc::cubemap_faces()` and builds RGBA32F
+            // face pixels for the GPU upload. The CPU shading path keeps
+            // consuming the preview-irradiance scalar so existing CPU
+            // rasterizer fixtures hold; the GPU shader switches to a real
+            // `texture_cube<f32>` sample of the prepared cubemap.
+            "environment.cubemap_faces()",
+            "environment.preview_irradiance_rgb()",
+            "build_face_pixels_rgba32f",
+            "PreparedEnvironmentCubemap",
             "gpu_diffuse_intensity",
             "gpu_specular_intensity",
             "pbr_contribution",
@@ -4694,8 +4703,22 @@ fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding>) {
         &[
             "shadow_caster: ShadowCasterResources",
             "shadow_sampler: wgpu::Sampler",
-            "shadow::create_shadow_caster_resources",
-            "shadow::create_shadow_sampler(&self.device)",
+            // Phase 1C step 1 split: shadow caster + sampler now allocated
+            // through `environment::build_output_resources` which bundles
+            // the entire group-0 ensemble into one helper.
+            "environment::build_output_resources",
+            "environment::OutputResources",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SHADOW-MAP",
+        "src/render/gpu/environment.rs",
+        &[
+            "ShadowCasterResources",
+            "create_shadow_caster_resources(",
+            "create_shadow_sampler(device)",
         ],
     );
     require_contains(

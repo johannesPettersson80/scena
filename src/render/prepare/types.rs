@@ -17,7 +17,7 @@ pub(super) struct PrimitiveSinks<'out> {
     pub(super) transparent_primitives: &'out mut Vec<TransparentPrimitive>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) struct PrimitiveBakeParams<'lights> {
     pub(super) target: RasterTarget,
     pub(super) transform: Transform,
@@ -27,6 +27,9 @@ pub(super) struct PrimitiveBakeParams<'lights> {
     pub(super) camera_projection: Option<&'lights CameraProjection>,
     pub(super) backend_sampled_base_color_textures: &'lights [TextureHandle],
     pub(super) backend_material_slots: &'lights [MaterialHandle],
+    /// Phase 1C step 1: holds the prepared environment cubemap behind an Arc
+    /// so cloning the params per-primitive in the bake loop stays
+    /// allocation-free.
     pub(super) environment_lighting: PreparedEnvironmentLighting,
 }
 
