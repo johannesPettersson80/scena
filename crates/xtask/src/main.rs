@@ -733,50 +733,224 @@ fn check_release_review_artifacts(artifact_root: &Path, findings: &mut Vec<Findi
     // documents.
     let findings_path = reviews_root.join("findings.json");
     if let Ok(text) = fs::read_to_string(&findings_path) {
-        if !text.contains("\"schema\": \"scena.release.findings.v1\"")
-            && !text.contains("\"schema\":\"scena.release.findings.v1\"")
-        {
-            findings.push(Finding::new(
-                "RELEASE-REVIEWS-PRESENT",
-                "reviews/findings.json must declare schema = \"scena.release.findings.v1\"; \
-                 see docs/specs/release-reviews.md",
-            ));
-        }
-        if !text.contains("\"reviewed_commit\"") {
-            findings.push(Finding::new(
-                "RELEASE-REVIEWS-PRESENT",
-                "reviews/findings.json must record reviewed_commit; see \
-                 docs/specs/release-reviews.md",
-            ));
-        }
+        validate_findings_register_schema(&text, findings);
     }
     let signoff_path = reviews_root.join("maintainer-signoff.toml");
     if let Ok(text) = fs::read_to_string(&signoff_path) {
-        for required in [
-            "[maintainer]",
-            "name = ",
-            "signed_commit = ",
-            "[approval]",
-            "decision = ",
-        ] {
-            if !text.contains(required) {
+        validate_maintainer_signoff_schema(&text, findings);
+    }
+}
+
+fn validate_findings_register_schema(text: &str, findings: &mut Vec<Finding>) {
+    let parsed: serde_json::Value = match serde_json::from_str(text) {
+        Ok(value) => value,
+        Err(error) => {
+            findings.push(Finding::new(
+                "RELEASE-REVIEWS-PRESENT",
+                format!(
+                    "reviews/findings.json is not valid JSON ({error}); see \
+                     docs/specs/release-reviews.md Section 2"
+                ),
+            ));
+            return;
+        }
+    };
+    let object = match parsed.as_object() {
+        Some(object) => object,
+        None => {
+            findings.push(Finding::new(
+                "RELEASE-REVIEWS-PRESENT",
+                "reviews/findings.json top-level must be a JSON object; see \
+                 docs/specs/release-reviews.md Section 2",
+            ));
+            return;
+        }
+    };
+    if object.get("schema").and_then(|value| value.as_str()) != Some("scena.release.findings.v1") {
+        findings.push(Finding::new(
+            "RELEASE-REVIEWS-PRESENT",
+            "reviews/findings.json must declare schema = \"scena.release.findings.v1\"; \
+             see docs/specs/release-reviews.md Section 2",
+        ));
+    }
+    if object
+        .get("reviewed_commit")
+        .and_then(|value| value.as_str())
+        .is_none()
+    {
+        findings.push(Finding::new(
+            "RELEASE-REVIEWS-PRESENT",
+            "reviews/findings.json must record reviewed_commit as a string; see \
+             docs/specs/release-reviews.md Section 2",
+        ));
+    }
+    if object
+        .get("generated_at")
+        .and_then(|value| value.as_str())
+        .is_none()
+    {
+        findings.push(Finding::new(
+            "RELEASE-REVIEWS-PRESENT",
+            "reviews/findings.json must record generated_at as an RFC 3339 string; \
+             see docs/specs/release-reviews.md Section 2",
+        ));
+    }
+    let entries = match object.get("findings").and_then(|value| value.as_array()) {
+        Some(array) => array,
+        None => {
+            findings.push(Finding::new(
+                "RELEASE-REVIEWS-PRESENT",
+                "reviews/findings.json must record findings as a JSON array; see \
+                 docs/specs/release-reviews.md Section 2",
+            ));
+            return;
+        }
+    };
+    for (index, entry) in entries.iter().enumerate() {
+        let entry_object = match entry.as_object() {
+            Some(object) => object,
+            None => {
                 findings.push(Finding::new(
                     "RELEASE-REVIEWS-PRESENT",
                     format!(
-                        "reviews/maintainer-signoff.toml is missing required schema field \
-                         {required:?}; see docs/specs/release-reviews.md"
+                        "reviews/findings.json findings[{index}] must be a JSON object; \
+                         see docs/specs/release-reviews.md Section 2"
+                    ),
+                ));
+                continue;
+            }
+        };
+        for required in [
+            "id",
+            "role",
+            "summary",
+            "severity",
+            "status",
+            "evidence",
+            "notes",
+            "deferral_target",
+        ] {
+            if !entry_object.contains_key(required) {
+                findings.push(Finding::new(
+                    "RELEASE-REVIEWS-PRESENT",
+                    format!(
+                        "reviews/findings.json findings[{index}] is missing required \
+                         field {required:?}; see docs/specs/release-reviews.md Section 2"
                     ),
                 ));
             }
         }
-        if text.contains("decision = \"hold\"") {
+        let status = entry_object.get("status").and_then(|value| value.as_str());
+        if let Some("deferred") = status {
+            let target = entry_object.get("deferral_target");
+            let target_is_null = matches!(target, Some(serde_json::Value::Null) | None);
+            if target_is_null {
+                let entry_id = entry_object
+                    .get("id")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("<unknown>");
+                findings.push(Finding::new(
+                    "RELEASE-REVIEWS-PRESENT",
+                    format!(
+                        "reviews/findings.json finding {entry_id:?} has status = \"deferred\" \
+                         but deferral_target is null; see docs/specs/release-reviews.md \
+                         Section 2"
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+fn validate_maintainer_signoff_schema(text: &str, findings: &mut Vec<Finding>) {
+    for required in [
+        "[maintainer]",
+        "name = ",
+        "signed_commit = ",
+        "[approval]",
+        "decision = ",
+    ] {
+        if !text.contains(required) {
             findings.push(Finding::new(
                 "RELEASE-REVIEWS-PRESENT",
-                "reviews/maintainer-signoff.toml has decision = \"hold\"; release-readiness \
-                 cannot pass while the maintainer holds; see docs/specs/release-reviews.md",
+                format!(
+                    "reviews/maintainer-signoff.toml is missing required schema field \
+                     {required:?}; see docs/specs/release-reviews.md Section 3"
+                ),
             ));
         }
     }
+    if text.contains("decision = \"hold\"") {
+        findings.push(Finding::new(
+            "RELEASE-REVIEWS-PRESENT",
+            "reviews/maintainer-signoff.toml has decision = \"hold\"; release-readiness \
+             cannot pass while the maintainer holds; see docs/specs/release-reviews.md \
+             Section 3",
+        ));
+    }
+    let decision = scrape_toml_string_value(text, "decision");
+    let all_clear = scrape_toml_bool_value(text, "all_clear");
+    if let (Some("approve"), Some(false)) = (decision.as_deref(), all_clear) {
+        findings.push(Finding::new(
+            "RELEASE-REVIEWS-PRESENT",
+            "reviews/maintainer-signoff.toml records decision = \"approve\" while \
+             all_clear = false; see docs/specs/release-reviews.md Section 3 — \
+             decision = \"approve\" requires all_clear = true",
+        ));
+    }
+    if let Ok(expected_commit) = std::env::var("SCENA_RELEASE_COMMIT") {
+        let signed_commit = scrape_toml_string_value(text, "signed_commit");
+        match signed_commit.as_deref() {
+            Some(actual) if actual == expected_commit => {}
+            Some(actual) => {
+                findings.push(Finding::new(
+                    "RELEASE-REVIEWS-PRESENT",
+                    format!(
+                        "reviews/maintainer-signoff.toml signed_commit = {actual:?} does \
+                         not match SCENA_RELEASE_COMMIT = {expected_commit:?}; see \
+                         docs/specs/release-reviews.md Section 3"
+                    ),
+                ));
+            }
+            None => {
+                findings.push(Finding::new(
+                    "RELEASE-REVIEWS-PRESENT",
+                    format!(
+                        "reviews/maintainer-signoff.toml signed_commit cannot be parsed; \
+                         expected match against SCENA_RELEASE_COMMIT = {expected_commit:?}; \
+                         see docs/specs/release-reviews.md Section 3"
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+fn scrape_toml_string_value(text: &str, key: &str) -> Option<String> {
+    let needle = format!("{key} = ");
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_prefix(&needle) {
+            let value = rest.trim().trim_matches(|c: char| c == '"' || c == '\'');
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+fn scrape_toml_bool_value(text: &str, key: &str) -> Option<bool> {
+    let needle = format!("{key} = ");
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_prefix(&needle) {
+            return match rest.trim() {
+                "true" => Some(true),
+                "false" => Some(false),
+                _ => None,
+            };
+        }
+    }
+    None
 }
 
 fn validate_release_review_report(role: &str, report_path: &Path, findings: &mut Vec<Finding>) {
@@ -11853,6 +12027,164 @@ mod tests {
             }),
             "release-readiness must reject findings.json that drops the schema field: \
              {findings:?}",
+        );
+    }
+
+    #[test]
+    fn release_readiness_rejects_findings_register_with_invalid_json_regression() {
+        // RELEASE-REVIEWS-PRESENT (JSON parse): findings.json must be valid
+        // JSON; a malformed register fails closed even when the substring
+        // "scena.release.findings.v1" happens to be present.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/release-reviews-findings-invalid-json");
+        let reviews_root = fixture_root.join("reviews");
+        for role in REQUIRED_REVIEW_ROLES {
+            let role_dir = reviews_root.join(role);
+            fs::create_dir_all(&role_dir).expect("role dir");
+            fs::write(role_dir.join("placeholder.md"), "---\nrole: bogus\nreviewed_commit: abc\nsession_id: o\ndate: 2026-05-09\nblocker_status: clear\nfindings_count: 0\n---\n# placeholder\n")
+                .expect("placeholder review");
+        }
+        fs::write(
+            reviews_root.join("findings.json"),
+            "{\"schema\": \"scena.release.findings.v1\", broken json,",
+        )
+        .expect("malformed findings");
+        let mut findings = Vec::new();
+
+        check_release_review_artifacts(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "RELEASE-REVIEWS-PRESENT"
+                    && finding
+                        .message
+                        .contains("reviews/findings.json is not valid JSON")
+            }),
+            "release-readiness must reject a malformed findings.json file: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn release_readiness_rejects_findings_register_finding_missing_field_regression() {
+        // RELEASE-REVIEWS-PRESENT (per-finding fields): every finding object
+        // in findings.json must declare id, role, summary, severity, status,
+        // evidence, notes, deferral_target. A finding missing any of those
+        // fails closed.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/release-reviews-findings-missing-fields");
+        let reviews_root = fixture_root.join("reviews");
+        for role in REQUIRED_REVIEW_ROLES {
+            let role_dir = reviews_root.join(role);
+            fs::create_dir_all(&role_dir).expect("role dir");
+            fs::write(role_dir.join("placeholder.md"), "---\nrole: bogus\nreviewed_commit: abc\nsession_id: o\ndate: 2026-05-09\nblocker_status: clear\nfindings_count: 0\n---\n# placeholder\n")
+                .expect("placeholder review");
+        }
+        fs::write(
+            reviews_root.join("findings.json"),
+            "{\"schema\":\"scena.release.findings.v1\",\"reviewed_commit\":\"abc\",\
+             \"generated_at\":\"2026-05-09T00:00:00Z\",\"findings\":[{\"id\":\"F1\"}]}",
+        )
+        .expect("findings missing fields");
+        let mut findings = Vec::new();
+
+        check_release_review_artifacts(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "RELEASE-REVIEWS-PRESENT"
+                    && finding
+                        .message
+                        .contains("findings[0] is missing required field \"severity\"")
+            }),
+            "release-readiness must reject a finding object missing required \
+             severity field: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn release_readiness_rejects_deferred_finding_with_null_deferral_target_regression() {
+        // RELEASE-REVIEWS-PRESENT (deferred-target invariant): a finding with
+        // status = "deferred" must carry a non-null deferral_target so the
+        // public-claim cross-reference is auditable. A null target fails
+        // closed.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/release-reviews-deferred-null-target");
+        let reviews_root = fixture_root.join("reviews");
+        for role in REQUIRED_REVIEW_ROLES {
+            let role_dir = reviews_root.join(role);
+            fs::create_dir_all(&role_dir).expect("role dir");
+            fs::write(role_dir.join("placeholder.md"), "---\nrole: bogus\nreviewed_commit: abc\nsession_id: o\ndate: 2026-05-09\nblocker_status: clear\nfindings_count: 0\n---\n# placeholder\n")
+                .expect("placeholder review");
+        }
+        fs::write(
+            reviews_root.join("findings.json"),
+            "{\"schema\":\"scena.release.findings.v1\",\"reviewed_commit\":\"abc\",\
+             \"generated_at\":\"2026-05-09T00:00:00Z\",\"findings\":[{\"id\":\"F1\",\
+             \"role\":\"r\",\"summary\":\"s\",\"severity\":\"minor\",\"status\":\"deferred\",\
+             \"evidence\":[],\"notes\":\"n\",\"deferral_target\":null}]}",
+        )
+        .expect("deferred null-target findings");
+        let mut findings = Vec::new();
+
+        check_release_review_artifacts(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "RELEASE-REVIEWS-PRESENT"
+                    && finding
+                        .message
+                        .contains("status = \"deferred\" but deferral_target is null")
+            }),
+            "release-readiness must reject deferred findings with a null \
+             deferral_target: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn release_readiness_rejects_signoff_with_approve_decision_when_not_all_clear_regression() {
+        // RELEASE-REVIEWS-PRESENT (decision-approve-requires-all-clear):
+        // maintainer-signoff.toml decision = "approve" only when
+        // all_clear = true; an approve-with-not-clear sign-off fails closed
+        // because shipping while a blocker is unresolved would re-introduce
+        // the silent-failure family release-reviews.md mandates we close.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/release-reviews-approve-without-all-clear");
+        let reviews_root = fixture_root.join("reviews");
+        for role in REQUIRED_REVIEW_ROLES {
+            let role_dir = reviews_root.join(role);
+            fs::create_dir_all(&role_dir).expect("role dir");
+            fs::write(role_dir.join("placeholder.md"), "---\nrole: bogus\nreviewed_commit: abc\nsession_id: o\ndate: 2026-05-09\nblocker_status: clear\nfindings_count: 0\n---\n# placeholder\n")
+                .expect("placeholder review");
+        }
+        fs::write(
+            reviews_root.join("findings.json"),
+            "{\"schema\":\"scena.release.findings.v1\",\"reviewed_commit\":\"abc\",\
+             \"generated_at\":\"2026-05-09T00:00:00Z\",\"findings\":[]}",
+        )
+        .expect("findings register fixture");
+        fs::write(
+            reviews_root.join("maintainer-signoff.toml"),
+            "[maintainer]\nname = \"Jane Smith\"\nsigned_commit = \"abc\"\n\n\
+             [reviews]\nall_clear = false\n\n[approval]\ndecision = \"approve\"\n",
+        )
+        .expect("signoff fixture");
+        let mut findings = Vec::new();
+
+        check_release_review_artifacts(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "RELEASE-REVIEWS-PRESENT"
+                    && finding
+                        .message
+                        .contains("decision = \"approve\" while all_clear = false")
+            }),
+            "release-readiness must reject decision = approve with all_clear = \
+             false: {findings:?}",
         );
     }
 
