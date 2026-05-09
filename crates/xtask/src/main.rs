@@ -703,13 +703,15 @@ fn check_release_review_artifacts(artifact_root: &Path, findings: &mut Vec<Findi
     }
     for role in REQUIRED_REVIEW_ROLES {
         let role_dir = reviews_root.join(role);
-        let has_markdown_report = match fs::read_dir(&role_dir) {
+        let report_paths: Vec<PathBuf> = match fs::read_dir(&role_dir) {
             Ok(entries) => entries
                 .flatten()
-                .any(|entry| entry.path().extension().and_then(|s| s.to_str()) == Some("md")),
-            Err(_) => false,
+                .map(|entry| entry.path())
+                .filter(|path| path.extension().and_then(|s| s.to_str()) == Some("md"))
+                .collect(),
+            Err(_) => Vec::new(),
         };
-        if !has_markdown_report {
+        if report_paths.is_empty() {
             findings.push(Finding::new(
                 "RELEASE-REVIEWS-PRESENT",
                 format!(
@@ -717,6 +719,10 @@ fn check_release_review_artifacts(artifact_root: &Path, findings: &mut Vec<Findi
                      see docs/specs/release-reviews.md"
                 ),
             ));
+            continue;
+        }
+        for report_path in &report_paths {
+            validate_release_review_report(role, report_path, findings);
         }
     }
 
@@ -771,6 +777,196 @@ fn check_release_review_artifacts(artifact_root: &Path, findings: &mut Vec<Findi
             ));
         }
     }
+}
+
+fn validate_release_review_report(role: &str, report_path: &Path, findings: &mut Vec<Finding>) {
+    let Ok(text) = fs::read_to_string(report_path) else {
+        findings.push(Finding::new(
+            "RELEASE-REVIEWS-PRESENT",
+            format!(
+                "could not read release review report {}; see \
+                 docs/specs/release-reviews.md",
+                report_path.display()
+            ),
+        ));
+        return;
+    };
+
+    let frontmatter = parse_release_review_frontmatter(&text);
+    let display = report_path.display();
+    let report_short = report_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("<unnamed>");
+    if frontmatter.is_none() {
+        findings.push(Finding::new(
+            "RELEASE-REVIEWS-PRESENT",
+            format!(
+                "{display} is missing the release-reviews frontmatter block; see \
+                 docs/specs/release-reviews.md Section 1"
+            ),
+        ));
+        return;
+    }
+    let frontmatter = frontmatter.unwrap();
+
+    for required_key in [
+        "role",
+        "reviewed_commit",
+        "session_id",
+        "date",
+        "blocker_status",
+        "findings_count",
+    ] {
+        if frontmatter.get(required_key).is_none() {
+            findings.push(Finding::new(
+                "RELEASE-REVIEWS-PRESENT",
+                format!(
+                    "{display} frontmatter is missing required field {required_key:?}; \
+                     see docs/specs/release-reviews.md Section 1"
+                ),
+            ));
+        }
+    }
+
+    if let Some(declared_role) = frontmatter.get("role") {
+        if declared_role.as_str() != role {
+            findings.push(Finding::new(
+                "RELEASE-REVIEWS-PRESENT",
+                format!(
+                    "{display} declares role={declared_role:?} but lives under \
+                     reviews/{role}/; the role slug must match the directory; \
+                     see docs/specs/release-reviews.md Section 1"
+                ),
+            ));
+        }
+    }
+
+    if let Some(declared_blocker) = frontmatter.get("blocker_status") {
+        if !matches!(
+            declared_blocker.as_str(),
+            "clear" | "blockers-open" | "findings-recorded"
+        ) {
+            findings.push(Finding::new(
+                "RELEASE-REVIEWS-PRESENT",
+                format!(
+                    "{display} blocker_status={declared_blocker:?} is not one of \
+                     clear | blockers-open | findings-recorded; see \
+                     docs/specs/release-reviews.md Section 1"
+                ),
+            ));
+        }
+    }
+
+    let finding_heading_count = text
+        .lines()
+        .filter(|line| line.trim_start().starts_with("### Finding"))
+        .count();
+    if let Some(declared_count_text) = frontmatter.get("findings_count") {
+        match declared_count_text.parse::<usize>() {
+            Ok(declared_count) if declared_count != finding_heading_count => {
+                findings.push(Finding::new(
+                    "RELEASE-REVIEWS-PRESENT",
+                    format!(
+                        "{display} declares findings_count={declared_count} but contains \
+                         {finding_heading_count} `### Finding` heading(s); see \
+                         docs/specs/release-reviews.md Section 1"
+                    ),
+                ));
+            }
+            Err(_) => {
+                findings.push(Finding::new(
+                    "RELEASE-REVIEWS-PRESENT",
+                    format!(
+                        "{display} findings_count={declared_count_text:?} is not a non-negative \
+                         integer; see docs/specs/release-reviews.md Section 1"
+                    ),
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    for finding_block in iterate_finding_blocks(&text) {
+        for required_field in ["Severity:", "Status:", "Evidence:", "Notes:"] {
+            if !finding_block.body.lines().any(|line| {
+                line.trim_start_matches(['-', '*', ' '])
+                    .starts_with(required_field)
+            }) {
+                findings.push(Finding::new(
+                    "RELEASE-REVIEWS-PRESENT",
+                    format!(
+                        "{report_short} finding {:?} is missing required field {required_field:?}; \
+                         see docs/specs/release-reviews.md Section 1",
+                        finding_block.heading.trim()
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+fn parse_release_review_frontmatter(
+    text: &str,
+) -> Option<std::collections::BTreeMap<String, String>> {
+    let trimmed_start = text.trim_start_matches('\u{feff}').trim_start();
+    let after_open = trimmed_start.strip_prefix("---\n")?;
+    let close_offset = after_open
+        .find("\n---\n")
+        .or_else(|| after_open.find("\n---"))?;
+    let yaml_block = &after_open[..close_offset];
+    let mut map = std::collections::BTreeMap::new();
+    for line in yaml_block.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = trimmed.split_once(':') else {
+            continue;
+        };
+        let value = value
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'')
+            .to_string();
+        map.insert(key.trim().to_string(), value);
+    }
+    Some(map)
+}
+
+struct ReleaseFindingBlock<'a> {
+    heading: &'a str,
+    body: &'a str,
+}
+
+fn iterate_finding_blocks(text: &str) -> Vec<ReleaseFindingBlock<'_>> {
+    let mut blocks = Vec::new();
+    let mut start_indices = Vec::new();
+    for (index, line_start) in text.match_indices("### Finding") {
+        if index == 0 || text.as_bytes()[index - 1] == b'\n' {
+            let heading_end = text[index..]
+                .find('\n')
+                .map(|relative| index + relative)
+                .unwrap_or(text.len());
+            start_indices.push((index, heading_end, line_start));
+        }
+    }
+    for (block_index, &(start, heading_end, _)) in start_indices.iter().enumerate() {
+        let next_start = start_indices
+            .get(block_index + 1)
+            .map(|next| next.0)
+            .unwrap_or_else(|| {
+                text[heading_end..]
+                    .find("\n## ")
+                    .map(|relative| heading_end + relative)
+                    .unwrap_or(text.len())
+            });
+        blocks.push(ReleaseFindingBlock {
+            heading: &text[start..heading_end],
+            body: &text[heading_end..next_start],
+        });
+    }
+    blocks
 }
 
 const REQUIRED_RELEASE_ARTIFACT_SUFFIXES: &[&str] = &[
@@ -11657,6 +11853,135 @@ mod tests {
             }),
             "release-readiness must reject findings.json that drops the schema field: \
              {findings:?}",
+        );
+    }
+
+    #[test]
+    fn release_readiness_rejects_review_report_missing_frontmatter_regression() {
+        // RELEASE-REVIEWS-PRESENT (frontmatter): a per-role review report
+        // without the documented frontmatter block fails closed.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/release-reviews-missing-frontmatter");
+        let reviews_root = fixture_root.join("reviews");
+        for role in REQUIRED_REVIEW_ROLES {
+            let role_dir = reviews_root.join(role);
+            fs::create_dir_all(&role_dir).expect("role dir");
+            fs::write(
+                role_dir.join("placeholder.md"),
+                "# placeholder review without frontmatter\n",
+            )
+            .expect("placeholder review");
+        }
+        let mut findings = Vec::new();
+
+        check_release_review_artifacts(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "RELEASE-REVIEWS-PRESENT"
+                    && finding
+                        .message
+                        .contains("missing the release-reviews frontmatter block")
+            }),
+            "release-readiness must reject a per-role review report that drops the \
+             release-reviews frontmatter block: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn release_readiness_rejects_review_report_with_findings_count_mismatch_regression() {
+        // RELEASE-REVIEWS-PRESENT (counter): findings_count must match the
+        // number of `### Finding` headings; a mismatch fails closed so the
+        // register cannot drift away from the report it claims to mirror.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/release-reviews-findings-count-mismatch");
+        let reviews_root = fixture_root.join("reviews");
+        for role in REQUIRED_REVIEW_ROLES {
+            let role_dir = reviews_root.join(role);
+            fs::create_dir_all(&role_dir).expect("role dir");
+            fs::write(
+                role_dir.join("placeholder.md"),
+                "---\n\
+                 role: bogus\n\
+                 reviewed_commit: abc\n\
+                 session_id: operator-local\n\
+                 date: 2026-05-09\n\
+                 blocker_status: clear\n\
+                 findings_count: 2\n\
+                 ---\n\
+                 \n\
+                 # placeholder\n\
+                 \n\
+                 ### Finding F1: only one\n\
+                 - Severity: nit\n\
+                 - Status: fixed\n\
+                 - Evidence: src/lib.rs\n\
+                 - Notes: only one heading\n",
+            )
+            .expect("placeholder review");
+        }
+        let mut findings = Vec::new();
+
+        check_release_review_artifacts(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "RELEASE-REVIEWS-PRESENT"
+                    && finding.message.contains("findings_count=2")
+                    && finding.message.contains("1 `### Finding`")
+            }),
+            "release-readiness must reject a release-review report whose \
+             findings_count disagrees with its `### Finding` heading count: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn release_readiness_rejects_review_report_finding_missing_severity_regression() {
+        // RELEASE-REVIEWS-PRESENT (per-finding fields): each `### Finding`
+        // must carry Severity, Status, Evidence, Notes lines; a finding
+        // missing any of those fails closed.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/release-reviews-finding-missing-severity");
+        let reviews_root = fixture_root.join("reviews");
+        for role in REQUIRED_REVIEW_ROLES {
+            let role_dir = reviews_root.join(role);
+            fs::create_dir_all(&role_dir).expect("role dir");
+            fs::write(
+                role_dir.join("placeholder.md"),
+                "---\n\
+                 role: bogus\n\
+                 reviewed_commit: abc\n\
+                 session_id: operator-local\n\
+                 date: 2026-05-09\n\
+                 blocker_status: findings-recorded\n\
+                 findings_count: 1\n\
+                 ---\n\
+                 \n\
+                 # placeholder\n\
+                 \n\
+                 ### Finding F1: missing severity\n\
+                 - Status: fixed\n\
+                 - Evidence: src/lib.rs\n\
+                 - Notes: severity line missing\n",
+            )
+            .expect("placeholder review");
+        }
+        let mut findings = Vec::new();
+
+        check_release_review_artifacts(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "RELEASE-REVIEWS-PRESENT"
+                    && finding
+                        .message
+                        .contains("missing required field \"Severity:\"")
+            }),
+            "release-readiness must reject a release-review finding that drops \
+             the Severity: line: {findings:?}",
         );
     }
 

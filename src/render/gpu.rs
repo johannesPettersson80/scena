@@ -27,9 +27,9 @@ mod webgl2_texture_set;
 #[cfg(target_arch = "wasm32")]
 mod webgl2_vertices;
 
-use crate::diagnostics::{AdapterLimitsReport, GpuAdapterReport};
 #[cfg(target_arch = "wasm32")]
 use crate::diagnostics::Backend;
+use crate::diagnostics::{AdapterLimitsReport, GpuAdapterReport};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::geometry::Primitive;
 
