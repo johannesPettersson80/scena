@@ -30,10 +30,28 @@ fn artifact_dir() -> PathBuf {
     dir
 }
 
+/// Minimum unique RGB triplets required for an example-visual harness-smoke
+/// artifact to be considered evidence of a real render rather than a flat
+/// constant-color block. Two strictly distinct triplets prove the renderer
+/// produced more than a single-color fill; production-claim proofs (which
+/// these artifacts are NOT — `production_claim = false` in the TOML) carry
+/// stricter spatial-variation floors documented in
+/// docs/specs/visual-quality-contract.md. Surfaces the
+/// visual-quality-validator F3 floor.
+const MIN_UNIQUE_PIXELS: usize = 2;
+
 fn count_nonblack_pixels(rgba: &[u8]) -> usize {
     rgba.chunks_exact(4)
         .filter(|pixel| pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0)
         .count()
+}
+
+fn count_unique_rgb_triplets(rgba: &[u8]) -> usize {
+    let mut triplets: std::collections::BTreeSet<[u8; 3]> = std::collections::BTreeSet::new();
+    for pixel in rgba.chunks_exact(4) {
+        triplets.insert([pixel[0], pixel[1], pixel[2]]);
+    }
+    triplets.len()
 }
 
 fn write_artifact(name: &str, width: u32, height: u32, rgba: &[u8]) {
@@ -43,6 +61,15 @@ fn write_artifact(name: &str, width: u32, height: u32, rgba: &[u8]) {
         ppm.extend_from_slice(&pixel[..3]);
     }
     fs::write(dir.join(format!("{name}.ppm")), ppm).expect("PPM artifact can be written");
+    let nonblack_pixels = count_nonblack_pixels(rgba);
+    let unique_pixels = count_unique_rgb_triplets(rgba);
+    assert!(
+        unique_pixels >= MIN_UNIQUE_PIXELS,
+        "example-visual harness-smoke artifact `{name}` has {unique_pixels} unique \
+         RGB triplets, below the MIN_UNIQUE_PIXELS={MIN_UNIQUE_PIXELS} floor; the \
+         capture is too uniform to count as evidence the renderer produced a real \
+         frame (visual-quality-validator F3)",
+    );
     fs::write(
         dir.join(format!("{name}.toml")),
         format!(
@@ -53,8 +80,12 @@ fn write_artifact(name: &str, width: u32, height: u32, rgba: &[u8]) {
              encoding = \"srgb8\"\n\
              width = {width}\n\
              height = {height}\n\
+             nonblack_pixels = {nonblack_pixels}\n\
+             unique_pixels = {unique_pixels}\n\
+             min_unique_pixels = {MIN_UNIQUE_PIXELS}\n\
              tolerance = \"nonblack-smoke\"\n\
-             proof_class = \"example-visual\"\n"
+             proof_class = \"example-visual-harness-smoke\"\n\
+             production_claim = false\n"
         ),
     )
     .expect("artifact metadata can be written");
