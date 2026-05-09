@@ -229,6 +229,50 @@ fn m8_set_active_variant_returns_typed_error_for_unknown_name() {
 }
 
 #[test]
+fn m8_active_variant_carries_across_replace_import_when_user_reapplies() {
+    // Phase 2B step 3 hot-reload contract: after `Scene::replace_import`,
+    // the previous SceneImport's `active_variant()` accessor still
+    // reports the name the user had selected (the stale import's
+    // variant Mutex is read-only metadata, not gated on live). The
+    // user can then call `scene.set_active_variant(&new_import,
+    // Some(&previous_name))` to re-apply the same variant on the
+    // freshly-instantiated import. Pins the user-facing rebind path
+    // so callers can preserve variant selection across hot reload
+    // without scena owning the rebind state for them.
+    let (_assets, scene_asset) = load_variants_scene();
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("variants scene instantiates");
+    scene
+        .set_active_variant(&import, Some("midnight"))
+        .expect("midnight variant selects before replace_import");
+
+    let replacement = scene
+        .replace_import(&import, &scene_asset)
+        .expect("replace_import succeeds with the same scene asset");
+
+    let previous_name = import
+        .active_variant()
+        .expect("the stale import's variant name is still readable after replace_import");
+    assert_eq!(previous_name, "midnight");
+
+    assert_eq!(
+        replacement.active_variant(),
+        None,
+        "freshly-instantiated import starts at the default variant slot",
+    );
+    scene
+        .set_active_variant(&replacement, Some(&previous_name))
+        .expect("re-applying the previous variant on the replacement import succeeds");
+    assert_eq!(
+        replacement.active_variant(),
+        Some("midnight".to_string()),
+        "user-driven variant rebind across replace_import preserves the selection",
+    );
+}
+
+#[test]
 fn m8_imports_without_variants_expose_empty_material_variants() {
     // Assets that do not declare KHR_materials_variants must surface an
     // empty `material_variants()` slice from SceneImport so callers can
