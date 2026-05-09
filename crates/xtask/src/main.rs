@@ -11243,6 +11243,80 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_module_boundaries_missing_renderer_no_fetch_clause_regression() {
+        // ARCH-MODULES: module-boundaries.md must keep the "no hidden asset fetch,
+        // shader compile, or first-time GPU upload inside render()" clause so the
+        // module ownership rules stay anchored in the spec.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/module-boundaries-stub");
+        let module_path = fixture_root.join("docs/specs/module-boundaries.md");
+        fs::create_dir_all(module_path.parent().expect("module-boundaries parent"))
+            .expect("fixture dir");
+        fs::write(
+            &module_path,
+            "# Module Boundaries\n\nNo render-fetch clause here.\n",
+        )
+        .expect("module-boundaries fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-MODULES",
+            "docs/specs/module-boundaries.md",
+            &[
+                "`scene`",
+                "`assets`",
+                "`render`",
+                "No hidden asset fetch, shader compile, or first-time GPU upload inside `render()`",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-MODULES" && finding.message.contains("No hidden asset fetch")
+            }),
+            "doctor must reject module-boundaries.md that drops the render-no-fetch \
+             clause: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_render_alpha_capabilities_field_regression() {
+        // ARCH-RENDER-ALPHA (capability field): capabilities.rs must keep
+        // pub alpha_pipeline: AlphaPipelineStatus on Capabilities so backends can
+        // structurally distinguish LinearSourceOver from BackendPassthrough.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/render-alpha-field-stub");
+        let capabilities_path = fixture_root.join("src/diagnostics/capabilities.rs");
+        fs::create_dir_all(capabilities_path.parent().expect("capabilities parent"))
+            .expect("fixture dir");
+        fs::write(
+            &capabilities_path,
+            "pub enum AlphaPipelineStatus { LinearSourceOver, BackendPassthrough }\npub struct Capabilities {}\n",
+        )
+        .expect("capabilities fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-RENDER-ALPHA",
+            "src/diagnostics/capabilities.rs",
+            &["pub alpha_pipeline: AlphaPipelineStatus"],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-RENDER-ALPHA"
+                    && finding.message.contains("pub alpha_pipeline")
+            }),
+            "doctor must reject Capabilities that drops the alpha_pipeline field: \
+             {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
