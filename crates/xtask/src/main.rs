@@ -8352,7 +8352,10 @@ fn check_m7_ergonomics_contracts(root: &Path, findings: &mut Vec<Finding>) {
         findings,
         "ERGONOMICS-M7",
         "examples/first_visible_render.rs",
-        &["add_default_camera", "render_active"],
+        // `Scene::with_default_camera()` is the smaller-of-two-default-camera
+        // paths shipped in commit f3105a3 (api-ergonomics-F1 closure) and
+        // wraps `add_default_camera` internally; either ergonomic counts.
+        &["with_default_camera", "render_active"],
     );
     require_contains(
         root,
