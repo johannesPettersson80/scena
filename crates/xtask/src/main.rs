@@ -1712,6 +1712,7 @@ const REQUIRED_DOCS: &[&str] = &[
     "docs/specs/platform-capabilities.md",
     "docs/specs/release-gates.md",
     "docs/specs/doctor-contract.md",
+    "docs/specs/release-reviews.md",
     "docs/checklists/acceptance-index.md",
     "docs/checklists/m0-foundation.md",
     "docs/checklists/m1-geometry-materials.md",
