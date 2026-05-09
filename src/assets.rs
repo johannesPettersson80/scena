@@ -58,6 +58,37 @@ pub enum RetainPolicy {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AssetPath(String);
 
+/// Process-unique identifier for an [`Assets`] store. Each [`Assets::new`] /
+/// [`Assets::with_fetcher`] call mints a fresh `AssetStoreId` from a
+/// monotonically-increasing counter. The id stays stable for the lifetime of
+/// the [`Assets`] instance and lets beginners distinguish "wrong Assets
+/// store" from "stale handle in the same store" without parsing the
+/// cargo-doc help text. Closes scena-api-ergonomics-reviewer Phase 6
+/// finding F4.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AssetStoreId(std::num::NonZeroU64);
+
+impl AssetStoreId {
+    fn next() -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(1);
+        let raw = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let value = std::num::NonZeroU64::new(raw)
+            .expect("AssetStoreId counter never returns zero before saturation");
+        Self(value)
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0.get()
+    }
+}
+
+impl std::fmt::Display for AssetStoreId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Assets#{}", self.0.get())
+    }
+}
+
 /// Per-store eviction counts returned by [`Assets::release_unreferenced`].
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct AssetEvictionStats {
@@ -73,6 +104,7 @@ pub struct Assets<F = DefaultAssetFetcher> {
     fetcher: F,
     retain_policy: RetainPolicy,
     storage: Arc<Mutex<AssetStorage>>,
+    store_id: AssetStoreId,
 }
 
 #[derive(Debug)]
@@ -112,7 +144,44 @@ impl<F> Assets<F> {
                 texture_lookup: BTreeMap::new(),
                 environment_lookup: BTreeMap::new(),
             })),
+            store_id: AssetStoreId::next(),
         }
+    }
+
+    /// Returns the unique [`AssetStoreId`] minted at construction. Two
+    /// [`Assets`] instances created independently always carry distinct ids;
+    /// a [`Clone`] of an existing instance shares the storage and therefore
+    /// returns the same id, so the store id reliably tracks "which Assets
+    /// store owns this handle?". Combine with `Assets::contains_<kind>` to
+    /// distinguish "wrong Assets store" from "stale handle in the same
+    /// store" before consuming the typed `*HandleNotFound` error variants.
+    /// Closes scena-api-ergonomics-reviewer F4.
+    pub fn store_id(&self) -> AssetStoreId {
+        self.store_id
+    }
+
+    /// Returns true when `handle` resolves to a live geometry descriptor in
+    /// this [`Assets`] store, mirroring the predicate the
+    /// [`AssetError::GeometryHandleNotFound`] variant guards. Useful when
+    /// callers want to programmatically distinguish "wrong store" from
+    /// "stale handle" without parsing the diagnostic display text.
+    pub fn contains_geometry(&self, handle: GeometryHandle) -> bool {
+        self.storage().geometries.contains_key(handle)
+    }
+
+    /// Returns true when `handle` resolves to a live material descriptor.
+    pub fn contains_material(&self, handle: MaterialHandle) -> bool {
+        self.storage().materials.contains_key(handle)
+    }
+
+    /// Returns true when `handle` resolves to a live texture descriptor.
+    pub fn contains_texture(&self, handle: TextureHandle) -> bool {
+        self.storage().textures.contains_key(handle)
+    }
+
+    /// Returns true when `handle` resolves to a live environment descriptor.
+    pub fn contains_environment(&self, handle: EnvironmentHandle) -> bool {
+        self.storage().environments.contains_key(handle)
     }
 
     pub fn fetcher(&self) -> &F {

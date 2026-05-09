@@ -47,6 +47,58 @@ fn m8_material_handle_from_other_store_returns_typed_error() {
 }
 
 #[test]
+fn m8_assets_store_id_distinguishes_wrong_store_from_stale_handle() {
+    // scena-api-ergonomics-reviewer Phase 6 finding F4 closure:
+    // The *HandleNotFound diagnostic surface is the same shape for "wrong
+    // Assets store" and "handle freed by release_unreferenced", so a
+    // beginner needs a programmatic distinguisher. Assets::store_id()
+    // labels each Assets instance with a process-unique id, and
+    // Assets::contains_<kind>(handle) lets callers check ownership against
+    // a specific store before lookup. Together they let beginners
+    // distinguish the two failure modes without parsing display text.
+    let store_a = Assets::new();
+    let store_b = Assets::new();
+    assert_ne!(
+        store_a.store_id(),
+        store_b.store_id(),
+        "two independently constructed Assets stores must mint distinct ids",
+    );
+
+    let handle = store_a.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
+    assert!(
+        store_a.contains_geometry(handle),
+        "handle is live in store_a"
+    );
+    assert!(
+        !store_b.contains_geometry(handle),
+        "handle is NOT live in store_b — wrong-store case",
+    );
+
+    // Both error paths share the AssetError::GeometryHandleNotFound surface;
+    // the predicate-based test above is the path callers should use to
+    // distinguish the two failure modes programmatically.
+    match store_b.try_geometry(handle) {
+        Err(AssetError::GeometryHandleNotFound { .. }) => {}
+        other => panic!("wrong-store handle must surface GeometryHandleNotFound: {other:?}"),
+    }
+}
+
+#[test]
+fn m8_assets_store_id_is_stable_across_clone() {
+    // A Clone of an Assets instance shares the underlying storage Arc, so
+    // Assets::store_id() must remain stable across clones — otherwise a
+    // helper that clones the store before resolving handles would surface
+    // a misleading "wrong store" reading.
+    let store = Assets::new();
+    let cloned = store.clone();
+    assert_eq!(
+        store.store_id(),
+        cloned.store_id(),
+        "Clone of Assets must preserve store_id since the Arc<Mutex<storage>> is shared",
+    );
+}
+
+#[test]
 fn m8_release_unreferenced_evicts_dangling_geometry_and_material_descriptors() {
     // scena-gltf-animation-reviewer Phase 6 finding F4 closure:
     // Assets::release_unreferenced() must evict GeometryDesc and

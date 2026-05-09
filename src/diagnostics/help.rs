@@ -31,7 +31,11 @@ impl AssetError {
             | Self::MaterialHandleNotFound { .. }
             | Self::TextureHandleNotFound { .. }
             | Self::EnvironmentHandleNotFound { .. } => {
-                "use the same Assets collection that created the typed handle"
+                "verify the handle came from the same Assets collection: \
+                 call assets.contains_<kind>(handle) on the store you queried; \
+                 compare assets.store_id() against the store that minted the \
+                 handle to distinguish 'wrong store' from 'stale handle freed \
+                 by Assets::release_unreferenced'"
             }
         }
     }
