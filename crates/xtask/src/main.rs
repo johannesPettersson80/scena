@@ -12612,6 +12612,74 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_m1_browser_rendered_output_missing_cargo_dep_regression() {
+        // VISUAL-BROWSER-M1: Cargo.toml must keep the wasm-bindgen + ImageData
+        // + CanvasRenderingContext2d dependencies that gate the m1 browser
+        // rendered-output path. A Cargo.toml that drops any of these fails
+        // closed so the M1 browser proof cannot regress silently.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/m1-browser-missing-cargo-dep");
+        let cargo_path = fixture_root.join("Cargo.toml");
+        fs::create_dir_all(&fixture_root).expect("fixture dir");
+        fs::write(
+            &cargo_path,
+            "[package]\nname = \"scena\"\n# stub Cargo.toml without wasm-bindgen / \
+             CanvasRenderingContext2d / ImageData entries.\n",
+        )
+        .expect("cargo fixture");
+        let mut findings = Vec::new();
+
+        check_m1_browser_rendered_output(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "VISUAL-BROWSER-M1" && finding.message.contains("wasm-bindgen")
+            }),
+            "doctor must reject Cargo.toml that drops the wasm-bindgen / \
+             CanvasRenderingContext2d / ImageData wiring required by the M1 \
+             browser rendered-output proof: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_manifest_file_hash_mismatch_regression() {
+        // VISUAL-DEFAULT-ENV (manifest hash): a manifest entry whose
+        // recorded SHA-256 does not match the file on disk fails closed so
+        // the asset bundle cannot drift away from the manifest contract.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/manifest-file-hash-mismatch");
+        let manifest_rel = "tests/assets/manifest.toml";
+        let asset_rel = "tests/assets/some-file.bin";
+        let manifest_path = fixture_root.join(manifest_rel);
+        let asset_path = fixture_root.join(asset_rel);
+        fs::create_dir_all(manifest_path.parent().expect("manifest parent")).expect("manifest dir");
+        fs::create_dir_all(asset_path.parent().expect("asset parent")).expect("asset dir");
+        fs::write(&manifest_path, "# stub manifest\n").expect("manifest fixture");
+        fs::write(&asset_path, b"actual file bytes").expect("asset fixture");
+        // 64-hex-character SHA-256 that does not match the file on disk.
+        let bogus_sha256 = "0".repeat(64);
+        let mut findings = Vec::new();
+
+        check_manifest_file_hash(
+            &fixture_root,
+            &mut findings,
+            manifest_rel,
+            asset_rel,
+            &bogus_sha256,
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "VISUAL-DEFAULT-ENV"
+                    && finding.message.contains("SHA-256 mismatch for")
+            }),
+            "doctor must reject manifest entries whose recorded SHA-256 does \
+             not match the file on disk: {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_m10_claim_audit_missing_contract_text_regression() {
         // CLAIM-AUDIT-M10: docs/checklists/m10-threejs-replacement-acceptance.md
         // and docs/api/m10-public-api-diff.md must keep the M10 claim-audit
