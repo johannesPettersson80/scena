@@ -4269,3 +4269,44 @@ fn m7_scene_inspection_reports_normal_debug_segments() {
         "normal debug points must be finite world-space positions"
     );
 }
+
+#[test]
+fn transform_rotate_helpers_compose_chained_rotations_instead_of_overwriting() {
+    // scena-api-ergonomics-reviewer Phase 6 finding F2 closure: chained
+    // rotate_*_deg helpers must compose onto the existing rotation so a
+    // beginner cannot silently lose an earlier rotation by chaining a
+    // second axis. Earlier behavior overwrote, which contradicted the
+    // "no silent fallbacks" review rule.
+    let chained = Transform::IDENTITY.rotate_y_deg(90.0).rotate_x_deg(45.0);
+    let last_only = Transform::IDENTITY.rotate_x_deg(45.0);
+    assert!(
+        !quaternion_close_enough(chained.rotation, last_only.rotation),
+        "chained rotate_y_deg(90).rotate_x_deg(45) must NOT collapse to a \
+         lone X rotation; the y-rotation must be preserved (got chained={:?} \
+         last_only={:?})",
+        chained.rotation,
+        last_only.rotation,
+    );
+
+    // Single-rotation callers are unaffected: rotate_y_deg(90) on the
+    // identity transform still yields the y-rotation, since identity ∘ R = R.
+    let single = Transform::IDENTITY.rotate_y_deg(90.0);
+    let direct_y = scena::Quat {
+        x: 0.0,
+        y: (std::f32::consts::FRAC_PI_4).sin(),
+        z: 0.0,
+        w: (std::f32::consts::FRAC_PI_4).cos(),
+    };
+    assert!(
+        quaternion_close_enough(single.rotation, direct_y),
+        "Transform::IDENTITY.rotate_y_deg(90) must equal the canonical Y(90°) \
+         quaternion (got {:?} vs canonical {:?})",
+        single.rotation,
+        direct_y,
+    );
+}
+
+fn quaternion_close_enough(a: scena::Quat, b: scena::Quat) -> bool {
+    let dot = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+    dot.abs() > 1.0 - 1.0e-3
+}
