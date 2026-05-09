@@ -8,8 +8,9 @@
 //! Phase 6 finding F3 v1.0 commitment without owning the host event loop.
 
 use scena::{
-    DiagnosticSeverity, InteractiveGltfViewer, PlatformSurface, RenderMode, Renderer, Scene,
-    SurfaceEvent, interactive_gltf_viewer,
+    DiagnosticSeverity, InteractiveGltfViewer, OrbitControlAction, PlatformSurface, PointerButton,
+    PointerEvent, PointerEventKind, RenderMode, Renderer, Scene, SurfaceEvent,
+    interactive_gltf_viewer,
 };
 
 #[test]
@@ -96,6 +97,123 @@ fn interactive_gltf_viewer_diagnostics_accessor_reports_renderer_diagnostics() {
     let _ = diagnostics
         .iter()
         .any(|diagnostic| diagnostic.severity() != DiagnosticSeverity::Info);
+}
+
+#[test]
+fn interactive_gltf_viewer_with_orbit_controls_attaches_controller_seeded_from_framing() {
+    // Phase 5B step 2: `with_orbit_controls()` derives the initial OrbitControls
+    // target+distance from the imported scene's bounds and the framed camera
+    // position. The controller must therefore exist and have a positive
+    // distance (the framed camera is offset along +Z from the bounds center).
+    let viewer = interactive_gltf_viewer(
+        "tests/assets/gltf/khronos/UnlitTest/UnlitTest.gltf",
+        PlatformSurface::native_window(96, 64),
+    )
+    .with_orbit_controls()
+    .build()
+    .expect("interactive viewer builds with orbit controls");
+
+    let controls = viewer
+        .orbit_controls
+        .as_ref()
+        .expect("with_orbit_controls populates the controller field");
+    assert!(
+        controls.distance() > 0.0 && controls.distance().is_finite(),
+        "framed orbit controls must seed a positive finite distance, got {}",
+        controls.distance()
+    );
+    assert!(
+        controls.yaw_radians().abs() < f32::EPSILON,
+        "orbit controls start unrotated; yaw={}",
+        controls.yaw_radians()
+    );
+}
+
+#[test]
+fn interactive_gltf_viewer_handle_pointer_event_orbits_and_applies_to_scene() {
+    // Phase 5B step 2: routing pointer events through
+    // `handle_pointer_event` must update the controller AND apply the
+    // resulting transform to the active camera. The test presses the
+    // primary button, drags 100 px right, and asserts that (a) the
+    // returned action is `Orbit` and (b) the camera node's world
+    // translation actually changed.
+    let mut viewer = interactive_gltf_viewer(
+        "tests/assets/gltf/khronos/UnlitTest/UnlitTest.gltf",
+        PlatformSurface::native_window(96, 64),
+    )
+    .with_orbit_controls()
+    .build()
+    .expect("interactive viewer builds with orbit controls");
+
+    let camera_node = viewer
+        .scene
+        .camera_node(viewer.camera)
+        .expect("active camera has a node");
+    let translation_before = viewer
+        .scene
+        .world_transform(camera_node)
+        .expect("camera world transform")
+        .translation;
+
+    let press = viewer
+        .handle_pointer_event(PointerEvent {
+            kind: PointerEventKind::Pressed,
+            position: (32.0, 32.0),
+            button: Some(PointerButton::Primary),
+            delta: (0.0, 0.0),
+            scroll_delta: 0.0,
+        })
+        .expect("press event handled");
+    assert_eq!(press, OrbitControlAction::BeginOrbit);
+
+    let drag = viewer
+        .handle_pointer_event(PointerEvent {
+            kind: PointerEventKind::Moved,
+            position: (132.0, 32.0),
+            button: Some(PointerButton::Primary),
+            delta: (100.0, 0.0),
+            scroll_delta: 0.0,
+        })
+        .expect("drag event handled");
+    assert_eq!(drag, OrbitControlAction::Orbit);
+
+    let translation_after = viewer
+        .scene
+        .world_transform(camera_node)
+        .expect("camera world transform")
+        .translation;
+    let dx = translation_after.x - translation_before.x;
+    let dz = translation_after.z - translation_before.z;
+    assert!(
+        dx * dx + dz * dz > 1e-6,
+        "100 px horizontal drag must rotate the camera around target; \
+         translation moved from {translation_before:?} to {translation_after:?}",
+    );
+}
+
+#[test]
+fn interactive_gltf_viewer_handle_pointer_event_no_op_without_orbit_controls() {
+    // Without `with_orbit_controls`, handle_pointer_event must short-circuit
+    // and report None — the handler is always reachable so callers can
+    // unconditionally route input through it.
+    let mut viewer = interactive_gltf_viewer(
+        "tests/assets/gltf/khronos/UnlitTest/UnlitTest.gltf",
+        PlatformSurface::native_window(64, 64),
+    )
+    .build()
+    .expect("interactive viewer builds without orbit controls");
+
+    assert!(viewer.orbit_controls.is_none());
+    let action = viewer
+        .handle_pointer_event(PointerEvent {
+            kind: PointerEventKind::Pressed,
+            position: (10.0, 10.0),
+            button: Some(PointerButton::Primary),
+            delta: (0.0, 0.0),
+            scroll_delta: 0.0,
+        })
+        .expect("event routes safely without orbit controls");
+    assert_eq!(action, OrbitControlAction::None);
 }
 
 #[test]

@@ -1,10 +1,11 @@
 //! High-level viewer helpers built from `Scene`, `Assets`, and `Renderer`.
 
 use crate::assets::{AssetPath, Assets};
-use crate::diagnostics::{Diagnostic, RenderOutcome};
+use crate::controls::{OrbitControlAction, OrbitControls, PointerEvent, TouchEvent};
+use crate::diagnostics::{Diagnostic, LookupError, RenderOutcome};
 use crate::platform::{PlatformSurface, SurfaceEvent};
 use crate::render::{Profile, Quality, RenderMode, Renderer, RendererOptions};
-use crate::scene::{CameraKey, DirectionalLight, Scene, SceneImport};
+use crate::scene::{CameraKey, DirectionalLight, Scene, SceneImport, Vec3};
 
 /// Owned state returned by [`first_render_gltf_headless`].
 #[derive(Debug)]
@@ -236,6 +237,12 @@ pub struct InteractiveGltfViewer {
     pub renderer: Renderer,
     pub import: SceneImport,
     pub camera: CameraKey,
+    /// Phase 5B step 2: optional orbit-camera controller. Populated when
+    /// the builder was configured with `with_orbit_controls()`. Pointer +
+    /// touch events route through `handle_pointer_event` /
+    /// `handle_touch_event`; the controller applies the resulting
+    /// transform to the active camera.
+    pub orbit_controls: Option<OrbitControls>,
 }
 
 /// Builder for [`interactive_gltf_viewer`].
@@ -247,6 +254,7 @@ pub struct InteractiveGltfViewerBuilder {
     default_light: bool,
     default_environment: bool,
     environment_path: Option<AssetPath>,
+    orbit_controls: bool,
     renderer_options: RendererOptions,
 }
 
@@ -268,6 +276,7 @@ pub fn interactive_gltf_viewer(
         default_light: false,
         default_environment: false,
         environment_path: None,
+        orbit_controls: false,
         renderer_options: RendererOptions::default(),
     }
 }
@@ -291,6 +300,16 @@ impl InteractiveGltfViewerBuilder {
     pub fn with_environment(mut self, path: impl Into<AssetPath>) -> Self {
         self.environment_path = Some(path.into());
         self.default_environment = false;
+        self
+    }
+
+    /// Phase 5B step 2: attaches an `OrbitControls` instance derived from
+    /// the imported scene's bounds and the framed camera position. Call
+    /// sites route input through `InteractiveGltfViewer::handle_pointer_event`
+    /// / `handle_touch_event` to apply orbit/pan/zoom to the active camera
+    /// without piercing the renderer or scene.
+    pub const fn with_orbit_controls(mut self) -> Self {
+        self.orbit_controls = true;
         self
     }
 
@@ -350,12 +369,14 @@ impl InteractiveGltfViewerBuilder {
             renderer.set_environment(assets.default_environment());
         }
         renderer.prepare_with_assets(&mut scene, &assets)?;
+        let orbit_controls = build_orbit_controls(self.orbit_controls, &scene, &import, camera);
         Ok(InteractiveGltfViewer {
             assets,
             scene,
             renderer,
             import,
             camera,
+            orbit_controls,
         })
     }
 
@@ -381,14 +402,47 @@ impl InteractiveGltfViewerBuilder {
             renderer.set_environment(assets.default_environment());
         }
         renderer.prepare_with_assets(&mut scene, &assets)?;
+        let orbit_controls = build_orbit_controls(self.orbit_controls, &scene, &import, camera);
         Ok(InteractiveGltfViewer {
             assets,
             scene,
             renderer,
             import,
             camera,
+            orbit_controls,
         })
     }
+}
+
+/// Phase 5B step 2: derives the initial OrbitControls transform from the
+/// imported scene's bounds and the framed camera position. Called by both
+/// the sync and async build paths so the controller starts at exactly the
+/// distance/target combination that `frame_import` placed the camera at;
+/// the first orbit/zoom delta therefore composes correctly with the
+/// initial framing.
+fn build_orbit_controls(
+    enabled: bool,
+    scene: &Scene,
+    import: &SceneImport,
+    camera: CameraKey,
+) -> Option<OrbitControls> {
+    if !enabled {
+        return None;
+    }
+    let bounds = import.bounds_world(scene);
+    let target = bounds.map(|aabb| aabb.center()).unwrap_or(Vec3::ZERO);
+    let distance = scene
+        .camera_node(camera)
+        .and_then(|node| scene.world_transform(node))
+        .map(|transform| {
+            let dx = transform.translation.x - target.x;
+            let dy = transform.translation.y - target.y;
+            let dz = transform.translation.z - target.z;
+            (dx * dx + dy * dy + dz * dz).sqrt()
+        })
+        .filter(|distance| distance.is_finite() && *distance > 0.0)
+        .unwrap_or(2.0);
+    Some(OrbitControls::new(target, distance))
 }
 
 impl InteractiveGltfViewer {
@@ -455,6 +509,41 @@ impl InteractiveGltfViewer {
     /// `viewer.renderer().capabilities()`.
     pub fn capabilities(&self) -> &crate::Capabilities {
         self.renderer.capabilities()
+    }
+
+    /// Phase 5B step 2: routes a pointer event through the attached
+    /// `OrbitControls` (if any). When the controller reports a non-`None`
+    /// action, the resulting camera transform is applied to the active
+    /// scene camera. Returns the action so the host loop can react (e.g.
+    /// flip the renderer to render-on-change for idle frames after `End`).
+    /// When no controller is attached, returns `OrbitControlAction::None`.
+    pub fn handle_pointer_event(
+        &mut self,
+        event: PointerEvent,
+    ) -> Result<OrbitControlAction, LookupError> {
+        let Some(orbit_controls) = self.orbit_controls.as_mut() else {
+            return Ok(OrbitControlAction::None);
+        };
+        let action = orbit_controls.handle_pointer(event);
+        if !matches!(action, OrbitControlAction::None) {
+            orbit_controls.apply_to_scene(&mut self.scene, self.camera)?;
+        }
+        Ok(action)
+    }
+
+    /// Phase 5B step 2: touch-event mirror of `handle_pointer_event`.
+    pub fn handle_touch_event(
+        &mut self,
+        event: TouchEvent,
+    ) -> Result<OrbitControlAction, LookupError> {
+        let Some(orbit_controls) = self.orbit_controls.as_mut() else {
+            return Ok(OrbitControlAction::None);
+        };
+        let action = orbit_controls.handle_touch(event);
+        if !matches!(action, OrbitControlAction::None) {
+            orbit_controls.apply_to_scene(&mut self.scene, self.camera)?;
+        }
+        Ok(action)
     }
 }
 
