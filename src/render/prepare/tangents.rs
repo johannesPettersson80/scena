@@ -9,66 +9,12 @@ pub(super) struct TangentFrame {
     pub(super) handedness: f32,
 }
 
+/// Generate per-vertex tangent frames for a glTF mesh using the canonical
+/// MikkTSpace algorithm. Phase 1E plan-line-856 closure: production
+/// arbitrary-glTF tangent generation now goes through the same algorithm
+/// the parity oracle uses, so authored normal maps from any glTF source
+/// resolve to the tangent basis MikkTSpace defines.
 pub(super) fn accumulate_vertex_tangents(
-    vertices: &[GeometryVertex],
-    indices: &[u32],
-    tex_coords0: &[[f32; 2]],
-    transform: Transform,
-    origin_shift: Vec3,
-) -> Vec<TangentFrame> {
-    let mut accumulated_tangent = vec![Vec3::ZERO; vertices.len()];
-    let mut accumulated_bitangent = vec![Vec3::ZERO; vertices.len()];
-    for triangle in indices.chunks_exact(3) {
-        let ia = triangle[0] as usize;
-        let ib = triangle[1] as usize;
-        let ic = triangle[2] as usize;
-        let Some((raw_tangent, raw_bitangent)) = raw_triangle_tangent_frame(
-            transform_position(vertices[ia].position, transform, origin_shift),
-            transform_position(vertices[ib].position, transform, origin_shift),
-            transform_position(vertices[ic].position, transform, origin_shift),
-            tex_coords0[ia],
-            tex_coords0[ib],
-            tex_coords0[ic],
-        ) else {
-            continue;
-        };
-        for index in [ia, ib, ic] {
-            accumulated_tangent[index] = add_vec3(accumulated_tangent[index], raw_tangent);
-            accumulated_bitangent[index] = add_vec3(accumulated_bitangent[index], raw_bitangent);
-        }
-    }
-    vertices
-        .iter()
-        .zip(accumulated_tangent)
-        .zip(accumulated_bitangent)
-        .map(|((vertex, raw_tangent), raw_bitangent)| {
-            let normal = transform_normal(vertex.normal, transform);
-            let orthogonal = subtract_vec3(
-                raw_tangent,
-                scale_vec3(normal, dot_vec3(raw_tangent, normal)),
-            );
-            let tangent = normalize_or(orthogonal, fallback_tangent(normal));
-            let handedness = if dot_vec3(cross_vec3(normal, tangent), raw_bitangent) < 0.0 {
-                -1.0
-            } else {
-                1.0
-            };
-            TangentFrame {
-                tangent,
-                handedness,
-            }
-        })
-        .collect()
-}
-
-/// Run the canonical MikkTSpace algorithm against the same inputs as
-/// [`accumulate_vertex_tangents`] and return the per-vertex tangent frames the algorithm
-/// would produce. Used today as the parity oracle for the in-tree generated-tangent path
-/// (P3 line 806). The implementation in this file may diverge from MikkTSpace by area
-/// weighting or UV island grouping; the parity test ensures the divergence stays within
-/// `1e-4`.
-#[cfg(test)]
-pub(super) fn mikktspace_vertex_tangents(
     vertices: &[GeometryVertex],
     indices: &[u32],
     tex_coords0: &[[f32; 2]],
@@ -99,10 +45,26 @@ pub(super) fn mikktspace_vertex_tangents(
     if face_count > 0 {
         let _ = mikktspace::generate_tangents(&mut adapter);
     }
+    // Re-orthogonalize against the per-vertex normal so a downstream
+    // tangent-space basis stays orthonormal even when the geometry's
+    // authored normals do not exactly match MikkTSpace's per-face normal
+    // averaging. Authored-tangent path applies the same step; preserving
+    // it for generated tangents keeps both paths under the same
+    // contract.
+    for (frame, vertex) in adapter.output.iter_mut().zip(vertices) {
+        let normal = transform_normal(vertex.normal, transform);
+        let orthogonal = subtract_vec3(
+            frame.tangent,
+            scale_vec3(normal, dot_vec3(frame.tangent, normal)),
+        );
+        frame.tangent = normalize_or(orthogonal, fallback_tangent(normal));
+    }
     adapter.output
 }
 
 #[cfg(test)]
+pub(super) use accumulate_vertex_tangents as mikktspace_vertex_tangents;
+
 struct MikktspaceAdapter<'a> {
     positions: Vec<Vec3>,
     normals: Vec<Vec3>,
@@ -112,14 +74,12 @@ struct MikktspaceAdapter<'a> {
     face_count: usize,
 }
 
-#[cfg(test)]
 impl<'a> MikktspaceAdapter<'a> {
     fn vertex_index(&self, face: usize, vert: usize) -> usize {
         self.indices[face * 3 + vert] as usize
     }
 }
 
-#[cfg(test)]
 impl<'a> mikktspace::Geometry for MikktspaceAdapter<'a> {
     fn num_faces(&self) -> usize {
         self.face_count
@@ -196,6 +156,7 @@ fn triangle_tangent(
     normalize_or(orthogonal, fallback_tangent(normal))
 }
 
+#[cfg(test)]
 fn raw_triangle_tangent_frame(
     position_a: Vec3,
     position_b: Vec3,
@@ -241,10 +202,6 @@ fn fallback_tangent(normal: Vec3) -> Vec3 {
 
 fn subtract_vec3(left: Vec3, right: Vec3) -> Vec3 {
     Vec3::new(left.x - right.x, left.y - right.y, left.z - right.z)
-}
-
-fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(left.x + right.x, left.y + right.y, left.z + right.z)
 }
 
 fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
@@ -319,7 +276,17 @@ mod tests {
     }
 
     #[test]
-    fn accumulated_vertex_tangents_average_shared_triangle_contributions() {
+    fn accumulated_vertex_tangents_resolve_shared_triangle_through_mikktspace() {
+        // Phase 1E plan-line-856 closure: production tangents now go
+        // through the MikkTSpace algorithm instead of the prior in-tree
+        // weighted-average. Vertex 0 is shared by two triangles with
+        // different UV mappings (the first puts the U axis along +X, the
+        // second along +Y). MikkTSpace resolves shared vertices per UV
+        // island rather than averaging across face boundaries, so the
+        // returned tangent matches one of the two per-face tangents
+        // (specifically the +X mapping from the first face) and stays
+        // orthogonal to the vertex normal. This is the canonical glTF
+        // tangent-space contract.
         let vertices = [
             GeometryVertex {
                 position: Vec3::new(0.0, 0.0, 0.0),
@@ -352,11 +319,10 @@ mod tests {
             Vec3::ZERO,
         );
 
-        let diagonal = 0.5_f32.sqrt();
-        assert_vec3_near(tangents[0].tangent, Vec3::new(diagonal, diagonal, 0.0));
+        assert_vec3_near(tangents[0].tangent, Vec3::new(1.0, 0.0, 0.0));
         assert!(
             dot_vec3(tangents[0].tangent, vertices[0].normal).abs() < 0.0001,
-            "accumulated tangent must stay orthogonal to the vertex normal"
+            "MikkTSpace tangent must stay orthogonal to the vertex normal"
         );
     }
 

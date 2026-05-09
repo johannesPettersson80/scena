@@ -3547,7 +3547,7 @@ fn check_renderer_truth_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "TangentFrame",
             "handedness",
             "fallback_tangent",
-            "accumulated_vertex_tangents_average_shared_triangle_contributions",
+            "accumulated_vertex_tangents_resolve_shared_triangle_through_mikktspace",
             "accumulated_vertex_tangents_preserve_mirrored_uv_handedness",
             "authored_vertex_tangents_preserve_handedness_and_orthogonalize",
             "generated_triangle_tangent_follows_texcoord_u_axis",
