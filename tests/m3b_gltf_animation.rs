@@ -369,6 +369,74 @@ fn morph_target_weights_channel_updates_scene_morph_weights() {
 }
 
 #[test]
+fn morph_target_weights_channel_preserves_each_target_weight_per_keyframe() {
+    // Regression: parse_output for AnimationTarget::Weights previously collapsed
+    // (keyframes * morph_target_count) scalars into output_count length-1 vectors.
+    // Khronos MorphCube has 2 morph targets and 127 keyframes (input count 127,
+    // output count 254). The fix chunks output by output.len() / keyframe_count,
+    // yielding 127 keyframes of 2 weights each.
+    let assets = Assets::default();
+    let scene_asset = pollster::block_on(
+        assets.load_scene("tests/assets/gltf/khronos/MorphCube/AnimatedMorphCube.gltf"),
+    )
+    .expect("MorphCube must load");
+    let clip_name = scene_asset
+        .clips()
+        .first()
+        .and_then(|clip| clip.name())
+        .expect("MorphCube ships an animation clip with a name")
+        .to_string();
+    let morph_node_name = scene_asset
+        .nodes()
+        .iter()
+        .find(|node| {
+            node.mesh()
+                .map(|mesh| !mesh.morph_weights().is_empty())
+                .unwrap_or(false)
+        })
+        .and_then(|node| node.name())
+        .expect("MorphCube has a named morphable node")
+        .to_string();
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("MorphCube import instantiates");
+    let morph_node = import
+        .node(&morph_node_name)
+        .expect("morph node resolves through import");
+    let mixer = scene
+        .create_animation_mixer(&import, &clip_name)
+        .expect("MorphCube animation mixer creates");
+
+    let initial = scene
+        .morph_weights(morph_node)
+        .expect("morph weights exist")
+        .to_vec();
+    assert_eq!(
+        initial.len(),
+        2,
+        "MorphCube exposes 2 morph targets per keyframe (got {initial:?})",
+    );
+
+    scene
+        .seek_animation(mixer, 0.5)
+        .expect("MorphCube animation seek samples");
+    let mid = scene
+        .morph_weights(morph_node)
+        .expect("morph weights remain after seek")
+        .to_vec();
+    assert_eq!(
+        mid.len(),
+        2,
+        "MorphCube morph weights preserve target count after animation update (got {mid:?})",
+    );
+    assert!(
+        mid != initial,
+        "MorphCube animation must change at least one morph weight; got {mid:?} == initial {initial:?}",
+    );
+}
+
+#[test]
 fn skinning_rebinds_joints_and_deforms_vertices_from_skeleton_hierarchy() {
     let assets = Assets::with_fetcher(MultiMemoryFetcher::new(vec![
         (

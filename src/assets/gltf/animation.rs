@@ -97,7 +97,16 @@ fn parse_animation_channel(
     )?;
     let target = parse_target(path, target_json)?;
     let input_seconds = read_f32_accessor(path, input, buffers, buffer_views, accessors)?;
-    let output = parse_output(path, target, output, buffers, buffer_views, accessors)?;
+    let output = parse_output(
+        path,
+        target,
+        output,
+        input_seconds.len(),
+        interpolation,
+        buffers,
+        buffer_views,
+        accessors,
+    )?;
 
     Ok(AnimationSourceChannel::new(
         source_node,
@@ -153,10 +162,13 @@ fn parse_target(path: &AssetPath, target_json: &JsonValue) -> Result<AnimationTa
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_output(
     path: &AssetPath,
     target: AnimationTarget,
     output: usize,
+    keyframe_count: usize,
+    interpolation: AnimationInterpolation,
     buffers: &[Vec<u8>],
     buffer_views: &[GltfBufferView],
     accessors: &[GltfAccessor],
@@ -176,12 +188,37 @@ fn parse_output(
                 })
                 .collect(),
         )),
-        AnimationTarget::Weights => Ok(AnimationOutput::Weights(
-            read_f32_accessor(path, output, buffers, buffer_views, accessors)?
-                .into_iter()
-                .map(|value| vec![value])
-                .collect(),
-        )),
+        AnimationTarget::Weights => {
+            let raw = read_f32_accessor(path, output, buffers, buffer_views, accessors)?;
+            if keyframe_count == 0 {
+                return Ok(AnimationOutput::Weights(Vec::new()));
+            }
+            // Per glTF 2.0 spec, weights output count = keyframes * targets_per_vertex
+            // for STEP/LINEAR, and keyframes * targets * 3 for CUBICSPLINE
+            // (in-tangent, value, out-tangent triples).
+            let stride_factor = match interpolation {
+                AnimationInterpolation::CubicSpline => 3,
+                AnimationInterpolation::Linear | AnimationInterpolation::Step => 1,
+            };
+            let denom = keyframe_count.saturating_mul(stride_factor);
+            if denom == 0 || raw.len() % denom != 0 {
+                return Err(accessor::parse_error(
+                    path,
+                    "animation weights output count is not a multiple of the keyframe count",
+                ));
+            }
+            let targets_per_keyframe = raw.len() / denom;
+            if targets_per_keyframe == 0 {
+                return Err(accessor::parse_error(
+                    path,
+                    "animation weights output declares zero morph targets per keyframe",
+                ));
+            }
+            let chunk_size = targets_per_keyframe * stride_factor;
+            Ok(AnimationOutput::Weights(
+                raw.chunks_exact(chunk_size).map(<[f32]>::to_vec).collect(),
+            ))
+        }
     }
 }
 
