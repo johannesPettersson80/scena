@@ -11362,6 +11362,46 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_test_first_doctor_contract_missing_governance_regression() {
+        // TEST-FIRST-DOCTOR-CONTRACT: docs/specs/doctor-contract.md must keep the
+        // unit-test-first governance reference so the doctor's own contract spec
+        // stays anchored to the AGENTS rule.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/test-first-doctor-contract-stub");
+        let doctor_contract_path = fixture_root.join("docs/specs/doctor-contract.md");
+        fs::create_dir_all(
+            doctor_contract_path
+                .parent()
+                .expect("doctor contract parent"),
+        )
+        .expect("fixture dir");
+        fs::write(
+            &doctor_contract_path,
+            "# Doctor Contract\n\nStub spec without the test-first anchor text.\n",
+        )
+        .expect("doctor contract fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "TEST-FIRST-DOCTOR-CONTRACT",
+            "docs/specs/doctor-contract.md",
+            &["unit-test-first governance"],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "TEST-FIRST-DOCTOR-CONTRACT"
+                    && finding.message.contains("unit-test-first governance")
+            }),
+            "doctor must reject doctor-contract.md that drops the unit-test-first \
+             governance anchor: {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");
