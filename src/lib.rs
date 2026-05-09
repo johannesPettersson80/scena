@@ -80,8 +80,9 @@ pub use scene::{
     SceneMaterialInspection, SceneNodeInspection, SceneNormalInspection, SceneTextureInspection,
 };
 pub use viewer::{
-    FirstRender, HeadlessGltfViewer, HeadlessGltfViewerBuilder, first_render_gltf_headless,
-    headless_gltf_viewer,
+    FirstRender, HeadlessGltfViewer, HeadlessGltfViewerBuilder, InteractiveGltfViewer,
+    InteractiveGltfViewerBuilder, first_render_gltf_headless, headless_gltf_viewer,
+    interactive_gltf_viewer,
 };
 
 /// Crate-level result type for APIs that can return any structured `scena` error.

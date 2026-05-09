@@ -2,8 +2,9 @@
 
 use crate::assets::{AssetPath, Assets};
 use crate::diagnostics::{Diagnostic, RenderOutcome};
+use crate::platform::{PlatformSurface, SurfaceEvent};
 use crate::render::{Profile, Quality, RenderMode, Renderer, RendererOptions};
-use crate::scene::{DirectionalLight, Scene, SceneImport};
+use crate::scene::{CameraKey, DirectionalLight, Scene, SceneImport};
 
 /// Owned state returned by [`first_render_gltf_headless`].
 #[derive(Debug)]
@@ -186,6 +187,210 @@ impl HeadlessGltfViewer {
 
     pub fn import(&self) -> &SceneImport {
         &self.import
+    }
+}
+
+/// Owned interactive viewer state returned by [`InteractiveGltfViewerBuilder::build`].
+///
+/// Holds the loaded asset, scene, attached-surface renderer, the imported scene's typed
+/// handle, and the active camera. The host owns the event loop and drives the viewer
+/// through `handle_surface_event`, `prepare`, and `render_next_frame`. This is the
+/// renderer-as-library shape: scena ships the placement glue (load → instantiate →
+/// frame → light → environment → prepare) but never owns the application's event loop,
+/// matching the public-API non-goal that scena does not replace winit / wasm-bindgen
+/// host loops.
+#[derive(Debug)]
+pub struct InteractiveGltfViewer {
+    pub assets: Assets,
+    pub scene: Scene,
+    pub renderer: Renderer,
+    pub import: SceneImport,
+    pub camera: CameraKey,
+}
+
+/// Builder for [`interactive_gltf_viewer`].
+#[derive(Debug)]
+pub struct InteractiveGltfViewerBuilder {
+    path: AssetPath,
+    surface: PlatformSurface,
+    frame_import: bool,
+    default_light: bool,
+    default_environment: bool,
+    renderer_options: RendererOptions,
+}
+
+/// Starts a fluent interactive glTF viewer setup against an attached surface.
+///
+/// The surface argument can be a native window descriptor, a browser canvas, or a
+/// surface descriptor - whatever [`PlatformSurface`] constructor matches the host.
+/// Use [`InteractiveGltfViewerBuilder::build`] for native/descriptor surfaces and
+/// [`InteractiveGltfViewerBuilder::build_async`] for browser surfaces (which require
+/// async wgpu adapter discovery).
+pub fn interactive_gltf_viewer(
+    path: impl Into<AssetPath>,
+    surface: PlatformSurface,
+) -> InteractiveGltfViewerBuilder {
+    InteractiveGltfViewerBuilder {
+        path: path.into(),
+        surface,
+        frame_import: true,
+        default_light: false,
+        default_environment: false,
+        renderer_options: RendererOptions::default(),
+    }
+}
+
+impl InteractiveGltfViewerBuilder {
+    /// Adds a neutral directional light before the first prepare/render.
+    pub const fn with_default_light(mut self) -> Self {
+        self.default_light = true;
+        self
+    }
+
+    /// Uses the bundled default environment before the first prepare/render.
+    pub const fn with_default_environment(mut self) -> Self {
+        self.default_environment = true;
+        self
+    }
+
+    /// Uses a renderer profile when the renderer is created.
+    pub const fn with_profile(mut self, profile: Profile) -> Self {
+        self.renderer_options = self.renderer_options.with_profile(profile);
+        self
+    }
+
+    /// Uses a renderer quality level when the renderer is created.
+    pub const fn with_quality(mut self, quality: Quality) -> Self {
+        self.renderer_options = self.renderer_options.with_quality(quality);
+        self
+    }
+
+    /// Uses an explicit render mode when the renderer is created.
+    pub const fn with_render_mode(mut self, render_mode: RenderMode) -> Self {
+        self.renderer_options = self.renderer_options.with_render_mode(render_mode);
+        self
+    }
+
+    /// Configures the viewer for render-on-change loops.
+    pub const fn on_change(self) -> Self {
+        self.with_render_mode(RenderMode::OnChange)
+    }
+
+    /// Leaves the imported asset's camera framing unchanged.
+    pub const fn without_framing(mut self) -> Self {
+        self.frame_import = false;
+        self
+    }
+
+    /// Synchronously builds the interactive viewer. Use this for native window
+    /// surfaces and surface descriptors. Browser surfaces require async wgpu
+    /// adapter discovery; call [`Self::build_async`] for those.
+    pub fn build(self) -> crate::Result<InteractiveGltfViewer> {
+        let assets = Assets::new();
+        let scene_asset = pollster::block_on(assets.load_scene(self.path.clone()))?;
+        let mut scene = Scene::new();
+        let import = scene.instantiate(&scene_asset)?;
+        let camera = scene.add_default_camera()?;
+        if self.frame_import {
+            scene.frame_import(camera, &import)?;
+        }
+        if self.default_light {
+            scene.directional_light(DirectionalLight::default()).add()?;
+        }
+        let mut renderer =
+            Renderer::from_surface_with_options(self.surface, self.renderer_options)?;
+        if self.default_environment {
+            renderer.set_environment(assets.default_environment());
+        }
+        renderer.prepare_with_assets(&mut scene, &assets)?;
+        Ok(InteractiveGltfViewer {
+            assets,
+            scene,
+            renderer,
+            import,
+            camera,
+        })
+    }
+
+    /// Async build path that supports browser-canvas surfaces.
+    pub async fn build_async(self) -> crate::Result<InteractiveGltfViewer> {
+        let assets = Assets::new();
+        let scene_asset = assets.load_scene(self.path.clone()).await?;
+        let mut scene = Scene::new();
+        let import = scene.instantiate(&scene_asset)?;
+        let camera = scene.add_default_camera()?;
+        if self.frame_import {
+            scene.frame_import(camera, &import)?;
+        }
+        if self.default_light {
+            scene.directional_light(DirectionalLight::default()).add()?;
+        }
+        let mut renderer =
+            Renderer::from_surface_async_with_options(self.surface, self.renderer_options).await?;
+        if self.default_environment {
+            renderer.set_environment(assets.default_environment());
+        }
+        renderer.prepare_with_assets(&mut scene, &assets)?;
+        Ok(InteractiveGltfViewer {
+            assets,
+            scene,
+            renderer,
+            import,
+            camera,
+        })
+    }
+}
+
+impl InteractiveGltfViewer {
+    /// Forwards a host platform-surface event (resize, lost, recovered) to the renderer.
+    pub fn handle_surface_event(&mut self, event: SurfaceEvent) -> crate::Result<()> {
+        self.renderer.handle_surface_event(event)?;
+        Ok(())
+    }
+
+    /// Re-runs prepare with the current scene + assets. Call after scene or asset edits.
+    pub fn prepare(&mut self) -> crate::Result<()> {
+        self.renderer
+            .prepare_with_assets(&mut self.scene, &self.assets)?;
+        Ok(())
+    }
+
+    /// Renders the next frame using the active camera.
+    pub fn render_next_frame(&mut self) -> crate::Result<RenderOutcome> {
+        Ok(self.renderer.render_active(&self.scene)?)
+    }
+
+    pub fn assets(&self) -> &Assets {
+        &self.assets
+    }
+
+    pub fn scene(&self) -> &Scene {
+        &self.scene
+    }
+
+    pub fn scene_mut(&mut self) -> &mut Scene {
+        &mut self.scene
+    }
+
+    pub fn renderer(&self) -> &Renderer {
+        &self.renderer
+    }
+
+    pub fn renderer_mut(&mut self) -> &mut Renderer {
+        &mut self.renderer
+    }
+
+    pub fn import(&self) -> &SceneImport {
+        &self.import
+    }
+
+    pub fn camera(&self) -> CameraKey {
+        self.camera
+    }
+
+    /// Renderer diagnostics emitted during prepare or render.
+    pub fn diagnostics(&self) -> Vec<Diagnostic> {
+        self.renderer.diagnostics().to_vec()
     }
 }
 
