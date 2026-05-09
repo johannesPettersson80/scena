@@ -12519,6 +12519,74 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_required_module_layout_with_missing_files_regression() {
+        // ARCH-REQUIRED: the architecture doctor must reject any workspace
+        // checkout missing one of the canonical source modules listed in
+        // `REQUIRED_SOURCE_MODULES`. We simulate a fresh-clone-with-missing-
+        // files scenario by pointing `require_files` at an empty fixture
+        // root and asserting the helper surfaces a per-path finding.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/required-modules-missing");
+        fs::create_dir_all(&fixture_root).expect("fixture dir");
+        let mut findings = Vec::new();
+
+        require_files(
+            &fixture_root,
+            &mut findings,
+            "ARCH-REQUIRED",
+            &["src/lib.rs", "src/render.rs"],
+        );
+
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.rule == "ARCH-REQUIRED"
+                    && finding.message.contains("src/lib.rs")
+                    && finding.message.contains("missing required file")),
+            "doctor must reject a checkout missing src/lib.rs: {findings:?}",
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.rule == "ARCH-REQUIRED"
+                    && finding.message.contains("src/render.rs")),
+            "doctor must reject a checkout missing src/render.rs: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_markdown_with_stale_doc_terms_regression() {
+        // DOCS-STALE-TERM: any markdown document containing "TODO", "FIXME",
+        // "TBD", or other documented stale-author markers must surface a
+        // per-file finding so doc rot can never silently land. Mirrors the
+        // pattern exercised by `doctor_rejects_markdown_link_to_missing_target_regression`.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/markdown-stale-terms");
+        let docs_dir = fixture_root.join("docs/specs");
+        fs::create_dir_all(&docs_dir).expect("docs dir");
+        fs::write(fixture_root.join("README.md"), "# Fixture readme\n").expect("readme stub");
+        fs::write(fixture_root.join("AGENTS.md"), "# Fixture agents\n").expect("agents stub");
+        fs::write(
+            docs_dir.join("stale.md"),
+            "# Stale-term fixture\n\nTODO: finish this document before shipping.\n",
+        )
+        .expect("stale-term fixture");
+        let mut findings = Vec::new();
+
+        check_for_stale_doc_terms(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "DOCS-STALE-TERM"
+                    && finding.message.contains("stale.md")
+                    && finding.message.contains("TODO")
+            }),
+            "doctor must reject markdown documents that retain author-stale \
+             markers like TODO/FIXME/TBD so doc rot cannot ship: {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_markdown_link_to_missing_target_regression() {
         // DOCS-LINKS: a markdown link to a missing relative target must surface
         // a finding so broken intra-doc references can never silently ship.
