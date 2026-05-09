@@ -7,7 +7,6 @@ mod material_uniform;
 mod materials;
 mod output;
 mod pipeline;
-#[cfg(not(target_arch = "wasm32"))]
 mod shadow;
 mod stats;
 mod vertices;
@@ -41,8 +40,7 @@ use self::output::{
 use self::pipeline::create_unlit_pipeline;
 #[cfg(not(target_arch = "wasm32"))]
 use self::pipeline::{BYTES_PER_PIXEL, GPU_COLOR_FORMAT};
-#[cfg(not(target_arch = "wasm32"))]
-use self::shadow::create_shadow_texture;
+use self::shadow::ShadowCasterResources;
 pub(super) use self::stats::GpuResourceStats;
 #[cfg(not(target_arch = "wasm32"))]
 use self::stats::align_to;
@@ -98,12 +96,14 @@ struct GpuPreparedResources {
     /// the shadow caster pass + fragment-shader shadow sampling.
     light_from_world: [f32; 16],
     material_resources: Vec<materials::MaterialTextureResources>,
-    // ARCH-SHADOW-MAP: M2 allocates shadow resources before the shadow render pass is
-    // wired; the explicit fields keep the deferred binding visible to reviews and doctor.
+    // Phase 1B step 2: directional shadow caster resources. Texture +
+    // depth-only pipeline + active flag (false when no directional shadow-
+    // casting light is present in the scene; the caster pass is skipped and
+    // the fragment shader shadow sample reads the placeholder texture but
+    // is gated by `directional_light_direction_intensity.w > 0.0`).
+    shadow_caster: ShadowCasterResources,
     #[allow(dead_code)]
-    shadow_texture: Option<wgpu::Texture>,
-    #[allow(dead_code)]
-    shadow_view: Option<wgpu::TextureView>,
+    shadow_sampler: wgpu::Sampler,
     depth_prepass: Option<depth::DepthPrepassResources>,
     #[allow(dead_code)]
     vertex_count: u32,
@@ -140,6 +140,11 @@ struct GpuPreparedResources {
     /// slot.
     light_from_world: [f32; 16],
     material_resources: Vec<materials::MaterialTextureResources>,
+    /// Phase 1B step 2: directional shadow caster resources (texture +
+    /// pipeline + active flag). Mirrors the native variant.
+    shadow_caster: ShadowCasterResources,
+    #[allow(dead_code)]
+    shadow_sampler: wgpu::Sampler,
     depth_prepass: Option<depth::DepthPrepassResources>,
     surface_pipeline: wgpu::RenderPipeline,
     #[allow(dead_code)]
@@ -238,21 +243,12 @@ impl GpuDeviceState {
         let output_bind_group_layout = create_output_bind_group_layout(&self.device);
         let material_bind_group_layout = create_material_bind_group_layout(&self.device);
         let output_uniform = create_output_uniform_buffer(&self.device);
-        let output_bind_group =
-            create_output_bind_group(&self.device, &output_bind_group_layout, &output_uniform);
         let material_resources = create_material_resources(
             &self.device,
             &self.queue,
             &material_bind_group_layout,
             material_slots,
         );
-        let shadow_texture = create_shadow_texture(
-            &self.device,
-            lighting_stats.directional_shadow_map_resolution,
-        );
-        let shadow_view = shadow_texture
-            .as_ref()
-            .map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()));
         let draw_bind_group_layout = output::create_draw_bind_group_layout(&self.device);
         let draw_uniform_buffer =
             output::create_draw_uniform_buffer(&self.device, draw_uniforms.len() as u64);
@@ -269,6 +265,20 @@ impl GpuDeviceState {
             &self.device,
             &draw_bind_group_layout,
             &draw_uniform_buffer,
+        );
+        let shadow_caster = shadow::create_shadow_caster_resources(
+            &self.device,
+            lighting_stats.directional_shadow_map_resolution,
+            &output_bind_group_layout,
+            &draw_bind_group_layout,
+        );
+        let shadow_sampler = shadow::create_shadow_sampler(&self.device);
+        let output_bind_group = create_output_bind_group(
+            &self.device,
+            &output_bind_group_layout,
+            &output_uniform,
+            &shadow_caster.view,
+            &shadow_sampler,
         );
         let depth_prepass = (depth_stats.passes > 0).then(|| {
             depth::create_depth_prepass_resources(
@@ -322,8 +332,8 @@ impl GpuDeviceState {
             light_uniform,
             light_from_world,
             material_resources,
-            shadow_texture,
-            shadow_view,
+            shadow_caster,
+            shadow_sampler,
             depth_prepass,
             vertex_count: (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32,
             draw_batches,
@@ -350,7 +360,6 @@ impl GpuDeviceState {
         depth_stats: PreparedDepthStats,
         material_slots: &[PreparedMaterialSlot],
     ) {
-        let _ = lighting_stats;
         self.configure_surface(target);
         self.release_prepared_resources();
         let Some(surface) = self.surface.as_ref() else {
@@ -393,8 +402,6 @@ impl GpuDeviceState {
         let output_bind_group_layout = create_output_bind_group_layout(&self.device);
         let material_bind_group_layout = create_material_bind_group_layout(&self.device);
         let output_uniform = create_output_uniform_buffer(&self.device);
-        let output_bind_group =
-            create_output_bind_group(&self.device, &output_bind_group_layout, &output_uniform);
         let material_resources = create_material_resources(
             &self.device,
             &self.queue,
@@ -417,6 +424,26 @@ impl GpuDeviceState {
             &self.device,
             &draw_bind_group_layout,
             &draw_uniform_buffer,
+        );
+        // Phase 1B step 2 (wasm32 mirror of native): allocate the shadow
+        // caster pipeline + texture and a comparison sampler so the output
+        // bind group always has a valid shadow_map binding. The fragment
+        // shader gates the sample on directional_light_direction_intensity.w
+        // > 0.0, so a 1×1 placeholder is safe when no shadow-casting light
+        // exists.
+        let shadow_caster = shadow::create_shadow_caster_resources(
+            &self.device,
+            lighting_stats.directional_shadow_map_resolution,
+            &output_bind_group_layout,
+            &draw_bind_group_layout,
+        );
+        let shadow_sampler = shadow::create_shadow_sampler(&self.device);
+        let output_bind_group = create_output_bind_group(
+            &self.device,
+            &output_bind_group_layout,
+            &output_uniform,
+            &shadow_caster.view,
+            &shadow_sampler,
         );
         let depth_prepass =
             (target.backend == Backend::WebGpu && depth_stats.passes > 0).then(|| {
@@ -444,8 +471,8 @@ impl GpuDeviceState {
             target,
             vertex_count: vertex_count as usize,
             has_surface_pipeline: true,
-            shadow_maps: 0,
-            shadow_map_resolution: None,
+            shadow_maps: lighting_stats.shadow_maps,
+            shadow_map_resolution: lighting_stats.directional_shadow_map_resolution,
             depth_prepass_passes: u64::from(depth_prepass.is_some()),
             material_texture_count: material_resources.len() as u64,
             material_texture_bytes: material_texture_byte_len(&material_resources),
@@ -459,6 +486,8 @@ impl GpuDeviceState {
             light_uniform,
             light_from_world,
             material_resources,
+            shadow_caster,
+            shadow_sampler,
             depth_prepass,
             surface_pipeline,
             vertex_count,

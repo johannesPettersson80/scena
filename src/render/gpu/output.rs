@@ -62,6 +62,15 @@ struct MaterialUniform {
 @group(0) @binding(0)
 var<uniform> camera: CameraUniform;
 
+// Phase 1B step 2: directional shadow map + comparison sampler. The shadow
+// caster pass writes the texture; the fragment samples with comparison
+// against the receiver depth in light-clip space.
+@group(0) @binding(1)
+var shadow_map: texture_depth_2d;
+
+@group(0) @binding(2)
+var shadow_sampler: sampler_comparison;
+
 @group(2) @binding(0)
 var<uniform> draw: DrawUniform;
 
@@ -160,6 +169,28 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     return vec4<f32>(aces_tonemap(shaded.rgb * camera.camera_position_exposure.w), shaded.a);
 }
 
+fn directional_shadow_factor(world_position: vec3<f32>) -> f32 {
+    // Phase 1B step 2: GPU shadow map sampling. Project the fragment's world
+    // position into light-clip space, map clip [-1..1, -1..1, 0..1] to
+    // texture [0..1, 0..1] (Y-flip — clip y is up, texture v is down), and
+    // sample with depth-comparison.
+    let light_clip = camera.light_from_world * vec4<f32>(world_position, 1.0);
+    if light_clip.w <= 0.0 {
+        return 1.0;
+    }
+    let light_ndc = light_clip.xyz / light_clip.w;
+    let shadow_uv = vec2<f32>(light_ndc.x * 0.5 + 0.5, light_ndc.y * -0.5 + 0.5);
+    // Receivers outside the shadow caster AABB get full radiance — the
+    // sampler's ClampToEdge would otherwise read the texture border and
+    // produce false self-shadow streaks (review F6).
+    if shadow_uv.x < 0.0 || shadow_uv.x > 1.0 ||
+       shadow_uv.y < 0.0 || shadow_uv.y > 1.0 ||
+       light_ndc.z < 0.0 || light_ndc.z > 1.0 {
+        return 1.0;
+    }
+    return textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv, light_ndc.z);
+}
+
 fn pbr_punctual_lighting(
     base: vec3<f32>,
     metallic: f32,
@@ -172,8 +203,15 @@ fn pbr_punctual_lighting(
     var shaded = vec3<f32>(0.0);
     if camera.lighting.directional_light_direction_intensity.w > 0.0 {
         let incoming = normalize(-camera.lighting.directional_light_direction_intensity.xyz);
+        // Phase 1B step 2: replace the per-vertex CPU-baked shadow_visibility
+        // input with the GPU shadow map sample so the GPU path stops relying
+        // on the CPU ray-cast bake (review F7). The argument is kept on the
+        // function signature for the WebGL2 fallback that does not yet have
+        // a shadow map.
+        let _ = shadow_visibility;
+        let gpu_shadow = directional_shadow_factor(world_position);
         let radiance = camera.lighting.directional_light_color_count.rgb *
-            camera.lighting.directional_light_direction_intensity.w * shadow_visibility;
+            camera.lighting.directional_light_direction_intensity.w * gpu_shadow;
         shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
     }
     if camera.lighting.point_light_position_intensity.w > 0.0 {
@@ -409,16 +447,34 @@ pub(super) fn encode_draw_uniform_bytes(
 pub(super) fn create_output_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("scena.output.bind_group_layout"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
             },
-            count: None,
-        }],
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Depth,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                count: None,
+            },
+        ],
     })
 }
 
@@ -435,14 +491,26 @@ pub(super) fn create_output_bind_group(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
     uniform: &wgpu::Buffer,
+    shadow_view: &wgpu::TextureView,
+    shadow_sampler: &wgpu::Sampler,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("scena.output.bind_group"),
         layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: uniform.as_entire_binding(),
-        }],
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(shadow_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::Sampler(shadow_sampler),
+            },
+        ],
     })
 }
 
@@ -647,12 +715,27 @@ mod tests {
     }
 
     #[test]
-    fn triangle_shader_consumes_prepared_directional_shadow_visibility() {
+    fn triangle_shader_samples_directional_shadow_map_in_fragment() {
+        // Phase 1B step 2: the GPU pipeline sources shadow attenuation from a
+        // hardware depth-comparison sample of the directional light's depth
+        // map (`shadow_map` + `shadow_sampler` bindings, projected through
+        // `camera.light_from_world`), not from a CPU-baked per-vertex
+        // attribute. The fragment shader multiplies directional radiance by
+        // the per-fragment GPU shadow factor.
         assert!(
-            GPU_TRIANGLE_SHADER.contains("shadow_visibility")
-                && GPU_TRIANGLE_SHADER.contains("* shadow_visibility"),
-            "GPU PBR lighting must consume prepared directional shadow visibility instead of \
-             silently ignoring opt-in shadowed directional lights"
+            GPU_TRIANGLE_SHADER.contains("textureSampleCompareLevel(shadow_map, shadow_sampler"),
+            "GPU PBR lighting must sample the hardware-comparison shadow_map texture \
+             with shadow_sampler so opt-in shadowed directional lights project real depth"
+        );
+        assert!(
+            GPU_TRIANGLE_SHADER.contains("camera.light_from_world * vec4<f32>(world_position"),
+            "GPU shadow path must reproject world position through camera.light_from_world \
+             so the shadow lookup is in light-clip space, not world space"
+        );
+        assert!(
+            GPU_TRIANGLE_SHADER.contains("* gpu_shadow"),
+            "GPU PBR fragment must scale directional radiance by the GPU-sampled shadow factor \
+             instead of multiplying by the (now retired) CPU shadow_visibility attribute"
         );
     }
 

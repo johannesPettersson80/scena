@@ -3441,6 +3441,11 @@ fn check_renderer_truth_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "@group(2) @binding(0)",
             "var<uniform> draw: DrawUniform",
             "light_from_world: mat4x4<f32>",
+            "var shadow_map: texture_depth_2d",
+            "var shadow_sampler: sampler_comparison",
+            "fn directional_shadow_factor",
+            "textureSampleCompareLevel(shadow_map, shadow_sampler",
+            "camera.light_from_world * vec4<f32>(world_position",
             "@location(2) normal: vec3<f32>",
             "@location(3) tex_coord0: vec2<f32>",
             "@location(4) tangent: vec4<f32>",
@@ -4575,9 +4580,17 @@ fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec<Finding>) 
         "ARCH-DIRECTIONAL-SHADOW",
         "src/render/gpu/output.rs",
         &[
+            // Vertex layout still carries the CPU-baked shadow_visibility
+            // attribute so the same vertex buffer can drive the WebGL2 path,
+            // but the WGSL fragment now sources directional attenuation from
+            // a hardware-comparison sample of the shadow map (Phase 1B step 2).
             "@location(5) shadow_visibility: f32",
-            "* shadow_visibility",
-            "triangle_shader_consumes_prepared_directional_shadow_visibility",
+            "var shadow_map: texture_depth_2d",
+            "var shadow_sampler: sampler_comparison",
+            "fn directional_shadow_factor",
+            "textureSampleCompareLevel(shadow_map, shadow_sampler",
+            "* gpu_shadow",
+            "triangle_shader_samples_directional_shadow_map_in_fragment",
         ],
     );
     require_contains(
@@ -4679,9 +4692,10 @@ fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "ARCH-SHADOW-MAP",
         "src/render/gpu.rs",
         &[
-            "shadow_texture: Option<wgpu::Texture>",
-            "shadow_view: Option<wgpu::TextureView>",
-            "ARCH-SHADOW-MAP: M2 allocates shadow resources before the shadow render pass",
+            "shadow_caster: ShadowCasterResources",
+            "shadow_sampler: wgpu::Sampler",
+            "shadow::create_shadow_caster_resources",
+            "shadow::create_shadow_sampler(&self.device)",
         ],
     );
     require_contains(
@@ -4694,7 +4708,20 @@ fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "wgpu::TextureFormat::Depth32Float",
             "wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING",
             "scena.m2.directional_shadow_map",
+            // Phase 1B step 2: shadow caster pipeline + depth-only render pass.
+            "pub(super) const SHADOW_CASTER_SHADER: &str",
+            "camera.light_from_world * draw.world_from_model * vec4<f32>(in.position, 1.0)",
+            "pub(super) fn create_shadow_caster_resources",
+            "pub(super) fn encode_shadow_caster_pass",
+            "wgpu::DepthBiasState",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SHADOW-MAP",
+        "src/render/gpu/draw.rs",
+        &["encode_shadow_caster_pass(", "&resources.shadow_caster,"],
     );
     require_contains(
         root,

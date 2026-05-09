@@ -11,6 +11,7 @@ use super::GpuDeviceState;
 use super::depth;
 use super::output::{OutputUniformUpload, encode_output_uniform};
 use super::pipeline::{UnlitPass, encode_unlit_pass};
+use super::shadow::encode_shadow_caster_pass;
 #[cfg(target_arch = "wasm32")]
 use super::webgl2;
 
@@ -78,6 +79,17 @@ impl GpuDeviceState {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("scena.headless_gpu.encoder"),
             });
+        // Phase 1B step 2: shadow caster pass writes the directional shadow
+        // map BEFORE the unlit pass so the fragment shader can sample it.
+        // No-op if no shadow-casting directional light exists.
+        encode_shadow_caster_pass(
+            &mut encoder,
+            &resources.shadow_caster,
+            &resources.vertex_buffer,
+            &resources.output_bind_group,
+            &resources.draw_bind_group,
+            &resources.draw_batches,
+        );
         if let Some(depth_prepass) = &resources.depth_prepass {
             depth::encode_depth_prepass(
                 &mut encoder,
@@ -282,6 +294,18 @@ impl GpuDeviceState {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("scena.browser.encoder"),
             });
+        // Phase 1B step 2 (wasm32 mirror of native): shadow caster pass writes
+        // the directional shadow map BEFORE the unlit pass so the fragment
+        // shader can sample it. No-op if no shadow-casting directional light
+        // exists.
+        encode_shadow_caster_pass(
+            &mut encoder,
+            &resources.shadow_caster,
+            &resources.vertex_buffer,
+            &resources.output_bind_group,
+            &resources.draw_bind_group,
+            &resources.draw_batches,
+        );
         if let Some(depth_prepass) = &resources.depth_prepass {
             depth::encode_depth_prepass(
                 &mut encoder,
