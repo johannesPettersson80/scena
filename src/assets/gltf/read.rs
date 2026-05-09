@@ -393,12 +393,18 @@ fn parse_mesh_primitive(
         .and_then(|index| inputs.materials.get(index as usize))
         .copied()
         .unwrap_or_else(|| inputs.storage.materials.insert(MaterialDesc::default()));
+    let material_variant_bindings =
+        super::material_variants::parse_primitive_material_variant_bindings(
+            primitive,
+            inputs.materials,
+        );
     Ok(SceneAssetMesh {
         geometry,
         material,
         bounds,
         uses_vertex_colors,
         morph_weights: inputs.mesh_weights.to_vec(),
+        material_variant_bindings,
     })
 }
 

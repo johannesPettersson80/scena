@@ -6,8 +6,7 @@ use serde_json::Value as JsonValue;
 use crate::animation::{AnimationSourceChannel, AnimationSourceClip};
 use crate::diagnostics::AssetError;
 use crate::geometry::Aabb;
-use crate::material::Color;
-use crate::scene::{Angle, DirectionalLight, Light, PointLight, SpotLight, Transform};
+use crate::scene::{Light, Transform};
 
 use self::accessor::{parse_accessors, parse_buffer_views, parse_buffers};
 pub use self::anchors::SceneAssetAnchor;
@@ -19,6 +18,7 @@ pub use self::extensions::{GltfDecoderPolicy, GltfExtensionDiagnostic, GltfExten
 use self::extensions::{collect_extension_diagnostics, is_v1_required_gltf_extension};
 use self::external::{external_buffer_paths, external_image_paths};
 use self::glb::{is_glb, parse_glb};
+pub use self::material_variants::MaterialVariantBinding;
 use self::read::{parse_materials, parse_meshes, parse_textures};
 pub use self::skins::SceneAssetSkin;
 use self::skins::parse_skins;
@@ -32,6 +32,7 @@ mod connectors;
 mod extensions;
 mod external;
 mod glb;
+mod lights;
 mod material_variants;
 mod read;
 mod skins;
@@ -76,6 +77,7 @@ pub struct SceneAssetMesh {
     bounds: Aabb,
     uses_vertex_colors: bool,
     morph_weights: Vec<f32>,
+    material_variant_bindings: Vec<MaterialVariantBinding>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -382,6 +384,10 @@ impl SceneAssetMesh {
     pub fn morph_weights(&self) -> &[f32] {
         &self.morph_weights
     }
+
+    pub fn material_variant_bindings(&self) -> &[MaterialVariantBinding] {
+        &self.material_variant_bindings
+    }
 }
 
 impl SceneAssetLight {
@@ -488,77 +494,4 @@ fn parse_gltf_nodes(
         .unwrap_or_default()
 }
 
-fn parse_punctual_lights(json: &JsonValue) -> Vec<SceneAssetLight> {
-    json.get("extensions")
-        .and_then(|extensions| extensions.get("KHR_lights_punctual"))
-        .and_then(|extension| extension.get("lights"))
-        .and_then(JsonValue::as_array)
-        .map(|lights| lights.iter().filter_map(parse_punctual_light).collect())
-        .unwrap_or_default()
-}
-
-fn parse_punctual_light(light: &JsonValue) -> Option<SceneAssetLight> {
-    let color = color3_field(light, "color", Color::WHITE);
-    let intensity = number_field(light, "intensity").unwrap_or(1.0);
-    let range = number_field(light, "range");
-    let light = match light.get("type").and_then(JsonValue::as_str)? {
-        "directional" => Light::Directional(
-            DirectionalLight::default()
-                .with_color(color)
-                .with_illuminance_lux(intensity),
-        ),
-        "point" => {
-            let mut point = PointLight::default()
-                .with_color(color)
-                .with_intensity_candela(intensity);
-            if let Some(range) = range {
-                point = point.with_range(range);
-            }
-            Light::Point(point)
-        }
-        "spot" => {
-            let spot_json = light.get("spot").unwrap_or(&JsonValue::Null);
-            let mut spot = SpotLight::default()
-                .with_color(color)
-                .with_intensity_candela(intensity)
-                .with_inner_cone_angle(Angle::from_radians(
-                    number_field(spot_json, "innerConeAngle").unwrap_or(0.0),
-                ))
-                .with_outer_cone_angle(Angle::from_radians(
-                    number_field(spot_json, "outerConeAngle")
-                        .unwrap_or(std::f32::consts::FRAC_PI_4),
-                ));
-            if let Some(range) = range {
-                spot = spot.with_range(range);
-            }
-            Light::Spot(spot)
-        }
-        _ => return None,
-    };
-    Some(SceneAssetLight { light })
-}
-
-fn number_field(value: &JsonValue, field: &str) -> Option<f32> {
-    value
-        .get(field)
-        .and_then(JsonValue::as_f64)
-        .map(|value| value as f32)
-}
-
-fn color3_field(value: &JsonValue, field: &str, fallback: Color) -> Color {
-    let Some(values) = value.get(field).and_then(JsonValue::as_array) else {
-        return fallback;
-    };
-    Color::from_linear_rgb(
-        array_f32(values, 0).unwrap_or(fallback.r),
-        array_f32(values, 1).unwrap_or(fallback.g),
-        array_f32(values, 2).unwrap_or(fallback.b),
-    )
-}
-
-fn array_f32(values: &[JsonValue], index: usize) -> Option<f32> {
-    values
-        .get(index)
-        .and_then(JsonValue::as_f64)
-        .map(|value| value as f32)
-}
+use self::lights::parse_punctual_lights;
