@@ -100,14 +100,21 @@ struct GpuPreparedResources {
     #[allow(dead_code)]
     shadow_view: Option<wgpu::TextureView>,
     depth_prepass: Option<depth::DepthPrepassResources>,
+    #[allow(dead_code)]
     vertex_count: u32,
     draw_batches: Vec<PrimitiveDrawBatch>,
-    // ARCH-RENDER-WORLD-BAKE: collected per-draw world_from_model / normal_from_model values
-    // are stored alongside the draw batches so the dynamic-uniform-offset path can consume
-    // them in the follow-up commit; today the GPU pipeline still relies on `prepared_primitive`
-    // baking vertices into world space.
+    // Phase 1A.2: per-draw world_from_model / normal_from_model uniforms uploaded
+    // through draw_uniform_buffer + draw_bind_group with dynamic offsets. The GPU
+    // vertex stream carries MODEL-SPACE positions (encode_vertices applies the
+    // matrix inverse on CPU); the shader applies draw.world_from_model to recover
+    // world space. The buffer + Vec are retained on the resources struct so the
+    // GPU object lifetime tracks the prepared scene; the bind group is the live
+    // consumer at draw time. Closes scena-wgpu-architect Phase 6 finding F2.
     #[allow(dead_code)]
     draw_uniforms: Vec<DrawUniformValue>,
+    #[allow(dead_code)]
+    draw_uniform_buffer: wgpu::Buffer,
+    draw_bind_group: wgpu::BindGroup,
     offscreen_pipeline: wgpu::RenderPipeline,
     surface_pipeline: Option<wgpu::RenderPipeline>,
     padded_bytes_per_row: u32,
@@ -232,12 +239,30 @@ impl GpuDeviceState {
         let shadow_view = shadow_texture
             .as_ref()
             .map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()));
+        let draw_bind_group_layout = output::create_draw_bind_group_layout(&self.device);
+        let draw_uniform_buffer =
+            output::create_draw_uniform_buffer(&self.device, draw_uniforms.len() as u64);
+        let draw_uniform_pairs: Vec<([f32; 16], [f32; 16])> = draw_uniforms
+            .iter()
+            .map(|value| (value.world_from_model, value.normal_from_model))
+            .collect();
+        self.queue.write_buffer(
+            &draw_uniform_buffer,
+            0,
+            &output::encode_draw_uniform_bytes(&draw_uniform_pairs),
+        );
+        let draw_bind_group = output::create_draw_bind_group(
+            &self.device,
+            &draw_bind_group_layout,
+            &draw_uniform_buffer,
+        );
         let depth_prepass = (depth_stats.passes > 0).then(|| {
             depth::create_depth_prepass_resources(
                 &self.device,
                 target,
                 depth_stats.reversed_z,
                 &output_bind_group_layout,
+                &draw_bind_group_layout,
             )
         });
         let depth_compare = depth_prepass
@@ -248,6 +273,7 @@ impl GpuDeviceState {
             GPU_COLOR_FORMAT,
             &output_bind_group_layout,
             &material_bind_group_layout,
+            &draw_bind_group_layout,
             depth_compare,
         );
         let surface_pipeline = self.surface.as_ref().map(|surface| {
@@ -256,6 +282,7 @@ impl GpuDeviceState {
                 surface.config.format,
                 &output_bind_group_layout,
                 &material_bind_group_layout,
+                &draw_bind_group_layout,
                 depth_compare,
             )
         });
@@ -286,6 +313,8 @@ impl GpuDeviceState {
             vertex_count: (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32,
             draw_batches,
             draw_uniforms,
+            draw_uniform_buffer,
+            draw_bind_group,
             offscreen_pipeline,
             surface_pipeline,
             padded_bytes_per_row,

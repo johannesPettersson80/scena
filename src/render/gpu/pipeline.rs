@@ -1,5 +1,5 @@
 use super::materials::MaterialTextureResources;
-use super::output::GPU_TRIANGLE_SHADER;
+use super::output::{DRAW_UNIFORM_ENTRY_STRIDE, GPU_TRIANGLE_SHADER};
 use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -12,6 +12,7 @@ pub(super) struct UnlitPass<'a> {
     pub(super) depth_view: Option<&'a wgpu::TextureView>,
     pub(super) vertex_buffer: &'a wgpu::Buffer,
     pub(super) output_bind_group: &'a wgpu::BindGroup,
+    pub(super) draw_bind_group: &'a wgpu::BindGroup,
     pub(super) material_resources: &'a [MaterialTextureResources],
     pub(super) draw_batches: &'a [PrimitiveDrawBatch],
     pub(super) pipeline: &'a wgpu::RenderPipeline,
@@ -59,6 +60,9 @@ pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: Unli
             .get(batch.material_slot as usize)
             .unwrap_or(fallback_material);
         pass.set_bind_group(1, &material.bind_group, &[]);
+        let draw_offset =
+            (batch.draw_uniform_index as u64).saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE) as u32;
+        pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset]);
         pass.draw(
             batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
             0..1,
@@ -66,11 +70,13 @@ pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: Unli
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn create_unlit_pipeline(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
     output_bind_group_layout: &wgpu::BindGroupLayout,
     material_bind_group_layout: &wgpu::BindGroupLayout,
+    draw_bind_group_layout: &wgpu::BindGroupLayout,
     depth_compare: Option<wgpu::CompareFunction>,
 ) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -82,6 +88,7 @@ pub(super) fn create_unlit_pipeline(
         bind_group_layouts: &[
             Some(output_bind_group_layout),
             Some(material_bind_group_layout),
+            Some(draw_bind_group_layout),
         ],
         immediate_size: 0,
     });

@@ -3434,9 +3434,12 @@ fn check_renderer_truth_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "geometry_smith",
             "environment_diffuse_intensity",
             "environment_specular_intensity",
-            "OUTPUT_UNIFORM_BYTE_LEN: u64 = 528",
+            "OUTPUT_UNIFORM_BYTE_LEN: u64 = 400",
             "camera.clip_from_view * camera.view_from_world * world_position",
-            "camera.normal_from_model * vec4<f32>(in.normal, 0.0)",
+            "draw.normal_from_model * vec4<f32>(in.normal, 0.0)",
+            "draw.world_from_model * vec4<f32>(in.position, 1.0)",
+            "@group(2) @binding(0)",
+            "var<uniform> draw: DrawUniform",
             "@location(2) normal: vec3<f32>",
             "@location(3) tex_coord0: vec2<f32>",
             "@location(4) tangent: vec4<f32>",
@@ -3649,7 +3652,7 @@ fn check_renderer_truth_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "ARCH-RENDER-TRUTH",
         "src/render/gpu/depth.rs",
         &[
-            "camera.clip_from_view * camera.view_from_world * camera.world_from_model",
+            "camera.clip_from_view * camera.view_from_world * draw.world_from_model",
             "pub(super) color_compare",
         ],
     );

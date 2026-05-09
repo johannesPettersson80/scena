@@ -1,5 +1,6 @@
 use super::super::RasterTarget;
-use super::vertices::{VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
+use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
+use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 
 const DEPTH_PREPASS_SHADER: &str = r#"
 struct VertexIn {
@@ -8,20 +9,26 @@ struct VertexIn {
 };
 
 struct CameraUniform {
-    world_from_model: mat4x4<f32>,
-    normal_from_model: mat4x4<f32>,
     view_from_world: mat4x4<f32>,
     clip_from_view: mat4x4<f32>,
     clip_from_world: mat4x4<f32>,
     exposure_padding: vec4<f32>,
 };
 
+struct DrawUniform {
+    world_from_model: mat4x4<f32>,
+    normal_from_model: mat4x4<f32>,
+};
+
 @group(0) @binding(0)
 var<uniform> camera: CameraUniform;
 
+@group(2) @binding(0)
+var<uniform> draw: DrawUniform;
+
 @vertex
 fn vs_main(in: VertexIn) -> @builtin(position) vec4<f32> {
-    return camera.clip_from_view * camera.view_from_world * camera.world_from_model * vec4<f32>(in.position, 1.0);
+    return camera.clip_from_view * camera.view_from_world * draw.world_from_model * vec4<f32>(in.position, 1.0);
 }
 "#;
 
@@ -39,6 +46,7 @@ pub(super) fn create_depth_prepass_resources(
     target: RasterTarget,
     reversed_z: bool,
     camera_bind_group_layout: &wgpu::BindGroupLayout,
+    draw_bind_group_layout: &wgpu::BindGroupLayout,
 ) -> DepthPrepassResources {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("scena.m2.depth_prepass"),
@@ -59,9 +67,20 @@ pub(super) fn create_depth_prepass_resources(
         label: Some("scena.m2.depth_prepass_shader"),
         source: wgpu::ShaderSource::Wgsl(DEPTH_PREPASS_SHADER.into()),
     });
+    // Depth prepass binds camera at @group(0) and draw uniform at @group(2)
+    // — material bind group is unused but the pipeline layout matches the
+    // unlit pipeline so the same vertex buffer + draw indices apply.
+    let dummy_material_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("scena.m2.depth_prepass_material_dummy"),
+        entries: &[],
+    });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("scena.m2.depth_prepass_pipeline_layout"),
-        bind_group_layouts: &[Some(camera_bind_group_layout)],
+        bind_group_layouts: &[
+            Some(camera_bind_group_layout),
+            Some(&dummy_material_layout),
+            Some(draw_bind_group_layout),
+        ],
         immediate_size: 0,
     });
     let vertex_buffer = wgpu::VertexBufferLayout {
@@ -111,7 +130,8 @@ pub(super) fn encode_depth_prepass(
     resources: &DepthPrepassResources,
     vertex_buffer: &wgpu::Buffer,
     camera_bind_group: &wgpu::BindGroup,
-    vertex_count: u32,
+    draw_bind_group: &wgpu::BindGroup,
+    draw_batches: &[PrimitiveDrawBatch],
 ) {
     let depth_attachment = Some(wgpu::RenderPassDepthStencilAttachment {
         view: &resources.view,
@@ -132,7 +152,15 @@ pub(super) fn encode_depth_prepass(
     pass.set_pipeline(&resources.pipeline);
     pass.set_bind_group(0, camera_bind_group, &[]);
     pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-    pass.draw(0..vertex_count, 0..1);
+    for batch in draw_batches {
+        let draw_offset =
+            (batch.draw_uniform_index as u64).saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE) as u32;
+        pass.set_bind_group(2, draw_bind_group, &[draw_offset]);
+        pass.draw(
+            batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
+            0..1,
+        );
+    }
 }
 
 impl Drop for DepthPrepassResources {

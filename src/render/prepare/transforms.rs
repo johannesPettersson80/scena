@@ -34,6 +34,115 @@ pub(super) fn prepared_primitive(
         .with_world_from_model(world_from_model, normal_from_model)
 }
 
+/// Returns the model-space position of a world-baked vertex by applying the
+/// inverse of the matrix that produced the bake. Used by the GPU vertex
+/// upload path to recover model-space data so the GPU vertex shader can
+/// apply the per-draw `world_from_model` matrix without double-transforming.
+/// CPU consumers (picking, culling, CPU rasterization, shadow occluders)
+/// continue to read world-baked vertices unchanged. Closes
+/// scena-wgpu-architect Phase 6 finding F2 for the GPU path.
+pub(crate) fn unbake_position_to_model_space(
+    world_baked: Vec3,
+    world_from_model_inverse: &[f32; 16],
+) -> Vec3 {
+    apply_matrix4_to_vec3(world_from_model_inverse, world_baked, 1.0)
+}
+
+pub(crate) fn unbake_normal_to_model_space(
+    world_baked_normal: Vec3,
+    normal_from_model_inverse: &[f32; 16],
+) -> Vec3 {
+    apply_matrix4_to_vec3(normal_from_model_inverse, world_baked_normal, 0.0)
+}
+
+pub(crate) fn invert_matrix4(matrix: &[f32; 16]) -> Option<[f32; 16]> {
+    // Standard 4x4 cofactor inverse. Returns None if the matrix is singular.
+    let m = matrix;
+    let mut inv = [0.0_f32; 16];
+    inv[0] = m[5] * m[10] * m[15] - m[5] * m[11] * m[14] - m[9] * m[6] * m[15]
+        + m[9] * m[7] * m[14]
+        + m[13] * m[6] * m[11]
+        - m[13] * m[7] * m[10];
+    inv[4] = -m[4] * m[10] * m[15] + m[4] * m[11] * m[14] + m[8] * m[6] * m[15]
+        - m[8] * m[7] * m[14]
+        - m[12] * m[6] * m[11]
+        + m[12] * m[7] * m[10];
+    inv[8] = m[4] * m[9] * m[15] - m[4] * m[11] * m[13] - m[8] * m[5] * m[15]
+        + m[8] * m[7] * m[13]
+        + m[12] * m[5] * m[11]
+        - m[12] * m[7] * m[9];
+    inv[12] = -m[4] * m[9] * m[14] + m[4] * m[10] * m[13] + m[8] * m[5] * m[14]
+        - m[8] * m[6] * m[13]
+        - m[12] * m[5] * m[10]
+        + m[12] * m[6] * m[9];
+    inv[1] = -m[1] * m[10] * m[15] + m[1] * m[11] * m[14] + m[9] * m[2] * m[15]
+        - m[9] * m[3] * m[14]
+        - m[13] * m[2] * m[11]
+        + m[13] * m[3] * m[10];
+    inv[5] = m[0] * m[10] * m[15] - m[0] * m[11] * m[14] - m[8] * m[2] * m[15]
+        + m[8] * m[3] * m[14]
+        + m[12] * m[2] * m[11]
+        - m[12] * m[3] * m[10];
+    inv[9] = -m[0] * m[9] * m[15] + m[0] * m[11] * m[13] + m[8] * m[1] * m[15]
+        - m[8] * m[3] * m[13]
+        - m[12] * m[1] * m[11]
+        + m[12] * m[3] * m[9];
+    inv[13] = m[0] * m[9] * m[14] - m[0] * m[10] * m[13] - m[8] * m[1] * m[14]
+        + m[8] * m[2] * m[13]
+        + m[12] * m[1] * m[10]
+        - m[12] * m[2] * m[9];
+    inv[2] = m[1] * m[6] * m[15] - m[1] * m[7] * m[14] - m[5] * m[2] * m[15]
+        + m[5] * m[3] * m[14]
+        + m[13] * m[2] * m[7]
+        - m[13] * m[3] * m[6];
+    inv[6] = -m[0] * m[6] * m[15] + m[0] * m[7] * m[14] + m[4] * m[2] * m[15]
+        - m[4] * m[3] * m[14]
+        - m[12] * m[2] * m[7]
+        + m[12] * m[3] * m[6];
+    inv[10] = m[0] * m[5] * m[15] - m[0] * m[7] * m[13] - m[4] * m[1] * m[15]
+        + m[4] * m[3] * m[13]
+        + m[12] * m[1] * m[7]
+        - m[12] * m[3] * m[5];
+    inv[14] = -m[0] * m[5] * m[14] + m[0] * m[6] * m[13] + m[4] * m[1] * m[14]
+        - m[4] * m[2] * m[13]
+        - m[12] * m[1] * m[6]
+        + m[12] * m[2] * m[5];
+    inv[3] = -m[1] * m[6] * m[11] + m[1] * m[7] * m[10] + m[5] * m[2] * m[11]
+        - m[5] * m[3] * m[10]
+        - m[9] * m[2] * m[7]
+        + m[9] * m[3] * m[6];
+    inv[7] = m[0] * m[6] * m[11] - m[0] * m[7] * m[10] - m[4] * m[2] * m[11]
+        + m[4] * m[3] * m[10]
+        + m[8] * m[2] * m[7]
+        - m[8] * m[3] * m[6];
+    inv[11] = -m[0] * m[5] * m[11] + m[0] * m[7] * m[9] + m[4] * m[1] * m[11]
+        - m[4] * m[3] * m[9]
+        - m[8] * m[1] * m[7]
+        + m[8] * m[3] * m[5];
+    inv[15] = m[0] * m[5] * m[10] - m[0] * m[6] * m[9] - m[4] * m[1] * m[10]
+        + m[4] * m[2] * m[9]
+        + m[8] * m[1] * m[6]
+        - m[8] * m[2] * m[5];
+
+    let det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
+    if det.abs() <= f32::EPSILON || !det.is_finite() {
+        return None;
+    }
+    let inv_det = 1.0 / det;
+    for value in inv.iter_mut() {
+        *value *= inv_det;
+    }
+    Some(inv)
+}
+
+fn apply_matrix4_to_vec3(matrix: &[f32; 16], vector: Vec3, w: f32) -> Vec3 {
+    Vec3::new(
+        matrix[0] * vector.x + matrix[4] * vector.y + matrix[8] * vector.z + matrix[12] * w,
+        matrix[1] * vector.x + matrix[5] * vector.y + matrix[9] * vector.z + matrix[13] * w,
+        matrix[2] * vector.x + matrix[6] * vector.y + matrix[10] * vector.z + matrix[14] * w,
+    )
+}
+
 pub(super) fn world_from_model_matrix(transform: Transform, origin_shift: Vec3) -> [f32; 16] {
     let s = transform.scale;
     let qx = transform.rotation.x;

@@ -44,7 +44,7 @@ mod shadows;
 mod stats;
 mod strokes;
 mod tangents;
-mod transforms;
+pub(super) mod transforms;
 mod types;
 
 pub(super) fn collect_prepared_primitives<F>(

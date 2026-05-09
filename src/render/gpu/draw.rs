@@ -39,8 +39,6 @@ impl GpuDeviceState {
             0,
             &encode_output_uniform(OutputUniformUpload {
                 exposure_ev,
-                world_from_model: identity_matrix(),
-                normal_from_model: identity_matrix(),
                 view_from_world: camera_projection
                     .view_from_world_matrix()
                     .unwrap_or_else(identity_matrix),
@@ -86,7 +84,8 @@ impl GpuDeviceState {
                 depth_prepass,
                 &resources.vertex_buffer,
                 &resources.output_bind_group,
-                resources.vertex_count,
+                &resources.draw_bind_group,
+                &resources.draw_batches,
             );
         }
         encode_unlit_pass(
@@ -99,6 +98,7 @@ impl GpuDeviceState {
                     .map(|depth_prepass| &depth_prepass.view),
                 vertex_buffer: &resources.vertex_buffer,
                 output_bind_group: &resources.output_bind_group,
+                draw_bind_group: &resources.draw_bind_group,
                 material_resources: &resources.material_resources,
                 draw_batches: &resources.draw_batches,
                 pipeline: &resources.offscreen_pipeline,
@@ -118,6 +118,7 @@ impl GpuDeviceState {
                         .map(|depth_prepass| &depth_prepass.view),
                     vertex_buffer: &resources.vertex_buffer,
                     output_bind_group: &resources.output_bind_group,
+                    draw_bind_group: &resources.draw_bind_group,
                     material_resources: &resources.material_resources,
                     draw_batches: &resources.draw_batches,
                     pipeline: surface_pipeline,
@@ -247,8 +248,6 @@ impl GpuDeviceState {
             0,
             &encode_output_uniform(OutputUniformUpload {
                 exposure_ev,
-                world_from_model: identity_matrix(),
-                normal_from_model: identity_matrix(),
                 view_from_world: camera_projection
                     .view_from_world_matrix()
                     .unwrap_or_else(identity_matrix),
@@ -288,7 +287,8 @@ impl GpuDeviceState {
                 depth_prepass,
                 &resources.vertex_buffer,
                 &resources.output_bind_group,
-                resources.vertex_count,
+                &resources.draw_bind_group,
+                &resources.draw_batches,
             );
         }
         encode_unlit_pass(
@@ -301,6 +301,7 @@ impl GpuDeviceState {
                     .map(|depth_prepass| &depth_prepass.view),
                 vertex_buffer: &resources.vertex_buffer,
                 output_bind_group: &resources.output_bind_group,
+                draw_bind_group: &resources.draw_bind_group,
                 material_resources: &resources.material_resources,
                 draw_batches: &resources.draw_batches,
                 pipeline: &resources.surface_pipeline,

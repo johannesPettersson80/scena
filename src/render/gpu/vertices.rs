@@ -1,4 +1,7 @@
 use crate::geometry::{Primitive, PrimitiveVertexAttributes, Vertex};
+use crate::render::prepare::transforms::{
+    invert_matrix4, unbake_normal_to_model_space, unbake_position_to_model_space,
+};
 
 pub(super) const VERTEX_BYTE_LEN: usize = 17 * std::mem::size_of::<f32>();
 pub(super) const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 6] = [
@@ -48,15 +51,51 @@ pub(super) struct DrawUniformValue {
     pub(super) normal_from_model: [f32; 16],
 }
 
+/// Writes the prepared primitives as MODEL-SPACE vertex bytes for GPU upload.
+/// CPU consumers (picking, culling, CPU rasterization, shadow occluders) read
+/// the prepared primitives directly with world-baked vertices; the GPU
+/// upload path recovers model-space by applying the inverse of the matrix
+/// that produced the bake. The shader then applies the per-draw
+/// `world_from_model` from the dynamic-offset draw uniform, yielding the
+/// same world-space position as the CPU path. Phase 1A.2 closure for
+/// scena-wgpu-architect F2.
 pub(super) fn encode_vertices(primitives: &[Primitive]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(primitives.len() * 3 * VERTEX_BYTE_LEN);
     for primitive in primitives {
+        let world_from_model = primitive.world_from_model();
+        let normal_from_model = primitive.normal_from_model();
+        let position_inverse = invert_matrix4(&world_from_model);
+        let normal_inverse = invert_matrix4(&normal_from_model);
         for (vertex, attributes) in primitive
             .vertices()
             .iter()
             .zip(primitive.vertex_attributes().iter())
         {
-            encode_vertex(&mut bytes, *vertex, *attributes);
+            // Recover model-space position via the inverse-transform-of-bake.
+            // `position_inverse` is None only if `world_from_model` is
+            // singular (zero scale on an axis), in which case we fall back
+            // to the world-baked vertex which the GPU will then double-
+            // transform against the singular forward matrix — pixels would
+            // be degenerate either way, so we avoid panicking and let the
+            // upstream culling stage decide.
+            let model_vertex = match position_inverse {
+                Some(inv) => Vertex {
+                    position: unbake_position_to_model_space(vertex.position, &inv),
+                    color: vertex.color,
+                },
+                None => *vertex,
+            };
+            let model_attributes = match normal_inverse {
+                Some(inv) => PrimitiveVertexAttributes {
+                    normal: unbake_normal_to_model_space(attributes.normal, &inv),
+                    tex_coord0: attributes.tex_coord0,
+                    tangent: unbake_normal_to_model_space(attributes.tangent, &inv),
+                    tangent_handedness: attributes.tangent_handedness,
+                    shadow_visibility: attributes.shadow_visibility,
+                },
+                None => *attributes,
+            };
+            encode_vertex(&mut bytes, model_vertex, model_attributes);
         }
     }
     bytes

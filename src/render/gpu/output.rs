@@ -36,8 +36,6 @@ struct LightingUniform {
 };
 
 struct CameraUniform {
-    world_from_model: mat4x4<f32>,
-    normal_from_model: mat4x4<f32>,
     view_from_world: mat4x4<f32>,
     clip_from_view: mat4x4<f32>,
     clip_from_world: mat4x4<f32>,
@@ -45,6 +43,11 @@ struct CameraUniform {
     viewport_near_far: vec4<f32>,
     color_management: vec4<f32>,
     lighting: LightingUniform,
+};
+
+struct DrawUniform {
+    world_from_model: mat4x4<f32>,
+    normal_from_model: mat4x4<f32>,
 };
 
 struct MaterialUniform {
@@ -57,6 +60,9 @@ struct MaterialUniform {
 
 @group(0) @binding(0)
 var<uniform> camera: CameraUniform;
+
+@group(2) @binding(0)
+var<uniform> draw: DrawUniform;
 
 @group(1) @binding(0)
 var base_color_sampler: sampler;
@@ -94,13 +100,13 @@ var emissive_texture: texture_2d<f32>;
 @vertex
 fn vs_main(in: VertexIn) -> VertexOut {
     var out: VertexOut;
-    let world_position = camera.world_from_model * vec4<f32>(in.position, 1.0);
+    let world_position = draw.world_from_model * vec4<f32>(in.position, 1.0);
     out.position = camera.clip_from_view * camera.view_from_world * world_position;
     out.color = in.color;
-    out.normal = (camera.normal_from_model * vec4<f32>(in.normal, 0.0)).xyz;
+    out.normal = (draw.normal_from_model * vec4<f32>(in.normal, 0.0)).xyz;
     out.tex_coord0 = in.tex_coord0;
     out.world_position = world_position.xyz;
-    out.tangent = vec4<f32>((camera.normal_from_model * vec4<f32>(in.tangent.xyz, 0.0)).xyz, in.tangent.w);
+    out.tangent = vec4<f32>((draw.normal_from_model * vec4<f32>(in.tangent.xyz, 0.0)).xyz, in.tangent.w);
     out.shadow_visibility = clamp(in.shadow_visibility, 0.0, 1.0);
     return out;
 }
@@ -320,7 +326,84 @@ fn rrt_and_odt_fit(value: f32) -> f32 {
 }
 "#;
 
-pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 528;
+pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 400;
+
+/// One DrawUniform entry packs world_from_model + normal_from_model = 32
+/// floats = 128 bytes. WebGPU requires dynamic-offset uniform binding offsets
+/// to be aligned to `min_uniform_buffer_offset_alignment`, which is 256 on
+/// every wgpu adapter we target. We pad each entry up to 256 bytes so the
+/// runtime stride matches the alignment requirement; the trailing 128 bytes
+/// per entry are zero-padding.
+pub(super) const DRAW_UNIFORM_ENTRY_SIZE: u64 = 128;
+pub(super) const DRAW_UNIFORM_ENTRY_STRIDE: u64 = 256;
+
+pub(super) fn create_draw_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("scena.draw.bind_group_layout"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: true,
+                min_binding_size: std::num::NonZeroU64::new(DRAW_UNIFORM_ENTRY_SIZE),
+            },
+            count: None,
+        }],
+    })
+}
+
+pub(super) fn create_draw_uniform_buffer(device: &wgpu::Device, entry_count: u64) -> wgpu::Buffer {
+    let size = DRAW_UNIFORM_ENTRY_STRIDE.saturating_mul(entry_count.max(1));
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("scena.draw.uniform"),
+        size,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
+}
+
+pub(super) fn create_draw_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    uniform: &wgpu::Buffer,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("scena.draw.bind_group"),
+        layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                buffer: uniform,
+                offset: 0,
+                size: std::num::NonZeroU64::new(DRAW_UNIFORM_ENTRY_SIZE),
+            }),
+        }],
+    })
+}
+
+/// Encodes a `Vec<DrawUniformValue>` into a packed byte buffer where each
+/// entry occupies `DRAW_UNIFORM_ENTRY_STRIDE` bytes. The first
+/// `DRAW_UNIFORM_ENTRY_SIZE` bytes of each entry hold the world_from_model +
+/// normal_from_model matrices; the trailing bytes are zero padding required
+/// by `min_uniform_buffer_offset_alignment` for dynamic-offset binding.
+pub(super) fn encode_draw_uniform_bytes(
+    values: &[(/*world*/ [f32; 16], /*normal*/ [f32; 16])],
+) -> Vec<u8> {
+    let mut bytes = vec![0u8; values.len().max(1) * DRAW_UNIFORM_ENTRY_STRIDE as usize];
+    for (entry_index, (world_from_model, normal_from_model)) in values.iter().enumerate() {
+        let entry_offset = entry_index * DRAW_UNIFORM_ENTRY_STRIDE as usize;
+        for (i, value) in world_from_model.iter().enumerate() {
+            let byte_offset = entry_offset + i * 4;
+            bytes[byte_offset..byte_offset + 4].copy_from_slice(&value.to_ne_bytes());
+        }
+        for (i, value) in normal_from_model.iter().enumerate() {
+            let byte_offset = entry_offset + 64 + i * 4;
+            bytes[byte_offset..byte_offset + 4].copy_from_slice(&value.to_ne_bytes());
+        }
+    }
+    bytes
+}
 
 pub(super) fn create_output_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -364,8 +447,6 @@ pub(super) fn create_output_bind_group(
 
 pub(super) struct OutputUniformUpload {
     pub(super) exposure_ev: f32,
-    pub(super) world_from_model: [f32; 16],
-    pub(super) normal_from_model: [f32; 16],
     pub(super) view_from_world: [f32; 16],
     pub(super) clip_from_view: [f32; 16],
     pub(super) clip_from_world: [f32; 16],
@@ -384,31 +465,29 @@ pub(super) fn encode_output_uniform(
     } else {
         0.0
     };
-    let mut values = [0.0; 132];
-    values[0..16].copy_from_slice(&upload.world_from_model);
-    values[16..32].copy_from_slice(&upload.normal_from_model);
-    values[32..48].copy_from_slice(&upload.view_from_world);
-    values[48..64].copy_from_slice(&upload.clip_from_view);
-    values[64..80].copy_from_slice(&upload.clip_from_world);
-    values[80] = upload.camera_position[0];
-    values[81] = upload.camera_position[1];
-    values[82] = upload.camera_position[2];
-    values[83] = 2.0_f32.powf(exposure_ev);
-    values[84] = upload.viewport[0];
-    values[85] = upload.viewport[1];
-    values[86] = upload.near_far[0];
-    values[87] = upload.near_far[1];
-    values[88..92].copy_from_slice(&upload.color_management);
-    values[92..96].copy_from_slice(&upload.lighting.directional_light_direction_intensity);
-    values[96..100].copy_from_slice(&upload.lighting.directional_light_color_count);
-    values[100..104].copy_from_slice(&upload.lighting.point_light_position_intensity);
-    values[104..108].copy_from_slice(&upload.lighting.point_light_color_range);
-    values[108..112].copy_from_slice(&upload.lighting.spot_light_position_intensity);
-    values[112..116].copy_from_slice(&upload.lighting.spot_light_direction_cones);
-    values[116..120].copy_from_slice(&upload.lighting.spot_light_cone_range);
-    values[120..124].copy_from_slice(&upload.lighting.spot_light_color_range);
-    values[124..128].copy_from_slice(&upload.lighting.environment_diffuse_intensity);
-    values[128..132].copy_from_slice(&upload.lighting.environment_specular_intensity);
+    let mut values = [0.0; 100];
+    values[0..16].copy_from_slice(&upload.view_from_world);
+    values[16..32].copy_from_slice(&upload.clip_from_view);
+    values[32..48].copy_from_slice(&upload.clip_from_world);
+    values[48] = upload.camera_position[0];
+    values[49] = upload.camera_position[1];
+    values[50] = upload.camera_position[2];
+    values[51] = 2.0_f32.powf(exposure_ev);
+    values[52] = upload.viewport[0];
+    values[53] = upload.viewport[1];
+    values[54] = upload.near_far[0];
+    values[55] = upload.near_far[1];
+    values[56..60].copy_from_slice(&upload.color_management);
+    values[60..64].copy_from_slice(&upload.lighting.directional_light_direction_intensity);
+    values[64..68].copy_from_slice(&upload.lighting.directional_light_color_count);
+    values[68..72].copy_from_slice(&upload.lighting.point_light_position_intensity);
+    values[72..76].copy_from_slice(&upload.lighting.point_light_color_range);
+    values[76..80].copy_from_slice(&upload.lighting.spot_light_position_intensity);
+    values[80..84].copy_from_slice(&upload.lighting.spot_light_direction_cones);
+    values[84..88].copy_from_slice(&upload.lighting.spot_light_cone_range);
+    values[88..92].copy_from_slice(&upload.lighting.spot_light_color_range);
+    values[92..96].copy_from_slice(&upload.lighting.environment_diffuse_intensity);
+    values[96..100].copy_from_slice(&upload.lighting.environment_specular_intensity);
     let mut bytes = [0; OUTPUT_UNIFORM_BYTE_LEN as usize];
     for (index, value) in values.into_iter().enumerate() {
         bytes[index * 4..index * 4 + 4].copy_from_slice(&value.to_ne_bytes());
@@ -423,16 +502,15 @@ mod tests {
     #[test]
     fn output_uniform_buffer_matches_wgsl_uniform_layout() {
         assert_eq!(
-            OUTPUT_UNIFORM_BYTE_LEN, 528,
-            "CameraUniform stores model, normal, view, projection, and view-projection matrices \
-             plus camera/exposure, viewport/depth, color-management, punctual-light, and \
-             environment uniforms"
+            OUTPUT_UNIFORM_BYTE_LEN, 400,
+            "CameraUniform stores view, projection, and view-projection matrices plus \
+             camera/exposure, viewport/depth, color-management, punctual-light, and \
+             environment uniforms — per-draw model + normal matrices live on the new \
+             DrawUniform bind group at @group(2)"
         );
         assert_eq!(
             encode_output_uniform(OutputUniformUpload {
                 exposure_ev: 0.0,
-                world_from_model: identity_clip_from_world(),
-                normal_from_model: identity_clip_from_world(),
                 view_from_world: identity_clip_from_world(),
                 clip_from_view: identity_clip_from_world(),
                 clip_from_world: identity_clip_from_world(),
