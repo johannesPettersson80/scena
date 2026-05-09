@@ -322,6 +322,27 @@ Generated local gate artifacts include:
 
 `target/gate-artifacts/` is generated output and is not part of the source package.
 
+### Phase 8 Clean-Tree Closure
+
+Use [`scripts/release_publish_dry_run.sh`](scripts/release_publish_dry_run.sh) to produce
+the clean-tree publish-dry-run evidence
+[`ADR-0006`](docs/decisions/ADR-0006-Local-Release-Candidate-Closure.md) requires before
+the v1.0 tag:
+
+```bash
+scripts/release_publish_dry_run.sh           # dry-run against HEAD
+scripts/release_publish_dry_run.sh <commit>  # dry-run against the named commit
+```
+
+The helper detaches a fresh worktree at `/tmp/scena-publish-dry-run-<sha>` so the
+dry-run sees an unmodified tree free of `node_modules/`, `target/`, and other
+working-tree artifacts. It runs the full clean-tree gate set (fmt / clippy / test / doc /
+doctor / claim-audit / release-readiness / `cargo publish --dry-run`) and records each
+step's exit code and tail output to
+`target/gate-artifacts/release-lanes/publish-dry-run.log`. Phase 8 cannot tag v1.0.0
+until that log records `status=passed` and the named human maintainer files
+`target/gate-artifacts/reviews/maintainer-signoff.toml` against the same commit.
+
 ## Configuration
 
 `scena` has no required runtime service, database, or API key. Configuration is handled
