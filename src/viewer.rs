@@ -3,6 +3,7 @@
 use crate::assets::{AssetPath, Assets};
 use crate::controls::{OrbitControlAction, OrbitControls, PointerEvent, TouchEvent};
 use crate::diagnostics::{Diagnostic, LookupError, RenderOutcome};
+use crate::picking::{CursorPosition, Hit, Viewport};
 use crate::platform::{PlatformSurface, SurfaceEvent};
 use crate::render::{Profile, Quality, RenderMode, Renderer, RendererOptions};
 use crate::scene::{CameraKey, DirectionalLight, Scene, SceneImport, Vec3};
@@ -544,6 +545,67 @@ impl InteractiveGltfViewer {
             orbit_controls.apply_to_scene(&mut self.scene, self.camera)?;
         }
         Ok(action)
+    }
+
+    /// Phase 5B step 3: ray-picks the active scene at the given physical
+    /// pointer coordinates using the renderer's current target dimensions
+    /// as the viewport. The pick is asset-aware so glTF-imported mesh and
+    /// instance-set nodes participate alongside scene-owned renderables.
+    /// `device_pixel_ratio` is fixed at 1.0; high-DPR consumers should
+    /// drop down to `viewer.scene.pick_with_assets(...)` directly.
+    pub fn pick_at(&self, physical_x: f32, physical_y: f32) -> Result<Option<Hit>, LookupError> {
+        let viewport = self.viewport_for_pick()?;
+        self.scene.pick_with_assets(
+            self.camera,
+            CursorPosition::physical(physical_x, physical_y),
+            viewport,
+            &self.assets,
+        )
+    }
+
+    /// Phase 5B step 3: convenience for `pick_at` followed by promoting
+    /// the hit to the scene's primary selection (and hover target).
+    /// Mirrors `Scene::pick_and_select_with_assets` against the active
+    /// camera + renderer dims.
+    pub fn pick_and_select_at(
+        &mut self,
+        physical_x: f32,
+        physical_y: f32,
+    ) -> Result<Option<Hit>, LookupError> {
+        let viewport = self.viewport_for_pick()?;
+        self.scene.pick_and_select_with_assets(
+            self.camera,
+            CursorPosition::physical(physical_x, physical_y),
+            viewport,
+            &self.assets,
+        )
+    }
+
+    /// Phase 5B step 3: convenience for `pick_at` followed by setting the
+    /// hovered hit. Mirrors `Scene::pick_and_hover_with_assets` against
+    /// the active camera + renderer dims.
+    pub fn pick_and_hover_at(
+        &mut self,
+        physical_x: f32,
+        physical_y: f32,
+    ) -> Result<Option<Hit>, LookupError> {
+        let viewport = self.viewport_for_pick()?;
+        self.scene.pick_and_hover_with_assets(
+            self.camera,
+            CursorPosition::physical(physical_x, physical_y),
+            viewport,
+            &self.assets,
+        )
+    }
+
+    fn viewport_for_pick(&self) -> Result<Viewport, LookupError> {
+        let stats = self.renderer.stats();
+        Viewport::new(stats.target_width, stats.target_height, 1.0).ok_or(
+            LookupError::InvalidViewport {
+                width: stats.target_width,
+                height: stats.target_height,
+            },
+        )
     }
 }
 
