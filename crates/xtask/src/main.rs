@@ -11174,6 +11174,75 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_m2_leak_stats_missing_counters_regression() {
+        // ARCH-M2-LEAK-STATS: tests/m2_lighting_depth_clipping.rs must keep the
+        // resource-lifetime baseline test that watches environment cubemaps,
+        // shadow maps, depth pre-pass counters, and pending destructions.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/m2-leak-stats-stub");
+        let m2_path = fixture_root.join("tests/m2_lighting_depth_clipping.rs");
+        fs::create_dir_all(m2_path.parent().expect("m2 parent")).expect("fixture dir");
+        fs::write(&m2_path, "// no leak baseline test here\n").expect("m2 fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-M2-LEAK-STATS",
+            "tests/m2_lighting_depth_clipping.rs",
+            &[
+                "m2_resource_counters_return_to_baseline_after_empty_prepare",
+                "environment_cubemaps",
+                "shadow_maps",
+                "depth_prepass_passes",
+                "released.pending_destructions, baseline.pending_destructions",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-M2-LEAK-STATS"
+                    && finding.message.contains("environment_cubemaps")
+            }),
+            "doctor must reject m2 lighting test that drops the resource-lifetime \
+             counter contract: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_camera_depth_missing_module_export_regression() {
+        // ARCH-CAMERA-DEPTH (module): src/scene.rs must keep the public
+        // `mod camera;` declaration plus the `pub use camera::{Camera, ...}`
+        // re-export so the typed cameras stay accessible without leaking the
+        // module path.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/camera-depth-module-stub");
+        let scene_path = fixture_root.join("src/scene.rs");
+        fs::create_dir_all(scene_path.parent().expect("scene parent")).expect("fixture dir");
+        fs::write(&scene_path, "pub struct Scene {}\n").expect("scene fixture");
+        let mut findings = Vec::new();
+
+        require_contains(
+            &fixture_root,
+            &mut findings,
+            "ARCH-CAMERA-DEPTH",
+            "src/scene.rs",
+            &[
+                "mod camera;",
+                "pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera}",
+            ],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-CAMERA-DEPTH" && finding.message.contains("pub use camera")
+            }),
+            "doctor must reject scene.rs that drops the camera module re-export: \
+             {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_world_baked_prepare_regression() {
         let root = repo_root().expect("test runs inside the scena workspace");
         let fixture_root = root.join("target/xtask-doctor-regressions/world-baked-prepare");

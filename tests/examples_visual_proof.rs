@@ -15,8 +15,9 @@ use std::path::PathBuf;
 use scena::{
     Aabb, AnimationPlaybackState, Assets, Color, ConnectOptions, ConnectionAlignment,
     ConnectionError, ConnectorFrame, CursorPosition, GeometryDesc, InteractionStyle, LabelDesc,
-    MaterialDesc, PerspectiveCamera, Profile, Renderer, RendererOptions, Scene,
-    SourceCoordinateSystem, SourceUnits, Transform, Vec3, Viewport,
+    MaterialDesc, OrbitControls, PerspectiveCamera, PointerEvent, Profile, Renderer,
+    RendererOptions, Scene, SourceCoordinateSystem, SourceUnits, TouchEvent, Transform, Vec3,
+    Viewport,
 };
 
 const ARTIFACT_WIDTH: u32 = 256;
@@ -1038,6 +1039,50 @@ fn examples_visual_coordinate_connector_repair_renders_repaired_assembly_to_ppm(
         ARTIFACT_HEIGHT,
         frame,
     );
+}
+
+#[test]
+fn examples_visual_orbit_controls_renders_oriented_box_to_ppm() {
+    // Mirror examples/orbit_controls.rs: a single box, default camera, then run
+    // the orbit-controls pointer + touch + wheel sequence and apply_to_scene
+    // before rendering. Proves the platform-neutral controls drive a real camera
+    // transform that survives the prepare/render lifecycle.
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.8, 0.45, 0.35));
+    let material = assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(90, 180, 220)));
+
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("orbit-controlled mesh inserts");
+    let camera = scene.add_default_camera().expect("default camera inserts");
+
+    let mut controls = OrbitControls::new(Vec3::ZERO, 2.0).with_damping(0.15);
+    controls.handle_pointer(PointerEvent::primary_pressed(160.0, 120.0));
+    controls.handle_pointer(PointerEvent::moved(168.0, 116.0, 8.0, -4.0));
+    controls.handle_touch(TouchEvent::pinch(168.0, 116.0, -0.1));
+    controls.handle_pointer(PointerEvent::wheel(168.0, 116.0, -0.25));
+    controls
+        .apply_to_scene(&mut scene, camera)
+        .expect("apply_to_scene succeeds");
+
+    let mut renderer =
+        Renderer::headless(ARTIFACT_WIDTH, ARTIFACT_HEIGHT).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("orbit_controls scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("orbit_controls scene renders");
+
+    let frame = renderer.frame_rgba8();
+    assert!(
+        count_nonblack_pixels(frame) > 0,
+        "orbit_controls example must render at least one nonblack pixel"
+    );
+
+    write_artifact("orbit_controls", ARTIFACT_WIDTH, ARTIFACT_HEIGHT, frame);
 }
 
 #[test]
