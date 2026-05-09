@@ -1758,6 +1758,7 @@ fn run_docs_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_m6_browser_renderer_probe(root, findings);
     check_gltf_asset_matrix_contract(root, findings);
     check_m9_ci_release_lanes(root, findings);
+    check_release_readiness_ci_fail_closed(root, findings);
     check_m10_claim_audit_contract(root, findings);
     check_state_of_art_checklist_links(root, findings);
 }
@@ -7644,6 +7645,78 @@ fn check_m10_claim_audit_contract(root: &Path, findings: &mut Vec<Finding>) {
     );
 }
 
+fn check_release_readiness_ci_fail_closed(root: &Path, findings: &mut Vec<Finding>) {
+    // RELEASE-READINESS-CI-FAIL-CLOSED: any GHA workflow job that runs
+    // `cargo run -p xtask -- release-readiness` must fail closed (no
+    // `continue-on-error: true`) once ADR-0005 moves out of `Status: Accepted`.
+    // While ADR-0005 is still in `Status: Accepted`, the rule recognizes the
+    // documented transitional exception and only flags configurations that
+    // would mask release-readiness on the publish-tag path.
+    let adr_active = match fs::read_to_string(
+        root.join("docs/decisions/ADR-0005-local-release-candidate-deferrals.md"),
+    ) {
+        Ok(text) => text.contains("Status: Accepted"),
+        Err(_) => false,
+    };
+    for workflow_rel in [".github/workflows/ci.yml", ".github/workflows/release.yml"] {
+        let path = root.join(workflow_rel);
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        for offending in jobs_with_continue_on_error_release_readiness(&text) {
+            if adr_active && offending.starts_with("premerge-release-readiness") {
+                continue;
+            }
+            findings.push(Finding::new(
+                "RELEASE-READINESS-CI-FAIL-CLOSED",
+                format!(
+                    "{workflow_rel} job '{offending}' runs release-readiness with \
+                     continue-on-error: true; the gate must fail closed once \
+                     ADR-0005 is superseded"
+                ),
+            ));
+        }
+    }
+}
+
+fn jobs_with_continue_on_error_release_readiness(text: &str) -> Vec<String> {
+    let mut offending = Vec::new();
+    let mut current_job: Option<String> = None;
+    let mut continue_on_error = false;
+    let mut runs_release_readiness = false;
+    for raw in text.lines() {
+        let leading_whitespace = raw.len() - raw.trim_start().len();
+        let trimmed = raw.trim();
+        // Top-level job heading is two-space indented (`  <name>:`) inside the
+        // workflow's `jobs:` block. We treat any header at column 2 as a new job.
+        if leading_whitespace == 2 && trimmed.ends_with(':') && !trimmed.contains(' ') {
+            if let Some(job) = current_job.take() {
+                if continue_on_error && runs_release_readiness {
+                    offending.push(job);
+                }
+            }
+            current_job = Some(trimmed.trim_end_matches(':').to_string());
+            continue_on_error = false;
+            runs_release_readiness = false;
+            continue;
+        }
+        if current_job.is_some() {
+            if trimmed.contains("continue-on-error: true") {
+                continue_on_error = true;
+            }
+            if trimmed.contains("cargo run -p xtask -- release-readiness") {
+                runs_release_readiness = true;
+            }
+        }
+    }
+    if let Some(job) = current_job {
+        if continue_on_error && runs_release_readiness {
+            offending.push(job);
+        }
+    }
+    offending
+}
+
 fn check_state_of_art_checklist_links(root: &Path, findings: &mut Vec<Finding>) {
     require_contains(
         root,
@@ -11784,6 +11857,82 @@ mod tests {
             }),
             "doctor must reject src/assets.rs that drops the mod gltf; export so \
              scene import wiring cannot silently regress: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_release_readiness_ci_continue_on_error_after_adr0005_supersession_regression()
+    {
+        // RELEASE-READINESS-CI-FAIL-CLOSED: once ADR-0005 leaves Status:
+        // Accepted (e.g. is Superseded by ADR-0006), no GHA workflow job that
+        // runs release-readiness may set continue-on-error: true. The fixture
+        // simulates a post-supersession state by writing ADR-0005 with
+        // Status: Superseded and a workflow that would otherwise still mask
+        // the release-readiness signal.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/release-readiness-ci-continue-on-error");
+        let adr_path =
+            fixture_root.join("docs/decisions/ADR-0005-local-release-candidate-deferrals.md");
+        let workflow_path = fixture_root.join(".github/workflows/ci.yml");
+        fs::create_dir_all(adr_path.parent().expect("adr dir")).expect("adr dir create");
+        fs::create_dir_all(workflow_path.parent().expect("workflow dir"))
+            .expect("workflow dir create");
+        fs::write(&adr_path, "# ADR-0005\n\nStatus: Superseded by ADR-0006.\n")
+            .expect("adr fixture");
+        fs::write(
+            &workflow_path,
+            "name: CI\njobs:\n  premerge-release-readiness:\n    \
+             runs-on: ubuntu-24.04\n    continue-on-error: true\n    steps:\n      - \
+             name: drift\n        run: cargo run -p xtask -- release-readiness\n",
+        )
+        .expect("workflow fixture");
+        let mut findings = Vec::new();
+
+        check_release_readiness_ci_fail_closed(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "RELEASE-READINESS-CI-FAIL-CLOSED"
+                    && finding.message.contains("premerge-release-readiness")
+                    && finding.message.contains("continue-on-error: true")
+            }),
+            "doctor must reject continue-on-error: true on release-readiness \
+             jobs once ADR-0005 leaves Accepted: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn release_readiness_ci_fail_closed_allows_continue_on_error_while_adr0005_is_accepted() {
+        // RELEASE-READINESS-CI-FAIL-CLOSED transitional exception: while
+        // ADR-0005 is in Status: Accepted, the documented transitional
+        // continue-on-error on premerge-release-readiness is allowed so the
+        // open-gates list surfaces in CI without blocking PR merges.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/release-readiness-ci-fail-closed-accepted");
+        let adr_path =
+            fixture_root.join("docs/decisions/ADR-0005-local-release-candidate-deferrals.md");
+        let workflow_path = fixture_root.join(".github/workflows/ci.yml");
+        fs::create_dir_all(adr_path.parent().expect("adr dir")).expect("adr dir create");
+        fs::create_dir_all(workflow_path.parent().expect("workflow dir"))
+            .expect("workflow dir create");
+        fs::write(&adr_path, "# ADR-0005\n\nStatus: Accepted.\n").expect("adr fixture");
+        fs::write(
+            &workflow_path,
+            "name: CI\njobs:\n  premerge-release-readiness:\n    \
+             runs-on: ubuntu-24.04\n    continue-on-error: true\n    steps:\n      - \
+             name: drift\n        run: cargo run -p xtask -- release-readiness\n",
+        )
+        .expect("workflow fixture");
+        let mut findings = Vec::new();
+
+        check_release_readiness_ci_fail_closed(&fixture_root, &mut findings);
+
+        assert!(
+            findings.is_empty(),
+            "while ADR-0005 is Accepted the premerge-release-readiness \
+             continue-on-error transitional exception must not fire: {findings:?}",
         );
     }
 
