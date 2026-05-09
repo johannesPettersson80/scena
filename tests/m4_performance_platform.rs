@@ -510,6 +510,144 @@ fn context_recovery_rejects_assets_without_retained_cpu_data() {
     ));
 }
 
+/// Plan line 1336 / RFC line 1226: GPU upload preservation across
+/// `SurfaceEvent::ContextLost → ContextRestored`. The renderer drops GPU-side
+/// material textures, the environment cubemap, and the directional shadow
+/// caster on context loss; recovery rebuilds those resources from the
+/// CPU-retained scene + assets and the post-recovery stats match the
+/// pre-loss baseline byte-for-byte. Closes the open dimension on master plan
+/// line 1336 ("hot reload preserves GPU upload across context loss").
+#[test]
+fn context_recovery_preserves_material_textures_cubemap_and_shadow_caster() {
+    let Ok(mut renderer) = Renderer::headless_gpu(32, 32) else {
+        return;
+    };
+
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::try_new(
+        GeometryTopology::Triangles,
+        vec![
+            GeometryVertex {
+                position: Vec3::new(-0.6, -0.6, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            GeometryVertex {
+                position: Vec3::new(0.6, -0.6, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            GeometryVertex {
+                position: Vec3::new(0.0, 0.6, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+        ],
+        vec![0, 1, 2],
+    )
+    .expect("triangle geometry"));
+    // 1×1 PNG so the renderer allocates GPU textures (per-material path
+    // because there's only one material slot, but the textures are still
+    // GPU resources that must survive the context-loss cycle).
+    let albedo = pollster::block_on(assets.load_texture(
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
+        scena::TextureColorSpace::Srgb,
+    ))
+    .expect("inline PNG loads");
+    let material = assets.create_material(
+        MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.5)
+            .with_base_color_texture(albedo),
+    );
+    let environment = assets.default_environment();
+
+    let (mut scene, camera) = scene_with_camera();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("textured mesh inserts");
+    scene
+        .directional_light(
+            scena::DirectionalLight::default()
+                .with_color(Color::WHITE)
+                .with_illuminance_lux(60_000.0)
+                .with_shadows(true),
+        )
+        .add()
+        .expect("directional light inserts so the shadow caster pass allocates");
+
+    renderer.set_environment(environment);
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("textured + lit scene prepares for headless GPU");
+    renderer.render(&scene, camera).expect("first render succeeds");
+    let baseline = renderer.stats();
+    assert!(
+        baseline.material_texture_bindings >= 1,
+        "baseline must allocate GPU material texture bindings, got {}",
+        baseline.material_texture_bindings
+    );
+    assert!(
+        baseline.environment_cubemaps >= 1,
+        "baseline must allocate the environment cubemap, got {}",
+        baseline.environment_cubemaps
+    );
+    assert!(
+        baseline.shadow_maps >= 1,
+        "baseline must allocate the directional shadow caster, got {}",
+        baseline.shadow_maps
+    );
+    let baseline_pipelines = baseline.pipelines;
+    let baseline_material_bind_groups = baseline.material_bind_groups;
+    let baseline_textures = baseline.textures;
+
+    renderer
+        .handle_surface_event(SurfaceEvent::ContextLost { recoverable: true })
+        .expect("context loss is recorded");
+    assert_eq!(
+        renderer.render(&scene, camera),
+        Err(RenderError::ContextLost { recoverable: true }),
+        "render must surface the lost context until the recovery handshake completes",
+    );
+
+    renderer
+        .handle_surface_event(SurfaceEvent::ContextRestored)
+        .expect("context restoration event is recorded");
+    renderer
+        .recover_context(&assets, &mut scene)
+        .expect("retained assets allow context recovery");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("re-prepare after recovery rebuilds GPU resources");
+    renderer
+        .render(&scene, camera)
+        .expect("post-recovery render succeeds");
+
+    let recovered = renderer.stats();
+    assert_eq!(
+        recovered.material_texture_bindings, baseline.material_texture_bindings,
+        "material texture bindings must rebuild byte-for-byte after context loss"
+    );
+    assert_eq!(
+        recovered.material_bind_groups, baseline_material_bind_groups,
+        "material bind groups must reuse the same per-material vs batched shape \
+         after context loss (proves the prepared scene's MaterialBatchPlan \
+         re-runs through the same code path)"
+    );
+    assert_eq!(
+        recovered.environment_cubemaps, baseline.environment_cubemaps,
+        "environment cubemap must rebuild after context loss"
+    );
+    assert_eq!(
+        recovered.shadow_maps, baseline.shadow_maps,
+        "directional shadow caster must rebuild after context loss"
+    );
+    assert_eq!(
+        recovered.pipelines, baseline_pipelines,
+        "shader pipelines must rebuild after context loss"
+    );
+    assert_eq!(
+        recovered.textures, baseline_textures,
+        "logical texture count must remain stable across the recovery cycle"
+    );
+}
+
 #[test]
 fn public_threading_contract_is_statically_enforced() {
     fn assert_send<T: Send>() {}
