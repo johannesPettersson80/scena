@@ -719,6 +719,58 @@ fn check_release_review_artifacts(artifact_root: &Path, findings: &mut Vec<Findi
             ));
         }
     }
+
+    // Schema validation for findings.json (scena.release.findings.v1) and
+    // maintainer-signoff.toml. These two single-file artifacts are required by
+    // REQUIRED_RELEASE_ARTIFACT_SUFFIXES; here we additionally fail-close when
+    // they exist but don't satisfy the schema docs/specs/release-reviews.md
+    // documents.
+    let findings_path = reviews_root.join("findings.json");
+    if let Ok(text) = fs::read_to_string(&findings_path) {
+        if !text.contains("\"schema\": \"scena.release.findings.v1\"")
+            && !text.contains("\"schema\":\"scena.release.findings.v1\"")
+        {
+            findings.push(Finding::new(
+                "RELEASE-REVIEWS-PRESENT",
+                "reviews/findings.json must declare schema = \"scena.release.findings.v1\"; \
+                 see docs/specs/release-reviews.md",
+            ));
+        }
+        if !text.contains("\"reviewed_commit\"") {
+            findings.push(Finding::new(
+                "RELEASE-REVIEWS-PRESENT",
+                "reviews/findings.json must record reviewed_commit; see \
+                 docs/specs/release-reviews.md",
+            ));
+        }
+    }
+    let signoff_path = reviews_root.join("maintainer-signoff.toml");
+    if let Ok(text) = fs::read_to_string(&signoff_path) {
+        for required in [
+            "[maintainer]",
+            "name = ",
+            "signed_commit = ",
+            "[approval]",
+            "decision = ",
+        ] {
+            if !text.contains(required) {
+                findings.push(Finding::new(
+                    "RELEASE-REVIEWS-PRESENT",
+                    format!(
+                        "reviews/maintainer-signoff.toml is missing required schema field \
+                         {required:?}; see docs/specs/release-reviews.md"
+                    ),
+                ));
+            }
+        }
+        if text.contains("decision = \"hold\"") {
+            findings.push(Finding::new(
+                "RELEASE-REVIEWS-PRESENT",
+                "reviews/maintainer-signoff.toml has decision = \"hold\"; release-readiness \
+                 cannot pass while the maintainer holds; see docs/specs/release-reviews.md",
+            ));
+        }
+    }
 }
 
 const REQUIRED_RELEASE_ARTIFACT_SUFFIXES: &[&str] = &[
@@ -11510,6 +11562,79 @@ mod tests {
             }),
             "release-readiness must reject an artifact bundle missing a per-role \
              review report: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn release_readiness_rejects_findings_register_missing_schema_field() {
+        // RELEASE-REVIEWS-PRESENT (schema): findings.json must declare the
+        // scena.release.findings.v1 schema and the reviewed_commit field. A stub
+        // register that drops the schema regresses the contract.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/release-reviews-findings-stub");
+        let reviews_root = fixture_root.join("reviews");
+        for role in REQUIRED_REVIEW_ROLES {
+            let role_dir = reviews_root.join(role);
+            fs::create_dir_all(&role_dir).expect("role dir");
+            fs::write(role_dir.join("placeholder.md"), "# placeholder review\n")
+                .expect("placeholder review");
+        }
+        fs::write(
+            reviews_root.join("findings.json"),
+            "{\"reviewed_commit\": \"abc\", \"findings\": []}\n",
+        )
+        .expect("findings fixture");
+        let mut findings = Vec::new();
+
+        check_release_review_artifacts(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "RELEASE-REVIEWS-PRESENT"
+                    && finding.message.contains("scena.release.findings.v1")
+            }),
+            "release-readiness must reject findings.json that drops the schema field: \
+             {findings:?}",
+        );
+    }
+
+    #[test]
+    fn release_readiness_rejects_signoff_with_hold_decision() {
+        // RELEASE-REVIEWS-PRESENT (schema): maintainer-signoff.toml with
+        // decision = "hold" must fail-close release-readiness so a withheld
+        // sign-off cannot accidentally ship as approval.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/release-reviews-hold-signoff");
+        let reviews_root = fixture_root.join("reviews");
+        for role in REQUIRED_REVIEW_ROLES {
+            let role_dir = reviews_root.join(role);
+            fs::create_dir_all(&role_dir).expect("role dir");
+            fs::write(role_dir.join("placeholder.md"), "# placeholder review\n")
+                .expect("placeholder review");
+        }
+        fs::write(
+            reviews_root.join("findings.json"),
+            "{\"schema\": \"scena.release.findings.v1\", \"reviewed_commit\": \"abc\", \"findings\": []}\n",
+        )
+        .expect("findings fixture");
+        fs::write(
+            reviews_root.join("maintainer-signoff.toml"),
+            "[maintainer]\nname = \"Jane Smith\"\nsigned_commit = \"abc\"\n\n[approval]\ndecision = \"hold\"\n",
+        )
+        .expect("signoff fixture");
+        let mut findings = Vec::new();
+
+        check_release_review_artifacts(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "RELEASE-REVIEWS-PRESENT"
+                    && finding.message.contains("decision = \"hold\"")
+            }),
+            "release-readiness must reject a maintainer sign-off whose decision is \
+             hold: {findings:?}",
         );
     }
 
