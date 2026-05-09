@@ -413,7 +413,7 @@ impl Renderer {
                 .gpu
                 .as_mut()
                 .expect("draw_gpu is called only when a GPU device exists");
-            let (submitted, culling_dispatches) = gpu.render_to_frame(
+            let submitted = gpu.render_to_frame(
                 self.target,
                 self.output.exposure_ev(),
                 camera_projection,
@@ -422,10 +422,10 @@ impl Renderer {
             if submitted {
                 self.stats.gpu_submissions = self.stats.gpu_submissions.saturating_add(1);
             }
-            self.stats.gpu_culling_dispatches = self
-                .stats
-                .gpu_culling_dispatches
-                .saturating_add(culling_dispatches);
+            // self.stats.gpu_culling_dispatches stays at 0 — the empty culling
+            // kernel was deleted in commit a311fcd. The public counter is kept
+            // for API stability and will be repurposed when a real culling
+            // kernel lands in a future v1.x.
             Ok(())
         }
 

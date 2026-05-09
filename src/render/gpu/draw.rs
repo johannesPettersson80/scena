@@ -23,11 +23,11 @@ impl GpuDeviceState {
         exposure_ev: f32,
         camera_projection: &CameraProjection,
         frame: &mut Vec<u8>,
-    ) -> Result<(bool, u64), RenderError> {
+    ) -> Result<bool, RenderError> {
         let Some(resources) = self.resources.as_ref() else {
             frame.resize(target.byte_len(), 0);
             frame.fill(0);
-            return Ok((false, 0));
+            return Ok(false);
         };
         if resources.target != target {
             return Err(RenderError::GpuResourcesNotPrepared {
@@ -80,7 +80,6 @@ impl GpuDeviceState {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("scena.headless_gpu.encoder"),
             });
-        let culling_dispatches = 0u64;
         if let Some(depth_prepass) = &resources.depth_prepass {
             depth::encode_depth_prepass(
                 &mut encoder,
@@ -185,7 +184,7 @@ impl GpuDeviceState {
         drop(mapped);
         resources.readback.unmap();
 
-        Ok((true, culling_dispatches))
+        Ok(true)
     }
 
     #[cfg(target_arch = "wasm32")]
