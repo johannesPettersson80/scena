@@ -116,6 +116,14 @@ struct AssetStorage {
     scene_lookup: BTreeMap<AssetPath, SceneAsset>,
     texture_lookup: BTreeMap<TextureCacheKey, TextureHandle>,
     environment_lookup: BTreeMap<AssetPath, EnvironmentHandle>,
+    // Tracks descriptors minted directly by `Assets::create_<kind>` (user-created)
+    // rather than by glTF parsing or environment loading. `release_unreferenced`
+    // ALWAYS retains these so a procedural-scene caller cannot lose handles they
+    // still hold. Closes scena-api-ergonomics-reviewer 4b0e621 finding N2.
+    user_created_geometries: std::collections::BTreeSet<GeometryHandle>,
+    user_created_materials: std::collections::BTreeSet<MaterialHandle>,
+    user_created_textures: std::collections::BTreeSet<TextureHandle>,
+    user_created_environments: std::collections::BTreeSet<EnvironmentHandle>,
 }
 
 impl Assets<DefaultAssetFetcher> {
@@ -143,6 +151,10 @@ impl<F> Assets<F> {
                 scene_lookup: BTreeMap::new(),
                 texture_lookup: BTreeMap::new(),
                 environment_lookup: BTreeMap::new(),
+                user_created_geometries: std::collections::BTreeSet::new(),
+                user_created_materials: std::collections::BTreeSet::new(),
+                user_created_textures: std::collections::BTreeSet::new(),
+                user_created_environments: std::collections::BTreeSet::new(),
             })),
             store_id: AssetStoreId::next(),
         }
@@ -255,22 +267,35 @@ impl<F> Assets<F> {
 
         let geometry_keys: Vec<GeometryHandle> = storage.geometries.keys().collect();
         for handle in geometry_keys {
-            if !referenced_geometries.contains(&handle) {
+            // User-created descriptors (minted via `Assets::create_<kind>`)
+            // are ALWAYS retained — release_unreferenced is hot-reload-scoped
+            // GC, not a generic eviction sweep. Closes
+            // scena-api-ergonomics-reviewer 4b0e621 finding N2.
+            if !referenced_geometries.contains(&handle)
+                && !storage.user_created_geometries.contains(&handle)
+            {
                 storage.geometries.remove(handle);
+                storage.user_created_geometries.remove(&handle);
                 stats.geometries_evicted += 1;
             }
         }
         let material_keys: Vec<MaterialHandle> = storage.materials.keys().collect();
         for handle in material_keys {
-            if !referenced_materials.contains(&handle) {
+            if !referenced_materials.contains(&handle)
+                && !storage.user_created_materials.contains(&handle)
+            {
                 storage.materials.remove(handle);
+                storage.user_created_materials.remove(&handle);
                 stats.materials_evicted += 1;
             }
         }
         let texture_keys: Vec<TextureHandle> = storage.textures.keys().collect();
         for handle in texture_keys {
-            if !referenced_textures.contains(&handle) {
+            if !referenced_textures.contains(&handle)
+                && !storage.user_created_textures.contains(&handle)
+            {
                 storage.textures.remove(handle);
+                storage.user_created_textures.remove(&handle);
                 stats.textures_evicted += 1;
             }
         }
@@ -283,8 +308,11 @@ impl<F> Assets<F> {
             .retain(|_, handle| live_textures.contains(handle));
         let environment_keys: Vec<EnvironmentHandle> = storage.environments.keys().collect();
         for handle in environment_keys {
-            if !referenced_environments.contains(&handle) {
+            if !referenced_environments.contains(&handle)
+                && !storage.user_created_environments.contains(&handle)
+            {
                 storage.environments.remove(handle);
+                storage.user_created_environments.remove(&handle);
                 stats.environments_evicted += 1;
             }
         }
@@ -292,7 +320,10 @@ impl<F> Assets<F> {
     }
 
     pub fn create_material(&self, material: impl Into<MaterialDesc>) -> MaterialHandle {
-        self.storage().materials.insert(material.into())
+        let mut storage = self.storage();
+        let handle = storage.materials.insert(material.into());
+        storage.user_created_materials.insert(handle);
+        handle
     }
 
     #[cfg(test)]
@@ -303,17 +334,23 @@ impl<F> Assets<F> {
         source_format: TextureSourceFormat,
         source_bytes: Option<&[u8]>,
     ) -> Result<TextureHandle, AssetError> {
-        Ok(self.storage().textures.insert(TextureDesc::new_with_bytes(
+        let mut storage = self.storage();
+        let handle = storage.textures.insert(TextureDesc::new_with_bytes(
             path.into(),
             color_space,
             TextureSamplerDesc::default(),
             source_format,
             source_bytes,
-        )?))
+        )?);
+        storage.user_created_textures.insert(handle);
+        Ok(handle)
     }
 
     pub fn create_geometry(&self, geometry: GeometryDesc) -> GeometryHandle {
-        self.storage().geometries.insert(geometry)
+        let mut storage = self.storage();
+        let handle = storage.geometries.insert(geometry);
+        storage.user_created_geometries.insert(handle);
+        handle
     }
 
     pub fn create_static_batch(

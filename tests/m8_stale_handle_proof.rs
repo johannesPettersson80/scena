@@ -99,39 +99,42 @@ fn m8_assets_store_id_is_stable_across_clone() {
 }
 
 #[test]
-fn m8_release_unreferenced_evicts_dangling_geometry_and_material_descriptors() {
-    // scena-gltf-animation-reviewer Phase 6 finding F4 closure:
-    // Assets::release_unreferenced() must evict GeometryDesc and
-    // MaterialDesc slotmap entries that no cached SceneAsset still
-    // references. Without an eviction path long-running hot-reload
-    // sessions accumulate dead handles even though scene_lookup keeps
-    // only the latest SceneAsset per path.
+fn m8_release_unreferenced_retains_user_created_descriptors_even_when_no_scene_asset_references_them()
+ {
+    // scena-api-ergonomics-reviewer 4b0e621 finding N2 closure:
+    // release_unreferenced is hot-reload-scoped GC, not a generic eviction
+    // sweep. User-created descriptors (minted via Assets::create_<kind>)
+    // must survive the call so a procedural-scene caller cannot lose
+    // handles they still hold. Otherwise the typed *HandleNotFound errors
+    // would fire next time the user passes the handle to render-time
+    // lookup, contradicting the "no silent fallbacks" review rule.
     let assets = Assets::new();
-    let live_geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
-    let live_material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
-    let _stranded_geometry = assets.create_geometry(GeometryDesc::box_xyz(2.0, 2.0, 2.0));
-    let _stranded_material = assets.create_material(MaterialDesc::unlit(Color::BLACK));
-
-    // Live handles stay reachable; stranded ones do not.
-    assert!(assets.geometry(live_geometry).is_some());
-    assert!(assets.material(live_material).is_some());
+    let user_geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
+    let user_material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
 
     let stats = assets.release_unreferenced();
-    assert!(
-        stats.geometries_evicted >= 2,
-        "release_unreferenced must evict every geometry the cache no longer references; got stats={stats:?}",
+    assert_eq!(
+        stats.geometries_evicted, 0,
+        "user-created GeometryDesc must survive release_unreferenced; got stats={stats:?}",
+    );
+    assert_eq!(
+        stats.materials_evicted, 0,
+        "user-created MaterialDesc must survive release_unreferenced; got stats={stats:?}",
     );
     assert!(
-        stats.materials_evicted >= 2,
-        "release_unreferenced must evict every material the cache no longer references; got stats={stats:?}",
-    );
-    // Live handles also drop because no SceneAsset retains them.
-    assert!(
-        assets.geometry(live_geometry).is_none(),
-        "live geometry not retained by any cached SceneAsset must also evict",
+        assets.geometry(user_geometry).is_some(),
+        "user-created geometry handle must still resolve after release_unreferenced",
     );
     assert!(
-        assets.material(live_material).is_none(),
-        "live material not retained by any cached SceneAsset must also evict",
+        assets.material(user_material).is_some(),
+        "user-created material handle must still resolve after release_unreferenced",
+    );
+    assert!(
+        assets.contains_geometry(user_geometry),
+        "contains_geometry must still report ownership after release_unreferenced",
+    );
+    assert!(
+        assets.contains_material(user_material),
+        "contains_material must still report ownership after release_unreferenced",
     );
 }
