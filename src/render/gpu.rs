@@ -1,5 +1,4 @@
 mod build;
-#[cfg(not(target_arch = "wasm32"))]
 mod depth;
 mod draw;
 mod lifecycle;
@@ -136,16 +135,23 @@ struct GpuPreparedResources {
     output_uniform: wgpu::Buffer,
     output_bind_group: wgpu::BindGroup,
     light_uniform: PreparedGpuLightUniform,
+    /// Phase 1B: directional-light view-projection matrix; mirrors the
+    /// native variant. Uploaded into the camera uniform's light_from_world
+    /// slot.
+    light_from_world: [f32; 16],
     material_resources: Vec<materials::MaterialTextureResources>,
     depth_prepass: Option<depth::DepthPrepassResources>,
     surface_pipeline: wgpu::RenderPipeline,
+    #[allow(dead_code)]
     vertex_count: u32,
     draw_batches: Vec<PrimitiveDrawBatch>,
-    // ARCH-RENDER-WORLD-BAKE: see the headless variant — the WebGL2/WebGPU browser path
-    // also retains per-draw world_from_model / normal_from_model values for the dynamic
-    // uniform path that lands in the follow-up commit.
+    // Phase 1A.2: per-draw uniforms uploaded through draw_uniform_buffer +
+    // draw_bind_group with dynamic offsets, mirroring the native variant.
     #[allow(dead_code)]
     draw_uniforms: Vec<DrawUniformValue>,
+    #[allow(dead_code)]
+    draw_uniform_buffer: wgpu::Buffer,
+    draw_bind_group: wgpu::BindGroup,
     webgl2_vertices: Vec<f32>,
     stats: GpuResourceStats,
 }
@@ -333,12 +339,14 @@ impl GpuDeviceState {
     }
 
     #[cfg(target_arch = "wasm32")]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn prepare(
         &mut self,
         target: RasterTarget,
         primitives: &[crate::geometry::Primitive],
         lighting_stats: PreparedLightingStats,
         light_uniform: PreparedGpuLightUniform,
+        light_from_world: [f32; 16],
         depth_stats: PreparedDepthStats,
         material_slots: &[PreparedMaterialSlot],
     ) {
@@ -393,6 +401,23 @@ impl GpuDeviceState {
             &material_bind_group_layout,
             material_slots,
         );
+        let draw_bind_group_layout = output::create_draw_bind_group_layout(&self.device);
+        let draw_uniform_buffer =
+            output::create_draw_uniform_buffer(&self.device, draw_uniforms.len() as u64);
+        let draw_uniform_pairs: Vec<([f32; 16], [f32; 16])> = draw_uniforms
+            .iter()
+            .map(|value| (value.world_from_model, value.normal_from_model))
+            .collect();
+        self.queue.write_buffer(
+            &draw_uniform_buffer,
+            0,
+            &output::encode_draw_uniform_bytes(&draw_uniform_pairs),
+        );
+        let draw_bind_group = output::create_draw_bind_group(
+            &self.device,
+            &draw_bind_group_layout,
+            &draw_uniform_buffer,
+        );
         let depth_prepass =
             (target.backend == Backend::WebGpu && depth_stats.passes > 0).then(|| {
                 depth::create_depth_prepass_resources(
@@ -400,6 +425,7 @@ impl GpuDeviceState {
                     target,
                     depth_stats.reversed_z,
                     &output_bind_group_layout,
+                    &draw_bind_group_layout,
                 )
             });
         let depth_compare = depth_prepass
@@ -410,6 +436,7 @@ impl GpuDeviceState {
             surface.config.format,
             &output_bind_group_layout,
             &material_bind_group_layout,
+            &draw_bind_group_layout,
             depth_compare,
         );
         let vertex_count = (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32;
@@ -420,7 +447,6 @@ impl GpuDeviceState {
             shadow_maps: 0,
             shadow_map_resolution: None,
             depth_prepass_passes: u64::from(depth_prepass.is_some()),
-            has_compute_culling: false,
             material_texture_count: material_resources.len() as u64,
             material_texture_bytes: material_texture_byte_len(&material_resources),
         });
@@ -431,12 +457,15 @@ impl GpuDeviceState {
             output_uniform,
             output_bind_group,
             light_uniform,
+            light_from_world,
             material_resources,
             depth_prepass,
             surface_pipeline,
             vertex_count,
             draw_batches,
             draw_uniforms,
+            draw_uniform_buffer,
+            draw_bind_group,
             webgl2_vertices,
             stats,
         });

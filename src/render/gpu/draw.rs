@@ -8,7 +8,6 @@ use crate::diagnostics::RenderError;
 use super::super::RasterTarget;
 use super::super::camera::CameraProjection;
 use super::GpuDeviceState;
-#[cfg(not(target_arch = "wasm32"))]
 use super::depth;
 use super::output::{OutputUniformUpload, encode_output_uniform};
 use super::pipeline::{UnlitPass, encode_unlit_pass};

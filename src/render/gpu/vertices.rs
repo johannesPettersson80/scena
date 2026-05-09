@@ -109,8 +109,25 @@ pub(super) fn encode_draw_batches(
     for (index, primitive) in primitives.iter().enumerate() {
         let start_vertex = (index as u32).saturating_mul(3);
         let material_slot = primitive.render_material_slot();
-        let world_from_model = primitive.world_from_model();
-        let normal_from_model = primitive.normal_from_model();
+        // F8 fallback: when world_from_model is singular (zero scale on an
+        // axis), encode_vertices keeps the world-baked vertex unchanged. To
+        // avoid the GPU shader re-multiplying that already-world-space vertex
+        // against the singular forward matrix, upload identity in the draw
+        // uniform for that primitive. Result: shader applies identity ×
+        // world_baked = world_baked = correct (matches pre-1A.2 behavior for
+        // degenerate primitives).
+        let raw_world_from_model = primitive.world_from_model();
+        let raw_normal_from_model = primitive.normal_from_model();
+        let world_from_model = if invert_matrix4(&raw_world_from_model).is_some() {
+            raw_world_from_model
+        } else {
+            identity_matrix4()
+        };
+        let normal_from_model = if invert_matrix4(&raw_normal_from_model).is_some() {
+            raw_normal_from_model
+        } else {
+            identity_matrix4()
+        };
         let draw_uniform_index = match draw_uniforms
             .iter()
             .position(|value| value.world_from_model == world_from_model)

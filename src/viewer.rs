@@ -284,7 +284,10 @@ impl InteractiveGltfViewerBuilder {
 
     /// Synchronously builds the interactive viewer. Use this for native window
     /// surfaces and surface descriptors. Browser surfaces require async wgpu
-    /// adapter discovery; call [`Self::build_async`] for those.
+    /// adapter discovery; call [`Self::build_async`] for those. Gated on
+    /// non-wasm32 targets because the sync build path uses `pollster::block_on`,
+    /// which is incompatible with the browser event loop.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn build(self) -> crate::Result<InteractiveGltfViewer> {
         let assets = Assets::new();
         let scene_asset = pollster::block_on(assets.load_scene(self.path.clone()))?;
