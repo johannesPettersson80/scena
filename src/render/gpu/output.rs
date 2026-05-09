@@ -57,6 +57,12 @@ struct MaterialUniform {
     base_color_factor: vec4<f32>,
     emissive_strength: vec4<f32>,
     metallic_roughness_alpha: vec4<f32>,
+    // Plan line 778 / RFC 866 commit 2: layer index in the shared
+    // `texture_2d_array<f32>` per role. Per-material fall-back leaves this
+    // at 0 (each material owns a 1-layer array). When N materials collapse
+    // into one bind group, the dynamic-offset uniform points at the layer's
+    // 256-byte slot and `material_layer_index.x` selects the array slice.
+    material_layer_index: vec4<u32>,
 };
 
 @group(0) @binding(0)
@@ -94,7 +100,7 @@ var<uniform> draw: DrawUniform;
 var base_color_sampler: sampler;
 
 @group(1) @binding(1)
-var base_color_texture: texture_2d<f32>;
+var base_color_texture: texture_2d_array<f32>;
 
 @group(1) @binding(2)
 var<uniform> material: MaterialUniform;
@@ -103,25 +109,25 @@ var<uniform> material: MaterialUniform;
 var normal_sampler: sampler;
 
 @group(1) @binding(4)
-var normal_texture: texture_2d<f32>;
+var normal_texture: texture_2d_array<f32>;
 
 @group(1) @binding(5)
 var metallic_roughness_sampler: sampler;
 
 @group(1) @binding(6)
-var metallic_roughness_texture: texture_2d<f32>;
+var metallic_roughness_texture: texture_2d_array<f32>;
 
 @group(1) @binding(7)
 var occlusion_sampler: sampler;
 
 @group(1) @binding(8)
-var occlusion_texture: texture_2d<f32>;
+var occlusion_texture: texture_2d_array<f32>;
 
 @group(1) @binding(9)
 var emissive_sampler: sampler;
 
 @group(1) @binding(10)
-var emissive_texture: texture_2d<f32>;
+var emissive_texture: texture_2d_array<f32>;
 
 @vertex
 fn vs_main(in: VertexIn) -> VertexOut {
@@ -144,11 +150,12 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         scaled_uv.x * material.base_color_uv_rotation.y - scaled_uv.y * material.base_color_uv_rotation.x,
         scaled_uv.x * material.base_color_uv_rotation.x + scaled_uv.y * material.base_color_uv_rotation.y,
     ) + material.base_color_uv_offset_scale.xy;
-    let base_color_sample = textureSample(base_color_texture, base_color_sampler, transformed_uv);
-    let normal_texture_sample = textureSample(normal_texture, normal_sampler, in.tex_coord0).rgb;
-    let metallic_roughness_sample = textureSample(metallic_roughness_texture, metallic_roughness_sampler, in.tex_coord0);
-    let occlusion_sample = textureSample(occlusion_texture, occlusion_sampler, in.tex_coord0).r;
-    let emissive_sample = textureSample(emissive_texture, emissive_sampler, in.tex_coord0).rgb;
+    let material_layer = i32(material.material_layer_index.x);
+    let base_color_sample = textureSample(base_color_texture, base_color_sampler, transformed_uv, material_layer);
+    let normal_texture_sample = textureSample(normal_texture, normal_sampler, in.tex_coord0, material_layer).rgb;
+    let metallic_roughness_sample = textureSample(metallic_roughness_texture, metallic_roughness_sampler, in.tex_coord0, material_layer);
+    let occlusion_sample = textureSample(occlusion_texture, occlusion_sampler, in.tex_coord0, material_layer).r;
+    let emissive_sample = textureSample(emissive_texture, emissive_sampler, in.tex_coord0, material_layer).rgb;
     let normal_sample = normalize(normal_texture_sample * 2.0 - vec3<f32>(1.0));
     let world_normal = normalize(in.normal);
     let world_tangent = normalize(in.tangent.xyz);
@@ -626,40 +633,48 @@ mod tests {
                 && GPU_TRIANGLE_SHADER.contains("base_color_uv_offset_scale")
                 && GPU_TRIANGLE_SHADER.contains("base_color_uv_rotation")
                 && GPU_TRIANGLE_SHADER.contains(
-                    "textureSample(base_color_texture, base_color_sampler, transformed_uv)"
+                    "textureSample(base_color_texture, base_color_sampler, transformed_uv, material_layer)"
                 ),
-            "GPU shader must receive normals and TEXCOORD_0 from prepared vertex data"
+            "GPU shader must receive normals + TEXCOORD_0 from prepared vertex data and \
+             route base-color sampling through the material layer index for array batching"
         );
     }
 
     #[test]
     fn triangle_shader_declares_material_texture_bindings() {
+        // Plan line 778 / RFC 866 commit 2: every material texture role binds
+        // a `texture_2d_array<f32>` so the same WGSL pipeline serves the
+        // per-material 1-layer fall-back and the batched N-layer path. The
+        // MaterialUniform carries `material_layer_index` so sampling can
+        // route into the correct layer.
         assert!(
             GPU_TRIANGLE_SHADER.contains("@group(1) @binding(0)")
                 && GPU_TRIANGLE_SHADER.contains("var base_color_sampler: sampler")
                 && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(1)")
-                && GPU_TRIANGLE_SHADER.contains("var base_color_texture: texture_2d<f32>")
+                && GPU_TRIANGLE_SHADER.contains("var base_color_texture: texture_2d_array<f32>")
                 && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(2)")
                 && GPU_TRIANGLE_SHADER.contains("var<uniform> material: MaterialUniform")
                 && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(3)")
                 && GPU_TRIANGLE_SHADER.contains("var normal_sampler: sampler")
                 && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(4)")
-                && GPU_TRIANGLE_SHADER.contains("var normal_texture: texture_2d<f32>")
+                && GPU_TRIANGLE_SHADER.contains("var normal_texture: texture_2d_array<f32>")
                 && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(5)")
                 && GPU_TRIANGLE_SHADER.contains("var metallic_roughness_sampler: sampler")
                 && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(6)")
-                && GPU_TRIANGLE_SHADER.contains("var metallic_roughness_texture: texture_2d<f32>")
+                && GPU_TRIANGLE_SHADER
+                    .contains("var metallic_roughness_texture: texture_2d_array<f32>")
                 && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(7)")
                 && GPU_TRIANGLE_SHADER.contains("var occlusion_sampler: sampler")
                 && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(8)")
-                && GPU_TRIANGLE_SHADER.contains("var occlusion_texture: texture_2d<f32>")
+                && GPU_TRIANGLE_SHADER.contains("var occlusion_texture: texture_2d_array<f32>")
                 && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(9)")
                 && GPU_TRIANGLE_SHADER.contains("var emissive_sampler: sampler")
                 && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(10)")
-                && GPU_TRIANGLE_SHADER.contains("var emissive_texture: texture_2d<f32>")
+                && GPU_TRIANGLE_SHADER.contains("var emissive_texture: texture_2d_array<f32>")
+                && GPU_TRIANGLE_SHADER.contains("material_layer_index: vec4<u32>")
                 && GPU_TRIANGLE_SHADER.contains("textureSample(base_color_texture"),
-            "GPU fragment shader must expose material texture bindings before backend material \
-             sampling can be claimed"
+            "GPU fragment shader must expose material texture bindings as 2D-array views \
+             with material_layer_index so per-material and array-batched paths share one shader"
         );
     }
 

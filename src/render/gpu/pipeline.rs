@@ -1,4 +1,5 @@
-use super::materials::MaterialTextureResources;
+use super::material_uniform::MATERIAL_UNIFORM_ENTRY_STRIDE;
+use super::materials::MaterialResources;
 use super::output::{DRAW_UNIFORM_ENTRY_STRIDE, GPU_TRIANGLE_SHADER};
 use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 
@@ -13,7 +14,7 @@ pub(super) struct UnlitPass<'a> {
     pub(super) vertex_buffer: &'a wgpu::Buffer,
     pub(super) output_bind_group: &'a wgpu::BindGroup,
     pub(super) draw_bind_group: &'a wgpu::BindGroup,
-    pub(super) material_resources: &'a [MaterialTextureResources],
+    pub(super) material_resources: &'a MaterialResources,
     pub(super) draw_batches: &'a [PrimitiveDrawBatch],
     pub(super) pipeline: &'a wgpu::RenderPipeline,
     pub(super) label: &'static str,
@@ -51,22 +52,51 @@ pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: Unli
     pass.set_pipeline(inputs.pipeline);
     pass.set_bind_group(0, inputs.output_bind_group, &[]);
     pass.set_vertex_buffer(0, inputs.vertex_buffer.slice(..));
-    let Some(fallback_material) = inputs.material_resources.first() else {
-        return;
-    };
-    for batch in inputs.draw_batches {
-        let material = inputs
-            .material_resources
-            .get(batch.material_slot as usize)
-            .unwrap_or(fallback_material);
-        pass.set_bind_group(1, &material.bind_group, &[]);
-        let draw_offset =
-            (batch.draw_uniform_index as u64).saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE) as u32;
-        pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset]);
-        pass.draw(
-            batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
-            0..1,
-        );
+    match inputs.material_resources {
+        MaterialResources::PerMaterial(slots) => {
+            let Some(fallback_material) = slots.first() else {
+                return;
+            };
+            for batch in inputs.draw_batches {
+                let material = slots
+                    .get(batch.material_slot as usize)
+                    .unwrap_or(fallback_material);
+                // Plan line 778 commit 2: per-material bind groups always
+                // bind their own uniform buffer at offset 0; the layer
+                // index in MaterialUniform stays at 0 because each material
+                // owns a 1-layer array.
+                pass.set_bind_group(1, &material.bind_group, &[0]);
+                let draw_offset = (batch.draw_uniform_index as u64)
+                    .saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE)
+                    as u32;
+                pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset]);
+                pass.draw(
+                    batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
+                    0..1,
+                );
+            }
+        }
+        MaterialResources::Batched(batched) => {
+            // Plan line 778 commit 2: a single bind group reused for every
+            // draw; per-draw dynamic offset selects the per-material uniform
+            // slot, and `material_layer_index` (encoded in the uniform)
+            // selects the array layer for sampling.
+            for batch in inputs.draw_batches {
+                let layer_index = (batch.material_slot as u64)
+                    .min(u64::from(batched.layer_count.saturating_sub(1)));
+                let material_offset =
+                    layer_index.saturating_mul(MATERIAL_UNIFORM_ENTRY_STRIDE) as u32;
+                pass.set_bind_group(1, &batched.bind_group, &[material_offset]);
+                let draw_offset = (batch.draw_uniform_index as u64)
+                    .saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE)
+                    as u32;
+                pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset]);
+                pass.draw(
+                    batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
+                    0..1,
+                );
+            }
+        }
     }
 }
 

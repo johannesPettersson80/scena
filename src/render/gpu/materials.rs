@@ -1,13 +1,13 @@
-use crate::assets::{TextureDesc, TextureFilter, TextureSamplerDesc, TextureWrap};
-use crate::material::TextureColorSpace;
-use crate::render::prepare::PreparedMaterialSlot;
+use crate::render::prepare::{PreparedMaterialSlot, compute_material_batch_plan};
 
+use super::material_batched::{MaterialBatchedResources, create_batched_material_resources};
 use super::material_mips::{downsample_rgba8_mip, mip_level_extents};
-use super::material_uniform::{MATERIAL_UNIFORM_BYTE_LEN, MaterialUniformUpload};
-
-const FALLBACK_WHITE_RGBA8: &[u8; 4] = &[255, 255, 255, 255];
-const FALLBACK_NORMAL_RGBA8: &[u8; 4] = &[128, 128, 255, 255];
-const FALLBACK_METALLIC_ROUGHNESS_RGBA8: &[u8; 4] = &[255, 255, 0, 255];
+use super::material_uniform::{
+    MATERIAL_UNIFORM_BYTE_LEN, MATERIAL_UNIFORM_ENTRY_STRIDE, MaterialUniformUpload,
+};
+pub(super) use super::material_upload::{
+    MaterialTextureUpload, address_mode, filter_mode, mipmap_filter_mode,
+};
 
 const BASE_COLOR_BINDINGS: TextureBindingIndices = TextureBindingIndices {
     sampler: 0,
@@ -36,6 +36,25 @@ struct TextureBindingIndices {
     texture: u32,
 }
 
+/// Plan line 778 commit 2: material GPU resources can take one of two shapes.
+///
+/// * `PerMaterial` keeps the legacy fall-back path: one
+///   `MaterialTextureResources` per slot, each owning its own bind group with
+///   a 1-layer `texture_2d_array<f32>` per role and a 96-byte uniform buffer
+///   addressed with dynamic offset 0.
+/// * `Batched` collapses N materials into a single bind group whose textures
+///   are N-layer arrays and whose uniform buffer holds N entries of size
+///   `MATERIAL_UNIFORM_ENTRY_STRIDE`. Each draw selects its layer with a
+///   dynamic uniform offset.
+///
+/// Both paths share the same WGSL pipeline because the bind group layout has
+/// `has_dynamic_offset: true` on the uniform binding regardless.
+#[derive(Debug)]
+pub(super) enum MaterialResources {
+    PerMaterial(Vec<MaterialTextureResources>),
+    Batched(MaterialBatchedResources),
+}
+
 #[derive(Debug)]
 pub(super) struct MaterialTextureResources {
     // These objects must stay alive for the bind group; the render pass reads the bind group.
@@ -58,92 +77,31 @@ pub(super) struct MaterialTextureBindingResources {
     byte_len: u64,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(super) struct MaterialTextureUpload<'a> {
-    pub(super) width: u32,
-    pub(super) height: u32,
-    pub(super) rgba8: &'a [u8],
-    pub(super) format: wgpu::TextureFormat,
-    pub(super) sampler: TextureSamplerDesc,
-    pub(super) uses_decoded_texture: bool,
-}
-
-impl<'a> MaterialTextureUpload<'a> {
-    pub(super) fn from_base_color_texture(texture: Option<&'a TextureDesc>) -> Self {
-        Self::from_texture(
-            texture,
-            FALLBACK_WHITE_RGBA8,
-            wgpu::TextureFormat::Rgba8UnormSrgb,
-        )
-    }
-
-    pub(super) fn from_normal_texture(texture: Option<&'a TextureDesc>) -> Self {
-        Self::from_linear_texture(texture, FALLBACK_NORMAL_RGBA8)
-    }
-
-    pub(super) fn from_metallic_roughness_texture(texture: Option<&'a TextureDesc>) -> Self {
-        Self::from_linear_texture(texture, FALLBACK_METALLIC_ROUGHNESS_RGBA8)
-    }
-
-    pub(super) fn from_occlusion_texture(texture: Option<&'a TextureDesc>) -> Self {
-        Self::from_linear_texture(texture, FALLBACK_WHITE_RGBA8)
-    }
-
-    pub(super) fn from_emissive_texture(texture: Option<&'a TextureDesc>) -> Self {
-        Self::from_base_color_texture(texture)
-    }
-
-    pub(super) fn from_linear_texture(
-        texture: Option<&'a TextureDesc>,
-        fallback_rgba8: &'a [u8; 4],
+impl MaterialTextureBindingResources {
+    pub(super) fn from_parts(
+        texture: wgpu::Texture,
+        view: wgpu::TextureView,
+        sampler: wgpu::Sampler,
+        byte_len: u64,
     ) -> Self {
-        Self::from_texture(texture, fallback_rgba8, wgpu::TextureFormat::Rgba8Unorm)
-    }
-
-    fn from_texture(
-        texture: Option<&'a TextureDesc>,
-        fallback_rgba8: &'a [u8; 4],
-        fallback_format: wgpu::TextureFormat,
-    ) -> Self {
-        if let Some(texture) = texture
-            && let Some((width, height, rgba8)) = texture.decoded_rgba8()
-            && width > 0
-            && height > 0
-            && !rgba8.is_empty()
-        {
-            let format = match texture.color_space() {
-                TextureColorSpace::Srgb => wgpu::TextureFormat::Rgba8UnormSrgb,
-                TextureColorSpace::Linear => wgpu::TextureFormat::Rgba8Unorm,
-            };
-            return Self {
-                width,
-                height,
-                rgba8,
-                format,
-                sampler: texture.sampler(),
-                uses_decoded_texture: true,
-            };
-        }
-
         Self {
-            width: 1,
-            height: 1,
-            rgba8: fallback_rgba8,
-            format: fallback_format,
-            sampler: TextureSamplerDesc::default(),
-            uses_decoded_texture: false,
+            texture,
+            view,
+            sampler,
+            byte_len,
         }
     }
 
-    pub(super) fn byte_len(self) -> u64 {
-        mip_level_extents(self.width, self.height, self.sampler.min_filter())
-            .into_iter()
-            .map(|(width, height)| {
-                u64::from(width)
-                    .saturating_mul(u64::from(height))
-                    .saturating_mul(4)
-            })
-            .sum()
+    pub(super) fn byte_len(&self) -> u64 {
+        self.byte_len
+    }
+
+    pub(super) fn view(&self) -> &wgpu::TextureView {
+        &self.view
+    }
+
+    pub(super) fn sampler(&self) -> &wgpu::Sampler {
+        &self.sampler
     }
 }
 
@@ -156,8 +114,11 @@ pub(super) fn create_material_bind_group_layout(device: &wgpu::Device) -> wgpu::
             visibility: wgpu::ShaderStages::FRAGMENT,
             ty: wgpu::BindingType::Buffer {
                 ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
+                // Plan line 778 commit 2: dynamic-offset uniform so the
+                // batched path can swap material slots without rebinding.
+                // Per-material fall-back uses offset 0.
+                has_dynamic_offset: true,
+                min_binding_size: std::num::NonZeroU64::new(MATERIAL_UNIFORM_BYTE_LEN),
             },
             count: None,
         },
@@ -193,7 +154,7 @@ fn texture_layout_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
         visibility: wgpu::ShaderStages::FRAGMENT,
         ty: wgpu::BindingType::Texture {
             sample_type: wgpu::TextureSampleType::Float { filterable: true },
-            view_dimension: wgpu::TextureViewDimension::D2,
+            view_dimension: wgpu::TextureViewDimension::D2Array,
             multisampled: false,
         },
         count: None,
@@ -205,22 +166,44 @@ pub(super) fn create_material_resources(
     queue: &wgpu::Queue,
     layout: &wgpu::BindGroupLayout,
     material_slots: &[PreparedMaterialSlot],
-) -> Vec<MaterialTextureResources> {
-    let mut resources = Vec::with_capacity(material_slots.len() + 1);
-    resources.push(create_material_resource(device, queue, layout, None));
-    resources.extend(
-        material_slots
-            .iter()
-            .map(|slot| create_material_resource(device, queue, layout, Some(slot))),
-    );
-    resources
+) -> MaterialResources {
+    let plan = compute_material_batch_plan(material_slots);
+    if plan.batchable && plan.layer_count >= 2 {
+        MaterialResources::Batched(create_batched_material_resources(
+            device,
+            queue,
+            layout,
+            material_slots,
+        ))
+    } else {
+        let mut resources = Vec::with_capacity(material_slots.len() + 1);
+        resources.push(create_material_resource(device, queue, layout, None));
+        resources.extend(
+            material_slots
+                .iter()
+                .map(|slot| create_material_resource(device, queue, layout, Some(slot))),
+        );
+        MaterialResources::PerMaterial(resources)
+    }
 }
 
-pub(super) fn material_texture_byte_len(resources: &[MaterialTextureResources]) -> u64 {
-    resources
-        .iter()
-        .map(|resources| resources.texture_byte_len)
-        .sum()
+pub(super) fn material_texture_byte_len(resources: &MaterialResources) -> u64 {
+    match resources {
+        MaterialResources::PerMaterial(slots) => {
+            slots.iter().map(|slot| slot.texture_byte_len).sum()
+        }
+        MaterialResources::Batched(batched) => batched.texture_byte_len,
+    }
+}
+
+pub(super) fn material_texture_count(resources: &MaterialResources) -> u64 {
+    match resources {
+        MaterialResources::PerMaterial(slots) => slots.len() as u64,
+        // Batched: every layer is one logical material occupying a slice of
+        // the shared array texture; report the layer count so external stats
+        // continue to track per-material totals.
+        MaterialResources::Batched(batched) => u64::from(batched.layer_count),
+    }
 }
 
 fn create_material_resource(
@@ -233,7 +216,8 @@ fn create_material_resource(
         slot.map(|slot| &slot.material),
         slot.and_then(|slot| slot.base_color.as_ref())
             .and_then(|texture| texture.transform),
-    );
+    )
+    .with_layer_index(0);
     let base_color = create_texture_binding_resource(
         device,
         queue,
@@ -286,7 +270,7 @@ fn create_material_resource(
         .sum();
     let uniform = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("scena.material.uniform"),
-        size: MATERIAL_UNIFORM_BYTE_LEN,
+        size: MATERIAL_UNIFORM_ENTRY_STRIDE,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -331,6 +315,8 @@ fn create_texture_binding_resource(
         size: wgpu::Extent3d {
             width: upload.width,
             height: upload.height,
+            // Plan line 778 commit 2: every material texture is now a
+            // `texture_2d_array<f32>`. Per-material fall-back uses 1 layer.
             depth_or_array_layers: 1,
         },
         mip_level_count: mip_extents.len() as u32,
@@ -340,8 +326,11 @@ fn create_texture_binding_resource(
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    write_material_texture_mips(queue, &texture, upload, &mip_extents);
-    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    write_material_texture_layer_mips(queue, &texture, upload, &mip_extents, 0);
+    let view = texture.create_view(&wgpu::TextureViewDescriptor {
+        dimension: Some(wgpu::TextureViewDimension::D2Array),
+        ..wgpu::TextureViewDescriptor::default()
+    });
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
         label: Some(if upload.uses_decoded_texture {
             "scena.material.sampler"
@@ -356,19 +345,15 @@ fn create_texture_binding_resource(
         mipmap_filter: mipmap_filter_mode(upload.sampler.min_filter()),
         ..wgpu::SamplerDescriptor::default()
     });
-    MaterialTextureBindingResources {
-        texture,
-        view,
-        sampler,
-        byte_len: upload.byte_len(),
-    }
+    MaterialTextureBindingResources::from_parts(texture, view, sampler, upload.byte_len())
 }
 
-fn write_material_texture_mips(
+pub(super) fn write_material_texture_layer_mips(
     queue: &wgpu::Queue,
     texture: &wgpu::Texture,
     upload: MaterialTextureUpload<'_>,
     mip_extents: &[(u32, u32)],
+    layer_index: u32,
 ) {
     let mut previous = upload.rgba8.to_vec();
     for (mip_level, (width, height)) in mip_extents.iter().copied().enumerate() {
@@ -388,7 +373,11 @@ fn write_material_texture_mips(
             wgpu::TexelCopyTextureInfo {
                 texture,
                 mip_level: mip_level as u32,
-                origin: wgpu::Origin3d::ZERO,
+                origin: wgpu::Origin3d {
+                    x: 0,
+                    y: 0,
+                    z: layer_index,
+                },
                 aspect: wgpu::TextureAspect::All,
             },
             pixels,
@@ -406,7 +395,7 @@ fn write_material_texture_mips(
     }
 }
 
-fn create_material_bind_group(
+pub(super) fn create_material_bind_group(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
     texture_bindings: &[MaterialTextureBindingResources],
@@ -423,16 +412,23 @@ fn create_material_bind_group(
     for (bindings, resources) in binding_indices.into_iter().zip(texture_bindings) {
         entries.push(wgpu::BindGroupEntry {
             binding: bindings.sampler,
-            resource: wgpu::BindingResource::Sampler(&resources.sampler),
+            resource: wgpu::BindingResource::Sampler(resources.sampler()),
         });
         entries.push(wgpu::BindGroupEntry {
             binding: bindings.texture,
-            resource: wgpu::BindingResource::TextureView(&resources.view),
+            resource: wgpu::BindingResource::TextureView(resources.view()),
         });
     }
     entries.push(wgpu::BindGroupEntry {
         binding: 2,
-        resource: uniform.as_entire_binding(),
+        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+            buffer: uniform,
+            offset: 0,
+            // The dynamic-offset path slices a single MATERIAL_UNIFORM_BYTE_LEN
+            // window out of the larger buffer; per-material fall-back uses
+            // the same window with offset 0.
+            size: std::num::NonZeroU64::new(MATERIAL_UNIFORM_BYTE_LEN),
+        }),
     });
 
     device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -440,44 +436,6 @@ fn create_material_bind_group(
         layout,
         entries: &entries,
     })
-}
-
-fn address_mode(wrap: TextureWrap) -> wgpu::AddressMode {
-    match wrap {
-        TextureWrap::ClampToEdge => wgpu::AddressMode::ClampToEdge,
-        TextureWrap::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
-        TextureWrap::Repeat => wgpu::AddressMode::Repeat,
-    }
-}
-
-fn filter_mode(filter: Option<TextureFilter>) -> wgpu::FilterMode {
-    match filter {
-        Some(
-            TextureFilter::Nearest
-            | TextureFilter::NearestMipmapNearest
-            | TextureFilter::NearestMipmapLinear,
-        ) => wgpu::FilterMode::Nearest,
-        Some(
-            TextureFilter::Linear
-            | TextureFilter::LinearMipmapNearest
-            | TextureFilter::LinearMipmapLinear,
-        )
-        | None => wgpu::FilterMode::Linear,
-    }
-}
-
-fn mipmap_filter_mode(filter: Option<TextureFilter>) -> wgpu::MipmapFilterMode {
-    match filter {
-        Some(TextureFilter::NearestMipmapNearest | TextureFilter::LinearMipmapNearest) => {
-            wgpu::MipmapFilterMode::Nearest
-        }
-        Some(TextureFilter::NearestMipmapLinear | TextureFilter::LinearMipmapLinear) => {
-            wgpu::MipmapFilterMode::Linear
-        }
-        Some(TextureFilter::Nearest | TextureFilter::Linear) | None => {
-            wgpu::MipmapFilterMode::Nearest
-        }
-    }
 }
 
 #[cfg(test)]
@@ -488,6 +446,7 @@ mod tests {
     #[test]
     fn material_resources_define_shader_visible_texture_bindings() {
         let source = include_str!("materials.rs");
+        let batched_source = include_str!("material_batched.rs");
         assert!(
             source.contains("SamplerBindingType::Filtering")
                 && source.contains("TextureSampleType::Float { filterable: true }")
@@ -505,8 +464,11 @@ mod tests {
                 && source.contains("scena.material.occlusion")
                 && source.contains("scena.material.emissive")
                 && source.contains("scena.material.fallback_base_color")
-                && source.contains("scena.material.fallback_bind_group"),
-            "backend material scaffolding must allocate a sampler, texture view, and bind group"
+                && source.contains("scena.material.fallback_bind_group")
+                && source.contains("TextureViewDimension::D2Array")
+                && batched_source.contains("scena.material.batched_uniform"),
+            "backend material scaffolding must allocate a sampler, texture view, and bind group \
+             plus the batched array path that closes plan line 778"
         );
     }
 

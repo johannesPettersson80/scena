@@ -3460,16 +3460,16 @@ fn check_renderer_truth_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "let normal_texture_sample = textureSample(normal_texture",
             "normal_sample.x * world_tangent + normal_sample.y * bitangent + normal_sample.z * world_normal",
             "var base_color_sampler: sampler",
-            "var base_color_texture: texture_2d<f32>",
+            "var base_color_texture: texture_2d_array<f32>",
             "var<uniform> material: MaterialUniform",
             "var normal_sampler: sampler",
-            "var normal_texture: texture_2d<f32>",
+            "var normal_texture: texture_2d_array<f32>",
             "var metallic_roughness_sampler: sampler",
-            "var metallic_roughness_texture: texture_2d<f32>",
+            "var metallic_roughness_texture: texture_2d_array<f32>",
             "var occlusion_sampler: sampler",
-            "var occlusion_texture: texture_2d<f32>",
+            "var occlusion_texture: texture_2d_array<f32>",
             "var emissive_sampler: sampler",
-            "var emissive_texture: texture_2d<f32>",
+            "var emissive_texture: texture_2d_array<f32>",
             "base_color_uv_offset_scale",
             "base_color_uv_rotation",
             "base_color_factor",
@@ -3477,7 +3477,7 @@ fn check_renderer_truth_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "metallic_roughness_alpha",
             "base.a < material.metallic_roughness_alpha.z",
             "discard;",
-            "textureSample(base_color_texture, base_color_sampler, transformed_uv)",
+            "textureSample(base_color_texture, base_color_sampler, transformed_uv, material_layer)",
             "textureSample(normal_texture",
             "textureSample(metallic_roughness_texture",
             "textureSample(occlusion_texture",
@@ -3589,12 +3589,6 @@ fn check_renderer_truth_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "MaterialTextureUpload",
             "MaterialUniformUpload",
             "MATERIAL_UNIFORM_BYTE_LEN",
-            "from_base_color_texture",
-            "from_normal_texture",
-            "from_metallic_roughness_texture",
-            "from_occlusion_texture",
-            "from_emissive_texture",
-            "from_linear_texture",
             "create_material_bind_group_layout",
             "create_material_resources",
             "material_texture_byte_len",
@@ -3614,7 +3608,41 @@ fn check_renderer_truth_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "scena.material.fallback_base_color",
             "scena.material.fallback_bind_group",
             "texture_byte_len",
+        ],
+    );
+    // Plan line 778 commit 2: per-role uploads + sampler/filter helpers live
+    // in `material_upload.rs` after the array-batching split.
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/render/gpu/material_upload.rs",
+        &[
+            "MaterialTextureUpload",
+            "from_base_color_texture",
+            "from_normal_texture",
+            "from_metallic_roughness_texture",
+            "from_occlusion_texture",
+            "from_emissive_texture",
+            "from_linear_texture",
             "decoded_base_color_texture_becomes_backend_upload",
+        ],
+    );
+    // Plan line 778 commit 2: shared `texture_2d_array<f32>` allocation +
+    // dynamic-offset bind group lives in `material_batched.rs`.
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/render/gpu/material_batched.rs",
+        &[
+            "MaterialBatchedResources",
+            "create_batched_material_resources",
+            "TextureViewDimension::D2Array",
+            "scena.material.batched_uniform",
+            "scena.material.batched_base_color",
+            "depth_or_array_layers: layer_count",
+            "with_layer_index",
         ],
     );
     require_contains(
@@ -9317,9 +9345,6 @@ fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Vec<Finding>)
             "MaterialTextureUpload",
             "MaterialUniformUpload",
             "MATERIAL_UNIFORM_BYTE_LEN",
-            "from_base_color_texture",
-            "from_linear_texture",
-            "decoded_base_color_texture_becomes_backend_upload",
             "binding: 2",
             "NORMAL_BINDINGS",
             "METALLIC_ROUGHNESS_BINDINGS",
@@ -9327,6 +9352,17 @@ fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Vec<Finding>)
             "EMISSIVE_BINDINGS",
             "SamplerBindingType::Filtering",
             "TextureSampleType::Float { filterable: true }",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/gpu/material_upload.rs",
+        &[
+            "from_base_color_texture",
+            "from_linear_texture",
+            "decoded_base_color_texture_becomes_backend_upload",
         ],
     );
     require_contains(

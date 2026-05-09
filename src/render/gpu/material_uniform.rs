@@ -1,6 +1,16 @@
 use crate::material::{AlphaMode, MaterialDesc, MaterialKind, TextureTransform};
 
-pub(super) const MATERIAL_UNIFORM_BYTE_LEN: u64 = 80;
+/// Plan line 778 / RFC 866 commit 2: the MaterialUniform now carries a
+/// `material_layer_index: vec4<u32>` so the WGSL fragment can address the
+/// correct layer when a `texture_2d_array<f32>` collapses N per-material bind
+/// groups into one shared bind group with dynamic-offset uniform. Per-material
+/// fall-back still allocates a 1-layer array and writes layer index 0.
+pub(super) const MATERIAL_UNIFORM_BYTE_LEN: u64 = 96;
+
+/// `min_uniform_buffer_offset_alignment` floor across every wgpu adapter we
+/// target. The shared per-batch material uniform buffer pads each entry up to
+/// this stride so dynamic-offset binding can point at any layer's slot.
+pub(super) const MATERIAL_UNIFORM_ENTRY_STRIDE: u64 = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct MaterialUniformUpload {
@@ -9,6 +19,7 @@ pub(super) struct MaterialUniformUpload {
     pub(super) base_color_factor: [f32; 4],
     pub(super) emissive_strength: [f32; 4],
     pub(super) metallic_roughness_alpha: [f32; 4],
+    pub(super) material_layer_index: [u32; 4],
 }
 
 impl MaterialUniformUpload {
@@ -52,7 +63,17 @@ impl MaterialUniformUpload {
                 alpha_cutoff,
                 unlit_flag,
             ],
+            material_layer_index: [0, 0, 0, 0],
         }
+    }
+
+    /// Plan line 778 commit 2: when the renderer batches N materials into a
+    /// shared `texture_2d_array<f32>`, the WGSL sampler call needs to know
+    /// which layer to read for this draw. The fall-back per-material path
+    /// keeps layer 0 (each material owns a 1-layer array).
+    pub(super) fn with_layer_index(mut self, layer: u32) -> Self {
+        self.material_layer_index = [layer, 0, 0, 0];
+        self
     }
 
     pub(super) fn from_transform(transform: Option<TextureTransform>) -> Self {
@@ -79,6 +100,7 @@ impl MaterialUniformUpload {
             base_color_factor: [1.0, 1.0, 1.0, 1.0],
             emissive_strength: [0.0, 0.0, 0.0, 1.0],
             metallic_roughness_alpha: [0.0, 1.0, 0.0, 0.0],
+            material_layer_index: [0, 0, 0, 0],
         }
     }
 
@@ -94,6 +116,11 @@ impl MaterialUniformUpload {
             .enumerate()
         {
             bytes[index * 4..index * 4 + 4].copy_from_slice(&value.to_ne_bytes());
+        }
+        // material_layer_index follows the f32 lanes at offset 80.
+        for (index, value) in self.material_layer_index.into_iter().enumerate() {
+            let byte_offset = 80 + index * 4;
+            bytes[byte_offset..byte_offset + 4].copy_from_slice(&value.to_ne_bytes());
         }
         bytes
     }
@@ -133,10 +160,22 @@ mod tests {
         assert_eq!(upload.metallic_roughness_alpha, [0.3, 0.7, 0.45, 0.0]);
         assert_eq!(
             upload.encode().len(),
-            80,
+            96,
             "material uniform must reserve transform, base color, emissive, metallic, \
-             roughness, and alpha-mask factor lanes"
+             roughness, alpha-mask, and material_layer_index lanes (5 vec4<f32> + \
+             1 vec4<u32> = 96 bytes)"
         );
+    }
+
+    #[test]
+    fn material_uniform_upload_encodes_material_layer_index_for_array_batching() {
+        let upload = MaterialUniformUpload::identity().with_layer_index(7);
+        let bytes = upload.encode();
+        // Layer index lives in the trailing vec4<u32> at offset 80. Read back
+        // the first lane and confirm it round-trips.
+        let lane0 = u32::from_ne_bytes(bytes[80..84].try_into().expect("4 bytes"));
+        assert_eq!(lane0, 7);
+        assert_eq!(upload.material_layer_index, [7, 0, 0, 0]);
     }
 
     #[test]
