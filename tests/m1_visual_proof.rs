@@ -481,10 +481,31 @@ fn write_ppm_artifact(dir: &Path, name: &str, width: u32, height: u32, rgba: &[u
         ppm.extend_from_slice(&pixel[..3]);
     }
     fs::write(dir.join(format!("{name}.ppm")), ppm).expect("PPM artifact can be written");
+    let nonblack_pixels = rgba
+        .chunks_exact(4)
+        .filter(|pixel| pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0)
+        .count();
+    let mut triplets: std::collections::BTreeSet<[u8; 3]> = std::collections::BTreeSet::new();
+    for pixel in rgba.chunks_exact(4) {
+        triplets.insert([pixel[0], pixel[1], pixel[2]]);
+    }
+    let unique_pixels = triplets.len();
     fs::write(
         dir.join(format!("{name}.toml")),
         format!(
-            "[artifact]\nname = \"{name}\"\nformat = \"ppm\"\nencoding = \"srgb8\"\nwidth = {width}\nheight = {height}\n"
+            "[artifact]\n\
+             name = \"{name}\"\n\
+             format = \"ppm\"\n\
+             encoding = \"srgb8\"\n\
+             width = {width}\n\
+             height = {height}\n\
+             nonblack_pixels = {nonblack_pixels}\n\
+             unique_pixels = {unique_pixels}\n\
+             tolerance = \"sampled-rgba-max-abs-diff-0\"\n\
+             proof_class = \"harness-smoke\"\n\
+             production_claim = false\n\
+             fixture_suite = \"m1-headless-core\"\n\
+             fixture_source = \"tests/visual/fixtures/m1-headless-core.toml\"\n"
         ),
     )
     .expect("artifact metadata can be written");
