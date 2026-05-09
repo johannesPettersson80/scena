@@ -3,6 +3,19 @@ use std::sync::Arc;
 use crate::assets::EnvironmentDesc;
 use crate::scene::Vec3;
 
+use super::environment_prefilter::{build_brdf_lut, prefilter_specular_cubemap_mips};
+
+/// Number of GGX-prefiltered specular mip levels emitted for the
+/// environment cubemap. Mip 0 carries the source radiance; mips 1+
+/// integrate the GGX kernel at increasing roughness so the WGSL
+/// specular path can sample roughness via `prefilter_mip = roughness *
+/// (mip_count - 1)`.
+pub(in crate::render) const PREFILTER_MIP_COUNT: u32 = 5;
+/// 2D BRDF LUT resolution. The split-sum approximation indexes the LUT
+/// by `(N·V, roughness)`; 64×64 is enough resolution for visually
+/// smooth specular without blowing the GPU upload budget.
+pub(in crate::render) const BRDF_LUT_SIZE: u32 = 64;
+
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::render) struct PreparedEnvironmentLighting {
     diffuse_rgb: Vec3,
@@ -20,7 +33,20 @@ pub(in crate::render) struct PreparedEnvironmentLighting {
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::render) struct PreparedEnvironmentCubemap {
     pub(in crate::render) resolution: u32,
-    pub(in crate::render) face_pixels: [Vec<f32>; 6],
+    /// Phase 1C step 2: full GGX-prefiltered specular mip chain
+    /// (PREFILTER_MIP_COUNT levels). Mip 0 is the source radiance, mips
+    /// 1+ are convolved with a GGX kernel at increasing roughness. Each
+    /// element is six face buffers laid out RGBA32F at that mip's
+    /// resolution. The CPU rasterizer reads `mips[0]` as a six-face
+    /// cube; the GPU upload streams every mip per face into the
+    /// `texture_cube<f32>` mip chain.
+    pub(in crate::render) mips: Vec<[Vec<f32>; 6]>,
+    pub(in crate::render) mip_count: u32,
+    /// 2D BRDF LUT (BRDF_LUT_SIZE × BRDF_LUT_SIZE) of `(scale, bias)`
+    /// pairs that drive the split-sum specular composition
+    /// `prefiltered * (F0 * scale + bias)` in the WGSL fragment shader.
+    pub(in crate::render) brdf_lut: Vec<f32>,
+    pub(in crate::render) brdf_lut_size: u32,
 }
 
 // Visibility note: both PreparedEnvironmentLighting and
@@ -51,9 +77,16 @@ impl PreparedEnvironmentLighting {
         // CPU rasterizer parity with the pre-Phase-1C fixtures.
         let cubemap_faces = environment.cubemap_faces();
         let cubemap = cubemap_faces.map(|faces| {
+            let resolution = faces.resolution();
+            let source_pixels = faces.build_face_pixels_rgba32f();
+            let mips =
+                prefilter_specular_cubemap_mips(&source_pixels, resolution, PREFILTER_MIP_COUNT);
             Arc::new(PreparedEnvironmentCubemap {
-                resolution: faces.resolution(),
-                face_pixels: faces.build_face_pixels_rgba32f(),
+                resolution,
+                mips,
+                mip_count: PREFILTER_MIP_COUNT,
+                brdf_lut: build_brdf_lut(BRDF_LUT_SIZE),
+                brdf_lut_size: BRDF_LUT_SIZE,
             })
         });
         let Some(irradiance) = environment.preview_irradiance_rgb() else {

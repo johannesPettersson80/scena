@@ -6,13 +6,15 @@ use super::shadow::{
 
 /// Bundles the per-frame group-0 GPU resources that are shared by every
 /// render pass: shadow caster (texture + pipeline + active flag), shadow
-/// comparison sampler, environment cubemap, environment sampler, and the
+/// comparison sampler, environment cubemap (mip chain), environment
+/// sampler, the BRDF LUT (split-sum specular composition), and the
 /// output bind group that ties them together with the uniform buffer.
 pub(super) struct OutputResources {
     pub(super) shadow_caster: ShadowCasterResources,
     pub(super) shadow_sampler: wgpu::Sampler,
     pub(super) environment_cubemap: wgpu::Texture,
     pub(super) environment_sampler: wgpu::Sampler,
+    pub(super) brdf_lut_texture: wgpu::Texture,
     pub(super) output_bind_group: wgpu::BindGroup,
 }
 
@@ -42,6 +44,11 @@ pub(super) fn build_output_resources(
         ..Default::default()
     });
     let environment_sampler = create_environment_sampler(device);
+    let brdf_lut_texture = create_brdf_lut_texture(device, queue, environment_lighting.cubemap());
+    let brdf_lut_view = brdf_lut_texture.create_view(&wgpu::TextureViewDescriptor {
+        label: Some("scena.output.brdf_lut_view"),
+        ..Default::default()
+    });
     let output_bind_group = create_output_bind_group(
         device,
         output_bind_group_layout,
@@ -50,12 +57,14 @@ pub(super) fn build_output_resources(
         &shadow_sampler,
         &environment_cubemap_view,
         &environment_sampler,
+        &brdf_lut_view,
     );
     OutputResources {
         shadow_caster,
         shadow_sampler,
         environment_cubemap,
         environment_sampler,
+        brdf_lut_texture,
         output_bind_group,
     }
 }
@@ -76,6 +85,7 @@ pub(super) fn create_environment_cubemap_texture(
     prepared: Option<&PreparedEnvironmentCubemap>,
 ) -> wgpu::Texture {
     let resolution = prepared.map(|c| c.resolution).unwrap_or(1).max(1);
+    let mip_count = prepared.map(|c| c.mip_count).unwrap_or(1).max(1);
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("scena.m3.environment_cubemap"),
         size: wgpu::Extent3d {
@@ -83,7 +93,7 @@ pub(super) fn create_environment_cubemap_texture(
             height: resolution,
             depth_or_array_layers: 6,
         },
-        mip_level_count: 1,
+        mip_level_count: mip_count,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba32Float,
@@ -91,32 +101,84 @@ pub(super) fn create_environment_cubemap_texture(
         view_formats: &[],
     });
     if let Some(prepared) = prepared {
-        for (face_index, face_pixels) in prepared.face_pixels.iter().enumerate() {
-            let bytes = f32_slice_to_bytes_le(face_pixels);
-            queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d {
-                        x: 0,
-                        y: 0,
-                        z: face_index as u32,
+        for (mip_index, faces) in prepared.mips.iter().enumerate() {
+            let mip_resolution = (prepared.resolution >> mip_index).max(1);
+            for (face_index, face_pixels) in faces.iter().enumerate() {
+                let bytes = f32_slice_to_bytes_le(face_pixels);
+                queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &texture,
+                        mip_level: mip_index as u32,
+                        origin: wgpu::Origin3d {
+                            x: 0,
+                            y: 0,
+                            z: face_index as u32,
+                        },
+                        aspect: wgpu::TextureAspect::All,
                     },
-                    aspect: wgpu::TextureAspect::All,
-                },
-                &bytes,
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(prepared.resolution * 16),
-                    rows_per_image: Some(prepared.resolution),
-                },
-                wgpu::Extent3d {
-                    width: prepared.resolution,
-                    height: prepared.resolution,
-                    depth_or_array_layers: 1,
-                },
-            );
+                    &bytes,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(mip_resolution * 16),
+                        rows_per_image: Some(mip_resolution),
+                    },
+                    wgpu::Extent3d {
+                        width: mip_resolution,
+                        height: mip_resolution,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
         }
+    }
+    texture
+}
+
+/// Allocates the 2D BRDF LUT (RG32Float) and uploads the prepared LUT
+/// pixels. Falls back to a 1×1 zero placeholder when no environment is
+/// bound; the WGSL shader gates the LUT sample on the same coverage flag
+/// as the diffuse cubemap so the placeholder is never read.
+pub(super) fn create_brdf_lut_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    prepared: Option<&PreparedEnvironmentCubemap>,
+) -> wgpu::Texture {
+    let size = prepared.map(|c| c.brdf_lut_size).unwrap_or(1).max(1);
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("scena.m3.brdf_lut"),
+        size: wgpu::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rg32Float,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    if let Some(prepared) = prepared {
+        let bytes = f32_slice_to_bytes_le(&prepared.brdf_lut);
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &bytes,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(prepared.brdf_lut_size * 8),
+                rows_per_image: Some(prepared.brdf_lut_size),
+            },
+            wgpu::Extent3d {
+                width: prepared.brdf_lut_size,
+                height: prepared.brdf_lut_size,
+                depth_or_array_layers: 1,
+            },
+        );
     }
     texture
 }

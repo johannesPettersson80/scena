@@ -38,6 +38,7 @@ use super::{RasterTarget, camera::CameraProjection};
 
 mod diagnostics;
 mod environment;
+mod environment_prefilter;
 mod labels;
 mod lighting;
 mod materials;

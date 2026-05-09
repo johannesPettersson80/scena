@@ -3446,6 +3446,13 @@ fn check_renderer_truth_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "fn directional_shadow_factor",
             "textureSampleCompareLevel(shadow_map, shadow_sampler",
             "camera.light_from_world * vec4<f32>(world_position",
+            // Phase 1C step 2: GGX prefilter + BRDF LUT split-sum specular.
+            "var environment_cubemap: texture_cube<f32>",
+            "var environment_sampler: sampler",
+            "var brdf_lut: texture_2d<f32>",
+            "let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection",
+            "let lut_sample = textureLoad(brdf_lut",
+            "f0 * lut_sample.x + vec3<f32>(lut_sample.y)",
             "@location(2) normal: vec3<f32>",
             "@location(3) tex_coord0: vec2<f32>",
             "@location(4) tangent: vec4<f32>",
@@ -4339,20 +4346,42 @@ fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mut Vec<Findi
         "src/render/prepare/environment.rs",
         &[
             "pub(in crate::render) struct PreparedEnvironmentLighting",
-            // Phase 1C step 1: prepare-side decoder reads the bundled cubemap
-            // through `EnvironmentDesc::cubemap_faces()` and builds RGBA32F
-            // face pixels for the GPU upload. The CPU shading path keeps
-            // consuming the preview-irradiance scalar so existing CPU
-            // rasterizer fixtures hold; the GPU shader switches to a real
-            // `texture_cube<f32>` sample of the prepared cubemap.
+            // Phase 1C steps 1-2: prepare-side decoder reads the bundled
+            // cubemap through `EnvironmentDesc::cubemap_faces()`, builds
+            // RGBA32F face pixels, runs the GGX prefilter mip chain, and
+            // builds the split-sum BRDF LUT for the GPU upload. The CPU
+            // shading path keeps consuming the preview-irradiance scalar
+            // so existing CPU rasterizer fixtures hold; the GPU shader
+            // switches to a real `texture_cube<f32>` mip-roughness sample
+            // composed with `prefiltered * (F0 * lut.x + lut.y)`.
             "environment.cubemap_faces()",
             "environment.preview_irradiance_rgb()",
             "build_face_pixels_rgba32f",
             "PreparedEnvironmentCubemap",
+            "prefilter_specular_cubemap_mips",
+            "build_brdf_lut",
+            "PREFILTER_MIP_COUNT",
+            "BRDF_LUT_SIZE",
             "gpu_diffuse_intensity",
             "gpu_specular_intensity",
             "pbr_contribution",
             "collect_environment_lighting",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "src/render/prepare/environment_prefilter.rs",
+        &[
+            "pub(in crate::render) fn prefilter_specular_cubemap_mips",
+            "pub(in crate::render) fn build_brdf_lut",
+            "fn integrate_ggx_specular",
+            "fn integrate_brdf_lut_cell",
+            "fn importance_sample_ggx_local",
+            "fn hammersley_2d",
+            "fn radical_inverse_van_der_corput",
+            "fn geometry_smith_ggx",
         ],
     );
     require_contains(

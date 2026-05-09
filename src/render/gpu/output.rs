@@ -81,6 +81,12 @@ var environment_cubemap: texture_cube<f32>;
 @group(0) @binding(4)
 var environment_sampler: sampler;
 
+// Phase 1C step 2: split-sum BRDF LUT (RG32Float, NoV × roughness). The
+// fragment specular path samples it once per pixel to fold the fresnel
+// + geometry terms into the prefiltered cubemap radiance.
+@group(0) @binding(5)
+var brdf_lut: texture_2d<f32>;
+
 @group(2) @binding(0)
 var<uniform> draw: DrawUniform;
 
@@ -274,17 +280,26 @@ fn pbr_environment_lighting(
     let f0 = vec3<f32>(0.04) * (1.0 - metallic) + base * metallic;
     let fresnel = fresnel_schlick(n_dot_v, f0);
     let diffuse_energy = (vec3<f32>(1.0) - fresnel) * (1.0 - metallic);
-    // Phase 1C step 1: GPU-sampled diffuse irradiance (mip 0). GGX prefilter
-    // mips and BRDF LUT specular ride in step 2.
+    // Phase 1C step 2: real diffuse + specular IBL.
+    //   - Diffuse: cubemap mip 0 sampled in the surface-normal direction.
+    //   - Specular: GGX-prefiltered cubemap sampled in the reflection
+    //     direction at a roughness-driven mip, then composited with the
+    //     split-sum BRDF LUT into `prefiltered * (F0 * lut.x + lut.y)`.
     let environment_radiance = textureSampleLevel(environment_cubemap, environment_sampler, normal, 0.0).rgb;
     let diffuse = diffuse_energy * base * environment_radiance * camera.lighting.environment_diffuse_intensity.w;
-    let specular_strength = clamp(1.25 - roughness * 0.75, 0.2, 1.25);
-    let specular = fresnel * camera.lighting.environment_specular_intensity.rgb * specular_strength;
-    let intensity = max(
-        camera.lighting.environment_diffuse_intensity.w,
-        camera.lighting.environment_specular_intensity.w,
+    let reflection = reflect(-view, normal);
+    let prefilter_max_mip = 4.0;
+    let prefilter_mip = clamp(roughness, 0.0, 1.0) * prefilter_max_mip;
+    let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;
+    let lut_size = f32(textureDimensions(brdf_lut).x);
+    let lut_pixel = vec2<f32>(n_dot_v * lut_size, clamp(roughness, 0.0, 1.0) * lut_size);
+    let lut_coord = vec2<i32>(
+        clamp(i32(floor(lut_pixel.x)), 0, i32(lut_size) - 1),
+        clamp(i32(floor(lut_pixel.y)), 0, i32(lut_size) - 1),
     );
-    return (diffuse + specular) * intensity;
+    let lut_sample = textureLoad(brdf_lut, lut_coord, 0).rg;
+    let specular = prefiltered * (f0 * lut_sample.x + vec3<f32>(lut_sample.y)) * camera.lighting.environment_specular_intensity.w;
+    return diffuse + specular;
 }
 
 fn pbr_light_contribution(
@@ -433,6 +448,19 @@ pub(super) fn create_output_bind_group_layout(device: &wgpu::Device) -> wgpu::Bi
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
+            // Phase 1C step 2: BRDF LUT (RG32Float). The split-sum specular
+            // composition reads (scale, bias) at (NoV, roughness) and folds
+            // them into the prefiltered specular sample.
+            wgpu::BindGroupLayoutEntry {
+                binding: 5,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
         ],
     })
 }
@@ -455,6 +483,7 @@ pub(super) fn create_output_bind_group(
     shadow_sampler: &wgpu::Sampler,
     environment_cubemap_view: &wgpu::TextureView,
     environment_sampler: &wgpu::Sampler,
+    brdf_lut_view: &wgpu::TextureView,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("scena.output.bind_group"),
@@ -479,6 +508,10 @@ pub(super) fn create_output_bind_group(
             wgpu::BindGroupEntry {
                 binding: 4,
                 resource: wgpu::BindingResource::Sampler(environment_sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: wgpu::BindingResource::TextureView(brdf_lut_view),
             },
         ],
     })

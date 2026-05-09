@@ -106,6 +106,8 @@ struct GpuPreparedResources {
     environment_cubemap: wgpu::Texture,
     #[allow(dead_code)]
     environment_sampler: wgpu::Sampler,
+    #[allow(dead_code)]
+    brdf_lut_texture: wgpu::Texture,
     depth_prepass: Option<depth::DepthPrepassResources>,
     #[allow(dead_code)]
     vertex_count: u32,
@@ -151,6 +153,8 @@ struct GpuPreparedResources {
     environment_cubemap: wgpu::Texture,
     #[allow(dead_code)]
     environment_sampler: wgpu::Sampler,
+    #[allow(dead_code)]
+    brdf_lut_texture: wgpu::Texture,
     depth_prepass: Option<depth::DepthPrepassResources>,
     surface_pipeline: wgpu::RenderPipeline,
     #[allow(dead_code)]
@@ -278,6 +282,7 @@ impl GpuDeviceState {
             shadow_sampler,
             environment_cubemap,
             environment_sampler,
+            brdf_lut_texture,
             output_bind_group,
         } = environment::build_output_resources(
             &self.device,
@@ -344,6 +349,7 @@ impl GpuDeviceState {
             shadow_sampler,
             environment_cubemap,
             environment_sampler,
+            brdf_lut_texture,
             depth_prepass,
             vertex_count: (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32,
             draw_batches,
@@ -444,6 +450,7 @@ impl GpuDeviceState {
             shadow_sampler,
             environment_cubemap,
             environment_sampler,
+            brdf_lut_texture,
             output_bind_group,
         } = environment::build_output_resources(
             &self.device,
@@ -499,6 +506,7 @@ impl GpuDeviceState {
             shadow_sampler,
             environment_cubemap,
             environment_sampler,
+            brdf_lut_texture,
             depth_prepass,
             surface_pipeline,
             vertex_count,
