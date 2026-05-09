@@ -1875,7 +1875,6 @@ const REQUIRED_SOURCE_MODULES: &[&str] = &[
     "src/render/surface.rs",
     "src/render/gpu/build.rs",
     "src/render/gpu/depth.rs",
-    "src/render/gpu/culling.rs",
     "src/render/gpu/shadow.rs",
     "src/render/gpu/vertices.rs",
     "src/render/prepare/strokes.rs",
@@ -5977,17 +5976,6 @@ fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Finding>) {
         "ARCH-M4-PLATFORM",
         "src/render/culling.rs",
         &["cull_cpu_frustum", "outside_camera_clip_box", "culled"],
-    );
-    require_contains(
-        root,
-        findings,
-        "ARCH-M4-PLATFORM",
-        "src/render/gpu/culling.rs",
-        &[
-            "create_culling_pipeline",
-            "encode_culling_dispatch",
-            "@compute @workgroup_size(64)",
-        ],
     );
     require_contains(
         root,

@@ -9,7 +9,6 @@ use super::super::RasterTarget;
 use super::super::camera::CameraProjection;
 use super::GpuDeviceState;
 #[cfg(not(target_arch = "wasm32"))]
-use super::culling;
 use super::depth;
 use super::output::{OutputUniformUpload, encode_output_uniform};
 use super::pipeline::{UnlitPass, encode_unlit_pass};
@@ -81,16 +80,7 @@ impl GpuDeviceState {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("scena.headless_gpu.encoder"),
             });
-        let culling_dispatches = if let Some(culling_pipeline) = &resources.culling_pipeline {
-            culling::encode_culling_dispatch(
-                &mut encoder,
-                culling_pipeline,
-                resources.culling_workgroups,
-            );
-            1
-        } else {
-            0
-        };
+        let culling_dispatches = 0u64;
         if let Some(depth_prepass) = &resources.depth_prepass {
             depth::encode_depth_prepass(
                 &mut encoder,

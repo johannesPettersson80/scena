@@ -24,7 +24,6 @@ pub(super) struct PreparedResourceEstimateInput {
     pub(super) shadow_maps: u64,
     pub(super) shadow_map_resolution: Option<u32>,
     pub(super) depth_prepass_passes: u64,
-    pub(super) has_compute_culling: bool,
     pub(super) material_texture_count: u64,
     pub(super) material_texture_bytes: u64,
 }
@@ -50,7 +49,6 @@ pub(super) fn estimate_prepared_resource_stats(
         shadow_maps,
         shadow_map_resolution,
         depth_prepass_passes,
-        has_compute_culling,
         material_texture_count,
         material_texture_bytes,
     } = input;
@@ -69,15 +67,7 @@ pub(super) fn estimate_prepared_resource_stats(
     let readback_bytes = u64::from(padded_bytes_per_row) * u64::from(target.height);
     let vertex_bytes = (vertex_count * VERTEX_BYTE_LEN).max(4) as u64;
     let uniform_bytes = output::OUTPUT_UNIFORM_BYTE_LEN;
-    #[cfg(not(target_arch = "wasm32"))]
-    let compute_culling_pipelines = u64::from(has_compute_culling);
-    #[cfg(target_arch = "wasm32")]
-    let compute_culling_pipelines = {
-        let _ = has_compute_culling;
-        0
-    };
-    let pipelines =
-        1 + u64::from(has_surface_pipeline) + depth_prepass_passes + compute_culling_pipelines;
+    let pipelines = 1 + u64::from(has_surface_pipeline) + depth_prepass_passes;
     #[cfg(not(target_arch = "wasm32"))]
     let shadow_map_bytes = shadow_map_resolution
         .map(|resolution| {
@@ -220,24 +210,6 @@ mod tests {
         assert!(stats.approximate_gpu_memory_bytes >= 4 * 4 * 4);
     }
 
-    #[test]
-    fn estimates_compute_culling_pipeline_resource_counters() {
-        let target = RasterTarget {
-            width: 4,
-            height: 4,
-            backend: Backend::HeadlessGpu,
-        };
-
-        let stats = estimate_prepared_resource_stats(PreparedResourceEstimateInput {
-            has_compute_culling: true,
-            ..estimate_input(target, 3)
-        });
-
-        assert_eq!(stats.pipelines, 2);
-        assert_eq!(stats.shader_modules, 2);
-        assert_eq!(stats.destruction_records(), 12);
-    }
-
     fn estimate_input(target: RasterTarget, vertex_count: usize) -> PreparedResourceEstimateInput {
         PreparedResourceEstimateInput {
             target,
@@ -246,7 +218,6 @@ mod tests {
             shadow_maps: 0,
             shadow_map_resolution: None,
             depth_prepass_passes: 0,
-            has_compute_culling: false,
             material_texture_count: 1,
             material_texture_bytes: 4,
         }

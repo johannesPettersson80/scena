@@ -1,6 +1,5 @@
 mod build;
 #[cfg(not(target_arch = "wasm32"))]
-mod culling;
 mod depth;
 mod draw;
 mod lifecycle;
@@ -28,9 +27,9 @@ mod webgl2_texture_set;
 #[cfg(target_arch = "wasm32")]
 mod webgl2_vertices;
 
-use crate::diagnostics::{AdapterLimitsReport, Backend, GpuAdapterReport};
-#[cfg(not(target_arch = "wasm32"))]
-use crate::diagnostics::{Capabilities, CapabilityStatus};
+use crate::diagnostics::{AdapterLimitsReport, GpuAdapterReport};
+#[cfg(target_arch = "wasm32")]
+use crate::diagnostics::Backend;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::geometry::Primitive;
 
@@ -101,8 +100,6 @@ struct GpuPreparedResources {
     #[allow(dead_code)]
     shadow_view: Option<wgpu::TextureView>,
     depth_prepass: Option<depth::DepthPrepassResources>,
-    culling_pipeline: Option<wgpu::ComputePipeline>,
-    culling_workgroups: u32,
     vertex_count: u32,
     draw_batches: Vec<PrimitiveDrawBatch>,
     // ARCH-RENDER-WORLD-BAKE: collected per-draw world_from_model / normal_from_model values
@@ -243,13 +240,6 @@ impl GpuDeviceState {
                 &output_bind_group_layout,
             )
         });
-        let culling_pipeline = (matches!(
-            target.backend,
-            Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu
-        ) && Capabilities::for_gpu_backend(target.backend)
-            .gpu_frustum_culling
-            == CapabilityStatus::Supported)
-            .then(|| culling::create_culling_pipeline(&self.device));
         let depth_compare = depth_prepass
             .as_ref()
             .map(|depth_prepass| depth_prepass.color_compare);
@@ -276,7 +266,6 @@ impl GpuDeviceState {
             shadow_maps: lighting_stats.shadow_maps,
             shadow_map_resolution: lighting_stats.directional_shadow_map_resolution,
             depth_prepass_passes: depth_stats.passes,
-            has_compute_culling: culling_pipeline.is_some(),
             material_texture_count: material_resources.len() as u64,
             material_texture_bytes: material_texture_byte_len(&material_resources),
         });
@@ -294,8 +283,6 @@ impl GpuDeviceState {
             shadow_texture,
             shadow_view,
             depth_prepass,
-            culling_pipeline,
-            culling_workgroups: (primitives.len() as u32).max(1).div_ceil(64),
             vertex_count: (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32,
             draw_batches,
             draw_uniforms,
