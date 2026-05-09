@@ -92,6 +92,18 @@ pub struct Capabilities {
     pub screen_space_ambient_occlusion: CapabilityStatus,
     pub texture_compression_basisu: CapabilityStatus,
     pub hardware_instancing: CapabilityStatus,
+    /// Phase 1F: whether the backend can sample from `texture_2d_array<f32>`
+    /// (or `sampler2DArray` on WebGL2 GLES 3.0+). When `Supported`, the
+    /// renderer can pack multiple per-material textures of the same role,
+    /// sampler, format, and dimensions into a single array texture and
+    /// drop per-draw bind-group changes between materials. When
+    /// `FeatureDisabled` the renderer keeps the per-material bind path.
+    pub texture_arrays: CapabilityStatus,
+    /// Maximum array-texture layer count this backend exposes. Reflects the
+    /// WebGPU `Limits::max_texture_array_layers` field (or the WebGL2
+    /// `MAX_ARRAY_TEXTURE_LAYERS` query). Zero on CPU-rasterizer backends
+    /// where array textures are not used.
+    pub max_texture_array_layers: u32,
     pub fragment_high_precision: CapabilityStatus,
     pub uniform_buffers: CapabilityStatus,
     pub uniform_buffer_max_bytes: u32,
@@ -132,6 +144,8 @@ impl Capabilities {
             screen_space_ambient_occlusion: postprocess_status(backend),
             texture_compression_basisu: texture_compression_basisu_status(backend),
             hardware_instancing: hardware_instancing_status(backend),
+            texture_arrays: texture_arrays_status(backend),
+            max_texture_array_layers: max_texture_array_layers(backend),
             fragment_high_precision: fragment_high_precision_status(backend),
             uniform_buffers: uniform_buffer_status(backend),
             uniform_buffer_max_bytes: uniform_buffer_max_bytes(backend),
@@ -168,6 +182,8 @@ impl Capabilities {
             screen_space_ambient_occlusion: postprocess_status(backend),
             texture_compression_basisu: texture_compression_basisu_status(backend),
             hardware_instancing: hardware_instancing_status(backend),
+            texture_arrays: texture_arrays_status(backend),
+            max_texture_array_layers: max_texture_array_layers(backend),
             fragment_high_precision: fragment_high_precision_status(backend),
             uniform_buffers: uniform_buffer_status(backend),
             uniform_buffer_max_bytes: uniform_buffer_max_bytes(backend),
@@ -204,6 +220,8 @@ impl Capabilities {
             screen_space_ambient_occlusion: postprocess_status(backend),
             texture_compression_basisu: texture_compression_basisu_status(backend),
             hardware_instancing: hardware_instancing_status(backend),
+            texture_arrays: texture_arrays_status(backend),
+            max_texture_array_layers: max_texture_array_layers(backend),
             fragment_high_precision: fragment_high_precision_status(backend),
             uniform_buffers: uniform_buffer_status(backend),
             uniform_buffer_max_bytes: uniform_buffer_max_bytes(backend),
@@ -399,6 +417,30 @@ const fn hardware_instancing_status(backend: Backend) -> CapabilityStatus {
         Backend::Headless | Backend::SurfaceDescriptor | Backend::WebGl2 => {
             CapabilityStatus::FeatureDisabled
         }
+    }
+}
+
+/// Phase 1F: backend-level support for sampling `texture_2d_array<f32>` /
+/// `sampler2DArray`. WebGPU mandates 256+ layer support; WebGL2 GLES 3.0+
+/// also exposes array textures. CPU-rasterizer backends keep the per-
+/// material bind path.
+const fn texture_arrays_status(backend: Backend) -> CapabilityStatus {
+    match backend {
+        Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu | Backend::WebGl2 => {
+            CapabilityStatus::Supported
+        }
+        Backend::Headless | Backend::SurfaceDescriptor => CapabilityStatus::FeatureDisabled,
+    }
+}
+
+/// Phase 1F: minimum guaranteed `max_texture_array_layers` per backend.
+/// Both the WebGPU `Limits::default()` and the WebGL2 `GLES 3.0`
+/// specification mandate at least 256 layers; runtime adapter probes can
+/// report higher values via `Capabilities::with_adapter_limits`.
+const fn max_texture_array_layers(backend: Backend) -> u32 {
+    match backend {
+        Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu | Backend::WebGl2 => 256,
+        Backend::Headless | Backend::SurfaceDescriptor => 0,
     }
 }
 

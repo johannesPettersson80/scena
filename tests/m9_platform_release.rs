@@ -1420,6 +1420,10 @@ fn capability_fields(capabilities: Capabilities) -> serde_json::Value {
         "screen_space_ambient_occlusion": { "state": format!("{:?}", capabilities.screen_space_ambient_occlusion) },
         "texture_compression_basisu": { "state": format!("{:?}", capabilities.texture_compression_basisu) },
         "hardware_instancing": { "state": format!("{:?}", capabilities.hardware_instancing) },
+        "texture_arrays": {
+            "state": format!("{:?}", capabilities.texture_arrays),
+            "max_layers": capabilities.max_texture_array_layers,
+        },
         "fragment_high_precision": { "state": format!("{:?}", capabilities.fragment_high_precision) },
         "uniform_buffers": {
             "state": format!("{:?}", capabilities.uniform_buffers),

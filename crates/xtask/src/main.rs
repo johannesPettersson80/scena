@@ -6468,6 +6468,12 @@ fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Finding>) {
             "BloomDisabled",
             "AmbientOcclusionDisabled",
             "hardware_instancing",
+            // Phase 1F: Capabilities::texture_arrays + max_texture_array_layers
+            // gate the per-role 2D-array texture batching planned for step 2.
+            // The capability matrix test pins the WebGPU/WebGL2 minimum (256
+            // layers) and the headless-CPU absence (FeatureDisabled / 0).
+            "texture_arrays",
+            "max_texture_array_layers",
             "fragment_high_precision",
             "uniform_buffer_max_bytes",
             "transform_dirty_state_propagates_through_world_transform_queries",

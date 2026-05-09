@@ -100,6 +100,14 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
         "CPU culling is the documented fallback for non-compute lanes"
     );
     assert_eq!(headless.compute_shaders, CapabilityStatus::FeatureDisabled);
+    // Phase 1F: CPU rasterizer never samples array textures; the field
+    // reports FeatureDisabled with zero layers so cap-matrix consumers can
+    // distinguish CPU lanes from GPU lanes that meet the WebGPU minimum.
+    assert_eq!(
+        headless.texture_arrays,
+        CapabilityStatus::FeatureDisabled
+    );
+    assert_eq!(headless.max_texture_array_layers, 0);
 
     let webgl2 = scena::Capabilities::for_backend(Backend::WebGl2);
     assert_eq!(webgl2.hardware_tier, HardwareTier::Low);
@@ -114,6 +122,11 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
         webgl2.hardware_instancing,
         CapabilityStatus::FeatureDisabled
     );
+    // Phase 1F: WebGL2 GLES 3.0+ exposes sampler2DArray; renderer can pack
+    // per-role textures into a single array texture once Phase 1F step 2
+    // lands the actual batching impl.
+    assert_eq!(webgl2.texture_arrays, CapabilityStatus::Supported);
+    assert_eq!(webgl2.max_texture_array_layers, 256);
     assert_eq!(
         webgl2.fragment_high_precision,
         CapabilityStatus::FeatureDisabled
@@ -136,6 +149,8 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
     );
     assert_eq!(webgpu.per_instance_culling, CapabilityStatus::Supported);
     assert_eq!(webgpu.compute_shaders, CapabilityStatus::Supported);
+    assert_eq!(webgpu.texture_arrays, CapabilityStatus::Supported);
+    assert_eq!(webgpu.max_texture_array_layers, 256);
 
     let diagnostics = webgpu.diagnostics();
     assert!(diagnostics.iter().any(|diagnostic| {
