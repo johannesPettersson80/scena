@@ -32,6 +32,7 @@ mod connectors;
 mod extensions;
 mod external;
 mod glb;
+mod material_variants;
 mod read;
 mod skins;
 mod transform;
@@ -52,6 +53,7 @@ struct SceneAssetData {
     extensions_used: Vec<String>,
     extensions_required: Vec<String>,
     extension_diagnostics: Vec<GltfExtensionDiagnostic>,
+    material_variants: Vec<String>,
     retained_source_bytes: Option<Arc<[u8]>>,
 }
 
@@ -99,6 +101,7 @@ impl SceneAsset {
                 extensions_used: Vec::new(),
                 extensions_required: Vec::new(),
                 extension_diagnostics: Vec::new(),
+                material_variants: Vec::new(),
                 retained_source_bytes: None,
             }),
         }
@@ -214,6 +217,7 @@ impl SceneAsset {
             }
         }
         let extension_diagnostics = collect_extension_diagnostics(&extensions_used);
+        let material_variants = self::material_variants::parse_material_variant_names(&json);
 
         let buffers = parse_buffers(&path, &json, binary_chunk, external_buffers)?;
         let buffer_views = parse_buffer_views(&path, &json)?;
@@ -246,6 +250,7 @@ impl SceneAsset {
                 extensions_used,
                 extensions_required,
                 extension_diagnostics,
+                material_variants,
                 retained_source_bytes: None,
             }),
         })
@@ -285,6 +290,12 @@ impl SceneAsset {
 
     pub fn extension_diagnostics(&self) -> &[GltfExtensionDiagnostic] {
         &self.inner.extension_diagnostics
+    }
+
+    /// Variant names declared by KHR_materials_variants in declaration
+    /// order; empty when the extension is absent (Phase 2B step 1).
+    pub fn material_variants(&self) -> &[String] {
+        &self.inner.material_variants
     }
 
     pub fn retained_source_bytes_len(&self) -> Option<usize> {
