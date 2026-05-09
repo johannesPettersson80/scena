@@ -39,6 +39,7 @@ struct CameraUniform {
     view_from_world: mat4x4<f32>,
     clip_from_view: mat4x4<f32>,
     clip_from_world: mat4x4<f32>,
+    light_from_world: mat4x4<f32>,
     camera_position_exposure: vec4<f32>,
     viewport_near_far: vec4<f32>,
     color_management: vec4<f32>,
@@ -326,7 +327,7 @@ fn rrt_and_odt_fit(value: f32) -> f32 {
 }
 "#;
 
-pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 400;
+pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 464;
 
 /// One DrawUniform entry packs world_from_model + normal_from_model = 32
 /// floats = 128 bytes. WebGPU requires dynamic-offset uniform binding offsets
@@ -450,6 +451,7 @@ pub(super) struct OutputUniformUpload {
     pub(super) view_from_world: [f32; 16],
     pub(super) clip_from_view: [f32; 16],
     pub(super) clip_from_world: [f32; 16],
+    pub(super) light_from_world: [f32; 16],
     pub(super) camera_position: [f32; 3],
     pub(super) viewport: [f32; 2],
     pub(super) near_far: [f32; 2],
@@ -465,29 +467,30 @@ pub(super) fn encode_output_uniform(
     } else {
         0.0
     };
-    let mut values = [0.0; 100];
+    let mut values = [0.0; 116];
     values[0..16].copy_from_slice(&upload.view_from_world);
     values[16..32].copy_from_slice(&upload.clip_from_view);
     values[32..48].copy_from_slice(&upload.clip_from_world);
-    values[48] = upload.camera_position[0];
-    values[49] = upload.camera_position[1];
-    values[50] = upload.camera_position[2];
-    values[51] = 2.0_f32.powf(exposure_ev);
-    values[52] = upload.viewport[0];
-    values[53] = upload.viewport[1];
-    values[54] = upload.near_far[0];
-    values[55] = upload.near_far[1];
-    values[56..60].copy_from_slice(&upload.color_management);
-    values[60..64].copy_from_slice(&upload.lighting.directional_light_direction_intensity);
-    values[64..68].copy_from_slice(&upload.lighting.directional_light_color_count);
-    values[68..72].copy_from_slice(&upload.lighting.point_light_position_intensity);
-    values[72..76].copy_from_slice(&upload.lighting.point_light_color_range);
-    values[76..80].copy_from_slice(&upload.lighting.spot_light_position_intensity);
-    values[80..84].copy_from_slice(&upload.lighting.spot_light_direction_cones);
-    values[84..88].copy_from_slice(&upload.lighting.spot_light_cone_range);
-    values[88..92].copy_from_slice(&upload.lighting.spot_light_color_range);
-    values[92..96].copy_from_slice(&upload.lighting.environment_diffuse_intensity);
-    values[96..100].copy_from_slice(&upload.lighting.environment_specular_intensity);
+    values[48..64].copy_from_slice(&upload.light_from_world);
+    values[64] = upload.camera_position[0];
+    values[65] = upload.camera_position[1];
+    values[66] = upload.camera_position[2];
+    values[67] = 2.0_f32.powf(exposure_ev);
+    values[68] = upload.viewport[0];
+    values[69] = upload.viewport[1];
+    values[70] = upload.near_far[0];
+    values[71] = upload.near_far[1];
+    values[72..76].copy_from_slice(&upload.color_management);
+    values[76..80].copy_from_slice(&upload.lighting.directional_light_direction_intensity);
+    values[80..84].copy_from_slice(&upload.lighting.directional_light_color_count);
+    values[84..88].copy_from_slice(&upload.lighting.point_light_position_intensity);
+    values[88..92].copy_from_slice(&upload.lighting.point_light_color_range);
+    values[92..96].copy_from_slice(&upload.lighting.spot_light_position_intensity);
+    values[96..100].copy_from_slice(&upload.lighting.spot_light_direction_cones);
+    values[100..104].copy_from_slice(&upload.lighting.spot_light_cone_range);
+    values[104..108].copy_from_slice(&upload.lighting.spot_light_color_range);
+    values[108..112].copy_from_slice(&upload.lighting.environment_diffuse_intensity);
+    values[112..116].copy_from_slice(&upload.lighting.environment_specular_intensity);
     let mut bytes = [0; OUTPUT_UNIFORM_BYTE_LEN as usize];
     for (index, value) in values.into_iter().enumerate() {
         bytes[index * 4..index * 4 + 4].copy_from_slice(&value.to_ne_bytes());
@@ -502,7 +505,7 @@ mod tests {
     #[test]
     fn output_uniform_buffer_matches_wgsl_uniform_layout() {
         assert_eq!(
-            OUTPUT_UNIFORM_BYTE_LEN, 400,
+            OUTPUT_UNIFORM_BYTE_LEN, 464,
             "CameraUniform stores view, projection, and view-projection matrices plus \
              camera/exposure, viewport/depth, color-management, punctual-light, and \
              environment uniforms — per-draw model + normal matrices live on the new \
@@ -514,6 +517,7 @@ mod tests {
                 view_from_world: identity_clip_from_world(),
                 clip_from_view: identity_clip_from_world(),
                 clip_from_world: identity_clip_from_world(),
+                light_from_world: identity_clip_from_world(),
                 camera_position: [0.0, 0.0, 2.0],
                 viewport: [128.0, 64.0],
                 near_far: [0.1, 1000.0],

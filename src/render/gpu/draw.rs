@@ -48,6 +48,7 @@ impl GpuDeviceState {
                 clip_from_world: camera_projection
                     .clip_from_world_matrix()
                     .unwrap_or_else(identity_matrix),
+                light_from_world: resources.light_from_world,
                 camera_position: camera_position_uniform(camera_projection),
                 viewport: [target.width as f32, target.height as f32],
                 near_far: camera_projection.near_far(),
@@ -257,6 +258,7 @@ impl GpuDeviceState {
                 clip_from_world: camera_projection
                     .clip_from_world_matrix()
                     .unwrap_or_else(identity_matrix),
+                light_from_world: resources.light_from_world,
                 camera_position: camera_position_uniform(camera_projection),
                 viewport: [target.width as f32, target.height as f32],
                 near_far: camera_projection.near_far(),

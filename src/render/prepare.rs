@@ -4,7 +4,7 @@ use crate::geometry::{
     GeometryDesc, GeometryTopology, Primitive, PrimitiveVertexAttributes, Vertex,
 };
 use crate::material::{MaterialDesc, MaterialKind};
-use crate::scene::{NodeKey, Scene};
+use crate::scene::{NodeKey, Scene, Vec3};
 
 pub(super) use self::diagnostics::{
     collect_asset_camera_visibility_diagnostics, collect_camera_projection_diagnostics,
@@ -47,6 +47,16 @@ mod tangents;
 pub(super) mod transforms;
 mod types;
 
+/// Collected primitives plus the directional-light view-projection matrix
+/// derived from the shadow occluders used during preparation. The matrix is
+/// the orthographic transform that maps world-space to light-clip-space and
+/// is consumed by the GPU shadow caster pass + fragment-shader shadow
+/// sampling. Phase 1B foundation for scena-wgpu-architect F3.
+pub(super) struct PreparedScene {
+    pub(super) primitives: Vec<Primitive>,
+    pub(super) light_from_world: [f32; 16],
+}
+
 pub(super) fn collect_prepared_primitives<F>(
     target: RasterTarget,
     scene: &Scene,
@@ -55,7 +65,7 @@ pub(super) fn collect_prepared_primitives<F>(
     backend_sampled_base_color_textures: &[TextureHandle],
     backend_material_slots: &[crate::assets::MaterialHandle],
     environment_lighting: PreparedEnvironmentLighting,
-) -> Result<Vec<Primitive>, PrepareError> {
+) -> Result<PreparedScene, PrepareError> {
     if let Some(model_node) = scene.model_nodes().next() {
         return Err(PrepareError::UnsupportedModelNode { node: model_node });
     }
@@ -180,7 +190,29 @@ pub(super) fn collect_prepared_primitives<F>(
             .map(|transparent| transparent.primitive),
     );
 
-    Ok(primitives)
+    let light_from_world = lights
+        .primary_shadow_ray_direction()
+        .map(|to_light_dir| {
+            // primary_shadow_ray_direction returns the vector pointing toward
+            // the light; the shadow projection wants the direction the light
+            // travels (forward), so negate.
+            shadows::directional_light_view_projection(
+                Vec3::new(-to_light_dir.x, -to_light_dir.y, -to_light_dir.z),
+                &shadow_occluders,
+            )
+        })
+        .unwrap_or_else(identity_matrix4);
+
+    Ok(PreparedScene {
+        primitives,
+        light_from_world,
+    })
+}
+
+const fn identity_matrix4() -> [f32; 16] {
+    [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ]
 }
 
 struct GeometryPrimitiveSource<'a, F> {

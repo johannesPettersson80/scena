@@ -156,7 +156,7 @@ impl Renderer {
             .iter()
             .map(|slot| slot.handle)
             .collect::<Vec<_>>();
-        let primitives = prepare::collect_prepared_primitives(
+        let prepared_scene = prepare::collect_prepared_primitives(
             self.target,
             scene,
             assets,
@@ -165,8 +165,9 @@ impl Renderer {
             &backend_material_handles,
             environment_lighting,
         )?;
+        let light_from_world = prepared_scene.light_from_world;
         let culled_primitives =
-            culling::cull_cpu_frustum(primitives, active_camera_projection.as_ref());
+            culling::cull_cpu_frustum(prepared_scene.primitives, active_camera_projection.as_ref());
         let primitives = culled_primitives.visible;
         let depth_stats = prepare::collect_depth_prepass_stats(&primitives, self.target.backend);
         let logical_stats =
@@ -193,6 +194,7 @@ impl Renderer {
                 &primitives,
                 lighting_stats,
                 gpu_light_uniform,
+                light_from_world,
                 depth_stats,
                 &backend_material_slots,
             );

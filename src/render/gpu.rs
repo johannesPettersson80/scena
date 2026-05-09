@@ -92,6 +92,12 @@ struct GpuPreparedResources {
     output_uniform: wgpu::Buffer,
     output_bind_group: wgpu::BindGroup,
     light_uniform: PreparedGpuLightUniform,
+    /// Phase 1B: directional-light view-projection matrix (orthographic) that
+    /// maps world-space → light-clip-space. Computed from the active
+    /// directional light direction + the AABB of shadow occluders in
+    /// `prepare/shadows.rs::directional_light_view_projection`. Consumed by
+    /// the shadow caster pass + fragment-shader shadow sampling.
+    light_from_world: [f32; 16],
     material_resources: Vec<materials::MaterialTextureResources>,
     // ARCH-SHADOW-MAP: M2 allocates shadow resources before the shadow render pass is
     // wired; the explicit fields keep the deferred binding visible to reviews and doctor.
@@ -167,12 +173,14 @@ impl GpuDeviceState {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn prepare(
         &mut self,
         target: RasterTarget,
         primitives: &[Primitive],
         lighting_stats: PreparedLightingStats,
         light_uniform: PreparedGpuLightUniform,
+        light_from_world: [f32; 16],
         depth_stats: PreparedDepthStats,
         material_slots: &[PreparedMaterialSlot],
     ) {
@@ -306,6 +314,7 @@ impl GpuDeviceState {
             output_uniform,
             output_bind_group,
             light_uniform,
+            light_from_world,
             material_resources,
             shadow_texture,
             shadow_view,
