@@ -11760,6 +11760,64 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_m3a_scene_import_missing_module_export_regression() {
+        // ARCH-M3A-SCENE-IMPORT: src/assets.rs must keep the canonical glTF
+        // module export wiring; a stripped replacement must fail closed.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/m3a-scene-import-missing-export");
+        let assets_path = fixture_root.join("src/assets.rs");
+        fs::create_dir_all(assets_path.parent().expect("src dir")).expect("fixture dir");
+        fs::write(
+            &assets_path,
+            "// Stub assets.rs missing the canonical glTF export wiring.\n\
+             pub fn placeholder() {}\n",
+        )
+        .expect("assets fixture");
+        let mut findings = Vec::new();
+
+        check_m3a_scene_import_contracts(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-M3A-SCENE-IMPORT" && finding.message.contains("mod gltf;")
+            }),
+            "doctor must reject src/assets.rs that drops the mod gltf; export so \
+             scene import wiring cannot silently regress: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_m5_release_missing_cargo_metadata_regression() {
+        // ARCH-M5-RELEASE: Cargo.toml must keep the release-publish metadata
+        // (version, rust-version, documentation, keywords, categories,
+        // include, crate-type) so the crate cannot ship without the
+        // release-readiness contract substrings.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/m5-release-missing-cargo-metadata");
+        let cargo_path = fixture_root.join("Cargo.toml");
+        fs::create_dir_all(&fixture_root).expect("fixture dir");
+        fs::write(
+            &cargo_path,
+            "[package]\nname = \"scena\"\n# stub Cargo.toml without rust-version, \
+             documentation, keywords, categories, include, or crate-type fields.\n",
+        )
+        .expect("cargo fixture");
+        let mut findings = Vec::new();
+
+        check_m5_release_contracts(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-M5-RELEASE" && finding.message.contains("rust-version")
+            }),
+            "doctor must reject Cargo.toml that drops release-publish metadata \
+             substrings: {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_m10_claim_audit_missing_contract_text_regression() {
         // CLAIM-AUDIT-M10: docs/checklists/m10-threejs-replacement-acceptance.md
         // and docs/api/m10-public-api-diff.md must keep the M10 claim-audit
