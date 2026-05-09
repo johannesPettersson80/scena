@@ -88,6 +88,18 @@ impl Scene {
         Ok(camera)
     }
 
+    /// Convenience constructor returning a fresh `Scene` plus a default
+    /// active camera in one call. The renderer-as-library analog of
+    /// Three.js's `new THREE.Scene()` + camera one-liner: callers who
+    /// only need a default perspective camera framed at z=2 can drop the
+    /// two-step `Scene::new()` + `add_default_camera()` boilerplate.
+    /// Closes scena-api-ergonomics-reviewer Phase 6 finding F1.
+    pub fn with_default_camera() -> Result<(Self, CameraKey), LookupError> {
+        let mut scene = Self::new();
+        let camera = scene.add_default_camera()?;
+        Ok((scene, camera))
+    }
+
     /// Frames the world-space bounds of an imported scene.
     pub fn frame_import(
         &mut self,

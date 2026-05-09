@@ -8,8 +8,8 @@
 //! Phase 6 finding F3 v1.0 commitment without owning the host event loop.
 
 use scena::{
-    DiagnosticSeverity, InteractiveGltfViewer, PlatformSurface, RenderMode, SurfaceEvent,
-    interactive_gltf_viewer,
+    DiagnosticSeverity, InteractiveGltfViewer, PlatformSurface, RenderMode, Renderer, Scene,
+    SurfaceEvent, interactive_gltf_viewer,
 };
 
 #[test]
@@ -96,4 +96,28 @@ fn interactive_gltf_viewer_diagnostics_accessor_reports_renderer_diagnostics() {
     let _ = diagnostics
         .iter()
         .any(|diagnostic| diagnostic.severity() != DiagnosticSeverity::Info);
+}
+
+#[test]
+fn renderer_headless_default_yields_canonical_first_render_dimensions() {
+    // scena-api-ergonomics-reviewer Phase 6 finding F1 closure:
+    // Renderer::headless_default() collapses the two-arg `Renderer::headless(w, h)`
+    // boilerplate into a single zero-arg constructor. The canonical first-render
+    // size is 800x600 per the Three.js parity baseline.
+    let renderer = Renderer::headless_default().expect("headless default builds");
+    assert_eq!(renderer.stats().target_width, 800);
+    assert_eq!(renderer.stats().target_height, 600);
+}
+
+#[test]
+fn scene_with_default_camera_returns_active_camera_in_one_call() {
+    // scena-api-ergonomics-reviewer Phase 6 finding F1 closure:
+    // Scene::with_default_camera() merges Scene::new() + add_default_camera()
+    // into one call so first-render examples drop two lines of setup.
+    let (scene, camera) = Scene::with_default_camera().expect("default scene + camera builds");
+    assert_eq!(
+        scene.active_camera(),
+        Some(camera),
+        "with_default_camera must register the camera as the active camera",
+    );
 }

@@ -20,6 +20,16 @@ impl Renderer {
         Self::headless_with_options(width, height, RendererOptions::default())
     }
 
+    /// Builds a CPU-headless renderer at the canonical first-render size
+    /// (800x600). This is the renderer-as-library analog of the Three.js
+    /// `new THREE.WebGLRenderer()` one-liner: callers who do not care about
+    /// the exact target dimensions can drop the explicit `(width, height)`
+    /// pair and lean on the `Renderer::headless_default()` constant. Closes
+    /// scena-api-ergonomics-reviewer Phase 6 finding F1.
+    pub fn headless_default() -> Result<Self, BuildError> {
+        Self::headless(800, 600)
+    }
+
     pub fn headless_with_options(
         width: u32,
         height: u32,
