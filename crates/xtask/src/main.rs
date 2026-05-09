@@ -670,6 +670,55 @@ fn check_release_artifact_bundle(artifact_root: &Path, findings: &mut Vec<Findin
             require_rendered_output_screenshot_metadata_file(path, suffix, findings);
         }
     }
+
+    check_release_review_artifacts(artifact_root, findings);
+}
+
+const REQUIRED_REVIEW_ROLES: &[&str] = &[
+    "scena-rfc-reviewer",
+    "scena-wgpu-architect",
+    "scena-gltf-animation-reviewer",
+    "scena-visual-quality-validator",
+    "scena-api-ergonomics-reviewer",
+    "scena-doctor-reviewer",
+];
+
+fn check_release_review_artifacts(artifact_root: &Path, findings: &mut Vec<Finding>) {
+    // RELEASE-REVIEWS-PRESENT: per docs/specs/release-reviews.md, every release
+    // requires one Markdown review report per configured subagent role under
+    // reviews/<role>/<commit>.md, plus a sign-off TOML and findings register
+    // (the sign-off + register are already wired through
+    // REQUIRED_RELEASE_ARTIFACT_SUFFIXES). This validator covers the six per-role
+    // .md files which the JSON+PPM scanner does not pick up.
+    let reviews_root = artifact_root.join("reviews");
+    if !reviews_root.is_dir() {
+        findings.push(Finding::new(
+            "RELEASE-REVIEWS-PRESENT",
+            format!(
+                "missing release review root {}; see docs/specs/release-reviews.md",
+                reviews_root.display()
+            ),
+        ));
+        return;
+    }
+    for role in REQUIRED_REVIEW_ROLES {
+        let role_dir = reviews_root.join(role);
+        let has_markdown_report = match fs::read_dir(&role_dir) {
+            Ok(entries) => entries
+                .flatten()
+                .any(|entry| entry.path().extension().and_then(|s| s.to_str()) == Some("md")),
+            Err(_) => false,
+        };
+        if !has_markdown_report {
+            findings.push(Finding::new(
+                "RELEASE-REVIEWS-PRESENT",
+                format!(
+                    "missing release review report under reviews/{role}/<commit>.md; \
+                     see docs/specs/release-reviews.md"
+                ),
+            ));
+        }
+    }
 }
 
 const REQUIRED_RELEASE_ARTIFACT_SUFFIXES: &[&str] = &[
@@ -11398,6 +11447,69 @@ mod tests {
             }),
             "doctor must reject doctor-contract.md that drops the unit-test-first \
              governance anchor: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn release_readiness_rejects_release_artifact_root_without_review_directory() {
+        // RELEASE-REVIEWS-PRESENT: an artifact root without a reviews/ subtree must
+        // surface a missing-review-root finding. This is the simplest end-to-end
+        // proof that check_release_review_artifacts wires into the release-readiness
+        // bundle validator alongside the existing suffix and JSON-status checks.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/release-reviews-missing-root");
+        fs::create_dir_all(&fixture_root).expect("fixture dir");
+        let mut findings = Vec::new();
+
+        check_release_review_artifacts(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "RELEASE-REVIEWS-PRESENT"
+                    && finding.message.contains("missing release review root")
+            }),
+            "release-readiness must reject an artifact bundle without a reviews/ \
+             subtree: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn release_readiness_rejects_release_review_directory_missing_per_role_report() {
+        // RELEASE-REVIEWS-PRESENT: when reviews/ exists but a configured role lacks
+        // any .md report, the validator must surface a per-role finding so the
+        // operator knows exactly which agent did not file.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/release-reviews-missing-role");
+        let reviews_root = fixture_root.join("reviews");
+        // Create five of six role directories with one .md each; leave the sixth
+        // (scena-doctor-reviewer) without an .md so the validator reports a missing
+        // report for that role.
+        for role in [
+            "scena-rfc-reviewer",
+            "scena-wgpu-architect",
+            "scena-gltf-animation-reviewer",
+            "scena-visual-quality-validator",
+            "scena-api-ergonomics-reviewer",
+        ] {
+            let role_dir = reviews_root.join(role);
+            fs::create_dir_all(&role_dir).expect("role dir");
+            fs::write(role_dir.join("placeholder.md"), "# placeholder review\n")
+                .expect("placeholder review");
+        }
+        // Leave scena-doctor-reviewer absent.
+        let mut findings = Vec::new();
+
+        check_release_review_artifacts(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "RELEASE-REVIEWS-PRESENT"
+                    && finding.message.contains("scena-doctor-reviewer")
+            }),
+            "release-readiness must reject an artifact bundle missing a per-role \
+             review report: {findings:?}",
         );
     }
 
