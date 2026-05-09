@@ -176,6 +176,8 @@ impl Renderer {
         self.stats.material_bindings = logical_stats.material_bindings;
         self.stats.material_texture_bindings = logical_stats.material_texture_bindings;
         self.stats.material_sampler_bindings = logical_stats.material_sampler_bindings;
+        self.stats.material_batch_layers =
+            prepare::compute_material_batch_plan(&backend_material_slots).layer_count;
         self.stats.environments = logical_stats.environments;
         self.stats.environment_cubemaps = environment_prepare_stats.cubemaps;
         self.stats.environment_prefilter_passes = environment_prepare_stats.prefilter_passes;

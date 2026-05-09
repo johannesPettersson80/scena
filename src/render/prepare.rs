@@ -40,6 +40,8 @@ mod diagnostics;
 mod environment;
 mod environment_prefilter;
 mod labels;
+mod material_batch;
+pub(in crate::render) use self::material_batch::compute_material_batch_plan;
 mod lighting;
 mod materials;
 mod resources;

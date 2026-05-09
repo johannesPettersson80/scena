@@ -349,6 +349,15 @@ pub struct RendererStats {
     pub material_bindings: u64,
     pub material_texture_bindings: u64,
     pub material_sampler_bindings: u64,
+    /// Phase 1F step 2: number of layers a `texture_2d_array` per
+    /// material role would carry when the prepared materials share
+    /// `(sampler, format, dimensions)` for every populated role.
+    /// Zero when the materials are not array-compatible or the scene
+    /// has no materials. Reports whether array batching is *available*
+    /// for the prepared scene; the GPU pipeline still consumes the
+    /// per-material path until commit 2 of the texture-array-batching
+    /// plan lands. See `docs/specs/texture-array-batching-plan.md`.
+    pub material_batch_layers: u32,
     pub render_targets: u64,
     pub pipelines: u64,
     pub bind_groups: u64,
