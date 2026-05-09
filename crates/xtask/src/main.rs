@@ -11699,6 +11699,104 @@ mod tests {
     }
 
     #[test]
+    fn doctor_rejects_material_desc_public_field_regression() {
+        // ARCH-ASSET-API: src/material.rs MaterialDesc must keep its fields
+        // private so the descriptor stays an opaque builder-only value.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root = root.join("target/xtask-doctor-regressions/material-desc-public-field");
+        let material_path = fixture_root.join("src/material.rs");
+        fs::create_dir_all(material_path.parent().expect("src dir")).expect("fixture dir");
+        fs::write(
+            &material_path,
+            "pub struct MaterialDesc {\n    pub leaked_field: u32,\n}\n",
+        )
+        .expect("material fixture");
+        let mut findings = Vec::new();
+
+        check_material_desc_fields_private(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "ARCH-ASSET-API" && finding.message.contains("leaked_field")
+            }),
+            "doctor must reject src/material.rs MaterialDesc declaring a public \
+             field so the descriptor stays an opaque builder-only value: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_ndc_smoke_fixture_missing_proof_class_regression() {
+        // VISUAL-HARNESS-SMOKE-P0: NDC/fullscreen smoke fixtures must declare
+        // proof_class = "harness-smoke" + production_claim = false so they
+        // cannot be promoted into renderer/PBR production-proof rows.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/ndc-smoke-missing-proof-class");
+        let manifest_rel = "tests/visual/ndc-smoke.toml";
+        let manifest_path = fixture_root.join(manifest_rel);
+        fs::create_dir_all(manifest_path.parent().expect("manifest parent")).expect("fixture dir");
+        fs::write(
+            &manifest_path,
+            "[[fixture]]\nname = \"ndc_smoke_demo\"\n# missing proof_class and production_claim lines\n",
+        )
+        .expect("ndc fixture");
+        let mut findings = Vec::new();
+
+        check_ndc_smoke_fixture_classification(
+            &fixture_root,
+            &mut findings,
+            manifest_rel,
+            &["ndc_smoke_demo"],
+        );
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "VISUAL-HARNESS-SMOKE-P0"
+                    && finding.message.contains("proof_class = \"harness-smoke\"")
+            }),
+            "doctor must reject NDC/fullscreen smoke fixtures missing the \
+             harness-smoke proof_class declaration: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_m10_claim_audit_missing_contract_text_regression() {
+        // CLAIM-AUDIT-M10: docs/checklists/m10-threejs-replacement-acceptance.md
+        // and docs/api/m10-public-api-diff.md must keep the M10 claim-audit
+        // wiring substrings; a stripped replacement must fail the gate.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/m10-claim-audit-missing-text");
+        let xtask_path = fixture_root.join("crates/xtask/src/main.rs");
+        let m10_checklist_path =
+            fixture_root.join("docs/checklists/m10-threejs-replacement-acceptance.md");
+        fs::create_dir_all(xtask_path.parent().expect("xtask parent")).expect("xtask dir");
+        fs::create_dir_all(m10_checklist_path.parent().expect("m10 parent")).expect("m10 dir");
+        fs::write(
+            &xtask_path,
+            "fn main() { /* stub xtask without claim-audit wiring */ }\n",
+        )
+        .expect("xtask fixture");
+        fs::write(
+            &m10_checklist_path,
+            "# m10 acceptance stub without claim audit reference\n",
+        )
+        .expect("m10 fixture");
+        let mut findings = Vec::new();
+
+        check_m10_claim_audit_contract(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "CLAIM-AUDIT-M10" && finding.message.contains("claim-audit")
+            }),
+            "doctor must reject xtask main.rs that drops the M10 claim-audit \
+             wiring substrings so the release-acceptance gate cannot ship \
+             silently: {findings:?}",
+        );
+    }
+
+    #[test]
     fn doctor_rejects_required_doc_missing_substring_regression() {
         // DOCS-PUBLIC-API: docs/specs/public-api.md must keep the canonical
         // public-API contract substrings; a stripped-down replacement must
