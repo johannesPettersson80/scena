@@ -2129,6 +2129,7 @@ fn run_docs_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_gltf_asset_matrix_contract(root, findings);
     check_m9_ci_release_lanes(root, findings);
     check_release_readiness_ci_fail_closed(root, findings);
+    check_release_publish_dry_run_helper(root, findings);
     check_m10_claim_audit_contract(root, findings);
     check_state_of_art_checklist_links(root, findings);
 }
@@ -8017,6 +8018,29 @@ fn check_m10_claim_audit_contract(root: &Path, findings: &mut Vec<Finding>) {
     );
 }
 
+fn check_release_publish_dry_run_helper(root: &Path, findings: &mut Vec<Finding>) {
+    // RELEASE-PUBLISH-DRY-RUN-RECORD: Phase 8 closure depends on
+    // scripts/release_publish_dry_run.sh producing a clean-tree publish
+    // dry-run log under target/gate-artifacts/release-lanes/publish-dry-run.log.
+    // The helper must fail-closed on its own bash machinery (set -euo
+    // pipefail) so a failed git rev-parse / git worktree / tee is not
+    // silently ignored before any run_step is reached. Closes
+    // scena-doctor-reviewer 4b0e621 finding N1.
+    require_contains(
+        root,
+        findings,
+        "RELEASE-PUBLISH-DRY-RUN-RECORD",
+        "scripts/release_publish_dry_run.sh",
+        &[
+            "set -euo pipefail",
+            "cargo publish --dry-run",
+            "publish-dry-run.log",
+            "git worktree add --detach",
+            "git worktree remove --force",
+        ],
+    );
+}
+
 fn check_release_readiness_ci_fail_closed(root: &Path, findings: &mut Vec<Finding>) {
     // RELEASE-READINESS-CI-FAIL-CLOSED: any GHA workflow job that runs
     // `cargo run -p xtask -- release-readiness` must fail closed (no
@@ -12519,6 +12543,44 @@ mod tests {
             }),
             "doctor must reject src/assets.rs that drops the mod gltf; export so \
              scene import wiring cannot silently regress: {findings:?}",
+        );
+    }
+
+    #[test]
+    fn doctor_rejects_release_publish_dry_run_helper_missing_strict_mode_regression() {
+        // RELEASE-PUBLISH-DRY-RUN-RECORD: scripts/release_publish_dry_run.sh
+        // must declare `set -euo pipefail` so a failed git rev-parse /
+        // git worktree / tee is not silently ignored before any run_step
+        // executes. A helper that drops the strict-mode declaration
+        // fails closed.
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let fixture_root =
+            root.join("target/xtask-doctor-regressions/release-publish-dry-run-missing-strict");
+        let helper_path = fixture_root.join("scripts/release_publish_dry_run.sh");
+        fs::create_dir_all(helper_path.parent().expect("scripts dir")).expect("scripts dir");
+        fs::write(
+            &helper_path,
+            "#!/usr/bin/env bash\n\
+             set -u\n\
+             # missing pipefail; failures in tee or pipeline ahead of run_step\n\
+             # would be silently ignored.\n\
+             cargo publish --dry-run\n\
+             # publish-dry-run.log path mentioned to satisfy other substrings.\n\
+             git worktree add --detach /tmp/x\n\
+             git worktree remove --force /tmp/x\n",
+        )
+        .expect("helper fixture");
+        let mut findings = Vec::new();
+
+        check_release_publish_dry_run_helper(&fixture_root, &mut findings);
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == "RELEASE-PUBLISH-DRY-RUN-RECORD"
+                    && finding.message.contains("set -euo pipefail")
+            }),
+            "doctor must reject release_publish_dry_run.sh that drops the \
+             strict-mode declaration (set -euo pipefail): {findings:?}",
         );
     }
 

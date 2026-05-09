@@ -210,20 +210,35 @@ impl<F> Assets<F> {
 
     /// Frees `GeometryDesc` / `MaterialDesc` / `TextureDesc` /
     /// `EnvironmentDesc` slotmap entries that no cached `SceneAsset`,
-    /// material descriptor, or environment lookup still references.
+    /// material descriptor, or environment lookup still references AND
+    /// that were not minted directly by [`Assets::create_geometry`] /
+    /// [`Assets::create_material`] / [`Assets::create_texture_for_test`].
     ///
-    /// Long-running hot-reload sessions accumulate dead handles in the
-    /// asset slotmaps because [`Assets::reload_scene`] inserts fresh
-    /// entries for the replacement scene without evicting the prior
-    /// scene's geometry/material/texture entries; only the latest
-    /// `SceneAsset` per path is retained in `scene_lookup`. This helper
-    /// computes the transitive closure of handles still reachable from
-    /// `scene_lookup`, the materials those scenes' meshes reference, the
-    /// textures those materials reference, and the cached environment
-    /// lookup, then drops every other entry. Returns a per-store eviction
-    /// count.
+    /// This helper is hot-reload-scoped GC, not a generic eviction sweep:
+    /// it is intended for long-running [`Assets::reload_scene`] sessions
+    /// where the replacement scene's `geometry/material/texture`
+    /// descriptors accumulate in the slotmaps because only the latest
+    /// `SceneAsset` per path is retained in `scene_lookup`. User-created
+    /// descriptors (every `Assets::create_*` call) are tracked and
+    /// always retained so a procedural-scene caller cannot lose handles
+    /// they still hold; this is the contract a beginner expects after
+    /// reading the typed `*HandleNotFound` error documentation.
     ///
-    /// Closes scena-gltf-animation-reviewer Phase 6 finding F4.
+    /// Reachability is rooted at:
+    /// - every `SceneAsset` in `scene_lookup` (its `nodes()`'s `meshes()`
+    ///   contribute their `GeometryHandle` and `MaterialHandle`);
+    /// - every cached `EnvironmentHandle` in `environment_lookup`;
+    /// - the texture slots of every reachable material descriptor.
+    ///
+    /// A `SceneAsset` returned by [`Assets::load_scene`] but later
+    /// overwritten in `scene_lookup` (for example by a follow-up
+    /// `load_scene` for the same path) is no longer reachable here, so
+    /// its glTF-derived geometry/material/texture descriptors evict on
+    /// the next call — the very behavior `release_unreferenced` is for.
+    /// Returns a per-store eviction count.
+    ///
+    /// Closes scena-gltf-animation-reviewer Phase 6 finding F4 and
+    /// scena-api-ergonomics-reviewer 4b0e621 finding N2.
     pub fn release_unreferenced(&self) -> AssetEvictionStats {
         let mut storage = self.storage();
         let mut referenced_geometries: std::collections::BTreeSet<GeometryHandle> =

@@ -21,7 +21,7 @@
 # gates would pass. Phase 8 still requires the maintainer to run the actual
 # `cargo publish` command after `cargo publish --dry-run` succeeds.
 
-set -u
+set -euo pipefail
 
 target_commit="${1:-HEAD}"
 repo_root="$(git rev-parse --show-toplevel)"
@@ -41,7 +41,7 @@ if [ -d "$worktree_dir" ]; then
   git worktree remove --force "$worktree_dir" 2>/dev/null || rm -rf "$worktree_dir"
 fi
 
-git worktree add --detach "$worktree_dir" "$resolved_commit" \
+git worktree add --detach "$worktree_dir" "$resolved_commit" 2>&1 \
   | tee -a "$log_path"
 
 cleanup() {
