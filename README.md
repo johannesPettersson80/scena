@@ -193,12 +193,12 @@ guess missing state.
 |---|---|
 | Scene graph | typed nodes, transforms, cameras, lights, clipping planes, imports, labels, instances, picking, animation mixers, and one-call `Scene::with_default_camera()` |
 | Geometry | primitives, manual buffers, boxes, line/wire/edge expansion, bounds, UV0 retention, CPU skinning, CPU morph targets (multi-target weights chunked correctly per glTF spec), and instance sets |
-| Materials | unlit, degraded CPU-side metallic-roughness preview, vertex colors, alpha blending, texture descriptors, line/wire/edge materials, ACES plus sRGB output, FXAA |
+| Materials | unlit, degraded CPU-side metallic-roughness preview, vertex colors, alpha blending, texture descriptors with shared `texture_2d_array<f32>` array batching when materials agree on `(sampler, format, dimensions)`, line/wire/edge materials, ACES plus sRGB output, FXAA, and KHR_materials_variants typed runtime variant flips |
 | Assets | glTF/GLB first, cache/dedup/reload, external buffers, selected Khronos samples, anchors, import-local lookup, source units, coordinate conversion, `Assets::release_unreferenced()` for explicit eviction, and `AssetStoreId` + `Assets::contains_<kind>` predicates that distinguish wrong-store from stale-handle |
-| Rendering | camera-projected headless CPU, headless/native wgpu foundation, explicit prepare/render lifecycle, render-on-change, offscreen targets, readback, stats, diagnostics, `Renderer::headless_default()` zero-arg constructor, and `interactive_gltf_viewer(path, surface)` fluent builder |
+| Rendering | camera-projected headless CPU, headless/native wgpu foundation with real GPU directional shadow caster + comparison-sampled `texture_depth_2d` shadow map, GGX-prefiltered IBL with split-sum BRDF LUT, explicit prepare/render lifecycle, render-on-change, offscreen targets, readback, hot-reload-preserved GPU uploads across `SurfaceEvent::ContextLost → ContextRestored`, stats, diagnostics, `Renderer::headless_default()` zero-arg constructor, and `interactive_gltf_viewer(path, surface)` fluent builder |
 | Interaction | typed picking results, hover/selection styles, viewport-aware cursor positions, platform-neutral orbit controls, and an example demonstrating the independent hover / primary-select / pointer-leave states |
 | Platform | native descriptor and attached-window paths, browser surface intent, WASM compile/package checks, surface/context/device loss events |
-| Quality | doctor rules, public API baseline, visual artifacts, browser API smoke, benchmarks, allocation gates, 64 dedicated bad-pattern doctor regression fixtures, six-role release-review schema with frontmatter + JSON-schema validators, and release-candidate deferral ADR |
+| Quality | doctor rules, public API baseline, visual artifacts, browser API smoke, benchmarks, allocation gates, 76 dedicated bad-pattern doctor regression fixtures, six-role release-review schema with frontmatter + JSON-schema validators, and release-candidate deferral ADR |
 
 The implementation is deliberately renderer-focused. Application semantics remain in the
 host application.
