@@ -91,6 +91,23 @@ path = "UnlitTest/UnlitTest.gltf"
 binary = ["UnlitTest/UnlitTest.bin"]
 contract = "KHR_materials_unlit required extension material mapping"
 
+[[asset]]
+name = "WaterBottle"
+path = "WaterBottle/WaterBottle.gltf"
+binary = ["WaterBottle/WaterBottle.bin"]
+images = [
+  "WaterBottle/WaterBottle_baseColor.png",
+  "WaterBottle/WaterBottle_normal.png",
+  "WaterBottle/WaterBottle_occlusionRoughnessMetallic.png",
+  "WaterBottle/WaterBottle_emissive.png",
+]
+# Real product PBR asset (~4.5k triangles, 4 PBR texture roles, real-world
+# millimeter dimensions). The .gltf and .bin are upstream-faithful; the four
+# PNG textures were downsampled from the upstream 2048×2048 to 256×256 with
+# Pillow LANCZOS so the bundled fixture stays under 300 KB while preserving
+# every material/texture role the importer + renderer must handle.
+contract = "real product PBR with base-color + normal + occlusion-roughness-metallic + emissive textures and real-world millimeter scale"
+
 [file_hashes]
 "AlphaBlendModeTest/AlphaBlendLabels.png" = "19c705f7e207384ca1ab01e0665601c051ca33c5848c03ce4fffad625b416b53"
 "AlphaBlendModeTest/AlphaBlendModeTest.bin" = "bb89ab8d9ac0cfbc168e5d552e3ec2fe1285fd01bacb65c863d838b3db025c85"
@@ -128,3 +145,9 @@ contract = "KHR_materials_unlit required extension material mapping"
 "TextureTransformTest/UV.png" = "ac37ff52fe06a4c8c35ad4e1e7e8da039dfa8afc9b629d40a44ca8b8cfe9d03d"
 "UnlitTest/UnlitTest.bin" = "a6a81ec57560242f29ee2c2a94f452a923b5548bf256b6529b0c07dea3f5c907"
 "UnlitTest/UnlitTest.gltf" = "b611ca0892cb1a0118e92b72ff52b3afed3e4903c15378daa72c4c252a0334e1"
+"WaterBottle/WaterBottle.bin" = "e4921f2d0c0a03cf65286bd195f3688d4f99d7b6a58f25935e70d516d744156e"
+"WaterBottle/WaterBottle.gltf" = "0596f4e61dc781439d254fdfb5e3462daf1762c18715e3e3ac13001aa8f3f547"
+"WaterBottle/WaterBottle_baseColor.png" = "d9b96cd4fee4a6e2ee6899f08eccc9734772c9690831abaeb93d11f16980f987"
+"WaterBottle/WaterBottle_emissive.png" = "44d760ec04f62596b192e04facb3d9c53623b00d412b73eb40d75b46e058a36c"
+"WaterBottle/WaterBottle_normal.png" = "123122881f208f382bf1247c86894c4e3e785ab49189f0075363e14a1b69df38"
+"WaterBottle/WaterBottle_occlusionRoughnessMetallic.png" = "6ffb7f2447dd6fb5329392817940dad5216f8d234ab9c48d3eb21ca35fd47f5c"
