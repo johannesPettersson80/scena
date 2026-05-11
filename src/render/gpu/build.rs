@@ -14,10 +14,7 @@ pub(in crate::render) async fn request_headless_gpu(
         .request_adapter(&wgpu::RequestAdapterOptions::default())
         .await
         .map_err(|_| BuildError::NoAdapter { backend })?;
-    let (device, queue) = adapter
-        .request_device(&wgpu::DeviceDescriptor::default())
-        .await
-        .map_err(|_| BuildError::RequestDevice { backend })?;
+    let (device, queue) = request_device_with_downlevel_fallback(&adapter, backend).await?;
 
     Ok(GpuDeviceState {
         instance,
@@ -28,6 +25,34 @@ pub(in crate::render) async fn request_headless_gpu(
         pending_destructions: 0,
         resources: None,
     })
+}
+
+/// Try the WebGPU baseline first, fall back to `downlevel_defaults` if the
+/// adapter rejects it. Embedded GPUs like the Pi 5's V3D and many tile-based
+/// mobile GPUs cannot meet the desktop baseline (e.g. compute workgroup
+/// invocations, storage buffer binding size) but do support every limit the
+/// renderer actually consumes. Without this fallback, scena returns
+/// `RequestDevice` on these hosts even though their drivers are functional.
+#[cfg(not(target_arch = "wasm32"))]
+async fn request_device_with_downlevel_fallback(
+    adapter: &wgpu::Adapter,
+    backend: Backend,
+) -> Result<(wgpu::Device, wgpu::Queue), BuildError> {
+    if let Ok(pair) = adapter
+        .request_device(&wgpu::DeviceDescriptor::default())
+        .await
+    {
+        return Ok(pair);
+    }
+    let downlevel = wgpu::DeviceDescriptor {
+        required_limits: wgpu::Limits::downlevel_defaults()
+            .using_resolution(adapter.limits()),
+        ..wgpu::DeviceDescriptor::default()
+    };
+    adapter
+        .request_device(&downlevel)
+        .await
+        .map_err(|_| BuildError::RequestDevice { backend })
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -78,14 +103,18 @@ async fn request_gpu_for_surface(
         })
         .await
         .map_err(|_| BuildError::NoAdapter { backend })?;
-    let mut descriptor = wgpu::DeviceDescriptor::default();
-    if backend == Backend::WebGl2 {
-        descriptor.required_limits = wgpu::Limits::downlevel_webgl2_defaults();
-    }
-    let (device, queue) = adapter
-        .request_device(&descriptor)
-        .await
-        .map_err(|_| BuildError::RequestDevice { backend })?;
+    let (device, queue) = if backend == Backend::WebGl2 {
+        let descriptor = wgpu::DeviceDescriptor {
+            required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
+            ..wgpu::DeviceDescriptor::default()
+        };
+        adapter
+            .request_device(&descriptor)
+            .await
+            .map_err(|_| BuildError::RequestDevice { backend })?
+    } else {
+        request_device_with_downlevel_fallback(&adapter, backend).await?
+    };
     #[cfg(target_arch = "wasm32")]
     device.on_uncaptured_error(std::sync::Arc::new(|error| {
         web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&format!(

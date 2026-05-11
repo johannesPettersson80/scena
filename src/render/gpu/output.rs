@@ -231,7 +231,7 @@ fn pbr_punctual_lighting(
         // on the CPU ray-cast bake (review F7). The argument is kept on the
         // function signature for the WebGL2 fallback that does not yet have
         // a shadow map.
-        let _ = shadow_visibility;
+        _ = shadow_visibility;
         let gpu_shadow = directional_shadow_factor(world_position);
         let radiance = camera.lighting.directional_light_color_count.rgb *
             camera.lighting.directional_light_direction_intensity.w * gpu_shadow;

@@ -15,7 +15,7 @@
 use std::fs::File;
 use std::io::BufWriter;
 
-use scena::{Assets, Renderer, Scene};
+use scena::{Assets, Color, DirectionalLight, Renderer, Scene, Transform};
 
 const WATERBOTTLE_PATH: &str = "tests/assets/gltf/khronos/WaterBottle/WaterBottle.gltf";
 const ARTIFACT_PNG: &str = "target/gate-artifacts/m8-real-asset/waterbottle.png";
@@ -56,15 +56,42 @@ fn m8_real_asset_waterbottle_imports_and_renders() {
         extents.1
     );
 
-    let camera = scene.add_default_camera().expect("default camera inserts");
-    scene
-        .frame(camera, bounds)
-        .expect("camera frames the WaterBottle");
+    // Place the camera at a fixed metre-scale distance from the bottle's
+    // bounds centre. `scene.frame` uses the default near/far which would
+    // clip an asset whose bounding sphere is smaller than the near plane.
+    let centre = scena::Vec3::new(
+        (bounds.min.x + bounds.max.x) * 0.5,
+        (bounds.min.y + bounds.max.y) * 0.5,
+        (bounds.min.z + bounds.max.z) * 0.5,
+    );
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            scena::PerspectiveCamera::default(),
+            Transform::at(scena::Vec3::new(centre.x, centre.y, centre.z + 0.5)),
+        )
+        .expect("camera inserts");
+    scene.set_active_camera(camera).expect("camera activates");
 
-    let mut renderer = Renderer::headless(256, 256).expect("headless renderer builds");
+    // Real product needs real lighting. Add a key directional light + the
+    // default environment so the CPU degraded-preview path has something
+    // beyond flat unlit silhouettes to draw.
+    scene
+        .directional_light(
+            DirectionalLight::default()
+                .with_color(Color::WHITE)
+                .with_illuminance_lux(60_000.0),
+        )
+        .transform(Transform::default().rotate_x_deg(-35.0).rotate_y_deg(25.0))
+        .add()
+        .expect("key directional light inserts");
+    let environment = assets.default_environment();
+
+    let mut renderer = Renderer::headless(512, 512).expect("headless CPU renderer builds");
+    renderer.set_environment(environment);
     renderer
         .prepare_with_assets(&mut scene, &assets)
-        .expect("WaterBottle prepares for the headless rasterizer");
+        .expect("WaterBottle prepares for the headless renderer");
     renderer
         .render_active(&scene)
         .expect("WaterBottle renders");
@@ -96,7 +123,7 @@ fn m8_real_asset_waterbottle_imports_and_renders() {
          CPU rasterizer (got {nonzero})"
     );
 
-    write_png_artifact(frame, 256, 256);
+    write_png_artifact(frame, 512, 512);
 }
 
 fn write_png_artifact(rgba8: &[u8], width: u32, height: u32) {

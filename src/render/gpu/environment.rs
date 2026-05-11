@@ -96,7 +96,12 @@ pub(super) fn create_environment_cubemap_texture(
         mip_level_count: mip_count,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba32Float,
+        // Rgba16Float is filterable on every wgpu adapter we target;
+        // Rgba32Float requires the `Float32Filterable` feature which the
+        // V3D (Pi 5), most mobile GPUs, and many lavapipe builds lack.
+        // HDR cubemap radiance values fit comfortably in fp16 (signed
+        // exponent up to 15, mantissa 10 bits).
+        format: wgpu::TextureFormat::Rgba16Float,
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
@@ -104,7 +109,7 @@ pub(super) fn create_environment_cubemap_texture(
         for (mip_index, faces) in prepared.mips.iter().enumerate() {
             let mip_resolution = (prepared.resolution >> mip_index).max(1);
             for (face_index, face_pixels) in faces.iter().enumerate() {
-                let bytes = f32_slice_to_bytes_le(face_pixels);
+                let bytes = f32_slice_to_rgba16f_bytes(face_pixels);
                 queue.write_texture(
                     wgpu::TexelCopyTextureInfo {
                         texture: &texture,
@@ -119,7 +124,8 @@ pub(super) fn create_environment_cubemap_texture(
                     &bytes,
                     wgpu::TexelCopyBufferLayout {
                         offset: 0,
-                        bytes_per_row: Some(mip_resolution * 16),
+                        // Rgba16Float is 8 bytes per pixel.
+                        bytes_per_row: Some(mip_resolution * 8),
                         rows_per_image: Some(mip_resolution),
                     },
                     wgpu::Extent3d {
@@ -132,6 +138,46 @@ pub(super) fn create_environment_cubemap_texture(
         }
     }
     texture
+}
+
+fn f32_slice_to_rgba16f_bytes(values: &[f32]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(values.len() * 2);
+    for &value in values {
+        let half = f32_to_f16_bits(value);
+        bytes.extend_from_slice(&half.to_le_bytes());
+    }
+    bytes
+}
+
+/// Minimal IEEE-754 f32 → binary16 conversion (round to nearest, ties to
+/// even). Handles subnormals, infinities, and NaN; preserves sign. Used by
+/// the cubemap upload path so we don't pull in a half-precision crate.
+fn f32_to_f16_bits(value: f32) -> u16 {
+    let bits = value.to_bits();
+    let sign = ((bits >> 16) & 0x8000) as u16;
+    let exp32 = ((bits >> 23) & 0xff) as i32;
+    let mant32 = bits & 0x007f_ffff;
+    if exp32 == 0xff {
+        // NaN / Inf
+        let mant16 = if mant32 != 0 { 0x200 } else { 0 };
+        return sign | 0x7c00 | mant16;
+    }
+    let exp = exp32 - 127 + 15;
+    if exp >= 0x1f {
+        return sign | 0x7c00; // overflow → Inf
+    }
+    if exp <= 0 {
+        if exp < -10 {
+            return sign; // underflow → ±0
+        }
+        let mant = mant32 | 0x0080_0000;
+        let shift = 14 - exp;
+        let rounded = (mant + (1 << (shift - 1))) >> shift;
+        return sign | rounded as u16;
+    }
+    let mant = mant32 >> 13;
+    let round = (mant32 & 0x1000) >> 12;
+    sign | ((exp as u16) << 10) | (mant as u16 + round as u16)
 }
 
 /// Allocates the 2D BRDF LUT (RG32Float) and uploads the prepared LUT
