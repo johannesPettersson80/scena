@@ -32,7 +32,7 @@ pub(super) fn build_output_resources(
     let shadow_caster = create_shadow_caster_resources(
         device,
         directional_shadow_map_resolution,
-        output_bind_group_layout,
+        output_uniform,
         draw_bind_group_layout,
     );
     let shadow_sampler = create_shadow_sampler(device);

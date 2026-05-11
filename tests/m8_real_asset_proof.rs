@@ -15,7 +15,9 @@
 use std::fs::File;
 use std::io::BufWriter;
 
-use scena::{Assets, Color, DirectionalLight, Renderer, Scene, Transform};
+use scena::{
+    Assets, Color, DirectionalLight, GeometryDesc, MaterialDesc, Renderer, Scene, Transform,
+};
 
 const WATERBOTTLE_PATH: &str = "tests/assets/gltf/khronos/WaterBottle/WaterBottle.gltf";
 const ARTIFACT_PNG: &str = "target/gate-artifacts/m8-real-asset/waterbottle.png";
@@ -89,7 +91,8 @@ fn m8_real_asset_waterbottle_imports_and_renders() {
         .directional_light(
             DirectionalLight::default()
                 .with_color(Color::WHITE)
-                .with_illuminance_lux(80_000.0),
+                .with_illuminance_lux(80_000.0)
+                .with_shadows(true),
         )
         .transform(Transform::default().rotate_x_deg(-55.0).rotate_y_deg(35.0))
         .add()
@@ -113,12 +116,23 @@ fn m8_real_asset_waterbottle_imports_and_renders() {
         .add()
         .expect("rim directional light inserts");
 
-    // Adding a floor for shadow-catching would be the natural next step,
-    // but the texture-array batching path crashes on a floor whose
-    // material has no base-color texture (256×256 batched array tries
-    // to upload the 1×1 fallback into a same-sized layer slot). Tracked
-    // as a follow-up bug; the lighting rig above gives the bottle real
-    // shading without needing the floor.
+    // White floor under the bottle: now that the batched-array empty-slot
+    // bug is fixed (test:
+    // `texture_array_batching_handles_materials_with_and_without_textures`)
+    // and the shadow caster's bind-group conflict is gone (test:
+    // `shadow_casting_light_with_multiple_meshes_renders_without_validation_error`),
+    // we can ground the composition with a real floor + cast shadow.
+    let floor_geometry = assets.create_geometry(GeometryDesc::plane(0.6, 0.6));
+    let floor_material =
+        assets.create_material(MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.9));
+    scene
+        .mesh(floor_geometry, floor_material)
+        .transform(
+            Transform::at(scena::Vec3::new(centre.x, bounds.min.y, centre.z))
+                .rotate_x_deg(-90.0),
+        )
+        .add()
+        .expect("floor mesh inserts");
     let environment = assets.default_environment();
 
     // Default to the CPU rasterizer so the test is deterministic on every
@@ -148,13 +162,14 @@ fn m8_real_asset_waterbottle_imports_and_renders() {
 
     let stats = renderer.stats();
     assert_eq!(
-        stats.materials, 1,
-        "WaterBottle's `BottleMat` must surface as one prepared material"
+        stats.materials, 2,
+        "WaterBottle's `BottleMat` + the floor surface as two prepared materials"
     );
     assert_eq!(
         stats.textures, 4,
         "WaterBottle must surface the four upstream PBR texture roles \
-         (baseColor, normal, occlusionRoughnessMetallic, emissive)"
+         (baseColor, normal, occlusionRoughnessMetallic, emissive); \
+         the floor has no textures"
     );
     assert!(
         stats.triangles > 1000,

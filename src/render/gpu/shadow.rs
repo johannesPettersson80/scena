@@ -102,12 +102,20 @@ pub(super) struct ShadowCasterResources {
     pub(super) view: wgpu::TextureView,
     pub(super) pipeline: wgpu::RenderPipeline,
     pub(super) active: bool,
+    /// Camera-only bind group used by the shadow caster pass. Distinct from
+    /// `output_bind_group` so that the shadow_map texture is not referenced
+    /// inside the caster pass's render-pass usage scope.
+    pub(super) camera_bind_group: wgpu::BindGroup,
+    /// Empty bind group for slot @group(1) (the material slot) so the
+    /// caster's pipeline layout aligns with the unlit pipeline's bind
+    /// group indices.
+    pub(super) dummy_material_group: wgpu::BindGroup,
 }
 
 pub(super) fn create_shadow_caster_resources(
     device: &wgpu::Device,
     resolution: Option<u32>,
-    output_bind_group_layout: &wgpu::BindGroupLayout,
+    output_uniform: &wgpu::Buffer,
     draw_bind_group_layout: &wgpu::BindGroupLayout,
 ) -> ShadowCasterResources {
     let texture = create_shadow_texture(device, resolution);
@@ -116,19 +124,52 @@ pub(super) fn create_shadow_caster_resources(
         label: Some("scena.m2.shadow_caster_shader"),
         source: wgpu::ShaderSource::Wgsl(SHADOW_CASTER_SHADER.into()),
     });
-    // Caster pipeline reuses the output + draw bind group layouts. The
-    // material bind group at @group(1) is unused but must be in the layout
-    // to keep the pipeline-layout indices aligned with the unlit pipeline so
-    // the same vertex buffer + draw bind group can be bound without re-
-    // binding camera/draw on the unlit pass.
+    // Shadow caster needs only the camera uniform. We must NOT bind the
+    // unlit pass's `output_bind_group` here because that group also
+    // references the shadow_map (as a resource); binding it inside the
+    // shadow caster render pass — which uses the same shadow_map as a
+    // depth-stencil write target — triggers wgpu's
+    // `TextureUses(DEPTH_STENCIL_WRITE) is an exclusive usage` validation
+    // error. Allocate a dedicated camera-only bind group instead. Test:
+    // `shadow_casting_light_with_multiple_meshes_renders_without_validation_error`.
+    let camera_bind_group_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("scena.m2.shadow_caster_camera_layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+    let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("scena.m2.shadow_caster_camera_bind_group"),
+        layout: &camera_bind_group_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: output_uniform.as_entire_binding(),
+        }],
+    });
+    // Empty material bind group keeps @group(1) slot pinned to match the
+    // shadow caster's pipeline layout indices with the unlit pipeline
+    // (so the shared vertex buffer + draw bind group bind cleanly).
     let dummy_material_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("scena.m2.shadow_caster_material_dummy"),
+        entries: &[],
+    });
+    let dummy_material_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("scena.m2.shadow_caster_material_dummy_group"),
+        layout: &dummy_material_layout,
         entries: &[],
     });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("scena.m2.shadow_caster_pipeline_layout"),
         bind_group_layouts: &[
-            Some(output_bind_group_layout),
+            Some(&camera_bind_group_layout),
             Some(&dummy_material_layout),
             Some(draw_bind_group_layout),
         ],
@@ -173,6 +214,8 @@ pub(super) fn create_shadow_caster_resources(
         view,
         pipeline,
         active: resolution.is_some(),
+        camera_bind_group,
+        dummy_material_group,
     }
 }
 
@@ -180,7 +223,6 @@ pub(super) fn encode_shadow_caster_pass(
     encoder: &mut wgpu::CommandEncoder,
     resources: &ShadowCasterResources,
     vertex_buffer: &wgpu::Buffer,
-    output_bind_group: &wgpu::BindGroup,
     draw_bind_group: &wgpu::BindGroup,
     draw_batches: &[PrimitiveDrawBatch],
 ) {
@@ -204,7 +246,14 @@ pub(super) fn encode_shadow_caster_pass(
         multiview_mask: None,
     });
     pass.set_pipeline(&resources.pipeline);
-    pass.set_bind_group(0, output_bind_group, &[]);
+    // Bind the caster-private camera bind group at @group(0) so the
+    // render-pass usage scope never references the shadow_map texture.
+    // The output bind group (which references the shadow_map) only enters
+    // the encoder during the later unlit pass, after the caster pass
+    // closes and the texture transitions from DEPTH_STENCIL_WRITE to
+    // RESOURCE.
+    pass.set_bind_group(0, &resources.camera_bind_group, &[]);
+    pass.set_bind_group(1, &resources.dummy_material_group, &[]);
     pass.set_vertex_buffer(0, vertex_buffer.slice(..));
     for batch in draw_batches {
         let draw_offset =

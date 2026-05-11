@@ -86,7 +86,6 @@ impl GpuDeviceState {
             &mut encoder,
             &resources.shadow_caster,
             &resources.vertex_buffer,
-            &resources.output_bind_group,
             &resources.draw_bind_group,
             &resources.draw_batches,
         );
@@ -302,7 +301,6 @@ impl GpuDeviceState {
             &mut encoder,
             &resources.shadow_caster,
             &resources.vertex_buffer,
-            &resources.output_bind_group,
             &resources.draw_bind_group,
             &resources.draw_batches,
         );

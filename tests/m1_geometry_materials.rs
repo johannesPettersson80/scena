@@ -1239,6 +1239,121 @@ fn texture_array_batching_falls_back_when_dimensions_mismatch() {
     );
 }
 
+/// Regression: when one material in a batch carries a base-color texture
+/// of N×N pixels and another material has no base-color texture at all, the
+/// batched `texture_2d_array<f32>` layer for the textureless material must
+/// be filled with a properly-sized fallback so the upload covers the
+/// template's pixel count. The previous bug uploaded a 1×1 fallback into
+/// a N×N slot, producing
+/// `Copy at offset 0 for N*N*4 bytes would end up overrunning the bounds
+/// of the Source buffer of size 4`.
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn texture_array_batching_handles_materials_with_and_without_textures() {
+    let Ok(mut renderer) = Renderer::headless_gpu(8, 8) else {
+        return;
+    };
+
+    let assets = Assets::new();
+    let albedo = pollster::block_on(assets.load_texture(
+        inline_2x2_png_uri([200, 60, 60, 255]),
+        TextureColorSpace::Srgb,
+    ))
+    .expect("inline textured albedo loads");
+    let geometry_a = assets.create_geometry(flat_square_geometry());
+    let geometry_b = assets.create_geometry(flat_square_geometry());
+    let material_textured = assets.create_material(
+        MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.8)
+            .with_base_color_texture(albedo),
+    );
+    let material_plain = assets.create_material(MaterialDesc::pbr_metallic_roughness(
+        Color::from_srgb_u8(60, 200, 60),
+        0.0,
+        0.8,
+    ));
+
+    let (mut scene, _camera) = scene_with_camera();
+    scene
+        .mesh(geometry_a, material_textured)
+        .add()
+        .expect("textured mesh inserts");
+    scene
+        .mesh(geometry_b, material_plain)
+        .transform(Transform::at(Vec3::new(1.5, 0.0, 0.0)))
+        .add()
+        .expect("plain mesh inserts");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("mixed-texture scene prepares without crashing the batched array upload");
+
+    // Confirm we exercised the batched path; otherwise the test would
+    // silently pass on per-material fallback and not regress the original
+    // crash from `target/gate-artifacts/m8-real-asset` (256×256 WaterBottle
+    // base color + 1×1 floor fallback).
+    let stats = renderer.stats();
+    assert!(
+        stats.material_batch_layers >= 2,
+        "batched path must engage when materials share (sampler, format, dimensions); \
+         got material_batch_layers={}",
+        stats.material_batch_layers
+    );
+}
+
+/// Regression: a scene with a shadow-casting directional light + multiple
+/// renderable meshes used to crash with
+/// `TextureUses(DEPTH_STENCIL_WRITE) is an exclusive usage and cannot be
+/// used with any other usages within the usage scope`. The shadow caster
+/// pass and the unlit pass were both attached to a command encoder that
+/// referenced the shadow_map as both a depth-stencil write target and as
+/// an output-bind-group resource within the same usage scope.
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn shadow_casting_light_with_multiple_meshes_renders_without_validation_error() {
+    let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
+        return;
+    };
+
+    let assets = Assets::new();
+    let geometry_a = assets.create_geometry(flat_square_geometry());
+    let geometry_b = assets.create_geometry(flat_square_geometry());
+    let material_a =
+        assets.create_material(MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.5));
+    let material_b = assets.create_material(MaterialDesc::pbr_metallic_roughness(
+        Color::from_srgb_u8(180, 80, 80),
+        0.0,
+        0.5,
+    ));
+
+    let (mut scene, camera) = scene_with_camera();
+    scene
+        .mesh(geometry_a, material_a)
+        .add()
+        .expect("first mesh inserts");
+    scene
+        .mesh(geometry_b, material_b)
+        .transform(Transform::at(Vec3::new(0.0, 0.0, -0.5)))
+        .add()
+        .expect("second mesh inserts");
+    scene
+        .directional_light(
+            scena::DirectionalLight::default()
+                .with_color(Color::WHITE)
+                .with_illuminance_lux(50_000.0)
+                .with_shadows(true),
+        )
+        .transform(Transform::default().rotate_x_deg(-45.0).rotate_y_deg(30.0))
+        .add()
+        .expect("shadow-casting key light inserts");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("scene with shadow-casting light prepares for GPU");
+    renderer
+        .render(&scene, camera)
+        .expect("scene with shadow-casting light renders without validation error");
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn inline_pixel_png_uri(pixel: [u8; 4]) -> String {
     let mut bytes = Vec::new();
