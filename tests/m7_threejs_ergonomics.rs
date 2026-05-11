@@ -822,12 +822,7 @@ fn m7_connectors_reject_degenerate_connector_rotation() {
         .add_empty(scene.root(), Transform::IDENTITY)
         .expect("target inserts");
     let degenerate_target = Transform {
-        rotation: scena::Quat {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-            w: 0.0,
-        },
+        rotation: scena::Quat::from_xyzw(0.0, 0.0, 0.0, 0.0),
         ..Transform::IDENTITY
     };
 
@@ -1355,12 +1350,7 @@ fn m7_z_up_import_node_rotation_converts_before_connection_solving() {
                 .with_source_coordinate_system(SourceCoordinateSystem::ZUpRightHanded),
         )
         .expect("z-up fixture instantiates");
-    let source_rotation = scena::Quat {
-        x: 0.0,
-        y: 0.0,
-        z: 0.70710677,
-        w: 0.70710677,
-    };
+    let source_rotation = scena::Quat::from_xyzw(0.0, 0.0, 0.70710677, 0.70710677);
     let expected = SourceCoordinateSystem::ZUpRightHanded
         .convert_connector_transform(Transform {
             rotation: source_rotation,
@@ -1648,23 +1638,13 @@ fn rotate_test_vec3(rotation: scena::Quat, vector: Vec3) -> Vec3 {
 }
 
 fn multiply_test_quat(left: scena::Quat, right: scena::Quat) -> scena::Quat {
-    normalize_test_quat(scena::Quat {
-        x: left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
-        y: left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,
-        z: left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w,
-        w: left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z,
-    })
+    normalize_test_quat(scena::Quat::from_xyzw(left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y, left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x, left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w, left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z))
 }
 
 fn normalize_test_quat(value: scena::Quat) -> scena::Quat {
     let length =
         (value.x * value.x + value.y * value.y + value.z * value.z + value.w * value.w).sqrt();
-    scena::Quat {
-        x: value.x / length,
-        y: value.y / length,
-        z: value.z / length,
-        w: value.w / length,
-    }
+    scena::Quat::from_xyzw(value.x / length, value.y / length, value.z / length, value.w / length)
 }
 
 const fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
@@ -4291,12 +4271,7 @@ fn transform_rotate_helpers_compose_chained_rotations_instead_of_overwriting() {
     // Single-rotation callers are unaffected: rotate_y_deg(90) on the
     // identity transform still yields the y-rotation, since identity ∘ R = R.
     let single = Transform::IDENTITY.rotate_y_deg(90.0);
-    let direct_y = scena::Quat {
-        x: 0.0,
-        y: (std::f32::consts::FRAC_PI_4).sin(),
-        z: 0.0,
-        w: (std::f32::consts::FRAC_PI_4).cos(),
-    };
+    let direct_y = scena::Quat::from_xyzw(0.0, (std::f32::consts::FRAC_PI_4).sin(), 0.0, (std::f32::consts::FRAC_PI_4).cos());
     assert!(
         quaternion_close_enough(single.rotation, direct_y),
         "Transform::IDENTITY.rotate_y_deg(90) must equal the canonical Y(90°) \

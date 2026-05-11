@@ -253,12 +253,7 @@ fn cubic_quat(
         delta_seconds,
         amount,
     );
-    Quat {
-        x: components[0],
-        y: components[1],
-        z: components[2],
-        w: components[3],
-    }
+    Quat::from_xyzw(components[0], components[1], components[2], components[3])
 }
 
 fn cubic_weights(
@@ -322,12 +317,7 @@ fn normalize_quat(value: Quat) -> Quat {
     if length <= f32::EPSILON || !length.is_finite() {
         return Quat::IDENTITY;
     }
-    Quat {
-        x: value.x / length,
-        y: value.y / length,
-        z: value.z / length,
-        w: value.w / length,
-    }
+    Quat::from_xyzw(value.x / length, value.y / length, value.z / length, value.w / length)
 }
 
 fn slerp_quat(left: Quat, right: Quat, amount: f32) -> Quat {
@@ -335,20 +325,10 @@ fn slerp_quat(left: Quat, right: Quat, amount: f32) -> Quat {
     let mut dot = left.x * right.x + left.y * right.y + left.z * right.z + left.w * right.w;
     if dot < 0.0 {
         dot = -dot;
-        right = Quat {
-            x: -right.x,
-            y: -right.y,
-            z: -right.z,
-            w: -right.w,
-        };
+        right = Quat::from_xyzw(-right.x, -right.y, -right.z, -right.w);
     }
     if dot > 0.9995 {
-        return normalize_quat(Quat {
-            x: left.x + (right.x - left.x) * amount,
-            y: left.y + (right.y - left.y) * amount,
-            z: left.z + (right.z - left.z) * amount,
-            w: left.w + (right.w - left.w) * amount,
-        });
+        return normalize_quat(Quat::from_xyzw(left.x + (right.x - left.x) * amount, left.y + (right.y - left.y) * amount, left.z + (right.z - left.z) * amount, left.w + (right.w - left.w) * amount));
     }
     let theta_0 = dot.acos();
     let theta = theta_0 * amount;
@@ -356,10 +336,5 @@ fn slerp_quat(left: Quat, right: Quat, amount: f32) -> Quat {
     let sin_theta_0 = theta_0.sin();
     let left_scale = theta.cos() - dot * sin_theta / sin_theta_0;
     let right_scale = sin_theta / sin_theta_0;
-    normalize_quat(Quat {
-        x: left.x * left_scale + right.x * right_scale,
-        y: left.y * left_scale + right.y * right_scale,
-        z: left.z * left_scale + right.z * right_scale,
-        w: left.w * left_scale + right.w * right_scale,
-    })
+    normalize_quat(Quat::from_xyzw(left.x * left_scale + right.x * right_scale, left.y * left_scale + right.y * right_scale, left.z * left_scale + right.z * right_scale, left.w * left_scale + right.w * right_scale))
 }

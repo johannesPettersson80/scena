@@ -174,12 +174,7 @@ fn inverse_quat(rotation: Quat) -> Option<Quat> {
         return None;
     }
     let inverse_length_squared = length_squared.recip();
-    Some(Quat {
-        x: -rotation.x * inverse_length_squared,
-        y: -rotation.y * inverse_length_squared,
-        z: -rotation.z * inverse_length_squared,
-        w: rotation.w * inverse_length_squared,
-    })
+    Some(Quat::from_xyzw(-rotation.x * inverse_length_squared, -rotation.y * inverse_length_squared, -rotation.z * inverse_length_squared, rotation.w * inverse_length_squared))
 }
 
 fn is_valid_scale(scale: Vec3) -> bool {

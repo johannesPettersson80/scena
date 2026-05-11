@@ -84,12 +84,21 @@ fn depth_prepass_benefits(primitives: &[Primitive]) -> bool {
 pub(in crate::render) fn collect_environment_prepare_stats(
     environment: Option<&EnvironmentDesc>,
 ) -> PreparedEnvironmentStats {
+    // Report the prefilter pipeline counters for every environment that
+    // produces a cubemap (bundled preview fixture) OR is declared as an
+    // equirectangular HDR (where the cubemap projection happens at load
+    // time when bytes are present). Both paths run the full prefilter
+    // mip chain + BRDF LUT downstream.
     match environment {
-        Some(environment) if environment.is_equirectangular_hdr() => PreparedEnvironmentStats {
-            cubemaps: 1,
-            prefilter_passes: 1,
-            brdf_luts: 1,
-        },
+        Some(environment)
+            if environment.cubemap_faces().is_some() || environment.is_equirectangular_hdr() =>
+        {
+            PreparedEnvironmentStats {
+                cubemaps: 1,
+                prefilter_passes: 1,
+                brdf_luts: 1,
+            }
+        }
         Some(_) | None => PreparedEnvironmentStats::default(),
     }
 }

@@ -240,12 +240,7 @@ fn reciprocal_or_zero(value: f32) -> f32 {
 
 fn inverse_quat(value: Quat) -> Quat {
     let normalized = normalize_quat(value);
-    Quat {
-        x: -normalized.x,
-        y: -normalized.y,
-        z: -normalized.z,
-        w: normalized.w,
-    }
+    Quat::from_xyzw(-normalized.x, -normalized.y, -normalized.z, normalized.w)
 }
 
 fn normalize_quat(value: Quat) -> Quat {
@@ -255,12 +250,7 @@ fn normalize_quat(value: Quat) -> Quat {
         return Quat::IDENTITY;
     }
     let inverse_length = length_squared.sqrt().recip();
-    Quat {
-        x: value.x * inverse_length,
-        y: value.y * inverse_length,
-        z: value.z * inverse_length,
-        w: value.w * inverse_length,
-    }
+    Quat::from_xyzw(value.x * inverse_length, value.y * inverse_length, value.z * inverse_length, value.w * inverse_length)
 }
 
 fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {

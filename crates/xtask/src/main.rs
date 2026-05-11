@@ -4351,7 +4351,7 @@ fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mut Vec<Findi
             "cubemaps: 1",
             "prefilter_passes: 1",
             "brdf_luts: 1",
-            "environment.is_equirectangular_hdr()",
+            "environment.cubemap_faces().is_some()",
         ],
     );
     require_contains(

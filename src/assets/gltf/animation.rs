@@ -180,12 +180,7 @@ fn parse_output(
         AnimationTarget::Rotation => Ok(AnimationOutput::Quat(
             read_vec4_accessor(path, output, buffers, buffer_views, accessors)?
                 .into_iter()
-                .map(|values| Quat {
-                    x: values[0],
-                    y: values[1],
-                    z: values[2],
-                    w: values[3],
-                })
+                .map(|values| Quat::from_xyzw(values[0], values[1], values[2], values[3]))
                 .collect(),
         )),
         AnimationTarget::Weights => {

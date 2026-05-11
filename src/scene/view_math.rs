@@ -51,12 +51,7 @@ fn normalize_quat(quat: Quat) -> Quat {
     if length <= f32::EPSILON || !length.is_finite() {
         Quat::IDENTITY
     } else {
-        Quat {
-            x: quat.x / length,
-            y: quat.y / length,
-            z: quat.z / length,
-            w: quat.w / length,
-        }
+        Quat::from_xyzw(quat.x / length, quat.y / length, quat.z / length, quat.w / length)
     }
 }
 
@@ -155,22 +150,12 @@ fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
 }
 
 pub(super) fn multiply_quat(left: Quat, right: Quat) -> Quat {
-    normalize_quat(Quat {
-        x: left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
-        y: left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,
-        z: left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w,
-        w: left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z,
-    })
+    normalize_quat(Quat::from_xyzw(left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y, left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x, left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w, left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z))
 }
 
 pub(super) fn inverse_unit_quat(rotation: Quat) -> Quat {
     let normalized = normalize_quat(rotation);
-    Quat {
-        x: -normalized.x,
-        y: -normalized.y,
-        z: -normalized.z,
-        w: normalized.w,
-    }
+    Quat::from_xyzw(-normalized.x, -normalized.y, -normalized.z, normalized.w)
 }
 
 pub(super) fn union_aabb(left: Aabb, right: Aabb) -> Aabb {

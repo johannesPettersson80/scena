@@ -143,12 +143,7 @@ fn normalize_quat(value: Quat) -> Quat {
     if length <= f32::EPSILON || !length.is_finite() {
         return Quat::IDENTITY;
     }
-    Quat {
-        x: value.x / length,
-        y: value.y / length,
-        z: value.z / length,
-        w: value.w / length,
-    }
+    Quat::from_xyzw(value.x / length, value.y / length, value.z / length, value.w / length)
 }
 
 fn length_vec3(value: Vec3) -> f32 {
