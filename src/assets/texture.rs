@@ -1,4 +1,3 @@
-use std::io::Cursor;
 use std::sync::Arc;
 
 use base64::Engine;
@@ -272,92 +271,37 @@ fn decode_data_uri(path: &AssetPath) -> Result<Vec<u8>, AssetError> {
 }
 
 fn decode_png_rgba8(path: &AssetPath, bytes: &[u8]) -> Result<TexturePixels, AssetError> {
-    let mut decoder = png::Decoder::new(Cursor::new(bytes));
-    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-    let mut reader = decoder.read_info().map_err(|error| AssetError::Parse {
-        path: path.as_str().to_string(),
-        reason: format!("invalid PNG texture header: {error}"),
-    })?;
-    let mut buffer = vec![0; reader.output_buffer_size()];
-    let info = reader
-        .next_frame(&mut buffer)
-        .map_err(|error| AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: format!("invalid PNG texture payload: {error}"),
-        })?;
-    let payload = &buffer[..info.buffer_size()];
-    let rgba8 = match info.color_type {
-        png::ColorType::Rgba => payload.to_vec(),
-        png::ColorType::Rgb => payload
-            .chunks_exact(3)
-            .flat_map(|pixel| [pixel[0], pixel[1], pixel[2], 255])
-            .collect(),
-        png::ColorType::Grayscale => payload
-            .iter()
-            .flat_map(|value| [*value, *value, *value, 255])
-            .collect(),
-        png::ColorType::GrayscaleAlpha => payload
-            .chunks_exact(2)
-            .flat_map(|pixel| [pixel[0], pixel[0], pixel[0], pixel[1]])
-            .collect(),
-        png::ColorType::Indexed => {
-            return Err(AssetError::Parse {
-                path: path.as_str().to_string(),
-                reason: "indexed PNG texture did not expand to RGB/RGBA".to_string(),
-            });
-        }
-    };
-    Ok(TexturePixels {
-        width: info.width,
-        height: info.height,
-        rgba8,
-    })
+    decode_via_image_crate(path, bytes, image::ImageFormat::Png)
 }
 
 fn decode_jpeg_rgba8(path: &AssetPath, bytes: &[u8]) -> Result<TexturePixels, AssetError> {
-    let mut decoder = jpeg_decoder::Decoder::new(Cursor::new(bytes));
-    let payload = decoder.decode().map_err(|error| AssetError::Parse {
-        path: path.as_str().to_string(),
-        reason: format!("invalid JPEG texture payload: {error}"),
-    })?;
-    let info = decoder.info().ok_or_else(|| AssetError::Parse {
-        path: path.as_str().to_string(),
-        reason: "invalid JPEG texture header: missing image info".to_string(),
-    })?;
-    let rgba8 = match info.pixel_format {
-        jpeg_decoder::PixelFormat::L8 => payload
-            .iter()
-            .flat_map(|value| [*value, *value, *value, 255])
-            .collect(),
-        jpeg_decoder::PixelFormat::L16 => payload
-            .chunks_exact(2)
-            .flat_map(|pixel| [pixel[0], pixel[0], pixel[0], 255])
-            .collect(),
-        jpeg_decoder::PixelFormat::RGB24 => payload
-            .chunks_exact(3)
-            .flat_map(|pixel| [pixel[0], pixel[1], pixel[2], 255])
-            .collect(),
-        jpeg_decoder::PixelFormat::CMYK32 => payload
-            .chunks_exact(4)
-            .flat_map(|pixel| cmyk_to_rgba8(pixel[0], pixel[1], pixel[2], pixel[3]))
-            .collect(),
-    };
-    Ok(TexturePixels {
-        width: u32::from(info.width),
-        height: u32::from(info.height),
-        rgba8,
-    })
+    decode_via_image_crate(path, bytes, image::ImageFormat::Jpeg)
 }
 
-fn cmyk_to_rgba8(cyan: u8, magenta: u8, yellow: u8, black: u8) -> [u8; 4] {
-    let c = u16::from(cyan);
-    let m = u16::from(magenta);
-    let y = u16::from(yellow);
-    let k = u16::from(black);
-    [
-        255_u16.saturating_sub((c + k).min(255)) as u8,
-        255_u16.saturating_sub((m + k).min(255)) as u8,
-        255_u16.saturating_sub((y + k).min(255)) as u8,
-        255,
-    ]
+/// Stage B2: delegate PNG/JPEG decode to the `image` crate. `image` wraps
+/// the same `png` and `jpeg-decoder` crates scena previously used directly,
+/// but its unified `DynamicImage::into_rgba8` handles every color-type
+/// expansion (RGB→RGBA, Grayscale→RGBA, Grayscale+Alpha→RGBA, 16-bit→8-bit,
+/// CMYK→RGBA) without us re-implementing each path by hand. Removes the
+/// hand-rolled `cmyk_to_rgba8` + 4 color-type match arms that previously
+/// lived here.
+fn decode_via_image_crate(
+    path: &AssetPath,
+    bytes: &[u8],
+    format: image::ImageFormat,
+) -> Result<TexturePixels, AssetError> {
+    let image = image::load_from_memory_with_format(bytes, format).map_err(|error| {
+        AssetError::Parse {
+            path: path.as_str().to_string(),
+            reason: format!("invalid texture payload: {error}"),
+        }
+    })?;
+    let rgba = image.into_rgba8();
+    let width = rgba.width();
+    let height = rgba.height();
+    Ok(TexturePixels {
+        width,
+        height,
+        rgba8: rgba.into_raw(),
+    })
 }

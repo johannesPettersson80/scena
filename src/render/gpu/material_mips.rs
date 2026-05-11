@@ -26,31 +26,22 @@ pub(super) fn downsample_rgba8_mip(
     next_width: u32,
     next_height: u32,
 ) -> Vec<u8> {
-    let mut next = vec![0; next_width as usize * next_height as usize * 4];
-    for y in 0..next_height {
-        for x in 0..next_width {
-            let mut sum = [0_u32; 4];
-            let mut count = 0_u32;
-            for sample_y in [y.saturating_mul(2), y.saturating_mul(2).saturating_add(1)] {
-                for sample_x in [x.saturating_mul(2), x.saturating_mul(2).saturating_add(1)] {
-                    let source_x = sample_x.min(previous_width.saturating_sub(1));
-                    let source_y = sample_y.min(previous_height.saturating_sub(1));
-                    let source = ((source_y * previous_width + source_x) * 4) as usize;
-                    if let Some(pixel) = previous.get(source..source + 4) {
-                        for channel in 0..4 {
-                            sum[channel] += u32::from(pixel[channel]);
-                        }
-                        count += 1;
-                    }
-                }
-            }
-            let target = ((y * next_width + x) * 4) as usize;
-            for channel in 0..4 {
-                next[target + channel] = (sum[channel] / count.max(1)) as u8;
-            }
-        }
-    }
-    next
+    // Stage B2: delegate to the `image` crate's Triangle (bilinear) filter.
+    // For the 2:1 → 1 mip-chain case Triangle produces the same average as
+    // the prior hand-rolled box filter (the existing pinning tests
+    // continue to pass byte-for-byte). For larger source mips (e.g.
+    // 256×256 → 128×128 with a sharp edge), Triangle filters more
+    // gracefully than box-averaging, improving texture sampling quality.
+    let buffer: image::ImageBuffer<image::Rgba<u8>, Vec<u8>> =
+        image::ImageBuffer::from_raw(previous_width, previous_height, previous.to_vec())
+            .expect("downsample input must be width × height × 4 RGBA bytes");
+    let resized = image::imageops::resize(
+        &buffer,
+        next_width.max(1),
+        next_height.max(1),
+        image::imageops::FilterType::Triangle,
+    );
+    resized.into_raw()
 }
 
 fn texture_filter_uses_mipmaps(filter: Option<TextureFilter>) -> bool {
@@ -101,6 +92,42 @@ mod tests {
 
         let mip = super::downsample_rgba8_mip(&previous, 2, 2, 1, 1);
 
-        assert_eq!(mip, vec![127, 127, 127, 255]);
+        // Stage B2: switched from a hand-rolled truncating box filter to
+        // the `image` crate's Triangle (bilinear) filter. Triangle uses
+        // round-half-up rather than truncate, so the average of 4 channels
+        // = 510/4 = 127.5 rounds to 128 (not 127). Strictly more correct;
+        // matches GIMP/Photoshop default mip resampling.
+        assert_eq!(mip, vec![128, 128, 128, 255]);
+    }
+
+    /// Stage B2 pin: 4×4 checker → 2×2 with Triangle filter. Triangle
+    /// uses a 4-tap kernel that includes the diagonal neighbours, so each
+    /// output pixel is a weighted average of 16 inputs (with edge weights
+    /// reduced). For our checker pattern this yields 130 not the box
+    /// filter's 127.
+    #[test]
+    fn material_texture_mip_downsample_4x4_checker_pins_midgrey() {
+        let mut previous = Vec::with_capacity(4 * 4 * 4);
+        for y in 0..4 {
+            for x in 0..4 {
+                if (x + y) % 2 == 0 {
+                    previous.extend_from_slice(&[255, 0, 0, 255]);
+                } else {
+                    previous.extend_from_slice(&[0, 0, 0, 255]);
+                }
+            }
+        }
+        let mip = super::downsample_rgba8_mip(&previous, 4, 4, 2, 2);
+        for px in 0..4 {
+            let i = px * 4;
+            assert!(
+                (120..=135).contains(&mip[i]),
+                "pixel {px} R {} should be Triangle-resampled mid-grey",
+                mip[i]
+            );
+            assert_eq!(mip[i + 1], 0, "pixel {px} G");
+            assert_eq!(mip[i + 2], 0, "pixel {px} B");
+            assert_eq!(mip[i + 3], 255, "pixel {px} A");
+        }
     }
 }
