@@ -7,6 +7,9 @@ use crate::scene::Vec3;
 /// visible faceting, small enough to upload in <128 KB. The Phase 1C step 2
 /// GGX prefilter mip chain attaches to the same texture.
 pub const DEFAULT_ENVIRONMENT_CUBEMAP_FACE_RESOLUTION: u32 = 64;
+/// BRDF LUT default resolution for environment lighting. Matches the
+/// 64×64 grid built by `build_brdf_lut`.
+pub const DEFAULT_ENVIRONMENT_BRDF_LUT_SIZE: u32 = 64;
 
 /// Six axis-aligned cubemap face directions in WebGPU layer order
 /// (px, nx, py, ny, pz, nz). Used to interpolate per-pixel radiance from a
@@ -33,6 +36,12 @@ pub const ENVIRONMENT_CUBEMAP_FACE_NORMALS: [[f32; 3]; 6] = [
 pub struct EnvironmentCubemapFaces {
     pub(crate) face_radiance: [[f32; 3]; 6],
     pub(crate) resolution: u32,
+    /// Optional per-pixel radiance for each of the 6 cubemap faces. When
+    /// `Some`, `build_face_pixels_rgba32f` returns these grids directly
+    /// (preserving the equirectangular HDR's per-pixel detail); when
+    /// `None`, the path falls back to interpolating the 6 face-centre
+    /// summaries via `blend_face_radiance`.
+    pub(crate) face_pixels: Option<[Vec<[f32; 3]>; 6]>,
 }
 
 impl EnvironmentCubemapFaces {
@@ -91,6 +100,55 @@ impl EnvironmentCubemapFaces {
         seen.iter().all(|present| *present).then_some(Self {
             face_radiance: radiance,
             resolution,
+            face_pixels: None,
+        })
+    }
+
+    /// Project an equirectangular HDR into 6 cubemap face grids at
+    /// `face_resolution` per side. For each face pixel, derives the world
+    /// direction, converts to spherical (longitude, latitude), and samples
+    /// the equirectangular HDR via bilinear filtering. The resulting cubemap
+    /// preserves real per-pixel radiance — the prefiltered specular pass
+    /// downstream then produces the bright sheen/reflections that pure
+    /// face-centre interpolation cannot.
+    pub fn from_equirectangular(
+        equirect: &DecodedEquirectangular,
+        face_resolution: u32,
+    ) -> Option<Self> {
+        if equirect.width == 0 || equirect.height == 0 || face_resolution == 0 {
+            return None;
+        }
+        let resolution = face_resolution;
+        let face_pixel_count = (resolution as usize).pow(2);
+        let mut faces: [Vec<[f32; 3]>; 6] =
+            std::array::from_fn(|_| vec![[0.0, 0.0, 0.0]; face_pixel_count]);
+        let mut face_radiance = [[0.0_f32; 3]; 6];
+        for (face_index, face) in faces.iter_mut().enumerate() {
+            let mut sum = [0.0_f64; 3];
+            for y in 0..resolution {
+                for x in 0..resolution {
+                    let u = (x as f32 + 0.5) / resolution as f32 * 2.0 - 1.0;
+                    let v = (y as f32 + 0.5) / resolution as f32 * 2.0 - 1.0;
+                    let direction = cube_face_direction(face_index, u, v);
+                    let sample = sample_equirectangular(equirect, direction);
+                    let pixel_index = (y * resolution + x) as usize;
+                    face[pixel_index] = sample;
+                    sum[0] += f64::from(sample[0]);
+                    sum[1] += f64::from(sample[1]);
+                    sum[2] += f64::from(sample[2]);
+                }
+            }
+            let inv = (face_pixel_count as f64).recip();
+            face_radiance[face_index] = [
+                (sum[0] * inv) as f32,
+                (sum[1] * inv) as f32,
+                (sum[2] * inv) as f32,
+            ];
+        }
+        Some(Self {
+            face_radiance,
+            resolution,
+            face_pixels: Some(faces),
         })
     }
 
@@ -102,15 +160,30 @@ impl EnvironmentCubemapFaces {
         self.resolution
     }
 
-    /// Builds six RGBA32F face buffers (resolution × resolution × 4 channels)
-    /// by spherically interpolating the six face-center radiances. Each pixel
-    /// direction's radiance is a `max(0, dot(d, face_normal))`-weighted
-    /// average of the six face values; alpha is always 1.0.
+    /// Builds six RGBA32F face buffers (resolution × resolution × 4 channels).
+    /// When the cubemap carries real per-pixel radiance (set by
+    /// `from_equirectangular`), expand those into the RGBA32F shape directly.
+    /// Otherwise, fall back to spherically-interpolating the six face-centre
+    /// radiances: each pixel direction's radiance is a
+    /// `max(0, dot(d, face_normal))`-weighted average of the face values.
+    /// Alpha is always 1.0.
     pub fn build_face_pixels_rgba32f(&self) -> [Vec<f32>; 6] {
         let resolution = self.resolution.max(1);
+        let pixel_count = (resolution as usize).pow(2);
         let mut faces: [Vec<f32>; 6] =
-            std::array::from_fn(|_| vec![0.0_f32; (resolution as usize).pow(2).saturating_mul(4)]);
+            std::array::from_fn(|_| vec![0.0_f32; pixel_count.saturating_mul(4)]);
         for (face_index, face_pixels) in faces.iter_mut().enumerate() {
+            if let Some(stored) = self.face_pixels.as_ref() {
+                let source = &stored[face_index];
+                for (pixel_index, radiance) in source.iter().enumerate().take(pixel_count) {
+                    let offset = pixel_index * 4;
+                    face_pixels[offset] = radiance[0];
+                    face_pixels[offset + 1] = radiance[1];
+                    face_pixels[offset + 2] = radiance[2];
+                    face_pixels[offset + 3] = 1.0;
+                }
+                continue;
+            }
             for y in 0..resolution {
                 for x in 0..resolution {
                     let u = (x as f32 + 0.5) / resolution as f32 * 2.0 - 1.0;
@@ -159,6 +232,8 @@ fn parse_radiance_triplet(value: &str) -> Option<[f32; 3]> {
     }
     Some(channels)
 }
+
+use super::environment_projection::sample_equirectangular;
 
 /// Maps the (face, u, v) coordinate to a unit direction vector pointing from
 /// the cube center through the face pixel. Mirrors WebGPU's cubemap face
@@ -245,7 +320,7 @@ pub struct EnvironmentDerivative {
     sha256: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct EnvironmentDesc {
     name: String,
     source_path: AssetPath,
@@ -259,6 +334,30 @@ pub struct EnvironmentDesc {
     brdf_lut_size: u32,
     wasm_delivery: WasmEnvironmentDelivery,
     derivatives: Vec<EnvironmentDerivative>,
+    /// When the environment originates from a Radiance HDR (equirectangular)
+    /// the decoded pixel grid is kept here. `cubemap_faces()` then projects
+    /// it into per-face radiance grids so the prefiltered specular pass
+    /// downstream has real HDR contrast to reflect. `Arc` keeps clones
+    /// cheap. Skipped from `PartialEq` because two equal `EnvironmentDesc`s
+    /// should compare by name + source identity, not by raw pixel pointers.
+    equirectangular_pixels: Option<std::sync::Arc<DecodedEquirectangular>>,
+}
+
+impl PartialEq for EnvironmentDesc {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.source_path == other.source_path
+            && self.source_kind == other.source_kind
+            && self.source_dimensions == other.source_dimensions
+            && self.source_sha256 == other.source_sha256
+            && self.preview_irradiance_rgb == other.preview_irradiance_rgb
+            && self.license == other.license
+            && self.generator == other.generator
+            && self.cubemap_resolution == other.cubemap_resolution
+            && self.brdf_lut_size == other.brdf_lut_size
+            && self.wasm_delivery == other.wasm_delivery
+            && self.derivatives == other.derivatives
+    }
 }
 
 impl EnvironmentDesc {
@@ -285,6 +384,7 @@ impl EnvironmentDesc {
                     sha256: DEFAULT_ENVIRONMENT_BRDF_LUT_SHA256.to_string(),
                 },
             ],
+            equirectangular_pixels: None,
         }
     }
 
@@ -304,6 +404,7 @@ impl EnvironmentDesc {
             brdf_lut_size: 0,
             wasm_delivery: WasmEnvironmentDelivery::SeparateFetch,
             derivatives: Vec::new(),
+            equirectangular_pixels: None,
         }
     }
 
@@ -312,8 +413,23 @@ impl EnvironmentDesc {
         source_bytes: &[u8],
     ) -> Result<Self, AssetError> {
         let path = path.into();
-        let (source_dimensions, preview_irradiance_rgb) =
-            parse_radiance_hdr_preview(&path, source_bytes)?;
+        let decoded = decode_radiance_hdr(&path, source_bytes)?;
+        let source_dimensions = (decoded.width, decoded.height);
+        let inverse_count = (decoded.pixels.len() as f32).recip();
+        let mut preview_irradiance_rgb = [0.0_f32; 3];
+        for pixel in &decoded.pixels {
+            preview_irradiance_rgb[0] += pixel[0];
+            preview_irradiance_rgb[1] += pixel[1];
+            preview_irradiance_rgb[2] += pixel[2];
+        }
+        preview_irradiance_rgb[0] *= inverse_count;
+        preview_irradiance_rgb[1] *= inverse_count;
+        preview_irradiance_rgb[2] *= inverse_count;
+        // Project the equirectangular HDR into a cubemap so the
+        // prefiltered specular path has real per-pixel radiance to reflect.
+        // Cap the projected face resolution at 256 (the default) — beyond
+        // this point the prefilter cost dominates without visible gain.
+        let cubemap_resolution = DEFAULT_ENVIRONMENT_CUBEMAP_FACE_RESOLUTION;
         Ok(Self {
             name: environment_name_from_path(&path).to_string(),
             source_path: path,
@@ -323,10 +439,11 @@ impl EnvironmentDesc {
             preview_irradiance_rgb: Some(preview_irradiance_rgb),
             license: None,
             generator: None,
-            cubemap_resolution: 0,
-            brdf_lut_size: 0,
+            cubemap_resolution,
+            brdf_lut_size: DEFAULT_ENVIRONMENT_BRDF_LUT_SIZE,
             wasm_delivery: WasmEnvironmentDelivery::SeparateFetch,
             derivatives: Vec::new(),
+            equirectangular_pixels: Some(std::sync::Arc::new(decoded)),
         })
     }
 
@@ -387,6 +504,12 @@ impl EnvironmentDesc {
     /// fixture decodes today. Equirectangular HDR sources will gain a real
     /// face decode in step 2 alongside the GGX prefilter and BRDF LUT.
     pub fn cubemap_faces(&self) -> Option<EnvironmentCubemapFaces> {
+        if let Some(equirect) = self.equirectangular_pixels.as_ref() {
+            return EnvironmentCubemapFaces::from_equirectangular(
+                equirect,
+                self.cubemap_resolution.max(1),
+            );
+        }
         if self.name == DEFAULT_ENVIRONMENT_NAME {
             return EnvironmentCubemapFaces::try_parse_fixture(BUNDLED_NEUTRAL_STUDIO_CUBEMAP);
         }
@@ -433,114 +556,64 @@ fn parse_equirectangular_hdr_dimensions(path: &AssetPath) -> Option<(u32, u32)> 
     (width > 0 && height > 0).then_some((width, height))
 }
 
-fn parse_radiance_hdr_preview(
+/// Decoded equirectangular HDR pixel grid. Stored as row-major linear RGB
+/// floats so the cubemap projection pass can sample by (longitude, latitude).
+/// Built by the `radiant` crate, which handles both uncompressed RGBE and
+/// the RLE-compressed scanline format used by every real-world HDRI source.
+#[derive(Debug, Clone)]
+pub struct DecodedEquirectangular {
+    /// Width of the decoded image in pixels.
+    pub width: u32,
+    /// Height of the decoded image in pixels.
+    pub height: u32,
+    /// Row-major linear RGB pixels (length = width × height).
+    pub pixels: Vec<[f32; 3]>,
+}
+
+// `parse_radiance_hdr_preview` was the legacy "average radiance only" entry
+// point; the new `from_equirectangular_hdr_bytes` now inlines that summation
+// alongside keeping the full pixel grid for cubemap projection.
+
+/// Full-pixel decoder used by both the scalar irradiance path and the
+/// cubemap projection path. Wraps `radiant::load` which handles both raw
+/// and RLE-compressed RGBE scanlines plus the various header variants
+/// real-world HDR exporters emit. Translates radiant's errors into
+/// scena's `AssetError::Parse` with the asset path attached.
+pub(crate) fn decode_radiance_hdr(
     path: &AssetPath,
     source_bytes: &[u8],
-) -> Result<((u32, u32), [f32; 3]), AssetError> {
-    let Some(header_end) = find_bytes(source_bytes, b"\n\n") else {
-        return Err(AssetError::Parse {
+) -> Result<DecodedEquirectangular, AssetError> {
+    let image = radiant::load(std::io::Cursor::new(source_bytes)).map_err(|error| {
+        AssetError::Parse {
             path: path.as_str().to_string(),
-            reason: "Radiance HDR header is missing a blank-line terminator".to_string(),
-        });
-    };
-    let resolution_start = header_end + 2;
-    let Some(resolution_end_relative) = find_bytes(&source_bytes[resolution_start..], b"\n") else {
-        return Err(AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: "Radiance HDR header is missing the resolution line".to_string(),
-        });
-    };
-    let resolution_end = resolution_start + resolution_end_relative;
-    let resolution =
-        std::str::from_utf8(&source_bytes[resolution_start..resolution_end]).map_err(|error| {
-            AssetError::Parse {
-                path: path.as_str().to_string(),
-                reason: format!("Radiance HDR resolution line is not UTF-8: {error}"),
-            }
-        })?;
-    let (width, height) = parse_radiance_resolution(path, resolution)?;
-    let pixel_start = resolution_end + 1;
-    let pixel_count = (width as usize)
-        .checked_mul(height as usize)
-        .ok_or_else(|| AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: "Radiance HDR dimensions overflow pixel count".to_string(),
-        })?;
-    let expected_bytes = pixel_count
-        .checked_mul(4)
-        .ok_or_else(|| AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: "Radiance HDR dimensions overflow byte count".to_string(),
-        })?;
-    let pixel_bytes = source_bytes
-        .get(pixel_start..pixel_start + expected_bytes)
-        .ok_or_else(|| AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: "Radiance HDR fixture is shorter than the declared raw RGBE data".to_string(),
-        })?;
-    let mut average = [0.0_f32; 3];
-    for rgbae in pixel_bytes.chunks_exact(4) {
-        let rgb = decode_rgbe(rgbae[0], rgbae[1], rgbae[2], rgbae[3]);
-        average[0] += rgb[0];
-        average[1] += rgb[1];
-        average[2] += rgb[2];
-    }
-    let inverse_count = (pixel_count as f32).recip();
-    average[0] *= inverse_count;
-    average[1] *= inverse_count;
-    average[2] *= inverse_count;
-    Ok(((width, height), average))
-}
-
-fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
-}
-
-fn parse_radiance_resolution(path: &AssetPath, resolution: &str) -> Result<(u32, u32), AssetError> {
-    let parts = resolution.split_whitespace().collect::<Vec<_>>();
-    if parts.len() != 4 {
-        return Err(AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: format!("unsupported Radiance HDR resolution line '{resolution}'"),
-        });
-    }
-    let mut width = None;
-    let mut height = None;
-    for pair in parts.chunks_exact(2) {
-        match pair[0] {
-            "+X" | "-X" => width = pair[1].parse::<u32>().ok(),
-            "+Y" | "-Y" => height = pair[1].parse::<u32>().ok(),
-            _ => {}
+            reason: format!("Radiance HDR decode failed: {error}"),
         }
-    }
-    let Some(width) = width.filter(|value| *value > 0) else {
-        return Err(AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: format!("Radiance HDR resolution line has invalid width '{resolution}'"),
-        });
-    };
-    let Some(height) = height.filter(|value| *value > 0) else {
-        return Err(AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: format!("Radiance HDR resolution line has invalid height '{resolution}'"),
-        });
-    };
-    Ok((width, height))
+    })?;
+    let width: u32 = image.width.try_into().map_err(|_| AssetError::Parse {
+        path: path.as_str().to_string(),
+        reason: "Radiance HDR width does not fit in u32".to_string(),
+    })?;
+    let height: u32 = image.height.try_into().map_err(|_| AssetError::Parse {
+        path: path.as_str().to_string(),
+        reason: "Radiance HDR height does not fit in u32".to_string(),
+    })?;
+    let pixels = image
+        .data
+        .into_iter()
+        .map(|rgb| [rgb.r, rgb.g, rgb.b])
+        .collect::<Vec<_>>();
+    Ok(DecodedEquirectangular {
+        width,
+        height,
+        pixels,
+    })
 }
 
-fn decode_rgbe(red: u8, green: u8, blue: u8, exponent: u8) -> [f32; 3] {
-    if exponent == 0 {
-        return [0.0, 0.0, 0.0];
-    }
-    let scale = 2.0_f32.powi(exponent as i32 - 136);
-    [
-        (f32::from(red) + 0.5) * scale,
-        (f32::from(green) + 0.5) * scale,
-        (f32::from(blue) + 0.5) * scale,
-    ]
-}
+// `find_bytes`, `parse_radiance_resolution`, and `decode_rgbe` previously
+// lived here as a hand-rolled Radiance HDR decoder. They were removed when
+// scena adopted the `radiant` crate (which properly handles RLE-compressed
+// scanlines and the various header variants real exporters emit) — see
+// `decode_radiance_hdr` above.
 
 #[cfg(test)]
 mod environment_cubemap_tests {
@@ -616,6 +689,7 @@ mod environment_cubemap_tests {
         let cube = EnvironmentCubemapFaces {
             face_radiance: radiance,
             resolution: 8,
+            face_pixels: None,
         };
         let pixels = cube.build_face_pixels_rgba32f();
         for (face_index, face_pixels) in pixels.iter().enumerate() {
@@ -659,6 +733,7 @@ mod environment_cubemap_tests {
         let cube = EnvironmentCubemapFaces {
             face_radiance: radiance,
             resolution: 4,
+            face_pixels: None,
         };
         let pixels = cube.build_face_pixels_rgba32f();
         let resolution = 4_usize;
@@ -704,6 +779,7 @@ mod environment_cubemap_tests {
         let cube = EnvironmentCubemapFaces {
             face_radiance: radiance,
             resolution: 64,
+            face_pixels: None,
         };
         let irradiance = cube.lambertian_irradiance();
         let expected = [

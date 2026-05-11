@@ -893,6 +893,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "radiant"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fe058d33033bb65dbf0adcfd4a03f4ce4964426ec9c73e054ebf2f7e605ccd3"
+
+[[package]]
 name = "range-alloc"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -968,6 +974,7 @@ dependencies = [
  "mikktspace",
  "png",
  "pollster",
+ "radiant",
  "raw-window-handle",
  "serde_json",
  "slotmap",

@@ -12,19 +12,106 @@
 //! the importer + renderer must handle.
 #![cfg(not(target_arch = "wasm32"))]
 
+use std::collections::BTreeMap;
 use std::fs::File;
+use std::future::{Ready, ready};
 use std::io::BufWriter;
 
 use scena::{
-    Assets, Color, DirectionalLight, GeometryDesc, MaterialDesc, Renderer, Scene, Transform,
+    AssetError, AssetFetcher, AssetPath, Assets, Color, DirectionalLight, GeometryDesc,
+    MaterialDesc, Renderer, Scene, Transform,
 };
 
 const WATERBOTTLE_PATH: &str = "tests/assets/gltf/khronos/WaterBottle/WaterBottle.gltf";
 const ARTIFACT_PNG: &str = "target/gate-artifacts/m8-real-asset/waterbottle.png";
+const STUDIO_HDR_PATH: &str = "memory://studio-3point.hdr";
+
+/// Hybrid fetcher: serves a small set of in-memory files (e.g. the
+/// synthetic HDR), falling back to the filesystem for anything else
+/// (the WaterBottle .gltf + .bin + textures live on disk).
+#[derive(Clone)]
+struct HybridFetcher {
+    overlay: BTreeMap<AssetPath, Vec<u8>>,
+}
+
+impl HybridFetcher {
+    fn new(overlay: Vec<(AssetPath, Vec<u8>)>) -> Self {
+        Self {
+            overlay: overlay.into_iter().collect(),
+        }
+    }
+}
+
+impl AssetFetcher for HybridFetcher {
+    type Future<'a> = Ready<Result<Vec<u8>, AssetError>>;
+
+    fn fetch<'a>(&'a self, path: &'a AssetPath) -> Self::Future<'a> {
+        if let Some(bytes) = self.overlay.get(path) {
+            return ready(Ok(bytes.clone()));
+        }
+        ready(std::fs::read(path.as_str()).map_err(|error| AssetError::Io {
+            path: path.as_str().to_string(),
+            reason: format!("{error}"),
+        }))
+    }
+}
+
+/// Synthetic 3-point-studio equirectangular HDR. 128×64 image with three
+/// bright "lights" (key, fill, rim) painted into the upper hemisphere
+/// against a dim sky. Provides real HDR contrast for the prefiltered
+/// specular path to reflect off the WaterBottle's metallic body.
+fn synthetic_studio_hdr() -> Vec<u8> {
+    const W: u32 = 128;
+    const H: u32 = 64;
+    let mut pixels = vec![[12_u8, 14, 18, 128]; (W * H) as usize];
+    // Helper: paint a soft bright spot centred at (cx, cy) with rgbe colour.
+    let mut paint = |cx: i32, cy: i32, radius: i32, rgbe: [u8; 4]| {
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                let x = cx + dx;
+                let y = cy + dy;
+                if y < 0 || y >= H as i32 {
+                    continue;
+                }
+                let xw = ((x % W as i32) + W as i32) % W as i32;
+                let dist2 = (dx * dx + dy * dy) as f32;
+                let r2 = (radius * radius) as f32;
+                if dist2 > r2 {
+                    continue;
+                }
+                let fall = 1.0 - (dist2 / r2);
+                let scaled = [
+                    (rgbe[0] as f32 * fall) as u8,
+                    (rgbe[1] as f32 * fall) as u8,
+                    (rgbe[2] as f32 * fall) as u8,
+                    rgbe[3],
+                ];
+                pixels[(y as u32 * W + xw as u32) as usize] = scaled;
+            }
+        }
+    };
+    // Three lights at upper-hemisphere positions: warm key (front-right),
+    // cool fill (front-left), warm rim (back-centre).
+    paint(74, 16, 9, [255, 240, 220, 134]); // key
+    paint(54, 22, 7, [180, 200, 255, 132]); // fill
+    paint(0, 12, 6, [255, 235, 200, 133]); // rim
+    // Encode as uncompressed Radiance HDR (the radiant crate decodes
+    // both compressed and uncompressed; uncompressed is easier to
+    // construct by hand for a fixture).
+    let mut bytes =
+        format!("#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y {H} +X {W}\n").into_bytes();
+    for pixel in &pixels {
+        bytes.extend_from_slice(pixel);
+    }
+    bytes
+}
 
 #[test]
 fn m8_real_asset_waterbottle_imports_and_renders() {
-    let assets = Assets::new();
+    let assets = Assets::with_fetcher(HybridFetcher::new(vec![(
+        AssetPath::from(STUDIO_HDR_PATH),
+        synthetic_studio_hdr(),
+    )]));
     let scene_asset =
         pollster::block_on(assets.load_scene(WATERBOTTLE_PATH)).expect("WaterBottle .gltf loads");
 
@@ -133,7 +220,11 @@ fn m8_real_asset_waterbottle_imports_and_renders() {
         )
         .add()
         .expect("floor mesh inserts");
-    let environment = assets.default_environment();
+    // Replace the bundled mid-grey neutral_studio with the synthetic
+    // 3-point HDR so the prefiltered specular cubemap has real high-contrast
+    // radiance for the metallic bottle body to reflect.
+    let environment = pollster::block_on(assets.load_environment(STUDIO_HDR_PATH))
+        .expect("synthetic studio HDR loads");
 
     // Default to the CPU rasterizer so the test is deterministic on every
     // host. To render through the GPU pipeline (e.g. on a Linux box with a

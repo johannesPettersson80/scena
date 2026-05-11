@@ -12,6 +12,7 @@ use crate::material::{Color, MaterialDesc, TextureColorSpace};
 use crate::scene::Transform;
 
 mod environment;
+mod environment_projection;
 mod fetch;
 mod gltf;
 mod load;
