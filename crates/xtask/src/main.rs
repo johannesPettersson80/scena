@@ -2173,6 +2173,55 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_unit_test_first_governance(root, findings);
     check_agent_validation(root, findings);
     check_tests_env_flags_documented(root, findings);
+    check_m8_real_asset_dual_lane(root, findings);
+}
+
+/// `M8-REAL-ASSET-DUAL-LANE`: the m8 WaterBottle proof must be split into
+/// a hard-required GPU headline lane (region asserts + diff) and a
+/// loose CPU preview lane. Both must produce their own artifact under
+/// `target/gate-artifacts/m8-real-asset/`. Catches regressions where
+/// someone collapses the two lanes back into one and silently passes
+/// either by the loose bar or by the CPU lane masking GPU breakage.
+fn check_m8_real_asset_dual_lane(root: &Path, findings: &mut Vec<Finding>) {
+    let test_path = root.join("tests/m8_real_asset_proof.rs");
+    let Ok(text) = fs::read_to_string(&test_path) else {
+        findings.push(Finding::new(
+            "M8-REAL-ASSET-DUAL-LANE",
+            "could not read tests/m8_real_asset_proof.rs".to_string(),
+        ));
+        return;
+    };
+    let required = [
+        "fn m8_real_asset_waterbottle_gpu_headline",
+        "fn m8_real_asset_waterbottle_cpu_preview",
+        "ARTIFACT_GPU_PNG",
+        "ARTIFACT_CPU_PNG",
+        "Renderer::headless_gpu",
+        "Renderer::headless(",
+        "build_waterbottle_scene",
+    ];
+    for needle in required {
+        if !text.contains(needle) {
+            findings.push(Finding::new(
+                "M8-REAL-ASSET-DUAL-LANE",
+                format!(
+                    "tests/m8_real_asset_proof.rs missing required contract text '{needle}'; \
+                     the m8 WaterBottle proof must keep its GPU-headline + CPU-preview split",
+                ),
+            ));
+        }
+    }
+    // Reject the old combined test name — if it comes back, the split was
+    // undone.
+    if text.contains("fn m8_real_asset_waterbottle_imports_and_renders") {
+        findings.push(Finding::new(
+            "M8-REAL-ASSET-DUAL-LANE",
+            "tests/m8_real_asset_proof.rs contains the legacy combined test name \
+             `m8_real_asset_waterbottle_imports_and_renders`; the Phase 3 split \
+             replaced it with gpu_headline + cpu_preview lanes"
+                .to_string(),
+        ));
+    }
 }
 
 /// `TESTS-ENV-FLAGS-DOCUMENTED`: every non-standard env var that a test under
@@ -10254,6 +10303,22 @@ mod tests {
         "#;
         let names = find_env_var_names(source);
         assert_eq!(names.iter().filter(|n| *n == "FOO").count(), 1);
+    }
+
+    #[test]
+    fn m8_real_asset_dual_lane_passes_for_current_test_file() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+        check_m8_real_asset_dual_lane(&root, &mut findings);
+        let dual_lane: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == "M8-REAL-ASSET-DUAL-LANE")
+            .collect();
+        assert!(
+            dual_lane.is_empty(),
+            "Phase 3 m8 test split must keep doctor green; got: {:?}",
+            dual_lane,
+        );
     }
 
     #[test]
