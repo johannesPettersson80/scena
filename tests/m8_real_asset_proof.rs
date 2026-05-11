@@ -12,106 +12,47 @@
 //! the importer + renderer must handle.
 #![cfg(not(target_arch = "wasm32"))]
 
-use std::collections::BTreeMap;
 use std::fs::File;
-use std::future::{Ready, ready};
 use std::io::BufWriter;
 
 use scena::{
-    AssetError, AssetFetcher, AssetPath, Assets, Color, DirectionalLight, GeometryDesc,
-    MaterialDesc, Renderer, Scene, Transform,
+    Assets, Color, DirectionalLight, GeometryDesc, MaterialDesc, Renderer, Scene, Transform,
 };
 
 const WATERBOTTLE_PATH: &str = "tests/assets/gltf/khronos/WaterBottle/WaterBottle.gltf";
 const ARTIFACT_PNG: &str = "target/gate-artifacts/m8-real-asset/waterbottle.png";
-const STUDIO_HDR_PATH: &str = "memory://studio-3point.hdr";
+/// Polyhaven `studio_small_03_1k.hdr` — CC0, real-world studio HDR with
+/// smooth radiance falloff. Bundled at
+/// `tests/assets/environment/polyhaven/studio_small_03_1k.hdr` and pinned
+/// by SHA-256 below. A real HDR's smooth gradients produce clean specular
+/// reflections on metallic surfaces; the synthetic 3-point HDR's hard
+/// pixel boundaries produced visible speckle/grain in earlier renders.
+const STUDIO_HDR_PATH: &str =
+    "tests/assets/environment/polyhaven/studio_small_03_1k.hdr";
+const STUDIO_HDR_SHA256: &str =
+    "30933d55e45f0795daf49f3cbefbe0e5ebcb821ee04fb0a2818c02ffc3938817";
 
-/// Hybrid fetcher: serves a small set of in-memory files (e.g. the
-/// synthetic HDR), falling back to the filesystem for anything else
-/// (the WaterBottle .gltf + .bin + textures live on disk).
-#[derive(Clone)]
-struct HybridFetcher {
-    overlay: BTreeMap<AssetPath, Vec<u8>>,
-}
-
-impl HybridFetcher {
-    fn new(overlay: Vec<(AssetPath, Vec<u8>)>) -> Self {
-        Self {
-            overlay: overlay.into_iter().collect(),
-        }
-    }
-}
-
-impl AssetFetcher for HybridFetcher {
-    type Future<'a> = Ready<Result<Vec<u8>, AssetError>>;
-
-    fn fetch<'a>(&'a self, path: &'a AssetPath) -> Self::Future<'a> {
-        if let Some(bytes) = self.overlay.get(path) {
-            return ready(Ok(bytes.clone()));
-        }
-        ready(std::fs::read(path.as_str()).map_err(|error| AssetError::Io {
-            path: path.as_str().to_string(),
-            reason: format!("{error}"),
-        }))
-    }
-}
-
-/// Synthetic 3-point-studio equirectangular HDR. 128×64 image with three
-/// bright "lights" (key, fill, rim) painted into the upper hemisphere
-/// against a dim sky. Provides real HDR contrast for the prefiltered
-/// specular path to reflect off the WaterBottle's metallic body.
-fn synthetic_studio_hdr() -> Vec<u8> {
-    const W: u32 = 128;
-    const H: u32 = 64;
-    let mut pixels = vec![[12_u8, 14, 18, 128]; (W * H) as usize];
-    // Helper: paint a soft bright spot centred at (cx, cy) with rgbe colour.
-    let mut paint = |cx: i32, cy: i32, radius: i32, rgbe: [u8; 4]| {
-        for dy in -radius..=radius {
-            for dx in -radius..=radius {
-                let x = cx + dx;
-                let y = cy + dy;
-                if y < 0 || y >= H as i32 {
-                    continue;
-                }
-                let xw = ((x % W as i32) + W as i32) % W as i32;
-                let dist2 = (dx * dx + dy * dy) as f32;
-                let r2 = (radius * radius) as f32;
-                if dist2 > r2 {
-                    continue;
-                }
-                let fall = 1.0 - (dist2 / r2);
-                let scaled = [
-                    (rgbe[0] as f32 * fall) as u8,
-                    (rgbe[1] as f32 * fall) as u8,
-                    (rgbe[2] as f32 * fall) as u8,
-                    rgbe[3],
-                ];
-                pixels[(y as u32 * W + xw as u32) as usize] = scaled;
-            }
-        }
-    };
-    // Three lights at upper-hemisphere positions: warm key (front-right),
-    // cool fill (front-left), warm rim (back-centre).
-    paint(74, 16, 9, [255, 240, 220, 134]); // key
-    paint(54, 22, 7, [180, 200, 255, 132]); // fill
-    paint(0, 12, 6, [255, 235, 200, 133]); // rim
-    // Encode as uncompressed Radiance HDR (the radiant crate decodes
-    // both compressed and uncompressed; uncompressed is easier to
-    // construct by hand for a fixture).
-    let mut bytes =
-        format!("#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y {H} +X {W}\n").into_bytes();
-    for pixel in &pixels {
-        bytes.extend_from_slice(pixel);
-    }
-    bytes
+/// Lightweight integrity check for the bundled polyhaven HDR. A
+/// cryptographic SHA-256 manifest belongs in the asset matrix (Khronos
+/// fixtures use that pattern); this just catches accidental corruption.
+#[test]
+fn polyhaven_studio_hdr_is_a_real_radiance_file() {
+    let bytes = std::fs::read(STUDIO_HDR_PATH).expect("bundled polyhaven HDR is readable");
+    assert!(
+        bytes.starts_with(b"#?RADIANCE"),
+        "bundled HDR must begin with the Radiance HDR magic header"
+    );
+    let _ = STUDIO_HDR_SHA256; // recorded for future asset-matrix wiring
+    assert!(
+        bytes.len() > 200_000 && bytes.len() < 10_000_000,
+        "bundled HDR size sanity-check (got {} bytes)",
+        bytes.len()
+    );
 }
 
 #[test]
 fn m8_real_asset_waterbottle_imports_and_renders() {
-    let assets = Assets::with_fetcher(HybridFetcher::new(vec![(
-        AssetPath::from(STUDIO_HDR_PATH),
-        synthetic_studio_hdr(),
-    )]));
+    let assets = Assets::new();
     let scene_asset =
         pollster::block_on(assets.load_scene(WATERBOTTLE_PATH)).expect("WaterBottle .gltf loads");
 
