@@ -12,9 +12,13 @@
 //! the importer + renderer must handle.
 #![cfg(not(target_arch = "wasm32"))]
 
+use std::fs::File;
+use std::io::BufWriter;
+
 use scena::{Assets, Renderer, Scene};
 
 const WATERBOTTLE_PATH: &str = "tests/assets/gltf/khronos/WaterBottle/WaterBottle.gltf";
+const ARTIFACT_PNG: &str = "target/gate-artifacts/m8-real-asset/waterbottle.png";
 
 #[test]
 fn m8_real_asset_waterbottle_imports_and_renders() {
@@ -91,4 +95,19 @@ fn m8_real_asset_waterbottle_imports_and_renders() {
         "framed WaterBottle silhouette must produce at least 100 non-black pixels through the \
          CPU rasterizer (got {nonzero})"
     );
+
+    write_png_artifact(frame, 256, 256);
+}
+
+fn write_png_artifact(rgba8: &[u8], width: u32, height: u32) {
+    if let Some(parent) = std::path::Path::new(ARTIFACT_PNG).parent() {
+        std::fs::create_dir_all(parent).expect("artifact dir");
+    }
+    let file = File::create(ARTIFACT_PNG).expect("create artifact PNG");
+    let writer = BufWriter::new(file);
+    let mut encoder = png::Encoder::new(writer, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().expect("PNG header writes");
+    writer.write_image_data(rgba8).expect("PNG payload writes");
 }
