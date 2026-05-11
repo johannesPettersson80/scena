@@ -279,19 +279,199 @@ fn m8_real_asset_waterbottle_imports_and_renders() {
          (got {nonzero})"
     );
 
-    // Sample known regions to pin the cream body + dark cap + dark label
-    // colors that the IBL fix delivers. These bytes were the result of the
-    // first green-flag render after the CPU IBL cubemap-irradiance fallback
-    // landed; they catch regressions in either the texture sampling chain
-    // or the environment irradiance derivation.
-    let body = pixel_at(frame, 256, 240);
-    assert!(
-        body[0] > 80 && body[1] > 80 && body[2] < body[1],
-        "body region should show warm cream/olive (got {body:?})"
-    );
-
     write_png_artifact(frame, 512, 512);
     write_renderer_metadata(renderer_path, &gpu_adapter_label);
+
+    // Phase 2 region asserts. These run on BOTH the CPU and GPU paths;
+    // tolerances are deliberately wide enough to accommodate CPU/GPU
+    // tonemap differences while still trapping the regressions Phase 0
+    // missed (cap colour flipped, logo region not red, label band not
+    // dark, etc.). Coordinates and expected RGBs were derived from the
+    // bundled scena-gold reference at reference_512.png.
+    let regions: &[(&str, usize, usize, [u8; 3], u8)] = &[
+        // (name, x, y, expected RGB, tolerance in chebyshev distance)
+        ("cap_dome",       250,  70, [130,  30,  35], 50),
+        ("cap_dome_left",  240,  70, [115,  20,  25], 50),
+        ("upper_body",     249, 130, [235, 235, 210], 45),
+        ("body_olive_mid", 249, 270, [ 95,  95,  45], 45),
+        ("body_olive_low", 249, 330, [ 90,  90,  40], 45),
+        ("label_metal_r",  270, 380, [105, 108, 115], 45),
+        ("label_metal_l",  255, 380, [ 80,  82,  85], 45),
+        ("bg_top_right",   490,  10, [ 70,  77,  82], 35),
+        ("bg_mid_right",   450, 250, [ 70,  75,  80], 35),
+        ("bg_bot_right",   490, 490, [ 50,  55,  60], 35),
+        ("bg_mid_left",     80, 250, [130, 138, 144], 45),
+    ];
+    let mut failed_regions = Vec::new();
+    for (name, x, y, expected, tol) in regions {
+        let p = pixel_at(frame, *x, *y);
+        let dr = (p[0] as i16 - expected[0] as i16).unsigned_abs() as u8;
+        let dg = (p[1] as i16 - expected[1] as i16).unsigned_abs() as u8;
+        let db = (p[2] as i16 - expected[2] as i16).unsigned_abs() as u8;
+        if dr > *tol || dg > *tol || db > *tol {
+            failed_regions.push(format!(
+                "  {name:14} ({x:3},{y:3}): expected {expected:?} ±{tol}, got [{},{},{}]",
+                p[0], p[1], p[2]
+            ));
+        }
+    }
+    assert!(
+        failed_regions.is_empty(),
+        "WaterBottle region colour asserts failed; this catches cap/body/label \
+         tinting regressions that the prior single-sample bar missed.\n{}",
+        failed_regions.join("\n")
+    );
+
+    // Phase 2 colour-family histograms. The render must contain at
+    // least N pixels in each named colour cluster — proves the cap is
+    // present as a red region, the body as olive/yellow, the label
+    // band as a dark/neutral cluster, etc. Lighter bar than the per-
+    // region asserts; meant to catch "entire region the wrong colour"
+    // regressions even if a single sample pixel drifted away from a
+    // tight tolerance.
+    let mut family_counts = ColourFamilyCounts::default();
+    for chunk in frame.chunks_exact(4) {
+        family_counts.tally(chunk[0], chunk[1], chunk[2]);
+    }
+    let family_failures = family_counts.failures(&[
+        ("dark_red_cap",    400,   |r, g, b| r > 80 && r < 180 && g < 60 && b < 60),
+        ("yellow_olive",   3_000,  |r, g, b| r > 60 && g > 50 && b < g.saturating_sub(15) && r < 200),
+        ("bright_cream",     200,  |r, g, b| r > 220 && g > 215 && b > 180 && b < r),
+        ("neutral_dark",   2_000,  |r, g, b| r < 80 && g < 85 && b < 90 && r.abs_diff(g) < 20),
+    ]);
+    assert!(
+        family_failures.is_empty(),
+        "WaterBottle colour-family histograms failed:\n{}",
+        family_failures.join("\n")
+    );
+
+    // Phase 2 reference diff (gated). With SCENA_REFERENCE_DIFF=1, also
+    // compare the live render against the bundled scena-gold reference
+    // pixel-by-pixel; ≥95% of pixels must be within RGB Chebyshev
+    // distance 16. The diff visualisation lands next to the artifact
+    // when the threshold fails so a reviewer can SEE which regions
+    // drifted.
+    if std::env::var("SCENA_REFERENCE_DIFF").is_ok() {
+        let reference = decode_reference_png();
+        assert_eq!(
+            reference.len(),
+            frame.len(),
+            "reference PNG must match render dimensions (512x512 RGBA)"
+        );
+        let (within_tol, total, max_d) = pixel_diff_summary(frame, &reference, 16);
+        let fraction = within_tol as f64 / total as f64;
+        if fraction < 0.95 {
+            write_diff_visualization(frame, &reference);
+            panic!(
+                "WaterBottle render diverged from bundled reference: \
+                 only {:.2}% of pixels are within RGB ±16 (max channel \
+                 distance: {max_d}). Diff visualisation written to {}",
+                fraction * 100.0,
+                DIFF_PNG,
+            );
+        }
+    }
+}
+
+#[derive(Default)]
+struct ColourFamilyCounts {
+    tallies: [u32; 8],
+}
+
+impl ColourFamilyCounts {
+    fn tally(&mut self, r: u8, g: u8, b: u8) {
+        // Match families in order; one pixel can match multiple. The
+        // ordering matches the order we test in `failures`.
+        let (dark_red, yellow_olive, bright_cream, neutral_dark) = (
+            r > 80 && r < 180 && g < 60 && b < 60,
+            r > 60 && g > 50 && b < g.saturating_sub(15) && r < 200,
+            r > 220 && g > 215 && b > 180 && b < r,
+            r < 80 && g < 85 && b < 90 && r.abs_diff(g) < 20,
+        );
+        if dark_red {
+            self.tallies[0] += 1;
+        }
+        if yellow_olive {
+            self.tallies[1] += 1;
+        }
+        if bright_cream {
+            self.tallies[2] += 1;
+        }
+        if neutral_dark {
+            self.tallies[3] += 1;
+        }
+    }
+
+    fn failures(
+        &self,
+        families: &[(&str, u32, fn(u8, u8, u8) -> bool)],
+    ) -> Vec<String> {
+        let mut out = Vec::new();
+        for (i, (name, min_count, _)) in families.iter().enumerate() {
+            let got = self.tallies[i];
+            if got < *min_count {
+                out.push(format!(
+                    "  {name:14}: expected ≥{min_count} pixels, got {got}"
+                ));
+            }
+        }
+        out
+    }
+}
+
+const DIFF_PNG: &str = "target/gate-artifacts/m8-real-asset/waterbottle_diff.png";
+
+fn decode_reference_png() -> Vec<u8> {
+    let bytes = std::fs::read(WATERBOTTLE_REFERENCE_PNG).expect("bundled reference is readable");
+    let decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+    let mut reader = decoder.read_info().expect("reference PNG header reads");
+    assert_eq!(reader.info().color_type, png::ColorType::Rgba);
+    let mut buffer = vec![0u8; reader.output_buffer_size()];
+    reader.next_frame(&mut buffer).expect("reference PNG payload reads");
+    buffer
+}
+
+/// Returns `(pixels within tol, total pixels, max channel distance seen)`
+/// where channel distance is the per-pixel Chebyshev distance.
+fn pixel_diff_summary(live: &[u8], reference: &[u8], tol: u8) -> (usize, usize, u8) {
+    let mut within = 0;
+    let mut max_d = 0u8;
+    let total = live.len() / 4;
+    for (l, r) in live.chunks_exact(4).zip(reference.chunks_exact(4)) {
+        let dr = (l[0] as i16 - r[0] as i16).unsigned_abs() as u8;
+        let dg = (l[1] as i16 - r[1] as i16).unsigned_abs() as u8;
+        let db = (l[2] as i16 - r[2] as i16).unsigned_abs() as u8;
+        let d = dr.max(dg).max(db);
+        if d > max_d {
+            max_d = d;
+        }
+        if d <= tol {
+            within += 1;
+        }
+    }
+    (within, total, max_d)
+}
+
+fn write_diff_visualization(live: &[u8], reference: &[u8]) {
+    let mut out = Vec::with_capacity(live.len());
+    for (l, r) in live.chunks_exact(4).zip(reference.chunks_exact(4)) {
+        let dr = (l[0] as i16 - r[0] as i16).unsigned_abs().min(255) as u8;
+        let dg = (l[1] as i16 - r[1] as i16).unsigned_abs().min(255) as u8;
+        let db = (l[2] as i16 - r[2] as i16).unsigned_abs().min(255) as u8;
+        // Visualise: amplify so even small diffs are visible.
+        let amp = |v: u8| ((v as u16).saturating_mul(8).min(255)) as u8;
+        out.extend_from_slice(&[amp(dr), amp(dg), amp(db), 255]);
+    }
+    if let Some(parent) = std::path::Path::new(DIFF_PNG).parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    let file = File::create(DIFF_PNG).expect("create diff PNG");
+    let writer = BufWriter::new(file);
+    let mut encoder = png::Encoder::new(writer, 512, 512);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().expect("PNG header writes");
+    writer.write_image_data(&out).expect("PNG payload writes");
 }
 
 fn pixel_at(frame: &[u8], x: usize, y: usize) -> [u8; 4] {
