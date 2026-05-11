@@ -9087,7 +9087,7 @@ fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Vec<Finding>)
             "source_format",
             "TextureSourceFormat::Jpeg",
             "decode_jpeg_rgba8",
-            "jpeg_decoder::Decoder",
+            "image::ImageFormat::Jpeg",
         ],
     );
     require_contains(
@@ -9260,8 +9260,8 @@ fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Vec<Finding>)
             "wrap_texture_coordinate",
             "TextureWrap::ClampToEdge",
             "TextureWrap::MirroredRepeat",
-            "png::Decoder",
-            "jpeg_decoder::Decoder",
+            "image::ImageFormat::Png",
+            "image::ImageFormat::Jpeg",
         ],
     );
     require_contains(
