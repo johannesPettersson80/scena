@@ -1,4 +1,12 @@
-use serde_json::Value as JsonValue;
+//! Stage C2: glTF animation parsing now uses the `gltf` crate's typed
+//! `animation::Channel::reader()` so input/output accessor walking is
+//! delegated to the gltf-crate util module (no hand-rolled component
+//! reading).
+
+use ::gltf::Document;
+use ::gltf::animation::Interpolation as GltfInterpolation;
+use ::gltf::animation::Property as GltfProperty;
+use ::gltf::animation::util::ReadOutputs;
 
 use crate::animation::{
     AnimationInterpolation, AnimationOutput, AnimationSourceChannel, AnimationSourceClip,
@@ -9,223 +17,123 @@ use crate::diagnostics::AssetError;
 use crate::scene::Quat;
 
 use super::SceneAssetClip;
-use super::accessor::{
-    self, GltfAccessor, GltfBufferView, read_f32_accessor, read_vec3_accessor, read_vec4_accessor,
-};
 
 pub(super) fn parse_gltf_clips(
     path: &AssetPath,
-    json: &JsonValue,
+    document: &Document,
     buffers: &[Vec<u8>],
-    buffer_views: &[GltfBufferView],
-    accessors: &[GltfAccessor],
 ) -> Result<Vec<SceneAssetClip>, AssetError> {
-    json.get("animations")
-        .and_then(JsonValue::as_array)
-        .map(|animations| {
-            animations
+    document
+        .animations()
+        .map(|animation| {
+            let channels = animation
+                .channels()
+                .map(|channel| parse_channel(path, &channel, buffers))
+                .collect::<Result<Vec<_>, _>>()?;
+            let duration_seconds = channels
                 .iter()
-                .map(|animation| parse_animation(path, animation, buffers, buffer_views, accessors))
-                .collect()
+                .flat_map(|channel| channel.input_seconds().iter().copied())
+                .fold(0.0_f32, f32::max);
+            Ok(SceneAssetClip {
+                clip: AnimationSourceClip::new(
+                    animation.name().map(str::to_string),
+                    channels,
+                    duration_seconds,
+                ),
+            })
         })
-        .unwrap_or_else(|| Ok(Vec::new()))
+        .collect()
 }
 
-fn parse_animation(
+fn parse_channel(
     path: &AssetPath,
-    animation: &JsonValue,
+    channel: &::gltf::animation::Channel<'_>,
     buffers: &[Vec<u8>],
-    buffer_views: &[GltfBufferView],
-    accessors: &[GltfAccessor],
-) -> Result<SceneAssetClip, AssetError> {
-    let samplers = animation
-        .get("samplers")
-        .and_then(JsonValue::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
-    let channels = animation
-        .get("channels")
-        .and_then(JsonValue::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or(&[])
-        .iter()
-        .map(|channel| {
-            parse_animation_channel(path, channel, samplers, buffers, buffer_views, accessors)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let duration_seconds = channels
-        .iter()
-        .flat_map(|channel| channel.input_seconds().iter().copied())
-        .fold(0.0_f32, f32::max);
-    Ok(SceneAssetClip {
-        clip: AnimationSourceClip::new(
-            animation
-                .get("name")
-                .and_then(JsonValue::as_str)
-                .map(str::to_string),
-            channels,
-            duration_seconds,
-        ),
-    })
-}
-
-fn parse_animation_channel(
-    path: &AssetPath,
-    channel: &JsonValue,
-    samplers: &[JsonValue],
-    buffers: &[Vec<u8>],
-    buffer_views: &[GltfBufferView],
-    accessors: &[GltfAccessor],
 ) -> Result<AnimationSourceChannel, AssetError> {
-    let sampler = sampler_for_channel(path, channel, samplers)?;
-    let input = required_index(path, sampler, "input", "animation sampler is missing input")?;
-    let output = required_index(
-        path,
-        sampler,
-        "output",
-        "animation sampler is missing output",
-    )?;
-    let interpolation = parse_interpolation(sampler);
-    let target_json = channel
-        .get("target")
-        .ok_or_else(|| accessor::parse_error(path, "animation channel is missing target"))?;
-    let source_node = required_index(
-        path,
-        target_json,
-        "node",
-        "animation target is missing node",
-    )?;
-    let target = parse_target(path, target_json)?;
-    let input_seconds = read_f32_accessor(path, input, buffers, buffer_views, accessors)?;
-    let output = parse_output(
-        path,
-        target,
-        output,
-        input_seconds.len(),
-        interpolation,
-        buffers,
-        buffer_views,
-        accessors,
-    )?;
+    let target = channel.target();
+    let target_node = target.node().index();
+    let target_property = match target.property() {
+        GltfProperty::Translation => AnimationTarget::Translation,
+        GltfProperty::Rotation => AnimationTarget::Rotation,
+        GltfProperty::Scale => AnimationTarget::Scale,
+        GltfProperty::MorphTargetWeights => AnimationTarget::Weights,
+    };
+    let sampler = channel.sampler();
+    let interpolation = match sampler.interpolation() {
+        GltfInterpolation::Linear => AnimationInterpolation::Linear,
+        GltfInterpolation::Step => AnimationInterpolation::Step,
+        GltfInterpolation::CubicSpline => AnimationInterpolation::CubicSpline,
+    };
+
+    let reader = channel.reader(|buffer| buffers.get(buffer.index()).map(Vec::as_slice));
+    let inputs = reader.read_inputs().ok_or_else(|| AssetError::Parse {
+        path: path.as_str().to_string(),
+        reason: "animation sampler input accessor failed to resolve".to_string(),
+    })?;
+    let input_seconds: Vec<f32> = inputs.collect();
+
+    let outputs = reader.read_outputs().ok_or_else(|| AssetError::Parse {
+        path: path.as_str().to_string(),
+        reason: "animation sampler output accessor failed to resolve".to_string(),
+    })?;
+    let output = match outputs {
+        ReadOutputs::Translations(translations) => AnimationOutput::Vec3(
+            translations.map(crate::scene::Vec3::from_array).collect(),
+        ),
+        ReadOutputs::Scales(scales) => {
+            AnimationOutput::Vec3(scales.map(crate::scene::Vec3::from_array).collect())
+        }
+        ReadOutputs::Rotations(rotations) => AnimationOutput::Quat(
+            rotations
+                .into_f32()
+                .map(|values| Quat::from_xyzw(values[0], values[1], values[2], values[3]))
+                .collect(),
+        ),
+        ReadOutputs::MorphTargetWeights(weights) => {
+            let raw: Vec<f32> = weights.into_f32().collect();
+            collect_weight_keyframes(path, raw, input_seconds.len(), interpolation)?
+        }
+    };
 
     Ok(AnimationSourceChannel::new(
-        source_node,
-        target,
+        target_node,
+        target_property,
         input_seconds,
         output,
         interpolation,
     ))
 }
 
-fn sampler_for_channel<'a>(
+fn collect_weight_keyframes(
     path: &AssetPath,
-    channel: &JsonValue,
-    samplers: &'a [JsonValue],
-) -> Result<&'a JsonValue, AssetError> {
-    let sampler_index = required_index(
-        path,
-        channel,
-        "sampler",
-        "animation channel is missing sampler",
-    )?;
-    samplers
-        .get(sampler_index)
-        .ok_or_else(|| accessor::parse_error(path, "animation channel references missing sampler"))
-}
-
-fn parse_interpolation(sampler: &JsonValue) -> AnimationInterpolation {
-    match sampler
-        .get("interpolation")
-        .and_then(JsonValue::as_str)
-        .unwrap_or("LINEAR")
-    {
-        "STEP" => AnimationInterpolation::Step,
-        "CUBICSPLINE" => AnimationInterpolation::CubicSpline,
-        _ => AnimationInterpolation::Linear,
-    }
-}
-
-fn parse_target(path: &AssetPath, target_json: &JsonValue) -> Result<AnimationTarget, AssetError> {
-    match target_json.get("path").and_then(JsonValue::as_str) {
-        Some("translation") => Ok(AnimationTarget::Translation),
-        Some("rotation") => Ok(AnimationTarget::Rotation),
-        Some("scale") => Ok(AnimationTarget::Scale),
-        Some("weights") => Ok(AnimationTarget::Weights),
-        Some(other) => Err(accessor::parse_error(
-            path,
-            format!("unsupported animation target path {other}"),
-        )),
-        None => Err(accessor::parse_error(
-            path,
-            "animation target is missing path",
-        )),
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn parse_output(
-    path: &AssetPath,
-    target: AnimationTarget,
-    output: usize,
+    raw: Vec<f32>,
     keyframe_count: usize,
     interpolation: AnimationInterpolation,
-    buffers: &[Vec<u8>],
-    buffer_views: &[GltfBufferView],
-    accessors: &[GltfAccessor],
 ) -> Result<AnimationOutput, AssetError> {
-    match target {
-        AnimationTarget::Translation | AnimationTarget::Scale => Ok(AnimationOutput::Vec3(
-            read_vec3_accessor(path, output, buffers, buffer_views, accessors)?,
-        )),
-        AnimationTarget::Rotation => Ok(AnimationOutput::Quat(
-            read_vec4_accessor(path, output, buffers, buffer_views, accessors)?
-                .into_iter()
-                .map(|values| Quat::from_xyzw(values[0], values[1], values[2], values[3]))
-                .collect(),
-        )),
-        AnimationTarget::Weights => {
-            let raw = read_f32_accessor(path, output, buffers, buffer_views, accessors)?;
-            if keyframe_count == 0 {
-                return Ok(AnimationOutput::Weights(Vec::new()));
-            }
-            // Per glTF 2.0 spec, weights output count = keyframes * targets_per_vertex
-            // for STEP/LINEAR, and keyframes * targets * 3 for CUBICSPLINE
-            // (in-tangent, value, out-tangent triples).
-            let stride_factor = match interpolation {
-                AnimationInterpolation::CubicSpline => 3,
-                AnimationInterpolation::Linear | AnimationInterpolation::Step => 1,
-            };
-            let denom = keyframe_count.saturating_mul(stride_factor);
-            if denom == 0 || raw.len() % denom != 0 {
-                return Err(accessor::parse_error(
-                    path,
-                    "animation weights output count is not a multiple of the keyframe count",
-                ));
-            }
-            let targets_per_keyframe = raw.len() / denom;
-            if targets_per_keyframe == 0 {
-                return Err(accessor::parse_error(
-                    path,
-                    "animation weights output declares zero morph targets per keyframe",
-                ));
-            }
-            let chunk_size = targets_per_keyframe * stride_factor;
-            Ok(AnimationOutput::Weights(
-                raw.chunks_exact(chunk_size).map(<[f32]>::to_vec).collect(),
-            ))
-        }
+    if keyframe_count == 0 {
+        return Ok(AnimationOutput::Weights(Vec::new()));
     }
-}
-
-fn required_index(
-    path: &AssetPath,
-    value: &JsonValue,
-    field: &str,
-    message: &'static str,
-) -> Result<usize, AssetError> {
-    value
-        .get(field)
-        .and_then(JsonValue::as_u64)
-        .and_then(|value| usize::try_from(value).ok())
-        .ok_or_else(|| accessor::parse_error(path, message))
+    let stride_factor = match interpolation {
+        AnimationInterpolation::CubicSpline => 3,
+        AnimationInterpolation::Linear | AnimationInterpolation::Step => 1,
+    };
+    let denom = keyframe_count.saturating_mul(stride_factor);
+    if denom == 0 || !raw.len().is_multiple_of(denom) {
+        return Err(AssetError::Parse {
+            path: path.as_str().to_string(),
+            reason: "animation weights output count is not a multiple of the keyframe count"
+                .to_string(),
+        });
+    }
+    let targets_per_keyframe = raw.len() / denom;
+    if targets_per_keyframe == 0 {
+        return Err(AssetError::Parse {
+            path: path.as_str().to_string(),
+            reason: "animation weights output declares zero morph targets per keyframe".to_string(),
+        });
+    }
+    let chunk_size = targets_per_keyframe * stride_factor;
+    Ok(AnimationOutput::Weights(
+        raw.chunks_exact(chunk_size).map(<[f32]>::to_vec).collect(),
+    ))
 }

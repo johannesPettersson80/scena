@@ -1,10 +1,15 @@
+//! Stage C2: anchor extras parsing now reads from
+//! `gltf::Node::extras()`, deserialized into `serde_json::Value` (the
+//! gltf crate exposes extras as `Option<Box<RawValue>>`).
+
 use std::collections::BTreeSet;
 
+use ::gltf::Node;
 use serde_json::Value as JsonValue;
 
 use crate::scene::{SourceUnits, Transform};
 
-use super::parse_node_transform;
+use super::transform::parse_node_transform;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SceneAssetAnchor {
@@ -42,9 +47,12 @@ impl SceneAssetAnchor {
     }
 }
 
-pub(super) fn parse_node_anchors(node: &JsonValue) -> Vec<SceneAssetAnchor> {
-    node.get("extras")
-        .and_then(|extras| extras.get("scena"))
+pub(super) fn parse_node_anchors(node: &Node) -> Vec<SceneAssetAnchor> {
+    let Some(extras) = super::extras_to_value(node.extras()) else {
+        return Vec::new();
+    };
+    extras
+        .get("scena")
         .and_then(|scena| scena.get("anchors"))
         .and_then(JsonValue::as_array)
         .map(|anchors| {

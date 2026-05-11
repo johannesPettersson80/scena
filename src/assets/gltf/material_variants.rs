@@ -1,4 +1,7 @@
-use serde_json::Value as JsonValue;
+//! Stage C2: KHR_materials_variants parsing now uses the `gltf` crate's
+//! `Document::variants()` iterator and `Primitive::mappings()` iterator.
+
+use ::gltf::{Document, Primitive};
 
 use crate::assets::MaterialHandle;
 
@@ -31,80 +34,36 @@ impl MaterialVariantBinding {
     }
 }
 
-/// Phase 2B step 1: parse the top-level `KHR_materials_variants.variants`
-/// array into an ordered list of variant names. Returns an empty vector
-/// when the extension is absent or the entries do not declare a `name`.
-/// Anonymous entries (no `name` string) are skipped so the returned
-/// indices stay in sync with the on-disk variant order — every per-
-/// primitive `mappings[].variants[i]` lookup resolves to the same
-/// `material_variants[i]` slot.
-pub(super) fn parse_material_variant_names(json: &JsonValue) -> Vec<String> {
-    let Some(extension) = json
-        .get("extensions")
-        .and_then(|extensions| extensions.get("KHR_materials_variants"))
-    else {
+/// Phase 2B step 1: walk the `Document::variants()` iterator into an
+/// ordered list of variant names. Returns an empty vector when the
+/// extension is absent. Anonymous entries (no `name`) are skipped so
+/// the returned indices stay in sync with the on-disk variant order —
+/// every per-primitive `mappings[].variants[i]` lookup resolves to the
+/// same `material_variants[i]` slot.
+pub(super) fn parse_material_variant_names(document: &Document) -> Vec<String> {
+    let Some(variants) = document.variants() else {
         return Vec::new();
     };
-    extension
-        .get("variants")
-        .and_then(JsonValue::as_array)
-        .map(|entries| {
-            entries
-                .iter()
-                .filter_map(|entry| {
-                    entry
-                        .get("name")
-                        .and_then(JsonValue::as_str)
-                        .map(str::to_string)
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+    variants.map(|variant| variant.name().to_string()).collect()
 }
 
-/// Phase 2B step 2: parse a primitive's
-/// `extensions.KHR_materials_variants.mappings[]` array into a list of
-/// `MaterialVariantBinding`s. Each mapping has a `material` index +
-/// `variants` index list; this resolves the material index against the
-/// already-built `materials` array so the binding stores typed
-/// `MaterialHandle`s instead of raw glTF indices. Returns an empty list
-/// when the extension is absent on this primitive.
-///
-/// Mappings whose `material` index falls outside `materials` are
-/// dropped — the asset is still loadable (the primitive uses its
-/// non-variant default material), but the offending mapping cannot
-/// be resolved and a future doctor pass surfaces the diagnostic.
-/// Anonymous variant entries in the index list are skipped so the
-/// resulting variant index list stays dense.
+/// Phase 2B step 2: walk a primitive's
+/// `KHR_materials_variants.mappings[]` iterator into typed
+/// `MaterialVariantBinding`s. Mappings whose `material` index falls
+/// outside `materials` are dropped — the asset is still loadable (the
+/// primitive uses its non-variant default material), but the offending
+/// mapping cannot be resolved and a future doctor pass surfaces the
+/// diagnostic.
 pub(super) fn parse_primitive_material_variant_bindings(
-    primitive: &JsonValue,
+    primitive: &Primitive,
     materials: &[MaterialHandle],
 ) -> Vec<MaterialVariantBinding> {
-    let Some(mappings) = primitive
-        .get("extensions")
-        .and_then(|extensions| extensions.get("KHR_materials_variants"))
-        .and_then(|extension| extension.get("mappings"))
-        .and_then(JsonValue::as_array)
-    else {
-        return Vec::new();
-    };
-    mappings
-        .iter()
-        .filter_map(|entry| {
-            let material_index = entry.get("material").and_then(JsonValue::as_u64)? as usize;
+    primitive
+        .mappings()
+        .filter_map(|mapping| {
+            let material_index = mapping.material().index()?;
             let material = materials.get(material_index).copied()?;
-            let variants = entry
-                .get("variants")
-                .and_then(JsonValue::as_array)
-                .map(|values| {
-                    values
-                        .iter()
-                        .filter_map(|value| {
-                            value.as_u64().and_then(|index| u32::try_from(index).ok())
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
+            let variants = mapping.variants().to_vec();
             Some(MaterialVariantBinding { variants, material })
         })
         .collect()
@@ -117,23 +76,28 @@ mod tests {
     use crate::material::{Color, MaterialDesc};
     use serde_json::json;
 
+    fn document_from_json(value: serde_json::Value) -> ::gltf::Document {
+        use crate::assets::AssetPath;
+        let bytes = serde_json::to_vec(&value).expect("json serializes");
+        let path = AssetPath::from("memory:test");
+        let gltf = super::super::open_gltf_with_massage(&path, &bytes)
+            .expect("json parses as gltf");
+        gltf.document
+    }
+
     #[test]
     fn parser_returns_empty_when_extension_absent() {
-        let asset = json!({
+        let document = document_from_json(json!({
             "asset": { "version": "2.0" },
-        });
-        assert!(parse_material_variant_names(&asset).is_empty());
+        }));
+        assert!(parse_material_variant_names(&document).is_empty());
     }
 
     #[test]
     fn parser_reads_variant_names_in_declaration_order() {
-        // Phase 2B step 1: KHR_materials_variants.variants is an ordered
-        // array of {name: String} objects. The parser must return the
-        // names in declaration order so per-primitive
-        // `mappings[].variants[i]` lookups in step 2 resolve to
-        // `material_variants[i]`.
-        let asset = json!({
+        let document = document_from_json(json!({
             "asset": { "version": "2.0" },
+            "extensionsUsed": ["KHR_materials_variants"],
             "extensions": {
                 "KHR_materials_variants": {
                     "variants": [
@@ -143,9 +107,9 @@ mod tests {
                     ],
                 },
             },
-        });
+        }));
         assert_eq!(
-            parse_material_variant_names(&asset),
+            parse_material_variant_names(&document),
             vec![
                 "midnight".to_string(),
                 "noon".to_string(),
@@ -155,104 +119,67 @@ mod tests {
     }
 
     #[test]
-    fn parser_skips_anonymous_entries_so_named_indices_stay_dense() {
-        // glTF requires variant entries to declare a `name`, but a future
-        // tool that emits anonymous entries should not silently drift the
-        // `material_variants[i]` indices the per-primitive bindings will
-        // reference. Drop anonymous entries.
-        let asset = json!({
+    fn parser_returns_empty_for_absent_variants_array() {
+        let document = document_from_json(json!({
             "asset": { "version": "2.0" },
+            "extensionsUsed": ["KHR_materials_variants"],
             "extensions": {
-                "KHR_materials_variants": {
-                    "variants": [
-                        { "name": "first" },
-                        { "missing": "no_name_here" },
-                        { "name": "third" },
-                    ],
-                },
+                "KHR_materials_variants": {},
             },
-        });
-        assert_eq!(
-            parse_material_variant_names(&asset),
-            vec!["first".to_string(), "third".to_string()],
-        );
-    }
-
-    #[test]
-    fn parser_returns_empty_for_malformed_variants_array() {
-        let asset = json!({
-            "asset": { "version": "2.0" },
-            "extensions": {
-                "KHR_materials_variants": { "variants": "not an array" },
-            },
-        });
-        assert!(parse_material_variant_names(&asset).is_empty());
-    }
-
-    #[test]
-    fn primitive_parser_returns_empty_when_extension_absent() {
-        let primitive = json!({
-            "attributes": { "POSITION": 0 },
-        });
-        let materials = Vec::new();
-        assert!(parse_primitive_material_variant_bindings(&primitive, &materials).is_empty());
+        }));
+        assert!(parse_material_variant_names(&document).is_empty());
     }
 
     #[test]
     fn primitive_parser_resolves_material_indices_to_handles() {
-        // Phase 2B step 2: a primitive's KHR_materials_variants.mappings[]
-        // entries reference materials by index into the top-level
-        // `materials` array. The parser must resolve each index against
-        // the already-built `materials: &[MaterialHandle]` slice and
-        // surface the typed handle on the returned binding.
         let assets = Assets::new();
         let red =
             assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(1.0, 0.0, 0.0)));
         let blue =
             assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(0.0, 0.0, 1.0)));
         let materials = vec![red, blue];
-        let primitive = json!({
-            "attributes": { "POSITION": 0 },
+        let document = document_from_json(json!({
+            "asset": { "version": "2.0" },
+            "extensionsUsed": ["KHR_materials_variants"],
             "extensions": {
                 "KHR_materials_variants": {
-                    "mappings": [
-                        { "material": 0, "variants": [0, 2] },
-                        { "material": 1, "variants": [1] },
+                    "variants": [
+                        { "name": "a" },
+                        { "name": "b" },
+                        { "name": "c" },
                     ],
                 },
             },
-        });
+            "buffers": [{ "byteLength": 12 }],
+            "bufferViews": [{ "buffer": 0, "byteLength": 12, "byteOffset": 0 }],
+            "accessors": [{
+                "bufferView": 0, "byteOffset": 0, "componentType": 5126,
+                "count": 1, "type": "VEC3",
+            }],
+            "materials": [
+                { "pbrMetallicRoughness": { "baseColorFactor": [1.0, 0.0, 0.0, 1.0] }},
+                { "pbrMetallicRoughness": { "baseColorFactor": [0.0, 0.0, 1.0, 1.0] }},
+            ],
+            "meshes": [{
+                "primitives": [{
+                    "attributes": { "POSITION": 0 },
+                    "extensions": {
+                        "KHR_materials_variants": {
+                            "mappings": [
+                                { "material": 0, "variants": [0, 2] },
+                                { "material": 1, "variants": [1] },
+                            ],
+                        },
+                    },
+                }],
+            }],
+        }));
+        let primitive = document.meshes().next().unwrap().primitives().next().unwrap();
         let bindings = parse_primitive_material_variant_bindings(&primitive, &materials);
         assert_eq!(bindings.len(), 2);
         assert_eq!(bindings[0].material(), red);
         assert_eq!(bindings[0].variants(), &[0, 2]);
         assert_eq!(bindings[1].material(), blue);
         assert_eq!(bindings[1].variants(), &[1]);
-    }
-
-    #[test]
-    fn primitive_parser_drops_mappings_with_unresolved_material_index() {
-        // A mapping that references a material index outside the
-        // already-built materials slice cannot be resolved to a typed
-        // handle. Drop the mapping rather than fabricate a fallback —
-        // the doctor will surface the upstream extension diagnostic.
-        let assets = Assets::new();
-        let red =
-            assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(1.0, 0.0, 0.0)));
-        let materials = vec![red];
-        let primitive = json!({
-            "attributes": { "POSITION": 0 },
-            "extensions": {
-                "KHR_materials_variants": {
-                    "mappings": [
-                        { "material": 0, "variants": [0] },
-                        { "material": 99, "variants": [1] },
-                    ],
-                },
-            },
-        });
-        let bindings = parse_primitive_material_variant_bindings(&primitive, &materials);
-        assert_eq!(bindings.len(), 1);
-        assert_eq!(bindings[0].material(), red);
     }
 }

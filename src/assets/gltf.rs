@@ -1,14 +1,23 @@
+//! Stage C2: glTF import now uses the canonical `gltf` crate as its
+//! parser. Scena retains the typed public surface — `SceneAsset`,
+//! `SceneAssetNode`, `SceneAssetMesh`, `SceneAssetSkin`,
+//! `SceneAssetClip`, `SceneAssetLight`, `SceneAssetAnchor`,
+//! `SceneAssetConnector`, `MaterialVariantBinding` — but every JSON
+//! walk + accessor read is delegated to the gltf crate. Scena-specific
+//! extras (anchors, connectors) are still parsed by scena since they
+//! live in the freeform `extras` slot.
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use serde_json::Value as JsonValue;
+use ::gltf::Gltf;
+use ::gltf::buffer::Source as BufferSource;
 
 use crate::animation::{AnimationSourceChannel, AnimationSourceClip};
 use crate::diagnostics::AssetError;
 use crate::geometry::Aabb;
 use crate::scene::{Light, Transform};
 
-use self::accessor::{parse_accessors, parse_buffer_views, parse_buffers};
 pub use self::anchors::SceneAssetAnchor;
 use self::anchors::parse_node_anchors;
 use self::animation::parse_gltf_clips;
@@ -16,26 +25,28 @@ pub use self::connectors::SceneAssetConnector;
 use self::connectors::parse_node_connectors;
 pub use self::extensions::{GltfDecoderPolicy, GltfExtensionDiagnostic, GltfExtensionStatus};
 use self::extensions::{collect_extension_diagnostics, is_v1_required_gltf_extension};
-use self::external::{external_buffer_paths, external_image_paths};
-use self::glb::{is_glb, parse_glb};
+use self::external::{external_buffer_paths, external_image_paths, resolve_relative_path};
+use self::lights::parse_punctual_lights;
+use self::materials::parse_materials;
 pub use self::material_variants::MaterialVariantBinding;
-use self::read::{parse_materials, parse_meshes, parse_textures};
+use self::meshes::parse_meshes;
 pub use self::skins::SceneAssetSkin;
 use self::skins::parse_skins;
-use self::transform::parse_node_transform;
+use self::textures::parse_textures;
+use self::transform::from_gltf_transform;
 use super::{AssetPath, AssetStorage, GeometryHandle, MaterialHandle};
 
-mod accessor;
 mod anchors;
 mod animation;
 mod connectors;
 mod extensions;
 mod external;
-mod glb;
 mod lights;
 mod material_variants;
-mod read;
+mod materials;
+mod meshes;
 mod skins;
+mod textures;
 mod transform;
 
 #[derive(Debug, Clone)]
@@ -109,39 +120,14 @@ impl SceneAsset {
         }
     }
 
-    pub(super) fn from_gltf_source(
-        path: AssetPath,
-        source: &str,
-        storage: &mut AssetStorage,
-    ) -> Result<Self, AssetError> {
-        Self::from_gltf_json(
-            path,
-            source,
-            None,
-            &BTreeMap::new(),
-            &BTreeMap::new(),
-            storage,
-        )
-    }
-
     pub(super) fn from_gltf_bytes(
         path: AssetPath,
         bytes: &[u8],
         storage: &mut AssetStorage,
     ) -> Result<Self, AssetError> {
-        if !is_glb(bytes) {
-            let source = std::str::from_utf8(bytes).map_err(|error| AssetError::Parse {
-                path: path.as_str().to_string(),
-                reason: format!("expected UTF-8 glTF JSON source: {error}"),
-            })?;
-            return Self::from_gltf_source(path, source, storage);
-        }
-
-        let (json, binary_chunk) = parse_glb(&path, bytes)?;
-        Self::from_gltf_json(
+        Self::from_gltf_bytes_with_external_resources(
             path,
-            &json,
-            binary_chunk.as_deref(),
+            bytes,
             &BTreeMap::new(),
             &BTreeMap::new(),
             storage,
@@ -155,30 +141,9 @@ impl SceneAsset {
         external_images: &BTreeMap<AssetPath, Vec<u8>>,
         storage: &mut AssetStorage,
     ) -> Result<Self, AssetError> {
-        if !is_glb(bytes) {
-            let source = std::str::from_utf8(bytes).map_err(|error| AssetError::Parse {
-                path: path.as_str().to_string(),
-                reason: format!("expected UTF-8 glTF JSON source: {error}"),
-            })?;
-            return Self::from_gltf_json(
-                path,
-                source,
-                None,
-                external_buffers,
-                external_images,
-                storage,
-            );
-        }
-
-        let (json, binary_chunk) = parse_glb(&path, bytes)?;
-        Self::from_gltf_json(
-            path,
-            &json,
-            binary_chunk.as_deref(),
-            external_buffers,
-            external_images,
-            storage,
-        )
+        let gltf = open_gltf_with_massage(&path, bytes)?;
+        let blob = gltf.blob.clone();
+        Self::from_gltf_document(&path, &gltf, blob.as_deref(), external_buffers, external_images, storage)
     }
 
     pub(super) fn external_buffer_paths(
@@ -195,21 +160,25 @@ impl SceneAsset {
         external_image_paths(path, bytes)
     }
 
-    fn from_gltf_json(
-        path: AssetPath,
-        source: &str,
+    fn from_gltf_document(
+        path: &AssetPath,
+        gltf: &Gltf,
         binary_chunk: Option<&[u8]>,
         external_buffers: &BTreeMap<usize, Vec<u8>>,
         external_images: &BTreeMap<AssetPath, Vec<u8>>,
         storage: &mut AssetStorage,
     ) -> Result<Self, AssetError> {
-        let json: JsonValue = serde_json::from_str(source).map_err(|error| AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: error.to_string(),
-        })?;
-        validate_gltf_version(&path, &json)?;
-        let extensions_used = string_array_field(&json, "extensionsUsed");
-        let extensions_required = string_array_field(&json, "extensionsRequired");
+        validate_gltf_version(path, gltf)?;
+        let extensions_used: Vec<String> = gltf
+            .document
+            .extensions_used()
+            .map(str::to_string)
+            .collect();
+        let extensions_required: Vec<String> = gltf
+            .document
+            .extensions_required()
+            .map(str::to_string)
+            .collect();
         for extension in &extensions_required {
             if !is_v1_required_gltf_extension(extension) {
                 return Err(AssetError::UnsupportedRequiredExtension {
@@ -219,31 +188,22 @@ impl SceneAsset {
             }
         }
         let extension_diagnostics = collect_extension_diagnostics(&extensions_used);
-        let material_variants = self::material_variants::parse_material_variant_names(&json);
+        let material_variants =
+            material_variants::parse_material_variant_names(&gltf.document);
 
-        let buffers = parse_buffers(&path, &json, binary_chunk, external_buffers)?;
-        let buffer_views = parse_buffer_views(&path, &json)?;
-        let accessors = parse_accessors(&path, &json)?;
-        let textures = parse_textures(&path, &json, external_images, storage);
-        let materials = parse_materials(&path, &json, storage, &textures)?;
-        let meshes = parse_meshes(
-            &path,
-            &json,
-            &buffers,
-            &buffer_views,
-            &accessors,
-            &materials,
-            storage,
-        )?;
-        let skins = parse_skins(&path, &json, &buffers, &buffer_views, &accessors)?;
-        let lights = parse_punctual_lights(&json);
-        let nodes = parse_gltf_nodes(&json, &meshes, &lights);
-        let clips = parse_gltf_clips(&path, &json, &buffers, &buffer_views, &accessors)?;
+        let buffers = resolve_buffers(path, gltf, binary_chunk, external_buffers)?;
+        let textures = parse_textures(path, &gltf.document, &buffers, external_images, storage);
+        let materials = parse_materials(path, &gltf.document, storage, &textures)?;
+        let meshes = parse_meshes(path, &gltf.document, &buffers, &materials, storage)?;
+        let skins = parse_skins(path, &gltf.document, &buffers)?;
+        let lights = parse_punctual_lights(&gltf.document);
+        let nodes = parse_gltf_nodes(&gltf.document, &meshes, &lights);
+        let clips = parse_gltf_clips(path, &gltf.document, &buffers)?;
         let node_count = nodes.len();
         let mesh_count = meshes.iter().map(Vec::len).sum();
         Ok(Self {
             inner: Arc::new(SceneAssetData {
-                path,
+                path: path.clone(),
                 node_count,
                 mesh_count,
                 nodes,
@@ -414,12 +374,8 @@ impl SceneAssetClip {
     }
 }
 
-fn validate_gltf_version(path: &AssetPath, json: &JsonValue) -> Result<(), AssetError> {
-    let version = json
-        .get("asset")
-        .and_then(|asset| asset.get("version"))
-        .and_then(JsonValue::as_str);
-    if version == Some("2.0") {
+fn validate_gltf_version(path: &AssetPath, gltf: &Gltf) -> Result<(), AssetError> {
+    if gltf.document.as_json().asset.version == "2.0" {
         Ok(())
     } else {
         Err(AssetError::Parse {
@@ -429,69 +385,172 @@ fn validate_gltf_version(path: &AssetPath, json: &JsonValue) -> Result<(), Asset
     }
 }
 
-fn string_array_field(json: &JsonValue, field: &str) -> Vec<String> {
-    json.get(field)
-        .and_then(JsonValue::as_array)
-        .map(|values| {
-            values
-                .iter()
-                .filter_map(JsonValue::as_str)
-                .map(str::to_string)
-                .collect()
+fn resolve_buffers(
+    path: &AssetPath,
+    gltf: &Gltf,
+    binary_chunk: Option<&[u8]>,
+    external_buffers: &BTreeMap<usize, Vec<u8>>,
+) -> Result<Vec<Vec<u8>>, AssetError> {
+    gltf.document
+        .buffers()
+        .map(|buffer| {
+            let byte_length = buffer.length();
+            match buffer.source() {
+                BufferSource::Bin => {
+                    let bin = binary_chunk.ok_or_else(|| AssetError::Parse {
+                        path: path.as_str().to_string(),
+                        reason: "glTF buffer without uri requires a GLB binary chunk".to_string(),
+                    })?;
+                    Ok(bin
+                        .get(..byte_length)
+                        .ok_or_else(|| AssetError::Parse {
+                            path: path.as_str().to_string(),
+                            reason: "GLB binary chunk is shorter than buffer byteLength".to_string(),
+                        })?
+                        .to_vec())
+                }
+                BufferSource::Uri(uri) => {
+                    if uri.starts_with("data:") {
+                        let (_, encoded) =
+                            uri.split_once(";base64,").ok_or_else(|| AssetError::Parse {
+                                path: path.as_str().to_string(),
+                                reason:
+                                    "only embedded base64 glTF buffers are supported in this loader slice"
+                                        .to_string(),
+                            })?;
+                        use base64::Engine;
+                        base64::engine::general_purpose::STANDARD
+                            .decode(encoded)
+                            .map_err(|error| AssetError::Parse {
+                                path: path.as_str().to_string(),
+                                reason: format!("invalid embedded buffer base64: {error}"),
+                            })
+                    } else {
+                        let _resolved = resolve_relative_path(path, uri);
+                        let bytes = external_buffers
+                            .get(&buffer.index())
+                            .ok_or_else(|| AssetError::Parse {
+                                path: path.as_str().to_string(),
+                                reason: "external glTF buffer was not fetched".to_string(),
+                            })?;
+                        bytes
+                            .get(..byte_length)
+                            .map(<[u8]>::to_vec)
+                            .ok_or_else(|| AssetError::Parse {
+                                path: path.as_str().to_string(),
+                                reason: "external glTF buffer is shorter than byteLength"
+                                    .to_string(),
+                            })
+                    }
+                }
+            }
         })
-        .unwrap_or_default()
+        .collect()
 }
 
 fn parse_gltf_nodes(
-    json: &JsonValue,
+    document: &::gltf::Document,
     meshes: &[Vec<SceneAssetMesh>],
     lights: &[SceneAssetLight],
 ) -> Vec<SceneAssetNode> {
-    json.get("nodes")
-        .and_then(JsonValue::as_array)
-        .map(|nodes| {
-            nodes
-                .iter()
-                .map(|node| SceneAssetNode {
-                    name: node
-                        .get("name")
-                        .and_then(JsonValue::as_str)
-                        .map(str::to_string),
-                    children: node
-                        .get("children")
-                        .and_then(JsonValue::as_array)
-                        .map(|children| {
-                            children
-                                .iter()
-                                .filter_map(JsonValue::as_u64)
-                                .map(|child| child as usize)
-                                .collect()
-                        })
-                        .unwrap_or_default(),
-                    transform: parse_node_transform(node),
-                    meshes: node
-                        .get("mesh")
-                        .and_then(JsonValue::as_u64)
-                        .and_then(|mesh| meshes.get(mesh as usize))
-                        .cloned()
-                        .unwrap_or_default(),
-                    skin: node
-                        .get("skin")
-                        .and_then(JsonValue::as_u64)
-                        .and_then(|skin| usize::try_from(skin).ok()),
-                    light: node
-                        .get("extensions")
-                        .and_then(|extensions| extensions.get("KHR_lights_punctual"))
-                        .and_then(|extension| extension.get("light"))
-                        .and_then(JsonValue::as_u64)
-                        .and_then(|light| lights.get(light as usize))
-                        .copied(),
-                    anchors: parse_node_anchors(node),
-                    connectors: parse_node_connectors(node),
-                })
-                .collect()
+    document
+        .nodes()
+        .map(|node| SceneAssetNode {
+            name: node.name().map(str::to_string),
+            children: node.children().map(|child| child.index()).collect(),
+            transform: from_gltf_transform(node.transform()),
+            meshes: node
+                .mesh()
+                .and_then(|mesh| meshes.get(mesh.index()))
+                .cloned()
+                .unwrap_or_default(),
+            skin: node.skin().map(|skin| skin.index()),
+            light: node
+                .light()
+                .and_then(|light| lights.get(light.index()).copied()),
+            anchors: parse_node_anchors(&node),
+            connectors: parse_node_connectors(&node),
         })
-        .unwrap_or_default()
+        .collect()
 }
 
-use self::lights::parse_punctual_lights;
+/// Helper exposed to anchor/connector parsers: convert the `gltf` crate's
+/// `Extras = Option<Box<RawValue>>` into a `serde_json::Value` so the
+/// existing scena-specific JSON-walking validators can inspect it.
+pub(super) fn extras_to_value(
+    extras: &::gltf::json::Extras,
+) -> Option<serde_json::Value> {
+    let raw = extras.as_ref()?;
+    serde_json::from_str(raw.get()).ok()
+}
+
+pub(super) fn has_glb_magic(bytes: &[u8]) -> bool {
+    bytes.starts_with(&0x4654_6C67_u32.to_le_bytes())
+}
+
+/// Parse glTF bytes (JSON or GLB) into a `Gltf` value, applying scena's
+/// lenient JSON pre-massage for JSON inputs. Stage C2: scena keeps the
+/// pre-existing tolerance for animations that omit `channels`/`samplers`
+/// arrays — the gltf crate's strict serde derive would otherwise reject
+/// those fixtures even though the spec considers them malformed.
+pub(super) fn open_gltf_with_massage(path: &AssetPath, bytes: &[u8]) -> Result<Gltf, AssetError> {
+    let parse = |slice: &[u8]| {
+        Gltf::from_slice_without_validation(slice).map_err(|error| AssetError::Parse {
+            path: path.as_str().to_string(),
+            reason: error.to_string(),
+        })
+    };
+    if has_glb_magic(bytes) {
+        return parse(bytes);
+    }
+    if let Some(massaged) = massage_json_for_gltf_crate(bytes) {
+        return parse(&massaged);
+    }
+    parse(bytes)
+}
+
+/// Pre-process JSON-form glTF to add empty `channels: []` and
+/// `samplers: []` arrays to any animation entry that omits them. The
+/// previous scena parser tolerated those omissions (a clip with just a
+/// `name` produced an empty `SceneAssetClip`); the gltf crate's
+/// strict serde derive rejects them. Returns `None` when no change is
+/// needed.
+pub(super) fn massage_json_for_gltf_crate(bytes: &[u8]) -> Option<Vec<u8>> {
+    let mut value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let mut changed = false;
+
+    if let Some(animations) = value.get_mut("animations").and_then(|v| v.as_array_mut()) {
+        for animation in animations.iter_mut() {
+            let Some(object) = animation.as_object_mut() else {
+                continue;
+            };
+            if !object.contains_key("channels") {
+                object.insert("channels".to_string(), serde_json::Value::Array(Vec::new()));
+                changed = true;
+            }
+            if !object.contains_key("samplers") {
+                object.insert("samplers".to_string(), serde_json::Value::Array(Vec::new()));
+                changed = true;
+            }
+        }
+    }
+
+    // `KHR_materials_variants` requires `variants: [...]`. Scena
+    // tolerates an empty extension block so a fixture that only
+    // declares the extension surfaces as zero variants.
+    if let Some(ext) = value
+        .get_mut("extensions")
+        .and_then(|v| v.get_mut("KHR_materials_variants"))
+        .and_then(|v| v.as_object_mut())
+        && !ext.contains_key("variants")
+    {
+        ext.insert("variants".to_string(), serde_json::Value::Array(Vec::new()));
+        changed = true;
+    }
+
+    if changed {
+        serde_json::to_vec(&value).ok()
+    } else {
+        None
+    }
+}

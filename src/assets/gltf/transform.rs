@@ -1,12 +1,32 @@
+//! Stage C2: node-transform conversion now delegates to the `gltf`
+//! crate's typed `scene::Transform::decomposed()`, which handles both
+//! TRS-decomposed and 4×4-matrix node transforms uniformly. Scena's
+//! basis-rotation extension (forward/up extras) is preserved.
+
+use ::gltf::scene::Transform as GltfTransform;
 use serde_json::Value as JsonValue;
 
 use crate::scene::{Quat, Transform, Vec3};
 
+pub(super) fn from_gltf_transform(transform: GltfTransform) -> Transform {
+    let (translation, rotation, scale) = transform.decomposed();
+    Transform {
+        translation: Vec3::from_array(translation),
+        rotation: normalize_quat(Quat::from_xyzw(
+            rotation[0],
+            rotation[1],
+            rotation[2],
+            rotation[3],
+        )),
+        scale: Vec3::from_array(scale),
+    }
+}
+
+/// Node-style transform parsed from JSON (used by anchors and
+/// connectors, whose embedded TRS lives inside `extras`).
 pub(super) fn parse_node_transform(node: &JsonValue) -> Transform {
-    if let Some(transform) = node
-        .get("matrix")
-        .and_then(JsonValue::as_array)
-        .and_then(|values| matrix_transform(values))
+    if let Some(values) = node.get("matrix").and_then(JsonValue::as_array)
+        && let Some(transform) = matrix_transform(values)
     {
         return transform;
     }
@@ -27,22 +47,14 @@ fn matrix_transform(values: &[JsonValue]) -> Option<Transform> {
         .iter()
         .map(|value| value.as_f64().map(|value| value as f32))
         .collect::<Option<Vec<_>>>()?;
-    let column_x = Vec3::new(values[0], values[1], values[2]);
-    let column_y = Vec3::new(values[4], values[5], values[6]);
-    let column_z = Vec3::new(values[8], values[9], values[10]);
-    let scale = Vec3::new(
-        length_vec3(column_x),
-        length_vec3(column_y),
-        length_vec3(column_z),
-    );
-    let rotation_x = scale_or_zero(column_x, scale.x.recip());
-    let rotation_y = scale_or_zero(column_y, scale.y.recip());
-    let rotation_z = scale_or_zero(column_z, scale.z.recip());
-    Some(Transform {
-        translation: Vec3::new(values[12], values[13], values[14]),
-        rotation: quat_from_rotation_columns(rotation_x, rotation_y, rotation_z),
-        scale,
-    })
+    let mut matrix = [[0.0_f32; 4]; 4];
+    for (column, chunk) in matrix.iter_mut().zip(values.chunks_exact(4)) {
+        column[0] = chunk[0];
+        column[1] = chunk[1];
+        column[2] = chunk[2];
+        column[3] = chunk[3];
+    }
+    Some(from_gltf_transform(GltfTransform::Matrix { matrix }))
 }
 
 fn vec3_field(node: &JsonValue, field: &str, fallback: Vec3) -> Vec3 {
@@ -58,12 +70,12 @@ fn vec3_field(node: &JsonValue, field: &str, fallback: Vec3) -> Vec3 {
 
 fn quat_field(node: &JsonValue, field: &str) -> Option<Quat> {
     let values = node.get(field).and_then(JsonValue::as_array)?;
-    Some(normalize_quat(Quat {
-        x: array_f32(values, 0)?,
-        y: array_f32(values, 1)?,
-        z: array_f32(values, 2)?,
-        w: array_f32(values, 3)?,
-    }))
+    Some(normalize_quat(Quat::from_xyzw(
+        array_f32(values, 0)?,
+        array_f32(values, 1)?,
+        array_f32(values, 2)?,
+        array_f32(values, 3)?,
+    )))
 }
 
 fn array_f32(values: &[JsonValue], index: usize) -> Option<f32> {
@@ -73,59 +85,12 @@ fn array_f32(values: &[JsonValue], index: usize) -> Option<f32> {
         .map(|value| value as f32)
 }
 
-fn quat_from_rotation_columns(x: Vec3, y: Vec3, z: Vec3) -> Quat {
-    let m00 = x.x;
-    let m01 = y.x;
-    let m02 = z.x;
-    let m10 = x.y;
-    let m11 = y.y;
-    let m12 = z.y;
-    let m20 = x.z;
-    let m21 = y.z;
-    let m22 = z.z;
-    let trace = m00 + m11 + m22;
-    let quat = if trace > 0.0 {
-        let scale = (trace + 1.0).sqrt() * 2.0;
-        Quat {
-            w: 0.25 * scale,
-            x: (m21 - m12) / scale,
-            y: (m02 - m20) / scale,
-            z: (m10 - m01) / scale,
-        }
-    } else if m00 > m11 && m00 > m22 {
-        let scale = (1.0 + m00 - m11 - m22).sqrt() * 2.0;
-        Quat {
-            w: (m21 - m12) / scale,
-            x: 0.25 * scale,
-            y: (m01 + m10) / scale,
-            z: (m02 + m20) / scale,
-        }
-    } else if m11 > m22 {
-        let scale = (1.0 + m11 - m00 - m22).sqrt() * 2.0;
-        Quat {
-            w: (m02 - m20) / scale,
-            x: (m01 + m10) / scale,
-            y: 0.25 * scale,
-            z: (m12 + m21) / scale,
-        }
-    } else {
-        let scale = (1.0 + m22 - m00 - m11).sqrt() * 2.0;
-        Quat {
-            w: (m10 - m01) / scale,
-            x: (m02 + m20) / scale,
-            y: (m12 + m21) / scale,
-            z: 0.25 * scale,
-        }
-    };
-    normalize_quat(quat)
-}
-
 fn basis_rotation(node: &JsonValue) -> Option<Quat> {
-    let forward = normalize_vec3(optional_vec3_field(node, "forward")?)?;
-    let authored_up = normalize_vec3(optional_vec3_field(node, "up")?)?;
-    let right = normalize_vec3(cross_vec3(forward, authored_up))?;
-    let up = normalize_vec3(cross_vec3(right, forward))?;
-    Some(quat_from_rotation_columns(forward, up, right))
+    let forward = optional_vec3_field(node, "forward")?.try_normalize()?;
+    let authored_up = optional_vec3_field(node, "up")?.try_normalize()?;
+    let right = forward.cross(authored_up).try_normalize()?;
+    let up = right.cross(forward).try_normalize()?;
+    Some(Quat::from_mat3(&glam::Mat3::from_cols(forward, up, right)))
 }
 
 fn optional_vec3_field(node: &JsonValue, field: &str) -> Option<Vec3> {
@@ -138,41 +103,9 @@ fn optional_vec3_field(node: &JsonValue, field: &str) -> Option<Vec3> {
 }
 
 fn normalize_quat(value: Quat) -> Quat {
-    let length =
-        (value.x * value.x + value.y * value.y + value.z * value.z + value.w * value.w).sqrt();
-    if length <= f32::EPSILON || !length.is_finite() {
+    let length_sq = value.length_squared();
+    if length_sq <= f32::EPSILON || !length_sq.is_finite() {
         return Quat::IDENTITY;
     }
-    Quat::from_xyzw(value.x / length, value.y / length, value.z / length, value.w / length)
-}
-
-fn length_vec3(value: Vec3) -> f32 {
-    (value.x * value.x + value.y * value.y + value.z * value.z).sqrt()
-}
-
-fn normalize_vec3(value: Vec3) -> Option<Vec3> {
-    let length = length_vec3(value);
-    if length <= f32::EPSILON || !length.is_finite() {
-        return None;
-    }
-    Some(Vec3::new(
-        value.x / length,
-        value.y / length,
-        value.z / length,
-    ))
-}
-
-const fn cross_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(
-        left.y * right.z - left.z * right.y,
-        left.z * right.x - left.x * right.z,
-        left.x * right.y - left.y * right.x,
-    )
-}
-
-fn scale_or_zero(value: Vec3, factor: f32) -> Vec3 {
-    if !factor.is_finite() {
-        return Vec3::ZERO;
-    }
-    Vec3::new(value.x * factor, value.y * factor, value.z * factor)
+    value.normalize()
 }

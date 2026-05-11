@@ -1,10 +1,13 @@
+//! Stage C2: connector extras parsing now reads from `gltf::Node::extras()`.
+
 use std::collections::BTreeSet;
 
+use ::gltf::Node;
 use serde_json::Value as JsonValue;
 
 use crate::scene::{ConnectorMetadata, ConnectorPolarity, ConnectorRollPolicy, Transform};
 
-use super::parse_node_transform;
+use super::transform::parse_node_transform;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SceneAssetConnector {
@@ -67,9 +70,12 @@ impl SceneAssetConnector {
     }
 }
 
-pub(super) fn parse_node_connectors(node: &JsonValue) -> Vec<SceneAssetConnector> {
-    node.get("extras")
-        .and_then(|extras| extras.get("scena"))
+pub(super) fn parse_node_connectors(node: &Node) -> Vec<SceneAssetConnector> {
+    let Some(extras) = super::extras_to_value(node.extras()) else {
+        return Vec::new();
+    };
+    extras
+        .get("scena")
         .and_then(|scena| scena.get("connectors"))
         .and_then(JsonValue::as_array)
         .map(|connectors| {
