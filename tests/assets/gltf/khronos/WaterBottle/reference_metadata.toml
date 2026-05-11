@@ -1,0 +1,53 @@
+# Phase 1 reference image metadata for tests/m8_real_asset_proof.rs.
+#
+# `reference_512.png` is the canonical "scena should keep producing this"
+# render of the Khronos WaterBottle. It is consumed by the m8 real-asset
+# proof for ΔE-based regression checks (Phase 2). The reference is
+# explicitly scena's own GPU output, NOT a third-party render — see
+# "scope" below for the honest scope and "how to upgrade" for the
+# follow-up that swaps it for a Khronos / Babylon / three.js render.
+
+[reference]
+relative_path = "reference_512.png"
+sha256 = "f4bdca94137b1c90432d0a88c26eca4992ff84e87fdbd1c21d147b3d56ba1d81"
+width = 512
+height = 512
+generated_at = "2026-05-11"
+generated_by = "scena GPU pipeline (llvmpipe Mesa lavapipe Vulkan, headless_gpu)"
+
+[scope]
+# This reference is for regression prevention, not third-party
+# validation. It catches scena-internal regressions: parser swaps,
+# shader edits, capability flips, mip-generation changes, etc. It
+# does NOT certify that scena matches the Khronos Sample Viewer's
+# exact pixels — that would require a separate reference produced
+# by a known-good third-party PBR renderer.
+purpose = "scena-gold regression baseline"
+not_a_match_for = "Khronos Sample Viewer, Babylon.js Sandbox, three.js GLTFLoader"
+
+[regenerate]
+# To regenerate this reference after an intentional rendering change
+# (e.g., a tonemap rebalance or environment-rig update), run:
+#
+#   VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
+#   SCENA_USE_GPU=1 \
+#   cargo test --test m8_real_asset_proof \
+#     m8_real_asset_waterbottle_imports_and_renders
+#
+# then copy `target/gate-artifacts/m8-real-asset/waterbottle.png` to
+# `tests/assets/gltf/khronos/WaterBottle/reference_512.png` and
+# update the `sha256` field above (`sha256sum reference_512.png`).
+# A reference swap should never be quiet — the commit message must
+# state which intentional renderer change forced the swap.
+
+[upgrade]
+# Eventually this should be replaced by an external-renderer image.
+# Candidates:
+#   - babylonjs Sandbox snapshot (load .glb, screenshot at 512x512)
+#   - three.js GLTFLoader headless render (puppeteer + a small
+#     scene script)
+#   - the Khronos Sample Viewer release build's screenshot mode.
+# Once a third-party reference is in place, this metadata's
+# `purpose` should flip to "third-party PBR pixel match" and the
+# generated_by line should name the producer.
+todo = "swap scena-gold for a third-party-rendered reference"

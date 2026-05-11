@@ -32,6 +32,15 @@ const STUDIO_HDR_PATH: &str =
 const STUDIO_HDR_SHA256: &str =
     "30933d55e45f0795daf49f3cbefbe0e5ebcb821ee04fb0a2818c02ffc3938817";
 
+/// Phase 1: scena-gold reference for the WaterBottle GPU render. This
+/// is the canonical "scena should keep producing this" baseline for
+/// Phase 2's ΔE-based regression checks. It is NOT a third-party
+/// pixel match — see `reference_metadata.toml` alongside the file.
+const WATERBOTTLE_REFERENCE_PNG: &str =
+    "tests/assets/gltf/khronos/WaterBottle/reference_512.png";
+const WATERBOTTLE_REFERENCE_SHA256: &str =
+    "f4bdca94137b1c90432d0a88c26eca4992ff84e87fdbd1c21d147b3d56ba1d81";
+
 /// Lightweight integrity check for the bundled polyhaven HDR. A
 /// cryptographic SHA-256 manifest belongs in the asset matrix (Khronos
 /// fixtures use that pattern); this just catches accidental corruption.
@@ -48,6 +57,38 @@ fn polyhaven_studio_hdr_is_a_real_radiance_file() {
         "bundled HDR size sanity-check (got {} bytes)",
         bytes.len()
     );
+}
+
+/// Phase 1: verify the bundled scena-gold WaterBottle reference is the
+/// exact PNG pinned by SHA-256. Catches accidental swaps; Phase 2's
+/// diff harness then compares the test's live render against it.
+#[test]
+fn waterbottle_reference_png_matches_pinned_sha256() {
+    let bytes =
+        std::fs::read(WATERBOTTLE_REFERENCE_PNG).expect("bundled WaterBottle reference is readable");
+    assert!(
+        bytes.starts_with(&[0x89, b'P', b'N', b'G']),
+        "bundled reference must be a PNG"
+    );
+    let actual = sha256_hex(&bytes);
+    assert_eq!(
+        actual, WATERBOTTLE_REFERENCE_SHA256,
+        "bundled WaterBottle reference SHA-256 must match the pinned value; \
+         if you intentionally regenerated the reference, update \
+         WATERBOTTLE_REFERENCE_SHA256 and reference_metadata.toml in the same commit"
+    );
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(bytes);
+    let digest = hasher.finalize();
+    digest.iter().fold(String::new(), |mut acc, byte| {
+        use std::fmt::Write;
+        let _ = write!(&mut acc, "{byte:02x}");
+        acc
+    })
 }
 
 #[test]

@@ -1092,6 +1092,7 @@ dependencies = [
  "radiant",
  "raw-window-handle",
  "serde_json",
+ "sha2",
  "slotmap",
  "wasm-bindgen",
  "wasm-bindgen-futures",
