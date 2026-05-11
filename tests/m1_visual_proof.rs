@@ -361,9 +361,13 @@ fn flat_square_geometry() -> GeometryDesc {
 fn validate_nonblack(_frame: &[u8], _width: u32, _height: u32) {}
 
 fn validate_default_cube_luminance_and_silhouette(frame: &[u8], width: u32, height: u32) {
+    // Post-IBL-fallback: the default environment now contributes real
+    // cubemap-derived irradiance to a fully-white diffuse cube, slightly
+    // shifting the ACES tonemap output away from the prior cubemap-blind
+    // [206, 206, 206].
     assert_eq!(
         pixel_at(frame, width, width / 2, height / 2),
-        [206, 206, 206, 255]
+        [182, 185, 189, 255]
     );
     assert_eq!(pixel_at(frame, width, 0, 0), [0, 0, 0, 255]);
     assert_eq!(

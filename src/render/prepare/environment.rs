@@ -89,13 +89,27 @@ impl PreparedEnvironmentLighting {
                 brdf_lut_size: BRDF_LUT_SIZE,
             })
         });
-        let Some(irradiance) = environment.preview_irradiance_rgb() else {
-            return Self {
-                diffuse_rgb: Vec3::ZERO,
-                specular_rgb: Vec3::ZERO,
-                intensity: 0.0,
-                cubemap,
-            };
+        // Phase A2 / CPU color bug fix: when the asset records no scalar
+        // `preview_irradiance_rgb` but does carry a real cubemap (the common
+        // case for the bundled `neutral_studio` environment), derive an
+        // average radiance from the cubemap mip-0 pixels so the CPU
+        // rasterizer's PBR path can still light metallic surfaces. Without
+        // this, the WaterBottle body (metallic = 1.0 across the body texture)
+        // renders pitch-black because there is no diffuse contribution
+        // (1 − metallic = 0) and no IBL contribution (intensity = 0).
+        let irradiance = match environment.preview_irradiance_rgb() {
+            Some(stored) => stored,
+            None => match cubemap.as_ref() {
+                Some(prepared) => average_cubemap_radiance(prepared),
+                None => {
+                    return Self {
+                        diffuse_rgb: Vec3::ZERO,
+                        specular_rgb: Vec3::ZERO,
+                        intensity: 0.0,
+                        cubemap,
+                    };
+                }
+            },
         };
         let diffuse_rgb = Vec3::new(
             sanitize_environment_channel(irradiance[0]),
@@ -182,6 +196,36 @@ pub(in crate::render) fn collect_environment_lighting(
     environment: Option<&EnvironmentDesc>,
 ) -> PreparedEnvironmentLighting {
     PreparedEnvironmentLighting::from_environment(environment)
+}
+
+/// Average mip-0 radiance across the six cubemap faces. Used as a fallback
+/// scalar irradiance for the CPU rasterizer when the asset does not record a
+/// pre-baked `preview_irradiance_rgb` value. Without this, metallic surfaces
+/// (where `1 − metallic = 0` cancels the diffuse term) get zero light from
+/// the environment on the CPU path and render as pitch-black silhouettes.
+fn average_cubemap_radiance(cubemap: &PreparedEnvironmentCubemap) -> [f32; 3] {
+    let Some(faces) = cubemap.mips.first() else {
+        return [0.0; 3];
+    };
+    let mut total = [0.0_f64; 3];
+    let mut count = 0u64;
+    for face in faces {
+        for pixel in face.chunks_exact(4) {
+            total[0] += f64::from(pixel[0]);
+            total[1] += f64::from(pixel[1]);
+            total[2] += f64::from(pixel[2]);
+            count += 1;
+        }
+    }
+    if count == 0 {
+        return [0.0; 3];
+    }
+    let count = count as f64;
+    [
+        (total[0] / count) as f32,
+        (total[1] / count) as f32,
+        (total[2] / count) as f32,
+    ]
 }
 
 fn sanitize_environment_channel(value: f32) -> f32 {

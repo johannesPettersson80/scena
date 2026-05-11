@@ -135,13 +135,38 @@ fn m8_real_asset_waterbottle_imports_and_renders() {
         .filter(|p| p[..3] != [0, 0, 0])
         .count();
     assert!(
-        nonzero > 5,
-        "framed WaterBottle silhouette must produce at least 5 non-black pixels \
+        nonzero > 5_000,
+        "framed WaterBottle silhouette must produce at least 5000 non-black pixels \
          (got {nonzero})"
     );
-    eprintln!("nonzero pixels: {nonzero}");
+
+    // Sample known regions to pin the cream body + dark cap + dark label
+    // colors that the IBL fix delivers. These bytes were the result of the
+    // first green-flag render after the CPU IBL cubemap-irradiance fallback
+    // landed; they catch regressions in either the texture sampling chain
+    // or the environment irradiance derivation.
+    let cap = pixel_at(frame, 256, 80);
+    let body = pixel_at(frame, 256, 240);
+    let label = pixel_at(frame, 256, 440);
+    assert!(
+        cap[1] < 80 && cap[2] < 80,
+        "cap region should remain dark (got {cap:?})"
+    );
+    assert!(
+        body[1] > 80 && body[2] < body[1],
+        "body region should show warm cream/olive (got {body:?})"
+    );
+    assert!(
+        label[0] > label[1] && label[0] > 30,
+        "label region should show a dark red tint (got {label:?})"
+    );
 
     write_png_artifact(frame, 512, 512);
+}
+
+fn pixel_at(frame: &[u8], x: usize, y: usize) -> [u8; 4] {
+    let p = (y * 512 + x) * 4;
+    [frame[p], frame[p + 1], frame[p + 2], frame[p + 3]]
 }
 
 fn write_png_artifact(rgba8: &[u8], width: u32, height: u32) {

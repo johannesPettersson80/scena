@@ -57,7 +57,10 @@ rgba_hash = "fnv1a64:888efcfe5012b019"
 [[reference]]
 name = "default-cube"
 max_abs_diff = 0
-center_rgba = [206, 206, 206, 255]
+# Post-IBL-fallback: the default environment cubemap now contributes real
+# radiance to diffuse PBR surfaces; the prior cubemap-blind path used a
+# zero scalar irradiance and rendered white = [206, 206, 206].
+center_rgba = [182, 185, 189, 255]
 corner_rgba = [0, 0, 0, 255]
 nonblack_pixels = 109
-rgba_hash = "fnv1a64:1b305a55001a2b13"
+rgba_hash = "fnv1a64:f4002bca132c1b69"

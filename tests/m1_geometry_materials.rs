@@ -558,9 +558,16 @@ fn renderer_environment_is_structural_and_validated_during_prepare() {
         .expect("default environment validates during prepare");
     assert_eq!(renderer.stats().environments, 1);
     renderer.render(&scene, camera).expect("scene renders");
-    assert_eq!(
+    // After the CPU IBL fallback fix (cubemap-derived scalar irradiance for
+    // environments without preview_irradiance_rgb), the default environment
+    // now contributes real radiance to diffuse PBR surfaces, slightly
+    // desaturating ACES on a fully-white-irradiated white material.
+    assert_pixel_close(
         center_pixel(renderer.frame_rgba8(), 4, 4),
-        [206, 206, 206, 255]
+        [181, 184, 187, 255],
+        2,
+        "default-environment + white PBR converges to roughly equal-luminance \
+         tonemapped grey across channels",
     );
 
     let missing_environment = EnvironmentHandle::default();

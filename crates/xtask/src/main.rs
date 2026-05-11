@@ -7266,7 +7266,7 @@ fn check_visual_fixture_metadata(root: &Path, findings: &mut Vec<Finding>) {
             "max_abs_diff = 0",
             "center_rgba = [119, 177, 204, 255]",
             "nonblack_pixels = 109",
-            "rgba_hash = \"fnv1a64:1b305a55001a2b13\"",
+            "rgba_hash = \"fnv1a64:f4002bca132c1b69\"",
         ],
     );
     require_contains(
