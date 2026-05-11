@@ -40,6 +40,7 @@ required-features = ["inspection"]
 [dependencies]
 base64 = "0.22"
 glam = { version = "0.30", default-features = false, features = ["std", "scalar-math"] }
+gltf = { version = "1.4", default-features = false, features = ["utils", "names", "extras", "extensions", "image", "import", "KHR_lights_punctual", "KHR_materials_unlit", "KHR_texture_transform", "KHR_materials_variants"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 mikktspace = "0.3"
 png = "0.17"
