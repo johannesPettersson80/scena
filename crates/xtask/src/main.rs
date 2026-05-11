@@ -2172,6 +2172,102 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_backend_vocabulary(root, findings);
     check_unit_test_first_governance(root, findings);
     check_agent_validation(root, findings);
+    check_tests_env_flags_documented(root, findings);
+}
+
+/// `TESTS-ENV-FLAGS-DOCUMENTED`: every non-standard env var that a test under
+/// `tests/` reads must be listed in `CLAUDE.md`'s "Test environment flags"
+/// section so contributors can discover them without grep. Standard cargo /
+/// rust vars (`RUST_LOG`, `RUST_BACKTRACE`, `CARGO_*`, `OUT_DIR`, `TMPDIR`)
+/// are exempt.
+fn check_tests_env_flags_documented(root: &Path, findings: &mut Vec<Finding>) {
+    const STANDARD_EXEMPTIONS: &[&str] = &[
+        "RUST_LOG",
+        "RUST_BACKTRACE",
+        "OUT_DIR",
+        "TMPDIR",
+        "HOME",
+        "PATH",
+        "CARGO",
+        "CI",
+        "TARGET",
+        "GITHUB_SHA",
+        "GITHUB_RUN_ID",
+        "GITHUB_REPOSITORY",
+    ];
+    let claude_md = match fs::read_to_string(root.join("CLAUDE.md")) {
+        Ok(text) => text,
+        Err(_) => {
+            findings.push(Finding::new(
+                "TESTS-ENV-FLAGS-DOCUMENTED",
+                "CLAUDE.md must exist and list test environment flags".to_string(),
+            ));
+            return;
+        }
+    };
+    let Ok(read_dir) = fs::read_dir(root.join("tests")) else {
+        return;
+    };
+    let mut entries = Vec::new();
+    for entry in read_dir.flatten() {
+        entries.push(entry.path());
+    }
+    entries.sort();
+    for path in entries {
+        if path.extension().and_then(|extension| extension.to_str()) != Some("rs") {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let display = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .display()
+            .to_string();
+        for capture in find_env_var_names(&text) {
+            if STANDARD_EXEMPTIONS
+                .iter()
+                .any(|prefix| capture.starts_with(prefix))
+            {
+                continue;
+            }
+            if !claude_md.contains(&capture) {
+                findings.push(Finding::new(
+                    "TESTS-ENV-FLAGS-DOCUMENTED",
+                    format!(
+                        "{display} reads env var '{capture}' that is not listed in \
+                         CLAUDE.md's 'Test environment flags' table; either document it \
+                         or remove the read",
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+/// Scan a Rust source for `std::env::var("NAME")` / `env::var("NAME")` reads
+/// and return the literal NAME strings. Best-effort: handles the common
+/// `env::var("FOO")` and `std::env::var("FOO")` call shapes; macro-built
+/// names are not detected.
+fn find_env_var_names(source: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for marker in &["env::var(\"", "env::var_os(\""] {
+        let mut cursor = 0;
+        while let Some(start) = source[cursor..].find(marker) {
+            let head = cursor + start + marker.len();
+            if let Some(end) = source[head..].find('"') {
+                let name = source[head..head + end].to_string();
+                if !name.is_empty() && !names.contains(&name) {
+                    names.push(name);
+                }
+                cursor = head + end + 1;
+            } else {
+                break;
+            }
+        }
+    }
+    names
 }
 
 const REQUIRED_DOCS: &[&str] = &[
@@ -10134,6 +10230,49 @@ fn sha256_hex(path: &Path) -> std::io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn env_var_scanner_finds_std_env_var_calls() {
+        let source = r#"
+            fn run() {
+                if std::env::var("SCENA_USE_GPU").is_ok() {}
+                let _ = env::var("MY_OTHER_FLAG");
+                let _ = env::var_os("OS_ONLY");
+            }
+        "#;
+        let names = find_env_var_names(source);
+        assert!(names.contains(&"SCENA_USE_GPU".to_string()));
+        assert!(names.contains(&"MY_OTHER_FLAG".to_string()));
+        assert!(names.contains(&"OS_ONLY".to_string()));
+    }
+
+    #[test]
+    fn env_var_scanner_deduplicates_repeated_names() {
+        let source = r#"
+            if env::var("FOO").is_ok() {}
+            if env::var("FOO").is_err() {}
+        "#;
+        let names = find_env_var_names(source);
+        assert_eq!(names.iter().filter(|n| *n == "FOO").count(), 1);
+    }
+
+    #[test]
+    fn tests_env_flags_documented_passes_when_flag_in_claude_md() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        // Sanity: the rule should not fire today (Stage 0 added CLAUDE.md
+        // with both SCENA_USE_GPU and VK_ICD_FILENAMES documented).
+        let mut findings = Vec::new();
+        check_tests_env_flags_documented(&root, &mut findings);
+        let flag_findings: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == "TESTS-ENV-FLAGS-DOCUMENTED")
+            .collect();
+        assert!(
+            flag_findings.is_empty(),
+            "Stage 0 CLAUDE.md must list every test env flag; got: {:?}",
+            flag_findings,
+        );
+    }
 
     #[test]
     fn parses_doctor_modes() {
