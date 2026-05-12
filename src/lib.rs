@@ -48,8 +48,8 @@ pub use diagnostics::{
     RendererStats,
 };
 pub use geometry::{
-    Aabb, GeometryDesc, GeometryError, GeometryMorphTarget, GeometrySkin, GeometryTopology,
-    GeometryVertex, Primitive, SkinningMatrix, StaticBatchReport, Vertex,
+    Aabb, FramingAngles, GeometryDesc, GeometryError, GeometryMorphTarget, GeometrySkin,
+    GeometryTopology, GeometryVertex, Primitive, SkinningMatrix, StaticBatchReport, Vertex,
 };
 pub use material::{
     AlphaMode, Color, ColorParseError, DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES,
