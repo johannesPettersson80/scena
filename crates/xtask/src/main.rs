@@ -2175,6 +2175,55 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_tests_env_flags_documented(root, findings);
     check_m8_real_asset_dual_lane(root, findings);
     check_cpu_ibl_gap_documented(root, findings);
+    check_waterbottle_third_party_reference(root, findings);
+}
+
+/// `M8-WATERBOTTLE-THIRD-PARTY-REFERENCE`: the m8 WaterBottle proof
+/// must ship a third-party PBR reference (Blender Cycles render) in
+/// addition to the scena-gold regression baseline. The scena-gold
+/// reference catches future drift; the Blender reference is the
+/// answer to "is scena's output canonically correct".
+fn check_waterbottle_third_party_reference(root: &Path, findings: &mut Vec<Finding>) {
+    let blender_png = root
+        .join("tests/assets/gltf/khronos/WaterBottle/reference_blender_cycles_512.png");
+    let blender_script = root
+        .join("tests/assets/gltf/khronos/WaterBottle/render_blender_reference.py");
+    let metadata = root.join("tests/assets/gltf/khronos/WaterBottle/reference_metadata.toml");
+    if !blender_png.is_file() {
+        findings.push(Finding::new(
+            "M8-WATERBOTTLE-THIRD-PARTY-REFERENCE",
+            "tests/assets/gltf/khronos/WaterBottle/reference_blender_cycles_512.png \
+             must exist (Blender Cycles third-party reference render)"
+                .to_string(),
+        ));
+    }
+    if !blender_script.is_file() {
+        findings.push(Finding::new(
+            "M8-WATERBOTTLE-THIRD-PARTY-REFERENCE",
+            "tests/assets/gltf/khronos/WaterBottle/render_blender_reference.py \
+             must exist so the Blender reference is reproducible"
+                .to_string(),
+        ));
+    }
+    let Ok(metadata_text) = fs::read_to_string(&metadata) else {
+        findings.push(Finding::new(
+            "M8-WATERBOTTLE-THIRD-PARTY-REFERENCE",
+            "reference_metadata.toml must exist and document both \
+             scena-gold and blender_cycles references"
+                .to_string(),
+        ));
+        return;
+    };
+    for needle in ["[scena_gold]", "[blender_cycles]", "third-party PBR validation"] {
+        if !metadata_text.contains(needle) {
+            findings.push(Finding::new(
+                "M8-WATERBOTTLE-THIRD-PARTY-REFERENCE",
+                format!(
+                    "reference_metadata.toml missing required marker '{needle}'"
+                ),
+            ));
+        }
+    }
 }
 
 /// `CPU-IBL-GAP-DOCUMENTED`: the CPU rasterizer's lack of split-sum

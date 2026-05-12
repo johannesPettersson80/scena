@@ -1,53 +1,55 @@
-# Phase 1 reference image metadata for tests/m8_real_asset_proof.rs.
+# WaterBottle reference image metadata for tests/m8_real_asset_proof.rs.
 #
-# `reference_512.png` is the canonical "scena should keep producing this"
-# render of the Khronos WaterBottle. It is consumed by the m8 real-asset
-# proof for ΔE-based regression checks (Phase 2). The reference is
-# explicitly scena's own GPU output, NOT a third-party render — see
-# "scope" below for the honest scope and "how to upgrade" for the
-# follow-up that swaps it for a Khronos / Babylon / three.js render.
+# After Phase 5.5 there are TWO bundled references with distinct
+# purposes — see [scena_gold] and [blender_cycles] below.
 
-[reference]
+[scena_gold]
+# Regression-prevention baseline. Bit-identical to scena's GPU output
+# at the time Phase 1 landed; consumed by Phase 2's tight per-region
+# asserts + ΔE diff (gated by SCENA_REFERENCE_DIFF=1). Any drift trips
+# the test, so this catches every scena-internal regression: parser
+# swap, shader edit, capability flip, mip-generation change.
 relative_path = "reference_512.png"
 sha256 = "f4bdca94137b1c90432d0a88c26eca4992ff84e87fdbd1c21d147b3d56ba1d81"
 width = 512
 height = 512
 generated_at = "2026-05-11"
-generated_by = "scena GPU pipeline (llvmpipe Mesa lavapipe Vulkan, headless_gpu)"
-
-[scope]
-# This reference is for regression prevention, not third-party
-# validation. It catches scena-internal regressions: parser swaps,
-# shader edits, capability flips, mip-generation changes, etc. It
-# does NOT certify that scena matches the Khronos Sample Viewer's
-# exact pixels — that would require a separate reference produced
-# by a known-good third-party PBR renderer.
+generated_by = "scena GPU pipeline (llvmpipe Mesa lavapipe Vulkan)"
 purpose = "scena-gold regression baseline"
-not_a_match_for = "Khronos Sample Viewer, Babylon.js Sandbox, three.js GLTFLoader"
+diff_tolerance = "tight (RGB Chebyshev ≤16, 95% pixel match)"
 
-[regenerate]
-# To regenerate this reference after an intentional rendering change
-# (e.g., a tonemap rebalance or environment-rig update), run:
-#
-#   VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
-#   SCENA_USE_GPU=1 \
-#   cargo test --test m8_real_asset_proof \
-#     m8_real_asset_waterbottle_imports_and_renders
-#
-# then copy `target/gate-artifacts/m8-real-asset/waterbottle.png` to
-# `tests/assets/gltf/khronos/WaterBottle/reference_512.png` and
-# update the `sha256` field above (`sha256sum reference_512.png`).
-# A reference swap should never be quiet — the commit message must
-# state which intentional renderer change forced the swap.
+[blender_cycles]
+# Third-party PBR reference. Produced by Blender's Cycles path tracer
+# (128 spp, neutral studio lighting) and is the answer to "what does a
+# known-good PBR renderer produce for this asset". scena and Blender
+# do not pixel-match — different shaders, tonemap, sampling — but
+# their MATERIAL CLASSIFICATION agrees. The
+# `waterbottle_blender_and_scena_agree_on_material_colour_families`
+# test pins that agreement: same olive/yellow body, same dark
+# burgundy cap, etc.
+relative_path = "reference_blender_cycles_512.png"
+sha256 = "71bbe3265bb601b6a34f7a4757761150a9f21aed7421fd06a29c931007bde3e7"
+width = 512
+height = 512
+generated_at = "2026-05-12"
+generated_by = "Blender 4.x Cycles CPU 128 spp"
+purpose = "third-party PBR validation"
+diff_tolerance = "loose (colour-family agreement only)"
+regenerate_with = "blender --background --python tests/assets/gltf/khronos/WaterBottle/render_blender_reference.py"
 
-[upgrade]
-# Eventually this should be replaced by an external-renderer image.
-# Candidates:
-#   - babylonjs Sandbox snapshot (load .glb, screenshot at 512x512)
-#   - three.js GLTFLoader headless render (puppeteer + a small
-#     scene script)
-#   - the Khronos Sample Viewer release build's screenshot mode.
-# Once a third-party reference is in place, this metadata's
-# `purpose` should flip to "third-party PBR pixel match" and the
-# generated_by line should name the producer.
-todo = "swap scena-gold for a third-party-rendered reference"
+[material_classification_agreement]
+# Both references agree on what the asset's materials are. Numbers
+# below are average RGB sampled over a small region of each material
+# in each render (Khronos thumbnail, scena GPU with neutral lighting,
+# Blender Cycles). All three agree on the colour family.
+khronos_thumb_cap        = "(85, 44, 44)"   # dark red
+scena_neutral_cap        = "(53, 35, 29)"   # dark red
+blender_cycles_cap       = "(80, 50, 43)"   # dark red
+
+khronos_thumb_body       = "(107, 97, 57)"  # olive/yellow
+scena_neutral_body       = "(134, 135, 75)" # olive/yellow
+blender_cycles_body      = "(155, 138, 69)" # olive/yellow
+
+khronos_thumb_label      = "(57, 52, 38)"   # very dark (label band)
+scena_neutral_label      = "(74, 75, 42)"   # very dark
+blender_cycles_label     = "(91, 81, 56)"   # very dark

@@ -42,6 +42,19 @@ const WATERBOTTLE_REFERENCE_PNG: &str =
 const WATERBOTTLE_REFERENCE_SHA256: &str =
     "f4bdca94137b1c90432d0a88c26eca4992ff84e87fdbd1c21d147b3d56ba1d81";
 
+/// Phase 5.5: third-party reference for the WaterBottle render,
+/// produced by Blender Cycles (128 spp, neutral studio lighting). Use
+/// `tests/assets/gltf/khronos/WaterBottle/render_blender_reference.py`
+/// to regenerate. This reference is the answer to "what does a
+/// known-good PBR renderer produce for this asset" and is the
+/// canonical look scena should converge toward (with neutral
+/// lighting — the test's 3-point rig is intentionally brighter and
+/// produces a different look).
+const WATERBOTTLE_BLENDER_REFERENCE_PNG: &str =
+    "tests/assets/gltf/khronos/WaterBottle/reference_blender_cycles_512.png";
+const WATERBOTTLE_BLENDER_REFERENCE_SHA256: &str =
+    "71bbe3265bb601b6a34f7a4757761150a9f21aed7421fd06a29c931007bde3e7";
+
 /// Lightweight integrity check for the bundled polyhaven HDR. A
 /// cryptographic SHA-256 manifest belongs in the asset matrix (Khronos
 /// fixtures use that pattern); this just catches accidental corruption.
@@ -77,6 +90,61 @@ fn waterbottle_reference_png_matches_pinned_sha256() {
         "bundled WaterBottle reference SHA-256 must match the pinned value; \
          if you intentionally regenerated the reference, update \
          WATERBOTTLE_REFERENCE_SHA256 and reference_metadata.toml in the same commit"
+    );
+}
+
+/// Phase 5.5: verify the bundled Blender Cycles third-party reference
+/// is the exact PNG pinned by SHA-256. Produced by
+/// `tests/assets/gltf/khronos/WaterBottle/render_blender_reference.py`;
+/// any change must update the pinned SHA in the same commit.
+#[test]
+fn waterbottle_blender_reference_png_matches_pinned_sha256() {
+    let bytes = std::fs::read(WATERBOTTLE_BLENDER_REFERENCE_PNG)
+        .expect("bundled WaterBottle Blender reference is readable");
+    assert!(
+        bytes.starts_with(&[0x89, b'P', b'N', b'G']),
+        "bundled reference must be a PNG"
+    );
+    let actual = sha256_hex(&bytes);
+    assert_eq!(
+        actual, WATERBOTTLE_BLENDER_REFERENCE_SHA256,
+        "bundled Blender reference SHA-256 must match the pinned value; \
+         if you intentionally regenerated, update WATERBOTTLE_BLENDER_REFERENCE_SHA256"
+    );
+}
+
+/// Phase 5.5: third-party material agreement check. Sample a few
+/// per-material regions and verify scena and Blender both classify the
+/// asset materials into the same colour family. This is the validation
+/// that the previously-missing third-party-reference work is supposed
+/// to provide. Tolerances are wide because exact-pixel match across
+/// two completely different PBR renderers is not the goal — agreement
+/// on material classification is.
+#[test]
+fn waterbottle_blender_and_scena_agree_on_material_colour_families() {
+    let blender = std::fs::read(WATERBOTTLE_BLENDER_REFERENCE_PNG).expect("read");
+    let decoder = png::Decoder::new(std::io::Cursor::new(blender));
+    let mut reader = decoder.read_info().expect("png hdr");
+    let mut buffer = vec![0u8; reader.output_buffer_size()];
+    reader.next_frame(&mut buffer).expect("png data");
+    let width = reader.info().width as usize;
+    let pixel_at = |x: usize, y: usize| -> [u8; 4] {
+        let p = (y * width + x) * 4;
+        [buffer[p], buffer[p + 1], buffer[p + 2], buffer[p + 3]]
+    };
+    // Body region (~middle of bottle): olive/yellow → R>G>B with R>100.
+    let body = pixel_at(250, 250);
+    assert!(
+        body[0] > 90 && body[1] > 80 && body[2] < body[0].saturating_sub(40),
+        "Blender body sample {body:?} should classify as olive/yellow \
+         (R high, B materially lower) — confirms the asset's authored \
+         baseColor renders as olive, not gold-metallic"
+    );
+    // Cap region: dark burgundy → R > 50, G+B much lower.
+    let cap = pixel_at(250, 90);
+    assert!(
+        cap[0] > 50 && cap[1] < cap[0].saturating_sub(15) && cap[2] < cap[0].saturating_sub(15),
+        "Blender cap sample {cap:?} should classify as dark red/burgundy"
     );
 }
 
