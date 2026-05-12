@@ -2174,6 +2174,53 @@ fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_agent_validation(root, findings);
     check_tests_env_flags_documented(root, findings);
     check_m8_real_asset_dual_lane(root, findings);
+    check_cpu_ibl_gap_documented(root, findings);
+}
+
+/// `CPU-IBL-GAP-DOCUMENTED`: the CPU rasterizer's lack of split-sum
+/// IBL specular is a real, known feature gap, not a bug. The spec doc
+/// at `docs/specs/cpu-rasterizer-ibl-gap.md` documents it; tests'
+/// renderer metadata exposes `ibl_specular_path` so reviewers can tell
+/// from the artifact which path ran. This rule keeps both wired.
+fn check_cpu_ibl_gap_documented(root: &Path, findings: &mut Vec<Finding>) {
+    let spec_path = root.join("docs/specs/cpu-rasterizer-ibl-gap.md");
+    let Ok(spec_text) = fs::read_to_string(&spec_path) else {
+        findings.push(Finding::new(
+            "CPU-IBL-GAP-DOCUMENTED",
+            "docs/specs/cpu-rasterizer-ibl-gap.md must exist and \
+             describe the CPU vs GPU IBL specular gap"
+                .to_string(),
+        ));
+        return;
+    };
+    for needle in [
+        "split_sum",
+        "renderer_path",
+        "Renderer::headless",
+        "Renderer::headless_gpu",
+    ] {
+        if !spec_text.contains(needle) {
+            findings.push(Finding::new(
+                "CPU-IBL-GAP-DOCUMENTED",
+                format!(
+                    "docs/specs/cpu-rasterizer-ibl-gap.md missing required text '{needle}'"
+                ),
+            ));
+        }
+    }
+    let test_text = match fs::read_to_string(root.join("tests/m8_real_asset_proof.rs")) {
+        Ok(t) => t,
+        Err(_) => return,
+    };
+    if !test_text.contains("ibl_specular_path") {
+        findings.push(Finding::new(
+            "CPU-IBL-GAP-DOCUMENTED",
+            "tests/m8_real_asset_proof.rs must emit ibl_specular_path \
+             in the renderer metadata so reviewers can tell which \
+             IBL path produced the artifact"
+                .to_string(),
+        ));
+    }
 }
 
 /// `M8-REAL-ASSET-DUAL-LANE`: the m8 WaterBottle proof must be split into
@@ -2669,8 +2716,25 @@ fn require_contains(
         return;
     };
 
+    // Phase 5.4 follow-up: extracted shader text lives in a sibling
+    // `<module>_shader.wgsl` file. When checking a `.rs` module, fall
+    // back to that sibling so doctor pins that name shader-text
+    // strings (e.g. `var brdf_lut: texture_2d<f32>`) continue to
+    // resolve after the extraction.
+    let sibling = if rel.ends_with(".rs") {
+        let stripped = rel.trim_end_matches(".rs");
+        let sibling_rel = format!("{stripped}_shader.wgsl");
+        fs::read_to_string(root.join(&sibling_rel)).ok()
+    } else {
+        None
+    };
+
     for needle in needles {
-        if !text.contains(needle) {
+        let found_in_primary = text.contains(needle);
+        let found_in_sibling = sibling
+            .as_deref()
+            .is_some_and(|sibling_text| sibling_text.contains(needle));
+        if !found_in_primary && !found_in_sibling {
             findings.push(Finding::new(
                 rule,
                 format!("{rel} is missing required contract text '{}'", needle),
@@ -4589,7 +4653,10 @@ fn check_scene_light_contracts(root: &Path, findings: &mut Vec<Finding>) {
         &[
             "pub struct LightKey",
             "mod lights;",
-            "pub use lights::{DirectionalLight, Light, LightBuilder, PointLight, SpotLight}",
+            "pub use lights::{",
+            "DirectionalLight,",
+            "LightBuilder,",
+            "StudioLightingHandles",
             "NodeKind::Light",
         ],
     );
@@ -10303,6 +10370,22 @@ mod tests {
         "#;
         let names = find_env_var_names(source);
         assert_eq!(names.iter().filter(|n| *n == "FOO").count(), 1);
+    }
+
+    #[test]
+    fn cpu_ibl_gap_documented_passes_for_current_repo() {
+        let root = repo_root().expect("test runs inside the scena workspace");
+        let mut findings = Vec::new();
+        check_cpu_ibl_gap_documented(&root, &mut findings);
+        let gap: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == "CPU-IBL-GAP-DOCUMENTED")
+            .collect();
+        assert!(
+            gap.is_empty(),
+            "Phase 5.4 cpu-ibl-gap doc must keep doctor green; got: {:?}",
+            gap,
+        );
     }
 
     #[test]
