@@ -52,6 +52,45 @@ impl Scene {
         self.light_builder(Light::Directional(light))
     }
 
+    /// Phase 5.3: insert a "studio" 3-point directional rig (key +
+    /// cool fill + warm rim). Returns the three node keys in
+    /// (key, fill, rim) order. Intensities are tuned to match the
+    /// look of the Khronos sample-thumbnail renders without
+    /// over-exposing PBR metallic body materials.
+    ///
+    /// Tests and examples previously hand-rolled this rig with
+    /// 80,000-lux suns that drowned the asset's authored materials in
+    /// specular reflections. This preset uses moderate intensities
+    /// (key 12,000 lux + fill 4,000 lux + rim 3,000 lux) that read
+    /// closer to what canonical PBR viewers produce.
+    pub fn add_studio_lighting(&mut self) -> Result<StudioLightingHandles, LookupError> {
+        let key = self
+            .directional_light(
+                DirectionalLight::default()
+                    .with_color(Color::WHITE)
+                    .with_illuminance_lux(12_000.0),
+            )
+            .transform(Transform::default().rotate_x_deg(-30.0).rotate_y_deg(20.0))
+            .add()?;
+        let fill = self
+            .directional_light(
+                DirectionalLight::default()
+                    .with_color(Color::from_srgb_u8(200, 215, 235))
+                    .with_illuminance_lux(4_000.0),
+            )
+            .transform(Transform::default().rotate_x_deg(-10.0).rotate_y_deg(-120.0))
+            .add()?;
+        let rim = self
+            .directional_light(
+                DirectionalLight::default()
+                    .with_color(Color::from_srgb_u8(255, 235, 210))
+                    .with_illuminance_lux(3_000.0),
+            )
+            .transform(Transform::default().rotate_x_deg(15.0).rotate_y_deg(170.0))
+            .add()?;
+        Ok(StudioLightingHandles { key, fill, rim })
+    }
+
     pub fn point_light(&mut self, light: PointLight) -> LightBuilder<'_> {
         self.light_builder(Light::Point(light))
     }
@@ -85,6 +124,17 @@ impl Scene {
             }
         }
     }
+}
+
+/// Phase 5.3: handles for the three lights inserted by
+/// [`Scene::add_studio_lighting`]. Returned so callers can later
+/// adjust an individual light (e.g. raise the key, tint the rim) or
+/// remove the rig.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StudioLightingHandles {
+    pub key: NodeKey,
+    pub fill: NodeKey,
+    pub rim: NodeKey,
 }
 
 impl LightBuilder<'_> {
@@ -272,5 +322,62 @@ const fn clamp_angle(angle: Angle, min: f32, max: f32) -> Angle {
         Angle::from_radians(max)
     } else {
         angle
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn add_studio_lighting_inserts_three_directional_nodes_with_distinct_keys() {
+        let mut scene = Scene::new();
+        let handles = scene.add_studio_lighting().expect("studio lighting inserts");
+        assert_ne!(handles.key, handles.fill);
+        assert_ne!(handles.fill, handles.rim);
+        assert_ne!(handles.key, handles.rim);
+        // Each handle resolves to a Light::Directional in the scene.
+        for node in [handles.key, handles.fill, handles.rim] {
+            let node_data = scene.node(node).expect("node exists");
+            match node_data.kind {
+                NodeKind::Light(light_key) => {
+                    let light = scene.light(light_key).expect("light exists");
+                    assert!(matches!(light, Light::Directional(_)));
+                }
+                _ => panic!("studio lighting handle must point at a Light node"),
+            }
+        }
+    }
+
+    #[test]
+    fn add_studio_lighting_uses_moderate_intensities_not_overdriven_3point() {
+        // Phase 5.3 motivation: the previous test rig used 80,000 lux
+        // suns that overwhelmed PBR materials. The preset must stay at
+        // moderate intensities so a metallic-1 surface doesn't render
+        // as polished gold under a flood of specular highlights.
+        let mut scene = Scene::new();
+        let handles = scene.add_studio_lighting().expect("inserts");
+        let mut illuminances = Vec::new();
+        for node in [handles.key, handles.fill, handles.rim] {
+            let node_data = scene.node(node).expect("node");
+            let NodeKind::Light(light_key) = node_data.kind else {
+                panic!("light node");
+            };
+            let Light::Directional(light) = scene.light(light_key).expect("light") else {
+                panic!("directional");
+            };
+            illuminances.push(light.illuminance_lux());
+        }
+        for lux in &illuminances {
+            assert!(
+                *lux < 20_000.0,
+                "studio preset must stay under 20k lux per light (got {lux})"
+            );
+        }
+        let total: f32 = illuminances.iter().sum();
+        assert!(
+            total < 30_000.0,
+            "combined studio preset under 30k lux total (got {total})"
+        );
     }
 }

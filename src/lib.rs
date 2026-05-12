@@ -73,7 +73,8 @@ pub use scene::{
     InstanceSet, InstanceSetKey, LabelBillboard, LabelDesc, LabelKey, LabelRasterization, Light,
     LightBuilder, LightKey, MeshBuilder, MeshNode, ModelBuilder, ModelNode, Node, NodeKey,
     NodeKind, OrthographicCamera, PerspectiveCamera, PointLight, Quat, Scene, SceneDirtyState,
-    SceneImport, SceneSkinBinding, SourceCoordinateSystem, SourceUnits, SpotLight, Transform, Vec3,
+    SceneImport, SceneSkinBinding, SourceCoordinateSystem, SourceUnits, SpotLight,
+    StudioLightingHandles, Transform, Vec3,
 };
 #[cfg(feature = "inspection")]
 pub use scene::{

@@ -58,7 +58,9 @@ pub use inspection::{
 };
 pub use instances::{Instance, InstanceCullingPolicy, InstanceId, InstanceSet};
 pub use labels::{LabelBillboard, LabelDesc, LabelRasterization};
-pub use lights::{DirectionalLight, Light, LightBuilder, PointLight, SpotLight};
+pub use lights::{
+    DirectionalLight, Light, LightBuilder, PointLight, SpotLight, StudioLightingHandles,
+};
 pub use math::{Angle, Quat, Transform, Vec3};
 pub use skinning::SceneSkinBinding;
 
