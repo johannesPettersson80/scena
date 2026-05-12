@@ -134,6 +134,12 @@ pub struct MaterialDesc {
     emissive_strength: f32,
     metallic_factor: f32,
     roughness_factor: f32,
+    /// glTF spec `normalTexture.scale` — scales tangent-space normal
+    /// X/Y components before TBN reconstruction. Default 1.0.
+    normal_scale: f32,
+    /// glTF spec `occlusionTexture.strength` — `lerp(1, occlusion, strength)`.
+    /// Default 1.0.
+    occlusion_strength: f32,
     double_sided: bool,
     base_color_texture_transform: Option<TextureTransform>,
     normal_texture_transform: Option<TextureTransform>,
@@ -191,6 +197,8 @@ impl MaterialDesc {
             emissive_strength: 1.0,
             metallic_factor: 0.0,
             roughness_factor: 1.0,
+            normal_scale: 1.0,
+            occlusion_strength: 1.0,
             double_sided: false,
             base_color_texture_transform: None,
             normal_texture_transform: None,
@@ -220,6 +228,8 @@ impl MaterialDesc {
             emissive_strength: 1.0,
             metallic_factor: clamp_unit_or(metallic_factor, 0.0),
             roughness_factor: clamp_unit_or(roughness_factor, 1.0),
+            normal_scale: 1.0,
+            occlusion_strength: 1.0,
             double_sided: false,
             base_color_texture_transform: None,
             normal_texture_transform: None,
@@ -275,6 +285,8 @@ impl MaterialDesc {
             emissive_strength: 1.0,
             metallic_factor: 0.0,
             roughness_factor: 1.0,
+            normal_scale: 1.0,
+            occlusion_strength: 1.0,
             double_sided: false,
             base_color_texture_transform: None,
             normal_texture_transform: None,
@@ -419,6 +431,30 @@ impl MaterialDesc {
     pub const fn with_normal_texture_transform(mut self, transform: TextureTransform) -> Self {
         self.normal_texture_transform = Some(transform);
         self
+    }
+
+    /// Sets `normalTexture.scale` (glTF spec): tangent-space normal X/Y
+    /// components are multiplied by this factor before TBN
+    /// reconstruction. Default 1.0.
+    pub const fn with_normal_scale(mut self, scale: f32) -> Self {
+        self.normal_scale = scale;
+        self
+    }
+
+    /// Sets `occlusionTexture.strength` (glTF spec): the AO factor
+    /// applied is `lerp(1.0, occlusion_sample, strength)`. Default 1.0
+    /// applies the full AO; 0.0 disables it.
+    pub const fn with_occlusion_strength(mut self, strength: f32) -> Self {
+        self.occlusion_strength = strength;
+        self
+    }
+
+    pub const fn normal_scale(&self) -> f32 {
+        self.normal_scale
+    }
+
+    pub const fn occlusion_strength(&self) -> f32 {
+        self.occlusion_strength
     }
 
     pub const fn with_metallic_roughness_texture(mut self, texture: TextureHandle) -> Self {

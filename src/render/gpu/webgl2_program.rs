@@ -65,6 +65,10 @@ uniform vec4 base_color_uv_rotation;
 uniform vec4 base_color_factor;
 uniform vec4 emissive_strength;
 uniform vec4 metallic_roughness_alpha;
+// Phase 5.1: glTF spec scalar texture strengths.
+// .x = normalTexture.scale (default 1.0)
+// .y = occlusionTexture.strength (default 1.0)
+uniform vec4 texture_strengths;
 out vec4 out_color;
 const float PI = 3.141592653589793;
 
@@ -238,7 +242,16 @@ void main() {
     vec4 metallic_roughness_sample = texture(metallic_roughness_texture, v_tex_coord0);
     float occlusion_sample = texture(occlusion_texture, v_tex_coord0).r;
     vec3 emissive_sample = texture(emissive_texture, v_tex_coord0).rgb;
-    vec3 normal_sample_tangent_space = normalize(normal_sample * 2.0 - vec3(1.0));
+    // Phase 5.1: apply normalTexture.scale (texture_strengths.x) to the
+    // tangent-space normal X/Y components.
+    vec3 raw_normal = normal_sample * 2.0 - vec3(1.0);
+    float normal_scale = texture_strengths.x;
+    vec3 scaled_tangent_normal = vec3(
+        raw_normal.x * normal_scale,
+        raw_normal.y * normal_scale,
+        raw_normal.z
+    );
+    vec3 normal_sample_tangent_space = normalize(scaled_tangent_normal);
     vec3 world_normal = normalize(v_normal);
     vec3 world_tangent = normalize(v_tangent.xyz);
     vec3 bitangent = normalize(cross(world_normal, world_tangent) * v_tangent.w);
@@ -246,7 +259,10 @@ void main() {
     float normal_visibility = clamp(normal_sample_tangent_space.z, 0.2, 1.0);
     float metallic = clamp(metallic_roughness_alpha.x * metallic_roughness_sample.b, 0.0, 1.0);
     float roughness = clamp(metallic_roughness_alpha.y * metallic_roughness_sample.g, 0.04, 1.0);
-    float material_response = normal_visibility * occlusion_sample * mix(0.92, 1.0, roughness) * (1.0 - metallic * 0.08);
+    // Phase 5.1: occlusionTexture.strength (texture_strengths.y).
+    float occlusion_strength = texture_strengths.y;
+    float occlusion_applied = mix(1.0, occlusion_sample, occlusion_strength);
+    float material_response = normal_visibility * occlusion_applied * mix(0.92, 1.0, roughness) * (1.0 - metallic * 0.08);
     vec4 base = v_color * base_color_factor * base_color_sample;
     if (metallic_roughness_alpha.z > 0.0 && base.a < metallic_roughness_alpha.z) {
         discard;
@@ -267,7 +283,7 @@ void main() {
         );
         vec3 environment = pbrEnvironmentLighting(base.rgb, metallic, roughness, normal, view);
         if (hasPunctualLight() || hasEnvironmentLight()) {
-            shaded_rgb = (direct + environment) * occlusion_sample;
+            shaded_rgb = (direct + environment) * occlusion_applied;
         }
     }
     vec4 shaded = vec4(shaded_rgb + emissive, base.a);

@@ -5,7 +5,7 @@ use crate::material::{AlphaMode, MaterialDesc, MaterialKind, TextureTransform};
 /// correct layer when a `texture_2d_array<f32>` collapses N per-material bind
 /// groups into one shared bind group with dynamic-offset uniform. Per-material
 /// fall-back still allocates a 1-layer array and writes layer index 0.
-pub(super) const MATERIAL_UNIFORM_BYTE_LEN: u64 = 96;
+pub(super) const MATERIAL_UNIFORM_BYTE_LEN: u64 = 112;
 
 /// `min_uniform_buffer_offset_alignment` floor across every wgpu adapter we
 /// target. The shared per-batch material uniform buffer pads each entry up to
@@ -20,6 +20,11 @@ pub(super) struct MaterialUniformUpload {
     pub(super) emissive_strength: [f32; 4],
     pub(super) metallic_roughness_alpha: [f32; 4],
     pub(super) material_layer_index: [u32; 4],
+    /// Phase 5.1: glTF spec scalar texture strengths.
+    /// .x = normalTexture.scale (default 1.0)
+    /// .y = occlusionTexture.strength (default 1.0)
+    /// .z, .w = reserved
+    pub(super) texture_strengths: [f32; 4],
 }
 
 impl MaterialUniformUpload {
@@ -64,6 +69,12 @@ impl MaterialUniformUpload {
                 unlit_flag,
             ],
             material_layer_index: [0, 0, 0, 0],
+            texture_strengths: [
+                material.normal_scale(),
+                material.occlusion_strength(),
+                0.0,
+                0.0,
+            ],
         }
     }
 
@@ -101,6 +112,7 @@ impl MaterialUniformUpload {
             emissive_strength: [0.0, 0.0, 0.0, 1.0],
             metallic_roughness_alpha: [0.0, 1.0, 0.0, 0.0],
             material_layer_index: [0, 0, 0, 0],
+            texture_strengths: [1.0, 1.0, 0.0, 0.0],
         }
     }
 
@@ -120,6 +132,11 @@ impl MaterialUniformUpload {
         // material_layer_index follows the f32 lanes at offset 80.
         for (index, value) in self.material_layer_index.into_iter().enumerate() {
             let byte_offset = 80 + index * 4;
+            bytes[byte_offset..byte_offset + 4].copy_from_slice(&value.to_ne_bytes());
+        }
+        // texture_strengths follows at offset 96.
+        for (index, value) in self.texture_strengths.into_iter().enumerate() {
+            let byte_offset = 96 + index * 4;
             bytes[byte_offset..byte_offset + 4].copy_from_slice(&value.to_ne_bytes());
         }
         bytes
@@ -160,11 +177,44 @@ mod tests {
         assert_eq!(upload.metallic_roughness_alpha, [0.3, 0.7, 0.45, 0.0]);
         assert_eq!(
             upload.encode().len(),
-            96,
+            112,
             "material uniform must reserve transform, base color, emissive, metallic, \
-             roughness, alpha-mask, and material_layer_index lanes (5 vec4<f32> + \
-             1 vec4<u32> = 96 bytes)"
+             roughness, alpha-mask, material_layer_index, and texture_strengths \
+             lanes (6 vec4<f32> + 1 vec4<u32> = 112 bytes)"
         );
+    }
+
+    #[test]
+    fn material_uniform_upload_defaults_texture_strengths_to_one() {
+        // Phase 5.1: glTF spec defaults — normalTexture.scale = 1.0,
+        // occlusionTexture.strength = 1.0. A material that does NOT
+        // set these explicitly must still encode 1.0 so the shader
+        // applies the texture at full strength (the bug Phase 5.1
+        // closed was previously these defaulted to 0.0 in the encoded
+        // bytes because the parser never wrote the field).
+        let material = MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 1.0);
+        let upload = MaterialUniformUpload::from_material(Some(&material), None);
+        assert_eq!(upload.texture_strengths, [1.0, 1.0, 0.0, 0.0]);
+        let bytes = upload.encode();
+        let normal_scale = f32::from_ne_bytes(bytes[96..100].try_into().unwrap());
+        let occlusion_strength = f32::from_ne_bytes(bytes[100..104].try_into().unwrap());
+        assert_eq!(normal_scale, 1.0);
+        assert_eq!(occlusion_strength, 1.0);
+    }
+
+    #[test]
+    fn material_uniform_upload_round_trips_custom_normal_scale_and_occlusion_strength() {
+        let material = MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 1.0)
+            .with_normal_scale(3.5)
+            .with_occlusion_strength(0.25);
+        let upload = MaterialUniformUpload::from_material(Some(&material), None);
+        assert_eq!(upload.texture_strengths[0], 3.5);
+        assert_eq!(upload.texture_strengths[1], 0.25);
+        let bytes = upload.encode();
+        let normal_scale = f32::from_ne_bytes(bytes[96..100].try_into().unwrap());
+        let occlusion_strength = f32::from_ne_bytes(bytes[100..104].try_into().unwrap());
+        assert!((normal_scale - 3.5).abs() < 1e-6);
+        assert!((occlusion_strength - 0.25).abs() < 1e-6);
     }
 
     #[test]

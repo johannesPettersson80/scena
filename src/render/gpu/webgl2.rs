@@ -112,6 +112,9 @@ struct WebGl2RenderCache {
     base_color_factor_uniform: Option<WebGlUniformLocation>,
     emissive_strength_uniform: Option<WebGlUniformLocation>,
     metallic_roughness_alpha_uniform: Option<WebGlUniformLocation>,
+    /// Phase 5.1: glTF spec scalar texture strengths
+    /// (.x = normalTexture.scale, .y = occlusionTexture.strength).
+    texture_strengths_uniform: Option<WebGlUniformLocation>,
     material_textures: Vec<WebGl2MaterialTextureSet>,
     material_uniforms: Vec<MaterialUniformUpload>,
     vertex_capacity_f32: usize,
@@ -157,6 +160,8 @@ impl WebGl2RenderCache {
         let emissive_strength_uniform = gl.get_uniform_location(&program, "emissive_strength");
         let metallic_roughness_alpha_uniform =
             gl.get_uniform_location(&program, "metallic_roughness_alpha");
+        let texture_strengths_uniform =
+            gl.get_uniform_location(&program, "texture_strengths");
         let material_textures = vec![WebGl2MaterialTextureSet::new(&gl)?];
 
         Ok(Self {
@@ -176,6 +181,7 @@ impl WebGl2RenderCache {
             base_color_factor_uniform,
             emissive_strength_uniform,
             metallic_roughness_alpha_uniform,
+            texture_strengths_uniform,
             material_textures,
             material_uniforms: vec![MaterialUniformUpload::identity()],
             vertex_capacity_f32: 0,
@@ -435,6 +441,13 @@ impl WebGl2RenderCache {
             uniform.metallic_roughness_alpha[1],
             uniform.metallic_roughness_alpha[2],
             uniform.metallic_roughness_alpha[3],
+        );
+        self.gl.uniform4f(
+            self.texture_strengths_uniform.as_ref(),
+            uniform.texture_strengths[0],
+            uniform.texture_strengths[1],
+            uniform.texture_strengths[2],
+            uniform.texture_strengths[3],
         );
     }
 

@@ -63,6 +63,11 @@ struct MaterialUniform {
     // into one bind group, the dynamic-offset uniform points at the layer's
     // 256-byte slot and `material_layer_index.x` selects the array slice.
     material_layer_index: vec4<u32>,
+    // Phase 5.1: glTF spec scalar texture strengths.
+    // .x = normalTexture.scale   (default 1.0)
+    // .y = occlusionTexture.strength (default 1.0)
+    // .z, .w = reserved
+    texture_strengths: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -156,7 +161,17 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let metallic_roughness_sample = textureSample(metallic_roughness_texture, metallic_roughness_sampler, in.tex_coord0, material_layer);
     let occlusion_sample = textureSample(occlusion_texture, occlusion_sampler, in.tex_coord0, material_layer).r;
     let emissive_sample = textureSample(emissive_texture, emissive_sampler, in.tex_coord0, material_layer).rgb;
-    let normal_sample = normalize(normal_texture_sample * 2.0 - vec3<f32>(1.0));
+    // Phase 5.1: apply normalTexture.scale to the tangent-space X/Y
+    // components before TBN reconstruction. Z stays unscaled so the
+    // unit-length invariant holds after normalize().
+    let raw_normal = normal_texture_sample * 2.0 - vec3<f32>(1.0);
+    let normal_scale = material.texture_strengths.x;
+    let scaled_tangent_normal = vec3<f32>(
+        raw_normal.x * normal_scale,
+        raw_normal.y * normal_scale,
+        raw_normal.z,
+    );
+    let normal_sample = normalize(scaled_tangent_normal);
     let world_normal = normalize(in.normal);
     let world_tangent = normalize(in.tangent.xyz);
     let bitangent = normalize(cross(world_normal, world_tangent) * in.tangent.w);
@@ -164,7 +179,12 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let normal_visibility = clamp(normal_sample.z, 0.2, 1.0);
     let metallic = clamp(material.metallic_roughness_alpha.x * metallic_roughness_sample.b, 0.0, 1.0);
     let roughness = clamp(material.metallic_roughness_alpha.y * metallic_roughness_sample.g, 0.04, 1.0);
-    let material_response = normal_visibility * occlusion_sample * mix(0.92, 1.0, roughness) * (1.0 - metallic * 0.08);
+    // Phase 5.1: occlusionTexture.strength lerps between 1.0 and the
+    // sampled occlusion. strength=0 disables AO; strength=1 applies it
+    // at full intensity. glTF spec default = 1.0.
+    let occlusion_strength = material.texture_strengths.y;
+    let occlusion_applied = mix(1.0, occlusion_sample, occlusion_strength);
+    let material_response = normal_visibility * occlusion_applied * mix(0.92, 1.0, roughness) * (1.0 - metallic * 0.08);
     let base = in.color * material.base_color_factor * base_color_sample;
     if material.metallic_roughness_alpha.z > 0.0 && base.a < material.metallic_roughness_alpha.z {
         discard;

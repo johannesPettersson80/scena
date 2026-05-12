@@ -12,6 +12,84 @@ use scena::{
     Transform, Vec3,
 };
 
+/// Phase 5.1: scena's glTF parser must propagate `normalTexture.scale`
+/// and `occlusionTexture.strength` from the asset to the typed
+/// `MaterialDesc`. Default 1.0 when omitted (per glTF spec). The
+/// previous parser dropped both — assets that authored a custom scale
+/// or strength rendered at always-1.0.
+#[test]
+fn m8_normal_texture_scale_and_occlusion_strength_are_parsed_from_gltf() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://normal-scale.gltf"),
+        br#"{
+            "asset": { "version": "2.0" },
+            "materials": [
+                {
+                    "pbrMetallicRoughness": {
+                        "baseColorTexture": { "index": 0 }
+                    },
+                    "normalTexture":    { "index": 0, "scale": 2.5 },
+                    "occlusionTexture": { "index": 0, "strength": 0.4 }
+                },
+                {
+                    "pbrMetallicRoughness": {
+                        "baseColorTexture": { "index": 0 }
+                    },
+                    "normalTexture":    { "index": 0 },
+                    "occlusionTexture": { "index": 0 }
+                }
+            ],
+            "textures": [{ "source": 0 }],
+            "images":   [{ "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==" }],
+            "meshes": [{
+                "primitives": [
+                    { "attributes": { "POSITION": 0 }, "indices": 1, "material": 0 },
+                    { "attributes": { "POSITION": 0 }, "indices": 1, "material": 1 }
+                ]
+            }],
+            "nodes": [{ "name": "ScaledMat", "mesh": 0 }],
+            "buffers": [{ "byteLength": 42, "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAABAAIA" }],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0,  "byteLength": 36 },
+                { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
+            ],
+            "accessors": [
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
+            ]
+        }"#
+        .to_vec(),
+    )]));
+
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://normal-scale.gltf")).expect("loads");
+    let meshes: Vec<_> = scene_asset.nodes()[0].meshes().to_vec();
+    assert_eq!(meshes.len(), 2, "two primitives, two materials");
+
+    // Material 0: custom scale=2.5, strength=0.4
+    let mat0 = assets.material(meshes[0].material()).expect("mat 0");
+    assert_eq!(
+        mat0.normal_scale(),
+        2.5,
+        "normalTexture.scale must propagate from glTF to MaterialDesc \
+         (was previously dropped entirely)"
+    );
+    assert_eq!(
+        mat0.occlusion_strength(),
+        0.4,
+        "occlusionTexture.strength must propagate from glTF to MaterialDesc"
+    );
+
+    // Material 1: defaults
+    let mat1 = assets.material(meshes[1].material()).expect("mat 1");
+    assert_eq!(mat1.normal_scale(), 1.0, "default normal scale = 1.0");
+    assert_eq!(
+        mat1.occlusion_strength(),
+        1.0,
+        "default occlusion strength = 1.0"
+    );
+}
+
 #[test]
 fn m8_optional_real_world_gltf_extensions_report_degradation_metadata() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(

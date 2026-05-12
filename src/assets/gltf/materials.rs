@@ -81,7 +81,13 @@ pub(super) fn parse_materials(
                     storage,
                     TextureColorSpace::Linear,
                 )?;
-                desc = desc.with_normal_texture(texture);
+                desc = desc
+                    .with_normal_texture(texture)
+                    // Phase 5.1: parse normalTexture.scale (glTF spec
+                    // default 1.0). Previously dropped — assets that
+                    // authored a custom scale rendered with strength
+                    // always 1.0.
+                    .with_normal_scale(normal.scale());
                 if let Some(transform) = normal_texture_transform(&normal) {
                     desc = desc.with_normal_texture_transform(transform);
                 }
@@ -95,7 +101,10 @@ pub(super) fn parse_materials(
                     storage,
                     TextureColorSpace::Linear,
                 )?;
-                desc = desc.with_occlusion_texture(texture);
+                desc = desc
+                    .with_occlusion_texture(texture)
+                    // Phase 5.1: parse occlusionTexture.strength.
+                    .with_occlusion_strength(occlusion.strength());
                 if let Some(transform) = occlusion_texture_transform(&occlusion) {
                     desc = desc.with_occlusion_texture_transform(transform);
                 }
