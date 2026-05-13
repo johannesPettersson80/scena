@@ -26,6 +26,7 @@ pub(super) struct MaterialShadingInput {
 pub(in crate::render) struct PreparedGpuLightUniform {
     pub(in crate::render) directional_light_direction_intensity: [f32; 4],
     pub(in crate::render) directional_light_color_count: [f32; 4],
+    pub(in crate::render) directional_shadow_control: [f32; 4],
     pub(in crate::render) point_light_position_intensity: [f32; 4],
     pub(in crate::render) point_light_color_range: [f32; 4],
     pub(in crate::render) spot_light_position_intensity: [f32; 4],
@@ -41,6 +42,7 @@ impl Default for PreparedGpuLightUniform {
         Self {
             directional_light_direction_intensity: [0.0, 0.0, -1.0, 0.0],
             directional_light_color_count: [1.0, 1.0, 1.0, 0.0],
+            directional_shadow_control: [0.0, 0.0, 0.0, 0.0],
             point_light_position_intensity: [0.0, 0.0, 0.0, 0.0],
             point_light_color_range: [1.0, 1.0, 1.0, 0.0],
             spot_light_position_intensity: [0.0, 0.0, 0.0, 0.0],
@@ -147,6 +149,8 @@ impl PreparedLights {
                 light.color.b,
                 self.directional.len() as f32,
             ];
+            uniform.directional_shadow_control =
+                [if light.casts_shadows { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0];
         }
         if let Some(light) = self.point.first() {
             uniform.point_light_position_intensity = [

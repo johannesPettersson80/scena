@@ -6,7 +6,7 @@ use super::super::prepare::PreparedGpuLightUniform;
 /// the same — `include_str!` produces a static `&'static str`.
 pub(super) const GPU_TRIANGLE_SHADER: &str = include_str!("output_shader.wgsl");
 
-pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 464;
+pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 480;
 
 pub(super) use super::draw_uniform::{
     DRAW_UNIFORM_ENTRY_STRIDE, create_draw_bind_group, create_draw_bind_group_layout,
@@ -151,7 +151,7 @@ pub(super) fn encode_output_uniform(
     } else {
         0.0
     };
-    let mut values = [0.0; 116];
+    let mut values = [0.0; 120];
     values[0..16].copy_from_slice(&upload.view_from_world);
     values[16..32].copy_from_slice(&upload.clip_from_view);
     values[32..48].copy_from_slice(&upload.clip_from_world);
@@ -167,14 +167,15 @@ pub(super) fn encode_output_uniform(
     values[72..76].copy_from_slice(&upload.color_management);
     values[76..80].copy_from_slice(&upload.lighting.directional_light_direction_intensity);
     values[80..84].copy_from_slice(&upload.lighting.directional_light_color_count);
-    values[84..88].copy_from_slice(&upload.lighting.point_light_position_intensity);
-    values[88..92].copy_from_slice(&upload.lighting.point_light_color_range);
-    values[92..96].copy_from_slice(&upload.lighting.spot_light_position_intensity);
-    values[96..100].copy_from_slice(&upload.lighting.spot_light_direction_cones);
-    values[100..104].copy_from_slice(&upload.lighting.spot_light_cone_range);
-    values[104..108].copy_from_slice(&upload.lighting.spot_light_color_range);
-    values[108..112].copy_from_slice(&upload.lighting.environment_diffuse_intensity);
-    values[112..116].copy_from_slice(&upload.lighting.environment_specular_intensity);
+    values[84..88].copy_from_slice(&upload.lighting.directional_shadow_control);
+    values[88..92].copy_from_slice(&upload.lighting.point_light_position_intensity);
+    values[92..96].copy_from_slice(&upload.lighting.point_light_color_range);
+    values[96..100].copy_from_slice(&upload.lighting.spot_light_position_intensity);
+    values[100..104].copy_from_slice(&upload.lighting.spot_light_direction_cones);
+    values[104..108].copy_from_slice(&upload.lighting.spot_light_cone_range);
+    values[108..112].copy_from_slice(&upload.lighting.spot_light_color_range);
+    values[112..116].copy_from_slice(&upload.lighting.environment_diffuse_intensity);
+    values[116..120].copy_from_slice(&upload.lighting.environment_specular_intensity);
     let mut bytes = [0; OUTPUT_UNIFORM_BYTE_LEN as usize];
     for (index, value) in values.into_iter().enumerate() {
         bytes[index * 4..index * 4 + 4].copy_from_slice(&value.to_ne_bytes());
@@ -189,10 +190,10 @@ mod tests {
     #[test]
     fn output_uniform_buffer_matches_wgsl_uniform_layout() {
         assert_eq!(
-            OUTPUT_UNIFORM_BYTE_LEN, 464,
+            OUTPUT_UNIFORM_BYTE_LEN, 480,
             "CameraUniform stores view, projection, and view-projection matrices plus \
-             camera/exposure, viewport/depth, color-management, punctual-light, and \
-             environment uniforms — per-draw model + normal matrices live on the new \
+             camera/exposure, viewport/depth, color-management, punctual-light, \
+             directional-shadow-control, and environment uniforms — per-draw model + normal matrices live on the new \
              DrawUniform bind group at @group(2)"
         );
         assert_eq!(
@@ -372,6 +373,15 @@ mod tests {
             GPU_TRIANGLE_SHADER.contains("* gpu_shadow"),
             "GPU PBR fragment must scale directional radiance by the GPU-sampled shadow factor \
              instead of multiplying by the (now retired) CPU shadow_visibility attribute"
+        );
+        assert!(
+            GPU_TRIANGLE_SHADER.contains("directional_shadow_control.x > 0.5")
+                && GPU_TRIANGLE_SHADER.contains("let gpu_shadow = select(")
+                && GPU_TRIANGLE_SHADER.contains("directional_shadow_factor(world_position)")
+                && GPU_TRIANGLE_SHADER.contains("* gpu_shadow"),
+            "GPU PBR fragment must sample the directional shadow map only when a \
+             shadow-casting directional light was prepared; non-shadowed lights must not \
+             be multiplied by a placeholder shadow texture"
         );
     }
 

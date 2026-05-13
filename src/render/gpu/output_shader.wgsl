@@ -22,6 +22,7 @@ struct VertexOut {
 struct LightingUniform {
     directional_light_direction_intensity: vec4<f32>,
     directional_light_color_count: vec4<f32>,
+    directional_shadow_control: vec4<f32>,
     point_light_position_intensity: vec4<f32>,
     point_light_color_range: vec4<f32>,
     spot_light_position_intensity: vec4<f32>,
@@ -251,7 +252,11 @@ fn pbr_punctual_lighting(
         // function signature for the WebGL2 fallback that does not yet have
         // a shadow map.
         _ = shadow_visibility;
-        let gpu_shadow = directional_shadow_factor(world_position);
+        let gpu_shadow = select(
+            1.0,
+            directional_shadow_factor(world_position),
+            camera.lighting.directional_shadow_control.x > 0.5,
+        );
         let radiance = camera.lighting.directional_light_color_count.rgb *
             camera.lighting.directional_light_direction_intensity.w * gpu_shadow;
         shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
