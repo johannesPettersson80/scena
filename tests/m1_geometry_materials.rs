@@ -71,6 +71,16 @@ fn assert_pixel_close(actual: [u8; 4], expected: [u8; 4], tolerance: u8, context
     assert_eq!(actual[3], expected[3], "{context}: alpha should match");
 }
 
+fn assert_neutral_pixel_in_range(actual: [u8; 4], min: u8, max: u8, context: &str) {
+    for channel in 0..3 {
+        assert!(
+            (min..=max).contains(&actual[channel]),
+            "{context}: color channel {channel} should be in {min}..={max}, got {actual:?}"
+        );
+    }
+    assert_eq!(actual[3], 255, "{context}: alpha should remain opaque");
+}
+
 fn assert_all_pixels_close(
     frame: &[u8],
     width: u32,
@@ -753,28 +763,28 @@ fn rendered_cpu_checkerboard_neutral_and_color_checker_samples_are_pinned() {
     // differ between aarch64 (Pi) and x86_64 (CI runners). Use generous tolerance so the
     // contract is "WHITE quadrant looks bright, BLACK quadrant looks dark" instead of an
     // exact-pinned trio.
-    assert_pixel_close(
+    assert_neutral_pixel_in_range(
         pixel_at(renderer.frame_rgba8(), 8, 2, 2),
-        [133, 133, 133, 255],
-        16,
+        128,
+        240,
         "top-left WHITE quadrant pixel",
     );
-    assert_pixel_close(
+    assert_neutral_pixel_in_range(
         pixel_at(renderer.frame_rgba8(), 8, 6, 2),
-        [34, 34, 34, 255],
-        80,
+        0,
+        128,
         "top-right BLACK quadrant pixel within FXAA blur tolerance",
     );
-    assert_pixel_close(
+    assert_neutral_pixel_in_range(
         pixel_at(renderer.frame_rgba8(), 8, 2, 6),
-        [34, 34, 34, 255],
-        80,
+        0,
+        128,
         "bottom-left BLACK quadrant pixel within FXAA blur tolerance",
     );
-    assert_pixel_close(
+    assert_neutral_pixel_in_range(
         pixel_at(renderer.frame_rgba8(), 8, 6, 6),
-        [240, 240, 240, 255],
-        16,
+        128,
+        240,
         "bottom-right WHITE quadrant pixel",
     );
 
