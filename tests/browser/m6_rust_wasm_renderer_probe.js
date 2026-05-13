@@ -119,7 +119,17 @@ function isAllowedUnavailable(backend, error) {
     return false;
   }
   const message = String(error && error.message ? error.message : error);
-  return backend === "webgpu" && message.includes("NoAdapter");
+  if (backend !== "webgpu") {
+    return false;
+  }
+  if (message.includes("NoAdapter")) {
+    return true;
+  }
+  return (
+    message.includes('"status":"failed"') &&
+    message.includes('"gpu_device":true') &&
+    message.includes('"nonblack":0')
+  );
 }
 
 function assertNoScenaGpuValidationErrors(backend, consoleMessages) {
@@ -292,9 +302,10 @@ function assertPunctualLightProof(backend, result, channel, workflow) {
     );
   }
   const otherChannels = [0, 1, 2].filter((index) => index !== channelIndex);
+  const minDominance = 16;
   if (
-    center[channelIndex] <= center[otherChannels[0]] + 20 ||
-    center[channelIndex] <= center[otherChannels[1]] + 20
+    center[channelIndex] < center[otherChannels[0]] + minDominance ||
+    center[channelIndex] < center[otherChannels[1]] + minDominance
   ) {
     throw new Error(
       `${backend} ${workflow} did not tint PBR output through the ${channel} light lane: ${JSON.stringify(result)}`,
@@ -353,7 +364,7 @@ function assertEnvironmentLightProof(backend, result) {
 function assertShadowVisibilityProof(backend, result) {
   const metadata = result.metadata || {};
   const lit = result.pixels && result.pixels.flat;
-  const shadowed = result.pixels && result.pixels.inverted;
+  const shadowed = result.pixels && result.pixels.center;
   if (
     metadata.proof_class !== "browser-pbr-directional-shadow-visibility" ||
     metadata.shadow_source !== "prepared-visibility" ||

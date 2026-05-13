@@ -204,7 +204,11 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         }
     }
     let shaded = vec4<f32>(shaded_rgb + emissive, base.a);
-    return vec4<f32>(apply_tonemapper(shaded.rgb * camera.camera_position_exposure.w), shaded.a);
+    let color_management_mode = camera.color_management.x;
+    return vec4<f32>(
+        apply_tonemapper(shaded.rgb * camera.camera_position_exposure.w, color_management_mode),
+        shaded.a,
+    );
 }
 
 fn directional_shadow_factor(world_position: vec3<f32>) -> f32 {
@@ -392,11 +396,11 @@ fn spot_cone_attenuation(cos_angle: f32, inner_cone_cos: f32, outer_cone_cos: f3
     return clamp((cos_angle - outer_cone_cos) / (inner_cone_cos - outer_cone_cos), 0.0, 1.0);
 }
 
-fn apply_tonemapper(color: vec3<f32>) -> vec3<f32> {
-    if camera.color_management.x < 0.5 {
+fn apply_tonemapper(color: vec3<f32>, color_management_mode: f32) -> vec3<f32> {
+    if color_management_mode < 0.5 {
         return clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));
     }
-    if camera.color_management.x > 1.5 {
+    if color_management_mode > 1.5 {
         return pbr_neutral_tonemap(color);
     }
     return aces_tonemap(color);

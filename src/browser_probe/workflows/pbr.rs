@@ -14,7 +14,8 @@ pub(super) fn point_light_scene() -> Result<WorkflowScene, JsValue> {
     let assets = Assets::new();
     let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.65, 0.65, 0.05));
     let material = assets.create_material(
-        MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.8).with_double_sided(true),
+        MaterialDesc::pbr_metallic_roughness(Color::from_linear_rgb(0.25, 0.25, 0.25), 0.0, 0.8)
+            .with_double_sided(true),
     );
     let mut scene = Scene::new();
     scene
@@ -49,7 +50,8 @@ pub(super) fn spot_light_scene() -> Result<WorkflowScene, JsValue> {
     let assets = Assets::new();
     let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.65, 0.65, 0.05));
     let material = assets.create_material(
-        MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.8).with_double_sided(true),
+        MaterialDesc::pbr_metallic_roughness(Color::from_linear_rgb(0.25, 0.25, 0.25), 0.0, 0.8)
+            .with_double_sided(true),
     );
     let mut scene = Scene::new();
     scene

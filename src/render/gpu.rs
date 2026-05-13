@@ -534,6 +534,7 @@ mod tests {
             WEBGL2_PROGRAM_SOURCE.contains("pbrNeutralTonemap")
                 && WEBGL2_PROGRAM_SOURCE.contains("startCompression")
                 && WEBGL2_PROGRAM_SOURCE.contains("desaturation")
+                && WEBGL2_PROGRAM_SOURCE.contains("uniform vec4 color_management;")
                 && WEBGL2_PROGRAM_SOURCE.contains("color_management.x > 1.5"),
             "native CI must still guard the WebGL2 source for the Khronos PBR Neutral \
              tone-mapping branch even though the WebGL2 module is wasm32-gated"

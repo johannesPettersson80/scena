@@ -45,6 +45,7 @@ in vec3 v_world_position;
 in vec4 v_tangent;
 in float v_shadow_visibility;
 uniform vec4 camera_position_exposure;
+uniform vec4 color_management;
 uniform vec4 directional_light_direction_intensity;
 uniform vec4 directional_light_color_count;
 uniform vec4 point_light_position_intensity;
@@ -423,6 +424,7 @@ mod tests {
             FRAGMENT_SHADER.contains("pbrNeutralTonemap")
                 && FRAGMENT_SHADER.contains("startCompression")
                 && FRAGMENT_SHADER.contains("desaturation")
+                && FRAGMENT_SHADER.contains("uniform vec4 color_management;")
                 && FRAGMENT_SHADER.contains("color_management.x > 1.5"),
             "WebGL2 shader must expose the Khronos PBR Neutral tone-mapping branch; \
              compatibility rendering must not rely on asset-specific color tuning"

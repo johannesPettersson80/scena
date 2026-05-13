@@ -219,7 +219,7 @@ mod tests {
             GPU_TRIANGLE_SHADER.contains("pbr_neutral_tonemap")
                 && GPU_TRIANGLE_SHADER.contains("start_compression")
                 && GPU_TRIANGLE_SHADER.contains("desaturation")
-                && GPU_TRIANGLE_SHADER.contains("camera.color_management.x > 1.5"),
+                && GPU_TRIANGLE_SHADER.contains("color_management_mode > 1.5"),
             "native/WebGPU shader must expose the Khronos PBR Neutral tone-mapping branch; \
              WaterBottle screenshots must not be tuned through private color constants"
         );
