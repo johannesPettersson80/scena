@@ -1638,13 +1638,23 @@ fn rotate_test_vec3(rotation: scena::Quat, vector: Vec3) -> Vec3 {
 }
 
 fn multiply_test_quat(left: scena::Quat, right: scena::Quat) -> scena::Quat {
-    normalize_test_quat(scena::Quat::from_xyzw(left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y, left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x, left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w, left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z))
+    normalize_test_quat(scena::Quat::from_xyzw(
+        left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
+        left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,
+        left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w,
+        left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z,
+    ))
 }
 
 fn normalize_test_quat(value: scena::Quat) -> scena::Quat {
     let length =
         (value.x * value.x + value.y * value.y + value.z * value.z + value.w * value.w).sqrt();
-    scena::Quat::from_xyzw(value.x / length, value.y / length, value.z / length, value.w / length)
+    scena::Quat::from_xyzw(
+        value.x / length,
+        value.y / length,
+        value.z / length,
+        value.w / length,
+    )
 }
 
 const fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
@@ -4271,7 +4281,12 @@ fn transform_rotate_helpers_compose_chained_rotations_instead_of_overwriting() {
     // Single-rotation callers are unaffected: rotate_y_deg(90) on the
     // identity transform still yields the y-rotation, since identity ∘ R = R.
     let single = Transform::IDENTITY.rotate_y_deg(90.0);
-    let direct_y = scena::Quat::from_xyzw(0.0, (std::f32::consts::FRAC_PI_4).sin(), 0.0, (std::f32::consts::FRAC_PI_4).cos());
+    let direct_y = scena::Quat::from_xyzw(
+        0.0,
+        (std::f32::consts::FRAC_PI_4).sin(),
+        0.0,
+        (std::f32::consts::FRAC_PI_4).cos(),
+    );
     assert!(
         quaternion_close_enough(single.rotation, direct_y),
         "Transform::IDENTITY.rotate_y_deg(90) must equal the canonical Y(90°) \

@@ -1,5 +1,8 @@
-use std::f32::consts::PI;
-
+use super::pbr_contract::{
+    PbrMaterial, directional_illuminance_lux, inverse_square_range_attenuation,
+    punctual_intensity_candela, punctual_light_contribution, roughness_or_min,
+    spot_cone_attenuation,
+};
 use crate::assets::EnvironmentDesc;
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
 use crate::scene::{Light, Quat, Scene, Transform, Vec3};
@@ -136,7 +139,7 @@ impl PreparedLights {
                 light.direction.x,
                 light.direction.y,
                 light.direction.z,
-                (light.illuminance_lux / 10_000.0).clamp(0.0, 8.0),
+                directional_illuminance_lux(light.illuminance_lux),
             ];
             uniform.directional_light_color_count = [
                 light.color.r,
@@ -150,7 +153,7 @@ impl PreparedLights {
                 light.position.x,
                 light.position.y,
                 light.position.z,
-                (light.intensity_candela / 100.0).clamp(0.0, 8.0),
+                punctual_intensity_candela(light.intensity_candela),
             ];
             uniform.point_light_color_range = [
                 light.color.r,
@@ -164,7 +167,7 @@ impl PreparedLights {
                 light.position.x,
                 light.position.y,
                 light.position.z,
-                (light.intensity_candela / 100.0).clamp(0.0, 8.0),
+                punctual_intensity_candela(light.intensity_candela),
             ];
             uniform.spot_light_direction_cones =
                 [light.direction.x, light.direction.y, light.direction.z, 0.0];
@@ -246,7 +249,8 @@ fn shade_pbr_base_color(
     let base_rgb = Vec3::new(base.r, base.g, base.b);
     let metallic = clamp_unit(material.metallic_factor() * input.metallic_roughness_texture.0);
     let roughness =
-        (material.roughness_factor() * input.metallic_roughness_texture.1).clamp(0.04, 1.0);
+        roughness_or_min(material.roughness_factor() * input.metallic_roughness_texture.1);
+    let pbr_material = PbrMaterial::new(base_rgb, metallic, roughness);
     let mut shaded = Vec3::ZERO;
 
     for light in &lights.directional {
@@ -258,13 +262,11 @@ fn shade_pbr_base_color(
         };
         let radiance = scale_color(
             light.color,
-            (light.illuminance_lux / 10_000.0).clamp(0.0, 8.0) * shadow_factor,
+            directional_illuminance_lux(light.illuminance_lux) * shadow_factor,
         );
         shaded = add_vec3(
             shaded,
-            pbr_light_contribution(
-                base_rgb, metallic, roughness, normal, view, incoming, radiance,
-            ),
+            punctual_light_contribution(pbr_material, normal, view, incoming, radiance),
         );
     }
     for light in &lights.point {
@@ -272,14 +274,12 @@ fn shade_pbr_base_color(
         let incoming = normalize_or(to_light, Vec3::ZERO);
         let radiance = scale_color(
             light.color,
-            (light.intensity_candela / 100.0).clamp(0.0, 8.0)
-                * distance_attenuation(to_light, light.range),
+            punctual_intensity_candela(light.intensity_candela)
+                * inverse_square_range_attenuation(to_light, light.range),
         );
         shaded = add_vec3(
             shaded,
-            pbr_light_contribution(
-                base_rgb, metallic, roughness, normal, view, incoming, radiance,
-            ),
+            punctual_light_contribution(pbr_material, normal, view, incoming, radiance),
         );
     }
     for light in &lights.spot {
@@ -293,22 +293,20 @@ fn shade_pbr_base_color(
         );
         let radiance = scale_color(
             light.color,
-            (light.intensity_candela / 100.0).clamp(0.0, 8.0)
-                * distance_attenuation(to_light, light.range)
+            punctual_intensity_candela(light.intensity_candela)
+                * inverse_square_range_attenuation(to_light, light.range)
                 * cone,
         );
         shaded = add_vec3(
             shaded,
-            pbr_light_contribution(
-                base_rgb, metallic, roughness, normal, view, incoming, radiance,
-            ),
+            punctual_light_contribution(pbr_material, normal, view, incoming, radiance),
         );
     }
     shaded = add_vec3(
         shaded,
         input
             .environment
-            .pbr_contribution(base_rgb, metallic, roughness, normal, view),
+            .pbr_contribution(pbr_material, normal, view),
     );
 
     Color::from_linear_rgba(shaded.x, shaded.y, shaded.z, base.a)
@@ -320,58 +318,6 @@ fn multiply_color(left: Color, right: Color) -> Color {
         left.g * right.g,
         left.b * right.b,
         left.a * right.a,
-    )
-}
-
-fn pbr_light_contribution(
-    base: Vec3,
-    metallic: f32,
-    roughness: f32,
-    normal: Vec3,
-    view: Vec3,
-    incoming: Vec3,
-    radiance: Vec3,
-) -> Vec3 {
-    let incoming = normalize_or(incoming, Vec3::ZERO);
-    let n_dot_l = dot_vec3(normal, incoming).max(0.0);
-    if n_dot_l <= f32::EPSILON {
-        return Vec3::ZERO;
-    }
-    let n_dot_v = dot_vec3(normal, view).max(0.001);
-    let half_vector = normalize_or(add_vec3(view, incoming), normal);
-    let n_dot_h = dot_vec3(normal, half_vector).max(0.0);
-    let v_dot_h = dot_vec3(view, half_vector).max(0.0);
-    let alpha = roughness * roughness;
-    let alpha_squared = alpha * alpha;
-    let distribution_denominator = n_dot_h * n_dot_h * (alpha_squared - 1.0) + 1.0;
-    let distribution =
-        alpha_squared / (PI * distribution_denominator * distribution_denominator).max(0.0001);
-    let k = ((roughness + 1.0) * (roughness + 1.0)) / 8.0;
-    let geometry = geometry_schlick_ggx(n_dot_v, k) * geometry_schlick_ggx(n_dot_l, k);
-    let f0 = mix_vec3(Vec3::new(0.04, 0.04, 0.04), base, metallic);
-    let fresnel = fresnel_schlick(v_dot_h, f0);
-    let specular_scale = distribution * geometry / (4.0 * n_dot_v * n_dot_l).max(0.0001);
-    let specular = scale_vec3(fresnel, specular_scale);
-    let diffuse_energy = scale_vec3(
-        subtract_vec3(Vec3::new(1.0, 1.0, 1.0), fresnel),
-        1.0 - metallic,
-    );
-    let diffuse = scale_vec3(multiply_vec3(diffuse_energy, base), PI.recip());
-    scale_vec3(
-        multiply_vec3(add_vec3(diffuse, specular), radiance),
-        n_dot_l,
-    )
-}
-
-fn geometry_schlick_ggx(n_dot: f32, k: f32) -> f32 {
-    n_dot / (n_dot * (1.0 - k) + k).max(0.0001)
-}
-
-fn fresnel_schlick(cos_theta: f32, f0: Vec3) -> Vec3 {
-    let factor = (1.0 - cos_theta.clamp(0.0, 1.0)).powi(5);
-    add_vec3(
-        f0,
-        scale_vec3(subtract_vec3(Vec3::new(1.0, 1.0, 1.0), f0), factor),
     )
 }
 
@@ -438,44 +384,10 @@ fn scale_color(color: Color, scale: f32) -> Vec3 {
     Vec3::new(color.r * scale, color.g * scale, color.b * scale)
 }
 
-fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
-    Vec3::new(value.x * scale, value.y * scale, value.z * scale)
-}
-
-fn multiply_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(left.x * right.x, left.y * right.y, left.z * right.z)
-}
-
-fn mix_vec3(left: Vec3, right: Vec3, amount: f32) -> Vec3 {
-    let amount = clamp_unit(amount);
-    add_vec3(scale_vec3(left, 1.0 - amount), scale_vec3(right, amount))
-}
-
 fn clamp_unit(value: f32) -> f32 {
     if value.is_finite() {
         value.clamp(0.0, 1.0)
     } else {
         0.0
-    }
-}
-
-fn distance_attenuation(to_light: Vec3, range: Option<f32>) -> f32 {
-    let Some(range) = range else {
-        return 1.0;
-    };
-    if range <= f32::EPSILON {
-        return 0.0;
-    }
-    let distance = length_vec3(to_light);
-    (1.0 - distance / range).clamp(0.0, 1.0).powi(2)
-}
-
-fn spot_cone_attenuation(cos_angle: f32, inner_cone_cos: f32, outer_cone_cos: f32) -> f32 {
-    if cos_angle >= inner_cone_cos {
-        1.0
-    } else if cos_angle <= outer_cone_cos {
-        0.0
-    } else {
-        ((cos_angle - outer_cone_cos) / (inner_cone_cos - outer_cone_cos)).clamp(0.0, 1.0)
     }
 }

@@ -80,8 +80,8 @@ mod tests {
         use crate::assets::AssetPath;
         let bytes = serde_json::to_vec(&value).expect("json serializes");
         let path = AssetPath::from("memory:test");
-        let gltf = super::super::open_gltf_with_massage(&path, &bytes)
-            .expect("json parses as gltf");
+        let gltf =
+            super::super::open_gltf_with_massage(&path, &bytes).expect("json parses as gltf");
         gltf.document
     }
 
@@ -174,7 +174,13 @@ mod tests {
                 }],
             }],
         }));
-        let primitive = document.meshes().next().unwrap().primitives().next().unwrap();
+        let primitive = document
+            .meshes()
+            .next()
+            .unwrap()
+            .primitives()
+            .next()
+            .unwrap();
         let bindings = parse_primitive_material_variant_bindings(&primitive, &materials);
         assert_eq!(bindings.len(), 2);
         assert_eq!(bindings[0].material(), red);

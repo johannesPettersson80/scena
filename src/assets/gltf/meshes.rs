@@ -4,8 +4,8 @@
 
 use ::gltf::Document;
 use ::gltf::Primitive;
-use ::gltf::accessor::{DataType, Dimensions};
 use ::gltf::accessor::Iter as AccessorIter;
+use ::gltf::accessor::{DataType, Dimensions};
 use ::gltf::mesh::{Mode, Semantic};
 
 use crate::diagnostics::AssetError;
@@ -15,13 +15,14 @@ use crate::geometry::{
 use crate::material::{Color, MaterialDesc};
 use crate::scene::Vec3;
 
-use super::SceneAssetMesh;
 use super::super::{AssetPath, AssetStorage, MaterialHandle};
+use super::SceneAssetMesh;
+use super::buffers::ResolvedGltfBuffers;
 
 pub(super) fn parse_meshes(
     path: &AssetPath,
     document: &Document,
-    buffers: &[Vec<u8>],
+    buffers: &ResolvedGltfBuffers,
     materials: &[MaterialHandle],
     storage: &mut AssetStorage,
 ) -> Result<Vec<Vec<SceneAssetMesh>>, AssetError> {
@@ -41,16 +42,18 @@ pub(super) fn parse_meshes(
 fn parse_primitive(
     path: &AssetPath,
     primitive: &Primitive<'_>,
-    buffers: &[Vec<u8>],
+    buffers: &ResolvedGltfBuffers,
     mesh_weights: &[f32],
     materials: &[MaterialHandle],
     storage: &mut AssetStorage,
 ) -> Result<SceneAssetMesh, AssetError> {
-    let reader = primitive.reader(|buffer| buffers.get(buffer.index()).map(Vec::as_slice));
-    let positions = read_vec3_attribute(primitive, buffers, &Semantic::Positions)?
-        .ok_or_else(|| AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: "glTF primitive is missing POSITION attribute".to_string(),
+    let reader = primitive.reader(|buffer| buffers.reader_buffer(buffer.index()));
+    let positions =
+        read_vec3_attribute(primitive, buffers, &Semantic::Positions)?.ok_or_else(|| {
+            AssetError::Parse {
+                path: path.as_str().to_string(),
+                reason: "glTF primitive is missing POSITION attribute".to_string(),
+            }
         })?;
     let normals = read_vec3_attribute(primitive, buffers, &Semantic::Normals)?
         .unwrap_or_else(|| vec![Vec3::new(0.0, 0.0, 1.0); positions.len()]);
@@ -72,7 +75,14 @@ fn parse_primitive(
         (Some(joints), Some(weights)) => {
             let joints: Vec<[usize; 4]> = joints
                 .into_u16()
-                .map(|joint| [joint[0] as usize, joint[1] as usize, joint[2] as usize, joint[3] as usize])
+                .map(|joint| {
+                    [
+                        joint[0] as usize,
+                        joint[1] as usize,
+                        joint[2] as usize,
+                        joint[3] as usize,
+                    ]
+                })
                 .collect();
             let weights: Vec<[f32; 4]> = weights.into_f32().collect();
             Some(GeometrySkin::new(joints, weights))
@@ -89,8 +99,9 @@ fn parse_primitive(
     let morph_targets = reader
         .read_morph_targets()
         .filter_map(|(positions, _normals, _tangents)| {
-            positions
-                .map(|iter| GeometryMorphTarget::new(iter.map(Vec3::from_array).collect::<Vec<_>>()))
+            positions.map(|iter| {
+                GeometryMorphTarget::new(iter.map(Vec3::from_array).collect::<Vec<_>>())
+            })
         })
         .collect::<Vec<_>>();
     let indices: Vec<u32> = reader
@@ -173,7 +184,7 @@ fn parse_primitive(
 /// SHORT or BYTE.
 fn read_vec3_attribute(
     primitive: &Primitive<'_>,
-    buffers: &[Vec<u8>],
+    buffers: &ResolvedGltfBuffers,
     semantic: &Semantic,
 ) -> Result<Option<Vec<Vec3>>, AssetError> {
     let Some(accessor) = primitive.get(semantic) else {
@@ -182,7 +193,7 @@ fn read_vec3_attribute(
     if accessor.dimensions() != Dimensions::Vec3 {
         return Ok(None);
     }
-    let get_buffer = |buffer: ::gltf::Buffer<'_>| buffers.get(buffer.index()).map(Vec::as_slice);
+    let get_buffer = |buffer: ::gltf::Buffer<'_>| buffers.reader_buffer(buffer.index());
     let values: Vec<Vec3> = match (accessor.data_type(), accessor.normalized()) {
         (DataType::F32, _) => AccessorIter::<[f32; 3]>::new(accessor, get_buffer)
             .map(|iter| iter.map(Vec3::from_array).collect())
@@ -213,7 +224,11 @@ fn normalize_i8_vec3(values: [i8; 3]) -> Vec3 {
 }
 
 fn normalize_u8_vec3(values: [u8; 3]) -> Vec3 {
-    Vec3::new(values[0] as f32 / 255.0, values[1] as f32 / 255.0, values[2] as f32 / 255.0)
+    Vec3::new(
+        values[0] as f32 / 255.0,
+        values[1] as f32 / 255.0,
+        values[2] as f32 / 255.0,
+    )
 }
 
 fn normalize_i16_vec3(values: [i16; 3]) -> Vec3 {

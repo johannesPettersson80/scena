@@ -173,42 +173,16 @@ fn headless_gpu_renderer_initialization_is_structured() {
 }
 
 #[test]
-fn headless_gpu_triangle_render_uses_gpu_submission_when_available() {
-    match Renderer::headless_gpu(64, 64) {
-        Ok(mut renderer) => {
-            let (mut scene, camera) = scene_with_triangle();
-            renderer.prepare(&mut scene).expect("prepare succeeds");
-
-            assert_eq!(renderer.stats().gpu_submissions, 0);
-            let outcome = renderer.render(&scene, camera).expect("render succeeds");
-
-            assert_eq!(outcome.draw_calls, 1);
-            assert_eq!(renderer.stats().gpu_submissions, 1);
-            assert!(
-                renderer
-                    .frame_rgba8()
-                    .chunks_exact(4)
-                    .any(|pixel| pixel[0..3] != [0, 0, 0])
-            );
-        }
-        Err(BuildError::NoAdapter { backend }) => {
-            assert_eq!(backend, Backend::HeadlessGpu);
-        }
-        Err(BuildError::RequestDevice { backend }) => {
-            assert_eq!(backend, Backend::HeadlessGpu);
-        }
-        Err(error) => panic!("unexpected headless GPU render setup result: {error:?}"),
-    }
-}
-
-#[test]
 fn headless_gpu_triangle_render_uses_scene_vertex_data_when_available() {
     match Renderer::headless_gpu(64, 64) {
         Ok(mut renderer) => {
             let (mut scene, camera) = scene_with_primitive(white_triangle());
             renderer.prepare(&mut scene).expect("prepare succeeds");
-            renderer.render(&scene, camera).expect("render succeeds");
+            assert_eq!(renderer.stats().gpu_submissions, 0);
+            let outcome = renderer.render(&scene, camera).expect("render succeeds");
 
+            assert_eq!(outcome.draw_calls, 1);
+            assert_eq!(renderer.stats().gpu_submissions, 1);
             assert!(
                 has_tonemapped_white_scene_pixel(renderer.frame_rgba8()),
                 "GPU frame should contain a neutral ACES/sRGB white scene triangle, not a \

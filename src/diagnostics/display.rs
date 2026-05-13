@@ -281,6 +281,12 @@ impl fmt::Display for PrepareError {
                     "backend {backend:?} cannot provide required feature {feature}: {help}"
                 )
             }
+            Self::GpuResourceUpload { backend, reason } => {
+                write!(
+                    formatter,
+                    "backend {backend:?} failed during explicit GPU resource upload: {reason}"
+                )
+            }
         }
     }
 }

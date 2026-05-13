@@ -7,8 +7,8 @@
 use std::collections::BTreeMap;
 
 use ::gltf::Document;
-use ::gltf::image::Source as ImageSource;
-use ::gltf::texture::{MagFilter, MinFilter, WrappingMode};
+use ::gltf::image::{Image, Source as ImageSource};
+use ::gltf::texture::{MagFilter, MinFilter, Texture, WrappingMode};
 
 use crate::diagnostics::AssetError;
 use crate::material::TextureColorSpace;
@@ -17,6 +17,7 @@ use super::super::{
     AssetPath, AssetStorage, TextureCacheKey, TextureDesc, TextureFilter, TextureHandle,
     TextureSamplerDesc, TextureSourceFormat, TextureWrap, validate_texture_source_format,
 };
+use super::buffers::ResolvedGltfBuffers;
 use super::external::resolve_relative_path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,22 +31,34 @@ pub(in crate::assets::gltf) struct GltfTexture {
 pub(in crate::assets::gltf) fn parse_textures(
     path: &AssetPath,
     document: &Document,
-    buffers: &[Vec<u8>],
+    buffers: &ResolvedGltfBuffers,
     external_images: &BTreeMap<AssetPath, Vec<u8>>,
     _storage: &mut AssetStorage,
 ) -> Vec<GltfTexture> {
     document
         .textures()
         .filter_map(|texture| {
-            let basisu_index = texture
+            let basisu_image = texture
                 .extension_value("KHR_texture_basisu")
                 .and_then(|value| value.get("source"))
                 .and_then(|value| value.as_u64())
-                .and_then(|value| usize::try_from(value).ok());
-            let uses_basisu = basisu_index.is_some();
-            let image = match basisu_index.and_then(|index| document.images().nth(index)) {
-                Some(image) => image,
-                None => texture.source(),
+                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|index| document.images().nth(index));
+            let fallback_image = texture_source_image(document, &texture);
+            let (image, uses_basisu) = if cfg!(feature = "ktx2") {
+                if let Some(image) = basisu_image {
+                    (image, true)
+                } else if let Some(image) = fallback_image {
+                    (image, false)
+                } else {
+                    return None;
+                }
+            } else if let Some(image) = fallback_image {
+                (image, false)
+            } else if let Some(image) = basisu_image {
+                (image, true)
+            } else {
+                return None;
             };
             let (image_path, source_bytes) = match image.source() {
                 ImageSource::Uri { uri, .. } => {
@@ -59,16 +72,10 @@ pub(in crate::assets::gltf) fn parse_textures(
                     }
                 }
                 ImageSource::View { view, mime_type } => {
-                    let buffer = buffers.get(view.buffer().index())?;
-                    let start = view.offset();
-                    let end = start.checked_add(view.length())?;
-                    let bytes = buffer.get(start..end)?.to_vec();
+                    let bytes = buffers.view_bytes(&view)?.to_vec();
                     let extension = extension_for_mime(Some(mime_type)).unwrap_or("png");
                     (
-                        AssetPath::from(format!(
-                            "memory:image-{}.{extension}",
-                            image.index()
-                        )),
+                        AssetPath::from(format!("memory:image-{}.{extension}", image.index())),
                         Some(bytes),
                     )
                 }
@@ -81,6 +88,20 @@ pub(in crate::assets::gltf) fn parse_textures(
             })
         })
         .collect()
+}
+
+fn texture_source_image<'a>(document: &'a Document, texture: &Texture<'a>) -> Option<Image<'a>> {
+    let source_index = document
+        .as_json()
+        .textures
+        .get(texture.index())?
+        .source
+        .value();
+    if source_index == u32::MAX as usize {
+        None
+    } else {
+        document.images().nth(source_index)
+    }
 }
 
 pub(super) fn texture_slot(
@@ -214,7 +235,9 @@ fn decode_data_uri(uri: &str) -> Option<(Option<String>, Vec<u8>)> {
     let (header, encoded) = uri.split_once(";base64,")?;
     let mime = header.strip_prefix("data:").map(|mime| mime.to_string());
     use base64::Engine;
-    let bytes = base64::engine::general_purpose::STANDARD.decode(encoded).ok()?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .ok()?;
     Some((mime, bytes))
 }
 

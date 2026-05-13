@@ -18,6 +18,8 @@ listed here so reviewers don't get caught by silent fallbacks:
 | `SCENA_USE_GPU` | When set, m8 real-asset test goes through `Renderer::headless_gpu` (the headline PBR path). Otherwise the CPU rasterizer renders. | unset → CPU rasterizer |
 | `VK_ICD_FILENAMES` | Vulkan loader picks which ICD driver to use. On the Pi 5 / V3DV-broken hosts, point this at `/usr/share/vulkan/icd.d/lvp_icd.json` to force Mesa lavapipe (software Vulkan). | system default |
 | `SCENA_REFERENCE_DIFF` | When set, m8 real-asset test runs an additional reference-image ΔE diff against `tests/assets/gltf/khronos/WaterBottle/reference_512.png`. | unset → diff skipped (asserts still run) |
+| `SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS` | When set, adapter-sensitive local headless-GPU visual assertions run instead of writing fail-closed `release_evidence=false` metadata. Use only on an approved visual-proof lane. | unset → fail-closed metadata, no release claim |
+| `SCENA_RUN_DEDICATED_4K_BENCHMARK` | When set, the M9 dedicated 4K benchmark writes measured `m9-benchmarks-4k.json`; otherwise the normal suite writes a required-lane artifact with `release_evidence=false`. | unset → fail-closed requirement metadata |
 
 To exercise the headline render on the Pi 5:
 

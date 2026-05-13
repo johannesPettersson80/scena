@@ -57,7 +57,7 @@ use super::prepare::{
 };
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
 pub(super) struct GpuDeviceState {
     instance: wgpu::Instance,
     adapter: wgpu::Adapter,
@@ -68,6 +68,8 @@ pub(super) struct GpuDeviceState {
     resources: Option<GpuPreparedResources>,
     #[cfg(target_arch = "wasm32")]
     browser_canvas: Option<web_sys::HtmlCanvasElement>,
+    #[cfg(target_arch = "wasm32")]
+    webgl2_render_cache: Option<webgl2::WebGl2RenderCache>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -178,11 +180,11 @@ impl GpuDeviceState {
         depth_stats: PreparedDepthStats,
         material_slots: &[PreparedMaterialSlot],
         environment_lighting: &PreparedEnvironmentLighting,
-    ) {
+    ) -> Result<(), crate::PrepareError> {
         self.configure_surface(target);
         self.release_prepared_resources();
         if primitives.is_empty() {
-            return;
+            return Ok(());
         }
 
         let vertex_bytes = encode_vertices(primitives);
@@ -336,6 +338,7 @@ impl GpuDeviceState {
             unpadded_bytes_per_row,
             stats,
         });
+        Ok(())
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -350,32 +353,38 @@ impl GpuDeviceState {
         depth_stats: PreparedDepthStats,
         material_slots: &[PreparedMaterialSlot],
         environment_lighting: &PreparedEnvironmentLighting,
-    ) {
+    ) -> Result<(), crate::PrepareError> {
         self.configure_surface(target);
         self.release_prepared_resources();
         let Some(surface) = self.surface.as_ref() else {
-            return;
+            return Ok(());
         };
         if primitives.is_empty() {
-            return;
+            return Ok(());
         }
         let vertex_bytes = encode_vertices(primitives);
         let (draw_batches, draw_uniforms) = encode_draw_batches(primitives);
         let webgl2_vertices = webgl2::encode_vertices(primitives);
         if target.backend == Backend::WebGl2 {
             let Some(canvas) = self.browser_canvas.as_ref() else {
-                return;
+                return Err(crate::PrepareError::GpuResourceUpload {
+                    backend: target.backend,
+                    reason: "WebGL2 target has no attached browser canvas".to_string(),
+                });
             };
-            if webgl2::prepare_canvas_vertices(
+            webgl2::prepare_canvas_vertices(
+                &mut self.webgl2_render_cache,
                 canvas,
                 &webgl2_vertices,
                 &draw_batches,
                 material_slots,
             )
-            .is_err()
-            {
-                return;
-            }
+            .map_err(|error| crate::PrepareError::GpuResourceUpload {
+                backend: target.backend,
+                reason: error
+                    .as_string()
+                    .unwrap_or_else(|| "WebGL2 resource preparation failed".to_string()),
+            })?;
         }
         let vertex_buffer_size = vertex_bytes.len().max(4) as u64;
         let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -492,6 +501,7 @@ impl GpuDeviceState {
             webgl2_vertices,
             stats,
         });
+        Ok(())
     }
 
     pub(super) fn prepared_resource_stats(&self) -> GpuResourceStats {
@@ -509,5 +519,22 @@ impl GpuDeviceState {
             }
             surface.surface.configure(&self.device, &surface.config);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    const WEBGL2_PROGRAM_SOURCE: &str = include_str!("gpu/webgl2_program.rs");
+
+    #[test]
+    fn host_tests_guard_webgl2_khronos_pbr_neutral_source() {
+        assert!(
+            WEBGL2_PROGRAM_SOURCE.contains("pbrNeutralTonemap")
+                && WEBGL2_PROGRAM_SOURCE.contains("startCompression")
+                && WEBGL2_PROGRAM_SOURCE.contains("desaturation")
+                && WEBGL2_PROGRAM_SOURCE.contains("color_management.x > 1.5"),
+            "native CI must still guard the WebGL2 source for the Khronos PBR Neutral \
+             tone-mapping branch even though the WebGL2 module is wasm32-gated"
+        );
     }
 }

@@ -64,6 +64,7 @@ fn variants_gltf_with_two_materials() -> Vec<u8> {
         r#"{{
             "asset": {{ "version": "2.0" }},
             "extensionsUsed": ["KHR_materials_variants", "KHR_materials_unlit"],
+            "extensionsRequired": ["KHR_materials_variants"],
             "extensions": {{
                 "KHR_materials_variants": {{
                     "variants": [

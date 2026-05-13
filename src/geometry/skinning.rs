@@ -250,7 +250,12 @@ fn normalize_quat(value: Quat) -> Quat {
         return Quat::IDENTITY;
     }
     let inverse_length = length_squared.sqrt().recip();
-    Quat::from_xyzw(value.x * inverse_length, value.y * inverse_length, value.z * inverse_length, value.w * inverse_length)
+    Quat::from_xyzw(
+        value.x * inverse_length,
+        value.y * inverse_length,
+        value.z * inverse_length,
+        value.w * inverse_length,
+    )
 }
 
 fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {

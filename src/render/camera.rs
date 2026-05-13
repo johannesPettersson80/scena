@@ -307,7 +307,12 @@ fn inverse_quat(rotation: Quat) -> Option<Quat> {
         return None;
     }
     let inverse_length_squared = length_squared.recip();
-    Some(Quat::from_xyzw(-rotation.x * inverse_length_squared, -rotation.y * inverse_length_squared, -rotation.z * inverse_length_squared, rotation.w * inverse_length_squared))
+    Some(Quat::from_xyzw(
+        -rotation.x * inverse_length_squared,
+        -rotation.y * inverse_length_squared,
+        -rotation.z * inverse_length_squared,
+        rotation.w * inverse_length_squared,
+    ))
 }
 
 fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {

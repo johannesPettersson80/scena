@@ -1,5 +1,6 @@
 use crate::assets::EnvironmentHandle;
 use crate::diagnostics::DebugOverlay;
+use crate::material::Color;
 use crate::picking::InteractionStyle;
 
 use super::{Renderer, Tonemapper};
@@ -150,6 +151,17 @@ impl Renderer {
         if self.environment.is_some() {
             self.environment = None;
             self.environment_revision = self.environment_revision.saturating_add(1);
+        }
+    }
+
+    pub fn background_color(&self) -> Color {
+        self.background_color
+    }
+
+    pub fn set_background_color(&mut self, color: Color) {
+        if self.background_color != color {
+            self.background_color = color;
+            self.mark_output_changed();
         }
     }
 

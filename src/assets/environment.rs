@@ -583,12 +583,11 @@ pub(crate) fn decode_radiance_hdr(
     path: &AssetPath,
     source_bytes: &[u8],
 ) -> Result<DecodedEquirectangular, AssetError> {
-    let image = radiant::load(std::io::Cursor::new(source_bytes)).map_err(|error| {
-        AssetError::Parse {
+    let image =
+        radiant::load(std::io::Cursor::new(source_bytes)).map_err(|error| AssetError::Parse {
             path: path.as_str().to_string(),
             reason: format!("Radiance HDR decode failed: {error}"),
-        }
-    })?;
+        })?;
     let width: u32 = image.width.try_into().map_err(|_| AssetError::Parse {
         path: path.as_str().to_string(),
         reason: "Radiance HDR width does not fit in u32".to_string(),

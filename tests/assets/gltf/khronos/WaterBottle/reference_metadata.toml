@@ -10,13 +10,13 @@
 # the test, so this catches every scena-internal regression: parser
 # swap, shader edit, capability flip, mip-generation change.
 relative_path = "reference_512.png"
-sha256 = "f4bdca94137b1c90432d0a88c26eca4992ff84e87fdbd1c21d147b3d56ba1d81"
+sha256 = "4db449cdacf2340f8fa53937c28e5c4b5e2c7deaea73cbe0987dcd51eb93c751"
 width = 512
 height = 512
-generated_at = "2026-05-11"
-generated_by = "scena GPU pipeline (llvmpipe Mesa lavapipe Vulkan)"
+generated_at = "2026-05-12"
+generated_by = "scena GPU pipeline (llvmpipe Mesa lavapipe Vulkan, Khronos PBR Neutral)"
 purpose = "scena-gold regression baseline"
-diff_tolerance = "tight (RGB Chebyshev ≤16, 95% pixel match)"
+diff_tolerance = "tight (RGB Chebyshev ≤16, 95% pixel match after 4x supersampled GPU render downsampled to 512px)"
 
 [blender_cycles]
 # Third-party PBR reference. Produced by Blender's Cycles path tracer
@@ -28,11 +28,11 @@ diff_tolerance = "tight (RGB Chebyshev ≤16, 95% pixel match)"
 # test pins that agreement: same olive/yellow body, same dark
 # burgundy cap, etc.
 relative_path = "reference_blender_cycles_512.png"
-sha256 = "71bbe3265bb601b6a34f7a4757761150a9f21aed7421fd06a29c931007bde3e7"
+sha256 = "17db39248ce1966ae60c3b85d09491ebfb7f654777dc2d150a64db4e938a6883"
 width = 512
 height = 512
 generated_at = "2026-05-12"
-generated_by = "Blender 4.x Cycles CPU 128 spp"
+generated_by = "Blender 4.3.2 Cycles CPU 128 spp"
 purpose = "third-party PBR validation"
 diff_tolerance = "loose (colour-family agreement only)"
 regenerate_with = "blender --background --python tests/assets/gltf/khronos/WaterBottle/render_blender_reference.py"
@@ -43,13 +43,13 @@ regenerate_with = "blender --background --python tests/assets/gltf/khronos/Water
 # in each render (Khronos thumbnail, scena GPU with neutral lighting,
 # Blender Cycles). All three agree on the colour family.
 khronos_thumb_cap        = "(85, 44, 44)"   # dark red
-scena_neutral_cap        = "(53, 35, 29)"   # dark red
+scena_neutral_cap        = "(76, 30, 12)"   # dark red
 blender_cycles_cap       = "(80, 50, 43)"   # dark red
 
 khronos_thumb_body       = "(107, 97, 57)"  # olive/yellow
-scena_neutral_body       = "(134, 135, 75)" # olive/yellow
+scena_neutral_body       = "(156, 134, 49)" # olive/yellow
 blender_cycles_body      = "(155, 138, 69)" # olive/yellow
 
 khronos_thumb_label      = "(57, 52, 38)"   # very dark (label band)
-scena_neutral_label      = "(74, 75, 42)"   # very dark
+scena_neutral_label      = "(92, 77, 29)"   # very dark
 blender_cycles_label     = "(91, 81, 56)"   # very dark

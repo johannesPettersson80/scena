@@ -4,6 +4,7 @@ use crate::assets::EnvironmentDesc;
 use crate::scene::Vec3;
 
 use super::environment_prefilter::{build_brdf_lut, prefilter_specular_cubemap_mips};
+use super::pbr_contract::{PbrMaterial, environment_split_sum_contribution, reflect_vec3};
 
 /// Number of GGX-prefiltered specular mip levels emitted for the
 /// environment cubemap. Mip 0 carries the source radiance; mips 1+
@@ -89,14 +90,12 @@ impl PreparedEnvironmentLighting {
                 brdf_lut_size: BRDF_LUT_SIZE,
             })
         });
-        // Phase A2 / CPU color bug fix: when the asset records no scalar
+        // glTF/PBR color-contract fallback: when the environment records no scalar
         // `preview_irradiance_rgb` but does carry a real cubemap (the common
-        // case for the bundled `neutral_studio` environment), derive an
-        // average radiance from the cubemap mip-0 pixels so the CPU
-        // rasterizer's PBR path can still light metallic surfaces. Without
-        // this, the WaterBottle body (metallic = 1.0 across the body texture)
-        // renders pitch-black because there is no diffuse contribution
-        // (1 − metallic = 0) and no IBL contribution (intensity = 0).
+        // case for bundled HDR environments), derive an average radiance from
+        // the cubemap mip-0 pixels so the CPU rasterizer's PBR path can still
+        // light metallic surfaces. This is a generic environment fallback, not
+        // an asset-specific color calibration path.
         let irradiance = match environment.preview_irradiance_rgb() {
             Some(stored) => stored,
             None => match cubemap.as_ref() {
@@ -129,7 +128,7 @@ impl PreparedEnvironmentLighting {
         }
         Self {
             diffuse_rgb,
-            specular_rgb: scale_vec3(diffuse_rgb, 1.5),
+            specular_rgb: diffuse_rgb,
             intensity: 1.0,
             cubemap,
         }
@@ -169,26 +168,33 @@ impl PreparedEnvironmentLighting {
 
     pub(in crate::render::prepare) fn pbr_contribution(
         &self,
-        base: Vec3,
-        metallic: f32,
-        roughness: f32,
+        material: PbrMaterial,
         normal: Vec3,
         view: Vec3,
     ) -> Vec3 {
         if !self.is_active() {
             return Vec3::ZERO;
         }
-        let n_dot_v = dot_vec3(normal, view).max(0.001);
-        let f0 = mix_vec3(Vec3::new(0.04, 0.04, 0.04), base, metallic);
-        let fresnel = fresnel_schlick(n_dot_v, f0);
-        let diffuse_energy = scale_vec3(
-            subtract_vec3(Vec3::new(1.0, 1.0, 1.0), fresnel),
-            1.0 - metallic,
-        );
-        let diffuse = multiply_vec3(multiply_vec3(diffuse_energy, base), self.diffuse_rgb);
-        let specular_strength = (1.25 - roughness * 0.75).clamp(0.2, 1.25);
-        let specular = scale_vec3(multiply_vec3(fresnel, self.specular_rgb), specular_strength);
-        scale_vec3(add_vec3(diffuse, specular), self.intensity)
+        let diffuse = self
+            .cubemap
+            .as_deref()
+            .map(|cubemap| sample_cubemap_mip(cubemap, 0, normal))
+            .unwrap_or(self.diffuse_rgb);
+        let reflection = reflect_vec3(Vec3::new(-view.x, -view.y, -view.z), normal);
+        let prefiltered = self
+            .cubemap
+            .as_deref()
+            .map(|cubemap| sample_prefiltered_specular(cubemap, reflection, material.roughness))
+            .unwrap_or(self.specular_rgb);
+        let brdf = self
+            .cubemap
+            .as_deref()
+            .map(|cubemap| sample_brdf_lut(cubemap, dot_vec3(normal, view), material.roughness))
+            .unwrap_or((1.0, 0.0));
+        scale_vec3(
+            environment_split_sum_contribution(material, normal, view, diffuse, prefiltered, brdf),
+            self.intensity,
+        )
     }
 }
 
@@ -236,12 +242,72 @@ fn sanitize_environment_channel(value: f32) -> f32 {
     }
 }
 
-fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(left.x + right.x, left.y + right.y, left.z + right.z)
+fn sample_prefiltered_specular(
+    cubemap: &PreparedEnvironmentCubemap,
+    direction: Vec3,
+    roughness: f32,
+) -> Vec3 {
+    let max_mip = cubemap.mip_count.saturating_sub(1);
+    let mip = (roughness.clamp(0.0, 1.0) * max_mip as f32).round() as u32;
+    sample_cubemap_mip(cubemap, mip, direction)
 }
 
-fn subtract_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(left.x - right.x, left.y - right.y, left.z - right.z)
+fn sample_cubemap_mip(cubemap: &PreparedEnvironmentCubemap, mip: u32, direction: Vec3) -> Vec3 {
+    let Some(faces) = cubemap.mips.get(mip as usize) else {
+        return Vec3::ZERO;
+    };
+    let resolution = (cubemap.resolution >> mip).max(1);
+    let (face_index, u, v) = cubemap_face_uv(direction);
+    let x = (u.clamp(0.0, 1.0) * (resolution - 1) as f32).round() as u32;
+    let y = (v.clamp(0.0, 1.0) * (resolution - 1) as f32).round() as u32;
+    let pixel = ((y * resolution + x) * 4) as usize;
+    let face = &faces[face_index];
+    if pixel + 2 >= face.len() {
+        return Vec3::ZERO;
+    }
+    Vec3::new(face[pixel], face[pixel + 1], face[pixel + 2])
+}
+
+fn cubemap_face_uv(direction: Vec3) -> (usize, f32, f32) {
+    let ax = direction.x.abs();
+    let ay = direction.y.abs();
+    let az = direction.z.abs();
+    let (face, sc, tc, major) = if ax >= ay && ax >= az {
+        if direction.x >= 0.0 {
+            (0, -direction.z, -direction.y, ax)
+        } else {
+            (1, direction.z, -direction.y, ax)
+        }
+    } else if ay >= ax && ay >= az {
+        if direction.y >= 0.0 {
+            (2, direction.x, direction.z, ay)
+        } else {
+            (3, direction.x, -direction.z, ay)
+        }
+    } else if direction.z >= 0.0 {
+        (4, direction.x, -direction.y, az)
+    } else {
+        (5, -direction.x, -direction.y, az)
+    };
+    if major <= f32::EPSILON || !major.is_finite() {
+        return (4, 0.5, 0.5);
+    }
+    (face, 0.5 * (sc / major + 1.0), 0.5 * (tc / major + 1.0))
+}
+
+fn sample_brdf_lut(
+    cubemap: &PreparedEnvironmentCubemap,
+    n_dot_v: f32,
+    roughness: f32,
+) -> (f32, f32) {
+    let size = cubemap.brdf_lut_size.max(1);
+    let x = (n_dot_v.clamp(0.0, 1.0) * (size - 1) as f32).round() as u32;
+    let y = (roughness.clamp(0.0, 1.0) * (size - 1) as f32).round() as u32;
+    let index = ((y * size + x) * 2) as usize;
+    if index + 1 >= cubemap.brdf_lut.len() {
+        return (1.0, 0.0);
+    }
+    (cubemap.brdf_lut[index], cubemap.brdf_lut[index + 1])
 }
 
 fn dot_vec3(left: Vec3, right: Vec3) -> f32 {
@@ -250,25 +316,4 @@ fn dot_vec3(left: Vec3, right: Vec3) -> f32 {
 
 fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
     Vec3::new(value.x * scale, value.y * scale, value.z * scale)
-}
-
-fn multiply_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(left.x * right.x, left.y * right.y, left.z * right.z)
-}
-
-fn mix_vec3(left: Vec3, right: Vec3, amount: f32) -> Vec3 {
-    let amount = if amount.is_finite() {
-        amount.clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    add_vec3(scale_vec3(left, 1.0 - amount), scale_vec3(right, amount))
-}
-
-fn fresnel_schlick(cos_theta: f32, f0: Vec3) -> Vec3 {
-    let factor = (1.0 - cos_theta.clamp(0.0, 1.0)).powi(5);
-    add_vec3(
-        f0,
-        scale_vec3(subtract_vec3(Vec3::new(1.0, 1.0, 1.0), f0), factor),
-    )
 }

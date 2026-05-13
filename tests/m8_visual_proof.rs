@@ -210,7 +210,7 @@ fn render_sensitivity_box(options: SensitivityOptions) -> Vec<u8> {
             .directional_light(
                 DirectionalLight::default()
                     .with_color(light_color)
-                    .with_illuminance_lux(10_000.0),
+                    .with_illuminance_lux(1.0),
             )
             .add()
             .expect("sensitivity light inserts");

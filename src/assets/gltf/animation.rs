@@ -17,11 +17,12 @@ use crate::diagnostics::AssetError;
 use crate::scene::Quat;
 
 use super::SceneAssetClip;
+use super::buffers::ResolvedGltfBuffers;
 
 pub(super) fn parse_gltf_clips(
     path: &AssetPath,
     document: &Document,
-    buffers: &[Vec<u8>],
+    buffers: &ResolvedGltfBuffers,
 ) -> Result<Vec<SceneAssetClip>, AssetError> {
     document
         .animations()
@@ -48,7 +49,7 @@ pub(super) fn parse_gltf_clips(
 fn parse_channel(
     path: &AssetPath,
     channel: &::gltf::animation::Channel<'_>,
-    buffers: &[Vec<u8>],
+    buffers: &ResolvedGltfBuffers,
 ) -> Result<AnimationSourceChannel, AssetError> {
     let target = channel.target();
     let target_node = target.node().index();
@@ -65,7 +66,7 @@ fn parse_channel(
         GltfInterpolation::CubicSpline => AnimationInterpolation::CubicSpline,
     };
 
-    let reader = channel.reader(|buffer| buffers.get(buffer.index()).map(Vec::as_slice));
+    let reader = channel.reader(|buffer| buffers.reader_buffer(buffer.index()));
     let inputs = reader.read_inputs().ok_or_else(|| AssetError::Parse {
         path: path.as_str().to_string(),
         reason: "animation sampler input accessor failed to resolve".to_string(),
@@ -77,9 +78,9 @@ fn parse_channel(
         reason: "animation sampler output accessor failed to resolve".to_string(),
     })?;
     let output = match outputs {
-        ReadOutputs::Translations(translations) => AnimationOutput::Vec3(
-            translations.map(crate::scene::Vec3::from_array).collect(),
-        ),
+        ReadOutputs::Translations(translations) => {
+            AnimationOutput::Vec3(translations.map(crate::scene::Vec3::from_array).collect())
+        }
         ReadOutputs::Scales(scales) => {
             AnimationOutput::Vec3(scales.map(crate::scene::Vec3::from_array).collect())
         }

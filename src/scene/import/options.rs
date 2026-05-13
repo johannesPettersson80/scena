@@ -142,7 +142,12 @@ const fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
 }
 
 fn multiply_quat(left: Quat, right: Quat) -> Quat {
-    normalize_quat(Quat::from_xyzw(left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y, left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x, left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w, left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z))
+    normalize_quat(Quat::from_xyzw(
+        left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
+        left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,
+        left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w,
+        left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z,
+    ))
 }
 
 fn inverse_unit_quat(rotation: Quat) -> Quat {
@@ -156,5 +161,10 @@ fn normalize_quat(value: Quat) -> Quat {
         return Quat::IDENTITY;
     }
     let inverse_length = length_squared.sqrt().recip();
-    Quat::from_xyzw(value.x * inverse_length, value.y * inverse_length, value.z * inverse_length, value.w * inverse_length)
+    Quat::from_xyzw(
+        value.x * inverse_length,
+        value.y * inverse_length,
+        value.z * inverse_length,
+        value.w * inverse_length,
+    )
 }

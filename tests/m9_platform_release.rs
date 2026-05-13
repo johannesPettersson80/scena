@@ -475,7 +475,7 @@ fn pbr_light_scene(kind: PbrLightKind) -> (Scene, Assets, scena::CameraKey) {
                 .directional_light(
                     DirectionalLight::default()
                         .with_color(Color::from_linear_rgb(1.0, 0.0, 0.0))
-                        .with_illuminance_lux(20_000.0),
+                        .with_illuminance_lux(1.0),
                 )
                 .add()
                 .expect("directional light inserts");
@@ -485,7 +485,7 @@ fn pbr_light_scene(kind: PbrLightKind) -> (Scene, Assets, scena::CameraKey) {
                 .point_light(
                     PointLight::default()
                         .with_color(Color::from_linear_rgb(0.0, 1.0, 0.0))
-                        .with_intensity_candela(800.0)
+                        .with_intensity_candela(1.0)
                         .with_range(5.0),
                 )
                 .transform(Transform::at(Vec3::new(0.0, 0.0, 1.0)))
@@ -497,7 +497,7 @@ fn pbr_light_scene(kind: PbrLightKind) -> (Scene, Assets, scena::CameraKey) {
                 .spot_light(
                     SpotLight::default()
                         .with_color(Color::from_linear_rgb(0.0, 0.0, 1.0))
-                        .with_intensity_candela(900.0)
+                        .with_intensity_candela(1.0)
                         .with_range(5.0)
                         .with_inner_cone_angle(Angle::from_degrees(20.0))
                         .with_outer_cone_angle(Angle::from_degrees(35.0)),
@@ -1089,8 +1089,26 @@ fn m9_benchmark_rows_record_stored_baseline_comparison() {
 }
 
 #[test]
-#[ignore = "dedicated 4K performance lane; run from CI with --ignored"]
 fn m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact() {
+    if std::env::var_os("SCENA_RUN_DEDICATED_4K_BENCHMARK").is_none() {
+        fs::create_dir_all(platform_dir()).expect("platform artifact dir");
+        let artifact_path = platform_dir().join("m9-benchmarks-4k-required.json");
+        let artifact = serde_json::json!({
+            "schema": "scena.m9.benchmark_4k_required.v1",
+            "status": "fail-closed",
+            "release_evidence": false,
+            "reason": "SCENA_RUN_DEDICATED_4K_BENCHMARK is not set in the normal cargo-test lane",
+            "run_hint": "Set SCENA_RUN_DEDICATED_4K_BENCHMARK=1 on the dedicated performance lane to write m9-benchmarks-4k.json.",
+            "required_artifact": path_string(&platform_dir().join("m9-benchmarks-4k.json")),
+        });
+        write_json(&artifact_path, &artifact);
+        assert!(
+            artifact_path.is_file(),
+            "normal suite must record fail-closed 4K benchmark requirement metadata"
+        );
+        return;
+    }
+
     let artifact = write_dedicated_4k_benchmark_artifact();
     let rows = artifact["rows"].as_array().expect("benchmark rows");
     assert_eq!(rows.len(), 1);
@@ -1587,10 +1605,13 @@ impl PbrLightKind {
     }
 
     fn assert_expected_tint(self, rgb: [u8; 3]) -> bool {
+        let r = rgb[0] as i16;
+        let g = rgb[1] as i16;
+        let b = rgb[2] as i16;
         match self {
-            Self::DirectionalRed => rgb[0] > rgb[1] + 30 && rgb[0] > rgb[2] + 30,
-            Self::PointGreen => rgb[1] > rgb[0] + 30 && rgb[1] > rgb[2] + 30,
-            Self::SpotBlue => rgb[2] > rgb[0] + 30 && rgb[2] > rgb[1] + 30,
+            Self::DirectionalRed => r > g + 30 && r > b + 30,
+            Self::PointGreen => g > r + 30 && g > b + 30,
+            Self::SpotBlue => b > r + 30 && b > g + 30,
         }
     }
 }

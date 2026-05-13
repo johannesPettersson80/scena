@@ -1,31 +1,56 @@
+use crate::geometry::{Primitive, PrimitiveVertexAttributes, Vertex};
+use crate::render::prepare::transforms::{
+    invert_matrix4, unbake_normal_to_model_space, unbake_position_to_model_space,
+};
 use web_sys::{WebGl2RenderingContext, WebGlProgram};
 
-pub(super) fn encode_vertices(primitives: &[crate::geometry::Primitive]) -> Vec<f32> {
+pub(super) fn encode_vertices(primitives: &[Primitive]) -> Vec<f32> {
     let mut vertices = Vec::with_capacity(primitives.len() * 3 * 17);
     for primitive in primitives {
+        let world_from_model = primitive.world_from_model();
+        let normal_from_model = primitive.normal_from_model();
+        let position_inverse = invert_matrix4(&world_from_model);
+        let normal_inverse = invert_matrix4(&normal_from_model);
         for (vertex, attributes) in primitive
             .vertices()
             .iter()
             .zip(primitive.vertex_attributes().iter())
         {
+            let model_vertex = match position_inverse {
+                Some(inv) => Vertex {
+                    position: unbake_position_to_model_space(vertex.position, &inv),
+                    color: vertex.color,
+                },
+                None => *vertex,
+            };
+            let model_attributes = match normal_inverse {
+                Some(inv) => PrimitiveVertexAttributes {
+                    normal: unbake_normal_to_model_space(attributes.normal, &inv),
+                    tex_coord0: attributes.tex_coord0,
+                    tangent: unbake_normal_to_model_space(attributes.tangent, &inv),
+                    tangent_handedness: attributes.tangent_handedness,
+                    shadow_visibility: attributes.shadow_visibility,
+                },
+                None => *attributes,
+            };
             vertices.extend_from_slice(&[
-                vertex.position.x,
-                vertex.position.y,
-                vertex.position.z,
-                vertex.color.r,
-                vertex.color.g,
-                vertex.color.b,
-                vertex.color.a,
-                attributes.normal.x,
-                attributes.normal.y,
-                attributes.normal.z,
-                attributes.tex_coord0[0],
-                attributes.tex_coord0[1],
-                attributes.tangent.x,
-                attributes.tangent.y,
-                attributes.tangent.z,
-                attributes.tangent_handedness,
-                attributes.shadow_visibility.clamp(0.0, 1.0),
+                model_vertex.position.x,
+                model_vertex.position.y,
+                model_vertex.position.z,
+                model_vertex.color.r,
+                model_vertex.color.g,
+                model_vertex.color.b,
+                model_vertex.color.a,
+                model_attributes.normal.x,
+                model_attributes.normal.y,
+                model_attributes.normal.z,
+                model_attributes.tex_coord0[0],
+                model_attributes.tex_coord0[1],
+                model_attributes.tangent.x,
+                model_attributes.tangent.y,
+                model_attributes.tangent.z,
+                model_attributes.tangent_handedness,
+                model_attributes.shadow_visibility.clamp(0.0, 1.0),
             ]);
         }
     }

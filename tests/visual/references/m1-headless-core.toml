@@ -9,58 +9,57 @@ status = "reference"
 [[reference]]
 name = "primitive-fullscreen"
 max_abs_diff = 0
-center_rgba = [119, 177, 204, 255]
-corner_rgba = [119, 177, 204, 255]
+center_rgba = [110, 189, 240, 255]
+corner_rgba = [110, 189, 240, 255]
 nonblack_pixels = 256
-rgba_hash = "fnv1a64:5e3954d596f48d25"
+rgba_hash = "fnv1a64:822d281437b34325"
 
 [[reference]]
 name = "unlit-asset-mesh"
 max_abs_diff = 0
-center_rgba = [216, 68, 45, 255]
-corner_rgba = [216, 68, 45, 255]
+center_rgba = [240, 75, 45, 255]
+corner_rgba = [240, 75, 45, 255]
 nonblack_pixels = 256
-rgba_hash = "fnv1a64:a9be295470ea6b25"
+rgba_hash = "fnv1a64:e16b94814fd4fb25"
 
 [[reference]]
 name = "pbr-asset-mesh"
 max_abs_diff = 0
-center_rgba = [189, 190, 191, 255]
-corner_rgba = [189, 190, 191, 255]
+center_rgba = [215, 218, 221, 255]
+corner_rgba = [215, 218, 221, 255]
 nonblack_pixels = 256
-rgba_hash = "fnv1a64:74c67718cf921925"
+rgba_hash = "fnv1a64:5e9c0aa31a92cd25"
 
 [[reference]]
 name = "transparent-blend"
 max_abs_diff = 0
-center_rgba = [158, 0, 159, 255]
-corner_rgba = [158, 0, 159, 255]
+center_rgba = [188, 0, 188, 255]
+corner_rgba = [188, 0, 188, 255]
 nonblack_pixels = 256
-rgba_hash = "fnv1a64:3e7927eecabf2325"
+rgba_hash = "fnv1a64:af6e69ea9da6a325"
 
 [[reference]]
 name = "line-material"
 max_abs_diff = 0
-center_rgba = [68, 68, 68, 255]
+center_rgba = [80, 80, 80, 255]
 corner_rgba = [0, 0, 0, 255]
-nonblack_pixels = 35
-rgba_hash = "fnv1a64:5a9333bd57902683"
+nonblack_pixels = 39
+rgba_hash = "fnv1a64:40703f9da9a60e95"
 
 [[reference]]
 name = "wire-edge-materials"
 max_abs_diff = 0
 center_rgba = [0, 0, 0, 255]
 corner_rgba = [0, 0, 0, 255]
-nonblack_pixels = 113
-rgba_hash = "fnv1a64:888efcfe5012b019"
+nonblack_pixels = 135
+rgba_hash = "fnv1a64:ac7efec4be459531"
 
 [[reference]]
 name = "default-cube"
 max_abs_diff = 0
-# Post-IBL-fallback: the default environment cubemap now contributes real
-# radiance to diffuse PBR surfaces; the prior cubemap-blind path used a
-# zero scalar irradiance and rendered white = [206, 206, 206].
-center_rgba = [182, 185, 189, 255]
+# CPU split-sum IBL contributes real cubemap-derived irradiance to diffuse
+# PBR surfaces under the Khronos PBR Neutral output stage.
+center_rgba = [209, 215, 225, 255]
 corner_rgba = [0, 0, 0, 255]
-nonblack_pixels = 109
-rgba_hash = "fnv1a64:f4002bca132c1b69"
+nonblack_pixels = 117
+rgba_hash = "fnv1a64:cfc5e9027c8e3ed0"

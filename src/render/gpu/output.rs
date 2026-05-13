@@ -6,7 +6,6 @@ use super::super::prepare::PreparedGpuLightUniform;
 /// the same — `include_str!` produces a static `&'static str`.
 pub(super) const GPU_TRIANGLE_SHADER: &str = include_str!("output_shader.wgsl");
 
-
 pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 464;
 
 pub(super) use super::draw_uniform::{
@@ -211,6 +210,18 @@ mod tests {
             })
             .len(),
             OUTPUT_UNIFORM_BYTE_LEN as usize
+        );
+    }
+
+    #[test]
+    fn triangle_shader_contains_khronos_pbr_neutral_tonemapper() {
+        assert!(
+            GPU_TRIANGLE_SHADER.contains("pbr_neutral_tonemap")
+                && GPU_TRIANGLE_SHADER.contains("start_compression")
+                && GPU_TRIANGLE_SHADER.contains("desaturation")
+                && GPU_TRIANGLE_SHADER.contains("camera.color_management.x > 1.5"),
+            "native/WebGPU shader must expose the Khronos PBR Neutral tone-mapping branch; \
+             WaterBottle screenshots must not be tuned through private color constants"
         );
     }
 

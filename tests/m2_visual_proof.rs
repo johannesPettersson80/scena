@@ -182,7 +182,7 @@ fn render_direct_lights_pbr() -> VisualProof {
         .directional_light(
             DirectionalLight::default()
                 .with_color(Color::from_linear_rgb(1.0, 0.0, 0.0))
-                .with_illuminance_lux(10_000.0),
+                .with_illuminance_lux(1.0),
         )
         .add()
         .expect("red directional light inserts");
@@ -393,7 +393,7 @@ fn validate_fxaa_edge(proof: &VisualProof) {
 
 fn validate_clipping_half_space(proof: &VisualProof) {
     assert_eq!(pixel_at(&proof.frame, 16, 3, 8), [0, 0, 0, 255]);
-    assert_eq!(pixel_at(&proof.frame, 16, 12, 8), [206, 206, 206, 255]);
+    assert_eq!(pixel_at(&proof.frame, 16, 12, 8), [240, 240, 240, 255]);
 }
 
 fn reference_specs() -> Vec<ReferenceSpec> {

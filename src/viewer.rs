@@ -11,21 +11,21 @@ use crate::scene::{CameraKey, DirectionalLight, Scene, SceneImport, Vec3};
 /// Owned state returned by [`first_render_gltf_headless`].
 #[derive(Debug)]
 pub struct FirstRender {
-    pub assets: Assets,
-    pub scene: Scene,
-    pub renderer: Renderer,
-    pub import: SceneImport,
-    pub outcome: RenderOutcome,
-    pub diagnostics: Vec<Diagnostic>,
+    assets: Assets,
+    scene: Scene,
+    renderer: Renderer,
+    import: SceneImport,
+    outcome: RenderOutcome,
+    diagnostics: Vec<Diagnostic>,
 }
 
 /// Prepared owned state for a headless glTF viewer loop.
 #[derive(Debug)]
 pub struct HeadlessGltfViewer {
-    pub assets: Assets,
-    pub scene: Scene,
-    pub renderer: Renderer,
-    pub import: SceneImport,
+    assets: Assets,
+    scene: Scene,
+    renderer: Renderer,
+    import: SceneImport,
 }
 
 /// Builder for the first headless glTF render.
@@ -34,11 +34,34 @@ pub struct HeadlessGltfViewerBuilder {
     path: AssetPath,
     width: u32,
     height: u32,
+    common: ViewerCommonOptions,
+}
+
+#[derive(Debug, Clone)]
+struct ViewerCommonOptions {
     frame_import: bool,
     default_light: bool,
     default_environment: bool,
     environment_path: Option<AssetPath>,
     renderer_options: RendererOptions,
+}
+
+impl ViewerCommonOptions {
+    fn new() -> Self {
+        Self {
+            frame_import: true,
+            default_light: false,
+            default_environment: false,
+            environment_path: None,
+            renderer_options: RendererOptions::default(),
+        }
+    }
+
+    fn with_environment(mut self, path: impl Into<AssetPath>) -> Self {
+        self.environment_path = Some(path.into());
+        self.default_environment = false;
+        self
+    }
 }
 
 /// Starts a fluent headless glTF viewer setup.
@@ -47,11 +70,33 @@ pub fn headless_gltf_viewer(path: impl Into<AssetPath>) -> HeadlessGltfViewerBui
         path: path.into(),
         width: 800,
         height: 600,
-        frame_import: true,
-        default_light: false,
-        default_environment: false,
-        environment_path: None,
-        renderer_options: RendererOptions::default(),
+        common: ViewerCommonOptions::new(),
+    }
+}
+
+impl FirstRender {
+    pub fn assets(&self) -> &Assets {
+        &self.assets
+    }
+
+    pub fn scene(&self) -> &Scene {
+        &self.scene
+    }
+
+    pub fn renderer(&self) -> &Renderer {
+        &self.renderer
+    }
+
+    pub fn import(&self) -> &SceneImport {
+        &self.import
+    }
+
+    pub fn outcome(&self) -> &RenderOutcome {
+        &self.outcome
+    }
+
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
     }
 }
 
@@ -65,13 +110,13 @@ impl HeadlessGltfViewerBuilder {
 
     /// Adds a neutral directional light before the first prepare/render.
     pub const fn with_default_light(mut self) -> Self {
-        self.default_light = true;
+        self.common.default_light = true;
         self
     }
 
     /// Uses the bundled default environment before the first prepare/render.
     pub const fn with_default_environment(mut self) -> Self {
-        self.default_environment = true;
+        self.common.default_environment = true;
         self
     }
 
@@ -81,26 +126,25 @@ impl HeadlessGltfViewerBuilder {
     /// `AssetError::UnsupportedEnvironmentFormat`. Setting an explicit
     /// environment overrides any prior `with_default_environment()` call.
     pub fn with_environment(mut self, path: impl Into<AssetPath>) -> Self {
-        self.environment_path = Some(path.into());
-        self.default_environment = false;
+        self.common = self.common.with_environment(path);
         self
     }
 
     /// Uses a renderer profile when the headless renderer is created.
     pub const fn with_profile(mut self, profile: Profile) -> Self {
-        self.renderer_options = self.renderer_options.with_profile(profile);
+        self.common.renderer_options = self.common.renderer_options.with_profile(profile);
         self
     }
 
     /// Uses a renderer quality level when the headless renderer is created.
     pub const fn with_quality(mut self, quality: Quality) -> Self {
-        self.renderer_options = self.renderer_options.with_quality(quality);
+        self.common.renderer_options = self.common.renderer_options.with_quality(quality);
         self
     }
 
     /// Uses an explicit render mode when the headless renderer is created.
     pub const fn with_render_mode(mut self, render_mode: RenderMode) -> Self {
-        self.renderer_options = self.renderer_options.with_render_mode(render_mode);
+        self.common.renderer_options = self.common.renderer_options.with_render_mode(render_mode);
         self
     }
 
@@ -111,7 +155,7 @@ impl HeadlessGltfViewerBuilder {
 
     /// Leaves the imported asset's camera framing unchanged.
     pub const fn without_framing(mut self) -> Self {
-        self.frame_import = false;
+        self.common.frame_import = false;
         self
     }
 
@@ -122,19 +166,19 @@ impl HeadlessGltfViewerBuilder {
         let mut scene = Scene::new();
         let import = scene.instantiate(&scene_asset)?;
         let camera = scene.add_default_camera()?;
-        if self.frame_import {
+        if self.common.frame_import {
             scene.frame_import(camera, &import)?;
         }
-        if self.default_light {
+        if self.common.default_light {
             scene.directional_light(DirectionalLight::default()).add()?;
         }
 
         let mut renderer =
-            Renderer::headless_with_options(self.width, self.height, self.renderer_options)?;
-        if let Some(environment_path) = self.environment_path {
+            Renderer::headless_with_options(self.width, self.height, self.common.renderer_options)?;
+        if let Some(environment_path) = self.common.environment_path {
             let environment = assets.load_environment(environment_path).await?;
             renderer.set_environment(environment);
-        } else if self.default_environment {
+        } else if self.common.default_environment {
             renderer.set_environment(assets.default_environment());
         }
         renderer.prepare_with_assets(&mut scene, &assets)?;
@@ -233,17 +277,17 @@ impl HeadlessGltfViewer {
 /// host loops.
 #[derive(Debug)]
 pub struct InteractiveGltfViewer {
-    pub assets: Assets,
-    pub scene: Scene,
-    pub renderer: Renderer,
-    pub import: SceneImport,
-    pub camera: CameraKey,
+    assets: Assets,
+    scene: Scene,
+    renderer: Renderer,
+    import: SceneImport,
+    camera: CameraKey,
     /// Phase 5B step 2: optional orbit-camera controller. Populated when
     /// the builder was configured with `with_orbit_controls()`. Pointer +
     /// touch events route through `handle_pointer_event` /
     /// `handle_touch_event`; the controller applies the resulting
     /// transform to the active camera.
-    pub orbit_controls: Option<OrbitControls>,
+    orbit_controls: Option<OrbitControls>,
 }
 
 /// Builder for [`interactive_gltf_viewer`].
@@ -251,12 +295,8 @@ pub struct InteractiveGltfViewer {
 pub struct InteractiveGltfViewerBuilder {
     path: AssetPath,
     surface: PlatformSurface,
-    frame_import: bool,
-    default_light: bool,
-    default_environment: bool,
-    environment_path: Option<AssetPath>,
     orbit_controls: bool,
-    renderer_options: RendererOptions,
+    common: ViewerCommonOptions,
 }
 
 /// Starts a fluent interactive glTF viewer setup against an attached surface.
@@ -273,25 +313,21 @@ pub fn interactive_gltf_viewer(
     InteractiveGltfViewerBuilder {
         path: path.into(),
         surface,
-        frame_import: true,
-        default_light: false,
-        default_environment: false,
-        environment_path: None,
         orbit_controls: false,
-        renderer_options: RendererOptions::default(),
+        common: ViewerCommonOptions::new(),
     }
 }
 
 impl InteractiveGltfViewerBuilder {
     /// Adds a neutral directional light before the first prepare/render.
     pub const fn with_default_light(mut self) -> Self {
-        self.default_light = true;
+        self.common.default_light = true;
         self
     }
 
     /// Uses the bundled default environment before the first prepare/render.
     pub const fn with_default_environment(mut self) -> Self {
-        self.default_environment = true;
+        self.common.default_environment = true;
         self
     }
 
@@ -299,8 +335,7 @@ impl InteractiveGltfViewerBuilder {
     /// Mirrors `HeadlessGltfViewerBuilder::with_environment`; setting an
     /// explicit path overrides any prior `with_default_environment()` call.
     pub fn with_environment(mut self, path: impl Into<AssetPath>) -> Self {
-        self.environment_path = Some(path.into());
-        self.default_environment = false;
+        self.common = self.common.with_environment(path);
         self
     }
 
@@ -316,19 +351,19 @@ impl InteractiveGltfViewerBuilder {
 
     /// Uses a renderer profile when the renderer is created.
     pub const fn with_profile(mut self, profile: Profile) -> Self {
-        self.renderer_options = self.renderer_options.with_profile(profile);
+        self.common.renderer_options = self.common.renderer_options.with_profile(profile);
         self
     }
 
     /// Uses a renderer quality level when the renderer is created.
     pub const fn with_quality(mut self, quality: Quality) -> Self {
-        self.renderer_options = self.renderer_options.with_quality(quality);
+        self.common.renderer_options = self.common.renderer_options.with_quality(quality);
         self
     }
 
     /// Uses an explicit render mode when the renderer is created.
     pub const fn with_render_mode(mut self, render_mode: RenderMode) -> Self {
-        self.renderer_options = self.renderer_options.with_render_mode(render_mode);
+        self.common.renderer_options = self.common.renderer_options.with_render_mode(render_mode);
         self
     }
 
@@ -339,7 +374,7 @@ impl InteractiveGltfViewerBuilder {
 
     /// Leaves the imported asset's camera framing unchanged.
     pub const fn without_framing(mut self) -> Self {
-        self.frame_import = false;
+        self.common.frame_import = false;
         self
     }
 
@@ -355,18 +390,18 @@ impl InteractiveGltfViewerBuilder {
         let mut scene = Scene::new();
         let import = scene.instantiate(&scene_asset)?;
         let camera = scene.add_default_camera()?;
-        if self.frame_import {
+        if self.common.frame_import {
             scene.frame_import(camera, &import)?;
         }
-        if self.default_light {
+        if self.common.default_light {
             scene.directional_light(DirectionalLight::default()).add()?;
         }
         let mut renderer =
-            Renderer::from_surface_with_options(self.surface, self.renderer_options)?;
-        if let Some(environment_path) = self.environment_path {
+            Renderer::from_surface_with_options(self.surface, self.common.renderer_options)?;
+        if let Some(environment_path) = self.common.environment_path {
             let environment = pollster::block_on(assets.load_environment(environment_path))?;
             renderer.set_environment(environment);
-        } else if self.default_environment {
+        } else if self.common.default_environment {
             renderer.set_environment(assets.default_environment());
         }
         renderer.prepare_with_assets(&mut scene, &assets)?;
@@ -388,18 +423,19 @@ impl InteractiveGltfViewerBuilder {
         let mut scene = Scene::new();
         let import = scene.instantiate(&scene_asset)?;
         let camera = scene.add_default_camera()?;
-        if self.frame_import {
+        if self.common.frame_import {
             scene.frame_import(camera, &import)?;
         }
-        if self.default_light {
+        if self.common.default_light {
             scene.directional_light(DirectionalLight::default()).add()?;
         }
         let mut renderer =
-            Renderer::from_surface_async_with_options(self.surface, self.renderer_options).await?;
-        if let Some(environment_path) = self.environment_path {
+            Renderer::from_surface_async_with_options(self.surface, self.common.renderer_options)
+                .await?;
+        if let Some(environment_path) = self.common.environment_path {
             let environment = assets.load_environment(environment_path).await?;
             renderer.set_environment(environment);
-        } else if self.default_environment {
+        } else if self.common.default_environment {
             renderer.set_environment(assets.default_environment());
         }
         renderer.prepare_with_assets(&mut scene, &assets)?;
@@ -491,6 +527,10 @@ impl InteractiveGltfViewer {
 
     pub fn camera(&self) -> CameraKey {
         self.camera
+    }
+
+    pub fn orbit_controls(&self) -> Option<&OrbitControls> {
+        self.orbit_controls.as_ref()
     }
 
     /// Renderer diagnostics emitted during prepare or render.

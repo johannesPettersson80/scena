@@ -7,6 +7,7 @@ use crate::diagnostics::AssetError;
 use crate::geometry::SkinningMatrix;
 
 use super::super::AssetPath;
+use super::buffers::ResolvedGltfBuffers;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SceneAssetSkin {
@@ -27,14 +28,14 @@ impl SceneAssetSkin {
 pub(super) fn parse_skins(
     path: &AssetPath,
     document: &Document,
-    buffers: &[Vec<u8>],
+    buffers: &ResolvedGltfBuffers,
 ) -> Result<Vec<SceneAssetSkin>, AssetError> {
     document
         .skins()
         .map(|skin| {
             let joints: Vec<usize> = skin.joints().map(|joint| joint.index()).collect();
             let inverse_bind_matrices = skin
-                .reader(|buffer| buffers.get(buffer.index()).map(Vec::as_slice))
+                .reader(|buffer| buffers.reader_buffer(buffer.index()))
                 .read_inverse_bind_matrices()
                 .map(|reader| {
                     reader

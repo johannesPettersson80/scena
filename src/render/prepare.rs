@@ -6,6 +6,9 @@ use crate::geometry::{
 use crate::material::{MaterialDesc, MaterialKind};
 use crate::scene::{NodeKey, Scene, Vec3};
 
+use self::cpu_bake::{
+    CpuBakeCorner, cpu_texture_subdivisions, push_material_pass_primitive, subdivided_cpu_corners,
+};
 pub(super) use self::diagnostics::{
     collect_asset_camera_visibility_diagnostics, collect_camera_projection_diagnostics,
     collect_camera_visibility_diagnostics, collect_precision_diagnostics,
@@ -17,7 +20,7 @@ pub(in crate::render) use self::environment::{
 use self::lighting::{MaterialShadingInput, PreparedLights, material_color};
 pub(super) use self::lighting::{PreparedGpuLightUniform, collect_gpu_light_uniform};
 use self::materials::{
-    MaterialPass, base_color_texture_sample, emissive_texture_sample, material_pass,
+    base_color_texture_sample, emissive_texture_sample, material_pass,
     metallic_roughness_texture_sample, multiply_color, normal_texture_sample,
     occlusion_texture_sample, render_material_slot, validate_material_texture_handles,
 };
@@ -36,6 +39,7 @@ use self::transforms::{
 use self::types::{DeformationInputs, PrimitiveBakeParams, PrimitiveSinks, TransparentPrimitive};
 use super::{RasterTarget, camera::CameraProjection};
 
+mod cpu_bake;
 mod diagnostics;
 mod environment;
 mod environment_prefilter;
@@ -44,6 +48,7 @@ mod material_batch;
 pub(in crate::render) use self::material_batch::compute_material_batch_plan;
 mod lighting;
 mod materials;
+mod pbr_contract;
 mod resources;
 mod shadows;
 mod stats;
@@ -252,7 +257,7 @@ fn append_triangle_primitives<F>(
     source: GeometryPrimitiveSource<'_, F>,
     deformation: DeformationInputs<'_>,
     params: PrimitiveBakeParams<'_>,
-    sinks: PrimitiveSinks<'_>,
+    mut sinks: PrimitiveSinks<'_>,
 ) -> Result<(), PrepareError> {
     match source.material.kind() {
         MaterialKind::Unlit | MaterialKind::PbrMetallicRoughness => {}
@@ -354,12 +359,6 @@ fn append_triangle_primitives<F>(
             directional_shadow_factor(position_b, params.lights, params.shadow_occluders);
         let shadow_visibility_c =
             directional_shadow_factor(position_c, params.lights, params.shadow_occluders);
-        let shaded_normal_a =
-            normal_texture_sample(source.assets, source.material, uv_a, geometric_normal_a);
-        let shaded_normal_b =
-            normal_texture_sample(source.assets, source.material, uv_b, geometric_normal_b);
-        let shaded_normal_c =
-            normal_texture_sample(source.assets, source.material, uv_c, geometric_normal_c);
         let render_material_slot =
             render_material_slot(source.material_handle, params.backend_material_slots);
         let backend_shaded_material = render_material_slot != 0;
@@ -406,101 +405,70 @@ fn append_triangle_primitives<F>(
                 )
             }
         };
-        let primitive = Primitive::triangle_with_attributes(
-            [
-                Vertex {
-                    position: position_a,
+        let corners = [
+            CpuBakeCorner {
+                position: position_a,
+                geometric_normal: geometric_normal_a,
+                uv: uv_a,
+                tangent: tangent_a.tangent,
+                tangent_handedness: tangent_a.handedness,
+                vertex_color: vertex_colors[triangle[0] as usize],
+                shadow_visibility: shadow_visibility_a,
+            },
+            CpuBakeCorner {
+                position: position_b,
+                geometric_normal: geometric_normal_b,
+                uv: uv_b,
+                tangent: tangent_b.tangent,
+                tangent_handedness: tangent_b.handedness,
+                vertex_color: vertex_colors[triangle[1] as usize],
+                shadow_visibility: shadow_visibility_b,
+            },
+            CpuBakeCorner {
+                position: position_c,
+                geometric_normal: geometric_normal_c,
+                uv: uv_c,
+                tangent: tangent_c.tangent,
+                tangent_handedness: tangent_c.handedness,
+                vertex_color: vertex_colors[triangle[2] as usize],
+                shadow_visibility: shadow_visibility_c,
+            },
+        ];
+        let subdivisions = cpu_texture_subdivisions(source.material, backend_shaded_material);
+        for sub_triangle in subdivided_cpu_corners(corners, subdivisions) {
+            let primitive = Primitive::triangle_with_attributes(
+                sub_triangle.map(|corner| Vertex {
+                    position: corner.position,
                     color: shade_vertex(
-                        position_a,
-                        shaded_normal_a,
-                        uv_a,
-                        vertex_colors[triangle[0] as usize],
-                        shadow_visibility_a,
+                        corner.position,
+                        normal_texture_sample(
+                            source.assets,
+                            source.material,
+                            corner.uv,
+                            corner.geometric_normal,
+                        ),
+                        corner.uv,
+                        corner.vertex_color,
+                        corner.shadow_visibility,
                     ),
-                },
-                Vertex {
-                    position: position_b,
-                    color: shade_vertex(
-                        position_b,
-                        shaded_normal_b,
-                        uv_b,
-                        vertex_colors[triangle[1] as usize],
-                        shadow_visibility_b,
-                    ),
-                },
-                Vertex {
-                    position: position_c,
-                    color: shade_vertex(
-                        position_c,
-                        shaded_normal_c,
-                        uv_c,
-                        vertex_colors[triangle[2] as usize],
-                        shadow_visibility_c,
-                    ),
-                },
-            ],
-            [
-                PrimitiveVertexAttributes {
-                    normal: geometric_normal_a,
-                    tex_coord0: uv_a,
-                    tangent: tangent_a.tangent,
-                    tangent_handedness: tangent_a.handedness,
-                    shadow_visibility: shadow_visibility_a,
-                },
-                PrimitiveVertexAttributes {
-                    normal: geometric_normal_b,
-                    tex_coord0: uv_b,
-                    tangent: tangent_b.tangent,
-                    tangent_handedness: tangent_b.handedness,
-                    shadow_visibility: shadow_visibility_b,
-                },
-                PrimitiveVertexAttributes {
-                    normal: geometric_normal_c,
-                    tex_coord0: uv_c,
-                    tangent: tangent_c.tangent,
-                    tangent_handedness: tangent_c.handedness,
-                    shadow_visibility: shadow_visibility_c,
-                },
-            ],
-        )
-        .with_render_material_slot(render_material_slot);
-        match material_pass {
-            MaterialPass::Opaque => sinks.primitives.push(primitive),
-            MaterialPass::Blend => sinks.transparent_primitives.push(TransparentPrimitive {
-                depth: average_sort_depth(&primitive, params.camera_projection),
+                }),
+                sub_triangle.map(|corner| PrimitiveVertexAttributes {
+                    normal: corner.geometric_normal,
+                    tex_coord0: corner.uv,
+                    tangent: corner.tangent,
+                    tangent_handedness: corner.tangent_handedness,
+                    shadow_visibility: corner.shadow_visibility,
+                }),
+            )
+            .with_render_material_slot(render_material_slot);
+            push_material_pass_primitive(
                 primitive,
-            }),
-            MaterialPass::Mask { cutoff } => {
-                if primitive
-                    .vertices()
-                    .iter()
-                    .any(|vertex| vertex.color.a >= cutoff)
-                {
-                    sinks.primitives.push(primitive);
-                }
-            }
+                material_pass,
+                &mut sinks,
+                params.camera_projection,
+            );
         }
     }
 
     Ok(())
-}
-
-fn average_sort_depth(primitive: &Primitive, camera_projection: Option<&CameraProjection>) -> f32 {
-    if let Some(camera_projection) = camera_projection {
-        let vertices = primitive.vertices();
-        let mut depth_sum = 0.0;
-        let mut depth_count = 0;
-        for vertex in vertices {
-            if let Some(depth) = camera_projection.camera_depth(vertex.position) {
-                depth_sum += depth;
-                depth_count += 1;
-            }
-        }
-        if depth_count > 0 {
-            return depth_sum / depth_count as f32;
-        }
-    }
-
-    let vertices = primitive.vertices();
-    (vertices[0].position.z + vertices[1].position.z + vertices[2].position.z) / 3.0
 }

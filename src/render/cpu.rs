@@ -33,7 +33,7 @@ impl<'frame> CpuFrame<'frame> {
 }
 
 pub(super) fn clear_cpu(cpu_frame: &mut CpuFrame<'_>, color: Color) {
-    let rgba = cpu_frame.output.encode_rgba8(color);
+    let rgba = cpu_frame.output.encode_clear_rgba8(color);
     for ((linear, depth), pixel) in cpu_frame
         .linear_frame
         .iter_mut()
@@ -90,15 +90,16 @@ pub(super) fn draw_primitive_cpu(
             let w0 = edge(b, c, px, py) / area;
             let w1 = edge(c, a, px, py) / area;
             let w2 = edge(a, b, px, py) / area;
-            if w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0 {
-                let position = mix_position(a.position, b.position, c.position, w0, w1, w2);
-                if is_clipped(position, clipping_planes) {
-                    continue;
-                }
-                let color = mix_color(a.color, b.color, c.color, w0, w1, w2);
-                let depth = mix_depth(a.depth, b.depth, c.depth, w0, w1, w2);
-                write_pixel(cpu_frame, x, y, color, depth);
+            if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {
+                continue;
             }
+            let position = mix_position(a.position, b.position, c.position, w0, w1, w2);
+            if is_clipped(position, clipping_planes) {
+                continue;
+            }
+            let color = mix_color(a, b, c, w0, w1, w2);
+            let depth = mix_depth(a.depth, b.depth, c.depth, w0, w1, w2);
+            write_pixel(cpu_frame, x, y, color, depth);
         }
     }
 }
@@ -108,6 +109,7 @@ struct ScreenVertex {
     x: f32,
     y: f32,
     depth: f32,
+    inv_depth: f32,
     position: Vec3,
     color: Color,
 }
@@ -125,6 +127,7 @@ impl ScreenVertex {
             x: (projected.ndc_x * 0.5 + 0.5) * width,
             y: (1.0 - (projected.ndc_y * 0.5 + 0.5)) * height,
             depth: projected.depth,
+            inv_depth: projected.depth.recip(),
             position: vertex.position,
             color: vertex.color,
         })
@@ -135,7 +138,28 @@ fn edge(a: ScreenVertex, b: ScreenVertex, x: f32, y: f32) -> f32 {
     (x - a.x) * (b.y - a.y) - (y - a.y) * (b.x - a.x)
 }
 
-fn mix_color(a: Color, b: Color, c: Color, w0: f32, w1: f32, w2: f32) -> Color {
+fn mix_color(
+    a: ScreenVertex,
+    b: ScreenVertex,
+    c: ScreenVertex,
+    w0: f32,
+    w1: f32,
+    w2: f32,
+) -> Color {
+    let iw0 = w0 * a.inv_depth;
+    let iw1 = w1 * b.inv_depth;
+    let iw2 = w2 * c.inv_depth;
+    let inv_sum = iw0 + iw1 + iw2;
+    if inv_sum.abs() <= f32::EPSILON || !inv_sum.is_finite() {
+        return mix_color_affine(a.color, b.color, c.color, w0, w1, w2);
+    }
+    let w0 = iw0 / inv_sum;
+    let w1 = iw1 / inv_sum;
+    let w2 = iw2 / inv_sum;
+    mix_color_affine(a.color, b.color, c.color, w0, w1, w2)
+}
+
+fn mix_color_affine(a: Color, b: Color, c: Color, w0: f32, w1: f32, w2: f32) -> Color {
     Color::from_linear_rgba(
         a.r * w0 + b.r * w1 + c.r * w2,
         a.g * w0 + b.g * w1 + c.g * w2,

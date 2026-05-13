@@ -31,12 +31,8 @@ pub(super) fn parse_materials(
         .map(|material| {
             let pbr = material.pbr_metallic_roughness();
             let base_color = pbr.base_color_factor();
-            let base_color = Color::from_linear_rgba(
-                base_color[0],
-                base_color[1],
-                base_color[2],
-                base_color[3],
-            );
+            let base_color =
+                Color::from_linear_rgba(base_color[0], base_color[1], base_color[2], base_color[3]);
             let metallic = pbr.metallic_factor();
             let roughness = pbr.roughness_factor();
             let mut desc = if material.unlit() {
@@ -161,7 +157,9 @@ fn validate_material_texture_indices(
             path,
             material_index,
             "baseColorTexture",
-            pbr.base_color_texture.as_ref().map(|info| info.index.value()),
+            pbr.base_color_texture
+                .as_ref()
+                .map(|info| info.index.value()),
             texture_count,
         )?;
         validate_texture_info(
@@ -177,7 +175,10 @@ fn validate_material_texture_indices(
             path,
             material_index,
             "normalTexture",
-            material.normal_texture.as_ref().map(|info| info.index.value()),
+            material
+                .normal_texture
+                .as_ref()
+                .map(|info| info.index.value()),
             texture_count,
         )?;
         validate_texture_info(
@@ -194,7 +195,10 @@ fn validate_material_texture_indices(
             path,
             material_index,
             "emissiveTexture",
-            material.emissive_texture.as_ref().map(|info| info.index.value()),
+            material
+                .emissive_texture
+                .as_ref()
+                .map(|info| info.index.value()),
             texture_count,
         )?;
     }
@@ -255,7 +259,9 @@ fn read_vec2(value: &serde_json::Value, key: &str) -> Option<[f32; 2]> {
     Some([x, y])
 }
 
-fn normal_texture_transform(normal: &::gltf::material::NormalTexture<'_>) -> Option<TextureTransform> {
+fn normal_texture_transform(
+    normal: &::gltf::material::NormalTexture<'_>,
+) -> Option<TextureTransform> {
     extension_texture_transform(normal.extension_value("KHR_texture_transform"))
 }
 

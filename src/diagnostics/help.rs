@@ -72,6 +72,9 @@ impl PrepareError {
             Self::BackendCapabilityMismatch { .. } => {
                 "query renderer.capabilities and choose a compatible quality/profile path"
             }
+            Self::GpuResourceUpload { .. } => {
+                "call Renderer::prepare again after fixing the browser/GPU resource state; render must not hide upload failures"
+            }
         }
     }
 }

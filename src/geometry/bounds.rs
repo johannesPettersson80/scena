@@ -120,11 +120,7 @@ impl Aabb {
         let pitch = angles.pitch_degrees.to_radians();
         // Start from offset (0, 0, distance), rotate by pitch around X
         // (raises camera up), then by yaw around Y (orbits horizontally).
-        let after_pitch = Vec3::new(
-            0.0,
-            -distance * pitch.sin(),
-            distance * pitch.cos(),
-        );
+        let after_pitch = Vec3::new(0.0, -distance * pitch.sin(), distance * pitch.cos());
         let after_yaw = Vec3::new(
             after_pitch.x * yaw.cos() + after_pitch.z * yaw.sin(),
             after_pitch.y,
@@ -147,11 +143,8 @@ mod tests {
     #[test]
     fn framing_transform_centred_unit_box_front_view_places_camera_along_positive_z() {
         let bounds = Aabb::new(Vec3::new(-0.5, -0.5, -0.5), Vec3::new(0.5, 0.5, 0.5));
-        let transform = bounds.framing_transform(
-            FramingAngles::FRONT,
-            0.7,
-            Angle::from_degrees(60.0),
-        );
+        let transform =
+            bounds.framing_transform(FramingAngles::FRONT, 0.7, Angle::from_degrees(60.0));
         // FRONT (yaw=0, pitch=0) places the camera on the +Z axis,
         // looking down -Z back at the centre.
         assert!(transform.translation.x.abs() < 1e-5);
@@ -181,11 +174,8 @@ mod tests {
         // Bounds centered at (10, 0, 0): camera should be at (10, 0, z>0)
         // for FRONT view, not at (0, 0, z>0).
         let bounds = Aabb::new(Vec3::new(9.5, -0.5, -0.5), Vec3::new(10.5, 0.5, 0.5));
-        let transform = bounds.framing_transform(
-            FramingAngles::FRONT,
-            0.7,
-            Angle::from_degrees(60.0),
-        );
+        let transform =
+            bounds.framing_transform(FramingAngles::FRONT, 0.7, Angle::from_degrees(60.0));
         assert!((transform.translation.x - 10.0).abs() < 1e-5);
         assert!(transform.translation.y.abs() < 1e-5);
         assert!(transform.translation.z > 0.0);

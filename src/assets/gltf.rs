@@ -27,8 +27,8 @@ pub use self::extensions::{GltfDecoderPolicy, GltfExtensionDiagnostic, GltfExten
 use self::extensions::{collect_extension_diagnostics, is_v1_required_gltf_extension};
 use self::external::{external_buffer_paths, external_image_paths, resolve_relative_path};
 use self::lights::parse_punctual_lights;
-use self::materials::parse_materials;
 pub use self::material_variants::MaterialVariantBinding;
+use self::materials::parse_materials;
 use self::meshes::parse_meshes;
 pub use self::skins::SceneAssetSkin;
 use self::skins::parse_skins;
@@ -38,6 +38,7 @@ use super::{AssetPath, AssetStorage, GeometryHandle, MaterialHandle};
 
 mod anchors;
 mod animation;
+mod buffers;
 mod connectors;
 mod extensions;
 mod external;
@@ -45,6 +46,7 @@ mod lights;
 mod material_variants;
 mod materials;
 mod meshes;
+mod meshopt;
 mod skins;
 mod textures;
 mod transform;
@@ -143,7 +145,14 @@ impl SceneAsset {
     ) -> Result<Self, AssetError> {
         let gltf = open_gltf_with_massage(&path, bytes)?;
         let blob = gltf.blob.clone();
-        Self::from_gltf_document(&path, &gltf, blob.as_deref(), external_buffers, external_images, storage)
+        Self::from_gltf_document(
+            &path,
+            &gltf,
+            blob.as_deref(),
+            external_buffers,
+            external_images,
+            storage,
+        )
     }
 
     pub(super) fn external_buffer_paths(
@@ -188,10 +197,15 @@ impl SceneAsset {
             }
         }
         let extension_diagnostics = collect_extension_diagnostics(&extensions_used);
-        let material_variants =
-            material_variants::parse_material_variant_names(&gltf.document);
+        let material_variants = material_variants::parse_material_variant_names(&gltf.document);
 
-        let buffers = resolve_buffers(path, gltf, binary_chunk, external_buffers)?;
+        let mut buffers = buffers::ResolvedGltfBuffers::new(resolve_buffers(
+            path,
+            gltf,
+            binary_chunk,
+            external_buffers,
+        )?);
+        meshopt::decode_meshopt_buffer_views(path, &gltf.document, &mut buffers)?;
         let textures = parse_textures(path, &gltf.document, &buffers, external_images, storage);
         let materials = parse_materials(path, &gltf.document, storage, &textures)?;
         let meshes = parse_meshes(path, &gltf.document, &buffers, &materials, storage)?;
@@ -477,9 +491,7 @@ fn parse_gltf_nodes(
 /// Helper exposed to anchor/connector parsers: convert the `gltf` crate's
 /// `Extras = Option<Box<RawValue>>` into a `serde_json::Value` so the
 /// existing scena-specific JSON-walking validators can inspect it.
-pub(super) fn extras_to_value(
-    extras: &::gltf::json::Extras,
-) -> Option<serde_json::Value> {
+pub(super) fn extras_to_value(extras: &::gltf::json::Extras) -> Option<serde_json::Value> {
     let raw = extras.as_ref()?;
     serde_json::from_str(raw.get()).ok()
 }

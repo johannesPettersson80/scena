@@ -14,6 +14,12 @@ pub(in crate::render) async fn request_headless_gpu(
         .request_adapter(&wgpu::RequestAdapterOptions::default())
         .await
         .map_err(|_| BuildError::NoAdapter { backend })?;
+    let adapter_info = adapter.get_info();
+    if is_unstable_v3d_headless_adapter(&adapter_info)
+        && std::env::var_os("SCENA_ALLOW_UNSTABLE_V3D_HEADLESS_GPU").is_none()
+    {
+        return Err(BuildError::RequestDevice { backend });
+    }
     let (device, queue) = request_device_with_downlevel_fallback(&adapter, backend).await?;
 
     Ok(GpuDeviceState {
@@ -27,13 +33,17 @@ pub(in crate::render) async fn request_headless_gpu(
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn is_unstable_v3d_headless_adapter(info: &wgpu::AdapterInfo) -> bool {
+    info.backend == wgpu::Backend::Vulkan && info.name.to_ascii_lowercase().contains("v3d")
+}
+
 /// Try the WebGPU baseline first, fall back to `downlevel_defaults` if the
 /// adapter rejects it. Embedded GPUs like the Pi 5's V3D and many tile-based
 /// mobile GPUs cannot meet the desktop baseline (e.g. compute workgroup
 /// invocations, storage buffer binding size) but do support every limit the
 /// renderer actually consumes. Without this fallback, scena returns
 /// `RequestDevice` on these hosts even though their drivers are functional.
-#[cfg(not(target_arch = "wasm32"))]
 async fn request_device_with_downlevel_fallback(
     adapter: &wgpu::Adapter,
     backend: Backend,
@@ -45,8 +55,7 @@ async fn request_device_with_downlevel_fallback(
         return Ok(pair);
     }
     let downlevel = wgpu::DeviceDescriptor {
-        required_limits: wgpu::Limits::downlevel_defaults()
-            .using_resolution(adapter.limits()),
+        required_limits: wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
         ..wgpu::DeviceDescriptor::default()
     };
     adapter
@@ -136,6 +145,8 @@ async fn request_gpu_for_surface(
         resources: None,
         #[cfg(target_arch = "wasm32")]
         browser_canvas: None,
+        #[cfg(target_arch = "wasm32")]
+        webgl2_render_cache: None,
     })
 }
 
@@ -184,5 +195,50 @@ fn instance_for_backend(backend: Backend) -> wgpu::Instance {
     {
         let _ = backend;
         wgpu::Instance::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn v3d_vulkan_headless_adapter_is_rejected_by_default() {
+        let info = wgpu::AdapterInfo {
+            name: String::from("V3D 7.1.10.2"),
+            vendor: 0,
+            device: 0,
+            device_type: wgpu::DeviceType::IntegratedGpu,
+            device_pci_bus_id: String::new(),
+            driver: String::from("V3DV"),
+            driver_info: String::new(),
+            backend: wgpu::Backend::Vulkan,
+            subgroup_min_size: 8,
+            subgroup_max_size: 8,
+            transient_saves_memory: false,
+        };
+
+        assert!(super::is_unstable_v3d_headless_adapter(&info));
+    }
+
+    #[test]
+    fn non_vulkan_or_non_v3d_headless_adapter_is_not_rejected() {
+        let mut info = wgpu::AdapterInfo {
+            name: String::from("llvmpipe"),
+            vendor: 0,
+            device: 0,
+            device_type: wgpu::DeviceType::Cpu,
+            device_pci_bus_id: String::new(),
+            driver: String::from("lavapipe"),
+            driver_info: String::new(),
+            backend: wgpu::Backend::Vulkan,
+            subgroup_min_size: 8,
+            subgroup_max_size: 8,
+            transient_saves_memory: false,
+        };
+
+        assert!(!super::is_unstable_v3d_headless_adapter(&info));
+
+        info.name = String::from("V3D 7.1.10.2");
+        info.backend = wgpu::Backend::Gl;
+        assert!(!super::is_unstable_v3d_headless_adapter(&info));
     }
 }

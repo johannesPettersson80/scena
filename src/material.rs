@@ -4,6 +4,7 @@ use std::error;
 use std::fmt;
 
 use crate::assets::TextureHandle;
+use palette::Srgb;
 
 pub const DEFAULT_STROKE_WIDTH_PX: f32 = 1.0;
 pub const DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES: f32 = 30.0;
@@ -29,11 +30,9 @@ impl Color {
     }
 
     pub fn from_srgb(r: f32, g: f32, b: f32) -> Self {
-        Self::from_linear_rgb(
-            srgb_channel_to_linear(r),
-            srgb_channel_to_linear(g),
-            srgb_channel_to_linear(b),
-        )
+        let linear =
+            Srgb::new(r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0)).into_linear();
+        Self::from_linear_rgb(linear.red, linear.green, linear.blue)
     }
 
     pub fn from_srgb_u8(r: u8, g: u8, b: u8) -> Self {
@@ -53,15 +52,6 @@ impl Color {
         let g = parse_hex_channel(&value[2..4])?;
         let b = parse_hex_channel(&value[4..6])?;
         Ok(Self::from_srgb_u8(r, g, b))
-    }
-}
-
-fn srgb_channel_to_linear(value: f32) -> f32 {
-    let value = value.clamp(0.0, 1.0);
-    if value <= 0.04045 {
-        value / 12.92
-    } else {
-        ((value + 0.055) / 1.055).powf(2.4)
     }
 }
 

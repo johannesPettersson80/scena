@@ -17,7 +17,13 @@ pub struct AssetLoadReport<T> {
     pub(super) cache_hit: bool,
     pub(super) fetched_bytes: usize,
     pub(super) external_buffers: usize,
+    pub(super) warnings: Vec<AssetLoadWarning>,
     pub(super) progress_events: Vec<AssetLoadProgress>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AssetLoadWarning {
+    ExternalImageMissing { path: AssetPath, reason: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,10 +53,11 @@ pub enum AssetLoadProgress {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(super) struct AssetLoadTelemetry {
     pub(super) fetched_bytes: usize,
     pub(super) external_buffers: usize,
+    pub(super) warnings: Vec<AssetLoadWarning>,
 }
 
 impl Default for AssetLoadControl {
@@ -104,6 +111,10 @@ impl<T> AssetLoadReport<T> {
 
     pub const fn external_buffers(&self) -> usize {
         self.external_buffers
+    }
+
+    pub fn warnings(&self) -> &[AssetLoadWarning] {
+        &self.warnings
     }
 
     pub fn progress_events(&self) -> &[AssetLoadProgress] {

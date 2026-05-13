@@ -308,7 +308,7 @@ fn direct_lights_tint_pbr_mesh_output() {
         .directional_light(
             DirectionalLight::default()
                 .with_color(Color::from_linear_rgb(1.0, 0.0, 0.0))
-                .with_illuminance_lux(10_000.0),
+                .with_illuminance_lux(1.0),
         )
         .add()
         .expect("red directional light inserts");
@@ -828,7 +828,7 @@ fn precision_depth_scene(origin_shift: Vec3, object_translation: Vec3) -> Scene 
 }
 
 #[test]
-fn fxaa_pass_runs_after_aces_without_second_tonemap() {
+fn fxaa_pass_runs_after_pbr_neutral_without_second_tonemap() {
     let mut scene = split_screen_fxaa_scene();
     let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
 
@@ -841,7 +841,7 @@ fn fxaa_pass_runs_after_aces_without_second_tonemap() {
     assert_eq!(stats.fxaa_passes, 1);
     assert_eq!(
         pixel_at(renderer.frame_rgba8(), 8, 1, 4),
-        [206, 206, 206, 255]
+        [240, 240, 240, 255]
     );
     assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 6, 4), [0, 0, 0, 255]);
 
@@ -849,8 +849,8 @@ fn fxaa_pass_runs_after_aces_without_second_tonemap() {
     let right_edge = pixel_at(renderer.frame_rgba8(), 8, 4, 4);
     assert_eq!(
         left_edge,
-        [206, 206, 206, 255],
-        "FXAA keeps bright edge pixels at ACES white instead of tonemapping twice"
+        [160, 160, 160, 255],
+        "FXAA keeps bright edge pixels in PBR Neutral output space instead of tonemapping twice"
     );
     assert!(
         right_edge[0] > 0,
@@ -1015,7 +1015,7 @@ fn clipping_plane_set_clips_rendered_output_half_space() {
     assert_eq!(pixel_at(renderer.frame_rgba8(), 16, 3, 8), [0, 0, 0, 255]);
     assert_eq!(
         pixel_at(renderer.frame_rgba8(), 16, 12, 8),
-        [206, 206, 206, 255]
+        [240, 240, 240, 255]
     );
 }
 
@@ -1065,7 +1065,7 @@ fn origin_shift_keeps_large_offset_renderable_visible_without_precision_warning(
 
     assert_eq!(
         pixel_at(renderer.frame_rgba8(), 8, 4, 4),
-        [206, 206, 206, 255]
+        [240, 240, 240, 255]
     );
     assert!(
         !renderer

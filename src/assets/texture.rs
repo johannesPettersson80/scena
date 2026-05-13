@@ -7,6 +7,13 @@ use crate::material::{Color, TextureColorSpace};
 
 use super::AssetPath;
 
+#[path = "texture_ktx2.rs"]
+mod texture_ktx2;
+
+#[cfg(feature = "ktx2")]
+use texture_ktx2::validate_rgba8_payload_len;
+use texture_ktx2::{decode_ktx2_basisu_rgba8, ktx2_descriptor_only_error};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextureDesc {
     path: AssetPath,
@@ -18,9 +25,58 @@ pub struct TextureDesc {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TexturePixels {
+    levels: Vec<TextureMipLevel>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TextureMipLevel {
     width: u32,
     height: u32,
     rgba8: Vec<u8>,
+}
+
+impl TexturePixels {
+    fn single_level(width: u32, height: u32, rgba8: Vec<u8>) -> Self {
+        Self {
+            levels: vec![TextureMipLevel {
+                width,
+                height,
+                rgba8,
+            }],
+        }
+    }
+
+    #[cfg(feature = "ktx2")]
+    fn from_mip_levels(path: &AssetPath, levels: Vec<TextureMipLevel>) -> Result<Self, AssetError> {
+        if levels.is_empty() {
+            return Err(AssetError::Parse {
+                path: path.as_str().to_string(),
+                reason: "texture decode returned zero mip levels".to_string(),
+            });
+        }
+        for (index, level) in levels.iter().enumerate() {
+            validate_rgba8_payload_len(path, level.width, level.height, level.rgba8.len())
+                .map_err(|error| match error {
+                    AssetError::Parse { path, reason } => AssetError::Parse {
+                        path,
+                        reason: format!("mip level {index}: {reason}"),
+                    },
+                    other => other,
+                })?;
+        }
+        Ok(Self { levels })
+    }
+
+    fn base_level(&self) -> Option<&TextureMipLevel> {
+        self.levels.first()
+    }
+
+    fn mip_metadata(&self) -> Vec<(u32, u32, usize)> {
+        self.levels
+            .iter()
+            .map(|level| (level.width, level.height, level.rgba8.len()))
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -72,7 +128,8 @@ impl TextureDesc {
         source_format: TextureSourceFormat,
         source_bytes: Option<&[u8]>,
     ) -> Result<Self, AssetError> {
-        let pixels = decode_texture_pixels(&path, source_format, source_bytes)?.map(Arc::new);
+        let pixels =
+            decode_texture_pixels(&path, color_space, source_format, source_bytes)?.map(Arc::new);
         Ok(Self {
             path,
             color_space,
@@ -105,13 +162,19 @@ impl TextureDesc {
     pub fn decoded_dimensions(&self) -> Option<(u32, u32)> {
         self.pixels
             .as_ref()
-            .map(|pixels| (pixels.width, pixels.height))
+            .and_then(|pixels| pixels.base_level())
+            .map(|level| (level.width, level.height))
     }
 
-    pub(crate) fn decoded_rgba8(&self) -> Option<(u32, u32, &[u8])> {
+    pub fn decoded_rgba8(&self) -> Option<(u32, u32, &[u8])> {
         self.pixels
             .as_ref()
-            .map(|pixels| (pixels.width, pixels.height, pixels.rgba8.as_slice()))
+            .and_then(|pixels| pixels.base_level())
+            .map(|level| (level.width, level.height, level.rgba8.as_slice()))
+    }
+
+    pub fn decoded_mip_metadata(&self) -> Option<Vec<(u32, u32, usize)>> {
+        self.pixels.as_ref().map(|pixels| pixels.mip_metadata())
     }
 
     pub(crate) fn decode_missing_pixels_from_bytes(
@@ -119,21 +182,44 @@ impl TextureDesc {
         source_bytes: Option<&[u8]>,
     ) -> Result<(), AssetError> {
         if self.pixels.is_none() {
-            self.pixels =
-                decode_texture_pixels(&self.path, self.source_format, source_bytes)?.map(Arc::new);
+            self.pixels = decode_texture_pixels(
+                &self.path,
+                self.color_space,
+                self.source_format,
+                source_bytes,
+            )?
+            .map(Arc::new);
         }
         Ok(())
     }
 
-    pub(crate) fn sample_nearest(&self, uv: [f32; 2]) -> Option<Color> {
+    pub(crate) fn sample_bilinear(&self, uv: [f32; 2]) -> Option<Color> {
         let pixels = self.pixels.as_ref()?;
+        let level = pixels.base_level()?;
         let u = wrap_texture_coordinate(uv[0], self.sampler.wrap_s);
         let v = wrap_texture_coordinate(uv[1], self.sampler.wrap_t);
-        let x = ((u * pixels.width as f32).floor() as u32).min(pixels.width.saturating_sub(1));
-        let y = (((1.0 - v) * pixels.height as f32).floor() as u32)
-            .min(pixels.height.saturating_sub(1));
-        let offset = ((y * pixels.width + x) as usize) * 4;
-        let rgba = pixels.rgba8.get(offset..offset + 4)?;
+        let x = u * level.width.saturating_sub(1) as f32;
+        let y = v * level.height.saturating_sub(1) as f32;
+        let x0 = x.floor() as u32;
+        let y0 = y.floor() as u32;
+        let x1 = (x0 + 1).min(level.width.saturating_sub(1));
+        let y1 = (y0 + 1).min(level.height.saturating_sub(1));
+        let tx = x - x0 as f32;
+        let ty = y - y0 as f32;
+        let c00 = self.sample_pixel_color(level, x0, y0)?;
+        let c10 = self.sample_pixel_color(level, x1, y0)?;
+        let c01 = self.sample_pixel_color(level, x0, y1)?;
+        let c11 = self.sample_pixel_color(level, x1, y1)?;
+        Some(lerp_color(
+            lerp_color(c00, c10, tx),
+            lerp_color(c01, c11, tx),
+            ty,
+        ))
+    }
+
+    fn sample_pixel_color(&self, level: &TextureMipLevel, x: u32, y: u32) -> Option<Color> {
+        let offset = ((y * level.width + x) as usize) * 4;
+        let rgba = level.rgba8.get(offset..offset + 4)?;
         let alpha = f32::from(rgba[3]) / 255.0;
         let mut color = match self.color_space {
             TextureColorSpace::Srgb => Color::from_srgb_u8(rgba[0], rgba[1], rgba[2]),
@@ -147,6 +233,15 @@ impl TextureDesc {
         color.a = alpha;
         Some(color)
     }
+}
+
+fn lerp_color(left: Color, right: Color, amount: f32) -> Color {
+    Color::from_linear_rgba(
+        left.r + (right.r - left.r) * amount,
+        left.g + (right.g - left.g) * amount,
+        left.b + (right.b - left.b) * amount,
+        left.a + (right.a - left.a) * amount,
+    )
 }
 
 impl TextureSamplerDesc {
@@ -237,6 +332,7 @@ fn wrap_texture_coordinate(value: f32, wrap: TextureWrap) -> f32 {
 
 fn decode_texture_pixels(
     path: &AssetPath,
+    color_space: TextureColorSpace,
     source_format: TextureSourceFormat,
     source_bytes: Option<&[u8]>,
 ) -> Result<Option<TexturePixels>, AssetError> {
@@ -245,12 +341,20 @@ fn decode_texture_pixels(
     } else if path.as_str().starts_with("data:") {
         decode_data_uri(path)?
     } else {
-        return Ok(None);
+        return match source_format {
+            TextureSourceFormat::Ktx2Basisu => Err(ktx2_descriptor_only_error(path)),
+            TextureSourceFormat::Png | TextureSourceFormat::Jpeg | TextureSourceFormat::Webp => {
+                Ok(None)
+            }
+        };
     };
     match source_format {
         TextureSourceFormat::Png => decode_png_rgba8(path, &bytes).map(Some),
         TextureSourceFormat::Jpeg => decode_jpeg_rgba8(path, &bytes).map(Some),
-        TextureSourceFormat::Webp | TextureSourceFormat::Ktx2Basisu => Ok(None),
+        TextureSourceFormat::Webp => Ok(None),
+        TextureSourceFormat::Ktx2Basisu => {
+            decode_ktx2_basisu_rgba8(path, &bytes, color_space).map(Some)
+        }
     }
 }
 
@@ -290,18 +394,13 @@ fn decode_via_image_crate(
     bytes: &[u8],
     format: image::ImageFormat,
 ) -> Result<TexturePixels, AssetError> {
-    let image = image::load_from_memory_with_format(bytes, format).map_err(|error| {
-        AssetError::Parse {
+    let image =
+        image::load_from_memory_with_format(bytes, format).map_err(|error| AssetError::Parse {
             path: path.as_str().to_string(),
             reason: format!("invalid texture payload: {error}"),
-        }
-    })?;
+        })?;
     let rgba = image.into_rgba8();
     let width = rgba.width();
     let height = rgba.height();
-    Ok(TexturePixels {
-        width,
-        height,
-        rgba8: rgba.into_raw(),
-    })
+    Ok(TexturePixels::single_level(width, height, rgba.into_raw()))
 }

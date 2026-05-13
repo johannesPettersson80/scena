@@ -23,10 +23,8 @@ pub(super) fn sample_equirectangular(
     if equirect.width == 0 || equirect.height == 0 {
         return [0.0, 0.0, 0.0];
     }
-    let length = (direction.x * direction.x
-        + direction.y * direction.y
-        + direction.z * direction.z)
-        .sqrt();
+    let length =
+        (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z).sqrt();
     if length <= f32::EPSILON || !length.is_finite() {
         return [0.0, 0.0, 0.0];
     }

@@ -1,8 +1,6 @@
 use crate::diagnostics::{AdapterLimitsReport, GpuAdapterReport};
 
 use super::GpuDeviceState;
-#[cfg(target_arch = "wasm32")]
-use super::webgl2;
 
 impl GpuDeviceState {
     pub(in crate::render) fn adapter_report(&self) -> GpuAdapterReport {
@@ -41,7 +39,9 @@ impl GpuDeviceState {
     pub(in crate::render) fn clear_prepared_resources_for_context_recovery(&mut self) {
         self.release_prepared_resources();
         #[cfg(target_arch = "wasm32")]
-        webgl2::clear_render_cache();
+        {
+            self.webgl2_render_cache = None;
+        }
     }
 
     #[cfg(not(target_arch = "wasm32"))]

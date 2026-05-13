@@ -14,7 +14,13 @@
 //! `AssetError::*HandleNotFound` for each handle kind so user-facing tools can
 //! distinguish "wrong asset store" from "missing handle in store".
 
-use scena::{AssetError, Assets, Color, GeometryDesc, MaterialDesc};
+use std::collections::BTreeMap;
+use std::future::ready;
+use std::sync::{Arc, Mutex};
+
+use scena::{
+    AssetError, AssetFetcher, AssetPath, Assets, Color, GeometryDesc, MaterialDesc, RetainPolicy,
+};
 
 #[test]
 fn m8_geometry_handle_from_other_store_returns_typed_error() {
@@ -168,4 +174,120 @@ fn m8_release_unreferenced_retains_user_created_descriptors_even_when_no_scene_a
         assets.contains_material(user_material),
         "contains_material must still report ownership after release_unreferenced",
     );
+}
+
+#[test]
+fn m8_release_unreferenced_with_scene_roots_retains_older_reload_descriptors() {
+    let fetcher = MutableMemoryFetcher::new(vec![(
+        AssetPath::from("memory://rooted-gc/scene.gltf"),
+        coloured_triangle_gltf([1.0, 0.0, 0.0, 1.0]).into_bytes(),
+    )]);
+    let mut assets = Assets::with_fetcher(fetcher.clone());
+    assets.set_retain_policy(RetainPolicy::Always);
+
+    let first = pollster::block_on(assets.load_scene("memory://rooted-gc/scene.gltf"))
+        .expect("first scene loads");
+    let first_mesh = first.nodes()[0].mesh().expect("first mesh exists");
+    let first_geometry = first_mesh.geometry();
+    let first_material = first_mesh.material();
+
+    fetcher.insert(
+        AssetPath::from("memory://rooted-gc/scene.gltf"),
+        coloured_triangle_gltf([0.0, 0.0, 1.0, 1.0]).into_bytes(),
+    );
+    let reloaded = pollster::block_on(assets.reload_scene(&first)).expect("scene reloads");
+    assert_ne!(
+        first_material,
+        reloaded.nodes()[0]
+            .mesh()
+            .expect("reloaded mesh exists")
+            .material(),
+        "reload should create a fresh glTF material handle so the old handle exercises rooted GC",
+    );
+
+    let stats = assets.release_unreferenced_with_scene_roots([&first]);
+    assert_eq!(
+        stats.materials_evicted, 0,
+        "old scene material is still live through the explicit scene root: {stats:?}",
+    );
+    assert!(
+        assets.geometry(first_geometry).is_some(),
+        "old scene geometry must survive while the caller passes the old SceneAsset as a root",
+    );
+    assert!(
+        assets.material(first_material).is_some(),
+        "old scene material must survive while the caller passes the old SceneAsset as a root",
+    );
+}
+
+#[derive(Clone)]
+struct MutableMemoryFetcher {
+    files: Arc<Mutex<BTreeMap<AssetPath, Vec<u8>>>>,
+}
+
+impl MutableMemoryFetcher {
+    fn new(files: Vec<(AssetPath, Vec<u8>)>) -> Self {
+        Self {
+            files: Arc::new(Mutex::new(files.into_iter().collect())),
+        }
+    }
+
+    fn insert(&self, path: AssetPath, bytes: Vec<u8>) {
+        self.files
+            .lock()
+            .expect("memory fetcher lock")
+            .insert(path, bytes);
+    }
+}
+
+impl AssetFetcher for MutableMemoryFetcher {
+    type Future<'a> = std::future::Ready<Result<Vec<u8>, AssetError>>;
+
+    fn fetch<'a>(&'a self, path: &'a AssetPath) -> Self::Future<'a> {
+        ready(
+            self.files
+                .lock()
+                .expect("memory fetcher lock")
+                .get(path)
+                .cloned()
+                .ok_or_else(|| AssetError::NotFound {
+                    path: path.as_str().to_string(),
+                }),
+        )
+    }
+}
+
+fn coloured_triangle_gltf(base_color: [f32; 4]) -> String {
+    format!(
+        r#"{{
+            "asset": {{ "version": "2.0" }},
+            "extensionsUsed": ["KHR_materials_unlit"],
+            "extensionsRequired": ["KHR_materials_unlit"],
+            "materials": [{{
+                "pbrMetallicRoughness": {{ "baseColorFactor": [{}, {}, {}, {}] }},
+                "extensions": {{ "KHR_materials_unlit": {{}} }}
+            }}],
+            "meshes": [{{
+                "primitives": [{{
+                    "attributes": {{ "POSITION": 0 }},
+                    "indices": 1,
+                    "material": 0
+                }}]
+            }}],
+            "nodes": [{{ "name": "Root", "mesh": 0 }}],
+            "buffers": [{{
+                "byteLength": 42,
+                "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAAAAAAAAAABAAIA"
+            }}],
+            "bufferViews": [
+                {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},
+                {{ "buffer": 0, "byteOffset": 36, "byteLength": 6 }}
+            ],
+            "accessors": [
+                {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" }},
+                {{ "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }}
+            ]
+        }}"#,
+        base_color[0], base_color[1], base_color[2], base_color[3]
+    )
 }

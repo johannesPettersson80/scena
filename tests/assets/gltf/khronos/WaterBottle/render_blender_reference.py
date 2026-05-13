@@ -4,8 +4,9 @@ Run with:
   blender --background --python tests/assets/gltf/khronos/WaterBottle/render_blender_reference.py
 
 Produces a third-party PBR reference render (Blender Cycles, 128 spp,
-neutral studio lighting). The output replaces the scena-gold
-reference_512.png as the canonical "what scena should converge toward".
+neutral studio lighting). The output is a loose material-family oracle.
+The separate reference_512.png remains the scena-gold regression
+baseline.
 """
 import bpy
 import math
@@ -38,28 +39,25 @@ extent = max(max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs))
 cx, cy, cz = ((max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2, (max(zs) + min(zs)) / 2)
 print(f"WaterBottle extent={extent:.3f} centre=({cx:.3f},{cy:.3f},{cz:.3f})")
 
-# Camera: 3/4 front view at distance ≈ extent * 1.4 (helmet was tight at
-# 0.95; bottle is taller so wider framing avoids cropping). Match
-# scena's m8 test pose: 25° yaw, -10° pitch.
+# Camera: 3/4 front view at distance ≈ extent * 1.6. Blender imports glTF
+# into its Z-up world, so the view must orbit in X/Y and use Z only as a
+# small height offset. The prior script orbited in X/Z and produced a
+# top-down cap view, which made the third-party reference unusable as a
+# visual oracle for the scena/Khronos front-view proof.
 cam_data = bpy.data.cameras.new("Camera")
 cam_data.lens = 50
 cam = bpy.data.objects.new("Camera", cam_data)
 bpy.context.scene.collection.objects.link(cam)
 
-distance = extent * 1.4
+distance = extent * 1.6
 yaw = math.radians(25.0)
-pitch = math.radians(-10.0)
-# Position camera by orbiting (0, 0, distance) by yaw (Y) then pitch (X).
-offset_after_pitch = mathutils.Vector((0.0, -distance * math.sin(pitch),
-                                        distance * math.cos(pitch)))
-offset = mathutils.Vector((
-    offset_after_pitch.x * math.cos(yaw) + offset_after_pitch.z * math.sin(yaw),
-    offset_after_pitch.y,
-    -offset_after_pitch.x * math.sin(yaw) + offset_after_pitch.z * math.cos(yaw),
+cam.location = mathutils.Vector((
+    cx + math.sin(yaw) * distance,
+    cy - math.cos(yaw) * distance,
+    cz + extent * 0.08,
 ))
-cam.location = mathutils.Vector((cx, cy, cz)) + offset
-# Aim camera at centre
-direction = mathutils.Vector((cx, cy, cz)) - cam.location
+target = mathutils.Vector((cx, cy, cz + extent * 0.03))
+direction = target - cam.location
 cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
 bpy.context.scene.camera = cam
 

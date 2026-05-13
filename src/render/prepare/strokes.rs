@@ -166,16 +166,22 @@ fn append_line_segment(
     let c = end.offset(-normal_x, -normal_y).to_vec3(target);
     let d = start.offset(-normal_x, -normal_y).to_vec3(target);
 
-    primitives.push(Primitive::triangle([
-        Vertex { position: a, color },
-        Vertex { position: b, color },
-        Vertex { position: c, color },
-    ]));
-    primitives.push(Primitive::triangle([
-        Vertex { position: a, color },
-        Vertex { position: c, color },
-        Vertex { position: d, color },
-    ]));
+    primitives.push(
+        Primitive::triangle([
+            Vertex { position: a, color },
+            Vertex { position: b, color },
+            Vertex { position: c, color },
+        ])
+        .without_depth_prepass(),
+    );
+    primitives.push(
+        Primitive::triangle([
+            Vertex { position: a, color },
+            Vertex { position: c, color },
+            Vertex { position: d, color },
+        ])
+        .without_depth_prepass(),
+    );
 }
 
 fn triangle_edges(triangle: &[u32]) -> [(u32, u32); 3] {

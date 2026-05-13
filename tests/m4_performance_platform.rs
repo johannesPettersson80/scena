@@ -1,7 +1,8 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::cell::Cell;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use scena::{
     Assets, Backend, CameraKey, CapabilityStatus, Color, GeometryDesc, GeometryTopology,
@@ -13,14 +14,17 @@ use scena::{
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
-static COUNT_ALLOCATIONS: AtomicBool = AtomicBool::new(false);
 static ALLOCATION_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+thread_local! {
+    static COUNT_ALLOCATIONS: Cell<bool> = const { Cell::new(false) };
+}
 
 struct CountingAllocator;
 
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if COUNT_ALLOCATIONS.load(Ordering::Relaxed) {
+        if COUNT_ALLOCATIONS.with(Cell::get) {
             ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
         }
         // SAFETY: this allocator only observes allocation counts and delegates the actual
@@ -239,11 +243,11 @@ fn render_on_change_static_idle_skip_has_zero_allocations() {
         .expect("warm-up render draws");
 
     ALLOCATION_COUNT.store(0, Ordering::Relaxed);
-    COUNT_ALLOCATIONS.store(true, Ordering::Relaxed);
+    COUNT_ALLOCATIONS.with(|count| count.set(true));
     let outcome = renderer
         .render(&scene, camera)
         .expect("static idle frame is skipped");
-    COUNT_ALLOCATIONS.store(false, Ordering::Relaxed);
+    COUNT_ALLOCATIONS.with(|count| count.set(false));
 
     assert!(outcome.skipped);
     assert_eq!(ALLOCATION_COUNT.load(Ordering::Relaxed), 0);
@@ -524,25 +528,27 @@ fn context_recovery_preserves_material_textures_cubemap_and_shadow_caster() {
     };
 
     let assets = Assets::new();
-    let geometry = assets.create_geometry(GeometryDesc::try_new(
-        GeometryTopology::Triangles,
-        vec![
-            GeometryVertex {
-                position: Vec3::new(-0.6, -0.6, 0.0),
-                normal: Vec3::new(0.0, 0.0, 1.0),
-            },
-            GeometryVertex {
-                position: Vec3::new(0.6, -0.6, 0.0),
-                normal: Vec3::new(0.0, 0.0, 1.0),
-            },
-            GeometryVertex {
-                position: Vec3::new(0.0, 0.6, 0.0),
-                normal: Vec3::new(0.0, 0.0, 1.0),
-            },
-        ],
-        vec![0, 1, 2],
-    )
-    .expect("triangle geometry"));
+    let geometry = assets.create_geometry(
+        GeometryDesc::try_new(
+            GeometryTopology::Triangles,
+            vec![
+                GeometryVertex {
+                    position: Vec3::new(-0.6, -0.6, 0.0),
+                    normal: Vec3::new(0.0, 0.0, 1.0),
+                },
+                GeometryVertex {
+                    position: Vec3::new(0.6, -0.6, 0.0),
+                    normal: Vec3::new(0.0, 0.0, 1.0),
+                },
+                GeometryVertex {
+                    position: Vec3::new(0.0, 0.6, 0.0),
+                    normal: Vec3::new(0.0, 0.0, 1.0),
+                },
+            ],
+            vec![0, 1, 2],
+        )
+        .expect("triangle geometry"),
+    );
     // 1×1 PNG so the renderer allocates GPU textures (per-material path
     // because there's only one material slot, but the textures are still
     // GPU resources that must survive the context-loss cycle).
@@ -576,7 +582,9 @@ fn context_recovery_preserves_material_textures_cubemap_and_shadow_caster() {
     renderer
         .prepare_with_assets(&mut scene, &assets)
         .expect("textured + lit scene prepares for headless GPU");
-    renderer.render(&scene, camera).expect("first render succeeds");
+    renderer
+        .render(&scene, camera)
+        .expect("first render succeeds");
     let baseline = renderer.stats();
     assert!(
         baseline.material_texture_bindings >= 1,

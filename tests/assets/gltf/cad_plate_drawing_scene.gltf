@@ -1,0 +1,88 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "scena deterministic CAD drawing fixture"
+  },
+  "extensionsUsed": ["KHR_materials_unlit"],
+  "extras": {
+    "scena": {
+      "source_kind": "cad_drawing",
+      "drawing_units": "millimeters",
+      "drawing_width_mm": 120.0,
+      "drawing_height_mm": 60.0
+    }
+  },
+  "materials": [
+    {
+      "name": "anodized_blue_plate",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [0.12, 0.38, 0.92, 1.0],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.45
+      },
+      "extensions": {
+        "KHR_materials_unlit": {}
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "plate_120x60mm",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0
+          },
+          "indices": 1,
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "CADPlate120x60mm",
+      "mesh": 0
+    }
+  ],
+  "scenes": [
+    {
+      "nodes": [0]
+    }
+  ],
+  "scene": 0,
+  "buffers": [
+    {
+      "byteLength": 60,
+      "uri": "data:application/octet-stream;base64,j8J1vY/C9bwAAAAAj8J1PY/C9bwAAAAAj8J1PY/C9TwAAAAAj8J1vY/C9TwAAAAAAAABAAIAAAACAAMA"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 48
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 48,
+      "byteLength": 12
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 4,
+      "type": "VEC3",
+      "min": [-0.06, -0.03, 0.0],
+      "max": [0.06, 0.03, 0.0]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5123,
+      "count": 6,
+      "type": "SCALAR"
+    }
+  ]
+}

@@ -114,8 +114,7 @@ fn interactive_gltf_viewer_with_orbit_controls_attaches_controller_seeded_from_f
     .expect("interactive viewer builds with orbit controls");
 
     let controls = viewer
-        .orbit_controls
-        .as_ref()
+        .orbit_controls()
         .expect("with_orbit_controls populates the controller field");
     assert!(
         controls.distance() > 0.0 && controls.distance().is_finite(),
@@ -146,11 +145,11 @@ fn interactive_gltf_viewer_handle_pointer_event_orbits_and_applies_to_scene() {
     .expect("interactive viewer builds with orbit controls");
 
     let camera_node = viewer
-        .scene
-        .camera_node(viewer.camera)
+        .scene()
+        .camera_node(viewer.camera())
         .expect("active camera has a node");
     let translation_before = viewer
-        .scene
+        .scene()
         .world_transform(camera_node)
         .expect("camera world transform")
         .translation;
@@ -178,7 +177,7 @@ fn interactive_gltf_viewer_handle_pointer_event_orbits_and_applies_to_scene() {
     assert_eq!(drag, OrbitControlAction::Orbit);
 
     let translation_after = viewer
-        .scene
+        .scene()
         .world_transform(camera_node)
         .expect("camera world transform")
         .translation;
@@ -203,7 +202,7 @@ fn interactive_gltf_viewer_handle_pointer_event_no_op_without_orbit_controls() {
     .build()
     .expect("interactive viewer builds without orbit controls");
 
-    assert!(viewer.orbit_controls.is_none());
+    assert!(viewer.orbit_controls().is_none());
     let action = viewer
         .handle_pointer_event(PointerEvent {
             kind: PointerEventKind::Pressed,
@@ -234,12 +233,12 @@ fn interactive_gltf_viewer_pick_at_forwards_to_scene_pick_with_assets() {
 
     let viewport = scena::Viewport::new(96, 64, 1.0).expect("viewport validates");
     let direct = viewer
-        .scene
+        .scene()
         .pick_with_assets(
-            viewer.camera,
+            viewer.camera(),
             scena::CursorPosition::physical(48.0, 32.0),
             viewport,
-            &viewer.assets,
+            viewer.assets(),
         )
         .expect("direct pick_with_assets runs");
     let convenience = viewer.pick_at(48.0, 32.0).expect("viewer.pick_at runs");
@@ -267,7 +266,7 @@ fn interactive_gltf_viewer_pick_and_select_at_updates_interaction_state_on_hit()
         .expect("pick_and_select_at runs");
     if let Some(hit) = result {
         assert_eq!(
-            viewer.scene.interaction().primary_selection(),
+            viewer.scene().interaction().primary_selection(),
             Some(hit.target()),
             "viewer.pick_and_select_at must promote the hit to primary selection"
         );

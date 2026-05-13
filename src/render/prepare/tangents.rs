@@ -43,7 +43,11 @@ pub(super) fn accumulate_vertex_tangents(
         face_count,
     };
     if face_count > 0 {
-        let _ = mikktspace::generate_tangents(&mut adapter);
+        let result = bevy_mikktspace::generate_tangents(&mut adapter);
+        debug_assert!(
+            result.is_ok(),
+            "bevy_mikktspace exposes an uninhabited tangent-generation error"
+        );
     }
     // Re-orthogonalize against the per-vertex normal so a downstream
     // tangent-space basis stays orthonormal even when the geometry's
@@ -62,9 +66,6 @@ pub(super) fn accumulate_vertex_tangents(
     adapter.output
 }
 
-#[cfg(test)]
-pub(super) use accumulate_vertex_tangents as mikktspace_vertex_tangents;
-
 struct MikktspaceAdapter<'a> {
     positions: Vec<Vec3>,
     normals: Vec<Vec3>,
@@ -80,7 +81,7 @@ impl<'a> MikktspaceAdapter<'a> {
     }
 }
 
-impl<'a> mikktspace::Geometry for MikktspaceAdapter<'a> {
+impl<'a> bevy_mikktspace::Geometry for MikktspaceAdapter<'a> {
     fn num_faces(&self) -> usize {
         self.face_count
     }
@@ -103,7 +104,16 @@ impl<'a> mikktspace::Geometry for MikktspaceAdapter<'a> {
         self.tex_coords0[self.vertex_index(face, vert)]
     }
 
-    fn set_tangent_encoded(&mut self, tangent: [f32; 4], face: usize, vert: usize) {
+    fn set_tangent(
+        &mut self,
+        tangent_space: Option<bevy_mikktspace::TangentSpace>,
+        face: usize,
+        vert: usize,
+    ) {
+        let Some(tangent_space) = tangent_space else {
+            return;
+        };
+        let tangent = tangent_space.tangent_encoded();
         let index = self.vertex_index(face, vert);
         self.output[index] = TangentFrame {
             tangent: Vec3::new(tangent[0], tangent[1], tangent[2]),
@@ -379,11 +389,12 @@ mod tests {
     }
 
     #[test]
-    fn accumulated_vertex_tangents_match_mikktspace_within_one_e_minus_four_on_indexed_quad() {
-        // Two-triangle quad with shared corners — the simplest non-trivial mesh that
-        // exercises shared-vertex tangent averaging. MikkTSpace and the in-tree Lengyel
-        // accumulator should converge within 1e-4 here because every vertex sees identical
-        // (position, normal, uv) across both incident triangles.
+    fn accumulated_vertex_tangents_generate_stable_indexed_quad_basis() {
+        // Two-triangle quad with shared corners: the simplest non-trivial
+        // mesh that exercises shared-vertex tangent generation. Every
+        // vertex sees identical (position, normal, uv) across both
+        // incident triangles, so the MikkTSpace basis must be the +U
+        // axis with preserved handedness at every corner.
         let vertices = [
             GeometryVertex {
                 position: Vec3::new(-1.0, -1.0, 0.0),
@@ -412,31 +423,53 @@ mod tests {
             Transform::IDENTITY,
             Vec3::ZERO,
         );
-        let oracle = mikktspace_vertex_tangents(
+
+        assert_eq!(in_tree.len(), vertices.len());
+        for (vertex_index, frame) in in_tree.iter().enumerate() {
+            assert_vec3_near(frame.tangent, Vec3::new(1.0, 0.0, 0.0));
+            assert_eq!(
+                frame.handedness, 1.0,
+                "vertex {vertex_index}: indexed quad handedness must be preserved",
+            );
+        }
+    }
+
+    #[test]
+    fn accumulated_vertex_tangents_fall_back_for_degenerate_uvs() {
+        let vertices = [
+            GeometryVertex {
+                position: Vec3::new(0.0, 0.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            GeometryVertex {
+                position: Vec3::new(1.0, 0.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            GeometryVertex {
+                position: Vec3::new(0.0, 1.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+        ];
+        let collapsed_uvs = [[0.5, 0.5], [0.5, 0.5], [0.5, 0.5]];
+
+        let tangents = accumulate_vertex_tangents(
             &vertices,
-            &indices,
-            &tex_coords,
+            &[0, 1, 2],
+            &collapsed_uvs,
             Transform::IDENTITY,
             Vec3::ZERO,
         );
 
-        assert_eq!(in_tree.len(), oracle.len());
-        for (vertex_index, (lhs, rhs)) in in_tree.iter().zip(oracle.iter()).enumerate() {
-            let dx = (lhs.tangent.x - rhs.tangent.x).abs();
-            let dy = (lhs.tangent.y - rhs.tangent.y).abs();
-            let dz = (lhs.tangent.z - rhs.tangent.z).abs();
+        for frame in tangents {
             assert!(
-                dx < 1.0e-4 && dy < 1.0e-4 && dz < 1.0e-4,
-                "vertex {vertex_index}: in-tree tangent {:?} drifts more than 1e-4 from \
-                 MikkTSpace oracle {:?}",
-                lhs.tangent,
-                rhs.tangent,
+                frame.tangent.x.is_finite()
+                    && frame.tangent.y.is_finite()
+                    && frame.tangent.z.is_finite(),
+                "degenerate UV fallback tangent must be finite"
             );
-            assert_eq!(
-                lhs.handedness, rhs.handedness,
-                "vertex {vertex_index}: in-tree handedness {:?} disagrees with MikkTSpace \
-                 oracle {:?}",
-                lhs.handedness, rhs.handedness,
+            assert!(
+                dot_vec3(frame.tangent, vertices[0].normal).abs() < 0.0001,
+                "degenerate UV fallback tangent must stay orthogonal to the normal"
             );
         }
     }

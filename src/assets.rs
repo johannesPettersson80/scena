@@ -14,10 +14,12 @@ use crate::scene::Transform;
 mod environment;
 mod environment_projection;
 mod fetch;
+mod gc;
 mod gltf;
 mod load;
 #[cfg(feature = "obj")]
 mod obj;
+mod scene_loading;
 mod texture;
 pub use environment::{
     DEFAULT_ENVIRONMENT_CUBEMAP_FACE_RESOLUTION, ENVIRONMENT_CUBEMAP_FACE_NORMALS,
@@ -33,13 +35,12 @@ pub use gltf::{
     GltfDecoderPolicy, GltfExtensionDiagnostic, GltfExtensionStatus, MaterialVariantBinding,
     SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetLight, SceneAssetMesh, SceneAssetNode,
 };
-pub use load::{AssetLoadControl, AssetLoadProgress, AssetLoadReport};
+pub use load::{AssetLoadControl, AssetLoadProgress, AssetLoadReport, AssetLoadWarning};
 pub use texture::{
     TextureDesc, TextureFilter, TextureSamplerDesc, TextureSourceFormat, TextureWrap,
 };
 
 use self::environment::{DEFAULT_ENVIRONMENT_SOURCE_PATH, is_equirectangular_hdr_path};
-use self::load::{AssetLoadTelemetry, check_cancelled};
 use self::texture::{TextureCacheKey, validate_texture_source_format};
 
 new_key_type! {
@@ -211,132 +212,6 @@ impl<F> Assets<F> {
         self.retain_policy = policy;
     }
 
-    /// Frees `GeometryDesc` / `MaterialDesc` / `TextureDesc` /
-    /// `EnvironmentDesc` slotmap entries that no cached `SceneAsset`,
-    /// material descriptor, or environment lookup still references AND
-    /// that were not minted directly by [`Assets::create_geometry`] /
-    /// [`Assets::create_material`] / [`Assets::create_texture_for_test`].
-    ///
-    /// This helper is hot-reload-scoped GC, not a generic eviction sweep:
-    /// it is intended for long-running [`Assets::reload_scene`] sessions
-    /// where the replacement scene's `geometry/material/texture`
-    /// descriptors accumulate in the slotmaps because only the latest
-    /// `SceneAsset` per path is retained in `scene_lookup`. User-created
-    /// descriptors (every `Assets::create_*` call) are tracked and
-    /// always retained so a procedural-scene caller cannot lose handles
-    /// they still hold; this is the contract a beginner expects after
-    /// reading the typed `*HandleNotFound` error documentation.
-    ///
-    /// Reachability is rooted at:
-    /// - every `SceneAsset` in `scene_lookup` (its `nodes()`'s `meshes()`
-    ///   contribute their `GeometryHandle` and `MaterialHandle`);
-    /// - every cached `EnvironmentHandle` in `environment_lookup`;
-    /// - the texture slots of every reachable material descriptor.
-    ///
-    /// A `SceneAsset` returned by [`Assets::load_scene`] but later
-    /// overwritten in `scene_lookup` (for example by a follow-up
-    /// `load_scene` for the same path) is no longer reachable here, so
-    /// its glTF-derived geometry/material/texture descriptors evict on
-    /// the next call — the very behavior `release_unreferenced` is for.
-    /// Returns a per-store eviction count.
-    ///
-    /// Closes scena-gltf-animation-reviewer Phase 6 finding F4 and
-    /// scena-api-ergonomics-reviewer 4b0e621 finding N2.
-    pub fn release_unreferenced(&self) -> AssetEvictionStats {
-        let mut storage = self.storage();
-        let mut referenced_geometries: std::collections::BTreeSet<GeometryHandle> =
-            std::collections::BTreeSet::new();
-        let mut referenced_materials: std::collections::BTreeSet<MaterialHandle> =
-            std::collections::BTreeSet::new();
-        let mut referenced_textures: std::collections::BTreeSet<TextureHandle> =
-            std::collections::BTreeSet::new();
-        let mut referenced_environments: std::collections::BTreeSet<EnvironmentHandle> =
-            std::collections::BTreeSet::new();
-
-        for scene in storage.scene_lookup.values() {
-            for node in scene.nodes() {
-                for mesh in node.meshes() {
-                    referenced_geometries.insert(mesh.geometry());
-                    referenced_materials.insert(mesh.material());
-                }
-            }
-        }
-        for environment in storage.environment_lookup.values().copied() {
-            referenced_environments.insert(environment);
-        }
-        for material_handle in referenced_materials.iter().copied() {
-            if let Some(material) = storage.materials.get(material_handle) {
-                for handle in [
-                    material.base_color_texture(),
-                    material.normal_texture(),
-                    material.metallic_roughness_texture(),
-                    material.occlusion_texture(),
-                    material.emissive_texture(),
-                ]
-                .into_iter()
-                .flatten()
-                {
-                    referenced_textures.insert(handle);
-                }
-            }
-        }
-
-        let mut stats = AssetEvictionStats::default();
-
-        let geometry_keys: Vec<GeometryHandle> = storage.geometries.keys().collect();
-        for handle in geometry_keys {
-            // User-created descriptors (minted via `Assets::create_<kind>`)
-            // are ALWAYS retained — release_unreferenced is hot-reload-scoped
-            // GC, not a generic eviction sweep. Closes
-            // scena-api-ergonomics-reviewer 4b0e621 finding N2.
-            if !referenced_geometries.contains(&handle)
-                && !storage.user_created_geometries.contains(&handle)
-            {
-                storage.geometries.remove(handle);
-                storage.user_created_geometries.remove(&handle);
-                stats.geometries_evicted += 1;
-            }
-        }
-        let material_keys: Vec<MaterialHandle> = storage.materials.keys().collect();
-        for handle in material_keys {
-            if !referenced_materials.contains(&handle)
-                && !storage.user_created_materials.contains(&handle)
-            {
-                storage.materials.remove(handle);
-                storage.user_created_materials.remove(&handle);
-                stats.materials_evicted += 1;
-            }
-        }
-        let texture_keys: Vec<TextureHandle> = storage.textures.keys().collect();
-        for handle in texture_keys {
-            if !referenced_textures.contains(&handle)
-                && !storage.user_created_textures.contains(&handle)
-            {
-                storage.textures.remove(handle);
-                storage.user_created_textures.remove(&handle);
-                stats.textures_evicted += 1;
-            }
-        }
-        // Drop texture_lookup entries that pointed at evicted textures so
-        // a stable retained-reload identity does not resurrect a dead handle.
-        let live_textures: std::collections::BTreeSet<TextureHandle> =
-            storage.textures.keys().collect();
-        storage
-            .texture_lookup
-            .retain(|_, handle| live_textures.contains(handle));
-        let environment_keys: Vec<EnvironmentHandle> = storage.environments.keys().collect();
-        for handle in environment_keys {
-            if !referenced_environments.contains(&handle)
-                && !storage.user_created_environments.contains(&handle)
-            {
-                storage.environments.remove(handle);
-                storage.user_created_environments.remove(&handle);
-                stats.environments_evicted += 1;
-            }
-        }
-        stats
-    }
-
     pub fn create_material(&self, material: impl Into<MaterialDesc>) -> MaterialHandle {
         let mut storage = self.storage();
         let handle = storage.materials.insert(material.into());
@@ -494,7 +369,7 @@ impl<F> Assets<F> {
         self.storage()
             .textures
             .get(handle)
-            .and_then(|texture| texture.sample_nearest(uv))
+            .and_then(|texture| texture.sample_bilinear(uv))
     }
 
     pub fn default_environment(&self) -> EnvironmentHandle {
@@ -627,213 +502,7 @@ const fn texture_format_has_cpu_decoder(source_format: TextureSourceFormat) -> b
     matches!(
         source_format,
         TextureSourceFormat::Png | TextureSourceFormat::Jpeg
-    )
-}
-
-impl<F: AssetFetcher> Assets<F> {
-    pub async fn load_scene(&self, path: impl Into<AssetPath>) -> Result<SceneAsset, AssetError> {
-        Ok(self.load_scene_with_report(path).await?.into_asset())
-    }
-
-    pub async fn load_scene_with_report(
-        &self,
-        path: impl Into<AssetPath>,
-    ) -> Result<AssetLoadReport<SceneAsset>, AssetError> {
-        self.load_scene_report_inner(path.into(), None, None).await
-    }
-
-    pub async fn load_scene_with_progress<P>(
-        &self,
-        path: impl Into<AssetPath>,
-        mut progress: P,
-    ) -> Result<AssetLoadReport<SceneAsset>, AssetError>
-    where
-        P: FnMut(AssetLoadProgress),
-    {
-        self.load_scene_report_inner(path.into(), None, Some(&mut progress))
-            .await
-    }
-
-    pub async fn load_scene_controlled(
-        &self,
-        path: impl Into<AssetPath>,
-        control: &AssetLoadControl,
-    ) -> Result<SceneAsset, AssetError> {
-        Ok(self
-            .load_scene_report_inner(path.into(), Some(control), None)
-            .await?
-            .into_asset())
-    }
-
-    pub async fn reload_scene(&self, scene: &SceneAsset) -> Result<SceneAsset, AssetError> {
-        let path = scene.path().clone();
-        if self.retain_policy != RetainPolicy::Always {
-            return Err(AssetError::ReloadRequiresRetain {
-                path: path.as_str().to_string(),
-                help: "set RetainPolicy::Always before reloading scene assets",
-            });
-        }
-
-        let mut progress_events = Vec::new();
-        let mut progress = None;
-        let reloaded = match self
-            .parse_scene_uncached(path.clone(), None, &mut progress_events, &mut progress)
-            .await
-        {
-            Ok((scene, _telemetry)) => scene,
-            Err(AssetError::NotFound { .. } | AssetError::Io { .. }) => {
-                let Some(bytes) = scene.retained_source_bytes() else {
-                    return Err(AssetError::ReloadRequiresRetain {
-                        path: path.as_str().to_string(),
-                        help: "retained source bytes are unavailable; reload needs the original source to be fetchable",
-                    });
-                };
-                let mut storage = self.storage();
-                SceneAsset::from_gltf_bytes(path.clone(), bytes, &mut storage)?
-                    .with_retained_source_bytes(bytes)
-            }
-            Err(error) => return Err(error),
-        };
-        self.storage().scene_lookup.insert(path, reloaded.clone());
-        Ok(reloaded)
-    }
-
-    async fn load_scene_report_inner(
-        &self,
-        path: AssetPath,
-        control: Option<&AssetLoadControl>,
-        mut progress: Option<&mut dyn FnMut(AssetLoadProgress)>,
-    ) -> Result<AssetLoadReport<SceneAsset>, AssetError> {
-        let mut progress_events = Vec::new();
-        load::emit_progress(
-            &mut progress_events,
-            &mut progress,
-            AssetLoadProgress::LoadStarted { path: path.clone() },
-        );
-        check_cancelled(&path, control)?;
-        if let Some(scene) = self.storage().scene_lookup.get(&path).cloned() {
-            load::emit_progress(
-                &mut progress_events,
-                &mut progress,
-                AssetLoadProgress::CacheHit { path: path.clone() },
-            );
-            return Ok(AssetLoadReport {
-                asset: scene,
-                path,
-                cache_hit: true,
-                fetched_bytes: 0,
-                external_buffers: 0,
-                progress_events,
-            });
-        }
-
-        let (scene, telemetry) = self
-            .parse_scene_uncached(path.clone(), control, &mut progress_events, &mut progress)
-            .await?;
-        load::emit_progress(
-            &mut progress_events,
-            &mut progress,
-            AssetLoadProgress::Parsed {
-                path: path.clone(),
-                nodes: scene.node_count(),
-                meshes: scene.mesh_count(),
-            },
-        );
-        check_cancelled(&path, control)?;
-        self.storage()
-            .scene_lookup
-            .insert(path.clone(), scene.clone());
-        load::emit_progress(
-            &mut progress_events,
-            &mut progress,
-            AssetLoadProgress::Cached { path: path.clone() },
-        );
-        Ok(AssetLoadReport {
-            asset: scene,
-            path,
-            cache_hit: false,
-            fetched_bytes: telemetry.fetched_bytes,
-            external_buffers: telemetry.external_buffers,
-            progress_events,
-        })
-    }
-
-    async fn parse_scene_uncached(
-        &self,
-        path: AssetPath,
-        control: Option<&AssetLoadControl>,
-        progress_events: &mut Vec<AssetLoadProgress>,
-        progress: &mut Option<&mut dyn FnMut(AssetLoadProgress)>,
-    ) -> Result<(SceneAsset, AssetLoadTelemetry), AssetError> {
-        check_cancelled(&path, control)?;
-        let bytes = self.fetcher.fetch(&path).await?;
-        load::emit_progress(
-            progress_events,
-            progress,
-            AssetLoadProgress::AssetFetched {
-                path: path.clone(),
-                bytes: bytes.len(),
-            },
-        );
-        check_cancelled(&path, control)?;
-        let external_paths = SceneAsset::external_buffer_paths(&path, &bytes)?;
-        let external_image_paths = SceneAsset::external_image_paths(&path, &bytes)?;
-        let mut external_buffers = BTreeMap::new();
-        let mut external_images = BTreeMap::new();
-        let mut telemetry = AssetLoadTelemetry {
-            fetched_bytes: bytes.len(),
-            external_buffers: 0,
-        };
-        for (index, external_path) in external_paths {
-            check_cancelled(&path, control)?;
-            let bytes = self.fetcher.fetch(&external_path).await?;
-            load::emit_progress(
-                progress_events,
-                progress,
-                AssetLoadProgress::ExternalBufferFetched {
-                    path: external_path.clone(),
-                    index,
-                    bytes: bytes.len(),
-                },
-            );
-            telemetry.fetched_bytes = telemetry.fetched_bytes.saturating_add(bytes.len());
-            telemetry.external_buffers = telemetry.external_buffers.saturating_add(1);
-            external_buffers.insert(index, bytes);
-        }
-        for external_path in external_image_paths {
-            if external_images.contains_key(&external_path) {
-                continue;
-            }
-            if validate_texture_source_format(&external_path).is_err() {
-                continue;
-            }
-            check_cancelled(&path, control)?;
-            let bytes = match self.fetcher.fetch(&external_path).await {
-                Ok(bytes) => bytes,
-                Err(AssetError::NotFound { .. } | AssetError::Io { .. }) => continue,
-                Err(error) => return Err(error),
-            };
-            telemetry.fetched_bytes = telemetry.fetched_bytes.saturating_add(bytes.len());
-            external_images.insert(external_path, bytes);
-        }
-        check_cancelled(&path, control)?;
-        let mut storage = self.storage();
-        let mut scene = if external_buffers.is_empty() && external_images.is_empty() {
-            SceneAsset::from_gltf_bytes(path.clone(), &bytes, &mut storage)?
-        } else {
-            SceneAsset::from_gltf_bytes_with_external_resources(
-                path.clone(),
-                &bytes,
-                &external_buffers,
-                &external_images,
-                &mut storage,
-            )?
-        };
-        if self.retain_policy == RetainPolicy::Always {
-            scene = scene.with_retained_source_bytes(&bytes);
-        }
-        Ok((scene, telemetry))
-    }
+    ) || (matches!(source_format, TextureSourceFormat::Ktx2Basisu) && cfg!(feature = "ktx2"))
 }
 
 impl AssetPath {

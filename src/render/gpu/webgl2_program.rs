@@ -97,6 +97,36 @@ vec3 aces_tonemap(vec3 color) {
     return clamp(output_color, vec3(0.0), vec3(1.0));
 }
 
+vec3 pbrNeutralTonemap(vec3 color);
+
+vec3 applyTonemapper(vec3 color) {
+    if (color_management.x < 0.5) {
+        return clamp(color, vec3(0.0), vec3(1.0));
+    }
+    if (color_management.x > 1.5) {
+        return pbrNeutralTonemap(color);
+    }
+    return aces_tonemap(color);
+}
+
+vec3 pbrNeutralTonemap(vec3 color) {
+    const float startCompression = 0.8 - 0.04;
+    const float desaturation = 0.15;
+    color = max(color, vec3(0.0));
+    float x = min(color.r, min(color.g, color.b));
+    float offset = x < 0.08 ? x - 6.25 * x * x : 0.04;
+    color -= offset;
+    float peak = max(color.r, max(color.g, color.b));
+    if (peak < startCompression) {
+        return color;
+    }
+    const float d = 1.0 - startCompression;
+    float newPeak = 1.0 - d * d / (peak + d - startCompression);
+    color *= newPeak / peak;
+    float g = 1.0 - 1.0 / (desaturation * (peak - newPeak) + 1.0);
+    return mix(color, newPeak * vec3(1.0), g);
+}
+
 float distributionGgx(float n_dot_h, float alpha) {
     float alpha_squared = alpha * alpha;
     float denominator = n_dot_h * n_dot_h * (alpha_squared - 1.0) + 1.0;
@@ -117,11 +147,14 @@ vec3 fresnelSchlick(float cos_theta, vec3 f0) {
 }
 
 float distanceAttenuation(vec3 to_light, float range) {
+    float distance_squared = max(dot(to_light, to_light), 0.0001);
+    float inverse_square = 1.0 / distance_squared;
     if (range <= 0.0) {
-        return 1.0;
+        return inverse_square;
     }
-    float distance_to_light = length(to_light);
-    return pow(clamp(1.0 - distance_to_light / range, 0.0, 1.0), 2.0);
+    float distance_to_light = sqrt(distance_squared);
+    float range_falloff = clamp(1.0 - pow(distance_to_light / range, 4.0), 0.0, 1.0);
+    return inverse_square * range_falloff * range_falloff;
 }
 
 float spotConeAttenuation(float cos_angle, float inner_cone_cos, float outer_cone_cos) {
@@ -225,8 +258,7 @@ vec3 pbrEnvironmentLighting(
     vec3 fresnel = fresnelSchlick(n_dot_v, f0);
     vec3 diffuse_energy = (vec3(1.0) - fresnel) * (1.0 - metallic);
     vec3 diffuse = diffuse_energy * base * environment_diffuse_intensity.rgb;
-    float specular_strength = clamp(1.25 - roughness * 0.75, 0.2, 1.25);
-    vec3 specular = fresnel * environment_specular_intensity.rgb * specular_strength;
+    vec3 specular = fresnel * environment_specular_intensity.rgb;
     float intensity = max(environment_diffuse_intensity.w, environment_specular_intensity.w);
     return (diffuse + specular) * intensity;
 }
@@ -256,13 +288,11 @@ void main() {
     vec3 world_tangent = normalize(v_tangent.xyz);
     vec3 bitangent = normalize(cross(world_normal, world_tangent) * v_tangent.w);
     vec3 normal = normalize(normal_sample_tangent_space.x * world_tangent + normal_sample_tangent_space.y * bitangent + normal_sample_tangent_space.z * world_normal);
-    float normal_visibility = clamp(normal_sample_tangent_space.z, 0.2, 1.0);
     float metallic = clamp(metallic_roughness_alpha.x * metallic_roughness_sample.b, 0.0, 1.0);
     float roughness = clamp(metallic_roughness_alpha.y * metallic_roughness_sample.g, 0.04, 1.0);
     // Phase 5.1: occlusionTexture.strength (texture_strengths.y).
     float occlusion_strength = texture_strengths.y;
     float occlusion_applied = mix(1.0, occlusion_sample, occlusion_strength);
-    float material_response = normal_visibility * occlusion_applied * mix(0.92, 1.0, roughness) * (1.0 - metallic * 0.08);
     vec4 base = v_color * base_color_factor * base_color_sample;
     if (metallic_roughness_alpha.z > 0.0 && base.a < metallic_roughness_alpha.z) {
         discard;
@@ -271,7 +301,7 @@ void main() {
     vec3 view = normalize(camera_position_exposure.xyz - v_world_position);
     vec3 shaded_rgb = base.rgb;
     if (metallic_roughness_alpha.w < 0.5) {
-        shaded_rgb = base.rgb * material_response;
+        shaded_rgb = base.rgb * occlusion_applied;
         vec3 direct = pbrPunctualLighting(
             base.rgb,
             metallic,
@@ -287,12 +317,12 @@ void main() {
         }
     }
     vec4 shaded = vec4(shaded_rgb + emissive, base.a);
-    out_color = vec4(aces_tonemap(shaded.rgb * camera_position_exposure.w), shaded.a);
+    out_color = vec4(applyTonemapper(shaded.rgb * camera_position_exposure.w), shaded.a);
 }"#;
 
 pub(super) fn context_options() -> js_sys::Object {
     let options = js_sys::Object::new();
-    let _ = js_sys::Reflect::set(&options, &"antialias".into(), &wasm_bindgen::JsValue::FALSE);
+    let _ = js_sys::Reflect::set(&options, &"antialias".into(), &wasm_bindgen::JsValue::TRUE);
     let _ = js_sys::Reflect::set(&options, &"depth".into(), &wasm_bindgen::JsValue::TRUE);
     options
 }
@@ -384,6 +414,18 @@ mod tests {
                 && FRAGMENT_SHADER.contains("metallic_roughness_alpha"),
             "WebGL2 material shader must sample every prepared glTF material texture role and \
              consume material factor uniforms before compatibility material parity can be claimed"
+        );
+    }
+
+    #[test]
+    fn webgl2_fragment_shader_contains_khronos_pbr_neutral_tonemapper() {
+        assert!(
+            FRAGMENT_SHADER.contains("pbrNeutralTonemap")
+                && FRAGMENT_SHADER.contains("startCompression")
+                && FRAGMENT_SHADER.contains("desaturation")
+                && FRAGMENT_SHADER.contains("color_management.x > 1.5"),
+            "WebGL2 shader must expose the Khronos PBR Neutral tone-mapping branch; \
+             compatibility rendering must not rely on asset-specific color tuning"
         );
     }
 

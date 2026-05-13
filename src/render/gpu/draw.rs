@@ -4,6 +4,7 @@ use std::sync::mpsc;
 #[cfg(target_arch = "wasm32")]
 use crate::diagnostics::Backend;
 use crate::diagnostics::RenderError;
+use crate::material::Color;
 
 use super::super::RasterTarget;
 use super::super::camera::CameraProjection;
@@ -21,6 +22,8 @@ impl GpuDeviceState {
         &mut self,
         target: RasterTarget,
         exposure_ev: f32,
+        color_management: [f32; 4],
+        background_color: Color,
         camera_projection: &CameraProjection,
         frame: &mut Vec<u8>,
     ) -> Result<bool, RenderError> {
@@ -52,7 +55,7 @@ impl GpuDeviceState {
                 camera_position: camera_position_uniform(camera_projection),
                 viewport: [target.width as f32, target.height as f32],
                 near_far: camera_projection.near_far(),
-                color_management: [1.0, 0.0, 0.0, 0.0],
+                color_management,
                 lighting: resources.light_uniform,
             }),
         );
@@ -113,6 +116,7 @@ impl GpuDeviceState {
                 material_resources: &resources.material_resources,
                 draw_batches: &resources.draw_batches,
                 pipeline: &resources.offscreen_pipeline,
+                clear_color: wgpu_clear_color(background_color),
                 label: "scena.headless_gpu.render_pass",
             },
         );
@@ -133,6 +137,7 @@ impl GpuDeviceState {
                     material_resources: &resources.material_resources,
                     draw_batches: &resources.draw_batches,
                     pipeline: surface_pipeline,
+                    clear_color: wgpu_clear_color(background_color),
                     label: "scena.surface.render_pass",
                 },
             );
@@ -204,6 +209,8 @@ impl GpuDeviceState {
         &mut self,
         target: RasterTarget,
         exposure_ev: f32,
+        color_management: [f32; 4],
+        background_color: Color,
         camera_projection: &CameraProjection,
     ) -> Result<bool, RenderError> {
         let Some(resources) = self.resources.as_ref() else {
@@ -228,11 +235,11 @@ impl GpuDeviceState {
                 });
             };
             webgl2::render_canvas(
+                &mut self.webgl2_render_cache,
                 canvas,
                 &resources.webgl2_vertices,
                 &resources.draw_batches,
-                &identity_matrix(),
-                &identity_matrix(),
+                &resources.draw_uniforms,
                 &camera_projection
                     .view_from_world_matrix()
                     .unwrap_or_else(identity_matrix),
@@ -245,8 +252,9 @@ impl GpuDeviceState {
                 camera_position_uniform(camera_projection),
                 [target.width as f32, target.height as f32],
                 camera_projection.near_far(),
+                webgl2_clear_color(background_color),
                 2.0_f32.powf(exposure_ev),
-                [1.0, 0.0, 0.0, 0.0],
+                color_management,
                 resources.light_uniform,
             )
             .map_err(|_| RenderError::GpuResourcesNotPrepared {
@@ -272,7 +280,7 @@ impl GpuDeviceState {
                 camera_position: camera_position_uniform(camera_projection),
                 viewport: [target.width as f32, target.height as f32],
                 near_far: camera_projection.near_far(),
-                color_management: [1.0, 0.0, 0.0, 0.0],
+                color_management,
                 lighting: resources.light_uniform,
             }),
         );
@@ -328,6 +336,7 @@ impl GpuDeviceState {
                 material_resources: &resources.material_resources,
                 draw_batches: &resources.draw_batches,
                 pipeline: &resources.surface_pipeline,
+                clear_color: wgpu_clear_color(background_color),
                 label: "scena.browser.surface_pass",
             },
         );
@@ -336,6 +345,29 @@ impl GpuDeviceState {
         surface_output.present();
         Ok(true)
     }
+}
+
+fn wgpu_clear_color(color: Color) -> wgpu::Color {
+    wgpu::Color {
+        r: clear_channel_f64(color.r),
+        g: clear_channel_f64(color.g),
+        b: clear_channel_f64(color.b),
+        a: clear_channel_f64(color.a),
+    }
+}
+
+fn clear_channel_f64(channel: f32) -> f64 {
+    channel.clamp(0.0, 1.0) as f64
+}
+
+#[cfg(target_arch = "wasm32")]
+fn webgl2_clear_color(color: Color) -> [f32; 4] {
+    [
+        color.r.clamp(0.0, 1.0),
+        color.g.clamp(0.0, 1.0),
+        color.b.clamp(0.0, 1.0),
+        color.a.clamp(0.0, 1.0),
+    ]
 }
 
 fn camera_position_uniform(camera_projection: &CameraProjection) -> [f32; 3] {

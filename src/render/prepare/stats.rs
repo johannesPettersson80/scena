@@ -79,6 +79,7 @@ pub(in crate::render) fn collect_depth_prepass_stats(
 
 fn depth_prepass_benefits(primitives: &[Primitive]) -> bool {
     primitives.len() >= DEPTH_PREPASS_MIN_PRIMITIVES
+        && primitives.iter().all(Primitive::depth_prepass_eligible)
 }
 
 pub(in crate::render) fn collect_environment_prepare_stats(

@@ -78,7 +78,11 @@ impl Scene {
                     .with_color(Color::from_srgb_u8(200, 215, 235))
                     .with_illuminance_lux(4_000.0),
             )
-            .transform(Transform::default().rotate_x_deg(-10.0).rotate_y_deg(-120.0))
+            .transform(
+                Transform::default()
+                    .rotate_x_deg(-10.0)
+                    .rotate_y_deg(-120.0),
+            )
             .add()?;
         let rim = self
             .directional_light(
@@ -332,7 +336,9 @@ mod tests {
     #[test]
     fn add_studio_lighting_inserts_three_directional_nodes_with_distinct_keys() {
         let mut scene = Scene::new();
-        let handles = scene.add_studio_lighting().expect("studio lighting inserts");
+        let handles = scene
+            .add_studio_lighting()
+            .expect("studio lighting inserts");
         assert_ne!(handles.key, handles.fill);
         assert_ne!(handles.fill, handles.rim);
         assert_ne!(handles.key, handles.rim);

@@ -336,7 +336,12 @@ fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
 }
 
 fn multiply_quat(left: Quat, right: Quat) -> Quat {
-    normalize_quat(Quat::from_xyzw(left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y, left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x, left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w, left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z))
+    normalize_quat(Quat::from_xyzw(
+        left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
+        left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,
+        left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w,
+        left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z,
+    ))
 }
 
 fn normalize_quat(quat: Quat) -> Quat {
@@ -344,7 +349,12 @@ fn normalize_quat(quat: Quat) -> Quat {
     if length <= f32::EPSILON || !length.is_finite() {
         Quat::IDENTITY
     } else {
-        Quat::from_xyzw(quat.x / length, quat.y / length, quat.z / length, quat.w / length)
+        Quat::from_xyzw(
+            quat.x / length,
+            quat.y / length,
+            quat.z / length,
+            quat.w / length,
+        )
     }
 }
 

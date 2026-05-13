@@ -173,7 +173,6 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let world_tangent = normalize(in.tangent.xyz);
     let bitangent = normalize(cross(world_normal, world_tangent) * in.tangent.w);
     let normal = normalize(normal_sample.x * world_tangent + normal_sample.y * bitangent + normal_sample.z * world_normal);
-    let normal_visibility = clamp(normal_sample.z, 0.2, 1.0);
     let metallic = clamp(material.metallic_roughness_alpha.x * metallic_roughness_sample.b, 0.0, 1.0);
     let roughness = clamp(material.metallic_roughness_alpha.y * metallic_roughness_sample.g, 0.04, 1.0);
     // Phase 5.1: occlusionTexture.strength lerps between 1.0 and the
@@ -181,7 +180,6 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     // at full intensity. glTF spec default = 1.0.
     let occlusion_strength = material.texture_strengths.y;
     let occlusion_applied = mix(1.0, occlusion_sample, occlusion_strength);
-    let material_response = normal_visibility * occlusion_applied * mix(0.92, 1.0, roughness) * (1.0 - metallic * 0.08);
     let base = in.color * material.base_color_factor * base_color_sample;
     if material.metallic_roughness_alpha.z > 0.0 && base.a < material.metallic_roughness_alpha.z {
         discard;
@@ -190,7 +188,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let view = normalize(camera.camera_position_exposure.xyz - in.world_position);
     var shaded_rgb = base.rgb;
     if material.metallic_roughness_alpha.w < 0.5 {
-        shaded_rgb = base.rgb * material_response;
+        shaded_rgb = base.rgb * occlusion_applied;
         let direct = pbr_punctual_lighting(
             base.rgb,
             metallic,
@@ -206,7 +204,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         }
     }
     let shaded = vec4<f32>(shaded_rgb + emissive, base.a);
-    return vec4<f32>(aces_tonemap(shaded.rgb * camera.camera_position_exposure.w), shaded.a);
+    return vec4<f32>(apply_tonemapper(shaded.rgb * camera.camera_position_exposure.w), shaded.a);
 }
 
 fn directional_shadow_factor(world_position: vec3<f32>) -> f32 {
@@ -374,11 +372,14 @@ fn fresnel_schlick(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
 }
 
 fn distance_attenuation(to_light: vec3<f32>, range: f32) -> f32 {
+    let distance_squared = max(dot(to_light, to_light), 0.0001);
+    let inverse_square = 1.0 / distance_squared;
     if range <= 0.0 {
-        return 1.0;
+        return inverse_square;
     }
-    let distance = length(to_light);
-    return pow(clamp(1.0 - distance / range, 0.0, 1.0), 2.0);
+    let distance = sqrt(distance_squared);
+    let range_falloff = clamp(1.0 - pow(distance / range, 4.0), 0.0, 1.0);
+    return inverse_square * range_falloff * range_falloff;
 }
 
 fn spot_cone_attenuation(cos_angle: f32, inner_cone_cos: f32, outer_cone_cos: f32) -> f32 {
@@ -389,6 +390,34 @@ fn spot_cone_attenuation(cos_angle: f32, inner_cone_cos: f32, outer_cone_cos: f3
         return 0.0;
     }
     return clamp((cos_angle - outer_cone_cos) / (inner_cone_cos - outer_cone_cos), 0.0, 1.0);
+}
+
+fn apply_tonemapper(color: vec3<f32>) -> vec3<f32> {
+    if camera.color_management.x < 0.5 {
+        return clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));
+    }
+    if camera.color_management.x > 1.5 {
+        return pbr_neutral_tonemap(color);
+    }
+    return aces_tonemap(color);
+}
+
+fn pbr_neutral_tonemap(color_in: vec3<f32>) -> vec3<f32> {
+    let start_compression = 0.8 - 0.04;
+    let desaturation = 0.15;
+    var color = max(color_in, vec3<f32>(0.0));
+    let x = min(color.r, min(color.g, color.b));
+    let offset = select(0.04, x - 6.25 * x * x, x < 0.08);
+    color -= vec3<f32>(offset);
+    let peak = max(color.r, max(color.g, color.b));
+    if peak < start_compression {
+        return color;
+    }
+    let d = 1.0 - start_compression;
+    let new_peak = 1.0 - d * d / (peak + d - start_compression);
+    color *= new_peak / peak;
+    let g = 1.0 - 1.0 / (desaturation * (peak - new_peak) + 1.0);
+    return mix(color, new_peak * vec3<f32>(1.0), g);
 }
 
 fn aces_tonemap(color: vec3<f32>) -> vec3<f32> {

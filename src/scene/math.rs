@@ -56,7 +56,10 @@ impl Transform {
     /// discarding the prior rotation. Closes scena-api-ergonomics-reviewer
     /// finding F2.
     pub fn rotate_x_deg(mut self, degrees: f32) -> Self {
-        let added = Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), Angle::from_degrees(degrees).radians());
+        let added = Quat::from_axis_angle(
+            Vec3::new(1.0, 0.0, 0.0),
+            Angle::from_degrees(degrees).radians(),
+        );
         self.rotation = compose_rotations(self.rotation, added);
         self
     }
@@ -64,7 +67,10 @@ impl Transform {
     /// Composes a degrees-around-Y rotation onto the existing rotation. See
     /// [`Self::rotate_x_deg`] for the compose semantics.
     pub fn rotate_y_deg(mut self, degrees: f32) -> Self {
-        let added = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), Angle::from_degrees(degrees).radians());
+        let added = Quat::from_axis_angle(
+            Vec3::new(0.0, 1.0, 0.0),
+            Angle::from_degrees(degrees).radians(),
+        );
         self.rotation = compose_rotations(self.rotation, added);
         self
     }
@@ -72,7 +78,10 @@ impl Transform {
     /// Composes a degrees-around-Z rotation onto the existing rotation. See
     /// [`Self::rotate_x_deg`] for the compose semantics.
     pub fn rotate_z_deg(mut self, degrees: f32) -> Self {
-        let added = Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), Angle::from_degrees(degrees).radians());
+        let added = Quat::from_axis_angle(
+            Vec3::new(0.0, 0.0, 1.0),
+            Angle::from_degrees(degrees).radians(),
+        );
         self.rotation = compose_rotations(self.rotation, added);
         self
     }

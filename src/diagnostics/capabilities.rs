@@ -14,6 +14,7 @@ pub enum Backend {
 #[non_exhaustive]
 pub enum OutputStageStatus {
     AcesSrgb,
+    PbrNeutralSrgb,
     BackendPassthrough,
 }
 
@@ -129,7 +130,7 @@ impl Capabilities {
             gpu_device: false,
             surface_attached: false,
             hardware_tier: hardware_tier(backend, false),
-            output_stage: OutputStageStatus::AcesSrgb,
+            output_stage: OutputStageStatus::PbrNeutralSrgb,
             alpha_pipeline: AlphaPipelineStatus::LinearSourceOver,
             forward_pbr: forward_pbr_status(backend),
             directional_shadows: directional_shadow_status(backend),
@@ -167,7 +168,7 @@ impl Capabilities {
             gpu_device: true,
             surface_attached: false,
             hardware_tier: hardware_tier(backend, true),
-            output_stage: OutputStageStatus::AcesSrgb,
+            output_stage: OutputStageStatus::PbrNeutralSrgb,
             alpha_pipeline: AlphaPipelineStatus::LinearSourceOver,
             forward_pbr: forward_pbr_status(backend),
             directional_shadows: directional_shadow_status(backend),
@@ -205,7 +206,7 @@ impl Capabilities {
             gpu_device: true,
             surface_attached: true,
             hardware_tier: hardware_tier(backend, true),
-            output_stage: OutputStageStatus::AcesSrgb,
+            output_stage: OutputStageStatus::PbrNeutralSrgb,
             alpha_pipeline: AlphaPipelineStatus::LinearSourceOver,
             forward_pbr: forward_pbr_status(backend),
             directional_shadows: directional_shadow_status(backend),

@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-
 use wasm_bindgen::JsCast;
 use web_sys::{
     HtmlCanvasElement, WebGl2RenderingContext, WebGlBuffer, WebGlProgram, WebGlUniformLocation,
@@ -8,7 +6,7 @@ use web_sys::{
 use crate::render::prepare::{PreparedGpuLightUniform, PreparedMaterialSlot};
 
 use super::material_uniform::MaterialUniformUpload;
-use super::vertices::PrimitiveDrawBatch;
+use super::vertices::{DrawUniformValue, PrimitiveDrawBatch};
 use super::webgl2_camera::{
     WebGl2CameraUniformLocations, WebGl2CameraUniformUpload, bind_camera_uniforms,
     query_camera_uniform_locations,
@@ -25,77 +23,71 @@ use super::webgl2_texture_set::{
 };
 use super::webgl2_vertices::configure_vertex_attributes;
 
-thread_local! {
-    static WEBGL2_RENDER_CACHE: RefCell<Option<WebGl2RenderCache>> = const { RefCell::new(None) };
-}
-
 pub(super) use super::webgl2_vertices::encode_vertices;
 
 pub(super) fn render_canvas(
+    cache: &mut Option<WebGl2RenderCache>,
     canvas: &HtmlCanvasElement,
     vertices: &[f32],
     draw_batches: &[PrimitiveDrawBatch],
-    world_from_model: &[f32; 16],
-    normal_from_model: &[f32; 16],
+    draw_uniforms: &[DrawUniformValue],
     view_from_world: &[f32; 16],
     clip_from_view: &[f32; 16],
     clip_from_world: &[f32; 16],
     camera_position: [f32; 3],
     viewport: [f32; 2],
     near_far: [f32; 2],
+    clear_color: [f32; 4],
     exposure: f32,
     color_management: [f32; 4],
     lighting: PreparedGpuLightUniform,
 ) -> Result<(), wasm_bindgen::JsValue> {
-    WEBGL2_RENDER_CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        if !cache
-            .as_ref()
-            .is_some_and(|existing| existing.matches_canvas(canvas))
-        {
-            return Err(wasm_bindgen::JsValue::from_str(
+    let cache = cache
+        .as_mut()
+        .filter(|existing| existing.matches_canvas(canvas))
+        .ok_or_else(|| {
+            wasm_bindgen::JsValue::from_str(
                 "webgl2 resources were not prepared; call Renderer::prepare before render",
-            ));
-        }
-        let cache = cache.as_mut().expect("cache match was checked");
-        cache.render(
-            vertices,
-            draw_batches,
-            world_from_model,
-            normal_from_model,
-            view_from_world,
-            clip_from_view,
-            clip_from_world,
-            camera_position,
-            viewport,
-            near_far,
-            exposure,
-            color_management,
-            lighting,
-        )
-    })
+            )
+        })?;
+    cache.render(
+        vertices,
+        draw_batches,
+        draw_uniforms,
+        view_from_world,
+        clip_from_view,
+        clip_from_world,
+        camera_position,
+        viewport,
+        near_far,
+        clear_color,
+        exposure,
+        color_management,
+        lighting,
+    )
 }
 
-pub(super) fn prepare_canvas(canvas: &HtmlCanvasElement) -> Result<(), wasm_bindgen::JsValue> {
-    WEBGL2_RENDER_CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        if cache
-            .as_ref()
-            .is_none_or(|existing| !existing.matches_canvas(canvas))
-        {
-            *cache = Some(WebGl2RenderCache::new(canvas)?);
-        }
-        Ok(())
-    })
+pub(super) fn prepare_canvas_vertices(
+    cache: &mut Option<WebGl2RenderCache>,
+    canvas: &HtmlCanvasElement,
+    vertices: &[f32],
+    draw_batches: &[PrimitiveDrawBatch],
+    material_slots: &[PreparedMaterialSlot],
+) -> Result<(), wasm_bindgen::JsValue> {
+    if cache
+        .as_ref()
+        .is_none_or(|existing| !existing.matches_canvas(canvas))
+    {
+        *cache = Some(WebGl2RenderCache::new(canvas)?);
+    }
+    let cache = cache
+        .as_mut()
+        .ok_or_else(|| wasm_bindgen::JsValue::from_str("webgl2 resources were not prepared"))?;
+    cache.upload_prepared_resources_if_dirty(vertices, draw_batches, material_slots)?;
+    Ok(())
 }
 
-pub(super) fn clear_render_cache() {
-    WEBGL2_RENDER_CACHE.with(|cache| {
-        *cache.borrow_mut() = None;
-    });
-}
-
-struct WebGl2RenderCache {
+pub(super) struct WebGl2RenderCache {
     canvas: HtmlCanvasElement,
     gl: WebGl2RenderingContext,
     program: WebGlProgram,
@@ -160,8 +152,7 @@ impl WebGl2RenderCache {
         let emissive_strength_uniform = gl.get_uniform_location(&program, "emissive_strength");
         let metallic_roughness_alpha_uniform =
             gl.get_uniform_location(&program, "metallic_roughness_alpha");
-        let texture_strengths_uniform =
-            gl.get_uniform_location(&program, "texture_strengths");
+        let texture_strengths_uniform = gl.get_uniform_location(&program, "texture_strengths");
         let material_textures = vec![WebGl2MaterialTextureSet::new(&gl)?];
 
         Ok(Self {
@@ -201,14 +192,14 @@ impl WebGl2RenderCache {
         &mut self,
         vertices: &[f32],
         draw_batches: &[PrimitiveDrawBatch],
-        world_from_model: &[f32; 16],
-        normal_from_model: &[f32; 16],
+        draw_uniforms: &[DrawUniformValue],
         view_from_world: &[f32; 16],
         clip_from_view: &[f32; 16],
         clip_from_world: &[f32; 16],
         camera_position: [f32; 3],
         viewport: [f32; 2],
         near_far: [f32; 2],
+        clear_color: [f32; 4],
         exposure: f32,
         color_management: [f32; 4],
         lighting: PreparedGpuLightUniform,
@@ -219,7 +210,12 @@ impl WebGl2RenderCache {
             self.canvas.width() as i32,
             self.canvas.height() as i32,
         );
-        self.gl.clear_color(0.0, 0.0, 0.0, 1.0);
+        self.gl.clear_color(
+            clear_color[0],
+            clear_color[1],
+            clear_color[2],
+            clear_color[3],
+        );
         self.gl.enable(WebGl2RenderingContext::DEPTH_TEST);
         self.gl.depth_mask(true);
         self.gl.depth_func(WebGl2RenderingContext::LEQUAL);
@@ -228,27 +224,34 @@ impl WebGl2RenderCache {
             WebGl2RenderingContext::COLOR_BUFFER_BIT | WebGl2RenderingContext::DEPTH_BUFFER_BIT,
         );
         self.gl.use_program(Some(&self.program));
-        bind_camera_uniforms(
-            &self.gl,
-            &self.camera_uniforms,
-            WebGl2CameraUniformUpload {
-                world_from_model,
-                normal_from_model,
-                view_from_world,
-                clip_from_view,
-                clip_from_world,
-                camera_position,
-                viewport,
-                near_far,
-                exposure,
-                color_management,
-            },
-        );
         bind_lighting_uniforms(&self.gl, &self.lighting_uniforms, lighting);
         self.ensure_vertices_prepared(vertices)?;
         configure_vertex_attributes(&self.gl, &self.program)?;
         self.ensure_draw_batches_prepared(draw_batches)?;
         for batch in draw_batches {
+            let draw_uniform = draw_uniforms
+                .get(batch.draw_uniform_index as usize)
+                .ok_or_else(|| {
+                    wasm_bindgen::JsValue::from_str(
+                        "webgl2 draw batch references a missing draw uniform",
+                    )
+                })?;
+            bind_camera_uniforms(
+                &self.gl,
+                &self.camera_uniforms,
+                WebGl2CameraUniformUpload {
+                    world_from_model: &draw_uniform.world_from_model,
+                    normal_from_model: &draw_uniform.normal_from_model,
+                    view_from_world,
+                    clip_from_view,
+                    clip_from_world,
+                    camera_position,
+                    viewport,
+                    near_far,
+                    exposure,
+                    color_management,
+                },
+            );
             self.bind_material_texture(batch.material_slot);
             self.gl.draw_arrays(
                 WebGl2RenderingContext::TRIANGLES,
@@ -484,21 +487,4 @@ impl WebGl2RenderCache {
             "webgl2 draw batch data is not available in render cache",
         ))
     }
-}
-
-pub(super) fn prepare_canvas_vertices(
-    canvas: &HtmlCanvasElement,
-    vertices: &[f32],
-    draw_batches: &[PrimitiveDrawBatch],
-    material_slots: &[PreparedMaterialSlot],
-) -> Result<(), wasm_bindgen::JsValue> {
-    prepare_canvas(canvas)?;
-    WEBGL2_RENDER_CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        let cache = cache
-            .as_mut()
-            .ok_or_else(|| wasm_bindgen::JsValue::from_str("webgl2 resources were not prepared"))?;
-        cache.upload_prepared_resources_if_dirty(vertices, draw_batches, material_slots)?;
-        Ok(())
-    })
 }

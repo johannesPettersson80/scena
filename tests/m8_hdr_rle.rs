@@ -47,7 +47,10 @@ fn rle_radiance_hdr_uniform(width: u32, height: u32, rgbe: [u8; 4]) -> Vec<u8> {
         "RLE scanline encoding only triggers for width >= 8 per the Radiance \
          HDR spec; the decoder falls back to uncompressed for narrower scanlines"
     );
-    assert!(width <= 127, "fixture uses single-byte run counts; keep width small");
+    assert!(
+        width <= 127,
+        "fixture uses single-byte run counts; keep width small"
+    );
     let mut bytes =
         format!("#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y {height} +X {width}\n").into_bytes();
     for _ in 0..height {
@@ -78,16 +81,14 @@ fn rle_compressed_radiance_hdr_decodes_into_environment_irradiance() {
 
     let environment = pollster::block_on(assets.load_environment(path.as_str()))
         .expect("RLE-compressed Radiance HDR loads through scena's decoder");
-    let desc = assets.environment(environment).expect("environment present");
+    let desc = assets
+        .environment(environment)
+        .expect("environment present");
     let irradiance = desc
         .preview_irradiance_rgb()
         .expect("RLE HDR decode yields preview irradiance");
 
-    let expected = [
-        64.0 / 128.0,
-        32.0 / 128.0,
-        16.0 / 128.0,
-    ];
+    let expected = [64.0 / 128.0, 32.0 / 128.0, 16.0 / 128.0];
     let tolerance = 0.02;
     for (channel, (actual, expected)) in irradiance.iter().zip(expected.iter()).enumerate() {
         assert!(
@@ -118,9 +119,11 @@ fn hdr_environment_produces_per_pixel_cubemap_radiance() {
     let bytes = uncompressed_radiance_hdr(16, 8, &pixels);
     let path = AssetPath::from("memory://rle-fixture/forward-bright.hdr");
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(path.clone(), bytes)]));
-    let environment = pollster::block_on(assets.load_environment(path.as_str()))
-        .expect("synthetic HDR loads");
-    let desc = assets.environment(environment).expect("environment present");
+    let environment =
+        pollster::block_on(assets.load_environment(path.as_str())).expect("synthetic HDR loads");
+    let desc = assets
+        .environment(environment)
+        .expect("environment present");
     let faces = desc
         .cubemap_faces()
         .expect("HDR environment produces cubemap faces");

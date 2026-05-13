@@ -28,8 +28,8 @@ pub use assets::BrowserAssetFetcher;
 pub use assets::FileAssetFetcher;
 pub use assets::{
     AssetEvictionStats, AssetFetcher, AssetLoadControl, AssetLoadProgress, AssetLoadReport,
-    AssetPath, AssetStoreId, Assets, DefaultAssetFetcher, EnvironmentDerivative, EnvironmentDesc,
-    EnvironmentHandle, EnvironmentSourceKind, GeometryHandle, GltfDecoderPolicy,
+    AssetLoadWarning, AssetPath, AssetStoreId, Assets, DefaultAssetFetcher, EnvironmentDerivative,
+    EnvironmentDesc, EnvironmentHandle, EnvironmentSourceKind, GeometryHandle, GltfDecoderPolicy,
     GltfExtensionDiagnostic, GltfExtensionStatus, MaterialHandle, MaterialVariantBinding,
     ModelHandle, RetainPolicy, SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetLight,
     SceneAssetMesh, SceneAssetNode, TextureDesc, TextureFilter, TextureHandle, TextureSamplerDesc,

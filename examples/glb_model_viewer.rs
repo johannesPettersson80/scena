@@ -4,6 +4,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         320,
         240,
     ))?;
-    println!("glb_model_viewer roots={}", first.import.roots().len());
+    println!("glb_model_viewer roots={}", first.import().roots().len());
     Ok(())
 }

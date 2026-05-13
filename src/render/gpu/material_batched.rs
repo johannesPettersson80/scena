@@ -217,13 +217,7 @@ where
         let upload = role_for(slot);
         let layer_index = (index + 1) as u32;
         if upload.width == template.width && upload.height == template.height {
-            write_material_texture_layer_mips(
-                queue,
-                &texture,
-                upload,
-                &mip_extents,
-                layer_index,
-            );
+            write_material_texture_layer_mips(queue, &texture, upload, &mip_extents, layer_index);
         } else {
             let expanded = expand_upload_to_template(upload, template.width, template.height);
             write_material_texture_layer_mips_owned(

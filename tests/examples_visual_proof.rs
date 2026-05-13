@@ -333,6 +333,61 @@ fn examples_visual_coordinate_units_renders_converted_position_to_ppm() {
 }
 
 #[test]
+fn examples_visual_imported_cad_drawing_matches_original_dimensions_to_ppm() {
+    // CAD-export-style glTF fixture: original drawing is a 120 mm x 60 mm
+    // rectangular plate, exported as meters in glTF. This proves the model
+    // viewer path imports the drawing, preserves dimensions, frames it, and
+    // writes a visual artifact for human comparison.
+    let assets = Assets::new();
+    let scene_asset =
+        pollster::block_on(assets.load_scene("tests/assets/gltf/cad_plate_drawing_scene.gltf"))
+            .expect("CAD drawing glTF loads");
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("CAD drawing instantiates");
+    let bounds = import
+        .bounds_world(&scene)
+        .expect("CAD drawing import has bounds");
+    let width_m = bounds.max.x - bounds.min.x;
+    let height_m = bounds.max.y - bounds.min.y;
+    assert_approx_eq(width_m, 0.120, 0.000_5, "CAD drawing width");
+    assert_approx_eq(height_m, 0.060, 0.000_5, "CAD drawing height");
+
+    let camera = scene.add_default_camera().expect("default camera inserts");
+    scene.frame(camera, bounds).expect("CAD drawing frames");
+
+    let mut renderer =
+        Renderer::headless(ARTIFACT_WIDTH, ARTIFACT_HEIGHT).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("CAD drawing scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("CAD drawing scene renders");
+
+    let frame = renderer.frame_rgba8();
+    assert!(
+        count_nonblack_pixels(frame) > 0,
+        "CAD drawing import must render at least one nonblack pixel"
+    );
+
+    write_artifact(
+        "cad_plate_drawing_import",
+        ARTIFACT_WIDTH,
+        ARTIFACT_HEIGHT,
+        frame,
+    );
+}
+
+fn assert_approx_eq(actual: f32, expected: f32, tolerance: f32, label: &str) {
+    assert!(
+        (actual - expected).abs() <= tolerance,
+        "{label} expected {expected} +/- {tolerance}, got {actual}"
+    );
+}
+
+#[test]
 fn examples_visual_static_batching_renders_repeated_boxes_to_ppm() {
     // Mirror examples/static_batching.rs: 12 transforms baked through
     // create_static_batch_with_report and rendered as a single mesh batch.
@@ -625,7 +680,7 @@ fn examples_visual_glb_model_viewer_renders_imported_mesh_to_ppm() {
     ))
     .expect("first_render_gltf_headless succeeds");
 
-    let frame = first.renderer.frame_rgba8();
+    let frame = first.renderer().frame_rgba8();
     assert_eq!(
         frame.len(),
         (ARTIFACT_WIDTH as usize) * (ARTIFACT_HEIGHT as usize) * 4

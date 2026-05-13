@@ -9,14 +9,14 @@ fn first_render_gltf_headless_loads_frames_prepares_and_renders() {
     ))
     .expect("first render helper loads and renders glTF");
 
-    assert_eq!(first.outcome.width, 64);
-    assert_eq!(first.outcome.height, 64);
-    assert!(first.outcome.draw_calls > 0);
-    assert!(!first.import.roots().is_empty());
-    assert!(first.scene.active_camera().is_some());
+    assert_eq!(first.outcome().width, 64);
+    assert_eq!(first.outcome().height, 64);
+    assert!(first.outcome().draw_calls > 0);
+    assert!(!first.import().roots().is_empty());
+    assert!(first.scene().active_camera().is_some());
     assert!(
         first
-            .renderer
+            .renderer()
             .screenshot_rgba8()
             .rgba8()
             .chunks_exact(4)
@@ -35,13 +35,13 @@ fn headless_gltf_viewer_builder_loads_frames_lights_and_renders() {
     )
     .expect("builder renders the first glTF frame");
 
-    assert_eq!(first.outcome.width, 80);
-    assert_eq!(first.outcome.height, 48);
-    assert!(first.outcome.draw_calls > 0);
-    assert!(first.scene.active_camera().is_some());
+    assert_eq!(first.outcome().width, 80);
+    assert_eq!(first.outcome().height, 48);
+    assert!(first.outcome().draw_calls > 0);
+    assert!(first.scene().active_camera().is_some());
     assert!(
         first
-            .renderer
+            .renderer()
             .screenshot_rgba8()
             .rgba8()
             .chunks_exact(4)
@@ -61,11 +61,11 @@ fn headless_gltf_viewer_builder_can_attach_environment_and_report_diagnostics() 
     .expect("builder renders with a default environment");
 
     assert_eq!(
-        first.renderer.environment(),
-        Some(first.assets.default_environment())
+        first.renderer().environment(),
+        Some(first.assets().default_environment())
     );
-    assert_eq!(first.renderer.stats().environments, 1);
-    assert_eq!(first.diagnostics, first.renderer.diagnostics());
+    assert_eq!(first.renderer().stats().environments, 1);
+    assert_eq!(first.diagnostics(), first.renderer().diagnostics());
 }
 
 #[test]
@@ -124,10 +124,10 @@ fn headless_gltf_viewer_builder_with_environment_loads_explicit_path() {
     .expect("builder accepts explicit environment paths");
 
     assert!(
-        first.renderer.environment().is_some(),
+        first.renderer().environment().is_some(),
         "with_environment must attach an environment handle to the renderer"
     );
-    assert_eq!(first.renderer.stats().environments, 1);
+    assert_eq!(first.renderer().stats().environments, 1);
 }
 
 #[test]
@@ -144,7 +144,7 @@ fn headless_gltf_viewer_with_environment_overrides_default_environment_call_orde
     )
     .expect("builder accepts explicit environment after default toggle");
 
-    assert!(first.renderer.environment().is_some());
+    assert!(first.renderer().environment().is_some());
 }
 
 #[test]

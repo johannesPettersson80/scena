@@ -163,6 +163,10 @@ pub enum PrepareError {
         backend: Backend,
         help: String,
     },
+    GpuResourceUpload {
+        backend: Backend,
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,11 +1,10 @@
 //! wgpu device/surface ownership, prepare lifecycle, passes, resource tables, and stats.
 
-use std::cell::Cell;
-use std::marker::PhantomData;
-use std::sync::Weak;
+use std::{cell::Cell, marker::PhantomData, sync::Weak};
 
 mod build;
 mod camera;
+mod color_contract;
 mod cpu;
 mod culling;
 mod gpu;
@@ -62,6 +61,7 @@ pub struct Renderer {
     hover_style: InteractionStyle,
     selection_style: InteractionStyle,
     environment: Option<EnvironmentHandle>,
+    background_color: Color,
     environment_revision: u64,
     target_revision: u64,
     not_sync: PhantomData<Cell<()>>,
@@ -200,7 +200,7 @@ impl Renderer {
                 depth_stats,
                 &backend_material_slots,
                 &environment_lighting,
-            );
+            )?;
             let stats = gpu.prepared_resource_stats();
             let pending_destructions = gpu.pending_destructions();
             self.stats.buffers = stats.buffers;
@@ -278,7 +278,7 @@ impl Renderer {
                 depth_frame,
                 &mut self.frame,
             );
-            cpu::clear_cpu(&mut cpu_frame, Color::BLACK);
+            cpu::clear_cpu(&mut cpu_frame, self.background_color);
             for primitive in &primitives {
                 cpu::draw_primitive_cpu(
                     &mut cpu_frame,
@@ -423,6 +423,8 @@ impl Renderer {
             let submitted = gpu.render_to_frame(
                 self.target,
                 self.output.exposure_ev(),
+                self.output.color_management_uniform(),
+                self.background_color,
                 camera_projection,
                 &mut self.frame,
             )?;
@@ -442,7 +444,13 @@ impl Renderer {
                 .gpu
                 .as_mut()
                 .expect("draw_gpu is called only when a GPU device exists");
-            if gpu.render_to_surface(self.target, self.output.exposure_ev(), camera_projection)? {
+            if gpu.render_to_surface(
+                self.target,
+                self.output.exposure_ev(),
+                self.output.color_management_uniform(),
+                self.background_color,
+                camera_projection,
+            )? {
                 self.stats.gpu_submissions = self.stats.gpu_submissions.saturating_add(1);
             }
             Ok(())

@@ -9,6 +9,7 @@ impl Primitive {
             vertices,
             attributes: [PrimitiveVertexAttributes::default(); 3],
             render_material_slot: 0,
+            depth_prepass_eligible: true,
             world_from_model: identity_matrix4(),
             normal_from_model: identity_matrix4(),
         }
@@ -22,6 +23,7 @@ impl Primitive {
             vertices,
             attributes,
             render_material_slot: 0,
+            depth_prepass_eligible: true,
             world_from_model: identity_matrix4(),
             normal_from_model: identity_matrix4(),
         }
@@ -59,6 +61,15 @@ impl Primitive {
 
     pub(crate) fn render_material_slot(&self) -> u32 {
         self.render_material_slot
+    }
+
+    pub(crate) fn without_depth_prepass(mut self) -> Self {
+        self.depth_prepass_eligible = false;
+        self
+    }
+
+    pub(crate) const fn depth_prepass_eligible(&self) -> bool {
+        self.depth_prepass_eligible
     }
 
     pub(crate) fn with_world_from_model(

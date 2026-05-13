@@ -15,11 +15,8 @@ pub(super) fn parse_punctual_lights(document: &Document) -> Vec<SceneAssetLight>
     };
     lights
         .map(|light| {
-            let color = Color::from_linear_rgb(
-                light.color()[0],
-                light.color()[1],
-                light.color()[2],
-            );
+            let color =
+                Color::from_linear_rgb(light.color()[0], light.color()[1], light.color()[2]);
             let intensity = light.intensity();
             let range = light.range();
             let light = match light.kind() {

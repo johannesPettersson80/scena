@@ -125,6 +125,7 @@ pub struct Primitive {
     vertices: [Vertex; 3],
     attributes: [PrimitiveVertexAttributes; 3],
     render_material_slot: u32,
+    depth_prepass_eligible: bool,
     world_from_model: [f32; 16],
     normal_from_model: [f32; 16],
 }

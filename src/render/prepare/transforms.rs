@@ -8,7 +8,7 @@ pub(super) fn transform_primitive(
 ) -> Primitive {
     let [a, b, c] = primitive.vertices();
     let [attributes_a, attributes_b, attributes_c] = primitive.vertex_attributes();
-    Primitive::triangle_with_attributes(
+    let transformed = Primitive::triangle_with_attributes(
         [
             transform_vertex(*a, transform, origin_shift),
             transform_vertex(*b, transform, origin_shift),
@@ -20,7 +20,12 @@ pub(super) fn transform_primitive(
             transform_vertex_attributes(*attributes_c, transform),
         ],
     )
-    .with_render_material_slot(primitive.render_material_slot())
+    .with_render_material_slot(primitive.render_material_slot());
+    if primitive.depth_prepass_eligible() {
+        transformed
+    } else {
+        transformed.without_depth_prepass()
+    }
 }
 
 pub(super) fn prepared_primitive(
@@ -312,7 +317,12 @@ fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
 }
 
 fn multiply_quat(left: Quat, right: Quat) -> Quat {
-    normalize_quat(Quat::from_xyzw(left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y, left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x, left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w, left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z))
+    normalize_quat(Quat::from_xyzw(
+        left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
+        left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,
+        left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w,
+        left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z,
+    ))
 }
 
 fn normalize_quat(value: Quat) -> Quat {
@@ -322,7 +332,12 @@ fn normalize_quat(value: Quat) -> Quat {
         return Quat::IDENTITY;
     }
     let inverse_length = length_squared.sqrt().recip();
-    Quat::from_xyzw(value.x * inverse_length, value.y * inverse_length, value.z * inverse_length, value.w * inverse_length)
+    Quat::from_xyzw(
+        value.x * inverse_length,
+        value.y * inverse_length,
+        value.z * inverse_length,
+        value.w * inverse_length,
+    )
 }
 
 fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
