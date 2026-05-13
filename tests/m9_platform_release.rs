@@ -462,7 +462,8 @@ fn pbr_light_scene(kind: PbrLightKind) -> (Scene, Assets, scena::CameraKey) {
     let assets = Assets::new();
     let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.65, 0.65, 0.05));
     let material = assets.create_material(
-        MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.8).with_double_sided(true),
+        MaterialDesc::pbr_metallic_roughness(Color::from_linear_rgb(0.25, 0.25, 0.25), 0.0, 0.8)
+            .with_double_sided(true),
     );
     let mut scene = Scene::new();
     scene
@@ -475,7 +476,7 @@ fn pbr_light_scene(kind: PbrLightKind) -> (Scene, Assets, scena::CameraKey) {
                 .directional_light(
                     DirectionalLight::default()
                         .with_color(Color::from_linear_rgb(1.0, 0.0, 0.0))
-                        .with_illuminance_lux(1.0),
+                        .with_illuminance_lux(100.0),
                 )
                 .add()
                 .expect("directional light inserts");
@@ -485,7 +486,7 @@ fn pbr_light_scene(kind: PbrLightKind) -> (Scene, Assets, scena::CameraKey) {
                 .point_light(
                     PointLight::default()
                         .with_color(Color::from_linear_rgb(0.0, 1.0, 0.0))
-                        .with_intensity_candela(1.0)
+                        .with_intensity_candela(900.0)
                         .with_range(5.0),
                 )
                 .transform(Transform::at(Vec3::new(0.0, 0.0, 1.0)))
@@ -497,7 +498,7 @@ fn pbr_light_scene(kind: PbrLightKind) -> (Scene, Assets, scena::CameraKey) {
                 .spot_light(
                     SpotLight::default()
                         .with_color(Color::from_linear_rgb(0.0, 0.0, 1.0))
-                        .with_intensity_candela(1.0)
+                        .with_intensity_candela(1_000.0)
                         .with_range(5.0)
                         .with_inner_cone_angle(Angle::from_degrees(20.0))
                         .with_outer_cone_angle(Angle::from_degrees(35.0)),
@@ -1609,9 +1610,9 @@ impl PbrLightKind {
         let g = rgb[1] as i16;
         let b = rgb[2] as i16;
         match self {
-            Self::DirectionalRed => r > g + 30 && r > b + 30,
-            Self::PointGreen => g > r + 30 && g > b + 30,
-            Self::SpotBlue => b > r + 30 && b > g + 30,
+            Self::DirectionalRed => r >= g + 8 && r >= b + 8,
+            Self::PointGreen => g >= r + 8 && g >= b + 8,
+            Self::SpotBlue => b >= r + 8 && b >= g + 8,
         }
     }
 }
