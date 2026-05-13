@@ -1,4 +1,6 @@
 mod build;
+#[cfg(target_arch = "wasm32")]
+mod debug;
 mod depth;
 mod draw;
 mod draw_uniform;

@@ -233,7 +233,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.93.1
       - name: Dedicated 4K benchmark
-        run: cargo test --release --test m9_platform_release m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact -- --ignored
+        env:
+          SCENA_RUN_DEDICATED_4K_BENCHMARK: "1"
+        run: cargo test --release --test m9_platform_release m9_dedicated_headless_4k_benchmark_writes_release_blocker_artifact
       - name: Upload 4K benchmark artifact
         uses: actions/upload-artifact@v4
         if: always()
