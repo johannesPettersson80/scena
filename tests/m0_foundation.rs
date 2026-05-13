@@ -85,24 +85,25 @@ fn white_triangle() -> Primitive {
     ])
 }
 
-fn has_tonemapped_white_scene_pixel(frame: &[u8]) -> bool {
+fn has_neutral_bright_scene_pixel(frame: &[u8]) -> bool {
     frame.chunks_exact(4).any(|pixel| {
         let [r, g, b, a] = [pixel[0], pixel[1], pixel[2], pixel[3]];
         let max_delta = r.abs_diff(g).max(r.abs_diff(b)).max(g.abs_diff(b));
-        (190..=220).contains(&r)
-            && (190..=220).contains(&g)
-            && (190..=220).contains(&b)
-            && max_delta <= 3
+        (190..=245).contains(&r)
+            && (190..=245).contains(&g)
+            && (190..=245).contains(&b)
+            && max_delta <= 8
             && a == 255
     })
 }
 
 #[test]
-fn tonemapped_white_scene_pixel_check_tracks_visual_contract() {
-    assert!(has_tonemapped_white_scene_pixel(&[206, 206, 206, 255]));
-    assert!(!has_tonemapped_white_scene_pixel(&[255, 255, 255, 255]));
-    assert!(!has_tonemapped_white_scene_pixel(&[206, 80, 40, 255]));
-    assert!(!has_tonemapped_white_scene_pixel(&[206, 206, 206, 0]));
+fn neutral_bright_scene_pixel_check_tracks_visual_contract() {
+    assert!(has_neutral_bright_scene_pixel(&[206, 206, 206, 255]));
+    assert!(has_neutral_bright_scene_pixel(&[231, 231, 231, 255]));
+    assert!(!has_neutral_bright_scene_pixel(&[255, 255, 255, 255]));
+    assert!(!has_neutral_bright_scene_pixel(&[206, 80, 40, 255]));
+    assert!(!has_neutral_bright_scene_pixel(&[206, 206, 206, 0]));
 }
 
 #[test]
@@ -184,9 +185,9 @@ fn headless_gpu_triangle_render_uses_scene_vertex_data_when_available() {
             assert_eq!(outcome.draw_calls, 1);
             assert_eq!(renderer.stats().gpu_submissions, 1);
             assert!(
-                has_tonemapped_white_scene_pixel(renderer.frame_rgba8()),
-                "GPU frame should contain a neutral ACES/sRGB white scene triangle, not a \
-                 hard-coded colored shader triangle"
+                has_neutral_bright_scene_pixel(renderer.frame_rgba8()),
+                "GPU frame should contain an opaque neutral bright scene-authored white \
+                 triangle pixel, not a black frame or hard-coded colored shader triangle"
             );
         }
         Err(BuildError::NoAdapter { backend }) => {

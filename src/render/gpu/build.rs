@@ -198,7 +198,7 @@ fn instance_for_backend(backend: Backend) -> wgpu::Instance {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     #[test]
     fn v3d_vulkan_headless_adapter_is_rejected_by_default() {
