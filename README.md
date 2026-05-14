@@ -12,10 +12,11 @@ and keep visual behavior testable.
 It is designed for model viewers, CAD-style inspection tools, industrial visualization,
 digital-twin UIs, browser/native Rust apps, and CI rendered-output tests.
 
-![scena rendered-output showcase](docs/assets/readme/showcase.png)
+| DamagedHelmet | WaterBottle |
+|---|---|
+| ![DamagedHelmet rendered by scena](docs/assets/readme/damaged-helmet-scena.png) | ![WaterBottle rendered by scena](docs/assets/readme/waterbottle-scena.png) |
 
-The showcase is composed from real renderer artifacts. It shows the visual quality and
-reproducible output workflow used by the project gates.
+These are original rendered-output artifacts produced by `scena`.
 
 ## Why scena
 
