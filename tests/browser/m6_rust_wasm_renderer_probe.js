@@ -78,6 +78,18 @@ function configuredBackends() {
     .filter(Boolean);
 }
 
+function chromiumLaunchArgs(backends) {
+  const args = [
+    "--enable-unsafe-webgpu",
+    "--enable-features=Vulkan,WebGPU",
+    "--ignore-gpu-blocklist",
+  ];
+  if (!backends.includes("webgpu")) {
+    args.push("--use-angle=swiftshader");
+  }
+  return args;
+}
+
 function unavailableResult(backend, error) {
   return {
     backend,
@@ -422,14 +434,10 @@ async function main() {
   fs.mkdirSync(artifactDir, { recursive: true });
 
   const { server, url } = await serve(browserRoot, pkgRoot, fixtureRoot);
+  const selectedBackends = configuredBackends();
   const browser = await chromium.launch({
     headless: true,
-    args: [
-      "--enable-unsafe-webgpu",
-      "--enable-features=Vulkan,WebGPU",
-      "--ignore-gpu-blocklist",
-      "--use-angle=swiftshader",
-    ],
+    args: chromiumLaunchArgs(selectedBackends),
   });
 
   const workflows = [
@@ -459,7 +467,7 @@ async function main() {
   ];
   const results = [];
   try {
-    for (const backend of configuredBackends()) {
+    for (const backend of selectedBackends) {
       const page = await browser.newPage({ viewport: { width: 96, height: 96 } });
       const consoleMessages = [];
       page.on("console", (message) => {

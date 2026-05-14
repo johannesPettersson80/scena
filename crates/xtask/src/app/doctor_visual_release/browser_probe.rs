@@ -149,6 +149,7 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "/fixtures/",
             "webgl2",
             "webgpu",
+            "chromiumLaunchArgs",
             "SCENA_BROWSER_BACKENDS",
             "SCENA_BROWSER_ALLOW_UNAVAILABLE",
             "NoAdapter",

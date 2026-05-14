@@ -84,6 +84,17 @@ pub(crate) fn release_lane_content_ok(root: &Path, lane: &str) -> Result<bool, S
             .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
         return Ok(headless_cpu_render_proof_passes(&value));
     }
+    if matches!(lane, "linux-webgl2-chromium" | "linux-webgpu-chromium") {
+        let path = root.join("target/gate-artifacts/m6-rust-wasm-renderer-probe.json");
+        if !path.is_file() {
+            return Ok(false);
+        }
+        let text = fs::read_to_string(&path)
+            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+        let value = serde_json::from_str::<serde_json::Value>(&text)
+            .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
+        return Ok(browser_probe_release_proof_passes(&value, lane));
+    }
     if !matches!(lane, "macos-metal" | "windows-dx12") {
         return Ok(true);
     }
@@ -98,6 +109,38 @@ pub(crate) fn release_lane_content_ok(root: &Path, lane: &str) -> Result<bool, S
     let value = serde_json::from_str::<serde_json::Value>(&text)
         .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
     Ok(native_gpu_render_proof_passes(&value))
+}
+
+fn browser_probe_release_proof_passes(value: &serde_json::Value, lane: &str) -> bool {
+    let expected_backend = match lane {
+        "linux-webgl2-chromium" => "webgl2",
+        "linux-webgpu-chromium" => "webgpu",
+        _ => return false,
+    };
+    value.get("gate").and_then(serde_json::Value::as_str) == Some("m6-rust-wasm-renderer-probe")
+        && value.get("status").and_then(serde_json::Value::as_str) == Some("passed")
+        && value
+            .get("results")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|results| {
+                results.iter().any(|result| {
+                    result
+                        .get("backend")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|backend| {
+                            backend.to_ascii_lowercase().replace("webgl2", "webgl2")
+                                == expected_backend
+                        })
+                        && result.get("status").and_then(serde_json::Value::as_str)
+                            == Some("passed")
+                        && result
+                            .get("pixels")
+                            .and_then(|pixels| pixels.get("nonblack"))
+                            .and_then(serde_json::Value::as_u64)
+                            .unwrap_or(0)
+                            > 0
+                })
+            })
 }
 
 pub(crate) fn release_lane_required_artifacts(lane: &str) -> Vec<String> {

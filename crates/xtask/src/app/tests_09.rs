@@ -341,6 +341,42 @@ pub(crate) fn release_lane_artifact_status_requires_native_gpu_content_proof() {
 }
 
 #[test]
+pub(crate) fn release_lane_artifact_status_requires_browser_probe_passed_status() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-release-lane-browser-content-test");
+    let artifact_dir = fixture_root.join("target/gate-artifacts");
+    let command_dir = artifact_dir.join("release-lanes");
+    fs::create_dir_all(&command_dir).expect("command record dir");
+    fs::write(
+        artifact_dir.join("m6-rust-wasm-renderer-probe.json"),
+        r#"{
+            "gate": "m6-rust-wasm-renderer-probe",
+            "status": "unavailable",
+            "results": [{
+                "backend": "WebGpu",
+                "status": "failed",
+                "gpu_device": true,
+                "pixels": { "nonblack": 0 }
+            }]
+        }"#,
+    )
+    .expect("browser probe artifact");
+    fs::write(
+        command_dir.join("linux-webgpu-chromium.commands.jsonl"),
+        r#"{"command":"wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe","status":"passed","duration_ms":1}
+{"command":"npm run browser:m6","status":"passed","duration_ms":1}
+"#,
+    )
+    .expect("command record jsonl");
+
+    let artifact = release_lane_artifact(&fixture_root, "linux-webgpu-chromium")
+        .expect("release lane artifact builds");
+
+    assert_eq!(artifact["content_ok"], false);
+    assert_eq!(artifact["status"], "incomplete");
+}
+
+#[test]
 pub(crate) fn release_lane_artifact_supports_separate_headless_cpu_proof_lane() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-headless-cpu-lane-test");

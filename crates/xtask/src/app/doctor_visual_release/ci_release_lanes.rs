@@ -157,6 +157,7 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "failure_log_path",
             "failure_log_sha256",
             "release_lane_content_ok",
+            "browser_probe_release_proof_passes",
             "REQUIRED_NATIVE_GPU_RENDER_ARTIFACT_SUFFIXES",
             "require_native_gpu_render_proof",
             "native_gpu_render_proof_passes",
@@ -190,6 +191,7 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "release_readiness_rejects_release_lane_artifact_with_failed_command_record",
             "MIN_BENCHMARK_SAMPLE_COUNT",
             "release_lane_artifact_status_requires_native_gpu_content_proof",
+            "release_lane_artifact_status_requires_browser_probe_passed_status",
         ],
     );
     require_contains(
