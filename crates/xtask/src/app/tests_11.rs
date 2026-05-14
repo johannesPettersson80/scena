@@ -61,6 +61,8 @@ pub(crate) fn stage_release_artifacts_generates_canonical_release_evidence() {
         "release-lanes/wasm32-unknown-unknown.json",
         "release-lanes/macos-metal.json",
         "release-lanes/windows-dx12.json",
+        "m5-benchmarks.json",
+        "m5-public-api-freeze.json",
         "m9-platform/m9-benchmarks.json",
         "m9-platform/m9-benchmarks-4k.json",
     ] {
@@ -81,6 +83,7 @@ pub(crate) fn stage_release_artifacts_generates_canonical_release_evidence() {
         );
     }
     for suffix in [
+        "examples-visual/cad_plate_drawing_import.ppm",
         "m9-platform/linux-native-vulkan/default-scene.ppm",
         "m9-platform/linux-native-vulkan/static-gltf.ppm",
         "m9-platform/linux-native-vulkan/pbr-directional-red.ppm",

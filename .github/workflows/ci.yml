@@ -258,10 +258,10 @@ jobs:
           path: target/release-artifacts
       - name: Release readiness drift check
         env:
-          SCENA_RELEASE_ARTIFACT_ROOT: target/release-bundle
+          SCENA_RELEASE_ARTIFACT_ROOT: target/gate-artifacts
         shell: bash
         run: |
-          cargo run -p xtask -- stage-release-artifacts target/release-artifacts target/release-bundle
+          cargo run -p xtask -- stage-release-artifacts target/release-artifacts target/gate-artifacts
           cargo run -p xtask -- release-readiness 2>&1 \
             | tee target/release-artifacts/release-readiness-report.log
       - name: Upload release readiness report

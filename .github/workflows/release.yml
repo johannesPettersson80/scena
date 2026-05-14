@@ -211,10 +211,10 @@ jobs:
       - name: Stage release artifacts for readiness
         shell: bash
         run: |
-          cargo run -p xtask -- stage-release-artifacts target/release-artifacts target/release-bundle
+          cargo run -p xtask -- stage-release-artifacts target/release-artifacts target/gate-artifacts
       - name: Release readiness
         env:
-          SCENA_RELEASE_ARTIFACT_ROOT: target/release-bundle
+          SCENA_RELEASE_ARTIFACT_ROOT: target/gate-artifacts
         run: cargo run -p xtask -- release-readiness
       - name: Clean publish dry run
         run: cargo publish --dry-run
