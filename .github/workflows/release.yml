@@ -208,7 +208,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: target/release-artifacts
-          merge-multiple: true
       - name: Stage release artifacts for readiness
         shell: bash
         run: |

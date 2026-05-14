@@ -39,7 +39,6 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "Release readiness drift check",
             "actions/download-artifact@v4",
             "target/release-artifacts",
-            "merge-multiple: true",
             "stage-release-artifacts target/release-artifacts target/release-bundle",
             "SCENA_RELEASE_ARTIFACT_ROOT: target/release-bundle",
             "cargo run -p xtask -- release-readiness",
@@ -55,7 +54,14 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
         findings,
         "RELEASE-CI-M9",
         ".github/workflows/ci.yml",
-        &["if-no-files-found: ignore"],
+        &["if-no-files-found: ignore", "merge-multiple: true"],
+    );
+    forbid_contains(
+        root,
+        findings,
+        "RELEASE-CI-M9",
+        ".github/workflows/release.yml",
+        &["merge-multiple: true"],
     );
     require_contains(
         root,
