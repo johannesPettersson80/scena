@@ -12,10 +12,10 @@ and keep visual behavior testable.
 It is designed for model viewers, CAD-style inspection tools, industrial visualization,
 digital-twin UIs, browser/native Rust apps, and CI rendered-output tests.
 
-![scena rendered-output proof strip](docs/assets/readme/render-proof-strip.png)
+![scena rendered-output showcase](docs/assets/readme/showcase.png)
 
-The image strip is generated from renderer artifacts. It shows reproducible output from
-the same proof workflow used by the project gates.
+The showcase is composed from real renderer artifacts. It shows the visual quality and
+reproducible output workflow used by the project gates.
 
 ## Why scena
 
