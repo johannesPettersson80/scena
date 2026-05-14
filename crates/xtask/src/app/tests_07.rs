@@ -100,14 +100,11 @@ pub(crate) fn doctor_rejects_release_publish_dry_run_helper_missing_strict_mode_
 }
 
 #[test]
-pub(crate) fn doctor_rejects_release_readiness_ci_continue_on_error_after_adr0005_supersession_regression()
- {
-    // RELEASE-READINESS-CI-FAIL-CLOSED: once ADR-0005 leaves Status:
-    // Accepted (e.g. is Superseded by ADR-0006), no GHA workflow job that
-    // runs release-readiness may set continue-on-error: true. The fixture
-    // simulates a post-supersession state by writing ADR-0005 with
-    // Status: Superseded and a workflow that would otherwise still mask
-    // the release-readiness signal.
+pub(crate) fn doctor_rejects_release_readiness_ci_continue_on_error_regression() {
+    // RELEASE-READINESS-CI-FAIL-CLOSED: no GHA workflow job that runs
+    // release-readiness may set continue-on-error: true. Pre-merge CI may
+    // convert ADR-0005 blockers into an explicit report step, but it must
+    // not leave a permanently red "allowed failure" job in normal push CI.
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root =
         root.join("target/xtask-doctor-regressions/release-readiness-ci-continue-on-error");
@@ -134,18 +131,16 @@ pub(crate) fn doctor_rejects_release_readiness_ci_continue_on_error_after_adr000
                 && finding.message.contains("premerge-release-readiness")
                 && finding.message.contains("continue-on-error: true")
         }),
-        "doctor must reject continue-on-error: true on release-readiness \
-         jobs once ADR-0005 leaves Accepted: {findings:?}",
+        "doctor must reject continue-on-error: true on release-readiness jobs: {findings:?}",
     );
 }
 
 #[test]
-pub(crate) fn release_readiness_ci_fail_closed_allows_continue_on_error_while_adr0005_is_accepted()
+pub(crate) fn release_readiness_ci_fail_closed_rejects_continue_on_error_while_adr0005_is_accepted()
 {
-    // RELEASE-READINESS-CI-FAIL-CLOSED transitional exception: while
-    // ADR-0005 is in Status: Accepted, the documented transitional
-    // continue-on-error on premerge-release-readiness is allowed so the
-    // open-gates list surfaces in CI without blocking PR merges.
+    // RELEASE-READINESS-CI-FAIL-CLOSED: ADR-0005 may keep pre-merge
+    // release-readiness informational, but it may not use continue-on-error
+    // because that still leaves a red job in the GitHub Actions UI.
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root =
         root.join("target/xtask-doctor-regressions/release-readiness-ci-fail-closed-accepted");
@@ -167,9 +162,13 @@ pub(crate) fn release_readiness_ci_fail_closed_allows_continue_on_error_while_ad
     check_release_readiness_ci_fail_closed(&fixture_root, &mut findings);
 
     assert!(
-        findings.is_empty(),
-        "while ADR-0005 is Accepted the premerge-release-readiness \
-         continue-on-error transitional exception must not fire: {findings:?}",
+        findings.iter().any(|finding| {
+            finding.rule == "RELEASE-READINESS-CI-FAIL-CLOSED"
+                && finding.message.contains("premerge-release-readiness")
+                && finding.message.contains("continue-on-error: true")
+        }),
+        "doctor must reject continue-on-error: true even while ADR-0005 is Accepted: \
+         {findings:?}",
     );
 }
 

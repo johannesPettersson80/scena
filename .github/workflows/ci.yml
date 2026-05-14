@@ -245,16 +245,14 @@ jobs:
           if-no-files-found: error
 
   premerge-release-readiness:
-    name: Pre-merge release readiness
+    name: Pre-merge release readiness report
     runs-on: ubuntu-24.04
     # release-readiness is the project's own end-to-end "do not release yet" gate. It
-    # fail-closes on the 49 open state-of-art Three.js replacement gates and on lane
-    # artifacts whose status is not "passed", which is the expected steady state until
-    # Phase 1B / 1C / 3 / 10 close. Keep the job scheduled so the failure log surfaces
-    # the exact open gates on every push, but mark it continue-on-error so it doesn't
-    # mask the lane-level CI signal — the per-lane jobs above are the real regression
-    # detectors. This matches the browser-WebGPU treatment.
-    continue-on-error: true
+    # fail-closes on open state-of-art Three.js replacement gates and missing final
+    # release evidence. While ADR-0005 is still Accepted, pre-merge CI records that
+    # blocker report as a green informational job so normal pushes do not show a
+    # permanent red job. Once ADR-0005 is superseded, this job exits with the real
+    # release-readiness status. The tag/release workflow remains hard fail-closed.
     needs:
       - linux-native-vulkan
       - linux-browser-webgl2
@@ -271,6 +269,29 @@ jobs:
         with:
           path: target/release-artifacts
       - name: Release readiness drift check
+        shell: bash
         env:
           SCENA_RELEASE_ARTIFACT_ROOT: target/release-artifacts
-        run: cargo run -p xtask -- release-readiness
+        run: |
+          mkdir -p target/release-artifacts
+          set +e
+          cargo run -p xtask -- release-readiness 2>&1 \
+            | tee target/release-artifacts/release-readiness-report.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "release-readiness passed for this artifact bundle"
+            exit 0
+          fi
+          if grep -q "Status: Accepted" docs/decisions/ADR-0005-local-release-candidate-deferrals.md; then
+            echo "::notice title=Release readiness blocked::release-readiness exited $status because ADR-0005/final release evidence is still open. This pre-merge report is informational until ADR-0005 is superseded; release.yml remains fail-closed."
+            exit 0
+          fi
+          exit "$status"
+      - name: Upload release readiness report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: premerge-release-readiness-report
+          path: target/release-artifacts/release-readiness-report.log
+          if-no-files-found: warn

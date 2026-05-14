@@ -25,32 +25,23 @@ pub(crate) fn check_release_publish_dry_run_helper(root: &Path, findings: &mut V
 
 pub(crate) fn check_release_readiness_ci_fail_closed(root: &Path, findings: &mut Vec<Finding>) {
     // RELEASE-READINESS-CI-FAIL-CLOSED: any GHA workflow job that runs
-    // `cargo run -p xtask -- release-readiness` must fail closed (no
-    // `continue-on-error: true`) once ADR-0005 moves out of `Status: Accepted`.
-    // While ADR-0005 is still in `Status: Accepted`, the rule recognizes the
-    // documented transitional exception and only flags configurations that
-    // would mask release-readiness on the publish-tag path.
-    let adr_active = match fs::read_to_string(
-        root.join("docs/decisions/ADR-0005-local-release-candidate-deferrals.md"),
-    ) {
-        Ok(text) => text.contains("Status: Accepted"),
-        Err(_) => false,
-    };
+    // `cargo run -p xtask -- release-readiness` must not use
+    // `continue-on-error: true`. Pre-merge CI may turn the command into an
+    // explicit blocker report while ADR-0005 is Accepted, but GitHub must not
+    // leave a permanently red "allowed failure" job in the normal push UI.
+    // The publish-tag path remains hard fail-closed through release.yml.
     for workflow_rel in [".github/workflows/ci.yml", ".github/workflows/release.yml"] {
         let path = root.join(workflow_rel);
         let Ok(text) = fs::read_to_string(&path) else {
             continue;
         };
         for offending in jobs_with_continue_on_error_release_readiness(&text) {
-            if adr_active && offending.starts_with("premerge-release-readiness") {
-                continue;
-            }
             findings.push(Finding::new(
                 "RELEASE-READINESS-CI-FAIL-CLOSED",
                 format!(
                     "{workflow_rel} job '{offending}' runs release-readiness with \
-                     continue-on-error: true; the gate must fail closed once \
-                     ADR-0005 is superseded"
+                     continue-on-error: true; use an explicit report step for \
+                     ADR-0005 pre-merge blockers and keep release.yml fail-closed"
                 ),
             ));
         }
