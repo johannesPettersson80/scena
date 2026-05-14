@@ -10,7 +10,9 @@ pub(crate) fn check_release_artifact_bundle(artifact_root: &Path, findings: &mut
     }
 
     let mut files = Vec::new();
-    if let Err(error) = collect_files_with_extensions(artifact_root, &["json", "ppm"], &mut files) {
+    if let Err(error) =
+        collect_files_with_extensions(artifact_root, &["json", "ppm", "toml"], &mut files)
+    {
         findings.push(Finding::new(
             "RELEASE-READY-ARTIFACTS",
             format!("could not collect release artifacts: {error}"),

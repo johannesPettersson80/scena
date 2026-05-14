@@ -54,12 +54,6 @@ jobs:
   linux-browser-webgl2:
     name: Linux browser WebGL2
     runs-on: ubuntu-24.04
-    # Headless Chromium WebGL2 + WebGPU lanes regress through wasm-bindgen-test in CI
-    # without a real graphics adapter. The browser-renderer-parity contract is exercised
-    # locally on the maintainer's checkout and recorded in the M6 probe artifact; the CI
-    # job stays scheduled (so failures stay visible and fixable) but does not block the
-    # other release lanes until the headless-driver gap closes — see ADR-0005.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.93.1
@@ -95,7 +89,6 @@ jobs:
   linux-browser-webgpu:
     name: Linux browser WebGPU
     runs-on: ubuntu-24.04
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.93.1
@@ -247,12 +240,6 @@ jobs:
   premerge-release-readiness:
     name: Pre-merge release readiness report
     runs-on: ubuntu-24.04
-    # release-readiness is the project's own end-to-end "do not release yet" gate. It
-    # fail-closes on open state-of-art Three.js replacement gates and missing final
-    # release evidence. While ADR-0005 is still Accepted, pre-merge CI records that
-    # blocker report as a green informational job so normal pushes do not show a
-    # permanent red job. Once ADR-0005 is superseded, this job exits with the real
-    # release-readiness status. The tag/release workflow remains hard fail-closed.
     needs:
       - linux-native-vulkan
       - linux-browser-webgl2
@@ -274,20 +261,8 @@ jobs:
           SCENA_RELEASE_ARTIFACT_ROOT: target/release-artifacts
         run: |
           mkdir -p target/release-artifacts
-          set +e
           cargo run -p xtask -- release-readiness 2>&1 \
             | tee target/release-artifacts/release-readiness-report.log
-          status=${PIPESTATUS[0]}
-          set -e
-          if [ "$status" -eq 0 ]; then
-            echo "release-readiness passed for this artifact bundle"
-            exit 0
-          fi
-          if grep -q "Status: Accepted" docs/decisions/ADR-0005-local-release-candidate-deferrals.md; then
-            echo "::notice title=Release readiness blocked::release-readiness exited $status because ADR-0005/final release evidence is still open. This pre-merge report is informational until ADR-0005 is superseded; release.yml remains fail-closed."
-            exit 0
-          fi
-          exit "$status"
       - name: Upload release readiness report
         uses: actions/upload-artifact@v4
         if: always()

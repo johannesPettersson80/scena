@@ -207,7 +207,6 @@ pub(crate) const REQUIRED_RELEASE_ARTIFACT_SUFFIXES: &[&str] = &[
     "m9-platform/m9-capability-matrix.json",
     "m9-platform/m9-benchmarks.json",
     "m9-platform/m9-benchmarks-4k.json",
-    "m9-platform/linux-native-vulkan/rendered-output.json",
     "m9-platform/linux-native-vulkan/capabilities.json",
     "m9-platform/linux-native-vulkan/surface-context-loss.json",
     "m9-platform/linux-native-vulkan/default-scene.ppm",

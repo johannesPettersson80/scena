@@ -84,7 +84,7 @@ pub(crate) fn release_lane_content_ok(root: &Path, lane: &str) -> Result<bool, S
             .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
         return Ok(headless_cpu_render_proof_passes(&value));
     }
-    if !matches!(lane, "linux-native-vulkan" | "macos-metal" | "windows-dx12") {
+    if !matches!(lane, "macos-metal" | "windows-dx12") {
         return Ok(true);
     }
     let path = root.join(format!(

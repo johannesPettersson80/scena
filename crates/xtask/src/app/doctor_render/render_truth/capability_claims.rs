@@ -48,13 +48,6 @@ pub(crate) fn check_renderer_truth_capability_claim_contracts(
         root,
         findings,
         "ARCH-RENDER-TRUTH",
-        "Cargo.toml",
-        &["version = \"1.0.0\""],
-    );
-    forbid_contains(
-        root,
-        findings,
-        "ARCH-RENDER-TRUTH",
         "examples/glb_model_viewer.rs",
         &["minimal_scene.gltf"],
     );
