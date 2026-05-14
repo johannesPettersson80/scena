@@ -260,6 +260,15 @@ jobs:
         shell: bash
         run: |
           mkdir -p target/release-artifacts
+          mkdir -p target/gate-artifacts
+          if [ -d target/release-artifacts/gate-artifacts ]; then
+            cp -a target/release-artifacts/gate-artifacts/. target/gate-artifacts/
+          fi
+          find target/release-artifacts -mindepth 1 -maxdepth 1 \
+            ! -name gate-artifacts \
+            ! -name m9-browser-pkg \
+            ! -name release-readiness-report.log \
+            -exec cp -a {} target/gate-artifacts/ \;
           cargo run -p xtask -- release-readiness 2>&1 \
             | tee target/release-artifacts/release-readiness-report.log
       - name: Upload release readiness report

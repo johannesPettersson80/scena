@@ -208,6 +208,18 @@ jobs:
         with:
           path: target/release-artifacts
           merge-multiple: true
+      - name: Stage release artifacts for readiness
+        shell: bash
+        run: |
+          mkdir -p target/gate-artifacts
+          if [ -d target/release-artifacts/gate-artifacts ]; then
+            cp -a target/release-artifacts/gate-artifacts/. target/gate-artifacts/
+          fi
+          find target/release-artifacts -mindepth 1 -maxdepth 1 \
+            ! -name gate-artifacts \
+            ! -name m9-browser-pkg \
+            ! -name release-readiness-report.log \
+            -exec cp -a {} target/gate-artifacts/ \;
       - name: Release readiness
         env:
           SCENA_RELEASE_ARTIFACT_ROOT: target/release-artifacts
