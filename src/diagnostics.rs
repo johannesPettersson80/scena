@@ -360,8 +360,7 @@ pub struct RendererStats {
     /// materials. Commit 2 wires the GPU pipeline to consume the shared
     /// `texture_2d_array<f32>` + dynamic-offset uniform; the layer count
     /// reported here matches the layer count actually allocated when
-    /// `material_batch_layers >= 2`. See
-    /// `docs/specs/texture-array-batching-plan.md`.
+    /// `material_batch_layers >= 2`.
     pub material_batch_layers: u32,
     /// Plan line 778 step 2: actual material bind-group count consumed by
     /// the GPU pipeline. Equals 1 when the renderer chose the batched

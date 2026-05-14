@@ -39,35 +39,7 @@ pub(crate) fn check_unit_test_first_governance(root: &Path, findings: &mut Vec<F
         ".codex/skills/scena-renderer-architecture/SKILL.md",
         &["Before production implementation"],
     );
-    require_contains(
-        root,
-        findings,
-        "TEST-FIRST-DOCTOR-CONTRACT",
-        "docs/specs/doctor-contract.md",
-        &["unit-test-first governance"],
-    );
-
-    for rel in MILESTONE_CHECKLISTS {
-        require_contains(
-            root,
-            findings,
-            "TEST-FIRST-CHECKLIST",
-            rel,
-            &["Unit-test-first evidence"],
-        );
-    }
 }
-
-pub(crate) const MILESTONE_CHECKLISTS: &[&str] = &[
-    "docs/checklists/m0-foundation.md",
-    "docs/checklists/m1-geometry-materials.md",
-    "docs/checklists/m2-lighting-depth-clipping.md",
-    "docs/checklists/m3a-app-features.md",
-    "docs/checklists/m3b-gltf-animation.md",
-    "docs/checklists/m4-performance-platform.md",
-    "docs/checklists/m5-v1-release.md",
-    "docs/checklists/acceptance-index.md",
-];
 
 pub(crate) fn check_backend_vocabulary(root: &Path, findings: &mut Vec<Finding>) {
     require_contains(

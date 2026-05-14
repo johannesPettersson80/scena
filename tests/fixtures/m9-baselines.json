@@ -1,0 +1,55 @@
+{
+  "schema": "scena.m9.benchmark_baselines.v1",
+  "metric": "p95_frame_ms",
+  "minimum_sample_count": 100,
+  "rows": [
+    {
+      "scene": "static-viewer",
+      "backend": "Headless",
+      "p95_frame_ms": 50.0,
+      "allowed_regression_percent": 100.0,
+      "minimum_sample_count": 100,
+      "note": "Debug-profile software-renderer baseline. Public release lanes must refresh this with optimized lane-specific values before claiming performance."
+    },
+    {
+      "scene": "standard-model-viewer-gltf",
+      "backend": "Headless",
+      "p95_frame_ms": 50.0,
+      "allowed_regression_percent": 100.0,
+      "minimum_sample_count": 100,
+      "note": "Debug-profile software-renderer baseline for camera-framed non-NDC glTF proof."
+    },
+    {
+      "scene": "larger-industrial-gltf",
+      "backend": "Headless",
+      "p95_frame_ms": 250.0,
+      "allowed_regression_percent": 100.0,
+      "minimum_sample_count": 100,
+      "note": "Debug-profile software-renderer baseline for the BrainStem stress fixture."
+    },
+    {
+      "scene": "high-instance",
+      "backend": "Headless",
+      "p95_frame_ms": 75.0,
+      "allowed_regression_percent": 100.0,
+      "minimum_sample_count": 100,
+      "note": "Debug-profile software-renderer baseline for 128 asset-backed instances."
+    },
+    {
+      "scene": "idle",
+      "backend": "Headless",
+      "p95_frame_ms": 2.0,
+      "allowed_regression_percent": 100.0,
+      "minimum_sample_count": 100,
+      "note": "Render-on-change idle calls should stay near-zero; the allowance is intentionally tolerant for noisy shared runners."
+    },
+    {
+      "scene": "headless-4k",
+      "backend": "Headless",
+      "p95_frame_ms": 2500.0,
+      "allowed_regression_percent": 100.0,
+      "minimum_sample_count": 100,
+      "note": "Dedicated release-profile 3840x2160 software-renderer lane baseline. Public release lanes must refresh this with optimized hardware-specific values before making performance claims."
+    }
+  ]
+}

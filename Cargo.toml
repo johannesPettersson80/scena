@@ -16,7 +16,6 @@ include = [
     "tests/**",
     "examples/**",
     "docs/**",
-    "docs/api/m5-semver-baseline.toml",
     "README.md",
     "CHANGELOG.md",
     "LICENSE-*",

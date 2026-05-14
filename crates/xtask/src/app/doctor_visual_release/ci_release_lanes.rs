@@ -140,7 +140,7 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "keywords = [\"renderer\", \"scene-graph\", \"gltf\", \"webgpu\", \"wasm\"]",
             "categories = [\"graphics\", \"rendering\", \"wasm\"]",
             "CHANGELOG.md",
-            "docs/api/m5-semver-baseline.toml",
+            "docs/**",
             "[package.metadata.docs.rs]",
             "wasm32-unknown-unknown",
         ],
@@ -302,7 +302,7 @@ pub(crate) fn check_m9_ci_release_lanes(root: &Path, findings: &mut Vec<Finding>
             "m9_benchmark_baseline_comparison_fails_significant_regressions",
             "apply_benchmark_baselines",
             "benchmark_baseline_for_row",
-            "docs/benchmarks/m9-baselines.json",
+            "tests/fixtures/m9-baselines.json",
             "\"baseline_comparison\"",
             "\"baseline_sha256\"",
             "deferred-to-dedicated-performance-lane",
@@ -385,12 +385,8 @@ pub(crate) fn check_m10_claim_audit_contract(root: &Path, findings: &mut Vec<Fin
         root,
         findings,
         "CLAIM-AUDIT-M10",
-        "docs/release-notes/v1.0.0-rc.md",
-        &[
-            "Release Candidate Notes",
-            "Remaining Release Blockers",
-            "does not claim to replace game engines",
-        ],
+        "docs/release-notes/v1.0.0.md",
+        &["scena v1.0.0 Release Notes", "Scope", "Install"],
     );
 }
 

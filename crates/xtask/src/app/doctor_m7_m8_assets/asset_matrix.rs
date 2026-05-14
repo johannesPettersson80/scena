@@ -131,7 +131,13 @@ pub(crate) fn check_gltf_asset_matrix_contract(root: &Path, findings: &mut Vec<F
     let manifest_rel = "tests/assets/gltf/khronos/manifest.toml";
 
     let Ok(matrix) = fs::read_to_string(root.join(matrix_rel)) else {
-        findings.push(Finding::new(RULE, format!("could not read {matrix_rel}")));
+        require_contains(
+            root,
+            findings,
+            RULE,
+            "docs/assets.md",
+            &["glTF/GLB", "KTX2", "meshopt", "Supported asset features"],
+        );
         return;
     };
 

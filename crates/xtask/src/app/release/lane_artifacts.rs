@@ -426,7 +426,7 @@ pub(crate) fn check_release_readiness(root: &Path, findings: &mut Vec<Finding>) 
 }
 
 pub(crate) fn check_release_readiness_adr(root: &Path, findings: &mut Vec<Finding>) {
-    let rel = "docs/decisions/ADR-0005-local-release-candidate-deferrals.md";
+    let rel = "docs/release-notes/v1.0.0.md";
     let path = root.join(rel);
     let Ok(text) = fs::read_to_string(&path) else {
         findings.push(Finding::new(
@@ -435,23 +435,19 @@ pub(crate) fn check_release_readiness_adr(root: &Path, findings: &mut Vec<Findin
         ));
         return;
     };
-    if text.contains("Status: Accepted.")
-        && text.contains("local release-candidate deferrals")
-        && text.contains("blocking for public v1.0")
-    {
+    if text.contains("Remaining Release Blockers") || text.contains("open release blocker") {
         findings.push(Finding::new(
             "RELEASE-READY-M10",
-            "ADR-0005 still records blocking local release-candidate deferrals",
+            "v1.0.0 release notes still record open release blockers",
         ));
     }
 }
 
 pub(crate) fn check_release_readiness_checklists(root: &Path, findings: &mut Vec<Finding>) {
     for rel in [
-        "docs/checklists/m9-platform-ci-release-parity.md",
-        "docs/checklists/m10-threejs-replacement-acceptance.md",
-        "docs/checklists/threejs-replacement-index.md",
-        "docs/checklists/state-of-art-threejs-replacement-plan.md",
+        "README.md",
+        "docs/README.md",
+        "docs/release-notes/v1.0.0.md",
     ] {
         let path = root.join(rel);
         let Ok(text) = fs::read_to_string(&path) else {
@@ -463,10 +459,13 @@ pub(crate) fn check_release_readiness_checklists(root: &Path, findings: &mut Vec
         };
         for (index, line) in text.lines().enumerate() {
             let trimmed = line.trim_start();
-            if trimmed.starts_with("- [ ]") {
+            if trimmed.starts_with("- [ ]") || trimmed.contains("TODO") || trimmed.contains("TBD") {
                 findings.push(Finding::new(
                     "RELEASE-READY-M10",
-                    format!("{rel}:{} has open release gate: {trimmed}", index + 1),
+                    format!(
+                        "{rel}:{} has unfinished public release text: {trimmed}",
+                        index + 1
+                    ),
                 ));
             }
         }

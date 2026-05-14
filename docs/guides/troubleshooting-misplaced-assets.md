@@ -2,7 +2,7 @@
 
 Type: Guide.
 
-Use this checklist when an imported model is invisible, rotated sideways, scaled wrong, or
+Use these steps when an imported model is invisible, rotated sideways, scaled wrong, or
 connects to another object in the wrong place.
 
 ## Start With Diagnostics

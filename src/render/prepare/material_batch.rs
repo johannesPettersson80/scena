@@ -8,9 +8,7 @@
 //! for every populated role; the first incompatibility blocks the
 //! batched path. The plan is exposed through `RendererStats` so test
 //! harnesses can verify the renderer detects array-batching
-//! opportunities even before commit 2 wires the actual GPU array
-//! allocation. See [`docs/specs/texture-array-batching-plan.md`] for
-//! the full multi-commit roadmap.
+//! opportunities.
 
 use crate::assets::{TextureDesc, TextureSamplerDesc, TextureSourceFormat};
 

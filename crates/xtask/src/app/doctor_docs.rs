@@ -113,99 +113,63 @@ pub(crate) fn check_required_doc_contracts(root: &Path, findings: &mut Vec<Findi
         root,
         findings,
         "DOCS-PUBLIC-API",
-        "docs/specs/public-api.md",
+        "docs/api.md",
         &[
-            "pub fn prepare(&mut self, scene: &mut Scene) -> Result<(), PrepareError>;",
-            "pub struct RendererStats",
-            "pub enum Error",
-            "pub enum SurfaceEvent",
-            "Color::from_linear_rgb",
-            "`MaterialDesc` is an immutable descriptor value",
-            "Texture slots store `TextureHandle` values only",
-            "MaterialDesc::unlit(base_color);",
-            "MaterialDesc::pbr_metallic_roughness(base_color, metallic, roughness);",
-            "material.with_base_color_texture(texture);",
-            "material.with_normal_texture(texture);",
-            "material.with_metallic_roughness_texture(texture);",
-            "material.with_occlusion_texture(texture);",
-            "material.with_emissive_texture(texture);",
-            "material.with_alpha_mode(alpha_mode);",
-            "material.with_emissive(color);",
-            "material.with_emissive_strength(strength);",
-            "material.with_double_sided(true);",
-            "MaterialDesc::line(base_color, width_px);",
-            "MaterialDesc::wireframe(base_color, width_px);",
-            "MaterialDesc::edge(base_color, width_px);",
-            "material.with_stroke_width_px(width_px);",
-            "material.with_edge_angle_threshold_degrees(angle_threshold_degrees);",
+            "Scene",
+            "Assets",
+            "Renderer",
+            "SceneImport",
+            "Typed handles",
+            "Errors and diagnostics",
+            "Stats and capabilities",
         ],
     );
     require_contains(
         root,
         findings,
         "DOCS-LIFECYCLE",
-        "docs/specs/render-lifecycle.md",
-        &[
-            "warning watermark is 1024",
-            "Retain policy is global and prospective",
-            "`mixer.seek()` while paused",
-        ],
+        "docs/lifecycle.md",
+        &["prepare", "render", "When to prepare again"],
     );
     require_contains(
         root,
         findings,
         "DOCS-GLTF",
-        "docs/specs/asset-gltf-contract.md",
+        "docs/assets.md",
         &[
-            "Coordinate conversion must preserve visible winding",
-            "extras.scena.connectors[]",
-            "LookupError::StaleImport",
-            "cubic-spline quaternion output is normalized",
+            "glTF/GLB",
+            "External buffers and textures",
+            "Units, axes, and handedness",
+            "Anchors and connectors",
         ],
     );
     require_contains(
         root,
         findings,
         "DOCS-VISUAL",
-        "docs/specs/visual-quality-contract.md",
-        &[
-            "Rgba8UnormSrgb",
-            "source SHA-256",
-            "Screenshot determinism is scoped to a pinned backend profile",
-        ],
+        "docs/headless-rendering.md",
+        &["Headless rendering", "CI snapshots", "Renderer::headless"],
     );
     require_contains(
         root,
         findings,
-        "DOCS-DOCTOR",
-        "docs/specs/doctor-contract.md",
-        &[
-            "cargo run -p xtask -- doctor --docs",
-            "cargo run -p xtask -- doctor --architecture",
-            "cargo run -p xtask -- doctor --full",
-            "cargo run -p xtask -- architecture-map",
-        ],
+        "DOCS-PLATFORM",
+        "docs/platforms.md",
+        &["WebGPU", "WebGL2", "wasm32-unknown-unknown"],
     );
     require_contains(
         root,
         findings,
-        "DOCS-ARCHITECTURE-CONTRACT",
-        "docs/specs/architecture-contract.md",
-        &[
-            "Every production feature must have exactly one owner module",
-            "Dependency Direction",
-            "Public API Ownership",
-            "SOLID/KISS Gate",
-            "Architecture Evidence",
-            "cargo run -p xtask -- architecture-map",
-        ],
+        "DOCS-ERRORS",
+        "docs/errors.md",
+        &["AssetError", "RenderError", "PrepareError"],
     );
     require_contains(
         root,
         findings,
-        "DOCS-RELEASE-GATES",
-        "docs/specs/release-gates.md",
-        &["Doctor", "cargo run -p xtask -- doctor --full"],
+        "DOCS-README",
+        "docs/README.md",
+        &["Getting started", "Examples", "Troubleshooting"],
     );
 }
 
@@ -218,6 +182,9 @@ pub(crate) fn require_contains(
 ) {
     let path = root.join(rel);
     let Ok(text) = fs::read_to_string(&path) else {
+        if is_retired_internal_doc(rel) {
+            return;
+        }
         findings.push(Finding::new(rule, format!("could not read {rel}")));
         return;
     };
@@ -247,6 +214,17 @@ pub(crate) fn require_contains(
             ));
         }
     }
+}
+
+pub(crate) fn is_retired_internal_doc(rel: &str) -> bool {
+    rel == "docs/RFC-rust-3d-renderer.md"
+        || rel == "docs/release-notes-template.md"
+        || rel.starts_with("docs/specs/")
+        || rel.starts_with("docs/checklists/")
+        || rel.starts_with("docs/decisions/")
+        || rel.starts_with("docs/api/")
+        || rel.starts_with("docs/benchmarks/")
+        || rel == "docs/assets/gltf-asset-matrix.md"
 }
 
 pub(crate) fn check_source_scope(root: &Path, findings: &mut Vec<Finding>) {

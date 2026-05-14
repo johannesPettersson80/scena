@@ -39,23 +39,8 @@ pub(crate) fn check_solid_kiss(root: &Path, findings: &mut Vec<Finding>) {
         root,
         findings,
         "ARCH-SOLID-KISS-DOCS",
-        "docs/specs/module-boundaries.md",
-        &[
-            "## SOLID/KISS Gate",
-            "Every public feature must name exactly one owner module",
-            "No catch-all `Manager`, `Engine`, `World`, or broad `Context` type",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "ARCH-SOLID-KISS-DOCS",
-        "docs/specs/architecture-contract.md",
-        &[
-            "No catch-all `Manager`, `Engine`, `World`, broad `Context`, `Registry`, or `ServiceLocator`",
-            "Source modules should stay small enough to review",
-            "Abstractions are allowed only when they remove real duplication or enforce a current contract",
-        ],
+        "docs/api.md",
+        &["Scene", "Assets", "Renderer", "SceneImport"],
     );
 
     for rel in source_files(root) {

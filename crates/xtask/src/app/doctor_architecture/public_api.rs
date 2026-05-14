@@ -88,7 +88,9 @@ pub(crate) fn check_public_api_ownership(root: &Path, findings: &mut Vec<Finding
         if !by_type.contains_key(required) {
             findings.push(Finding::new(
                 "ARCH-PUBLIC-API-OWNERSHIP",
-                format!("core public API type {required} is missing from docs/api/public-api-ownership.toml"),
+                format!(
+                    "core public API type {required} is missing from src/lib.rs public re-exports"
+                ),
             ));
         }
     }
@@ -97,7 +99,7 @@ pub(crate) fn check_public_api_ownership(root: &Path, findings: &mut Vec<Finding
             findings.push(Finding::new(
                 "ARCH-PUBLIC-API-OWNERSHIP",
                 format!(
-                    "crate-root public type re-export {public_type} is missing from docs/api/public-api-ownership.toml"
+                    "crate-root public type re-export {public_type} is missing from derived public API ownership"
                 ),
             ));
         }

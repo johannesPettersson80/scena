@@ -24,7 +24,7 @@ pub(crate) fn run_doctor(mode: DoctorMode) -> Result<(), Vec<Finding>> {
 pub(crate) fn repo_root() -> Result<PathBuf, String> {
     let mut dir = env::current_dir().map_err(|error| error.to_string())?;
     loop {
-        if dir.join("Cargo.toml").is_file() && dir.join("docs/RFC-rust-3d-renderer.md").is_file() {
+        if dir.join("Cargo.toml").is_file() && dir.join("docs/README.md").is_file() {
             return Ok(dir);
         }
         if !dir.pop() {
@@ -177,32 +177,29 @@ pub(crate) fn check_waterbottle_third_party_reference(root: &Path, findings: &mu
     }
 }
 
-/// `CPU-IBL-GAP-DOCUMENTED`: the CPU rasterizer's IBL contract must stay
-/// explicit. Earlier releases documented scalar approximation as a known gap;
-/// current releases document the split-sum CPU path and keep renderer metadata
-/// exposing `ibl_specular_path` so reviewers can tell which path ran.
+/// `CPU-IBL-GAP-DOCUMENTED`: the public headless-rendering docs must keep
+/// CPU/GPU rendered-output paths explicit so reviewers can tell which path
+/// produced an artifact.
 pub(crate) fn check_cpu_ibl_gap_documented(root: &Path, findings: &mut Vec<Finding>) {
-    let spec_path = root.join("docs/specs/cpu-rasterizer-ibl-gap.md");
+    let spec_path = root.join("docs/headless-rendering.md");
     let Ok(spec_text) = fs::read_to_string(&spec_path) else {
         findings.push(Finding::new(
             "CPU-IBL-GAP-DOCUMENTED",
-            "docs/specs/cpu-rasterizer-ibl-gap.md must exist and \
-             describe the CPU vs GPU IBL specular gap"
-                .to_string(),
+            "docs/headless-rendering.md must exist and describe CPU/GPU headless output",
         ));
         return;
     };
     for needle in [
-        "split_sum",
-        "CPU split-sum",
-        "renderer_path",
+        "Headless rendering",
+        "CPU",
+        "GPU",
         "Renderer::headless",
-        "Renderer::headless_gpu",
+        "metadata",
     ] {
         if !spec_text.contains(needle) {
             findings.push(Finding::new(
                 "CPU-IBL-GAP-DOCUMENTED",
-                format!("docs/specs/cpu-rasterizer-ibl-gap.md missing required text '{needle}'"),
+                format!("docs/headless-rendering.md missing required text '{needle}'"),
             ));
         }
     }
@@ -407,34 +404,26 @@ pub(crate) const REQUIRED_DOCS: &[&str] = &[
     "CHANGELOG.md",
     "LICENSE-MIT",
     "LICENSE-APACHE",
-    "docs/RFC-rust-3d-renderer.md",
-    "docs/api/m5-public-api-baseline.txt",
-    "docs/api/m5-semver-baseline.toml",
-    "docs/agents/subagents.md",
-    "docs/specs/public-api.md",
-    "docs/specs/architecture-contract.md",
-    "docs/specs/module-boundaries.md",
-    "docs/specs/render-lifecycle.md",
-    "docs/specs/asset-gltf-contract.md",
-    "docs/specs/visual-quality-contract.md",
-    "docs/specs/platform-capabilities.md",
-    "docs/specs/release-gates.md",
-    "docs/specs/doctor-contract.md",
-    "docs/specs/release-reviews.md",
-    "docs/api/public-api-ownership.toml",
-    "docs/checklists/acceptance-index.md",
-    "docs/checklists/architecture-perfection-checklist.md",
-    "docs/checklists/m0-foundation.md",
-    "docs/checklists/m1-geometry-materials.md",
-    "docs/checklists/m2-lighting-depth-clipping.md",
-    "docs/checklists/m3a-app-features.md",
-    "docs/checklists/m3b-gltf-animation.md",
-    "docs/checklists/m4-performance-platform.md",
-    "docs/checklists/m5-v1-release.md",
-    "docs/decisions/ADR-0001-renderer-not-engine.md",
-    "docs/decisions/ADR-0002-explicit-prepare-lifecycle.md",
-    "docs/decisions/ADR-0003-gltf-primary-format.md",
-    "docs/decisions/ADR-0004-visual-evidence-policy.md",
+    "docs/README.md",
+    "docs/api.md",
+    "docs/getting-started.md",
+    "docs/examples.md",
+    "docs/platforms.md",
+    "docs/assets.md",
+    "docs/rendering.md",
+    "docs/headless-rendering.md",
+    "docs/browser.md",
+    "docs/troubleshooting.md",
+    "docs/lifecycle.md",
+    "docs/capabilities.md",
+    "docs/errors.md",
+    "docs/feature-flags.md",
+    "docs/guides/authoring-gltf-anchors-connectors.md",
+    "docs/guides/migrating-from-threejs.md",
+    "docs/guides/place-and-connect-objects.md",
+    "docs/guides/troubleshooting-misplaced-assets.md",
+    "docs/guides/units-axes-handedness.md",
+    "docs/release-notes/v1.0.0.md",
     ".codex/skills/scena-doctor/SKILL.md",
     ".codex/skills/scena-git-github/SKILL.md",
     ".codex/skills/scena-gltf-assets/SKILL.md",

@@ -78,24 +78,24 @@ impl Finding {
 
 pub(crate) fn finding_reference(rule: &str) -> &'static str {
     if rule.starts_with("RELEASE") || rule.starts_with("CLAIM") || rule.starts_with("M10") {
-        "docs/specs/release-gates.md"
+        "docs/release-notes/v1.0.0.md"
     } else if rule.contains("STATE-OF-ART")
         || rule == "ARCH-RENDER-TRUTH"
         || rule == "ARCH-RENDER-STANDARD-MATH"
         || rule == "ARCH-RENDER-WORLD-BAKE"
         || rule == "BINARY-ASSET-TRUTH-P9"
     {
-        "docs/checklists/state-of-art-threejs-replacement-plan.md"
+        "docs/rendering.md"
     } else if rule.contains("M8") || rule.contains("GLTF") || rule.contains("ASSETS") {
-        "docs/specs/asset-gltf-contract.md"
+        "docs/assets.md"
     } else if rule.contains("M7") || rule.contains("ERGONOMICS") {
-        "docs/specs/public-api.md"
+        "docs/api.md"
     } else if rule.contains("VISUAL") || rule.contains("SCREENSHOT") {
-        "docs/specs/visual-quality-contract.md"
+        "docs/headless-rendering.md"
     } else if rule.contains("PLATFORM") || rule.contains("BACKEND") || rule.contains("WEBGL") {
-        "docs/specs/platform-capabilities.md"
+        "docs/platforms.md"
     } else if rule.contains("PREPARE") || rule.contains("LIFECYCLE") {
-        "docs/specs/render-lifecycle.md"
+        "docs/lifecycle.md"
     } else if rule.starts_with("ARCH-CONTRACT")
         || rule.starts_with("ARCH-DEPENDENCY-DIRECTION")
         || rule.starts_with("ARCH-PUBLIC-API-OWNERSHIP")
@@ -104,9 +104,9 @@ pub(crate) fn finding_reference(rule: &str) -> &'static str {
         || rule == "ARCH-XTASK-SPLIT"
         || rule == "ARCHITECTURE-MAP"
     {
-        "docs/specs/architecture-contract.md"
+        "docs/api.md"
     } else {
-        "docs/specs/doctor-contract.md"
+        "docs/README.md"
     }
 }
 

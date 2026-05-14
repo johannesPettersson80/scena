@@ -35,7 +35,7 @@ predictably."
 | CAD and industrial visualization | units, axes, handedness repair, connector metadata, labels, helpers, and deterministic placement |
 | Native plus browser targets | wgpu/native foundations, WASM packaging, browser WebGPU/WebGL2 proof lanes, and explicit platform capabilities |
 | Reliable render loops | explicit `prepare()` / `render()` lifecycle that keeps fallible work in predictable host-visible steps |
-| Release-quality visual confidence | rendered-output artifacts, browser proof, benchmarks, doctor gates, and release-readiness checks |
+| Release-quality visual confidence | rendered-output examples, browser proof, benchmarks, and published release evidence |
 
 `scena` owns the visual layer: scene graph state, assets, cameras, lights, materials,
 interaction data, diagnostics, and rendered-output proof. Host applications keep their
@@ -65,18 +65,31 @@ cargo check --examples
 
 ## Install
 
-From Git:
+Add `scena` to a Rust application or library:
+
+```bash
+cargo add scena
+```
+
+Equivalent `Cargo.toml` entry:
 
 ```toml
 [dependencies]
-scena = { git = "https://github.com/johannesPettersson80/scena" }
+scena = "1.0"
 ```
 
-From a sibling checkout:
+Use a sibling checkout when developing `scena` and an application together:
 
 ```toml
 [dependencies]
 scena = { path = "../scena" }
+```
+
+Install the bundled CLI tool:
+
+```bash
+cargo install scena
+scena-convert --help
 ```
 
 Cargo features:
@@ -167,8 +180,7 @@ the host receives structured results before drawing frames.
 
 - Generate rendered-output artifacts for examples and milestone scenes.
 - Run browser WebGPU/WebGL2 proof lanes through Rust/WASM probe entry points.
-- Record capability JSON, screenshot metadata, benchmark rows, and release-lane artifacts.
-- Use `xtask doctor` and `xtask release-readiness` to block silent drift.
+- Record capability JSON, screenshot metadata, benchmark rows, and release artifacts.
 
 ## Capabilities
 
@@ -181,7 +193,7 @@ the host receives structured results before drawing frames.
 | Rendering | headless CPU output, native/headless wgpu foundation, explicit prepare/render lifecycle, render-on-change, offscreen targets, readback, stats, diagnostics, shadows, IBL, and release-lane proof artifacts |
 | Interaction | typed picking, hover/selection styling, cursor positions, platform-neutral controls, and independent hover/select/pointer-leave states |
 | Browser/WASM | wasm32 compile/package, browser WebGPU/WebGL2 proof lanes, attached-canvas probe paths, surface/context/device-loss event vocabulary, and size gates |
-| Quality | unit/integration tests, visual artifacts, browser proof, public API baseline, benchmarks, allocation gates, architecture doctor, release-readiness, and review schemas |
+| Quality | unit/integration tests, visual artifacts, browser proof, benchmarks, allocation checks, and release evidence |
 
 ## Examples by task
 
@@ -217,7 +229,7 @@ flowchart LR
 |---|---|
 | `Scene` | graph state, transforms, cameras, lights, labels, imports, animation mixers, picking targets, and dirty tracking |
 | `Assets` | fetchers, parsed/decoded resources, caches, retain/reload policy, and logical handles |
-| `Renderer` | device/surface state, prepared resource tables, render passes, capability reports, diagnostics, stats, and deferred destruction |
+| `Renderer` | device/surface state, prepared resource tables, render passes, capability reports, diagnostics, stats, and scheduled resource destruction |
 | `SceneImport` | import-local roots, names, paths, anchors, connectors, clips, pivots, bounds, and stale-import checks |
 
 Typed handles such as `NodeKey`, `GeometryHandle`, `MaterialHandle`, `TextureHandle`,
@@ -228,7 +240,7 @@ compile time. Stale or missing handles return structured errors.
 
 | Target | Support |
 |---|---|
-| Linux native/headless | CI lane with cargo gates, rendered-output tests, examples, doctor, capability artifacts, and release-lane JSON |
+| Linux native/headless | CI lane with cargo gates, rendered-output tests, examples, capability artifacts, and release JSON |
 | macOS Metal | CI lane with tests, examples, docs, platform proof, capability artifacts, and release-lane JSON |
 | Windows DX12 | CI lane with tests, examples, docs, platform proof, capability artifacts, and release-lane JSON |
 | Headless CPU | deterministic rendered-output path for tests, docs, and artifact generation |
@@ -244,14 +256,26 @@ state until the host calls `prepare()` again.
 
 | Document | Purpose |
 |---|---|
-| [`docs/RFC-rust-3d-renderer.md`](docs/RFC-rust-3d-renderer.md) | renderer charter, scope boundaries, and long-form design narrative |
-| [`docs/specs/public-api.md`](docs/specs/public-api.md) | public vocabulary, lifecycle signatures, handles, errors, diagnostics, and stats |
-| [`docs/specs/render-lifecycle.md`](docs/specs/render-lifecycle.md) | prepare/render contract, dirty state, retain policy, and resource destruction |
-| [`docs/specs/asset-gltf-contract.md`](docs/specs/asset-gltf-contract.md) | glTF/GLB import, extension, anchor, lookup, reload, and animation rules |
-| [`docs/specs/platform-capabilities.md`](docs/specs/platform-capabilities.md) | native/browser/WASM capability contracts |
-| [`docs/specs/visual-quality-contract.md`](docs/specs/visual-quality-contract.md) | color, environment, screenshot, browser, and tolerance rules |
-| [`docs/specs/architecture-contract.md`](docs/specs/architecture-contract.md) | SOLID/KISS ownership, dependency direction, public API ownership, and doctor checks |
-| [`docs/specs/release-gates.md`](docs/specs/release-gates.md) | release-readiness gates and required evidence artifacts |
+| [`docs/README.md`](docs/README.md) | user documentation index |
+| [`docs/getting-started.md`](docs/getting-started.md) | install, first scene, GLB loading, and first output |
+| [`docs/api.md`](docs/api.md) | human-readable API overview with docs.rs links |
+| [`docs/rendering.md`](docs/rendering.md) | cameras, lights, materials, environments, shadows, and output |
+| [`docs/lifecycle.md`](docs/lifecycle.md) | explicit prepare/render lifecycle |
+| [`docs/assets.md`](docs/assets.md) | glTF/GLB loading, textures, units, anchors, and connectors |
+| [`docs/platforms.md`](docs/platforms.md) | native, browser, WASM, and headless targets |
+| [`docs/browser.md`](docs/browser.md) | browser canvas, WebGPU, WebGL2, and WASM integration |
+| [`docs/headless-rendering.md`](docs/headless-rendering.md) | deterministic output for CI, docs, and automation |
+| [`docs/capabilities.md`](docs/capabilities.md) | backend capability reports and adapter diagnostics |
+| [`docs/errors.md`](docs/errors.md) | structured error families and common recovery paths |
+| [`docs/feature-flags.md`](docs/feature-flags.md) | optional Cargo features and recommended combinations |
+| [`docs/examples.md`](docs/examples.md) | examples grouped by task |
+| [`docs/troubleshooting.md`](docs/troubleshooting.md) | common rendering, asset, browser, and placement issues |
+| [`docs/guides/migrating-from-threejs.md`](docs/guides/migrating-from-threejs.md) | mapping familiar Three.js workflows to `scena` |
+| [`docs/guides/place-and-connect-objects.md`](docs/guides/place-and-connect-objects.md) | placing imported objects by authored anchors and connectors |
+| [`docs/guides/units-axes-handedness.md`](docs/guides/units-axes-handedness.md) | unit, axis, and handedness behavior for imported assets |
+| [`docs/guides/authoring-gltf-anchors-connectors.md`](docs/guides/authoring-gltf-anchors-connectors.md) | authoring metadata for CAD-style placement workflows |
+| [`docs/guides/troubleshooting-misplaced-assets.md`](docs/guides/troubleshooting-misplaced-assets.md) | practical checks for invisible, mis-scaled, or rotated imports |
+| [`docs/release-notes/v1.0.0.md`](docs/release-notes/v1.0.0.md) | v1.0.0 release notes and published evidence |
 
 ## Development
 
@@ -262,20 +286,7 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 cargo check --examples
-cargo run -p xtask -- doctor --full
 ```
-
-For release validation:
-
-```bash
-RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
-cargo run -p xtask -- claim-audit
-cargo run -p xtask -- release-readiness
-cargo publish --dry-run
-```
-
-The doctor is a source-derived guardrail for known silent-failure families. It complements
-unit tests, rendered-output proof, browser checks, release gates, and review.
 
 ## Security
 

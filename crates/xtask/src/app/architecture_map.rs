@@ -97,7 +97,7 @@ pub(crate) fn architecture_modules_json(root: &Path) -> serde_json::Value {
         "schema": "scena.architecture.modules.v1",
         "commit": release_artifact_commit_label(root),
         "generated_at_unix_seconds": current_unix_seconds(),
-        "contract": "docs/specs/architecture-contract.md",
+        "contract": "docs/api.md",
         "modules": modules,
     })
 }
@@ -119,7 +119,7 @@ pub(crate) fn public_api_ownership_json(root: &Path) -> Result<serde_json::Value
         "schema": "scena.architecture.public_api_ownership.v1",
         "commit": release_artifact_commit_label(root),
         "generated_at_unix_seconds": current_unix_seconds(),
-        "manifest": "docs/api/public-api-ownership.toml",
+        "source": "src/lib.rs",
         "types": values,
     }))
 }
@@ -209,58 +209,17 @@ pub(crate) fn declared_public_type_names(text: &str) -> Vec<String> {
 pub(crate) fn read_public_api_ownership(
     root: &Path,
 ) -> Result<Vec<PublicApiOwnershipEntry>, String> {
-    let rel = "docs/api/public-api-ownership.toml";
-    let text = fs::read_to_string(root.join(rel))
-        .map_err(|error| format!("could not read {rel}: {error}"))?;
     let mut entries = Vec::new();
-    let mut current: Option<PublicApiOwnershipEntry> = None;
-
-    for raw_line in text.lines() {
-        let line = raw_line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if line.starts_with("[types.") && line.ends_with(']') {
-            if let Some(entry) = current.take() {
-                entries.push(entry);
-            }
-            let type_name = line
-                .trim_start_matches("[types.")
-                .trim_end_matches(']')
-                .to_string();
-            current = Some(PublicApiOwnershipEntry {
-                type_name,
-                owner: String::new(),
-                path: String::new(),
-                boundary: None,
-            });
-            continue;
-        }
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        let Some(entry) = current.as_mut() else {
-            continue;
-        };
-        let value = value.trim().trim_matches('"').to_string();
-        match key.trim() {
-            "owner" => entry.owner = value,
-            "path" => entry.path = value,
-            "boundary" => entry.boundary = Some(value),
-            _ => {}
-        }
-    }
-    if let Some(entry) = current.take() {
-        entries.push(entry);
-    }
-
-    for entry in &entries {
-        if entry.owner.is_empty() || entry.path.is_empty() {
-            return Err(format!(
-                "public API ownership entry '{}' must declare owner and path",
-                entry.type_name
-            ));
-        }
+    for type_name in public_reexported_type_names(root) {
+        let definition_path = find_public_api_definition_path(root, &type_name)
+            .unwrap_or_else(|| PathBuf::from("src/lib.rs"));
+        let owner = architecture_owner_for_source_path(&definition_path).to_string();
+        entries.push(PublicApiOwnershipEntry {
+            type_name,
+            owner,
+            path: path_to_forward_slash(&definition_path),
+            boundary: None,
+        });
     }
     Ok(entries)
 }

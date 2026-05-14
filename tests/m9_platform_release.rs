@@ -13,7 +13,7 @@ use scena::{
 
 const CAMERA_DISTANCE_FOR_NDC_FIXTURES: f32 = 1.732_050_8;
 const STATIC_GLTF_PROOF_FIXTURE: &str = "tests/assets/gltf/non_ndc_camera_scene.gltf";
-const BENCHMARK_BASELINE_PATH: &str = "docs/benchmarks/m9-baselines.json";
+const BENCHMARK_BASELINE_PATH: &str = "tests/fixtures/m9-baselines.json";
 const BENCHMARK_SAMPLE_COUNT: usize = 100;
 const DEDICATED_4K_SAMPLE_COUNT: usize = 100;
 const HEADLESS_CPU_LANE: &str = "headless-cpu";

@@ -213,7 +213,7 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
             "m5-public-api-freeze",
             "\"status\"",
             "passed",
-            "docs/api/m5-public-api-baseline.txt",
+            "\"baseline\"",
         ],
     );
 }

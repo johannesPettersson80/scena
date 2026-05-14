@@ -20,8 +20,8 @@ pub(crate) use environment_lighting::{
     check_scene_light_contracts,
 };
 pub(crate) use governance_backend::{
-    MILESTONE_CHECKLISTS, check_agent_validation, check_backend_vocabulary,
-    check_unit_test_first_governance, contains_scope_term,
+    check_agent_validation, check_backend_vocabulary, check_unit_test_first_governance,
+    contains_scope_term,
 };
 pub(crate) use platform_contracts::check_m4_platform_contracts;
 pub(crate) use release_contracts::{

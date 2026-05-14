@@ -59,7 +59,7 @@ pub(crate) use crate::app::doctor_render::{
     check_renderer_stats_contracts, check_renderer_truth_contracts,
 };
 pub(crate) use crate::app::doctor_scene_platform::{
-    MILESTONE_CHECKLISTS, REQUIRED_EXAMPLES, REQUIRED_M5_GATE_ARTIFACTS, check_agent_validation,
+    REQUIRED_EXAMPLES, REQUIRED_M5_GATE_ARTIFACTS, check_agent_validation,
     check_backend_vocabulary, check_camera_depth_contracts, check_clipping_contracts,
     check_depth_prepass_contracts, check_direct_light_shading_contracts,
     check_directional_shadow_contracts, check_environment_ibl_prepare_contracts,
