@@ -12,73 +12,11 @@ and keep visual behavior testable.
 It is designed for model viewers, CAD-style inspection tools, industrial visualization,
 digital-twin UIs, browser/native Rust apps, and CI rendered-output tests.
 
-A headless model-viewer render is direct Rust code:
-
-```rust
-use scena::headless_gltf_viewer;
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let first = pollster::block_on(
-        headless_gltf_viewer("tests/assets/gltf/khronos/WaterBottle/WaterBottle.gltf")
-            .size(512, 512)
-            .with_default_light()
-            .with_default_environment()
-            .render(),
-    )?;
-
-    image::save_buffer(
-        "target/waterbottle.png",
-        first.renderer().frame_rgba8(),
-        512,
-        512,
-        image::ColorType::Rgba8,
-    )?;
-
-    Ok(())
-}
-```
-
 | DamagedHelmet | WaterBottle |
 |---|---|
 | ![DamagedHelmet rendered by scena](docs/assets/readme/damaged-helmet-scena.png) | ![WaterBottle rendered by scena](docs/assets/readme/waterbottle-scena.png) |
 
-These are original rendered-output artifacts produced by `scena`. The WaterBottle image
-shows the output from the glTF rendering flow above; the helmet shows the same renderer on
-a richer production-style asset.
-
-A procedural scene uses the same explicit lifecycle:
-
-```rust
-use scena::{Assets, Color, GeometryDesc, MaterialDesc, Renderer, Scene};
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let assets = Assets::new();
-    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.7, 0.45, 0.35));
-    let material = assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(105, 190, 128)));
-
-    let mut scene = Scene::new();
-    scene.mesh(geometry, material).add()?;
-    let camera = scene.add_default_camera()?;
-    scene.frame_all_with_assets(camera, &assets)?;
-    scene.set_active_camera(camera)?;
-
-    let mut renderer = Renderer::headless(256, 256)?;
-    renderer.prepare_with_assets(&mut scene, &assets)?;
-    renderer.render_active(&scene)?;
-
-    image::save_buffer(
-        "target/headless-box.png",
-        renderer.frame_rgba8(),
-        256,
-        256,
-        image::ColorType::Rgba8,
-    )?;
-
-    Ok(())
-}
-```
-
-![Procedural headless render output](docs/assets/readme/headless-ci.png)
+These are original rendered-output artifacts produced by `scena`.
 
 ## Why scena
 
