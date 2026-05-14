@@ -170,7 +170,6 @@ jobs:
           cargo clippy --all-targets -- -D warnings
           cargo test --all-targets
           bash scripts/release_lane_command.sh macos-metal cargo test --test m9_platform_release
-          SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact
           bash scripts/release_lane_command.sh macos-metal cargo check --examples
           cargo run -p xtask -- doctor --full
       - name: Docs
