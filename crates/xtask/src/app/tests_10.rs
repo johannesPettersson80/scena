@@ -251,7 +251,7 @@ pub(crate) fn doctor_rejects_m5_release_cargo_missing_metadata_regression() {
         "ARCH-M5-RELEASE",
         "Cargo.toml",
         &[
-            "version = \"1.0.0\"",
+            "version = \"1.0.1\"",
             "rust-version = ",
             "documentation = \"https://docs.rs/scena\"",
             "keywords = [",

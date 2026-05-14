@@ -14,7 +14,7 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
         "ARCH-M5-RELEASE",
         "Cargo.toml",
         &[
-            "version = \"1.0.0\"",
+            "version = \"1.0.1\"",
             "rust-version = ",
             "documentation = \"https://docs.rs/scena\"",
             "keywords = [",
@@ -132,7 +132,7 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
         "ARCH-M5-RELEASE",
         "docs/api/m5-semver-baseline.toml",
         &[
-            "version = \"1.0.0\"",
+            "version = \"1.0.1\"",
             "api_baseline = \"cargo run -p xtask -- doctor --full\"",
             "BuildError",
             "AnimationError",

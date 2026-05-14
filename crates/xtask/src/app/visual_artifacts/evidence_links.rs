@@ -30,7 +30,7 @@ pub(crate) fn evidence_links_for_category(category: &str) -> Vec<&'static str> {
             "tests/m3b_visual_proof.rs",
         ],
         "performance" => vec![
-            "docs/release-notes/v1.0.0.md",
+            "docs/release-notes/v1.0.1.md",
             "tests/m4_performance_platform.rs",
             "tests/m5_release.rs",
         ],

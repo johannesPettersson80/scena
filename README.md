@@ -275,7 +275,7 @@ state until the host calls `prepare()` again.
 | [`docs/guides/units-axes-handedness.md`](docs/guides/units-axes-handedness.md) | unit, axis, and handedness behavior for imported assets |
 | [`docs/guides/authoring-gltf-anchors-connectors.md`](docs/guides/authoring-gltf-anchors-connectors.md) | authoring metadata for CAD-style placement workflows |
 | [`docs/guides/troubleshooting-misplaced-assets.md`](docs/guides/troubleshooting-misplaced-assets.md) | practical checks for invisible, mis-scaled, or rotated imports |
-| [`docs/release-notes/v1.0.0.md`](docs/release-notes/v1.0.0.md) | v1.0.0 release notes and published evidence |
+| [`docs/release-notes/v1.0.1.md`](docs/release-notes/v1.0.1.md) | v1.0.1 release notes and package documentation update |
 
 ## Development
 
