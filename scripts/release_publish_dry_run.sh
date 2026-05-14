@@ -29,7 +29,9 @@ cd "$repo_root"
 
 resolved_commit="$(git rev-parse "$target_commit")"
 short_commit="$(git rev-parse --short "$resolved_commit")"
-worktree_dir="/tmp/scena-publish-dry-run-${short_commit}"
+scratch_root="${SCENA_PUBLISH_DRY_RUN_TMPDIR:-${TMPDIR:-/tmp}}"
+mkdir -p "$scratch_root"
+worktree_dir="${scratch_root%/}/scena-publish-dry-run-${short_commit}"
 artifact_dir="${repo_root}/target/gate-artifacts/release-lanes"
 log_path="${artifact_dir}/publish-dry-run.log"
 
