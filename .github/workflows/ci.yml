@@ -153,7 +153,7 @@ jobs:
           name: wasm32-package
           path: |
             target/m9-browser-pkg/**
-            target/gate-artifacts/m9-wasm-size.json
+            target/gate-artifacts/**
           if-no-files-found: error
 
   macos-metal:
@@ -255,10 +255,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: target/release-artifacts
+          merge-multiple: true
       - name: Release readiness drift check
         shell: bash
-        env:
-          SCENA_RELEASE_ARTIFACT_ROOT: target/release-artifacts
         run: |
           mkdir -p target/release-artifacts
           cargo run -p xtask -- release-readiness 2>&1 \

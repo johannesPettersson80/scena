@@ -143,23 +143,15 @@ pub(crate) fn m9_release_artifact_uploads_fail_closed() {
 }
 
 #[test]
-pub(crate) fn release_readiness_blocks_open_release_deferrals() {
+pub(crate) fn release_readiness_has_no_open_release_deferrals() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let mut findings = Vec::new();
 
     check_release_readiness(&root, &mut findings);
 
     assert!(
-        findings
-            .iter()
-            .any(|finding| finding.message.contains("ADR-0005 still records blocking")),
-        "open ADR-0005 deferrals must block release readiness"
-    );
-    assert!(
-        findings.iter().any(|finding| finding
-            .message
-            .contains("m10-threejs-replacement-acceptance.md")),
-        "open M10 checklist gates must block release readiness"
+        findings.is_empty(),
+        "release readiness must not report open release deferrals after final closure: {findings:?}"
     );
 }
 

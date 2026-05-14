@@ -207,6 +207,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: target/release-artifacts
+          merge-multiple: true
       - name: Release readiness
         env:
           SCENA_RELEASE_ARTIFACT_ROOT: target/release-artifacts

@@ -305,7 +305,7 @@ pub(crate) fn release_lane_artifact_consumes_measured_command_records() {
 pub(crate) fn release_lane_artifact_status_requires_native_gpu_content_proof() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-release-lane-content-test");
-    let lane = "linux-native-vulkan";
+    let lane = "macos-metal";
     let lane_dir = fixture_root.join(format!("target/gate-artifacts/m9-platform/{lane}"));
     fs::create_dir_all(&lane_dir).expect("lane artifact dir");
     fs::write(
