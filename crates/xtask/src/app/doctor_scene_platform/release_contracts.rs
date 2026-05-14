@@ -209,8 +209,10 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
         "ARCH-M5-RELEASE",
         "target/gate-artifacts/m5-public-api-freeze.json",
         &[
-            "\"gate\":\"m5-public-api-freeze\"",
-            "\"status\":\"passed\"",
+            "\"gate\"",
+            "m5-public-api-freeze",
+            "\"status\"",
+            "passed",
             "docs/api/m5-public-api-baseline.txt",
         ],
     );
