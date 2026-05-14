@@ -7,6 +7,9 @@ pub(crate) fn run() {
         Ok(Command::ClaimAudit) => run_claim_audit(),
         Ok(Command::ReleaseLaneArtifact(lane)) => run_release_lane_artifact(&lane),
         Ok(Command::ReleaseReadiness) => run_release_readiness(),
+        Ok(Command::StageReleaseArtifacts { input, output }) => {
+            run_stage_release_artifacts(&input, &output)
+        }
         Ok(Command::VisualProof(VisualProofCommand::AllReleaseLanes)) => run_visual_proof(),
         Ok(Command::VisualProof(VisualProofCommand::Run { lane, command })) => repo_root()
             .map_err(|message| vec![Finding::new("VISUAL-PROOF", message)])
@@ -44,6 +47,7 @@ pub(crate) enum Command {
     ClaimAudit,
     ReleaseLaneArtifact(String),
     ReleaseReadiness,
+    StageReleaseArtifacts { input: String, output: String },
     VisualProof(VisualProofCommand),
     Help,
 }
@@ -139,6 +143,18 @@ pub(crate) fn parse_command(args: Vec<String>) -> Result<Command, String> {
         return Err("release-readiness accepts no arguments".to_string());
     }
 
+    if args.first().map(String::as_str) == Some("stage-release-artifacts") {
+        if args.len() == 3 {
+            return Ok(Command::StageReleaseArtifacts {
+                input: args[1].clone(),
+                output: args[2].clone(),
+            });
+        }
+        return Err(
+            "stage-release-artifacts expects <downloaded-root> <canonical-output-root>".to_string(),
+        );
+    }
+
     if args.first().map(String::as_str) == Some("visual-proof") {
         if args.len() == 2 && args[1] == "--all-release-lanes" {
             return Ok(Command::VisualProof(VisualProofCommand::AllReleaseLanes));
@@ -156,7 +172,7 @@ pub(crate) fn parse_command(args: Vec<String>) -> Result<Command, String> {
 
     if args.first().map(String::as_str) != Some("doctor") {
         return Err(format!(
-            "unknown command '{}'; expected 'doctor', 'architecture-map', 'claim-audit', 'release-lane-artifact', 'release-readiness', or 'visual-proof'",
+            "unknown command '{}'; expected 'doctor', 'architecture-map', 'claim-audit', 'release-lane-artifact', 'release-readiness', 'stage-release-artifacts', or 'visual-proof'",
             args.first().map(String::as_str).unwrap_or("")
         ));
     }
@@ -182,6 +198,6 @@ pub(crate) fn parse_command(args: Vec<String>) -> Result<Command, String> {
 
 pub(crate) fn print_usage() {
     println!(
-        "Usage:\n  cargo run -p xtask -- doctor --docs\n  cargo run -p xtask -- doctor --architecture\n  cargo run -p xtask -- doctor --full\n  cargo run -p xtask -- architecture-map\n  cargo run -p xtask -- claim-audit\n  cargo run -p xtask -- release-lane-artifact <lane>\n  cargo run -p xtask -- release-readiness\n  cargo run -p xtask -- visual-proof --all-release-lanes\n  cargo run -p xtask -- visual-proof <lane> -- <command...>"
+        "Usage:\n  cargo run -p xtask -- doctor --docs\n  cargo run -p xtask -- doctor --architecture\n  cargo run -p xtask -- doctor --full\n  cargo run -p xtask -- architecture-map\n  cargo run -p xtask -- claim-audit\n  cargo run -p xtask -- release-lane-artifact <lane>\n  cargo run -p xtask -- release-readiness\n  cargo run -p xtask -- stage-release-artifacts <downloaded-root> <canonical-output-root>\n  cargo run -p xtask -- visual-proof --all-release-lanes\n  cargo run -p xtask -- visual-proof <lane> -- <command...>"
     );
 }

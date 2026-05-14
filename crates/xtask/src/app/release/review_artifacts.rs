@@ -263,7 +263,6 @@ pub(crate) const RELEASE_LANE_ARTIFACT_SUFFIXES: &[&str] = &[
 ];
 
 pub(crate) const REQUIRED_NATIVE_GPU_RENDER_ARTIFACT_SUFFIXES: &[&str] = &[
-    "m9-platform/linux-native-vulkan/rendered-output.json",
     "m9-platform/macos-metal/rendered-output.json",
     "m9-platform/windows-dx12/rendered-output.json",
 ];

@@ -1,6 +1,7 @@
 mod bundle_schema;
 mod lane_artifacts;
 mod review_artifacts;
+mod stage_artifacts;
 
 pub(crate) use bundle_schema::{
     REQUIRED_REVIEW_ROLES, check_release_artifact_bundle, check_release_review_artifacts,
@@ -33,4 +34,7 @@ pub(crate) use review_artifacts::{
     REQUIRED_PASSED_STATUS_ARTIFACT_SUFFIXES, REQUIRED_RELEASE_ARTIFACT_SUFFIXES,
     ReleaseFindingBlock, iterate_finding_blocks, parse_release_review_frontmatter,
     validate_release_review_report,
+};
+pub(crate) use stage_artifacts::{
+    run_stage_release_artifacts, stage_release_artifacts, utc_rfc3339_from_unix,
 };

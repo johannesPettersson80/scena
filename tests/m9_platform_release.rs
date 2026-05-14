@@ -104,6 +104,7 @@ fn m9_platform_rendered_output_suite_writes_release_artifacts() {
         "gpu_proof": default_gpu_proof && static_gltf_gpu_proof,
         "fallback_policy": "cpu fallback is diagnostic only and never satisfies GPU rendered-output claims",
         "commit": current_commit_label(),
+        "commit_sha": current_commit_label(),
         "timestamp_unix_seconds": current_timestamp_unix_seconds(),
         "test_names": [
             "m9_platform_rendered_output_suite_writes_release_artifacts",
@@ -256,6 +257,7 @@ fn m9_capability_matrix_artifact_covers_required_lanes() {
         "status": "incomplete",
         "status_reason": "current runner records a measured lane row; public release requires measured adapter artifacts from every required lane",
         "commit": current_commit_label(),
+        "commit_sha": current_commit_label(),
         "timestamp_unix_seconds": current_timestamp_unix_seconds(),
         "test_names": [
             "m9_capability_matrix_artifact_covers_required_lanes"
@@ -458,6 +460,31 @@ fn render_pbr_light_suite_platform(width: u32, height: u32) -> Vec<PbrLightProof
     .collect()
 }
 
+fn render_pbr_light_suite_headless_cpu(width: u32, height: u32) -> Vec<PbrLightProof> {
+    [
+        PbrLightKind::DirectionalRed,
+        PbrLightKind::PointGreen,
+        PbrLightKind::SpotBlue,
+    ]
+    .into_iter()
+    .map(|kind| {
+        let (mut scene, assets, camera) = pbr_light_scene(kind);
+        let artifact = render_scene_headless_cpu(width, height, &mut scene, Some(&assets), camera);
+        let center = sample_rgb(&artifact.frame, width, height, width / 2, height / 2);
+        let color_assertion_passed = kind.assert_expected_tint(center);
+        let ppm_path = headless_cpu_dir().join(kind.ppm_filename());
+        write_ppm(&ppm_path, artifact.width, artifact.height, &artifact.frame);
+        PbrLightProof {
+            kind,
+            center,
+            color_assertion_passed,
+            ppm_path,
+            artifact,
+        }
+    })
+    .collect()
+}
+
 fn pbr_light_scene(kind: PbrLightKind) -> (Scene, Assets, scena::CameraKey) {
     let assets = Assets::new();
     let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.65, 0.65, 0.05));
@@ -623,6 +650,7 @@ fn write_headless_cpu_lane_artifacts() {
         "gpu_proof": false,
         "fallback_policy": "headless CPU is a separate software proof lane and never satisfies native GPU claims",
         "commit": current_commit_label(),
+        "commit_sha": current_commit_label(),
         "timestamp_unix_seconds": current_timestamp_unix_seconds(),
         "test_names": [
             "m9_platform_rendered_output_suite_writes_release_artifacts"
@@ -662,6 +690,15 @@ fn write_headless_cpu_lane_artifacts() {
             "height": static_gltf.height,
             "draw_calls": static_gltf.draw_calls,
             "nonblack_pixels": static_gltf.nonblack_pixels,
+        },
+        "pbr_lights": {
+            "proof_class": "headless-cpu-pbr-punctual-light",
+            "production_claim": headless_cpu_production_claim,
+            "gpu_proof": false,
+            "lights": render_pbr_light_suite_headless_cpu(96, 64)
+                .iter()
+                .map(PbrLightProof::to_json)
+                .collect::<Vec<_>>(),
         },
         "capabilities": path_string(&capability_path),
     });
@@ -1350,6 +1387,7 @@ fn lane_capability_from_artifact(lane: &str, artifact: &RenderedArtifact) -> ser
     row["host_gpu_available"] = serde_json::json!(artifact.host_gpu_available);
     row["host_gpu_error"] = serde_json::json!(artifact.host_gpu_error);
     row["commit"] = serde_json::json!(current_commit_label());
+    row["commit_sha"] = serde_json::json!(current_commit_label());
     row["timestamp_unix_seconds"] = serde_json::json!(current_timestamp_unix_seconds());
     row
 }
@@ -1393,6 +1431,7 @@ fn capability_json(lane: &str, artifact: &RenderedArtifact) -> serde_json::Value
         "lane": lane,
         "measurement_source": "lane-renderer-runtime",
         "commit": current_commit_label(),
+        "commit_sha": current_commit_label(),
         "timestamp_unix_seconds": current_timestamp_unix_seconds(),
         "backend": format!("{:?}", capabilities.backend),
         "hardware_tier": format!("{:?}", capabilities.hardware_tier),

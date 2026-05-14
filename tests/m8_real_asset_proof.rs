@@ -313,13 +313,11 @@ fn m8_real_asset_waterbottle_gpu_headline() {
     ) {
         Ok(r) => r,
         Err(error) => {
-            write_gpu_fail_closed_artifact(
-                &format!(
-                    "Renderer::headless_gpu failed: {error:?}; approved GPU/browser visual proof infrastructure is required before release"
-                ),
-                "unavailable",
+            let reason = format!(
+                "Renderer::headless_gpu failed: {error:?}; approved GPU/browser visual proof infrastructure is required before release"
             );
-            return;
+            write_gpu_fail_closed_artifact(&reason, "unavailable");
+            panic!("{reason}");
         }
     };
     let gpu_adapter_label = match renderer.gpu_adapter_report() {
@@ -366,13 +364,11 @@ fn m8_real_asset_waterbottle_gpu_headline() {
         .filter(|p| p[..3] != [0, 0, 0])
         .count();
     if nonzero <= 5_000 {
-        write_gpu_fail_closed_artifact(
-            &format!(
-                "GPU WaterBottle readback produced only {nonzero} non-black pixels; expected more than 5000"
-            ),
-            "degenerate-readback",
+        let reason = format!(
+            "GPU WaterBottle readback produced only {nonzero} non-black pixels; expected more than 5000"
         );
-        return;
+        write_gpu_fail_closed_artifact(&reason, "degenerate-readback");
+        panic!("{reason}");
     }
 
     write_png_artifact(

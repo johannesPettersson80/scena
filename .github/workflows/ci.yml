@@ -170,6 +170,7 @@ jobs:
           cargo clippy --all-targets -- -D warnings
           cargo test --all-targets
           bash scripts/release_lane_command.sh macos-metal cargo test --test m9_platform_release
+          SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh macos-metal cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact
           bash scripts/release_lane_command.sh macos-metal cargo check --examples
           cargo run -p xtask -- doctor --full
       - name: Docs
@@ -202,6 +203,7 @@ jobs:
           cargo clippy --all-targets -- -D warnings
           cargo test --all-targets
           bash scripts/release_lane_command.sh windows-dx12 cargo test --test m9_platform_release
+          SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 bash scripts/release_lane_command.sh windows-dx12 cargo test --test m8_real_asset_proof m8_real_asset_waterbottle_gpu_headline -- --exact
           bash scripts/release_lane_command.sh windows-dx12 cargo check --examples
           cargo run -p xtask -- doctor --full
       - name: Docs
@@ -257,18 +259,11 @@ jobs:
           path: target/release-artifacts
           merge-multiple: true
       - name: Release readiness drift check
+        env:
+          SCENA_RELEASE_ARTIFACT_ROOT: target/release-bundle
         shell: bash
         run: |
-          mkdir -p target/release-artifacts
-          mkdir -p target/gate-artifacts
-          if [ -d target/release-artifacts/gate-artifacts ]; then
-            cp -a target/release-artifacts/gate-artifacts/. target/gate-artifacts/
-          fi
-          find target/release-artifacts -mindepth 1 -maxdepth 1 \
-            ! -name gate-artifacts \
-            ! -name m9-browser-pkg \
-            ! -name release-readiness-report.log \
-            -exec cp -a {} target/gate-artifacts/ \;
+          cargo run -p xtask -- stage-release-artifacts target/release-artifacts target/release-bundle
           cargo run -p xtask -- release-readiness 2>&1 \
             | tee target/release-artifacts/release-readiness-report.log
       - name: Upload release readiness report

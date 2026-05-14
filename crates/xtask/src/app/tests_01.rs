@@ -109,6 +109,17 @@ pub(crate) fn parses_doctor_modes() {
         parse_command(vec!["release-readiness".into()]),
         Ok(Command::ReleaseReadiness)
     );
+    assert_eq!(
+        parse_command(vec![
+            "stage-release-artifacts".into(),
+            "target/release-artifacts".into(),
+            "target/release-bundle".into()
+        ]),
+        Ok(Command::StageReleaseArtifacts {
+            input: "target/release-artifacts".into(),
+            output: "target/release-bundle".into()
+        })
+    );
 }
 
 #[test]

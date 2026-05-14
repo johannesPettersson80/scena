@@ -95,7 +95,8 @@ pub(crate) use crate::app::release::{
     release_lane_content_ok, release_lane_evidence, release_lane_expected_commands,
     release_lane_measured_command_records, release_lane_required_artifacts,
     require_json_status_passed, run_claim_audit, run_release_lane_artifact, run_release_readiness,
-    scrape_toml_bool_value, scrape_toml_string_value, validate_findings_register_schema,
+    run_stage_release_artifacts, scrape_toml_bool_value, scrape_toml_string_value,
+    stage_release_artifacts, utc_rfc3339_from_unix, validate_findings_register_schema,
     validate_maintainer_signoff_schema, validate_release_review_report,
 };
 pub(crate) use crate::app::util::{

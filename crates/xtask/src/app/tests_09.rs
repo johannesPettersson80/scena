@@ -147,7 +147,7 @@ pub(crate) fn release_readiness_accepts_rendered_output_with_screenshot_metadata
 pub(crate) fn release_readiness_rejects_cpu_fallback_native_render_artifact() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let artifact_root = root.join("target/xtask-release-readiness-test/cpu-fallback-render");
-    let lane_dir = artifact_root.join("m9-platform/linux-native-vulkan");
+    let lane_dir = artifact_root.join("m9-platform/macos-metal");
     fs::create_dir_all(&lane_dir).expect("lane artifact dir");
     fs::write(
         lane_dir.join("rendered-output.json"),
