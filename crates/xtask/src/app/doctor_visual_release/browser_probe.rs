@@ -214,6 +214,8 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "scenaM6RustWasmStateLifecycleProbe",
             "screenshot_metadata",
             "device_pixel_ratio",
+            "readRenderedPixelsWithRetry",
+            "pixel_readback_attempts",
             "pixel_statistics",
             "nonblack",
         ],

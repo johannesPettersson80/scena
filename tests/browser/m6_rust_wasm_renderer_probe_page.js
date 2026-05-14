@@ -88,15 +88,33 @@ function readRenderedPixels(backend, canvas) {
   return readCanvasPixels(canvas);
 }
 
+async function readRenderedPixelsWithRetry(backend, canvas, workflow) {
+  const maxAttempts = backend === "webgpu" ? 8 : 2;
+  let lastPixels = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+    if (backend === "webgpu") {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    lastPixels = readRenderedPixels(backend, canvas);
+    const benchmarkOk = workflow === "benchmark-idle";
+    if (benchmarkOk || (lastPixels && lastPixels.nonblack > 0)) {
+      return { pixels: lastPixels, attempts: attempt };
+    }
+  }
+  return { pixels: lastPixels, attempts: maxAttempts };
+}
+
 async function runProbe(backend, workflow, render) {
   await ensureInit();
   const canvas = createCanvas(backend, workflow);
   const raw = await render(canvas);
-  await new Promise((resolve) => requestAnimationFrame(() => resolve()));
   const result = JSON.parse(raw);
-  const pixelStatistics = readRenderedPixels(backend, canvas);
+  const readback = await readRenderedPixelsWithRetry(backend, canvas, workflow);
+  const pixelStatistics = readback.pixels;
   result.workflow = workflow;
   result.pixels = pixelStatistics;
+  result.pixel_readback_attempts = readback.attempts;
   result.canvas_data_url = canvas.toDataURL("image/png");
   result.screenshot_metadata = {
     backend,
@@ -106,6 +124,7 @@ async function runProbe(backend, workflow, render) {
     height: canvas.height,
     device_pixel_ratio: window.devicePixelRatio || 1,
     canvas_mime: "image/png",
+    pixel_readback_attempts: readback.attempts,
     pixel_statistics: pixelStatistics,
   };
   const benchmarkOk =
