@@ -4,13 +4,15 @@
 [![rust](https://img.shields.io/badge/rust-1.93%2B-orange)](Cargo.toml)
 [![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 
-`scena` is a Rust-native scene-graph renderer for applications that need practical,
-inspectable 3D. It gives Rust projects the model-viewer workflow people like in Three.js:
-load glTF/GLB assets, build a scene, frame it, pick objects, render headlessly or on GPU,
-and keep visual behavior testable.
+Rust 3D library
 
-It is designed for model viewers, CAD-style inspection tools, industrial visualization,
-digital-twin UIs, browser/native Rust apps, and CI rendered-output tests.
+`scena` is an easy-to-use, lightweight 3D library for Rust applications on native and
+browser targets. It provides scene graphs, glTF/GLB loading, cameras, lights, materials,
+picking, controls, headless rendering, GPU rendering, and deterministic rendered-output
+tests through a simple Rust API.
+
+The aim of the project is to make 3D in Rust as straightforward as building a scene,
+loading a model, adding a camera and light, and rendering the result.
 
 | DamagedHelmet | WaterBottle |
 |---|---|
