@@ -27,6 +27,8 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "Renderer::from_surface_async",
             "prepare_with_assets",
             "Renderer::render",
+            "browser_probe_readback_rgba8",
+            "renderer-owned-gpu-copy",
             "scena.m6.browser_renderer_probe.v1",
         ],
     );
@@ -217,6 +219,9 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "device_pixel_ratio",
             "readRenderedPixelsWithRetry",
             "pixel_readback_attempts",
+            "renderer_readback",
+            "pixel_source",
+            "renderer-owned-gpu-copy",
             "pixel_statistics",
             "nonblack",
         ],

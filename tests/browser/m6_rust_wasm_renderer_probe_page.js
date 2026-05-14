@@ -111,9 +111,14 @@ async function runProbe(backend, workflow, render) {
   const raw = await render(canvas);
   const result = JSON.parse(raw);
   const readback = await readRenderedPixelsWithRetry(backend, canvas, workflow);
-  const pixelStatistics = readback.pixels;
+  const rendererReadback =
+    result.renderer_readback && result.renderer_readback.pixel_statistics;
+  const useRendererReadback =
+    backend === "webgpu" && rendererReadback && rendererReadback.nonblack > 0;
+  const pixelStatistics = useRendererReadback ? rendererReadback : readback.pixels;
   result.workflow = workflow;
   result.pixels = pixelStatistics;
+  result.pixel_source = useRendererReadback ? "renderer-owned-gpu-copy" : "canvas-readback";
   result.pixel_readback_attempts = readback.attempts;
   result.canvas_data_url = canvas.toDataURL("image/png");
   result.screenshot_metadata = {
@@ -124,8 +129,11 @@ async function runProbe(backend, workflow, render) {
     height: canvas.height,
     device_pixel_ratio: window.devicePixelRatio || 1,
     canvas_mime: "image/png",
+    pixel_source: result.pixel_source,
     pixel_readback_attempts: readback.attempts,
     pixel_statistics: pixelStatistics,
+    canvas_pixel_statistics: readback.pixels,
+    renderer_readback: result.renderer_readback || null,
   };
   const benchmarkOk =
     workflow === "benchmark-idle" &&

@@ -10,7 +10,7 @@ use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 use workflows::{build_workflow_scene, scene_with_triangle};
 
-use crate::{Assets, Backend, EnvironmentHandle, PlatformSurface, Renderer, Scene};
+use crate::{Assets, Backend, EnvironmentHandle, PixelReadback, PlatformSurface, Renderer, Scene};
 
 #[wasm_bindgen(js_name = m6RenderWebgl2Probe)]
 pub async fn m6_render_webgl2_probe(canvas: HtmlCanvasElement) -> Result<String, JsValue> {
@@ -146,6 +146,10 @@ async fn render_scene(
     let outcome = renderer
         .render(scene, camera)
         .map_err(|error| JsValue::from_str(&format!("render failed: {error:?}")))?;
+    let renderer_readback = renderer
+        .browser_probe_readback_rgba8()
+        .await?
+        .map(|readback| renderer_readback_json(&readback));
     let stats = renderer.stats();
     let capabilities = renderer.capabilities();
 
@@ -172,8 +176,65 @@ async fn render_scene(
         "prepared_buffers": stats.buffers,
         "prepared_pipelines": stats.pipelines,
         "prepared_bind_groups": stats.bind_groups,
+        "renderer_readback": renderer_readback,
     })
     .to_string())
+}
+
+pub(super) fn renderer_readback_json(readback: &PixelReadback) -> serde_json::Value {
+    json!({
+        "source": "renderer-owned-gpu-copy",
+        "width": readback.width(),
+        "height": readback.height(),
+        "rgba8_fnv1a64": hash_pixel_readback(readback),
+        "pixel_statistics": summarize_pixel_readback(readback),
+    })
+}
+
+fn summarize_pixel_readback(readback: &PixelReadback) -> serde_json::Value {
+    let width = readback.width();
+    let height = readback.height();
+    let rgba = readback.rgba8();
+    let mut nonblack = 0_u64;
+    let mut max = [0_u8; 4];
+    for pixel in rgba.chunks_exact(4) {
+        if pixel[0] > 0 || pixel[1] > 0 || pixel[2] > 0 {
+            nonblack = nonblack.saturating_add(1);
+        }
+        max[0] = max[0].max(pixel[0]);
+        max[1] = max[1].max(pixel[1]);
+        max[2] = max[2].max(pixel[2]);
+        max[3] = max[3].max(pixel[3]);
+    }
+    json!({
+        "center": sample_pixel(rgba, width, height, width as f32 / 2.0, height as f32 / 2.0),
+        "flat": sample_pixel(rgba, width, height, width as f32 * 0.38, height as f32 / 2.0),
+        "inverted": sample_pixel(rgba, width, height, width as f32 * 0.62, height as f32 / 2.0),
+        "nonblack": nonblack,
+        "max": max,
+    })
+}
+
+fn hash_pixel_readback(readback: &PixelReadback) -> String {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x00000100000001b3;
+    let mut hash = FNV_OFFSET;
+    for byte in readback.rgba8() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    format!("{hash:016x}")
+}
+
+fn sample_pixel(rgba: &[u8], width: u32, height: u32, x: f32, y: f32) -> [u8; 4] {
+    let x = x.floor().clamp(0.0, width.saturating_sub(1) as f32) as u32;
+    let y = y.floor().clamp(0.0, height.saturating_sub(1) as f32) as u32;
+    let offset = ((y as usize) * (width as usize) + (x as usize)) * 4;
+    if let Some(pixel) = rgba.get(offset..offset + 4) {
+        [pixel[0], pixel[1], pixel[2], pixel[3]]
+    } else {
+        [0; 4]
+    }
 }
 
 fn parse_browser_backend(value: &str) -> Result<Backend, JsValue> {

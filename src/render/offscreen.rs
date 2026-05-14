@@ -1,4 +1,6 @@
 use crate::diagnostics::BuildError;
+#[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
+use wasm_bindgen::JsValue;
 
 use super::Renderer;
 
@@ -34,6 +36,15 @@ impl OffscreenTarget {
 }
 
 impl PixelReadback {
+    #[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
+    pub(in crate::render) fn from_rgba8(width: u32, height: u32, rgba8: Vec<u8>) -> Self {
+        Self {
+            width,
+            height,
+            rgba8,
+        }
+    }
+
     pub const fn width(&self) -> u32 {
         self.width
     }
@@ -66,5 +77,20 @@ impl Renderer {
 
     pub fn screenshot_rgba8(&self) -> PixelReadback {
         self.read_pixels()
+    }
+
+    #[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
+    pub async fn browser_probe_readback_rgba8(&mut self) -> Result<Option<PixelReadback>, JsValue> {
+        let Some(gpu) = &mut self.gpu else {
+            return Ok(None);
+        };
+        let Some(rgba8) = gpu.browser_probe_readback_rgba8(self.target).await? else {
+            return Ok(None);
+        };
+        Ok(Some(PixelReadback::from_rgba8(
+            self.target.width,
+            self.target.height,
+            rgba8,
+        )))
     }
 }

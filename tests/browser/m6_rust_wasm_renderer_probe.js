@@ -425,6 +425,17 @@ function assertTexturedConnectorViewerProof(backend, result) {
   }
 }
 
+function renderedOutputFingerprint(result) {
+  const readback = result && result.renderer_readback;
+  if (readback && typeof readback.rgba8_fnv1a64 === "string") {
+    return `renderer:${readback.rgba8_fnv1a64}`;
+  }
+  if (result && typeof result.canvas_data_url === "string") {
+    return `canvas:${result.canvas_data_url}`;
+  }
+  return null;
+}
+
 async function main() {
   const { chromium } = loadPlaywright();
   const browserRoot = __dirname;
@@ -481,10 +492,18 @@ async function main() {
       });
       try {
         await page.goto(url);
-        const result = await page.evaluate(
-          (name) => window.scenaM6RustWasmRendererProbe(name),
-          backend,
-        );
+        let result;
+        try {
+          result = await page.evaluate(
+            (name) => window.scenaM6RustWasmRendererProbe(name),
+            backend,
+          );
+        } catch (error) {
+          if (consoleMessages.length > 0) {
+            error.message += `\nconsole:\n${consoleMessages.join("\n")}`;
+          }
+          throw error;
+        }
         results.push(result);
         if (result.status !== "passed") {
           throw new Error(`${backend} Rust/WASM renderer probe failed: ${JSON.stringify(result)}`);
@@ -533,10 +552,14 @@ async function main() {
         );
         const connectorBefore = workflowResults.get("connector-before");
         const connectorAfter = workflowResults.get("connector-after");
+        const connectorBeforeFingerprint = renderedOutputFingerprint(connectorBefore);
+        const connectorAfterFingerprint = renderedOutputFingerprint(connectorAfter);
         if (
           !connectorBefore ||
           !connectorAfter ||
-          connectorBefore.canvas_data_url === connectorAfter.canvas_data_url
+          !connectorBeforeFingerprint ||
+          !connectorAfterFingerprint ||
+          connectorBeforeFingerprint === connectorAfterFingerprint
         ) {
           throw new Error(
             `${backend} connector before/after workflow did not change rendered output`,

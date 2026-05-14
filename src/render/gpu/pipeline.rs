@@ -3,7 +3,6 @@ use super::materials::MaterialResources;
 use super::output::{DRAW_UNIFORM_ENTRY_STRIDE, GPU_TRIANGLE_SHADER};
 use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 
-#[cfg(not(target_arch = "wasm32"))]
 pub(super) const BYTES_PER_PIXEL: u32 = 4;
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) const GPU_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;

@@ -5,10 +5,16 @@ use std::sync::mpsc;
 use crate::diagnostics::Backend;
 use crate::diagnostics::RenderError;
 use crate::material::Color;
+#[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
+use wasm_bindgen::JsValue;
+#[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
+use wasm_bindgen_futures::JsFuture;
 
 use super::super::RasterTarget;
 use super::super::camera::CameraProjection;
 use super::GpuDeviceState;
+#[cfg(target_arch = "wasm32")]
+use super::browser_readback::{BrowserReadbackPass, encode_browser_readback_pass};
 use super::depth;
 use super::output::{OutputUniformUpload, encode_output_uniform};
 use super::pipeline::{UnlitPass, encode_unlit_pass};
@@ -284,6 +290,50 @@ impl GpuDeviceState {
                 lighting: resources.light_uniform,
             }),
         );
+        #[cfg(feature = "browser-probe")]
+        if let Some(readback) = resources.readback.as_ref() {
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("scena.browser.webgpu_proof_encoder"),
+                });
+            encode_shadow_caster_pass(
+                &mut encoder,
+                &resources.shadow_caster,
+                &resources.vertex_buffer,
+                &resources.draw_bind_group,
+                &resources.draw_batches,
+            );
+            if let Some(depth_prepass) = &resources.depth_prepass {
+                depth::encode_depth_prepass(
+                    &mut encoder,
+                    depth_prepass,
+                    &resources.vertex_buffer,
+                    &resources.output_bind_group,
+                    &resources.draw_bind_group,
+                    &resources.draw_batches,
+                );
+            }
+            encode_browser_readback_pass(
+                &mut encoder,
+                BrowserReadbackPass {
+                    target,
+                    readback,
+                    depth_view: resources
+                        .depth_prepass
+                        .as_ref()
+                        .map(|depth_prepass| &depth_prepass.view),
+                    vertex_buffer: &resources.vertex_buffer,
+                    output_bind_group: &resources.output_bind_group,
+                    draw_bind_group: &resources.draw_bind_group,
+                    material_resources: &resources.material_resources,
+                    draw_batches: &resources.draw_batches,
+                    clear_color: wgpu_clear_color(background_color),
+                },
+            );
+            self.queue.submit(Some(encoder.finish()));
+            return Ok(true);
+        }
         let surface_output = match surface.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(output)
             | wgpu::CurrentSurfaceTexture::Suboptimal(output) => output,
@@ -340,10 +390,73 @@ impl GpuDeviceState {
                 label: "scena.browser.surface_pass",
             },
         );
+        if let Some(readback) = resources.readback.as_ref() {
+            encode_browser_readback_pass(
+                &mut encoder,
+                BrowserReadbackPass {
+                    target,
+                    readback,
+                    depth_view: None,
+                    vertex_buffer: &resources.vertex_buffer,
+                    output_bind_group: &resources.output_bind_group,
+                    draw_bind_group: &resources.draw_bind_group,
+                    material_resources: &resources.material_resources,
+                    draw_batches: &resources.draw_batches,
+                    clear_color: wgpu_clear_color(background_color),
+                },
+            );
+        }
         self.queue.submit(Some(encoder.finish()));
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
         surface_output.present();
         Ok(true)
+    }
+
+    #[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
+    pub(in crate::render) async fn browser_probe_readback_rgba8(
+        &mut self,
+        target: RasterTarget,
+    ) -> Result<Option<Vec<u8>>, JsValue> {
+        let Some(resources) = self.resources.as_ref() else {
+            return Ok(None);
+        };
+        let Some(readback) = resources.readback.as_ref() else {
+            return Ok(None);
+        };
+        if resources.target != target {
+            return Err(JsValue::from_str(&format!(
+                "WebGPU proof readback resources were prepared for {:?}, not {:?}",
+                resources.target, target
+            )));
+        }
+        let slice = readback.buffer.slice(..);
+        let promise = js_sys::Promise::new(&mut |resolve, reject| {
+            let resolve = resolve.clone();
+            let reject = reject.clone();
+            slice.map_async(wgpu::MapMode::Read, move |result| match result {
+                Ok(()) => {
+                    let _ = resolve.call0(&JsValue::UNDEFINED);
+                }
+                Err(error) => {
+                    let _ = reject.call1(
+                        &JsValue::UNDEFINED,
+                        &JsValue::from_str(&format!("WebGPU proof readback failed: {error:?}")),
+                    );
+                }
+            });
+        });
+        JsFuture::from(promise).await?;
+        let mapped = slice.get_mapped_range();
+        let mut frame = vec![0; target.byte_len()];
+        for row in 0..target.height as usize {
+            let source_start = row * readback.padded_bytes_per_row as usize;
+            let source_end = source_start + readback.unpadded_bytes_per_row as usize;
+            let target_start = row * readback.unpadded_bytes_per_row as usize;
+            let target_end = target_start + readback.unpadded_bytes_per_row as usize;
+            frame[target_start..target_end].copy_from_slice(&mapped[source_start..source_end]);
+        }
+        drop(mapped);
+        readback.buffer.unmap();
+        Ok(Some(frame))
     }
 }
 

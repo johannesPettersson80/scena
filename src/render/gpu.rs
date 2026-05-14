@@ -1,3 +1,4 @@
+mod browser_readback;
 mod build;
 #[cfg(target_arch = "wasm32")]
 mod debug;
@@ -15,6 +16,7 @@ mod output;
 mod pipeline;
 mod shadow;
 mod stats;
+mod surface_config;
 mod vertices;
 #[cfg(target_arch = "wasm32")]
 mod webgl2;
@@ -36,6 +38,8 @@ use crate::diagnostics::Backend;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::geometry::Primitive;
 
+#[cfg(target_arch = "wasm32")]
+use self::browser_readback::{BrowserReadbackResources, create_browser_readback_resources};
 use self::materials::{
     create_material_bind_group_layout, create_material_resources, material_bind_group_count,
     material_texture_byte_len, material_texture_count,
@@ -155,6 +159,7 @@ struct GpuPreparedResources {
     brdf_lut_texture: wgpu::Texture,
     depth_prepass: Option<depth::DepthPrepassResources>,
     surface_pipeline: wgpu::RenderPipeline,
+    readback: Option<BrowserReadbackResources>,
     #[allow(dead_code)]
     vertex_count: u32,
     draw_batches: Vec<PrimitiveDrawBatch>,
@@ -467,6 +472,16 @@ impl GpuDeviceState {
             &draw_bind_group_layout,
             depth_compare,
         );
+        let readback = (target.backend == Backend::WebGpu).then(|| {
+            create_browser_readback_resources(
+                &self.device,
+                target,
+                &output_bind_group_layout,
+                &material_bind_group_layout,
+                &draw_bind_group_layout,
+                depth_compare,
+            )
+        });
         let vertex_count = (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32;
         let stats = estimate_prepared_resource_stats(PreparedResourceEstimateInput {
             target,
@@ -495,6 +510,7 @@ impl GpuDeviceState {
             brdf_lut_texture,
             depth_prepass,
             surface_pipeline,
+            readback,
             vertex_count,
             draw_batches,
             draw_uniforms,
@@ -511,16 +527,6 @@ impl GpuDeviceState {
             .as_ref()
             .map(|resources| resources.stats)
             .unwrap_or_default()
-    }
-
-    fn configure_surface(&mut self, target: RasterTarget) {
-        if let Some(surface) = &mut self.surface {
-            if surface.config.width != target.width || surface.config.height != target.height {
-                surface.config.width = target.width;
-                surface.config.height = target.height;
-            }
-            surface.surface.configure(&self.device, &surface.config);
-        }
     }
 }
 

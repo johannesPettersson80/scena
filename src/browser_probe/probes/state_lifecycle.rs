@@ -7,6 +7,7 @@ use crate::{
     RenderMode, Renderer, RendererOptions, Scene, SurfaceEvent, Transform, Vec3,
 };
 
+use super::super::renderer_readback_json;
 use super::super::report::{capabilities_json, diagnostics_json, stats_json};
 
 pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
@@ -141,6 +142,10 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
     let animation = verify_animation_dirty(&mut renderer, &mut events).await?;
     super::verify_context_recovery(&mut renderer, &assets, &mut scene, camera, &mut events)?;
     events.push("context-recovery");
+    let renderer_readback = renderer
+        .browser_probe_readback_rgba8()
+        .await?
+        .map(|readback| renderer_readback_json(&readback));
 
     let stats = renderer.stats();
     let capabilities = renderer.capabilities();
@@ -197,6 +202,7 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
         "prepared_buffers": stats.buffers,
         "prepared_pipelines": stats.pipelines,
         "prepared_bind_groups": stats.bind_groups,
+        "renderer_readback": renderer_readback,
     })
     .to_string())
 }

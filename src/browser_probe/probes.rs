@@ -2,6 +2,7 @@ use serde_json::json;
 use wasm_bindgen::prelude::JsValue;
 use web_sys::HtmlCanvasElement;
 
+use super::renderer_readback_json;
 use super::report::{capabilities_json, diagnostics_json, stats_json};
 use super::workflows::{
     animation_scene, build_workflow_scene, instancing_scene_with_count, picking_selection_scene,
@@ -137,6 +138,7 @@ pub(super) async fn render_surface_lifecycle_probe(
         "prepared_buffers": stats.buffers,
         "prepared_pipelines": stats.pipelines,
         "prepared_bind_groups": stats.bind_groups,
+        "renderer_readback": final_outcome.renderer_readback,
     })
     .to_string())
 }
@@ -338,6 +340,10 @@ async fn rebuild_after_surface_loss(
     let render = renderer
         .render(scene, camera)
         .map_err(|error| JsValue::from_str(&format!("final render failed: {error:?}")))?;
+    let renderer_readback = renderer
+        .browser_probe_readback_rgba8()
+        .await?
+        .map(|readback| renderer_readback_json(&readback));
     Ok(LifecycleFinal {
         render,
         renderer_stats: renderer.stats(),
@@ -345,6 +351,7 @@ async fn rebuild_after_surface_loss(
         diagnostics: diagnostics_json(renderer.diagnostics()),
         context_recovered: json!({ "draw_calls": render.draw_calls }),
         device_recovered: json!({ "draw_calls": render.draw_calls }),
+        renderer_readback,
     })
 }
 
@@ -406,4 +413,5 @@ struct LifecycleFinal {
     diagnostics: serde_json::Value,
     context_recovered: serde_json::Value,
     device_recovered: serde_json::Value,
+    renderer_readback: Option<serde_json::Value>,
 }
