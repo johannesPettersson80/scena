@@ -2,10 +2,8 @@ use scena::{Assets, Renderer, Scene};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let assets = Assets::new();
-    let drive_part =
-        pollster::block_on(assets.load_scene("tests/assets/gltf/drive_unit.glb"))?;
-    let load_part =
-        pollster::block_on(assets.load_scene("tests/assets/gltf/load_unit.glb"))?;
+    let drive_part = pollster::block_on(assets.load_scene("tests/assets/gltf/drive_unit.glb"))?;
+    let load_part = pollster::block_on(assets.load_scene("tests/assets/gltf/load_unit.glb"))?;
 
     let mut scene = Scene::new();
     let drive = scene.instantiate(&drive_part)?;
