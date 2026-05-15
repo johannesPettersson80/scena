@@ -23,6 +23,26 @@ impl Scene {
             .map_err(|error| connector_lookup_error(error, target_name))?;
         self.connect(source, target, options)
     }
+
+    /// Mate two imported parts by named connector using default options.
+    ///
+    /// Short form of [`Self::connect_import_connectors`] with [`ConnectOptions::default`].
+    /// For non-default alignment, roll policy, or mate offset, call the full form directly.
+    pub fn mate(
+        &mut self,
+        source: &SceneImport,
+        source_name: &str,
+        target: &SceneImport,
+        target_name: &str,
+    ) -> Result<ConnectionPreview, ConnectionError> {
+        self.connect_import_connectors(
+            source,
+            source_name,
+            target,
+            target_name,
+            ConnectOptions::default(),
+        )
+    }
 }
 
 fn connector_lookup_error(error: LookupError, requested_name: &str) -> ConnectionError {
