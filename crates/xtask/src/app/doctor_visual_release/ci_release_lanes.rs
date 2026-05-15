@@ -385,8 +385,8 @@ pub(crate) fn check_m10_claim_audit_contract(root: &Path, findings: &mut Vec<Fin
         root,
         findings,
         "CLAIM-AUDIT-M10",
-        "docs/release-notes/v1.0.1.md",
-        &["scena v1.0.1 Release Notes", "Scope", "Install"],
+        "docs/release-notes/v1.0.2.md",
+        &["scena v1.0.2 Release Notes", "Scope", "Install"],
     );
 }
 
