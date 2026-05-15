@@ -14,11 +14,15 @@ uniform mat4 normal_from_model;
 uniform mat4 view_from_world;
 uniform mat4 clip_from_view;
 uniform mat4 clip_from_world;
-uniform vec4 camera_position_exposure;
 uniform vec4 viewport_near_far;
-uniform vec4 color_management;
-uniform vec4 base_color_uv_offset_scale;
-uniform vec4 base_color_uv_rotation;
+// Uniforms that are also declared in the fragment shader (camera_position_exposure,
+// color_management, base_color_uv_offset_scale, base_color_uv_rotation) are intentionally
+// not redeclared here. The fragment shader applies `precision mediump float;` to its
+// declarations; the vertex shader uses GLSL ES 3.0's implicit `highp` default. Redeclaring
+// the same uniform name in both stages with mismatched precision is a GLSL ES 3.0 link
+// error ("Uniform `<name>` is not linkable between attached shaders" in Firefox WebGL2).
+// These uniforms are unused in the vertex stage; if a future change needs them in vertex,
+// add an explicit precision qualifier matching the fragment side.
 out vec4 v_color;
 out vec3 v_normal;
 out vec2 v_tex_coord0;

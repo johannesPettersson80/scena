@@ -426,7 +426,7 @@ pub(crate) fn check_release_readiness(root: &Path, findings: &mut Vec<Finding>) 
 }
 
 pub(crate) fn check_release_readiness_adr(root: &Path, findings: &mut Vec<Finding>) {
-    let rel = "docs/release-notes/v1.0.1.md";
+    let rel = "docs/release-notes/v1.0.2.md";
     let path = root.join(rel);
     let Ok(text) = fs::read_to_string(&path) else {
         findings.push(Finding::new(
@@ -438,7 +438,7 @@ pub(crate) fn check_release_readiness_adr(root: &Path, findings: &mut Vec<Findin
     if text.contains("Remaining Release Blockers") || text.contains("open release blocker") {
         findings.push(Finding::new(
             "RELEASE-READY-M10",
-            "v1.0.1 release notes still record open release blockers",
+            "v1.0.2 release notes still record open release blockers",
         ));
     }
 }

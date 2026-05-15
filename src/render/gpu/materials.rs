@@ -549,4 +549,129 @@ mod tests {
              transform uniforms that render code sets per material"
         );
     }
+
+    /// Regression for ADR-0001. GLSL ES 3.0 § 4.5.3 sets implicit `highp float` and
+    /// `highp int` in the vertex stage and leaves the fragment-stage float default
+    /// unspecified — it must be declared via `precision <qualifier> float;`. For any
+    /// uniform declared in both stages with the same name, the linker requires
+    /// matching precision qualifiers; unqualified declarations inherit each stage's
+    /// default.
+    ///
+    /// Firefox WebGL2 enforces this strictly and reports the verbatim error
+    /// `Uniform `<name>` is not linkable between attached shaders`. Chromium WebGL2
+    /// does not enforce it, which is why CI on Chromium passed while downstream
+    /// Firefox proof failed.
+    ///
+    /// This test parses the inline GLSL strings out of `webgl2_program.rs` at
+    /// compile time (no browser required) and fails if any uniform name is
+    /// redeclared across stages without an explicit matching precision qualifier.
+    #[test]
+    fn webgl2_shaders_have_no_cross_stage_uniform_precision_mismatch() {
+        let source = include_str!("webgl2_program.rs");
+        let vertex_shader = extract_inline_raw_string(source, "VERTEX_SHADER")
+            .expect("WebGL2 vertex shader source is present in webgl2_program.rs");
+        let fragment_shader = extract_inline_raw_string(source, "FRAGMENT_SHADER")
+            .expect("WebGL2 fragment shader source is present in webgl2_program.rs");
+
+        let v_default_float = default_float_precision(vertex_shader).unwrap_or("highp");
+        let f_default_float = default_float_precision(fragment_shader)
+            .expect("fragment shader must declare `precision <qualifier> float;` per GLSL ES 3.0");
+
+        let vertex_uniforms = parse_uniform_declarations(vertex_shader);
+        let fragment_uniforms = parse_uniform_declarations(fragment_shader);
+
+        let mut mismatches: Vec<String> = Vec::new();
+        for (name, vertex_decl) in &vertex_uniforms {
+            let Some(fragment_decl) = fragment_uniforms.get(name) else {
+                continue;
+            };
+            if vertex_decl.type_name != fragment_decl.type_name {
+                mismatches.push(format!(
+                    "{name}: type mismatch (vertex `{}`, fragment `{}`)",
+                    vertex_decl.type_name, fragment_decl.type_name
+                ));
+            }
+            let v_eff = vertex_decl.precision.as_deref().unwrap_or(v_default_float);
+            let f_eff = fragment_decl
+                .precision
+                .as_deref()
+                .unwrap_or(f_default_float);
+            let is_float_derived = vertex_decl.type_name.starts_with("vec")
+                || vertex_decl.type_name.starts_with("mat")
+                || vertex_decl.type_name == "float";
+            if is_float_derived && v_eff != f_eff {
+                mismatches.push(format!(
+                    "{name}: precision mismatch (vertex `{v_eff}`, fragment `{f_eff}`)"
+                ));
+            }
+        }
+        assert!(
+            mismatches.is_empty(),
+            "WebGL2 vertex and fragment shaders must not redeclare the same uniform with \
+             mismatched precision (GLSL ES 3.0 link rule). See ADR-0001. Mismatches: {mismatches:?}"
+        );
+    }
+
+    struct UniformDecl {
+        precision: Option<String>,
+        type_name: String,
+    }
+
+    fn extract_inline_raw_string<'a>(source: &'a str, anchor: &str) -> Option<&'a str> {
+        let needle = format!("pub(super) const {anchor}");
+        let start = source.find(&needle)?;
+        let after_anchor = &source[start..];
+        let open = after_anchor.find("r#\"")? + 3;
+        let body = &after_anchor[open..];
+        let close = body.find("\"#")?;
+        Some(&body[..close])
+    }
+
+    fn parse_uniform_declarations(source: &str) -> std::collections::HashMap<String, UniformDecl> {
+        let mut map = std::collections::HashMap::new();
+        for raw_line in source.lines() {
+            let line = raw_line.trim();
+            let Some(rest) = line.strip_prefix("uniform ") else {
+                continue;
+            };
+            let rest = rest.trim_end_matches(';').trim();
+            let parts: Vec<&str> = rest.split_whitespace().collect();
+            let (precision, type_name, name) = match parts.as_slice() {
+                [p, t, n] if matches!(*p, "highp" | "mediump" | "lowp") => {
+                    (Some((*p).to_string()), (*t).to_string(), (*n).to_string())
+                }
+                [t, n] => (None, (*t).to_string(), (*n).to_string()),
+                _ => continue,
+            };
+            map.insert(
+                name,
+                UniformDecl {
+                    precision,
+                    type_name,
+                },
+            );
+        }
+        map
+    }
+
+    fn default_float_precision(source: &str) -> Option<&'static str> {
+        for raw_line in source.lines() {
+            let line = raw_line.trim().trim_end_matches(';').trim();
+            let Some(rest) = line.strip_prefix("precision ") else {
+                continue;
+            };
+            let parts: Vec<&str> = rest.split_whitespace().collect();
+            if let [qualifier, type_name] = parts.as_slice()
+                && *type_name == "float"
+            {
+                return Some(match *qualifier {
+                    "highp" => "highp",
+                    "mediump" => "mediump",
+                    "lowp" => "lowp",
+                    _ => return None,
+                });
+            }
+        }
+        None
+    }
 }

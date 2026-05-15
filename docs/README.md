@@ -7,10 +7,10 @@ and deterministic headless rendering.
 ## Start here
 
 - [README](../README.md): install, quick start, features, examples, and platform support.
-- [docs.rs API reference](https://docs.rs/scena/1.0.1/scena/): generated Rust API docs.
+- [docs.rs API reference](https://docs.rs/scena/1.0.2/scena/): generated Rust API docs.
 - [Getting started](getting-started.md): install, first scene, GLB loading, and output paths.
 - [API overview](api.md): the main public types and how they fit together.
-- [v1.0.1 release notes](release-notes/v1.0.1.md): published release evidence and compatibility notes.
+- [v1.0.2 release notes](release-notes/v1.0.2.md): published release evidence and compatibility notes.
 
 ## Core documentation
 
