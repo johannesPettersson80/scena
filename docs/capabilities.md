@@ -41,6 +41,10 @@ This lets applications present clear UI instead of failing silently.
 - Readback support.
 - WASM/browser support.
 
+For browser WebGL2, capability reports describe the active wgpu GL/WebGL
+adapter path. They should not be treated as constants from a separate raw GL
+renderer.
+
 ## Adapter reports
 
 GPU adapter reports identify backend, adapter name, limits, and related

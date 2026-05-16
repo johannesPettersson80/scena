@@ -506,7 +506,11 @@ async function main() {
         }
         results.push(result);
         if (result.status !== "passed") {
-          throw new Error(`${backend} Rust/WASM renderer probe failed: ${JSON.stringify(result)}`);
+          const consoleSuffix =
+            consoleMessages.length > 0 ? `\nconsole:\n${consoleMessages.join("\n")}` : "";
+          throw new Error(
+            `${backend} Rust/WASM renderer probe failed: ${JSON.stringify(result)}${consoleSuffix}`,
+          );
         }
         const workflowResults = new Map();
         for (const workflow of workflows) {

@@ -1,6 +1,8 @@
 use super::material_uniform::MATERIAL_UNIFORM_ENTRY_STRIDE;
-use super::materials::MaterialResources;
-use super::output::{DRAW_UNIFORM_ENTRY_STRIDE, GPU_TRIANGLE_SHADER};
+use super::materials::{MaterialResources, MaterialTextureBindingMode};
+use super::output::{
+    DRAW_UNIFORM_ENTRY_STRIDE, GPU_TRIANGLE_SHADER, GPU_TRIANGLE_SHADER_TEXTURE_2D,
+};
 use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 
 pub(super) const BYTES_PER_PIXEL: u32 = 4;
@@ -107,11 +109,16 @@ pub(super) fn create_unlit_pipeline(
     output_bind_group_layout: &wgpu::BindGroupLayout,
     material_bind_group_layout: &wgpu::BindGroupLayout,
     draw_bind_group_layout: &wgpu::BindGroupLayout,
+    texture_binding_mode: MaterialTextureBindingMode,
     depth_compare: Option<wgpu::CompareFunction>,
 ) -> wgpu::RenderPipeline {
+    let shader_source = match texture_binding_mode {
+        MaterialTextureBindingMode::Texture2d => GPU_TRIANGLE_SHADER_TEXTURE_2D,
+        MaterialTextureBindingMode::Texture2dArray => GPU_TRIANGLE_SHADER,
+    };
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("scena.m0.unlit_triangle"),
-        source: wgpu::ShaderSource::Wgsl(GPU_TRIANGLE_SHADER.into()),
+        source: wgpu::ShaderSource::Wgsl(shader_source.into()),
     });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("scena.m0.pipeline_layout"),

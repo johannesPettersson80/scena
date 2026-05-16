@@ -36,12 +36,35 @@ struct TextureBindingIndices {
     texture: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub(super) enum MaterialTextureBindingMode {
+    Texture2d,
+    Texture2dArray,
+}
+
+impl MaterialTextureBindingMode {
+    fn view_dimension(self) -> wgpu::TextureViewDimension {
+        match self {
+            Self::Texture2d => wgpu::TextureViewDimension::D2,
+            Self::Texture2dArray => wgpu::TextureViewDimension::D2Array,
+        }
+    }
+
+    fn supports_batching(self) -> bool {
+        matches!(self, Self::Texture2dArray)
+    }
+}
+
 /// Plan line 778 commit 2: material GPU resources can take one of two shapes.
 ///
 /// * `PerMaterial` keeps the legacy fall-back path: one
 ///   `MaterialTextureResources` per slot, each owning its own bind group with
-///   a 1-layer `texture_2d_array<f32>` per role and a 96-byte uniform buffer
-///   addressed with dynamic offset 0.
+///   one texture per role and a 96-byte uniform buffer addressed with dynamic
+///   offset 0. WebGPU/native bind those textures as 1-layer
+///   `texture_2d_array<f32>` views; WebGL2 uses ordinary `texture_2d<f32>`
+///   views because wgpu 29's GL backend samples material array textures as
+///   black in Chromium WebGL2.
 /// * `Batched` collapses N materials into a single bind group whose textures
 ///   are N-layer arrays and whose uniform buffer holds N entries of size
 ///   `MATERIAL_UNIFORM_ENTRY_STRIDE`. Each draw selects its layer with a
@@ -105,10 +128,13 @@ impl MaterialTextureBindingResources {
     }
 }
 
-pub(super) fn create_material_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+pub(super) fn create_material_bind_group_layout(
+    device: &wgpu::Device,
+    texture_binding_mode: MaterialTextureBindingMode,
+) -> wgpu::BindGroupLayout {
     let mut entries = vec![
         texture_sampler_layout_entry(BASE_COLOR_BINDINGS.sampler),
-        texture_layout_entry(BASE_COLOR_BINDINGS.texture),
+        texture_layout_entry(BASE_COLOR_BINDINGS.texture, texture_binding_mode),
         wgpu::BindGroupLayoutEntry {
             binding: 2,
             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -130,7 +156,7 @@ pub(super) fn create_material_bind_group_layout(device: &wgpu::Device) -> wgpu::
         EMISSIVE_BINDINGS,
     ] {
         entries.push(texture_sampler_layout_entry(bindings.sampler));
-        entries.push(texture_layout_entry(bindings.texture));
+        entries.push(texture_layout_entry(bindings.texture, texture_binding_mode));
     }
 
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -148,13 +174,16 @@ fn texture_sampler_layout_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
     }
 }
 
-fn texture_layout_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+fn texture_layout_entry(
+    binding: u32,
+    texture_binding_mode: MaterialTextureBindingMode,
+) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
         visibility: wgpu::ShaderStages::FRAGMENT,
         ty: wgpu::BindingType::Texture {
             sample_type: wgpu::TextureSampleType::Float { filterable: true },
-            view_dimension: wgpu::TextureViewDimension::D2Array,
+            view_dimension: texture_binding_mode.view_dimension(),
             multisampled: false,
         },
         count: None,
@@ -166,25 +195,31 @@ pub(super) fn create_material_resources(
     queue: &wgpu::Queue,
     layout: &wgpu::BindGroupLayout,
     material_slots: &[PreparedMaterialSlot],
+    texture_binding_mode: MaterialTextureBindingMode,
 ) -> MaterialResources {
-    let plan = compute_material_batch_plan(material_slots);
-    if plan.batchable && plan.layer_count >= 2 {
-        MaterialResources::Batched(create_batched_material_resources(
-            device,
-            queue,
-            layout,
-            material_slots,
-        ))
-    } else {
-        let mut resources = Vec::with_capacity(material_slots.len() + 1);
-        resources.push(create_material_resource(device, queue, layout, None));
-        resources.extend(
-            material_slots
-                .iter()
-                .map(|slot| create_material_resource(device, queue, layout, Some(slot))),
-        );
-        MaterialResources::PerMaterial(resources)
+    if texture_binding_mode.supports_batching() {
+        let plan = compute_material_batch_plan(material_slots);
+        if plan.batchable && plan.layer_count >= 2 {
+            return MaterialResources::Batched(create_batched_material_resources(
+                device,
+                queue,
+                layout,
+                material_slots,
+            ));
+        }
     }
+    let mut resources = Vec::with_capacity(material_slots.len() + 1);
+    resources.push(create_material_resource(
+        device,
+        queue,
+        layout,
+        None,
+        texture_binding_mode,
+    ));
+    resources.extend(material_slots.iter().map(|slot| {
+        create_material_resource(device, queue, layout, Some(slot), texture_binding_mode)
+    }));
+    MaterialResources::PerMaterial(resources)
 }
 
 pub(super) fn material_texture_byte_len(resources: &MaterialResources) -> u64 {
@@ -225,6 +260,7 @@ fn create_material_resource(
     queue: &wgpu::Queue,
     layout: &wgpu::BindGroupLayout,
     slot: Option<&PreparedMaterialSlot>,
+    texture_binding_mode: MaterialTextureBindingMode,
 ) -> MaterialTextureResources {
     let material_uniform = MaterialUniformUpload::from_material(
         slot.map(|slot| &slot.material),
@@ -240,6 +276,7 @@ fn create_material_resource(
             slot.and_then(|slot| slot.base_color.as_ref())
                 .map(|texture| &texture.desc),
         ),
+        texture_binding_mode,
     );
     let normal = create_texture_binding_resource(
         device,
@@ -249,6 +286,7 @@ fn create_material_resource(
             slot.and_then(|slot| slot.normal.as_ref())
                 .map(|texture| &texture.desc),
         ),
+        texture_binding_mode,
     );
     let metallic_roughness = create_texture_binding_resource(
         device,
@@ -258,6 +296,7 @@ fn create_material_resource(
             slot.and_then(|slot| slot.metallic_roughness.as_ref())
                 .map(|texture| &texture.desc),
         ),
+        texture_binding_mode,
     );
     let occlusion = create_texture_binding_resource(
         device,
@@ -267,6 +306,7 @@ fn create_material_resource(
             slot.and_then(|slot| slot.occlusion.as_ref())
                 .map(|texture| &texture.desc),
         ),
+        texture_binding_mode,
     );
     let emissive = create_texture_binding_resource(
         device,
@@ -276,6 +316,7 @@ fn create_material_resource(
             slot.and_then(|slot| slot.emissive.as_ref())
                 .map(|texture| &texture.desc),
         ),
+        texture_binding_mode,
     );
     let texture_bindings = vec![base_color, normal, metallic_roughness, occlusion, emissive];
     let texture_byte_len = texture_bindings
@@ -304,6 +345,7 @@ fn create_texture_binding_resource(
     queue: &wgpu::Queue,
     label: &'static str,
     upload: MaterialTextureUpload<'_>,
+    texture_binding_mode: MaterialTextureBindingMode,
 ) -> MaterialTextureBindingResources {
     let mip_extents = mip_level_extents(upload.width, upload.height, upload.sampler.min_filter());
     let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -329,8 +371,6 @@ fn create_texture_binding_resource(
         size: wgpu::Extent3d {
             width: upload.width,
             height: upload.height,
-            // Plan line 778 commit 2: every material texture is now a
-            // `texture_2d_array<f32>`. Per-material fall-back uses 1 layer.
             depth_or_array_layers: 1,
         },
         mip_level_count: mip_extents.len() as u32,
@@ -342,7 +382,7 @@ fn create_texture_binding_resource(
     });
     write_material_texture_layer_mips(queue, &texture, upload, &mip_extents, 0);
     let view = texture.create_view(&wgpu::TextureViewDescriptor {
-        dimension: Some(wgpu::TextureViewDimension::D2Array),
+        dimension: Some(texture_binding_mode.view_dimension()),
         ..wgpu::TextureViewDescriptor::default()
     });
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -398,7 +438,7 @@ pub(super) fn write_material_texture_layer_mips(
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(width.saturating_mul(4)),
-                rows_per_image: Some(height),
+                rows_per_image: None,
             },
             wgpu::Extent3d {
                 width,
@@ -479,6 +519,7 @@ mod tests {
                 && source.contains("scena.material.emissive")
                 && source.contains("scena.material.fallback_base_color")
                 && source.contains("scena.material.fallback_bind_group")
+                && source.contains("Self::Texture2d => wgpu::TextureViewDimension::D2")
                 && source.contains("TextureViewDimension::D2Array")
                 && batched_source.contains("scena.material.batched_uniform"),
             "backend material scaffolding must allocate a sampler, texture view, and bind group \
@@ -510,168 +551,22 @@ mod tests {
     }
 
     #[test]
-    fn webgl2_material_upload_uses_texture_sampler_metadata() {
-        let source = include_str!("webgl2_materials.rs");
-        let cache_source = include_str!("webgl2.rs");
-        let texture_set_source = include_str!("webgl2_texture_set.rs");
+    fn wgpu_material_upload_uses_texture_sampler_metadata() {
+        let source = include_str!("materials.rs");
+        let upload_source = include_str!("material_upload.rs");
         assert!(
-            source.contains("upload.sampler.wrap_s()")
-                && source.contains("upload.sampler.wrap_t()")
-                && source.contains("webgl2_wrap_mode")
-                && source.contains("webgl2_filter_mode")
-                && source.contains("TEXTURE_WRAP_S")
-                && source.contains("TEXTURE_MIN_FILTER")
-                && cache_source.contains("upload_webgl2_material_texture_set")
-                && texture_set_source.contains("WebGl2MaterialTextureSet")
-                && texture_set_source.contains("base_color: WebGlTexture")
-                && texture_set_source.contains("normal: WebGlTexture")
-                && texture_set_source.contains("metallic_roughness: WebGlTexture")
-                && texture_set_source.contains("occlusion: WebGlTexture")
-                && texture_set_source.contains("emissive: WebGlTexture"),
-            "WebGL2 material upload must honor texture sampler wrap/filter metadata instead of \
+            source.contains("address_mode(upload.sampler.wrap_s())")
+                && source.contains("address_mode(upload.sampler.wrap_t())")
+                && source.contains("filter_mode(upload.sampler.mag_filter())")
+                && source.contains("filter_mode(upload.sampler.min_filter())")
+                && source.contains("mipmap_filter_mode(upload.sampler.min_filter())")
+                && upload_source
+                    .contains("TextureWrap::MirroredRepeat => wgpu::AddressMode::MirrorRepeat")
+                && upload_source.contains("TextureWrap::Repeat => wgpu::AddressMode::Repeat")
+                && upload_source.contains("TextureFilter::Nearest")
+                && upload_source.contains("TextureFilter::LinearMipmapLinear"),
+            "wgpu material upload must honor glTF sampler wrap/filter metadata instead of \
              hardcoding linear clamp-to-edge"
         );
-    }
-
-    #[test]
-    fn webgl2_material_shader_declares_fragment_texture_transform_uniforms() {
-        let source = include_str!("webgl2_program.rs");
-        let fragment_shader = source
-            .split("pub(super) const FRAGMENT_SHADER")
-            .nth(1)
-            .expect("WebGL2 fragment shader source is present");
-
-        assert!(
-            fragment_shader.contains("uniform vec4 base_color_uv_offset_scale;")
-                && fragment_shader.contains("uniform vec4 base_color_uv_rotation;")
-                && fragment_shader.contains("texture(base_color_texture, transformed_uv)"),
-            "WebGL2 fragment shader must declare and apply the same base-color texture \
-             transform uniforms that render code sets per material"
-        );
-    }
-
-    /// Regression for ADR-0001. GLSL ES 3.0 § 4.5.3 sets implicit `highp float` and
-    /// `highp int` in the vertex stage and leaves the fragment-stage float default
-    /// unspecified — it must be declared via `precision <qualifier> float;`. For any
-    /// uniform declared in both stages with the same name, the linker requires
-    /// matching precision qualifiers; unqualified declarations inherit each stage's
-    /// default.
-    ///
-    /// Firefox WebGL2 enforces this strictly and reports the verbatim error
-    /// `Uniform `<name>` is not linkable between attached shaders`. Chromium WebGL2
-    /// does not enforce it, which is why CI on Chromium passed while downstream
-    /// Firefox proof failed.
-    ///
-    /// This test parses the inline GLSL strings out of `webgl2_program.rs` at
-    /// compile time (no browser required) and fails if any uniform name is
-    /// redeclared across stages without an explicit matching precision qualifier.
-    #[test]
-    fn webgl2_shaders_have_no_cross_stage_uniform_precision_mismatch() {
-        let source = include_str!("webgl2_program.rs");
-        let vertex_shader = extract_inline_raw_string(source, "VERTEX_SHADER")
-            .expect("WebGL2 vertex shader source is present in webgl2_program.rs");
-        let fragment_shader = extract_inline_raw_string(source, "FRAGMENT_SHADER")
-            .expect("WebGL2 fragment shader source is present in webgl2_program.rs");
-
-        let v_default_float = default_float_precision(vertex_shader).unwrap_or("highp");
-        let f_default_float = default_float_precision(fragment_shader)
-            .expect("fragment shader must declare `precision <qualifier> float;` per GLSL ES 3.0");
-
-        let vertex_uniforms = parse_uniform_declarations(vertex_shader);
-        let fragment_uniforms = parse_uniform_declarations(fragment_shader);
-
-        let mut mismatches: Vec<String> = Vec::new();
-        for (name, vertex_decl) in &vertex_uniforms {
-            let Some(fragment_decl) = fragment_uniforms.get(name) else {
-                continue;
-            };
-            if vertex_decl.type_name != fragment_decl.type_name {
-                mismatches.push(format!(
-                    "{name}: type mismatch (vertex `{}`, fragment `{}`)",
-                    vertex_decl.type_name, fragment_decl.type_name
-                ));
-            }
-            let v_eff = vertex_decl.precision.as_deref().unwrap_or(v_default_float);
-            let f_eff = fragment_decl
-                .precision
-                .as_deref()
-                .unwrap_or(f_default_float);
-            let is_float_derived = vertex_decl.type_name.starts_with("vec")
-                || vertex_decl.type_name.starts_with("mat")
-                || vertex_decl.type_name == "float";
-            if is_float_derived && v_eff != f_eff {
-                mismatches.push(format!(
-                    "{name}: precision mismatch (vertex `{v_eff}`, fragment `{f_eff}`)"
-                ));
-            }
-        }
-        assert!(
-            mismatches.is_empty(),
-            "WebGL2 vertex and fragment shaders must not redeclare the same uniform with \
-             mismatched precision (GLSL ES 3.0 link rule). See ADR-0001. Mismatches: {mismatches:?}"
-        );
-    }
-
-    struct UniformDecl {
-        precision: Option<String>,
-        type_name: String,
-    }
-
-    fn extract_inline_raw_string<'a>(source: &'a str, anchor: &str) -> Option<&'a str> {
-        let needle = format!("pub(super) const {anchor}");
-        let start = source.find(&needle)?;
-        let after_anchor = &source[start..];
-        let open = after_anchor.find("r#\"")? + 3;
-        let body = &after_anchor[open..];
-        let close = body.find("\"#")?;
-        Some(&body[..close])
-    }
-
-    fn parse_uniform_declarations(source: &str) -> std::collections::HashMap<String, UniformDecl> {
-        let mut map = std::collections::HashMap::new();
-        for raw_line in source.lines() {
-            let line = raw_line.trim();
-            let Some(rest) = line.strip_prefix("uniform ") else {
-                continue;
-            };
-            let rest = rest.trim_end_matches(';').trim();
-            let parts: Vec<&str> = rest.split_whitespace().collect();
-            let (precision, type_name, name) = match parts.as_slice() {
-                [p, t, n] if matches!(*p, "highp" | "mediump" | "lowp") => {
-                    (Some((*p).to_string()), (*t).to_string(), (*n).to_string())
-                }
-                [t, n] => (None, (*t).to_string(), (*n).to_string()),
-                _ => continue,
-            };
-            map.insert(
-                name,
-                UniformDecl {
-                    precision,
-                    type_name,
-                },
-            );
-        }
-        map
-    }
-
-    fn default_float_precision(source: &str) -> Option<&'static str> {
-        for raw_line in source.lines() {
-            let line = raw_line.trim().trim_end_matches(';').trim();
-            let Some(rest) = line.strip_prefix("precision ") else {
-                continue;
-            };
-            let parts: Vec<&str> = rest.split_whitespace().collect();
-            if let [qualifier, type_name] = parts.as_slice()
-                && *type_name == "float"
-            {
-                return Some(match *qualifier {
-                    "highp" => "highp",
-                    "mediump" => "mediump",
-                    "lowp" => "lowp",
-                    _ => return None,
-                });
-            }
-        }
-        None
     }
 }

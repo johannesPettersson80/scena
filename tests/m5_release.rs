@@ -63,6 +63,7 @@ fn m5_release_surface_files_and_examples_are_present() {
         "docs/api.md",
         "docs/release-notes/v1.0.1.md",
         "docs/release-notes/v1.0.2.md",
+        "docs/release-notes/v1.1.0.md",
         "examples/primitive_shapes.rs",
         "examples/glb_model_viewer.rs",
         "examples/picking_selection_hover.rs",
@@ -86,13 +87,17 @@ fn m5_release_surface_files_and_examples_are_present() {
 fn m5_package_metadata_is_ready_for_dry_run() {
     let manifest = fs::read_to_string(root().join("Cargo.toml")).expect("Cargo.toml is readable");
     for needle in [
-        "version = \"1.0.2\"",
+        "version = \"1.1.0\"",
         "rust-version = ",
         "license = \"MIT OR Apache-2.0\"",
         "documentation = \"https://docs.rs/scena\"",
         "keywords = [",
         "categories = [",
         "include = [",
+        "\"/src/**\"",
+        "\"/README.md\"",
+        "\"/CHANGELOG.md\"",
+        "\"/Cargo.toml\"",
     ] {
         assert!(manifest.contains(needle), "Cargo.toml missing {needle}");
     }
@@ -131,7 +136,7 @@ fn m5_public_api_baseline_names_frozen_contracts() {
             "gate": "m5-public-api-freeze",
             "status": "passed",
             "baseline": "docs/api.md",
-            "semver_baseline": "docs/release-notes/v1.0.1.md",
+            "semver_baseline": "docs/api.md",
             "required_terms": [
                 "Renderer::prepare",
                 "Renderer::render",

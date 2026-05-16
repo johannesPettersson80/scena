@@ -5,13 +5,9 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
         findings,
         "VISUAL-BROWSER-M6",
         "Cargo.toml",
-        &[
-            "browser-probe",
-            "WebGl2RenderingContext",
-            "WebGlProgram",
-            "WebGlShader",
-        ],
+        &["browser-probe"],
     );
+    check_raw_webgl2_renderer_removed(root, findings);
     require_contains(
         root,
         findings,
@@ -120,9 +116,10 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
         "src/render/gpu/build.rs",
         &[
             "create_browser_canvas_surface",
-            "WebCanvasWindowHandle",
-            "WebDisplayHandle",
-            "raw_display_handle: Some(raw_display_handle)",
+            "wgpu::SurfaceTarget::Canvas",
+            "raw_window_handle::WebDisplayHandle::new()",
+            "Backend::WebGl2 => wgpu::Backends::GL",
+            "wgpu::Limits::downlevel_webgl2_defaults()",
         ],
     );
     require_contains(
@@ -208,6 +205,7 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "m6RenderBenchmarkProbe",
             "m6RenderStateLifecycleProbe",
             "readWebGl2Pixels",
+            "preserveDrawingBuffer",
             "readCanvasPixels",
             "readRenderedPixels",
             "getImageData",
@@ -240,23 +238,8 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
         root,
         findings,
         "VISUAL-BROWSER-M6",
-        "src/render/gpu/webgl2.rs",
-        &[
-            "cache: &mut Option<WebGl2RenderCache>",
-            "pub(super) struct WebGl2RenderCache",
-            "last_vertex_hash",
-            "buffer_sub_data_with_i32_and_array_buffer_view",
-            "DEPTH_TEST",
-            "DEPTH_BUFFER_BIT",
-            "depth_func",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "VISUAL-BROWSER-M6",
-        "src/render/gpu/webgl2_program.rs",
-        &["aces_tonemap", "rrt_and_odt_fit", "fn vertex_stream_hash"],
+        "src/render/gpu.rs",
+        &["target.backend == Backend::WebGpu"],
     );
     require_contains(
         root,
@@ -272,4 +255,69 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "idle-render-skipped",
         ],
     );
+}
+
+fn check_raw_webgl2_renderer_removed(root: &Path, findings: &mut Vec<Finding>) {
+    for raw_binding in [
+        "WebGl2RenderingContext",
+        "WebGlBuffer",
+        "WebGlProgram",
+        "WebGlShader",
+        "WebGlTexture",
+    ] {
+        forbid_contains(
+            root,
+            findings,
+            "VISUAL-BROWSER-M6",
+            "Cargo.toml",
+            &[raw_binding],
+        );
+    }
+
+    for retired_file in [
+        "src/render/gpu/webgl2.rs",
+        "src/render/gpu/webgl2_program.rs",
+        "src/render/gpu/webgl2_camera.rs",
+        "src/render/gpu/webgl2_lighting.rs",
+        "src/render/gpu/webgl2_materials.rs",
+        "src/render/gpu/webgl2_texture_set.rs",
+        "src/render/gpu/webgl2_vertices.rs",
+    ] {
+        if root.join(retired_file).exists() {
+            findings.push(Finding::new(
+                "VISUAL-BROWSER-M6",
+                format!("{retired_file} is a retired raw WebGL2 renderer file and must be deleted"),
+            ));
+        }
+    }
+
+    for rel in [
+        "src/render/gpu.rs",
+        "src/render/gpu/draw.rs",
+        "src/render/gpu/build.rs",
+        "src/render/gpu/lifecycle.rs",
+        "src/render/gpu/debug.rs",
+    ] {
+        forbid_contains(
+            root,
+            findings,
+            "VISUAL-BROWSER-M6",
+            rel,
+            &[
+                "WebGl2RenderCache",
+                "webgl2_render_cache",
+                "webgl2_vertices",
+                "prepare_canvas_vertices",
+                "render_canvas",
+                "WebGl2RenderingContext",
+                "WebGlProgram",
+                "WebGlShader",
+                "compileShader",
+                "linkProgram",
+                "bufferData",
+                "VERTEX_SHADER",
+                "FRAGMENT_SHADER",
+            ],
+        );
+    }
 }

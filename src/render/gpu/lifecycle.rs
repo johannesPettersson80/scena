@@ -38,10 +38,6 @@ impl GpuDeviceState {
 
     pub(in crate::render) fn clear_prepared_resources_for_context_recovery(&mut self) {
         self.release_prepared_resources();
-        #[cfg(target_arch = "wasm32")]
-        {
-            self.webgl2_render_cache = None;
-        }
     }
 
     #[cfg(not(target_arch = "wasm32"))]

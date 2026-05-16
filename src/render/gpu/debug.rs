@@ -11,10 +11,6 @@ impl core::fmt::Debug for GpuDeviceState {
             .field("pending_destructions", &self.pending_destructions)
             .field("resources", &self.resources)
             .field("browser_canvas_prepared", &self.browser_canvas.is_some())
-            .field(
-                "webgl2_render_cache_prepared",
-                &self.webgl2_render_cache.is_some(),
-            )
             .finish()
     }
 }

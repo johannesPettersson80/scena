@@ -61,6 +61,60 @@ pub(crate) fn m9_release_metadata_contracts_are_source_enforced() {
 }
 
 #[test]
+pub(crate) fn browser_canvas_surface_uses_wgpu_surface_targets_only() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let source = fs::read_to_string(root.join("src/render/gpu/build.rs"))
+        .expect("build.rs must be readable");
+
+    assert!(
+        source.contains("wgpu::SurfaceTarget::Canvas"),
+        "browser WebGPU canvas surfaces must use wgpu::SurfaceTarget::Canvas"
+    );
+    assert!(
+        source.contains("raw_window_handle::WebDisplayHandle::new()"),
+        "browser WebGL2 canvas surfaces need the minimal wgpu raw-handle shim until \
+         SurfaceTarget::Canvas carries the display handle for wgpu::Backends::GL"
+    );
+    assert!(
+        !source.contains("WebGl2RenderingContext"),
+        "browser surface creation must not depend on raw WebGL2 renderer bindings"
+    );
+}
+
+#[test]
+pub(crate) fn render_path_has_no_raw_webgl2_renderer_bindings() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let cargo = fs::read_to_string(root.join("Cargo.toml")).expect("Cargo.toml must be readable");
+    for raw_binding in [
+        "WebGl2RenderingContext",
+        "WebGlBuffer",
+        "WebGlProgram",
+        "WebGlShader",
+        "WebGlTexture",
+    ] {
+        assert!(
+            !cargo.contains(raw_binding),
+            "Cargo.toml must not keep raw WebGL2 renderer web-sys binding {raw_binding}"
+        );
+    }
+
+    for retired_file in [
+        "src/render/gpu/webgl2.rs",
+        "src/render/gpu/webgl2_program.rs",
+        "src/render/gpu/webgl2_camera.rs",
+        "src/render/gpu/webgl2_lighting.rs",
+        "src/render/gpu/webgl2_materials.rs",
+        "src/render/gpu/webgl2_texture_set.rs",
+        "src/render/gpu/webgl2_vertices.rs",
+    ] {
+        assert!(
+            !root.join(retired_file).exists(),
+            "retired raw WebGL2 renderer file must be deleted: {retired_file}"
+        );
+    }
+}
+
+#[test]
 pub(crate) fn xtask_module_split_is_source_enforced() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let mut findings = Vec::new();

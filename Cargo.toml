@@ -1,6 +1,6 @@
 [package]
 name = "scena"
-version = "1.0.2"
+version = "1.1.0"
 edition = "2024"
 rust-version = "1.93"
 license = "MIT OR Apache-2.0"
@@ -12,15 +12,15 @@ documentation = "https://docs.rs/scena"
 keywords = ["renderer", "scene-graph", "gltf", "webgpu", "wasm"]
 categories = ["graphics", "rendering", "wasm"]
 include = [
-    "src/**",
-    "tests/**",
-    "examples/**",
-    "docs/**",
-    "README.md",
-    "CHANGELOG.md",
-    "LICENSE-*",
-    "Cargo.toml",
-    "Cargo.lock",
+    "/src/**",
+    "/tests/**",
+    "/examples/**",
+    "/docs/**",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE-*",
+    "/Cargo.toml",
+    "/Cargo.lock",
 ]
 
 [workspace]
@@ -85,11 +85,6 @@ web-sys = { version = "0.3.98", features = [
     "HtmlElement",
     "ImageData",
     "Response",
-    "WebGl2RenderingContext",
-    "WebGlBuffer",
-    "WebGlProgram",
-    "WebGlShader",
-    "WebGlTexture",
     "console",
     "Window",
 ] }

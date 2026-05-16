@@ -18,20 +18,6 @@ mod shadow;
 mod stats;
 mod surface_config;
 mod vertices;
-#[cfg(target_arch = "wasm32")]
-mod webgl2;
-#[cfg(target_arch = "wasm32")]
-mod webgl2_camera;
-#[cfg(target_arch = "wasm32")]
-mod webgl2_lighting;
-#[cfg(target_arch = "wasm32")]
-mod webgl2_materials;
-#[cfg(target_arch = "wasm32")]
-mod webgl2_program;
-#[cfg(target_arch = "wasm32")]
-mod webgl2_texture_set;
-#[cfg(target_arch = "wasm32")]
-mod webgl2_vertices;
 
 #[cfg(target_arch = "wasm32")]
 use crate::diagnostics::Backend;
@@ -41,8 +27,8 @@ use crate::geometry::Primitive;
 #[cfg(target_arch = "wasm32")]
 use self::browser_readback::{BrowserReadbackResources, create_browser_readback_resources};
 use self::materials::{
-    create_material_bind_group_layout, create_material_resources, material_bind_group_count,
-    material_texture_byte_len, material_texture_count,
+    MaterialTextureBindingMode, create_material_bind_group_layout, create_material_resources,
+    material_bind_group_count, material_texture_byte_len, material_texture_count,
 };
 use self::output::{create_output_bind_group_layout, create_output_uniform_buffer};
 use self::pipeline::create_unlit_pipeline;
@@ -74,8 +60,6 @@ pub(super) struct GpuDeviceState {
     resources: Option<GpuPreparedResources>,
     #[cfg(target_arch = "wasm32")]
     browser_canvas: Option<web_sys::HtmlCanvasElement>,
-    #[cfg(target_arch = "wasm32")]
-    webgl2_render_cache: Option<webgl2::WebGl2RenderCache>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -87,6 +71,17 @@ pub(super) use build::{request_headless_gpu, request_native_surface_gpu};
 pub(super) struct GpuSurfaceState {
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
+}
+
+fn material_texture_binding_mode(target: RasterTarget) -> MaterialTextureBindingMode {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if target.backend == Backend::WebGl2 {
+            return MaterialTextureBindingMode::Texture2d;
+        }
+    }
+    let _ = target;
+    MaterialTextureBindingMode::Texture2dArray
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -170,7 +165,6 @@ struct GpuPreparedResources {
     #[allow(dead_code)]
     draw_uniform_buffer: wgpu::Buffer,
     draw_bind_group: wgpu::BindGroup,
-    webgl2_vertices: Vec<f32>,
     stats: GpuResourceStats,
 }
 
@@ -234,13 +228,16 @@ impl GpuDeviceState {
             mapped_at_creation: false,
         });
         let output_bind_group_layout = create_output_bind_group_layout(&self.device);
-        let material_bind_group_layout = create_material_bind_group_layout(&self.device);
+        let texture_binding_mode = material_texture_binding_mode(target);
+        let material_bind_group_layout =
+            create_material_bind_group_layout(&self.device, texture_binding_mode);
         let output_uniform = create_output_uniform_buffer(&self.device);
         let material_resources = create_material_resources(
             &self.device,
             &self.queue,
             &material_bind_group_layout,
             material_slots,
+            texture_binding_mode,
         );
         let draw_bind_group_layout = output::create_draw_bind_group_layout(&self.device);
         let draw_uniform_buffer =
@@ -293,6 +290,7 @@ impl GpuDeviceState {
             &output_bind_group_layout,
             &material_bind_group_layout,
             &draw_bind_group_layout,
+            texture_binding_mode,
             depth_compare,
         );
         let surface_pipeline = self.surface.as_ref().map(|surface| {
@@ -302,6 +300,7 @@ impl GpuDeviceState {
                 &output_bind_group_layout,
                 &material_bind_group_layout,
                 &draw_bind_group_layout,
+                texture_binding_mode,
                 depth_compare,
             )
         });
@@ -371,49 +370,28 @@ impl GpuDeviceState {
         }
         let vertex_bytes = encode_vertices(primitives);
         let (draw_batches, draw_uniforms) = encode_draw_batches(primitives);
-        let webgl2_vertices = webgl2::encode_vertices(primitives);
-        if target.backend == Backend::WebGl2 {
-            let Some(canvas) = self.browser_canvas.as_ref() else {
-                return Err(crate::PrepareError::GpuResourceUpload {
-                    backend: target.backend,
-                    reason: "WebGL2 target has no attached browser canvas".to_string(),
-                });
-            };
-            webgl2::prepare_canvas_vertices(
-                &mut self.webgl2_render_cache,
-                canvas,
-                &webgl2_vertices,
-                &draw_batches,
-                material_slots,
-            )
-            .map_err(|error| crate::PrepareError::GpuResourceUpload {
-                backend: target.backend,
-                reason: error
-                    .as_string()
-                    .unwrap_or_else(|| "WebGL2 resource preparation failed".to_string()),
-            })?;
-        }
         let vertex_buffer_size = vertex_bytes.len().max(4) as u64;
         let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("scena.browser.scene_vertices"),
             size: vertex_buffer_size,
-            usage: wgpu::BufferUsages::VERTEX,
-            mapped_at_creation: true,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
         if !vertex_bytes.is_empty() {
-            let mut mapped = vertex_buffer.slice(..).get_mapped_range_mut();
-            mapped.copy_from_slice(&vertex_bytes);
+            self.queue.write_buffer(&vertex_buffer, 0, &vertex_bytes);
         }
-        vertex_buffer.unmap();
 
         let output_bind_group_layout = create_output_bind_group_layout(&self.device);
-        let material_bind_group_layout = create_material_bind_group_layout(&self.device);
+        let texture_binding_mode = material_texture_binding_mode(target);
+        let material_bind_group_layout =
+            create_material_bind_group_layout(&self.device, texture_binding_mode);
         let output_uniform = create_output_uniform_buffer(&self.device);
         let material_resources = create_material_resources(
             &self.device,
             &self.queue,
             &material_bind_group_layout,
             material_slots,
+            texture_binding_mode,
         );
         let draw_bind_group_layout = output::create_draw_bind_group_layout(&self.device);
         let draw_uniform_buffer =
@@ -451,8 +429,9 @@ impl GpuDeviceState {
             lighting_stats.directional_shadow_map_resolution,
             environment_lighting,
         );
-        let depth_prepass =
-            (target.backend == Backend::WebGpu && depth_stats.passes > 0).then(|| {
+        let depth_prepass = (matches!(target.backend, Backend::WebGpu | Backend::WebGl2)
+            && depth_stats.passes > 0)
+            .then(|| {
                 depth::create_depth_prepass_resources(
                     &self.device,
                     target,
@@ -470,6 +449,7 @@ impl GpuDeviceState {
             &output_bind_group_layout,
             &material_bind_group_layout,
             &draw_bind_group_layout,
+            texture_binding_mode,
             depth_compare,
         );
         let readback = (target.backend == Backend::WebGpu).then(|| {
@@ -479,6 +459,7 @@ impl GpuDeviceState {
                 &output_bind_group_layout,
                 &material_bind_group_layout,
                 &draw_bind_group_layout,
+                texture_binding_mode,
                 depth_compare,
             )
         });
@@ -516,7 +497,6 @@ impl GpuDeviceState {
             draw_uniforms,
             draw_uniform_buffer,
             draw_bind_group,
-            webgl2_vertices,
             stats,
         });
         Ok(())
@@ -527,23 +507,5 @@ impl GpuDeviceState {
             .as_ref()
             .map(|resources| resources.stats)
             .unwrap_or_default()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    const WEBGL2_PROGRAM_SOURCE: &str = include_str!("gpu/webgl2_program.rs");
-
-    #[test]
-    fn host_tests_guard_webgl2_khronos_pbr_neutral_source() {
-        assert!(
-            WEBGL2_PROGRAM_SOURCE.contains("pbrNeutralTonemap")
-                && WEBGL2_PROGRAM_SOURCE.contains("startCompression")
-                && WEBGL2_PROGRAM_SOURCE.contains("desaturation")
-                && WEBGL2_PROGRAM_SOURCE.contains("uniform vec4 color_management;")
-                && WEBGL2_PROGRAM_SOURCE.contains("color_management.x > 1.5"),
-            "native CI must still guard the WebGL2 source for the Khronos PBR Neutral \
-             tone-mapping branch even though the WebGL2 module is wasm32-gated"
-        );
     }
 }

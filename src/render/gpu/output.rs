@@ -5,6 +5,8 @@ use super::super::prepare::PreparedGpuLightUniform;
 /// per-module significant-lines budget. The shader still compiles
 /// the same — `include_str!` produces a static `&'static str`.
 pub(super) const GPU_TRIANGLE_SHADER: &str = include_str!("output_shader.wgsl");
+pub(super) const GPU_TRIANGLE_SHADER_TEXTURE_2D: &str =
+    include_str!("output_shader_texture_2d.wgsl");
 
 pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 480;
 
@@ -294,6 +296,24 @@ mod tests {
                 && GPU_TRIANGLE_SHADER.contains("textureSample(base_color_texture"),
             "GPU fragment shader must expose material texture bindings as 2D-array views \
              with material_layer_index so per-material and array-batched paths share one shader"
+        );
+    }
+
+    #[test]
+    fn triangle_shader_texture_2d_variant_declares_webgl2_material_bindings() {
+        assert!(
+            GPU_TRIANGLE_SHADER_TEXTURE_2D.contains(
+                "var base_color_texture: texture_2d<f32>"
+            ) && GPU_TRIANGLE_SHADER_TEXTURE_2D.contains("var normal_texture: texture_2d<f32>")
+                && GPU_TRIANGLE_SHADER_TEXTURE_2D
+                    .contains("var metallic_roughness_texture: texture_2d<f32>")
+                && GPU_TRIANGLE_SHADER_TEXTURE_2D.contains(
+                    "let base_color_sample = textureSample(base_color_texture, base_color_sampler, transformed_uv)"
+                )
+                && !GPU_TRIANGLE_SHADER_TEXTURE_2D
+                    .contains("textureSample(base_color_texture, base_color_sampler, transformed_uv, material_layer)"),
+            "WebGL2 uses a texture_2d material shader variant because wgpu 29's GL backend \
+             samples material texture arrays as black in Chromium WebGL2"
         );
     }
 

@@ -4,6 +4,7 @@ Status: Accepted
 Date: 2026-05-15
 Affects: scena 1.0.1 (regression introduced before 1.0.0 release; first observed externally during downstream Firefox + Playwright headless visual proof)
 Resolved in: scena 1.0.2
+Superseded by: ADR-0002 for the active WebGL2 implementation path. ADR-0001 remains the historical bug record for the deleted raw WebGL2 renderer.
 
 ## Problem
 
