@@ -30,7 +30,8 @@ Start with:
 
 Browser hosts provide a canvas and drive rendering through WASM. WebGPU and
 WebGL2 are represented as explicit backend choices so applications can report
-or select capabilities.
+or select capabilities. WebGL2 uses `wgpu::Backends::GL`, so shader compilation
+and resource ownership stay on the shared wgpu/naga renderer path.
 
 Start with:
 

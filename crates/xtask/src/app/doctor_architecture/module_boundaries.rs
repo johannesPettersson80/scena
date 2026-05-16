@@ -61,12 +61,13 @@ pub(crate) fn check_module_boundaries(root: &Path, findings: &mut Vec<Finding>) 
         root,
         findings,
         "ARCH-RENDER-LIFECYCLE",
-        "src/render/gpu/webgl2.rs",
+        "src/render/gpu/draw.rs",
         &[
-            "pub(super) fn render_canvas",
-            "pub(super) fn prepare_canvas_vertices",
-            "webgl2 resources were not prepared; call Renderer::prepare before render",
-            "webgl2 vertex stream was not prepared; call Renderer::prepare after scene changes",
+            "pub(in crate::render) fn render_to_surface",
+            "GpuResourcesNotPrepared",
+            "surface.surface.get_current_texture()",
+            "encode_unlit_pass",
+            "surface_output.present();",
         ],
     );
     require_contains(
@@ -74,27 +75,20 @@ pub(crate) fn check_module_boundaries(root: &Path, findings: &mut Vec<Finding>) 
         findings,
         "ARCH-RENDER-LIFECYCLE",
         "src/render/gpu.rs",
-        &["webgl2::prepare_canvas_vertices(", "material_slots"],
+        &[
+            "self.configure_surface(target);",
+            "self.release_prepared_resources();",
+            "let vertex_bytes = encode_vertices(primitives);",
+            "create_material_resources",
+            "material_slots",
+        ],
     );
     require_contains(
         root,
         findings,
         "ARCH-RENDER-LIFECYCLE",
         "src/render/gpu/lifecycle.rs",
-        &[
-            "pub(in crate::render) fn clear_prepared_resources_for_context_recovery",
-            "self.webgl2_render_cache = None;",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "ARCH-RENDER-LIFECYCLE",
-        "src/render/gpu/webgl2.rs",
-        &[
-            "pub(super) struct WebGl2RenderCache",
-            "cache: &mut Option<WebGl2RenderCache>",
-        ],
+        &["pub(in crate::render) fn clear_prepared_resources_for_context_recovery"],
     );
     require_contains(
         root,

@@ -77,9 +77,9 @@ pub(crate) fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec
         "src/render/gpu/output.rs",
         &[
             // Vertex layout still carries the CPU-baked shadow_visibility
-            // attribute so the same vertex buffer can drive the WebGL2 path,
-            // but the WGSL fragment now sources directional attenuation from
-            // a hardware-comparison sample of the shadow map (Phase 1B step 2).
+            // attribute for CPU fallback/debug visibility, but the WGSL
+            // fragment now sources directional attenuation from a
+            // hardware-comparison sample of the shadow map (Phase 1B step 2).
             "@location(5) shadow_visibility: f32",
             "var shadow_map: texture_depth_2d",
             "var shadow_sampler: sampler_comparison",
@@ -87,17 +87,6 @@ pub(crate) fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec
             "textureSampleCompareLevel(shadow_map, shadow_sampler",
             "* gpu_shadow",
             "triangle_shader_samples_directional_shadow_map_in_fragment",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "ARCH-DIRECTIONAL-SHADOW",
-        "src/render/gpu/webgl2_program.rs",
-        &[
-            "in float shadow_visibility",
-            "* shadow_visibility",
-            "webgl2_fragment_shader_consumes_prepared_directional_shadow_visibility",
         ],
     );
     require_contains(

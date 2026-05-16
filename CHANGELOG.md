@@ -2,6 +2,28 @@
 
 All notable user-facing changes are recorded here.
 
+## [1.1.0] - 2026-05-16
+
+### Changed
+
+- WebGL2 now renders through the shared wgpu/naga path instead of the deleted
+  hand-written raw WebGL2 renderer. The public `Backend::WebGl2` API remains
+  intact.
+- WebGL2 material sampling uses a small wgpu shader/layout shim with ordinary
+  `texture_2d` bindings because wgpu 29's GL backend rendered material
+  `texture_2d_array` samples black in Chromium WebGL2.
+
+### Fixed
+
+- Repeated WebGL2 `Renderer::prepare()` no longer retains the old raw GL
+  buffer/texture/program cache, closing the GL out-of-memory and subsequent
+  wasm-bindgen mutable-guard poisoning failure family.
+
+### Removed
+
+- Removed the hand-written WebGL2 renderer modules and raw `web_sys`
+  render-path bindings.
+
 ## [1.0.2] - 2026-05-15
 
 ### Fixed

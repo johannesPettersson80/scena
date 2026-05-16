@@ -145,8 +145,6 @@ async fn request_gpu_for_surface(
         resources: None,
         #[cfg(target_arch = "wasm32")]
         browser_canvas: None,
-        #[cfg(target_arch = "wasm32")]
-        webgl2_render_cache: None,
     })
 }
 
@@ -156,15 +154,22 @@ fn create_browser_canvas_surface(
     backend: Backend,
     canvas: &web_sys::HtmlCanvasElement,
 ) -> Result<wgpu::Surface<'static>, BuildError> {
+    if backend == Backend::WebGpu {
+        return instance
+            .create_surface(wgpu::SurfaceTarget::Canvas(canvas.clone()))
+            .map_err(|_| BuildError::CreateSurface { backend });
+    }
+
     use std::ptr::NonNull;
 
     let value: &wasm_bindgen::JsValue = canvas;
     let raw_window_handle =
         raw_window_handle::WebCanvasWindowHandle::new(NonNull::from(value).cast()).into();
     let raw_display_handle = raw_window_handle::WebDisplayHandle::new().into();
-    // SAFETY: the handles are produced from the live `HtmlCanvasElement` passed by the host.
-    // wgpu copies the canvas reference during surface creation, and this function does not
-    // retain borrowed raw handles beyond the call.
+    // SAFETY: wgpu 29's safe `SurfaceTarget::Canvas` omits WebDisplayHandle,
+    // which the WebGL2 backend still needs. The raw handles are produced from
+    // the live HtmlCanvasElement, and wgpu copies the canvas reference during
+    // surface creation.
     unsafe {
         instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
             raw_display_handle: Some(raw_display_handle),

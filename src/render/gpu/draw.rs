@@ -1,8 +1,6 @@
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::mpsc;
 
-#[cfg(target_arch = "wasm32")]
-use crate::diagnostics::Backend;
 use crate::diagnostics::RenderError;
 use crate::material::Color;
 #[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
@@ -19,9 +17,6 @@ use super::depth;
 use super::output::{OutputUniformUpload, encode_output_uniform};
 use super::pipeline::{UnlitPass, encode_unlit_pass};
 use super::shadow::encode_shadow_caster_pass;
-#[cfg(target_arch = "wasm32")]
-use super::webgl2;
-
 impl GpuDeviceState {
     #[cfg(not(target_arch = "wasm32"))]
     pub(in crate::render) fn render_to_frame(
@@ -234,40 +229,6 @@ impl GpuDeviceState {
                 backend: target.backend,
             });
         };
-        if target.backend == Backend::WebGl2 {
-            let Some(canvas) = self.browser_canvas.as_ref() else {
-                return Err(RenderError::GpuResourcesNotPrepared {
-                    backend: target.backend,
-                });
-            };
-            webgl2::render_canvas(
-                &mut self.webgl2_render_cache,
-                canvas,
-                &resources.webgl2_vertices,
-                &resources.draw_batches,
-                &resources.draw_uniforms,
-                &camera_projection
-                    .view_from_world_matrix()
-                    .unwrap_or_else(identity_matrix),
-                &camera_projection
-                    .clip_from_view_matrix()
-                    .unwrap_or_else(identity_matrix),
-                &camera_projection
-                    .clip_from_world_matrix()
-                    .unwrap_or_else(identity_matrix),
-                camera_position_uniform(camera_projection),
-                [target.width as f32, target.height as f32],
-                camera_projection.near_far(),
-                webgl2_clear_color(background_color),
-                2.0_f32.powf(exposure_ev),
-                color_management,
-                resources.light_uniform,
-            )
-            .map_err(|_| RenderError::GpuResourcesNotPrepared {
-                backend: target.backend,
-            })?;
-            return Ok(true);
-        }
         self.queue.write_buffer(
             &resources.output_uniform,
             0,
@@ -295,7 +256,7 @@ impl GpuDeviceState {
             let mut encoder = self
                 .device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("scena.browser.webgpu_proof_encoder"),
+                    label: Some("scena.browser.proof_encoder"),
                 });
             encode_shadow_caster_pass(
                 &mut encoder,
@@ -424,7 +385,7 @@ impl GpuDeviceState {
         };
         if resources.target != target {
             return Err(JsValue::from_str(&format!(
-                "WebGPU proof readback resources were prepared for {:?}, not {:?}",
+                "browser proof readback resources were prepared for {:?}, not {:?}",
                 resources.target, target
             )));
         }
@@ -439,7 +400,7 @@ impl GpuDeviceState {
                 Err(error) => {
                     let _ = reject.call1(
                         &JsValue::UNDEFINED,
-                        &JsValue::from_str(&format!("WebGPU proof readback failed: {error:?}")),
+                        &JsValue::from_str(&format!("browser proof readback failed: {error:?}")),
                     );
                 }
             });
@@ -471,16 +432,6 @@ fn wgpu_clear_color(color: Color) -> wgpu::Color {
 
 fn clear_channel_f64(channel: f32) -> f64 {
     channel.clamp(0.0, 1.0) as f64
-}
-
-#[cfg(target_arch = "wasm32")]
-fn webgl2_clear_color(color: Color) -> [f32; 4] {
-    [
-        color.r.clamp(0.0, 1.0),
-        color.g.clamp(0.0, 1.0),
-        color.b.clamp(0.0, 1.0),
-        color.a.clamp(0.0, 1.0),
-    ]
 }
 
 fn camera_position_uniform(camera_projection: &CameraProjection) -> [f32; 3] {

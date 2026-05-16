@@ -6,9 +6,12 @@ and render frames.
 
 The authoritative API reference is generated on docs.rs:
 
-<https://docs.rs/scena/1.0.2/scena/>
+<https://docs.rs/scena/1.1.0/scena/>
 
 Use this page as the conceptual map.
+
+No public API changes in 1.1.0. The release changes the browser WebGL2
+implementation path, not the exported Rust API surface.
 
 ## Core types
 
@@ -120,12 +123,50 @@ Common scene interaction calls:
 
 - `Scene::pick_with_assets`
 - `Scene::pick_and_select_with_assets`
+- `Scene::connect_import_connectors`
+- `Scene::with_default_camera()`
 
 Common public event and output types:
 
 - `SurfaceEvent`
 - `DebugOverlay`
 - `RendererStats`
+- `CapabilityReport`
+- `GpuAdapterReport`
+- `AdapterLimitsReport`
+- `AssetEvictionStats`
+- `AssetStoreId`
+
+Common asset-store calls:
+
+- `Assets::store_id()`
+- `Assets::contains_geometry`
+- `Assets::contains_material`
+- `Assets::contains_texture`
+- `Assets::contains_environment`
+- `Assets::release_unreferenced`
+
+Common import and connector contracts:
+
+- `SceneImport`
+- `AnchorKey`
+- `ConnectorKey`
+- `AnchorFrame`
+- `ConnectorFrame`
+- `ConnectorMetadata`
+- `ConnectionAlignment`
+- `ConnectionRoll`
+- `ConnectionLineOverlay`
+- `ConnectorRollPolicy`
+- `ConnectorPolarity`
+
+Common viewer helpers:
+
+- `InteractiveGltfViewer`
+- `InteractiveGltfViewerBuilder`
+- `interactive_gltf_viewer(path, surface)`
+- `InteractiveGltfViewer::handle_surface_event`
+- `Renderer::headless_default()`
 
 ## Errors and diagnostics
 

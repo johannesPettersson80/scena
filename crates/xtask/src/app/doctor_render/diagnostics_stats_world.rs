@@ -344,7 +344,7 @@ pub(crate) fn check_render_world_bake_contracts(root: &Path, findings: &mut Vec<
         root,
         findings,
         "ARCH-RENDER-WORLD-BAKE",
-        "src/render/gpu/webgl2_vertices.rs",
+        "src/render/gpu/vertices.rs",
         &[
             "unbake_position_to_model_space",
             "unbake_normal_to_model_space",
@@ -356,12 +356,11 @@ pub(crate) fn check_render_world_bake_contracts(root: &Path, findings: &mut Vec<
         root,
         findings,
         "ARCH-RENDER-WORLD-BAKE",
-        "src/render/gpu/webgl2.rs",
+        "src/render/gpu/pipeline.rs",
         &[
-            "draw_uniforms: &[DrawUniformValue]",
+            "draw_batches: &'a [PrimitiveDrawBatch]",
             "batch.draw_uniform_index",
-            "world_from_model: &draw_uniform.world_from_model",
-            "normal_from_model: &draw_uniform.normal_from_model",
+            "pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset])",
         ],
     );
 }

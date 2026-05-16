@@ -1,7 +1,7 @@
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
 use super::super::RasterTarget;
-use super::materials::MaterialResources;
+use super::materials::{MaterialResources, MaterialTextureBindingMode};
 use super::pipeline::{BYTES_PER_PIXEL, create_unlit_pipeline};
 use super::pipeline::{UnlitPass, encode_unlit_pass};
 use super::vertices::PrimitiveDrawBatch;
@@ -22,10 +22,11 @@ pub(super) fn create_browser_readback_resources(
     output_bind_group_layout: &wgpu::BindGroupLayout,
     material_bind_group_layout: &wgpu::BindGroupLayout,
     draw_bind_group_layout: &wgpu::BindGroupLayout,
+    texture_binding_mode: MaterialTextureBindingMode,
     depth_compare: Option<wgpu::CompareFunction>,
 ) -> BrowserReadbackResources {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("scena.browser_webgpu.proof_readback_target"),
+        label: Some("scena.browser.proof_readback_target"),
         size: wgpu::Extent3d {
             width: target.width,
             height: target.height,
@@ -42,7 +43,7 @@ pub(super) fn create_browser_readback_resources(
     let unpadded_bytes_per_row = target.width.saturating_mul(BYTES_PER_PIXEL);
     let padded_bytes_per_row = align_to(unpadded_bytes_per_row, wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("scena.browser_webgpu.proof_readback_buffer"),
+        label: Some("scena.browser.proof_readback_buffer"),
         size: u64::from(padded_bytes_per_row) * u64::from(target.height),
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
@@ -53,6 +54,7 @@ pub(super) fn create_browser_readback_resources(
         output_bind_group_layout,
         material_bind_group_layout,
         draw_bind_group_layout,
+        texture_binding_mode,
         depth_compare,
     );
     BrowserReadbackResources {
@@ -93,7 +95,7 @@ pub(super) fn encode_browser_readback_pass(
             draw_batches: pass.draw_batches,
             pipeline: &pass.readback.pipeline,
             clear_color: pass.clear_color,
-            label: "scena.browser.webgpu_proof_readback_pass",
+            label: "scena.browser.proof_readback_pass",
         },
     );
     encoder.copy_texture_to_buffer(

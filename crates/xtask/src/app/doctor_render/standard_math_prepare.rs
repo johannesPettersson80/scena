@@ -21,7 +21,6 @@ pub(crate) fn check_renderer_standard_math_contracts(root: &Path, findings: &mut
 
     for rel in [
         "src/render/gpu/output_shader.wgsl",
-        "src/render/gpu/webgl2_program.rs",
         "src/render/prepare.rs",
         "src/render/prepare/lights.rs",
         "src/render/prepare/materials.rs",

@@ -58,11 +58,15 @@ intact when deploying.
 Use capability reports instead of assuming a backend:
 
 - WebGPU is the modern browser GPU path.
-- WebGL2 is the compatibility path.
+- WebGL2 is the compatibility path and renders through wgpu's WebGL backend.
 - Browser support depends on browser version, OS, GPU, and security context.
 
 Applications should expose clear fallback behavior when a requested backend is
 unavailable.
+
+Both browser backends use the shared Rust renderer lifecycle. `prepare()` builds
+wgpu resources, and `render()` presents through the configured browser surface.
+There is no separate raw WebGL2 render path.
 
 ## Surface events
 

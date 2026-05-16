@@ -205,10 +205,10 @@ pub(crate) fn doctor_rejects_m5_release_missing_cargo_metadata_regression() {
 #[test]
 pub(crate) fn doctor_rejects_m6_browser_renderer_probe_missing_cargo_dep_regression() {
     // VISUAL-BROWSER-M6: Cargo.toml must keep the browser-probe feature
-    // gate plus WebGl2RenderingContext / WebGlProgram / WebGlShader
-    // dependencies that the M6 browser renderer probe links against.
-    // A Cargo.toml that drops any of those fails closed so the M6
-    // attached-canvas Rust/WASM path cannot regress silently.
+    // gate, but the M6 renderer proof must no longer depend on raw Rust
+    // WebGL2 program/shader bindings. A Cargo.toml that drops the feature
+    // still fails closed; raw render-path WebGl bindings are covered by the
+    // source-enforced absence rule.
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root =
         root.join("target/xtask-doctor-regressions/m6-browser-probe-missing-cargo-dep");
@@ -216,8 +216,7 @@ pub(crate) fn doctor_rejects_m6_browser_renderer_probe_missing_cargo_dep_regress
     fs::create_dir_all(&fixture_root).expect("fixture dir");
     fs::write(
         &cargo_path,
-        "[package]\nname = \"scena\"\n# stub Cargo.toml missing every required \
-         feature gate and web-sys binding.\n",
+        "[package]\nname = \"scena\"\n# stub Cargo.toml missing the browser-probe feature gate.\n",
     )
     .expect("cargo fixture");
     let mut findings = Vec::new();
@@ -232,8 +231,7 @@ pub(crate) fn doctor_rejects_m6_browser_renderer_probe_missing_cargo_dep_regress
                     .contains("Cargo.toml is missing required contract text 'browser-probe'")
         }),
         "doctor must reject Cargo.toml that drops the browser-probe / \
-         WebGl2RenderingContext / WebGlProgram / WebGlShader wiring required \
-         by the M6 browser renderer probe: {findings:?}",
+         wgpu-backed M6 browser renderer probe gate: {findings:?}",
     );
 }
 

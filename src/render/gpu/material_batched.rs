@@ -329,7 +329,7 @@ fn write_material_texture_layer_mips_owned(
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(mip_width.saturating_mul(4)),
-                rows_per_image: Some(mip_height),
+                rows_per_image: None,
             },
             wgpu::Extent3d {
                 width: mip_width,

@@ -26,7 +26,7 @@ pub(super) fn point_light_scene() -> Result<WorkflowScene, JsValue> {
         .point_light(
             PointLight::default()
                 .with_color(Color::from_linear_rgb(0.0, 1.0, 0.0))
-                .with_intensity_candela(900.0)
+                .with_intensity_candela(180.0)
                 .with_range(5.0),
         )
         .transform(Transform::at(Vec3::new(0.0, 0.0, 1.0)))
@@ -62,7 +62,7 @@ pub(super) fn spot_light_scene() -> Result<WorkflowScene, JsValue> {
         .spot_light(
             SpotLight::default()
                 .with_color(Color::from_linear_rgb(0.0, 0.0, 1.0))
-                .with_intensity_candela(1_000.0)
+                .with_intensity_candela(200.0)
                 .with_range(5.0)
                 .with_inner_cone_angle(Angle::from_degrees(20.0))
                 .with_outer_cone_angle(Angle::from_degrees(35.0)),

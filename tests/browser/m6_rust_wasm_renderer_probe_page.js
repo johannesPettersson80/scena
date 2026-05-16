@@ -23,6 +23,9 @@ function createCanvas(backend, workflow = "triangle") {
   canvas.dataset.backend = backend;
   canvas.dataset.workflow = workflow;
   document.body.appendChild(canvas);
+  if (backend === "webgl2") {
+    canvas.getContext("webgl2", { antialias: false, preserveDrawingBuffer: true });
+  }
   return canvas;
 }
 
@@ -56,7 +59,7 @@ function summarizePixels(width, height, pixels) {
 }
 
 function readWebGl2Pixels(canvas) {
-  const gl = canvas.getContext("webgl2", { antialias: false });
+  const gl = canvas.getContext("webgl2", { antialias: false, preserveDrawingBuffer: true });
   if (!gl) {
     return null;
   }

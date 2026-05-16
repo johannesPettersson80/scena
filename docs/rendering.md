@@ -70,6 +70,10 @@ Rendering outputs depend on the backend:
 - headless paths can produce deterministic frame buffers,
 - readback paths can write images for CI and docs.
 
+GPU backends share the same wgpu/naga renderer path. Browser WebGL2 keeps a
+small material texture binding shim for wgpu 29's GL backend, but it does not
+use a separate raw WebGL renderer.
+
 For generated images, see [Headless rendering](headless-rendering.md).
 
 ## Lifecycle

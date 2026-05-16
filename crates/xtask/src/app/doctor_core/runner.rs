@@ -423,7 +423,7 @@ pub(crate) const REQUIRED_DOCS: &[&str] = &[
     "docs/guides/place-and-connect-objects.md",
     "docs/guides/troubleshooting-misplaced-assets.md",
     "docs/guides/units-axes-handedness.md",
-    "docs/release-notes/v1.0.1.md",
+    "docs/release-notes/v1.1.0.md",
     ".codex/skills/scena-doctor/SKILL.md",
     ".codex/skills/scena-git-github/SKILL.md",
     ".codex/skills/scena-gltf-assets/SKILL.md",
