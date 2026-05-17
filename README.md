@@ -4,6 +4,8 @@
 [![rust](https://img.shields.io/badge/rust-1.93%2B-orange)](Cargo.toml)
 [![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 
+[![Connector snap demo: scena mates authored shaft and hub connectors](docs/assets/readme/connector-snap.gif)](https://scena-demo.pages.dev/)
+
 Rust 3D library
 
 `scena` is an easy-to-use, lightweight 3D library for Rust applications on native and

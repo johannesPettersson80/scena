@@ -8,6 +8,8 @@ pub mod assets;
 #[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
 pub mod browser_probe;
 pub mod controls;
+#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+pub mod demo_page;
 pub mod diagnostics;
 pub mod geometry;
 pub mod material;

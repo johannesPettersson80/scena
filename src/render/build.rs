@@ -228,6 +228,7 @@ impl Renderer {
             background_color: Color::BLACK,
             environment_revision: 0,
             target_revision: 0,
+            prepare_telemetry: Default::default(),
             not_sync: PhantomData::<Cell<()>>,
         })
     }

@@ -12,14 +12,15 @@ mod gpu;
 mod offscreen;
 mod output;
 mod prepare;
+mod prepare_lifecycle;
 mod reporting;
 mod settings;
 mod surface;
 
-use crate::assets::{Assets, EnvironmentHandle};
+use crate::assets::EnvironmentHandle;
 use crate::diagnostics::{
     Backend, Capabilities, CapabilityReport, ChangeKind, DebugOverlay, DevicePoll, Diagnostic,
-    GpuAdapterReport, NotPreparedReason, PrepareError, RenderError, RenderOutcome, RendererStats,
+    GpuAdapterReport, NotPreparedReason, RenderError, RenderOutcome, RendererStats,
 };
 use crate::geometry::Primitive;
 use crate::material::Color;
@@ -32,28 +33,6 @@ pub use self::offscreen::{OffscreenTarget, PixelReadback};
 use self::output::OutputTransform;
 pub use self::output::Tonemapper;
 pub use self::settings::{Profile, Quality, RenderMode, RendererOptions};
-
-#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
-fn prepare_now_ms() -> f64 {
-    js_sys::Date::now()
-}
-
-#[cfg(not(all(target_arch = "wasm32", feature = "demo-page")))]
-fn prepare_now_ms() -> f64 {
-    0.0
-}
-
-#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
-fn log_prepare_step(label: &str, start_ms: f64) -> f64 {
-    let elapsed_ms = prepare_now_ms() - start_ms;
-    web_sys::console::log_1(&format!("[scena-prepare] {label}: {elapsed_ms:.1}ms").into());
-    prepare_now_ms()
-}
-
-#[cfg(not(all(target_arch = "wasm32", feature = "demo-page")))]
-fn log_prepare_step(_label: &str, _start_ms: f64) -> f64 {
-    0.0
-}
 
 #[derive(Debug)]
 pub struct Renderer {
@@ -88,13 +67,22 @@ pub struct Renderer {
     background_color: Color,
     environment_revision: u64,
     target_revision: u64,
+    prepare_telemetry: PrepareTelemetry,
     not_sync: PhantomData<Cell<()>>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct PrepareTelemetry {
+    full_prepares: u64,
+    prepared_primitive_collections: u64,
+    static_gpu_resource_rebuilds: u64,
 }
 
 #[derive(Debug, Clone)]
 struct PreparedSceneState {
     scene: Weak<()>,
     structure_revision: u64,
+    transform_revision: u64,
     environment_revision: u64,
     target_revision: u64,
     debug_revision: u64,
@@ -111,163 +99,6 @@ struct RasterTarget {
 }
 
 impl Renderer {
-    pub fn prepare(&mut self, scene: &mut Scene) -> Result<(), PrepareError> {
-        self.prepare_inner::<()>(scene, None)
-    }
-
-    pub fn prepare_with_assets<F>(
-        &mut self,
-        scene: &mut Scene,
-        assets: &Assets<F>,
-    ) -> Result<(), PrepareError> {
-        self.prepare_inner(scene, Some(assets))
-    }
-
-    fn prepare_inner<F>(
-        &mut self,
-        scene: &mut Scene,
-        assets: Option<&Assets<F>>,
-    ) -> Result<(), PrepareError> {
-        let total_start = prepare_now_ms();
-        let mut step_start = total_start;
-        self.poll_device();
-        self.diagnostics.clear();
-        validate_target_size(self.target.width, self.target.height).map_err(|()| {
-            PrepareError::InvalidTargetSize {
-                width: self.target.width,
-                height: self.target.height,
-            }
-        })?;
-        let mut diagnostics = prepare::collect_precision_diagnostics(scene, self.target.backend);
-        diagnostics.extend(prepare::collect_camera_visibility_diagnostics(
-            scene,
-            self.target,
-        ));
-        if let Some(assets) = assets {
-            diagnostics.extend(prepare::collect_material_texture_diagnostics(scene, assets));
-        }
-        step_start = log_prepare_step("diagnostics", step_start);
-        let environment_desc = match self.environment {
-            Some(environment) => {
-                let Some(assets) = assets else {
-                    return Err(PrepareError::EnvironmentAssetsRequired { environment });
-                };
-                Some(
-                    assets
-                        .environment(environment)
-                        .ok_or(PrepareError::EnvironmentNotFound { environment })?,
-                )
-            }
-            None => None,
-        };
-        let environment_prepare_stats =
-            prepare::collect_environment_prepare_stats(environment_desc.as_ref());
-        let environment_count = u64::from(environment_desc.is_some());
-        let lighting_stats = prepare::collect_lighting_stats(scene, self.target.backend)?;
-        let environment_lighting = self.environment_lighting_for_prepare(environment_desc.as_ref());
-        let gpu_light_uniform =
-            prepare::collect_gpu_light_uniform(scene, scene.origin_shift(), &environment_lighting);
-        step_start = log_prepare_step("environment + lights", step_start);
-        let active_camera_projection = scene.active_camera().and_then(|camera| {
-            camera::CameraProjection::from_scene(scene, camera, self.target).ok()
-        });
-        let backend_material_slots = if self.gpu.is_some() {
-            prepare::collect_backend_material_slots(scene, assets)
-        } else {
-            Vec::new()
-        };
-        let backend_sampled_base_color_textures = backend_material_slots
-            .iter()
-            .filter_map(|slot| slot.base_color.as_ref().map(|texture| texture.handle))
-            .collect::<Vec<_>>();
-        let backend_material_handles = backend_material_slots
-            .iter()
-            .map(|slot| slot.handle)
-            .collect::<Vec<_>>();
-        step_start = log_prepare_step("camera + backend material slots", step_start);
-        let prepared_scene = prepare::collect_prepared_primitives(
-            self.target,
-            scene,
-            assets,
-            active_camera_projection.as_ref(),
-            &backend_sampled_base_color_textures,
-            &backend_material_handles,
-            environment_lighting.clone(),
-        )?;
-        step_start = log_prepare_step("collect_prepared_primitives", step_start);
-        let light_from_world = prepared_scene.light_from_world;
-        let culled_primitives =
-            culling::cull_cpu_frustum(prepared_scene.primitives, active_camera_projection.as_ref());
-        let primitives = culled_primitives.visible;
-        let depth_stats = prepare::collect_depth_prepass_stats(&primitives, self.target.backend);
-        let logical_stats =
-            prepare::collect_logical_resource_stats(scene, assets, environment_count);
-        self.stats.materials = logical_stats.materials;
-        self.stats.material_bindings = logical_stats.material_bindings;
-        self.stats.material_texture_bindings = logical_stats.material_texture_bindings;
-        self.stats.material_sampler_bindings = logical_stats.material_sampler_bindings;
-        self.stats.material_textures_missing_decoded_pixels =
-            logical_stats.material_textures_missing_decoded_pixels;
-        self.stats.material_batch_layers =
-            prepare::compute_material_batch_plan(&backend_material_slots).layer_count;
-        self.stats.environments = logical_stats.environments;
-        self.stats.environment_cubemaps = environment_prepare_stats.cubemaps;
-        self.stats.environment_prefilter_passes = environment_prepare_stats.prefilter_passes;
-        self.stats.environment_brdf_luts = environment_prepare_stats.brdf_luts;
-        self.stats.live_logical_handles = logical_stats.live_logical_handles;
-        self.stats.shadow_maps = lighting_stats.shadow_maps;
-        self.stats.depth_prepass_passes = depth_stats.passes;
-        self.stats.depth_prepass_draws = depth_stats.draws;
-        self.stats.directional_shadow_map_resolution =
-            lighting_stats.directional_shadow_map_resolution;
-        self.stats.directional_shadow_pcf_kernel = lighting_stats.directional_shadow_pcf_kernel;
-        self.stats.culled_objects = culled_primitives.culled;
-        step_start = log_prepare_step("cull + stats", step_start);
-        if let Some(gpu) = &mut self.gpu {
-            gpu.prepare(
-                self.target,
-                &primitives,
-                lighting_stats,
-                gpu_light_uniform,
-                light_from_world,
-                depth_stats,
-                &backend_material_slots,
-                &environment_lighting,
-            )?;
-            let stats = gpu.prepared_resource_stats();
-            let pending_destructions = gpu.pending_destructions();
-            self.stats.buffers = stats.buffers;
-            self.stats.textures = logical_stats.textures;
-            self.stats.render_targets = stats.render_targets;
-            self.stats.pipelines = stats.pipelines;
-            self.stats.bind_groups = stats.bind_groups;
-            self.stats.shader_modules = stats.shader_modules;
-            self.stats.pending_destructions = pending_destructions;
-            self.stats.material_bind_groups = stats.material_bind_groups;
-            self.stats.approximate_gpu_memory_bytes = (stats.approximate_gpu_memory_bytes > 0)
-                .then_some(stats.approximate_gpu_memory_bytes);
-            step_start = log_prepare_step("gpu.prepare", step_start);
-        } else {
-            self.stats.textures = logical_stats.textures;
-            self.stats.material_bind_groups = 0;
-        }
-        self.prepared = Some(PreparedSceneState {
-            scene: scene.identity(),
-            structure_revision: scene.structure_revision(),
-            environment_revision: self.environment_revision,
-            target_revision: self.target_revision,
-            debug_revision: self.debug_revision,
-            primitives,
-            clipping_planes: scene.active_clipping_plane_values().collect(),
-        });
-        self.render_generation = self.render_generation.saturating_add(1);
-        self.last_rendered_generation = None;
-        self.diagnostics = diagnostics;
-        log_prepare_step("prepare_inner tail", step_start);
-        log_prepare_step("prepare_inner total", total_start);
-        Ok(())
-    }
-
     pub fn render(
         &mut self,
         scene: &Scene,
@@ -292,13 +123,18 @@ impl Renderer {
             });
         }
 
-        let primitives = self.prepared_state(scene)?.primitives.clone();
-        let clipping_planes = self.prepared_state(scene)?.clipping_planes.clone();
         let camera_projection = camera::CameraProjection::from_scene(scene, camera, self.target)?;
-        let primitive_count = primitives.len() as u64;
+        let primitive_count = self.prepared_state(scene)?.primitives.len() as u64;
         if self.gpu.is_some() {
             self.draw_gpu(&camera_projection)?;
         } else {
+            let (primitives, clipping_planes) = {
+                let prepared = self.prepared_state(scene)?;
+                (
+                    prepared.primitives.clone(),
+                    prepared.clipping_planes.clone(),
+                )
+            };
             let linear_frame = self
                 .linear_frame
                 .as_mut()
@@ -459,6 +295,17 @@ impl Renderer {
             });
         }
 
+        let current_revision = scene.transform_revision();
+        if prepared.transform_revision != current_revision {
+            return Err(RenderError::NotPrepared {
+                reason: NotPreparedReason::SceneChanged {
+                    prepared_revision: prepared.transform_revision,
+                    current_revision,
+                    change: ChangeKind::Transform,
+                },
+            });
+        }
+
         if prepared.environment_revision != self.environment_revision {
             return Err(RenderError::NotPrepared {
                 reason: NotPreparedReason::EnvironmentChanged {
@@ -490,6 +337,191 @@ impl Renderer {
         }
 
         Ok(prepared)
+    }
+}
+
+#[cfg(test)]
+impl Renderer {
+    fn prepare_telemetry_for_test(&self) -> PrepareTelemetry {
+        self.prepare_telemetry
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use crate::assets::Assets;
+    use crate::diagnostics::DebugOverlay;
+    use crate::geometry::GeometryDesc;
+    use crate::material::{Color, MaterialDesc};
+    use crate::platform::SurfaceEvent;
+    use crate::scene::{DirectionalLight, NodeKey, Scene, Transform, Vec3};
+
+    use super::Renderer;
+
+    #[test]
+    fn transform_only_gpu_prepare_recollects_primitives_for_visual_correctness() {
+        let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
+            return;
+        };
+        let assets = Assets::new();
+        let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.4, 0.4, 0.4));
+        let material =
+            assets.create_material(MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.8));
+        let mut scene = Scene::new();
+        scene.add_default_camera().expect("camera inserts");
+        let moving = scene
+            .mesh(geometry, material)
+            .transform(Transform::at(Vec3::new(-0.4, 0.0, 0.0)))
+            .add()
+            .expect("first mesh inserts");
+        scene
+            .mesh(geometry, material)
+            .transform(Transform::at(Vec3::new(0.4, 0.0, 0.0)))
+            .add()
+            .expect("second mesh inserts");
+
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("initial GPU prepare succeeds");
+        let first = renderer.prepare_telemetry_for_test();
+
+        scene
+            .set_transform(moving, Transform::at(Vec3::new(-0.15, 0.0, 0.0)))
+            .expect("mesh transform updates");
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("transform-only GPU prepare succeeds");
+        let second = renderer.prepare_telemetry_for_test();
+
+        assert_eq!(
+            second.prepared_primitive_collections,
+            first.prepared_primitive_collections + 1,
+            "transform-only GPU prepares must use the canonical prepared primitive order until a visual-equivalence gate proves a fast path safe"
+        );
+    }
+
+    #[test]
+    fn target_change_rejects_transform_only_gpu_template_reuse() {
+        let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
+            return;
+        };
+        let (assets, mut scene, moving) = gpu_template_scene();
+
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("initial GPU prepare succeeds");
+        let first = renderer.prepare_telemetry_for_test();
+
+        renderer
+            .handle_surface_event(SurfaceEvent::Resize {
+                width: 24,
+                height: 16,
+            })
+            .expect("target resizes");
+        scene
+            .set_transform(moving, Transform::at(Vec3::new(-0.15, 0.0, 0.0)))
+            .expect("mesh transform updates");
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("target-changed prepare succeeds");
+        let second = renderer.prepare_telemetry_for_test();
+
+        assert!(
+            second.prepared_primitive_collections > first.prepared_primitive_collections,
+            "target changes must force a full prepare instead of a dynamic draw-template update"
+        );
+    }
+
+    #[test]
+    fn environment_and_debug_changes_reject_transform_only_gpu_template_reuse() {
+        let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
+            return;
+        };
+        let (assets, mut scene, moving) = gpu_template_scene();
+
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("initial GPU prepare succeeds");
+        let first = renderer.prepare_telemetry_for_test();
+
+        renderer.set_environment(assets.default_environment());
+        scene
+            .set_transform(moving, Transform::at(Vec3::new(-0.15, 0.0, 0.0)))
+            .expect("mesh transform updates");
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("environment-changed prepare succeeds");
+        let second = renderer.prepare_telemetry_for_test();
+
+        assert!(
+            second.prepared_primitive_collections > first.prepared_primitive_collections,
+            "environment changes must force a full prepare"
+        );
+        renderer.set_debug_overlay(DebugOverlay::Wireframe);
+        scene
+            .set_transform(moving, Transform::at(Vec3::new(0.0, 0.0, 0.0)))
+            .expect("mesh transform updates again");
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("debug-changed prepare succeeds");
+        let third = renderer.prepare_telemetry_for_test();
+
+        assert!(
+            third.prepared_primitive_collections > second.prepared_primitive_collections,
+            "debug draw-shape changes must force a full prepare"
+        );
+    }
+
+    #[test]
+    fn shadow_state_change_rejects_transform_only_gpu_template_reuse() {
+        let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
+            return;
+        };
+        let (assets, mut scene, _moving) = gpu_template_scene();
+
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("initial GPU prepare succeeds");
+        let first = renderer.prepare_telemetry_for_test();
+
+        scene
+            .directional_light(DirectionalLight::default().with_shadows(true))
+            .add()
+            .expect("shadowed light inserts");
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("shadow-state-changed prepare succeeds");
+        let second = renderer.prepare_telemetry_for_test();
+
+        assert!(
+            second.prepared_primitive_collections > first.prepared_primitive_collections,
+            "shadow pass eligibility changes must force a full prepare"
+        );
+        assert_eq!(
+            renderer.stats().shadow_maps,
+            1,
+            "shadow pass must stay enabled after the fallback full prepare"
+        );
+    }
+
+    fn gpu_template_scene() -> (Assets, Scene, NodeKey) {
+        let assets = Assets::new();
+        let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.4, 0.4, 0.4));
+        let material =
+            assets.create_material(MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.8));
+        let mut scene = Scene::new();
+        scene.add_default_camera().expect("camera inserts");
+        let moving = scene
+            .mesh(geometry, material)
+            .transform(Transform::at(Vec3::new(-0.4, 0.0, 0.0)))
+            .add()
+            .expect("first mesh inserts");
+        scene
+            .mesh(geometry, material)
+            .transform(Transform::at(Vec3::new(0.4, 0.0, 0.0)))
+            .add()
+            .expect("second mesh inserts");
+        (assets, scene, moving)
     }
 }
 

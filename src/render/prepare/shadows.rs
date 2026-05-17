@@ -1,6 +1,6 @@
 use crate::assets::Assets;
 use crate::diagnostics::PrepareError;
-use crate::geometry::{GeometryDesc, GeometryTopology, GeometryVertex};
+use crate::geometry::{Aabb, GeometryDesc, GeometryTopology, GeometryVertex};
 use crate::scene::{NodeKey, Scene, Transform, Vec3};
 
 use super::DeformationInputs;
@@ -82,6 +82,71 @@ pub(super) fn collect_shadow_occluders<F>(
     }
 
     Ok(occluders)
+}
+
+pub(super) fn collect_shadow_projection_points<F>(
+    scene: &Scene,
+    assets: Option<&Assets<F>>,
+    origin_shift: Vec3,
+) -> Result<Vec<Vec3>, PrepareError> {
+    let mut points = Vec::new();
+
+    for (renderable, transform) in scene.renderables() {
+        for primitive in renderable.primitives() {
+            let primitive = transform_primitive(primitive, transform, origin_shift);
+            for vertex in primitive.vertices() {
+                points.push(vertex.position);
+            }
+        }
+    }
+
+    let Some(assets) = assets else {
+        return Ok(points);
+    };
+
+    for (node, mesh, transform) in scene.mesh_nodes() {
+        let geometry = assets
+            .geometry(mesh.geometry())
+            .ok_or(PrepareError::GeometryNotFound {
+                node,
+                geometry: mesh.geometry(),
+            })?;
+        let skin_matrices = scene.skin_matrices(node);
+        let deformation = DeformationInputs {
+            morph_weights: scene.morph_weights(node),
+            skin_matrices: skin_matrices.as_deref(),
+        };
+        append_shadow_projection_points(
+            &mut points,
+            node,
+            &geometry,
+            deformation,
+            transform,
+            origin_shift,
+        )?;
+    }
+
+    for (node, instance_set, node_transform) in scene.instance_set_nodes() {
+        let geometry =
+            assets
+                .geometry(instance_set.geometry())
+                .ok_or(PrepareError::GeometryNotFound {
+                    node,
+                    geometry: instance_set.geometry(),
+                })?;
+        for instance in instance_set.instances() {
+            append_shadow_projection_points(
+                &mut points,
+                node,
+                &geometry,
+                DeformationInputs::default(),
+                compose_transform(node_transform, instance.transform()),
+                origin_shift,
+            )?;
+        }
+    }
+
+    Ok(points)
 }
 
 pub(super) fn directional_shadow_factor(
@@ -174,10 +239,18 @@ pub(super) fn directional_light_view_projection(
     light_direction: Vec3,
     occluders: &[ShadowOccluder],
 ) -> [f32; 16] {
-    if occluders.is_empty() {
-        return identity_matrix4();
-    }
+    directional_light_view_projection_from_points(
+        light_direction,
+        occluders
+            .iter()
+            .flat_map(|occluder| [occluder.a, occluder.b, occluder.c]),
+    )
+}
 
+pub(in crate::render) fn directional_light_view_projection_from_points(
+    light_direction: Vec3,
+    points: impl IntoIterator<Item = Vec3>,
+) -> [f32; 16] {
     // Light forward = direction the light travels. Build an orthonormal basis.
     let forward = normalize_or(light_direction, Vec3::new(0.0, 0.0, -1.0));
     let world_up = if forward.y.abs() > 0.99 {
@@ -191,16 +264,19 @@ pub(super) fn directional_light_view_projection(
     // Project all occluder vertices into the light-view basis, then build an
     // orthographic projection that fits the resulting AABB. min/max is the
     // tight light-space bounding box.
+    let mut any = false;
     let mut min = Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
     let mut max = Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
-    for occluder in occluders {
-        for vertex in [occluder.a, occluder.b, occluder.c] {
-            let lx = dot_vec3(right, vertex);
-            let ly = dot_vec3(up, vertex);
-            let lz = dot_vec3(forward, vertex);
-            min = Vec3::new(min.x.min(lx), min.y.min(ly), min.z.min(lz));
-            max = Vec3::new(max.x.max(lx), max.y.max(ly), max.z.max(lz));
-        }
+    for vertex in points {
+        any = true;
+        let lx = dot_vec3(right, vertex);
+        let ly = dot_vec3(up, vertex);
+        let lz = dot_vec3(forward, vertex);
+        min = Vec3::new(min.x.min(lx), min.y.min(ly), min.z.min(lz));
+        max = Vec3::new(max.x.max(lx), max.y.max(ly), max.z.max(lz));
+    }
+    if !any {
+        return identity_matrix4();
     }
 
     // Pad slightly so receivers near the AABB edges aren't clipped, and so
@@ -267,6 +343,58 @@ pub(super) fn directional_light_view_projection(
     ]
 }
 
+fn append_shadow_projection_points(
+    points: &mut Vec<Vec3>,
+    node: NodeKey,
+    geometry: &GeometryDesc,
+    deformation: DeformationInputs<'_>,
+    transform: Transform,
+    origin_shift: Vec3,
+) -> Result<(), PrepareError> {
+    if geometry.topology() != GeometryTopology::Triangles {
+        return Ok(());
+    }
+    if deformation.morph_weights.is_none()
+        && deformation.skin_matrices.is_none()
+        && geometry.skin().is_none()
+    {
+        append_transformed_bounds_points(points, geometry.bounds(), transform, origin_shift);
+        return Ok(());
+    }
+
+    let vertices = shadow_vertices(node, geometry, deformation)?;
+    for vertex in vertices {
+        points.push(transform_position(vertex.position, transform, origin_shift));
+    }
+    Ok(())
+}
+
+fn append_transformed_bounds_points(
+    points: &mut Vec<Vec3>,
+    bounds: Aabb,
+    transform: Transform,
+    origin_shift: Vec3,
+) {
+    for corner in bounds_corners(bounds) {
+        points.push(transform_position(corner, transform, origin_shift));
+    }
+}
+
+fn bounds_corners(bounds: Aabb) -> [Vec3; 8] {
+    let min = bounds.min;
+    let max = bounds.max;
+    [
+        Vec3::new(min.x, min.y, min.z),
+        Vec3::new(max.x, min.y, min.z),
+        Vec3::new(min.x, max.y, min.z),
+        Vec3::new(max.x, max.y, min.z),
+        Vec3::new(min.x, min.y, max.z),
+        Vec3::new(max.x, min.y, max.z),
+        Vec3::new(min.x, max.y, max.z),
+        Vec3::new(max.x, max.y, max.z),
+    ]
+}
+
 fn normalize_or(value: Vec3, fallback: Vec3) -> Vec3 {
     let length = dot_vec3(value, value).sqrt();
     if length <= f32::EPSILON || !length.is_finite() {
@@ -326,4 +454,42 @@ fn cross_vec3(left: Vec3, right: Vec3) -> Vec3 {
         left.z * right.x - left.x * right.z,
         left.x * right.y - left.y * right.x,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shadow_projection_from_points_matches_triangle_vertices() {
+        let points = bounds_corners(Aabb::new(
+            Vec3::new(-1.0, -0.5, -0.25),
+            Vec3::new(1.0, 0.5, 0.25),
+        ));
+        let occluders = [
+            ShadowOccluder {
+                a: points[0],
+                b: points[1],
+                c: points[2],
+            },
+            ShadowOccluder {
+                a: points[3],
+                b: points[4],
+                c: points[5],
+            },
+            ShadowOccluder {
+                a: points[6],
+                b: points[7],
+                c: points[0],
+            },
+        ];
+        let light_direction = Vec3::new(-0.2, -1.0, -0.35);
+
+        let from_points = directional_light_view_projection_from_points(light_direction, points);
+        let from_triangles = directional_light_view_projection(light_direction, &occluders);
+
+        for (left, right) in from_points.iter().zip(from_triangles.iter()) {
+            assert!((left - right).abs() < 1e-6);
+        }
+    }
 }

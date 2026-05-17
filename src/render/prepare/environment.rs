@@ -18,9 +18,11 @@ fn environment_now_ms() -> f64 {
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 fn log_environment_step(label: &str, start_ms: f64) -> f64 {
     let now = environment_now_ms();
-    web_sys::console::log_1(
-        &format!("[scena-demo] environment {label}: {:.1}ms", now - start_ms).into(),
-    );
+    if crate::diagnostics::browser_timing_enabled() {
+        web_sys::console::log_1(
+            &format!("[scena-demo] environment {label}: {:.1}ms", now - start_ms).into(),
+        );
+    }
     now
 }
 
@@ -34,6 +36,7 @@ pub(in crate::render) const PREFILTER_MIP_COUNT: u32 = 5;
 /// by `(N·V, roughness)`; 64×64 is enough resolution for visually
 /// smooth specular without blowing the GPU upload budget.
 pub(in crate::render) const BRDF_LUT_SIZE: u32 = 64;
+const HDR_DIFFUSE_IBL_RESPONSE_SCALE: f32 = 0.8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::render) enum EnvironmentLightingProfile {
@@ -199,11 +202,16 @@ impl PreparedEnvironmentLighting {
                 }
             },
         };
+        let diffuse_scale = if environment.is_equirectangular_hdr() {
+            HDR_DIFFUSE_IBL_RESPONSE_SCALE
+        } else {
+            1.0
+        };
         let diffuse_rgb = Vec3::new(
             sanitize_environment_channel(irradiance[0]),
             sanitize_environment_channel(irradiance[1]),
             sanitize_environment_channel(irradiance[2]),
-        );
+        ) * diffuse_scale;
         if diffuse_rgb.x <= f32::EPSILON
             && diffuse_rgb.y <= f32::EPSILON
             && diffuse_rgb.z <= f32::EPSILON
@@ -217,7 +225,11 @@ impl PreparedEnvironmentLighting {
         }
         Self {
             diffuse_rgb,
-            specular_rgb: diffuse_rgb,
+            specular_rgb: Vec3::new(
+                sanitize_environment_channel(irradiance[0]),
+                sanitize_environment_channel(irradiance[1]),
+                sanitize_environment_channel(irradiance[2]),
+            ),
             intensity: 1.0,
             cubemap,
         }
@@ -264,11 +276,7 @@ impl PreparedEnvironmentLighting {
         if !self.is_active() {
             return Vec3::ZERO;
         }
-        let diffuse = self
-            .cubemap
-            .as_deref()
-            .map(|cubemap| sample_cubemap_mip(cubemap, 0, normal))
-            .unwrap_or(self.diffuse_rgb);
+        let diffuse = self.diffuse_rgb;
         let reflection = reflect_vec3(Vec3::new(-view.x, -view.y, -view.z), normal);
         let prefiltered = self
             .cubemap
@@ -409,4 +417,114 @@ fn dot_vec3(left: Vec3, right: Vec3) -> f32 {
 
 fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
     Vec3::new(value.x * scale, value.y * scale, value.z * scale)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pbr_contribution_uses_prepared_diffuse_irradiance_not_raw_cubemap_radiance() {
+        let black_face = vec![0.0, 0.0, 0.0, 1.0];
+        let black_mip = [
+            black_face.clone(),
+            black_face.clone(),
+            black_face.clone(),
+            black_face.clone(),
+            black_face.clone(),
+            black_face,
+        ];
+        let lighting = PreparedEnvironmentLighting {
+            diffuse_rgb: Vec3::new(0.5, 0.5, 0.5),
+            specular_rgb: Vec3::ZERO,
+            intensity: 1.0,
+            cubemap: Some(Arc::new(PreparedEnvironmentCubemap {
+                resolution: 1,
+                mips: vec![black_mip],
+                mip_count: 1,
+                brdf_lut: vec![0.0, 0.0],
+                brdf_lut_size: 1,
+            })),
+        };
+
+        let contribution = lighting.pbr_contribution(
+            PbrMaterial::new(Vec3::new(0.8, 0.7, 0.6), 0.0, 1.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+        );
+
+        assert!(
+            contribution.x > 0.0 && contribution.y > 0.0 && contribution.z > 0.0,
+            "diffuse IBL must use the prepared diffuse irradiance scalar; raw HDR cubemap \
+             radiance can be black in the surface-normal direction and would leave this \
+             dielectric material unlit"
+        );
+    }
+
+    #[test]
+    fn hdr_diffuse_ibl_uses_calibrated_strength_without_dimming_specular() {
+        let desc = EnvironmentDesc::from_equirectangular_hdr_bytes(
+            "memory://uniform-studio.hdr",
+            &rle_radiance_hdr_uniform(8, 1, [64, 32, 16, 129]),
+        )
+        .expect("uniform HDR fixture decodes");
+        let raw = desc
+            .preview_irradiance_rgb()
+            .expect("HDR decode records raw average radiance");
+        assert_vec3_close(raw, [0.501_960_8, 0.250_980_4, 0.125_490_2]);
+
+        let lighting = PreparedEnvironmentLighting::from_environment_with_profile(
+            Some(&desc),
+            EnvironmentLightingProfile::Reference,
+        );
+
+        assert_vec4_close(
+            lighting.gpu_diffuse_intensity(),
+            [0.401_568_65, 0.200_784_33, 0.100_392_16, 1.0],
+        );
+        assert_vec4_close(
+            lighting.gpu_specular_intensity(),
+            [0.501_960_8, 0.250_980_4, 0.125_490_2, 1.0],
+        );
+    }
+
+    fn rle_radiance_hdr_uniform(width: u32, height: u32, rgbe: [u8; 4]) -> Vec<u8> {
+        assert!(width >= 8);
+        assert!(width <= 127);
+        let mut bytes =
+            format!("#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y {height} +X {width}\n").into_bytes();
+        for _ in 0..height {
+            bytes.push(0x02);
+            bytes.push(0x02);
+            bytes.push((width >> 8) as u8);
+            bytes.push((width & 0xff) as u8);
+            for channel in &rgbe {
+                bytes.push(0x80 + width as u8);
+                bytes.push(*channel);
+            }
+        }
+        bytes
+    }
+
+    fn assert_vec3_close(actual: [f32; 3], expected: [f32; 3]) {
+        for channel in 0..3 {
+            assert!(
+                (actual[channel] - expected[channel]).abs() < 0.001,
+                "channel {channel}: expected {}, got {}",
+                expected[channel],
+                actual[channel]
+            );
+        }
+    }
+
+    fn assert_vec4_close(actual: [f32; 4], expected: [f32; 4]) {
+        for channel in 0..4 {
+            assert!(
+                (actual[channel] - expected[channel]).abs() < 0.001,
+                "channel {channel}: expected {}, got {}",
+                expected[channel],
+                actual[channel]
+            );
+        }
+    }
 }

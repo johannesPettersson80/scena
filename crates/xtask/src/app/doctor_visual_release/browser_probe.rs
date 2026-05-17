@@ -245,7 +245,7 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
         root,
         findings,
         "VISUAL-BROWSER-M6",
-        "src/render/gpu.rs",
+        "src/render/gpu/prepare_resources.rs",
         &["target.backend == Backend::WebGpu"],
     );
     require_contains(

@@ -303,6 +303,10 @@ impl Scene {
             .saturating_add(self.interaction.revision())
     }
 
+    pub(crate) const fn transform_revision(&self) -> u64 {
+        self.transform_revision
+    }
+
     pub(crate) fn mesh_nodes(&self) -> impl Iterator<Item = (NodeKey, MeshNode, Transform)> + '_ {
         self.nodes.iter().filter_map(|(key, node)| match node.kind {
             NodeKind::Mesh(mesh) if self.visible_for_active_camera(key) => self

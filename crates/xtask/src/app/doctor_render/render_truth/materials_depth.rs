@@ -166,7 +166,7 @@ pub(crate) fn check_renderer_truth_material_depth_contracts(
         root,
         findings,
         "ARCH-RENDER-TRUTH",
-        "src/render.rs",
+        "src/render/prepare_lifecycle.rs",
         &[
             "collect_backend_material_slots(scene, assets)",
             "backend_material_handles",

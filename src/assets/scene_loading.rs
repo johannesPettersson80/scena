@@ -17,7 +17,11 @@ fn asset_now_ms() -> f64 {
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 fn log_asset_step(label: &str, start_ms: f64) -> f64 {
     let now = asset_now_ms();
-    web_sys::console::log_1(&format!("[scena-demo] asset {label}: {:.1}ms", now - start_ms).into());
+    if crate::diagnostics::browser_timing_enabled() {
+        web_sys::console::log_1(
+            &format!("[scena-demo] asset {label}: {:.1}ms", now - start_ms).into(),
+        );
+    }
     now
 }
 

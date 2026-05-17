@@ -2,6 +2,22 @@
 
 All notable user-facing changes are recorded here.
 
+## [Unreleased]
+
+### Changed
+
+- Updated the browser demo showcase so connector mating is the default first
+  render with a synced Rust code panel, visible replay action, collapsed
+  diagnostics, and a README connector-snap hero GIF.
+
+### Fixed
+
+- Browser HDR/IBL diffuse lighting now uses prepared diffuse irradiance instead
+  of sampling raw HDR radiance in the surface-normal direction, avoiding dark or
+  washed-out connector renders while preserving the specular path.
+- Public demo timing logs are quiet by default and remain available through
+  `?perf=1` or `?timing=1`.
+
 ## [1.2.0] - 2026-05-17
 
 ### Added

@@ -393,9 +393,7 @@ pub(crate) fn doctor_findings_include_contract_reference() {
     let finding = Finding::new("ARCH-RENDER-TRUTH", "shader bypassed camera projection");
 
     assert!(
-        finding
-            .message
-            .contains("docs/checklists/state-of-art-threejs-replacement-plan.md"),
+        finding.message.contains("docs/rendering.md"),
         "doctor findings must point maintainers at the governing checklist or spec"
     );
 }
@@ -439,6 +437,32 @@ pub(crate) fn source_files_include_renderer_submodules() {
         files
             .iter()
             .any(|path| path == Path::new("src/render/gpu.rs"))
+    );
+}
+
+#[test]
+pub(crate) fn demo_page_wasm_entrypoint_stays_architecture_mapped() {
+    assert_eq!(
+        architecture_owner_for_source_path(Path::new("src/demo_page.rs")),
+        "viewer"
+    );
+}
+
+#[test]
+pub(crate) fn demo_page_wasm_feature_and_module_stay_declared() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let cargo = fs::read_to_string(root.join("Cargo.toml")).expect("Cargo.toml readable");
+    let lib = fs::read_to_string(root.join("src/lib.rs")).expect("src/lib.rs readable");
+
+    assert!(
+        cargo.contains("demo-page = [\"web-sys/Blob\", \"web-sys/Url\"]"),
+        "Cargo.toml must keep the demo-page feature used by wasm-pack"
+    );
+    assert!(
+        lib.contains(
+            "#[cfg(all(target_arch = \"wasm32\", feature = \"demo-page\"))]\npub mod demo_page;"
+        ),
+        "src/lib.rs must expose src/demo_page.rs behind the demo-page feature"
     );
 }
 

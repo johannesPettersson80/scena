@@ -365,7 +365,7 @@ fn validate_default_cube_luminance_and_silhouette(frame: &[u8], width: u32, heig
     // fully-white diffuse cube and the output stage is Khronos PBR Neutral.
     assert_eq!(
         pixel_at(frame, width, width / 2, height / 2),
-        [209, 215, 225, 255]
+        [203, 208, 214, 255]
     );
     assert_eq!(pixel_at(frame, width, 0, 0), [0, 0, 0, 255]);
     assert_eq!(

@@ -591,13 +591,12 @@ fn renderer_environment_is_structural_and_validated_during_prepare() {
         .expect("default environment validates during prepare");
     assert_eq!(renderer.stats().environments, 1);
     renderer.render(&scene, camera).expect("scene renders");
-    // After the CPU IBL fallback fix (cubemap-derived scalar irradiance for
-    // environments without preview_irradiance_rgb), the default environment
-    // now contributes real radiance to diffuse PBR surfaces, slightly
-    // desaturating ACES on a fully-white-irradiated white material.
+    // Diffuse IBL uses prepared irradiance instead of raw normal-direction
+    // cubemap radiance, so the default environment converges to a softer
+    // neutral grey on fully white diffuse material.
     assert_pixel_close(
         center_pixel(renderer.frame_rgba8(), 4, 4),
-        [202, 208, 218, 255],
+        [196, 201, 207, 255],
         2,
         "default-environment + white PBR converges to roughly equal-luminance \
          tonemapped grey across channels",

@@ -70,7 +70,7 @@ pub(crate) fn public_fields_in_struct_detects_material_desc_visibility_regressio
 pub(crate) fn doctor_rejects_render_lifecycle_doc_missing_substring_regression() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-doctor-regressions/lifecycle-doc-stub");
-    let doc_path = fixture_root.join("docs/specs/render-lifecycle.md");
+    let doc_path = fixture_root.join("docs/lifecycle.md");
     fs::create_dir_all(doc_path.parent().expect("lifecycle parent")).expect("fixture dir");
     fs::write(
         &doc_path,
@@ -85,7 +85,7 @@ pub(crate) fn doctor_rejects_render_lifecycle_doc_missing_substring_regression()
         findings
             .iter()
             .any(|finding| finding.rule == "DOCS-LIFECYCLE"),
-        "doctor must reject docs/specs/render-lifecycle.md when the contract substrings \
+        "doctor must reject docs/lifecycle.md when the contract substrings \
          are missing: {findings:?}",
     );
 }
@@ -94,7 +94,7 @@ pub(crate) fn doctor_rejects_render_lifecycle_doc_missing_substring_regression()
 pub(crate) fn doctor_rejects_asset_gltf_doc_missing_substring_regression() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-doctor-regressions/gltf-doc-stub");
-    let doc_path = fixture_root.join("docs/specs/asset-gltf-contract.md");
+    let doc_path = fixture_root.join("docs/assets.md");
     fs::create_dir_all(doc_path.parent().expect("gltf parent")).expect("fixture dir");
     fs::write(
         &doc_path,
@@ -107,7 +107,7 @@ pub(crate) fn doctor_rejects_asset_gltf_doc_missing_substring_regression() {
 
     assert!(
         findings.iter().any(|finding| finding.rule == "DOCS-GLTF"),
-        "doctor must reject docs/specs/asset-gltf-contract.md when its required \
+        "doctor must reject docs/assets.md when its required \
          substrings are missing: {findings:?}",
     );
 }
@@ -116,7 +116,7 @@ pub(crate) fn doctor_rejects_asset_gltf_doc_missing_substring_regression() {
 pub(crate) fn doctor_rejects_visual_quality_doc_missing_substring_regression() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-doctor-regressions/visual-doc-stub");
-    let doc_path = fixture_root.join("docs/specs/visual-quality-contract.md");
+    let doc_path = fixture_root.join("docs/headless-rendering.md");
     fs::create_dir_all(doc_path.parent().expect("visual parent")).expect("fixture dir");
     fs::write(
         &doc_path,
@@ -129,44 +129,22 @@ pub(crate) fn doctor_rejects_visual_quality_doc_missing_substring_regression() {
 
     assert!(
         findings.iter().any(|finding| finding.rule == "DOCS-VISUAL"),
-        "doctor must reject docs/specs/visual-quality-contract.md when its required \
+        "doctor must reject docs/headless-rendering.md when its required \
          substrings are missing: {findings:?}",
     );
 }
 
 #[test]
-pub(crate) fn doctor_rejects_doctor_contract_doc_missing_substring_regression() {
+pub(crate) fn doctor_rejects_platform_doc_missing_substring_regression() {
     let root = repo_root().expect("test runs inside the scena workspace");
-    let fixture_root = root.join("target/xtask-doctor-regressions/doctor-doc-stub");
-    let doc_path = fixture_root.join("docs/specs/doctor-contract.md");
-    fs::create_dir_all(doc_path.parent().expect("doctor parent")).expect("fixture dir");
+    let fixture_root = root.join("target/xtask-doctor-regressions/platform-doc-stub");
+    let doc_path = fixture_root.join("docs/platforms.md");
+    fs::create_dir_all(doc_path.parent().expect("platform parent")).expect("fixture dir");
     fs::write(
         &doc_path,
-        "# Doctor contract\n\nStub without the required CLI invocation substrings.\n",
+        "# Platforms\n\nStub without the required browser backend substrings.\n",
     )
-    .expect("doctor fixture");
-    let mut findings = Vec::new();
-
-    check_required_doc_contracts(&fixture_root, &mut findings);
-
-    assert!(
-        findings.iter().any(|finding| finding.rule == "DOCS-DOCTOR"),
-        "doctor must reject docs/specs/doctor-contract.md when its required CLI \
-         invocations are missing: {findings:?}",
-    );
-}
-
-#[test]
-pub(crate) fn doctor_rejects_release_gates_doc_missing_substring_regression() {
-    let root = repo_root().expect("test runs inside the scena workspace");
-    let fixture_root = root.join("target/xtask-doctor-regressions/release-gates-doc-stub");
-    let doc_path = fixture_root.join("docs/specs/release-gates.md");
-    fs::create_dir_all(doc_path.parent().expect("release-gates parent")).expect("fixture dir");
-    fs::write(
-        &doc_path,
-        "# Release gates\n\nStub without the doctor or full-mode contract terms.\n",
-    )
-    .expect("release-gates fixture");
+    .expect("platform fixture");
     let mut findings = Vec::new();
 
     check_required_doc_contracts(&fixture_root, &mut findings);
@@ -174,8 +152,30 @@ pub(crate) fn doctor_rejects_release_gates_doc_missing_substring_regression() {
     assert!(
         findings
             .iter()
-            .any(|finding| finding.rule == "DOCS-RELEASE-GATES"),
-        "doctor must reject docs/specs/release-gates.md when its required substrings \
+            .any(|finding| finding.rule == "DOCS-PLATFORM"),
+        "doctor must reject docs/platforms.md when its required platform \
+         substrings are missing: {findings:?}",
+    );
+}
+
+#[test]
+pub(crate) fn doctor_rejects_errors_doc_missing_substring_regression() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/errors-doc-stub");
+    let doc_path = fixture_root.join("docs/errors.md");
+    fs::create_dir_all(doc_path.parent().expect("errors parent")).expect("fixture dir");
+    fs::write(
+        &doc_path,
+        "# Errors\n\nStub without the renderer error contract terms.\n",
+    )
+    .expect("errors fixture");
+    let mut findings = Vec::new();
+
+    check_required_doc_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| finding.rule == "DOCS-ERRORS"),
+        "doctor must reject docs/errors.md when its required substrings \
          are missing: {findings:?}",
     );
 }
@@ -184,7 +184,7 @@ pub(crate) fn doctor_rejects_release_gates_doc_missing_substring_regression() {
 pub(crate) fn doctor_rejects_public_api_doc_missing_substring_regression() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-doctor-regressions/public-api-doc-stub");
-    let doc_path = fixture_root.join("docs/specs/public-api.md");
+    let doc_path = fixture_root.join("docs/api.md");
     fs::create_dir_all(doc_path.parent().expect("public-api parent")).expect("fixture dir");
     fs::write(
         &doc_path,
@@ -199,7 +199,7 @@ pub(crate) fn doctor_rejects_public_api_doc_missing_substring_regression() {
         findings
             .iter()
             .any(|finding| finding.rule == "DOCS-PUBLIC-API"),
-        "doctor must reject docs/specs/public-api.md when the public-API surface \
+        "doctor must reject docs/api.md when the public-API surface \
          contract substrings are missing: {findings:?}",
     );
 }

@@ -8,6 +8,14 @@ pub(super) struct CulledPrimitives {
     pub(super) culled: u64,
 }
 
+pub(super) fn cull_prepared_primitives(
+    primitives: Vec<Primitive>,
+    camera: Option<&CameraProjection>,
+    _gpu_active: bool,
+) -> CulledPrimitives {
+    cull_cpu_frustum(primitives, camera)
+}
+
 pub(super) fn cull_cpu_frustum(
     primitives: Vec<Primitive>,
     camera: Option<&CameraProjection>,
@@ -61,6 +69,22 @@ mod tests {
         ]);
 
         let result = cull_cpu_frustum(vec![visible.clone(), culled.clone()], None);
+
+        assert_eq!(result.visible, vec![visible, culled]);
+        assert_eq!(result.culled, 0);
+    }
+
+    #[test]
+    fn gpu_path_uses_canonical_prepared_primitive_culling() {
+        let visible = Primitive::unlit_triangle();
+        let culled = Primitive::triangle([
+            vertex(2.0, -0.5, 0.0),
+            vertex(3.0, -0.5, 0.0),
+            vertex(2.5, 0.5, 0.0),
+        ]);
+
+        let result =
+            super::cull_prepared_primitives(vec![visible.clone(), culled.clone()], None, true);
 
         assert_eq!(result.visible, vec![visible, culled]);
         assert_eq!(result.culled, 0);

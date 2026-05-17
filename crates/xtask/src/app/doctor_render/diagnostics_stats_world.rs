@@ -42,8 +42,14 @@ pub(crate) fn check_diagnostics_contracts(root: &Path, findings: &mut Vec<Findin
         findings,
         "ARCH-DIAGNOSTICS",
         "src/render.rs",
+        &["diagnostics: Vec<Diagnostic>"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIAGNOSTICS",
+        "src/render/prepare_lifecycle.rs",
         &[
-            "diagnostics: Vec<Diagnostic>",
             "self.diagnostics.clear()",
             "prepare::collect_precision_diagnostics(scene, self.target.backend)",
             "prepare::collect_camera_visibility_diagnostics",
@@ -241,8 +247,14 @@ pub(crate) fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Fin
         findings,
         "ARCH-RENDER-STATS",
         "src/render.rs",
+        &["pub fn poll_device(&mut self) -> DevicePoll"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STATS",
+        "src/render/prepare_lifecycle.rs",
         &[
-            "pub fn poll_device(&mut self) -> DevicePoll",
             "self.stats.live_logical_handles = logical_stats.live_logical_handles",
             "self.stats.shadow_maps = lighting_stats.shadow_maps",
             "self.stats.depth_prepass_passes = depth_stats.passes",
@@ -321,8 +333,8 @@ pub(crate) fn check_render_world_bake_contracts(root: &Path, findings: &mut Vec<
         "src/render/prepare/transforms.rs",
         &[
             "pub(super) fn prepared_primitive",
-            "pub(super) fn world_from_model_matrix",
-            "pub(super) fn normal_from_model_matrix",
+            "pub(in crate::render) fn world_from_model_matrix",
+            "pub(in crate::render) fn normal_from_model_matrix",
         ],
     );
     require_contains(

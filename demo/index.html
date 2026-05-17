@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>scena live demo</title>
+    <link rel="icon" href="data:," />
     <style>
       :root {
         color-scheme: dark;
@@ -94,6 +95,25 @@
       .sample-list {
         display: grid;
         gap: 8px;
+      }
+
+      .replay-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 36px;
+        padding: 0 12px;
+        color: #07110f;
+        background: var(--teal);
+        border: 1px solid color-mix(in srgb, var(--teal), white 20%);
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .replay-button[hidden] {
+        display: none;
       }
 
       .sample-group-label {
@@ -259,14 +279,21 @@
       }
 
       .code-head,
-      .metrics {
+      .diagnostics {
         padding: 14px 16px;
       }
 
       .code-head {
         display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
         gap: 4px;
         border-bottom: 1px solid var(--line);
+      }
+
+      .code-title {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
       }
 
       .code-head strong {
@@ -276,6 +303,18 @@
       .code-head span {
         color: var(--muted);
         font-size: 12px;
+      }
+
+      .copy-button {
+        align-self: start;
+        min-height: 28px;
+        padding: 0 10px;
+        color: var(--text);
+        background: #11161c;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        font-size: 12px;
+        cursor: pointer;
       }
 
       pre {
@@ -302,10 +341,21 @@
           monospace;
       }
 
+      .diagnostics {
+        border-top: 1px solid var(--line);
+      }
+
+      .diagnostics summary {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 650;
+        cursor: pointer;
+      }
+
       .metrics {
         display: grid;
         gap: 8px;
-        border-top: 1px solid var(--line);
+        padding-top: 10px;
       }
 
       .metric {
@@ -334,7 +384,7 @@
           border-left: 0;
         }
 
-        .metrics {
+        .diagnostics {
           display: none;
         }
       }
@@ -371,12 +421,13 @@
       <aside class="samples">
         <div class="brand">
           <h1>scena</h1>
-          <p>Rust scene graph, glTF assets, native renderer.</p>
+          <p>Three.js ergonomics, Rust types, running in your browser. Drop a model or snap authored connectors.</p>
         </div>
         <div>
-          <p class="section-label">Samples</p>
+          <p class="section-label">Try it now</p>
           <div id="sample-list" class="sample-list"></div>
         </div>
+        <button id="replay-button" class="replay-button" type="button">Replay snap</button>
         <p class="drop-hint">Drop a GLB, or a glTF file together with its referenced files.</p>
       </aside>
 
@@ -396,16 +447,22 @@
 
       <aside class="code">
         <div class="code-head">
-          <strong id="code-title">Rust</strong>
-          <span id="code-subtitle">Current scene path</span>
+          <div class="code-title">
+            <strong id="code-title">Rust</strong>
+            <span id="code-subtitle">Current scene path</span>
+          </div>
+          <button id="copy-code" class="copy-button" type="button">Copy</button>
         </div>
         <pre><code id="code-snippet"></code></pre>
-        <div class="metrics">
-          <div class="metric"><span>Frame</span><strong id="metric-frame">0</strong></div>
-          <div class="metric"><span>Asset bytes</span><strong id="metric-bytes">0</strong></div>
-          <div class="metric"><span>Load phase</span><strong id="metric-phase">idle</strong></div>
-          <div class="metric"><span>Orbit</span><strong id="metric-orbit">0 / 0 / 2.00</strong></div>
-        </div>
+        <details id="diagnostics" class="diagnostics">
+          <summary>Diagnostics</summary>
+          <div class="metrics">
+            <div class="metric"><span>Frame</span><strong id="metric-frame">0</strong></div>
+            <div class="metric"><span>Asset bytes</span><strong id="metric-bytes">0</strong></div>
+            <div class="metric"><span>Load phase</span><strong id="metric-phase">idle</strong></div>
+            <div class="metric"><span>Orbit</span><strong id="metric-orbit">0 / 0 / 2.00</strong></div>
+          </div>
+        </details>
       </aside>
     </div>
     <script type="module" src="./main.js"></script>

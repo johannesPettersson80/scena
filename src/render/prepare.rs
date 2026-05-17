@@ -7,7 +7,8 @@ use crate::material::{MaterialDesc, MaterialKind};
 use crate::scene::{NodeKey, Scene, Vec3};
 
 use self::cpu_bake::{
-    CpuBakeCorner, cpu_texture_subdivisions, push_material_pass_primitive, subdivided_cpu_corners,
+    CpuBakeCorner, baked_shadow_visibility, cpu_texture_subdivisions, push_material_pass_primitive,
+    subdivided_cpu_corners,
 };
 pub(super) use self::diagnostics::{
     collect_asset_camera_visibility_diagnostics, collect_camera_projection_diagnostics,
@@ -25,13 +26,13 @@ use self::materials::{
     occlusion_texture_sample, render_material_slot, validate_material_texture_handles,
 };
 pub(super) use self::resources::{
-    PreparedMaterialSlot, collect_backend_material_slots, collect_logical_resource_stats,
-    collect_material_texture_diagnostics,
+    PreparedLogicalResourceStats, PreparedMaterialSlot, collect_backend_material_slots,
+    collect_logical_resource_stats, collect_material_texture_diagnostics,
 };
-use self::shadows::{collect_shadow_occluders, directional_shadow_factor};
+use self::shadows::collect_shadow_occluders;
 pub(super) use self::stats::{
-    PreparedDepthStats, PreparedLightingStats, collect_depth_prepass_stats,
-    collect_environment_prepare_stats, collect_lighting_stats,
+    PreparedDepthStats, PreparedEnvironmentStats, PreparedLightingStats,
+    collect_depth_prepass_stats, collect_environment_prepare_stats, collect_lighting_stats,
 };
 use self::tangents::{accumulate_vertex_tangents, authored_vertex_tangents};
 use self::transforms::{
@@ -83,7 +84,21 @@ pub(super) fn collect_prepared_primitives<F>(
 
     let origin_shift = scene.origin_shift();
     let lights = PreparedLights::from_scene(scene, origin_shift);
-    let shadow_occluders = collect_shadow_occluders(scene, assets, origin_shift)?;
+    let needs_cpu_shadow_visibility = cpu_shadow_visibility_required(scene, backend_material_slots);
+    let shadow_occluders = if needs_cpu_shadow_visibility {
+        collect_shadow_occluders(scene, assets, origin_shift)?
+    } else {
+        Vec::new()
+    };
+    let shadow_projection_points = if needs_cpu_shadow_visibility {
+        None
+    } else {
+        Some(shadows::collect_shadow_projection_points(
+            scene,
+            assets,
+            origin_shift,
+        )?)
+    };
     let mut primitives: Vec<Primitive> = scene
         .renderables()
         .flat_map(|(renderable, transform)| {
@@ -207,10 +222,16 @@ pub(super) fn collect_prepared_primitives<F>(
             // primary_shadow_ray_direction returns the vector pointing toward
             // the light; the shadow projection wants the direction the light
             // travels (forward), so negate.
-            shadows::directional_light_view_projection(
-                Vec3::new(-to_light_dir.x, -to_light_dir.y, -to_light_dir.z),
-                &shadow_occluders,
-            )
+            let light_direction = Vec3::new(-to_light_dir.x, -to_light_dir.y, -to_light_dir.z);
+            match shadow_projection_points.as_ref() {
+                Some(points) => shadows::directional_light_view_projection_from_points(
+                    light_direction,
+                    points.iter().copied(),
+                ),
+                None => {
+                    shadows::directional_light_view_projection(light_direction, &shadow_occluders)
+                }
+            }
         })
         .unwrap_or_else(identity_matrix4);
 
@@ -218,6 +239,23 @@ pub(super) fn collect_prepared_primitives<F>(
         primitives,
         light_from_world,
     })
+}
+
+fn cpu_shadow_visibility_required(
+    scene: &Scene,
+    backend_material_slots: &[crate::assets::MaterialHandle],
+) -> bool {
+    for (_node, mesh, _transform) in scene.mesh_nodes() {
+        if render_material_slot(mesh.material(), backend_material_slots) == 0 {
+            return true;
+        }
+    }
+    for (_node, instance_set, _transform) in scene.instance_set_nodes() {
+        if render_material_slot(instance_set.material(), backend_material_slots) == 0 {
+            return true;
+        }
+    }
+    false
 }
 
 const fn identity_matrix4() -> [f32; 16] {
@@ -354,25 +392,43 @@ fn append_triangle_primitives<F>(
         let tangent_a = vertex_tangents[triangle[0] as usize];
         let tangent_b = vertex_tangents[triangle[1] as usize];
         let tangent_c = vertex_tangents[triangle[2] as usize];
-        let shadow_visibility_a =
-            directional_shadow_factor(position_a, params.lights, params.shadow_occluders);
-        let shadow_visibility_b =
-            directional_shadow_factor(position_b, params.lights, params.shadow_occluders);
-        let shadow_visibility_c =
-            directional_shadow_factor(position_c, params.lights, params.shadow_occluders);
         let render_material_slot =
             render_material_slot(source.material_handle, params.backend_material_slots);
         let backend_shaded_material = render_material_slot != 0;
-        let shade_vertex = |position, normal, uv, vertex_color, shadow_visibility| {
+        let shadow_visibility_a = baked_shadow_visibility(
+            position_a,
+            params.lights,
+            params.shadow_occluders,
+            backend_shaded_material,
+        );
+        let shadow_visibility_b = baked_shadow_visibility(
+            position_b,
+            params.lights,
+            params.shadow_occluders,
+            backend_shaded_material,
+        );
+        let shadow_visibility_c = baked_shadow_visibility(
+            position_c,
+            params.lights,
+            params.shadow_occluders,
+            backend_shaded_material,
+        );
+        let shade_vertex = |corner: CpuBakeCorner| {
             if backend_shaded_material {
-                vertex_color
+                corner.vertex_color
             } else {
+                let normal = normal_texture_sample(
+                    source.assets,
+                    source.material,
+                    corner.uv,
+                    corner.geometric_normal,
+                );
                 multiply_color(
                     material_color(
                         source.material,
                         params.lights,
                         &MaterialShadingInput {
-                            position,
+                            position: corner.position,
                             normal,
                             camera_position: params
                                 .camera_projection
@@ -380,29 +436,29 @@ fn append_triangle_primitives<F>(
                             base_color_texture: base_color_texture_sample(
                                 source.assets,
                                 source.material,
-                                uv,
+                                corner.uv,
                                 params.backend_sampled_base_color_textures,
                             ),
                             metallic_roughness_texture: metallic_roughness_texture_sample(
                                 source.assets,
                                 source.material,
-                                uv,
+                                corner.uv,
                             ),
                             occlusion_texture: occlusion_texture_sample(
                                 source.assets,
                                 source.material,
-                                uv,
+                                corner.uv,
                             ),
                             emissive_texture: emissive_texture_sample(
                                 source.assets,
                                 source.material,
-                                uv,
+                                corner.uv,
                             ),
                             environment: params.environment_lighting.clone(),
-                            directional_shadow_factor: shadow_visibility,
+                            directional_shadow_factor: corner.shadow_visibility,
                         },
                     ),
-                    vertex_color,
+                    corner.vertex_color,
                 )
             }
         };
@@ -440,18 +496,7 @@ fn append_triangle_primitives<F>(
             let primitive = Primitive::triangle_with_attributes(
                 sub_triangle.map(|corner| Vertex {
                     position: corner.position,
-                    color: shade_vertex(
-                        corner.position,
-                        normal_texture_sample(
-                            source.assets,
-                            source.material,
-                            corner.uv,
-                            corner.geometric_normal,
-                        ),
-                        corner.uv,
-                        corner.vertex_color,
-                        corner.shadow_visibility,
-                    ),
+                    color: shade_vertex(corner),
                 }),
                 sub_triangle.map(|corner| PrimitiveVertexAttributes {
                     normal: corner.geometric_normal,
@@ -472,4 +517,19 @@ fn append_triangle_primitives<F>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backend_shaded_materials_skip_cpu_shadow_visibility_bake() {
+        let scene = Scene::new();
+        let lights = PreparedLights::from_scene(&scene, Vec3::ZERO);
+        let position = Vec3::new(0.0, 0.0, 0.0);
+
+        assert_eq!(baked_shadow_visibility(position, &lights, &[], true), 1.0);
+        assert_eq!(baked_shadow_visibility(position, &lights, &[], false), 1.0);
+    }
 }

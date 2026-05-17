@@ -3,7 +3,9 @@ use crate::material::{Color, MaterialDesc};
 use crate::scene::Vec3;
 
 use super::super::camera::CameraProjection;
+use super::lighting::PreparedLights;
 use super::materials::MaterialPass;
+use super::shadows::{ShadowOccluder, directional_shadow_factor};
 use super::types::{PrimitiveSinks, TransparentPrimitive};
 
 #[derive(Clone, Copy)]
@@ -80,6 +82,19 @@ pub(super) fn push_material_pass_primitive(
                 sinks.primitives.push(primitive);
             }
         }
+    }
+}
+
+pub(super) fn baked_shadow_visibility(
+    position: Vec3,
+    lights: &PreparedLights,
+    shadow_occluders: &[ShadowOccluder],
+    backend_shaded_material: bool,
+) -> f32 {
+    if backend_shaded_material {
+        1.0
+    } else {
+        directional_shadow_factor(position, lights, shadow_occluders)
     }
 }
 

@@ -122,15 +122,15 @@ fn add_contact_strobe(
 fn camera_plan(frame: u32) -> (Vec3, Vec3) {
     match frame {
         // 0.0-1.0s: wide establishing — both parts on neutral ground
-        0..=9 => (Vec3::new(-0.20, 0.78, 2.05), Vec3::new(-0.65, 0.04, 0.0)),
+        0..=9 => (Vec3::new(-0.30, 0.78, 2.85), Vec3::new(-0.36, 0.04, 0.0)),
         // 1.0-2.5s: dolly in to the drive shaft (at start position, world x ≈ -0.92)
-        10..=24 => (Vec3::new(-0.65, 0.22, 0.50), Vec3::new(-0.92, 0.07, 0.0)),
+        10..=24 => (Vec3::new(-0.64, 0.22, 0.62), Vec3::new(-0.92, 0.07, 0.0)),
         // 2.5-4.0s: cut to the flywheel hub (load hub bearing flange at world x ≈ 0.05)
-        25..=39 => (Vec3::new(0.30, 0.22, 0.45), Vec3::new(0.06, 0.07, 0.0)),
+        25..=39 => (Vec3::new(0.32, 0.22, 0.58), Vec3::new(0.06, 0.07, 0.0)),
         // 4.0-6.5s: cut wide — drive translates along the inferred mate axis
-        40..=64 => (Vec3::new(-0.48, 0.56, 1.35), Vec3::new(-0.12, 0.05, 0.0)),
+        40..=64 => (Vec3::new(-0.36, 0.58, 2.05), Vec3::new(0.02, 0.05, 0.0)),
         // 6.5-8.0s: final hold for snippet overlay
-        _ => (Vec3::new(-0.40, 0.50, 1.22), Vec3::new(-0.12, 0.04, 0.0)),
+        _ => (Vec3::new(-0.34, 0.54, 2.10), Vec3::new(0.08, 0.04, 0.0)),
     }
 }
 

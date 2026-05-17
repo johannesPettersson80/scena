@@ -67,7 +67,16 @@ pub(crate) fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec
             "shadow_visibility_a",
             "shadow_visibility_b",
             "shadow_visibility_c",
-            "directional_shadow_factor(position_a",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIRECTIONAL-SHADOW",
+        "src/render/prepare/cpu_bake.rs",
+        &[
+            "pub(super) fn baked_shadow_visibility",
+            "directional_shadow_factor(position",
         ],
     );
     require_contains(
@@ -179,6 +188,14 @@ pub(crate) fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding
         &[
             "shadow_caster: ShadowCasterResources",
             "shadow_sampler: wgpu::Sampler",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SHADOW-MAP",
+        "src/render/gpu/prepare_resources.rs",
+        &[
             // Phase 1C step 1 split: shadow caster + sampler now allocated
             // through `environment::build_output_resources` which bundles
             // the entire group-0 ensemble into one helper.
@@ -319,7 +336,7 @@ pub(crate) fn check_depth_prepass_contracts(root: &Path, findings: &mut Vec<Find
         root,
         findings,
         "ARCH-DEPTH-PREPASS",
-        "src/render.rs",
+        "src/render/prepare_lifecycle.rs",
         &[
             "let depth_stats = prepare::collect_depth_prepass_stats(&primitives, self.target.backend)",
             "self.stats.depth_prepass_passes = depth_stats.passes",
@@ -334,8 +351,16 @@ pub(crate) fn check_depth_prepass_contracts(root: &Path, findings: &mut Vec<Find
         "src/render/gpu.rs",
         &[
             "mod depth;",
-            "PreparedDepthStats",
             "depth_prepass: Option<depth::DepthPrepassResources>",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DEPTH-PREPASS",
+        "src/render/gpu/prepare_resources.rs",
+        &[
+            "PreparedDepthStats",
             "depth::create_depth_prepass_resources",
         ],
     );

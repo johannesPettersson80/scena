@@ -1450,7 +1450,7 @@ fn prepared_render_requires_reprepare_after_transform_changes() {
         renderer.render(&scene, camera),
         Err(RenderError::NotPrepared {
             reason: NotPreparedReason::SceneChanged {
-                change: ChangeKind::SceneStructure,
+                change: ChangeKind::Transform,
                 ..
             },
         })
@@ -1703,7 +1703,7 @@ fn camera_frame_and_look_at_helpers_update_view_and_require_prepare() {
         renderer.render(&scene, camera),
         Err(RenderError::NotPrepared {
             reason: NotPreparedReason::SceneChanged {
-                change: ChangeKind::SceneStructure,
+                change: ChangeKind::Transform,
                 ..
             },
         })

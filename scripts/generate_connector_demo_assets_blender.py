@@ -17,6 +17,10 @@ ASSEMBLY_DRIVE_OFFSET_X = -0.615
 DRIVE_SHAFT_CONNECTOR = (0.66, AXIS_Y, 0.0)
 LOAD_HUB_CONNECTOR = (0.045, AXIS_Y, 0.0)
 
+SMOOTH_SMALL = 32
+SMOOTH_MEDIUM = 44
+SMOOTH_LARGE = 64
+
 
 def reset_scene():
     bpy.ops.object.select_all(action="SELECT")
@@ -39,12 +43,13 @@ def material(name, color, metallic=0.0, roughness=0.45, specular=0.5):
 
 def materials():
     return {
-        "steel": material("brushed steel", (0.79, 0.81, 0.82, 1.0), 1.0, 0.28, 0.55),
-        "machined": material("machined aluminium", (0.55, 0.57, 0.59, 1.0), 0.85, 0.36, 0.55),
-        "navy": material("navy powder coat", (0.05, 0.10, 0.20, 1.0), 0.15, 0.42, 0.45),
+        "steel": material("polished shaft steel", (0.42, 0.45, 0.48, 1.0), 1.0, 0.18, 0.65),
+        "machined": material("machined aluminium", (0.30, 0.33, 0.36, 1.0), 1.0, 0.26, 0.60),
+        "navy": material("navy powder coat", (0.018, 0.055, 0.115, 1.0), 0.0, 0.30, 0.55),
+        "anodized": material("dark anodized aluminium", (0.020, 0.025, 0.030, 1.0), 1.0, 0.21, 0.65),
         "cast_iron": material("cast iron", (0.08, 0.08, 0.09, 1.0), 0.55, 0.55, 0.40),
-        "plate": material("baseplate steel", (0.14, 0.15, 0.17, 1.0), 0.45, 0.55, 0.40),
-        "bolt": material("stainless bolt", (0.66, 0.68, 0.70, 1.0), 1.0, 0.18, 0.55),
+        "plate": material("brushed baseplate steel", (0.10, 0.12, 0.14, 1.0), 0.65, 0.42, 0.50),
+        "bolt": material("stainless bolt", (0.46, 0.48, 0.50, 1.0), 1.0, 0.18, 0.60),
         "rubber": material("isolator pad", (0.04, 0.04, 0.05, 1.0), 0.0, 0.85, 0.30),
         "bore": material("recessed bore", (0.012, 0.014, 0.018, 1.0), 0.30, 0.62, 0.30),
         "label": material("data plate", (0.78, 0.74, 0.55, 1.0), 0.35, 0.40, 0.45),
@@ -82,7 +87,7 @@ def add_weighted_normals(obj):
     obj.modifiers.new("weighted normals", "WEIGHTED_NORMAL")
 
 
-def add_bevel(obj, width=0.012, segments=4, only_edges=True):
+def add_bevel(obj, width=0.012, segments=2, only_edges=True):
     if width <= 0:
         return
     mod = obj.modifiers.new("bevel", "BEVEL")
@@ -92,6 +97,49 @@ def add_bevel(obj, width=0.012, segments=4, only_edges=True):
     mod.angle_limit = math.radians(35.0)
     if only_edges:
         mod.affect = "EDGES"
+
+
+def apply_modifiers(obj):
+    bpy.ops.object.select_all(action="DESELECT")
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    for mod in list(obj.modifiers):
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+    triangulate = obj.modifiers.new("glTF tangent triangulation", "TRIANGULATE")
+    triangulate.quad_method = "BEAUTY"
+    triangulate.ngon_method = "BEAUTY"
+    bpy.ops.object.modifier_apply(modifier=triangulate.name)
+    obj.select_set(False)
+
+
+def merge_parts_by_material(root, parts, name_prefix):
+    groups = {}
+    for part in parts:
+        material_name = part.data.materials[0].name if part.data.materials else "unmaterialed"
+        groups.setdefault(material_name, []).append(part)
+
+    merged = []
+    for material_name, group in groups.items():
+        for part in group:
+            apply_modifiers(part)
+
+        if len(group) == 1:
+            obj = group[0]
+        else:
+            bpy.ops.object.select_all(action="DESELECT")
+            active = group[0]
+            bpy.context.view_layer.objects.active = active
+            for part in group:
+                part.select_set(True)
+            bpy.ops.object.join()
+            obj = bpy.context.object
+
+        safe_material_name = material_name.lower().replace(" ", "_")
+        obj.name = f"{name_prefix}_{safe_material_name}"
+        parent_to(obj, root)
+        merged.append(obj)
+
+    return merged
 
 
 def bevelled_box(name, center, size, mat, bevel=0.012):
@@ -108,7 +156,7 @@ def bevelled_box(name, center, size, mat, bevel=0.012):
     return obj
 
 
-def cylinder_x(name, center, length, radius, mat, vertices=128, bevel=0.0):
+def cylinder_x(name, center, length, radius, mat, vertices=SMOOTH_MEDIUM, bevel=0.0):
     bpy.ops.mesh.primitive_cylinder_add(
         vertices=vertices,
         radius=radius,
@@ -123,12 +171,12 @@ def cylinder_x(name, center, length, radius, mat, vertices=128, bevel=0.0):
         obj.data.materials.append(mat)
     shade_smooth(obj)
     if bevel > 0:
-        add_bevel(obj, bevel, segments=3)
+        add_bevel(obj, bevel, segments=2)
     add_weighted_normals(obj)
     return obj
 
 
-def cylinder_y(name, center, length, radius, mat, vertices=64, bevel=0.0):
+def cylinder_y(name, center, length, radius, mat, vertices=SMOOTH_SMALL, bevel=0.0):
     bpy.ops.mesh.primitive_cylinder_add(
         vertices=vertices,
         radius=radius,
@@ -142,7 +190,25 @@ def cylinder_y(name, center, length, radius, mat, vertices=64, bevel=0.0):
         obj.data.materials.append(mat)
     shade_smooth(obj)
     if bevel > 0:
-        add_bevel(obj, bevel, segments=3)
+        add_bevel(obj, bevel, segments=2)
+    add_weighted_normals(obj)
+    return obj
+
+
+def torus_x(name, center, major_radius, minor_radius, mat, major_segments=SMOOTH_LARGE, minor_segments=8):
+    bpy.ops.mesh.primitive_torus_add(
+        major_segments=major_segments,
+        minor_segments=minor_segments,
+        major_radius=major_radius,
+        minor_radius=minor_radius,
+        location=gltf_to_blender_position(center),
+        rotation=(0.0, math.radians(90.0), 0.0),
+    )
+    obj = bpy.context.object
+    obj.name = name
+    if mat:
+        obj.data.materials.append(mat)
+    shade_smooth(obj)
     add_weighted_normals(obj)
     return obj
 
@@ -252,7 +318,7 @@ def cooling_fins(name_prefix, axis_x_center, axis_y, axis_z, length, body_radius
             fin_thickness,
             fin_radius,
             mat,
-            vertices=96,
+            vertices=SMOOTH_SMALL,
             bevel=0.001,
         )
         fins.append(fin)
@@ -347,9 +413,21 @@ def drive_unit(mats):
             motor_length,
             motor_radius,
             mats["steel"],
-            vertices=128,
+            vertices=SMOOTH_LARGE,
         )
     )
+    for offset, radius in ((-0.13, motor_radius + 0.008), (0.13, motor_radius + 0.008)):
+        parts.append(
+            torus_x(
+                f"motor polished end band {offset:+.2f}",
+                (motor_axis[0] + offset, AXIS_Y, 0.0),
+                radius,
+                0.003,
+                mats["bolt"],
+                major_segments=SMOOTH_LARGE,
+                minor_segments=8,
+            )
+        )
 
     parts.extend(
         cooling_fins(
@@ -373,7 +451,7 @@ def drive_unit(mats):
             0.022,
             motor_radius + 0.005,
             mats["machined"],
-            vertices=128,
+            vertices=SMOOTH_LARGE,
             bevel=0.004,
         )
     )
@@ -454,7 +532,7 @@ def drive_unit(mats):
             0.030,
             0.090,
             mats["machined"],
-            vertices=96,
+            vertices=SMOOTH_MEDIUM,
             bevel=0.003,
         )
     )
@@ -481,7 +559,7 @@ def drive_unit(mats):
             0.024,
             0.038,
             mats["steel"],
-            vertices=96,
+            vertices=SMOOTH_MEDIUM,
             bevel=0.002,
         )
     )
@@ -497,7 +575,16 @@ def drive_unit(mats):
             shaft_length,
             0.022,
             mats["steel"],
-            vertices=96,
+            vertices=SMOOTH_MEDIUM,
+        )
+    )
+    parts.append(
+        bevelled_box(
+            "drive shaft keyway",
+            (shaft_center_x + 0.018, AXIS_Y + 0.0225, 0.0),
+            (0.170, 0.004, 0.012),
+            mats["bore"],
+            bevel=0.001,
         )
     )
 
@@ -508,13 +595,12 @@ def drive_unit(mats):
             0.022,
             0.026,
             mats["steel"],
-            vertices=96,
+            vertices=SMOOTH_MEDIUM,
             bevel=0.002,
         )
     )
 
-    for part in parts:
-        parent_to(part, root)
+    merge_parts_by_material(root, parts, "drive")
 
     return root
 
@@ -590,8 +676,19 @@ def load_unit(mats):
             0.036,
             0.105,
             mats["machined"],
-            vertices=128,
+            vertices=SMOOTH_LARGE,
             bevel=0.004,
+        )
+    )
+    parts.append(
+        torus_x(
+            "hub polished lip",
+            (hub_flange_x - 0.018, AXIS_Y, 0.0),
+            0.104,
+            0.004,
+            mats["bolt"],
+            major_segments=SMOOTH_LARGE,
+            minor_segments=8,
         )
     )
 
@@ -616,7 +713,7 @@ def load_unit(mats):
             0.018,
             0.030,
             mats["bore"],
-            vertices=96,
+            vertices=SMOOTH_MEDIUM,
         )
     )
 
@@ -628,7 +725,7 @@ def load_unit(mats):
             0.118,
             0.082,
             mats["machined"],
-            vertices=128,
+            vertices=SMOOTH_LARGE,
             bevel=0.004,
         )
     )
@@ -643,9 +740,31 @@ def load_unit(mats):
             (flywheel_center_x, AXIS_Y, 0.0),
             flywheel_length,
             flywheel_radius,
-            mats["cast_iron"],
-            vertices=192,
+            mats["anodized"],
+            vertices=SMOOTH_LARGE,
             bevel=0.005,
+        )
+    )
+    parts.append(
+        torus_x(
+            "flywheel bright outer bevel",
+            (flywheel_face_x - 0.001, AXIS_Y, 0.0),
+            flywheel_radius - 0.010,
+            0.005,
+            mats["bolt"],
+            major_segments=SMOOTH_LARGE,
+            minor_segments=8,
+        )
+    )
+    parts.append(
+        torus_x(
+            "flywheel recessed inner groove",
+            (flywheel_face_x - 0.003, AXIS_Y, 0.0),
+            flywheel_radius - 0.075,
+            0.004,
+            mats["bore"],
+            major_segments=SMOOTH_MEDIUM,
+            minor_segments=8,
         )
     )
 
@@ -656,7 +775,7 @@ def load_unit(mats):
             flywheel_length + 0.002,
             flywheel_radius - 0.075,
             mats["machined"],
-            vertices=160,
+            vertices=SMOOTH_LARGE,
         )
     )
 
@@ -667,7 +786,7 @@ def load_unit(mats):
             0.024,
             0.055,
             mats["steel"],
-            vertices=96,
+            vertices=SMOOTH_MEDIUM,
             bevel=0.003,
         )
     )
@@ -695,12 +814,11 @@ def load_unit(mats):
                 flywheel_length + 0.003,
                 0.028,
                 mats["bore"],
-                vertices=64,
+                vertices=SMOOTH_SMALL,
             )
         )
 
-    for part in parts:
-        parent_to(part, root)
+    merge_parts_by_material(root, parts, "load")
 
     return root
 
@@ -712,6 +830,7 @@ def export_glb(path):
         export_format="GLB",
         export_extras=True,
         export_apply=True,
+        export_tangents=True,
         export_yup=True,
     )
     print(f"wrote {path.relative_to(REPO)}")

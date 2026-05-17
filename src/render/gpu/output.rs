@@ -376,6 +376,25 @@ mod tests {
     }
 
     #[test]
+    fn triangle_shader_avoids_pow_in_hot_pbr_fragment_paths() {
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            assert!(
+                shader.contains("fn pow4(value: f32) -> f32")
+                    && shader.contains("fn pow5(value: f32) -> f32")
+                    && shader.contains("pow5(1.0 - clamp(cos_theta")
+                    && shader.contains("pow4(distance / range)")
+                    && !shader.contains("pow(1.0 - clamp(cos_theta")
+                    && !shader.contains("pow(distance / range"),
+                "{name} shader must use multiply-chain pow4/pow5 helpers in the PBR hot path \
+                 because WebGL2 drivers can lower generic pow() expensively"
+            );
+        }
+    }
+
+    #[test]
     fn triangle_shader_consumes_gpu_environment_light_uniforms() {
         assert!(
             GPU_TRIANGLE_SHADER.contains("environment_diffuse_intensity")
@@ -385,6 +404,27 @@ mod tests {
             "GPU PBR shader must consume prepared environment irradiance/specular uniforms \
              before backend IBL lighting can be claimed"
         );
+    }
+
+    #[test]
+    fn triangle_shader_uses_prepared_irradiance_for_diffuse_ibl() {
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            assert!(
+                shader.contains(
+                    "let diffuse_irradiance = camera.lighting.environment_diffuse_intensity.rgb"
+                ) && shader.contains(
+                    "diffuse_energy * base * diffuse_irradiance * camera.lighting.environment_diffuse_intensity.w"
+                ) && !shader.contains(
+                    "textureSampleLevel(environment_cubemap, environment_sampler, normal, 0.0).rgb"
+                ),
+                "{name} shader must use prepared diffuse irradiance for diffuse IBL; \
+                 sampling raw HDR radiance in the surface-normal direction makes real HDR \
+                 environments dark and high-contrast"
+            );
+        }
     }
 
     #[test]

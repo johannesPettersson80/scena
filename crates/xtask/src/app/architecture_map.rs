@@ -171,7 +171,7 @@ pub(crate) fn architecture_owner_for_source_path(rel: &Path) -> &'static str {
         "diagnostics"
     } else if path.starts_with("src/platform") {
         "platform"
-    } else if path.starts_with("src/viewer") {
+    } else if path.starts_with("src/viewer") || path == "src/demo_page.rs" {
         "viewer"
     } else if path.starts_with("src/browser_probe") {
         "browser_probe"
