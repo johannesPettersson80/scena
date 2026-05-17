@@ -6,12 +6,17 @@ and render frames.
 
 The authoritative API reference is generated on docs.rs:
 
-<https://docs.rs/scena/1.1.0/scena/>
+<https://docs.rs/scena/1.2.0/scena/>
 
 Use this page as the conceptual map.
 
-No public API changes in 1.1.0. The release changes the browser WebGL2
-implementation path, not the exported Rust API surface.
+Additive public API changes in 1.2.0:
+
+- `AssetLoadOptions`
+- `Assets::load_scene_with_options`
+- `Assets::load_scene_with_report_options`
+- `DiagnosticCode::MaterialTextureMissingDecodedPixels`
+- `RendererStats::material_textures_missing_decoded_pixels`
 
 ## Core types
 
@@ -140,6 +145,8 @@ Common public event and output types:
 Common asset-store calls:
 
 - `Assets::store_id()`
+- `Assets::load_scene_with_options()`
+- `Assets::load_scene_with_report_options()`
 - `Assets::contains_geometry`
 - `Assets::contains_material`
 - `Assets::contains_texture`

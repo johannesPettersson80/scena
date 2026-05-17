@@ -347,7 +347,28 @@ fn create_texture_binding_resource(
     upload: MaterialTextureUpload<'_>,
     texture_binding_mode: MaterialTextureBindingMode,
 ) -> MaterialTextureBindingResources {
-    let mip_extents = mip_level_extents(upload.width, upload.height, upload.sampler.min_filter());
+    let mip_extents = {
+        #[cfg(target_arch = "wasm32")]
+        if upload.browser_image.is_some() {
+            vec![(upload.width.max(1), upload.height.max(1))]
+        } else {
+            mip_level_extents(upload.width, upload.height, upload.sampler.min_filter())
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            mip_level_extents(upload.width, upload.height, upload.sampler.min_filter())
+        }
+    };
+    #[cfg(target_arch = "wasm32")]
+    let texture_usage = if upload.browser_image.is_some() {
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::RENDER_ATTACHMENT
+    } else {
+        wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    let texture_usage = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST;
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(if upload.uses_decoded_texture {
             match label {
@@ -377,7 +398,7 @@ fn create_texture_binding_resource(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: upload.format,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        usage: texture_usage,
         view_formats: &[],
     });
     write_material_texture_layer_mips(queue, &texture, upload, &mip_extents, 0);
@@ -409,6 +430,34 @@ pub(super) fn write_material_texture_layer_mips(
     mip_extents: &[(u32, u32)],
     layer_index: u32,
 ) {
+    #[cfg(target_arch = "wasm32")]
+    if let Some(image) = upload.browser_image {
+        queue.copy_external_image_to_texture(
+            &wgpu::CopyExternalImageSourceInfo {
+                source: wgpu::ExternalImageSource::ImageBitmap(image.clone()),
+                origin: wgpu::Origin2d::ZERO,
+                flip_y: false,
+            },
+            wgpu::CopyExternalImageDestInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: 0,
+                    y: 0,
+                    z: layer_index,
+                },
+                aspect: wgpu::TextureAspect::All,
+                color_space: wgpu::PredefinedColorSpace::Srgb,
+                premultiplied_alpha: false,
+            },
+            wgpu::Extent3d {
+                width: upload.width.max(1),
+                height: upload.height.max(1),
+                depth_or_array_layers: 1,
+            },
+        );
+        return;
+    }
     let mut previous = upload.rgba8.to_vec();
     for (mip_level, (width, height)) in mip_extents.iter().copied().enumerate() {
         let pixels = if mip_level == 0 {

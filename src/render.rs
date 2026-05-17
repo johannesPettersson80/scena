@@ -7,18 +7,19 @@ mod camera;
 mod color_contract;
 mod cpu;
 mod culling;
+mod environment_cache;
 mod gpu;
 mod offscreen;
 mod output;
 mod prepare;
+mod reporting;
 mod settings;
 mod surface;
 
 use crate::assets::{Assets, EnvironmentHandle};
 use crate::diagnostics::{
     Backend, Capabilities, CapabilityReport, ChangeKind, DebugOverlay, DevicePoll, Diagnostic,
-    DiagnosticCode, GpuAdapterReport, NotPreparedReason, PrepareError, RenderError, RenderOutcome,
-    RendererStats,
+    GpuAdapterReport, NotPreparedReason, PrepareError, RenderError, RenderOutcome, RendererStats,
 };
 use crate::geometry::Primitive;
 use crate::material::Color;
@@ -31,6 +32,28 @@ pub use self::offscreen::{OffscreenTarget, PixelReadback};
 use self::output::OutputTransform;
 pub use self::output::Tonemapper;
 pub use self::settings::{Profile, Quality, RenderMode, RendererOptions};
+
+#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+fn prepare_now_ms() -> f64 {
+    js_sys::Date::now()
+}
+
+#[cfg(not(all(target_arch = "wasm32", feature = "demo-page")))]
+fn prepare_now_ms() -> f64 {
+    0.0
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+fn log_prepare_step(label: &str, start_ms: f64) -> f64 {
+    let elapsed_ms = prepare_now_ms() - start_ms;
+    web_sys::console::log_1(&format!("[scena-prepare] {label}: {elapsed_ms:.1}ms").into());
+    prepare_now_ms()
+}
+
+#[cfg(not(all(target_arch = "wasm32", feature = "demo-page")))]
+fn log_prepare_step(_label: &str, _start_ms: f64) -> f64 {
+    0.0
+}
 
 #[derive(Debug)]
 pub struct Renderer {
@@ -61,6 +84,7 @@ pub struct Renderer {
     hover_style: InteractionStyle,
     selection_style: InteractionStyle,
     environment: Option<EnvironmentHandle>,
+    environment_lighting_cache: Option<environment_cache::EnvironmentLightingCache>,
     background_color: Color,
     environment_revision: u64,
     target_revision: u64,
@@ -104,6 +128,8 @@ impl Renderer {
         scene: &mut Scene,
         assets: Option<&Assets<F>>,
     ) -> Result<(), PrepareError> {
+        let total_start = prepare_now_ms();
+        let mut step_start = total_start;
         self.poll_device();
         self.diagnostics.clear();
         validate_target_size(self.target.width, self.target.height).map_err(|()| {
@@ -117,6 +143,10 @@ impl Renderer {
             scene,
             self.target,
         ));
+        if let Some(assets) = assets {
+            diagnostics.extend(prepare::collect_material_texture_diagnostics(scene, assets));
+        }
+        step_start = log_prepare_step("diagnostics", step_start);
         let environment_desc = match self.environment {
             Some(environment) => {
                 let Some(assets) = assets else {
@@ -134,12 +164,10 @@ impl Renderer {
             prepare::collect_environment_prepare_stats(environment_desc.as_ref());
         let environment_count = u64::from(environment_desc.is_some());
         let lighting_stats = prepare::collect_lighting_stats(scene, self.target.backend)?;
-        let environment_lighting = prepare::collect_environment_lighting(environment_desc.as_ref());
-        let gpu_light_uniform = prepare::collect_gpu_light_uniform(
-            scene,
-            scene.origin_shift(),
-            environment_desc.as_ref(),
-        );
+        let environment_lighting = self.environment_lighting_for_prepare(environment_desc.as_ref());
+        let gpu_light_uniform =
+            prepare::collect_gpu_light_uniform(scene, scene.origin_shift(), &environment_lighting);
+        step_start = log_prepare_step("environment + lights", step_start);
         let active_camera_projection = scene.active_camera().and_then(|camera| {
             camera::CameraProjection::from_scene(scene, camera, self.target).ok()
         });
@@ -156,6 +184,7 @@ impl Renderer {
             .iter()
             .map(|slot| slot.handle)
             .collect::<Vec<_>>();
+        step_start = log_prepare_step("camera + backend material slots", step_start);
         let prepared_scene = prepare::collect_prepared_primitives(
             self.target,
             scene,
@@ -165,6 +194,7 @@ impl Renderer {
             &backend_material_handles,
             environment_lighting.clone(),
         )?;
+        step_start = log_prepare_step("collect_prepared_primitives", step_start);
         let light_from_world = prepared_scene.light_from_world;
         let culled_primitives =
             culling::cull_cpu_frustum(prepared_scene.primitives, active_camera_projection.as_ref());
@@ -176,6 +206,8 @@ impl Renderer {
         self.stats.material_bindings = logical_stats.material_bindings;
         self.stats.material_texture_bindings = logical_stats.material_texture_bindings;
         self.stats.material_sampler_bindings = logical_stats.material_sampler_bindings;
+        self.stats.material_textures_missing_decoded_pixels =
+            logical_stats.material_textures_missing_decoded_pixels;
         self.stats.material_batch_layers =
             prepare::compute_material_batch_plan(&backend_material_slots).layer_count;
         self.stats.environments = logical_stats.environments;
@@ -190,6 +222,7 @@ impl Renderer {
             lighting_stats.directional_shadow_map_resolution;
         self.stats.directional_shadow_pcf_kernel = lighting_stats.directional_shadow_pcf_kernel;
         self.stats.culled_objects = culled_primitives.culled;
+        step_start = log_prepare_step("cull + stats", step_start);
         if let Some(gpu) = &mut self.gpu {
             gpu.prepare(
                 self.target,
@@ -213,6 +246,7 @@ impl Renderer {
             self.stats.material_bind_groups = stats.material_bind_groups;
             self.stats.approximate_gpu_memory_bytes = (stats.approximate_gpu_memory_bytes > 0)
                 .then_some(stats.approximate_gpu_memory_bytes);
+            step_start = log_prepare_step("gpu.prepare", step_start);
         } else {
             self.stats.textures = logical_stats.textures;
             self.stats.material_bind_groups = 0;
@@ -229,6 +263,8 @@ impl Renderer {
         self.render_generation = self.render_generation.saturating_add(1);
         self.last_rendered_generation = None;
         self.diagnostics = diagnostics;
+        log_prepare_step("prepare_inner tail", step_start);
+        log_prepare_step("prepare_inner total", total_start);
         Ok(())
     }
 
@@ -321,64 +357,8 @@ impl Renderer {
         self.render(scene, camera)
     }
 
-    pub fn diagnose_scene(&self, scene: &Scene) -> Vec<Diagnostic> {
-        let mut diagnostics = Vec::new();
-        if scene.active_camera().is_none() {
-            diagnostics.push(Diagnostic::error(
-                DiagnosticCode::MissingActiveCamera,
-                "scene has no active camera",
-                "call Scene::add_default_camera or Scene::set_active_camera before rendering",
-            ));
-        }
-        diagnostics.extend(prepare::collect_camera_projection_diagnostics(scene));
-        diagnostics.extend(prepare::collect_camera_visibility_diagnostics(
-            scene,
-            self.target,
-        ));
-
-        if scene.visible_drawable_count() == 0 {
-            diagnostics.push(Diagnostic::warning(
-                DiagnosticCode::InvisibleScene,
-                "scene has no visible drawables for the active camera",
-                "check node visibility, parent visibility, camera layer masks, or add a mesh/renderable node",
-            ));
-        }
-
-        if scene.light_nodes().count() == 0 && self.environment.is_none() {
-            diagnostics.push(Diagnostic::warning(
-                DiagnosticCode::MissingLightingOrEnvironment,
-                "scene has no active light nodes and no renderer environment",
-                "call renderer.set_environment for image-based lighting or add a scene light for lit materials",
-            ));
-        }
-
-        diagnostics
-    }
-
-    pub fn diagnose_scene_with_assets<F>(
-        &self,
-        scene: &Scene,
-        assets: &Assets<F>,
-    ) -> Vec<Diagnostic> {
-        let mut diagnostics = self.diagnose_scene(scene);
-        diagnostics.extend(prepare::collect_asset_camera_visibility_diagnostics(
-            scene,
-            self.target,
-            assets,
-        ));
-        diagnostics
-    }
-
     pub fn frame_rgba8(&self) -> &[u8] {
         &self.frame
-    }
-
-    pub fn stats(&self) -> RendererStats {
-        self.stats
-    }
-
-    pub fn diagnostics(&self) -> &[Diagnostic] {
-        &self.diagnostics
     }
 
     pub fn poll_device(&mut self) -> DevicePoll {

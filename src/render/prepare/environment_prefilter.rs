@@ -11,6 +11,12 @@ struct GgxSample {
     n_dot_l: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::render) enum EnvironmentPrefilterQuality {
+    Reference,
+    InteractiveWebGl2,
+}
+
 /// Builds the GGX-prefiltered specular cubemap mip chain (one face buffer
 /// per face per mip, RGBA32F). Mip 0 is the source radiance verbatim;
 /// each subsequent mip is the source radiance convolved with a GGX BRDF
@@ -18,10 +24,25 @@ struct GgxSample {
 /// approximation (Karis 2013) assumes view = normal at every fragment so
 /// the prefilter is independent of camera position and a 2D BRDF LUT
 /// can carry the view-dependent fresnel + geometry terms.
+#[cfg(test)]
 pub(in crate::render) fn prefilter_specular_cubemap_mips(
     source_face_pixels: &[Vec<f32>; 6],
     resolution: u32,
     mip_count: u32,
+) -> Vec<[Vec<f32>; 6]> {
+    prefilter_specular_cubemap_mips_with_quality(
+        source_face_pixels,
+        resolution,
+        mip_count,
+        EnvironmentPrefilterQuality::Reference,
+    )
+}
+
+pub(in crate::render) fn prefilter_specular_cubemap_mips_with_quality(
+    source_face_pixels: &[Vec<f32>; 6],
+    resolution: u32,
+    mip_count: u32,
+    quality: EnvironmentPrefilterQuality,
 ) -> Vec<[Vec<f32>; 6]> {
     if mip_count == 0 {
         return Vec::new();
@@ -37,7 +58,13 @@ pub(in crate::render) fn prefilter_specular_cubemap_mips(
             } else {
                 0.0
             };
-            prefilter_face_pixels(source_face_pixels, resolution, mip_resolution, roughness)
+            prefilter_face_pixels(
+                source_face_pixels,
+                resolution,
+                mip_resolution,
+                roughness,
+                quality,
+            )
         };
         mips.push(mip_faces);
     }
@@ -51,8 +78,9 @@ fn prefilter_face_pixels(
     source_resolution: u32,
     mip_resolution: u32,
     roughness: f32,
+    quality: EnvironmentPrefilterQuality,
 ) -> [Vec<f32>; 6] {
-    let sample_count = sample_count_for_roughness(roughness);
+    let sample_count = sample_count_for_roughness(roughness, quality);
     let mut faces: [Vec<f32>; 6] =
         std::array::from_fn(|_| vec![0.0_f32; (mip_resolution as usize).pow(2) * 4]);
     for (face_index, face_pixels) in faces.iter_mut().enumerate() {
@@ -83,14 +111,22 @@ fn prefilter_face_pixels(
 /// `(N·V, roughness)`. Returned slice is `size * size * 2` floats laid
 /// out row-major. The shader computes specular as
 /// `prefiltered_radiance * (F0 * lut.x + lut.y)`.
+#[cfg(test)]
 pub(in crate::render) fn build_brdf_lut(size: u32) -> Vec<f32> {
+    build_brdf_lut_with_sample_count(size, 1024)
+}
+
+pub(in crate::render) fn build_brdf_lut_with_sample_count(
+    size: u32,
+    sample_count: u32,
+) -> Vec<f32> {
     let resolved_size = size.max(1);
     let mut pixels = vec![0.0_f32; (resolved_size as usize).pow(2) * 2];
     for y in 0..resolved_size {
         let roughness = (y as f32 + 0.5) / resolved_size as f32;
         for x in 0..resolved_size {
             let n_dot_v = (x as f32 + 0.5) / resolved_size as f32;
-            let (scale, bias) = integrate_brdf_lut_cell(n_dot_v, roughness, 1024);
+            let (scale, bias) = integrate_brdf_lut_cell(n_dot_v, roughness, sample_count);
             let pixel_index = ((y * resolved_size + x) * 2) as usize;
             pixels[pixel_index] = scale;
             pixels[pixel_index + 1] = bias;
@@ -276,14 +312,21 @@ fn normalize_or_z(value: Vec3) -> Vec3 {
 /// (roughness 0) needs no convolution and we route it through this
 /// table only for completeness; smoother surfaces converge at fewer
 /// samples while rougher surfaces benefit from many more.
-fn sample_count_for_roughness(roughness: f32) -> u32 {
+fn sample_count_for_roughness(roughness: f32, quality: EnvironmentPrefilterQuality) -> u32 {
     let stepped = (roughness.clamp(0.0, 1.0) * 8.0).round() as u32;
-    match stepped {
-        0 => 32,
-        1 | 2 => 96,
-        3 | 4 => 192,
-        5 | 6 => 384,
-        _ => 768,
+    match quality {
+        EnvironmentPrefilterQuality::Reference => match stepped {
+            0 => 32,
+            1 | 2 => 96,
+            3 | 4 => 192,
+            5 | 6 => 384,
+            _ => 768,
+        },
+        EnvironmentPrefilterQuality::InteractiveWebGl2 => match stepped {
+            0 => 4,
+            1 | 2 => 8,
+            _ => 16,
+        },
     }
 }
 
@@ -446,6 +489,25 @@ mod tests {
         assert!(
             scale_grazing.is_finite() && bias_grazing.is_finite(),
             "BRDF LUT must produce finite values everywhere"
+        );
+    }
+
+    #[test]
+    fn interactive_prefilter_profile_caps_browser_runtime_work() {
+        assert_eq!(
+            sample_count_for_roughness(1.0, EnvironmentPrefilterQuality::Reference),
+            768,
+            "reference quality keeps the existing rough-environment sample count"
+        );
+        assert_eq!(
+            sample_count_for_roughness(1.0, EnvironmentPrefilterQuality::InteractiveWebGl2),
+            16,
+            "WebGL2 first-frame prefiltering must not run the reference offline sample count"
+        );
+        assert_eq!(
+            build_brdf_lut_with_sample_count(4, 64).len(),
+            4 * 4 * 2,
+            "interactive BRDF LUT generation keeps the same texture layout"
         );
     }
 

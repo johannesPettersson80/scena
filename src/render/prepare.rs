@@ -15,7 +15,7 @@ pub(super) use self::diagnostics::{
 };
 pub(super) use self::environment::collect_environment_lighting;
 pub(in crate::render) use self::environment::{
-    PreparedEnvironmentCubemap, PreparedEnvironmentLighting,
+    EnvironmentLightingProfile, PreparedEnvironmentCubemap, PreparedEnvironmentLighting,
 };
 use self::lighting::{MaterialShadingInput, PreparedLights, material_color};
 pub(super) use self::lighting::{PreparedGpuLightUniform, collect_gpu_light_uniform};
@@ -26,6 +26,7 @@ use self::materials::{
 };
 pub(super) use self::resources::{
     PreparedMaterialSlot, collect_backend_material_slots, collect_logical_resource_stats,
+    collect_material_texture_diagnostics,
 };
 use self::shadows::{collect_shadow_occluders, directional_shadow_factor};
 pub(super) use self::stats::{

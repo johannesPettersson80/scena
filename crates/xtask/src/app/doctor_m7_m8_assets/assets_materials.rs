@@ -1,3 +1,4 @@
+use super::material_texture_diagnostics::check_material_texture_diagnostic_contracts;
 use crate::app::prelude::*;
 pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Vec<Finding>) {
     require_contains(
@@ -71,8 +72,11 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
         "src/assets/load.rs",
         &[
             "pub struct AssetLoadControl",
+            "pub struct AssetLoadOptions",
             "pub struct AssetLoadReport",
             "pub enum AssetLoadProgress",
+            "strict_textures",
+            "with_strict_textures",
             "progress_events",
             "emit_progress",
             "AssetError::Cancelled",
@@ -83,7 +87,13 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
         findings,
         "ASSETS-M8",
         "src/assets/scene_loading.rs",
-        &["load_scene_with_report", "load_scene_controlled"],
+        &[
+            "load_scene_with_report",
+            "load_scene_with_options",
+            "load_scene_with_report_options",
+            "load_scene_controlled",
+            "warn_external_image_missing",
+        ],
     );
     require_contains(
         root,
@@ -147,6 +157,8 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "m8_direct_load_texture_decodes_png_for_cpu_preview_pixels",
             "m8_direct_load_texture_decodes_jpeg_for_cpu_preview_pixels",
             "m8_missing_external_image_records_load_warning",
+            "m8_strict_scene_load_promotes_missing_external_image_to_error",
+            "m8_prepare_reports_material_texture_handles_without_decoded_pixels",
             "m8_checked_asset_lookups_report_typed_missing_handles",
             "m8_prepare_rejects_material_texture_handles_from_wrong_assets",
             "m8_texture_sampler_clamp_to_edge_affects_cpu_preview_pixels",
@@ -181,6 +193,8 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "material_bindings",
             "material_texture_bindings",
             "material_sampler_bindings",
+            "material_textures_missing_decoded_pixels",
+            "MaterialTextureMissingDecodedPixels",
             "m8_khronos_material_texture_samples_cover_promoted_extensions",
             "m8_khronos_jpeg_textures_decode_for_degraded_material_preview",
             "m8_real_world_fixture_matrix_covers_asset_edge_cases",
@@ -232,23 +246,7 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "texture_format_has_cpu_decoder",
         ],
     );
-    require_contains(
-        root,
-        findings,
-        "ASSETS-M8",
-        "src/assets/scene_loading.rs",
-        &[
-            "external_image_paths",
-            "AssetLoadWarning::ExternalImageMissing",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "ASSETS-M8",
-        "src/assets/load.rs",
-        &["AssetLoadWarning", "ExternalImageMissing", "warnings"],
-    );
+    check_material_texture_diagnostic_contracts(root, findings);
     require_contains(
         root,
         findings,

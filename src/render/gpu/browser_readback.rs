@@ -13,6 +13,7 @@ pub(super) struct BrowserReadbackResources {
     pub(super) buffer: wgpu::Buffer,
     pub(super) pipeline: wgpu::RenderPipeline,
     pub(super) padded_bytes_per_row: u32,
+    #[allow(dead_code)]
     pub(super) unpadded_bytes_per_row: u32,
 }
 

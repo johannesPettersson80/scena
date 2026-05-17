@@ -143,6 +143,7 @@ impl Renderer {
     pub fn set_environment(&mut self, environment: EnvironmentHandle) {
         if self.environment != Some(environment) {
             self.environment = Some(environment);
+            self.environment_lighting_cache = None;
             self.environment_revision = self.environment_revision.saturating_add(1);
         }
     }
@@ -150,6 +151,7 @@ impl Renderer {
     pub fn clear_environment(&mut self) {
         if self.environment.is_some() {
             self.environment = None;
+            self.environment_lighting_cache = None;
             self.environment_revision = self.environment_revision.saturating_add(1);
         }
     }

@@ -293,11 +293,12 @@ pub(crate) fn check_depth_prepass_contracts(root: &Path, findings: &mut Vec<Find
             "pub(in crate::render) struct PreparedDepthStats",
             "pub(in crate::render) fn collect_depth_prepass_stats(",
             "backend: Backend",
-            "DEPTH_PREPASS_MIN_PRIMITIVES: usize = 2",
-            "fn depth_prepass_benefits",
-            "Primitive::depth_prepass_eligible",
+            "DEPTH_PREPASS_MIN_PRIMITIVES: usize = 1",
+            "fn depth_prepass_eligible_draws",
+            "fn depth_prepass_backend_supported",
+            "primitive.depth_prepass_eligible()",
             "passes: 1",
-            "draws: primitives.len() as u64",
+            "draws: eligible_draws as u64",
         ],
     );
     require_contains(

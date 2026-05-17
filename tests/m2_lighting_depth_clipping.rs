@@ -649,7 +649,9 @@ fn depth_prepass_is_prepared_when_multiple_opaque_primitives_benefit() {
             Transform::default(),
         )
         .expect("opaque primitives insert");
-    let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+    let Ok(mut renderer) = Renderer::headless_gpu(8, 8) else {
+        return;
+    };
 
     renderer.prepare(&mut scene).expect("scene prepares");
     let prepared = renderer.stats();
@@ -1093,7 +1095,9 @@ fn m2_resource_counters_return_to_baseline_after_empty_prepare() {
             Transform::default(),
         )
         .expect("opaque primitive inserts");
-    let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+    let Ok(mut renderer) = Renderer::headless_gpu(8, 8) else {
+        return;
+    };
     let baseline = renderer.stats();
 
     renderer.set_environment(environment);

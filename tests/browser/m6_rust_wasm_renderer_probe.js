@@ -299,6 +299,45 @@ function assertMaterialTextureProof(backend, result) {
   }
 }
 
+function assertSourceGltfMaterialProof(backend, result) {
+  const metadata = result.metadata || {};
+  const pixels = result.pixels || {};
+  const nonblack = (pixel) => Array.isArray(pixel) && (pixel[0] > 0 || pixel[1] > 0 || pixel[2] > 0);
+  const diagnostics = result.diagnostics || [];
+  if (
+    metadata.proof_class !== "browser-source-gltf-material-comparison" ||
+    metadata.construction !== "SceneAsset::nodes mesh.geometry mesh.material" ||
+    metadata.source_base_color_decoded !== true ||
+    metadata.source_texture_bindings < 1 ||
+    metadata.load_warnings !== 0
+  ) {
+    throw new Error(
+      `${backend} source-gltf-materials proof did not load decoded source material handles cleanly: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    !result.stats ||
+    result.stats.material_texture_bindings < 1 ||
+    result.stats.material_textures_missing_decoded_pixels !== 0
+  ) {
+    throw new Error(
+      `${backend} source-gltf-materials proof reported missing texture pixels or no material texture binding: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    diagnostics.some((diagnostic) => diagnostic.code === "MaterialTextureMissingDecodedPixels")
+  ) {
+    throw new Error(
+      `${backend} source-gltf-materials proof emitted missing-decoded-pixels diagnostics: ${JSON.stringify(result)}`,
+    );
+  }
+  if (!nonblack(pixels.left) || !nonblack(pixels.center) || !nonblack(pixels.right)) {
+    throw new Error(
+      `${backend} source-gltf-materials did not render visible unlit/source/PBR comparison lanes: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
 function assertPunctualLightProof(backend, result, channel, workflow) {
   const metadata = result.metadata || {};
   const center = result.pixels && result.pixels.center;
@@ -473,6 +512,7 @@ async function main() {
     "layers-helper-on-top",
     "beginner-diagnostics",
     "material-textures",
+    "source-gltf-materials",
     "textured-connector-viewer",
     "asset-cache-reload",
   ];
@@ -550,6 +590,7 @@ async function main() {
         assertEnvironmentLightProof(backend, workflowResults.get("pbr-environment"));
         assertShadowVisibilityProof(backend, workflowResults.get("pbr-shadow-visibility"));
         assertMaterialTextureProof(backend, workflowResults.get("material-textures"));
+        assertSourceGltfMaterialProof(backend, workflowResults.get("source-gltf-materials"));
         assertTexturedConnectorViewerProof(
           backend,
           workflowResults.get("textured-connector-viewer"),

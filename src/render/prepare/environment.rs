@@ -1,10 +1,28 @@
 use std::sync::Arc;
 
 use crate::assets::EnvironmentDesc;
+use crate::diagnostics::Backend;
 use crate::scene::Vec3;
 
-use super::environment_prefilter::{build_brdf_lut, prefilter_specular_cubemap_mips};
+use super::environment_prefilter::{
+    EnvironmentPrefilterQuality, build_brdf_lut_with_sample_count,
+    prefilter_specular_cubemap_mips_with_quality,
+};
 use super::pbr_contract::{PbrMaterial, environment_split_sum_contribution, reflect_vec3};
+
+#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+fn environment_now_ms() -> f64 {
+    js_sys::Date::now()
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+fn log_environment_step(label: &str, start_ms: f64) -> f64 {
+    let now = environment_now_ms();
+    web_sys::console::log_1(
+        &format!("[scena-demo] environment {label}: {:.1}ms", now - start_ms).into(),
+    );
+    now
+}
 
 /// Number of GGX-prefiltered specular mip levels emitted for the
 /// environment cubemap. Mip 0 carries the source radiance; mips 1+
@@ -16,6 +34,43 @@ pub(in crate::render) const PREFILTER_MIP_COUNT: u32 = 5;
 /// by `(N·V, roughness)`; 64×64 is enough resolution for visually
 /// smooth specular without blowing the GPU upload budget.
 pub(in crate::render) const BRDF_LUT_SIZE: u32 = 64;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::render) enum EnvironmentLightingProfile {
+    Reference,
+    InteractiveWebGl2,
+}
+
+impl EnvironmentLightingProfile {
+    pub(in crate::render) fn for_backend(backend: Backend) -> Self {
+        match backend {
+            Backend::WebGl2 => Self::InteractiveWebGl2,
+            Backend::Headless
+            | Backend::HeadlessGpu
+            | Backend::SurfaceDescriptor
+            | Backend::NativeSurface
+            | Backend::WebGpu => Self::Reference,
+        }
+    }
+
+    fn prefilter_quality(self) -> EnvironmentPrefilterQuality {
+        match self {
+            Self::Reference => EnvironmentPrefilterQuality::Reference,
+            Self::InteractiveWebGl2 => EnvironmentPrefilterQuality::InteractiveWebGl2,
+        }
+    }
+
+    fn brdf_lut_size(self) -> u32 {
+        BRDF_LUT_SIZE
+    }
+
+    fn brdf_sample_count(self) -> u32 {
+        match self {
+            Self::Reference => 1024,
+            Self::InteractiveWebGl2 => 64,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::render) struct PreparedEnvironmentLighting {
@@ -67,7 +122,10 @@ impl Default for PreparedEnvironmentLighting {
 }
 
 impl PreparedEnvironmentLighting {
-    pub(in crate::render) fn from_environment(environment: Option<&EnvironmentDesc>) -> Self {
+    pub(in crate::render) fn from_environment_with_profile(
+        environment: Option<&EnvironmentDesc>,
+        profile: EnvironmentLightingProfile,
+    ) -> Self {
         let Some(environment) = environment else {
             return Self::default();
         };
@@ -76,20 +134,51 @@ impl PreparedEnvironmentLighting {
         // pipeline can sample real per-fragment radiance. The scalar
         // diffuse/specular still come from `preview_irradiance_rgb` to keep
         // CPU rasterizer parity with the pre-Phase-1C fixtures.
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        let environment_total_start = environment_now_ms();
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        let mut environment_step_start = environment_total_start;
+
         let cubemap_faces = environment.cubemap_faces();
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        {
+            environment_step_start = log_environment_step("cubemap_faces", environment_step_start);
+        }
         let cubemap = cubemap_faces.map(|faces| {
             let resolution = faces.resolution();
             let source_pixels = faces.build_face_pixels_rgba32f();
-            let mips =
-                prefilter_specular_cubemap_mips(&source_pixels, resolution, PREFILTER_MIP_COUNT);
+            #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+            let prefilter_start =
+                log_environment_step("build_face_pixels_rgba32f", environment_step_start);
+            let mips = prefilter_specular_cubemap_mips_with_quality(
+                &source_pixels,
+                resolution,
+                PREFILTER_MIP_COUNT,
+                profile.prefilter_quality(),
+            );
+            #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+            let brdf_start =
+                log_environment_step("prefilter_specular_cubemap_mips", prefilter_start);
+            let brdf_lut = build_brdf_lut_with_sample_count(
+                profile.brdf_lut_size(),
+                profile.brdf_sample_count(),
+            );
+            #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+            {
+                log_environment_step("build_brdf_lut", brdf_start);
+            }
             Arc::new(PreparedEnvironmentCubemap {
                 resolution,
                 mips,
                 mip_count: PREFILTER_MIP_COUNT,
-                brdf_lut: build_brdf_lut(BRDF_LUT_SIZE),
-                brdf_lut_size: BRDF_LUT_SIZE,
+                brdf_lut,
+                brdf_lut_size: profile.brdf_lut_size(),
             })
         });
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        {
+            log_environment_step("from_environment total", environment_total_start);
+        }
         // glTF/PBR color-contract fallback: when the environment records no scalar
         // `preview_irradiance_rgb` but does carry a real cubemap (the common
         // case for bundled HDR environments), derive an average radiance from
@@ -200,8 +289,12 @@ impl PreparedEnvironmentLighting {
 
 pub(in crate::render) fn collect_environment_lighting(
     environment: Option<&EnvironmentDesc>,
+    backend: Backend,
 ) -> PreparedEnvironmentLighting {
-    PreparedEnvironmentLighting::from_environment(environment)
+    PreparedEnvironmentLighting::from_environment_with_profile(
+        environment,
+        EnvironmentLightingProfile::for_backend(backend),
+    )
 }
 
 /// Average mip-0 radiance across the six cubemap faces. Used as a fallback

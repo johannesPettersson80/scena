@@ -208,6 +208,8 @@ fn summarize_pixel_readback(readback: &PixelReadback) -> serde_json::Value {
     }
     json!({
         "center": sample_pixel(rgba, width, height, width as f32 / 2.0, height as f32 / 2.0),
+        "left": sample_pixel(rgba, width, height, width as f32 * 0.25, height as f32 / 2.0),
+        "right": sample_pixel(rgba, width, height, width as f32 * 0.75, height as f32 / 2.0),
         "flat": sample_pixel(rgba, width, height, width as f32 * 0.38, height as f32 / 2.0),
         "inverted": sample_pixel(rgba, width, height, width as f32 * 0.62, height as f32 / 2.0),
         "nonblack": nonblack,

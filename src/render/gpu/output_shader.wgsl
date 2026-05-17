@@ -136,7 +136,7 @@ var emissive_texture: texture_2d_array<f32>;
 fn vs_main(in: VertexIn) -> VertexOut {
     var out: VertexOut;
     let world_position = draw.world_from_model * vec4<f32>(in.position, 1.0);
-    out.position = camera.clip_from_view * camera.view_from_world * world_position;
+    out.position = camera.clip_from_world * world_position;
     out.color = in.color;
     out.normal = (draw.normal_from_model * vec4<f32>(in.normal, 0.0)).xyz;
     out.tex_coord0 = in.tex_coord0;
@@ -201,7 +201,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         );
         let environment = pbr_environment_lighting(base.rgb, metallic, roughness, normal, view);
         if has_punctual_light() || has_environment_light() {
-            shaded_rgb = (direct + environment) * occlusion_sample;
+            shaded_rgb = (direct + environment) * occlusion_applied;
         }
     }
     let shaded = vec4<f32>(shaded_rgb + emissive, base.a);

@@ -334,6 +334,22 @@ mod tests {
     }
 
     #[test]
+    fn triangle_shader_applies_occlusion_strength_to_lit_pbr_output() {
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            assert!(
+                shader.contains(
+                    "let occlusion_applied = mix(1.0, occlusion_sample, occlusion_strength)"
+                ) && shader.contains("shaded_rgb = (direct + environment) * occlusion_applied;")
+                    && !shader.contains("shaded_rgb = (direct + environment) * occlusion_sample;"),
+                "{name} shader must apply glTF occlusionTexture.strength in the lit PBR branch"
+            );
+        }
+    }
+
+    #[test]
     fn triangle_shader_discards_alpha_masked_fragments() {
         assert!(
             GPU_TRIANGLE_SHADER.contains("material.metallic_roughness_alpha.z > 0.0")

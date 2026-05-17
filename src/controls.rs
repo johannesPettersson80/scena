@@ -99,6 +99,16 @@ impl OrbitControls {
         self
     }
 
+    pub fn with_angles(mut self, yaw_radians: f32, pitch_radians: f32) -> Self {
+        if yaw_radians.is_finite() {
+            self.yaw_radians = yaw_radians;
+        }
+        if pitch_radians.is_finite() {
+            self.pitch_radians = pitch_radians.clamp(-MAX_PITCH_RADIANS, MAX_PITCH_RADIANS);
+        }
+        self
+    }
+
     pub fn handle_pointer(&mut self, event: PointerEvent) -> OrbitControlAction {
         match event.kind {
             PointerEventKind::Pressed => match event.button {

@@ -51,6 +51,8 @@ function summarizePixels(width, height, pixels) {
   };
   return {
     center: sampleAt(width / 2, height / 2),
+    left: sampleAt(width * 0.25, height / 2),
+    right: sampleAt(width * 0.75, height / 2),
     flat: sampleAt(width * 0.38, height / 2),
     inverted: sampleAt(width * 0.62, height / 2),
     nonblack,

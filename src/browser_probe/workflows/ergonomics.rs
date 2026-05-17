@@ -8,6 +8,7 @@ use crate::{
     SourceCoordinateSystem, SourceUnits, TextureColorSpace, TextureTransform, Transform, Vec3,
 };
 
+mod source_materials;
 mod viewer;
 
 pub(super) async fn build_ergonomics_scene(workflow: &str) -> Result<WorkflowScene, JsValue> {
@@ -21,6 +22,7 @@ pub(super) async fn build_ergonomics_scene(workflow: &str) -> Result<WorkflowSce
         "layers-helper-on-top" => layers_helper_on_top_scene(),
         "beginner-diagnostics" => beginner_diagnostics_scene(),
         "material-textures" => material_textures_scene().await,
+        "source-gltf-materials" => source_materials::source_gltf_materials_scene().await,
         "textured-connector-viewer" => viewer::textured_connector_viewer_scene().await,
         "asset-cache-reload" => asset_cache_reload_scene().await,
         other => Err(JsValue::from_str(&format!(

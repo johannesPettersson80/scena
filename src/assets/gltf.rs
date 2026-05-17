@@ -13,10 +13,7 @@ use std::sync::Arc;
 use ::gltf::Gltf;
 use ::gltf::buffer::Source as BufferSource;
 
-use crate::animation::{AnimationSourceChannel, AnimationSourceClip};
 use crate::diagnostics::AssetError;
-use crate::geometry::Aabb;
-use crate::scene::{Light, Transform};
 
 pub use self::anchors::SceneAssetAnchor;
 use self::anchors::parse_node_anchors;
@@ -30,11 +27,27 @@ use self::lights::parse_punctual_lights;
 pub use self::material_variants::MaterialVariantBinding;
 use self::materials::parse_materials;
 use self::meshes::parse_meshes;
+use self::scene_asset::SceneAssetData;
+pub use self::scene_asset::{
+    SceneAsset, SceneAssetClip, SceneAssetLight, SceneAssetMesh, SceneAssetNode,
+};
 pub use self::skins::SceneAssetSkin;
 use self::skins::parse_skins;
 use self::textures::parse_textures;
 use self::transform::from_gltf_transform;
-use super::{AssetPath, AssetStorage, GeometryHandle, MaterialHandle};
+use super::{AssetPath, AssetStorage};
+
+#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+fn gltf_now_ms() -> f64 {
+    js_sys::Date::now()
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+fn log_gltf_step(label: &str, start_ms: f64) -> f64 {
+    let now = gltf_now_ms();
+    web_sys::console::log_1(&format!("[scena-demo] glTF {label}: {:.1}ms", now - start_ms).into());
+    now
+}
 
 mod anchors;
 mod animation;
@@ -47,81 +60,12 @@ mod material_variants;
 mod materials;
 mod meshes;
 mod meshopt;
+mod scene_asset;
 mod skins;
 mod textures;
 mod transform;
 
-#[derive(Debug, Clone)]
-pub struct SceneAsset {
-    inner: Arc<SceneAssetData>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct SceneAssetData {
-    path: AssetPath,
-    node_count: usize,
-    mesh_count: usize,
-    nodes: Vec<SceneAssetNode>,
-    skins: Vec<SceneAssetSkin>,
-    clips: Vec<SceneAssetClip>,
-    extensions_used: Vec<String>,
-    extensions_required: Vec<String>,
-    extension_diagnostics: Vec<GltfExtensionDiagnostic>,
-    material_variants: Vec<String>,
-    retained_source_bytes: Option<Arc<[u8]>>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct SceneAssetNode {
-    name: Option<String>,
-    children: Vec<usize>,
-    transform: Transform,
-    meshes: Vec<SceneAssetMesh>,
-    skin: Option<usize>,
-    light: Option<SceneAssetLight>,
-    anchors: Vec<SceneAssetAnchor>,
-    connectors: Vec<SceneAssetConnector>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct SceneAssetMesh {
-    geometry: GeometryHandle,
-    material: MaterialHandle,
-    bounds: Aabb,
-    uses_vertex_colors: bool,
-    morph_weights: Vec<f32>,
-    material_variant_bindings: Vec<MaterialVariantBinding>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SceneAssetLight {
-    light: Light,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct SceneAssetClip {
-    clip: AnimationSourceClip,
-}
-
 impl SceneAsset {
-    pub fn empty() -> Self {
-        Self {
-            inner: Arc::new(SceneAssetData {
-                path: AssetPath::from("memory:empty"),
-                node_count: 0,
-                mesh_count: 0,
-                nodes: Vec::new(),
-                skins: Vec::new(),
-                clips: Vec::new(),
-                extensions_used: Vec::new(),
-                extensions_required: Vec::new(),
-                extension_diagnostics: Vec::new(),
-                material_variants: Vec::new(),
-                retained_source_bytes: None,
-            }),
-        }
-    }
-
     pub(super) fn from_gltf_bytes(
         path: AssetPath,
         bytes: &[u8],
@@ -143,16 +87,31 @@ impl SceneAsset {
         external_images: &BTreeMap<AssetPath, Vec<u8>>,
         storage: &mut AssetStorage,
     ) -> Result<Self, AssetError> {
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        let total_start = gltf_now_ms();
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        let mut step_start = total_start;
+
         let gltf = open_gltf_with_massage(&path, bytes)?;
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        {
+            step_start = log_gltf_step("open_gltf_with_massage", step_start);
+        }
         let blob = gltf.blob.clone();
-        Self::from_gltf_document(
+        let scene = Self::from_gltf_document(
             &path,
             &gltf,
             blob.as_deref(),
             external_buffers,
             external_images,
             storage,
-        )
+        )?;
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        {
+            log_gltf_step("from_gltf_document wrapper", step_start);
+            log_gltf_step("from_gltf_bytes_with_external_resources total", total_start);
+        }
+        Ok(scene)
     }
 
     pub(super) fn external_buffer_paths(
@@ -177,6 +136,11 @@ impl SceneAsset {
         external_images: &BTreeMap<AssetPath, Vec<u8>>,
         storage: &mut AssetStorage,
     ) -> Result<Self, AssetError> {
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        let total_start = gltf_now_ms();
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        let mut step_start = total_start;
+
         validate_gltf_version(path, gltf)?;
         let extensions_used: Vec<String> = gltf
             .document
@@ -198,6 +162,10 @@ impl SceneAsset {
         }
         let extension_diagnostics = collect_extension_diagnostics(&extensions_used);
         let material_variants = material_variants::parse_material_variant_names(&gltf.document);
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        {
+            step_start = log_gltf_step("metadata + extensions", step_start);
+        }
 
         let mut buffers = buffers::ResolvedGltfBuffers::new(resolve_buffers(
             path,
@@ -205,14 +173,47 @@ impl SceneAsset {
             binary_chunk,
             external_buffers,
         )?);
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        {
+            step_start = log_gltf_step("resolve_buffers", step_start);
+        }
         meshopt::decode_meshopt_buffer_views(path, &gltf.document, &mut buffers)?;
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        {
+            step_start = log_gltf_step("decode_meshopt_buffer_views", step_start);
+        }
         let textures = parse_textures(path, &gltf.document, &buffers, external_images, storage);
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        {
+            step_start = log_gltf_step("parse_textures", step_start);
+        }
         let materials = parse_materials(path, &gltf.document, storage, &textures)?;
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        {
+            step_start = log_gltf_step("parse_materials", step_start);
+        }
         let meshes = parse_meshes(path, &gltf.document, &buffers, &materials, storage)?;
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        {
+            step_start = log_gltf_step("parse_meshes", step_start);
+        }
         let skins = parse_skins(path, &gltf.document, &buffers)?;
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        {
+            step_start = log_gltf_step("parse_skins", step_start);
+        }
         let lights = parse_punctual_lights(&gltf.document);
         let nodes = parse_gltf_nodes(&gltf.document, &meshes, &lights);
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        {
+            step_start = log_gltf_step("parse_lights_nodes", step_start);
+        }
         let clips = parse_gltf_clips(path, &gltf.document, &buffers)?;
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        {
+            log_gltf_step("parse_clips", step_start);
+            log_gltf_step("from_gltf_document total", total_start);
+        }
         let node_count = nodes.len();
         let mesh_count = meshes.iter().map(Vec::len).sum();
         Ok(Self {
@@ -230,161 +231,6 @@ impl SceneAsset {
                 retained_source_bytes: None,
             }),
         })
-    }
-
-    pub fn path(&self) -> &AssetPath {
-        &self.inner.path
-    }
-
-    pub fn node_count(&self) -> usize {
-        self.inner.node_count
-    }
-
-    pub fn mesh_count(&self) -> usize {
-        self.inner.mesh_count
-    }
-
-    pub fn nodes(&self) -> &[SceneAssetNode] {
-        &self.inner.nodes
-    }
-
-    pub fn skins(&self) -> &[SceneAssetSkin] {
-        &self.inner.skins
-    }
-
-    pub fn clips(&self) -> &[SceneAssetClip] {
-        &self.inner.clips
-    }
-
-    pub fn extensions_used(&self) -> &[String] {
-        &self.inner.extensions_used
-    }
-
-    pub fn extensions_required(&self) -> &[String] {
-        &self.inner.extensions_required
-    }
-
-    pub fn extension_diagnostics(&self) -> &[GltfExtensionDiagnostic] {
-        &self.inner.extension_diagnostics
-    }
-
-    /// Variant names declared by KHR_materials_variants in declaration
-    /// order; empty when the extension is absent (Phase 2B step 1).
-    pub fn material_variants(&self) -> &[String] {
-        &self.inner.material_variants
-    }
-
-    pub fn retained_source_bytes_len(&self) -> Option<usize> {
-        self.inner
-            .retained_source_bytes
-            .as_ref()
-            .map(|bytes| bytes.len())
-    }
-
-    pub(super) fn retained_source_bytes(&self) -> Option<&[u8]> {
-        self.inner.retained_source_bytes.as_deref()
-    }
-
-    pub(super) fn with_retained_source_bytes(mut self, bytes: &[u8]) -> Self {
-        Arc::make_mut(&mut self.inner).retained_source_bytes =
-            Some(Arc::<[u8]>::from(bytes.to_vec()));
-        self
-    }
-}
-
-impl PartialEq for SceneAsset {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.inner, &other.inner) || self.inner.path == other.inner.path
-    }
-}
-
-impl Eq for SceneAsset {}
-
-impl SceneAssetNode {
-    pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
-    }
-
-    pub fn children(&self) -> &[usize] {
-        &self.children
-    }
-
-    pub fn transform(&self) -> Transform {
-        self.transform
-    }
-
-    pub fn mesh(&self) -> Option<&SceneAssetMesh> {
-        self.meshes.first()
-    }
-
-    pub fn meshes(&self) -> &[SceneAssetMesh] {
-        &self.meshes
-    }
-
-    pub const fn skin(&self) -> Option<usize> {
-        self.skin
-    }
-
-    pub fn light(&self) -> Option<SceneAssetLight> {
-        self.light
-    }
-
-    pub fn anchors(&self) -> &[SceneAssetAnchor] {
-        &self.anchors
-    }
-
-    pub fn connectors(&self) -> &[SceneAssetConnector] {
-        &self.connectors
-    }
-}
-
-impl SceneAssetMesh {
-    pub const fn geometry(&self) -> GeometryHandle {
-        self.geometry
-    }
-
-    pub const fn material(&self) -> MaterialHandle {
-        self.material
-    }
-
-    pub const fn bounds(&self) -> Aabb {
-        self.bounds
-    }
-
-    pub const fn uses_vertex_colors(&self) -> bool {
-        self.uses_vertex_colors
-    }
-
-    pub fn morph_weights(&self) -> &[f32] {
-        &self.morph_weights
-    }
-
-    pub fn material_variant_bindings(&self) -> &[MaterialVariantBinding] {
-        &self.material_variant_bindings
-    }
-}
-
-impl SceneAssetLight {
-    pub const fn light(self) -> Light {
-        self.light
-    }
-}
-
-impl SceneAssetClip {
-    pub fn name(&self) -> Option<&str> {
-        self.clip.name()
-    }
-
-    pub fn channels(&self) -> &[AnimationSourceChannel] {
-        self.clip.channels()
-    }
-
-    pub const fn duration_seconds(&self) -> f32 {
-        self.clip.duration_seconds()
-    }
-
-    pub(crate) fn clip(&self) -> &AnimationSourceClip {
-        &self.clip
     }
 }
 

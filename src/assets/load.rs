@@ -21,6 +21,11 @@ pub struct AssetLoadReport<T> {
     pub(super) progress_events: Vec<AssetLoadProgress>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct AssetLoadOptions {
+    strict_textures: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AssetLoadWarning {
     ExternalImageMissing { path: AssetPath, reason: String },
@@ -119,6 +124,23 @@ impl<T> AssetLoadReport<T> {
 
     pub fn progress_events(&self) -> &[AssetLoadProgress] {
         &self.progress_events
+    }
+}
+
+impl AssetLoadOptions {
+    pub const fn new() -> Self {
+        Self {
+            strict_textures: false,
+        }
+    }
+
+    pub const fn with_strict_textures(mut self, strict_textures: bool) -> Self {
+        self.strict_textures = strict_textures;
+        self
+    }
+
+    pub const fn strict_textures(&self) -> bool {
+        self.strict_textures
     }
 }
 

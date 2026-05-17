@@ -1,6 +1,6 @@
 [package]
 name = "scena"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2024"
 rust-version = "1.93"
 license = "MIT OR Apache-2.0"
@@ -78,11 +78,13 @@ js-sys = "0.3.98"
 wasm-bindgen = "0.2.121"
 wasm-bindgen-futures = "0.4.71"
 web-sys = { version = "0.3.98", features = [
+    "Blob",
     "CanvasRenderingContext2d",
     "Document",
     "Element",
     "HtmlCanvasElement",
     "HtmlElement",
+    "ImageBitmap",
     "ImageData",
     "Response",
     "console",

@@ -43,6 +43,7 @@ pub(super) struct PrimitiveDrawBatch {
     pub(super) vertex_count: u32,
     pub(super) material_slot: u32,
     pub(super) draw_uniform_index: u32,
+    pub(super) depth_prepass_eligible: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -109,6 +110,7 @@ pub(super) fn encode_draw_batches(
     for (index, primitive) in primitives.iter().enumerate() {
         let start_vertex = (index as u32).saturating_mul(3);
         let material_slot = primitive.render_material_slot();
+        let depth_prepass_eligible = primitive.depth_prepass_eligible();
         // F8 fallback: when world_from_model is singular (zero scale on an
         // axis), encode_vertices keeps the world-baked vertex unchanged. To
         // avoid the GPU shader re-multiplying that already-world-space vertex
@@ -144,6 +146,7 @@ pub(super) fn encode_draw_batches(
         if let Some(last) = batches.last_mut()
             && last.material_slot == material_slot
             && last.draw_uniform_index == draw_uniform_index
+            && last.depth_prepass_eligible == depth_prepass_eligible
             && last.start_vertex.saturating_add(last.vertex_count) == start_vertex
         {
             last.vertex_count = last.vertex_count.saturating_add(3);
@@ -154,6 +157,7 @@ pub(super) fn encode_draw_batches(
             vertex_count: 3,
             material_slot,
             draw_uniform_index,
+            depth_prepass_eligible,
         });
     }
     if draw_uniforms.is_empty() {
@@ -292,12 +296,14 @@ mod tests {
                     vertex_count: 6,
                     material_slot: 1,
                     draw_uniform_index: 0,
+                    depth_prepass_eligible: true,
                 },
                 PrimitiveDrawBatch {
                     start_vertex: 6,
                     vertex_count: 3,
                     material_slot: 2,
                     draw_uniform_index: 0,
+                    depth_prepass_eligible: true,
                 },
             ],
             "GPU draw encoding must preserve prepared per-material slots instead of drawing \
@@ -348,6 +354,42 @@ mod tests {
             draw_uniforms[1].world_from_model[12], 5.0,
             "the second draw-uniform slot must record the translated world transform exactly, \
              not the per-vertex baked positions"
+        );
+    }
+
+    #[test]
+    fn gpu_draw_batches_split_when_depth_prepass_eligibility_differs() {
+        let opaque = Primitive::unlit_triangle().with_render_material_slot(1);
+        let helper_stroke = Primitive::unlit_triangle()
+            .with_render_material_slot(1)
+            .without_depth_prepass();
+
+        let (batches, draw_uniforms) = encode_draw_batches(&[opaque, helper_stroke]);
+
+        assert_eq!(
+            batches,
+            vec![
+                PrimitiveDrawBatch {
+                    start_vertex: 0,
+                    vertex_count: 3,
+                    material_slot: 1,
+                    draw_uniform_index: 0,
+                    depth_prepass_eligible: true,
+                },
+                PrimitiveDrawBatch {
+                    start_vertex: 3,
+                    vertex_count: 3,
+                    material_slot: 1,
+                    draw_uniform_index: 0,
+                    depth_prepass_eligible: false,
+                },
+            ],
+            "eligible triangles and ineligible helper strokes must not merge into one draw batch; the depth pass needs to skip the helper stroke while the color pass still draws it",
+        );
+        assert_eq!(
+            draw_uniforms.len(),
+            1,
+            "depth eligibility should not force another draw uniform when the transform is shared",
         );
     }
 }

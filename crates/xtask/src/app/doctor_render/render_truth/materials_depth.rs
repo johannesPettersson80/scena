@@ -193,7 +193,7 @@ pub(crate) fn check_renderer_truth_material_depth_contracts(
         "ARCH-RENDER-TRUTH",
         "src/render/gpu/depth.rs",
         &[
-            "camera.clip_from_view * camera.view_from_world * draw.world_from_model",
+            "camera.clip_from_world * world_position",
             "pub(super) color_compare",
         ],
     );

@@ -390,4 +390,4 @@ impl Scene {
 }
 
 const FRAME_PADDING: f32 = 1.15;
-const MIN_FRAME_RADIUS: f32 = 0.5;
+const MIN_FRAME_RADIUS: f32 = 0.05;

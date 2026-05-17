@@ -353,6 +353,7 @@ pub struct RendererStats {
     pub material_bindings: u64,
     pub material_texture_bindings: u64,
     pub material_sampler_bindings: u64,
+    pub material_textures_missing_decoded_pixels: u64,
     /// Plan line 778 step 2: number of layers a `texture_2d_array` per
     /// material role carries when the prepared materials share
     /// `(sampler, format, dimensions)` for every populated role. Zero when

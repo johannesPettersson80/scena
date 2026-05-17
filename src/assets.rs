@@ -35,7 +35,9 @@ pub use gltf::{
     GltfDecoderPolicy, GltfExtensionDiagnostic, GltfExtensionStatus, MaterialVariantBinding,
     SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetLight, SceneAssetMesh, SceneAssetNode,
 };
-pub use load::{AssetLoadControl, AssetLoadProgress, AssetLoadReport, AssetLoadWarning};
+pub use load::{
+    AssetLoadControl, AssetLoadOptions, AssetLoadProgress, AssetLoadReport, AssetLoadWarning,
+};
 pub use texture::{
     TextureDesc, TextureFilter, TextureSamplerDesc, TextureSourceFormat, TextureWrap,
 };
@@ -465,9 +467,31 @@ impl<F> Assets<F> {
         }
         match self.fetcher.fetch(path).await {
             Ok(bytes) => Ok(Some(bytes)),
-            Err(AssetError::NotFound { .. } | AssetError::Io { .. }) => Ok(None),
+            Err(AssetError::NotFound { .. }) => {
+                warn_optional_texture_fetch_failed(path, "not found");
+                Ok(None)
+            }
+            Err(AssetError::Io { reason, .. }) => {
+                warn_optional_texture_fetch_failed(path, &reason);
+                Ok(None)
+            }
             Err(error) => Err(error),
         }
+    }
+}
+
+fn warn_optional_texture_fetch_failed(path: &AssetPath, reason: &str) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&format!(
+            "scena asset warning: optional texture fetch failed for '{}': {}",
+            path.as_str(),
+            reason
+        )));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (path, reason);
     }
 }
 

@@ -13,6 +13,20 @@ use crate::material::{AlphaMode, Color, MaterialDesc, TextureColorSpace, Texture
 use super::super::{AssetPath, AssetStorage, MaterialHandle};
 use super::textures::{GltfTexture, texture_slot};
 
+#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+fn material_now_ms() -> f64 {
+    js_sys::Date::now()
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+fn log_material_step(label: &str, start_ms: f64) -> f64 {
+    let now = material_now_ms();
+    web_sys::console::log_1(
+        &format!("[scena-demo] material {label}: {:.1}ms", now - start_ms).into(),
+    );
+    now
+}
+
 pub(super) fn parse_materials(
     path: &AssetPath,
     document: &Document,
@@ -24,11 +38,15 @@ pub(super) fn parse_materials(
     // the typed Info constructors unwrap on missing texture
     // indices, which would otherwise propagate as a panic instead
     // of a structured `MissingTexture` error.
+    #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+    let total_start = material_now_ms();
     validate_material_texture_indices(path, document, textures.len())?;
-    document
+    let materials = document
         .materials()
         .filter_map(|material| material.index().map(|_| material))
         .map(|material| {
+            #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+            let material_start = material_now_ms();
             let pbr = material.pbr_metallic_roughness();
             let base_color = pbr.base_color_factor();
             let base_color =
@@ -41,6 +59,8 @@ pub(super) fn parse_materials(
                 MaterialDesc::pbr_metallic_roughness(base_color, metallic, roughness)
             };
             if let Some(info) = pbr.base_color_texture() {
+                #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+                let slot_start = material_now_ms();
                 let texture = texture_slot(
                     path,
                     "baseColorTexture",
@@ -49,12 +69,18 @@ pub(super) fn parse_materials(
                     storage,
                     TextureColorSpace::Srgb,
                 )?;
+                #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+                {
+                    log_material_step("baseColorTexture", slot_start);
+                }
                 desc = desc.with_base_color_texture(texture);
                 if let Some(transform) = texture_transform(&info) {
                     desc = desc.with_base_color_texture_transform(transform);
                 }
             }
             if let Some(info) = pbr.metallic_roughness_texture() {
+                #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+                let slot_start = material_now_ms();
                 let texture = texture_slot(
                     path,
                     "metallicRoughnessTexture",
@@ -63,12 +89,18 @@ pub(super) fn parse_materials(
                     storage,
                     TextureColorSpace::Linear,
                 )?;
+                #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+                {
+                    log_material_step("metallicRoughnessTexture", slot_start);
+                }
                 desc = desc.with_metallic_roughness_texture(texture);
                 if let Some(transform) = texture_transform(&info) {
                     desc = desc.with_metallic_roughness_texture_transform(transform);
                 }
             }
             if let Some(normal) = material.normal_texture() {
+                #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+                let slot_start = material_now_ms();
                 let texture = texture_slot(
                     path,
                     "normalTexture",
@@ -77,6 +109,10 @@ pub(super) fn parse_materials(
                     storage,
                     TextureColorSpace::Linear,
                 )?;
+                #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+                {
+                    log_material_step("normalTexture", slot_start);
+                }
                 desc = desc
                     .with_normal_texture(texture)
                     // Phase 5.1: parse normalTexture.scale (glTF spec
@@ -89,6 +125,8 @@ pub(super) fn parse_materials(
                 }
             }
             if let Some(occlusion) = material.occlusion_texture() {
+                #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+                let slot_start = material_now_ms();
                 let texture = texture_slot(
                     path,
                     "occlusionTexture",
@@ -97,6 +135,10 @@ pub(super) fn parse_materials(
                     storage,
                     TextureColorSpace::Linear,
                 )?;
+                #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+                {
+                    log_material_step("occlusionTexture", slot_start);
+                }
                 desc = desc
                     .with_occlusion_texture(texture)
                     // Phase 5.1: parse occlusionTexture.strength.
@@ -106,6 +148,8 @@ pub(super) fn parse_materials(
                 }
             }
             if let Some(info) = material.emissive_texture() {
+                #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+                let slot_start = material_now_ms();
                 let texture = texture_slot(
                     path,
                     "emissiveTexture",
@@ -114,6 +158,10 @@ pub(super) fn parse_materials(
                     storage,
                     TextureColorSpace::Srgb,
                 )?;
+                #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+                {
+                    log_material_step("emissiveTexture", slot_start);
+                }
                 desc = desc.with_emissive_texture(texture);
                 if let Some(transform) = texture_transform(&info) {
                     desc = desc.with_emissive_texture_transform(transform);
@@ -140,9 +188,18 @@ pub(super) fn parse_materials(
             if material.double_sided() {
                 desc = desc.with_double_sided(true);
             }
+            #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+            {
+                log_material_step("material total", material_start);
+            }
             Ok(storage.materials.insert(desc))
         })
-        .collect()
+        .collect();
+    #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+    {
+        log_material_step("parse_materials total", total_start);
+    }
+    materials
 }
 
 fn validate_material_texture_indices(

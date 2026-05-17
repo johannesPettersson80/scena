@@ -218,13 +218,15 @@ pub(crate) fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Find
         root,
         findings,
         "ARCH-M3B-ANIMATION",
+        "src/assets/gltf/scene_asset.rs",
+        &["pub fn skins(&self)", "pub const fn skin(&self)"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3B-ANIMATION",
         "src/assets/gltf.rs",
-        &[
-            "pub use self::skins::SceneAssetSkin",
-            "parse_skins",
-            "pub fn skins(&self)",
-            "pub const fn skin(&self)",
-        ],
+        &["pub use self::skins::SceneAssetSkin", "parse_skins"],
     );
     require_contains(
         root,

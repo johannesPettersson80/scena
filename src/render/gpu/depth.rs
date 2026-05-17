@@ -28,7 +28,14 @@ var<uniform> draw: DrawUniform;
 
 @vertex
 fn vs_main(in: VertexIn) -> @builtin(position) vec4<f32> {
-    return camera.clip_from_view * camera.view_from_world * draw.world_from_model * vec4<f32>(in.position, 1.0);
+    // Use the same matrix multiplication path as the color pass so depth
+    // values are bit-identical. On low-precision WebGL2 drivers (Pi 5 V3D),
+    // computing `clip_from_view * view_from_world * world_from_model * pos`
+    // here while the color pass computes `clip_from_view * view_from_world *
+    // (world_from_model * pos)` makes most color-pass fragments fail the
+    // LessEqual depth test by a single ULP, producing a mostly-black render.
+    let world_position = draw.world_from_model * vec4<f32>(in.position, 1.0);
+    return camera.clip_from_world * world_position;
 }
 "#;
 
@@ -153,6 +160,9 @@ pub(super) fn encode_depth_prepass(
     pass.set_bind_group(0, camera_bind_group, &[]);
     pass.set_vertex_buffer(0, vertex_buffer.slice(..));
     for batch in draw_batches {
+        if !batch.depth_prepass_eligible {
+            continue;
+        }
         let draw_offset =
             (batch.draw_uniform_index as u64).saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE) as u32;
         pass.set_bind_group(2, draw_bind_group, &[draw_offset]);

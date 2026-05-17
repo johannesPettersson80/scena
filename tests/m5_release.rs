@@ -64,6 +64,7 @@ fn m5_release_surface_files_and_examples_are_present() {
         "docs/release-notes/v1.0.1.md",
         "docs/release-notes/v1.0.2.md",
         "docs/release-notes/v1.1.0.md",
+        "docs/release-notes/v1.2.0.md",
         "examples/primitive_shapes.rs",
         "examples/glb_model_viewer.rs",
         "examples/picking_selection_hover.rs",
@@ -87,7 +88,7 @@ fn m5_release_surface_files_and_examples_are_present() {
 fn m5_package_metadata_is_ready_for_dry_run() {
     let manifest = fs::read_to_string(root().join("Cargo.toml")).expect("Cargo.toml is readable");
     for needle in [
-        "version = \"1.1.0\"",
+        "version = \"1.2.0\"",
         "rust-version = ",
         "license = \"MIT OR Apache-2.0\"",
         "documentation = \"https://docs.rs/scena\"",
@@ -112,6 +113,7 @@ fn m5_public_api_baseline_names_frozen_contracts() {
         "Renderer::set_debug",
         "DebugOverlay",
         "RendererStats",
+        "AssetLoadOptions",
         "BuildError",
         "AssetError",
         "ImportError",
@@ -124,6 +126,9 @@ fn m5_public_api_baseline_names_frozen_contracts() {
         "SurfaceEvent",
         "Scene::pick_with_assets",
         "Scene::pick_and_select_with_assets",
+        "Assets::load_scene_with_options",
+        "Assets::load_scene_with_report_options",
+        "MaterialTextureMissingDecodedPixels",
     ] {
         assert!(baseline.contains(needle), "baseline missing {needle}");
     }
@@ -142,6 +147,7 @@ fn m5_public_api_baseline_names_frozen_contracts() {
                 "Renderer::render",
                 "Renderer::set_debug",
                 "RendererStats",
+                "AssetLoadOptions",
                 "BuildError",
                 "RenderError",
                 "SceneImport"

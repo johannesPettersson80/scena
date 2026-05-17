@@ -184,6 +184,37 @@ mod tests {
     }
 
     #[test]
+    fn depth_prepass_and_color_pass_use_identical_clip_space_transform() {
+        // Pi 5 V3D WebGL2 runs the fragment stage at lower-than-highp
+        // precision by default. If the depth pre-pass computes clip-space
+        // depth via a different matrix multiplication path than the color
+        // pass, the two ULP-diverge and the LessEqual depth test rejects
+        // most color-pass fragments, producing a mostly-black render on
+        // V3D-class hardware while Lavapipe/desktop GL is unaffected.
+        // Both shaders must use `clip_from_world * world_position`.
+        let depth = include_str!("depth.rs");
+        let color = include_str!("output_shader.wgsl");
+        let color_tex2d = include_str!("output_shader_texture_2d.wgsl");
+        for (label, source) in [
+            ("depth.rs", depth),
+            ("output_shader.wgsl", color),
+            ("output_shader_texture_2d.wgsl", color_tex2d),
+        ] {
+            assert!(
+                source.contains("camera.clip_from_world * world_position"),
+                "{label} vs_main must use `camera.clip_from_world * world_position` so depth values match the other passes bit-for-bit",
+            );
+            assert!(
+                !source.contains("camera.clip_from_view * camera.view_from_world * world_position")
+                    && !source.contains(
+                        "camera.clip_from_view * camera.view_from_world * draw.world_from_model",
+                    ),
+                "{label} must not reintroduce a divergent clip-space matrix path",
+            );
+        }
+    }
+
+    #[test]
     fn unlit_pipeline_binds_material_group_for_fragment_sampling() {
         let source = include_str!("pipeline.rs");
         let implementation = source

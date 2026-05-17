@@ -224,6 +224,7 @@ impl Renderer {
             hover_style: InteractionStyle::default(),
             selection_style: InteractionStyle::default(),
             environment: None,
+            environment_lighting_cache: None,
             background_color: Color::BLACK,
             environment_revision: 0,
             target_revision: 0,

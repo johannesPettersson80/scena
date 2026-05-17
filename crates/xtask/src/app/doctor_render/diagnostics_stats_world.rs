@@ -46,8 +46,16 @@ pub(crate) fn check_diagnostics_contracts(root: &Path, findings: &mut Vec<Findin
             "diagnostics: Vec<Diagnostic>",
             "self.diagnostics.clear()",
             "prepare::collect_precision_diagnostics(scene, self.target.backend)",
-            "prepare::collect_camera_projection_diagnostics(scene)",
             "prepare::collect_camera_visibility_diagnostics",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIAGNOSTICS",
+        "src/render/reporting.rs",
+        &[
+            "prepare::collect_camera_projection_diagnostics(scene)",
             "prepare::collect_asset_camera_visibility_diagnostics",
             "pub fn diagnostics(&self) -> &[Diagnostic]",
             "pub fn diagnose_scene_with_assets",

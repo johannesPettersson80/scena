@@ -77,7 +77,7 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
             "textureSample(base_color_texture, base_color_sampler, transformed_uv, material_layer)",
             "base.a < material.metallic_roughness_alpha.z",
             "discard;",
-            "camera.clip_from_view * camera.view_from_world * world_position",
+            "camera.clip_from_world * world_position",
             "draw.normal_from_model * vec4<f32>(in.normal, 0.0)",
         ],
     );

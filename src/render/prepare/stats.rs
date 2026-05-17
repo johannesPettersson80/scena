@@ -4,7 +4,13 @@ use crate::geometry::Primitive;
 use crate::scene::{Light, Scene};
 
 const DIRECTIONAL_SHADOW_PCF_KERNEL: u8 = 3;
-const DEPTH_PREPASS_MIN_PRIMITIVES: usize = 2;
+// The depth pre-pass is correctness-load-bearing, not just an optimisation:
+// when it does not run, `create_unlit_pipeline` is called with
+// `depth_compare: None` and the color pipeline ends up with no depth state at
+// all. Triangles then composite in submission order through alpha blending,
+// producing ghosted overdraw on closed meshes (back faces leaking through
+// front faces). Always run the pre-pass when any primitive is eligible.
+const DEPTH_PREPASS_MIN_PRIMITIVES: usize = 1;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(in crate::render) struct PreparedLightingStats {
@@ -65,21 +71,31 @@ pub(in crate::render) fn collect_depth_prepass_stats(
     primitives: &[Primitive],
     backend: Backend,
 ) -> PreparedDepthStats {
-    if !depth_prepass_benefits(primitives) {
+    let eligible_draws = depth_prepass_eligible_draws(primitives);
+    if eligible_draws < DEPTH_PREPASS_MIN_PRIMITIVES || !depth_prepass_backend_supported(backend) {
         PreparedDepthStats::default()
     } else {
         let capabilities = Capabilities::for_backend(backend);
         PreparedDepthStats {
             passes: 1,
-            draws: primitives.len() as u64,
+            draws: eligible_draws as u64,
             reversed_z: capabilities.reversed_z_depth == CapabilityStatus::Supported,
         }
     }
 }
 
-fn depth_prepass_benefits(primitives: &[Primitive]) -> bool {
-    primitives.len() >= DEPTH_PREPASS_MIN_PRIMITIVES
-        && primitives.iter().all(Primitive::depth_prepass_eligible)
+fn depth_prepass_eligible_draws(primitives: &[Primitive]) -> usize {
+    primitives
+        .iter()
+        .filter(|primitive| primitive.depth_prepass_eligible())
+        .count()
+}
+
+const fn depth_prepass_backend_supported(backend: Backend) -> bool {
+    matches!(
+        backend,
+        Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu | Backend::WebGl2
+    )
 }
 
 pub(in crate::render) fn collect_environment_prepare_stats(
@@ -101,5 +117,58 @@ pub(in crate::render) fn collect_environment_prepare_stats(
             }
         }
         Some(_) | None => PreparedEnvironmentStats::default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geometry::Primitive;
+
+    #[test]
+    fn single_primitive_scene_still_runs_depth_prepass_on_gpu_backends() {
+        // Regression: BoxTextured (a single-mesh cube) used to render with
+        // ghosted overdraw because depth_prepass_benefits returned false for
+        // primitives.len() == 1. The color pipeline then had no depth state
+        // and back faces composited through front faces via alpha blending.
+        let primitives = vec![Primitive::unlit_triangle()];
+        for backend in [Backend::WebGl2, Backend::WebGpu, Backend::HeadlessGpu] {
+            let stats = collect_depth_prepass_stats(&primitives, backend);
+            assert_eq!(
+                stats.passes, 1,
+                "single-primitive scene must produce a depth pre-pass on \
+                 {backend:?}: without it the unlit pipeline runs with no \
+                 depth state and overdraws closed meshes",
+            );
+        }
+    }
+
+    #[test]
+    fn ineligible_stroke_primitives_do_not_disable_depth_prepass_for_triangles() {
+        let primitives = vec![
+            Primitive::unlit_triangle(),
+            Primitive::unlit_triangle().without_depth_prepass(),
+        ];
+
+        let stats = collect_depth_prepass_stats(&primitives, Backend::WebGl2);
+
+        assert_eq!(
+            stats.passes, 1,
+            "depth-prepass eligible triangles must keep a WebGL2 depth pre-pass even when helper line/wire/edge primitives are present",
+        );
+        assert_eq!(
+            stats.draws, 1,
+            "depth-prepass draw count must include only eligible primitives so helper strokes are not written into the depth buffer",
+        );
+    }
+
+    #[test]
+    fn cpu_headless_renderer_does_not_report_gpu_depth_prepass() {
+        let primitives = vec![Primitive::unlit_triangle()];
+
+        let stats = collect_depth_prepass_stats(&primitives, Backend::Headless);
+
+        assert_eq!(stats.passes, 0);
+        assert_eq!(stats.draws, 0);
     }
 }
