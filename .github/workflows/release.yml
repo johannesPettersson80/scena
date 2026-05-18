@@ -239,6 +239,8 @@ jobs:
           version="${SCENA_RELEASE_TAG#v}"
           status="$(
             curl --silent --show-error --output /tmp/scena-crate-version.json \
+              --retry 3 --retry-delay 2 \
+              --header "User-Agent: scena-release-workflow (https://github.com/johannesPettersson80/scena)" \
               --write-out "%{http_code}" \
               "https://crates.io/api/v1/crates/scena/${version}"
           )"
