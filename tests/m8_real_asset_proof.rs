@@ -421,12 +421,29 @@ fn m8_real_asset_waterbottle_gpu_headline() {
     // Phase 2 region asserts. The GPU lane is the canonical scena-gold
     // regression baseline; the CPU lane below carries its own measured
     // release-quality tolerance envelope instead of a loose smoke test.
+    let software_dx12 = gpu_adapter_label.contains("Microsoft Basic Render Driver")
+        && gpu_adapter_label.contains("Dx12");
+    let body_olive_mid_tolerance = if software_dx12 {
+        // GitHub's Windows software DX12 adapter renders this single olive-body
+        // sample darker than hardware lanes. Keep the normal GPU tolerance tight,
+        // but accept the measured software-adapter envelope while the colour-family
+        // histogram below still proves the body stays olive/yellow.
+        45
+    } else {
+        25
+    };
     let regions: &[(&str, usize, usize, [u8; 3], u8)] = &[
         // (name, x, y, expected RGB, tolerance in chebyshev distance)
         ("cap_dome", 250, 70, [76, 27, 12], 25),
         ("cap_dome_left", 240, 70, [76, 27, 12], 25),
         ("upper_body", 249, 130, [153, 134, 48], 25),
-        ("body_olive_mid", 249, 270, [171, 152, 78], 25),
+        (
+            "body_olive_mid",
+            249,
+            270,
+            [171, 152, 78],
+            body_olive_mid_tolerance,
+        ),
         ("body_olive_low", 249, 330, [132, 114, 32], 25),
         ("label_metal_r", 270, 380, [30, 20, 6], 25),
         ("label_metal_l", 255, 380, [28, 18, 5], 25),
