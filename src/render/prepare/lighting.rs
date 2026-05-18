@@ -3,7 +3,6 @@ use super::pbr_contract::{
     punctual_intensity_candela, punctual_light_contribution, roughness_or_min,
     spot_cone_attenuation,
 };
-use crate::assets::EnvironmentDesc;
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
 use crate::scene::{Light, Quat, Scene, Transform, Vec3};
 
@@ -194,10 +193,9 @@ impl PreparedLights {
 pub(in crate::render) fn collect_gpu_light_uniform(
     scene: &Scene,
     origin_shift: Vec3,
-    environment: Option<&EnvironmentDesc>,
+    environment: &PreparedEnvironmentLighting,
 ) -> PreparedGpuLightUniform {
-    PreparedLights::from_scene(scene, origin_shift)
-        .gpu_uniform(PreparedEnvironmentLighting::from_environment(environment))
+    PreparedLights::from_scene(scene, origin_shift).gpu_uniform(environment.clone())
 }
 
 pub(super) fn material_color(
@@ -393,5 +391,21 @@ fn clamp_unit(value: f32) -> f32 {
         value.clamp(0.0, 1.0)
     } else {
         0.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gpu_light_uniform_consumes_prepared_environment_lighting() {
+        let scene = Scene::new();
+        let environment = PreparedEnvironmentLighting::default();
+
+        let uniform = collect_gpu_light_uniform(&scene, Vec3::ZERO, &environment);
+
+        assert_eq!(uniform.environment_diffuse_intensity, [0.0; 4]);
+        assert_eq!(uniform.environment_specular_intensity, [0.0; 4]);
     }
 }

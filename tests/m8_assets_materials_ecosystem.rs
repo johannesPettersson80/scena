@@ -5,11 +5,11 @@ use std::sync::{Arc, Mutex};
 
 use base64::Engine;
 use scena::{
-    AlphaMode, Angle, AssetError, AssetFetcher, AssetLoadControl, AssetLoadProgress,
-    AssetLoadWarning, AssetPath, Assets, Color, DirectionalLight, GeometryDesc, GltfDecoderPolicy,
-    GltfExtensionStatus, MaterialDesc, MaterialKind, NotPreparedReason, PointLight, RenderError,
-    Renderer, RetainPolicy, Scene, SpotLight, TextureColorSpace, TextureFilter,
-    TextureSourceFormat, TextureWrap, Transform, Vec3,
+    AlphaMode, Angle, AssetError, AssetFetcher, AssetLoadControl, AssetLoadOptions,
+    AssetLoadProgress, AssetLoadWarning, AssetPath, Assets, Color, DiagnosticCode,
+    DirectionalLight, GeometryDesc, GltfDecoderPolicy, GltfExtensionStatus, MaterialDesc,
+    MaterialKind, NotPreparedReason, PointLight, RenderError, Renderer, RetainPolicy, Scene,
+    SpotLight, TextureColorSpace, TextureFilter, TextureSourceFormat, TextureWrap, Transform, Vec3,
 };
 
 fn unstable_headless_gpu_release_tests_enabled() -> bool {
@@ -955,6 +955,75 @@ fn m8_missing_external_image_records_load_warning() {
 }
 
 #[test]
+fn m8_strict_scene_load_promotes_missing_external_image_to_error() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://strict-missing-external-image/scene.gltf"),
+        textured_triangle_gltf("missing.png").into_bytes(),
+    )]));
+
+    let error = pollster::block_on(assets.load_scene_with_options(
+        "memory://strict-missing-external-image/scene.gltf",
+        AssetLoadOptions::default().with_strict_textures(true),
+    ))
+    .expect_err("strict texture loading must fail when a referenced external image is missing");
+
+    assert!(
+        matches!(
+            error,
+            AssetError::NotFound { ref path }
+                if path == "memory://strict-missing-external-image/missing.png"
+        ),
+        "strict texture loading should preserve the missing external image path in the hard error, got {error:?}",
+    );
+}
+
+#[test]
+fn m8_prepare_reports_material_texture_handles_without_decoded_pixels() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(Vec::new()));
+    let texture = pollster::block_on(assets.load_texture(
+        "memory://missing-texture-diagnostic/base.png",
+        TextureColorSpace::Srgb,
+    ))
+    .expect("lenient texture load creates descriptor-only texture");
+    assert!(
+        !assets
+            .texture(texture)
+            .expect("texture descriptor exists")
+            .has_decoded_pixels(),
+        "test setup needs a texture handle whose descriptor has no decoded pixels",
+    );
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.25, 0.25, 0.25));
+    let material =
+        assets.create_material(MaterialDesc::unlit(Color::WHITE).with_base_color_texture(texture));
+    let mut scene = Scene::new();
+    scene.mesh(geometry, material).add().expect("mesh inserts");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = Renderer::headless(64, 64).expect("renderer builds");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("descriptor-only texture should stay lenient but diagnosed");
+
+    assert_eq!(
+        renderer.stats().material_textures_missing_decoded_pixels,
+        1,
+        "renderer stats must count material texture handles that fell back because decoded pixels are missing",
+    );
+    assert!(
+        renderer.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code() == DiagnosticCode::MaterialTextureMissingDecodedPixels
+                && diagnostic.message().contains("base_color")
+        }),
+        "prepare diagnostics must surface the missing decoded material texture instead of silently binding a fallback: {:?}",
+        renderer.diagnostics(),
+    );
+
+    renderer
+        .render(&scene, camera)
+        .expect("render remains lenient");
+}
+
+#[test]
 fn m8_emissive_png_texture_affects_cpu_preview_pixels() {
     let red_png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
     let mut buffer = Vec::new();
@@ -1884,7 +1953,7 @@ fn render_center_rgb_for_material(material: MaterialDesc) -> [u8; 3] {
         .add()
         .expect("mesh inserts");
     scene
-        .directional_light(DirectionalLight::default().with_illuminance_lux(1.0))
+        .directional_light(DirectionalLight::default().with_illuminance_lux(12_000.0))
         .add()
         .expect("light inserts");
     let camera = scene.add_default_camera().expect("camera inserts");
@@ -2962,7 +3031,7 @@ fn render_center_rgb_with_assets(assets: &Assets, material: MaterialDesc) -> [u8
         .add()
         .expect("mesh inserts");
     scene
-        .directional_light(DirectionalLight::default().with_illuminance_lux(1.0))
+        .directional_light(DirectionalLight::default().with_illuminance_lux(12_000.0))
         .add()
         .expect("light inserts");
     let camera = scene.add_default_camera().expect("camera inserts");

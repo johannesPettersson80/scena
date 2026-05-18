@@ -224,9 +224,13 @@ impl Renderer {
             hover_style: InteractionStyle::default(),
             selection_style: InteractionStyle::default(),
             environment: None,
+            environment_lighting_cache: None,
             background_color: Color::BLACK,
+            auto_exposure: None,
+            last_auto_exposure: None,
             environment_revision: 0,
             target_revision: 0,
+            prepare_telemetry: Default::default(),
             not_sync: PhantomData::<Cell<()>>,
         })
     }

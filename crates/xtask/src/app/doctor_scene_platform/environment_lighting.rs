@@ -9,10 +9,18 @@ pub(crate) fn check_environment_lifecycle_contracts(root: &Path, findings: &mut 
         &[
             "environment: Option<EnvironmentHandle>",
             "environment_revision: u64",
-            "PrepareError::EnvironmentAssetsRequired",
-            "PrepareError::EnvironmentNotFound",
             "NotPreparedReason::EnvironmentChanged",
             "ChangeKind::Environment",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENVIRONMENT-LIFECYCLE",
+        "src/render/prepare_lifecycle.rs",
+        &[
+            "PrepareError::EnvironmentAssetsRequired",
+            "PrepareError::EnvironmentNotFound",
         ],
     );
     require_contains(
@@ -149,13 +157,23 @@ pub(crate) fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mu
         root,
         findings,
         "ARCH-ENV-IBL-PREP",
-        "src/render.rs",
+        "src/render/prepare_lifecycle.rs",
         &[
             "prepare::collect_environment_prepare_stats(environment_desc.as_ref())",
-            "prepare::collect_environment_lighting(environment_desc.as_ref())",
             "self.stats.environment_cubemaps = environment_prepare_stats.cubemaps",
             "self.stats.environment_prefilter_passes = environment_prepare_stats.prefilter_passes",
             "self.stats.environment_brdf_luts = environment_prepare_stats.brdf_luts",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "src/render/environment_cache.rs",
+        &[
+            "EnvironmentLightingCache",
+            "prepare::collect_environment_lighting(environment_desc, self.target.backend)",
+            "EnvironmentLightingProfile::for_backend(self.target.backend)",
         ],
     );
     require_contains(

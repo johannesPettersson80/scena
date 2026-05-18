@@ -20,6 +20,8 @@ pub(super) struct MaterialTextureUpload<'a> {
     pub(super) format: wgpu::TextureFormat,
     pub(super) sampler: TextureSamplerDesc,
     pub(super) uses_decoded_texture: bool,
+    #[cfg(target_arch = "wasm32")]
+    pub(super) browser_image: Option<&'a web_sys::ImageBitmap>,
 }
 
 impl<'a> MaterialTextureUpload<'a> {
@@ -76,6 +78,26 @@ impl<'a> MaterialTextureUpload<'a> {
                 format,
                 sampler: texture.sampler(),
                 uses_decoded_texture: true,
+                #[cfg(target_arch = "wasm32")]
+                browser_image: None,
+            };
+        }
+        #[cfg(target_arch = "wasm32")]
+        if let Some(texture) = texture
+            && let Some(image) = texture.browser_image()
+        {
+            let format = match texture.color_space() {
+                TextureColorSpace::Srgb => wgpu::TextureFormat::Rgba8UnormSrgb,
+                TextureColorSpace::Linear => wgpu::TextureFormat::Rgba8Unorm,
+            };
+            return Self {
+                width: image.width(),
+                height: image.height(),
+                rgba8: fallback_rgba8,
+                format,
+                sampler: texture.sampler().without_mipmaps(),
+                uses_decoded_texture: true,
+                browser_image: Some(image),
             };
         }
 
@@ -86,6 +108,8 @@ impl<'a> MaterialTextureUpload<'a> {
             format: fallback_format,
             sampler: TextureSamplerDesc::default(),
             uses_decoded_texture: false,
+            #[cfg(target_arch = "wasm32")]
+            browser_image: None,
         }
     }
 

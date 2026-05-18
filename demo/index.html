@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>scena live demo</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f1115;
+        --panel: #171a20;
+        --panel-2: #10151a;
+        --line: #2c323b;
+        --text: #f4f0e8;
+        --muted: #aeb6c2;
+        --teal: #49d0aa;
+        --amber: #f0b85a;
+        --rust: #d87547;
+        --blue: #6fa8dc;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        font-family:
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        overflow: hidden;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1fr) minmax(500px, 560px);
+        width: 100vw;
+        height: 100vh;
+        min-width: 0;
+      }
+
+      .samples,
+      .code {
+        min-width: 0;
+        background: var(--panel);
+        border-color: var(--line);
+      }
+
+      .samples {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        padding: 18px 16px;
+        border-right: 1px solid var(--line);
+      }
+
+      .brand {
+        display: grid;
+        gap: 6px;
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 1.05;
+        font-weight: 680;
+        letter-spacing: 0;
+      }
+
+      .brand p,
+      .section-label,
+      .metric span,
+      .drop-hint {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .section-label {
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .sample-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .replay-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 36px;
+        padding: 0 12px;
+        color: #07110f;
+        background: var(--teal);
+        border: 1px solid color-mix(in srgb, var(--teal), white 20%);
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .replay-button[hidden] {
+        display: none;
+      }
+
+      .connector-story {
+        display: grid;
+        gap: 10px;
+        padding: 14px 12px;
+        background: #11161c;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .connector-story[hidden] {
+        display: none;
+      }
+
+      .connector-story p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.42;
+      }
+
+      .connector-story strong {
+        color: var(--text);
+        font-weight: 680;
+      }
+
+      .sample-group-label {
+        grid-column: 1 / -1;
+        margin: 14px 0 2px;
+        padding: 0;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+
+      .sample-button {
+        display: grid;
+        grid-template-columns: 5px minmax(0, 1fr);
+        gap: 10px;
+        align-items: center;
+        min-height: 48px;
+        padding: 0;
+        color: var(--text);
+        background: #11161c;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        cursor: pointer;
+        overflow: hidden;
+        text-align: left;
+      }
+
+      .sample-button::before {
+        content: "";
+        width: 5px;
+        height: 100%;
+        background: var(--blue);
+      }
+
+      .sample-button[data-tone="teal"]::before {
+        background: var(--teal);
+      }
+
+      .sample-button[data-tone="amber"]::before {
+        background: var(--amber);
+      }
+
+      .sample-button[data-tone="rust"]::before {
+        background: var(--rust);
+      }
+
+      .sample-button strong,
+      .sample-button small {
+        display: block;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: normal;
+      }
+
+      .sample-button strong {
+        font-size: 14px;
+        font-weight: 650;
+      }
+
+      .sample-button small {
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .sample-button.active {
+        border-color: var(--teal);
+        background: #14201e;
+      }
+
+      .viewport {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        background:
+          linear-gradient(
+            180deg,
+            #1a1d23 0%,
+            #1e222a 42%,
+            #262a33 64%,
+            #20242c 86%,
+            #1a1d23 100%
+          );
+      }
+
+      #canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        min-width: 0;
+        min-height: 0;
+        touch-action: none;
+      }
+
+      .connector-overlay {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 5;
+      }
+
+      .connector-overlay[hidden] {
+        display: none;
+      }
+
+      .connector-marker {
+        position: absolute;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 26px;
+        padding: 0 9px 0 6px;
+        color: #f7f2e8;
+        background: rgba(15, 17, 21, 0.78);
+        border: 1px solid rgba(73, 208, 170, 0.68);
+        border-radius: 999px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          "Liberation Mono",
+          monospace;
+        font-size: 11px;
+        line-height: 1;
+        opacity: 0;
+        transform: translate(-50%, -50%);
+        transition:
+          opacity 120ms ease,
+          border-color 120ms ease,
+          background-color 120ms ease;
+      }
+
+      .connector-marker::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border: 2px solid var(--teal);
+        border-radius: 50%;
+        background: rgba(73, 208, 170, 0.16);
+      }
+
+      .connector-marker[data-visible="true"] {
+        opacity: 1;
+      }
+
+      .connector-marker[data-cluster="left"] {
+        transform: translate(calc(-100% - 8px), -50%);
+      }
+
+      .connector-marker[data-cluster="right"] {
+        transform: translate(8px, -50%);
+      }
+
+      .status {
+        position: absolute;
+        left: 14px;
+        right: 14px;
+        bottom: 14px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        padding: 10px 12px;
+        background: rgba(15, 17, 21, 0.86);
+        border: 1px solid rgba(244, 240, 232, 0.14);
+        border-radius: 8px;
+        backdrop-filter: blur(10px);
+        z-index: 4;
+      }
+
+      .status strong,
+      .status span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .status strong {
+        font-size: 13px;
+      }
+
+      .status span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      #dropzone {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        pointer-events: none;
+        opacity: 0;
+        background: rgba(6, 10, 12, 0.72);
+        border: 2px solid var(--teal);
+        z-index: 8;
+      }
+
+      #dropzone.over {
+        opacity: 1;
+      }
+
+      #dropzone > div {
+        display: grid;
+        gap: 6px;
+        padding: 18px 22px;
+        background: rgba(23, 26, 32, 0.96);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        text-align: center;
+      }
+
+      #dropzone strong {
+        font-size: 15px;
+      }
+
+      .code {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        border-left: 1px solid var(--line);
+        min-width: 0;
+      }
+
+      .code-head,
+      .diagnostics {
+        padding: 14px 16px;
+      }
+
+      .code-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 4px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .code-title {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .code-head strong {
+        font-size: 14px;
+      }
+
+      .code-head span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .copy-button {
+        align-self: start;
+        min-height: 28px;
+        padding: 0 10px;
+        color: var(--text);
+        background: #11161c;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      pre {
+        margin: 0;
+        padding: 16px;
+        overflow: auto;
+        background: var(--panel-2);
+        color: #f7f2e8;
+        font-size: 12px;
+        line-height: 1.45;
+        letter-spacing: 0;
+        tab-size: 2;
+        white-space: pre;
+      }
+
+      code {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          "Liberation Mono",
+          monospace;
+      }
+
+      .code-line {
+        display: block;
+        margin: 0 -6px;
+        padding: 0 6px;
+        border-radius: 5px;
+      }
+
+      .code-line.is-active {
+        color: #ffffff;
+        background: rgba(73, 208, 170, 0.26);
+        box-shadow:
+          inset 3px 0 0 var(--teal),
+          0 0 0 1px rgba(73, 208, 170, 0.16);
+      }
+
+      .diagnostics {
+        border-top: 1px solid var(--line);
+      }
+
+      .diagnostics summary {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      .metrics {
+        display: grid;
+        gap: 8px;
+        padding-top: 10px;
+      }
+
+      .metric {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .metric strong {
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 620;
+      }
+
+      @media (max-width: 1040px) {
+        .app {
+          grid-template-columns: 220px minmax(0, 1fr);
+          grid-template-rows: minmax(0, 1fr) 260px;
+        }
+
+        .code {
+          grid-column: 1 / -1;
+          grid-template-rows: auto minmax(0, 1fr);
+          border-top: 1px solid var(--line);
+          border-left: 0;
+        }
+
+        .diagnostics {
+          display: none;
+        }
+      }
+
+      @media (max-width: 720px) {
+        body {
+          overflow: hidden;
+        }
+
+        .app {
+          display: flex;
+          flex-direction: column;
+          height: 100svh;
+          min-height: 100svh;
+          overflow-y: auto;
+        }
+
+        .samples {
+          order: 2;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .samples .connector-story {
+          order: 1;
+        }
+
+        .samples .replay-button {
+          order: 2;
+        }
+
+        .samples .brand {
+          order: 3;
+        }
+
+        .samples .sample-picker {
+          order: 4;
+        }
+
+        .samples > .drop-hint {
+          order: 5;
+        }
+
+        .viewport {
+          order: 1;
+          min-height: 430px;
+          height: 64vh;
+        }
+
+        .code {
+          order: 3;
+          display: none;
+        }
+
+        .sample-list {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .connector-marker {
+          font-size: 10px;
+          min-height: 24px;
+          padding-right: 8px;
+        }
+
+        .connector-marker[data-cluster="left"] {
+          transform: translate(calc(-100% - 12px), -50%);
+        }
+
+        .connector-marker[data-cluster="right"] {
+          transform: translate(12px, -50%);
+        }
+
+        .status {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="samples">
+        <div class="brand">
+          <h1>scena</h1>
+          <p>Three.js ergonomics, Rust types, running in your browser. Drop a model or snap authored connectors.</p>
+        </div>
+        <div class="sample-picker">
+          <p class="section-label">Try it now</p>
+          <div id="sample-list" class="sample-list"></div>
+        </div>
+        <div id="connector-story" class="connector-story">
+          <p id="connector-claim">
+            <strong>Authored connector mate.</strong> Watch scena align two parts using only authored connectors in their glTF files, no coordinates and no transform math.
+          </p>
+          <p id="connector-result">Before snap: drive_unit (Y-up, mm) and load_unit (Z-up, m) start separated.</p>
+        </div>
+        <button id="replay-button" class="replay-button" type="button">Run scene.mate()</button>
+        <p class="drop-hint">Drop a GLB, or a glTF file together with its referenced files.</p>
+      </aside>
+
+      <main class="viewport">
+        <canvas id="canvas" width="1280" height="720"></canvas>
+        <div id="connector-overlay" class="connector-overlay" data-state="before">
+          <div class="connector-marker" data-connector="shaft">shaft</div>
+          <div class="connector-marker" data-connector="hub">hub</div>
+        </div>
+        <div id="dropzone">
+          <div>
+            <strong>Drop asset</strong>
+            <span class="drop-hint">GLB or glTF bundle</span>
+          </div>
+        </div>
+        <div class="status" aria-live="polite">
+          <strong id="status-title">Starting</strong>
+          <span id="status-detail">WASM initialising</span>
+        </div>
+      </main>
+
+      <aside class="code">
+        <div class="code-head">
+          <div class="code-title">
+            <strong id="code-title">Rust</strong>
+            <span id="code-subtitle">Current scene path</span>
+          </div>
+          <button id="copy-code" class="copy-button" type="button">Copy</button>
+        </div>
+        <pre><code id="code-snippet"></code></pre>
+        <details id="diagnostics" class="diagnostics">
+          <summary>Diagnostics</summary>
+          <div class="metrics">
+            <div class="metric"><span>Frame</span><strong id="metric-frame">0</strong></div>
+            <div class="metric"><span>Asset bytes</span><strong id="metric-bytes">0</strong></div>
+            <div class="metric"><span>Load phase</span><strong id="metric-phase">idle</strong></div>
+          </div>
+        </details>
+      </aside>
+    </div>
+    <script type="module" src="./main.js?v=20260518-connector-story-1"></script>
+  </body>
+</html>

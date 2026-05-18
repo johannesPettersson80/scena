@@ -1,13 +1,14 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use scena::{
-    Aabb, AlphaMode, AlphaPipelineStatus, AssetPath, Assets, Backend, Capabilities, Color,
-    DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES, DEFAULT_STROKE_WIDTH_PX, EnvironmentDesc,
-    EnvironmentHandle, EnvironmentSourceKind, GeometryDesc, GeometryHandle, GeometryTopology,
-    MaterialDesc, MaterialHandle, MaterialKind, ModelHandle, NodeKind, NotPreparedReason,
-    OutputStageStatus, PerspectiveCamera, PrepareError, Primitive, RenderError, Renderer, Scene,
-    SceneAsset, TextureColorSpace, TextureDesc, TextureHandle, Tonemapper, Transform, Vec3, Vertex,
-    WasmEnvironmentDelivery,
+    Aabb, AlphaMode, AlphaPipelineStatus, AssetPath, Assets, AutoExposureConfig, Backend,
+    Capabilities, Color, DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES, DEFAULT_STROKE_WIDTH_PX,
+    EnvironmentDesc, EnvironmentHandle, EnvironmentSourceKind, GeometryDesc, GeometryHandle,
+    GeometryTopology, MaterialDesc, MaterialHandle, MaterialKind, ModelHandle, NodeKind,
+    NotPreparedReason, OutputStageStatus, PerspectiveCamera, PrepareError, Primitive, RenderError,
+    Renderer, Scene, SceneAsset, TextureColorSpace, TextureDesc, TextureHandle, Tonemapper,
+    Transform, Vec3, Vertex, WasmEnvironmentDelivery, estimate_auto_exposure_from_linear_colors,
+    estimate_auto_exposure_from_srgb8,
 };
 
 const CAMERA_DISTANCE_FOR_NDC_FIXTURES: f32 = 1.732_050_8;
@@ -591,13 +592,12 @@ fn renderer_environment_is_structural_and_validated_during_prepare() {
         .expect("default environment validates during prepare");
     assert_eq!(renderer.stats().environments, 1);
     renderer.render(&scene, camera).expect("scene renders");
-    // After the CPU IBL fallback fix (cubemap-derived scalar irradiance for
-    // environments without preview_irradiance_rgb), the default environment
-    // now contributes real radiance to diffuse PBR surfaces, slightly
-    // desaturating ACES on a fully-white-irradiated white material.
+    // Diffuse IBL uses prepared irradiance instead of raw normal-direction
+    // cubemap radiance, so the default environment converges to a softer
+    // neutral grey on fully white diffuse material.
     assert_pixel_close(
         center_pixel(renderer.frame_rgba8(), 4, 4),
-        [202, 208, 218, 255],
+        [196, 201, 207, 255],
         2,
         "default-environment + white PBR converges to roughly equal-luminance \
          tonemapped grey across channels",
@@ -746,6 +746,155 @@ fn headless_output_stage_applies_pbr_neutral_srgb_and_exposure_without_reprepare
         center_pixel(renderer.frame_rgba8(), 4, 4),
         [253, 253, 253, 255]
     );
+}
+
+#[test]
+fn auto_exposure_solves_dark_bright_mixed_and_clamped_luminance() {
+    let config = AutoExposureConfig::default().with_ev_range(-3.0, 3.0);
+    let dark = estimate_auto_exposure_from_linear_colors(
+        &[Color::from_linear_rgb(0.045, 0.045, 0.045); 4],
+        config,
+    )
+    .expect("dark frame has valid luminance samples");
+    assert!(
+        (dark.exposure_ev() - 2.0).abs() < 0.05,
+        "dark frame should need roughly +2 EV, got {dark:?}"
+    );
+    assert!(!dark.clamped());
+
+    let bright = estimate_auto_exposure_from_linear_colors(
+        &[Color::from_linear_rgb(0.72, 0.72, 0.72); 4],
+        config,
+    )
+    .expect("bright frame has valid luminance samples");
+    assert!(
+        (bright.exposure_ev() + 2.0).abs() < 0.05,
+        "bright frame should need roughly -2 EV, got {bright:?}"
+    );
+    assert!(!bright.clamped());
+
+    let mixed = estimate_auto_exposure_from_linear_colors(
+        &[
+            Color::from_linear_rgb(0.18, 0.18, 0.18),
+            Color::from_linear_rgb(0.18, 0.18, 0.18),
+            Color::from_linear_rgb(0.18, 0.18, 0.18),
+            Color::from_linear_rgb(0.18, 0.18, 0.18),
+        ],
+        config,
+    )
+    .expect("mixed frame has valid luminance samples");
+    assert!(
+        mixed.exposure_ev().abs() < 0.01,
+        "already-targeted mid gray should stay near 0 EV, got {mixed:?}"
+    );
+
+    let clamped = estimate_auto_exposure_from_linear_colors(
+        &[Color::from_linear_rgb(0.001, 0.001, 0.001); 4],
+        AutoExposureConfig::default().with_ev_range(-1.0, 1.0),
+    )
+    .expect("very dark frame has valid luminance samples");
+    assert_eq!(clamped.exposure_ev(), 1.0);
+    assert!(clamped.clamped());
+
+    let mut dark_canvas_with_light_subject =
+        vec![Color::from_linear_rgb(0.014, 0.017, 0.024); 1024];
+    for pixel in dark_canvas_with_light_subject.iter_mut().skip(900) {
+        *pixel = Color::from_linear_rgb(0.85, 0.85, 0.85);
+    }
+    let guarded = estimate_auto_exposure_from_linear_colors(
+        &dark_canvas_with_light_subject,
+        AutoExposureConfig::default().with_ev_range(-3.0, 3.0),
+    )
+    .expect("dark canvas with bright subject has valid luminance samples");
+    assert!(
+        guarded.exposure_ev() <= 0.05,
+        "auto exposure must protect bright subject highlights instead of raising exposure from the dark background, got {guarded:?}"
+    );
+    assert!(!guarded.clamped());
+}
+
+#[test]
+fn renderer_can_apply_auto_exposure_from_last_cpu_frame() {
+    let (mut scene, camera) =
+        scene_with_fullscreen_triangle(Color::from_linear_rgb(0.045, 0.045, 0.045));
+    let mut renderer = Renderer::headless(4, 4).expect("headless renderer builds");
+    renderer.prepare(&mut scene).expect("prepare succeeds");
+    renderer.render(&scene, camera).expect("render succeeds");
+    let before = center_pixel(renderer.frame_rgba8(), 4, 4);
+
+    let result = renderer
+        .apply_auto_exposure_from_last_cpu_frame(AutoExposureConfig::default())
+        .expect("CPU renderer has a linear frame to measure");
+    assert!(
+        (result.exposure_ev() - 2.0).abs() < 0.05,
+        "dark rendered frame should calibrate to roughly +2 EV, got {result:?}"
+    );
+    assert!(
+        (renderer.exposure_ev() - result.exposure_ev()).abs() < f32::EPSILON,
+        "renderer exposure must be the calibrated auto-exposure value"
+    );
+
+    renderer
+        .render_active(&scene)
+        .expect("auto-exposure is a steady-state update");
+    let after = center_pixel(renderer.frame_rgba8(), 4, 4);
+    assert!(
+        after[0] > before[0] && after[1] > before[1] && after[2] > before[2],
+        "auto-exposure should brighten dark rendered content, before={before:?}, after={after:?}"
+    );
+}
+
+#[test]
+fn renderer_managed_auto_exposure_applies_during_render() {
+    let (mut scene, camera) =
+        scene_with_fullscreen_triangle(Color::from_linear_rgb(0.045, 0.045, 0.045));
+    let mut manual = Renderer::headless(4, 4).expect("manual renderer builds");
+    manual
+        .prepare(&mut scene)
+        .expect("manual renderer prepares");
+    manual
+        .render(&scene, camera)
+        .expect("manual render succeeds");
+    let manual_pixel = center_pixel(manual.frame_rgba8(), 4, 4);
+
+    let mut automatic = Renderer::headless(4, 4).expect("auto renderer builds");
+    automatic.set_auto_exposure(AutoExposureConfig::default());
+    automatic
+        .prepare(&mut scene)
+        .expect("auto renderer prepares");
+    automatic
+        .render(&scene, camera)
+        .expect("auto-exposure render succeeds");
+    let auto_pixel = center_pixel(automatic.frame_rgba8(), 4, 4);
+    let result = automatic
+        .last_auto_exposure()
+        .expect("renderer records last auto-exposure result");
+
+    assert!(
+        (result.exposure_ev() - 2.0).abs() < 0.05,
+        "managed renderer auto exposure should solve the dark frame, got {result:?}"
+    );
+    assert!(
+        auto_pixel[0] > manual_pixel[0]
+            && auto_pixel[1] > manual_pixel[1]
+            && auto_pixel[2] > manual_pixel[2],
+        "managed auto-exposure should brighten first rendered output, manual={manual_pixel:?} auto={auto_pixel:?}"
+    );
+}
+
+#[test]
+fn auto_exposure_estimates_from_srgb8_frame_bytes() {
+    let srgb_mid_gray = [118, 118, 118, 255];
+    let rgba8 = srgb_mid_gray.repeat(16);
+
+    let result = estimate_auto_exposure_from_srgb8(&rgba8, AutoExposureConfig::default())
+        .expect("valid srgb8 frame has luminance samples");
+
+    assert!(
+        result.exposure_ev().abs() < 0.05,
+        "sRGB bytes near linear 0.18 should stay near 0 EV, got {result:?}"
+    );
+    assert_eq!(result.sample_count(), 16);
 }
 
 #[test]

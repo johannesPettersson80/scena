@@ -20,6 +20,7 @@ mod camera_controls;
 mod clipping;
 mod connectors;
 mod dirty;
+mod framing;
 mod import;
 #[cfg(feature = "inspection")]
 mod inspection;
@@ -36,7 +37,7 @@ mod render_nodes;
 mod skinning;
 mod transforms;
 mod view;
-mod view_math;
+pub(crate) mod view_math;
 mod visibility;
 pub use anchors::AnchorFrame;
 pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
@@ -47,6 +48,9 @@ pub use connectors::{
     ConnectorFrame, ConnectorMetadata, ConnectorPolarity, ConnectorRollPolicy,
 };
 pub use dirty::SceneDirtyState;
+pub use framing::{
+    FramingOptions, FramingOutcome, GridFloorHandles, GridFloorOptions, ProjectedPoint, ScreenRect,
+};
 pub use import::{
     ImportAnchor, ImportAnchorDebugMetadata, ImportClip, ImportConnector, ImportOptions,
     ImportPivot, SceneImport, SourceCoordinateSystem, SourceUnits,
@@ -301,6 +305,10 @@ impl Scene {
     pub(crate) fn structure_revision(&self) -> u64 {
         self.structure_revision
             .saturating_add(self.interaction.revision())
+    }
+
+    pub(crate) const fn transform_revision(&self) -> u64 {
+        self.transform_revision
     }
 
     pub(crate) fn mesh_nodes(&self) -> impl Iterator<Item = (NodeKey, MeshNode, Transform)> + '_ {

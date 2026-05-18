@@ -148,7 +148,10 @@ fn apply_matrix4_to_vec3(matrix: &[f32; 16], vector: Vec3, w: f32) -> Vec3 {
     )
 }
 
-pub(super) fn world_from_model_matrix(transform: Transform, origin_shift: Vec3) -> [f32; 16] {
+pub(in crate::render) fn world_from_model_matrix(
+    transform: Transform,
+    origin_shift: Vec3,
+) -> [f32; 16] {
     let s = transform.scale;
     let qx = transform.rotation.x;
     let qy = transform.rotation.y;
@@ -192,7 +195,7 @@ pub(super) fn world_from_model_matrix(transform: Transform, origin_shift: Vec3) 
     ]
 }
 
-pub(super) fn normal_from_model_matrix(transform: Transform) -> [f32; 16] {
+pub(in crate::render) fn normal_from_model_matrix(transform: Transform) -> [f32; 16] {
     let qx = transform.rotation.x;
     let qy = transform.rotation.y;
     let qz = transform.rotation.z;
@@ -252,7 +255,11 @@ pub(super) fn compose_transform(parent: Transform, child: Transform) -> Transfor
     }
 }
 
-pub(super) fn transform_position(position: Vec3, transform: Transform, origin_shift: Vec3) -> Vec3 {
+pub(in crate::render) fn transform_position(
+    position: Vec3,
+    transform: Transform,
+    origin_shift: Vec3,
+) -> Vec3 {
     let scaled = Vec3::new(
         position.x * transform.scale.x,
         position.y * transform.scale.y,

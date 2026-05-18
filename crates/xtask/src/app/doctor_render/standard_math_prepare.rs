@@ -47,7 +47,7 @@ pub(crate) fn check_prepare_asset_contracts(root: &Path, findings: &mut Vec<Find
         root,
         findings,
         "ARCH-PREPARE-ASSETS",
-        "src/render.rs",
+        "src/render/prepare_lifecycle.rs",
         &[
             "pub fn prepare_with_assets",
             "prepare::collect_prepared_primitives",

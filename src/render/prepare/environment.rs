@@ -1,10 +1,30 @@
 use std::sync::Arc;
 
 use crate::assets::EnvironmentDesc;
+use crate::diagnostics::Backend;
 use crate::scene::Vec3;
 
-use super::environment_prefilter::{build_brdf_lut, prefilter_specular_cubemap_mips};
+use super::environment_prefilter::{
+    EnvironmentPrefilterQuality, build_brdf_lut_with_sample_count,
+    prefilter_specular_cubemap_mips_with_quality,
+};
 use super::pbr_contract::{PbrMaterial, environment_split_sum_contribution, reflect_vec3};
+
+#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+fn environment_now_ms() -> f64 {
+    js_sys::Date::now()
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+fn log_environment_step(label: &str, start_ms: f64) -> f64 {
+    let now = environment_now_ms();
+    if crate::diagnostics::browser_timing_enabled() {
+        web_sys::console::log_1(
+            &format!("[scena-demo] environment {label}: {:.1}ms", now - start_ms).into(),
+        );
+    }
+    now
+}
 
 /// Number of GGX-prefiltered specular mip levels emitted for the
 /// environment cubemap. Mip 0 carries the source radiance; mips 1+
@@ -16,6 +36,45 @@ pub(in crate::render) const PREFILTER_MIP_COUNT: u32 = 5;
 /// by `(N·V, roughness)`; 64×64 is enough resolution for visually
 /// smooth specular without blowing the GPU upload budget.
 pub(in crate::render) const BRDF_LUT_SIZE: u32 = 64;
+const HDR_DIFFUSE_IBL_RESPONSE_SCALE: f32 = 0.8;
+const HDR_IBL_INTENSITY_SCALE: f32 = 0.75;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::render) enum EnvironmentLightingProfile {
+    Reference,
+    InteractiveWebGl2,
+}
+
+impl EnvironmentLightingProfile {
+    pub(in crate::render) fn for_backend(backend: Backend) -> Self {
+        match backend {
+            Backend::WebGl2 => Self::InteractiveWebGl2,
+            Backend::Headless
+            | Backend::HeadlessGpu
+            | Backend::SurfaceDescriptor
+            | Backend::NativeSurface
+            | Backend::WebGpu => Self::Reference,
+        }
+    }
+
+    fn prefilter_quality(self) -> EnvironmentPrefilterQuality {
+        match self {
+            Self::Reference => EnvironmentPrefilterQuality::Reference,
+            Self::InteractiveWebGl2 => EnvironmentPrefilterQuality::InteractiveWebGl2,
+        }
+    }
+
+    fn brdf_lut_size(self) -> u32 {
+        BRDF_LUT_SIZE
+    }
+
+    fn brdf_sample_count(self) -> u32 {
+        match self {
+            Self::Reference => 1024,
+            Self::InteractiveWebGl2 => 64,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::render) struct PreparedEnvironmentLighting {
@@ -67,7 +126,10 @@ impl Default for PreparedEnvironmentLighting {
 }
 
 impl PreparedEnvironmentLighting {
-    pub(in crate::render) fn from_environment(environment: Option<&EnvironmentDesc>) -> Self {
+    pub(in crate::render) fn from_environment_with_profile(
+        environment: Option<&EnvironmentDesc>,
+        profile: EnvironmentLightingProfile,
+    ) -> Self {
         let Some(environment) = environment else {
             return Self::default();
         };
@@ -76,20 +138,51 @@ impl PreparedEnvironmentLighting {
         // pipeline can sample real per-fragment radiance. The scalar
         // diffuse/specular still come from `preview_irradiance_rgb` to keep
         // CPU rasterizer parity with the pre-Phase-1C fixtures.
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        let environment_total_start = environment_now_ms();
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        let mut environment_step_start = environment_total_start;
+
         let cubemap_faces = environment.cubemap_faces();
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        {
+            environment_step_start = log_environment_step("cubemap_faces", environment_step_start);
+        }
         let cubemap = cubemap_faces.map(|faces| {
             let resolution = faces.resolution();
             let source_pixels = faces.build_face_pixels_rgba32f();
-            let mips =
-                prefilter_specular_cubemap_mips(&source_pixels, resolution, PREFILTER_MIP_COUNT);
+            #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+            let prefilter_start =
+                log_environment_step("build_face_pixels_rgba32f", environment_step_start);
+            let mips = prefilter_specular_cubemap_mips_with_quality(
+                &source_pixels,
+                resolution,
+                PREFILTER_MIP_COUNT,
+                profile.prefilter_quality(),
+            );
+            #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+            let brdf_start =
+                log_environment_step("prefilter_specular_cubemap_mips", prefilter_start);
+            let brdf_lut = build_brdf_lut_with_sample_count(
+                profile.brdf_lut_size(),
+                profile.brdf_sample_count(),
+            );
+            #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+            {
+                log_environment_step("build_brdf_lut", brdf_start);
+            }
             Arc::new(PreparedEnvironmentCubemap {
                 resolution,
                 mips,
                 mip_count: PREFILTER_MIP_COUNT,
-                brdf_lut: build_brdf_lut(BRDF_LUT_SIZE),
-                brdf_lut_size: BRDF_LUT_SIZE,
+                brdf_lut,
+                brdf_lut_size: profile.brdf_lut_size(),
             })
         });
+        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+        {
+            log_environment_step("from_environment total", environment_total_start);
+        }
         // glTF/PBR color-contract fallback: when the environment records no scalar
         // `preview_irradiance_rgb` but does carry a real cubemap (the common
         // case for bundled HDR environments), derive an average radiance from
@@ -110,11 +203,16 @@ impl PreparedEnvironmentLighting {
                 }
             },
         };
+        let diffuse_scale = if environment.is_equirectangular_hdr() {
+            HDR_DIFFUSE_IBL_RESPONSE_SCALE
+        } else {
+            1.0
+        };
         let diffuse_rgb = Vec3::new(
             sanitize_environment_channel(irradiance[0]),
             sanitize_environment_channel(irradiance[1]),
             sanitize_environment_channel(irradiance[2]),
-        );
+        ) * diffuse_scale;
         if diffuse_rgb.x <= f32::EPSILON
             && diffuse_rgb.y <= f32::EPSILON
             && diffuse_rgb.z <= f32::EPSILON
@@ -126,10 +224,19 @@ impl PreparedEnvironmentLighting {
                 cubemap,
             };
         }
+        let intensity = if environment.is_equirectangular_hdr() {
+            HDR_IBL_INTENSITY_SCALE
+        } else {
+            1.0
+        };
         Self {
             diffuse_rgb,
-            specular_rgb: diffuse_rgb,
-            intensity: 1.0,
+            specular_rgb: Vec3::new(
+                sanitize_environment_channel(irradiance[0]),
+                sanitize_environment_channel(irradiance[1]),
+                sanitize_environment_channel(irradiance[2]),
+            ),
+            intensity,
             cubemap,
         }
     }
@@ -175,11 +282,7 @@ impl PreparedEnvironmentLighting {
         if !self.is_active() {
             return Vec3::ZERO;
         }
-        let diffuse = self
-            .cubemap
-            .as_deref()
-            .map(|cubemap| sample_cubemap_mip(cubemap, 0, normal))
-            .unwrap_or(self.diffuse_rgb);
+        let diffuse = self.diffuse_rgb;
         let reflection = reflect_vec3(Vec3::new(-view.x, -view.y, -view.z), normal);
         let prefiltered = self
             .cubemap
@@ -200,8 +303,12 @@ impl PreparedEnvironmentLighting {
 
 pub(in crate::render) fn collect_environment_lighting(
     environment: Option<&EnvironmentDesc>,
+    backend: Backend,
 ) -> PreparedEnvironmentLighting {
-    PreparedEnvironmentLighting::from_environment(environment)
+    PreparedEnvironmentLighting::from_environment_with_profile(
+        environment,
+        EnvironmentLightingProfile::for_backend(backend),
+    )
 }
 
 /// Average mip-0 radiance across the six cubemap faces. Used as a fallback
@@ -316,4 +423,114 @@ fn dot_vec3(left: Vec3, right: Vec3) -> f32 {
 
 fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
     Vec3::new(value.x * scale, value.y * scale, value.z * scale)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pbr_contribution_uses_prepared_diffuse_irradiance_not_raw_cubemap_radiance() {
+        let black_face = vec![0.0, 0.0, 0.0, 1.0];
+        let black_mip = [
+            black_face.clone(),
+            black_face.clone(),
+            black_face.clone(),
+            black_face.clone(),
+            black_face.clone(),
+            black_face,
+        ];
+        let lighting = PreparedEnvironmentLighting {
+            diffuse_rgb: Vec3::new(0.5, 0.5, 0.5),
+            specular_rgb: Vec3::ZERO,
+            intensity: 1.0,
+            cubemap: Some(Arc::new(PreparedEnvironmentCubemap {
+                resolution: 1,
+                mips: vec![black_mip],
+                mip_count: 1,
+                brdf_lut: vec![0.0, 0.0],
+                brdf_lut_size: 1,
+            })),
+        };
+
+        let contribution = lighting.pbr_contribution(
+            PbrMaterial::new(Vec3::new(0.8, 0.7, 0.6), 0.0, 1.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+        );
+
+        assert!(
+            contribution.x > 0.0 && contribution.y > 0.0 && contribution.z > 0.0,
+            "diffuse IBL must use the prepared diffuse irradiance scalar; raw HDR cubemap \
+             radiance can be black in the surface-normal direction and would leave this \
+             dielectric material unlit"
+        );
+    }
+
+    #[test]
+    fn hdr_ibl_uses_calibrated_strength_for_diffuse_and_specular() {
+        let desc = EnvironmentDesc::from_equirectangular_hdr_bytes(
+            "memory://uniform-studio.hdr",
+            &rle_radiance_hdr_uniform(8, 1, [64, 32, 16, 129]),
+        )
+        .expect("uniform HDR fixture decodes");
+        let raw = desc
+            .preview_irradiance_rgb()
+            .expect("HDR decode records raw average radiance");
+        assert_vec3_close(raw, [0.501_960_8, 0.250_980_4, 0.125_490_2]);
+
+        let lighting = PreparedEnvironmentLighting::from_environment_with_profile(
+            Some(&desc),
+            EnvironmentLightingProfile::Reference,
+        );
+
+        assert_vec4_close(
+            lighting.gpu_diffuse_intensity(),
+            [0.401_568_65, 0.200_784_33, 0.100_392_16, 0.75],
+        );
+        assert_vec4_close(
+            lighting.gpu_specular_intensity(),
+            [0.501_960_8, 0.250_980_4, 0.125_490_2, 0.75],
+        );
+    }
+
+    fn rle_radiance_hdr_uniform(width: u32, height: u32, rgbe: [u8; 4]) -> Vec<u8> {
+        assert!(width >= 8);
+        assert!(width <= 127);
+        let mut bytes =
+            format!("#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y {height} +X {width}\n").into_bytes();
+        for _ in 0..height {
+            bytes.push(0x02);
+            bytes.push(0x02);
+            bytes.push((width >> 8) as u8);
+            bytes.push((width & 0xff) as u8);
+            for channel in &rgbe {
+                bytes.push(0x80 + width as u8);
+                bytes.push(*channel);
+            }
+        }
+        bytes
+    }
+
+    fn assert_vec3_close(actual: [f32; 3], expected: [f32; 3]) {
+        for channel in 0..3 {
+            assert!(
+                (actual[channel] - expected[channel]).abs() < 0.001,
+                "channel {channel}: expected {}, got {}",
+                expected[channel],
+                actual[channel]
+            );
+        }
+    }
+
+    fn assert_vec4_close(actual: [f32; 4], expected: [f32; 4]) {
+        for channel in 0..4 {
+            assert!(
+                (actual[channel] - expected[channel]).abs() < 0.001,
+                "channel {channel}: expected {}, got {}",
+                expected[channel],
+                actual[channel]
+            );
+        }
+    }
 }

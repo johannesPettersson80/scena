@@ -70,6 +70,9 @@ fn connector_lookup_error(error: LookupError, requested_name: &str) -> Connectio
         | LookupError::VariantNotFound { .. }
         | LookupError::PathNotFound { .. }
         | LookupError::InvalidViewport { .. }
+        | LookupError::InvalidBounds { .. }
+        | LookupError::InvalidFramingOption { .. }
+        | LookupError::UnsupportedCameraType { .. }
         | LookupError::ImportHasNoBounds
         | LookupError::NodeIsNotMesh { .. }
         | LookupError::NonInvertibleParentTransform { .. }

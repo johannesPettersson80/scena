@@ -102,14 +102,25 @@ pub(super) async fn normal_map_scene() -> Result<WorkflowScene, JsValue> {
         .map_err(|error| {
             JsValue::from_str(&format!("inverted normal texture failed: {error:?}"))
         })?;
-    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.55, 0.55, 0.05));
+    let white = assets
+        .load_texture(
+            rgba_png_data_uri([255, 255, 255, 255])?,
+            crate::TextureColorSpace::Srgb,
+        )
+        .await
+        .map_err(|error| {
+            JsValue::from_str(&format!("normal-map base texture failed: {error:?}"))
+        })?;
+    let geometry = assets.create_geometry(normal_map_quad_geometry());
     let flat_material = assets.create_material(
         MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.8)
+            .with_base_color_texture(white)
             .with_normal_texture(flat)
             .with_double_sided(true),
     );
     let inverted_material = assets.create_material(
         MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.8)
+            .with_base_color_texture(white)
             .with_normal_texture(inverted)
             .with_double_sided(true),
     );
@@ -142,6 +153,34 @@ pub(super) async fn normal_map_scene() -> Result<WorkflowScene, JsValue> {
             },
         }),
     })
+}
+
+fn normal_map_quad_geometry() -> GeometryDesc {
+    GeometryDesc::try_new_with_vertex_colors_and_tex_coords(
+        GeometryTopology::Triangles,
+        vec![
+            GeometryVertex {
+                position: Vec3::new(-0.36, -0.55, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            GeometryVertex {
+                position: Vec3::new(0.36, -0.55, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            GeometryVertex {
+                position: Vec3::new(0.36, 0.55, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            GeometryVertex {
+                position: Vec3::new(-0.36, 0.55, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+        ],
+        vec![0, 1, 2, 0, 2, 3],
+        vec![Color::WHITE; 4],
+        vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+    )
+    .expect("browser normal-map proof quad geometry is valid")
 }
 
 pub(super) fn environment_scene() -> Result<WorkflowScene, JsValue> {

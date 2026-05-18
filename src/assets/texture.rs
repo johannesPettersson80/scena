@@ -1,26 +1,56 @@
 use std::sync::Arc;
 
-use base64::Engine;
-
 use crate::diagnostics::AssetError;
 use crate::material::{Color, TextureColorSpace};
 
 use super::AssetPath;
 
+#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+fn texture_now_ms() -> f64 {
+    js_sys::Date::now()
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+fn log_texture_step(path: &AssetPath, label: &str, start_ms: f64) -> f64 {
+    let now = texture_now_ms();
+    if crate::diagnostics::browser_timing_enabled() {
+        web_sys::console::log_1(
+            &format!(
+                "[scena-demo] texture {} {label}: {:.1}ms",
+                path.as_str(),
+                now - start_ms
+            )
+            .into(),
+        );
+    }
+    now
+}
+
 #[path = "texture_ktx2.rs"]
 mod texture_ktx2;
+#[path = "texture_source.rs"]
+mod texture_source;
 
+use texture_ktx2::decode_ktx2_basisu_rgba8;
 #[cfg(feature = "ktx2")]
 use texture_ktx2::validate_rgba8_payload_len;
-use texture_ktx2::{decode_ktx2_basisu_rgba8, ktx2_descriptor_only_error};
+#[cfg(target_arch = "wasm32")]
+use texture_source::browser_native_decode_format;
+#[cfg(target_arch = "wasm32")]
+pub(crate) use texture_source::decode_browser_image_bitmap;
+use texture_source::resolve_texture_source_bytes;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct TextureDesc {
     path: AssetPath,
     color_space: TextureColorSpace,
     sampler: TextureSamplerDesc,
     source_format: TextureSourceFormat,
     pixels: Option<Arc<TexturePixels>>,
+    #[cfg(target_arch = "wasm32")]
+    encoded_source_bytes: Option<Arc<[u8]>>,
+    #[cfg(target_arch = "wasm32")]
+    browser_image: Option<web_sys::ImageBitmap>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +109,26 @@ impl TexturePixels {
     }
 }
 
+impl PartialEq for TextureDesc {
+    fn eq(&self, other: &Self) -> bool {
+        let base = self.path == other.path
+            && self.color_space == other.color_space
+            && self.sampler == other.sampler
+            && self.source_format == other.source_format
+            && self.pixels == other.pixels;
+        #[cfg(target_arch = "wasm32")]
+        {
+            base && self.encoded_source_bytes == other.encoded_source_bytes
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            base
+        }
+    }
+}
+
+impl Eq for TextureDesc {}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TextureSourceFormat {
     Png,
@@ -128,6 +178,20 @@ impl TextureDesc {
         source_format: TextureSourceFormat,
         source_bytes: Option<&[u8]>,
     ) -> Result<Self, AssetError> {
+        #[cfg(target_arch = "wasm32")]
+        if browser_native_decode_format(source_format) {
+            let encoded_source_bytes =
+                resolve_texture_source_bytes(&path, source_format, source_bytes)?.map(Arc::from);
+            return Ok(Self {
+                path,
+                color_space,
+                sampler,
+                source_format,
+                pixels: None,
+                encoded_source_bytes,
+                browser_image: None,
+            });
+        }
         let pixels =
             decode_texture_pixels(&path, color_space, source_format, source_bytes)?.map(Arc::new);
         Ok(Self {
@@ -136,6 +200,10 @@ impl TextureDesc {
             sampler,
             source_format,
             pixels,
+            #[cfg(target_arch = "wasm32")]
+            encoded_source_bytes: None,
+            #[cfg(target_arch = "wasm32")]
+            browser_image: None,
         })
     }
 
@@ -156,10 +224,21 @@ impl TextureDesc {
     }
 
     pub fn has_decoded_pixels(&self) -> bool {
-        self.pixels.is_some()
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.pixels.is_some() || self.browser_image.is_some()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.pixels.is_some()
+        }
     }
 
     pub fn decoded_dimensions(&self) -> Option<(u32, u32)> {
+        #[cfg(target_arch = "wasm32")]
+        if let Some(image) = &self.browser_image {
+            return Some((image.width(), image.height()));
+        }
         self.pixels
             .as_ref()
             .and_then(|pixels| pixels.base_level())
@@ -181,6 +260,15 @@ impl TextureDesc {
         &mut self,
         source_bytes: Option<&[u8]>,
     ) -> Result<(), AssetError> {
+        #[cfg(target_arch = "wasm32")]
+        if browser_native_decode_format(self.source_format) {
+            if self.encoded_source_bytes.is_none() {
+                self.encoded_source_bytes =
+                    resolve_texture_source_bytes(&self.path, self.source_format, source_bytes)?
+                        .map(Arc::from);
+            }
+            return Ok(());
+        }
         if self.pixels.is_none() {
             self.pixels = decode_texture_pixels(
                 &self.path,
@@ -191,6 +279,24 @@ impl TextureDesc {
             .map(Arc::new);
         }
         Ok(())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn browser_decode_source(&self) -> Option<Arc<[u8]>> {
+        if self.browser_image.is_some() {
+            return None;
+        }
+        self.encoded_source_bytes.clone()
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn set_browser_image(&mut self, image: web_sys::ImageBitmap) {
+        self.browser_image = Some(image);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn browser_image(&self) -> Option<&web_sys::ImageBitmap> {
+        self.browser_image.as_ref()
     }
 
     pub(crate) fn sample_bilinear(&self, uv: [f32; 2]) -> Option<Color> {
@@ -267,6 +373,25 @@ impl TextureSamplerDesc {
         self.min_filter
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) const fn without_mipmaps(self) -> Self {
+        let min_filter = match self.min_filter {
+            Some(TextureFilter::NearestMipmapNearest | TextureFilter::NearestMipmapLinear) => {
+                Some(TextureFilter::Nearest)
+            }
+            Some(TextureFilter::LinearMipmapNearest | TextureFilter::LinearMipmapLinear) => {
+                Some(TextureFilter::Linear)
+            }
+            other => other,
+        };
+        Self {
+            mag_filter: self.mag_filter,
+            min_filter,
+            wrap_s: self.wrap_s,
+            wrap_t: self.wrap_t,
+        }
+    }
+
     pub const fn wrap_s(self) -> TextureWrap {
         self.wrap_s
     }
@@ -336,42 +461,27 @@ fn decode_texture_pixels(
     source_format: TextureSourceFormat,
     source_bytes: Option<&[u8]>,
 ) -> Result<Option<TexturePixels>, AssetError> {
-    let bytes = if let Some(bytes) = source_bytes {
-        bytes.to_vec()
-    } else if path.as_str().starts_with("data:") {
-        decode_data_uri(path)?
-    } else {
-        return match source_format {
-            TextureSourceFormat::Ktx2Basisu => Err(ktx2_descriptor_only_error(path)),
-            TextureSourceFormat::Png | TextureSourceFormat::Jpeg | TextureSourceFormat::Webp => {
-                Ok(None)
-            }
-        };
+    #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+    let total_start = texture_now_ms();
+    let Some(bytes) = resolve_texture_source_bytes(path, source_format, source_bytes)? else {
+        return Ok(None);
     };
-    match source_format {
+    #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+    let decode_start = log_texture_step(path, "resolve compressed bytes", total_start);
+    let pixels = match source_format {
         TextureSourceFormat::Png => decode_png_rgba8(path, &bytes).map(Some),
         TextureSourceFormat::Jpeg => decode_jpeg_rgba8(path, &bytes).map(Some),
         TextureSourceFormat::Webp => Ok(None),
         TextureSourceFormat::Ktx2Basisu => {
             decode_ktx2_basisu_rgba8(path, &bytes, color_space).map(Some)
         }
-    }
-}
-
-fn decode_data_uri(path: &AssetPath) -> Result<Vec<u8>, AssetError> {
-    let Some((_, encoded)) = path.as_str().split_once(";base64,") else {
-        return Err(AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: "only base64 texture data URIs are supported for embedded texture decoding"
-                .to_string(),
-        });
     };
-    base64::engine::general_purpose::STANDARD
-        .decode(encoded)
-        .map_err(|error| AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: format!("invalid embedded texture base64: {error}"),
-        })
+    #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+    {
+        log_texture_step(path, "decode pixels", decode_start);
+        log_texture_step(path, "decode_texture_pixels total", total_start);
+    }
+    pixels
 }
 
 fn decode_png_rgba8(path: &AssetPath, bytes: &[u8]) -> Result<TexturePixels, AssetError> {

@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use crate::assets::{Assets, MaterialHandle, TextureDesc, TextureHandle};
+use crate::diagnostics::{Diagnostic, DiagnosticCode};
 use crate::material::{MaterialDesc, MaterialKind, TextureTransform};
 use crate::scene::Scene;
 
@@ -37,8 +38,15 @@ pub(in crate::render) struct PreparedLogicalResourceStats {
     pub(in crate::render) material_bindings: u64,
     pub(in crate::render) material_texture_bindings: u64,
     pub(in crate::render) material_sampler_bindings: u64,
+    pub(in crate::render) material_textures_missing_decoded_pixels: u64,
     pub(in crate::render) environments: u64,
     pub(in crate::render) live_logical_handles: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct MaterialTextureStats {
+    bindings: usize,
+    missing_decoded_pixels: usize,
 }
 
 pub(in crate::render) fn collect_logical_resource_stats<F>(
@@ -50,20 +58,23 @@ pub(in crate::render) fn collect_logical_resource_stats<F>(
     let mut materials = HashSet::new();
     let mut textures = HashSet::new();
     let mut material_texture_bindings = 0;
+    let mut material_textures_missing_decoded_pixels = 0;
 
     for (_node, mesh, _transform) in scene.mesh_nodes() {
         geometries.insert(mesh.geometry());
         if materials.insert(mesh.material()) {
-            material_texture_bindings +=
-                collect_material_textures(assets, mesh.material(), &mut textures);
+            let counts = collect_material_textures(assets, mesh.material(), &mut textures);
+            material_texture_bindings += counts.bindings;
+            material_textures_missing_decoded_pixels += counts.missing_decoded_pixels;
         }
     }
 
     for (_node, instance_set, _transform) in scene.instance_set_nodes() {
         geometries.insert(instance_set.geometry());
         if materials.insert(instance_set.material()) {
-            material_texture_bindings +=
-                collect_material_textures(assets, instance_set.material(), &mut textures);
+            let counts = collect_material_textures(assets, instance_set.material(), &mut textures);
+            material_texture_bindings += counts.bindings;
+            material_textures_missing_decoded_pixels += counts.missing_decoded_pixels;
         }
     }
 
@@ -79,9 +90,40 @@ pub(in crate::render) fn collect_logical_resource_stats<F>(
         material_bindings: materials,
         material_texture_bindings,
         material_sampler_bindings: material_texture_bindings,
+        material_textures_missing_decoded_pixels: material_textures_missing_decoded_pixels as u64,
         environments,
         live_logical_handles,
     }
+}
+
+pub(in crate::render) fn collect_material_texture_diagnostics<F>(
+    scene: &Scene,
+    assets: &Assets<F>,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let mut materials = HashSet::new();
+
+    for (_node, mesh, _transform) in scene.mesh_nodes() {
+        if materials.insert(mesh.material()) {
+            collect_material_texture_diagnostics_from_material(
+                assets,
+                mesh.material(),
+                &mut diagnostics,
+            );
+        }
+    }
+
+    for (_node, instance_set, _transform) in scene.instance_set_nodes() {
+        if materials.insert(instance_set.material()) {
+            collect_material_texture_diagnostics_from_material(
+                assets,
+                instance_set.material(),
+                &mut diagnostics,
+            );
+        }
+    }
+
+    diagnostics
 }
 
 #[cfg(test)]
@@ -312,14 +354,14 @@ fn collect_material_textures<F>(
     assets: Option<&Assets<F>>,
     material: crate::assets::MaterialHandle,
     textures: &mut HashSet<crate::assets::TextureHandle>,
-) -> usize {
+) -> MaterialTextureStats {
     let Some(assets) = assets else {
-        return 0;
+        return MaterialTextureStats::default();
     };
     let Some(material) = assets.material(material) else {
-        return 0;
+        return MaterialTextureStats::default();
     };
-    let mut binding_slots = 0;
+    let mut stats = MaterialTextureStats::default();
     for texture in [
         material.base_color_texture(),
         material.normal_texture(),
@@ -330,12 +372,58 @@ fn collect_material_textures<F>(
     .into_iter()
     .flatten()
     {
-        if assets.texture(texture).is_some() {
+        if let Some(desc) = assets.texture(texture) {
             textures.insert(texture);
-            binding_slots += 1;
+            stats.bindings += 1;
+            if !desc.has_decoded_pixels() {
+                stats.missing_decoded_pixels += 1;
+            }
         }
     }
-    binding_slots
+    stats
+}
+
+fn collect_material_texture_diagnostics_from_material<F>(
+    assets: &Assets<F>,
+    handle: MaterialHandle,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let Some(material) = assets.material(handle) else {
+        return;
+    };
+
+    for (slot, texture) in material_texture_slots(&material) {
+        let Some(texture) = texture else {
+            continue;
+        };
+        let Some(desc) = assets.texture(texture) else {
+            continue;
+        };
+        if desc.has_decoded_pixels() {
+            continue;
+        }
+
+        diagnostics.push(Diagnostic::warning(
+            DiagnosticCode::MaterialTextureMissingDecodedPixels,
+            format!(
+                "material texture slot {slot} references '{}' but has no decoded pixels",
+                desc.path().as_str()
+            ),
+            "check external glTF image URI rewriting/CSP, inspect \
+             AssetLoadWarning::ExternalImageMissing from the asset load report, or use \
+             AssetLoadOptions::with_strict_textures(true)",
+        ));
+    }
+}
+
+fn material_texture_slots(material: &MaterialDesc) -> [(&'static str, Option<TextureHandle>); 5] {
+    [
+        ("base_color", material.base_color_texture()),
+        ("normal", material.normal_texture()),
+        ("metallic_roughness", material.metallic_roughness_texture()),
+        ("occlusion", material.occlusion_texture()),
+        ("emissive", material.emissive_texture()),
+    ]
 }
 
 #[cfg(test)]

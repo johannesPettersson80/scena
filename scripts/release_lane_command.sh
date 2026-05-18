@@ -9,6 +9,11 @@ fi
 lane="$1"
 shift
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -d "$ROOT/node_modules/.bin" ]; then
+  export PATH="$ROOT/node_modules/.bin:$PATH"
+fi
+
 artifact_dir="target/gate-artifacts/release-lanes"
 jsonl="${artifact_dir}/${lane}.commands.jsonl"
 log_path="${artifact_dir}/${lane}.log"

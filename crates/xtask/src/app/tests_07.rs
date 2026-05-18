@@ -216,7 +216,7 @@ pub(crate) fn doctor_rejects_m6_browser_renderer_probe_missing_cargo_dep_regress
     fs::create_dir_all(&fixture_root).expect("fixture dir");
     fs::write(
         &cargo_path,
-        "[package]\nname = \"scena\"\n# stub Cargo.toml missing the browser-probe feature gate.\n",
+        "[package]\nname = \"scena\"\n# stub Cargo.toml missing the browser renderer feature gate.\n",
     )
     .expect("cargo fixture");
     let mut findings = Vec::new();
@@ -339,13 +339,13 @@ pub(crate) fn doctor_rejects_m10_claim_audit_missing_contract_text_regression() 
 
 #[test]
 pub(crate) fn doctor_rejects_required_doc_missing_substring_regression() {
-    // DOCS-PUBLIC-API: docs/specs/public-api.md must keep the canonical
+    // DOCS-PUBLIC-API: docs/api.md must keep the canonical
     // public-API contract substrings; a stripped-down replacement must
     // fail the required-doc-contract gate.
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-doctor-regressions/required-doc-missing-substring");
-    let public_api_path = fixture_root.join("docs/specs/public-api.md");
-    fs::create_dir_all(public_api_path.parent().expect("docs/specs")).expect("docs dir");
+    let public_api_path = fixture_root.join("docs/api.md");
+    fs::create_dir_all(public_api_path.parent().expect("docs")).expect("docs dir");
     fs::write(
         &public_api_path,
         "# Public API\n\nThis stub does not declare the prepare lifecycle, the \
@@ -361,9 +361,9 @@ pub(crate) fn doctor_rejects_required_doc_missing_substring_regression() {
             finding.rule == "DOCS-PUBLIC-API"
                 && finding
                     .message
-                    .contains("public-api.md is missing required contract text")
+                    .contains("docs/api.md is missing required contract text")
         }),
-        "doctor must reject docs/specs/public-api.md when it drops a required \
+        "doctor must reject docs/api.md when it drops a required \
          public-API contract substring: {findings:?}",
     );
 }

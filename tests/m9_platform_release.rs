@@ -503,7 +503,7 @@ fn pbr_light_scene(kind: PbrLightKind) -> (Scene, Assets, scena::CameraKey) {
                 .directional_light(
                     DirectionalLight::default()
                         .with_color(Color::from_linear_rgb(1.0, 0.0, 0.0))
-                        .with_illuminance_lux(100.0),
+                        .with_illuminance_lux(12_000.0),
                 )
                 .add()
                 .expect("directional light inserts");

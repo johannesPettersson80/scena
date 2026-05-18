@@ -108,6 +108,12 @@ images = [
 # every material/texture role the importer + renderer must handle.
 contract = "real product PBR with base-color + normal + occlusion-roughness-metallic + emissive textures and real-world millimeter scale"
 
+[[asset]]
+name = "TransmissionTest"
+path = "TransmissionTest/TransmissionTest.glb"
+binary = ["TransmissionTest/TransmissionTest.glb"]
+contract = "Khronos optional KHR_materials_transmission control asset for framing and extension-degradation coverage"
+
 [file_hashes]
 "AlphaBlendModeTest/AlphaBlendLabels.png" = "19c705f7e207384ca1ab01e0665601c051ca33c5848c03ce4fffad625b416b53"
 "AlphaBlendModeTest/AlphaBlendModeTest.bin" = "bb89ab8d9ac0cfbc168e5d552e3ec2fe1285fd01bacb65c863d838b3db025c85"
@@ -143,6 +149,7 @@ contract = "real product PBR with base-color + normal + occlusion-roughness-meta
 "TextureTransformTest/TextureTransformTest.bin" = "d0cdd23f2fa0996a0db99d4932fb9912a51a34e27c8bf832d072dc856ee9a7af"
 "TextureTransformTest/TextureTransformTest.gltf" = "c22c8c6c96c0ea4bcbb9b47ea245a093c5ef59acc5fd425effa4c00da4cdf164"
 "TextureTransformTest/UV.png" = "ac37ff52fe06a4c8c35ad4e1e7e8da039dfa8afc9b629d40a44ca8b8cfe9d03d"
+"TransmissionTest/TransmissionTest.glb" = "dd9732dae5517f8605ad4324d78b077b969c3e8357c056280d0a4e4b67797d15"
 "UnlitTest/UnlitTest.bin" = "a6a81ec57560242f29ee2c2a94f452a923b5548bf256b6529b0c07dea3f5c907"
 "UnlitTest/UnlitTest.gltf" = "b611ca0892cb1a0118e92b72ff52b3afed3e4903c15378daa72c4c252a0334e1"
 "WaterBottle/WaterBottle.bin" = "e4921f2d0c0a03cf65286bd195f3688d4f99d7b6a58f25935e70d516d744156e"

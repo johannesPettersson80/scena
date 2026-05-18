@@ -76,6 +76,7 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "pbr-spot-light",
             "pbr-normal-map",
             "pbr-environment",
+            "source-gltf-materials",
             "instancing",
             "picking-selection",
             "animation",
@@ -131,6 +132,7 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "material_bindings",
             "material_texture_bindings",
             "material_sampler_bindings",
+            "material_textures_missing_decoded_pixels",
         ],
     );
     require_contains(
@@ -165,6 +167,7 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "assertNormalMapProof",
             "assertEnvironmentLightProof",
             "assertMaterialTextureProof",
+            "assertSourceGltfMaterialProof",
             "assertTexturedConnectorViewerProof",
             "assertSurfaceLifecycleProbe",
             "assertNoScenaGpuValidationErrors",
@@ -183,6 +186,8 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "browser-pbr-normal-map",
             "browser-pbr-environment-light",
             "material-textures",
+            "source-gltf-materials",
+            "MaterialTextureMissingDecodedPixels",
             "textured-connector-viewer",
             "model-viewer",
             "instancing",
@@ -222,6 +227,8 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "renderer-owned-gpu-copy",
             "pixel_statistics",
             "nonblack",
+            "left",
+            "right",
         ],
     );
     if let Ok(page_source) =
@@ -238,7 +245,7 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
         root,
         findings,
         "VISUAL-BROWSER-M6",
-        "src/render/gpu.rs",
+        "src/render/gpu/prepare_resources.rs",
         &["target.backend == Backend::WebGpu"],
     );
     require_contains(

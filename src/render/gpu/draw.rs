@@ -215,9 +215,7 @@ impl GpuDeviceState {
         camera_projection: &CameraProjection,
     ) -> Result<bool, RenderError> {
         let Some(resources) = self.resources.as_ref() else {
-            return Err(RenderError::GpuResourcesNotPrepared {
-                backend: target.backend,
-            });
+            return self.render_empty_surface(target, background_color);
         };
         if resources.target != target {
             return Err(RenderError::GpuResourcesNotPrepared {
@@ -370,6 +368,57 @@ impl GpuDeviceState {
         self.queue.submit(Some(encoder.finish()));
         surface_output.present();
         Ok(true)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn render_empty_surface(
+        &mut self,
+        target: RasterTarget,
+        background_color: Color,
+    ) -> Result<bool, RenderError> {
+        let Some(surface) = self.surface.as_ref() else {
+            return Err(RenderError::GpuResourcesNotPrepared {
+                backend: target.backend,
+            });
+        };
+        let surface_output = match surface.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(output)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(output) => output,
+            wgpu::CurrentSurfaceTexture::Timeout
+            | wgpu::CurrentSurfaceTexture::Occluded
+            | wgpu::CurrentSurfaceTexture::Outdated
+            | wgpu::CurrentSurfaceTexture::Lost
+            | wgpu::CurrentSurfaceTexture::Validation => return Ok(false),
+        };
+        let surface_view = surface_output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("scena.browser.empty_surface_encoder"),
+            });
+        {
+            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("scena.browser.empty_surface_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &surface_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu_clear_color(background_color)),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+        }
+        self.queue.submit(Some(encoder.finish()));
+        surface_output.present();
+        Ok(false)
     }
 
     #[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]

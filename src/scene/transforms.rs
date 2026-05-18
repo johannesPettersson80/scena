@@ -14,7 +14,6 @@ impl Scene {
             .ok_or(LookupError::NodeNotFound(node))?;
         if node.transform != transform {
             node.transform = transform;
-            self.structure_revision = self.structure_revision.saturating_add(1);
             self.transform_revision = self.transform_revision.saturating_add(1);
         }
         Ok(())
@@ -148,4 +147,29 @@ fn is_invertible_scale(scale: Vec3) -> bool {
     [scale.x, scale.y, scale.z]
         .into_iter()
         .all(|component| component.is_finite() && component.abs() > f32::EPSILON)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn set_transform_marks_transform_dirty_without_structure_change() {
+        let mut scene = Scene::new();
+        let structure_before = scene.structure_revision;
+        let transform_before = scene.transform_revision;
+
+        scene
+            .set_transform(scene.root(), Transform::at(Vec3::new(1.0, 0.0, 0.0)))
+            .expect("root transform updates");
+
+        assert_eq!(
+            scene.structure_revision, structure_before,
+            "moving an existing node must not invalidate static scene structure"
+        );
+        assert!(
+            scene.transform_revision > transform_before,
+            "moving an existing node must mark transform-dependent prepared data dirty"
+        );
+    }
 }

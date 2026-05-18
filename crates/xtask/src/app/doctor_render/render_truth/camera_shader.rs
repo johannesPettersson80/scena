@@ -94,7 +94,7 @@ pub(crate) fn check_renderer_truth_camera_shader_contracts(
             "directional_shadow_control",
             "directional_shadow_control.x > 0.5",
             "OUTPUT_UNIFORM_BYTE_LEN: u64 = 480",
-            "camera.clip_from_view * camera.view_from_world * world_position",
+            "camera.clip_from_world * world_position",
             "draw.normal_from_model * vec4<f32>(in.normal, 0.0)",
             "draw.world_from_model * vec4<f32>(in.position, 1.0)",
             "@group(2) @binding(0)",

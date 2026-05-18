@@ -12,7 +12,7 @@ or in `Cargo.toml`:
 
 ```toml
 [dependencies]
-scena = { version = "1.0", features = ["controls", "controls-winit"] }
+scena = { version = "1.3", features = ["controls", "controls-winit"] }
 ```
 
 ## Features
@@ -34,25 +34,25 @@ scena = { version = "1.0", features = ["controls", "controls-winit"] }
 Native viewer:
 
 ```toml
-scena = { version = "1.0", features = ["controls", "controls-winit"] }
+scena = { version = "1.3", features = ["controls", "controls-winit"] }
 ```
 
 Browser viewer:
 
 ```toml
-scena = { version = "1.0", features = ["controls", "controls-web"] }
+scena = { version = "1.3", features = ["controls", "controls-web"] }
 ```
 
 Asset-heavy viewer:
 
 ```toml
-scena = { version = "1.0", features = ["ktx2", "meshopt", "obj"] }
+scena = { version = "1.3", features = ["ktx2", "meshopt", "obj"] }
 ```
 
 Diagnostic tooling:
 
 ```toml
-scena = { version = "1.0", features = ["inspection"] }
+scena = { version = "1.3", features = ["inspection"] }
 ```
 
 ## Default feature set

@@ -219,15 +219,15 @@ fn scene_with_white_triangle() -> (Scene, scena::CameraKey) {
             scene.root(),
             vec![Primitive::triangle([
                 Vertex {
-                    position: Vec3::new(-0.6, -0.5, 0.0),
+                    position: Vec3::new(-0.6, -0.5, -2.0),
                     color: Color::WHITE,
                 },
                 Vertex {
-                    position: Vec3::new(0.6, -0.5, 0.0),
+                    position: Vec3::new(0.6, -0.5, -2.0),
                     color: Color::WHITE,
                 },
                 Vertex {
-                    position: Vec3::new(0.0, 0.6, 0.0),
+                    position: Vec3::new(0.0, 0.6, -2.0),
                     color: Color::WHITE,
                 },
             ])],

@@ -173,6 +173,28 @@ pub(crate) fn check_required_doc_contracts(root: &Path, findings: &mut Vec<Findi
     );
 }
 
+pub(crate) fn check_demo_build_heartbeat_contract(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "DEMO-BUILD-HEARTBEAT",
+        "package.json",
+        &["\"demo:build\": \"node scripts/build_demo_wasm.js\""],
+    );
+    require_contains(
+        root,
+        findings,
+        "DEMO-BUILD-HEARTBEAT",
+        "scripts/build_demo_wasm.js",
+        &[
+            "wasm-pack",
+            "SCENA_BUILD_HEARTBEAT_MS",
+            "still running",
+            "process.exit(code ?? 1)",
+        ],
+    );
+}
+
 pub(crate) fn require_contains(
     root: &Path,
     findings: &mut Vec<Finding>,

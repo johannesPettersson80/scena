@@ -415,6 +415,25 @@ impl fmt::Display for LookupError {
                     "viewport {width}x{height} is invalid; width and height must be non-zero"
                 )
             }
+            Self::InvalidBounds { reason } => {
+                write!(formatter, "bounds are invalid: {reason}")
+            }
+            Self::InvalidFramingOption { field, reason } => {
+                write!(
+                    formatter,
+                    "camera framing option '{field}' is invalid: {reason}"
+                )
+            }
+            Self::UnsupportedCameraType {
+                camera,
+                operation,
+                supported,
+            } => {
+                write!(
+                    formatter,
+                    "{operation} does not support camera {camera:?}; supported camera type: {supported}"
+                )
+            }
             Self::ImportHasNoBounds => {
                 write!(
                     formatter,

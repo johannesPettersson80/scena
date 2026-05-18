@@ -52,23 +52,29 @@ impl Scene {
         self.light_builder(Light::Directional(light))
     }
 
-    /// Phase 5.3: insert a "studio" 3-point directional rig (key +
-    /// cool fill + warm rim). Returns the three node keys in
-    /// (key, fill, rim) order. Intensities are tuned to match the
-    /// look of the Khronos sample-thumbnail renders without
+    /// Inserts a studio-style three-point directional rig.
+    ///
+    /// The rig contains a key light, cool fill, and warm rim light. The
+    /// returned handles are ordered as key, fill, and rim so callers can
+    /// adjust or remove individual lights after insertion. Intensities are
+    /// tuned for neutral glTF product/model-viewer scenes without
     /// over-exposing PBR metallic body materials.
     ///
-    /// Tests and examples previously hand-rolled this rig with
-    /// 80,000-lux suns that drowned the asset's authored materials in
-    /// specular reflections. This preset uses moderate intensities
-    /// (key 12,000 lux + fill 4,000 lux + rim 3,000 lux) that read
-    /// closer to what canonical PBR viewers produce.
+    /// This preset uses moderate intensities (key 13,500 lux, fill 4,500 lux,
+    /// rim 3,500 lux). Only the key casts shadows because the renderer
+    /// supports one shadowed directional light per scene.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`LookupError`] if the scene cannot insert one of the light
+    /// nodes under the root.
     pub fn add_studio_lighting(&mut self) -> Result<StudioLightingHandles, LookupError> {
         let key = self
             .directional_light(
                 DirectionalLight::default()
                     .with_color(Color::WHITE)
-                    .with_illuminance_lux(12_000.0),
+                    .with_illuminance_lux(13_500.0)
+                    .with_shadows(true),
             )
             .transform(Transform::default().rotate_x_deg(-30.0).rotate_y_deg(20.0))
             .add()?;
@@ -76,7 +82,7 @@ impl Scene {
             .directional_light(
                 DirectionalLight::default()
                     .with_color(Color::from_srgb_u8(200, 215, 235))
-                    .with_illuminance_lux(4_000.0),
+                    .with_illuminance_lux(4_500.0),
             )
             .transform(
                 Transform::default()
@@ -88,7 +94,7 @@ impl Scene {
             .directional_light(
                 DirectionalLight::default()
                     .with_color(Color::from_srgb_u8(255, 235, 210))
-                    .with_illuminance_lux(3_000.0),
+                    .with_illuminance_lux(3_500.0),
             )
             .transform(Transform::default().rotate_x_deg(15.0).rotate_y_deg(170.0))
             .add()?;
@@ -130,10 +136,10 @@ impl Scene {
     }
 }
 
-/// Phase 5.3: handles for the three lights inserted by
-/// [`Scene::add_studio_lighting`]. Returned so callers can later
-/// adjust an individual light (e.g. raise the key, tint the rim) or
-/// remove the rig.
+/// Handles for the three lights inserted by [`Scene::add_studio_lighting`].
+///
+/// Returned so callers can later adjust an individual light, for example to
+/// raise the key, tint the rim, or remove the rig.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StudioLightingHandles {
     pub key: NodeKey,
@@ -357,10 +363,7 @@ mod tests {
 
     #[test]
     fn add_studio_lighting_uses_moderate_intensities_not_overdriven_3point() {
-        // Phase 5.3 motivation: the previous test rig used 80,000 lux
-        // suns that overwhelmed PBR materials. The preset must stay at
-        // moderate intensities so a metallic-1 surface doesn't render
-        // as polished gold under a flood of specular highlights.
+        // Keep the preset moderate so PBR material differences stay visible.
         let mut scene = Scene::new();
         let handles = scene.add_studio_lighting().expect("inserts");
         let mut illuminances = Vec::new();
@@ -381,9 +384,40 @@ mod tests {
             );
         }
         let total: f32 = illuminances.iter().sum();
+        assert_eq!(illuminances, [13_500.0, 4_500.0, 3_500.0]);
         assert!(
             total < 30_000.0,
             "combined studio preset under 30k lux total (got {total})"
+        );
+    }
+
+    #[test]
+    fn add_studio_lighting_shadows_only_the_key_light() {
+        let mut scene = Scene::new();
+        let handles = scene.add_studio_lighting().expect("inserts");
+
+        let casts_shadows = |scene: &Scene, node| -> bool {
+            let node_data = scene.node(node).expect("node");
+            let NodeKind::Light(light_key) = node_data.kind else {
+                panic!("light node");
+            };
+            let Light::Directional(light) = scene.light(light_key).expect("light") else {
+                panic!("directional");
+            };
+            light.casts_shadows()
+        };
+
+        assert!(
+            casts_shadows(&scene, handles.key),
+            "studio key light should cast the single supported directional shadow"
+        );
+        assert!(
+            !casts_shadows(&scene, handles.fill),
+            "studio fill light must not cast a second directional shadow"
+        );
+        assert!(
+            !casts_shadows(&scene, handles.rim),
+            "studio rim light must not cast a second directional shadow"
         );
     }
 }

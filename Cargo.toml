@@ -1,6 +1,6 @@
 [package]
 name = "scena"
-version = "1.1.0"
+version = "1.3.0"
 edition = "2024"
 rust-version = "1.93"
 license = "MIT OR Apache-2.0"
@@ -60,6 +60,7 @@ controls = []
 controls-winit = ["controls"]
 controls-web = ["controls"]
 browser-probe = []
+demo-page = ["web-sys/Blob", "web-sys/Url"]
 inspection = []
 icc = ["dep:lcms2"]
 ktx2 = ["dep:ktx2", "dep:basisu_c_sys"]
@@ -78,11 +79,13 @@ js-sys = "0.3.98"
 wasm-bindgen = "0.2.121"
 wasm-bindgen-futures = "0.4.71"
 web-sys = { version = "0.3.98", features = [
+    "Blob",
     "CanvasRenderingContext2d",
     "Document",
     "Element",
     "HtmlCanvasElement",
     "HtmlElement",
+    "ImageBitmap",
     "ImageData",
     "Response",
     "console",

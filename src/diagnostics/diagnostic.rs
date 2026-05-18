@@ -24,6 +24,7 @@ pub enum DiagnosticCode {
     BloomDisabled,
     AmbientOcclusionDisabled,
     GpuCullingDisabled,
+    MaterialTextureMissingDecodedPixels,
     DestructionQueuePressure,
 }
 

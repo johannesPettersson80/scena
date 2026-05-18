@@ -9,10 +9,14 @@ use crate::scene::{
     SourceUnits, Transform,
 };
 
+#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+mod browser_timing;
 mod capabilities;
 mod diagnostic;
 mod display;
 mod help;
+#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+pub(crate) use browser_timing::browser_timing_enabled;
 pub use capabilities::{
     AdapterLimitsReport, AlphaPipelineStatus, Backend, Capabilities, CapabilityReport,
     CapabilityStatus, GpuAdapterReport, HardwareTier, OutputStageStatus,
@@ -235,6 +239,7 @@ pub enum NotPreparedReason {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeKind {
     SceneStructure,
+    Transform,
     Environment,
     RenderTarget,
     DebugOverlay,
@@ -294,9 +299,25 @@ pub enum LookupError {
     PathNotFound {
         path: String,
     },
+    /// A viewport width or height was zero where projection/framing needs pixels.
     InvalidViewport {
         width: u32,
         height: u32,
+    },
+    /// Bounds were empty, non-finite, or otherwise unsuitable for framing.
+    InvalidBounds {
+        reason: &'static str,
+    },
+    /// A named framing option failed validation before camera state was changed.
+    InvalidFramingOption {
+        field: &'static str,
+        reason: &'static str,
+    },
+    /// The requested operation does not support the camera type yet.
+    UnsupportedCameraType {
+        camera: CameraKey,
+        operation: &'static str,
+        supported: &'static str,
     },
     ImportHasNoBounds,
     StaleImport,
@@ -353,6 +374,7 @@ pub struct RendererStats {
     pub material_bindings: u64,
     pub material_texture_bindings: u64,
     pub material_sampler_bindings: u64,
+    pub material_textures_missing_decoded_pixels: u64,
     /// Plan line 778 step 2: number of layers a `texture_2d_array` per
     /// material role carries when the prepared materials share
     /// `(sampler, format, dimensions)` for every populated role. Zero when

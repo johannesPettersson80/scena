@@ -60,6 +60,7 @@ pub(super) fn stats_json(stats: crate::RendererStats) -> serde_json::Value {
         "material_bindings": stats.material_bindings,
         "material_texture_bindings": stats.material_texture_bindings,
         "material_sampler_bindings": stats.material_sampler_bindings,
+        "material_textures_missing_decoded_pixels": stats.material_textures_missing_decoded_pixels,
         "render_targets": stats.render_targets,
         "pipelines": stats.pipelines,
         "bind_groups": stats.bind_groups,

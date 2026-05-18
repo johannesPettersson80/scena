@@ -2,6 +2,7 @@ mod asset_matrix;
 mod assets_materials;
 mod ergonomics;
 mod manifest_helpers;
+mod material_texture_diagnostics;
 mod state_of_art;
 
 pub(crate) use asset_matrix::{

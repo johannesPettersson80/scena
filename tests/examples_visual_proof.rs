@@ -54,6 +54,60 @@ fn count_unique_rgb_triplets(rgba: &[u8]) -> usize {
     triplets.len()
 }
 
+#[derive(Debug, Clone, Copy)]
+struct PixelRect {
+    min_x: u32,
+    min_y: u32,
+    max_x: u32,
+    max_y: u32,
+}
+
+impl PixelRect {
+    fn width(self) -> u32 {
+        self.max_x - self.min_x + 1
+    }
+
+    fn height(self) -> u32 {
+        self.max_y - self.min_y + 1
+    }
+
+    fn center_x(self) -> f32 {
+        (self.min_x + self.max_x) as f32 * 0.5
+    }
+
+    fn center_y(self) -> f32 {
+        (self.min_y + self.max_y) as f32 * 0.5
+    }
+}
+
+fn nonblack_pixel_rect(rgba: &[u8], width: u32, height: u32) -> Option<PixelRect> {
+    let mut rect: Option<PixelRect> = None;
+    for y in 0..height {
+        for x in 0..width {
+            let index = ((y * width + x) as usize) * 4;
+            let pixel = &rgba[index..index + 4];
+            if pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 0 {
+                continue;
+            }
+            rect = Some(match rect {
+                Some(rect) => PixelRect {
+                    min_x: rect.min_x.min(x),
+                    min_y: rect.min_y.min(y),
+                    max_x: rect.max_x.max(x),
+                    max_y: rect.max_y.max(y),
+                },
+                None => PixelRect {
+                    min_x: x,
+                    min_y: y,
+                    max_x: x,
+                    max_y: y,
+                },
+            });
+        }
+    }
+    rect
+}
+
 fn write_artifact(name: &str, width: u32, height: u32, rgba: &[u8]) {
     let dir = artifact_dir();
     let mut ppm = format!("P6\n{width} {height}\n255\n").into_bytes();
@@ -89,6 +143,55 @@ fn write_artifact(name: &str, width: u32, height: u32, rgba: &[u8]) {
         ),
     )
     .expect("artifact metadata can be written");
+}
+
+fn write_frame_bounds_artifact(
+    name: &str,
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+    outcome: scena::FramingOutcome,
+    pixel_rect: PixelRect,
+) {
+    let dir = artifact_dir();
+    let mut ppm = format!("P6\n{width} {height}\n255\n").into_bytes();
+    for pixel in rgba.chunks_exact(4) {
+        ppm.extend_from_slice(&pixel[..3]);
+    }
+    fs::write(dir.join(format!("{name}.ppm")), ppm).expect("PPM artifact can be written");
+    fs::write(
+        dir.join(format!("{name}.json")),
+        serde_json::json!({
+            "proof_class": "frame-bounds-rendered-output",
+            "rendered_image": format!("{}.ppm", name),
+            "viewport": { "width": width, "height": height, "aspect": width as f32 / height as f32 },
+            "target_fill": outcome.fill,
+            "margin_px": outcome.margin_px,
+            "computed_distance": outcome.distance,
+            "projected_rect": {
+                "min_x": outcome.projected_rect.min_x,
+                "min_y": outcome.projected_rect.min_y,
+                "max_x": outcome.projected_rect.max_x,
+                "max_y": outcome.projected_rect.max_y,
+                "fill": outcome.projected_rect.fill_fraction(width, height),
+            },
+            "nonblack_pixel_rect": {
+                "min_x": pixel_rect.min_x,
+                "min_y": pixel_rect.min_y,
+                "max_x": pixel_rect.max_x,
+                "max_y": pixel_rect.max_y,
+                "width": pixel_rect.width(),
+                "height": pixel_rect.height(),
+            },
+            "assertions": {
+                "not_tiny": true,
+                "not_clipped": true,
+                "centered": true,
+            }
+        })
+        .to_string(),
+    )
+    .expect("frame_bounds metadata can be written");
 }
 
 #[test]
@@ -215,6 +318,87 @@ fn examples_visual_camera_framing_renders_framed_part_to_ppm() {
     );
 
     write_artifact("camera_framing", ARTIFACT_WIDTH, ARTIFACT_HEIGHT, frame);
+}
+
+#[test]
+fn frame_bounds_rendered_output_proves_fill_center_and_unclipped_object() {
+    let width = 320;
+    let height = 180;
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.8, 0.45, 0.35));
+    let material = assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(70, 160, 240)));
+
+    let mut scene = Scene::new();
+    scene.mesh(geometry, material).add().expect("mesh inserts");
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default().with_aspect(width as f32 / height as f32),
+            Transform::default(),
+        )
+        .expect("camera inserts");
+    scene.set_active_camera(camera).expect("active camera sets");
+    let bounds = Aabb::new(
+        Vec3::new(-0.9, -0.225, -0.175),
+        Vec3::new(0.9, 0.225, 0.175),
+    );
+    let outcome = scene
+        .frame_bounds(
+            camera,
+            bounds,
+            scena::FramingOptions::new()
+                .front()
+                .fill(0.70)
+                .margin_px(0.0)
+                .viewport(width, height),
+        )
+        .expect("frame_bounds succeeds");
+
+    assert!(outcome.projected_rect.min_x >= 0.0, "{outcome:?}");
+    assert!(outcome.projected_rect.min_y >= 0.0, "{outcome:?}");
+    assert!(outcome.projected_rect.max_x <= width as f32, "{outcome:?}");
+    assert!(outcome.projected_rect.max_y <= height as f32, "{outcome:?}");
+    assert!(
+        (0.66..=0.72).contains(&outcome.projected_rect.fill_fraction(width, height)),
+        "{outcome:?}"
+    );
+
+    let mut renderer = Renderer::headless(width, height).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("frame_bounds proof prepares");
+    renderer
+        .render_active(&scene)
+        .expect("frame_bounds proof renders");
+    let frame = renderer.frame_rgba8();
+    let pixel_rect = nonblack_pixel_rect(frame, width, height).expect("visible rendered object");
+    assert!(pixel_rect.width() > width / 3, "{pixel_rect:?}");
+    assert!(pixel_rect.height() > height / 10, "{pixel_rect:?}");
+    assert!(
+        pixel_rect.min_x > 0 && pixel_rect.max_x < width - 1,
+        "{pixel_rect:?}"
+    );
+    assert!(
+        pixel_rect.min_y > 0 && pixel_rect.max_y < height - 1,
+        "{pixel_rect:?}"
+    );
+    assert!(
+        (pixel_rect.center_x() - width as f32 * 0.5).abs() < width as f32 * 0.08,
+        "{pixel_rect:?}"
+    );
+    assert!(
+        (pixel_rect.center_y() - height as f32 * 0.5).abs() < height as f32 * 0.10,
+        "{pixel_rect:?}"
+    );
+
+    write_frame_bounds_artifact(
+        "camera_framing_frame_bounds",
+        width,
+        height,
+        frame,
+        outcome,
+        pixel_rect,
+    );
 }
 
 #[test]

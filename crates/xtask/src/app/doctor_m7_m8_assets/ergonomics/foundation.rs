@@ -178,15 +178,21 @@ pub(crate) fn check_m7_foundation_contracts(root: &Path, findings: &mut Vec<Find
         root,
         findings,
         "ERGONOMICS-M7",
-        "src/render.rs",
+        "src/render/reporting.rs",
         &[
             "pub fn diagnose_scene",
             "pub fn diagnose_scene_with_assets",
-            "pub fn capability_report",
             "MissingActiveCamera",
             "InvisibleScene",
             "MissingLightingOrEnvironment",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/render.rs",
+        &["pub fn capability_report"],
     );
     require_contains(
         root,

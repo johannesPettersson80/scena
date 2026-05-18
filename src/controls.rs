@@ -1,6 +1,7 @@
 //! Platform-neutral orbit, pan, fly, and focus controls.
 
 use crate::diagnostics::LookupError;
+use crate::scene::FramingOutcome;
 use crate::scene::Vec3;
 use crate::scene::{CameraKey, Scene, Transform};
 
@@ -90,12 +91,39 @@ impl OrbitControls {
         self
     }
 
+    /// Creates orbit controls from a [`Scene::frame_bounds`](crate::Scene::frame_bounds) result.
+    pub fn from_framing(framing: FramingOutcome) -> Self {
+        Self::new(framing.target, framing.distance).focus_on_framing(framing)
+    }
+
+    /// Adopts the target, distance, yaw, and pitch computed by
+    /// [`Scene::frame_bounds`](crate::Scene::frame_bounds).
+    pub fn focus_on_framing(mut self, framing: FramingOutcome) -> Self {
+        self.target = framing.target;
+        self.distance = framing.distance.max(MIN_DISTANCE);
+        self.yaw_radians = framing.yaw_radians;
+        self.pitch_radians = framing
+            .pitch_radians
+            .clamp(-MAX_PITCH_RADIANS, MAX_PITCH_RADIANS);
+        self
+    }
+
     pub fn with_damping(mut self, factor: f32) -> Self {
         self.damping_factor = if factor.is_finite() {
             factor.clamp(0.0, 1.0)
         } else {
             0.0
         };
+        self
+    }
+
+    pub fn with_angles(mut self, yaw_radians: f32, pitch_radians: f32) -> Self {
+        if yaw_radians.is_finite() {
+            self.yaw_radians = yaw_radians;
+        }
+        if pitch_radians.is_finite() {
+            self.pitch_radians = pitch_radians.clamp(-MAX_PITCH_RADIANS, MAX_PITCH_RADIANS);
+        }
         self
     }
 

@@ -17,16 +17,24 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
         root,
         findings,
         "ARCH-RENDER-TRUTH",
-        "src/render/gpu.rs",
+        "src/render/gpu/prepare_resources.rs",
         &[
             "let vertex_bytes = encode_vertices(primitives)",
-            "let (draw_batches, draw_uniforms) = encode_draw_batches(primitives)",
+            "encode_draw_batches(primitives)",
             "create_output_bind_group_layout",
             "create_material_bind_group_layout",
             "create_unlit_pipeline",
+            "self.release_prepared_resources();",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/render/gpu.rs",
+        &[
             "MaterialTextureBindingMode::Texture2d",
             "MaterialTextureBindingMode::Texture2dArray",
-            "self.release_prepared_resources();",
         ],
     );
     require_contains(
@@ -77,7 +85,7 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
             "textureSample(base_color_texture, base_color_sampler, transformed_uv, material_layer)",
             "base.a < material.metallic_roughness_alpha.z",
             "discard;",
-            "camera.clip_from_view * camera.view_from_world * world_position",
+            "camera.clip_from_world * world_position",
             "draw.normal_from_model * vec4<f32>(in.normal, 0.0)",
         ],
     );

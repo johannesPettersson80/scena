@@ -37,10 +37,11 @@ pub(crate) use crate::app::doctor_core::{
     repo_root, require_files, run_architecture_doctor, run_docs_doctor, run_doctor,
 };
 pub(crate) use crate::app::doctor_docs::{
-    check_for_stale_doc_terms, check_markdown_links, check_required_doc_contracts,
-    check_source_scope, collect_markdown, is_external_link, markdown_files, markdown_link_targets,
-    require_contains,
+    check_demo_build_heartbeat_contract, check_for_stale_doc_terms, check_markdown_links,
+    check_required_doc_contracts, check_source_scope, collect_markdown, is_external_link,
+    markdown_files, markdown_link_targets, require_contains,
 };
+pub(crate) use crate::app::doctor_easy_scene::check_easy_scene_setup_contracts;
 pub(crate) use crate::app::doctor_m7_m8_assets::{
     backtick_values, binary_render_asset_extension, check_binary_render_asset_contracts,
     check_gltf_asset_matrix_contract, check_m7_ergonomics_contracts,

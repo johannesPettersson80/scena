@@ -74,7 +74,7 @@ pub(crate) fn check_module_boundaries(root: &Path, findings: &mut Vec<Finding>) 
         root,
         findings,
         "ARCH-RENDER-LIFECYCLE",
-        "src/render/gpu.rs",
+        "src/render/gpu/prepare_resources.rs",
         &[
             "self.configure_surface(target);",
             "self.release_prepared_resources();",

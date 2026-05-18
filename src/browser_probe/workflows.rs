@@ -30,6 +30,7 @@ pub(super) async fn build_workflow_scene(workflow: &str) -> Result<WorkflowScene
         "pbr-normal-map" => pbr::normal_map_scene().await,
         "pbr-environment" => Ok(pbr::environment_scene()?),
         "pbr-shadow-visibility" => Ok(pbr::shadow_visibility_scene()?),
+        "source-gltf-materials" => ergonomics::build_ergonomics_scene(workflow).await,
         other => ergonomics::build_ergonomics_scene(other).await,
     }
 }

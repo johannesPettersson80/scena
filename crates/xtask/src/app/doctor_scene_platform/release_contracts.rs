@@ -14,7 +14,7 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
         "ARCH-M5-RELEASE",
         "Cargo.toml",
         &[
-            "version = \"1.1.0\"",
+            "version = \"1.3.0\"",
             "rust-version = ",
             "documentation = \"https://docs.rs/scena\"",
             "keywords = [",
@@ -96,6 +96,7 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
             "Renderer::capability_report",
             "Renderer::gpu_adapter_report",
             "CapabilityReport",
+            "AssetLoadOptions",
             "DebugOverlay",
             "RendererStats",
             "GpuAdapterReport",
@@ -122,6 +123,8 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
             "Scene::with_default_camera()",
             "AssetStoreId",
             "Assets::store_id()",
+            "Assets::load_scene_with_options()",
+            "Assets::load_scene_with_report_options()",
             "Assets::contains_geometry",
             "Assets::contains_material",
             "Assets::contains_texture",
@@ -137,9 +140,10 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
         "docs/api.md",
         &[
             "Use this page as the conceptual map.",
-            "No public API changes in 1.1.0.",
+            "Additive public API changes in 1.3.0:",
             "BuildError",
             "AnimationError",
+            "MaterialTextureMissingDecodedPixels",
         ],
     );
     require_contains(
@@ -224,7 +228,10 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
 
 pub(crate) const REQUIRED_EXAMPLES: &[&str] = &[
     "examples/primitive_shapes.rs",
+    "examples/easy_model_viewer.rs",
     "examples/glb_model_viewer.rs",
+    "examples/camera_framing.rs",
+    "examples/connector_auto_framing.rs",
     "examples/picking_selection_hover.rs",
     "examples/instancing.rs",
     "examples/labels_helpers.rs",

@@ -4,6 +4,8 @@
 [![rust](https://img.shields.io/badge/rust-1.93%2B-orange)](Cargo.toml)
 [![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 
+[![Connector snap demo: scena mates authored shaft and hub connectors](docs/assets/readme/connector-snap.gif)](https://scena-demo.pages.dev/)
+
 Rust 3D library
 
 `scena` is an easy-to-use, lightweight 3D library for Rust applications on native and
@@ -20,6 +22,34 @@ loading a model, adding a camera and light, and rendering the result.
 
 These are original rendered-output artifacts produced by `scena`.
 
+## Easy Scene Setup
+
+The common model-viewer setup does not require hand-tuned camera constants:
+
+```rust
+let model = assets.load_scene("machine.glb").await?;
+let import = scene.instantiate(&model)?;
+let bounds = import.bounds_world(&scene).ok_or("model has no bounds")?;
+
+scene.add_studio_lighting()?;
+scene.add_grid_floor(&assets, GridFloorOptions::new().under_bounds(bounds))?;
+
+let framing = scene.frame_bounds(
+    camera,
+    bounds,
+    FramingOptions::new()
+        .three_quarter_front_right()
+        .fill(0.72)
+        .margin_px(48.0)
+        .viewport(width, height),
+)?;
+let controls = OrbitControls::from_framing(framing);
+renderer.set_auto_exposure(AutoExposureConfig::default());
+```
+
+See [Easy scene setup](docs/guides/easy-scene-setup.md) for the full workflow,
+including connector mating and projected labels.
+
 ## Why scena
 
 Rust applications benefit from a focused rendering layer: a library that lets an
@@ -31,7 +61,7 @@ predictably."
 | If you need | scena gives you |
 |---|---|
 | A Rust replacement for the common Three.js scene workflow | `Scene`, `Assets`, and `Renderer` with typed handles and structured errors |
-| glTF/GLB model-viewer behavior | import, instantiate, frame, inspect, animate, pick, and connect authored anchors |
+| glTF/GLB model-viewer behavior | import, instantiate, projection-frame bounds, inspect, animate, pick, and connect authored anchors |
 | CAD and industrial visualization | units, axes, handedness repair, connector metadata, labels, helpers, and deterministic placement |
 | Native plus browser targets | wgpu/native foundations, WASM packaging, browser WebGPU/WebGL2 proof lanes, and explicit platform capabilities |
 | Reliable render loops | explicit `prepare()` / `render()` lifecycle that keeps fallible work in predictable host-visible steps |
@@ -75,7 +105,7 @@ Equivalent `Cargo.toml` entry:
 
 ```toml
 [dependencies]
-scena = "1.0"
+scena = "1.3"
 ```
 
 Use a sibling checkout when developing `scena` and an application together:
@@ -108,7 +138,11 @@ Cargo features:
 
 ## Happy Path
 
-Start with the product workflow: load or create assets, build scene state, prepare once, then render prepared frames. The shortest examples are `glb_model_viewer`, `camera_framing`, `orbit_controls`, `picking_selection_hover`, and `headless_ci`.
+Start with the product workflow: load or create assets, add studio lighting,
+add a matte grid floor, frame model bounds, prepare once, then render prepared
+frames. The shortest examples are `easy_model_viewer`, `camera_framing`,
+`connector_auto_framing`, `orbit_controls`, `picking_selection_hover`, and
+`headless_ci`.
 
 ## First scene
 
@@ -190,8 +224,9 @@ the host receives structured results before drawing frames.
 | Assets | glTF/GLB import, external buffers, cache/dedup/reload, source units, coordinate conversion, anchors, connectors, import-local lookup, retain policy, and stale-handle diagnostics |
 | Geometry | primitives, manual buffers, bounds, lines, wire/edge expansion, UV retention, CPU skinning, CPU morph targets, and instance sets |
 | Materials | unlit and metallic-roughness paths, texture descriptors, vertex colors, alpha modes, normal/occlusion/emissive/base-color slots, variants, ACES/sRGB output, and FXAA |
-| Rendering | headless CPU output, native/headless wgpu foundation, explicit prepare/render lifecycle, render-on-change, offscreen targets, readback, stats, diagnostics, shadows, IBL, and release-lane proof artifacts |
-| Interaction | typed picking, hover/selection styling, cursor positions, platform-neutral controls, and independent hover/select/pointer-leave states |
+| Rendering | headless CPU output, native/headless wgpu foundation, explicit prepare/render lifecycle, render-on-change, offscreen targets, readback, stats, diagnostics, shadows, IBL, renderer-managed auto exposure, and release-lane proof artifacts |
+| Easy viewer setup | projection-based `frame_bounds`, `add_studio_lighting`, matte `add_grid_floor`, world-to-screen projection, and authored connector mating |
+| Interaction | typed picking, hover/selection styling, cursor positions, platform-neutral controls, orbit focus from `FramingOutcome`, and independent hover/select/pointer-leave states |
 | Browser/WASM | wasm32 compile/package, browser WebGPU/WebGL2 proof lanes, attached-canvas probe paths, surface/context/device-loss event vocabulary, and size gates |
 | Quality | unit/integration tests, visual artifacts, browser proof, benchmarks, allocation checks, and release evidence |
 
@@ -200,10 +235,10 @@ the host receives structured results before drawing frames.
 | Task | Examples |
 |---|---|
 | First render and primitives | [`first_visible_render.rs`](examples/first_visible_render.rs), [`primitive_shapes.rs`](examples/primitive_shapes.rs), [`headless_ci.rs`](examples/headless_ci.rs) |
-| glTF/model viewer | [`glb_model_viewer.rs`](examples/glb_model_viewer.rs), [`animation.rs`](examples/animation.rs), [`instancing.rs`](examples/instancing.rs) |
+| glTF/model viewer | [`easy_model_viewer.rs`](examples/easy_model_viewer.rs), [`glb_model_viewer.rs`](examples/glb_model_viewer.rs), [`animation.rs`](examples/animation.rs), [`instancing.rs`](examples/instancing.rs) |
 | Camera and controls | [`camera_framing.rs`](examples/camera_framing.rs), [`orbit_controls.rs`](examples/orbit_controls.rs), [`orbit_controls_native_adapter.rs`](examples/orbit_controls_native_adapter.rs), [`orbit_controls_browser_adapter.rs`](examples/orbit_controls_browser_adapter.rs) |
 | Picking and interaction | [`picking_selection_hover.rs`](examples/picking_selection_hover.rs), [`layers_visibility.rs`](examples/layers_visibility.rs) |
-| Anchors, connectors, CAD placement | [`anchor_alignment.rs`](examples/anchor_alignment.rs), [`connect_objects.rs`](examples/connect_objects.rs), [`imported_anchor_connection.rs`](examples/imported_anchor_connection.rs), [`industrial_connector_assembly.rs`](examples/industrial_connector_assembly.rs), [`coordinate_connector_repair.rs`](examples/coordinate_connector_repair.rs), [`coordinate_units.rs`](examples/coordinate_units.rs) |
+| Anchors, connectors, CAD placement | [`connector_auto_framing.rs`](examples/connector_auto_framing.rs), [`anchor_alignment.rs`](examples/anchor_alignment.rs), [`connect_objects.rs`](examples/connect_objects.rs), [`imported_anchor_connection.rs`](examples/imported_anchor_connection.rs), [`industrial_connector_assembly.rs`](examples/industrial_connector_assembly.rs), [`coordinate_connector_repair.rs`](examples/coordinate_connector_repair.rs), [`coordinate_units.rs`](examples/coordinate_units.rs) |
 | Industrial/static scenes | [`industrial_static_scene.rs`](examples/industrial_static_scene.rs), [`static_batching.rs`](examples/static_batching.rs), [`labels_helpers.rs`](examples/labels_helpers.rs) |
 | Diagnostics and inspection | [`beginner_diagnostics.rs`](examples/beginner_diagnostics.rs), [`scene_inspection.rs`](examples/scene_inspection.rs) |
 | Platform setup | [`native_window.rs`](examples/native_window.rs), [`browser_canvas.rs`](examples/browser_canvas.rs) |
@@ -275,6 +310,7 @@ state until the host calls `prepare()` again.
 | [`docs/guides/units-axes-handedness.md`](docs/guides/units-axes-handedness.md) | unit, axis, and handedness behavior for imported assets |
 | [`docs/guides/authoring-gltf-anchors-connectors.md`](docs/guides/authoring-gltf-anchors-connectors.md) | authoring metadata for CAD-style placement workflows |
 | [`docs/guides/troubleshooting-misplaced-assets.md`](docs/guides/troubleshooting-misplaced-assets.md) | practical checks for invisible, mis-scaled, or rotated imports |
+| [`docs/release-notes/v1.3.0.md`](docs/release-notes/v1.3.0.md) | v1.3.0 release notes for easy scene setup, connector showcase materials, and browser demo proof |
 | [`docs/release-notes/v1.1.0.md`](docs/release-notes/v1.1.0.md) | v1.1.0 release notes for the wgpu-backed WebGL2 renderer |
 | [`docs/release-notes/v1.0.1.md`](docs/release-notes/v1.0.1.md) | v1.0.1 release notes and package documentation update |
 

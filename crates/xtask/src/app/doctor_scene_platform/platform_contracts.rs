@@ -54,9 +54,15 @@ pub(crate) fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Findin
         &[
             "render_generation",
             "skipped_frames",
-            "culling::cull_cpu_frustum",
             "gpu_culling_dispatches",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M4-PLATFORM",
+        "src/render/prepare_lifecycle.rs",
+        &["culling::cull_prepared_primitives"],
     );
     require_contains(
         root,

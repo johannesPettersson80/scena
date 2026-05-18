@@ -81,9 +81,9 @@ var shadow_map: texture_depth_2d;
 var shadow_sampler: sampler_comparison;
 
 // Phase 1C step 1: real environment cubemap. Six faces of decoded radiance
-// drive diffuse via textureSampleLevel(environment_cubemap, environment_sampler,
-// normal, 0). The 1×1 placeholder is never sampled because
-// environment_diffuse_intensity.w gates whether IBL contributes at all.
+// drive prefiltered specular IBL. Diffuse IBL uses prepared irradiance from
+// environment_diffuse_intensity.rgb; the 1×1 placeholder is never sampled
+// because environment_diffuse_intensity.w gates whether IBL contributes at all.
 @group(0) @binding(3)
 var environment_cubemap: texture_cube<f32>;
 
@@ -136,7 +136,7 @@ var emissive_texture: texture_2d_array<f32>;
 fn vs_main(in: VertexIn) -> VertexOut {
     var out: VertexOut;
     let world_position = draw.world_from_model * vec4<f32>(in.position, 1.0);
-    out.position = camera.clip_from_view * camera.view_from_world * world_position;
+    out.position = camera.clip_from_world * world_position;
     out.color = in.color;
     out.normal = (draw.normal_from_model * vec4<f32>(in.normal, 0.0)).xyz;
     out.tex_coord0 = in.tex_coord0;
@@ -201,7 +201,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         );
         let environment = pbr_environment_lighting(base.rgb, metallic, roughness, normal, view);
         if has_punctual_light() || has_environment_light() {
-            shaded_rgb = (direct + environment) * occlusion_sample;
+            shaded_rgb = (direct + environment) * occlusion_applied;
         }
     }
     let shaded = vec4<f32>(shaded_rgb + emissive, base.a);
@@ -312,12 +312,12 @@ fn pbr_environment_lighting(
     let fresnel = fresnel_schlick(n_dot_v, f0);
     let diffuse_energy = (vec3<f32>(1.0) - fresnel) * (1.0 - metallic);
     // Phase 1C step 2: real diffuse + specular IBL.
-    //   - Diffuse: cubemap mip 0 sampled in the surface-normal direction.
+    //   - Diffuse: prepared irradiance from the active environment.
     //   - Specular: GGX-prefiltered cubemap sampled in the reflection
     //     direction at a roughness-driven mip, then composited with the
     //     split-sum BRDF LUT into `prefiltered * (F0 * lut.x + lut.y)`.
-    let environment_radiance = textureSampleLevel(environment_cubemap, environment_sampler, normal, 0.0).rgb;
-    let diffuse = diffuse_energy * base * environment_radiance * camera.lighting.environment_diffuse_intensity.w;
+    let diffuse_irradiance = camera.lighting.environment_diffuse_intensity.rgb;
+    let diffuse = diffuse_energy * base * diffuse_irradiance * camera.lighting.environment_diffuse_intensity.w;
     let reflection = reflect(-view, normal);
     let prefilter_max_mip = 4.0;
     let prefilter_mip = clamp(roughness, 0.0, 1.0) * prefilter_max_mip;
@@ -377,7 +377,7 @@ fn geometry_schlick_ggx(n_dot: f32, k: f32) -> f32 {
 }
 
 fn fresnel_schlick(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
-    return f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - clamp(cos_theta, 0.0, 1.0), 5.0);
+    return f0 + (vec3<f32>(1.0) - f0) * pow5(1.0 - clamp(cos_theta, 0.0, 1.0));
 }
 
 fn distance_attenuation(to_light: vec3<f32>, range: f32) -> f32 {
@@ -387,8 +387,18 @@ fn distance_attenuation(to_light: vec3<f32>, range: f32) -> f32 {
         return inverse_square;
     }
     let distance = sqrt(distance_squared);
-    let range_falloff = clamp(1.0 - pow(distance / range, 4.0), 0.0, 1.0);
+    let range_falloff = clamp(1.0 - pow4(distance / range), 0.0, 1.0);
     return inverse_square * range_falloff * range_falloff;
+}
+
+fn pow4(value: f32) -> f32 {
+    let squared = value * value;
+    return squared * squared;
+}
+
+fn pow5(value: f32) -> f32 {
+    let squared = value * value;
+    return squared * squared * value;
 }
 
 fn spot_cone_attenuation(cos_angle: f32, inner_cone_cos: f32, outer_cone_cos: f32) -> f32 {

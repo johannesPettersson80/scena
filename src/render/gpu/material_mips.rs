@@ -74,6 +74,8 @@ mod tests {
                 TextureWrap::Repeat,
                 TextureWrap::Repeat,
             ),
+            #[cfg(target_arch = "wasm32")]
+            browser_image: None,
             uses_decoded_texture: true,
         };
 

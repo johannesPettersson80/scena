@@ -5,6 +5,10 @@ Type: Guide.
 Use connector frames when one object must be placed relative to another. Application code
 should name connection points and let `Scene` solve the source node transform.
 
+For the full viewer setup around this workflow, including automatic camera
+framing, studio lighting, grid floor, auto exposure, and projected connector
+labels, see [Easy scene setup](easy-scene-setup.md).
+
 ## Scene-Authored Connectors
 
 ```rust
@@ -54,6 +58,19 @@ scene.connect_import_connectors(
 
 This preserves connector kind, allowed mates, tags, snap tolerance, roll policy, polarity,
 and opaque metadata from the glTF extras.
+
+For the common shaft/hub case, the direct mating helper keeps application code
+free of raw transform math:
+
+```rust
+let drive = scene.instantiate(&drive_part)?;
+let load = scene.instantiate(&load_part)?;
+scene.mate(&drive, "shaft", &load, "hub")?;
+```
+
+When showing a before/after replay, use `Scene::bounds_for_transforms()` to
+frame every pose that may be visible, and use `Scene::project_world_point()` for
+connector labels so they continue to track the parts during orbit and replay.
 
 ## Locked Nodes
 

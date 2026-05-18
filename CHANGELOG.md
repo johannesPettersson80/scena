@@ -2,6 +2,51 @@
 
 All notable user-facing changes are recorded here.
 
+## [Unreleased]
+
+### Changed
+
+- Updated the browser demo showcase so connector mating is the default first
+  render with a synced Rust code panel, visible replay action, collapsed
+  diagnostics, and a README connector-snap hero GIF.
+- Added easy scene setup APIs and docs for projection-based camera framing,
+  matte grid floors, studio lighting, renderer-managed auto exposure, projected
+  labels, and connector replay framing.
+
+### Fixed
+
+- Browser HDR/IBL diffuse lighting now uses prepared diffuse irradiance instead
+  of sampling raw HDR radiance in the surface-normal direction, avoiding dark or
+  washed-out connector renders while preserving the specular path.
+- Public demo timing logs are quiet by default and remain available through
+  `?perf=1` or `?timing=1`.
+
+## [1.2.0] - 2026-05-17
+
+### Added
+
+- Added `AssetLoadOptions` with `with_strict_textures(true)` plus
+  `Assets::load_scene_with_options` and `Assets::load_scene_with_report_options`
+  so browser hosts can promote missing external glTF image fetches from warnings
+  to hard load errors.
+- Added `DiagnosticCode::MaterialTextureMissingDecodedPixels` and
+  `RendererStats::material_textures_missing_decoded_pixels` so descriptor-only
+  material textures are visible during `prepare_with_assets`.
+- Added browser WebGL2/WebGPU visual coverage for manual `SceneAsset` source
+  material reuse on the dense Khronos WaterBottle glTF with external relative
+  PBR textures.
+
+### Fixed
+
+- Depth prepass eligibility now ignores ineligible helper/stroke primitives
+  instead of disabling the prepass for the whole scene.
+- WebGL2 and WebGPU color/depth passes now use the same
+  `clip_from_world * world_position` path, avoiding precision disagreement in
+  dense browser scenes.
+- Browser asset loading now emits console warnings when optional external
+  textures cannot be fetched and the caller did not request strict texture
+  loading.
+
 ## [1.1.0] - 2026-05-16
 
 ### Changed

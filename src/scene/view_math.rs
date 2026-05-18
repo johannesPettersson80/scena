@@ -81,6 +81,29 @@ pub(super) fn subtract_vec3(left: Vec3, right: Vec3) -> Vec3 {
     Vec3::new(left.x - right.x, left.y - right.y, left.z - right.z)
 }
 
+pub(crate) fn world_to_view(world_position: Vec3, world_from_camera: Transform) -> Option<Vec3> {
+    if !world_from_camera.translation.is_finite()
+        || !world_from_camera.rotation.is_finite()
+        || !is_finite_nonzero_scale(world_from_camera.scale)
+    {
+        return None;
+    }
+    let translated = subtract_vec3(world_position, world_from_camera.translation);
+    let rotated = rotate_vec3(inverse_unit_quat(world_from_camera.rotation), translated);
+    Some(Vec3::new(
+        rotated.x / world_from_camera.scale.x,
+        rotated.y / world_from_camera.scale.y,
+        rotated.z / world_from_camera.scale.z,
+    ))
+}
+
+fn is_finite_nonzero_scale(scale: Vec3) -> bool {
+    scale.is_finite()
+        && scale.x.abs() > f32::EPSILON
+        && scale.y.abs() > f32::EPSILON
+        && scale.z.abs() > f32::EPSILON
+}
+
 fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
     Vec3::new(value.x * scale, value.y * scale, value.z * scale)
 }

@@ -382,7 +382,6 @@ impl Scene {
             .ok_or(LookupError::NodeNotFound(node))?;
         if node.transform != transform {
             node.transform = transform;
-            self.structure_revision = self.structure_revision.saturating_add(1);
             self.transform_revision = self.transform_revision.saturating_add(1);
         }
         Ok(())
@@ -390,4 +389,4 @@ impl Scene {
 }
 
 const FRAME_PADDING: f32 = 1.15;
-const MIN_FRAME_RADIUS: f32 = 0.5;
+const MIN_FRAME_RADIUS: f32 = 0.05;
