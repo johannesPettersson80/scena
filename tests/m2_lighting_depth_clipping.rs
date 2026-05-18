@@ -1120,29 +1120,47 @@ fn m2_resource_counters_return_to_baseline_after_empty_prepare() {
     renderer
         .prepare(&mut empty_scene)
         .expect("empty scene prepares after clearing M2 resources");
-    let released = renderer.stats();
+    let queued = renderer.stats();
 
-    assert_eq!(released.environments, baseline.environments);
-    assert_eq!(released.environment_cubemaps, baseline.environment_cubemaps);
+    assert_eq!(queued.environments, baseline.environments);
+    assert_eq!(queued.environment_cubemaps, baseline.environment_cubemaps);
     assert_eq!(
-        released.environment_prefilter_passes,
+        queued.environment_prefilter_passes,
         baseline.environment_prefilter_passes
     );
+    assert_eq!(queued.environment_brdf_luts, baseline.environment_brdf_luts);
+    assert_eq!(queued.shadow_maps, baseline.shadow_maps);
     assert_eq!(
-        released.environment_brdf_luts,
-        baseline.environment_brdf_luts
-    );
-    assert_eq!(released.shadow_maps, baseline.shadow_maps);
-    assert_eq!(
-        released.directional_shadow_map_resolution,
+        queued.directional_shadow_map_resolution,
         baseline.directional_shadow_map_resolution
     );
     assert_eq!(
-        released.directional_shadow_pcf_kernel,
+        queued.directional_shadow_pcf_kernel,
         baseline.directional_shadow_pcf_kernel
     );
-    assert_eq!(released.depth_prepass_passes, baseline.depth_prepass_passes);
-    assert_eq!(released.depth_prepass_draws, baseline.depth_prepass_draws);
+    assert_eq!(queued.depth_prepass_passes, baseline.depth_prepass_passes);
+    assert_eq!(queued.depth_prepass_draws, baseline.depth_prepass_draws);
+    assert_eq!(queued.textures, baseline.textures);
+    assert!(
+        queued.pending_destructions >= baseline.pending_destructions,
+        "released GPU resources may remain queued until the device is polled"
+    );
+
+    if queued.pending_destructions > baseline.pending_destructions {
+        let poll = renderer.poll_device();
+        assert!(poll.gpu_polled);
+        assert_eq!(
+            poll.pending_destructions_before,
+            queued.pending_destructions
+        );
+        assert_eq!(poll.destroyed_resources, queued.pending_destructions);
+        assert_eq!(
+            poll.pending_destructions_after,
+            baseline.pending_destructions
+        );
+    }
+
+    let released = renderer.stats();
     assert_eq!(released.textures, baseline.textures);
     assert_eq!(released.pending_destructions, baseline.pending_destructions);
 }
