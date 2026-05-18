@@ -37,6 +37,7 @@ pub(in crate::render) const PREFILTER_MIP_COUNT: u32 = 5;
 /// smooth specular without blowing the GPU upload budget.
 pub(in crate::render) const BRDF_LUT_SIZE: u32 = 64;
 const HDR_DIFFUSE_IBL_RESPONSE_SCALE: f32 = 0.8;
+const HDR_IBL_INTENSITY_SCALE: f32 = 0.75;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::render) enum EnvironmentLightingProfile {
@@ -223,6 +224,11 @@ impl PreparedEnvironmentLighting {
                 cubemap,
             };
         }
+        let intensity = if environment.is_equirectangular_hdr() {
+            HDR_IBL_INTENSITY_SCALE
+        } else {
+            1.0
+        };
         Self {
             diffuse_rgb,
             specular_rgb: Vec3::new(
@@ -230,7 +236,7 @@ impl PreparedEnvironmentLighting {
                 sanitize_environment_channel(irradiance[1]),
                 sanitize_environment_channel(irradiance[2]),
             ),
-            intensity: 1.0,
+            intensity,
             cubemap,
         }
     }
@@ -462,7 +468,7 @@ mod tests {
     }
 
     #[test]
-    fn hdr_diffuse_ibl_uses_calibrated_strength_without_dimming_specular() {
+    fn hdr_ibl_uses_calibrated_strength_for_diffuse_and_specular() {
         let desc = EnvironmentDesc::from_equirectangular_hdr_bytes(
             "memory://uniform-studio.hdr",
             &rle_radiance_hdr_uniform(8, 1, [64, 32, 16, 129]),
@@ -480,11 +486,11 @@ mod tests {
 
         assert_vec4_close(
             lighting.gpu_diffuse_intensity(),
-            [0.401_568_65, 0.200_784_33, 0.100_392_16, 1.0],
+            [0.401_568_65, 0.200_784_33, 0.100_392_16, 0.75],
         );
         assert_vec4_close(
             lighting.gpu_specular_intensity(),
-            [0.501_960_8, 0.250_980_4, 0.125_490_2, 1.0],
+            [0.501_960_8, 0.250_980_4, 0.125_490_2, 0.75],
         );
     }
 

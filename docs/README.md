@@ -7,10 +7,12 @@ and deterministic headless rendering.
 ## Start here
 
 - [README](../README.md): install, quick start, features, examples, and platform support.
-- [docs.rs API reference](https://docs.rs/scena/1.2.0/scena/): generated Rust API docs.
+- [docs.rs API reference](https://docs.rs/scena/1.3.0/scena/): generated Rust API docs.
 - [Getting started](getting-started.md): install, first scene, GLB loading, and output paths.
+- [Easy scene setup](guides/easy-scene-setup.md): frame models, add studio lighting,
+  add a matte grid floor, enable auto exposure, and connect authored anchors.
 - [API overview](api.md): the main public types and how they fit together.
-- [v1.2.0 release notes](release-notes/v1.2.0.md): published release evidence and compatibility notes.
+- [v1.3.0 release notes](release-notes/v1.3.0.md): easy scene setup API notes and required proof.
 
 ## Core documentation
 
@@ -33,6 +35,7 @@ and deterministic headless rendering.
 
 ## Guides
 
+- [Easy scene setup](guides/easy-scene-setup.md)
 - [Migrating from Three.js](guides/migrating-from-threejs.md)
 - [Place and connect objects](guides/place-and-connect-objects.md)
 - [Units, axes, and handedness](guides/units-axes-handedness.md)

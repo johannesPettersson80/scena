@@ -1,13 +1,16 @@
 import init, {
   load_gltf_from_bytes,
+  load_gltf_with_floor_from_bytes,
+  load_gltf_with_view_from_bytes,
   load_connector_snap_from_bytes,
   attach_to_canvas,
+  connector_marker_positions,
   connector_replay_active,
   forward_pointer_event,
   replay_connector_snap,
   resize,
   tick,
-} from "./pkg/scena.js";
+} from "./pkg/scena.js?v=20260518-waterbottle-facing-label-1";
 
 const SAMPLE_GROUPS = [
   {
@@ -30,6 +33,7 @@ const SAMPLE_GROUPS = [
         path: "/samples/connector-snap/drive_unit.glb",
         tone: "blue",
         code: "asset",
+        floor: true,
       },
       {
         id: "load-unit",
@@ -38,6 +42,7 @@ const SAMPLE_GROUPS = [
         path: "/samples/connector-snap/load_unit.glb",
         tone: "amber",
         code: "asset",
+        floor: true,
       },
     ],
   },
@@ -51,6 +56,7 @@ const SAMPLE_GROUPS = [
         path: "/samples/khronos/WaterBottle.glb",
         tone: "rust",
         code: "asset",
+        view: { yaw: 1.34, pitch: 0.34 },
       },
       {
         id: "toy-car",
@@ -59,6 +65,7 @@ const SAMPLE_GROUPS = [
         path: "/samples/khronos/ToyCar.glb",
         tone: "blue",
         code: "asset",
+        floor: true,
       },
     ],
   },
@@ -87,10 +94,16 @@ const codeSubtitle = document.getElementById("code-subtitle");
 const codeSnippet = document.getElementById("code-snippet");
 const copyButton = document.getElementById("copy-code");
 const replayButton = document.getElementById("replay-button");
+const connectorStory = document.getElementById("connector-story");
+const connectorResult = document.getElementById("connector-result");
+const connectorOverlay = document.getElementById("connector-overlay");
+const connectorMarkers = {
+  shaft: connectorOverlay?.querySelector('[data-connector="shaft"]'),
+  hub: connectorOverlay?.querySelector('[data-connector="hub"]'),
+};
 const metricFrame = document.getElementById("metric-frame");
 const metricBytes = document.getElementById("metric-bytes");
 const metricPhase = document.getElementById("metric-phase");
-const metricOrbit = document.getElementById("metric-orbit");
 
 let app = null;
 let attached = false;
@@ -102,6 +115,7 @@ let lastFrameAt = performance.now();
 let pointerDown = false;
 let orbit = { yaw: -0.48, pitch: 0.31, distance: 2.0 };
 let replayActive = false;
+let connectorStoryState = "before";
 
 function buildSampleButtons() {
   const children = [];
@@ -132,7 +146,11 @@ function updateActiveButton() {
   for (const button of sampleList.querySelectorAll(".sample-button")) {
     button.classList.toggle("active", button.dataset.sample === activeAsset.id);
   }
-  replayButton.hidden = activeAsset.code !== "connector";
+  const isConnector = activeAsset.code === "connector";
+  replayButton.hidden = !isConnector;
+  connectorStory.hidden = !isConnector;
+  connectorOverlay.hidden = !isConnector;
+  updateConnectorMarkers();
 }
 
 function formatBytes(bytes) {
@@ -156,6 +174,7 @@ function setPhase(label) {
 function setReplayStatus() {
   replayActive = true;
   metricPhase.textContent = "replaying";
+  setConnectorStoryState("replaying");
   setStatus(activeAsset.label, "replaying connector snap");
 }
 
@@ -178,29 +197,123 @@ function setError(text) {
 function updateMetrics(bytes = null) {
   metricFrame.textContent = String(frameCount);
   if (bytes !== null) metricBytes.textContent = formatBytes(bytes);
-  metricOrbit.textContent = `${orbit.yaw.toFixed(2)} / ${orbit.pitch.toFixed(2)} / ${orbit.distance.toFixed(2)}`;
 }
 
 function rustString(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function codeLine(text, options = {}) {
+  const id = options.id ? ` id="${options.id}"` : "";
+  const className = options.className ? ` ${options.className}` : "";
+  return `<span${id} class="code-line${className}">${escapeHtml(text)}</span>`;
+}
+
+function setConnectorStoryState(state) {
+  connectorStoryState = state;
+  connectorOverlay.dataset.state = state;
+  document.getElementById("mate-line")?.classList.toggle("is-active", state === "replaying");
+  if (state === "replaying") {
+    connectorResult.textContent = 'Running scene.mate(&drive, "shaft", &load, "hub"): the shaft connector is moving to the hub connector.';
+  } else if (state === "aligned") {
+    connectorResult.textContent =
+      "Aligned via authored connectors: drive_unit (Y-up, mm) + load_unit (Z-up, m), mated without hand-entered coordinates.";
+  } else {
+    connectorResult.textContent =
+      "Before snap: drive_unit (Y-up, mm) and load_unit (Z-up, m) start separated.";
+  }
+  updateConnectorMarkers();
+}
+
+function updateConnectorMarkers() {
+  if (!connectorOverlay) return;
+  const isConnector = activeAsset.code === "connector" && attached && app;
+  if (!isConnector) {
+    for (const marker of Object.values(connectorMarkers)) {
+      if (marker) marker.dataset.visible = "false";
+    }
+    return;
+  }
+  try {
+    const positions = connector_marker_positions(
+      app,
+      Math.max(1, Math.round(canvas.clientWidth)),
+      Math.max(1, Math.round(canvas.clientHeight)),
+    );
+    const visiblePositions = {};
+    for (const [name, marker] of Object.entries(connectorMarkers)) {
+      const position = positions?.[name];
+      if (!marker || !position?.visible) {
+        if (marker) marker.dataset.visible = "false";
+        continue;
+      }
+      marker.style.left = `${position.x}px`;
+      marker.style.top = `${position.y}px`;
+      marker.dataset.visible = "true";
+      visiblePositions[name] = position;
+    }
+    const shaft = visiblePositions.shaft;
+    const hub = visiblePositions.hub;
+    const labelsOverlap =
+      shaft && hub && Math.hypot(shaft.x - hub.x, shaft.y - hub.y) < 72;
+    for (const [name, marker] of Object.entries(connectorMarkers)) {
+      if (!marker) continue;
+      if (!labelsOverlap) {
+        delete marker.dataset.cluster;
+      } else {
+        marker.dataset.cluster = name === "shaft" ? "left" : "right";
+      }
+    }
+  } catch (err) {
+    for (const marker of Object.values(connectorMarkers)) {
+      if (marker) marker.dataset.visible = "false";
+    }
+    if (TIMING_ENABLED) console.info("[scena-demo] connector marker projection skipped", err);
+  }
+}
+
+window.__scenaDemoProbe = {
+  connectorMarkerPositions() {
+    if (!app || activeAsset.code !== "connector") return null;
+    return connector_marker_positions(
+      app,
+      Math.max(1, Math.round(canvas.clientWidth)),
+      Math.max(1, Math.round(canvas.clientHeight)),
+    );
+  },
+};
+
 function updateCodePanel() {
   codeTitle.textContent = activeAsset.code === "connector" ? "Connector snap" : "Rust";
   codeSubtitle.textContent =
     activeAsset.code === "connector" ? 'scene.mate(&drive, "shaft", &load, "hub")' : activeAsset.path;
   if (activeAsset.code === "connector") {
-    codeSnippet.textContent = `let assets = Assets::new();
-let drive_part = assets.load_scene("drive_unit.glb").await?;
-let load_part  = assets.load_scene("load_unit.glb").await?;
-
-let mut scene = Scene::new();
-let drive = scene.instantiate(&drive_part)?;
-let load  = scene.instantiate(&load_part)?;
-
-scene.mate(&drive, "shaft", &load, "hub")?;`;
+    codeSnippet.innerHTML = [
+      codeLine("let assets = Assets::new();"),
+      codeLine('let drive_part = assets.load_scene("drive_unit.glb").await?;'),
+      codeLine('let load_part  = assets.load_scene("load_unit.glb").await?;'),
+      codeLine(""),
+      codeLine("let mut scene = Scene::new();"),
+      codeLine("let drive = scene.instantiate(&drive_part)?;"),
+      codeLine("let load  = scene.instantiate(&load_part)?;"),
+      codeLine(""),
+      codeLine('scene.mate(&drive, "shaft", &load, "hub")?;', { id: "mate-line" }),
+    ].join("");
+    setConnectorStoryState(connectorStoryState);
     return;
   }
+
+  const viewOption = activeAsset.view
+    ? `.orbit(${orbit.yaw.toFixed(2)}, ${orbit.pitch.toFixed(2)})`
+    : `.isometric()`;
 
   codeSnippet.textContent = `let assets = Assets::new();
 let scene_asset = assets
@@ -209,10 +322,25 @@ let scene_asset = assets
 
 let mut scene = Scene::new();
 let import = scene.instantiate(&scene_asset)?;
-let camera = scene.add_default_camera()?;
-scene.frame_import(camera, &import)?;
+let bounds = import.bounds_world(&scene).ok_or("model has no bounds")?;
+scene.add_studio_lighting()?;
+scene.add_grid_floor(&assets, GridFloorOptions::new().under_bounds(bounds))?;
 
-let controls = OrbitControls::new(Vec3::ZERO, ${orbit.distance.toFixed(2)})
+let camera = scene.add_perspective_camera(
+    scene.root(),
+    PerspectiveCamera::default().with_aspect(width as f32 / height as f32),
+    Transform::default(),
+)?;
+	let framing = scene.frame_bounds(
+	    camera,
+	    bounds,
+	    FramingOptions::new()
+	        ${viewOption}
+	        .fill(0.72)
+	        .viewport(width, height),
+)?;
+
+let controls = OrbitControls::from_framing(framing)
     .with_damping(0.12);`;
 }
 
@@ -236,7 +364,9 @@ async function start() {
   updateCodePanel();
   updateMetrics();
   beginPhase("initialising WASM");
-  await init();
+  await init({
+    module_or_path: new URL("./pkg/scena_bg.wasm?v=20260518-connector-story-1", import.meta.url),
+  });
   wireDragDrop();
   wirePointer();
   wireResize();
@@ -250,6 +380,9 @@ async function start() {
 
 async function loadSample(sample) {
   activeAsset = sample;
+  if (sample.code === "connector") {
+    setConnectorStoryState("before");
+  }
   updateActiveButton();
   updateCodePanel();
   beginPhase(sample.code === "connector" ? "fetching connector parts" : "fetching sample");
@@ -283,6 +416,8 @@ async function loadConnectorAndAttach(driveBytes, loadBytes, asset, byteLength) 
   activeAsset = asset;
   orbit = { yaw: -0.48, pitch: 0.31, distance: 2.0 };
   replayActive = false;
+  frameCount = 0;
+  setConnectorStoryState("before");
   updateActiveButton();
   updateCodePanel();
   updateMetrics(byteLength);
@@ -291,7 +426,6 @@ async function loadConnectorAndAttach(driveBytes, loadBytes, asset, byteLength) 
   beginPhase("creating WebGL2 renderer");
   await attach_to_canvas(app, canvas);
   attached = true;
-  frameCount = 0;
   lastFrameAt = performance.now();
   beginPhase("preparing first frame");
   requestRender();
@@ -300,17 +434,29 @@ async function loadConnectorAndAttach(driveBytes, loadBytes, asset, byteLength) 
 async function loadAndAttach(bytes, asset, byteLength) {
   attached = false;
   activeAsset = asset;
-  orbit = { yaw: -0.46, pitch: 0.34, distance: 2.0 };
+  orbit = { yaw: asset.view?.yaw ?? -0.46, pitch: asset.view?.pitch ?? 0.34, distance: 2.0 };
   replayActive = false;
+  frameCount = 0;
   updateActiveButton();
   updateCodePanel();
   updateMetrics(byteLength);
   beginPhase("parsing glTF");
-  app = await load_gltf_from_bytes(bytes, canvas.width, canvas.height);
+  if (asset.view) {
+    app = await load_gltf_with_view_from_bytes(
+      bytes,
+      canvas.width,
+      canvas.height,
+      Boolean(asset.floor),
+      orbit.yaw,
+      orbit.pitch,
+    );
+  } else {
+    const load = asset.floor ? load_gltf_with_floor_from_bytes : load_gltf_from_bytes;
+    app = await load(bytes, canvas.width, canvas.height);
+  }
   beginPhase("creating WebGL2 renderer");
   await attach_to_canvas(app, canvas);
   attached = true;
-  frameCount = 0;
   lastFrameAt = performance.now();
   beginPhase("preparing first frame");
   requestRender();
@@ -330,15 +476,27 @@ function requestRender() {
       lastFrameAt = now;
       tick(app, dtSeconds);
       frameCount += 1;
+      updateConnectorMarkers();
       const stillReplaying = isReplayTick && connector_replay_active(app);
       replayActive = stillReplaying;
       if (stillReplaying) {
         metricPhase.textContent = "replaying";
-        setStatus(activeAsset.label, `replaying connector snap · frame ${frameCount}`);
+        setStatus(activeAsset.label, "running scene.mate()");
         requestRender();
       } else {
         metricPhase.textContent = "rendered";
-        setStatus(activeAsset.label, `frame ${frameCount}`);
+        if (activeAsset.code === "connector") {
+          if (isReplayTick) {
+            setConnectorStoryState("aligned");
+            setStatus(activeAsset.label, "aligned via authored connectors");
+          } else if (connectorStoryState === "before") {
+            setStatus(activeAsset.label, "before snap");
+          } else {
+            setStatus(activeAsset.label, "aligned via authored connectors");
+          }
+        } else {
+          setStatus(activeAsset.label, "rendered");
+        }
       }
       updateMetrics();
     } catch (err) {
@@ -364,7 +522,7 @@ function wireActions() {
   });
 
   copyButton.addEventListener("click", async () => {
-    const text = codeSnippet.textContent || "";
+    const text = codeSnippet.innerText || codeSnippet.textContent || "";
     try {
       await navigator.clipboard.writeText(text);
       copyButton.textContent = "Copied";

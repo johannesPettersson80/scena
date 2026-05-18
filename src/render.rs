@@ -8,6 +8,7 @@ mod color_contract;
 mod cpu;
 mod culling;
 mod environment_cache;
+mod exposure;
 mod gpu;
 mod offscreen;
 mod output;
@@ -28,6 +29,10 @@ use crate::picking::InteractionStyle;
 use crate::platform::SurfaceKind;
 use crate::scene::{CameraKey, ClippingPlane, Scene};
 
+pub use self::exposure::{
+    AutoExposureConfig, AutoExposureResult, estimate_auto_exposure_from_linear_colors,
+    estimate_auto_exposure_from_srgb8,
+};
 use self::gpu::GpuDeviceState;
 pub use self::offscreen::{OffscreenTarget, PixelReadback};
 use self::output::OutputTransform;
@@ -65,6 +70,8 @@ pub struct Renderer {
     environment: Option<EnvironmentHandle>,
     environment_lighting_cache: Option<environment_cache::EnvironmentLightingCache>,
     background_color: Color,
+    auto_exposure: Option<AutoExposureConfig>,
+    last_auto_exposure: Option<AutoExposureResult>,
     environment_revision: u64,
     target_revision: u64,
     prepare_telemetry: PrepareTelemetry,
@@ -76,6 +83,8 @@ struct PrepareTelemetry {
     full_prepares: u64,
     prepared_primitive_collections: u64,
     static_gpu_resource_rebuilds: u64,
+    dynamic_template_prepares: u64,
+    draw_uniform_only_updates: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -125,43 +134,50 @@ impl Renderer {
 
         let camera_projection = camera::CameraProjection::from_scene(scene, camera, self.target)?;
         let primitive_count = self.prepared_state(scene)?.primitives.len() as u64;
-        if self.gpu.is_some() {
-            self.draw_gpu(&camera_projection)?;
-        } else {
-            let (primitives, clipping_planes) = {
-                let prepared = self.prepared_state(scene)?;
-                (
-                    prepared.primitives.clone(),
-                    prepared.clipping_planes.clone(),
-                )
-            };
-            let linear_frame = self
-                .linear_frame
-                .as_mut()
-                .expect("CPU renderer owns a linear accumulator");
-            let depth_frame = self
-                .depth_frame
-                .as_mut()
-                .expect("CPU renderer owns a depth buffer");
-            let mut cpu_frame = cpu::CpuFrame::new(
-                self.target,
-                self.output,
-                linear_frame,
-                depth_frame,
-                &mut self.frame,
-            );
-            cpu::clear_cpu(&mut cpu_frame, self.background_color);
-            for primitive in &primitives {
-                cpu::draw_primitive_cpu(
-                    &mut cpu_frame,
-                    primitive,
-                    &clipping_planes,
-                    &camera_projection,
+        let mut auto_exposure_attempted = false;
+        loop {
+            if self.gpu.is_some() {
+                self.draw_gpu(&camera_projection)?;
+            } else {
+                let (primitives, clipping_planes) = {
+                    let prepared = self.prepared_state(scene)?;
+                    (
+                        prepared.primitives.clone(),
+                        prepared.clipping_planes.clone(),
+                    )
+                };
+                let linear_frame = self
+                    .linear_frame
+                    .as_mut()
+                    .expect("CPU renderer owns a linear accumulator");
+                let depth_frame = self
+                    .depth_frame
+                    .as_mut()
+                    .expect("CPU renderer owns a depth buffer");
+                let mut cpu_frame = cpu::CpuFrame::new(
+                    self.target,
+                    self.output,
+                    linear_frame,
+                    depth_frame,
+                    &mut self.frame,
                 );
+                cpu::clear_cpu(&mut cpu_frame, self.background_color);
+                for primitive in &primitives {
+                    cpu::draw_primitive_cpu(
+                        &mut cpu_frame,
+                        primitive,
+                        &clipping_planes,
+                        &camera_projection,
+                    );
+                }
             }
+            self.stats.fxaa_passes =
+                output::apply_fxaa_rgba8(self.target, &mut self.frame, &mut self.fxaa_scratch);
+            if auto_exposure_attempted || !self.apply_managed_auto_exposure_after_render() {
+                break;
+            }
+            auto_exposure_attempted = true;
         }
-        self.stats.fxaa_passes =
-            output::apply_fxaa_rgba8(self.target, &mut self.frame, &mut self.fxaa_scratch);
         self.poll_device();
 
         self.stats.frames_rendered = self.stats.frames_rendered.saturating_add(1);
@@ -359,7 +375,7 @@ mod tests {
     use super::Renderer;
 
     #[test]
-    fn transform_only_gpu_prepare_recollects_primitives_for_visual_correctness() {
+    fn transform_only_gpu_prepare_updates_draw_uniforms_without_recollecting_primitives() {
         let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
             return;
         };
@@ -394,9 +410,22 @@ mod tests {
         let second = renderer.prepare_telemetry_for_test();
 
         assert_eq!(
-            second.prepared_primitive_collections,
-            first.prepared_primitive_collections + 1,
-            "transform-only GPU prepares must use the canonical prepared primitive order until a visual-equivalence gate proves a fast path safe"
+            second.prepared_primitive_collections, first.prepared_primitive_collections,
+            "transform-only GPU prepares must skip canonical primitive collection"
+        );
+        assert_eq!(
+            second.static_gpu_resource_rebuilds, first.static_gpu_resource_rebuilds,
+            "transform-only GPU prepares must reuse static GPU draw resources"
+        );
+        assert_eq!(
+            second.dynamic_template_prepares,
+            first.dynamic_template_prepares + 1,
+            "transform-only GPU prepares must take the dynamic template path"
+        );
+        assert_eq!(
+            second.draw_uniform_only_updates,
+            first.draw_uniform_only_updates + 1,
+            "transform-only GPU prepares must update per-draw uniforms"
         );
     }
 

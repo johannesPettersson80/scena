@@ -9,43 +9,19 @@ use crate::scene::{
     SourceUnits, Transform,
 };
 
+#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+mod browser_timing;
 mod capabilities;
 mod diagnostic;
 mod display;
 mod help;
+#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+pub(crate) use browser_timing::browser_timing_enabled;
 pub use capabilities::{
     AdapterLimitsReport, AlphaPipelineStatus, Backend, Capabilities, CapabilityReport,
     CapabilityStatus, GpuAdapterReport, HardwareTier, OutputStageStatus,
 };
 pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
-
-#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
-pub(crate) fn browser_timing_enabled() -> bool {
-    web_sys::window()
-        .and_then(|window| {
-            js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str("location")).ok()
-        })
-        .and_then(|location| {
-            js_sys::Reflect::get(&location, &wasm_bindgen::JsValue::from_str("search")).ok()
-        })
-        .and_then(|search| search.as_string())
-        .is_some_and(|search| {
-            search
-                .trim_start_matches('?')
-                .split('&')
-                .filter(|part| !part.is_empty())
-                .any(|part| {
-                    part == "perf"
-                        || part == "timing"
-                        || part
-                            .strip_prefix("perf=")
-                            .is_some_and(|value| value != "0" && value != "false")
-                        || part
-                            .strip_prefix("timing=")
-                            .is_some_and(|value| value != "0" && value != "false")
-                })
-        })
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Error {
@@ -323,9 +299,25 @@ pub enum LookupError {
     PathNotFound {
         path: String,
     },
+    /// A viewport width or height was zero where projection/framing needs pixels.
     InvalidViewport {
         width: u32,
         height: u32,
+    },
+    /// Bounds were empty, non-finite, or otherwise unsuitable for framing.
+    InvalidBounds {
+        reason: &'static str,
+    },
+    /// A named framing option failed validation before camera state was changed.
+    InvalidFramingOption {
+        field: &'static str,
+        reason: &'static str,
+    },
+    /// The requested operation does not support the camera type yet.
+    UnsupportedCameraType {
+        camera: CameraKey,
+        operation: &'static str,
+        supported: &'static str,
     },
     ImportHasNoBounds,
     StaleImport,

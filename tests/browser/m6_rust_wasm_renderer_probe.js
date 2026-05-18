@@ -367,6 +367,7 @@ function assertPunctualLightProof(backend, result, channel, workflow) {
 function assertNormalMapProof(backend, result) {
   const metadata = result.metadata || {};
   const normalMapPixels = metadata.normal_map_pixels || {};
+  const missingDecodedPixels = result.stats && result.stats.material_textures_missing_decoded_pixels;
   if (
     metadata.proof_class !== "browser-pbr-normal-map" ||
     normalMapPixels.flat_normal !== true ||
@@ -377,6 +378,11 @@ function assertNormalMapProof(backend, result) {
   ) {
     throw new Error(
       `${backend} pbr-normal-map proof did not record normal-map metadata and sample pixels: ${JSON.stringify(result)}`,
+    );
+  }
+  if (missingDecodedPixels !== 0) {
+    throw new Error(
+      `${backend} pbr-normal-map direct load_texture normal maps must decode before GPU upload; missing decoded pixels=${missingDecodedPixels}: ${JSON.stringify(result)}`,
     );
   }
   const flat = result.pixels.flat;

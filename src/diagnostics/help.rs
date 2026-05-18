@@ -131,6 +131,15 @@ impl LookupError {
                 "use SceneImport::path_segments when names contain slashes"
             }
             Self::InvalidViewport { .. } => "use non-zero physical viewport dimensions",
+            Self::InvalidBounds { .. } => {
+                "use finite non-empty bounds whose min components are less than or equal to max"
+            }
+            Self::InvalidFramingOption { .. } => {
+                "use finite bounds, a non-zero view direction, 0 < fill <= 1, and margins smaller than the viewport"
+            }
+            Self::UnsupportedCameraType { .. } => {
+                "use a perspective camera for this helper or call a camera-type-specific framing method"
+            }
             Self::ImportHasNoBounds => {
                 "frame a node, add renderable geometry, or choose a manual camera pose"
             }

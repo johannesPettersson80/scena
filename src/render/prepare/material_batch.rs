@@ -37,6 +37,11 @@ pub enum MaterialBatchIncompatibility {
     /// The source formats differ (e.g. one PNG, one KTX2). Array
     /// layers must share the underlying GPU format.
     FormatMismatch,
+    /// Browser WebGPU normal-map array batching is disabled until the
+    /// M6 browser proof validates tangent-space normal map sampling
+    /// through the texture-array path. The per-material path remains
+    /// the correctness fallback.
+    NormalMapBatchingDeferred,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,6 +93,14 @@ pub(in crate::render) fn compute_material_batch_plan(
         MaterialTextureRole::Occlusion,
         MaterialTextureRole::Emissive,
     ] {
+        if role == MaterialTextureRole::Normal && role_is_populated(role, slots) {
+            return MaterialBatchPlan {
+                batchable: false,
+                layer_count: 0,
+                incompatible_role: Some(role),
+                incompatible_reason: Some(MaterialBatchIncompatibility::NormalMapBatchingDeferred),
+            };
+        }
         if let Some(reason) = role_compatibility(role, slots) {
             return MaterialBatchPlan {
                 batchable: false,
@@ -103,6 +116,10 @@ pub(in crate::render) fn compute_material_batch_plan(
         incompatible_role: None,
         incompatible_reason: None,
     }
+}
+
+fn role_is_populated(role: MaterialTextureRole, slots: &[PreparedMaterialSlot]) -> bool {
+    slots.iter().any(|slot| role_texture(role, slot).is_some())
 }
 
 fn role_compatibility(
@@ -233,6 +250,19 @@ mod tests {
         }
     }
 
+    fn material_slot_with_normal(
+        handle: MaterialHandle,
+        normal: TextureDesc,
+    ) -> PreparedMaterialSlot {
+        let mut slot = material_slot_with_base_color(handle, texture_desc(default_sampler()));
+        slot.normal = Some(PreparedMaterialTexture {
+            handle: Default::default(),
+            desc: normal,
+            transform: None,
+        });
+        slot
+    }
+
     fn assets_handle() -> MaterialHandle {
         let assets = Assets::new();
         assets.create_material(MaterialDesc::unlit(Color::WHITE))
@@ -282,6 +312,22 @@ mod tests {
     }
 
     #[test]
+    fn normal_mapped_materials_do_not_use_array_batching_until_webgpu_path_is_proven() {
+        let slots = vec![
+            material_slot_with_normal(assets_handle(), texture_desc(default_sampler())),
+            material_slot_with_normal(assets_handle(), texture_desc(default_sampler())),
+        ];
+        let plan = compute_material_batch_plan(&slots);
+        assert!(!plan.batchable);
+        assert_eq!(plan.layer_count, 0);
+        assert_eq!(plan.incompatible_role, Some(MaterialTextureRole::Normal));
+        assert_eq!(
+            plan.incompatible_reason,
+            Some(MaterialBatchIncompatibility::NormalMapBatchingDeferred),
+        );
+    }
+
+    #[test]
     fn sampler_mismatch_blocks_batching_with_diagnostic_role() {
         let slots = vec![
             material_slot_with_base_color(assets_handle(), texture_desc(default_sampler())),
@@ -313,11 +359,11 @@ mod tests {
     }
 
     #[test]
-    fn unpopulated_role_does_not_block_batching() {
-        // One material has a normal map, the other does not. The
-        // normal-role slot only compares populated entries, so the
-        // missing slot is treated as the fallback and does not break
-        // batchability.
+    fn normal_map_on_any_material_uses_per_material_path() {
+        // One material has a normal map, the other does not. Until
+        // browser WebGPU proves normal maps through texture arrays,
+        // any populated normal slot keeps the per-material bind-group
+        // path.
         let mut left =
             material_slot_with_base_color(assets_handle(), texture_desc(default_sampler()));
         left.normal = Some(PreparedMaterialTexture {
@@ -327,7 +373,12 @@ mod tests {
         });
         let right = material_slot_with_base_color(assets_handle(), texture_desc(default_sampler()));
         let plan = compute_material_batch_plan(&[left, right]);
-        assert!(plan.batchable);
-        assert_eq!(plan.layer_count, 2);
+        assert!(!plan.batchable);
+        assert_eq!(plan.layer_count, 0);
+        assert_eq!(plan.incompatible_role, Some(MaterialTextureRole::Normal));
+        assert_eq!(
+            plan.incompatible_reason,
+            Some(MaterialBatchIncompatibility::NormalMapBatchingDeferred),
+        );
     }
 }

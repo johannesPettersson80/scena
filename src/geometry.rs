@@ -10,7 +10,6 @@ mod primitive;
 mod skinning;
 mod static_batch;
 mod tangents;
-pub use bounds::FramingAngles;
 pub use morph::GeometryMorphTarget;
 pub use skinning::{GeometrySkin, SkinningMatrix};
 pub use static_batch::StaticBatchReport;

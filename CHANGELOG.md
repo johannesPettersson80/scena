@@ -9,6 +9,9 @@ All notable user-facing changes are recorded here.
 - Updated the browser demo showcase so connector mating is the default first
   render with a synced Rust code panel, visible replay action, collapsed
   diagnostics, and a README connector-snap hero GIF.
+- Added easy scene setup APIs and docs for projection-based camera framing,
+  matte grid floors, studio lighting, renderer-managed auto exposure, projected
+  labels, and connector replay framing.
 
 ### Fixed
 

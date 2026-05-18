@@ -204,6 +204,8 @@ pub(crate) const REQUIRED_RELEASE_ARTIFACT_SUFFIXES: &[&str] = &[
     "release-lanes/windows-dx12.json",
     "m5-benchmarks.json",
     "m5-public-api-freeze.json",
+    "examples-visual/camera_framing_frame_bounds.json",
+    "examples-visual/camera_framing_frame_bounds.ppm",
     "examples-visual/cad_plate_drawing_import.ppm",
     "m6-rust-wasm-renderer-probe.json",
     "m9-wasm-size.json",

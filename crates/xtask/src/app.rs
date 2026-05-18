@@ -5,6 +5,7 @@ mod core;
 mod doctor_architecture;
 mod doctor_core;
 mod doctor_docs;
+mod doctor_easy_scene;
 mod doctor_m7_m8_assets;
 mod doctor_render;
 mod doctor_scene_platform;
@@ -33,6 +34,8 @@ mod tests_09;
 mod tests_10;
 #[cfg(test)]
 mod tests_11;
+#[cfg(test)]
+mod tests_12;
 mod util;
 mod visual_artifacts;
 mod visual_proof;

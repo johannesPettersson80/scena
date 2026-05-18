@@ -116,6 +116,31 @@
         display: none;
       }
 
+      .connector-story {
+        display: grid;
+        gap: 10px;
+        padding: 14px 12px;
+        background: #11161c;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .connector-story[hidden] {
+        display: none;
+      }
+
+      .connector-story p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.42;
+      }
+
+      .connector-story strong {
+        color: var(--text);
+        font-weight: 680;
+      }
+
       .sample-group-label {
         grid-column: 1 / -1;
         margin: 14px 0 2px;
@@ -192,10 +217,14 @@
         min-width: 0;
         min-height: 0;
         background:
-          linear-gradient(transparent 23px, rgba(255, 255, 255, 0.03) 24px),
-          linear-gradient(90deg, transparent 23px, rgba(255, 255, 255, 0.03) 24px),
-          #090b0f;
-        background-size: 24px 24px;
+          linear-gradient(
+            180deg,
+            #1a1d23 0%,
+            #1e222a 42%,
+            #262a33 64%,
+            #20242c 86%,
+            #1a1d23 100%
+          );
       }
 
       #canvas {
@@ -205,6 +234,68 @@
         min-width: 0;
         min-height: 0;
         touch-action: none;
+      }
+
+      .connector-overlay {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 5;
+      }
+
+      .connector-overlay[hidden] {
+        display: none;
+      }
+
+      .connector-marker {
+        position: absolute;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 26px;
+        padding: 0 9px 0 6px;
+        color: #f7f2e8;
+        background: rgba(15, 17, 21, 0.78);
+        border: 1px solid rgba(73, 208, 170, 0.68);
+        border-radius: 999px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          "Liberation Mono",
+          monospace;
+        font-size: 11px;
+        line-height: 1;
+        opacity: 0;
+        transform: translate(-50%, -50%);
+        transition:
+          opacity 120ms ease,
+          border-color 120ms ease,
+          background-color 120ms ease;
+      }
+
+      .connector-marker::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border: 2px solid var(--teal);
+        border-radius: 50%;
+        background: rgba(73, 208, 170, 0.16);
+      }
+
+      .connector-marker[data-visible="true"] {
+        opacity: 1;
+      }
+
+      .connector-marker[data-cluster="left"] {
+        transform: translate(calc(-100% - 8px), -50%);
+      }
+
+      .connector-marker[data-cluster="right"] {
+        transform: translate(8px, -50%);
       }
 
       .status {
@@ -341,6 +432,21 @@
           monospace;
       }
 
+      .code-line {
+        display: block;
+        margin: 0 -6px;
+        padding: 0 6px;
+        border-radius: 5px;
+      }
+
+      .code-line.is-active {
+        color: #ffffff;
+        background: rgba(73, 208, 170, 0.26);
+        box-shadow:
+          inset 3px 0 0 var(--teal),
+          0 0 0 1px rgba(73, 208, 170, 0.16);
+      }
+
       .diagnostics {
         border-top: 1px solid var(--line);
       }
@@ -391,23 +497,70 @@
 
       @media (max-width: 720px) {
         body {
-          overflow: auto;
+          overflow: hidden;
         }
 
         .app {
-          grid-template-columns: 1fr;
-          grid-template-rows: auto minmax(420px, 58vh) 260px;
-          min-height: 100vh;
-          height: auto;
+          display: flex;
+          flex-direction: column;
+          height: 100svh;
+          min-height: 100svh;
+          overflow-y: auto;
         }
 
         .samples {
+          order: 2;
           border-right: 0;
           border-bottom: 1px solid var(--line);
         }
 
+        .samples .connector-story {
+          order: 1;
+        }
+
+        .samples .replay-button {
+          order: 2;
+        }
+
+        .samples .brand {
+          order: 3;
+        }
+
+        .samples .sample-picker {
+          order: 4;
+        }
+
+        .samples > .drop-hint {
+          order: 5;
+        }
+
+        .viewport {
+          order: 1;
+          min-height: 430px;
+          height: 64vh;
+        }
+
+        .code {
+          order: 3;
+          display: none;
+        }
+
         .sample-list {
           grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .connector-marker {
+          font-size: 10px;
+          min-height: 24px;
+          padding-right: 8px;
+        }
+
+        .connector-marker[data-cluster="left"] {
+          transform: translate(calc(-100% - 12px), -50%);
+        }
+
+        .connector-marker[data-cluster="right"] {
+          transform: translate(12px, -50%);
         }
 
         .status {
@@ -423,16 +576,26 @@
           <h1>scena</h1>
           <p>Three.js ergonomics, Rust types, running in your browser. Drop a model or snap authored connectors.</p>
         </div>
-        <div>
+        <div class="sample-picker">
           <p class="section-label">Try it now</p>
           <div id="sample-list" class="sample-list"></div>
         </div>
-        <button id="replay-button" class="replay-button" type="button">Replay snap</button>
+        <div id="connector-story" class="connector-story">
+          <p id="connector-claim">
+            <strong>Authored connector mate.</strong> Watch scena align two parts using only authored connectors in their glTF files, no coordinates and no transform math.
+          </p>
+          <p id="connector-result">Before snap: drive_unit (Y-up, mm) and load_unit (Z-up, m) start separated.</p>
+        </div>
+        <button id="replay-button" class="replay-button" type="button">Run scene.mate()</button>
         <p class="drop-hint">Drop a GLB, or a glTF file together with its referenced files.</p>
       </aside>
 
       <main class="viewport">
         <canvas id="canvas" width="1280" height="720"></canvas>
+        <div id="connector-overlay" class="connector-overlay" data-state="before">
+          <div class="connector-marker" data-connector="shaft">shaft</div>
+          <div class="connector-marker" data-connector="hub">hub</div>
+        </div>
         <div id="dropzone">
           <div>
             <strong>Drop asset</strong>
@@ -460,11 +623,10 @@
             <div class="metric"><span>Frame</span><strong id="metric-frame">0</strong></div>
             <div class="metric"><span>Asset bytes</span><strong id="metric-bytes">0</strong></div>
             <div class="metric"><span>Load phase</span><strong id="metric-phase">idle</strong></div>
-            <div class="metric"><span>Orbit</span><strong id="metric-orbit">0 / 0 / 2.00</strong></div>
           </div>
         </details>
       </aside>
     </div>
-    <script type="module" src="./main.js"></script>
+    <script type="module" src="./main.js?v=20260518-connector-story-1"></script>
   </body>
 </html>

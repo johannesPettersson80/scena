@@ -23,19 +23,73 @@ Do not keep string paths as long-lived object IDs.
 
 ## Frame The Camera
 
-Instead of manually calculating camera distance, ask the scene to frame known bounds:
+In Three.js, camera fitting often starts from a `Box3`, a center point, and a
+hand-maintained orbit target:
 
-```rust
-let camera = scene.add_default_camera()?;
-scene.frame_all(camera)?;
-scene.set_active_camera(camera)?;
+```js
+const box = new THREE.Box3().setFromObject(model);
+const center = box.getCenter(new THREE.Vector3());
+const size = box.getSize(new THREE.Vector3());
+const distance = Math.max(size.x / aspect, size.y) / (2 * Math.tan(fovY / 2));
+
+camera.position.set(center.x + distance * 0.8, center.y + distance * 0.35, center.z + distance * 0.7);
+controls.target.copy(center);
+controls.update();
 ```
 
-For geometry created directly through `Assets`, use the asset-aware helper:
+In `scena`, ask the scene to frame known bounds in the actual viewport and
+seed the orbit controller from the framing result:
 
 ```rust
-scene.frame_all_with_assets(camera, &assets)?;
+let bounds = import.bounds_world(&scene).ok_or("model has no bounds")?;
+let camera = scene.add_perspective_camera(
+    scene.root(),
+    PerspectiveCamera::default().with_aspect(width as f32 / height as f32),
+    Transform::default(),
+)?;
+let framing = scene.frame_bounds(
+    camera,
+    bounds,
+    FramingOptions::new()
+        .three_quarter_front_right()
+        .fill(0.72)
+        .margin_px(48.0)
+        .viewport(width, height),
+)?;
+let controls = OrbitControls::from_framing(framing);
 ```
+
+`frame_bounds()` solves from projected AABB corners on both axes, so wide
+objects on portrait/mobile viewports do not get clipped or under-filled.
+
+Three.js turntable code often stores the view in `Spherical::theta` and
+`Spherical::phi`. In `scena`, the same intent is expressed as azimuth from the
+front axis and elevation above the horizon:
+
+```js
+// Three.js
+controls.target.copy(box.getCenter(new THREE.Vector3()));
+const spherical = new THREE.Spherical().setFromVector3(
+  camera.position.clone().sub(controls.target),
+);
+spherical.theta = THREE.MathUtils.degToRad(-28);
+spherical.phi = THREE.MathUtils.degToRad(90 - 18);
+camera.position.copy(
+  new THREE.Vector3().setFromSpherical(spherical).add(controls.target),
+);
+```
+
+```rust
+// scena
+scene.frame_bounds(
+    camera,
+    bounds,
+    FramingOptions::new().azimuth_elevation(-28.0, 18.0),
+)?;
+```
+
+For a complete load-light-floor-frame-render flow, see
+[Easy scene setup](easy-scene-setup.md).
 
 ## Connect Objects
 

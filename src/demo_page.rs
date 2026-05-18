@@ -9,14 +9,28 @@ use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
 use crate::{
-    Aabb, Assets, CameraKey, Color, DirectionalLight, NodeKey, OrbitControls, PerspectiveCamera,
-    PlatformSurface, PointerEvent, Renderer, Scene, SceneAsset, SurfaceEvent, Transform, Vec3,
+    Assets, AutoExposureConfig, CameraKey, Color, FramingOptions, GridFloorOptions, NodeKey,
+    OrbitControls, PerspectiveCamera, PlatformSurface, PointerEvent, Renderer, Scene, SurfaceEvent,
+    Transform, Vec3,
 };
 
-const DEMO_HDR_ENVIRONMENT: &str = "samples/environment/studio_small_03_1k.hdr";
+mod bounds;
+mod connectors;
+mod floor;
+mod imports;
+mod replay;
+
+use bounds::{combined_import_bounds, union_optional_bounds};
+use connectors::{ConnectorMarker, connector_marker, project_connector_marker, set_object_value};
+use floor::{ground_import_roots, ground_offset_to_floor, translate_transform};
+use imports::load_scene_asset_from_bytes;
+use replay::{lerp_transform, smoothstep};
+
 const CONNECTOR_REPLAY_SECONDS: f64 = 1.8;
-const CONNECTOR_START_OFFSET: Vec3 = Vec3::new(-1.08, 0.11, 0.0);
-const CONNECTOR_KEY_LIGHT_LUX: f32 = 300.0;
+const DEMO_HDR_ENVIRONMENT: &str = "samples/environment/white_studio_03_1k.hdr";
+const CONNECTOR_SOLVE_SEED_OFFSET: Vec3 = Vec3::new(-0.62, 0.11, 0.0);
+const CONNECTOR_REPLAY_SEPARATION_X: f32 = 0.48;
+const DEMO_BACKGROUND: Color = Color::from_linear_rgba(0.0, 0.0, 0.0, 0.0);
 
 fn now_ms() -> f64 {
     js_sys::Date::now()
@@ -76,61 +90,10 @@ struct ConnectorReplay {
     drive_root: NodeKey,
     start: Transform,
     end: Transform,
+    shaft_marker: ConnectorMarker,
+    hub_marker: ConnectorMarker,
     elapsed_seconds: f64,
     active: bool,
-}
-
-#[wasm_bindgen]
-pub async fn load_gltf_from_bytes(
-    bytes: Box<[u8]>,
-    viewport_width: u32,
-    viewport_height: u32,
-) -> Result<DemoApp, JsValue> {
-    let total_start = now_ms();
-    let mut step_start = total_start;
-    let assets = Assets::new();
-    let scene_asset = load_scene_asset_from_bytes(&assets, bytes.as_ref()).await?;
-    step_start = log_timing("Assets::load_scene", step_start);
-
-    let mut scene = Scene::new();
-    let import = scene
-        .instantiate(&scene_asset)
-        .map_err(|err| JsValue::from_str(&format!("instantiate failed: {err:?}")))?;
-    step_start = log_timing("Scene::instantiate", step_start);
-    let aspect = if viewport_width > 0 && viewport_height > 0 {
-        viewport_width as f32 / viewport_height as f32
-    } else {
-        1.0
-    };
-    let camera = scene
-        .add_perspective_camera(
-            scene.root(),
-            PerspectiveCamera::default().with_aspect(aspect),
-            Transform::at(Vec3::new(0.0, 0.0, 2.0)),
-        )
-        .map_err(|err| JsValue::from_str(&format!("add_perspective_camera failed: {err:?}")))?;
-    scene
-        .set_active_camera(camera)
-        .map_err(|err| JsValue::from_str(&format!("set_active_camera failed: {err:?}")))?;
-    scene
-        .frame_import(camera, &import)
-        .map_err(|err| JsValue::from_str(&format!("frame_import failed: {err:?}")))?;
-    log_timing("camera + frame_import", step_start);
-    log_timing("load_gltf_from_bytes total", total_start);
-
-    let controls = orbit_controls_from_framed_import(&scene, &import, camera)
-        .unwrap_or_else(|| OrbitControls::new(Vec3::ZERO, 2.0))
-        .with_angles(-0.46, 0.34)
-        .with_damping(0.12);
-
-    Ok(DemoApp {
-        assets,
-        scene,
-        camera,
-        controls,
-        renderer: None,
-        connector_replay: None,
-    })
 }
 
 #[wasm_bindgen]
@@ -155,9 +118,11 @@ pub async fn load_connector_snap_from_bytes(
         .roots()
         .first()
         .ok_or_else(|| JsValue::from_str("drive import has no root node"))?;
-    let start = Transform::at(CONNECTOR_START_OFFSET);
+    let shaft_marker = connector_marker(&drive, "shaft")?;
+    let hub_marker = connector_marker(&load, "hub")?;
+    let solve_seed = Transform::at(CONNECTOR_SOLVE_SEED_OFFSET);
     scene
-        .set_transform(drive_root, start)
+        .set_transform(drive_root, solve_seed)
         .map_err(|err| JsValue::from_str(&format!("set replay start failed: {err:?}")))?;
     scene
         .mate(&drive, "shaft", &load, "hub")
@@ -168,7 +133,31 @@ pub async fn load_connector_snap_from_bytes(
     scene.set_transform(drive_root, end).map_err(|err| {
         JsValue::from_str(&format!("set assembled connector pose failed: {err:?}"))
     })?;
-    let connector_bounds = combined_import_bounds(&scene, &drive, &load);
+    let ungrounded_end_bounds = combined_import_bounds(&scene, &drive, &load);
+    let ground_offset = ground_offset_to_floor(ungrounded_end_bounds);
+    ground_import_roots(&mut scene, &load, ground_offset)?;
+    let end = translate_transform(end, ground_offset);
+    let start = horizontal_replay_start_from_end(end);
+    scene.set_transform(drive_root, start).map_err(|err| {
+        JsValue::from_str(&format!(
+            "set grounded connector before pose failed: {err:?}"
+        ))
+    })?;
+    let drive_replay_bounds = scene
+        .bounds_for_transforms(drive_root, &[start, end], &assets)
+        .map_err(|err| JsValue::from_str(&format!("connector replay bounds failed: {err:?}")))?;
+    let connector_bounds =
+        union_optional_bounds(Some(drive_replay_bounds), load.bounds_world(&scene))
+            .ok_or_else(|| JsValue::from_str("connector scene has no renderable bounds"))?;
+    scene
+        .add_grid_floor(
+            &assets,
+            GridFloorOptions::new()
+                .under_bounds(connector_bounds)
+                .padding(0.46)
+                .line_spacing(0.24),
+        )
+        .map_err(|err| JsValue::from_str(&format!("add_grid_floor failed: {err:?}")))?;
 
     let aspect = if viewport_width > 0 && viewport_height > 0 {
         viewport_width as f32 / viewport_height as f32
@@ -185,21 +174,27 @@ pub async fn load_connector_snap_from_bytes(
     scene
         .set_active_camera(camera)
         .map_err(|err| JsValue::from_str(&format!("set_active_camera failed: {err:?}")))?;
-    add_connector_key_light(&mut scene)?;
-    let (target, distance) = connector_bounds
-        .map(|bounds| {
-            (
-                bounds.center(),
-                (bounds.bounding_sphere_radius() * 3.1).clamp(2.0, 3.6),
-            )
-        })
-        .unwrap_or((Vec3::new(-0.24, 0.06, 0.0), 2.15));
-    let controls = OrbitControls::new(target, distance)
-        .with_angles(-0.48, 0.31)
-        .with_damping(0.12);
+    let is_mobile_viewport = viewport_width < 640;
+    let connector_fill = if is_mobile_viewport { 0.82 } else { 0.72 };
+    let connector_margin = if is_mobile_viewport { 12.0 } else { 24.0 };
+    let framing = scene
+        .frame_bounds(
+            camera,
+            connector_bounds,
+            FramingOptions::new()
+                .azimuth_elevation(-27.5, 17.8)
+                .fill(connector_fill)
+                .margin_px(connector_margin)
+                .viewport(viewport_width.max(1), viewport_height.max(1)),
+        )
+        .map_err(|err| JsValue::from_str(&format!("connector frame_bounds failed: {err:?}")))?;
+    let controls = OrbitControls::from_framing(framing).with_damping(0.12);
     controls.apply_to_scene(&mut scene, camera).map_err(|err| {
         JsValue::from_str(&format!("apply initial connector camera failed: {err:?}"))
     })?;
+    scene
+        .add_studio_lighting()
+        .map_err(|err| JsValue::from_str(&format!("add_studio_lighting failed: {err:?}")))?;
     log_timing("load_connector_snap_from_bytes total", total_start);
 
     Ok(DemoApp {
@@ -212,78 +207,18 @@ pub async fn load_connector_snap_from_bytes(
             drive_root,
             start,
             end,
+            shaft_marker,
+            hub_marker,
             elapsed_seconds: 0.0,
             active: false,
         }),
     })
 }
 
-async fn load_scene_asset_from_bytes(assets: &Assets, bytes: &[u8]) -> Result<SceneAsset, JsValue> {
-    let array = js_sys::Uint8Array::from(bytes);
-    let parts = js_sys::Array::of1(&array.into());
-    let blob = web_sys::Blob::new_with_u8_array_sequence(&parts.into())
-        .map_err(|err| JsValue::from_str(&format!("Blob construction failed: {err:?}")))?;
-    let url = web_sys::Url::create_object_url_with_blob(&blob)
-        .map_err(|err| JsValue::from_str(&format!("createObjectURL failed: {err:?}")))?;
-    let scene_asset = assets
-        .load_scene(url.as_str())
-        .await
-        .map_err(|err| JsValue::from_str(&format!("load_scene failed: {err:?}")));
-    let _ = web_sys::Url::revoke_object_url(&url);
-    scene_asset
-}
-
-fn add_connector_key_light(scene: &mut Scene) -> Result<(), JsValue> {
-    scene
-        .directional_light(
-            DirectionalLight::default()
-                .with_color(Color::WHITE)
-                .with_illuminance_lux(CONNECTOR_KEY_LIGHT_LUX)
-                .with_shadows(true),
-        )
-        .transform(Transform::default().rotate_x_deg(-34.0).rotate_y_deg(26.0))
-        .add()
-        .map(|_| ())
-        .map_err(|err| JsValue::from_str(&format!("add connector key light failed: {err:?}")))
-}
-
-fn combined_import_bounds(
-    scene: &Scene,
-    left: &crate::SceneImport,
-    right: &crate::SceneImport,
-) -> Option<Aabb> {
-    match (left.bounds_world(scene), right.bounds_world(scene)) {
-        (Some(left), Some(right)) => Some(union_aabb(left, right)),
-        (Some(bounds), None) | (None, Some(bounds)) => Some(bounds),
-        (None, None) => None,
-    }
-}
-
-fn union_aabb(left: Aabb, right: Aabb) -> Aabb {
-    Aabb::new(
-        Vec3::new(
-            left.min.x.min(right.min.x),
-            left.min.y.min(right.min.y),
-            left.min.z.min(right.min.z),
-        ),
-        Vec3::new(
-            left.max.x.max(right.max.x),
-            left.max.y.max(right.max.y),
-            left.max.z.max(right.max.z),
-        ),
-    )
-}
-
-fn orbit_controls_from_framed_import(
-    scene: &Scene,
-    import: &crate::SceneImport,
-    camera: CameraKey,
-) -> Option<OrbitControls> {
-    let target = import.bounds_world(scene)?.center();
-    let camera_node = scene.camera_node(camera)?;
-    let camera_position = scene.world_transform(camera_node)?.translation;
-    let distance = camera_position.distance(target) * 0.82;
-    Some(OrbitControls::new(target, distance))
+fn horizontal_replay_start_from_end(end: Transform) -> Transform {
+    let mut start = end;
+    start.translation.x -= CONNECTOR_REPLAY_SEPARATION_X;
+    start
 }
 
 #[wasm_bindgen]
@@ -304,8 +239,13 @@ pub async fn attach_to_canvas(app: &mut DemoApp, canvas: HtmlCanvasElement) -> R
             .map_err(|err| JsValue::from_str(&format!("load_environment failed: {err:?}")))?;
         renderer.set_environment(environment);
     }
-    renderer.set_background_color(Color::from_linear_rgb(0.014, 0.017, 0.024));
-    renderer.set_exposure_ev(0.5);
+    renderer.set_background_color(DEMO_BACKGROUND);
+    renderer.set_exposure_ev(-0.35);
+    renderer.set_auto_exposure(
+        AutoExposureConfig::new(0.22)
+            .with_ev_range(-1.5, 0.65)
+            .with_highlight_guard(0.88, 0.70),
+    );
     app.renderer = Some(renderer);
     log_timing("attach_to_canvas setup", step_start);
     log_timing("attach_to_canvas total", total_start);
@@ -362,6 +302,35 @@ pub fn connector_replay_active(app: &DemoApp) -> bool {
 }
 
 #[wasm_bindgen]
+pub fn connector_marker_positions(
+    app: &DemoApp,
+    viewport_width: u32,
+    viewport_height: u32,
+) -> Result<JsValue, JsValue> {
+    let replay = app.connector_replay.as_ref().ok_or_else(|| {
+        JsValue::from_str("connector marker positions are only available for connector scenes")
+    })?;
+    let shaft = project_connector_marker(
+        &app.scene,
+        app.camera,
+        replay.shaft_marker,
+        viewport_width,
+        viewport_height,
+    )?;
+    let hub = project_connector_marker(
+        &app.scene,
+        app.camera,
+        replay.hub_marker,
+        viewport_width,
+        viewport_height,
+    )?;
+    let object = js_sys::Object::new();
+    set_object_value(&object, "shaft", shaft)?;
+    set_object_value(&object, "hub", hub)?;
+    Ok(object.into())
+}
+
+#[wasm_bindgen]
 pub fn tick(app: &mut DemoApp, dt_seconds: f64) -> Result<(), JsValue> {
     let total_start = now_ms();
     app.apply_connector_replay(dt_seconds)?;
@@ -380,9 +349,29 @@ pub fn tick(app: &mut DemoApp, dt_seconds: f64) -> Result<(), JsValue> {
     renderer
         .render(&app.scene, app.camera)
         .map_err(|err| JsValue::from_str(&format!("render failed: {err:?}")))?;
+    log_renderer_auto_exposure(renderer);
     log_timing("Renderer::render", step_start);
     log_timing("tick total", total_start);
     Ok(())
+}
+
+fn log_renderer_auto_exposure(renderer: &Renderer) {
+    if !demo_timing_enabled() {
+        return;
+    }
+    if let Some(result) = renderer.last_auto_exposure() {
+        web_sys::console::log_1(
+            &format!(
+                "[scena-demo] renderer auto_exposure: luminance={:.4} target={:.4} ev={:.2} samples={} clamped={}",
+                result.measured_luminance(),
+                result.target_luminance(),
+                result.exposure_ev(),
+                result.sample_count(),
+                result.clamped()
+            )
+            .into(),
+        );
+    }
 }
 
 impl DemoApp {
@@ -413,18 +402,5 @@ impl DemoApp {
                 })?;
         }
         Ok(())
-    }
-}
-
-fn smoothstep(value: f32) -> f32 {
-    let value = value.clamp(0.0, 1.0);
-    value * value * (3.0 - 2.0 * value)
-}
-
-fn lerp_transform(start: Transform, end: Transform, amount: f32) -> Transform {
-    Transform {
-        translation: start.translation.lerp(end.translation, amount),
-        rotation: start.rotation.slerp(end.rotation, amount),
-        scale: start.scale.lerp(end.scale, amount),
     }
 }

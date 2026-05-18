@@ -13,6 +13,7 @@
   },
   "scripts": {
     "browser:m6": "node tests/browser/m6_rust_wasm_renderer_probe.js",
+    "demo:build": "node scripts/build_demo_wasm.js",
     "wasm:size": "node tests/release/m9_wasm_size_gate.js"
   }
 }

@@ -1,6 +1,7 @@
 //! Platform-neutral orbit, pan, fly, and focus controls.
 
 use crate::diagnostics::LookupError;
+use crate::scene::FramingOutcome;
 use crate::scene::Vec3;
 use crate::scene::{CameraKey, Scene, Transform};
 
@@ -87,6 +88,23 @@ impl OrbitControls {
     pub fn focus(mut self, target: Vec3, distance: f32) -> Self {
         self.target = target;
         self.distance = distance.max(MIN_DISTANCE);
+        self
+    }
+
+    /// Creates orbit controls from a [`Scene::frame_bounds`](crate::Scene::frame_bounds) result.
+    pub fn from_framing(framing: FramingOutcome) -> Self {
+        Self::new(framing.target, framing.distance).focus_on_framing(framing)
+    }
+
+    /// Adopts the target, distance, yaw, and pitch computed by
+    /// [`Scene::frame_bounds`](crate::Scene::frame_bounds).
+    pub fn focus_on_framing(mut self, framing: FramingOutcome) -> Self {
+        self.target = framing.target;
+        self.distance = framing.distance.max(MIN_DISTANCE);
+        self.yaw_radians = framing.yaw_radians;
+        self.pitch_radians = framing
+            .pitch_radians
+            .clamp(-MAX_PITCH_RADIANS, MAX_PITCH_RADIANS);
         self
     }
 

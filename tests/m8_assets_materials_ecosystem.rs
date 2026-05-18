@@ -1953,7 +1953,7 @@ fn render_center_rgb_for_material(material: MaterialDesc) -> [u8; 3] {
         .add()
         .expect("mesh inserts");
     scene
-        .directional_light(DirectionalLight::default().with_illuminance_lux(1.0))
+        .directional_light(DirectionalLight::default().with_illuminance_lux(12_000.0))
         .add()
         .expect("light inserts");
     let camera = scene.add_default_camera().expect("camera inserts");
@@ -3031,7 +3031,7 @@ fn render_center_rgb_with_assets(assets: &Assets, material: MaterialDesc) -> [u8
         .add()
         .expect("mesh inserts");
     scene
-        .directional_light(DirectionalLight::default().with_illuminance_lux(1.0))
+        .directional_light(DirectionalLight::default().with_illuminance_lux(12_000.0))
         .add()
         .expect("light inserts");
     let camera = scene.add_default_camera().expect("camera inserts");

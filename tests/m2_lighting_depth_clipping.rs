@@ -308,7 +308,7 @@ fn direct_lights_tint_pbr_mesh_output() {
         .directional_light(
             DirectionalLight::default()
                 .with_color(Color::from_linear_rgb(1.0, 0.0, 0.0))
-                .with_illuminance_lux(1.0),
+                .with_illuminance_lux(12_000.0),
         )
         .add()
         .expect("red directional light inserts");

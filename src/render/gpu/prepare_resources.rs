@@ -21,13 +21,46 @@ use super::pipeline::{BYTES_PER_PIXEL, GPU_COLOR_FORMAT};
 #[cfg(not(target_arch = "wasm32"))]
 use super::stats::align_to;
 use super::stats::{PreparedResourceEstimateInput, estimate_prepared_resource_stats};
-use super::vertices::{VERTEX_BYTE_LEN, encode_vertices};
+use super::vertices::{DrawUniformValue, VERTEX_BYTE_LEN, encode_vertices};
 use super::{
     GpuDeviceState, GpuPrepareOutcome, GpuPreparedResources, depth, environment,
     material_texture_binding_mode, output,
 };
 
 impl GpuDeviceState {
+    pub(in crate::render) fn update_dynamic_draw_uniforms(
+        &mut self,
+        target: RasterTarget,
+        light_uniform: PreparedGpuLightUniform,
+        light_from_world: [f32; 16],
+        draw_uniform_pairs: &[([f32; 16], [f32; 16])],
+    ) -> Result<(), &'static str> {
+        let Some(resources) = self.resources.as_mut() else {
+            return Err("no GPU resources");
+        };
+        if resources.target != target {
+            return Err("target changed");
+        }
+        if resources.draw_uniforms.len() != draw_uniform_pairs.len() {
+            return Err("draw uniform shape changed");
+        }
+        self.queue.write_buffer(
+            &resources.draw_uniform_buffer,
+            0,
+            &output::encode_draw_uniform_bytes(draw_uniform_pairs),
+        );
+        resources.draw_uniforms = draw_uniform_pairs
+            .iter()
+            .map(|(world_from_model, normal_from_model)| DrawUniformValue {
+                world_from_model: *world_from_model,
+                normal_from_model: *normal_from_model,
+            })
+            .collect();
+        resources.light_uniform = light_uniform;
+        resources.light_from_world = light_from_world;
+        Ok(())
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     #[allow(clippy::too_many_arguments)]
     pub(in crate::render) fn prepare(

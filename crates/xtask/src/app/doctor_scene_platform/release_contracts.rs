@@ -14,7 +14,7 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
         "ARCH-M5-RELEASE",
         "Cargo.toml",
         &[
-            "version = \"1.2.0\"",
+            "version = \"1.3.0\"",
             "rust-version = ",
             "documentation = \"https://docs.rs/scena\"",
             "keywords = [",
@@ -140,7 +140,7 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
         "docs/api.md",
         &[
             "Use this page as the conceptual map.",
-            "Additive public API changes in 1.2.0:",
+            "Additive public API changes in 1.3.0:",
             "BuildError",
             "AnimationError",
             "MaterialTextureMissingDecodedPixels",
@@ -228,7 +228,10 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
 
 pub(crate) const REQUIRED_EXAMPLES: &[&str] = &[
     "examples/primitive_shapes.rs",
+    "examples/easy_model_viewer.rs",
     "examples/glb_model_viewer.rs",
+    "examples/camera_framing.rs",
+    "examples/connector_auto_framing.rs",
     "examples/picking_selection_hover.rs",
     "examples/instancing.rs",
     "examples/labels_helpers.rs",

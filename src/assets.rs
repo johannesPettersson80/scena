@@ -324,29 +324,35 @@ impl<F> Assets<F> {
             .fetch_optional_texture_bytes(&path, source_format)
             .await?;
 
-        let mut storage = self.storage();
-        if let Some(handle) = storage.texture_lookup.get(&cache_key).copied() {
-            if source_bytes.is_some() {
-                storage
-                    .textures
-                    .get_mut(handle)
-                    .ok_or_else(|| AssetError::Parse {
-                        path: path.as_str().to_string(),
-                        reason: "texture cache lookup pointed at a missing texture descriptor"
-                            .to_string(),
-                    })?
-                    .decode_missing_pixels_from_bytes(source_bytes.as_deref())?;
+        let handle = {
+            let mut storage = self.storage();
+            if let Some(handle) = storage.texture_lookup.get(&cache_key).copied() {
+                if source_bytes.is_some() {
+                    storage
+                        .textures
+                        .get_mut(handle)
+                        .ok_or_else(|| AssetError::Parse {
+                            path: path.as_str().to_string(),
+                            reason: "texture cache lookup pointed at a missing texture descriptor"
+                                .to_string(),
+                        })?
+                        .decode_missing_pixels_from_bytes(source_bytes.as_deref())?;
+                }
+                handle
+            } else {
+                let handle = storage.textures.insert(TextureDesc::new_with_bytes(
+                    path,
+                    color_space,
+                    cache_key.sampler,
+                    source_format,
+                    source_bytes.as_deref(),
+                )?);
+                storage.texture_lookup.insert(cache_key, handle);
+                handle
             }
-            return Ok(handle);
-        }
-        let handle = storage.textures.insert(TextureDesc::new_with_bytes(
-            path,
-            color_space,
-            cache_key.sampler,
-            source_format,
-            source_bytes.as_deref(),
-        )?);
-        storage.texture_lookup.insert(cache_key, handle);
+        };
+        #[cfg(target_arch = "wasm32")]
+        self.decode_browser_texture_image(handle).await?;
         Ok(handle)
     }
 
@@ -477,6 +483,26 @@ impl<F> Assets<F> {
             }
             Err(error) => Err(error),
         }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    async fn decode_browser_texture_image(&self, handle: TextureHandle) -> Result<(), AssetError> {
+        let Some((path, bytes)) = ({
+            let storage = self.storage();
+            storage.textures.get(handle).and_then(|texture| {
+                texture
+                    .browser_decode_source()
+                    .map(|bytes| (texture.path().clone(), bytes))
+            })
+        }) else {
+            return Ok(());
+        };
+
+        let image = self::texture::decode_browser_image_bitmap(&path, bytes).await?;
+        if let Some(texture) = self.storage().textures.get_mut(handle) {
+            texture.set_browser_image(image);
+        }
+        Ok(())
     }
 }
 

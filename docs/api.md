@@ -6,7 +6,7 @@ and render frames.
 
 The authoritative API reference is generated on docs.rs:
 
-<https://docs.rs/scena/1.2.0/scena/>
+<https://docs.rs/scena/1.3.0/scena/>
 
 Use this page as the conceptual map.
 
@@ -17,6 +17,37 @@ Additive public API changes in 1.2.0:
 - `Assets::load_scene_with_report_options`
 - `DiagnosticCode::MaterialTextureMissingDecodedPixels`
 - `RendererStats::material_textures_missing_decoded_pixels`
+
+Additive public API changes in 1.3.0:
+
+- `Scene::frame_bounds`
+- `FramingOptions`
+- `FramingOptions::azimuth_elevation`
+- `FramingOptions::front`
+- `FramingOptions::back`
+- `FramingOptions::left`
+- `FramingOptions::right`
+- `FramingOptions::top`
+- `FramingOptions::bottom`
+- `FramingOptions::three_quarter_front_left`
+- `FramingOptions::three_quarter_front_right`
+- `FramingOptions::three_quarter_back_left`
+- `FramingOptions::three_quarter_back_right`
+- `FramingOutcome`
+- `ScreenRect`
+- `ProjectedPoint`
+- `Scene::project_world_point`
+- `Scene::bounds_for_transforms`
+- `Scene::add_grid_floor`
+- `GridFloorOptions`
+- `GridFloorHandles`
+- `Aabb::union`
+- `OrbitControls::focus_on_framing`
+- `OrbitControls::from_framing`
+- `Scene::add_studio_lighting`
+- `Renderer::set_auto_exposure`
+- `AutoExposureConfig`
+- `AutoExposureResult`
 
 ## Core types
 
@@ -35,11 +66,29 @@ let asset = assets.load_scene("model.glb")?;
 
 let mut scene = scena::Scene::new();
 let import = scene.instantiate(&asset)?;
-scene.frame_import(import)?;
+let bounds = import.bounds_world(&scene).ok_or("model has no bounds")?;
+scene.add_studio_lighting()?;
+scene.add_grid_floor(&assets, scena::GridFloorOptions::new().under_bounds(bounds))?;
+
+let camera = scene.add_perspective_camera(
+    scene.root(),
+    scena::PerspectiveCamera::default().with_aspect(1280.0 / 720.0),
+    scena::Transform::default(),
+)?;
+let framing = scene.frame_bounds(
+    camera,
+    bounds,
+    scena::FramingOptions::new()
+        .three_quarter_front_right()
+        .fill(0.72)
+        .viewport(1280, 720),
+)?;
+let controls = scena::OrbitControls::from_framing(framing);
 
 let mut renderer = scena::Renderer::headless(1280, 720)?;
+renderer.set_auto_exposure(scena::AutoExposureConfig::default());
 renderer.prepare_with_assets(&mut scene, &assets)?;
-renderer.render_active(&scene)?;
+renderer.render(&scene, camera)?;
 ```
 
 See the exact signatures on docs.rs and the runnable examples in `examples/`.
@@ -129,6 +178,11 @@ Common scene interaction calls:
 - `Scene::pick_with_assets`
 - `Scene::pick_and_select_with_assets`
 - `Scene::connect_import_connectors`
+- `Scene::frame_bounds`
+- `Scene::project_world_point`
+- `Scene::bounds_for_transforms`
+- `Scene::add_grid_floor`
+- `Scene::add_studio_lighting`
 - `Scene::with_default_camera()`
 
 Common public event and output types:
@@ -169,11 +223,16 @@ Common import and connector contracts:
 
 Common viewer helpers:
 
+- `FramingOptions`
+- `FramingOutcome`
+- `GridFloorOptions`
+- `GridFloorHandles`
 - `InteractiveGltfViewer`
 - `InteractiveGltfViewerBuilder`
 - `interactive_gltf_viewer(path, surface)`
 - `InteractiveGltfViewer::handle_surface_event`
 - `Renderer::headless_default()`
+- `Renderer::set_auto_exposure`
 
 ## Errors and diagnostics
 

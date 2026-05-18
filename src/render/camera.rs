@@ -1,4 +1,5 @@
 use crate::diagnostics::{Capabilities, CapabilityStatus, RenderError};
+use crate::scene::view_math::world_to_view as world_to_view_point;
 use crate::scene::{Camera, CameraKey, Quat, Scene, Transform, Vec3};
 
 use super::RasterTarget;
@@ -254,16 +255,7 @@ impl CameraProjection {
     }
 
     fn world_to_view(&self, world_position: Vec3) -> Option<Vec3> {
-        if !is_finite_nonzero_scale(self.world_from_camera.scale) {
-            return None;
-        }
-        let translated = subtract_vec3(world_position, self.world_from_camera.translation);
-        let rotated = rotate_vec3(inverse_quat(self.world_from_camera.rotation)?, translated);
-        Some(Vec3::new(
-            rotated.x / self.world_from_camera.scale.x,
-            rotated.y / self.world_from_camera.scale.y,
-            rotated.z / self.world_from_camera.scale.z,
-        ))
+        world_to_view_point(world_position, self.world_from_camera)
     }
 
     fn uses_reversed_z(&self) -> bool {
@@ -298,23 +290,6 @@ impl CameraProjection {
     }
 }
 
-fn inverse_quat(rotation: Quat) -> Option<Quat> {
-    let length_squared = rotation.x * rotation.x
-        + rotation.y * rotation.y
-        + rotation.z * rotation.z
-        + rotation.w * rotation.w;
-    if length_squared <= f32::EPSILON || !length_squared.is_finite() {
-        return None;
-    }
-    let inverse_length_squared = length_squared.recip();
-    Some(Quat::from_xyzw(
-        -rotation.x * inverse_length_squared,
-        -rotation.y * inverse_length_squared,
-        -rotation.z * inverse_length_squared,
-        rotation.w * inverse_length_squared,
-    ))
-}
-
 fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
     let length_squared = rotation.x * rotation.x
         + rotation.y * rotation.y
@@ -345,10 +320,6 @@ fn is_finite_nonzero_scale(scale: Vec3) -> bool {
         && scale.x.abs() > f32::EPSILON
         && scale.y.abs() > f32::EPSILON
         && scale.z.abs() > f32::EPSILON
-}
-
-const fn subtract_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(left.x - right.x, left.y - right.y, left.z - right.z)
 }
 
 const fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {

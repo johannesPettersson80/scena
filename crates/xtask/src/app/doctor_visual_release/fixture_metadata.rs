@@ -219,7 +219,7 @@ pub(crate) fn check_m2_visual_fixture_metadata(root: &Path, findings: &mut Vec<F
             "[suite]",
             "status = \"reference\"",
             "max_abs_diff = 0",
-            "center_rgba = [151, 0, 0, 255]",
+            "center_rgba = [164, 0, 0, 255]",
             "center_rgba = [80, 80, 80, 255]",
             "nonblack_pixels = 149",
             "rgba_hash = \"fnv1a64:4d3a874730a5e5bc\"",

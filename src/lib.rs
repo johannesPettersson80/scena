@@ -51,8 +51,8 @@ pub use diagnostics::{
     RendererStats,
 };
 pub use geometry::{
-    Aabb, FramingAngles, GeometryDesc, GeometryError, GeometryMorphTarget, GeometrySkin,
-    GeometryTopology, GeometryVertex, Primitive, SkinningMatrix, StaticBatchReport, Vertex,
+    Aabb, GeometryDesc, GeometryError, GeometryMorphTarget, GeometrySkin, GeometryTopology,
+    GeometryVertex, Primitive, SkinningMatrix, StaticBatchReport, Vertex,
 };
 pub use material::{
     AlphaMode, Color, ColorParseError, DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES,
@@ -63,21 +63,23 @@ pub use picking::{CursorPosition, Hit, HitTarget, InteractionContext, Interactio
 pub use platform::NativeWindowHandle;
 pub use platform::{PlatformSurface, SurfaceEvent, SurfaceKind, SurfaceSize, SurfaceViewport};
 pub use render::{
-    OffscreenTarget, PixelReadback, Profile, Quality, RenderMode, Renderer, RendererOptions,
-    Tonemapper,
+    AutoExposureConfig, AutoExposureResult, OffscreenTarget, PixelReadback, Profile, Quality,
+    RenderMode, Renderer, RendererOptions, Tonemapper, estimate_auto_exposure_from_linear_colors,
+    estimate_auto_exposure_from_srgb8,
 };
 pub use scene::{
     AnchorFrame, AnchorKey, Angle, Camera, CameraKey, ClippingPlane, ClippingPlaneKey,
     ClippingPlaneSet, ConnectOptions, ConnectionAlignment, ConnectionError, ConnectionLineOverlay,
     ConnectionParenting, ConnectionPreview, ConnectionRequest, ConnectionRoll, ConnectionWarning,
     ConnectorFrame, ConnectorKey, ConnectorMetadata, ConnectorPolarity, ConnectorRollPolicy,
-    DepthRange, DirectionalLight, ImportAnchor, ImportAnchorDebugMetadata, ImportClip,
-    ImportConnector, ImportOptions, ImportPivot, Instance, InstanceCullingPolicy, InstanceId,
-    InstanceSet, InstanceSetKey, LabelBillboard, LabelDesc, LabelKey, LabelRasterization, Light,
-    LightBuilder, LightKey, MeshBuilder, MeshNode, ModelBuilder, ModelNode, Node, NodeKey,
-    NodeKind, OrthographicCamera, PerspectiveCamera, PointLight, Quat, Scene, SceneDirtyState,
-    SceneImport, SceneSkinBinding, SourceCoordinateSystem, SourceUnits, SpotLight,
-    StudioLightingHandles, Transform, Vec3,
+    DepthRange, DirectionalLight, FramingOptions, FramingOutcome, GridFloorHandles,
+    GridFloorOptions, ImportAnchor, ImportAnchorDebugMetadata, ImportClip, ImportConnector,
+    ImportOptions, ImportPivot, Instance, InstanceCullingPolicy, InstanceId, InstanceSet,
+    InstanceSetKey, LabelBillboard, LabelDesc, LabelKey, LabelRasterization, Light, LightBuilder,
+    LightKey, MeshBuilder, MeshNode, ModelBuilder, ModelNode, Node, NodeKey, NodeKind,
+    OrthographicCamera, PerspectiveCamera, PointLight, ProjectedPoint, Quat, Scene,
+    SceneDirtyState, SceneImport, SceneSkinBinding, ScreenRect, SourceCoordinateSystem,
+    SourceUnits, SpotLight, StudioLightingHandles, Transform, Vec3,
 };
 #[cfg(feature = "inspection")]
 pub use scene::{

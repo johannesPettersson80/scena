@@ -12,6 +12,7 @@ pub(super) const DIELECTRIC_F0: f32 = 0.04;
 pub(super) const MIN_ROUGHNESS: f32 = 0.04;
 const MIN_DENOMINATOR: f32 = 0.0001;
 const MIN_N_DOT_V: f32 = 0.001;
+const DIRECTIONAL_LUX_TO_SCENE_RADIANCE: f32 = 1.0 / 10_000.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct PbrMaterial {
@@ -109,7 +110,7 @@ pub(super) fn environment_split_sum_contribution(
 }
 
 pub(super) fn directional_illuminance_lux(value: f32) -> f32 {
-    finite_non_negative(value)
+    finite_non_negative(value) * DIRECTIONAL_LUX_TO_SCENE_RADIANCE
 }
 
 pub(super) fn punctual_intensity_candela(value: f32) -> f32 {
@@ -242,14 +243,23 @@ mod tests {
     }
 
     #[test]
-    fn light_units_do_not_apply_scene_tuned_divisors_or_clamps() {
-        assert_eq!(directional_illuminance_lux(20_000.0), 20_000.0);
+    fn punctual_light_units_do_not_apply_scene_tuned_divisors_or_clamps() {
         assert_eq!(punctual_intensity_candela(800.0), 800.0);
         let near = inverse_square_range_attenuation(Vec3::new(0.0, 0.0, 1.0), Some(10.0));
         let far = inverse_square_range_attenuation(Vec3::new(0.0, 0.0, 2.0), Some(10.0));
         assert!(
             near > far * 3.5,
             "KHR_lights_punctual point/spot intensity must use inverse-square distance falloff"
+        );
+    }
+
+    #[test]
+    fn directional_lux_is_calibrated_to_scene_linear_radiance() {
+        assert_eq!(directional_illuminance_lux(0.0), 0.0);
+        assert!(
+            (directional_illuminance_lux(10_000.0) - 1.0).abs() < 1e-6,
+            "a default 10k-lux directional light must be calibrated to renderer scene-linear \
+             units instead of being injected as raw 10000x HDR radiance"
         );
     }
 }

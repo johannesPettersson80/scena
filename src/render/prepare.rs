@@ -14,6 +14,7 @@ pub(super) use self::diagnostics::{
     collect_asset_camera_visibility_diagnostics, collect_camera_projection_diagnostics,
     collect_camera_visibility_diagnostics, collect_precision_diagnostics,
 };
+pub(super) use self::dynamic::collect_dynamic_light_from_world;
 pub(super) use self::environment::collect_environment_lighting;
 pub(in crate::render) use self::environment::{
     EnvironmentLightingProfile, PreparedEnvironmentCubemap, PreparedEnvironmentLighting,
@@ -36,13 +37,15 @@ pub(super) use self::stats::{
 };
 use self::tangents::{accumulate_vertex_tangents, authored_vertex_tangents};
 use self::transforms::{
-    compose_transform, prepared_primitive, transform_normal, transform_position,
+    compose_transform, normal_from_model_matrix, prepared_primitive, transform_normal,
+    transform_position, world_from_model_matrix,
 };
 use self::types::{DeformationInputs, PrimitiveBakeParams, PrimitiveSinks, TransparentPrimitive};
 use super::{RasterTarget, camera::CameraProjection};
 
 mod cpu_bake;
 mod diagnostics;
+mod dynamic;
 mod environment;
 mod environment_prefilter;
 mod labels;
@@ -56,6 +59,8 @@ mod shadows;
 mod stats;
 mod strokes;
 mod tangents;
+#[cfg(test)]
+mod tests;
 pub(super) mod transforms;
 mod types;
 
@@ -362,6 +367,8 @@ fn append_triangle_primitives<F>(
                     params.origin_shift,
                 )
             });
+    let world_from_model = world_from_model_matrix(params.transform, params.origin_shift);
+    let normal_from_model = normal_from_model_matrix(params.transform);
 
     for triangle in source.geometry.indices().chunks_exact(3) {
         let position_a = transform_position(
@@ -507,6 +514,7 @@ fn append_triangle_primitives<F>(
                 }),
             )
             .with_render_material_slot(render_material_slot);
+            let primitive = primitive.with_world_from_model(world_from_model, normal_from_model);
             push_material_pass_primitive(
                 primitive,
                 material_pass,
@@ -517,19 +525,4 @@ fn append_triangle_primitives<F>(
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn backend_shaded_materials_skip_cpu_shadow_visibility_bake() {
-        let scene = Scene::new();
-        let lights = PreparedLights::from_scene(&scene, Vec3::ZERO);
-        let position = Vec3::new(0.0, 0.0, 0.0);
-
-        assert_eq!(baked_shadow_visibility(position, &lights, &[], true), 1.0);
-        assert_eq!(baked_shadow_visibility(position, &lights, &[], false), 1.0);
-    }
 }

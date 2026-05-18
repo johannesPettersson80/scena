@@ -90,7 +90,7 @@ pub(crate) fn check_m7_example_contracts(root: &Path, findings: &mut Vec<Finding
         findings,
         "ERGONOMICS-M7",
         "examples/camera_framing.rs",
-        &["scene.frame(", "scene.look_at(", "render_active"],
+        &["frame_bounds(", "FramingOptions", "from_framing", "render("],
     );
     require_contains(
         root,

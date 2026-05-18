@@ -167,7 +167,7 @@ impl Renderer {
         }
     }
 
-    fn mark_output_changed(&mut self) {
+    pub(super) fn mark_output_changed(&mut self) {
         self.render_generation = self.render_generation.saturating_add(1);
     }
 }

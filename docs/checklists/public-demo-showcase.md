@@ -5,15 +5,28 @@ Updated: 2026-05-17
 Goal: the public Cloudflare demo must screenshot as a product-quality renderer
 showcase for authored connector mating in Rust, not as a browser test harness.
 
+Related library ergonomics gate:
+`docs/checklists/easy-scene-setup-and-auto-framing.md`. The connector demo must
+migrate from hand-tuned framing/floor/projection constants to reusable scena
+primitives before this showcase is considered production-ready.
+
 ## Local Visual Verdict
 
 - [x] Connector snap is the default first render.
 - [x] The tagline is:
   "Three.js ergonomics, Rust types, running in your browser. Drop a model or snap authored connectors."
 - [x] Connector snap remains first/sidebar-featured.
-- [x] `Replay snap` is visible for connector mode.
+- [x] `Run scene.mate()` is visible for connector mode.
 - [x] Replay moves the drive unit toward the load unit along the solved mate axis.
-- [x] The first connector frame is assembled and lit, not a mid-replay scattered frame.
+- [x] The first connector frame is the separated before state, so the authored
+      connector mate is legible before replay.
+- [x] Connector mode states the claim: authored glTF connectors align the parts
+      without hand-entered coordinates or transform math.
+- [x] Connector `shaft` and `hub` markers are visible in the interactive demo.
+- [x] Replay highlights the `scene.mate(&drive, "shaft", &load, "hub")?;`
+      code line while the snap runs.
+- [x] Completion text explains the result:
+      `drive_unit` (Y-up, mm) + `load_unit` (Z-up, m), mated by authored connectors.
 - [x] Khronos samples remain secondary compatibility checks.
 - [x] Weak/random public samples are not present.
 
@@ -23,7 +36,7 @@ showcase for authored connector mating in Rust, not as a browser test harness.
 - [x] Connector mode shows `scene.mate(&drive, "shaft", &load, "hub")?;`.
 - [x] Khronos/drop mode shows matching `load_scene(...)`, instantiate, camera/frame/orbit code.
 - [x] Code panel is verified against every sidebar mode by `scripts/probe_cloudflare_demo.js`.
-- [x] Frame, asset bytes, load phase, and orbit are under collapsed Diagnostics.
+- [x] Frame, asset bytes, and load phase are under collapsed Diagnostics.
 - [x] Diagnostics are closed by default on desktop and mobile.
 - [x] Public demo console is quiet without `?perf=1` / `?timing=1`.
 
@@ -44,7 +57,7 @@ showcase for authored connector mating in Rust, not as a browser test harness.
 Build:
 
 ```bash
-wasm-pack build --release --target web --out-dir demo/pkg . --features demo-page
+npm run demo:build
 ```
 
 Probe:
@@ -72,8 +85,8 @@ Artifacts:
 - [x] `cargo fmt --check`
 - [x] `cargo clippy --all-targets -- -D warnings`
 - [x] `cargo run --example mate_two_parts`
-- [x] `wasm-pack build --release --target web --out-dir demo/pkg . --features demo-page`
-- [x] `node scripts/probe_cloudflare_demo.js http://127.0.0.1:18104/index.html`
+- [x] `npm run demo:build` (uses the repo-pinned `node_modules/.bin/wasm-opt`)
+- [x] `node scripts/probe_cloudflare_demo.js http://127.0.0.1:18106/index.html?connector-story=final`
 - [x] `cargo test`
 - [x] `cargo run -p xtask -- doctor --full`
 - [x] `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`

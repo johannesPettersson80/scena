@@ -31,6 +31,16 @@ fn log_prepare_step(_label: &str, _start_ms: f64) -> f64 {
 }
 
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+fn log_dynamic_reject(reason: &str) {
+    if prepare_logging_enabled() {
+        web_sys::console::log_1(&format!("[scena-prepare] dynamic reject: {reason}").into());
+    }
+}
+
+#[cfg(not(all(target_arch = "wasm32", feature = "demo-page")))]
+fn log_dynamic_reject(_reason: &str) {}
+
+#[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 fn prepare_logging_enabled() -> bool {
     web_sys::window()
         .and_then(|window| {
@@ -109,16 +119,61 @@ impl Renderer {
         } else {
             Vec::new()
         };
-        let logical_stats =
-            prepare::collect_logical_resource_stats(scene, assets, environment_count);
-        step_start = log_prepare_step("camera + backend material slots", step_start);
-        let backend_sampled_base_color_textures = backend_material_slots
-            .iter()
-            .filter_map(|slot| slot.base_color.as_ref().map(|texture| texture.handle))
-            .collect::<Vec<_>>();
         let backend_material_handles = backend_material_slots
             .iter()
             .map(|slot| slot.handle)
+            .collect::<Vec<_>>();
+        let logical_stats =
+            prepare::collect_logical_resource_stats(scene, assets, environment_count);
+        step_start = log_prepare_step("camera + backend material slots", step_start);
+        if self.gpu.is_some() {
+            if let Some(reason) =
+                self.dynamic_gpu_prepare_rejection_reason(scene, &backend_material_handles)
+            {
+                log_dynamic_reject(reason);
+            } else {
+                let draw_uniform_pairs = dynamic_draw_uniform_pairs(scene);
+                match prepare::collect_dynamic_light_from_world(scene, assets) {
+                    Ok(light_from_world) => {
+                        if let Some(gpu) = &mut self.gpu {
+                            match gpu.update_dynamic_draw_uniforms(
+                                self.target,
+                                gpu_light_uniform,
+                                light_from_world,
+                                &draw_uniform_pairs,
+                            ) {
+                                Ok(()) => {
+                                    if let Some(prepared) = self.prepared.as_mut() {
+                                        prepared.transform_revision = scene.transform_revision();
+                                    }
+                                    self.stats.textures = logical_stats.textures;
+                                    self.prepare_telemetry.dynamic_template_prepares = self
+                                        .prepare_telemetry
+                                        .dynamic_template_prepares
+                                        .saturating_add(1);
+                                    self.prepare_telemetry.draw_uniform_only_updates = self
+                                        .prepare_telemetry
+                                        .draw_uniform_only_updates
+                                        .saturating_add(1);
+                                    self.render_generation =
+                                        self.render_generation.saturating_add(1);
+                                    self.last_rendered_generation = None;
+                                    self.diagnostics = diagnostics;
+                                    log_prepare_step("dynamic draw-uniform update", step_start);
+                                    log_prepare_step("prepare_inner total", total_start);
+                                    return Ok(());
+                                }
+                                Err(reason) => log_dynamic_reject(reason),
+                            }
+                        }
+                    }
+                    Err(_error) => log_dynamic_reject("dynamic shadow projection failed"),
+                }
+            }
+        }
+        let backend_sampled_base_color_textures = backend_material_slots
+            .iter()
+            .filter_map(|slot| slot.base_color.as_ref().map(|texture| texture.handle))
             .collect::<Vec<_>>();
         let prepared_scene = prepare::collect_prepared_primitives(
             self.target,
@@ -194,6 +249,57 @@ impl Renderer {
         Ok(())
     }
 
+    fn dynamic_gpu_prepare_rejection_reason(
+        &self,
+        scene: &Scene,
+        backend_material_handles: &[crate::assets::MaterialHandle],
+    ) -> Option<&'static str> {
+        let Some(prepared) = self.prepared.as_ref() else {
+            return Some("no prepared template");
+        };
+        if !prepared.scene.ptr_eq(&scene.identity()) {
+            return Some("scene identity changed");
+        }
+        if prepared.structure_revision != scene.structure_revision() {
+            return Some("structure revision changed");
+        }
+        if prepared.environment_revision != self.environment_revision {
+            return Some("environment revision changed");
+        }
+        if prepared.target_revision != self.target_revision {
+            return Some("target revision changed");
+        }
+        if prepared.debug_revision != self.debug_revision {
+            return Some("debug revision changed");
+        }
+        if prepared.transform_revision == scene.transform_revision() {
+            return None;
+        }
+        if scene.model_nodes().next().is_some() {
+            return Some("model nodes present");
+        }
+        if scene.instance_set_nodes().next().is_some() {
+            return Some("instance set nodes present");
+        }
+        if scene.label_nodes().next().is_some() {
+            return Some("label nodes present");
+        }
+        if scene
+            .mesh_nodes()
+            .any(|(_node, mesh, _transform)| !backend_material_handles.contains(&mesh.material()))
+        {
+            return Some("moving mesh missing GPU material slot");
+        }
+        if !prepared
+            .primitives
+            .iter()
+            .all(crate::geometry::Primitive::depth_prepass_eligible)
+        {
+            return Some("non-opaque primitive present");
+        }
+        None
+    }
+
     fn apply_prepare_stats(
         &mut self,
         logical_stats: prepare::PreparedLogicalResourceStats,
@@ -242,4 +348,53 @@ impl Renderer {
         self.stats.approximate_gpu_memory_bytes =
             (stats.approximate_gpu_memory_bytes > 0).then_some(stats.approximate_gpu_memory_bytes);
     }
+}
+
+fn dynamic_draw_uniform_pairs(scene: &Scene) -> Vec<([f32; 16], [f32; 16])> {
+    let mut values = Vec::new();
+    let origin_shift = scene.origin_shift();
+    for (_renderable, transform) in scene.renderables() {
+        push_dynamic_draw_uniform(&mut values, transform, origin_shift);
+    }
+    for (_node, _mesh, transform) in scene.mesh_nodes() {
+        push_dynamic_draw_uniform(&mut values, transform, origin_shift);
+    }
+    if values.is_empty() {
+        values.push((identity_matrix4(), identity_matrix4()));
+    }
+    values
+}
+
+fn push_dynamic_draw_uniform(
+    values: &mut Vec<([f32; 16], [f32; 16])>,
+    transform: crate::scene::Transform,
+    origin_shift: crate::scene::Vec3,
+) {
+    let raw_world_from_model =
+        prepare::transforms::world_from_model_matrix(transform, origin_shift);
+    let raw_normal_from_model = prepare::transforms::normal_from_model_matrix(transform);
+    let world_from_model = if prepare::transforms::invert_matrix4(&raw_world_from_model).is_some() {
+        raw_world_from_model
+    } else {
+        identity_matrix4()
+    };
+    let normal_from_model = if prepare::transforms::invert_matrix4(&raw_normal_from_model).is_some()
+    {
+        raw_normal_from_model
+    } else {
+        identity_matrix4()
+    };
+    if values
+        .iter()
+        .any(|(existing_world, _)| *existing_world == world_from_model)
+    {
+        return;
+    }
+    values.push((world_from_model, normal_from_model));
+}
+
+const fn identity_matrix4() -> [f32; 16] {
+    [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ]
 }
