@@ -142,6 +142,15 @@ let framing = scene.frame_bounds(camera, bounds, FramingOptions::new().viewport(
 let controls = scena::OrbitControls::from_framing(framing).cinematic();
 ```
 
+Clamp wheel and pinch zoom relative to that framed distance when a viewer
+should stay near the inspected object:
+
+```rust
+let controls = scena::OrbitControls::from_framing(framing)
+    .cinematic()
+    .zoom_limits_bounds_relative(0.5, 4.0);
+```
+
 Use `presentation()` or `turntable(rpm)` when the host should advance the
 camera between input events:
 

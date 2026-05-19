@@ -329,3 +329,47 @@ pub(super) fn check_connector_axial_gap(root: &Path, findings: &mut Vec<Finding>
         ));
     }
 }
+
+pub(super) fn check_orbit_zoom_limits(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ORBIT-ZOOM-LIMITS",
+        "src/controls.rs",
+        &[
+            "pub fn zoom_limits_bounds_relative(",
+            "pub fn with_distance_limits(",
+            "pub const fn min_distance(",
+            "pub const fn max_distance(",
+            "fn clamp_distance(",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ORBIT-ZOOM-LIMITS",
+        "tests/round_d_orbit_zoom_limits.rs",
+        &[
+            "orbit_zoom_limits_are_relative_to_current_framed_distance",
+            "wheel_and_pinch_zoom_are_clamped_to_named_limits",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ORBIT-ZOOM-LIMITS",
+        "tests/examples_visual_proof.rs",
+        &[
+            "round_d_orbit_zoom_limit_animated_docs_image",
+            "round-d-orbit-zoom-limit-animated-docs-image",
+            "animated-proof+docs-image",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ORBIT-ZOOM-LIMITS",
+        "docs/guides/easy-scene-setup.md",
+        &["zoom_limits_bounds_relative(0.5, 4.0)"],
+    );
+}

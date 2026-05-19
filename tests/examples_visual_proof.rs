@@ -814,6 +814,102 @@ fn render_orbit_control_motion_frame(controls: OrbitControls, width: u32, height
 }
 
 #[test]
+fn round_d_orbit_zoom_limit_animated_docs_image() {
+    let frame_width = 96;
+    let frame_height = 96;
+    let mut controls = OrbitControls::new(Vec3::ZERO, 4.0).zoom_limits_bounds_relative(0.5, 2.0);
+
+    let start = render_orbit_zoom_limit_frame(controls, frame_width, frame_height);
+    let start_rect =
+        nonblack_pixel_rect(&start, frame_width, frame_height).expect("start frame is visible");
+
+    for _ in 0..16 {
+        assert_eq!(
+            controls.handle_pointer(PointerEvent::wheel(0.0, 0.0, -10.0)),
+            OrbitControlAction::Zoom
+        );
+    }
+    assert_close(controls.distance(), 2.0);
+    let min = render_orbit_zoom_limit_frame(controls, frame_width, frame_height);
+    let min_rect =
+        nonblack_pixel_rect(&min, frame_width, frame_height).expect("min frame is visible");
+
+    for _ in 0..16 {
+        assert_eq!(
+            controls.handle_pointer(PointerEvent::wheel(0.0, 0.0, -10.0)),
+            OrbitControlAction::Zoom
+        );
+    }
+    assert_close(controls.distance(), 2.0);
+    let min_clamped = render_orbit_zoom_limit_frame(controls, frame_width, frame_height);
+    assert_eq!(
+        min, min_clamped,
+        "orbit zoom-limit proof must show repeated zoom-in clamped at the minimum distance"
+    );
+
+    for _ in 0..16 {
+        assert_eq!(
+            controls.handle_touch(TouchEvent::pinch(0.0, 0.0, 10.0)),
+            OrbitControlAction::Zoom
+        );
+    }
+    assert_close(controls.distance(), 8.0);
+    let max = render_orbit_zoom_limit_frame(controls, frame_width, frame_height);
+    let max_rect =
+        nonblack_pixel_rect(&max, frame_width, frame_height).expect("max frame is visible");
+
+    assert!(
+        min_rect.width() > start_rect.width(),
+        "minimum zoom distance should render the subject larger: start={start_rect:?} min={min_rect:?}"
+    );
+    assert!(
+        max_rect.width() < start_rect.width(),
+        "maximum zoom distance should render the subject smaller: start={start_rect:?} max={max_rect:?}"
+    );
+
+    write_animated_docs_image_artifact(
+        "round-d-orbit-zoom-limit-animated-docs-image",
+        "docs/guides/easy-scene-setup.md",
+        frame_width,
+        frame_height,
+        &[start, min, min_clamped, max],
+    );
+}
+
+fn render_orbit_zoom_limit_frame(controls: OrbitControls, width: u32, height: u32) -> Vec<u8> {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 0.5, 0.3));
+    let material = assets.create_material(MaterialDesc::unlit(Color::CYAN));
+
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("orbit zoom-limit subject inserts");
+    let camera = scene.add_default_camera().expect("default camera inserts");
+    controls
+        .apply_to_scene(&mut scene, camera)
+        .expect("orbit zoom-limit controls apply");
+
+    let mut renderer = Renderer::headless(width, height).expect("headless renderer builds");
+    renderer.set_background(Background::Black);
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("orbit zoom-limit scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("orbit zoom-limit scene renders");
+    renderer.frame_rgba8().to_vec()
+}
+
+fn assert_close(left: f32, right: f32) {
+    assert!(
+        (left - right).abs() <= 1.0e-4,
+        "expected {left} to be close to {right}"
+    );
+}
+
+#[test]
 fn round_c_auto_exposure_preset_reference_docs_image() {
     let tile_width = 96;
     let tile_height = 96;

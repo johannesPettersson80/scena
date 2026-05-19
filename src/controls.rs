@@ -76,6 +76,8 @@ pub struct OrbitControls {
     pitch_radians: f32,
     damping_factor: f32,
     auto_rotate_rpm: f32,
+    min_distance: f32,
+    max_distance: f32,
     orbiting: bool,
     panning: bool,
 }
@@ -89,6 +91,8 @@ impl OrbitControls {
             pitch_radians: 0.0,
             damping_factor: 0.0,
             auto_rotate_rpm: 0.0,
+            min_distance: MIN_DISTANCE,
+            max_distance: f32::INFINITY,
             orbiting: false,
             panning: false,
         }
@@ -96,7 +100,7 @@ impl OrbitControls {
 
     pub fn focus(mut self, target: Vec3, distance: f32) -> Self {
         self.target = target;
-        self.distance = distance.max(MIN_DISTANCE);
+        self.distance = self.clamp_distance(distance.max(MIN_DISTANCE));
         self
     }
 
@@ -109,11 +113,37 @@ impl OrbitControls {
     /// [`Scene::frame_bounds`](crate::Scene::frame_bounds).
     pub fn focus_on_framing(mut self, framing: FramingOutcome) -> Self {
         self.target = framing.target;
-        self.distance = framing.distance.max(MIN_DISTANCE);
+        self.distance = self.clamp_distance(framing.distance.max(MIN_DISTANCE));
         self.yaw_radians = framing.yaw_radians;
         self.pitch_radians = framing
             .pitch_radians
             .clamp(-MAX_PITCH_RADIANS, MAX_PITCH_RADIANS);
+        self
+    }
+
+    /// Sets zoom limits relative to the current framed distance.
+    ///
+    /// `min_factor` and `max_factor` multiply the current distance. The method
+    /// is designed for the common `OrbitControls::from_framing(framing)` path:
+    /// choose how close and far the user can zoom relative to the initial
+    /// composition instead of hard-coding scene distances.
+    pub fn zoom_limits_bounds_relative(self, min_factor: f32, max_factor: f32) -> Self {
+        let base_distance = self.distance.max(MIN_DISTANCE);
+        self.with_distance_limits(base_distance * min_factor, base_distance * max_factor)
+    }
+
+    /// Sets absolute scene-unit distance limits for wheel and pinch zoom.
+    pub fn with_distance_limits(mut self, min_distance: f32, max_distance: f32) -> Self {
+        let min_distance = sanitize_distance_limit(min_distance, MIN_DISTANCE);
+        let max_distance = sanitize_distance_limit(max_distance, f32::INFINITY);
+        let (min_distance, max_distance) = if min_distance <= max_distance {
+            (min_distance, max_distance)
+        } else {
+            (max_distance, min_distance)
+        };
+        self.min_distance = min_distance.max(MIN_DISTANCE);
+        self.max_distance = max_distance.max(self.min_distance);
+        self.distance = self.clamp_distance(self.distance);
         self
     }
 
@@ -223,7 +253,7 @@ impl OrbitControls {
             }
             PointerEventKind::Wheel => {
                 let zoom = (1.0 + event.scroll_delta * ZOOM_SCALE).max(0.05);
-                self.distance = (self.distance * zoom).max(MIN_DISTANCE);
+                self.distance = self.clamp_distance((self.distance * zoom).max(MIN_DISTANCE));
                 OrbitControlAction::Zoom
             }
             PointerEventKind::Released | PointerEventKind::Cancelled => {
@@ -264,6 +294,14 @@ impl OrbitControls {
 
     pub const fn distance(&self) -> f32 {
         self.distance
+    }
+
+    pub const fn min_distance(&self) -> f32 {
+        self.min_distance
+    }
+
+    pub const fn max_distance(&self) -> f32 {
+        self.max_distance
     }
 
     pub const fn yaw_radians(&self) -> f32 {
@@ -320,7 +358,11 @@ impl OrbitControls {
 
     fn apply_zoom_delta(&mut self, delta: f32) {
         let zoom = (1.0 + delta * ZOOM_SCALE).max(0.05);
-        self.distance = (self.distance * zoom).max(MIN_DISTANCE);
+        self.distance = self.clamp_distance((self.distance * zoom).max(MIN_DISTANCE));
+    }
+
+    fn clamp_distance(&self, distance: f32) -> f32 {
+        distance.clamp(self.min_distance, self.max_distance)
     }
 }
 
@@ -426,3 +468,11 @@ const PAN_UNITS_PER_PIXEL: f32 = 0.001;
 const ZOOM_SCALE: f32 = 0.1;
 const MIN_DISTANCE: f32 = 0.001;
 const MAX_PITCH_RADIANS: f32 = 1.553_343;
+
+fn sanitize_distance_limit(value: f32, fallback: f32) -> f32 {
+    if value.is_finite() && value > 0.0 {
+        value
+    } else {
+        fallback
+    }
+}

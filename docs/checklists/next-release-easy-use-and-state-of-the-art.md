@@ -580,11 +580,16 @@ Assets::khronos::dragon_attenuation().await?       // transmissive control
 
 ### 4.2 `OrbitControls` bounds-relative zoom
 
-Status: **[gap]**
+Status: **[shipped]**
 Owner: `src/controls.rs`
-Proof: unit test deriving limits from a known AABB and browser interaction
-test proving wheel / pinch input cannot zoom inside or outside the bounds.
-Visual proof: animated-proof (short interaction recording showing zoom clamped at both extremes)
+Proof: `tests/round_d_orbit_zoom_limits.rs` asserts limits are derived
+from the current framed distance and that wheel / pinch input clamps at
+both extremes; doctor rule `ORBIT-ZOOM-LIMITS` keeps the API, tests,
+docs, and generated proof present.
+Visual proof: animated-proof via
+`target/gate-artifacts/examples-visual/round-d-orbit-zoom-limit-animated-docs-image.ppm`
+(contact sheet shows start, clamped minimum, repeated minimum, and
+clamped maximum).
 
 ```rust
 OrbitControls::from_framing(framing).zoom_limits_bounds_relative(0.5, 4.0)
@@ -855,7 +860,7 @@ the rounds, not after — they're the strategic arc.
 ### Round D — Tier 2 ergonomics
 
 12. - [x] `ConnectOptions::with_axial_gap` (§4.3)
-13. - [ ] `OrbitControls` bounds-relative zoom (§4.2)
+13. - [x] `OrbitControls` bounds-relative zoom (§4.2)
 14. - [ ] `Viewer::on_click` / `on_hover` callbacks (§4.5)
 15. - [ ] `Viewer::capture_png` (§4.6)
 16. - [ ] Asset hot-reload (§4.7)
@@ -1009,3 +1014,12 @@ Round A implementation pass (2026-05-19):
   and lens-preset comparison under `target/gate-artifacts/examples-visual/`.
 - Added `ROUND-A-EASY-USE-PRIMITIVES` doctor coverage so the source,
   tests, visual proof, and first-path API style remain enforced.
+
+Ease-of-use implementation continuation (2026-05-19):
+
+- Landed named background presets, orbit-control presets, auto-exposure
+  scenarios, one-call animation playback, connector axial gaps, and
+  bounds-relative orbit zoom as small independent slices.
+- Added doctor rules for each shipped slice so source APIs, focused
+  tests, docs snippets, and generated visual-proof artifacts remain
+  source-enforced instead of checklist-only claims.

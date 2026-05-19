@@ -83,6 +83,7 @@ pub(crate) fn stage_release_artifacts_generates_canonical_release_evidence() {
         );
     }
     for suffix in [
+        "examples-visual/camera_framing_frame_bounds.ppm",
         "examples-visual/cad_plate_drawing_import.ppm",
         "m9-platform/linux-native-vulkan/default-scene.ppm",
         "m9-platform/linux-native-vulkan/static-gltf.ppm",
@@ -104,6 +105,11 @@ pub(crate) fn stage_release_artifacts_generates_canonical_release_evidence() {
     ] {
         write_stage_test_ppm(&fixture_root.join(format!("release-linux-native-vulkan/{suffix}")));
     }
+    write_stage_test_json(
+        &fixture_root
+            .join("release-linux-native-vulkan/examples-visual/camera_framing_frame_bounds.json"),
+        &json!({"schema":"fixture","status":"passed"}),
+    );
     for suffix in [
         "m9-platform/linux-native-vulkan/surface-context-loss.json",
         "m9-platform/macos-metal/surface-context-loss.json",
