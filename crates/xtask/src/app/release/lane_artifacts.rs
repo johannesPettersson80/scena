@@ -127,10 +127,7 @@ fn browser_probe_release_proof_passes(value: &serde_json::Value, lane: &str) -> 
                     result
                         .get("backend")
                         .and_then(serde_json::Value::as_str)
-                        .is_some_and(|backend| {
-                            backend.to_ascii_lowercase().replace("webgl2", "webgl2")
-                                == expected_backend
-                        })
+                        .is_some_and(|backend| backend.eq_ignore_ascii_case(expected_backend))
                         && result.get("status").and_then(serde_json::Value::as_str)
                             == Some("passed")
                         && result

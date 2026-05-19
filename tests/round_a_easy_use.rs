@@ -18,6 +18,10 @@ fn assert_color_close(left: Color, right: Color) {
 fn round_a_color_named_constants_and_hex_alias_are_public() {
     assert_eq!(Color::WHITE, Color::from_linear_rgba(1.0, 1.0, 1.0, 1.0));
     assert_eq!(Color::BLACK, Color::from_linear_rgba(0.0, 0.0, 0.0, 1.0));
+    assert_eq!(
+        Color::TRANSPARENT,
+        Color::from_linear_rgba(0.0, 0.0, 0.0, 0.0)
+    );
 
     assert_color_close(Color::GRAY, Color::from_hex("#808080").unwrap());
     assert_color_close(Color::LIGHT_GRAY, Color::from_hex("#d9dde3").unwrap());

@@ -30,7 +30,7 @@ const CONNECTOR_REPLAY_SECONDS: f64 = 1.8;
 const DEMO_HDR_ENVIRONMENT: &str = "samples/environment/white_studio_03_1k.hdr";
 const CONNECTOR_SOLVE_SEED_OFFSET: Vec3 = Vec3::new(-0.62, 0.11, 0.0);
 const CONNECTOR_REPLAY_SEPARATION_X: f32 = 0.48;
-const DEMO_BACKGROUND: Color = Color::from_linear_rgba(0.0, 0.0, 0.0, 0.0);
+const DEMO_BACKGROUND: Color = Color::TRANSPARENT;
 
 fn now_ms() -> f64 {
     js_sys::Date::now()

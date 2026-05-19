@@ -281,7 +281,7 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     .expect("visual proof fixture");
     fs::write(
         fixture_root.join("src/material.rs"),
-        "pub const GRAY: Color = Color; pub const BLUE: Color = Color; pub fn from_hex(value: &str) {} pub fn from_kelvin(kelvin: f32) {}",
+        "pub const TRANSPARENT: Color = Color; pub const GRAY: Color = Color; pub const BLUE: Color = Color; pub fn from_hex(value: &str) {} pub fn from_kelvin(kelvin: f32) {}",
     )
     .expect("material fixture");
     fs::write(

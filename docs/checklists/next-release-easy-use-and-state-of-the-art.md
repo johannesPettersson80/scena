@@ -279,7 +279,7 @@ Color::from_hex("#1a1d28")       // alias for existing from_hex_srgb
 Color::from_kelvin(3200.0)       // for light color temperature
 ```
 
-Constants: `WHITE`, `BLACK`, `GRAY`, `LIGHT_GRAY`, `DARK_GRAY`,
+Constants: `TRANSPARENT`, `WHITE`, `BLACK`, `GRAY`, `LIGHT_GRAY`, `DARK_GRAY`,
 `CHARCOAL`, `STUDIO_BACKDROP`, `WARM_WHITE`, `COOL_WHITE`,
 `RED`, `GREEN`, `BLUE`, `ORANGE`, `YELLOW`, `CYAN`, `MAGENTA`.
 
@@ -837,22 +837,22 @@ For every Tier-1 named primitive that lands, add a doctor rule in the
 same shape — but with an **allowlist clause** so escape hatches stay
 teachable.
 
-- [ ] Ban inline raw RGB/RGBA constructors such as
+- [x] Ban inline raw RGB/RGBA constructors such as
       `Color::from_linear_rgba(<lit>, ...)` or
       `Color::from_srgb(<lit>, ...)` / `Color::from_srgb_u8(<lit>, ...)`
       in first-path examples and `src/demo_page*` **except** in the
       dedicated color escape-hatch example. Do not ban
       `Color::from_kelvin`; that is one of the named conveniences this
       roadmap wants.
-- [ ] Ban first-path camera FOV literals once lens presets land: direct
+- [x] Ban first-path camera FOV literals once lens presets land: direct
       `vertical_fov: Angle::from_degrees(<lit>)`, raw FOV setter calls, or
       equivalent. Do not key the rule to dead API names like
       `with_fov(<float>)`.
 - [x] Ban inline `with_damping(<float>)` in `src/demo_page*` if a named
       damping preset would do.
-- [ ] Ban inline `Quat::from_*(<float>, ...)` in `examples/` **except**
+- [x] Ban inline `Quat::from_*(<float>, ...)` in `examples/` **except**
       in the dedicated transform escape-hatch example.
-- [ ] Ban inline `look_from(Vec3::new(<lit>, <lit>, <lit>))` and
+- [x] Ban inline `look_from(Vec3::new(<lit>, <lit>, <lit>))` and
       `orbit(<lit>, <lit>)` in `src/demo_page*` (already in v1.3.0).
 
 The rule shape: **wherever the library ships a name, the first-path
@@ -1123,6 +1123,17 @@ Environment preset implementation pass (2026-05-19):
   metadata/package-budget checks, all-preset load coverage, and generated
   reference artifact
   `target/gate-artifacts/environment-presets/environment-preset-reference-docs-image.ppm`.
+
+Doctor residue-rule closure (2026-05-19):
+
+- Extended `ROUND-A-EASY-USE-PRIMITIVES` so the first-path rule catches
+  raw demo color constructors, raw camera FOV setters/literals, and raw
+  `Quat::from_*` example literals. `DEMO-CAMERA-VIEWS-NAMED` already
+  catches inline `look_from(Vec3::new(...))` and `.orbit(<float>, <float>)`
+  in `src/demo_page*`.
+- Added `Color::TRANSPARENT` and swept the demo background away from the
+  raw `Color::from_linear_rgba(0.0, 0.0, 0.0, 0.0)` residue so the new
+  rule can fail closed.
 
 Ease-of-use implementation continuation (2026-05-19):
 

@@ -43,7 +43,7 @@ pub(crate) fn validate_release_review_report(
         "blocker_status",
         "findings_count",
     ] {
-        if frontmatter.get(required_key).is_none() {
+        if !frontmatter.contains_key(required_key) {
             findings.push(Finding::new(
                 "RELEASE-REVIEWS-PRESENT",
                 format!(
@@ -54,33 +54,33 @@ pub(crate) fn validate_release_review_report(
         }
     }
 
-    if let Some(declared_role) = frontmatter.get("role") {
-        if declared_role.as_str() != role {
-            findings.push(Finding::new(
-                "RELEASE-REVIEWS-PRESENT",
-                format!(
-                    "{display} declares role={declared_role:?} but lives under \
-                     reviews/{role}/; the role slug must match the directory; \
-                     see docs/specs/release-reviews.md Section 1"
-                ),
-            ));
-        }
+    if let Some(declared_role) = frontmatter.get("role")
+        && declared_role.as_str() != role
+    {
+        findings.push(Finding::new(
+            "RELEASE-REVIEWS-PRESENT",
+            format!(
+                "{display} declares role={declared_role:?} but lives under \
+                 reviews/{role}/; the role slug must match the directory; \
+                 see docs/specs/release-reviews.md Section 1"
+            ),
+        ));
     }
 
-    if let Some(declared_blocker) = frontmatter.get("blocker_status") {
-        if !matches!(
+    if let Some(declared_blocker) = frontmatter.get("blocker_status")
+        && !matches!(
             declared_blocker.as_str(),
             "clear" | "blockers-open" | "findings-recorded"
-        ) {
-            findings.push(Finding::new(
-                "RELEASE-REVIEWS-PRESENT",
-                format!(
-                    "{display} blocker_status={declared_blocker:?} is not one of \
-                     clear | blockers-open | findings-recorded; see \
-                     docs/specs/release-reviews.md Section 1"
-                ),
-            ));
-        }
+        )
+    {
+        findings.push(Finding::new(
+            "RELEASE-REVIEWS-PRESENT",
+            format!(
+                "{display} blocker_status={declared_blocker:?} is not one of \
+                 clear | blockers-open | findings-recorded; see \
+                 docs/specs/release-reviews.md Section 1"
+            ),
+        ));
     }
 
     let finding_heading_count = text

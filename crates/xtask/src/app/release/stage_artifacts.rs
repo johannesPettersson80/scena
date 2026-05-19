@@ -114,7 +114,7 @@ fn select_stage_source(files: &[PathBuf], suffix: &str) -> Option<PathBuf> {
         .filter(|path| path_ends_with(path, suffix))
         .cloned()
         .collect::<Vec<_>>();
-    matches.sort_by(|a, b| stage_source_rank(a, suffix).cmp(&stage_source_rank(b, suffix)));
+    matches.sort_by_key(|path| stage_source_rank(path, suffix));
     matches.into_iter().next()
 }
 
@@ -183,15 +183,14 @@ fn normalize_release_json_metadata(
         .or_else(|| object.get("commit"))
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty());
-    if let Some(recorded) = recorded {
-        if expected_commit != "local-checkout"
-            && recorded != "local-checkout"
-            && recorded != expected_commit
-        {
-            return Err(format!(
-                "release artifact {suffix} was generated for commit {recorded}, expected {expected_commit}"
-            ));
-        }
+    if let Some(recorded) = recorded
+        && expected_commit != "local-checkout"
+        && recorded != "local-checkout"
+        && recorded != expected_commit
+    {
+        return Err(format!(
+            "release artifact {suffix} was generated for commit {recorded}, expected {expected_commit}"
+        ));
     }
     if expected_commit != "local-checkout" {
         object.insert("commit_sha".to_string(), json!(expected_commit));

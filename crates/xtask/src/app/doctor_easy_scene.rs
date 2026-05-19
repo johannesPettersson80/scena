@@ -3,6 +3,7 @@ use crate::app::prelude::*;
 mod environment_presets;
 mod khronos_samples;
 mod next_release;
+mod round_a_primitives;
 mod state_url;
 
 pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<Finding>) {
@@ -162,7 +163,7 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
             "nonblack_pixel_rect",
         ],
     );
-    check_round_a_easy_use_primitives(root, findings);
+    round_a_primitives::check_round_a_easy_use_primitives(root, findings);
     next_release::check_named_light_presets(root, findings);
     next_release::check_honest_material_presets(root, findings);
     next_release::check_named_background_presets(root, findings);
@@ -196,123 +197,6 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
     }
     check_demo_camera_views_named(root, findings);
     check_demo_diagnostics_contract(root, findings);
-}
-
-fn check_round_a_easy_use_primitives(root: &Path, findings: &mut Vec<Finding>) {
-    require_contains(
-        root,
-        findings,
-        "ROUND-A-EASY-USE-PRIMITIVES",
-        "src/material.rs",
-        &[
-            "pub const GRAY",
-            "pub const BLUE",
-            "pub fn from_hex(",
-            "pub fn from_kelvin(",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "ROUND-A-EASY-USE-PRIMITIVES",
-        "src/scene/camera.rs",
-        &[
-            "pub fn standard()",
-            "pub fn wide_angle()",
-            "pub fn portrait()",
-            "pub fn telephoto()",
-            "pub fn with_fov_degrees(",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "ROUND-A-EASY-USE-PRIMITIVES",
-        "src/scene/math.rs",
-        &["pub fn looking_at("],
-    );
-    require_contains(
-        root,
-        findings,
-        "ROUND-A-EASY-USE-PRIMITIVES",
-        "tests/round_a_easy_use.rs",
-        &[
-            "round_a_color_named_constants_and_hex_alias_are_public",
-            "round_a_color_kelvin_helper_is_clamped_and_ordered",
-            "round_a_perspective_camera_lens_presets_are_named_degree_surfaces",
-            "round_a_transform_looking_at_faces_target_with_requested_up",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "ROUND-A-EASY-USE-PRIMITIVES",
-        "tests/examples_visual_proof.rs",
-        &[
-            "round_a_named_color_swatch_docs_image",
-            "round-a-named-color-swatch-docs-image",
-            "round_a_lens_preset_comparison_docs_image",
-            "round-a-lens-preset-comparison-docs-image",
-        ],
-    );
-
-    for rel in ROUND_A_CAMERA_FIRST_PATH_FILES {
-        let path = root.join(rel);
-        let Ok(text) = fs::read_to_string(&path) else {
-            continue;
-        };
-        if text.contains("PerspectiveCamera::default().with_aspect(") {
-            findings.push(Finding::new(
-                "ROUND-A-EASY-USE-PRIMITIVES",
-                format!(
-                    "{rel} must use a named PerspectiveCamera lens preset and let frame_bounds/viewport own aspect"
-                ),
-            ));
-        }
-    }
-
-    for rel in ROUND_A_COLOR_FIRST_PATH_FILES {
-        let path = root.join(rel);
-        let Ok(text) = fs::read_to_string(&path) else {
-            continue;
-        };
-        if contains_raw_color_literal(&text) {
-            findings.push(Finding::new(
-                "ROUND-A-EASY-USE-PRIMITIVES",
-                format!("{rel} must use named colors or Color::from_hex for first-path examples"),
-            ));
-        }
-    }
-}
-
-const ROUND_A_CAMERA_FIRST_PATH_FILES: &[&str] = &[
-    "README.md",
-    "docs/getting-started.md",
-    "docs/api.md",
-    "docs/guides/easy-scene-setup.md",
-    "docs/guides/migrating-from-threejs.md",
-    "examples/easy_model_viewer.rs",
-    "examples/camera_framing.rs",
-    "examples/connector_auto_framing.rs",
-    "src/demo_page.rs",
-    "src/demo_page/imports.rs",
-];
-
-const ROUND_A_COLOR_FIRST_PATH_FILES: &[&str] = &[
-    "README.md",
-    "docs/getting-started.md",
-    "examples/camera_framing.rs",
-];
-
-fn contains_raw_color_literal(text: &str) -> bool {
-    [
-        "Color::from_srgb(",
-        "Color::from_srgb_u8(",
-        "Color::from_linear_rgb(",
-        "Color::from_linear_rgba(",
-    ]
-    .into_iter()
-    .any(|needle| text.contains(needle))
 }
 
 fn check_easy_scene_guide_snippet(root: &Path, findings: &mut Vec<Finding>) {
@@ -390,18 +274,17 @@ fn check_demo_camera_views_named(root: &Path, findings: &mut Vec<Finding>) {
             ));
         }
         for line in text.lines() {
-            if let Some(name) = const_name(line) {
-                if name.contains("VIEW_DIRECTION")
-                    || (name.contains("APPROVED") && name.contains("VIEW"))
-                {
-                    findings.push(Finding::new(
-                        "DEMO-CAMERA-VIEWS-NAMED",
-                        format!(
-                            "{} must not hide demo camera views in opaque constants named {name}",
-                            rel.display()
-                        ),
-                    ));
-                }
+            if let Some(name) = const_name(line)
+                && (name.contains("VIEW_DIRECTION")
+                    || (name.contains("APPROVED") && name.contains("VIEW")))
+            {
+                findings.push(Finding::new(
+                    "DEMO-CAMERA-VIEWS-NAMED",
+                    format!(
+                        "{} must not hide demo camera views in opaque constants named {name}",
+                        rel.display()
+                    ),
+                ));
             }
         }
     }
@@ -412,10 +295,10 @@ fn contains_inline_look_from_vec3_literal(text: &str) -> bool {
     while let Some(index) = rest.find(".look_from(") {
         let after_call = &rest[index + ".look_from(".len()..];
         let trimmed = after_call.trim_start();
-        if let Some(after_vec3) = trimmed.strip_prefix("Vec3::new(") {
-            if starts_with_float_literal(after_vec3.trim_start()) {
-                return true;
-            }
+        if let Some(after_vec3) = trimmed.strip_prefix("Vec3::new(")
+            && starts_with_float_literal(after_vec3.trim_start())
+        {
+            return true;
         }
         rest = after_call;
     }
@@ -529,9 +412,7 @@ fn find_tag_with_id<'a>(html: &'a str, tag: &str, id: &str) -> Option<&'a str> {
     let needle = format!("<{tag}");
     while let Some(start) = rest.find(&needle) {
         let after_start = &rest[start..];
-        let Some(end) = after_start.find('>') else {
-            return None;
-        };
+        let end = after_start.find('>')?;
         let candidate = &after_start[..=end];
         if candidate.contains(&format!("id=\"{id}\"")) {
             return Some(candidate);

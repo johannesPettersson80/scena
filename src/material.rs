@@ -20,6 +20,7 @@ pub struct Color {
 }
 
 impl Color {
+    pub const TRANSPARENT: Self = Self::from_linear_rgba(0.0, 0.0, 0.0, 0.0);
     pub const BLACK: Self = Self::from_linear_rgba(0.0, 0.0, 0.0, 1.0);
     pub const WHITE: Self = Self::from_linear_rgba(1.0, 1.0, 1.0, 1.0);
     pub const GRAY: Self = Self::from_linear_rgba(0.215_860_5, 0.215_860_5, 0.215_860_5, 1.0);
