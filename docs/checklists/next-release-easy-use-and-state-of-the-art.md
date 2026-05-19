@@ -592,12 +592,16 @@ OrbitControls::from_framing(framing).zoom_limits_bounds_relative(0.5, 4.0)
 
 ### 4.3 `ConnectOptions::with_axial_gap` / unit-aware clearance helper
 
-Status: **[gap]**
+Status: **[shipped]** for scene-unit axial gaps; `with_clearance_mm`
+remains intentionally absent until imported source-unit metadata can make
+it fail closed.
 Owner: `src/scene/connectors/`
-Proof: connector mating unit tests for axial gap in scene units plus a
-fail-closed test proving `with_clearance_mm` is unavailable or errors when
-source-unit metadata is absent.
-Visual proof: docs-image (optional — render two mated parts with the gap rendered so the docs example is concrete)
+Proof: `tests/round_d_connector_axial_gap.rs` asserts that
+`with_axial_gap` offsets along the target connector's forward axis and
+sanitizes invalid gaps to zero; doctor rule `CONNECTOR-AXIAL-GAP` keeps
+the API, test, docs, and `with_clearance_mm` absence present.
+Visual proof: docs-image optional — the behavior is placement math and
+covered by deterministic connector tests.
 
 ```rust
 options.with_axial_gap(0.4)
@@ -850,7 +854,7 @@ the rounds, not after — they're the strategic arc.
 
 ### Round D — Tier 2 ergonomics
 
-12. - [ ] `ConnectOptions::with_axial_gap` (§4.3)
+12. - [x] `ConnectOptions::with_axial_gap` (§4.3)
 13. - [ ] `OrbitControls` bounds-relative zoom (§4.2)
 14. - [ ] `Viewer::on_click` / `on_hover` callbacks (§4.5)
 15. - [ ] `Viewer::capture_png` (§4.6)

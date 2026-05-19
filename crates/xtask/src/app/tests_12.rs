@@ -140,6 +140,7 @@ fn write_easy_scene_fixture(
         "src/render",
         "src/demo_page",
         "src/scene",
+        "src/scene/connectors",
         "tests",
     ] {
         fs::create_dir_all(fixture_root.join(dir)).expect("fixture dir");
@@ -150,6 +151,11 @@ fn write_easy_scene_fixture(
         "new THREE.Box3 controls.target.copy OrbitControls::from_framing spherical.theta spherical.phi azimuth_elevation",
     )
     .expect("migration fixture");
+    fs::write(
+        fixture_root.join("docs/guides/place-and-connect-objects.md"),
+        "with_axial_gap(0.4) target connector's forward axis",
+    )
+    .expect("connect guide fixture");
     fs::write(
         fixture_root.join("docs/release-notes/v1.3.0.md"),
         "Status: ready OrbitControls::from_framing Aabb::union ScreenRect ProjectedPoint GridFloorHandles LookupError::InvalidBounds LookupError::UnsupportedCameraType FramingOptions::azimuth_elevation FramingOptions::front FramingOptions::back FramingOptions::left FramingOptions::right FramingOptions::top FramingOptions::bottom FramingOptions::three_quarter_front_left FramingOptions::three_quarter_front_right FramingOptions::three_quarter_back_left FramingOptions::three_quarter_back_right",
@@ -196,6 +202,11 @@ fn write_easy_scene_fixture(
         "pub fn play_animation_by_name() { self.create_animation_mixer(); self.play_animation(mixer); }",
     )
     .expect("mixers fixture");
+    fs::write(
+        fixture_root.join("src/scene/connectors/options.rs"),
+        "pub fn with_axial_gap() {} pub const fn axial_gap() {}",
+    )
+    .expect("connector options fixture");
     fs::write(
         fixture_root.join("examples/animation.rs"),
         "play_animation_by_name(&import",
@@ -276,6 +287,11 @@ fn write_easy_scene_fixture(
         "scene_play_animation_by_name_creates_and_starts_mixer",
     )
     .expect("animation playback test fixture");
+    fs::write(
+        fixture_root.join("tests/round_d_connector_axial_gap.rs"),
+        "connect_options_axial_gap_offsets_along_target_forward_axis axial_gap_sanitizes_invalid_or_negative_values_to_zero",
+    )
+    .expect("axial gap test fixture");
     fs::write(fixture_root.join("src/lib.rs"), "").expect("lib fixture");
     fs::write(fixture_root.join("src/geometry.rs"), "").expect("geometry fixture");
     fs::write(fixture_root.join("demo/index.html"), diagnostics_html).expect("demo html fixture");

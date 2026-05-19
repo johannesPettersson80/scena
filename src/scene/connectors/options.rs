@@ -1,4 +1,4 @@
-use super::super::Transform;
+use super::super::{Transform, Vec3};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ConnectionAlignment {
@@ -59,6 +59,21 @@ impl ConnectOptions {
     pub const fn with_mate_offset(mut self, mate_offset: Transform) -> Self {
         self.mate_offset = mate_offset;
         self
+    }
+
+    /// Offsets the mated source along the target connector's forward axis.
+    ///
+    /// The value is in scene units. Non-finite and negative values are
+    /// sanitized to zero; source-authored physical-unit helpers should stay
+    /// separate so they can fail closed when import units are unknown.
+    pub fn with_axial_gap(mut self, gap: f32) -> Self {
+        let gap = if gap.is_finite() { gap.max(0.0) } else { 0.0 };
+        self.mate_offset = Transform::at(Vec3::new(gap, 0.0, 0.0));
+        self
+    }
+
+    pub const fn axial_gap(self) -> f32 {
+        self.mate_offset.translation.x
     }
 
     pub const fn allow_non_uniform_scale(mut self, allow: bool) -> Self {

@@ -29,6 +29,14 @@ let options = ConnectOptions::default().with_alignment(ConnectionAlignment::Forw
 scene.connect(source_frame, target_frame, options)?;
 ```
 
+Use `with_axial_gap` when the connection should leave scene-unit clearance
+along the target connector's forward axis:
+
+```rust
+let options = ConnectOptions::default().with_axial_gap(0.4);
+scene.connect(source_frame, target_frame, options)?;
+```
+
 Use roll options when the part is correctly mated but should keep or snap its twist around
 the connector forward axis:
 

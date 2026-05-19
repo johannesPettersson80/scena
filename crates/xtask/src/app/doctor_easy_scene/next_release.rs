@@ -294,3 +294,38 @@ pub(super) fn check_one_call_animation_playback(root: &Path, findings: &mut Vec<
         &["play_animation_by_name(&import"],
     );
 }
+
+pub(super) fn check_connector_axial_gap(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "CONNECTOR-AXIAL-GAP",
+        "src/scene/connectors/options.rs",
+        &["pub fn with_axial_gap(", "pub const fn axial_gap("],
+    );
+    require_contains(
+        root,
+        findings,
+        "CONNECTOR-AXIAL-GAP",
+        "tests/round_d_connector_axial_gap.rs",
+        &[
+            "connect_options_axial_gap_offsets_along_target_forward_axis",
+            "axial_gap_sanitizes_invalid_or_negative_values_to_zero",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "CONNECTOR-AXIAL-GAP",
+        "docs/guides/place-and-connect-objects.md",
+        &["with_axial_gap(0.4)", "target connector's forward axis"],
+    );
+    if fs::read_to_string(root.join("src/scene/connectors/options.rs"))
+        .is_ok_and(|text| text.contains("with_clearance_mm("))
+    {
+        findings.push(Finding::new(
+            "CONNECTOR-AXIAL-GAP",
+            "with_clearance_mm must not ship until source-unit metadata can make it fail closed",
+        ));
+    }
+}

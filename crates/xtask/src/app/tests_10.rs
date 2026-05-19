@@ -149,6 +149,8 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     fs::create_dir_all(fixture_root.join("demo")).expect("fixture demo");
     fs::create_dir_all(fixture_root.join("examples")).expect("fixture examples");
     fs::create_dir_all(fixture_root.join("src/scene")).expect("fixture scene");
+    fs::create_dir_all(fixture_root.join("src/scene/connectors"))
+        .expect("fixture scene connectors");
     fs::create_dir_all(fixture_root.join("src/material")).expect("fixture material");
     fs::create_dir_all(fixture_root.join("src/render")).expect("fixture render");
     fs::create_dir_all(fixture_root.join("src/geometry")).expect("fixture geometry");
@@ -163,6 +165,11 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
         "new THREE.Box3 controls.target.copy OrbitControls::from_framing spherical.theta spherical.phi azimuth_elevation",
     )
     .expect("migration fixture");
+    fs::write(
+        fixture_root.join("docs/guides/place-and-connect-objects.md"),
+        "with_axial_gap(0.4) target connector's forward axis",
+    )
+    .expect("connect guide fixture");
     fs::write(
         fixture_root.join("docs/release-notes/v1.3.0.md"),
         "Status: ready OrbitControls::from_framing Aabb::union ScreenRect ProjectedPoint GridFloorHandles LookupError::InvalidBounds LookupError::UnsupportedCameraType FramingOptions::azimuth_elevation FramingOptions::front FramingOptions::back FramingOptions::left FramingOptions::right FramingOptions::top FramingOptions::bottom FramingOptions::three_quarter_front_left FramingOptions::three_quarter_front_right FramingOptions::three_quarter_back_left FramingOptions::three_quarter_back_right",
@@ -209,6 +216,11 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
         "pub fn play_animation_by_name() { self.create_animation_mixer(); self.play_animation(mixer); }",
     )
     .expect("mixers fixture");
+    fs::write(
+        fixture_root.join("src/scene/connectors/options.rs"),
+        "pub fn with_axial_gap() {} pub const fn axial_gap() {}",
+    )
+    .expect("connector options fixture");
     fs::write(
         fixture_root.join("examples/animation.rs"),
         "play_animation_by_name(&import",
@@ -292,6 +304,11 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
         "scene_play_animation_by_name_creates_and_starts_mixer",
     )
     .expect("animation playback test fixture");
+    fs::write(
+        fixture_root.join("tests/round_d_connector_axial_gap.rs"),
+        "connect_options_axial_gap_offsets_along_target_forward_axis axial_gap_sanitizes_invalid_or_negative_values_to_zero",
+    )
+    .expect("axial gap test fixture");
     fs::write(
         fixture_root.join("demo/index.html"),
         r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
