@@ -513,6 +513,78 @@ fn render_point_light_preset_tile(light: PointLight, width: u32, height: u32) ->
 }
 
 #[test]
+fn round_b_material_preset_reference_docs_image() {
+    let tile_width = 128;
+    let tile_height = 128;
+    let tiles = [
+        render_material_preset_tile(MaterialDesc::matte(Color::BLUE), tile_width, tile_height),
+        render_material_preset_tile(MaterialDesc::plastic(Color::BLUE), tile_width, tile_height),
+        render_material_preset_tile(
+            MaterialDesc::metal(Color::LIGHT_GRAY),
+            tile_width,
+            tile_height,
+        ),
+        render_material_preset_tile(MaterialDesc::rubber(), tile_width, tile_height),
+    ];
+    let width = tile_width * tiles.len() as u32;
+    let height = tile_height;
+    let mut rgba = vec![0_u8; (width * height * 4) as usize];
+    for (index, tile) in tiles.iter().enumerate() {
+        assert!(
+            count_nonblack_pixels(tile) > 0,
+            "material preset tile {index} must render a visible subject"
+        );
+        for y in 0..tile_height {
+            let dst_start = ((y * width + index as u32 * tile_width) * 4) as usize;
+            let src_start = (y * tile_width * 4) as usize;
+            let byte_count = (tile_width * 4) as usize;
+            rgba[dst_start..dst_start + byte_count]
+                .copy_from_slice(&tile[src_start..src_start + byte_count]);
+        }
+    }
+    write_reference_docs_image_artifact(
+        "round-b-material-preset-reference-docs-image",
+        "docs/guides/easy-scene-setup.md",
+        width,
+        height,
+        &rgba,
+    );
+}
+
+fn render_material_preset_tile(material: MaterialDesc, width: u32, height: u32) -> Vec<u8> {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 0.35));
+    let material = assets.create_material(material);
+
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("material preset subject inserts");
+    scene
+        .directional_light(DirectionalLight::key_light().with_shadows(false))
+        .add()
+        .expect("material preset light inserts");
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::standard(),
+            Transform::at(Vec3::new(0.0, 0.0, 3.0)),
+        )
+        .expect("camera inserts");
+    scene.set_active_camera(camera).expect("active camera sets");
+
+    let mut renderer = Renderer::headless(width, height).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("material preset docs-image scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("material preset docs-image scene renders");
+    renderer.frame_rgba8().to_vec()
+}
+
+#[test]
 fn examples_visual_primitive_shapes_renders_box_to_ppm() {
     // Mirror examples/primitive_shapes.rs at the same headless renderer scale.
     let assets = Assets::new();

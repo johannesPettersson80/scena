@@ -74,6 +74,14 @@ roughness, dynamic range, or composition.
 Use `Scene::add_grid_floor()` for a matte floor at a known plane. The default
 floor is dark, rough, non-metallic, and sized from object bounds so it grounds
 the object without becoming the subject.
+For simple authored geometry, prefer honest material presets over raw
+metallic/roughness numbers:
+
+```rust
+let body = assets.create_material(MaterialDesc::plastic(Color::BLUE));
+let shaft = assets.create_material(MaterialDesc::metal(Color::LIGHT_GRAY));
+let foot = assets.create_material(MaterialDesc::rubber());
+```
 
 Use `Scene::frame_bounds()` instead of manually tuning camera distance. The
 framing solver projects the AABB into the requested viewport and solves from

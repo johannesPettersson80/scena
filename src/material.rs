@@ -6,6 +6,8 @@ use std::fmt;
 use crate::assets::TextureHandle;
 use palette::Srgb;
 
+mod presets;
+
 pub const DEFAULT_STROKE_WIDTH_PX: f32 = 1.0;
 pub const DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES: f32 = 30.0;
 

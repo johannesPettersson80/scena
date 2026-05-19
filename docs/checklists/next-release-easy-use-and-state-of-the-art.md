@@ -362,10 +362,17 @@ PointLight::bulb_cool()      // 5600K
 
 ### 2.6 `MaterialDesc` PBR presets — honest set only
 
-Status: **[gap]**
-Owner: `src/material/preset.rs` (new) or extend `MaterialDesc`
-Proof: rendered-output reference per preset.
-Visual proof: reference-image + docs-image (one reference image per preset on the same control sphere; tutorial shows the four presets side-by-side)
+Status: **[shipped]** — implemented on branch
+`easy-use-state-art/round-b`.
+Owner: `src/material/presets.rs` extending `MaterialDesc`
+Proof: `tests/round_b_material_presets.rs` asserts each preset's
+PBR material kind, base color, metallic factor, and roughness factor;
+rustdoc examples cover all four constructors; doctor rule
+`HONEST-MATERIAL-PRESETS` keeps overpromising glass/chrome/leather names
+out until the renderer can back them.
+Visual proof: reference-image + docs-image
+`target/gate-artifacts/examples-visual/round-b-material-preset-reference-docs-image.ppm`
+renders the four presets side-by-side on the same subject.
 
 ```rust
 MaterialDesc::matte(Color)
@@ -808,7 +815,7 @@ the rounds, not after — they're the strategic arc.
 ### Round B — easy by name, continued
 
 4. - [x] Light presets (§2.5)
-5. - [ ] `MaterialDesc` honest PBR presets (§2.6 — matte/plastic/metal/rubber only)
+5. - [x] `MaterialDesc` honest PBR presets (§2.6 — matte/plastic/metal/rubber only)
 6. - [ ] `Background` enum (§2.7)
 7. - [ ] `OrbitControls` named damping presets (§2.8)
 

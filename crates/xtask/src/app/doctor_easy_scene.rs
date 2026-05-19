@@ -1,5 +1,7 @@
 use crate::app::prelude::*;
 
+mod next_release;
+
 pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<Finding>) {
     require_contains(
         root,
@@ -158,7 +160,8 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
         ],
     );
     check_round_a_easy_use_primitives(root, findings);
-    check_named_light_presets(root, findings);
+    next_release::check_named_light_presets(root, findings);
+    next_release::check_honest_material_presets(root, findings);
 
     for rel in ["src/lib.rs", "src/geometry.rs"] {
         if fs::read_to_string(root.join(rel)).is_ok_and(|text| text.contains("FramingAngles")) {
@@ -295,45 +298,6 @@ fn contains_raw_color_literal(text: &str) -> bool {
     ]
     .into_iter()
     .any(|needle| text.contains(needle))
-}
-
-fn check_named_light_presets(root: &Path, findings: &mut Vec<Finding>) {
-    require_contains(
-        root,
-        findings,
-        "NAMED-LIGHT-PRESETS",
-        "src/scene/lights.rs",
-        &[
-            "pub fn sun()",
-            "pub fn key_light()",
-            "pub fn fill_light()",
-            "pub fn rim_light()",
-            "pub fn softbox()",
-            "pub fn bulb_warm()",
-            "pub fn bulb_cool()",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "NAMED-LIGHT-PRESETS",
-        "tests/round_b_light_presets.rs",
-        &[
-            "named_directional_light_presets_are_public_and_ordered",
-            "named_point_light_presets_are_kelvin_tinted_and_range_limited",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "NAMED-LIGHT-PRESETS",
-        "tests/examples_visual_proof.rs",
-        &[
-            "round_b_light_preset_reference_docs_image",
-            "round-b-light-preset-reference-docs-image",
-            "reference-image+docs-image",
-        ],
-    );
 }
 
 fn check_easy_scene_guide_snippet(root: &Path, findings: &mut Vec<Finding>) {

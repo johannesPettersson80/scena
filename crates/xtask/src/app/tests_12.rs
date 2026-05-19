@@ -135,6 +135,7 @@ fn write_easy_scene_fixture(
         "docs/guides",
         "docs/release-notes",
         "src",
+        "src/material",
         "src/demo_page",
         "src/scene",
         "tests",
@@ -185,7 +186,7 @@ fn write_easy_scene_fixture(
     .expect("lights fixture");
     fs::write(
         fixture_root.join("tests/examples_visual_proof.rs"),
-        "frame_bounds_rendered_output_proves_fill_center_and_unclipped_object frame-bounds-rendered-output computed_distance projected_rect nonblack_pixel_rect round_a_named_color_swatch_docs_image round-a-named-color-swatch-docs-image round_a_lens_preset_comparison_docs_image round-a-lens-preset-comparison-docs-image round_b_light_preset_reference_docs_image round-b-light-preset-reference-docs-image reference-image+docs-image",
+        "frame_bounds_rendered_output_proves_fill_center_and_unclipped_object frame-bounds-rendered-output computed_distance projected_rect nonblack_pixel_rect round_a_named_color_swatch_docs_image round-a-named-color-swatch-docs-image round_a_lens_preset_comparison_docs_image round-a-lens-preset-comparison-docs-image round_b_light_preset_reference_docs_image round-b-light-preset-reference-docs-image round_b_material_preset_reference_docs_image round-b-material-preset-reference-docs-image reference-image+docs-image",
     )
     .expect("visual proof fixture");
     fs::write(
@@ -193,6 +194,11 @@ fn write_easy_scene_fixture(
         "pub const GRAY: Color = Color; pub const BLUE: Color = Color; pub fn from_hex(value: &str) {} pub fn from_kelvin(kelvin: f32) {}",
     )
     .expect("material fixture");
+    fs::write(
+        fixture_root.join("src/material/presets.rs"),
+        "pub const fn matte(color: Color) {} pub const fn plastic(color: Color) {} pub const fn metal(color: Color) {} pub const fn rubber() {}",
+    )
+    .expect("material presets fixture");
     fs::write(
         fixture_root.join("src/scene/camera.rs"),
         "pub fn standard() {} pub fn wide_angle() {} pub fn portrait() {} pub fn telephoto() {} pub fn with_fov_degrees(degrees: f32) {}",
@@ -213,6 +219,11 @@ fn write_easy_scene_fixture(
         "named_directional_light_presets_are_public_and_ordered named_point_light_presets_are_kelvin_tinted_and_range_limited",
     )
     .expect("light preset test fixture");
+    fs::write(
+        fixture_root.join("tests/round_b_material_presets.rs"),
+        "honest_material_presets_are_public_pbr_shortcuts",
+    )
+    .expect("material preset test fixture");
     fs::write(fixture_root.join("src/lib.rs"), "").expect("lib fixture");
     fs::write(fixture_root.join("src/geometry.rs"), "").expect("geometry fixture");
     fs::write(fixture_root.join("demo/index.html"), diagnostics_html).expect("demo html fixture");
