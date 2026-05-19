@@ -201,6 +201,14 @@ viewer.hover_at(pointer_x, pointer_y)?;
 viewer.click_at(pointer_x, pointer_y)?;
 ```
 
+Set hover and selection outlines on the renderer when the interaction state
+should be visible in screenshots or demos:
+
+```rust
+renderer.set_hover_style(InteractionStyle::outline(Color::from_hex("#ffd240")?, 2.0));
+renderer.set_selection_style(InteractionStyle::outline(Color::from_hex("#40a0ff")?, 3.0));
+```
+
 ## Animation playback
 
 Imported glTF clips can be started by name without manually creating and

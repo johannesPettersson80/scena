@@ -4,6 +4,7 @@ mod camera_control_kit;
 mod environment_presets;
 mod khronos_samples;
 mod next_release;
+mod picking_outline_hover;
 mod production_asset_profile;
 mod reference_image_regression;
 mod round_a_primitives;
@@ -187,6 +188,7 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
     viewer_load_progress::check_viewer_load_progress(root, findings);
     viewer_material_variants::check_viewer_material_variants(root, findings);
     camera_control_kit::check_camera_control_kit(root, findings);
+    picking_outline_hover::check_picking_outline_hover(root, findings);
     reference_image_regression::check_reference_image_regression(root, findings);
     next_release::check_asset_hot_reload(root, findings);
     khronos_samples::check_khronos_samples(root, findings);

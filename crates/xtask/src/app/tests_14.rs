@@ -1,4 +1,5 @@
 use crate::app::prelude::*;
+use crate::app::tests_10::write_minimal_easy_scene_fixture;
 use crate::app::tests_12::{VALID_GUIDE, write_easy_scene_fixture};
 
 #[test]
@@ -40,6 +41,22 @@ pub(crate) fn public_fields_in_struct_detects_material_desc_visibility_regressio
         public_fields_in_struct(source, "MaterialDesc"),
         vec!["pub base_color: Color", "pub(crate) roughness_factor: f32"]
     );
+}
+
+#[test]
+pub(crate) fn easy_scene_setup_contracts_allow_azimuth_elevation_camera_view() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root =
+        root.join("target/xtask-doctor-regressions/easy-scene-azimuth-elevation-view");
+    write_minimal_easy_scene_fixture(
+        &fixture_root,
+        "frame_bounds(()) bounds_for_transforms add_grid_floor FramingOptions::new().azimuth_elevation(-27.5, 17.8)",
+    );
+    let mut findings = Vec::new();
+
+    check_easy_scene_setup_contracts(&fixture_root, &mut findings);
+
+    assert_eq!(findings, Vec::new());
 }
 
 #[test]
@@ -145,5 +162,28 @@ pub(crate) fn easy_scene_setup_contracts_reject_missing_camera_control_kit() {
             .iter()
             .any(|finding| finding.rule == "CAMERA-CONTROL-KIT"),
         "doctor must reject controls that do not expose follow and fly modes: {findings:?}",
+    );
+}
+
+#[test]
+pub(crate) fn easy_scene_setup_contracts_reject_missing_picking_outline_hover_proof() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/missing-picking-outline-hover");
+    write_easy_scene_fixture(
+        &fixture_root,
+        VALID_GUIDE,
+        "frame_bounds(()) bounds_for_transforms add_grid_floor",
+        r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
+    );
+    let _ = fs::remove_file(fixture_root.join("src/picking.rs"));
+    let mut findings = Vec::new();
+
+    check_easy_scene_setup_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "PICKING-OUTLINE-HOVER"),
+        "doctor must reject picking/outline/hover claims without the source and proof contract: {findings:?}",
     );
 }

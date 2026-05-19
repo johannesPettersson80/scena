@@ -806,11 +806,22 @@ specific competitor primitive.
   Visual proof: animated-proof + browser-demo still required for the
   future `<scena-viewer>` interaction surface (one short recording per
   mode showing the input → motion mapping)
-- **Picking + outline + hover.** Status: **[gap]** overall. Owner:
-  `src/picking.rs` + `src/render/`. Picking exists at `src/picking.rs`;
-  outline rendering is missing. Proof: browser hit-test plus rendered
-  outline reference.
-  Visual proof: reference-image + animated-proof (reference image of an outlined selection on a known asset; recording shows hover/click highlight)
+- **Picking + outline + hover.** Status: **[shipped]** for the library
+  renderer surface. Owner: `src/picking.rs` + `src/render/`.
+  `Scene::pick_and_select_with_assets` and
+  `Scene::pick_and_hover_with_assets` update typed interaction state;
+  `InteractionStyle::outline` plus `Renderer::set_hover_style` and
+  `Renderer::set_selection_style` make hover/selection visible in
+  rendered output; viewer callbacks already route through the same
+  picking path. Proof:
+  `examples_visual_picking_selection_hover_renders_styled_pick_to_ppm`
+  renders the styled pick path, and doctor rule `PICKING-OUTLINE-HOVER`
+  pins the source API, guide, checklist, and visual proof. The future
+  `<scena-viewer>` live demo can still add a richer browser recording,
+  but the renderer/library contract is closed.
+  Visual proof: reference-image shipped via the generated
+  `picking_selection_hover` artifact; custom-element animated browser
+  demo remains follow-up polish.
 - **HTML/CSS annotation overlay anchored to 3D points.** Status:
   **[gap]**. Owner: `<scena-viewer>` (bet 1.1). `data-position` /
   `data-normal` / `data-surface` attribute pattern; the `data-surface`
@@ -1294,6 +1305,15 @@ Camera-control kit implementation pass (2026-05-19):
   `CAMERA-CONTROL-KIT` doctor rule so the guide, checklist, public
   re-exports, and test proof stay aligned. Remaining proof is the
   browser-demo/animated custom-element interaction surface.
+
+Picking/outline/hover reconciliation pass (2026-05-19):
+
+- Reclassified the signature picking item from `[gap]` to `[shipped]`
+  for the library renderer surface after verifying the existing typed
+  pick-and-select / pick-and-hover APIs, outline interaction styles, viewer
+  callbacks, and generated visual proof.
+- Added a `PICKING-OUTLINE-HOVER` doctor rule so this remains a
+  source-enforced shipped claim instead of a stale checklist note.
 
 Ease-of-use implementation continuation (2026-05-19):
 
