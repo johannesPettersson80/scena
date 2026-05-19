@@ -239,6 +239,7 @@ Common viewer helpers:
 - `interactive_gltf_viewer(path, surface)`
 - `InteractiveGltfViewer::handle_surface_event`
 - `HeadlessGltfViewerBuilder::build_with_progress`
+- `HeadlessGltfViewerBuilder::render_png_bytes`
 - `InteractiveGltfViewerBuilder::build_with_progress`
 - `AssetLoadProgress`
 - `HeadlessGltfViewer::set_active_material_variant`
@@ -260,6 +261,8 @@ Public failures use structured errors such as:
 - `AnimationError`
 - `ConnectionError`
 - `ColorParseError`
+- `ViewerCaptureError`
+- `ViewerPngError`
 
 Most errors include a stable category plus contextual data. Use pattern matching
 for application behavior and `.help()` or diagnostics output for user-facing

@@ -477,7 +477,7 @@ pub(super) fn check_viewer_capture_png(root: &Path, findings: &mut Vec<Finding>)
         findings,
         "VIEWER-CAPTURE-PNG",
         "src/viewer.rs",
-        &["mod capture;", "pub use capture::ViewerCaptureError;"],
+        &["mod capture;", "ViewerCaptureError"],
     );
     require_contains(
         root,

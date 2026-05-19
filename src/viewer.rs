@@ -5,7 +5,7 @@ mod interaction;
 mod load_progress;
 mod material_variants;
 
-pub use capture::ViewerCaptureError;
+pub use capture::{ViewerCaptureError, ViewerPngError};
 
 use crate::assets::{AssetLoadProgress, AssetPath, Assets};
 use crate::controls::{OrbitControlAction, OrbitControls, PointerEvent, TouchEvent};

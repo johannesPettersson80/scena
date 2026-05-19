@@ -1,3 +1,4 @@
+use std::error::Error as StdError;
 use std::fmt;
 use std::io::Cursor;
 
@@ -6,7 +7,7 @@ use std::path::Path;
 
 use crate::render::Renderer;
 
-use super::{FirstRender, HeadlessGltfViewer, InteractiveGltfViewer};
+use super::{FirstRender, HeadlessGltfViewer, HeadlessGltfViewerBuilder, InteractiveGltfViewer};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ViewerCaptureError {
@@ -23,6 +24,36 @@ pub enum ViewerCaptureError {
         path: String,
         reason: String,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ViewerPngError {
+    Render(crate::Error),
+    Capture(ViewerCaptureError),
+}
+
+impl HeadlessGltfViewerBuilder {
+    /// Loads, frames, renders, and encodes a glTF/GLB scene as PNG bytes using
+    /// the CPU headless renderer. This path does not request a GPU adapter or
+    /// attach a platform surface.
+    pub async fn render_png_bytes(self) -> Result<Vec<u8>, ViewerPngError> {
+        let first = self.render().await?;
+        Ok(first.capture_png_bytes()?)
+    }
+
+    /// Loads, frames, renders, and writes a glTF/GLB scene as a PNG file using
+    /// the CPU headless renderer.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn render_png(self, path: impl AsRef<Path>) -> Result<(), ViewerPngError> {
+        let path = path.as_ref().to_path_buf();
+        let bytes = self.render_png_bytes().await?;
+        std::fs::write(&path, bytes)
+            .map_err(|error| ViewerCaptureError::Io {
+                path: path.display().to_string(),
+                reason: error.to_string(),
+            })
+            .map_err(ViewerPngError::from)
+    }
 }
 
 impl FirstRender {
@@ -130,3 +161,33 @@ impl fmt::Display for ViewerCaptureError {
 }
 
 impl std::error::Error for ViewerCaptureError {}
+
+impl fmt::Display for ViewerPngError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Render(error) => write!(formatter, "failed to render glTF PNG: {error}"),
+            Self::Capture(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for ViewerPngError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        match self {
+            Self::Render(error) => Some(error),
+            Self::Capture(error) => Some(error),
+        }
+    }
+}
+
+impl From<crate::Error> for ViewerPngError {
+    fn from(error: crate::Error) -> Self {
+        Self::Render(error)
+    }
+}
+
+impl From<ViewerCaptureError> for ViewerPngError {
+    fn from(error: ViewerCaptureError) -> Self {
+        Self::Capture(error)
+    }
+}

@@ -684,6 +684,8 @@ Status: **[shipped]** — viewer capture APIs now encode the current
 RGBA8 frame through the existing `png` crate. `capture_png_bytes()` is
 available on `FirstRender`, `HeadlessGltfViewer`, and
 `InteractiveGltfViewer`; `capture_png(path)` is native-only file output.
+`HeadlessGltfViewerBuilder::render_png_bytes()` and native
+`render_png(path)` cover the no-GPU one-shot asset-pipeline path.
 Owner: `src/viewer/capture.rs`
 Dependency note: use the already-present `png` crate directly for
 `capture_png_bytes`; keep `image` only where broader format support is
@@ -701,6 +703,7 @@ the captured PNG is itself the proof.
 ```rust
 viewer.capture_png("frame.png")?;
 viewer.capture_png_bytes()?;
+headless_gltf_viewer("machine.glb").render_png_bytes().await?;
 viewer.capture_gif("turntable.gif", Duration::from_secs(4))?;   // stretch
 ```
 
@@ -835,11 +838,19 @@ with proof and a clean public surface.
   drag-to-assemble workflow has a concrete consumer; not needed for
   read-only viewing.
   Visual proof: animated-proof + browser-demo (recording shows ghost + green outline as a part approaches a valid mate within tolerance)
-- **CPU rasterizer fallback for no-GPU screenshots.** Owner: existing CPU
-  path. Status: **[ergonomic-gap]** — the path exists; the public "render
-  a glTF to PNG on native/headless or WASI-like hosts with no GPU" surface
-  doesn't.
-  Visual proof: reference-image (CPU-rendered output of a known asset diffed against a stored reference)
+- **CPU rasterizer fallback for no-GPU screenshots.** Status:
+  **[shipped]**. Owner: `src/viewer/capture.rs`.
+  `HeadlessGltfViewerBuilder::render_png_bytes()` and native
+  `render_png(path)` load, frame, render, and encode through the CPU
+  headless renderer without requesting a GPU adapter. The structured
+  error type is `ViewerPngError`.
+  Proof: `tests/round_d_viewer_capture_png.rs` asserts that one-shot
+  bytes and file PNGs decode to the requested dimensions and contain visible
+  CPU-rendered pixels; doctor rule `VIEWER-HEADLESS-PNG` pins the API,
+  docs, test, and checklist entry.
+  Visual proof: reference-image via the same viewer-capture PNG artifact;
+  a dedicated CPU/no-GPU diff fixture can be added when public
+  reference-image tooling lands.
 - **Reference-image regression as a public API.** Status: **[ergonomic-gap]**
   — `SCENA_REFERENCE_DIFF` already exists internally; surface as
   `scena::regress(asset, expected)` for end users.
@@ -915,7 +926,7 @@ the rounds, not after — they're the strategic arc.
 12. - [x] `ConnectOptions::with_axial_gap` (§4.3)
 13. - [x] `OrbitControls` bounds-relative zoom (§4.2)
 14. - [x] `Viewer::on_click` / `on_hover` callbacks (§4.5)
-15. - [x] `Viewer::capture_png` (§4.6)
+15. - [x] `Viewer::capture_png` + headless `render_png_bytes` (§4.6, §6)
 16. - [x] Asset hot-reload (§4.7)
 17. - [x] State-via-URL (§4.9)
 
@@ -1083,6 +1094,13 @@ Viewer PNG capture implementation pass (2026-05-19):
   `tests/round_d_viewer_capture_png.rs`, generated reference image
   `viewer-capture-png-reference.png`, and doctor rule
   `VIEWER-CAPTURE-PNG`.
+- Extended the same capture module with the no-GPU one-shot path:
+  `HeadlessGltfViewerBuilder::render_png_bytes()` plus native
+  `render_png(path)`. The helper uses the CPU headless renderer, returns
+  `ViewerPngError`, and is pinned by
+  `headless_viewer_builder_renders_gltf_to_png_bytes_without_gpu_setup`
+  and `headless_viewer_builder_renders_gltf_to_png_file_without_gpu_setup`
+  plus doctor rule `VIEWER-HEADLESS-PNG`.
 
 Native hot-reload implementation pass (2026-05-19):
 

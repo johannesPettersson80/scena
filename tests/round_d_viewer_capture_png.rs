@@ -39,13 +39,58 @@ fn viewer_capture_png_writes_reference_artifact() {
     .expect("headless viewer builds");
     viewer.render_next_frame().expect("viewer renders a frame");
 
-    let artifact = artifact_path();
+    let artifact = artifact_path("viewer-capture-png-reference.png");
     viewer.capture_png(&artifact).expect("PNG capture writes");
     let file_bytes = std::fs::read(&artifact).expect("PNG artifact is readable");
     let bytes = viewer.capture_png_bytes().expect("PNG capture encodes");
 
     assert_eq!(file_bytes, bytes);
     assert_eq!(decode_png_rgba8(&file_bytes).rgba8, viewer.snapshot_rgba8());
+}
+
+#[test]
+fn headless_viewer_builder_renders_gltf_to_png_bytes_without_gpu_setup() {
+    let png_bytes = pollster::block_on(
+        headless_gltf_viewer("tests/assets/gltf/mesh_material_vertex_color_scene.gltf")
+            .size(40, 24)
+            .with_default_light()
+            .render_png_bytes(),
+    )
+    .expect("headless CPU viewer renders glTF directly to PNG bytes");
+
+    let decoded = decode_png_rgba8(&png_bytes);
+    assert_eq!(decoded.width, 40);
+    assert_eq!(decoded.height, 24);
+    assert!(
+        decoded
+            .rgba8
+            .chunks_exact(4)
+            .any(|pixel| pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0),
+        "glTF-to-PNG one-liner must produce visible CPU-rendered pixels"
+    );
+}
+
+#[test]
+fn headless_viewer_builder_renders_gltf_to_png_file_without_gpu_setup() {
+    let artifact = artifact_path("headless-gltf-to-png-one-shot.png");
+    pollster::block_on(
+        headless_gltf_viewer("tests/assets/gltf/mesh_material_vertex_color_scene.gltf")
+            .size(40, 24)
+            .with_default_light()
+            .render_png(&artifact),
+    )
+    .expect("headless CPU viewer renders glTF directly to a PNG file");
+
+    let decoded = decode_png_rgba8(&std::fs::read(&artifact).expect("PNG artifact is readable"));
+    assert_eq!(decoded.width, 40);
+    assert_eq!(decoded.height, 24);
+    assert!(
+        decoded
+            .rgba8
+            .chunks_exact(4)
+            .any(|pixel| pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0),
+        "glTF-to-PNG file one-liner must produce visible CPU-rendered pixels"
+    );
 }
 
 #[derive(Debug)]
@@ -74,9 +119,9 @@ fn decode_png_rgba8(bytes: &[u8]) -> DecodedPng {
     }
 }
 
-fn artifact_path() -> PathBuf {
+fn artifact_path(file_name: &str) -> PathBuf {
     let dir =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/gate-artifacts/viewer-capture");
     std::fs::create_dir_all(&dir).expect("viewer-capture artifact directory");
-    dir.join("viewer-capture-png-reference.png")
+    dir.join(file_name)
 }

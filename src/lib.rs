@@ -92,7 +92,7 @@ pub use scene::{
 };
 pub use viewer::{
     FirstRender, HeadlessGltfViewer, HeadlessGltfViewerBuilder, InteractiveGltfViewer,
-    InteractiveGltfViewerBuilder, ViewerCaptureError, first_render_gltf_headless,
+    InteractiveGltfViewerBuilder, ViewerCaptureError, ViewerPngError, first_render_gltf_headless,
     headless_gltf_viewer, interactive_gltf_viewer,
 };
 

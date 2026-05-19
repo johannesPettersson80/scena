@@ -5,6 +5,7 @@ mod khronos_samples;
 mod next_release;
 mod round_a_primitives;
 mod state_url;
+mod viewer_headless_png;
 mod viewer_load_progress;
 mod viewer_material_variants;
 
@@ -179,6 +180,7 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
     next_release::check_orbit_zoom_limits(root, findings);
     next_release::check_viewer_pointer_callbacks(root, findings);
     next_release::check_viewer_capture_png(root, findings);
+    viewer_headless_png::check_viewer_headless_png(root, findings);
     viewer_load_progress::check_viewer_load_progress(root, findings);
     viewer_material_variants::check_viewer_material_variants(root, findings);
     next_release::check_asset_hot_reload(root, findings);

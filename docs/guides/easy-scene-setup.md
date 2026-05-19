@@ -204,6 +204,18 @@ viewer.capture_png("frame.png")?;
 let png = viewer.capture_png_bytes()?;
 ```
 
+For build servers, docs, and asset pipelines that only need a PNG artifact, the
+headless builder can load, frame, render, and encode in one call through the
+CPU headless renderer, without requesting a GPU adapter:
+
+```rust
+let png = headless_gltf_viewer("machine.glb")
+    .size(800, 600)
+    .with_default_light()
+    .render_png_bytes()
+    .await?;
+```
+
 ## Asset load progress
 
 Viewer builders can forward `AssetLoadProgress` events while loading and keep
