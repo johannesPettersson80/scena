@@ -204,6 +204,26 @@ viewer.capture_png("frame.png")?;
 let png = viewer.capture_png_bytes()?;
 ```
 
+## Asset load progress
+
+Viewer builders can forward `AssetLoadProgress` events while loading and keep
+the same events on the built viewer for status UIs and logs:
+
+```rust
+use scena::{AssetLoadProgress, headless_gltf_viewer};
+
+let mut seen = Vec::new();
+let viewer = headless_gltf_viewer("machine.glb")
+    .build_with_progress(|event| seen.push(event))
+    .await?;
+
+for event in viewer.load_progress_events() {
+    if let AssetLoadProgress::Parsed { nodes, meshes, .. } = event {
+        println!("loaded {nodes} nodes and {meshes} meshes");
+    }
+}
+```
+
 ## Native asset hot reload
 
 On native targets, enable the `hot-reload` feature and retain source bytes for

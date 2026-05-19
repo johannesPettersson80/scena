@@ -2,16 +2,17 @@
 
 mod capture;
 mod interaction;
+mod load_progress;
 
 pub use capture::ViewerCaptureError;
 
-use crate::assets::{AssetPath, Assets};
+use crate::assets::{AssetLoadProgress, AssetPath, Assets};
 use crate::controls::{OrbitControlAction, OrbitControls, PointerEvent, TouchEvent};
 use crate::diagnostics::{Diagnostic, LookupError, RenderOutcome};
 use crate::picking::Hit;
 use crate::platform::{PlatformSurface, SurfaceEvent};
 use crate::render::{Profile, Quality, RenderMode, Renderer, RendererOptions};
-use crate::scene::{CameraKey, DirectionalLight, Scene, SceneImport, Vec3};
+use crate::scene::{CameraKey, Scene, SceneImport, Vec3};
 
 type ViewerPickCallback = Box<dyn FnMut(std::result::Result<Option<Hit>, LookupError>) + 'static>;
 
@@ -24,6 +25,7 @@ pub struct FirstRender {
     import: SceneImport,
     outcome: RenderOutcome,
     diagnostics: Vec<Diagnostic>,
+    load_progress_events: Vec<AssetLoadProgress>,
 }
 
 /// Prepared owned state for a headless glTF viewer loop.
@@ -33,6 +35,7 @@ pub struct HeadlessGltfViewer {
     scene: Scene,
     renderer: Renderer,
     import: SceneImport,
+    load_progress_events: Vec<AssetLoadProgress>,
 }
 
 /// Builder for the first headless glTF render.
@@ -168,56 +171,12 @@ impl HeadlessGltfViewerBuilder {
 
     /// Loads, instantiates, optionally frames/lights, and prepares a reusable viewer loop.
     pub async fn build(self) -> crate::Result<HeadlessGltfViewer> {
-        let assets = Assets::new();
-        let scene_asset = assets.load_scene(self.path).await?;
-        let mut scene = Scene::new();
-        let import = scene.instantiate(&scene_asset)?;
-        let camera = scene.add_default_camera()?;
-        if self.common.frame_import {
-            scene.frame_import(camera, &import)?;
-        }
-        if self.common.default_light {
-            scene.directional_light(DirectionalLight::default()).add()?;
-        }
-
-        let mut renderer =
-            Renderer::headless_with_options(self.width, self.height, self.common.renderer_options)?;
-        if let Some(environment_path) = self.common.environment_path {
-            let environment = assets.load_environment(environment_path).await?;
-            renderer.set_environment(environment);
-        } else if self.common.default_environment {
-            renderer.set_environment(assets.default_environment());
-        }
-        renderer.prepare_with_assets(&mut scene, &assets)?;
-
-        Ok(HeadlessGltfViewer {
-            assets,
-            scene,
-            renderer,
-            import,
-        })
+        self.build_with_progress(|_| {}).await
     }
 
     /// Loads, instantiates, optionally frames/lights, prepares, and renders one frame.
     pub async fn render(self) -> crate::Result<FirstRender> {
-        let mut viewer = self.build().await?;
-        let outcome = viewer.render_next_frame()?;
-        let diagnostics = viewer.renderer.diagnostics().to_vec();
-        let HeadlessGltfViewer {
-            assets,
-            scene,
-            renderer,
-            import,
-        } = viewer;
-
-        Ok(FirstRender {
-            assets,
-            scene,
-            renderer,
-            import,
-            outcome,
-            diagnostics,
-        })
+        self.render_with_progress(|_| {}).await
     }
 }
 
@@ -288,6 +247,7 @@ pub struct InteractiveGltfViewer {
     renderer: Renderer,
     import: SceneImport,
     camera: CameraKey,
+    load_progress_events: Vec<AssetLoadProgress>,
     /// Phase 5B step 2: optional orbit-camera controller. Populated when
     /// the builder was configured with `with_orbit_controls()`. Pointer +
     /// touch events route through `handle_pointer_event` /
@@ -307,6 +267,7 @@ impl std::fmt::Debug for InteractiveGltfViewer {
             .field("renderer", &self.renderer)
             .field("import", &self.import)
             .field("camera", &self.camera)
+            .field("load_progress_events", &self.load_progress_events)
             .field("orbit_controls", &self.orbit_controls)
             .field("click_callback_registered", &self.click_callback.is_some())
             .field("hover_callback_registered", &self.hover_callback.is_some())
@@ -409,73 +370,12 @@ impl InteractiveGltfViewerBuilder {
     /// which is incompatible with the browser event loop.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn build(self) -> crate::Result<InteractiveGltfViewer> {
-        let assets = Assets::new();
-        let scene_asset = pollster::block_on(assets.load_scene(self.path.clone()))?;
-        let mut scene = Scene::new();
-        let import = scene.instantiate(&scene_asset)?;
-        let camera = scene.add_default_camera()?;
-        if self.common.frame_import {
-            scene.frame_import(camera, &import)?;
-        }
-        if self.common.default_light {
-            scene.directional_light(DirectionalLight::default()).add()?;
-        }
-        let mut renderer =
-            Renderer::from_surface_with_options(self.surface, self.common.renderer_options)?;
-        if let Some(environment_path) = self.common.environment_path {
-            let environment = pollster::block_on(assets.load_environment(environment_path))?;
-            renderer.set_environment(environment);
-        } else if self.common.default_environment {
-            renderer.set_environment(assets.default_environment());
-        }
-        renderer.prepare_with_assets(&mut scene, &assets)?;
-        let orbit_controls = build_orbit_controls(self.orbit_controls, &scene, &import, camera);
-        Ok(InteractiveGltfViewer {
-            assets,
-            scene,
-            renderer,
-            import,
-            camera,
-            orbit_controls,
-            click_callback: None,
-            hover_callback: None,
-        })
+        self.build_with_progress(|_| {})
     }
 
     /// Async build path that supports browser-canvas surfaces.
     pub async fn build_async(self) -> crate::Result<InteractiveGltfViewer> {
-        let assets = Assets::new();
-        let scene_asset = assets.load_scene(self.path.clone()).await?;
-        let mut scene = Scene::new();
-        let import = scene.instantiate(&scene_asset)?;
-        let camera = scene.add_default_camera()?;
-        if self.common.frame_import {
-            scene.frame_import(camera, &import)?;
-        }
-        if self.common.default_light {
-            scene.directional_light(DirectionalLight::default()).add()?;
-        }
-        let mut renderer =
-            Renderer::from_surface_async_with_options(self.surface, self.common.renderer_options)
-                .await?;
-        if let Some(environment_path) = self.common.environment_path {
-            let environment = assets.load_environment(environment_path).await?;
-            renderer.set_environment(environment);
-        } else if self.common.default_environment {
-            renderer.set_environment(assets.default_environment());
-        }
-        renderer.prepare_with_assets(&mut scene, &assets)?;
-        let orbit_controls = build_orbit_controls(self.orbit_controls, &scene, &import, camera);
-        Ok(InteractiveGltfViewer {
-            assets,
-            scene,
-            renderer,
-            import,
-            camera,
-            orbit_controls,
-            click_callback: None,
-            hover_callback: None,
-        })
+        self.build_async_with_progress(|_| {}).await
     }
 }
 

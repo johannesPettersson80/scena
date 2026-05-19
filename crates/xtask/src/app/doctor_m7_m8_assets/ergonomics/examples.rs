@@ -221,13 +221,21 @@ pub(crate) fn check_m7_example_contracts(root: &Path, findings: &mut Vec<Finding
             "pub fn render_next_frame",
             "pub fn prepare",
             "pub async fn first_render_gltf_headless",
+            "renderer.render_active",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/viewer/load_progress.rs",
+        &[
             "assets.load_scene",
             "assets.default_environment",
             "scene.instantiate",
             "scene.frame_import",
             "renderer.set_environment",
             "renderer.prepare_with_assets",
-            "renderer.render_active",
             "renderer.diagnostics().to_vec()",
         ],
     );

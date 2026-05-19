@@ -795,11 +795,19 @@ specific competitor primitive.
   Surface it on Viewer / `<scena-viewer>` and add rendered-output proof
   as the closing evidence. Owner: `src/viewer.rs` + future custom element.
   Visual proof: reference-image + docs-image (one reference per variant on the same asset; tutorial shows the variant picker output)
-- **Loading progress primitives.** Status: **[ergonomic-gap]**.
-  `AssetLoadProgress` exists in `src/lib.rs`; surface it as a Viewer /
-  `<scena-viewer>` primitive. Proof: loader progress test over cache hit,
-  external buffer, texture decode, and cancellation paths.
-  Visual proof: animated-proof + browser-demo (progress bar advancing on a throttled connection)
+- **Loading progress primitives.** Status: **[ergonomic-gap]** overall;
+  Viewer primitive **[shipped]**, `<scena-viewer>` progress UI still
+  missing. `AssetLoadProgress` exists in `src/lib.rs` and is now surfaced
+  through `HeadlessGltfViewerBuilder::build_with_progress`,
+  `HeadlessGltfViewerBuilder::render_with_progress`,
+  `InteractiveGltfViewerBuilder::build_with_progress`,
+  `InteractiveGltfViewerBuilder::build_async_with_progress`, plus
+  `load_progress_events()` accessors on built viewers and `FirstRender`.
+  Proof: loader progress test over cache hit, external buffer, texture
+  decode, and cancellation paths; viewer progress tests in
+  `tests/first_render_api.rs` and `tests/m7_interactive_viewer.rs`.
+  Visual proof: animated-proof + browser-demo still required for the
+  future custom element progress bar on a throttled connection.
 - **Mobile-first + a11y defaults.** Status: **[gap]**. Owner:
   `<scena-viewer>` (bet 1.1). Proof: Playwright mobile viewport tests for
   touch/pinch plus keyboard/ARIA smoke checks.
@@ -1168,6 +1176,15 @@ EXT_mesh_gpu_instancing implementation pass (2026-05-19):
 - Added focused import proof and a release-artifact visual row for an
   instanced glTF fixture, with doctor coverage pinning the parser,
   importer mapping, and proof tests.
+
+Viewer loading-progress implementation pass (2026-05-19):
+
+- Surfaced `AssetLoadProgress` through headless and interactive viewer
+  builders and preserved the emitted events on built viewers / first
+  renders for status UIs.
+- Added focused headless and interactive viewer tests plus a
+  `VIEWER-LOAD-PROGRESS` doctor rule so docs, tests, library re-export,
+  and viewer APIs stay aligned.
 
 Ease-of-use implementation continuation (2026-05-19):
 

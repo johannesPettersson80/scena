@@ -100,6 +100,31 @@ fn interactive_gltf_viewer_diagnostics_accessor_reports_renderer_diagnostics() {
 }
 
 #[test]
+fn interactive_gltf_viewer_surfaces_asset_load_progress() {
+    let mut observed = Vec::new();
+    let viewer = interactive_gltf_viewer(
+        "tests/assets/gltf/khronos/UnlitTest/UnlitTest.gltf",
+        PlatformSurface::native_window(64, 64),
+    )
+    .build_with_progress(|event| observed.push(event))
+    .expect("interactive viewer builds with progress events");
+
+    assert_eq!(viewer.load_progress_events(), observed.as_slice());
+    assert!(observed.iter().any(|event| matches!(
+        event,
+        scena::AssetLoadProgress::LoadStarted { path }
+            if path.as_str() == "tests/assets/gltf/khronos/UnlitTest/UnlitTest.gltf"
+    )));
+    assert!(observed.iter().any(|event| matches!(
+        event,
+        scena::AssetLoadProgress::Parsed { path, nodes, meshes }
+            if path.as_str() == "tests/assets/gltf/khronos/UnlitTest/UnlitTest.gltf"
+                && *nodes > 0
+                && *meshes > 0
+    )));
+}
+
+#[test]
 fn interactive_gltf_viewer_with_orbit_controls_attaches_controller_seeded_from_framing() {
     // Phase 5B step 2: `with_orbit_controls()` derives the initial OrbitControls
     // target+distance from the imported scene's bounds and the framed camera

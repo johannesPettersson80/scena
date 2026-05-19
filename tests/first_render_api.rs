@@ -107,6 +107,42 @@ fn headless_gltf_viewer_builder_can_build_on_change_render_loop() {
 }
 
 #[test]
+fn headless_gltf_viewer_surfaces_asset_load_progress() {
+    let mut observed = Vec::new();
+    let viewer = pollster::block_on(
+        scena::headless_gltf_viewer("tests/assets/gltf/mesh_material_vertex_color_scene.gltf")
+            .size(24, 24)
+            .build_with_progress(|event| observed.push(event)),
+    )
+    .expect("builder creates a prepared viewer with load progress");
+
+    assert_eq!(viewer.load_progress_events(), observed.as_slice());
+    assert!(observed.iter().any(|event| matches!(
+        event,
+        scena::AssetLoadProgress::LoadStarted { path }
+            if path.as_str() == "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
+    )));
+    assert!(observed.iter().any(|event| matches!(
+        event,
+        scena::AssetLoadProgress::AssetFetched { path, bytes }
+            if path.as_str() == "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
+                && *bytes > 0
+    )));
+    assert!(observed.iter().any(|event| matches!(
+        event,
+        scena::AssetLoadProgress::Parsed { path, nodes, meshes }
+            if path.as_str() == "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
+                && *nodes > 0
+                && *meshes > 0
+    )));
+    assert!(observed.iter().any(|event| matches!(
+        event,
+        scena::AssetLoadProgress::Cached { path }
+            if path.as_str() == "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
+    )));
+}
+
+#[test]
 fn headless_gltf_viewer_builder_with_environment_loads_explicit_path() {
     // Phase 5B step 1: `with_environment(path)` accepts an explicit asset
     // path and overrides the default-environment toggle. Loading the

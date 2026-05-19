@@ -238,6 +238,9 @@ Common viewer helpers:
 - `InteractiveGltfViewerBuilder`
 - `interactive_gltf_viewer(path, surface)`
 - `InteractiveGltfViewer::handle_surface_event`
+- `HeadlessGltfViewerBuilder::build_with_progress`
+- `InteractiveGltfViewerBuilder::build_with_progress`
+- `AssetLoadProgress`
 - `Renderer::headless_default()`
 - `Renderer::set_auto_exposure`
 
