@@ -2,6 +2,7 @@
 
 use std::{cell::Cell, marker::PhantomData, sync::Weak};
 
+mod background;
 mod build;
 mod camera;
 mod color_contract;
@@ -29,6 +30,7 @@ use crate::picking::InteractionStyle;
 use crate::platform::SurfaceKind;
 use crate::scene::{CameraKey, ClippingPlane, Scene};
 
+pub use self::background::Background;
 pub use self::exposure::{
     AutoExposureConfig, AutoExposureResult, estimate_auto_exposure_from_linear_colors,
     estimate_auto_exposure_from_srgb8,

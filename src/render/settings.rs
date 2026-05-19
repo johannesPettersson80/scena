@@ -3,7 +3,7 @@ use crate::diagnostics::DebugOverlay;
 use crate::material::Color;
 use crate::picking::InteractionStyle;
 
-use super::{Renderer, Tonemapper};
+use super::{Background, Renderer, Tonemapper};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
@@ -165,6 +165,10 @@ impl Renderer {
             self.background_color = color;
             self.mark_output_changed();
         }
+    }
+
+    pub fn set_background(&mut self, background: Background) {
+        self.set_background_color(background.color());
     }
 
     pub(super) fn mark_output_changed(&mut self) {

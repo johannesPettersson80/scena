@@ -389,10 +389,17 @@ the underlying material features in §3.1.
 
 ### 2.7 `Background` named scheme
 
-Status: **[gap]**
+Status: **[shipped]** — implemented on branch
+`easy-use-state-art/round-b`.
 Owner: `src/render/background.rs` (new) + `Renderer::set_background`
-Proof: rendered-output proof per variant.
-Visual proof: reference-image + docs-image (one reference image per variant on the same subject)
+Proof: `tests/round_b_background_presets.rs` asserts every named
+scheme maps to the intended clear color and that
+`Renderer::set_background(...)` drives the existing renderer clear path;
+doctor rule `NAMED-BACKGROUND-PRESETS` keeps the API, tests, and visual
+proof present.
+Visual proof: reference-image + docs-image
+`target/gate-artifacts/examples-visual/round-b-background-preset-reference-docs-image.ppm`
+renders the same subject over every named background.
 
 ```rust
 renderer.set_background(Background::DarkStudio);
@@ -816,7 +823,7 @@ the rounds, not after — they're the strategic arc.
 
 4. - [x] Light presets (§2.5)
 5. - [x] `MaterialDesc` honest PBR presets (§2.6 — matte/plastic/metal/rubber only)
-6. - [ ] `Background` enum (§2.7)
+6. - [x] `Background` enum (§2.7)
 7. - [ ] `OrbitControls` named damping presets (§2.8)
 
 ### Round C — bundled content + feature shortcuts

@@ -149,6 +149,7 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     fs::create_dir_all(fixture_root.join("demo")).expect("fixture demo");
     fs::create_dir_all(fixture_root.join("src/scene")).expect("fixture scene");
     fs::create_dir_all(fixture_root.join("src/material")).expect("fixture material");
+    fs::create_dir_all(fixture_root.join("src/render")).expect("fixture render");
     fs::create_dir_all(fixture_root.join("src/geometry")).expect("fixture geometry");
     fs::create_dir_all(fixture_root.join("tests")).expect("fixture tests");
     fs::write(
@@ -202,7 +203,7 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     fs::write(fixture_root.join("src/geometry/bounds.rs"), "").expect("bounds fixture");
     fs::write(
         fixture_root.join("tests/examples_visual_proof.rs"),
-        "frame_bounds_rendered_output_proves_fill_center_and_unclipped_object frame-bounds-rendered-output computed_distance projected_rect nonblack_pixel_rect round_a_named_color_swatch_docs_image round-a-named-color-swatch-docs-image round_a_lens_preset_comparison_docs_image round-a-lens-preset-comparison-docs-image round_b_light_preset_reference_docs_image round-b-light-preset-reference-docs-image round_b_material_preset_reference_docs_image round-b-material-preset-reference-docs-image reference-image+docs-image",
+        "frame_bounds_rendered_output_proves_fill_center_and_unclipped_object frame-bounds-rendered-output computed_distance projected_rect nonblack_pixel_rect round_a_named_color_swatch_docs_image round-a-named-color-swatch-docs-image round_a_lens_preset_comparison_docs_image round-a-lens-preset-comparison-docs-image round_b_light_preset_reference_docs_image round-b-light-preset-reference-docs-image round_b_material_preset_reference_docs_image round-b-material-preset-reference-docs-image round_b_background_preset_reference_docs_image round-b-background-preset-reference-docs-image reference-image+docs-image",
     )
     .expect("visual proof fixture");
     fs::write(
@@ -215,6 +216,16 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
         "pub const fn matte(color: Color) {} pub const fn plastic(color: Color) {} pub const fn metal(color: Color) {} pub const fn rubber() {}",
     )
     .expect("material presets fixture");
+    fs::write(
+        fixture_root.join("src/render/background.rs"),
+        "pub enum Background { Studio, DarkStudio, NeutralGray, White, Black, Sky, Transparent, Custom(Color) } impl Background { pub const fn color(self) -> Color {} }",
+    )
+    .expect("background fixture");
+    fs::write(
+        fixture_root.join("src/render/settings.rs"),
+        "pub fn set_background(background: Background) { self.set_background_color(background.color()); }",
+    )
+    .expect("render settings fixture");
     fs::write(
         fixture_root.join("src/scene/camera.rs"),
         "pub fn standard() {} pub fn wide_angle() {} pub fn portrait() {} pub fn telephoto() {} pub fn with_fov_degrees(degrees: f32) {}",
@@ -240,6 +251,11 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
         "honest_material_presets_are_public_pbr_shortcuts",
     )
     .expect("material preset test fixture");
+    fs::write(
+        fixture_root.join("tests/round_b_background_presets.rs"),
+        "named_background_presets_map_to_public_colors renderer_set_background_uses_named_scheme",
+    )
+    .expect("background preset test fixture");
     fs::write(
         fixture_root.join("demo/index.html"),
         r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,

@@ -13,7 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use scena::{
-    Aabb, AnimationPlaybackState, Assets, Color, ConnectOptions, ConnectionAlignment,
+    Aabb, AnimationPlaybackState, Assets, Background, Color, ConnectOptions, ConnectionAlignment,
     ConnectionError, ConnectorFrame, CursorPosition, DirectionalLight, GeometryDesc,
     InteractionStyle, LabelDesc, MaterialDesc, OrbitControls, PerspectiveCamera, PointLight,
     PointerEvent, Profile, Renderer, RendererOptions, Scene, SourceCoordinateSystem, SourceUnits,
@@ -581,6 +581,82 @@ fn render_material_preset_tile(material: MaterialDesc, width: u32, height: u32) 
     renderer
         .render_active(&scene)
         .expect("material preset docs-image scene renders");
+    renderer.frame_rgba8().to_vec()
+}
+
+#[test]
+fn round_b_background_preset_reference_docs_image() {
+    let tile_width = 96;
+    let tile_height = 96;
+    let presets = [
+        Background::Studio,
+        Background::DarkStudio,
+        Background::NeutralGray,
+        Background::White,
+        Background::Black,
+        Background::Sky,
+        Background::Transparent,
+        Background::Custom(Color::MAGENTA),
+    ];
+    let width = tile_width * presets.len() as u32;
+    let height = tile_height;
+    let mut rgba = vec![0_u8; (width * height * 4) as usize];
+    for (index, background) in presets.iter().enumerate() {
+        let tile = render_background_preset_tile(*background, tile_width, tile_height);
+        let expected = srgb8_from_linear(background.color());
+        assert_eq!(
+            &tile[0..4],
+            &expected,
+            "background preset tile {index} must clear its corner to the named color"
+        );
+        assert!(
+            count_unique_rgb_triplets(&tile) >= MIN_UNIQUE_PIXELS,
+            "background preset tile {index} must include both background and subject pixels"
+        );
+        for y in 0..tile_height {
+            let dst_start = ((y * width + index as u32 * tile_width) * 4) as usize;
+            let src_start = (y * tile_width * 4) as usize;
+            let byte_count = (tile_width * 4) as usize;
+            rgba[dst_start..dst_start + byte_count]
+                .copy_from_slice(&tile[src_start..src_start + byte_count]);
+        }
+    }
+    write_reference_docs_image_artifact(
+        "round-b-background-preset-reference-docs-image",
+        "docs/guides/easy-scene-setup.md",
+        width,
+        height,
+        &rgba,
+    );
+}
+
+fn render_background_preset_tile(background: Background, width: u32, height: u32) -> Vec<u8> {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.8, 0.8, 0.25));
+    let material = assets.create_material(MaterialDesc::unlit(Color::ORANGE));
+
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("background preset subject inserts");
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::standard(),
+            Transform::at(Vec3::new(0.0, 0.0, 3.0)),
+        )
+        .expect("camera inserts");
+    scene.set_active_camera(camera).expect("active camera sets");
+
+    let mut renderer = Renderer::headless(width, height).expect("headless renderer builds");
+    renderer.set_background(background);
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("background preset docs-image scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("background preset docs-image scene renders");
     renderer.frame_rgba8().to_vec()
 }
 

@@ -87,3 +87,49 @@ pub(super) fn check_honest_material_presets(root: &Path, findings: &mut Vec<Find
         ],
     );
 }
+
+pub(super) fn check_named_background_presets(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "NAMED-BACKGROUND-PRESETS",
+        "src/render/background.rs",
+        &[
+            "pub enum Background",
+            "Studio",
+            "DarkStudio",
+            "NeutralGray",
+            "Transparent",
+            "Custom(Color)",
+            "pub const fn color(",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "NAMED-BACKGROUND-PRESETS",
+        "src/render/settings.rs",
+        &["pub fn set_background(", "self.set_background_color("],
+    );
+    require_contains(
+        root,
+        findings,
+        "NAMED-BACKGROUND-PRESETS",
+        "tests/round_b_background_presets.rs",
+        &[
+            "named_background_presets_map_to_public_colors",
+            "renderer_set_background_uses_named_scheme",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "NAMED-BACKGROUND-PRESETS",
+        "tests/examples_visual_proof.rs",
+        &[
+            "round_b_background_preset_reference_docs_image",
+            "round-b-background-preset-reference-docs-image",
+            "reference-image+docs-image",
+        ],
+    );
+}

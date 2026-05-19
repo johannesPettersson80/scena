@@ -9,7 +9,7 @@ applications can replace any part.
 
 ```rust
 use scena::{
-    Assets, AutoExposureConfig, FramingOptions, GridFloorOptions,
+    Assets, AutoExposureConfig, Background, FramingOptions, GridFloorOptions,
     PerspectiveCamera, Renderer, Scene, Transform,
 };
 
@@ -42,6 +42,7 @@ let framing = scene.frame_bounds(
 )?;
 
 let mut renderer = Renderer::headless(width, height)?;
+renderer.set_background(Background::Studio);
 renderer.set_auto_exposure(AutoExposureConfig::default());
 renderer.prepare_with_assets(&mut scene, &assets)?;
 renderer.render(&scene, camera)?;
@@ -70,6 +71,14 @@ Use `Renderer::set_auto_exposure(AutoExposureConfig::default())` to adapt output
 brightness from the rendered frame. Auto exposure prevents globally too-dark or
 too-bright frames. It does not change light direction, material albedo,
 roughness, dynamic range, or composition.
+
+Use named backgrounds for the first render instead of typing raw RGB values:
+
+```rust
+renderer.set_background(Background::Studio);
+renderer.set_background(Background::DarkStudio);
+renderer.set_background(Background::Custom(Color::from_hex("#f5f7fb")?));
+```
 
 Use `Scene::add_grid_floor()` for a matte floor at a known plane. The default
 floor is dark, rough, non-metallic, and sized from object bounds so it grounds

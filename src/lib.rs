@@ -63,9 +63,9 @@ pub use picking::{CursorPosition, Hit, HitTarget, InteractionContext, Interactio
 pub use platform::NativeWindowHandle;
 pub use platform::{PlatformSurface, SurfaceEvent, SurfaceKind, SurfaceSize, SurfaceViewport};
 pub use render::{
-    AutoExposureConfig, AutoExposureResult, OffscreenTarget, PixelReadback, Profile, Quality,
-    RenderMode, Renderer, RendererOptions, Tonemapper, estimate_auto_exposure_from_linear_colors,
-    estimate_auto_exposure_from_srgb8,
+    AutoExposureConfig, AutoExposureResult, Background, OffscreenTarget, PixelReadback, Profile,
+    Quality, RenderMode, Renderer, RendererOptions, Tonemapper,
+    estimate_auto_exposure_from_linear_colors, estimate_auto_exposure_from_srgb8,
 };
 pub use scene::{
     AnchorFrame, AnchorKey, Angle, Camera, CameraKey, ClippingPlane, ClippingPlaneKey,
