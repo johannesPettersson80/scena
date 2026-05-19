@@ -6,13 +6,13 @@ use scena::{
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let assets = Assets::new();
     let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.2, 0.4, 0.4));
-    let material = assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(70, 160, 240)));
+    let material = assets.create_material(MaterialDesc::unlit(Color::BLUE));
 
     let mut scene = Scene::new();
     let inspected_part = scene.mesh(geometry, material).add()?;
     let camera = scene.add_perspective_camera(
         scene.root(),
-        PerspectiveCamera::default().with_aspect(16.0 / 9.0),
+        PerspectiveCamera::standard(),
         Transform::default(),
     )?;
 

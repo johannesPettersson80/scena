@@ -56,14 +56,14 @@ use scena::{
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let assets = Assets::new();
     let cube = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
-    let material = assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(80, 160, 255)));
+    let material = assets.create_material(MaterialDesc::unlit(Color::BLUE));
 
     let mut scene = Scene::new();
     scene.mesh(cube, material).add()?;
 
     let camera = scene.add_perspective_camera(
         scene.root(),
-        PerspectiveCamera::default(),
+        PerspectiveCamera::standard(),
         Transform::default(),
     )?;
     scene.set_active_camera(camera)?;

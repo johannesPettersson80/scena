@@ -44,7 +44,7 @@ seed the orbit controller from the framing result:
 let bounds = import.bounds_world(&scene).ok_or("model has no bounds")?;
 let camera = scene.add_perspective_camera(
     scene.root(),
-    PerspectiveCamera::default().with_aspect(width as f32 / height as f32),
+    PerspectiveCamera::standard(),
     Transform::default(),
 )?;
 let framing = scene.frame_bounds(

@@ -66,6 +66,61 @@ pub(crate) fn easy_scene_setup_contracts_reject_reordered_open_diagnostics() {
     );
 }
 
+#[test]
+pub(crate) fn easy_scene_setup_contracts_reject_round_a_raw_camera_aspect_in_first_path() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/round-a-raw-camera-aspect");
+    write_easy_scene_fixture(
+        &fixture_root,
+        VALID_GUIDE,
+        "frame_bounds(()) bounds_for_transforms add_grid_floor",
+        r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
+    );
+    fs::create_dir_all(fixture_root.join("examples")).expect("examples fixture dir");
+    fs::write(
+        fixture_root.join("examples/easy_model_viewer.rs"),
+        "PerspectiveCamera::default().with_aspect(width as f32 / height as f32)",
+    )
+    .expect("round-a raw camera fixture");
+    let mut findings = Vec::new();
+
+    check_easy_scene_setup_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "ROUND-A-EASY-USE-PRIMITIVES"),
+        "doctor must reject raw with_aspect camera construction in first-path examples: {findings:?}",
+    );
+}
+
+#[test]
+pub(crate) fn easy_scene_setup_contracts_reject_round_a_raw_color_literals_in_first_path() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/round-a-raw-color-literal");
+    write_easy_scene_fixture(
+        &fixture_root,
+        VALID_GUIDE,
+        "frame_bounds(()) bounds_for_transforms add_grid_floor",
+        r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
+    );
+    fs::write(
+        fixture_root.join("README.md"),
+        "## Easy Scene Setup docs/guides/easy-scene-setup.md docs/release-notes/v1.3.0.md Color::from_srgb_u8(80, 160, 255)",
+    )
+    .expect("round-a raw color fixture");
+    let mut findings = Vec::new();
+
+    check_easy_scene_setup_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "ROUND-A-EASY-USE-PRIMITIVES"),
+        "doctor must reject raw color literals in first-path docs: {findings:?}",
+    );
+}
+
 const VALID_GUIDE: &str = "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```";
 
 fn write_easy_scene_fixture(
@@ -126,9 +181,29 @@ fn write_easy_scene_fixture(
     fs::write(fixture_root.join("src/scene/lights.rs"), "studio docs").expect("lights fixture");
     fs::write(
         fixture_root.join("tests/examples_visual_proof.rs"),
-        "frame_bounds_rendered_output_proves_fill_center_and_unclipped_object frame-bounds-rendered-output computed_distance projected_rect nonblack_pixel_rect",
+        "frame_bounds_rendered_output_proves_fill_center_and_unclipped_object frame-bounds-rendered-output computed_distance projected_rect nonblack_pixel_rect round_a_named_color_swatch_docs_image round-a-named-color-swatch-docs-image round_a_lens_preset_comparison_docs_image round-a-lens-preset-comparison-docs-image",
     )
     .expect("visual proof fixture");
+    fs::write(
+        fixture_root.join("src/material.rs"),
+        "pub const GRAY: Color = Color; pub const BLUE: Color = Color; pub fn from_hex(value: &str) {} pub fn from_kelvin(kelvin: f32) {}",
+    )
+    .expect("material fixture");
+    fs::write(
+        fixture_root.join("src/scene/camera.rs"),
+        "pub fn standard() {} pub fn wide_angle() {} pub fn portrait() {} pub fn telephoto() {} pub fn with_fov_degrees(degrees: f32) {}",
+    )
+    .expect("camera fixture");
+    fs::write(
+        fixture_root.join("src/scene/math.rs"),
+        "pub fn looking_at() {}",
+    )
+    .expect("math fixture");
+    fs::write(
+        fixture_root.join("tests/round_a_easy_use.rs"),
+        "round_a_color_named_constants_and_hex_alias_are_public round_a_color_kelvin_helper_is_clamped_and_ordered round_a_perspective_camera_lens_presets_are_named_degree_surfaces round_a_transform_looking_at_faces_target_with_requested_up",
+    )
+    .expect("round-a test fixture");
     fs::write(fixture_root.join("src/lib.rs"), "").expect("lib fixture");
     fs::write(fixture_root.join("src/geometry.rs"), "").expect("geometry fixture");
     fs::write(fixture_root.join("demo/index.html"), diagnostics_html).expect("demo html fixture");

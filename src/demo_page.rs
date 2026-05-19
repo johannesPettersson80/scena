@@ -159,15 +159,10 @@ pub async fn load_connector_snap_from_bytes(
         )
         .map_err(|err| JsValue::from_str(&format!("add_grid_floor failed: {err:?}")))?;
 
-    let aspect = if viewport_width > 0 && viewport_height > 0 {
-        viewport_width as f32 / viewport_height as f32
-    } else {
-        1.0
-    };
     let camera = scene
         .add_perspective_camera(
             scene.root(),
-            PerspectiveCamera::default().with_aspect(aspect),
+            PerspectiveCamera::standard(),
             Transform::at(Vec3::new(0.0, 0.0, 2.0)),
         )
         .map_err(|err| JsValue::from_str(&format!("add_perspective_camera failed: {err:?}")))?;

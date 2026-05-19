@@ -1,578 +1,836 @@
 # scena post-1.3.0 — Easy-use + state-of-the-art roadmap
 
 Created: 2026-05-18
+Reconciled: 2026-05-19 — staleness pass against current main; shipped items
+removed, false gaps reframed, four bets promoted, material presets trimmed
+to the honest set, auto-framing-default reworded for the viewer level.
+Source-truth fix pass: 2026-05-19 — false residual gaps reclassified
+against `src/viewer.rs`, `src/scene/mixers.rs`, material variants,
+`src/material.rs`, `src/scene/math.rs`, and current feature flags.
+Dependency-boundary pass: 2026-05-19 — existing crates preferred for
+format / IO / OS / encoding / validation work; renderer public behavior
+and visual contracts stay owned by scena modules.
+Visual-proof pass: 2026-05-19 — every item declares its visual proof
+class so "code compiles, APIs work, but the render is wrong" cannot pass
+as success (the v1.3.0 demo failure mode).
 
-Status: planning. v1.3.0 is the easy-scene-setup + auto-framing release;
-this document lists the work for the release(s) after that.
+scena's signature is **easy to use**. This document is the gap inventory
+between "Rust renderer that works" and "easier than Three.js, more
+accurate than `<model-viewer>`." It is a planning document, not a
+contract; items become contracts as they're picked up, each with its own
+narrow implementation checklist (the way
+`easy-scene-setup-and-auto-framing.md` was structured for v1.3.0).
 
-scena's signature is **easy to use**. The prioritized list below is the
-gap inventory between "Rust renderer that works" and "easier than
-Three.js, more accurate than model-viewer." Items are grouped by the
-shipping rounds in §3 — Rounds A–D are the ease-of-use signature work;
-the renderer state-of-the-art and differentiator sections after that are
-the separate quality-bar arc.
+## Status legend
 
-This is a planning document, not a contract. Items become contracts as
-they're picked up; each round will get its own narrow implementation
-checklist (the way `easy-scene-setup-and-auto-framing.md` was structured
-for v1.3.0).
+Every item carries one tag:
 
----
+- **[gap]** — genuinely missing; nothing to build on.
+- **[ergonomic-gap]** — implementation exists but the user surface is
+  raw / opt-in / requires plumbing.
+- **[proof-gap]** — implementation exists but lacks rendered-output
+  proof, doctor rule, or capability evidence.
+- **[shipped]** — already in v1.3.0; listed only for context.
 
-## 1. Two corrections to existing direction
-
-Before adding anything new, fix two defaults the current code chose
-wrong:
-
-- [ ] **Default tonemapper is Khronos PBR Neutral, not AgX.** AgX is
-      correct for filmic content; PBR Neutral was released by Khronos
-      in 2024 specifically for product/e-commerce/digital-twin use
-      cases. Blender adopted it, Filament integrated it, model-viewer
-      exposes it as `tone-mapping="neutral"`. It preserves
-      brand-accurate sRGB colors — exactly what a digital-twin viewer
-      needs. Keep AgX available; default is PBR Neutral.
-- [ ] **Auto-framing is the default, not opt-in.** model-viewer
-      auto-frames on every model load; drei's `<Bounds fit clip observe>`
-      is one of its most-used components. Today scena treats
-      `frame_bounds()` as an explicit call. Make it the default when no
-      camera is specified; explicit `Camera::default()` should mean
-      "compute a good view"; manual placement is the opt-out.
+Each item also names an **owner module** (where the work lives) and a
+**proof class** (what would close the item).
 
 ---
 
-## 2. Tier 1 — "write a name, not a number" gaps
+## Visual proof classes
 
-The signature pattern: wherever the library currently forces users to
-write raw coordinates or magic floats, give them a named primitive.
+When a roadmap item produces a frame, declare which visual evidence
+closes the spec. Items can combine classes with `+`.
 
-### 2.1 `Color` has no named constants
+- **none** — text / API / serialization spec; no rendered image required.
+- **docs-image** — rendered image embedded in the guide next to the
+  example that produced it. **Generated from checked example code or a
+  small render harness, never hand-screenshotted** — hand-maintained
+  screenshots drift away from the code that produced them. The source
+  example / harness, generation command, output path, dimensions, and
+  proof class must be recorded so docs images can be regenerated and
+  checked like other artifacts.
+- **reference-image** — stored reference artifact with a documented
+  tolerance: PNG / PPM, sampled-RGBA TOML in `tests/visual/references/`,
+  or an asset-specific reference PNG with adjacent metadata / SHA. The
+  non-negotiable regression guard when the picture is the spec. Renderer
+  features that change visual quality (AA, contact shadows, bloom,
+  material extensions) need ON/OFF or before/after pairs, not a single
+  image.
+- **browser-demo** — live page on the Cloudflare demo or equivalent
+  that runs the code and shows the result. Used for integration, mobile
+  layout, controls, and WASM/WebGPU/WebGL behavior.
+- **animated-proof** — GIF / video / browser recording for motion or
+  interaction: damping, hot reload, drag/drop, auto-rotate, picking,
+  variant switching.
 
-Every example writes `Color::from_srgb_u8(80, 180, 220)` or
-`Color::from_linear_rgb(0.014, 0.017, 0.024)`. Eleven occurrences in
-`examples/`. Users have to guess RGB triples for "warm yellow" or
-"studio backdrop."
+Mandatory visual proof applies when the feature's value is visual:
+`<scena-viewer>`, viewer-level auto-framing, material / light /
+background / environment / auto-exposure presets, §3.1 items whose
+user-facing value is a changed frame, Khronos sample loader, material
+variants, screenshot capture, and anything whose acceptance criterion is
+"does it look correct?". Import, compression, capability, and performance
+items need their own structured proof first, then rendered proof only
+where the render is part of the contract. A unit test alone is not enough
+for visual items — the v1.3.0 demo proved that code can compile, APIs can
+work, and the rendered result can still be wrong.
 
-```rust
-// today
-Color::from_linear_rgb(0.014, 0.017, 0.024)
+---
 
-// easy
-Color::STUDIO_BACKDROP            // or Color::CHARCOAL
-Color::from_hex("#1a1d28")        // for designers
-Color::from_kelvin(3200.0)        // for light color temperature
+## Dependency boundary
+
+Use existing libraries where they replace hard, spec-heavy, or
+platform-specific work. Do not add dependencies for preset tables, thin
+API aliases, or renderer passes where the dependency would import another
+engine's architecture.
+
+Default split:
+
+- **Lean on proven crates** in `assets`, `diagnostics`, `platform`, and
+  `encoding`: glTF parsing, texture / mesh compression, PNG encoding,
+  filesystem watching, URL/serde state, browser APIs, and official asset
+  validation.
+- **Keep ownership in scena** for `scene`, `viewer`, `controls`, and
+  `render`: public behavior, typed handles, viewer workflow, camera
+  controls, render passes, visual proof, and capability reporting.
+- **Use references, not engine dependencies** for render algorithms:
+  Khronos Sample Viewer / Sample Renderer for glTF material behavior,
+  Filament docs/source for PBR architecture, XeGTAO for ambient occlusion,
+  and published OIT / TAA / bloom references. Port the relevant technique
+  into scena with focused tests and rendered-output proof.
+
+Dependency admission rule: every new crate needs a named owner module,
+feature/default policy, package-size and build-time impact when relevant,
+and a proof path. Convenience-only dependencies are rejected unless they
+remove meaningful maintenance risk.
+
+---
+
+## 1. The four bets — highest leverage
+
+These four investments move scena from "Rust renderer that works" to
+"the library people reach for." Funded first; the convenience-API
+rounds in §2 are the floor underneath them, not a substitute.
+
+### 1.1 `<scena-viewer>` custom element with `<model-viewer>` attribute parity
+
+Status: **[gap]**
+Owner: `src/viewer.rs` for shared viewer behavior + a new thin browser
+adapter module / WASM package built directly on `web-sys` /
+`wasm-bindgen`. Do not add a Rust web-component framework unless a
+concrete missing browser API proves one is necessary. The adapter must
+delegate asset loading, framing, and rendering to `viewer` / `assets` /
+`scene`; it must not become a second renderer owner.
+Proof: WASM browser test rendering against three sample assets +
+side-by-side screenshot comparison with `<model-viewer>` on the same assets.
+Visual proof: reference-image + browser-demo + animated-proof
+
+```html
+<scena-viewer
+    src="machine.glb"
+    environment="studio"
+    tone-mapping="neutral"
+    camera-controls
+    auto-rotate
+    ar>
+</scena-viewer>
 ```
 
-- [ ] Constants: `WHITE`, `BLACK`, `GRAY`, `LIGHT_GRAY`, `DARK_GRAY`,
-      `CHARCOAL`, `STUDIO_BACKDROP`, `WARM_WHITE`, `COOL_WHITE`,
-      `RED`, `GREEN`, `BLUE`, `ORANGE`, `YELLOW`, `CYAN`, `MAGENTA`.
-- [ ] `Color::from_hex(&str)` — `"#1a1d28"` and `"1a1d28"` both work;
-      typed error on malformed input.
-- [ ] `Color::from_kelvin(temp_k)` — for light color temperature in
-      Kelvin (2700–6500K is the useful range).
+This is the single most important item. `<model-viewer>`'s entire value
+is exactly this surface — drop a model on a page, get a viewer.
+Everything else in this roadmap is a smaller adoption lever than the
+custom element.
 
-### 2.2 `PerspectiveCamera` lens presets
+### 1.2 Auto-framing as the default at the viewer level
 
-Every example writes
-`PerspectiveCamera::default().with_aspect(width as f32 / height as f32)`.
-There's no way to say "wide angle" or "portrait lens" without finding
-the radians.
+Status: **[ergonomic-gap]** — viewer builders already frame imported
+assets by default (`ViewerCommonOptions::frame_import = true`); the gap is
+the frictionless scene/helper/custom-element surface plus stored
+browser-rendered proof.
+Owner: `src/viewer.rs` (`InteractiveGltfViewer`, `HeadlessGltfViewer`)
+and the future `<scena-viewer>`. Not on `Camera::default()` — that
+has no bounds or viewport.
+Proof: viewer-level integration test asserting "load → render" produces
+a centered, fill-correct frame without any `frame_bounds()` call in user
+code, plus a browser screenshot artifact for the custom element path.
+Visual proof: reference-image + browser-demo
 
 ```rust
 // today
-PerspectiveCamera::default()                              // what FOV? opaque
-PerspectiveCamera::default().with_fov(1.04719)            // radians, no thanks
+let mut scene = Scene::new();
+let import = scene.instantiate(&model)?;
+let bounds = import.bounds_world(&scene).ok_or(...)?;
+let camera = scene.add_perspective_camera(...)?;
+let framing = scene.frame_bounds(camera, bounds, FramingOptions::new()...)?;
 
-// easy
+// already available at viewer-builder level
+let mut viewer = interactive_gltf_viewer("machine.glb", surface)
+    .with_orbit_controls()
+    .build_async()
+    .await?;                         // frames imported bounds by default
+viewer.render_next_frame()?;
+
+// desired explicit helper (Scene level)
+let camera = scene.add_perspective_camera_default_for(bounds, (w, h))?;
+```
+
+### 1.3 Production-grade asset pipeline complete and production-profile ready
+
+Status: **[gap]** overall — KTX2 / meshopt are implemented but not
+ergonomic/proven, while Draco and `EXT_mesh_gpu_instancing` import support
+remain genuinely missing.
+Owner: `Cargo.toml` features + `src/assets/texture.rs` +
+`src/assets/gltf/extensions.rs` + a new doctor lane.
+
+Default policy to decide before implementation: keep the crate's default
+feature set lean unless package size, build time, and binary-size evidence
+support changing it. If KTX2 / meshopt stay optional, ship a documented
+`production-assets` profile or example command that enables them together.
+
+Sub-items:
+
+- **PBR Neutral tonemapper as default** — Status: **[shipped]**
+  (`src/render/output.rs:62`, `#[default]` on `Tonemapper::PbrNeutral`;
+  test at `tests/m1_geometry_materials.rs:719`).
+- **KTX2 / Basis textures (`KHR_texture_basisu`)** — Status:
+  **[ergonomic-gap]**. Feature flag exists at `Cargo.toml:45`, documented
+  in `docs/feature-flags.md:28`, decode path at `src/assets/texture.rs`,
+  marked `Supported` in extension diagnostics. Not on by default; no
+  benchmark proving the GPU memory win; no rendered-output regression
+  image of a KTX2-textured asset.
+- **meshopt (`EXT_meshopt_compression`)** — Status: **[ergonomic-gap]**.
+  Feature flag at `Cargo.toml`, marked `Supported` at
+  `src/assets/gltf/extensions.rs`. Not default; no proof artifact.
+- **Draco (`KHR_draco_mesh_compression`)** — Status: **[gap]**.
+  Not a v1.4 critical-path item. Prefer meshopt for the next release;
+  revisit Draco only behind an optional feature when a maintained decoder
+  path is proven. `draco_decoder` is still 0.0.x, and `draco-oxide`
+  decoder support is not ready.
+- **GPU instancing (`EXT_mesh_gpu_instancing`)** — Status: **[gap]**.
+  Source-truth pass found no `EXT_mesh_gpu_instancing` import support;
+  procedural/internal instancing is separate. Preferred path: file /
+  contribute upstream `gltf-rs` support. Contingency: a narrow
+  scena-side parser for this extension so v1.4 is not blocked on upstream
+  merge timing.
+
+Proof: a doctor lane that loads a KTX2-textured + meshopt-compressed +
+instanced glTF, renders it, diffs against a stored reference, and records
+package-size / build-time impact for any default-feature change.
+Visual proof: reference-image (per format: KTX2-textured render, meshopt-compressed render, instanced render — each diffed against a stored reference)
+
+### 1.4 Doctor → official validation + actionable scena guidance
+
+Status: **[ergonomic-gap]**
+Owner: new `xtask` doctor-assets lane under `crates/xtask/src/app/` plus
+the existing `src/assets/gltf/extensions.rs` diagnostics infrastructure.
+Proof: doctor lane that runs the official Khronos glTF Validator for
+spec-compliance validation, then runs scena-native checks for
+renderer-specific guidance and produces structured errors with `fix`
+strings; rustdoc example for each scena error variant.
+Visual proof: none (structured text errors; no rendered output)
+
+```rust
+AssetError::UnsupportedTextureFormat {
+    path: "albedo.webp".into(),
+    help: "Re-export with PNG/JPEG or use KTX2 through the ktx2 feature",
+}
+```
+
+The official validator owns glTF spec compliance; scena owns actionable
+renderer guidance such as "this asset uses clearcoat, but this pipeline
+will render the matte fallback until clearcoat support lands." Do not
+reimplement a private subset of the glTF Validator against the `gltf`
+AST unless the official validator cannot run in CI or `xtask`.
+`GltfExtensionDiagnostic` already returns `extension`, `status`, `help`,
+`decoder_policy` (`src/assets/gltf/extensions.rs:24-45`). The ergonomic
+gap is surfacing this as user-facing typed errors with `fix` hints on
+every `Assets::load_*` path, not just internal diagnostics.
+
+---
+
+## 2. Tier 1 — "write a name, not a number"
+
+The signature pattern: wherever the library forces users to write raw
+coordinates or magic floats, give them a named primitive. Atomic, small,
+landable in one PR each.
+
+### 2.1 `Color` named constants + `from_hex` + `from_kelvin`
+
+Status: **[shipped]** — implemented on branch
+`easy-use-state-art/round-a`: `WHITE`, `BLACK`,
+`Color::from_hex_srgb("#rrggbb")`, the wider named palette,
+the designer-friendly `from_hex` alias, and the Kelvin helper all exist.
+Owner: `src/material.rs` (or a deliberate future split from it).
+Proof: `tests/round_a_easy_use.rs` covers every constant plus hex/Kelvin
+behavior; rustdoc examples cover `from_hex` and `from_kelvin`; doctor rule
+`ROUND-A-EASY-USE-PRIMITIVES` bans raw RGB/RGBA constructors in first-path
+examples where a constant would do.
+Visual proof: docs-image
+`target/gate-artifacts/examples-visual/round-a-named-color-swatch-docs-image.ppm`
+generated from the constants.
+Dependency note: keep `palette` for color-space conversion plumbing, but
+do not rely on it for Kelvin-to-RGB. Implement `from_kelvin` locally as a
+small tested 2700-6500K approximation in `src/material.rs`; avoid making
+the heavier optional `lcms2` path a default dependency for this helper.
+
+```rust
+Color::CHARCOAL                  // = Color::from_hex("#1a1d28")
+Color::from_hex("#1a1d28")       // alias for existing from_hex_srgb
+Color::from_kelvin(3200.0)       // for light color temperature
+```
+
+Constants: `WHITE`, `BLACK`, `GRAY`, `LIGHT_GRAY`, `DARK_GRAY`,
+`CHARCOAL`, `STUDIO_BACKDROP`, `WARM_WHITE`, `COOL_WHITE`,
+`RED`, `GREEN`, `BLUE`, `ORANGE`, `YELLOW`, `CYAN`, `MAGENTA`.
+
+### 2.2 `PerspectiveCamera` lens presets + `with_fov_degrees`
+
+Status: **[shipped]** — implemented on branch
+`easy-use-state-art/round-a`.
+Owner: `src/scene/camera.rs`
+Proof: `tests/round_a_easy_use.rs` asserts each preset's FOV in degrees;
+rustdoc examples cover each preset plus `with_fov_degrees`; doctor rule
+`ROUND-A-EASY-USE-PRIMITIVES` keeps first-path camera examples on named
+presets.
+Visual proof: docs-image
+`target/gate-artifacts/examples-visual/round-a-lens-preset-comparison-docs-image.ppm`
+renders one subject with each lens preset side-by-side.
+
+```rust
 PerspectiveCamera::wide_angle()    // ~24mm equivalent, ~84° FOV
 PerspectiveCamera::standard()      // ~50mm equivalent, ~46° FOV (default)
 PerspectiveCamera::portrait()      // ~85mm equivalent, ~28° FOV
 PerspectiveCamera::telephoto()     // ~135mm equivalent, ~18° FOV
-PerspectiveCamera::standard().with_fov_degrees(60.0)  // escape hatch in degrees
+PerspectiveCamera::standard().with_fov_degrees(60.0)  // escape hatch
 ```
-
-- [ ] `wide_angle`, `standard`, `portrait`, `telephoto` lens presets.
-- [ ] `with_fov_degrees(deg)` escape hatch.
 
 ### 2.3 Drop the `with_aspect` boilerplate
 
-Every example writes `.with_aspect(width as f32 / height as f32)`
-because `frame_bounds` overwrites it anyway. Make this implicit:
-`FramingOptions::viewport(w, h)` sets aspect automatically; document
-the side effect; drop the boilerplate from every example.
+Status: **[shipped]** — first-path docs, examples, and demo camera setup
+now use named lens presets; `frame_bounds` continues to write aspect from
+`FramingOptions::viewport`.
+Owner: `src/scene/framing.rs` (document side effect) + `examples/` (sweep)
+Proof: first-path examples and docs drop avoidable `with_aspect(...)`
+calls; tests and advanced examples may keep explicit aspect setup where
+that is the behavior under test. Doctor rule
+`ROUND-A-EASY-USE-PRIMITIVES` rejects `PerspectiveCamera::default().with_aspect(`
+in first-path files.
+Visual proof: none (no visual change; behavior-preserving cleanup)
+
+### 2.4 `Transform` rotations in degrees + `looking_at`
+
+Status: **[shipped]** — degree rotations already exist as
+`rotate_x_deg`, `rotate_y_deg`, and `rotate_z_deg`; Round A deliberately
+keeps those names and adds `looking_at` rather than adding alias churn.
+Owner: `src/scene/math.rs`
+Proof: `tests/round_a_easy_use.rs` asserts `looking_at` against known
+forward vectors; rustdoc example covers the public call.
+Visual proof: docs-image (optional — a small "node rotated 45° around Y" render is a useful tutorial illustration but the spec is the math)
 
 ```rust
-// today (every example)
-let camera = scene.add_perspective_camera(
-    scene.root(),
-    PerspectiveCamera::default().with_aspect(width as f32 / height as f32),
-    Transform::default(),
-)?;
-
-// easy
-let camera = scene.add_perspective_camera_default()?;
-// or
-let camera = scene.add_perspective_camera(
-    scene.root(),
-    PerspectiveCamera::standard(),
-    Transform::default(),
-)?;
+Transform::at(Vec3::new(1.0, 0.0, 0.0)).rotate_y_deg(45.0)
+Transform::default().rotate_x_deg(-90.0)            // glTF Y-up → CAD Z-up
+Transform::looking_at(target_position, Vec3::Y)     // node faces a point
 ```
 
-- [ ] `Scene::add_perspective_camera_default()` convenience.
-- [ ] Document that `FramingOptions::viewport(w, h)` writes the
-      camera aspect; users can omit `with_aspect`.
+Implementation decision: keep the existing `rotate_*_deg` names and only
+add `looking_at`; do not add beginner aliases unless a later docs/usability
+pass proves the current names are a real obstacle.
 
-### 2.4 `Transform` rotations in degrees
+### 2.5 Light presets
 
-`Transform::at(Vec3::new(...))` works for translation. Rotation
-requires `Quat::from_axis_angle(Vec3::Y, deg.to_radians())` — not a
-thing a beginner reaches for.
+Status: **[gap]**
+Owner: `src/scene/lights.rs`
+Proof: rendered-output proof of
+`scene.directional_light(DirectionalLight::sun()).add()` against a reference.
+Visual proof: reference-image + docs-image (one reference image per preset; tutorial shows a single subject lit by each preset)
 
 ```rust
-// today
-Transform {
-    translation: Vec3::new(1.0, 0.0, 0.0),
-    rotation: Quat::from_axis_angle(Vec3::Y, 0.7853),
-    ..Default::default()
-}
-
-// easy
-Transform::at(Vec3::new(1.0, 0.0, 0.0)).rotated_y_degrees(45.0)
-Transform::default().rotated_x_degrees(-90.0)   // glTF Y-up → CAD Z-up
-Transform::looking_at(target_position, Vec3::Y) // node faces a point
+DirectionalLight::sun()
+DirectionalLight::key_light()
+DirectionalLight::fill_light()
+DirectionalLight::rim_light()
+PointLight::softbox()
+PointLight::bulb_warm()      // 2700K
+PointLight::bulb_cool()      // 5600K
 ```
 
-- [ ] `Transform::rotated_x_degrees(deg)` / `rotated_y_degrees` /
-      `rotated_z_degrees`.
-- [ ] `Transform::looking_at(target, up)`.
+### 2.6 `MaterialDesc` PBR presets — honest set only
 
-### 2.5 Named camera views on `FramingOptions`
-
-(This is the work prompted by the v1.3.0 connector-angle drift.)
-
-```rust
-// today
-FramingOptions::new().look_from(Vec3::new(-0.4398, 0.3051, 0.8447))
-
-// easy
-FramingOptions::new().three_quarter_front_left()
-FramingOptions::new().azimuth_elevation(-27.5, 17.8)  // 28° left, 18° up
-```
-
-- [ ] `front`, `back`, `left`, `right`, `top`, `bottom`,
-      `three_quarter_front_left/right`, `three_quarter_back_left/right`.
-- [ ] `azimuth_elevation(az_deg, el_deg)` escape hatch.
-
-### 2.6 Light presets
-
-`DirectionalLight`, `PointLight`, `SpotLight` are public types but
-each example would have to set intensity, color, and direction by
-hand. `add_studio_lighting` covers the 3-point case; individual lights
-have no shorthand.
+Status: **[gap]**
+Owner: `src/material/preset.rs` (new) or extend `MaterialDesc`
+Proof: rendered-output reference per preset.
+Visual proof: reference-image + docs-image (one reference image per preset on the same control sphere; tutorial shows the four presets side-by-side)
 
 ```rust
-// today
-DirectionalLight {
-    color: Color::from_srgb_u8(255, 244, 220),
-    intensity: 5.0,
-    direction: Vec3::new(-0.3, -1.0, -0.2).normalize(),
-}
-
-// easy
-DirectionalLight::sun()              // warm white, bright, default sun angle
-DirectionalLight::key_light()        // 3-point key
-DirectionalLight::fill_light()       // 3-point fill
-DirectionalLight::rim_light()        // 3-point rim/back
-PointLight::softbox()                // big soft fill
-PointLight::bulb_warm()              // 2700K incandescent
-PointLight::bulb_cool()              // 5600K daylight
-```
-
-- [ ] `DirectionalLight::sun`, `key_light`, `fill_light`, `rim_light`.
-- [ ] `PointLight::softbox`, `bulb_warm`, `bulb_cool`.
-- [ ] (Optional) `SpotLight::stage_spot`, `accent`.
-
-### 2.7 `MaterialDesc` PBR presets
-
-Examples use `MaterialDesc::unlit(Color)` and
-`MaterialDesc::line(Color, width)`. For PBR there's no shortcut —
-users would build the full descriptor with `metallic`, `roughness`,
-`clearcoat`.
-
-```rust
-// today
-MaterialDesc {
-    base_color: Color::from_srgb_u8(140, 145, 150),
-    metallic: 0.9,
-    roughness: 0.35,
-    ..Default::default()
-}
-
-// easy
-MaterialDesc::matte(Color::WHITE)
-MaterialDesc::plastic(Color::RED)
-MaterialDesc::metal(Color::from_hex("#c0c0c0"))
-MaterialDesc::brushed_steel()
-MaterialDesc::chrome()
-MaterialDesc::clear_glass()
-MaterialDesc::frosted_glass()
-MaterialDesc::leather(Color::DARK_GRAY)
+MaterialDesc::matte(Color)
+MaterialDesc::plastic(Color)
+MaterialDesc::metal(Color)
 MaterialDesc::rubber()
 ```
 
-- [ ] `matte(Color)`, `plastic(Color)`, `metal(Color)`, `leather(Color)`,
-      `rubber()`.
-- [ ] `brushed_steel`, `chrome`, `clear_glass`, `frosted_glass`.
+**Deferred until the renderer can back the visual claim**:
+`brushed_steel`, `chrome` (need sharp environment reflections + SSR for
+floor reflection), `clear_glass` / `frosted_glass` (need transmission +
+IOR + OIT), `leather` (needs sheen). These names overpromise without
+the underlying material features in §3.1.
 
-### 2.8 `Background` named scheme
+### 2.7 `Background` named scheme
 
-`renderer.set_background_color(Color::from_linear_rgb(0.014, 0.017, 0.024))`
-appears in the showcase example. There's no named scheme.
+Status: **[gap]**
+Owner: `src/render/background.rs` (new) + `Renderer::set_background`
+Proof: rendered-output proof per variant.
+Visual proof: reference-image + docs-image (one reference image per variant on the same subject)
 
 ```rust
-// today
-renderer.set_background_color(Color::from_linear_rgb(0.014, 0.017, 0.024));
-
-// easy
 renderer.set_background(Background::DarkStudio);
 // variants: Studio, DarkStudio, NeutralGray, White, Black, Sky, Transparent, Custom(Color)
 ```
 
-- [ ] `Background` enum + `Renderer::set_background(Background)`.
+### 2.8 `OrbitControls` named damping presets
 
-### 2.9 `OrbitControls` named damping presets
-
-`OrbitControls::new(Vec3::ZERO, 2.0).with_damping(0.15)` — what does
-0.15 mean? Five examples copy-paste the same value.
+Status: **[gap]**
+Owner: `src/controls.rs`
+Proof: unit test on damping values; browser test on `presentation()` and
+`turntable(rpm)` for the auto-rotate behavior. `presentation()` and
+`turntable()` require explicit auto-rotate state and frame-advance
+semantics, not just damping constants.
+Visual proof: animated-proof + docs-image (short GIF per preset showing the motion character — cinematic vs snappy is the spec; static image cannot show it)
 
 ```rust
-// today
-OrbitControls::from_framing(framing).with_damping(0.12)
-
-// easy
-OrbitControls::from_framing(framing).cinematic()      // heavy damping, smooth
-OrbitControls::from_framing(framing).snappy()         // light damping, responsive
+OrbitControls::from_framing(framing).cinematic()      // heavy damping
+OrbitControls::from_framing(framing).snappy()         // light damping
 OrbitControls::from_framing(framing).presentation()   // medium + slow auto-rotate
 OrbitControls::from_framing(framing).turntable(6.0)   // auto-rotate, 6 RPM
 ```
 
-- [ ] `cinematic`, `snappy`, `presentation`, `turntable(rpm)`.
+### 2.9 `AutoExposureConfig` scenario presets
 
-### 2.10 `AutoExposureConfig` scenario presets
-
-`with_ev_range(min, max)` + `with_highlight_guard(percentile, target_lum)`
-requires the user to know what those numbers mean. No scenario presets.
+Status: **[gap]**
+Owner: `src/render/exposure.rs`
+Proof: per-scenario rendered-output reference.
+Visual proof: reference-image + docs-image (one reference image per scenario on a matched scene to show the EV/highlight-guard outcome)
 
 ```rust
-// today
-AutoExposureConfig::default()
-    .with_ev_range(-2.0, 4.0)
-    .with_highlight_guard(0.98, 0.85)
-
-// easy
 AutoExposureConfig::product_studio()    // tight EV range, clean highlights
-AutoExposureConfig::indoor()            // wider EV range, warm bias OK
-AutoExposureConfig::outdoor()           // wide range, anti-blowout guard
+AutoExposureConfig::indoor()
+AutoExposureConfig::outdoor()
 AutoExposureConfig::mixed()             // default, conservative
 ```
 
-- [ ] `product_studio`, `indoor`, `outdoor`, `mixed` scenarios.
+---
+
+## 3. Renderer state-of-the-art — three buckets
+
+Not all "state of the art" items are greenfield. Each is tagged by the
+bucket it actually sits in.
+
+### 3.1 Genuinely missing — [gap]
+
+Proof rule for this bucket: visual renderer features need
+**reference-image with ON/OFF, before/after, or order-invariance pairs**.
+A single "pretty render" only proves that something rendered — it does
+not prove the feature is doing anything. Pipeline / compression /
+capability / performance items need structural or measured proof first
+(decode/import assertions, capability artifacts, package-size/build-time
+data, allocation/performance gates), plus a rendered reference only when
+the rendered result is part of the contract.
+
+- **Anti-aliasing.** MSAA at minimum; TAA preferred. Owner: `src/render/`.
+  Proof: rendered-output diff against a non-AA reference showing edge
+  quality.
+  Visual proof: reference-image ON/OFF.
+- **Contact shadows / SSAO.** Single biggest "pro vs amateur" tell beyond
+  framing. Owner: `src/render/`. Proof: reference image of the grid floor
+  + model with and without contact shadows.
+  Visual proof: reference-image ON/OFF.
+- **Subtle bloom in post.** One low-threshold pass; the difference between
+  "rendered" and "photographed."
+  Visual proof: reference-image ON/OFF at a fixed exposure.
+- **Material features**: clearcoat, sheen, anisotropy, iridescence,
+  dispersion on top of the existing metal-rough + transmission. Owner:
+  `src/render/prepare/material_batch.rs` + shaders.
+  Visual proof: reference-image before/after per feature using Khronos
+  sample controls where available.
+- **Clustered / tiled light culling.** Babylon 9 made this baseline.
+  Proof: many-light stress scene proves correct light selection,
+  stable frame time / allocation behavior, and no dropped-light fallback.
+  Visual proof: reference-image of the stress scene; not an ON/OFF gate.
+- **Area lights with LTC** (rect/disc/sphere).
+  Visual proof: reference-image before/after per light shape.
+- **Screen-space reflections (SSR).**
+  Visual proof: reference-image ON/OFF on a reflective-floor control.
+- **Order-independent transparency (OIT).** Weighted-blended is the cheap
+  baseline.
+  Visual proof: reference-image order-invariance pair for overlapping
+  transparent surfaces.
+- **Wide-gamut output (Display P3)** — capability-gated. PBR Neutral
+  targets sRGB; Display P3 is a `drawingBufferColorSpace` capability on
+  WebGL/WebGPU. Needs measured proof per backend, not a blanket claim.
+  Proof: capability-matrix artifact per backend plus a color-space probe;
+  no blanket visual claim for unavailable backends.
+- **Draco mesh compression** (`KHR_draco_mesh_compression`).
+  Proof: decode/import assertions against a known compressed fixture,
+  package-size/build-time impact for any optional feature, and a rendered
+  reference proving the decoded asset survives the normal pipeline.
+  Visual proof: reference-image compared to the uncompressed control, not
+  an ON/OFF renderer-feature gate.
+- **GPU instancing import** (`EXT_mesh_gpu_instancing`). Procedural/internal
+  instancing is separate; this item is the glTF extension import path.
+  Upstream `gltf-rs` support is preferred; local narrow parsing is the
+  release-timing contingency.
+  Proof: extension parse/import assertions for instance count, transforms,
+  bounds, and resource sharing, plus a rendered repeated-part fixture.
+  Visual proof: reference-image of the repeated-part fixture; not an
+  ON/OFF renderer-feature gate.
+
+### 3.2 Implemented but not ergonomic — [ergonomic-gap]
+
+These exist in the source but the user surface or default story isn't there.
+
+Visual proof for this bucket: **reference-image of a known asset rendered
+through each feature path** (KTX2-textured asset render, meshopt
+asset render, animation clip at fixed timestamps). For animation
+specifically, add **animated-proof** of the clip playing back.
+
+- **Animation update flow.** `src/scene/mixers.rs:10-104` has
+  `create_animation_mixer`, `play_animation`, `pause`, `stop`, `seek`,
+  `set_speed`, `set_loop_mode`, `update_animation`. `create_animation_mixer`
+  already takes a clip name. **Gap**: no one-call scene/viewer helper for
+  "play this named clip now" that creates the mixer, starts it, and makes
+  update-loop wiring obvious.
+  Proof: rendered-output proof of a known animation clip playing back at
+  fixed timestamps.
+- **KTX2 / Basis textures.** Feature flag at `Cargo.toml:45`, documented
+  at `docs/feature-flags.md:28`, decode path at `src/assets/texture.rs`,
+  marked `Supported` in extension diagnostics. **Gap**: not in default
+  features; no rendered-output proof of a KTX2-textured asset; no
+  benchmark vs uncompressed.
+- **meshopt compression.** Feature flag in `Cargo.toml`, marked
+  `Supported` at `src/assets/gltf/extensions.rs`. **Gap**: not default;
+  no proof artifact.
+- **glTF extension diagnostics.** `GltfExtensionDiagnostic` exists at
+  `src/assets/gltf/extensions.rs`. **Gap**: not surfaced as typed
+  user-facing errors with `fix` hints and not yet combined with official
+  Khronos glTF Validator output (covered by bet 1.4).
+
+### 3.3 Implemented but not visually/proof complete — [proof-gap]
+
+The pipeline runs but no stored reference asserts the visual is right.
+This section IS the reference-image work; closing every item below
+produces a stored PNG with a CI diff threshold.
+
+- Animation clip rendered-output regression test.
+- KTX2-textured asset rendered-output regression test.
+- meshopt-compressed asset rendered-output regression test.
+- Transmission + IBL combo capability evidence on the headless GPU lane.
+- Per-backend capability matrix evidence (Vulkan / Metal / DX12 / WebGPU
+  / WebGL2 fallback).
 
 ---
 
-## 3. Tier 2 — related ease-of-use gaps
+## 4. Tier 2 — ease-of-use ergonomics
 
-Same spirit (named primitive over numeric API), different shape.
+### 4.1 Bundled Khronos sample loader
 
-### 3.1 Bundled Khronos sample loader
-
-Every example points at `tests/assets/gltf/...`. Three.js shows
-`gltfLoader.load('Duck.glb')` against a CDN; model-viewer ships sample
-URLs. Bundle the canonical Khronos samples behind a feature flag.
+Status: **[gap]**
+Owner: `src/assets/khronos.rs` (new) behind `khronos-samples` feature.
+Proof: each sample loads and renders without user-supplied local file
+paths, with license/checksum metadata and a package-size budget. Prefer
+checked download/cache or dev-fixture resolution; do not silently bloat
+the default published crate with large binaries.
+Visual proof: reference-image + browser-demo (one reference image per sample; the cloudflare demo lists them for users to click through)
 
 ```rust
-// today
-assets.load_scene("tests/assets/gltf/khronos/WaterBottle/glTF-Binary/WaterBottle.glb").await?
-
-// easy
 Assets::khronos::water_bottle().await?
 Assets::khronos::damaged_helmet().await?
-Assets::khronos::boom_box().await?
-Assets::khronos::dragon_attenuation().await?   // transmissive control
+Assets::khronos::dragon_attenuation().await?       // transmissive control
 ```
 
-- [ ] `scena = { features = ["khronos-samples"] }` feature flag.
-- [ ] `Assets::khronos::*` namespaced loaders for at least: WaterBottle,
-      DamagedHelmet, BoomBox, DragonAttenuation, ToyCar, FlightHelmet.
+### 4.2 `OrbitControls` bounds-relative zoom
 
-### 3.2 Bounds-relative `OrbitControls` zoom
-
-`OrbitControls::new(Vec3::ZERO, 2.0)` — `2.0` is "2 scene units," but
-the user typically wants "1× the bounding sphere." Bounds-relative
-zoom limits are missing.
+Status: **[gap]**
+Owner: `src/controls.rs`
+Proof: unit test deriving limits from a known AABB and browser interaction
+test proving wheel / pinch input cannot zoom inside or outside the bounds.
+Visual proof: animated-proof (short interaction recording showing zoom clamped at both extremes)
 
 ```rust
-// easy
 OrbitControls::from_framing(framing).zoom_limits_bounds_relative(0.5, 4.0)
 ```
 
-- [ ] `zoom_limits_bounds_relative(min_fraction, max_fraction)`.
+### 4.3 `ConnectOptions::with_axial_gap` / unit-aware clearance helper
 
-### 3.3 `ConnectOptions::with_axial_gap`
-
-The semantic is "axial gap of 0.4 along the mate axis." The API
-should say so.
+Status: **[gap]**
+Owner: `src/scene/connectors/`
+Proof: connector mating unit tests for axial gap in scene units plus a
+fail-closed test proving `with_clearance_mm` is unavailable or errors when
+source-unit metadata is absent.
+Visual proof: docs-image (optional — render two mated parts with the gap rendered so the docs example is concrete)
 
 ```rust
-// today
-options.with_mate_offset(Transform::at(Vec3::new(0.4, 0.0, 0.0)))
-
-// easy
 options.with_axial_gap(0.4)
-options.with_clearance_mm(2.5)        // if input is millimeters
+options.with_clearance_mm(2.5)        // only when source units are known
 ```
 
-- [ ] `with_axial_gap(distance)`.
-- [ ] `with_clearance_mm(mm)` for unit-explicit input.
+`with_clearance_mm` must fail closed or be absent when imported source
+units are unknown. Otherwise it suggests physical precision the connector
+system cannot prove.
 
-### 3.4 `AnimationMixer::play_by_name`
+### 4.4 One-call animation playback by clip name
 
-Authored glTF animations have names. Looking up the key by name is
-plumbing. Add a `play_by_name(&str)` shortcut.
+Status: **[ergonomic-gap]** — see §3.2. `create_animation_mixer` already
+accepts a clip name; the missing piece is a higher-level helper, not
+`AnimationMixer::play_by_name`.
+Owner: `src/scene/mixers.rs` + `src/viewer.rs`
+Proof: rendered-output regression at fixed timestamps plus an API test
+showing the helper creates the mixer, starts playback, and returns a typed
+handle for loop/speed control.
+Visual proof: reference-image + animated-proof (reference images at fixed timestamps freeze the clip; the GIF/recording shows playback for the docs)
 
 ```rust
-// easy
-mixer.play_by_name("idle")?;
-mixer.play_by_name("door_open")?.with_loop(AnimationLoopMode::Once);
+// preferred primary surface: Scene owns mixer creation and playback state
+let idle = scene.play_animation_by_name(&import, "idle")?;
+
+// optional convenience: Viewer delegates to the Scene-level helper
+let door = viewer.play_clip("door_open")?.with_loop(AnimationLoopMode::Once);
 ```
 
-- [ ] `AnimationMixer::play_by_name(&str) -> Result<...>`.
+Implementation decision before PR: pick the primary API surface first.
+Recommended default is `Scene::play_animation_by_name` because the scene
+already owns mixer handles; `Viewer::play_clip` should only exist as a
+thin convenience if the viewer needs to expose animations directly.
 
-### 3.5 Viewer pointer callbacks
+### 4.5 Viewer pointer callbacks
 
-`Viewer::pick_at(x, y)` exists. Users still wire pointer events
-themselves. Add a callback-registration API for the common case.
+Status: **[ergonomic-gap]** — `InteractiveGltfViewer::pick_at(x, y)`
+exists in `src/viewer.rs`. Missing: callback registration.
+Owner: `src/viewer.rs`
+Proof: browser test that click / hover callbacks receive hit, no-hit, and
+stale-scene cases without bypassing the existing picking API.
+Visual proof: animated-proof + browser-demo (recording shows click → callback fires; demo page lets users see hover/click feedback live)
 
 ```rust
-// easy
-viewer.on_click(|hit| println!("clicked {:?}", hit.node));
+viewer.on_click(|hit| ...);
 viewer.on_hover(|hit| ...);
 ```
 
-- [ ] `Viewer::on_click(impl Fn(Hit))`, `on_hover`, `on_drag`.
+### 4.6 Screenshot one-liner
 
-### 3.6 Screenshot one-liner
-
-The viewer has internal screenshot plumbing but the public ergonomic
-isn't surfaced cleanly.
+Status: **[ergonomic-gap]** — internal screenshot plumbing exists in
+`src/viewer.rs` ("convenience for screenshots and visual-proof
+artifacts"); not surfaced cleanly on the public viewer.
+Owner: `src/viewer.rs`
+Dependency note: use the already-present `png` crate directly for
+`capture_png_bytes`; keep `image` only where broader format support is
+actually exercised. Add `gif` only behind an optional stretch feature.
+Proof: unit/integration test that `capture_png_bytes()` decodes as a PNG
+with the same dimensions as `snapshot_rgba8`; file-writing helper tested
+behind native-only filesystem support. GIF remains stretch.
+Visual proof: reference-image (the captured PNG is itself the proof; CI diffs the captured bytes against a stored reference)
 
 ```rust
-// easy
 viewer.capture_png("frame.png")?;
-viewer.capture_png_bytes()?;       // for upload pipelines
-viewer.capture_gif("turntable.gif", Duration::from_secs(4))?;
+viewer.capture_png_bytes()?;
+viewer.capture_gif("turntable.gif", Duration::from_secs(4))?;   // stretch
 ```
 
-- [ ] `Viewer::capture_png(path)`, `capture_png_bytes()`.
-- [ ] (Stretch) `capture_gif`, `capture_mp4`.
+### 4.7 Asset hot-reload during dev
 
-### 3.7 Asset hot-reload during dev
+Status: **[gap]**
+Owner: `src/assets.rs` behind `hot-reload` feature on native; WASM
+mechanism separate. Use `notify-debouncer-full`, not raw `notify`, so a
+single editor save becomes one reload decision instead of several raw
+filesystem events.
+Proof: native integration test reloads a retained asset after file change;
+browser/WASM path is a separate explicit contract, not a hidden fetch in
+`render()`.
+Visual proof: animated-proof (recording shows edit → save → render reflects the change without page reload)
 
-Grep returned zero hits. drei's `useGLTF` invalidates on file change;
-model-viewer reloads on `src` change.
+### 4.8 Drag-and-drop in the WASM viewer
 
-- [ ] `Assets::with_hot_reload()` behind a `hot-reload` feature flag
-      (native; WASM uses a different mechanism).
+Status: **[gap]**
+Owner: `<scena-viewer>` (bet 1.1).
+Proof: Playwright test drops GLB/glTF files onto the custom element,
+renders the result, and surfaces structured validation errors for rejected
+files.
+Visual proof: animated-proof + browser-demo (recording shows drag-drop ingestion; the cloudflare demo accepts dropped files)
 
-### 3.8 Drag-and-drop in the WASM viewer
+### 4.9 State-via-URL serializer
 
-`<scena-viewer>` (when it exists) should accept dropped files. Sister
-to model-viewer's drop behavior.
+Status: **[gap]**
+Owner: new helper on `FramingOutcome` + `OrbitControls`.
+Dependency note: use direct `serde` derives for structured camera/orbit
+state and `urlencoding` for percent-encoding. Do not serialize asset URLs
+with credentials or other secrets.
+Proof: round-trip test for camera/orbit state plus a privacy test proving
+serialized URLs do not include credentialed asset URLs or other secrets.
+Visual proof: none (URL serialization is text spec)
 
-- [ ] Drop-target handling on the WASM viewer canvas.
-
-### 3.9 State-via-URL helper
-
-`?camera-orbit=-28,18,2.5` round-tripping. model-viewer ships it.
-
-- [ ] `FramingOutcome::serialize_url_state()` + matching deserializer.
-- [ ] `OrbitControls` snapshot/restore for shareable URLs.
-
----
-
-## 4. Shipping rounds
-
-Rounds are sized to land independently. Each round closes a coherent
-slice of "easier than Three.js" rather than spreading the work
-horizontally.
-
-### Round A — name, not number (signature)
-
-1. - [ ] Named camera views + `azimuth_elevation` (§2.5)
-2. - [ ] `Color` constants + `from_hex` + `from_kelvin` (§2.1)
-3. - [ ] `PerspectiveCamera` lens presets + drop `with_aspect` (§2.2, §2.3)
-4. - [ ] `Transform::rotated_*_degrees` + `looking_at` (§2.4)
-
-### Round B — easy by name, continued
-
-5. - [ ] Light presets (§2.6)
-6. - [ ] `MaterialDesc` PBR presets (§2.7)
-7. - [ ] `Background` enum (§2.8)
-8. - [ ] `OrbitControls` named damping presets (§2.9)
-
-### Round C — bundled content + feature shortcuts
-
-9. - [ ] `Environment::*` with bundled KTX2 cubemaps
-10. - [ ] `Assets::khronos::*` sample loaders (§3.1)
-11. - [ ] `AutoExposureConfig` scenario presets (§2.10)
-12. - [ ] `AnimationMixer::play_by_name` (§3.4)
-
-### Round D — Tier 2 ergonomics
-
-13. - [ ] `ConnectOptions::with_axial_gap` (§3.3)
-14. - [ ] `OrbitControls` bounds-relative zoom (§3.2)
-15. - [ ] `Viewer::on_click` / `on_hover` callbacks (§3.5)
-16. - [ ] `Viewer::capture_png` and friends (§3.6)
-17. - [ ] Asset hot-reload (§3.7)
-18. - [ ] State-via-URL (§3.9)
+```rust
+?camera-orbit=-28,18,2.5         // round-trip-compatible with model-viewer
+```
 
 ---
 
-## 5. Doctor enforcement pattern
+## 5. Ease-of-use signature opportunities
+
+Cross-cutting features that delight users; each corresponds to a
+specific competitor primitive.
+
+- **Bundled studio environments as a Rust enum.** Status: **[gap]**.
+  Owner: `src/assets/environment_preset.rs`. Ship a small manifest of
+  curated KTX2 cubemaps with license/checksum metadata; embed only if
+  package-size evidence says it is acceptable, otherwise use checked
+  download/cache. Proof: rendered reference per preset plus package-size
+  budget.
+  Visual proof: reference-image + docs-image + browser-demo (per-environment reference on the same subject; tutorial picker; demo page environment selector)
+  ```rust
+  scene.set_environment(Environment::Studio)?;
+  // variants: Studio, Apartment, City, Sunset, Warehouse, Park, Dawn, Lobby
+  ```
+- **Camera control kit.** Status: **[gap]**. Owner: `src/controls.rs`.
+  Minimum: Orbit, Turntable/Presentation, Follow, Fly. Proof: browser
+  interaction test per mode.
+  Visual proof: animated-proof + browser-demo (one short recording per mode showing the input → motion mapping)
+- **Picking + outline + hover.** Status: **[gap]** overall. Owner:
+  `src/picking.rs` + `src/render/`. Picking exists at `src/picking.rs`;
+  outline rendering is missing. Proof: browser hit-test plus rendered
+  outline reference.
+  Visual proof: reference-image + animated-proof (reference image of an outlined selection on a known asset; recording shows hover/click highlight)
+- **HTML/CSS annotation overlay anchored to 3D points.** Status:
+  **[gap]**. Owner: `<scena-viewer>` (bet 1.1). `data-position` /
+  `data-normal` / `data-surface` attribute pattern; the `data-surface`
+  trick (label sticks to a deforming surface) is the killer feature.
+  Proof: Playwright test showing labels track projected 3D points across
+  camera movement.
+  Visual proof: browser-demo + animated-proof (labels visible in the demo; recording shows them tracking through camera orbit and animation)
+- **Variant switching for `KHR_materials_variants`.** Status:
+  **[ergonomic-gap]** — extension diagnostics mark it supported and
+  `Scene::set_active_variant(&import, Some(name))` already exists.
+  Surface it on Viewer / `<scena-viewer>` and add rendered-output proof
+  as the closing evidence. Owner: `src/viewer.rs` + future custom element.
+  Visual proof: reference-image + docs-image (one reference per variant on the same asset; tutorial shows the variant picker output)
+- **Loading progress primitives.** Status: **[ergonomic-gap]**.
+  `AssetLoadProgress` exists in `src/lib.rs`; surface it as a Viewer /
+  `<scena-viewer>` primitive. Proof: loader progress test over cache hit,
+  external buffer, texture decode, and cancellation paths.
+  Visual proof: animated-proof + browser-demo (progress bar advancing on a throttled connection)
+- **Mobile-first + a11y defaults.** Status: **[gap]**. Owner:
+  `<scena-viewer>` (bet 1.1). Proof: Playwright mobile viewport tests for
+  touch/pinch plus keyboard/ARIA smoke checks.
+  Visual proof: browser-demo + animated-proof (mobile-viewport demo capture; touch-pinch recording)
+- **Inspector / dev overlay.** Status: **[ergonomic-gap]**. Owner:
+  `crates/xtask/` doctor integration + an in-viewer overlay. Doctor is
+  already half of this. Proof: browser overlay snapshot plus doctor JSON
+  fixture feeding the overlay.
+  Visual proof: browser-demo + reference-image (live overlay in the demo; reference snapshot of the overlay state for CI diff)
+
+---
+
+## 6. Differentiators scena could uniquely own
+
+These are not blanket "no competitor has this" claims. They are places
+scena could own a distinct Rust / digital-twin workflow if implemented
+with proof and a clean public surface.
+
+- **Connector "magnet" snapping with visual cues.** Status: **[gap]**.
+  Owner: builds on `src/scene/connectors/`. Triggered when an interactive
+  drag-to-assemble workflow has a concrete consumer; not needed for
+  read-only viewing.
+  Visual proof: animated-proof + browser-demo (recording shows ghost + green outline as a part approaches a valid mate within tolerance)
+- **CPU rasterizer fallback for no-GPU screenshots.** Owner: existing CPU
+  path. Status: **[ergonomic-gap]** — the path exists; the public "render
+  a glTF to PNG on native/headless or WASI-like hosts with no GPU" surface
+  doesn't.
+  Visual proof: reference-image (CPU-rendered output of a known asset diffed against a stored reference)
+- **Reference-image regression as a public API.** Status: **[ergonomic-gap]**
+  — `SCENA_REFERENCE_DIFF` already exists internally; surface as
+  `scena::regress(asset, expected)` for end users.
+  Visual proof: reference-image (self-referential — this feature *is* reference-image tooling for end users)
+
+---
+
+## 7. Doctor enforcement pattern
 
 For every Tier-1 named primitive that lands, add a doctor rule in the
-same shape:
+same shape — but with an **allowlist clause** so escape hatches stay
+teachable.
 
-- [ ] Ban inline `Color::from_*(<float>, <float>, <float>)` arguments
-      in `examples/` and `src/demo_page*` if a named `Color::*`
-      constant or `Color::from_hex(...)` / `from_kelvin(...)` would do.
-- [ ] Ban inline `with_fov(<float>)` if the value would match a lens
-      preset.
-- [ ] Ban inline `with_damping(<float>)` in `src/demo_page*` if a
-      named damping preset would do.
-- [ ] Ban inline `Quat::from_*(<float>, ...)` in `examples/` if
-      `Transform::rotated_*_degrees` would do.
+- [ ] Ban inline raw RGB/RGBA constructors such as
+      `Color::from_linear_rgba(<lit>, ...)` or
+      `Color::from_srgb(<lit>, ...)` / `Color::from_srgb_u8(<lit>, ...)`
+      in first-path examples and `src/demo_page*` **except** in the
+      dedicated color escape-hatch example. Do not ban
+      `Color::from_kelvin`; that is one of the named conveniences this
+      roadmap wants.
+- [ ] Ban first-path camera FOV literals once lens presets land: direct
+      `vertical_fov: Angle::from_degrees(<lit>)`, raw FOV setter calls, or
+      equivalent. Do not key the rule to dead API names like
+      `with_fov(<float>)`.
+- [ ] Ban inline `with_damping(<float>)` in `src/demo_page*` if a named
+      damping preset would do.
+- [ ] Ban inline `Quat::from_*(<float>, ...)` in `examples/` **except**
+      in the dedicated transform escape-hatch example.
 - [ ] Ban inline `look_from(Vec3::new(<lit>, <lit>, <lit>))` and
       `orbit(<lit>, <lit>)` in `src/demo_page*` (already in v1.3.0).
 
-The rule: **wherever the library ships a name, the demo and example
-code must use the name.** Magic numbers stay legal in user-application
-code (escape hatches matter), but the library's own examples must
-demonstrate the named surface — because the examples are the
-documentation.
+The rule shape: **wherever the library ships a name, the first-path
+examples and the demo must use the name; one dedicated example per area
+demonstrates the escape hatch**. Without the allowlist, the docs become
+artificially clean and users cannot see how to go beyond presets.
 
-Rule shape lesson from v1.3.0: bind rules to the *residue pattern*,
-not to dead API names. Inline-float-literal in a setter call is the
-residue; the specific call's removed signature is not.
-
----
-
-## 6. Renderer state-of-the-art gaps (separate arc)
-
-Beyond ease-of-use, the renderer itself is missing table-stakes for
-"state of the art in 2026." Listed for awareness; sequencing is
-separate from Rounds A–D above.
-
-- [ ] **Skinned / morph / clip-sampled animation playback.** Without
-      `KHR_animations` playback, scena is a static model viewer, not a
-      3D library. Renderer scope, not game-engine scope.
-- [ ] **Anti-aliasing.** MSAA at minimum; TAA preferred.
-- [ ] **Contact shadows / SSAO.** Single biggest "pro vs amateur" tell
-      beyond framing. Without contact shadows the model floats on the
-      grid regardless of how well it's framed.
-- [ ] **Subtle bloom in post.** One low-threshold pass is the
-      difference between "rendered" and "photographed."
-- [ ] **Material coverage:** clearcoat, sheen, anisotropy, iridescence,
-      dispersion on top of the existing metal-rough + transmission.
-      The Khronos sample set assumes these.
-- [ ] **Clustered / tiled light culling.** Babylon 9 made this
-      baseline. Without it, scena is locked to a handful of lights.
-- [ ] **KTX2 / Basis Universal textures (`KHR_texture_basisu`).** 4–8×
-      GPU memory reduction. Required for twins of any meaningful size.
-- [ ] **Mesh compression on import: Draco + meshoptimizer**
-      (`KHR_draco_mesh_compression` + `EXT_meshopt_compression`).
-- [ ] **GPU instancing import (`EXT_mesh_gpu_instancing`).** Mandatory
-      for any twin with repeated parts.
-- [ ] **Area lights with LTC (rect/disc/sphere).** Babylon 9 ships
-      textured area lights; Filament has had them.
-- [ ] **Screen-space reflections (SSR).** Floor reflections are now
-      expected.
-- [ ] **Order-independent transparency (OIT).** WaterBottle plus
-      multiple transparent layers is what reviewers critique next.
-      Weighted-blended OIT is the cheap baseline.
-- [ ] **Wide-gamut output (Display P3).** Browser canvas supports
-      `colorSpace: "display-p3"` for WebGL/WebGPU.
-- [ ] **Khronos glTF Validator integration in `doctor`.** Sample
-      Viewer 1.1 added a validator tab. scena's doctor tool is the
-      natural home for per-asset validation with structured errors.
+Rule shape lesson from v1.3.0: bind rules to the **residue pattern**
+(inline-float-literal in a setter call), not to dead API names.
+Before enabling a doctor rule, either create the allowlist teaching
+example named by the rule or point the allowlist at an existing file; the
+doctor fixture should fail before the implementation sweep and pass after.
 
 ---
 
-## 7. Ease-of-use signature opportunities
+## 8. Shipping rounds
 
-Higher-leverage than the renderer-quality work above. Each corresponds
-to a specific competitor primitive known to delight users.
+Sized to land independently. Each round closes a coherent slice rather
+than spreading work horizontally. Bets 1.1–1.4 are funded **alongside**
+the rounds, not after — they're the strategic arc.
 
-- [ ] **`<scena-viewer>` custom element with `<model-viewer>`
-      attribute parity.** The single most important item.
-      `<scena-viewer src="..." environment="studio" ar camera-controls 
-      auto-rotate tone-mapping="neutral">` is the difference between
-      "a Rust crate" and "the thing people reach for when they need to
-      put a model on a page."
-- [ ] **Bundled studio environments as a Rust enum.** drei's
-      `<Environment preset="studio|city|sunset|...">` is the gold
-      standard. Embed 6–8 small KTX2 cubemaps in the crate.
-- [ ] **Camera control kit.** Minimum: Orbit, Turntable/Presentation,
-      Follow, Fly, one-call "cinematic" preset.
-- [ ] **Picking + outline + hover.** drei `<Select>`, `useCursor`,
-      three.js `OutlinePass`. For inspection workflows this is
-      mandatory: click a part, get a glow.
-- [ ] **HTML/CSS annotation overlay anchored to 3D points.**
-      model-viewer's `data-position` / `data-normal` / `data-surface`.
-      The `data-surface` trick (label sticks to a deforming surface)
-      is the killer feature.
-- [ ] **Variant switching for `KHR_materials_variants`.** "Same
-      chassis, different SKU."
-- [ ] **Loading progress primitives.** drei `<Loader>` + `useProgress`;
-      model-viewer `poster` + `reveal="interaction"`.
-- [ ] **Actionable error messages.** Khronos validator error codes plus
-      Rust enum errors with `fix` hints:
-      ```rust
-      SceneLoadError::TextureFormatUnsupported {
-          texture: "albedo.webp",
-          reason: "WebP animation not allowed by glTF",
-          fix: "Re-export with PNG or use KTX2",
-      }
-      ```
-      Rust enums + scena's doctor combine into something genuinely
-      better than the JS competitors here.
-- [ ] **Mobile-first + a11y defaults.** Touch, pinch-zoom, adaptive
-      resolution, arrow-key rotation, ARIA live region for camera
-      state, `alt` text.
-- [ ] **Inspector / dev overlay.** Single overlay (FPS + draw calls +
-      GPU adapter + capability warnings + tonemap toggle + exposure
-      slider + environment picker + wireframe/normals/UVs/AO) toggled
-      by a keyboard shortcut. doctor is already half of this.
+### Round A — name, not number (atomic, low risk)
 
----
+1. - [x] `Color` constants + `from_hex` + `from_kelvin` (§2.1)
+2. - [x] `PerspectiveCamera` lens presets + drop `with_aspect` (§2.2, §2.3)
+3. - [x] `Transform` alias decision + `looking_at` (§2.4)
 
-## 8. Differentiators scena could uniquely own
+### Round B — easy by name, continued
 
-No competitor has these. Each builds on something scena already has.
+4. - [ ] Light presets (§2.5)
+5. - [ ] `MaterialDesc` honest PBR presets (§2.6 — matte/plastic/metal/rubber only)
+6. - [ ] `Background` enum (§2.7)
+7. - [ ] `OrbitControls` named damping presets (§2.8)
 
-- [ ] **Connector "magnet" snapping with visual cues.** Ghost + green
-      outline when a valid mate is within tolerance. Builds on the
-      connector mating work. No general-purpose library does this.
-      *Triggered when an interactive drag-to-assemble workflow has a
-      concrete consumer; not needed for read-only viewing.*
-- [ ] **CPU rasterizer fallback in WASM for server-side screenshots.**
-      scena already has a CPU path. No JS library does this — for
-      OG-image generation / server-side preview rendering, this is a
-      real moat.
-- [ ] **Reference-image regression as a public API.** scena already
-      does this internally (`SCENA_REFERENCE_DIFF` against the Khronos
-      WaterBottle reference). Expose `scena::regress(asset, expected)`
-      for end users.
+### Round C — bundled content + feature shortcuts
+
+8. - [ ] `Environment::*` curated KTX2 environment presets (§5)
+9. - [ ] `Assets::khronos::*` sample loaders (§4.1)
+10. - [ ] `AutoExposureConfig` scenario presets (§2.9)
+11. - [ ] Scene / Viewer one-call animation playback by clip name (§4.4)
+
+### Round D — Tier 2 ergonomics
+
+12. - [ ] `ConnectOptions::with_axial_gap` (§4.3)
+13. - [ ] `OrbitControls` bounds-relative zoom (§4.2)
+14. - [ ] `Viewer::on_click` / `on_hover` callbacks (§4.5)
+15. - [ ] `Viewer::capture_png` (§4.6)
+16. - [ ] Asset hot-reload (§4.7)
+17. - [ ] State-via-URL (§4.9)
+
+### Strategic arc (parallel with rounds)
+
+- **Bet 1.1** — `<scena-viewer>` custom element (large; phased delivery)
+- **Bet 1.2** — auto-framing default at viewer level (medium; mostly
+  custom-element / helper API + proof because viewer builders already frame)
+- **Bet 1.3** — production-grade asset pipeline (medium; mostly proof +
+  production-profile/default policy)
+- **Bet 1.4** — doctor → per-asset validation (medium)
 
 ---
 
@@ -589,45 +847,127 @@ dilute scena's renderer-only positioning:
 - Networking / multiplayer state sync.
 - Geometry-creation asset editor (keep import-only).
 - Visual node editor / scripting language for materials.
-- Animation *authoring* (import + playback is renderer; authoring is
-  not).
+- Animation **authoring** (import + playback is renderer; authoring is not).
 
 ---
 
-## 10. The four bets that move scena to state-of-the-art
-
-If only four big things can be funded in addition to Rounds A–D:
-
-1. **`<scena-viewer>` custom element with model-viewer attribute
-   parity.** The difference between "a Rust crate" and "the thing
-   people reach for."
-2. **`frame_bounds` as default + named studio environments as a Rust
-   enum.** Drop-a-model-and-it-looks-good without 12 knobs to tune.
-3. **PBR Neutral default tonemapper + KTX2 + Draco + meshopt + GPU
-   instancing on import.** The compression/quality features that take
-   scena from "Rust toy" to "deploy this to production."
-4. **Extend `doctor` into per-asset validation + actionable Rust enum
-   errors with `fix` hints.** doctor is already most of an inspector;
-   finishing it gives scena the single most actionable error story of
-   any 3D library.
-
-Together those four make "easier than Three.js, more accurate than
-model-viewer" a defensible claim.
-
----
-
-## 11. Positioning verdict
+## 10. Positioning verdict
 
 For scena's actual positioning — a Rust renderer for trust-platform /
-digital-twin applications — Rounds A–D + bets 1–4 above get scena to
+digital-twin applications — Rounds A–D + bets 1.1–1.4 get scena to
 **credibly competitive with Three.js for static product viewing**.
 That's a defensible "state-of-the-art static product / digital-twin
 viewer" claim.
 
 The unqualified **"state-of-the-art 3D library"** claim needs at least
-animation playback (§6), contact shadows (§6), and anti-aliasing (§6)
-before it survives someone running the same glTF through
-`<model-viewer>` or Three.js side by side. This roadmap is a
-necessary step, not a sufficient one — the follow-up arc that closes
-the rest of the gap is animation + AA + contact shadows + bloom +
-material coverage.
+the §3.1 list (genuinely missing) cleared — particularly animation
+visual proof, contact shadows, AA, and material coverage — before it
+survives someone running the same glTF through `<model-viewer>` or
+Three.js side by side. This roadmap is a necessary step, not a
+sufficient one.
+
+---
+
+## 11. Reconciliation notes (2026-05-19)
+
+Items removed from the prior draft because they're already in v1.3.0:
+
+- **Named camera views** (`front`/`back`/`left`/`right`/`top`/`bottom`/
+  `three_quarter_*`/`azimuth_elevation`) — shipped per
+  `docs/release-notes/v1.3.0.md:22` and `docs/api.md:25`.
+- **PBR Neutral default tonemapper** — shipped per
+  `src/render/output.rs:62` (`#[default]` on `Tonemapper::PbrNeutral`),
+  test at `tests/m1_geometry_materials.rs:719`.
+
+Items reframed from "missing" to "implemented but [ergonomic|proof]-gap":
+
+- **Animation playback** — update flow exists at `src/scene/mixers.rs:10-104`.
+  `create_animation_mixer` already accepts a clip name; the remaining
+  ergonomic gap is a one-call scene/viewer helper that creates, starts,
+  and documents update-loop wiring. The proof gap remains no rendered
+  regression of a clip.
+- **KTX2 / meshopt compression** — feature flags + decode paths exist at
+  `Cargo.toml:45`, documented at `docs/feature-flags.md:28`. Now an
+  ergonomic gap (not default) and a proof gap (no rendered reference).
+- **glTF extension diagnostics** — exist at `src/assets/gltf/extensions.rs`.
+  Now an ergonomic gap (not surfaced as user-facing typed errors with
+  `fix` hints).
+
+Items trimmed for honesty:
+
+- **Material presets**: `clear_glass`, `frosted_glass`, `chrome`,
+  `brushed_steel`, `leather` deferred until clearcoat / sheen /
+  anisotropy / OIT / SSR land — otherwise the names overpromise the
+  renderer.
+
+Item reworded:
+
+- **Auto-framing as default**: no longer "`Camera::default()` computes a
+  good view" (impossible — no bounds, no viewport). Now "viewer-level
+  default" via existing `InteractiveGltfViewer` / `HeadlessGltfViewer`
+  builder framing, future `<scena-viewer>`, and a proposed
+  `Scene::add_perspective_camera_default_for(bounds, viewport)` helper.
+  Status is therefore an ergonomic/proof gap, not a greenfield gap.
+
+Additional source-truth fixes in this pass:
+
+- **Material variants**: `Scene::set_active_variant(&import, Some(name))`
+  already exists. The remaining gap is Viewer / `<scena-viewer>` binding
+  and rendered-output proof.
+- **Color and transform owners**: color lives in `src/material.rs`; degree
+  rotations live in `src/scene/math.rs`. The checklist no longer points at
+  nonexistent `src/material/color.rs` or `src/scene/transform.rs` paths.
+  The transform alias question is now an explicit API decision, not an
+  implied rename.
+- **GPU instancing**: `EXT_mesh_gpu_instancing` import support is not wired;
+  marked as a genuine glTF extension gap. Procedural/internal instancing is
+  separate. Preferred path is upstream `gltf-rs` support with a local
+  narrow parser as the release-timing contingency.
+- **Asset pipeline defaults**: KTX2 / meshopt remain optional features today.
+  The roadmap now requires package-size, build-time, and profile/default
+  policy evidence before changing defaults.
+- **Dependency boundary**: format / IO / OS / encoding / validation work
+  should use proven crates, while `scene`, `viewer`, `controls`, and
+  `render` keep ownership of scena's public behavior and visual proof.
+  Specific accepted choices: local tested Kelvin approximation rather than
+  a heavy default dependency, `notify-debouncer-full` for hot reload, `png`
+  for screenshot encoding, official Khronos Validator in `xtask doctor`,
+  and no Draco critical path until a maintained decoder route is proven.
+
+Visual-proof pass (2026-05-19):
+
+- Added a **Visual proof classes** legend (`none` / `docs-image` /
+  `reference-image` / `browser-demo` / `animated-proof`) plus a per-item
+  **Visual proof:** field so the "looks correct?" half of the spec is
+  declared up front. Rule: docs-images are generated from checked
+  example code or a small render harness — never hand-screenshotted —
+  with generation metadata so they can be regenerated. Reference images
+  may be PNG / PPM, sampled-RGBA TOML, or asset-specific PNGs with
+  adjacent metadata. Renderer features that change visual quality need
+  ON/OFF, before/after, or order-invariance pairs, not a single image;
+  import / compression / capability / performance features keep their
+  own structured proof gates and add render proof only where the render
+  is part of the contract.
+
+Doctor section: added an **allowlist clause** so escape-hatch teaching
+examples stay demonstrable rather than artificially banned. The rules now
+target actual residue patterns (`Color::from_linear_rgba`,
+`Color::from_srgb`, `Color::from_srgb_u8`, direct camera FOV literals,
+quaternion literals), not dead or desired API names.
+
+Wide-gamut output: marked **capability-gated**, not blanket-claimed —
+PBR Neutral targets sRGB; Display P3 is a per-backend
+`drawingBufferColorSpace` capability. Needs measured proof per backend.
+
+Round A implementation pass (2026-05-19):
+
+- Landed the "name, not number" slice on branch
+  `easy-use-state-art/round-a`: `Color` constants / `from_hex` /
+  `from_kelvin`, `PerspectiveCamera` lens presets / `with_fov_degrees`,
+  and `Transform::looking_at`.
+- Swept first-path docs, examples, and demo setup away from avoidable
+  `PerspectiveCamera::default().with_aspect(...)` and raw color literals.
+- Added generated docs-image proof artifacts for the color swatch panel
+  and lens-preset comparison under `target/gate-artifacts/examples-visual/`.
+- Added `ROUND-A-EASY-USE-PRIMITIVES` doctor coverage so the source,
+  tests, visual proof, and first-path API style remain enforced.

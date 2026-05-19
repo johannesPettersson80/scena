@@ -72,7 +72,7 @@ scene.add_grid_floor(&assets, scena::GridFloorOptions::new().under_bounds(bounds
 
 let camera = scene.add_perspective_camera(
     scene.root(),
-    scena::PerspectiveCamera::default().with_aspect(1280.0 / 720.0),
+    scena::PerspectiveCamera::standard(),
     scena::Transform::default(),
 )?;
 let framing = scene.frame_bounds(

@@ -27,7 +27,7 @@ let width = 1280;
 let height = 720;
 let camera = scene.add_perspective_camera(
     scene.root(),
-    PerspectiveCamera::default().with_aspect(width as f32 / height as f32),
+    PerspectiveCamera::standard(),
     Transform::default(),
 )?;
 

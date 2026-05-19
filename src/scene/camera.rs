@@ -42,6 +42,82 @@ impl Default for PerspectiveCamera {
 }
 
 impl PerspectiveCamera {
+    /// A wide-angle lens preset for tight spaces and broad establishing views.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::{Angle, PerspectiveCamera};
+    ///
+    /// let camera = PerspectiveCamera::wide_angle();
+    /// assert!((camera.vertical_fov.radians() - Angle::from_degrees(84.0).radians()).abs() < 1.0e-6);
+    /// ```
+    pub fn wide_angle() -> Self {
+        Self::default().with_fov_degrees(84.0)
+    }
+
+    /// A general-purpose standard lens preset.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::{Angle, PerspectiveCamera};
+    ///
+    /// let camera = PerspectiveCamera::standard();
+    /// assert!((camera.vertical_fov.radians() - Angle::from_degrees(46.0).radians()).abs() < 1.0e-6);
+    /// ```
+    pub fn standard() -> Self {
+        Self::default().with_fov_degrees(46.0)
+    }
+
+    /// A portrait-style lens preset with a narrower field of view.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::{Angle, PerspectiveCamera};
+    ///
+    /// let camera = PerspectiveCamera::portrait();
+    /// assert!((camera.vertical_fov.radians() - Angle::from_degrees(28.0).radians()).abs() < 1.0e-6);
+    /// ```
+    pub fn portrait() -> Self {
+        Self::default().with_fov_degrees(28.0)
+    }
+
+    /// A telephoto lens preset for compressed, inspection-style views.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::{Angle, PerspectiveCamera};
+    ///
+    /// let camera = PerspectiveCamera::telephoto();
+    /// assert!((camera.vertical_fov.radians() - Angle::from_degrees(18.0).radians()).abs() < 1.0e-6);
+    /// ```
+    pub fn telephoto() -> Self {
+        Self::default().with_fov_degrees(18.0)
+    }
+
+    /// Overrides the vertical field of view in degrees.
+    ///
+    /// Non-finite or non-positive values are ignored, preserving the previous
+    /// field of view.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::{Angle, PerspectiveCamera};
+    ///
+    /// let camera = PerspectiveCamera::standard().with_fov_degrees(60.0);
+    /// assert!((camera.vertical_fov.radians() - Angle::from_degrees(60.0).radians()).abs() < 1.0e-6);
+    /// ```
+    pub fn with_fov_degrees(mut self, degrees: f32) -> Self {
+        if degrees.is_finite() && degrees > 0.0 {
+            self.vertical_fov = Angle::from_degrees(degrees);
+        }
+        self
+    }
+
     pub const fn with_aspect(mut self, aspect: f32) -> Self {
         self.aspect = aspect;
         self

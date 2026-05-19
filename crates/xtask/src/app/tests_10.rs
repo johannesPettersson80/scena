@@ -197,9 +197,29 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     fs::write(fixture_root.join("src/geometry/bounds.rs"), "").expect("bounds fixture");
     fs::write(
         fixture_root.join("tests/examples_visual_proof.rs"),
-        "frame_bounds_rendered_output_proves_fill_center_and_unclipped_object frame-bounds-rendered-output computed_distance projected_rect nonblack_pixel_rect",
+        "frame_bounds_rendered_output_proves_fill_center_and_unclipped_object frame-bounds-rendered-output computed_distance projected_rect nonblack_pixel_rect round_a_named_color_swatch_docs_image round-a-named-color-swatch-docs-image round_a_lens_preset_comparison_docs_image round-a-lens-preset-comparison-docs-image",
     )
     .expect("visual proof fixture");
+    fs::write(
+        fixture_root.join("src/material.rs"),
+        "pub const GRAY: Color = Color; pub const BLUE: Color = Color; pub fn from_hex(value: &str) {} pub fn from_kelvin(kelvin: f32) {}",
+    )
+    .expect("material fixture");
+    fs::write(
+        fixture_root.join("src/scene/camera.rs"),
+        "pub fn standard() {} pub fn wide_angle() {} pub fn portrait() {} pub fn telephoto() {} pub fn with_fov_degrees(degrees: f32) {}",
+    )
+    .expect("camera fixture");
+    fs::write(
+        fixture_root.join("src/scene/math.rs"),
+        "pub fn looking_at() {}",
+    )
+    .expect("math fixture");
+    fs::write(
+        fixture_root.join("tests/round_a_easy_use.rs"),
+        "round_a_color_named_constants_and_hex_alias_are_public round_a_color_kelvin_helper_is_clamped_and_ordered round_a_perspective_camera_lens_presets_are_named_degree_surfaces round_a_transform_looking_at_faces_target_with_requested_up",
+    )
+    .expect("round-a test fixture");
     fs::write(
         fixture_root.join("demo/index.html"),
         r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,

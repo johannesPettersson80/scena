@@ -194,6 +194,155 @@ fn write_frame_bounds_artifact(
     .expect("frame_bounds metadata can be written");
 }
 
+fn write_docs_image_artifact(name: &str, source: &str, width: u32, height: u32, rgba: &[u8]) {
+    let dir = artifact_dir();
+    let mut ppm = format!("P6\n{width} {height}\n255\n").into_bytes();
+    for pixel in rgba.chunks_exact(4) {
+        ppm.extend_from_slice(&pixel[..3]);
+    }
+    fs::write(dir.join(format!("{name}.ppm")), ppm).expect("docs-image PPM can be written");
+    fs::write(
+        dir.join(format!("{name}.toml")),
+        format!(
+            "[artifact]\n\
+             name = \"{name}\"\n\
+             source = \"{source}\"\n\
+             format = \"ppm\"\n\
+             encoding = \"srgb8\"\n\
+             width = {width}\n\
+             height = {height}\n\
+             proof_class = \"docs-image\"\n\
+             generated = true\n\
+             screenshot = false\n"
+        ),
+    )
+    .expect("docs-image metadata can be written");
+}
+
+fn srgb8_from_linear(color: Color) -> [u8; 4] {
+    [
+        linear_channel_to_srgb8(color.r),
+        linear_channel_to_srgb8(color.g),
+        linear_channel_to_srgb8(color.b),
+        linear_channel_to_srgb8(color.a),
+    ]
+}
+
+fn linear_channel_to_srgb8(value: f32) -> u8 {
+    let value = value.clamp(0.0, 1.0);
+    let encoded = if value <= 0.003_130_8 {
+        value * 12.92
+    } else {
+        1.055 * value.powf(1.0 / 2.4) - 0.055
+    };
+    (encoded * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
+#[test]
+fn round_a_named_color_swatch_docs_image() {
+    let width = 320;
+    let height = 96;
+    let palette = [
+        Color::GRAY,
+        Color::BLUE,
+        Color::from_hex("#f5f7fb").expect("studio swatch hex parses"),
+        Color::from_kelvin(3200.0),
+        Color::from_kelvin(6500.0),
+    ];
+    let mut rgba = vec![255_u8; (width * height * 4) as usize];
+    let swatch_width = width / palette.len() as u32;
+    for (index, color) in palette.iter().enumerate() {
+        let srgb = srgb8_from_linear(*color);
+        let min_x = index as u32 * swatch_width;
+        let max_x = if index + 1 == palette.len() {
+            width
+        } else {
+            (index as u32 + 1) * swatch_width
+        };
+        for y in 0..height {
+            for x in min_x..max_x {
+                let offset = ((y * width + x) * 4) as usize;
+                rgba[offset..offset + 4].copy_from_slice(&srgb);
+            }
+        }
+    }
+    assert!(
+        count_unique_rgb_triplets(&rgba) >= palette.len(),
+        "round-a color swatch must show each named/derived color as a distinct docs-image proof"
+    );
+    write_docs_image_artifact(
+        "round-a-named-color-swatch-docs-image",
+        "docs/guides/easy-scene-setup.md",
+        width,
+        height,
+        &rgba,
+    );
+}
+
+#[test]
+fn round_a_lens_preset_comparison_docs_image() {
+    let tile_width = 128;
+    let tile_height = 128;
+    let presets = [
+        PerspectiveCamera::wide_angle(),
+        PerspectiveCamera::standard(),
+        PerspectiveCamera::portrait(),
+        PerspectiveCamera::telephoto(),
+    ];
+    let mut rgba = vec![0_u8; (tile_width * tile_height * presets.len() as u32 * 4) as usize];
+    for (index, camera) in presets.iter().enumerate() {
+        let tile = render_lens_preset_tile(*camera, tile_width, tile_height);
+        for y in 0..tile_height {
+            let dst_start =
+                ((y * tile_width * presets.len() as u32 + index as u32 * tile_width) * 4) as usize;
+            let src_start = (y * tile_width * 4) as usize;
+            let byte_count = (tile_width * 4) as usize;
+            rgba[dst_start..dst_start + byte_count]
+                .copy_from_slice(&tile[src_start..src_start + byte_count]);
+        }
+    }
+    assert!(
+        count_nonblack_pixels(&rgba) > 0,
+        "round-a lens comparison docs-image must render the shared subject"
+    );
+    write_docs_image_artifact(
+        "round-a-lens-preset-comparison-docs-image",
+        "docs/guides/easy-scene-setup.md",
+        tile_width * presets.len() as u32,
+        tile_height,
+        &rgba,
+    );
+}
+
+fn render_lens_preset_tile(camera: PerspectiveCamera, width: u32, height: u32) -> Vec<u8> {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
+    let material = assets.create_material(MaterialDesc::unlit(Color::BLUE));
+
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("lens subject inserts");
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            camera,
+            Transform::at(Vec3::new(0.0, 0.0, 5.0)),
+        )
+        .expect("lens preset camera inserts");
+    scene.set_active_camera(camera).expect("active camera sets");
+
+    let mut renderer = Renderer::headless(width, height).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("lens docs-image scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("lens docs-image scene renders");
+    renderer.frame_rgba8().to_vec()
+}
+
 #[test]
 fn examples_visual_primitive_shapes_renders_box_to_ppm() {
     // Mirror examples/primitive_shapes.rs at the same headless renderer scale.
