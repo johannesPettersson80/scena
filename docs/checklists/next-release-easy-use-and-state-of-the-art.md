@@ -115,7 +115,7 @@ rounds in §2 are the floor underneath them, not a substitute.
 ### 1.1 `<scena-viewer>` custom element with `<model-viewer>` attribute parity
 
 Status: **[gap]** for full drop-in renderer parity; custom-element
-foundation **[shipped]**.
+foundation and browser UI proof **[shipped]**.
 Owner: `src/viewer.rs` for shared viewer behavior + a new thin browser
 adapter module / WASM package built directly on `web-sys` /
 `wasm-bindgen`. Do not add a Rust web-component framework unless a
@@ -124,7 +124,9 @@ delegate asset loading, framing, and rendering to `viewer` / `assets` /
 `scene`; it must not become a second renderer owner.
 Proof: foundation is `src/viewer_element.rs` with
 `defineScenaViewer()`, a shadow-canvas custom element, model-viewer-style
-attribute parsing, docs, and doctor rule `SCENA-VIEWER-ELEMENT`.
+attribute parsing, docs, doctor rule `SCENA-VIEWER-ELEMENT`, and the M6
+browser proof artifact
+`target/gate-artifacts/scena-viewer-element-browser-proof.png`.
 Remaining proof for full parity: WASM browser test rendering against
 three sample assets + side-by-side screenshot comparison with
 `<model-viewer>` on the same assets.
@@ -755,15 +757,19 @@ rendering without rebuilding the scene by hand.
 ### 4.8 Drag-and-drop in the WASM viewer
 
 Status: **[proof-gap]** — `<scena-viewer>` now owns the browser
-drag/drop ingestion surface and validates dropped `.glb` / `.gltf`
-filenames through `ScenaViewerDropDecision`; full render-after-drop proof
-is still missing.
+drag/drop ingestion surface, validates dropped `.glb` / `.gltf`
+filenames through `ScenaViewerDropDecision`, and has Playwright browser
+proof for accepted/rejected drop events. Full render-after-drop proof is
+still missing.
 Owner: `<scena-viewer>` (bet 1.1).
 Proof: native drop-decision test in `tests/scena_viewer_element.rs`;
 custom element dispatches `scena-viewer-file-drop` for accepted `File`
-objects and `scena-viewer-drop-error` for rejected drops. Remaining proof:
-Playwright test drops GLB/glTF files onto the custom element, renders the
-result, and surfaces structured validation errors for rejected files.
+objects and `scena-viewer-drop-error` for rejected drops. The focused M6
+browser proof writes
+`target/gate-artifacts/scena-viewer-element-browser-proof.png` and records
+`scena.scena_viewer_element_browser_proof.v1`. Remaining proof:
+Playwright test drops GLB/glTF files onto the custom element and renders
+the accepted result.
 Visual proof: animated-proof + browser-demo (recording shows drag-drop ingestion; the cloudflare demo accepts dropped files)
 
 ### 4.9 State-via-URL serializer
@@ -838,14 +844,16 @@ specific competitor primitive.
   demo remains follow-up polish.
 - **HTML/CSS annotation overlay anchored to 3D points.** Status:
   **[proof-gap]** — `<scena-viewer>` now exposes the slotted annotation
-  surface and host projection contract. Owner: `<scena-viewer>` (bet
+  surface and host projection contract, with browser proof for projection
+  events and screen-position application. Owner: `<scena-viewer>` (bet
   1.1). `ScenaViewerAnnotationAnchor` parses `data-position`,
   `data-normal`, and `data-surface`; the element emits
   `scena-viewer-annotations-request` with parsed anchors and accepts
   `setAnnotationProjections([{ id, x, y, visible }])` before emitting
-  `scena-viewer-annotations-rendered`. Remaining proof: Playwright test
-  showing labels track projected 3D points across camera movement and
-  surface-bound updates.
+  `scena-viewer-annotations-rendered`. The M6 browser proof verifies the
+  rendered projection and includes the custom-element screenshot artifact.
+  Remaining proof: animated orbit/update recording showing labels track
+  projected 3D points across camera movement and surface-bound updates.
   Visual proof: browser-demo + animated-proof (labels visible in the demo; recording shows them tracking through camera orbit and animation)
 - **Variant switching for `KHR_materials_variants`.** Status:
   **[proof-gap]** overall; Viewer primitive, reference/docs-image proof,
@@ -860,7 +868,9 @@ specific competitor primitive.
   binding. Owner: `src/viewer.rs` + `src/viewer_element.rs`.
   Visual proof: reference-image + docs-image shipped through
   `target/gate-artifacts/examples-visual/viewer-material-variant-reference-docs-image.ppm`;
-  browser-demo remains future custom-element proof.
+  custom-element browser-demo proof for picker events shipped through
+  `target/gate-artifacts/scena-viewer-element-browser-proof.png`; full
+  picker-to-rendered-variant proof remains future custom-element work.
 - **Loading progress primitives.** Status: **[proof-gap]** overall;
   Viewer primitive and `<scena-viewer>` progress UI surface **[shipped]**.
   `AssetLoadProgress` exists in `src/lib.rs` and is now surfaced
@@ -877,17 +887,20 @@ specific competitor primitive.
   decode, and cancellation paths; viewer progress tests in
   `tests/first_render_api.rs` and `tests/m7_interactive_viewer.rs`;
   custom-element progress mapping in `tests/scena_viewer_element.rs`;
-  doctor rule `SCENA-VIEWER-ELEMENT` pins the browser UI surface.
-  Visual proof: animated-proof + browser-demo still required for a
-  throttled-connection custom-element recording.
+  focused Playwright proof in the M6 browser probe; doctor rule
+  `SCENA-VIEWER-ELEMENT` pins the browser UI surface.
+  Visual proof: browser-demo proof shipped through
+  `target/gate-artifacts/scena-viewer-element-browser-proof.png`;
+  animated-proof still required for a throttled-connection recording.
 - **Mobile-first + a11y defaults.** Status: **[proof-gap]** —
   `<scena-viewer>` now ships explicit mobile/ARIA/keyboard defaults.
   Owner: `<scena-viewer>` (bet 1.1). `ScenaViewerAccessibilityDefaults`
   and `ScenaViewerKeyboardAction` define the source contract; the element
   sets host role/label/tabindex defaults, keeps the canvas touch-safe, and
   emits `scena-viewer-key-control` for keyboard orbit/zoom/reset events.
-  Remaining proof: Playwright mobile viewport tests for touch/pinch plus
-  keyboard/ARIA smoke checks.
+  Browser proof now covers host role/label/tabindex, roledescription,
+  canvas `touch-action: none`, and keyboard event dispatch. Remaining
+  proof: mobile viewport tests for touch/pinch gestures.
   Visual proof: browser-demo + animated-proof (mobile-viewport demo capture; touch-pinch recording)
 - **Inspector / dev overlay.** Status: **[proof-gap]** —
   `<scena-viewer>` now exposes a host-fed inspector overlay surface.
@@ -896,8 +909,9 @@ specific competitor primitive.
   diagnostics, and render stats into a testable snapshot; the element
   exposes `setInspectorSnapshot(...)`, `setInspectorDiagnostics(...)`,
   `clearInspectorSnapshot()`, and emits
-  `scena-viewer-inspector-rendered`. Remaining proof: browser overlay
-  snapshot plus a doctor JSON fixture feeding the live overlay.
+  `scena-viewer-inspector-rendered`. Browser overlay snapshot proof now
+  ships through the M6 custom-element proof artifact. Remaining proof: a
+  doctor JSON fixture feeding the live overlay.
   Visual proof: browser-demo + reference-image (live overlay in the demo; reference snapshot of the overlay state for CI diff)
 
 ---
@@ -1438,6 +1452,21 @@ Picking/outline/hover reconciliation pass (2026-05-19):
 - Reclassified the annotation overlay from gap to proof gap: the HTML
   surface and host projection contract are shipped and source-enforced;
   animated browser proof remains open.
+
+`<scena-viewer>` browser-proof pass (2026-05-19):
+
+- Extended the M6 Playwright browser probe with
+  `scena.scena_viewer_element_browser_proof.v1`, exercising the real
+  wasm-exported `defineScenaViewer()` package path.
+- The proof covers shadow canvas defaults, ARIA/focus/touch-action
+  defaults, progressbar rendering, drag/drop accepted/rejected events,
+  material-variant picker events, annotation projection, inspector
+  overlay rendering, and keyboard control events.
+- The probe writes
+  `target/gate-artifacts/scena-viewer-element-browser-proof.png` and is
+  source-enforced by `SCENA-VIEWER-ELEMENT` / `VISUAL-BROWSER-M6`.
+  Full asset load/render parity and animated gesture proofs remain open
+  under the relevant checklist items.
 
 Connector magnet preview pass (2026-05-19):
 

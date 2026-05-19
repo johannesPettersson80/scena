@@ -6,7 +6,10 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
         findings,
         "SCENA-VIEWER-ELEMENT",
         "Cargo.toml",
-        &["viewer-element = []"],
+        &[
+            "viewer-element = []",
+            "browser-probe = [\"viewer-element\"]",
+        ],
     );
     require_contains(
         root,
@@ -174,6 +177,37 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
         root,
         findings,
         "SCENA-VIEWER-ELEMENT",
+        "tests/browser/m6_rust_wasm_renderer_probe.js",
+        &[
+            "assertScenaViewerElementProof",
+            "runScenaViewerElementProof",
+            "scena-viewer-element-browser-proof.png",
+            "SCENA_BROWSER_VIEWER_ELEMENT_ONLY",
+            "scena.scena_viewer_element_browser_proof.v1",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "SCENA-VIEWER-ELEMENT",
+        "tests/browser/m6_rust_wasm_renderer_probe_page.js",
+        &[
+            "defineScenaViewer",
+            "scenaViewerElementProbe",
+            "scena.scena_viewer_element_browser_proof.v1",
+            "scena-viewer-progress-rendered",
+            "scena-viewer-file-drop",
+            "scena-viewer-drop-error",
+            "scena-viewer-variant-change",
+            "scena-viewer-annotations-rendered",
+            "scena-viewer-inspector-rendered",
+            "scena-viewer-key-control",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "SCENA-VIEWER-ELEMENT",
         "docs/browser.md",
         &[
             "<scena-viewer",
@@ -199,6 +233,8 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
             "data-position",
             "scena-viewer-annotations-request",
             "scena-viewer-annotations-rendered",
+            "SCENA_BROWSER_VIEWER_ELEMENT_ONLY=1",
+            "scena-viewer-element-browser-proof.png",
         ],
     );
     require_contains(
@@ -207,7 +243,7 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
         "SCENA-VIEWER-ELEMENT",
         "docs/checklists/next-release-easy-use-and-state-of-the-art.md",
         &[
-            "custom-element\nfoundation **[shipped]**",
+            "custom-element\nfoundation and browser UI proof **[shipped]**",
             "src/viewer_element.rs",
             "SCENA-VIEWER-ELEMENT",
             "ScenaViewerProgress",
@@ -222,6 +258,8 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
             "scena-viewer-inspector-rendered",
             "ScenaViewerAnnotationAnchor",
             "scena-viewer-annotations-rendered",
+            "scena.scena_viewer_element_browser_proof.v1",
+            "scena-viewer-element-browser-proof.png",
             "Full\n  asset loading/rendering parity remains open under bet 1.1",
         ],
     );

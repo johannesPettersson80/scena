@@ -49,19 +49,25 @@ defineScenaViewer();
 
 The first shipped foundation registers `<scena-viewer>`, creates a shadow DOM
 canvas, exposes model-viewer-style attributes, and dispatches structured
-attribute events. The element also owns a shadow DOM progressbar. Hosts can
+attribute events. The browser proof is part of the M6 probe package; run
+`SCENA_BROWSER_VIEWER_ELEMENT_ONLY=1 node tests/browser/m6_rust_wasm_renderer_probe.js`
+after building `target/m6-browser-pkg` with `--features browser-probe` to
+generate `target/gate-artifacts/scena-viewer-element-browser-proof.png`.
+
+The element also owns a shadow DOM progressbar. Hosts can
 dispatch a `scena-viewer-progress` event or call `setLoadProgress(detail)` with
 `phase`, `ariaText`, and optional `value` / `ratio` / `percent`; the element
 updates the visible status text, ARIA progress state, and emits
-`scena-viewer-progress-rendered` after the UI changes. Asset loading, rendering,
-drag/drop, and annotation overlays build on this surface in follow-up slices.
+`scena-viewer-progress-rendered` after the UI changes. Asset loading and
+rendering remain explicit host responsibilities until full renderer parity lands
+under the `<scena-viewer>` roadmap item.
 
 The element handles browser drag-and-drop ingestion for `.glb` and `.gltf`
 files. Valid drops emit `scena-viewer-file-drop` with the accepted `File`
 objects and names. Invalid or mixed drops emit `scena-viewer-drop-error` with
 rejected names and a user-facing message. The custom element owns validation
-and browser events; renderer loading and visual proof are still explicit
-follow-up work.
+and browser events; renderer loading and render-after-drop proof remain
+explicit follow-up work.
 
 Hosts can expose material variants through the built-in material variant picker
 with `setMaterialVariants(variants, activeName)`. The picker accepts string

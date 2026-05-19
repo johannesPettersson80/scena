@@ -5,7 +5,7 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
         findings,
         "VISUAL-BROWSER-M6",
         "Cargo.toml",
-        &["browser-probe"],
+        &["browser-probe = [\"viewer-element\"]"],
     );
     check_raw_webgl2_renderer_removed(root, findings);
     require_contains(
@@ -169,6 +169,11 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "assertMaterialTextureProof",
             "assertSourceGltfMaterialProof",
             "assertTexturedConnectorViewerProof",
+            "assertScenaViewerElementProof",
+            "runScenaViewerElementProof",
+            "scena-viewer-element-browser-proof.png",
+            "SCENA_BROWSER_VIEWER_ELEMENT_ONLY",
+            "scena.scena_viewer_element_browser_proof.v1",
             "assertSurfaceLifecycleProbe",
             "assertNoScenaGpuValidationErrors",
             "scena wgpu uncaptured error",
@@ -204,6 +209,16 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
         "tests/browser/m6_rust_wasm_renderer_probe_page.js",
         &[
             "m6RenderWebgl2Probe",
+            "defineScenaViewer",
+            "scenaViewerElementProbe",
+            "scena.scena_viewer_element_browser_proof.v1",
+            "scena-viewer-progress-rendered",
+            "scena-viewer-file-drop",
+            "scena-viewer-drop-error",
+            "scena-viewer-variant-change",
+            "scena-viewer-annotations-rendered",
+            "scena-viewer-inspector-rendered",
+            "scena-viewer-key-control",
             "m6RenderWebgpuProbe",
             "m6RenderWorkflowProbe",
             "m6RenderSurfaceLifecycleProbe",

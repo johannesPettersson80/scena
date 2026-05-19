@@ -470,6 +470,64 @@ function assertTexturedConnectorViewerProof(backend, result) {
   }
 }
 
+function assertScenaViewerElementProof(result) {
+  if (
+    !result ||
+    result.schema !== "scena.scena_viewer_element_browser_proof.v1" ||
+    result.status !== "passed" ||
+    !result.screenshot_metadata ||
+    !/^[0-9a-f]{64}$/.test(result.screenshot_metadata.sha256 || "")
+  ) {
+    throw new Error(`<scena-viewer> browser proof did not pass: ${JSON.stringify(result)}`);
+  }
+  const checks = result.checks || {};
+  for (const [key, value] of [
+    ["host_role", "img"],
+    ["host_label", "3D model viewer"],
+    ["host_tabindex", "0"],
+    ["host_roledescription", "interactive 3D model"],
+    ["canvas_label", "scena 3D viewer canvas"],
+    ["canvas_touch_action", "none"],
+    ["progress_phase", "fetching"],
+    ["progress_value_now", "42"],
+    ["variant_change", "painted"],
+    ["annotation_count", 1],
+    ["annotation_visible", 1],
+    ["inspector_overlay", "Diagnostics"],
+    ["inspector_warnings", 1],
+    ["keyboard_action", "orbit-left"],
+  ]) {
+    if (checks[key] !== value) {
+      throw new Error(`<scena-viewer> proof expected ${key}=${value}: ${JSON.stringify(result)}`);
+    }
+  }
+  if (
+    !Array.isArray(checks.drop_accepted_names) ||
+    !checks.drop_accepted_names.includes("accepted-machine.glb") ||
+    !Array.isArray(checks.drop_rejected_names) ||
+    !checks.drop_rejected_names.includes("notes.txt")
+  ) {
+    throw new Error(`<scena-viewer> proof did not exercise drag/drop decisions: ${JSON.stringify(result)}`);
+  }
+}
+
+async function runScenaViewerElementProof(page, artifactDir) {
+  const result = await page.evaluate(() => window.scenaViewerElementProbe());
+  const screenshotPath = path.join(artifactDir, "scena-viewer-element-browser-proof.png");
+  await page
+    .locator(result.screenshot_selector || "scena-viewer[data-proof=\"custom-element\"]")
+    .screenshot({ path: screenshotPath });
+  const screenshot = fs.readFileSync(screenshotPath);
+  result.screenshot_metadata = {
+    path: path.relative(process.cwd(), screenshotPath),
+    mime: "image/png",
+    sha256: crypto.createHash("sha256").update(screenshot).digest("hex"),
+    bytes: screenshot.length,
+  };
+  assertScenaViewerElementProof(result);
+  return result;
+}
+
 function renderedOutputFingerprint(result) {
   const readback = result && result.renderer_readback;
   if (readback && typeof readback.rgba8_fnv1a64 === "string") {
@@ -491,6 +549,7 @@ async function main() {
 
   const { server, url } = await serve(browserRoot, pkgRoot, fixtureRoot);
   const selectedBackends = configuredBackends();
+  const viewerElementOnly = process.env.SCENA_BROWSER_VIEWER_ELEMENT_ONLY === "1";
   const browser = await chromium.launch({
     headless: true,
     args: chromiumLaunchArgs(selectedBackends),
@@ -524,7 +583,14 @@ async function main() {
   ];
   const results = [];
   try {
-    for (const backend of selectedBackends) {
+    const viewerElementPage = await browser.newPage({ viewport: { width: 480, height: 320 } });
+    try {
+      await viewerElementPage.goto(url);
+      results.push(await runScenaViewerElementProof(viewerElementPage, artifactDir));
+    } finally {
+      await viewerElementPage.close();
+    }
+    for (const backend of viewerElementOnly ? [] : selectedBackends) {
       const page = await browser.newPage({ viewport: { width: 96, height: 96 } });
       const consoleMessages = [];
       page.on("console", (message) => {

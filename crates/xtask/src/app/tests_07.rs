@@ -226,9 +226,10 @@ pub(crate) fn doctor_rejects_m6_browser_renderer_probe_missing_cargo_dep_regress
     assert!(
         findings.iter().any(|finding| {
             finding.rule == "VISUAL-BROWSER-M6"
-                && finding
-                    .message
-                    .contains("Cargo.toml is missing required contract text 'browser-probe'")
+                && finding.message.contains(
+                    "Cargo.toml is missing required contract text \
+                         'browser-probe = [\"viewer-element\"]'",
+                )
         }),
         "doctor must reject Cargo.toml that drops the browser-probe / \
          wgpu-backed M6 browser renderer probe gate: {findings:?}",

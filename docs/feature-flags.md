@@ -22,7 +22,7 @@ scena = { version = "1.3", features = ["controls", "controls-winit"] }
 | `controls` | platform-neutral orbit, pan, zoom, and focus controls |
 | `controls-winit` | native-host controls adapter support |
 | `controls-web` | browser-host controls adapter support |
-| `browser-probe` | browser/WASM rendered-output probe entry points |
+| `browser-probe` | browser/WASM rendered-output probe entry points; includes `viewer-element` so the browser proof package also verifies `<scena-viewer>` |
 | `demo-page` | browser demo page WASM exports |
 | `viewer-element` | `<scena-viewer>` custom-element registration surface |
 | `hot-reload` | native debounced asset-file watching for explicit reload loops |

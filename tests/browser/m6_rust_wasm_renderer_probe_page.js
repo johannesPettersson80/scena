@@ -1,4 +1,5 @@
 import init, {
+  defineScenaViewer,
   m6RenderWebgl2Probe,
   m6RenderWebgpuProbe,
   m6RenderSurfaceLifecycleProbe,
@@ -15,6 +16,164 @@ async function ensureInit() {
     initialized = true;
   }
 }
+
+async function nextFrame() {
+  await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+function once(target, eventName) {
+  return new Promise((resolve) => {
+    target.addEventListener(eventName, (event) => resolve(event.detail || {}), { once: true });
+  });
+}
+
+async function dispatchDrop(viewer) {
+  const dataTransfer = new DataTransfer();
+  dataTransfer.items.add(new File(["{}"], "accepted-machine.glb", { type: "model/gltf-binary" }));
+  dataTransfer.items.add(new File(["not a model"], "notes.txt", { type: "text/plain" }));
+  const accepted = once(viewer, "scena-viewer-file-drop");
+  const rejected = once(viewer, "scena-viewer-drop-error");
+  viewer.dispatchEvent(new DragEvent("drop", {
+    bubbles: true,
+    cancelable: true,
+    dataTransfer,
+  }));
+  return {
+    accepted: await accepted,
+    rejected: await rejected,
+  };
+}
+
+window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
+  await ensureInit();
+  const defined = defineScenaViewer();
+  await customElements.whenDefined("scena-viewer");
+
+  const viewer = document.createElement("scena-viewer");
+  viewer.dataset.proof = "custom-element";
+  viewer.setAttribute("src", "/fixtures/gltf/non_ndc_camera_scene.gltf");
+  viewer.setAttribute("camera-controls", "");
+  viewer.setAttribute("auto-rotate", "");
+  viewer.style.cssText = "display:block;width:360px;height:240px;background:#111827;color:#f8fafc";
+
+  const annotation = document.createElement("span");
+  annotation.slot = "annotation";
+  annotation.id = "bearing-label";
+  annotation.dataset.position = "0 1 0";
+  annotation.dataset.normal = "0 0 1";
+  annotation.dataset.surface = "bearing";
+  annotation.textContent = "Bearing";
+  annotation.style.cssText = "padding:4px 7px;background:#f8fafc;color:#0f172a;font:12px system-ui,sans-serif;border-radius:4px";
+  viewer.append(annotation);
+
+  const ready = once(viewer, "scena-viewer-ready");
+  document.body.append(viewer);
+  const readyDetail = await ready;
+  await nextFrame();
+
+  const root = viewer.shadowRoot;
+  const canvas = root.querySelector("canvas");
+  const progress = root.querySelector("[part=progress]");
+  const progressBar = root.querySelector("[part=progress-bar]");
+  const progressRendered = once(viewer, "scena-viewer-progress-rendered");
+  viewer.dispatchEvent(new CustomEvent("scena-viewer-progress", {
+    bubbles: true,
+    detail: { phase: "fetching", value: 0.42, ariaText: "Fetching model" },
+  }));
+  const progressDetail = await progressRendered;
+
+  const variantsReady = once(viewer, "scena-viewer-variants-ready");
+  viewer.setMaterialVariants([
+    { name: "raw", label: "Raw metal" },
+    { name: "painted", label: "Painted" },
+  ], "raw");
+  const variantReadyDetail = await variantsReady;
+  const variantChange = once(viewer, "scena-viewer-variant-change");
+  const variantPicker = root.querySelector("[part=variant-picker]");
+  variantPicker.value = "painted";
+  variantPicker.dispatchEvent(new Event("change", { bubbles: true }));
+  const variantChangeDetail = await variantChange;
+
+  const annotationRequest = once(viewer, "scena-viewer-annotations-request");
+  viewer.requestAnnotationProjections();
+  const annotationRequestDetail = await annotationRequest;
+  const annotationsRendered = once(viewer, "scena-viewer-annotations-rendered");
+  viewer.setAnnotationProjections([{ id: "bearing-label", x: 144, y: 72, visible: true }]);
+  const annotationsRenderedDetail = await annotationsRendered;
+
+  const inspectorRendered = once(viewer, "scena-viewer-inspector-rendered");
+  viewer.setInspectorSnapshot({
+    overlay: "Diagnostics",
+    diagnostics: [{ severity: "warning", code: "FrameBounds", message: "sample warning" }],
+    stats: { drawCalls: 2, triangles: 12, targetWidth: 360, targetHeight: 240 },
+  });
+  const inspectorDetail = await inspectorRendered;
+
+  const keyboard = once(viewer, "scena-viewer-key-control");
+  viewer.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowLeft" }));
+  const keyboardDetail = await keyboard;
+  const dropDetail = await dispatchDrop(viewer);
+  await nextFrame();
+
+  const checks = {
+    defined,
+    host_role: viewer.getAttribute("role"),
+    host_label: viewer.getAttribute("aria-label"),
+    host_tabindex: viewer.getAttribute("tabindex"),
+    host_roledescription: viewer.getAttribute("aria-roledescription"),
+    canvas_label: canvas.getAttribute("aria-label"),
+    canvas_touch_action: getComputedStyle(canvas).touchAction,
+    ready_src: readyDetail.src,
+    progress_phase: progressDetail.phase,
+    progress_value_now: progress.getAttribute("aria-valuenow"),
+    progress_bar_transform: progressBar.style.transform,
+    variant_names: variantReadyDetail.names,
+    variant_change: variantChangeDetail.name,
+    annotation_count: annotationRequestDetail.anchors.length,
+    annotation_visible: annotationsRenderedDetail.visible,
+    annotation_transform: getComputedStyle(annotation).transform,
+    inspector_overlay: inspectorDetail.overlay,
+    inspector_warnings: inspectorDetail.warnings,
+    keyboard_action: keyboardDetail.action,
+    drop_accepted_names: dropDetail.accepted.names,
+    drop_rejected_names: dropDetail.rejected.names,
+    drop_error_message: dropDetail.rejected.message,
+  };
+
+  const passed =
+    checks.host_role === "img" &&
+    checks.host_label === "3D model viewer" &&
+    checks.host_tabindex === "0" &&
+    checks.host_roledescription === "interactive 3D model" &&
+    checks.canvas_label === "scena 3D viewer canvas" &&
+    checks.canvas_touch_action === "none" &&
+    checks.ready_src.endsWith("non_ndc_camera_scene.gltf") &&
+    checks.progress_phase === "fetching" &&
+    checks.progress_value_now === "42" &&
+    checks.progress_bar_transform === "scaleX(0.42)" &&
+    Array.isArray(checks.variant_names) &&
+    checks.variant_names.includes("raw") &&
+    checks.variant_names.includes("painted") &&
+    checks.variant_change === "painted" &&
+    checks.annotation_count === 1 &&
+    checks.annotation_visible === 1 &&
+    checks.annotation_transform !== "none" &&
+    checks.inspector_overlay === "Diagnostics" &&
+    checks.inspector_warnings === 1 &&
+    checks.keyboard_action === "orbit-left" &&
+    checks.drop_accepted_names.includes("accepted-machine.glb") &&
+    checks.drop_rejected_names.includes("notes.txt") &&
+    checks.drop_error_message.includes("notes.txt");
+
+  return {
+    schema: "scena.scena_viewer_element_browser_proof.v1",
+    status: passed ? "passed" : "failed",
+    proof_class: "browser-demo",
+    visual_proof: "browser-demo",
+    screenshot_selector: "scena-viewer[data-proof=\"custom-element\"]",
+    checks,
+  };
+};
 
 function createCanvas(backend, workflow = "triangle") {
   const canvas = document.createElement("canvas");

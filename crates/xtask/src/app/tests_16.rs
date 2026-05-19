@@ -5,7 +5,7 @@ pub(crate) fn write_scena_viewer_element_easy_scene_fixture(fixture_root: &Path)
     fs::write(
         fixture_root.join("Cargo.toml"),
         format!(
-            "{}\nviewer-element = []",
+            "{}\nviewer-element = []\nbrowser-probe = [\"viewer-element\"]",
             fs::read_to_string(fixture_root.join("Cargo.toml")).expect("manifest fixture")
         ),
     )
@@ -45,9 +45,20 @@ pub(crate) fn write_scena_viewer_element_easy_scene_fixture(fixture_root: &Path)
         "scena_viewer_attributes_parse_model_viewer_style_surface scena_viewer_attributes_default_to_safe_drop_in_viewer_values scena_viewer_progress_maps_asset_events_to_accessible_details scena_viewer_drop_decision_accepts_gltf_and_reports_rejections scena_viewer_variant_selection_tracks_available_and_active_names scena_viewer_accessibility_defaults_define_mobile_and_keyboard_surface scena_viewer_inspector_snapshot_summarizes_diagnostics_and_render_state scena_viewer_annotation_anchor_parses_dataset_position_normal_and_surface camera-controls tone-mapping",
     )
     .expect("viewer element test fixture");
+    fs::create_dir_all(fixture_root.join("tests/browser")).expect("viewer browser fixture dir");
+    fs::write(
+        fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe.js"),
+        "assertScenaViewerElementProof runScenaViewerElementProof scena-viewer-element-browser-proof.png SCENA_BROWSER_VIEWER_ELEMENT_ONLY scena.scena_viewer_element_browser_proof.v1",
+    )
+    .expect("viewer element browser runner fixture");
+    fs::write(
+        fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe_page.js"),
+        "defineScenaViewer scenaViewerElementProbe scena.scena_viewer_element_browser_proof.v1 scena-viewer-progress-rendered scena-viewer-file-drop scena-viewer-drop-error scena-viewer-variant-change scena-viewer-annotations-rendered scena-viewer-inspector-rendered scena-viewer-key-control",
+    )
+    .expect("viewer element browser page fixture");
     fs::write(
         fixture_root.join("docs/browser.md"),
-        "<scena-viewer defineScenaViewer viewer-element shadow DOM canvas progressbar scena-viewer-progress drag-and-drop scena-viewer-file-drop scena-viewer-drop-error material variant picker scena-viewer-variant-change mobile accessibility keyboard scena-viewer-key-control inspector/dev overlay setInspectorSnapshot scena-viewer-inspector-rendered annotation overlay data-position scena-viewer-annotations-request scena-viewer-annotations-rendered",
+        "<scena-viewer defineScenaViewer viewer-element shadow DOM canvas progressbar scena-viewer-progress drag-and-drop scena-viewer-file-drop scena-viewer-drop-error material variant picker scena-viewer-variant-change mobile accessibility keyboard scena-viewer-key-control inspector/dev overlay setInspectorSnapshot scena-viewer-inspector-rendered annotation overlay data-position scena-viewer-annotations-request scena-viewer-annotations-rendered SCENA_BROWSER_VIEWER_ELEMENT_ONLY=1 scena-viewer-element-browser-proof.png",
     )
     .expect("browser docs fixture");
     let checklist_path =
@@ -55,7 +66,7 @@ pub(crate) fn write_scena_viewer_element_easy_scene_fixture(fixture_root: &Path)
     let mut checklist =
         fs::read_to_string(&checklist_path).expect("next release checklist fixture");
     checklist.push_str(
-        " custom-element\nfoundation **[shipped]** src/viewer_element.rs SCENA-VIEWER-ELEMENT ScenaViewerProgress scena-viewer-progress-rendered ScenaViewerDropDecision scena-viewer-file-drop ScenaViewerVariantSelection scena-viewer-variant-change ScenaViewerAccessibilityDefaults scena-viewer-key-control ScenaViewerInspectorSnapshot scena-viewer-inspector-rendered ScenaViewerAnnotationAnchor scena-viewer-annotations-rendered Full\n  asset loading/rendering parity remains open under bet 1.1",
+        " custom-element\nfoundation and browser UI proof **[shipped]** src/viewer_element.rs SCENA-VIEWER-ELEMENT ScenaViewerProgress scena-viewer-progress-rendered ScenaViewerDropDecision scena-viewer-file-drop ScenaViewerVariantSelection scena-viewer-variant-change ScenaViewerAccessibilityDefaults scena-viewer-key-control ScenaViewerInspectorSnapshot scena-viewer-inspector-rendered ScenaViewerAnnotationAnchor scena-viewer-annotations-rendered scena.scena_viewer_element_browser_proof.v1 scena-viewer-element-browser-proof.png Full\n  asset loading/rendering parity remains open under bet 1.1",
     );
     fs::write(checklist_path, checklist).expect("next release checklist viewer element fixture");
 }

@@ -6,6 +6,11 @@ All notable user-facing changes are recorded here.
 
 ### Added
 
+- Added browser proof for `<scena-viewer>` custom-element surfaces in the M6
+  Playwright probe, covering progress UI, drag/drop events, material variants,
+  annotation projection, inspector overlay, keyboard events, and mobile/a11y
+  DOM defaults.
+
 - Added connector magnet preview APIs for editor-style drag-to-assemble UIs:
   `Scene::preview_connector_magnet`, `ConnectionMagnetPreview`, and
   `ConnectionMagnetVisualCue`.
