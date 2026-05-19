@@ -695,15 +695,22 @@ viewer.capture_gif("turntable.gif", Duration::from_secs(4))?;   // stretch
 
 ### 4.7 Asset hot-reload during dev
 
-Status: **[gap]**
-Owner: `src/assets.rs` behind `hot-reload` feature on native; WASM
-mechanism separate. Use `notify-debouncer-full`, not raw `notify`, so a
-single editor save becomes one reload decision instead of several raw
-filesystem events.
-Proof: native integration test reloads a retained asset after file change;
-browser/WASM path is a separate explicit contract, not a hidden fetch in
-`render()`.
-Visual proof: animated-proof (recording shows edit → save → render reflects the change without page reload)
+Status: **[shipped]** — native `hot-reload` feature adds
+`Assets::watch_scene_for_hot_reload`, backed by
+`notify-debouncer-full`, so a save drains as a debounced asset-path
+reload decision. WASM mechanism remains a separate explicit contract.
+Owner: `src/assets/hot_reload.rs`
+Proof: `tests/round_d_asset_hot_reload.rs` writes a retained glTF asset
+to disk, starts a debounced watcher, edits the asset, drains exactly one
+changed `AssetPath`, reloads through `Assets::reload_scene`, replaces the
+existing scene import, prepares, and rerenders. `xtask doctor --full`
+rule `ASSET-HOT-RELOAD` pins the feature, dependency, API, test, docs,
+and proof artifact. Browser/WASM remains separate; this does not hide
+fetch/reload/prepare inside `render()`.
+Visual proof: animated-proof via
+`target/gate-artifacts/asset-hot-reload/asset-hot-reload-animated-proof.ppm`;
+the generated before/after strip shows the watched glTF color edit
+rendering without rebuilding the scene by hand.
 
 ### 4.8 Drag-and-drop in the WASM viewer
 
@@ -878,7 +885,7 @@ the rounds, not after — they're the strategic arc.
 13. - [x] `OrbitControls` bounds-relative zoom (§4.2)
 14. - [x] `Viewer::on_click` / `on_hover` callbacks (§4.5)
 15. - [x] `Viewer::capture_png` (§4.6)
-16. - [ ] Asset hot-reload (§4.7)
+16. - [x] Asset hot-reload (§4.7)
 17. - [ ] State-via-URL (§4.9)
 
 ### Strategic arc (parallel with rounds)
@@ -1045,6 +1052,18 @@ Viewer PNG capture implementation pass (2026-05-19):
   `tests/round_d_viewer_capture_png.rs`, generated reference image
   `viewer-capture-png-reference.png`, and doctor rule
   `VIEWER-CAPTURE-PNG`.
+
+Native hot-reload implementation pass (2026-05-19):
+
+- Landed the native `hot-reload` feature with
+  `Assets::watch_scene_for_hot_reload`, `AssetHotReloadWatcher`, and
+  `AssetHotReloadError`. The watcher uses `notify-debouncer-full` rather
+  than raw `notify`, drains debounced changed `AssetPath`s, and leaves
+  `reload_scene`, `Scene::replace_import`, `prepare`, and `render` as
+  explicit host operations. Proof is pinned by
+  `tests/round_d_asset_hot_reload.rs`, generated before/after artifact
+  `asset-hot-reload-animated-proof.ppm`, and doctor rule
+  `ASSET-HOT-RELOAD`.
 - Swept first-path docs, examples, and demo setup away from avoidable
   `PerspectiveCamera::default().with_aspect(...)` and raw color literals.
 - Added generated docs-image proof artifacts for the color swatch panel

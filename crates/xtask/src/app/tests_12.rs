@@ -121,7 +121,7 @@ pub(crate) fn easy_scene_setup_contracts_reject_round_a_raw_color_literals_in_fi
     );
 }
 
-const VALID_GUIDE: &str = "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()?\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```";
+const VALID_GUIDE: &str = "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded)\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```";
 
 fn write_easy_scene_fixture(
     fixture_root: &Path,
@@ -136,6 +136,7 @@ fn write_easy_scene_fixture(
         "docs/guides",
         "docs/release-notes",
         "src",
+        "src/assets",
         "src/viewer",
         "src/material",
         "src/render",
@@ -147,6 +148,11 @@ fn write_easy_scene_fixture(
         fs::create_dir_all(fixture_root.join(dir)).expect("fixture dir");
     }
     fs::write(fixture_root.join("docs/guides/easy-scene-setup.md"), guide).expect("guide fixture");
+    fs::write(
+        fixture_root.join("Cargo.toml"),
+        "notify-debouncer-full = { version = \"0.7.0\", optional = true }\nhot-reload = [\"dep:notify-debouncer-full\"]",
+    )
+    .expect("manifest fixture");
     fs::write(
         fixture_root.join("docs/guides/migrating-from-threejs.md"),
         "new THREE.Box3 controls.target.copy OrbitControls::from_framing spherical.theta spherical.phi azimuth_elevation",
@@ -178,6 +184,16 @@ fn write_easy_scene_fixture(
         "pub fn cinematic() {} pub fn snappy() {} pub fn presentation() {} pub fn turntable() {} pub fn advance() {} pub const fn auto_rotate_rpm() {} pub fn auto_rotate_radians_per_second() {} pub fn zoom_limits_bounds_relative() {} pub fn with_distance_limits() {} pub const fn min_distance() {} pub const fn max_distance() {} fn clamp_distance() {}",
     )
     .expect("controls fixture");
+    fs::write(
+        fixture_root.join("src/assets.rs"),
+        "mod hot_reload; pub use hot_reload::{AssetHotReloadError, AssetHotReloadWatcher};",
+    )
+    .expect("assets fixture");
+    fs::write(
+        fixture_root.join("src/assets/hot_reload.rs"),
+        "use notify_debouncer_full::{new_debouncer, DebounceEventResult}; use notify_debouncer_full::notify::RecursiveMode; pub struct AssetHotReloadWatcher; pub enum AssetHotReloadError {} fn watch_scene_for_hot_reload() { new_debouncer; RecursiveMode::NonRecursive; } fn drain_changed_scenes() {}",
+    )
+    .expect("asset hot reload fixture");
     fs::write(
         fixture_root.join("src/viewer.rs"),
         "mod capture; mod interaction; pub use capture::ViewerCaptureError; click_callback: Option<ViewerPickCallback> hover_callback: Option<ViewerPickCallback>",
@@ -323,7 +339,16 @@ fn write_easy_scene_fixture(
         "viewer_capture_png_bytes_decode_to_current_frame viewer_capture_png_writes_reference_artifact viewer-capture-png-reference.png",
     )
     .expect("viewer PNG capture test fixture");
-    fs::write(fixture_root.join("src/lib.rs"), "ViewerCaptureError").expect("lib fixture");
+    fs::write(
+        fixture_root.join("tests/round_d_asset_hot_reload.rs"),
+        "asset_hot_reload_watcher_reports_debounced_file_change_and_reload_updates_retained_asset asset-hot-reload-animated-proof.ppm reload_scene(&first) replace_import(&import, &reloaded)",
+    )
+    .expect("asset hot reload test fixture");
+    fs::write(
+        fixture_root.join("src/lib.rs"),
+        "ViewerCaptureError AssetHotReloadError AssetHotReloadWatcher",
+    )
+    .expect("lib fixture");
     fs::write(fixture_root.join("src/geometry.rs"), "").expect("geometry fixture");
     fs::write(fixture_root.join("demo/index.html"), diagnostics_html).expect("demo html fixture");
     fs::write(

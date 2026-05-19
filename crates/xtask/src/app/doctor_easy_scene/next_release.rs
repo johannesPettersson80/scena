@@ -489,3 +489,74 @@ pub(super) fn check_viewer_capture_png(root: &Path, findings: &mut Vec<Finding>)
         ],
     );
 }
+
+pub(super) fn check_asset_hot_reload(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ASSET-HOT-RELOAD",
+        "Cargo.toml",
+        &[
+            "notify-debouncer-full",
+            "optional = true",
+            "hot-reload = [\"dep:notify-debouncer-full\"]",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSET-HOT-RELOAD",
+        "src/assets.rs",
+        &[
+            "mod hot_reload;",
+            "AssetHotReloadError",
+            "AssetHotReloadWatcher",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSET-HOT-RELOAD",
+        "src/assets/hot_reload.rs",
+        &[
+            "new_debouncer",
+            "DebounceEventResult",
+            "RecursiveMode::NonRecursive",
+            "pub struct AssetHotReloadWatcher",
+            "pub enum AssetHotReloadError",
+            "watch_scene_for_hot_reload",
+            "drain_changed_scenes",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSET-HOT-RELOAD",
+        "src/lib.rs",
+        &["AssetHotReloadError", "AssetHotReloadWatcher"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSET-HOT-RELOAD",
+        "tests/round_d_asset_hot_reload.rs",
+        &[
+            "asset_hot_reload_watcher_reports_debounced_file_change_and_reload_updates_retained_asset",
+            "asset-hot-reload-animated-proof.ppm",
+            "reload_scene(&first)",
+            "replace_import(&import, &reloaded)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSET-HOT-RELOAD",
+        "docs/guides/easy-scene-setup.md",
+        &[
+            "watch_scene_for_hot_reload",
+            "drain_changed_scenes",
+            "reload_scene(&scene_asset)",
+            "replace_import(&import, &reloaded)",
+        ],
+    );
+}

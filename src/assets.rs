@@ -16,6 +16,8 @@ mod environment_projection;
 mod fetch;
 mod gc;
 mod gltf;
+#[cfg(all(feature = "hot-reload", not(target_arch = "wasm32")))]
+mod hot_reload;
 mod load;
 #[cfg(feature = "obj")]
 mod obj;
@@ -35,6 +37,8 @@ pub use gltf::{
     GltfDecoderPolicy, GltfExtensionDiagnostic, GltfExtensionStatus, MaterialVariantBinding,
     SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetLight, SceneAssetMesh, SceneAssetNode,
 };
+#[cfg(all(feature = "hot-reload", not(target_arch = "wasm32")))]
+pub use hot_reload::{AssetHotReloadError, AssetHotReloadWatcher};
 pub use load::{
     AssetLoadControl, AssetLoadOptions, AssetLoadProgress, AssetLoadReport, AssetLoadWarning,
 };

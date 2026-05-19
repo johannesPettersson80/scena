@@ -216,6 +216,31 @@ viewer.capture_png("frame.png")?;
 let png = viewer.capture_png_bytes()?;
 ```
 
+## Native asset hot reload
+
+On native targets, enable the `hot-reload` feature and retain source bytes for
+assets that should reload during development. The watcher emits debounced asset
+paths; the host still reloads, replaces imports, prepares, and renders
+explicitly.
+
+```rust
+use std::time::Duration;
+
+assets.set_retain_policy(RetainPolicy::Always);
+let scene_asset = assets.load_scene("machine.glb").await?;
+let mut import = scene.instantiate(&scene_asset)?;
+let mut watcher =
+    assets.watch_scene_for_hot_reload(&scene_asset, Duration::from_millis(250))?;
+
+for path in watcher.drain_changed_scenes()? {
+    if path.as_str() == scene_asset.path().as_str() {
+        let reloaded = assets.reload_scene(&scene_asset).await?;
+        import = scene.replace_import(&import, &reloaded)?;
+        renderer.prepare_with_assets(&mut scene, &assets)?;
+    }
+}
+```
+
 ## Connector mating
 
 Authored connectors let two imported assets find each other without application

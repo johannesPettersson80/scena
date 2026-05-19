@@ -38,6 +38,8 @@ pub use assets::{
     TextureFilter, TextureHandle, TextureSamplerDesc, TextureSourceFormat, TextureWrap,
     WasmEnvironmentDelivery,
 };
+#[cfg(all(feature = "hot-reload", not(target_arch = "wasm32")))]
+pub use assets::{AssetHotReloadError, AssetHotReloadWatcher};
 pub use controls::{
     OrbitControlAction, OrbitControls, PointerButton, PointerEvent, PointerEventKind, TouchEvent,
     TouchEventKind,
