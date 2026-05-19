@@ -5,9 +5,11 @@
 //! element registration is only exported for `wasm32` with the
 //! `viewer-element` feature.
 
+mod annotations;
 mod inspector;
 mod model;
 
+pub use annotations::{ScenaViewerAnnotationAnchor, ScenaViewerAnnotationError};
 pub use inspector::{ScenaViewerInspectorDiagnostic, ScenaViewerInspectorSnapshot};
 pub use model::{
     ScenaViewerAccessibilityDefaults, ScenaViewerAttributes, ScenaViewerDropDecision,
@@ -41,11 +43,16 @@ export function defineScenaViewerElement(tagName) {
       super();
       const root = this.attachShadow({ mode: "open" });
       const style = document.createElement("style");
-      style.textContent = ":host{display:block;min-width:160px;min-height:120px;contain:content;position:relative}:host([hidden]){display:none}canvas{display:block;width:100%;height:100%;touch-action:none;background:transparent}[part=variant-picker]{position:absolute;right:12px;top:12px;max-width:min(220px,calc(100% - 24px));font:13px/1.3 system-ui,sans-serif}[part=variant-picker][hidden]{display:none}[part=progress]{position:absolute;left:12px;right:12px;bottom:12px;display:grid;gap:6px;color:#f8fafc;font:12px/1.4 system-ui,sans-serif;text-shadow:0 1px 2px #0f172a}[part=progress][hidden]{display:none}[part=progress]::before{content:\"\";display:block;height:4px;border-radius:999px;background:rgba(15,23,42,.52)}[part=progress-bar]{height:4px;margin-top:-10px;border-radius:999px;background:#60a5fa;transform-origin:left center;transform:scaleX(0)}[part=progress-status]{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}[part=inspector]{position:absolute;left:12px;top:12px;max-width:min(320px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;padding:10px;border:1px solid rgba(148,163,184,.55);background:rgba(15,23,42,.86);color:#e2e8f0;font:12px/1.4 system-ui,sans-serif}[part=inspector][hidden]{display:none}[part=inspector-status]{display:block;font-weight:600;margin-bottom:6px}[part=inspector-list]{margin:0;padding-left:16px}";
+      style.textContent = ":host{display:block;min-width:160px;min-height:120px;contain:content;position:relative}:host([hidden]){display:none}canvas{display:block;width:100%;height:100%;touch-action:none;background:transparent}[part=annotations]{position:absolute;inset:0;overflow:hidden;pointer-events:none}::slotted([slot=annotation]){position:absolute;left:0;top:0;transform:translate(var(--scena-annotation-x,-9999px),var(--scena-annotation-y,-9999px));pointer-events:auto}::slotted([slot=annotation][data-scena-hidden]){display:none}[part=variant-picker]{position:absolute;right:12px;top:12px;max-width:min(220px,calc(100% - 24px));font:13px/1.3 system-ui,sans-serif}[part=variant-picker][hidden]{display:none}[part=progress]{position:absolute;left:12px;right:12px;bottom:12px;display:grid;gap:6px;color:#f8fafc;font:12px/1.4 system-ui,sans-serif;text-shadow:0 1px 2px #0f172a}[part=progress][hidden]{display:none}[part=progress]::before{content:\"\";display:block;height:4px;border-radius:999px;background:rgba(15,23,42,.52)}[part=progress-bar]{height:4px;margin-top:-10px;border-radius:999px;background:#60a5fa;transform-origin:left center;transform:scaleX(0)}[part=progress-status]{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}[part=inspector]{position:absolute;left:12px;top:12px;max-width:min(320px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;padding:10px;border:1px solid rgba(148,163,184,.55);background:rgba(15,23,42,.86);color:#e2e8f0;font:12px/1.4 system-ui,sans-serif}[part=inspector][hidden]{display:none}[part=inspector-status]{display:block;font-weight:600;margin-bottom:6px}[part=inspector-list]{margin:0;padding-left:16px}";
       const canvas = document.createElement("canvas");
       canvas.part = "canvas";
       canvas.tabIndex = 0;
       canvas.setAttribute("aria-label", "scena 3D viewer canvas");
+      const annotationLayer = document.createElement("div");
+      annotationLayer.part = "annotations";
+      const annotationSlot = document.createElement("slot");
+      annotationSlot.name = "annotation";
+      annotationLayer.append(annotationSlot);
       const variantPicker = document.createElement("select");
       variantPicker.part = "variant-picker";
       variantPicker.hidden = true;
@@ -69,8 +76,10 @@ export function defineScenaViewerElement(tagName) {
       const inspectorList = document.createElement("ul");
       inspectorList.part = "inspector-list";
       inspector.append(inspectorStatus, inspectorList);
-      root.append(style, canvas, variantPicker, progress, inspector);
+      root.append(style, canvas, annotationLayer, variantPicker, progress, inspector);
       this._canvas = canvas;
+      this._annotationSlot = annotationSlot;
+      this._annotationDataAttributes = ["data-position", "data-normal", "data-surface"];
       this._variantPicker = variantPicker;
       this._progress = progress;
       this._progressBar = bar;
@@ -84,6 +93,9 @@ export function defineScenaViewerElement(tagName) {
           bubbles: true,
           detail: { name }
         }));
+      });
+      annotationSlot.addEventListener("slotchange", () => {
+        this.requestAnnotationProjections();
       });
       this.addEventListener("scena-viewer-progress", (event) => {
         this.setLoadProgress(event.detail || {});
@@ -180,6 +192,58 @@ export function defineScenaViewerElement(tagName) {
       }));
     }
 
+    annotationAnchors() {
+      return this._annotationElements()
+        .map((element, index) => {
+          const position = this._parseVector(element.dataset.position);
+          if (!position) {
+            return null;
+          }
+          return {
+            id: this._annotationId(element, index),
+            position,
+            normal: this._parseVector(element.dataset.normal),
+            surface: element.dataset.surface || null
+          };
+        })
+        .filter(Boolean);
+    }
+
+    requestAnnotationProjections() {
+      this.dispatchEvent(new CustomEvent("scena-viewer-annotations-request", {
+        bubbles: true,
+        detail: { anchors: this.annotationAnchors() }
+      }));
+    }
+
+    setAnnotationProjections(projections = []) {
+      const byId = new Map(Array.from(projections || []).map((projection) => [
+        String(projection?.id || ""),
+        projection
+      ]));
+      let visible = 0;
+      const elements = this._annotationElements();
+      elements.forEach((element, index) => {
+        const id = this._annotationId(element, index);
+        const projection = byId.get(id);
+        const x = Number(projection?.x ?? projection?.screenX);
+        const y = Number(projection?.y ?? projection?.screenY);
+        const isVisible = Boolean(projection) && projection.visible !== false && Number.isFinite(x) && Number.isFinite(y);
+        if (isVisible) {
+          visible += 1;
+          element.style.setProperty("--scena-annotation-x", `${x}px`);
+          element.style.setProperty("--scena-annotation-y", `${y}px`);
+          element.removeAttribute("data-scena-hidden");
+        } else {
+          element.setAttribute("data-scena-hidden", "");
+        }
+      });
+      this.dispatchEvent(new CustomEvent("scena-viewer-annotations-rendered", {
+        bubbles: true,
+        detail: { count: elements.length, visible }
+      }));
+    }
+
     setInspectorSnapshot(snapshot = {}) {
       const overlay = String(snapshot.overlay || "None");
       const diagnostics = Array.isArray(snapshot.diagnostics) ? snapshot.diagnostics : [];
@@ -261,6 +325,24 @@ export function defineScenaViewerElement(tagName) {
 
     _isSupportedAssetFile(name) {
       return /\.(glb|gltf)$/i.test(String(name || ""));
+    }
+
+    _annotationElements() {
+      return this._annotationSlot
+        ? this._annotationSlot.assignedElements({ flatten: true }).filter((element) => element.hasAttribute(this._annotationDataAttributes[0]))
+        : [];
+    }
+
+    _annotationId(element, index) {
+      return element.dataset.annotationId || element.id || `annotation-${index}`;
+    }
+
+    _parseVector(value) {
+      if (!value) {
+        return null;
+      }
+      const parts = String(value).replace(/,/g, " ").trim().split(/\s+/).filter(Boolean).map(Number);
+      return parts.length === 3 && parts.every(Number.isFinite) ? parts : null;
     }
 
     _severity(diagnostic) {

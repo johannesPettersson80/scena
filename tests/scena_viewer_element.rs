@@ -1,9 +1,9 @@
 use scena::{
     AssetLoadProgress, AssetPath, DebugOverlay, Diagnostic, DiagnosticCode, DiagnosticSeverity,
-    RendererStats, SCENA_VIEWER_TAG, ScenaViewerAccessibilityDefaults, ScenaViewerAttributes,
-    ScenaViewerDropDecision, ScenaViewerDropKind, ScenaViewerInspectorSnapshot,
-    ScenaViewerKeyboardAction, ScenaViewerProgress, ScenaViewerProgressPhase,
-    ScenaViewerVariantSelection, Tonemapper,
+    RendererStats, SCENA_VIEWER_TAG, ScenaViewerAccessibilityDefaults, ScenaViewerAnnotationAnchor,
+    ScenaViewerAnnotationError, ScenaViewerAttributes, ScenaViewerDropDecision,
+    ScenaViewerDropKind, ScenaViewerInspectorSnapshot, ScenaViewerKeyboardAction,
+    ScenaViewerProgress, ScenaViewerProgressPhase, ScenaViewerVariantSelection, Tonemapper,
 };
 
 #[test]
@@ -199,5 +199,45 @@ fn scena_viewer_inspector_snapshot_summarizes_diagnostics_and_render_state() {
     assert_eq!(
         snapshot.status_text(),
         "BoundingBoxes overlay; 1 error, 1 warning; 7 draws; 42 triangles at 320x180"
+    );
+}
+
+#[test]
+fn scena_viewer_annotation_anchor_parses_dataset_position_normal_and_surface() {
+    let anchor = ScenaViewerAnnotationAnchor::from_attributes(
+        "fallback-label",
+        [
+            ("id", "pump-label"),
+            ("data-position", "1.0, 2.5, -3.0"),
+            ("data-normal", "0 1 0"),
+            ("data-surface", "pump.housing"),
+        ],
+    )
+    .expect("annotation anchor parses");
+
+    assert_eq!(anchor.id(), "pump-label");
+    assert_eq!(anchor.position(), [1.0, 2.5, -3.0]);
+    assert_eq!(anchor.normal(), Some([0.0, 1.0, 0.0]));
+    assert_eq!(anchor.surface(), Some("pump.housing"));
+    assert!(anchor.is_surface_bound());
+
+    let missing = ScenaViewerAnnotationAnchor::from_attributes(
+        "missing-position",
+        [("data-normal", "0 1 0")],
+    )
+    .expect_err("position is required");
+    assert_eq!(missing, ScenaViewerAnnotationError::MissingPosition);
+
+    let invalid = ScenaViewerAnnotationAnchor::from_attributes(
+        "bad-position",
+        [("data-position", "1 2 nope")],
+    )
+    .expect_err("invalid vector is structured");
+    assert_eq!(
+        invalid,
+        ScenaViewerAnnotationError::InvalidVector {
+            field: "data-position",
+            value: "1 2 nope".to_string(),
+        }
     );
 }

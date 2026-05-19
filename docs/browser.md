@@ -81,6 +81,13 @@ The inspector/dev overlay is host-fed and renderer-neutral. Call
 overlay with the active debug overlay, diagnostic severities, render counters,
 and the `scena-viewer-inspector-rendered` event for browser tests.
 
+The annotation overlay uses slotted HTML with `slot="annotation"` and
+`data-position`, optional `data-normal`, and optional `data-surface`
+attributes. The element emits `scena-viewer-annotations-request` with parsed
+anchors and accepts `setAnnotationProjections([{ id, x, y, visible }])`,
+then emits `scena-viewer-annotations-rendered` after applying the screen-space
+positions.
+
 ## Browser responsibilities
 
 The browser host owns:

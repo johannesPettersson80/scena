@@ -837,11 +837,15 @@ specific competitor primitive.
   `picking_selection_hover` artifact; custom-element animated browser
   demo remains follow-up polish.
 - **HTML/CSS annotation overlay anchored to 3D points.** Status:
-  **[gap]**. Owner: `<scena-viewer>` (bet 1.1). `data-position` /
-  `data-normal` / `data-surface` attribute pattern; the `data-surface`
-  trick (label sticks to a deforming surface) is the killer feature.
-  Proof: Playwright test showing labels track projected 3D points across
-  camera movement.
+  **[proof-gap]** — `<scena-viewer>` now exposes the slotted annotation
+  surface and host projection contract. Owner: `<scena-viewer>` (bet
+  1.1). `ScenaViewerAnnotationAnchor` parses `data-position`,
+  `data-normal`, and `data-surface`; the element emits
+  `scena-viewer-annotations-request` with parsed anchors and accepts
+  `setAnnotationProjections([{ id, x, y, visible }])` before emitting
+  `scena-viewer-annotations-rendered`. Remaining proof: Playwright test
+  showing labels track projected 3D points across camera movement and
+  surface-bound updates.
   Visual proof: browser-demo + animated-proof (labels visible in the demo; recording shows them tracking through camera orbit and animation)
 - **Variant switching for `KHR_materials_variants`.** Status:
   **[proof-gap]** overall; Viewer primitive, reference/docs-image proof,
@@ -1416,6 +1420,20 @@ Picking/outline/hover reconciliation pass (2026-05-19):
 - Reclassified inspector/dev overlay from ergonomic gap to proof gap:
   overlay data plumbing and source enforcement are shipped; live browser
   snapshot proof remains open.
+
+`<scena-viewer>` annotation overlay pass (2026-05-19):
+
+- Added `ScenaViewerAnnotationAnchor` and
+  `ScenaViewerAnnotationError` to parse `data-position`, `data-normal`,
+  and `data-surface` from annotation elements with structured errors.
+- Extended the custom element with a slotted annotation layer,
+  `annotationAnchors()`, `requestAnnotationProjections()`,
+  `setAnnotationProjections(...)`, and the
+  `scena-viewer-annotations-request` /
+  `scena-viewer-annotations-rendered` events.
+- Reclassified the annotation overlay from gap to proof gap: the HTML
+  surface and host projection contract are shipped and source-enforced;
+  animated browser proof remains open.
 
 Asset-validation doctor implementation pass (2026-05-19):
 
