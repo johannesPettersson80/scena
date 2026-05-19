@@ -106,8 +106,9 @@ pub use viewer_element::define_scena_viewer;
 pub use viewer_element::{
     SCENA_VIEWER_TAG, ScenaViewerAccessibilityDefaults, ScenaViewerAttributes,
     ScenaViewerDropDecision, ScenaViewerDropKind, ScenaViewerDroppedFile,
-    ScenaViewerKeyboardAction, ScenaViewerProgress, ScenaViewerProgressPhase,
-    ScenaViewerVariantOption, ScenaViewerVariantSelection,
+    ScenaViewerInspectorDiagnostic, ScenaViewerInspectorSnapshot, ScenaViewerKeyboardAction,
+    ScenaViewerProgress, ScenaViewerProgressPhase, ScenaViewerVariantOption,
+    ScenaViewerVariantSelection,
 };
 
 /// Crate-level result type for APIs that can return any structured `scena` error.

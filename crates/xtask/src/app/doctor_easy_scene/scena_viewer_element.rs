@@ -21,6 +21,8 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
             "ScenaViewerDropDecision",
             "ScenaViewerDropKind",
             "ScenaViewerDroppedFile",
+            "ScenaViewerInspectorDiagnostic",
+            "ScenaViewerInspectorSnapshot",
             "ScenaViewerKeyboardAction",
             "ScenaViewerProgress",
             "ScenaViewerProgressPhase",
@@ -36,7 +38,9 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
         "src/viewer_element.rs",
         &[
             "mod model;",
+            "mod inspector;",
             "pub use model::",
+            "pub use inspector::",
             "pub const SCENA_VIEWER_TAG",
             "defineScenaViewerElement",
             "customElements.define",
@@ -63,6 +67,13 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
             "_handleKeydown",
             "_keyboardAction",
             "scena-viewer-key-control",
+            "setInspectorSnapshot",
+            "setInspectorDiagnostics",
+            "clearInspectorSnapshot",
+            "inspector.part = \"inspector\"",
+            "inspector-status",
+            "inspector-list",
+            "scena-viewer-inspector-rendered",
         ],
     );
     require_contains(
@@ -100,6 +111,22 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
         root,
         findings,
         "SCENA-VIEWER-ELEMENT",
+        "src/viewer_element/inspector.rs",
+        &[
+            "pub struct ScenaViewerInspectorSnapshot",
+            "from_renderer_state",
+            "status_text",
+            "warning_count",
+            "error_count",
+            "pub struct ScenaViewerInspectorDiagnostic",
+            "DiagnosticSeverity",
+            "RendererStats",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "SCENA-VIEWER-ELEMENT",
         "tests/scena_viewer_element.rs",
         &[
             "scena_viewer_attributes_parse_model_viewer_style_surface",
@@ -108,6 +135,7 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
             "scena_viewer_drop_decision_accepts_gltf_and_reports_rejections",
             "scena_viewer_variant_selection_tracks_available_and_active_names",
             "scena_viewer_accessibility_defaults_define_mobile_and_keyboard_surface",
+            "scena_viewer_inspector_snapshot_summarizes_diagnostics_and_render_state",
             "camera-controls",
             "tone-mapping",
         ],
@@ -134,6 +162,9 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
             "accessibility",
             "keyboard",
             "scena-viewer-key-control",
+            "inspector/dev overlay",
+            "setInspectorSnapshot",
+            "scena-viewer-inspector-rendered",
         ],
     );
     require_contains(
@@ -153,6 +184,8 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
             "scena-viewer-variant-change",
             "ScenaViewerAccessibilityDefaults",
             "scena-viewer-key-control",
+            "ScenaViewerInspectorSnapshot",
+            "scena-viewer-inspector-rendered",
             "Full\n  asset loading/rendering parity remains open under bet 1.1",
         ],
     );

@@ -885,10 +885,15 @@ specific competitor primitive.
   Remaining proof: Playwright mobile viewport tests for touch/pinch plus
   keyboard/ARIA smoke checks.
   Visual proof: browser-demo + animated-proof (mobile-viewport demo capture; touch-pinch recording)
-- **Inspector / dev overlay.** Status: **[ergonomic-gap]**. Owner:
-  `crates/xtask/` doctor integration + an in-viewer overlay. Doctor is
-  already half of this. Proof: browser overlay snapshot plus doctor JSON
-  fixture feeding the overlay.
+- **Inspector / dev overlay.** Status: **[proof-gap]** —
+  `<scena-viewer>` now exposes a host-fed inspector overlay surface.
+  Owner: `crates/xtask/` doctor integration + `<scena-viewer>`.
+  `ScenaViewerInspectorSnapshot` turns renderer debug overlay,
+  diagnostics, and render stats into a testable snapshot; the element
+  exposes `setInspectorSnapshot(...)`, `setInspectorDiagnostics(...)`,
+  `clearInspectorSnapshot()`, and emits
+  `scena-viewer-inspector-rendered`. Remaining proof: browser overlay
+  snapshot plus a doctor JSON fixture feeding the live overlay.
   Visual proof: browser-demo + reference-image (live overlay in the demo; reference snapshot of the overlay state for CI diff)
 
 ---
@@ -1398,6 +1403,19 @@ Picking/outline/hover reconciliation pass (2026-05-19):
 - Reclassified mobile-first + a11y from gap to proof gap: defaults are
   shipped and source-enforced; mobile viewport and touch/pinch browser
   proof remains open.
+
+`<scena-viewer>` inspector overlay pass (2026-05-19):
+
+- Added `ScenaViewerInspectorSnapshot` and
+  `ScenaViewerInspectorDiagnostic` so renderer debug overlay,
+  diagnostics, and render counters can feed a browser overlay through a
+  typed native-tested surface.
+- Extended the custom element with `setInspectorSnapshot(...)`,
+  `setInspectorDiagnostics(...)`, `clearInspectorSnapshot()`, and
+  `scena-viewer-inspector-rendered` for host-driven browser proof.
+- Reclassified inspector/dev overlay from ergonomic gap to proof gap:
+  overlay data plumbing and source enforcement are shipped; live browser
+  snapshot proof remains open.
 
 Asset-validation doctor implementation pass (2026-05-19):
 

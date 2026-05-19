@@ -1,7 +1,9 @@
 use scena::{
-    AssetLoadProgress, AssetPath, SCENA_VIEWER_TAG, ScenaViewerAccessibilityDefaults,
-    ScenaViewerAttributes, ScenaViewerDropDecision, ScenaViewerDropKind, ScenaViewerKeyboardAction,
-    ScenaViewerProgress, ScenaViewerProgressPhase, ScenaViewerVariantSelection, Tonemapper,
+    AssetLoadProgress, AssetPath, DebugOverlay, Diagnostic, DiagnosticCode, DiagnosticSeverity,
+    RendererStats, SCENA_VIEWER_TAG, ScenaViewerAccessibilityDefaults, ScenaViewerAttributes,
+    ScenaViewerDropDecision, ScenaViewerDropKind, ScenaViewerInspectorSnapshot,
+    ScenaViewerKeyboardAction, ScenaViewerProgress, ScenaViewerProgressPhase,
+    ScenaViewerVariantSelection, Tonemapper,
 };
 
 #[test]
@@ -151,4 +153,51 @@ fn scena_viewer_accessibility_defaults_define_mobile_and_keyboard_surface() {
         Some(ScenaViewerKeyboardAction::ResetView)
     );
     assert_eq!(ScenaViewerKeyboardAction::from_key("Tab"), None);
+}
+
+#[test]
+fn scena_viewer_inspector_snapshot_summarizes_diagnostics_and_render_state() {
+    let diagnostics = [
+        Diagnostic::warning(
+            DiagnosticCode::MissingLightingOrEnvironment,
+            "scene has no visible lighting",
+            "add a default light or environment preset",
+        ),
+        Diagnostic::error(
+            DiagnosticCode::MissingActiveCamera,
+            "scene has no active camera",
+            "call Scene::set_active_camera",
+        ),
+    ];
+    let stats = RendererStats {
+        draw_calls: 7,
+        triangles: 42,
+        target_width: 320,
+        target_height: 180,
+        ..RendererStats::default()
+    };
+
+    let snapshot = ScenaViewerInspectorSnapshot::from_renderer_state(
+        DebugOverlay::BoundingBoxes,
+        &diagnostics,
+        stats,
+    );
+
+    assert_eq!(snapshot.overlay(), DebugOverlay::BoundingBoxes);
+    assert_eq!(snapshot.diagnostics().len(), 2);
+    assert_eq!(
+        snapshot.diagnostics()[0].severity(),
+        DiagnosticSeverity::Warning
+    );
+    assert_eq!(
+        snapshot.diagnostics()[0].code(),
+        "MissingLightingOrEnvironment"
+    );
+    assert_eq!(snapshot.warning_count(), 1);
+    assert_eq!(snapshot.error_count(), 1);
+    assert!(snapshot.has_errors());
+    assert_eq!(
+        snapshot.status_text(),
+        "BoundingBoxes overlay; 1 error, 1 warning; 7 draws; 42 triangles at 320x180"
+    );
 }

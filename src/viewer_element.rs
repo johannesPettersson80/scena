@@ -5,8 +5,10 @@
 //! element registration is only exported for `wasm32` with the
 //! `viewer-element` feature.
 
+mod inspector;
 mod model;
 
+pub use inspector::{ScenaViewerInspectorDiagnostic, ScenaViewerInspectorSnapshot};
 pub use model::{
     ScenaViewerAccessibilityDefaults, ScenaViewerAttributes, ScenaViewerDropDecision,
     ScenaViewerDropKind, ScenaViewerDroppedFile, ScenaViewerKeyboardAction, ScenaViewerProgress,
@@ -39,7 +41,7 @@ export function defineScenaViewerElement(tagName) {
       super();
       const root = this.attachShadow({ mode: "open" });
       const style = document.createElement("style");
-      style.textContent = ":host{display:block;min-width:160px;min-height:120px;contain:content;position:relative}:host([hidden]){display:none}canvas{display:block;width:100%;height:100%;touch-action:none;background:transparent}[part=variant-picker]{position:absolute;right:12px;top:12px;max-width:min(220px,calc(100% - 24px));font:13px/1.3 system-ui,sans-serif}[part=variant-picker][hidden]{display:none}[part=progress]{position:absolute;left:12px;right:12px;bottom:12px;display:grid;gap:6px;color:#f8fafc;font:12px/1.4 system-ui,sans-serif;text-shadow:0 1px 2px #0f172a}[part=progress][hidden]{display:none}[part=progress]::before{content:\"\";display:block;height:4px;border-radius:999px;background:rgba(15,23,42,.52)}[part=progress-bar]{height:4px;margin-top:-10px;border-radius:999px;background:#60a5fa;transform-origin:left center;transform:scaleX(0)}[part=progress-status]{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}";
+      style.textContent = ":host{display:block;min-width:160px;min-height:120px;contain:content;position:relative}:host([hidden]){display:none}canvas{display:block;width:100%;height:100%;touch-action:none;background:transparent}[part=variant-picker]{position:absolute;right:12px;top:12px;max-width:min(220px,calc(100% - 24px));font:13px/1.3 system-ui,sans-serif}[part=variant-picker][hidden]{display:none}[part=progress]{position:absolute;left:12px;right:12px;bottom:12px;display:grid;gap:6px;color:#f8fafc;font:12px/1.4 system-ui,sans-serif;text-shadow:0 1px 2px #0f172a}[part=progress][hidden]{display:none}[part=progress]::before{content:\"\";display:block;height:4px;border-radius:999px;background:rgba(15,23,42,.52)}[part=progress-bar]{height:4px;margin-top:-10px;border-radius:999px;background:#60a5fa;transform-origin:left center;transform:scaleX(0)}[part=progress-status]{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}[part=inspector]{position:absolute;left:12px;top:12px;max-width:min(320px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;padding:10px;border:1px solid rgba(148,163,184,.55);background:rgba(15,23,42,.86);color:#e2e8f0;font:12px/1.4 system-ui,sans-serif}[part=inspector][hidden]{display:none}[part=inspector-status]{display:block;font-weight:600;margin-bottom:6px}[part=inspector-list]{margin:0;padding-left:16px}";
       const canvas = document.createElement("canvas");
       canvas.part = "canvas";
       canvas.tabIndex = 0;
@@ -58,12 +60,24 @@ export function defineScenaViewerElement(tagName) {
       const status = document.createElement("span");
       status.part = "progress-status";
       progress.append(bar, status);
-      root.append(style, canvas, variantPicker, progress);
+      const inspector = document.createElement("section");
+      inspector.part = "inspector";
+      inspector.hidden = true;
+      inspector.setAttribute("aria-live", "polite");
+      const inspectorStatus = document.createElement("strong");
+      inspectorStatus.part = "inspector-status";
+      const inspectorList = document.createElement("ul");
+      inspectorList.part = "inspector-list";
+      inspector.append(inspectorStatus, inspectorList);
+      root.append(style, canvas, variantPicker, progress, inspector);
       this._canvas = canvas;
       this._variantPicker = variantPicker;
       this._progress = progress;
       this._progressBar = bar;
       this._progressStatus = status;
+      this._inspector = inspector;
+      this._inspectorStatus = inspectorStatus;
+      this._inspectorList = inspectorList;
       variantPicker.addEventListener("change", () => {
         const name = variantPicker.value || null;
         this.dispatchEvent(new CustomEvent("scena-viewer-variant-change", {
@@ -166,6 +180,46 @@ export function defineScenaViewerElement(tagName) {
       }));
     }
 
+    setInspectorSnapshot(snapshot = {}) {
+      const overlay = String(snapshot.overlay || "None");
+      const diagnostics = Array.isArray(snapshot.diagnostics) ? snapshot.diagnostics : [];
+      const stats = snapshot.stats || snapshot;
+      const drawCalls = Number(stats.drawCalls ?? stats.draw_calls ?? 0);
+      const triangles = Number(stats.triangles ?? 0);
+      const width = Number(stats.targetWidth ?? stats.target_width ?? 0);
+      const height = Number(stats.targetHeight ?? stats.target_height ?? 0);
+      const errors = diagnostics.filter((diagnostic) => this._severity(diagnostic) === "error").length;
+      const warnings = diagnostics.filter((diagnostic) => this._severity(diagnostic) === "warning").length;
+      const status = String(snapshot.statusText || `${overlay} overlay; ${this._countLabel(errors, "error")}, ${this._countLabel(warnings, "warning")}; ${drawCalls} draws; ${triangles} triangles at ${width}x${height}`);
+      this._inspector.hidden = false;
+      this._inspector.dataset.overlay = overlay;
+      this._inspectorStatus.textContent = status;
+      this._inspectorList.replaceChildren();
+      for (const diagnostic of diagnostics) {
+        const item = document.createElement("li");
+        const code = String(diagnostic.code || "Diagnostic");
+        const message = String(diagnostic.message || "");
+        item.dataset.severity = this._severity(diagnostic);
+        item.textContent = message ? `${code}: ${message}` : code;
+        this._inspectorList.append(item);
+      }
+      this.dispatchEvent(new CustomEvent("scena-viewer-inspector-rendered", {
+        bubbles: true,
+        detail: { overlay, errors, warnings, diagnostics: diagnostics.length, status }
+      }));
+    }
+
+    setInspectorDiagnostics(diagnostics, overlay = "None", stats = {}) {
+      this.setInspectorSnapshot({ overlay, diagnostics, stats });
+    }
+
+    clearInspectorSnapshot() {
+      this._inspector.hidden = true;
+      this._inspectorStatus.textContent = "";
+      this._inspectorList.replaceChildren();
+      delete this._inspector.dataset.overlay;
+    }
+
     _handleDragOver(event) {
       event.preventDefault();
       if (event.dataTransfer) {
@@ -207,6 +261,14 @@ export function defineScenaViewerElement(tagName) {
 
     _isSupportedAssetFile(name) {
       return /\.(glb|gltf)$/i.test(String(name || ""));
+    }
+
+    _severity(diagnostic) {
+      return String(diagnostic?.severity || "").toLowerCase();
+    }
+
+    _countLabel(count, singular) {
+      return count === 1 ? `1 ${singular}` : `${count} ${singular}s`;
     }
 
     _handleKeydown(event) {

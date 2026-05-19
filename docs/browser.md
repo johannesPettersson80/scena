@@ -75,6 +75,12 @@ sets role and ARIA labels when the host has not supplied them, and keyboard
 navigation emits `scena-viewer-key-control` for arrow-key orbit, `+` / `-` zoom,
 and `Escape` / `Home` reset events.
 
+The inspector/dev overlay is host-fed and renderer-neutral. Call
+`setInspectorSnapshot({ overlay, diagnostics, stats })` or
+`setInspectorDiagnostics(diagnostics, overlay, stats)` to render a shadow-DOM
+overlay with the active debug overlay, diagnostic severities, render counters,
+and the `scena-viewer-inspector-rendered` event for browser tests.
+
 ## Browser responsibilities
 
 The browser host owns:
