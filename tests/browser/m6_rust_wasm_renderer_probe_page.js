@@ -239,6 +239,111 @@ window.scenaCameraControlKitProbe = async function scenaCameraControlKitProbe() 
   return result;
 };
 
+function dispatchPointer(target, type, options) {
+  target.dispatchEvent(new PointerEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    isPrimary: options.isPrimary ?? true,
+    pointerId: options.pointerId,
+    pointerType: options.pointerType || "touch",
+    clientX: options.x,
+    clientY: options.y,
+  }));
+}
+
+window.scenaViewerMobileA11yProbe = async function scenaViewerMobileA11yProbe() {
+  await ensureInit();
+  defineScenaViewer();
+  await customElements.whenDefined("scena-viewer");
+  document.body.style.margin = "0";
+
+  const viewer = document.createElement("scena-viewer");
+  viewer.dataset.proof = "mobile-a11y";
+  viewer.setAttribute("src", "/fixtures/gltf/non_ndc_camera_scene.gltf");
+  viewer.setAttribute("camera-controls", "");
+  viewer.style.cssText = "display:block;width:100vw;max-width:100%;height:220px;background:#111827;color:#f8fafc";
+  const ready = once(viewer, "scena-viewer-ready");
+  document.body.append(viewer);
+  await ready;
+  await nextFrame();
+
+  const root = viewer.shadowRoot;
+  const canvas = root.querySelector("canvas");
+
+  const pinch = once(viewer, "scena-viewer-gesture-control");
+  dispatchPointer(viewer, "pointerdown", { pointerId: 1, pointerType: "touch", x: 120, y: 120 });
+  dispatchPointer(viewer, "pointerdown", { pointerId: 2, pointerType: "touch", isPrimary: false, x: 220, y: 120 });
+  dispatchPointer(viewer, "pointermove", { pointerId: 2, pointerType: "touch", isPrimary: false, x: 250, y: 120 });
+  const pinchDetail = await pinch;
+  dispatchPointer(viewer, "pointerup", { pointerId: 1, pointerType: "touch", x: 120, y: 120 });
+  dispatchPointer(viewer, "pointerup", { pointerId: 2, pointerType: "touch", isPrimary: false, x: 250, y: 120 });
+
+  const orbit = once(viewer, "scena-viewer-gesture-control");
+  dispatchPointer(viewer, "pointerdown", { pointerId: 3, pointerType: "touch", x: 120, y: 160 });
+  dispatchPointer(viewer, "pointermove", { pointerId: 3, pointerType: "touch", x: 146, y: 174 });
+  const orbitDetail = await orbit;
+  dispatchPointer(viewer, "pointerup", { pointerId: 3, pointerType: "touch", x: 146, y: 174 });
+
+  const wheel = once(viewer, "scena-viewer-gesture-control");
+  viewer.dispatchEvent(new WheelEvent("wheel", {
+    bubbles: true,
+    cancelable: true,
+    deltaY: -120,
+  }));
+  const wheelDetail = await wheel;
+
+  const keyboard = once(viewer, "scena-viewer-key-control");
+  viewer.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Home" }));
+  const keyboardDetail = await keyboard;
+
+  const rect = viewer.getBoundingClientRect();
+  const checks = {
+    viewport_width: window.innerWidth,
+    viewer_width: Math.round(rect.width),
+    viewer_overflows_x: rect.left < 0 || rect.right > window.innerWidth,
+    host_role: viewer.getAttribute("role"),
+    host_tabindex: viewer.getAttribute("tabindex"),
+    canvas_touch_action: getComputedStyle(canvas).touchAction,
+    pinch_action: pinchDetail.action,
+    pinch_pointers: pinchDetail.pointers,
+    pinch_delta_positive: pinchDetail.deltaDistance > 0,
+    orbit_action: orbitDetail.action,
+    orbit_pointer_type: orbitDetail.pointerType,
+    orbit_delta_x: orbitDetail.deltaX,
+    orbit_delta_y: orbitDetail.deltaY,
+    wheel_action: wheelDetail.action,
+    wheel_delta_y: wheelDetail.deltaY,
+    keyboard_action: keyboardDetail.action,
+  };
+
+  const passed =
+    checks.viewport_width <= 390 &&
+    checks.viewer_width <= checks.viewport_width &&
+    checks.viewer_overflows_x === false &&
+    checks.host_role === "img" &&
+    checks.host_tabindex === "0" &&
+    checks.canvas_touch_action === "none" &&
+    checks.pinch_action === "pinch-zoom" &&
+    checks.pinch_pointers === 2 &&
+    checks.pinch_delta_positive === true &&
+    checks.orbit_action === "orbit" &&
+    checks.orbit_pointer_type === "touch" &&
+    checks.orbit_delta_x === 26 &&
+    checks.orbit_delta_y === 14 &&
+    checks.wheel_action === "wheel-zoom" &&
+    checks.wheel_delta_y === -120 &&
+    checks.keyboard_action === "reset-view";
+
+  return {
+    schema: "scena.scena_viewer_mobile_a11y_browser_proof.v1",
+    status: passed ? "passed" : "failed",
+    proof_class: "browser-demo",
+    visual_proof: "browser-demo",
+    screenshot_selector: "scena-viewer[data-proof=\"mobile-a11y\"]",
+    checks,
+  };
+};
+
 function createCanvas(backend, workflow = "triangle") {
   const canvas = document.createElement("canvas");
   canvas.width = 64;

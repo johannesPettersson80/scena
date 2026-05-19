@@ -13,8 +13,9 @@ pub use annotations::{ScenaViewerAnnotationAnchor, ScenaViewerAnnotationError};
 pub use inspector::{ScenaViewerInspectorDiagnostic, ScenaViewerInspectorSnapshot};
 pub use model::{
     ScenaViewerAccessibilityDefaults, ScenaViewerAttributes, ScenaViewerDropDecision,
-    ScenaViewerDropKind, ScenaViewerDroppedFile, ScenaViewerKeyboardAction, ScenaViewerProgress,
-    ScenaViewerProgressPhase, ScenaViewerVariantOption, ScenaViewerVariantSelection,
+    ScenaViewerDropKind, ScenaViewerDroppedFile, ScenaViewerGestureAction,
+    ScenaViewerKeyboardAction, ScenaViewerProgress, ScenaViewerProgressPhase,
+    ScenaViewerVariantOption, ScenaViewerVariantSelection,
 };
 
 pub const SCENA_VIEWER_TAG: &str = "scena-viewer";
@@ -87,6 +88,8 @@ export function defineScenaViewerElement(tagName) {
       this._inspector = inspector;
       this._inspectorStatus = inspectorStatus;
       this._inspectorList = inspectorList;
+      this._activePointers = new Map();
+      this._lastPinchDistance = null;
       variantPicker.addEventListener("change", () => {
         const name = variantPicker.value || null;
         this.dispatchEvent(new CustomEvent("scena-viewer-variant-change", {
@@ -107,6 +110,11 @@ export function defineScenaViewerElement(tagName) {
       });
       this.addEventListener("drop", (event) => this._handleDrop(event));
       this.addEventListener("keydown", (event) => this._handleKeydown(event));
+      this.addEventListener("pointerdown", (event) => this._handlePointerDown(event));
+      this.addEventListener("pointermove", (event) => this._handlePointerMove(event));
+      this.addEventListener("pointerup", (event) => this._handlePointerEnd(event));
+      this.addEventListener("pointercancel", (event) => this._handlePointerEnd(event));
+      this.addEventListener("wheel", (event) => this._handleWheel(event), { passive: false });
     }
 
     connectedCallback() {
@@ -379,6 +387,88 @@ export function defineScenaViewerElement(tagName) {
         case "Home": return "reset-view";
         default: return null;
       }
+    }
+
+    _handlePointerDown(event) {
+      if (!this._booleanAttribute("camera-controls")) {
+        return;
+      }
+      event.preventDefault();
+      this._activePointers.set(event.pointerId, {
+        x: Number(event.clientX || 0),
+        y: Number(event.clientY || 0),
+        pointerType: event.pointerType || "mouse"
+      });
+      if (this._activePointers.size >= 2) {
+        this._lastPinchDistance = this._pinchDistance();
+      }
+    }
+
+    _handlePointerMove(event) {
+      if (!this._booleanAttribute("camera-controls") || !this._activePointers.has(event.pointerId)) {
+        return;
+      }
+      event.preventDefault();
+      const previous = this._activePointers.get(event.pointerId);
+      const next = {
+        x: Number(event.clientX || 0),
+        y: Number(event.clientY || 0),
+        pointerType: event.pointerType || previous.pointerType || "mouse"
+      };
+      this._activePointers.set(event.pointerId, next);
+      if (this._activePointers.size >= 2) {
+        const distance = this._pinchDistance();
+        const deltaDistance = this._lastPinchDistance == null ? 0 : distance - this._lastPinchDistance;
+        this._lastPinchDistance = distance;
+        this._emitGesture("pinch-zoom", {
+          pointerType: next.pointerType,
+          pointers: this._activePointers.size,
+          deltaDistance
+        });
+        return;
+      }
+      this._emitGesture("orbit", {
+        pointerType: next.pointerType,
+        pointers: 1,
+        deltaX: next.x - previous.x,
+        deltaY: next.y - previous.y
+      });
+    }
+
+    _handlePointerEnd(event) {
+      this._activePointers.delete(event.pointerId);
+      if (this._activePointers.size < 2) {
+        this._lastPinchDistance = null;
+      }
+    }
+
+    _handleWheel(event) {
+      if (!this._booleanAttribute("camera-controls")) {
+        return;
+      }
+      event.preventDefault();
+      this._emitGesture("wheel-zoom", {
+        pointerType: "wheel",
+        pointers: 0,
+        deltaY: Number(event.deltaY || 0)
+      });
+    }
+
+    _pinchDistance() {
+      const pointers = Array.from(this._activePointers.values());
+      if (pointers.length < 2) {
+        return 0;
+      }
+      const dx = pointers[0].x - pointers[1].x;
+      const dy = pointers[0].y - pointers[1].y;
+      return Math.hypot(dx, dy);
+    }
+
+    _emitGesture(action, detail = {}) {
+      this.dispatchEvent(new CustomEvent("scena-viewer-gesture-control", {
+        bubbles: true,
+        detail: { action, ...detail }
+      }));
     }
 
     _booleanAttribute(name) {

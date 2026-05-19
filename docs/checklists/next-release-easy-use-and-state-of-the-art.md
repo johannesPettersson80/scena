@@ -900,16 +900,21 @@ specific competitor primitive.
   loading progress sequence proof **[shipped]**.
   Visual proof: browser-demo proof shipped through
   `target/gate-artifacts/scena-viewer-element-browser-proof.png`.
-- **Mobile-first + a11y defaults.** Status: **[proof-gap]** —
-  `<scena-viewer>` now ships explicit mobile/ARIA/keyboard defaults.
+- **Mobile-first + a11y defaults.** Status: **[shipped]** for
+  mobile/ARIA/keyboard defaults and touch gesture browser proof.
   Owner: `<scena-viewer>` (bet 1.1). `ScenaViewerAccessibilityDefaults`
-  and `ScenaViewerKeyboardAction` define the source contract; the element
-  sets host role/label/tabindex defaults, keeps the canvas touch-safe, and
-  emits `scena-viewer-key-control` for keyboard orbit/zoom/reset events.
+  `ScenaViewerKeyboardAction`, and `ScenaViewerGestureAction` define the
+  source contract; the element sets host role/label/tabindex defaults,
+  keeps the canvas touch-safe, emits `scena-viewer-key-control` for
+  keyboard orbit/zoom/reset events, and emits
+  `scena-viewer-gesture-control` for `orbit`, `pinch-zoom`, and
+  `wheel-zoom` host wiring.
   Browser proof now covers host role/label/tabindex, roledescription,
-  canvas `touch-action: none`, and keyboard event dispatch. Remaining
-  proof: mobile viewport tests for touch/pinch gestures.
-  Visual proof: browser-demo + animated-proof (mobile-viewport demo capture; touch-pinch recording)
+  canvas `touch-action: none`, keyboard event dispatch, mobile viewport
+  overflow behavior, and mobile/a11y gesture proof **[shipped]** through
+  `scena.scena_viewer_mobile_a11y_browser_proof.v1`.
+  Visual proof: browser-demo shipped through
+  `target/gate-artifacts/scena-viewer-mobile-a11y-browser-proof.png`.
 - **Inspector / dev overlay.** Status: **[shipped]** for the host-fed
   overlay and browser snapshot fixture.
   Owner: `crates/xtask/` doctor integration + `<scena-viewer>`.
@@ -1501,6 +1506,19 @@ Picking/outline/hover reconciliation pass (2026-05-19):
 - Reclassified loading progress primitives from proof gap to shipped for
   loader events, viewer event capture, accessible custom-element progress
   UI, browser sequence proof, and doctor source enforcement.
+
+`<scena-viewer>` mobile/a11y gesture proof pass (2026-05-19):
+
+- Added `ScenaViewerGestureAction` and a browser custom-element gesture
+  bridge for `orbit`, `pinch-zoom`, and `wheel-zoom` events when
+  `camera-controls` is enabled.
+- Added `scena.scena_viewer_mobile_a11y_browser_proof.v1`, which runs in
+  a mobile-sized Playwright viewport, checks no horizontal overflow,
+  asserts touch-action and ARIA defaults, and records touch pinch/orbit
+  plus wheel and keyboard reset events.
+- Reclassified mobile-first + a11y defaults from proof gap to shipped for
+  defaults, keyboard surface, mobile viewport proof, gesture event proof,
+  screenshot artifact, and doctor source enforcement.
 
 `<scena-viewer>` browser-proof pass (2026-05-19):
 

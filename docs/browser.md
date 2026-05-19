@@ -81,7 +81,13 @@ The mobile and accessibility defaults are part of the element contract. The host
 keyboard focusable by default, the canvas uses `touch-action: none`, the element
 sets role and ARIA labels when the host has not supplied them, and keyboard
 navigation emits `scena-viewer-key-control` for arrow-key orbit, `+` / `-` zoom,
-and `Escape` / `Home` reset events.
+and `Escape` / `Home` reset events. With `camera-controls`, pointer and wheel
+input emits `scena-viewer-gesture-control` with `orbit`, `pinch-zoom`, and
+`wheel-zoom` actions so mobile hosts can wire touch gestures into the shared
+Rust controls without browser-specific logic in application code. The M6
+browser proof records the mobile viewport, overflow check, touch-action
+default, keyboard reset, and touch pinch/orbit gestures in
+`scena.scena_viewer_mobile_a11y_browser_proof.v1`.
 
 The inspector/dev overlay is host-fed and renderer-neutral. Call
 `setInspectorSnapshot({ overlay, diagnostics, stats })` or

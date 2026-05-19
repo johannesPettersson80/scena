@@ -25,6 +25,9 @@ All notable user-facing changes are recorded here.
 - Added loading progress sequence assertions to the `<scena-viewer>` browser
   proof, verifying both indeterminate and determinate progress UI updates.
 
+- Added `<scena-viewer>` mobile gesture proof and host events for touch orbit,
+  pinch zoom, wheel zoom, and keyboard reset handling.
+
 - Added connector magnet preview APIs for editor-style drag-to-assemble UIs:
   `Scene::preview_connector_magnet`, `ConnectionMagnetPreview`, and
   `ConnectionMagnetVisualCue`.

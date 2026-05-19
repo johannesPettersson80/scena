@@ -559,6 +559,40 @@ function assertCameraControlKitProof(result) {
   }
 }
 
+function assertScenaViewerMobileA11yProof(result) {
+  if (!result || result.schema !== "scena.scena_viewer_mobile_a11y_browser_proof.v1") {
+    throw new Error(`<scena-viewer> mobile proof returned unexpected schema: ${JSON.stringify(result)}`);
+  }
+  if (result.status !== "passed") {
+    throw new Error(`<scena-viewer> mobile proof did not pass: ${JSON.stringify(result)}`);
+  }
+  const checks = result.checks || {};
+  const expected = [
+    ["viewer_overflows_x", false],
+    ["host_role", "img"],
+    ["host_tabindex", "0"],
+    ["canvas_touch_action", "none"],
+    ["pinch_action", "pinch-zoom"],
+    ["pinch_pointers", 2],
+    ["pinch_delta_positive", true],
+    ["orbit_action", "orbit"],
+    ["orbit_pointer_type", "touch"],
+    ["orbit_delta_x", 26],
+    ["orbit_delta_y", 14],
+    ["wheel_action", "wheel-zoom"],
+    ["wheel_delta_y", -120],
+    ["keyboard_action", "reset-view"],
+  ];
+  for (const [key, value] of expected) {
+    if (checks[key] !== value) {
+      throw new Error(`<scena-viewer> mobile proof expected ${key}=${value}: ${JSON.stringify(result)}`);
+    }
+  }
+  if (checks.viewport_width > 390 || checks.viewer_width > checks.viewport_width) {
+    throw new Error(`<scena-viewer> mobile proof overflowed its viewport: ${JSON.stringify(result)}`);
+  }
+}
+
 async function runCameraControlKitProof(page, artifactDir) {
   const result = await page.evaluate(() => window.scenaCameraControlKitProbe());
   const screenshotPath = path.join(artifactDir, "camera-control-kit-browser-proof.png");
@@ -573,6 +607,23 @@ async function runCameraControlKitProof(page, artifactDir) {
     bytes: screenshot.length,
   };
   assertCameraControlKitProof(result);
+  return result;
+}
+
+async function runScenaViewerMobileA11yProof(page, artifactDir) {
+  const result = await page.evaluate(() => window.scenaViewerMobileA11yProbe());
+  const screenshotPath = path.join(artifactDir, "scena-viewer-mobile-a11y-browser-proof.png");
+  await page
+    .locator(result.screenshot_selector || "scena-viewer[data-proof=\"mobile-a11y\"]")
+    .screenshot({ path: screenshotPath });
+  const screenshot = fs.readFileSync(screenshotPath);
+  result.screenshot_metadata = {
+    path: path.relative(process.cwd(), screenshotPath),
+    mime: "image/png",
+    sha256: crypto.createHash("sha256").update(screenshot).digest("hex"),
+    bytes: screenshot.length,
+  };
+  assertScenaViewerMobileA11yProof(result);
   return result;
 }
 
@@ -655,6 +706,13 @@ async function main() {
       results.push(await runCameraControlKitProof(viewerElementPage, artifactDir));
     } finally {
       await viewerElementPage.close();
+    }
+    const mobileA11yPage = await browser.newPage({ viewport: { width: 390, height: 640 }, isMobile: true, hasTouch: true });
+    try {
+      await mobileA11yPage.goto(url);
+      results.push(await runScenaViewerMobileA11yProof(mobileA11yPage, artifactDir));
+    } finally {
+      await mobileA11yPage.close();
     }
     for (const backend of viewerElementOnly ? [] : selectedBackends) {
       const page = await browser.newPage({ viewport: { width: 96, height: 96 } });

@@ -2,8 +2,9 @@ use scena::{
     AssetLoadProgress, AssetPath, DebugOverlay, Diagnostic, DiagnosticCode, DiagnosticSeverity,
     RendererStats, SCENA_VIEWER_TAG, ScenaViewerAccessibilityDefaults, ScenaViewerAnnotationAnchor,
     ScenaViewerAnnotationError, ScenaViewerAttributes, ScenaViewerDropDecision,
-    ScenaViewerDropKind, ScenaViewerInspectorSnapshot, ScenaViewerKeyboardAction,
-    ScenaViewerProgress, ScenaViewerProgressPhase, ScenaViewerVariantSelection, Tonemapper,
+    ScenaViewerDropKind, ScenaViewerGestureAction, ScenaViewerInspectorSnapshot,
+    ScenaViewerKeyboardAction, ScenaViewerProgress, ScenaViewerProgressPhase,
+    ScenaViewerVariantSelection, Tonemapper,
 };
 
 #[test]
@@ -153,6 +154,16 @@ fn scena_viewer_accessibility_defaults_define_mobile_and_keyboard_surface() {
         Some(ScenaViewerKeyboardAction::ResetView)
     );
     assert_eq!(ScenaViewerKeyboardAction::from_key("Tab"), None);
+
+    assert_eq!(ScenaViewerGestureAction::Orbit.event_action(), "orbit");
+    assert_eq!(
+        ScenaViewerGestureAction::PinchZoom.event_action(),
+        "pinch-zoom"
+    );
+    assert_eq!(
+        ScenaViewerGestureAction::WheelZoom.event_action(),
+        "wheel-zoom"
+    );
 }
 
 #[test]

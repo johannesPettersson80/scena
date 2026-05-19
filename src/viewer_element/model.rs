@@ -34,6 +34,13 @@ pub enum ScenaViewerKeyboardAction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScenaViewerGestureAction {
+    Orbit,
+    PinchZoom,
+    WheelZoom,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScenaViewerDropKind {
     Glb,
     Gltf,
@@ -218,6 +225,16 @@ impl ScenaViewerKeyboardAction {
             Self::ZoomIn => "zoom-in",
             Self::ZoomOut => "zoom-out",
             Self::ResetView => "reset-view",
+        }
+    }
+}
+
+impl ScenaViewerGestureAction {
+    pub const fn event_action(self) -> &'static str {
+        match self {
+            Self::Orbit => "orbit",
+            Self::PinchZoom => "pinch-zoom",
+            Self::WheelZoom => "wheel-zoom",
         }
     }
 }
