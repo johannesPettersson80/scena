@@ -6,6 +6,7 @@ mod next_release;
 mod round_a_primitives;
 mod state_url;
 mod viewer_load_progress;
+mod viewer_material_variants;
 
 pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<Finding>) {
     require_contains(
@@ -179,6 +180,7 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
     next_release::check_viewer_pointer_callbacks(root, findings);
     next_release::check_viewer_capture_png(root, findings);
     viewer_load_progress::check_viewer_load_progress(root, findings);
+    viewer_material_variants::check_viewer_material_variants(root, findings);
     next_release::check_asset_hot_reload(root, findings);
     khronos_samples::check_khronos_samples(root, findings);
     next_release::check_production_asset_profile(root, findings);

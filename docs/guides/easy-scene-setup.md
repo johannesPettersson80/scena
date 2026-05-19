@@ -224,6 +224,24 @@ for event in viewer.load_progress_events() {
 }
 ```
 
+## Material variants
+
+Viewers surface `KHR_materials_variants` names from the loaded import and
+re-prepare automatically when a variant is selected:
+
+```rust
+let mut viewer = headless_gltf_viewer("product.glb").build().await?;
+
+for name in viewer.material_variants() {
+    println!("variant: {name}");
+}
+
+viewer.set_active_material_variant(Some("blue"))?;
+viewer.render_next_frame()?;
+
+viewer.set_active_material_variant(None)?;
+```
+
 ## Native asset hot reload
 
 On native targets, enable the `hot-reload` feature and retain source bytes for

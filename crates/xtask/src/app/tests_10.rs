@@ -11,31 +11,6 @@ pub(crate) fn binary_render_asset_contracts_are_source_enforced() {
 }
 
 #[test]
-pub(crate) fn binary_render_asset_contracts_reject_text_fixtures_with_binary_extensions() {
-    let root = repo_root().expect("test runs inside the scena workspace");
-    let fixture_root = root.join("target/xtask-binary-asset-contract-test");
-    let fixture_dir = fixture_root.join("tests/assets/environment/generated");
-    fs::create_dir_all(&fixture_dir).expect("fixture dir");
-    fs::write(
-        fixture_dir.join("fake.ktx2"),
-        b"SCENA_CUBEMAP_V1\nencoding = rgba16f-text-fixture\n",
-    )
-    .expect("fixture write");
-    let mut findings = Vec::new();
-
-    check_binary_render_asset_contracts(&fixture_root, &mut findings);
-
-    assert!(
-        findings.iter().any(|finding| {
-            finding.rule == "BINARY-ASSET-TRUTH-P9"
-                && finding.message.contains("fake.ktx2")
-                && finding.message.contains("text fixture data")
-        }),
-        "text fixtures must not be allowed to masquerade as binary render assets: {findings:?}",
-    );
-}
-
-#[test]
 pub(crate) fn m7_ergonomics_contracts_are_source_enforced() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let mut findings = Vec::new();
@@ -143,12 +118,12 @@ pub(crate) fn easy_scene_setup_contracts_reject_open_diagnostics_and_public_fram
 
 fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     let _ = fs::remove_dir_all(fixture_root);
-    for dir in "src/demo_page docs/guides docs/release-notes demo examples src/assets src/viewer src/controls src/scene src/scene/connectors src/material src/render src/geometry tests".split_whitespace() {
+    for dir in "src/demo_page docs/guides docs/release-notes demo examples src/assets src/viewer src/controls src/scene src/scene/connectors src/material src/render src/geometry tests tests/assets/gltf".split_whitespace() {
         fs::create_dir_all(fixture_root.join(dir)).expect("fixture dir");
     }
     fs::write(
         fixture_root.join("docs/guides/easy-scene-setup.md"),
-        "frame_bounds add_perspective_camera_default_for add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? AssetLoadProgress build_with_progress load_progress_events watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() EnvironmentPreset::Studio load_environment_preset EnvironmentPreset::ALL KTX2 cubemap presets are still future work khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.add_perspective_camera_default_for(bounds, (width, height))?;\n```",
+        "frame_bounds add_perspective_camera_default_for add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? AssetLoadProgress build_with_progress load_progress_events Material variants viewer.material_variants() viewer.set_active_material_variant(Some(\"blue\"))? viewer.set_active_material_variant(None)? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() EnvironmentPreset::Studio load_environment_preset EnvironmentPreset::ALL KTX2 cubemap presets are still future work khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.add_perspective_camera_default_for(bounds, (width, height))?;\n```",
     )
     .expect("guide fixture");
     fs::write(
@@ -219,7 +194,7 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     }
     fs::write(
         fixture_root.join("src/viewer.rs"),
-        "mod capture; mod interaction; mod load_progress; pub use capture::ViewerCaptureError; click_callback: Option<ViewerPickCallback> hover_callback: Option<ViewerPickCallback> load_progress_events: Vec<AssetLoadProgress>",
+        "mod capture; mod interaction; mod load_progress; mod material_variants; pub use capture::ViewerCaptureError; click_callback: Option<ViewerPickCallback> hover_callback: Option<ViewerPickCallback> load_progress_events: Vec<AssetLoadProgress>",
     )
     .expect("viewer fixture");
     fs::write(
@@ -227,6 +202,11 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
         "pub async fn build_with_progress<T>() {} pub async fn render_with_progress<T>() {} pub fn build_with_progress<T>() {} pub async fn build_async_with_progress<T>() {} pub fn load_progress_events(&self) -> &[AssetLoadProgress] { &[] }",
     )
     .expect("viewer progress fixture");
+    fs::write(
+        fixture_root.join("src/viewer/material_variants.rs"),
+        "pub fn material_variants(&self) -> &[String] { &[] } pub fn active_material_variant(&self) -> Option<String> { None } pub fn set_active_material_variant(&mut self, name: Option<&str>) -> crate::Result<()> { self.scene.set_active_variant(&self.import, name)?; self.prepare() }",
+    )
+    .expect("viewer material variants fixture");
     fs::write(
         fixture_root.join("src/viewer/capture.rs"),
         "pub enum ViewerCaptureError {} pub fn capture_png_bytes() { png::Encoder::new(); png::ColorType::Rgba; png::BitDepth::Eight; } pub fn capture_png() {}",
@@ -370,11 +350,15 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
         ),
         (
             "tests/first_render_api.rs",
-            "headless_gltf_viewer_surfaces_asset_load_progress .build_with_progress(|event| observed.push(event)) viewer.load_progress_events() AssetLoadProgress::LoadStarted AssetLoadProgress::Parsed AssetLoadProgress::Cached",
+            "headless_gltf_viewer_surfaces_asset_load_progress .build_with_progress(|event| observed.push(event)) viewer.load_progress_events() AssetLoadProgress::LoadStarted AssetLoadProgress::Parsed AssetLoadProgress::Cached headless_gltf_viewer_switches_material_variants_and_reprepares material_variants_scene.gltf viewer.material_variants() viewer.set_active_material_variant(Some(\"midnight\")) viewer.active_material_variant()",
         ),
         (
             "tests/m7_interactive_viewer.rs",
-            "interactive_gltf_viewer_surfaces_asset_load_progress .build_with_progress(|event| observed.push(event)) viewer.load_progress_events() AssetLoadProgress::LoadStarted AssetLoadProgress::Parsed",
+            "interactive_gltf_viewer_surfaces_asset_load_progress .build_with_progress(|event| observed.push(event)) viewer.load_progress_events() AssetLoadProgress::LoadStarted AssetLoadProgress::Parsed interactive_gltf_viewer_switches_material_variants_and_reprepares material_variants_scene.gltf viewer.material_variants() viewer.set_active_material_variant(Some(\"noon\")) viewer.active_material_variant()",
+        ),
+        (
+            "tests/assets/gltf/material_variants_scene.gltf",
+            "KHR_materials_variants \"midnight\" \"noon\"",
         ),
         (
             "tests/round_d_asset_hot_reload.rs",

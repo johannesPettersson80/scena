@@ -241,6 +241,8 @@ Common viewer helpers:
 - `HeadlessGltfViewerBuilder::build_with_progress`
 - `InteractiveGltfViewerBuilder::build_with_progress`
 - `AssetLoadProgress`
+- `HeadlessGltfViewer::set_active_material_variant`
+- `InteractiveGltfViewer::set_active_material_variant`
 - `Renderer::headless_default()`
 - `Renderer::set_auto_exposure`
 

@@ -125,6 +125,32 @@ fn interactive_gltf_viewer_surfaces_asset_load_progress() {
 }
 
 #[test]
+fn interactive_gltf_viewer_switches_material_variants_and_reprepares() {
+    let mut viewer = interactive_gltf_viewer(
+        "tests/assets/gltf/material_variants_scene.gltf",
+        PlatformSurface::native_window(64, 64),
+    )
+    .build()
+    .expect("interactive viewer builds a variants fixture");
+
+    assert_eq!(
+        viewer.material_variants(),
+        &["midnight".to_string(), "noon".to_string()],
+    );
+    viewer
+        .set_active_material_variant(Some("noon"))
+        .expect("viewer applies a known material variant");
+    assert_eq!(viewer.active_material_variant(), Some("noon".to_string()));
+    assert!(
+        viewer
+            .render_next_frame()
+            .expect("variant switch prepares before rendering")
+            .draw_calls
+            > 0,
+    );
+}
+
+#[test]
 fn interactive_gltf_viewer_with_orbit_controls_attaches_controller_seeded_from_framing() {
     // Phase 5B step 2: `with_orbit_controls()` derives the initial OrbitControls
     // target+distance from the imported scene's bounds and the framed camera

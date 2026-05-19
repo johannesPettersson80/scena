@@ -790,11 +790,15 @@ specific competitor primitive.
   camera movement.
   Visual proof: browser-demo + animated-proof (labels visible in the demo; recording shows them tracking through camera orbit and animation)
 - **Variant switching for `KHR_materials_variants`.** Status:
-  **[ergonomic-gap]** — extension diagnostics mark it supported and
-  `Scene::set_active_variant(&import, Some(name))` already exists.
-  Surface it on Viewer / `<scena-viewer>` and add rendered-output proof
-  as the closing evidence. Owner: `src/viewer.rs` + future custom element.
-  Visual proof: reference-image + docs-image (one reference per variant on the same asset; tutorial shows the variant picker output)
+  **[ergonomic-gap]** overall; Viewer primitive **[shipped]**,
+  `<scena-viewer>` picker and rendered reference grid still missing.
+  Extension diagnostics mark it supported and
+  `Scene::set_active_variant(&import, Some(name))` exists. Viewers now
+  expose `material_variants()`, `active_material_variant()`, and
+  `set_active_material_variant(name)`; the setter delegates to the scene
+  API and re-prepares before the next render. Owner: `src/viewer.rs` +
+  future custom element.
+  Visual proof: reference-image + docs-image still required (one reference per variant on the same asset; tutorial shows the variant picker output)
 - **Loading progress primitives.** Status: **[ergonomic-gap]** overall;
   Viewer primitive **[shipped]**, `<scena-viewer>` progress UI still
   missing. `AssetLoadProgress` exists in `src/lib.rs` and is now surfaced
@@ -1185,6 +1189,15 @@ Viewer loading-progress implementation pass (2026-05-19):
 - Added focused headless and interactive viewer tests plus a
   `VIEWER-LOAD-PROGRESS` doctor rule so docs, tests, library re-export,
   and viewer APIs stay aligned.
+
+Viewer material-variants implementation pass (2026-05-19):
+
+- Surfaced `KHR_materials_variants` names and active-variant switching on
+  headless and interactive viewers, with automatic re-prepare after a
+  switch.
+- Added a real glTF variant fixture, focused viewer tests, and a
+  `VIEWER-MATERIAL-VARIANTS` doctor rule. Remaining work is the
+  `<scena-viewer>` picker plus rendered reference/docs images.
 
 Ease-of-use implementation continuation (2026-05-19):
 

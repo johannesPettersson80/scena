@@ -3,6 +3,7 @@
 mod capture;
 mod interaction;
 mod load_progress;
+mod material_variants;
 
 pub use capture::ViewerCaptureError;
 

@@ -203,3 +203,75 @@ fn headless_gltf_viewer_snapshot_rgba8_and_capabilities_accessors_match_renderer
     assert_eq!(viewer.snapshot_rgba8(), viewer.renderer().frame_rgba8());
     assert_eq!(viewer.capabilities(), viewer.renderer().capabilities());
 }
+
+#[test]
+fn headless_gltf_viewer_switches_material_variants_and_reprepares() {
+    let mut viewer = pollster::block_on(
+        scena::headless_gltf_viewer("tests/assets/gltf/material_variants_scene.gltf")
+            .size(48, 48)
+            .build(),
+    )
+    .expect("viewer builds a variants fixture");
+
+    assert_eq!(
+        viewer.material_variants(),
+        &["midnight".to_string(), "noon".to_string()],
+    );
+    assert_eq!(viewer.active_material_variant(), None);
+    let default_material = variant_mesh_material(viewer.scene(), viewer.import());
+
+    viewer
+        .set_active_material_variant(Some("midnight"))
+        .expect("viewer applies a known material variant");
+    let midnight_material = variant_mesh_material(viewer.scene(), viewer.import());
+    assert_ne!(
+        default_material, midnight_material,
+        "variant must swap the imported mesh material",
+    );
+    assert_eq!(
+        viewer.active_material_variant(),
+        Some("midnight".to_string())
+    );
+    assert!(
+        viewer
+            .render_next_frame()
+            .expect("variant switch prepares before rendering")
+            .draw_calls
+            > 0,
+    );
+
+    viewer
+        .set_active_material_variant(None)
+        .expect("viewer clears material variant");
+    assert_eq!(
+        variant_mesh_material(viewer.scene(), viewer.import()),
+        default_material,
+        "clearing the variant restores the default material",
+    );
+    assert_eq!(viewer.active_material_variant(), None);
+}
+
+fn variant_mesh_material(
+    scene: &scena::Scene,
+    import: &scena::SceneImport,
+) -> scena::MaterialHandle {
+    for root in import.roots() {
+        if let Some(handle) = walk_for_mesh(scene, *root) {
+            return handle;
+        }
+    }
+    panic!("scene has no mesh node under variant import");
+}
+
+fn walk_for_mesh(scene: &scena::Scene, node_key: scena::NodeKey) -> Option<scena::MaterialHandle> {
+    let node = scene.node(node_key)?;
+    if let scena::NodeKind::Mesh(mesh) = node.kind() {
+        return Some(mesh.material());
+    }
+    for child in node.children() {
+        if let Some(handle) = walk_for_mesh(scene, *child) {
+            return Some(handle);
+        }
+    }
+    None
+}
