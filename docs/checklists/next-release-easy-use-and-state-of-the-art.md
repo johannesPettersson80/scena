@@ -177,10 +177,11 @@ let camera = scene.add_perspective_camera_default_for(bounds, (w, h))?;
 
 ### 1.3 Production-grade asset pipeline complete and production-profile ready
 
-Status: **[proof-gap]** overall — KTX2 / meshopt are implemented but
-still need package/build-size evidence, Draco remains deferred, and
-`EXT_mesh_gpu_instancing` now imports through scene-owned instance sets
-with local visual proof.
+Status: **[shipped]** for the production profile — `production-assets`
+enables KTX2 / Basis and meshopt together while keeping `default = []`.
+KTX2, meshopt, and `EXT_mesh_gpu_instancing` now have feature-gated
+local visual proof artifacts. Draco remains deferred and is not a v1.4
+critical-path item.
 Owner: `Cargo.toml` features + `src/assets/texture.rs` +
 `src/assets/gltf/extensions.rs` + a new doctor lane.
 
@@ -197,16 +198,19 @@ Sub-items:
   (`src/render/output.rs:62`, `#[default]` on `Tonemapper::PbrNeutral`;
   test at `tests/m1_geometry_materials.rs:719`).
 - **KTX2 / Basis textures (`KHR_texture_basisu`)** — Status:
-  **[proof-gap]**. Feature flag exists at `Cargo.toml:45`, documented
-  in `docs/feature-flags.md:28`, decode path at `src/assets/texture.rs`,
-  marked `Supported` in extension diagnostics, and grouped under the
-  `production-assets` profile. Not on by default; no benchmark proving
-  the GPU memory win; no rendered-output regression image of a
-  KTX2-textured asset.
-- **meshopt (`EXT_meshopt_compression`)** — Status: **[proof-gap]**.
-  Feature flag at `Cargo.toml`, marked `Supported` at
-  `src/assets/gltf/extensions.rs`, and grouped under the
-  `production-assets` profile. Not default; no proof artifact.
+  **[shipped]** for the optional production profile. Feature flag exists
+  at `Cargo.toml:45`, documented in `docs/feature-flags.md:28`, decode
+  path at `src/assets/texture.rs`, marked `Supported` in extension
+  diagnostics, and grouped under `production-assets`. The feature-gated
+  proof suite writes material-role visual rows under
+  `target/gate-artifacts/m8-compressed-assets`. Native compressed GPU
+  upload and browser-lane release proof are not claimed yet.
+- **meshopt (`EXT_meshopt_compression`)** — Status: **[shipped]** for
+  the optional production profile. Feature flag at `Cargo.toml`, marked
+  `Supported` at `src/assets/gltf/extensions.rs`, grouped under
+  `production-assets`, and proved by feature-gated rendered fixtures for
+  triangle, index-sequence, normal, tangent, and quantized-position paths.
+  Native GPU / browser release proof remains a separate lane.
 - **Draco (`KHR_draco_mesh_compression`)** — Status: **[gap]**.
   Not a v1.4 critical-path item. Prefer meshopt for the next release;
   revisit Draco only behind an optional feature when a maintained decoder
@@ -217,10 +221,19 @@ Sub-items:
   raw extension data and a narrow parser for the extension's TRS accessors
   so v1.4 is not blocked on upstream typed support.
 
-Proof: a doctor lane that loads a KTX2-textured + meshopt-compressed +
-instanced glTF, renders it, diffs against a stored reference, and records
-package-size / build-time impact for any default-feature change.
-Visual proof: reference-image (per format: KTX2-textured render, meshopt-compressed render, instanced render — each diffed against a stored reference)
+Proof: `tests/production_asset_profile.rs` pins the empty-default /
+production-profile policy. `tests/m8_compressed_asset_release_proof.rs`
+runs with `--features production-assets`, loads KTX2 material-role
+textures, meshopt-compressed glTF fixtures, and an instanced glTF, renders
+them through the normal CPU headless path, and writes JSON + PPM artifacts
+under `target/gate-artifacts/m8-compressed-assets`. The native GPU and
+browser compressed-asset lanes write fail-closed unavailable artifacts
+instead of pretending local unit tests are release proof. Doctor rules
+`PRODUCTION-ASSET-PROFILE` and `ASSETS-M8` pin the profile and proof
+suite.
+Visual proof: reference-image (KTX2-textured render, meshopt-compressed
+render, and instanced render artifacts written by the feature-gated
+compressed-asset proof suite)
 
 ### 1.4 Doctor → official validation + actionable scena guidance
 
@@ -536,14 +549,14 @@ specifically, add **animated-proof** of the clip playing back.
   the typed mixer handle. Viewer sugar remains deferred. Proof:
   rendered-output proof of a known animation clip playing back at fixed
   timestamps.
-- **KTX2 / Basis textures.** Feature flag at `Cargo.toml:45`, documented
-  at `docs/feature-flags.md:28`, decode path at `src/assets/texture.rs`,
-  marked `Supported` in extension diagnostics. **Gap**: not in default
-  features; no rendered-output proof of a KTX2-textured asset; no
-  benchmark vs uncompressed.
-- **meshopt compression.** Feature flag in `Cargo.toml`, marked
-  `Supported` at `src/assets/gltf/extensions.rs`. **Gap**: not default;
-  no proof artifact.
+- **KTX2 / Basis textures.** Status: **[shipped]** for the optional
+  production profile. The decode path and feature flag remain opt-in, and
+  feature-gated rendered proof covers material texture roles. Native GPU
+  upload and browser release lanes remain future proof work.
+- **meshopt compression.** Status: **[shipped]** for the optional
+  production profile. The feature-gated proof suite renders decoded
+  compressed fixtures for the supported bufferView modes and metadata
+  paths. Native GPU and browser release lanes remain future proof work.
 - **glTF extension diagnostics.** `GltfExtensionDiagnostic` exists at
   `src/assets/gltf/extensions.rs`. **Gap**: not surfaced as typed
   user-facing errors with `fix` hints and not yet combined with official
@@ -556,8 +569,12 @@ This section IS the reference-image work; closing every item below
 produces a stored PNG with a CI diff threshold.
 
 - Animation clip rendered-output regression test.
-- KTX2-textured asset rendered-output regression test.
-- meshopt-compressed asset rendered-output regression test.
+- KTX2-textured asset rendered-output regression test — **[shipped]**
+  locally through `tests/m8_compressed_asset_release_proof.rs` with
+  `--features production-assets`.
+- meshopt-compressed asset rendered-output regression test — **[shipped]**
+  locally through `tests/m8_compressed_asset_release_proof.rs` with
+  `--features production-assets`.
 - Transmission + IBL combo capability evidence on the headless GPU lane.
 - Per-backend capability matrix evidence (Vulkan / Metal / DX12 / WebGPU
   / WebGL2 fallback).
@@ -1003,8 +1020,9 @@ Items reframed from "missing" to "implemented but [ergonomic|proof]-gap":
   and documents update-loop wiring. The proof gap remains no rendered
   regression of a clip.
 - **KTX2 / meshopt compression** — feature flags + decode paths exist at
-  `Cargo.toml:45`, documented at `docs/feature-flags.md:28`. Now an
-  ergonomic gap (not default) and a proof gap (no rendered reference).
+  `Cargo.toml:45`, documented at `docs/feature-flags.md:28`. This was
+  first reframed as an optional-profile proof gap; the later compressed
+  asset proof pass below closes the local production-profile proof.
 - **glTF extension diagnostics** — exist at `src/assets/gltf/extensions.rs`.
   Now an ergonomic gap (not surfaced as user-facing typed errors with
   `fix` hints).
@@ -1202,9 +1220,21 @@ Production asset profile implementation pass (2026-05-19):
   glTF profile that enables `ktx2` + `meshopt` while keeping
   `default = []`.
 - Updated `docs/feature-flags.md` so asset-heavy users can opt into the
-  profile without guessing the decoder feature pair. The remaining §1.3
-  work is measured package/build-size evidence and rendered reference
-  artifacts for KTX2 and meshopt assets.
+  profile without guessing the decoder feature pair.
+
+Compressed asset proof closure pass (2026-05-19):
+
+- Verified `cargo test --features production-assets --test
+  m8_compressed_asset_release_proof`: KTX2 material-role visual rows,
+  meshopt visual rows, EXT_mesh_gpu_instancing visual row, and fail-closed
+  backend-lane artifacts all passed.
+- Reclassified §1.3 KTX2 and meshopt from `[proof-gap]` to `[shipped]`
+  for the optional production profile. The claim remains deliberately
+  local: native compressed GPU upload and browser-lane release proof are
+  not claimed until those lanes have their own artifacts.
+- Extended `PRODUCTION-ASSET-PROFILE` doctor coverage so the production
+  profile cannot exist without the compressed-asset visual proof suite and
+  checklist evidence.
 
 EXT_mesh_gpu_instancing implementation pass (2026-05-19):
 

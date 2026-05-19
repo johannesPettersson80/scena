@@ -138,7 +138,7 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     .expect("feature flags fixture");
     fs::write(
         fixture_root.join("docs/checklists/next-release-easy-use-and-state-of-the-art.md"),
-        "CPU rasterizer fallback for no-GPU screenshots Status: **[shipped]** render_png_bytes() Reference-image regression as a public API Status:\n  **[shipped]** ReferenceImage::from_rgba8 REFERENCE-IMAGE-REGRESSION",
+        "Production-grade asset pipeline complete and production-profile ready Status: **[shipped]** for the production profile tests/m8_compressed_asset_release_proof.rs target/gate-artifacts/m8-compressed-assets CPU rasterizer fallback for no-GPU screenshots Status: **[shipped]** render_png_bytes() Reference-image regression as a public API Status:\n  **[shipped]** ReferenceImage::from_rgba8 REFERENCE-IMAGE-REGRESSION",
     )
     .expect("next release checklist fixture");
     fs::write(
@@ -322,6 +322,10 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
         (
             "tests/production_asset_profile.rs",
             "production_asset_profile_enables_compressed_asset_decoders_without_default_bloat",
+        ),
+        (
+            "tests/m8_compressed_asset_release_proof.rs",
+            "m8_ktx2_material_role_visual_rows_write_release_artifacts m8_meshopt_visual_rows_write_release_artifacts m8_ext_mesh_gpu_instancing_visual_row_writes_release_artifacts m8_compressed_native_gpu_lane_records_fail_closed_unavailable_artifact scena.compressed_asset_visual_proof.v1",
         ),
         (
             "tests/round_b_light_presets.rs",

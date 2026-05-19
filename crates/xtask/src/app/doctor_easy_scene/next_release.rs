@@ -1,38 +1,5 @@
 use crate::app::prelude::*;
 
-pub(super) fn check_production_asset_profile(root: &Path, findings: &mut Vec<Finding>) {
-    require_contains(
-        root,
-        findings,
-        "PRODUCTION-ASSET-PROFILE",
-        "Cargo.toml",
-        &[
-            "default = []",
-            "ktx2 = [\"dep:ktx2\", \"dep:basisu_c_sys\"]",
-            "meshopt = [\"dep:meshopt\"]",
-            "production-assets = [\"ktx2\", \"meshopt\"]",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "PRODUCTION-ASSET-PROFILE",
-        "docs/feature-flags.md",
-        &[
-            "`production-assets`",
-            "enables `ktx2` + `meshopt`",
-            "features = [\"production-assets\"]",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "PRODUCTION-ASSET-PROFILE",
-        "tests/production_asset_profile.rs",
-        &["production_asset_profile_enables_compressed_asset_decoders_without_default_bloat"],
-    );
-}
-
 pub(super) fn check_named_light_presets(root: &Path, findings: &mut Vec<Finding>) {
     require_contains(
         root,

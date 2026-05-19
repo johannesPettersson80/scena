@@ -3,6 +3,7 @@ use crate::app::prelude::*;
 mod environment_presets;
 mod khronos_samples;
 mod next_release;
+mod production_asset_profile;
 mod reference_image_regression;
 mod round_a_primitives;
 mod state_url;
@@ -187,7 +188,7 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
     reference_image_regression::check_reference_image_regression(root, findings);
     next_release::check_asset_hot_reload(root, findings);
     khronos_samples::check_khronos_samples(root, findings);
-    next_release::check_production_asset_profile(root, findings);
+    production_asset_profile::check_production_asset_profile(root, findings);
     state_url::check_state_via_url(root, findings);
 
     for rel in ["src/lib.rs", "src/geometry.rs"] {

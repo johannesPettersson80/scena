@@ -306,9 +306,9 @@ pub(crate) fn easy_scene_setup_contracts_reject_missing_headless_png_one_liner()
     );
 }
 
-const VALID_GUIDE: &str = "frame_bounds add_perspective_camera_default_for add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? render_png_bytes() CPU headless renderer without requesting a GPU adapter Reference-image regression ReferenceImage::from_rgba8 regress_with_tolerance ReferenceImageTolerance::new().with_max_abs_diff AssetLoadProgress build_with_progress load_progress_events Material variants viewer.material_variants() viewer.set_active_material_variant(Some(\"blue\"))? viewer.set_active_material_variant(None)? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() EnvironmentPreset::Studio load_environment_preset EnvironmentPreset::ALL KTX2 cubemap presets are still future work khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.add_perspective_camera_default_for(bounds, (width, height))?;\n```";
+pub(crate) const VALID_GUIDE: &str = "frame_bounds add_perspective_camera_default_for add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? render_png_bytes() CPU headless renderer without requesting a GPU adapter Reference-image regression ReferenceImage::from_rgba8 regress_with_tolerance ReferenceImageTolerance::new().with_max_abs_diff AssetLoadProgress build_with_progress load_progress_events Material variants viewer.material_variants() viewer.set_active_material_variant(Some(\"blue\"))? viewer.set_active_material_variant(None)? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() EnvironmentPreset::Studio load_environment_preset EnvironmentPreset::ALL KTX2 cubemap presets are still future work khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.add_perspective_camera_default_for(bounds, (width, height))?;\n```";
 
-fn write_easy_scene_fixture(
+pub(crate) fn write_easy_scene_fixture(
     fixture_root: &Path,
     guide: &str,
     demo_rs: &str,
@@ -347,7 +347,7 @@ fn write_easy_scene_fixture(
     .expect("feature flags fixture");
     fs::write(
         fixture_root.join("docs/checklists/next-release-easy-use-and-state-of-the-art.md"),
-        "CPU rasterizer fallback for no-GPU screenshots Status: **[shipped]** render_png_bytes() Reference-image regression as a public API Status:\n  **[shipped]** ReferenceImage::from_rgba8 REFERENCE-IMAGE-REGRESSION",
+        "Production-grade asset pipeline complete and production-profile ready Status: **[shipped]** for the production profile tests/m8_compressed_asset_release_proof.rs target/gate-artifacts/m8-compressed-assets CPU rasterizer fallback for no-GPU screenshots Status: **[shipped]** render_png_bytes() Reference-image regression as a public API Status:\n  **[shipped]** ReferenceImage::from_rgba8 REFERENCE-IMAGE-REGRESSION",
     )
     .expect("next release checklist fixture");
     fs::write(
@@ -522,6 +522,11 @@ fn write_easy_scene_fixture(
         "production_asset_profile_enables_compressed_asset_decoders_without_default_bloat",
     )
     .expect("production asset profile test fixture");
+    fs::write(
+        fixture_root.join("tests/m8_compressed_asset_release_proof.rs"),
+        "m8_ktx2_material_role_visual_rows_write_release_artifacts m8_meshopt_visual_rows_write_release_artifacts m8_ext_mesh_gpu_instancing_visual_row_writes_release_artifacts m8_compressed_native_gpu_lane_records_fail_closed_unavailable_artifact scena.compressed_asset_visual_proof.v1",
+    )
+    .expect("compressed asset proof test fixture");
     fs::write(
         fixture_root.join("tests/round_b_light_presets.rs"),
         "named_directional_light_presets_are_public_and_ordered named_point_light_presets_are_kelvin_tinted_and_range_limited",
