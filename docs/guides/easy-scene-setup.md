@@ -57,6 +57,14 @@ GPU resources, or render.
 Use `Scene::add_studio_lighting()` when the asset does not author lights. It is
 a broad product-viewer setup: a shadowed key light plus softer fill and rim
 lights. It is not a replacement for a deliberately authored lighting rig.
+For custom rigs, start from the same named presets instead of raw lux or
+candela values:
+
+```rust
+scene.directional_light(DirectionalLight::key_light()).add()?;
+scene.directional_light(DirectionalLight::fill_light()).add()?;
+scene.point_light(PointLight::bulb_warm()).add()?;
+```
 
 Use `Renderer::set_auto_exposure(AutoExposureConfig::default())` to adapt output
 brightness from the rendered frame. Auto exposure prevents globally too-dark or

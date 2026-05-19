@@ -339,11 +339,16 @@ pass proves the current names are a real obstacle.
 
 ### 2.5 Light presets
 
-Status: **[gap]**
+Status: **[shipped]** — implemented on branch
+`easy-use-state-art/round-b`.
 Owner: `src/scene/lights.rs`
-Proof: rendered-output proof of
-`scene.directional_light(DirectionalLight::sun()).add()` against a reference.
-Visual proof: reference-image + docs-image (one reference image per preset; tutorial shows a single subject lit by each preset)
+Proof: `tests/round_b_light_presets.rs` asserts preset colors,
+intensities, shadow ownership, and point-light ranges; rustdoc examples
+cover each preset; doctor rule `NAMED-LIGHT-PRESETS` keeps the API,
+tests, and visual proof present.
+Visual proof: reference-image + docs-image
+`target/gate-artifacts/examples-visual/round-b-light-preset-reference-docs-image.ppm`
+renders one subject under each preset side-by-side.
 
 ```rust
 DirectionalLight::sun()
@@ -802,7 +807,7 @@ the rounds, not after — they're the strategic arc.
 
 ### Round B — easy by name, continued
 
-4. - [ ] Light presets (§2.5)
+4. - [x] Light presets (§2.5)
 5. - [ ] `MaterialDesc` honest PBR presets (§2.6 — matte/plastic/metal/rubber only)
 6. - [ ] `Background` enum (§2.7)
 7. - [ ] `OrbitControls` named damping presets (§2.8)

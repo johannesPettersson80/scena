@@ -70,20 +70,11 @@ impl Scene {
     /// nodes under the root.
     pub fn add_studio_lighting(&mut self) -> Result<StudioLightingHandles, LookupError> {
         let key = self
-            .directional_light(
-                DirectionalLight::default()
-                    .with_color(Color::WHITE)
-                    .with_illuminance_lux(13_500.0)
-                    .with_shadows(true),
-            )
+            .directional_light(DirectionalLight::key_light())
             .transform(Transform::default().rotate_x_deg(-30.0).rotate_y_deg(20.0))
             .add()?;
         let fill = self
-            .directional_light(
-                DirectionalLight::default()
-                    .with_color(Color::from_srgb_u8(200, 215, 235))
-                    .with_illuminance_lux(4_500.0),
-            )
+            .directional_light(DirectionalLight::fill_light())
             .transform(
                 Transform::default()
                     .rotate_x_deg(-10.0)
@@ -91,11 +82,7 @@ impl Scene {
             )
             .add()?;
         let rim = self
-            .directional_light(
-                DirectionalLight::default()
-                    .with_color(Color::from_srgb_u8(255, 235, 210))
-                    .with_illuminance_lux(3_500.0),
-            )
+            .directional_light(DirectionalLight::rim_light())
             .transform(Transform::default().rotate_x_deg(15.0).rotate_y_deg(170.0))
             .add()?;
         Ok(StudioLightingHandles { key, fill, rim })
@@ -179,6 +166,76 @@ impl Default for DirectionalLight {
 }
 
 impl DirectionalLight {
+    /// Direct sunlight preset: neutral daylight, high illuminance, shadowed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::DirectionalLight;
+    ///
+    /// let sun = DirectionalLight::sun();
+    /// assert!(sun.casts_shadows());
+    /// assert!(sun.illuminance_lux() > DirectionalLight::key_light().illuminance_lux());
+    /// ```
+    pub fn sun() -> Self {
+        Self::default()
+            .with_color(Color::from_kelvin(5600.0))
+            .with_illuminance_lux(110_000.0)
+            .with_shadows(true)
+    }
+
+    /// Product-viewer key light preset used by [`Scene::add_studio_lighting`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::DirectionalLight;
+    ///
+    /// let key = DirectionalLight::key_light();
+    /// assert!(key.casts_shadows());
+    /// assert_eq!(key.illuminance_lux(), 13_500.0);
+    /// ```
+    pub fn key_light() -> Self {
+        Self::default()
+            .with_color(Color::WHITE)
+            .with_illuminance_lux(13_500.0)
+            .with_shadows(true)
+    }
+
+    /// Cool fill light preset used by [`Scene::add_studio_lighting`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::{Color, DirectionalLight};
+    ///
+    /// let fill = DirectionalLight::fill_light();
+    /// assert_eq!(fill.color(), Color::COOL_WHITE);
+    /// assert!(!fill.casts_shadows());
+    /// ```
+    pub fn fill_light() -> Self {
+        Self::default()
+            .with_color(Color::COOL_WHITE)
+            .with_illuminance_lux(4_500.0)
+    }
+
+    /// Warm rim light preset used by [`Scene::add_studio_lighting`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::{Color, DirectionalLight};
+    ///
+    /// let rim = DirectionalLight::rim_light();
+    /// assert_eq!(rim.color(), Color::WARM_WHITE);
+    /// assert!(!rim.casts_shadows());
+    /// ```
+    pub fn rim_light() -> Self {
+        Self::default()
+            .with_color(Color::WARM_WHITE)
+            .with_illuminance_lux(3_500.0)
+    }
+
     pub const fn color(self) -> Color {
         self.color
     }
@@ -218,6 +275,62 @@ impl Default for PointLight {
 }
 
 impl PointLight {
+    /// Neutral softbox-like point-light approximation for simple product shots.
+    ///
+    /// This is still a point light, not an area light; it is named for the
+    /// workflow role rather than a physically large emitter shape.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::PointLight;
+    ///
+    /// let light = PointLight::softbox();
+    /// assert_eq!(light.range(), Some(4.0));
+    /// ```
+    pub fn softbox() -> Self {
+        Self::default()
+            .with_color(Color::from_kelvin(5600.0))
+            .with_intensity_candela(900.0)
+            .with_range(4.0)
+    }
+
+    /// Warm practical bulb preset, approximately 2700K.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::PointLight;
+    ///
+    /// let light = PointLight::bulb_warm();
+    /// assert_eq!(light.range(), Some(6.0));
+    /// assert!(light.color().r > light.color().b);
+    /// ```
+    pub fn bulb_warm() -> Self {
+        Self::default()
+            .with_color(Color::from_kelvin(2700.0))
+            .with_intensity_candela(450.0)
+            .with_range(6.0)
+    }
+
+    /// Cool practical bulb preset, approximately 5600K.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::PointLight;
+    ///
+    /// let warm = PointLight::bulb_warm();
+    /// let cool = PointLight::bulb_cool();
+    /// assert!(cool.color().b > warm.color().b);
+    /// ```
+    pub fn bulb_cool() -> Self {
+        Self::default()
+            .with_color(Color::from_kelvin(5600.0))
+            .with_intensity_candela(450.0)
+            .with_range(6.0)
+    }
+
     pub const fn color(self) -> Color {
         self.color
     }

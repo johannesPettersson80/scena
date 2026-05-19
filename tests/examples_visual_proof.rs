@@ -14,10 +14,10 @@ use std::path::PathBuf;
 
 use scena::{
     Aabb, AnimationPlaybackState, Assets, Color, ConnectOptions, ConnectionAlignment,
-    ConnectionError, ConnectorFrame, CursorPosition, GeometryDesc, InteractionStyle, LabelDesc,
-    MaterialDesc, OrbitControls, PerspectiveCamera, PointerEvent, Profile, Renderer,
-    RendererOptions, Scene, SourceCoordinateSystem, SourceUnits, TouchEvent, Transform, Vec3,
-    Viewport,
+    ConnectionError, ConnectorFrame, CursorPosition, DirectionalLight, GeometryDesc,
+    InteractionStyle, LabelDesc, MaterialDesc, OrbitControls, PerspectiveCamera, PointLight,
+    PointerEvent, Profile, Renderer, RendererOptions, Scene, SourceCoordinateSystem, SourceUnits,
+    TouchEvent, Transform, Vec3, Viewport,
 };
 
 const ARTIFACT_WIDTH: u32 = 256;
@@ -219,6 +219,46 @@ fn write_docs_image_artifact(name: &str, source: &str, width: u32, height: u32, 
     .expect("docs-image metadata can be written");
 }
 
+fn write_reference_docs_image_artifact(
+    name: &str,
+    source: &str,
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+) {
+    let dir = artifact_dir();
+    let mut ppm = format!("P6\n{width} {height}\n255\n").into_bytes();
+    for pixel in rgba.chunks_exact(4) {
+        ppm.extend_from_slice(&pixel[..3]);
+    }
+    fs::write(dir.join(format!("{name}.ppm")), ppm)
+        .expect("reference docs-image PPM can be written");
+    let nonblack_pixels = count_nonblack_pixels(rgba);
+    let unique_pixels = count_unique_rgb_triplets(rgba);
+    assert!(
+        nonblack_pixels > 0 && unique_pixels >= MIN_UNIQUE_PIXELS,
+        "reference docs-image `{name}` must contain visible rendered pixels"
+    );
+    fs::write(
+        dir.join(format!("{name}.toml")),
+        format!(
+            "[artifact]\n\
+             name = \"{name}\"\n\
+             source = \"{source}\"\n\
+             format = \"ppm\"\n\
+             encoding = \"srgb8\"\n\
+             width = {width}\n\
+             height = {height}\n\
+             nonblack_pixels = {nonblack_pixels}\n\
+             unique_pixels = {unique_pixels}\n\
+             proof_class = \"reference-image+docs-image\"\n\
+             generated = true\n\
+             screenshot = false\n"
+        ),
+    )
+    .expect("reference docs-image metadata can be written");
+}
+
 fn srgb8_from_linear(color: Color) -> [u8; 4] {
     [
         linear_channel_to_srgb8(color.r),
@@ -340,6 +380,135 @@ fn render_lens_preset_tile(camera: PerspectiveCamera, width: u32, height: u32) -
     renderer
         .render_active(&scene)
         .expect("lens docs-image scene renders");
+    renderer.frame_rgba8().to_vec()
+}
+
+#[test]
+fn round_b_light_preset_reference_docs_image() {
+    let tile_width = 112;
+    let tile_height = 112;
+    let tiles = [
+        render_directional_light_preset_tile(DirectionalLight::sun(), tile_width, tile_height),
+        render_directional_light_preset_tile(
+            DirectionalLight::key_light(),
+            tile_width,
+            tile_height,
+        ),
+        render_directional_light_preset_tile(
+            DirectionalLight::fill_light(),
+            tile_width,
+            tile_height,
+        ),
+        render_directional_light_preset_tile(
+            DirectionalLight::rim_light(),
+            tile_width,
+            tile_height,
+        ),
+        render_point_light_preset_tile(PointLight::softbox(), tile_width, tile_height),
+        render_point_light_preset_tile(PointLight::bulb_warm(), tile_width, tile_height),
+        render_point_light_preset_tile(PointLight::bulb_cool(), tile_width, tile_height),
+    ];
+    let width = tile_width * tiles.len() as u32;
+    let height = tile_height;
+    let mut rgba = vec![0_u8; (width * height * 4) as usize];
+    for (index, tile) in tiles.iter().enumerate() {
+        assert!(
+            count_nonblack_pixels(tile) > 0,
+            "light preset tile {index} must render a visible lit subject"
+        );
+        for y in 0..tile_height {
+            let dst_start = ((y * width + index as u32 * tile_width) * 4) as usize;
+            let src_start = (y * tile_width * 4) as usize;
+            let byte_count = (tile_width * 4) as usize;
+            rgba[dst_start..dst_start + byte_count]
+                .copy_from_slice(&tile[src_start..src_start + byte_count]);
+        }
+    }
+    write_reference_docs_image_artifact(
+        "round-b-light-preset-reference-docs-image",
+        "docs/guides/easy-scene-setup.md",
+        width,
+        height,
+        &rgba,
+    );
+}
+
+fn render_directional_light_preset_tile(
+    light: DirectionalLight,
+    width: u32,
+    height: u32,
+) -> Vec<u8> {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 0.35));
+    let material = assets.create_material(MaterialDesc::pbr_metallic_roughness(
+        Color::LIGHT_GRAY,
+        0.0,
+        0.7,
+    ));
+
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("light preset subject inserts");
+    scene
+        .directional_light(light)
+        .add()
+        .expect("directional preset inserts");
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::standard(),
+            Transform::at(Vec3::new(0.0, 0.0, 3.0)),
+        )
+        .expect("camera inserts");
+    scene.set_active_camera(camera).expect("active camera sets");
+
+    let mut renderer = Renderer::headless(width, height).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("directional light docs-image scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("directional light docs-image scene renders");
+    renderer.frame_rgba8().to_vec()
+}
+
+fn render_point_light_preset_tile(light: PointLight, width: u32, height: u32) -> Vec<u8> {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 0.35));
+    let material = assets.create_material(MaterialDesc::pbr_metallic_roughness(
+        Color::LIGHT_GRAY,
+        0.0,
+        0.7,
+    ));
+
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("light preset subject inserts");
+    scene
+        .point_light(light)
+        .transform(Transform::at(Vec3::new(0.0, 0.0, 2.0)))
+        .add()
+        .expect("point preset inserts");
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::standard(),
+            Transform::at(Vec3::new(0.0, 0.0, 3.0)),
+        )
+        .expect("camera inserts");
+    scene.set_active_camera(camera).expect("active camera sets");
+
+    let mut renderer = Renderer::headless(width, height).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("point light docs-image scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("point light docs-image scene renders");
     renderer.frame_rgba8().to_vec()
 }
 
