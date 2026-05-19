@@ -1,6 +1,8 @@
+use super::asset_instancing::check_m8_instancing_contracts;
 use super::material_texture_diagnostics::check_material_texture_diagnostic_contracts;
 use crate::app::prelude::*;
 pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    check_m8_instancing_contracts(root, findings);
     require_contains(
         root,
         findings,
@@ -189,6 +191,7 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "m8_meshopt_optional_extension_uses_compressed_data_when_feature_enabled",
             "m8_meshopt_malformed_buffer_views_fail_with_structured_errors",
             "m8_meshopt_decoded_geometry_affects_cpu_rendered_silhouette",
+            "m8_ext_mesh_gpu_instancing_imports_node_as_instance_set",
             "m8_asset_resource_lifetime_counters_return_to_baseline_after_reload_cycle",
             "material_bindings",
             "material_texture_bindings",
@@ -298,6 +301,7 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "m8_ktx2_rejects_isolated_invalid_container_and_color_space_cases",
             "m8_ktx2_material_role_visual_rows_write_release_artifacts",
             "m8_meshopt_visual_rows_write_release_artifacts",
+            "m8_ext_mesh_gpu_instancing_visual_row_writes_release_artifacts",
             "m8_compressed_native_gpu_lane_records_fail_closed_unavailable_artifact",
             "browser-webgpu",
             "browser-webgl2",

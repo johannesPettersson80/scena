@@ -36,6 +36,7 @@ pub struct SceneAssetNode {
     pub(in crate::assets::gltf) children: Vec<usize>,
     pub(in crate::assets::gltf) transform: Transform,
     pub(in crate::assets::gltf) meshes: Vec<SceneAssetMesh>,
+    pub(in crate::assets::gltf) instance_transforms: Vec<Transform>,
     pub(in crate::assets::gltf) skin: Option<usize>,
     pub(in crate::assets::gltf) light: Option<SceneAssetLight>,
     pub(in crate::assets::gltf) anchors: Vec<SceneAssetAnchor>,
@@ -168,6 +169,10 @@ impl SceneAssetNode {
 
     pub fn meshes(&self) -> &[SceneAssetMesh] {
         &self.meshes
+    }
+
+    pub fn instance_transforms(&self) -> &[Transform] {
+        &self.instance_transforms
     }
 
     pub const fn skin(&self) -> Option<usize> {

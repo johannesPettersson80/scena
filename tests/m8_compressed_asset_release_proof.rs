@@ -186,6 +186,55 @@ fn m8_meshopt_visual_rows_write_release_artifacts() {
 }
 
 #[test]
+fn m8_ext_mesh_gpu_instancing_visual_row_writes_release_artifacts() {
+    let root = artifact_root();
+    fs::create_dir_all(&root).expect("artifact dir");
+    let gltf = ext_mesh_gpu_instancing_triangle_gltf();
+    let source_sha = sha256_bytes(gltf.as_bytes());
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://ext-mesh-gpu-instancing.gltf"),
+        gltf.into_bytes(),
+    )]));
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://ext-mesh-gpu-instancing.gltf"))
+            .expect("EXT_mesh_gpu_instancing scene loads");
+    let mut scene = Scene::new();
+    scene
+        .instantiate(&scene_asset)
+        .expect("instanced scene instantiates");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    scene
+        .frame_all_with_assets(camera, &assets)
+        .expect("instanced bounds frame");
+    let mut renderer = Renderer::headless(64, 64).expect("renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("instanced scene prepares");
+    renderer.render(&scene, camera).expect("scene renders");
+    let frame = renderer.frame_rgba8().to_vec();
+    assert_non_degenerate_frame(&frame, "EXT_mesh_gpu_instancing");
+    let ppm_path = root.join("ext-mesh-gpu-instancing.ppm");
+    write_ppm(&ppm_path, 64, 64, &frame);
+    let ppm_bytes = fs::read(&ppm_path).expect("ppm readable");
+
+    write_json(
+        &root.join("ext-mesh-gpu-instancing-visual-proof.json"),
+        json!({
+            "schema": "scena.compressed_asset_visual_proof.v1",
+            "status": "passed",
+            "commit_sha": commit_label(),
+            "extension": "EXT_mesh_gpu_instancing",
+            "source_sha256": source_sha,
+            "instance_count": scene_asset.nodes()[0].instance_transforms().len(),
+            "artifact": path_string(&ppm_path),
+            "artifact_sha256": sha256_bytes(&ppm_bytes),
+            "backend": "Headless",
+            "evidence_class": "local-instanced-render-proof"
+        }),
+    );
+}
+
+#[test]
 fn m8_compressed_native_gpu_lane_records_fail_closed_unavailable_artifact() {
     let root = artifact_root();
     fs::create_dir_all(&root).expect("artifact dir");
@@ -329,6 +378,61 @@ fn render_center_rgb_for_ktx2_normal_texture(pixel: [u8; 4]) -> [u8; 3] {
     let frame = render_material(&assets, material_for_slot("normal", normal));
     let center = ((64 / 2) * 64 + (64 / 2)) as usize * 4;
     [frame[center], frame[center + 1], frame[center + 2]]
+}
+
+fn ext_mesh_gpu_instancing_triangle_gltf() -> String {
+    let mut buffer = Vec::with_capacity(60);
+    push_vec3_f32(
+        &mut buffer,
+        [[-0.25, -0.25, 0.0], [0.25, -0.25, 0.0], [0.0, 0.25, 0.0]],
+    );
+    push_vec3_f32(&mut buffer, [[-0.7, 0.0, 0.0], [0.7, 0.0, 0.0]]);
+    let bytes = base64::engine::general_purpose::STANDARD.encode(&buffer);
+    let byte_length = buffer.len();
+
+    format!(
+        r#"{{
+        "asset": {{ "version": "2.0" }},
+        "extensionsUsed": ["EXT_mesh_gpu_instancing", "KHR_materials_unlit"],
+        "extensionsRequired": ["EXT_mesh_gpu_instancing", "KHR_materials_unlit"],
+        "materials": [{{
+            "pbrMetallicRoughness": {{ "baseColorFactor": [0.95, 0.2, 0.1, 1.0] }},
+            "extensions": {{ "KHR_materials_unlit": {{}} }}
+        }}],
+        "meshes": [{{
+            "primitives": [{{
+                "attributes": {{ "POSITION": 0 }},
+                "material": 0
+            }}]
+        }}],
+        "nodes": [{{
+            "name": "InstancedTriangle",
+            "mesh": 0,
+            "extensions": {{
+                "EXT_mesh_gpu_instancing": {{
+                    "attributes": {{ "TRANSLATION": 1 }}
+                }}
+            }}
+        }}],
+        "buffers": [{{ "byteLength": {byte_length}, "uri": "data:application/octet-stream;base64,{bytes}" }}],
+        "bufferViews": [
+            {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},
+            {{ "buffer": 0, "byteOffset": 36, "byteLength": 24 }}
+        ],
+        "accessors": [
+            {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-0.25,-0.25,0.0], "max": [0.25,0.25,0.0] }},
+            {{ "bufferView": 1, "componentType": 5126, "count": 2, "type": "VEC3" }}
+        ]
+    }}"#
+    )
+}
+
+fn push_vec3_f32<const N: usize>(buffer: &mut Vec<u8>, values: [[f32; 3]; N]) {
+    for vector in values {
+        for value in vector {
+            buffer.extend_from_slice(&value.to_le_bytes());
+        }
+    }
 }
 
 fn tiny_basisu_ktx2_solid_rgba(pixel: [u8; 4], color_space: TextureColorSpace) -> Vec<u8> {

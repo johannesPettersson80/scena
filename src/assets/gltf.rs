@@ -59,6 +59,7 @@ mod buffers;
 mod connectors;
 mod extensions;
 mod external;
+mod instancing;
 mod lights;
 mod material_variants;
 mod materials;
@@ -207,7 +208,7 @@ impl SceneAsset {
             step_start = log_gltf_step("parse_skins", step_start);
         }
         let lights = parse_punctual_lights(&gltf.document);
-        let nodes = parse_gltf_nodes(&gltf.document, &meshes, &lights);
+        let nodes = parse_gltf_nodes(path, &gltf.document, &buffers, &meshes, &lights)?;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
             step_start = log_gltf_step("parse_lights_nodes", step_start);
@@ -313,27 +314,34 @@ fn resolve_buffers(
 }
 
 fn parse_gltf_nodes(
+    path: &AssetPath,
     document: &::gltf::Document,
+    buffers: &buffers::ResolvedGltfBuffers,
     meshes: &[Vec<SceneAssetMesh>],
     lights: &[SceneAssetLight],
-) -> Vec<SceneAssetNode> {
+) -> Result<Vec<SceneAssetNode>, AssetError> {
     document
         .nodes()
-        .map(|node| SceneAssetNode {
-            name: node.name().map(str::to_string),
-            children: node.children().map(|child| child.index()).collect(),
-            transform: from_gltf_transform(node.transform()),
-            meshes: node
-                .mesh()
-                .and_then(|mesh| meshes.get(mesh.index()))
-                .cloned()
-                .unwrap_or_default(),
-            skin: node.skin().map(|skin| skin.index()),
-            light: node
-                .light()
-                .and_then(|light| lights.get(light.index()).copied()),
-            anchors: parse_node_anchors(&node),
-            connectors: parse_node_connectors(&node),
+        .map(|node| {
+            Ok(SceneAssetNode {
+                name: node.name().map(str::to_string),
+                children: node.children().map(|child| child.index()).collect(),
+                transform: from_gltf_transform(node.transform()),
+                meshes: node
+                    .mesh()
+                    .and_then(|mesh| meshes.get(mesh.index()))
+                    .cloned()
+                    .unwrap_or_default(),
+                instance_transforms: instancing::parse_node_instance_transforms(
+                    path, document, buffers, &node,
+                )?,
+                skin: node.skin().map(|skin| skin.index()),
+                light: node
+                    .light()
+                    .and_then(|light| lights.get(light.index()).copied()),
+                anchors: parse_node_anchors(&node),
+                connectors: parse_node_connectors(&node),
+            })
         })
         .collect()
 }

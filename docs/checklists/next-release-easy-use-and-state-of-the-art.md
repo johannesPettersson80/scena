@@ -177,9 +177,10 @@ let camera = scene.add_perspective_camera_default_for(bounds, (w, h))?;
 
 ### 1.3 Production-grade asset pipeline complete and production-profile ready
 
-Status: **[gap]** overall — KTX2 / meshopt are implemented but not
-ergonomic/proven, while Draco and `EXT_mesh_gpu_instancing` import support
-remain genuinely missing.
+Status: **[proof-gap]** overall — KTX2 / meshopt are implemented but
+still need package/build-size evidence, Draco remains deferred, and
+`EXT_mesh_gpu_instancing` now imports through scene-owned instance sets
+with local visual proof.
 Owner: `Cargo.toml` features + `src/assets/texture.rs` +
 `src/assets/gltf/extensions.rs` + a new doctor lane.
 
@@ -211,12 +212,10 @@ Sub-items:
   revisit Draco only behind an optional feature when a maintained decoder
   path is proven. `draco_decoder` is still 0.0.x, and `draco-oxide`
   decoder support is not ready.
-- **GPU instancing (`EXT_mesh_gpu_instancing`)** — Status: **[gap]**.
-  Source-truth pass found no `EXT_mesh_gpu_instancing` import support;
-  procedural/internal instancing is separate. Preferred path: file /
-  contribute upstream `gltf-rs` support. Contingency: a narrow
-  scena-side parser for this extension so v1.4 is not blocked on upstream
-  merge timing.
+- **GPU instancing (`EXT_mesh_gpu_instancing`)** — Status: **[shipped]**
+  for import into scene-owned `InstanceSet` nodes. Scena uses gltf-rs
+  raw extension data and a narrow parser for the extension's TRS accessors
+  so v1.4 is not blocked on upstream typed support.
 
 Proof: a doctor lane that loads a KTX2-textured + meshopt-compressed +
 instanced glTF, renders it, diffs against a stored reference, and records
@@ -511,12 +510,12 @@ the rendered result is part of the contract.
   reference proving the decoded asset survives the normal pipeline.
   Visual proof: reference-image compared to the uncompressed control, not
   an ON/OFF renderer-feature gate.
-- **GPU instancing import** (`EXT_mesh_gpu_instancing`). Procedural/internal
-  instancing is separate; this item is the glTF extension import path.
-  Upstream `gltf-rs` support is preferred; local narrow parsing is the
-  release-timing contingency.
-  Proof: extension parse/import assertions for instance count, transforms,
-  bounds, and resource sharing, plus a rendered repeated-part fixture.
+- **GPU instancing import** (`EXT_mesh_gpu_instancing`) — Status:
+  **[shipped]** for local parsing and import into scene-owned
+  `InstanceSet` nodes. Upstream `gltf-rs` typed support is still worth
+  contributing, but v1.4 no longer blocks on it.
+  Proof: extension parse/import assertions for instance count and
+  transforms, plus a rendered repeated-part fixture.
   Visual proof: reference-image of the repeated-part fixture; not an
   ON/OFF renderer-feature gate.
 
@@ -1004,10 +1003,10 @@ Additional source-truth fixes in this pass:
   nonexistent `src/material/color.rs` or `src/scene/transform.rs` paths.
   The transform alias question is now an explicit API decision, not an
   implied rename.
-- **GPU instancing**: `EXT_mesh_gpu_instancing` import support is not wired;
-  marked as a genuine glTF extension gap. Procedural/internal instancing is
-  separate. Preferred path is upstream `gltf-rs` support with a local
-  narrow parser as the release-timing contingency.
+- **GPU instancing**: `EXT_mesh_gpu_instancing` now has a local narrow
+  parser and imports into existing scene-owned `InstanceSet` nodes.
+  Procedural/internal instancing remains separate from the glTF extension
+  import path.
 - **Asset pipeline defaults**: KTX2 / meshopt remain optional features today.
   The roadmap now requires package-size, build-time, and profile/default
   policy evidence before changing defaults.
@@ -1160,6 +1159,15 @@ Production asset profile implementation pass (2026-05-19):
   profile without guessing the decoder feature pair. The remaining §1.3
   work is measured package/build-size evidence and rendered reference
   artifacts for KTX2 and meshopt assets.
+
+EXT_mesh_gpu_instancing implementation pass (2026-05-19):
+
+- Added a built-in parser for `EXT_mesh_gpu_instancing` node attributes
+  (`TRANSLATION`, `ROTATION`, `SCALE`) and import mapping into existing
+  scene-owned `InstanceSet` nodes.
+- Added focused import proof and a release-artifact visual row for an
+  instanced glTF fixture, with doctor coverage pinning the parser,
+  importer mapping, and proof tests.
 
 Ease-of-use implementation continuation (2026-05-19):
 

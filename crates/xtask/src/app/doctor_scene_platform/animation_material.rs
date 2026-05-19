@@ -68,9 +68,15 @@ pub(crate) fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Find
         &[
             "clip.clip().rebind",
             "resolve_import_skin_bindings",
-            "SceneSkinBinding::new",
             "convert_animation_vec3",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3B-ANIMATION",
+        "src/scene/import/skin_bindings.rs",
+        &["SceneSkinBinding::new", "InvalidSkinJointIndex"],
     );
     require_contains(
         root,

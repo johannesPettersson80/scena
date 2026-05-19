@@ -8,8 +8,9 @@ use scena::{
     AlphaMode, Angle, AssetError, AssetFetcher, AssetLoadControl, AssetLoadOptions,
     AssetLoadProgress, AssetLoadWarning, AssetPath, Assets, Color, DiagnosticCode,
     DirectionalLight, GeometryDesc, GltfDecoderPolicy, GltfExtensionStatus, MaterialDesc,
-    MaterialKind, NotPreparedReason, PointLight, RenderError, Renderer, RetainPolicy, Scene,
-    SpotLight, TextureColorSpace, TextureFilter, TextureSourceFormat, TextureWrap, Transform, Vec3,
+    MaterialKind, NodeKind, NotPreparedReason, PointLight, RenderError, Renderer, RetainPolicy,
+    Scene, SpotLight, TextureColorSpace, TextureFilter, TextureSourceFormat, TextureWrap,
+    Transform, Vec3,
 };
 
 fn unstable_headless_gpu_release_tests_enabled() -> bool {
@@ -2473,6 +2474,48 @@ fn m8_meshopt_decoded_geometry_affects_cpu_rendered_silhouette() {
 }
 
 #[test]
+fn m8_ext_mesh_gpu_instancing_imports_node_as_instance_set() {
+    let gltf = ext_mesh_gpu_instancing_triangle_gltf();
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://instanced-triangle.gltf"),
+        gltf.into_bytes(),
+    )]));
+    let scene_asset = pollster::block_on(assets.load_scene("memory://instanced-triangle.gltf"))
+        .expect("EXT_mesh_gpu_instancing glTF loads");
+
+    let diagnostic = scene_asset
+        .extension_diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.extension() == "EXT_mesh_gpu_instancing")
+        .expect("instancing extension is diagnosed");
+    assert_eq!(diagnostic.status(), GltfExtensionStatus::Supported);
+    assert_eq!(diagnostic.decoder_policy(), GltfDecoderPolicy::BuiltIn);
+    assert_eq!(scene_asset.nodes()[0].instance_transforms().len(), 2);
+
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("instanced scene instantiates");
+    let node = import
+        .node("InstancedTriangle")
+        .expect("import node exists");
+    let instance_set = match scene.node(node).expect("instanced node exists").kind() {
+        NodeKind::InstanceSet(instance_set) => scene
+            .instance_set(*instance_set)
+            .expect("instance set handle resolves"),
+        other => panic!("instanced mesh must import as an InstanceSet node, got {other:?}"),
+    };
+    let translations = instance_set
+        .instances()
+        .map(|instance| instance.transform().translation)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        translations,
+        vec![Vec3::new(-0.7, 0.0, 0.0), Vec3::new(0.7, 0.0, 0.0)]
+    );
+}
+
+#[test]
 fn m8_cancelled_scene_load_does_not_cache_partial_asset_state() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from("memory://cancel.gltf"),
@@ -3528,6 +3571,56 @@ fn tiny_basisu_ktx2_solid_red() -> Vec<u8> {
             low_level_uastc_rdo_or_dct_quality: 0.0,
         })
         .expect("solid-red texture compresses to a KTX2/Basis Universal payload")
+}
+
+fn ext_mesh_gpu_instancing_triangle_gltf() -> String {
+    let mut buffer = Vec::with_capacity(60);
+    push_vec3_f32(
+        &mut buffer,
+        [[-0.25, -0.25, 0.0], [0.25, -0.25, 0.0], [0.0, 0.25, 0.0]],
+    );
+    push_vec3_f32(&mut buffer, [[-0.7, 0.0, 0.0], [0.7, 0.0, 0.0]]);
+    let bytes = base64::engine::general_purpose::STANDARD.encode(&buffer);
+    let byte_length = buffer.len();
+
+    format!(
+        r#"{{
+        "asset": {{ "version": "2.0" }},
+        "extensionsUsed": ["EXT_mesh_gpu_instancing"],
+        "extensionsRequired": ["EXT_mesh_gpu_instancing"],
+        "meshes": [{{
+            "primitives": [{{
+                "attributes": {{ "POSITION": 0 }}
+            }}]
+        }}],
+        "nodes": [{{
+            "name": "InstancedTriangle",
+            "mesh": 0,
+            "extensions": {{
+                "EXT_mesh_gpu_instancing": {{
+                    "attributes": {{ "TRANSLATION": 1 }}
+                }}
+            }}
+        }}],
+        "buffers": [{{ "byteLength": {byte_length}, "uri": "data:application/octet-stream;base64,{bytes}" }}],
+        "bufferViews": [
+            {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},
+            {{ "buffer": 0, "byteOffset": 36, "byteLength": 24 }}
+        ],
+        "accessors": [
+            {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-0.25,-0.25,0.0], "max": [0.25,0.25,0.0] }},
+            {{ "bufferView": 1, "componentType": 5126, "count": 2, "type": "VEC3" }}
+        ]
+    }}"#
+    )
+}
+
+fn push_vec3_f32<const N: usize>(buffer: &mut Vec<u8>, values: [[f32; 3]; N]) {
+    for vector in values {
+        for value in vector {
+            buffer.extend_from_slice(&value.to_le_bytes());
+        }
+    }
 }
 
 #[cfg(feature = "meshopt")]

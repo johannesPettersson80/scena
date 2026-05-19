@@ -5,13 +5,13 @@ use std::sync::{Arc, Mutex};
 use self::bounds::union_optional;
 use self::diagnostic_overlays::diagnostic_overlay;
 use self::handedness::reject_unproven_left_handed_mesh_import;
+use self::instancing::instanced_bounds;
 use self::types::{ImportBuild, ImportedNode, PendingSkinBinding, mesh_node_kind};
 use self::units::convert_marker_units;
 pub(super) use self::variants::MeshVariantRecord;
 use super::transforms::compose_transform;
 use super::{
-    ConnectorMetadata, ConnectorPolarity, ConnectorRollPolicy, NodeKey, NodeKind, Scene,
-    SceneSkinBinding, Transform,
+    ConnectorMetadata, ConnectorPolarity, ConnectorRollPolicy, NodeKey, NodeKind, Scene, Transform,
 };
 use crate::animation::{AnimationClip, AnimationClipKey};
 use crate::assets::SceneAsset;
@@ -21,9 +21,11 @@ mod accessors;
 mod bounds;
 mod diagnostic_overlays;
 mod handedness;
+mod instancing;
 mod load;
 mod lookups;
 mod options;
+mod skin_bindings;
 mod types;
 mod units;
 mod variants;
@@ -227,10 +229,34 @@ impl Scene {
         let transform = build.options.convert_transform(source_node.transform());
         let meshes = source_node.meshes();
         let skin = source_node.skin();
-        let bounds = meshes.iter().fold(None, |bounds, mesh| {
+        let mesh_bounds = meshes.iter().fold(None, |bounds, mesh| {
             Some(union_optional(bounds, mesh.bounds()))
         });
+        let instance_transforms = source_node.instance_transforms();
+        let bounds = match (mesh_bounds, instance_transforms.is_empty()) {
+            (Some(bounds), false) => {
+                Some(instanced_bounds(bounds, instance_transforms, build.options))
+            }
+            (bounds, true) => bounds,
+            (None, false) => None,
+        };
         let node = match (meshes, source_node.light()) {
+            ([mesh], _) if !instance_transforms.is_empty() => Ok(self
+                .instantiate_single_import_instance_set(
+                    parent,
+                    mesh,
+                    transform,
+                    instance_transforms,
+                    build.options,
+                )),
+            ([_, _, ..], _) if !instance_transforms.is_empty() => Ok(self
+                .instantiate_multi_import_instance_sets(
+                    parent,
+                    meshes,
+                    transform,
+                    instance_transforms,
+                    build.options,
+                )),
             ([mesh], _) => {
                 let node = self.insert_node(parent, mesh_node_kind(mesh), transform);
                 if let Ok(node) = node {
@@ -467,40 +493,5 @@ impl Scene {
             )?;
         }
         Ok(node)
-    }
-
-    fn resolve_import_skin_bindings(
-        &mut self,
-        scene_asset: &SceneAsset,
-        records: &[ImportedNode],
-        pending: &[PendingSkinBinding],
-    ) -> Result<(), InstantiateError> {
-        for pending in pending {
-            let skin = scene_asset.skins().get(pending.skin).ok_or(
-                InstantiateError::InvalidSkinIndex {
-                    node: pending.source_node,
-                    skin: pending.skin,
-                },
-            )?;
-            let joints = skin
-                .joints()
-                .iter()
-                .map(|source_joint| {
-                    records
-                        .iter()
-                        .find(|record| record.source_index == *source_joint)
-                        .map(|record| record.node)
-                        .ok_or(InstantiateError::InvalidSkinJointIndex {
-                            skin: pending.skin,
-                            joint: *source_joint,
-                        })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            self.set_initial_skin_binding(
-                pending.node,
-                SceneSkinBinding::new(joints, skin.inverse_bind_matrices().to_vec()),
-            );
-        }
-        Ok(())
     }
 }

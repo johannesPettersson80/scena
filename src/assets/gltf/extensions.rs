@@ -55,6 +55,7 @@ pub(super) fn is_v1_required_gltf_extension(extension: &str) -> bool {
             | "KHR_texture_transform"
             | "KHR_mesh_quantization"
             | "KHR_materials_variants"
+            | "EXT_mesh_gpu_instancing"
     );
     built_in
         || (extension == "KHR_texture_basisu" && cfg!(feature = "ktx2"))
@@ -70,7 +71,10 @@ pub(super) fn collect_extension_diagnostics(
             !is_v1_required_gltf_extension(extension)
                 || matches!(
                     extension.as_str(),
-                    "KHR_texture_basisu" | "KHR_materials_variants" | "EXT_meshopt_compression"
+                    "KHR_texture_basisu"
+                        | "KHR_materials_variants"
+                        | "EXT_meshopt_compression"
+                        | "EXT_mesh_gpu_instancing"
                 )
         })
         .map(|extension| GltfExtensionDiagnostic {
@@ -85,6 +89,7 @@ pub(super) fn collect_extension_diagnostics(
 fn optional_extension_status(extension: &str) -> GltfExtensionStatus {
     match extension {
         "KHR_materials_variants" => GltfExtensionStatus::Supported,
+        "EXT_mesh_gpu_instancing" => GltfExtensionStatus::Supported,
         "KHR_texture_basisu" if cfg!(feature = "ktx2") => GltfExtensionStatus::Supported,
         "EXT_meshopt_compression" if cfg!(feature = "meshopt") => GltfExtensionStatus::Supported,
         _ => GltfExtensionStatus::Degraded,
@@ -104,6 +109,9 @@ fn optional_extension_help(extension: &str) -> &'static str {
         }
         "KHR_materials_variants" => {
             "material variants are supported for v1.0: top-level variants and per-primitive mappings are parsed into typed runtime variant selection"
+        }
+        "EXT_mesh_gpu_instancing" => {
+            "EXT_mesh_gpu_instancing is parsed into scene-owned InstanceSet nodes using built-in TRS accessors"
         }
         "EXT_texture_webp" => {
             "WebP texture extension is v1.x-deferred; plain .webp image paths are accepted but EXT_texture_webp texture-source rebinding is not implemented"
@@ -149,6 +157,7 @@ fn optional_extension_decoder_policy(extension: &str) -> GltfDecoderPolicy {
             license: "MIT",
         },
         "KHR_materials_variants" => GltfDecoderPolicy::BuiltIn,
+        "EXT_mesh_gpu_instancing" => GltfDecoderPolicy::BuiltIn,
         "KHR_materials_clearcoat"
         | "KHR_materials_transmission"
         | "KHR_materials_ior"

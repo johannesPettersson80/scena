@@ -1,3 +1,4 @@
+mod asset_instancing;
 mod asset_matrix;
 mod assets_materials;
 mod ergonomics;
