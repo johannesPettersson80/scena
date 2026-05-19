@@ -14,6 +14,10 @@ All notable user-facing changes are recorded here.
 - Added M6 browser proof for the camera-control kit, covering Rust/WASM orbit
   pointer input, follow-camera placement, and fly-camera local movement.
 
+- Added a pinned `<scena-viewer>` inspector overlay JSON fixture to the M6
+  browser proof so the live overlay is fed from source-controlled renderer
+  diagnostics data before screenshot capture.
+
 - Added connector magnet preview APIs for editor-style drag-to-assemble UIs:
   `Scene::preview_connector_magnet`, `ConnectionMagnetPreview`, and
   `ConnectionMagnetVisualCue`.

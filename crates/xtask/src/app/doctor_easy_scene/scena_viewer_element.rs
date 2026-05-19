@@ -184,6 +184,8 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
             "scena-viewer-element-browser-proof.png",
             "SCENA_BROWSER_VIEWER_ELEMENT_ONLY",
             "scena.scena_viewer_element_browser_proof.v1",
+            "inspector_fixture_schema",
+            "scena.scena_viewer_inspector_snapshot.v1",
         ],
     );
     require_contains(
@@ -195,6 +197,9 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
             "defineScenaViewer",
             "scenaViewerElementProbe",
             "scena.scena_viewer_element_browser_proof.v1",
+            "loadInspectorSnapshot",
+            "/fixtures/viewer/inspector_snapshot.json",
+            "scena.scena_viewer_inspector_snapshot.v1",
             "scena-viewer-progress-rendered",
             "scena-viewer-file-drop",
             "scena-viewer-drop-error",
@@ -241,6 +246,20 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
         root,
         findings,
         "SCENA-VIEWER-ELEMENT",
+        "tests/assets/viewer/inspector_snapshot.json",
+        &[
+            "scena.scena_viewer_inspector_snapshot.v1",
+            "scena-viewer-inspector-fixture",
+            "\"overlay\": \"Diagnostics\"",
+            "\"diagnostics\"",
+            "\"stats\"",
+            "\"FrameBounds\"",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "SCENA-VIEWER-ELEMENT",
         "docs/checklists/next-release-easy-use-and-state-of-the-art.md",
         &[
             "custom-element\nfoundation and browser UI proof **[shipped]**",
@@ -256,6 +275,7 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
             "scena-viewer-key-control",
             "ScenaViewerInspectorSnapshot",
             "scena-viewer-inspector-rendered",
+            "scena.scena_viewer_inspector_snapshot.v1",
             "ScenaViewerAnnotationAnchor",
             "scena-viewer-annotations-rendered",
             "scena.scena_viewer_element_browser_proof.v1",

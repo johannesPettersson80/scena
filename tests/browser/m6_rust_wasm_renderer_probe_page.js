@@ -22,6 +22,18 @@ async function nextFrame() {
   await new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
+async function loadInspectorSnapshot() {
+  const response = await fetch("/fixtures/viewer/inspector_snapshot.json");
+  if (!response.ok) {
+    throw new Error(`inspector fixture load failed: ${response.status}`);
+  }
+  const snapshot = await response.json();
+  if (snapshot.schema !== "scena.scena_viewer_inspector_snapshot.v1") {
+    throw new Error(`unexpected inspector fixture schema: ${snapshot.schema}`);
+  }
+  return snapshot;
+}
+
 function once(target, eventName) {
   return new Promise((resolve) => {
     target.addEventListener(eventName, (event) => resolve(event.detail || {}), { once: true });
@@ -103,11 +115,8 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
   const annotationsRenderedDetail = await annotationsRendered;
 
   const inspectorRendered = once(viewer, "scena-viewer-inspector-rendered");
-  viewer.setInspectorSnapshot({
-    overlay: "Diagnostics",
-    diagnostics: [{ severity: "warning", code: "FrameBounds", message: "sample warning" }],
-    stats: { drawCalls: 2, triangles: 12, targetWidth: 360, targetHeight: 240 },
-  });
+  const inspectorSnapshot = await loadInspectorSnapshot();
+  viewer.setInspectorSnapshot(inspectorSnapshot);
   const inspectorDetail = await inspectorRendered;
 
   const keyboard = once(viewer, "scena-viewer-key-control");
@@ -135,6 +144,8 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     annotation_transform: getComputedStyle(annotation).transform,
     inspector_overlay: inspectorDetail.overlay,
     inspector_warnings: inspectorDetail.warnings,
+    inspector_fixture_schema: inspectorSnapshot.schema,
+    inspector_fixture_source: inspectorSnapshot.source,
     keyboard_action: keyboardDetail.action,
     drop_accepted_names: dropDetail.accepted.names,
     drop_rejected_names: dropDetail.rejected.names,

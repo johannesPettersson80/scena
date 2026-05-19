@@ -85,7 +85,12 @@ The inspector/dev overlay is host-fed and renderer-neutral. Call
 `setInspectorSnapshot({ overlay, diagnostics, stats })` or
 `setInspectorDiagnostics(diagnostics, overlay, stats)` to render a shadow-DOM
 overlay with the active debug overlay, diagnostic severities, render counters,
-and the `scena-viewer-inspector-rendered` event for browser tests.
+and the `scena-viewer-inspector-rendered` event for browser tests. The M6
+custom-element proof loads
+`/fixtures/viewer/inspector_snapshot.json`, asserts
+`scena.scena_viewer_inspector_snapshot.v1`, feeds that JSON through the live
+overlay, and captures it in
+`target/gate-artifacts/scena-viewer-element-browser-proof.png`.
 
 The annotation overlay uses slotted HTML with `slot="annotation"` and
 `data-position`, optional `data-normal`, and optional `data-surface`

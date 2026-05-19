@@ -177,8 +177,10 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "assertCameraControlKitProof",
             "runCameraControlKitProof",
             "camera-control-kit-browser-proof.png",
+            "inspector_fixture_schema",
             "SCENA_BROWSER_VIEWER_ELEMENT_ONLY",
             "scena.scena_viewer_element_browser_proof.v1",
+            "scena.scena_viewer_inspector_snapshot.v1",
             "scena.m6.camera_control_kit_browser_proof.v1",
             "assertSurfaceLifecycleProbe",
             "assertNoScenaGpuValidationErrors",
@@ -220,6 +222,9 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "scenaViewerElementProbe",
             "scenaCameraControlKitProbe",
             "scena.scena_viewer_element_browser_proof.v1",
+            "loadInspectorSnapshot",
+            "/fixtures/viewer/inspector_snapshot.json",
+            "scena.scena_viewer_inspector_snapshot.v1",
             "scena.m6.camera_control_kit_browser_proof.v1",
             "scena-viewer-progress-rendered",
             "scena-viewer-file-drop",
@@ -253,6 +258,17 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "nonblack",
             "left",
             "right",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "tests/assets/viewer/inspector_snapshot.json",
+        &[
+            "scena.scena_viewer_inspector_snapshot.v1",
+            "scena-viewer-inspector-fixture",
+            "\"overlay\": \"Diagnostics\"",
         ],
     );
     if let Ok(page_source) =

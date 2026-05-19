@@ -909,17 +909,22 @@ specific competitor primitive.
   canvas `touch-action: none`, and keyboard event dispatch. Remaining
   proof: mobile viewport tests for touch/pinch gestures.
   Visual proof: browser-demo + animated-proof (mobile-viewport demo capture; touch-pinch recording)
-- **Inspector / dev overlay.** Status: **[proof-gap]** —
-  `<scena-viewer>` now exposes a host-fed inspector overlay surface.
+- **Inspector / dev overlay.** Status: **[shipped]** for the host-fed
+  overlay and browser snapshot fixture.
   Owner: `crates/xtask/` doctor integration + `<scena-viewer>`.
   `ScenaViewerInspectorSnapshot` turns renderer debug overlay,
   diagnostics, and render stats into a testable snapshot; the element
   exposes `setInspectorSnapshot(...)`, `setInspectorDiagnostics(...)`,
   `clearInspectorSnapshot()`, and emits
   `scena-viewer-inspector-rendered`. Browser overlay snapshot proof now
-  ships through the M6 custom-element proof artifact. Remaining proof: a
-  doctor JSON fixture feeding the live overlay.
-  Visual proof: browser-demo + reference-image (live overlay in the demo; reference snapshot of the overlay state for CI diff)
+  ships through the M6 custom-element proof artifact and is fed by
+  `tests/assets/viewer/inspector_snapshot.json` with schema
+  `scena.scena_viewer_inspector_snapshot.v1`; doctor rules
+  `SCENA-VIEWER-ELEMENT` and `VISUAL-BROWSER-M6` pin the fixture, page
+  fetch, schema assertion, and screenshot proof.
+  Visual proof: browser-demo + reference-image shipped through the live
+  overlay screenshot in
+  `target/gate-artifacts/scena-viewer-element-browser-proof.png`.
 
 ---
 
@@ -1445,6 +1450,18 @@ Picking/outline/hover reconciliation pass (2026-05-19):
 - Reclassified inspector/dev overlay from ergonomic gap to proof gap:
   overlay data plumbing and source enforcement are shipped; live browser
   snapshot proof remains open.
+
+`<scena-viewer>` inspector fixture proof pass (2026-05-19):
+
+- Added `tests/assets/viewer/inspector_snapshot.json` with schema
+  `scena.scena_viewer_inspector_snapshot.v1` as the pinned inspector
+  overlay fixture for browser proof.
+- Updated the M6 custom-element browser probe to fetch the JSON fixture,
+  assert the schema in-page, feed it through `setInspectorSnapshot(...)`,
+  and verify the rendered overlay details before capturing the screenshot.
+- Reclassified inspector/dev overlay from proof gap to shipped for the
+  host-fed overlay: the fixture, live overlay, screenshot artifact, and
+  doctor source enforcement now close the planned proof.
 
 `<scena-viewer>` annotation overlay pass (2026-05-19):
 

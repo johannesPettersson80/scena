@@ -1,0 +1,18 @@
+{
+  "schema": "scena.scena_viewer_inspector_snapshot.v1",
+  "source": "scena-viewer-inspector-fixture",
+  "overlay": "Diagnostics",
+  "diagnostics": [
+    {
+      "severity": "warning",
+      "code": "FrameBounds",
+      "message": "sample warning from fixture"
+    }
+  ],
+  "stats": {
+    "drawCalls": 2,
+    "triangles": 12,
+    "targetWidth": 360,
+    "targetHeight": 240
+  }
+}

@@ -495,6 +495,8 @@ function assertScenaViewerElementProof(result) {
     ["annotation_visible", 1],
     ["inspector_overlay", "Diagnostics"],
     ["inspector_warnings", 1],
+    ["inspector_fixture_schema", "scena.scena_viewer_inspector_snapshot.v1"],
+    ["inspector_fixture_source", "scena-viewer-inspector-fixture"],
     ["keyboard_action", "orbit-left"],
   ]) {
     if (checks[key] !== value) {
