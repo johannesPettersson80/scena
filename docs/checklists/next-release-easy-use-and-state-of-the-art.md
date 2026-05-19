@@ -876,9 +876,14 @@ specific competitor primitive.
   doctor rule `SCENA-VIEWER-ELEMENT` pins the browser UI surface.
   Visual proof: animated-proof + browser-demo still required for a
   throttled-connection custom-element recording.
-- **Mobile-first + a11y defaults.** Status: **[gap]**. Owner:
-  `<scena-viewer>` (bet 1.1). Proof: Playwright mobile viewport tests for
-  touch/pinch plus keyboard/ARIA smoke checks.
+- **Mobile-first + a11y defaults.** Status: **[proof-gap]** —
+  `<scena-viewer>` now ships explicit mobile/ARIA/keyboard defaults.
+  Owner: `<scena-viewer>` (bet 1.1). `ScenaViewerAccessibilityDefaults`
+  and `ScenaViewerKeyboardAction` define the source contract; the element
+  sets host role/label/tabindex defaults, keeps the canvas touch-safe, and
+  emits `scena-viewer-key-control` for keyboard orbit/zoom/reset events.
+  Remaining proof: Playwright mobile viewport tests for touch/pinch plus
+  keyboard/ARIA smoke checks.
   Visual proof: browser-demo + animated-proof (mobile-viewport demo capture; touch-pinch recording)
 - **Inspector / dev overlay.** Status: **[ergonomic-gap]**. Owner:
   `crates/xtask/` doctor integration + an in-viewer overlay. Doctor is
@@ -1380,6 +1385,19 @@ Picking/outline/hover reconciliation pass (2026-05-19):
 - Reclassified variant switching from ergonomic gap to proof gap: the
   picker surface is shipped and source-enforced; browser-demo proof remains
   open.
+
+`<scena-viewer>` mobile/a11y defaults pass (2026-05-19):
+
+- Added `ScenaViewerAccessibilityDefaults` and
+  `ScenaViewerKeyboardAction` to make role, label, touch-action, minimum
+  size, focusability, and keyboard control mapping testable on native
+  targets.
+- Extended the custom element with default host `tabIndex`,
+  `aria-roledescription`, and `scena-viewer-key-control` events for
+  keyboard orbit/zoom/reset actions.
+- Reclassified mobile-first + a11y from gap to proof gap: defaults are
+  shipped and source-enforced; mobile viewport and touch/pinch browser
+  proof remains open.
 
 Asset-validation doctor implementation pass (2026-05-19):
 

@@ -16,10 +16,12 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
         &[
             "pub mod viewer_element;",
             "SCENA_VIEWER_TAG",
+            "ScenaViewerAccessibilityDefaults",
             "ScenaViewerAttributes",
             "ScenaViewerDropDecision",
             "ScenaViewerDropKind",
             "ScenaViewerDroppedFile",
+            "ScenaViewerKeyboardAction",
             "ScenaViewerProgress",
             "ScenaViewerProgressPhase",
             "ScenaViewerVariantOption",
@@ -56,6 +58,11 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
             "variantPicker.part = \"variant-picker\"",
             "scena-viewer-variant-change",
             "scena-viewer-variants-ready",
+            "tabIndex = 0",
+            "aria-roledescription",
+            "_handleKeydown",
+            "_keyboardAction",
+            "scena-viewer-key-control",
         ],
     );
     require_contains(
@@ -64,6 +71,15 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
         "SCENA-VIEWER-ELEMENT",
         "src/viewer_element/model.rs",
         &[
+            "pub struct ScenaViewerAccessibilityDefaults",
+            "host_role",
+            "host_label",
+            "canvas_label",
+            "touch_action",
+            "host_is_keyboard_focusable",
+            "pub enum ScenaViewerKeyboardAction",
+            "from_key",
+            "event_action",
             "pub struct ScenaViewerAttributes",
             "from_pairs",
             "pub enum ScenaViewerDropKind",
@@ -91,6 +107,7 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
             "scena_viewer_progress_maps_asset_events_to_accessible_details",
             "scena_viewer_drop_decision_accepts_gltf_and_reports_rejections",
             "scena_viewer_variant_selection_tracks_available_and_active_names",
+            "scena_viewer_accessibility_defaults_define_mobile_and_keyboard_surface",
             "camera-controls",
             "tone-mapping",
         ],
@@ -113,6 +130,10 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
             "scena-viewer-drop-error",
             "material variant picker",
             "scena-viewer-variant-change",
+            "mobile",
+            "accessibility",
+            "keyboard",
+            "scena-viewer-key-control",
         ],
     );
     require_contains(
@@ -130,6 +151,8 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
             "scena-viewer-file-drop",
             "ScenaViewerVariantSelection",
             "scena-viewer-variant-change",
+            "ScenaViewerAccessibilityDefaults",
+            "scena-viewer-key-control",
             "Full\n  asset loading/rendering parity remains open under bet 1.1",
         ],
     );

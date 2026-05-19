@@ -12,6 +12,28 @@ pub struct ScenaViewerAttributes {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScenaViewerAccessibilityDefaults {
+    host_role: &'static str,
+    host_label: &'static str,
+    canvas_label: &'static str,
+    min_width_px: u32,
+    min_height_px: u32,
+    touch_action: &'static str,
+    host_keyboard_focusable: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScenaViewerKeyboardAction {
+    OrbitLeft,
+    OrbitRight,
+    OrbitUp,
+    OrbitDown,
+    ZoomIn,
+    ZoomOut,
+    ResetView,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScenaViewerDropKind {
     Glb,
     Gltf,
@@ -126,6 +148,77 @@ impl ScenaViewerAttributes {
 
     pub const fn ar(&self) -> bool {
         self.ar
+    }
+}
+
+impl Default for ScenaViewerAccessibilityDefaults {
+    fn default() -> Self {
+        Self {
+            host_role: "img",
+            host_label: "3D model viewer",
+            canvas_label: "scena 3D viewer canvas",
+            min_width_px: 160,
+            min_height_px: 120,
+            touch_action: "none",
+            host_keyboard_focusable: true,
+        }
+    }
+}
+
+impl ScenaViewerAccessibilityDefaults {
+    pub const fn host_role(&self) -> &'static str {
+        self.host_role
+    }
+
+    pub const fn host_label(&self) -> &'static str {
+        self.host_label
+    }
+
+    pub const fn canvas_label(&self) -> &'static str {
+        self.canvas_label
+    }
+
+    pub const fn min_width_px(&self) -> u32 {
+        self.min_width_px
+    }
+
+    pub const fn min_height_px(&self) -> u32 {
+        self.min_height_px
+    }
+
+    pub const fn touch_action(&self) -> &'static str {
+        self.touch_action
+    }
+
+    pub const fn host_is_keyboard_focusable(&self) -> bool {
+        self.host_keyboard_focusable
+    }
+}
+
+impl ScenaViewerKeyboardAction {
+    pub fn from_key(key: &str) -> Option<Self> {
+        match key {
+            "ArrowLeft" => Some(Self::OrbitLeft),
+            "ArrowRight" => Some(Self::OrbitRight),
+            "ArrowUp" => Some(Self::OrbitUp),
+            "ArrowDown" => Some(Self::OrbitDown),
+            "+" | "=" => Some(Self::ZoomIn),
+            "-" | "_" => Some(Self::ZoomOut),
+            "Escape" | "Home" => Some(Self::ResetView),
+            _ => None,
+        }
+    }
+
+    pub const fn event_action(self) -> &'static str {
+        match self {
+            Self::OrbitLeft => "orbit-left",
+            Self::OrbitRight => "orbit-right",
+            Self::OrbitUp => "orbit-up",
+            Self::OrbitDown => "orbit-down",
+            Self::ZoomIn => "zoom-in",
+            Self::ZoomOut => "zoom-out",
+            Self::ResetView => "reset-view",
+        }
     }
 }
 

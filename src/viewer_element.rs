@@ -8,9 +8,9 @@
 mod model;
 
 pub use model::{
-    ScenaViewerAttributes, ScenaViewerDropDecision, ScenaViewerDropKind, ScenaViewerDroppedFile,
-    ScenaViewerProgress, ScenaViewerProgressPhase, ScenaViewerVariantOption,
-    ScenaViewerVariantSelection,
+    ScenaViewerAccessibilityDefaults, ScenaViewerAttributes, ScenaViewerDropDecision,
+    ScenaViewerDropKind, ScenaViewerDroppedFile, ScenaViewerKeyboardAction, ScenaViewerProgress,
+    ScenaViewerProgressPhase, ScenaViewerVariantOption, ScenaViewerVariantSelection,
 };
 
 pub const SCENA_VIEWER_TAG: &str = "scena-viewer";
@@ -80,6 +80,7 @@ export function defineScenaViewerElement(tagName) {
         delete this.dataset.drag;
       });
       this.addEventListener("drop", (event) => this._handleDrop(event));
+      this.addEventListener("keydown", (event) => this._handleKeydown(event));
     }
 
     connectedCallback() {
@@ -88,6 +89,12 @@ export function defineScenaViewerElement(tagName) {
       }
       if (!this.hasAttribute("aria-label")) {
         this.setAttribute("aria-label", "3D model viewer");
+      }
+      if (!this.hasAttribute("tabindex")) {
+        this.tabIndex = 0;
+      }
+      if (!this.hasAttribute("aria-roledescription")) {
+        this.setAttribute("aria-roledescription", "interactive 3D model");
       }
       this._emit("scena-viewer-ready");
     }
@@ -200,6 +207,34 @@ export function defineScenaViewerElement(tagName) {
 
     _isSupportedAssetFile(name) {
       return /\.(glb|gltf)$/i.test(String(name || ""));
+    }
+
+    _handleKeydown(event) {
+      const action = this._keyboardAction(event.key);
+      if (!action) {
+        return;
+      }
+      event.preventDefault();
+      this.dispatchEvent(new CustomEvent("scena-viewer-key-control", {
+        bubbles: true,
+        detail: { action, key: event.key }
+      }));
+    }
+
+    _keyboardAction(key) {
+      switch (key) {
+        case "ArrowLeft": return "orbit-left";
+        case "ArrowRight": return "orbit-right";
+        case "ArrowUp": return "orbit-up";
+        case "ArrowDown": return "orbit-down";
+        case "+":
+        case "=": return "zoom-in";
+        case "-":
+        case "_": return "zoom-out";
+        case "Escape":
+        case "Home": return "reset-view";
+        default: return null;
+      }
     }
 
     _booleanAttribute(name) {

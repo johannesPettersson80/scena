@@ -1,7 +1,7 @@
 use scena::{
-    AssetLoadProgress, AssetPath, SCENA_VIEWER_TAG, ScenaViewerAttributes, ScenaViewerDropDecision,
-    ScenaViewerDropKind, ScenaViewerProgress, ScenaViewerProgressPhase,
-    ScenaViewerVariantSelection, Tonemapper,
+    AssetLoadProgress, AssetPath, SCENA_VIEWER_TAG, ScenaViewerAccessibilityDefaults,
+    ScenaViewerAttributes, ScenaViewerDropDecision, ScenaViewerDropKind, ScenaViewerKeyboardAction,
+    ScenaViewerProgress, ScenaViewerProgressPhase, ScenaViewerVariantSelection, Tonemapper,
 };
 
 #[test]
@@ -124,4 +124,31 @@ fn scena_viewer_variant_selection_tracks_available_and_active_names() {
     let empty = ScenaViewerVariantSelection::from_names(std::iter::empty::<&str>());
     assert!(empty.options().is_empty());
     assert_eq!(empty.status_text(), "No material variants");
+}
+
+#[test]
+fn scena_viewer_accessibility_defaults_define_mobile_and_keyboard_surface() {
+    let defaults = ScenaViewerAccessibilityDefaults::default();
+
+    assert_eq!(defaults.host_role(), "img");
+    assert_eq!(defaults.host_label(), "3D model viewer");
+    assert_eq!(defaults.canvas_label(), "scena 3D viewer canvas");
+    assert_eq!(defaults.min_width_px(), 160);
+    assert_eq!(defaults.min_height_px(), 120);
+    assert_eq!(defaults.touch_action(), "none");
+    assert!(defaults.host_is_keyboard_focusable());
+
+    assert_eq!(
+        ScenaViewerKeyboardAction::from_key("ArrowLeft"),
+        Some(ScenaViewerKeyboardAction::OrbitLeft)
+    );
+    assert_eq!(
+        ScenaViewerKeyboardAction::from_key("+"),
+        Some(ScenaViewerKeyboardAction::ZoomIn)
+    );
+    assert_eq!(
+        ScenaViewerKeyboardAction::from_key("Escape"),
+        Some(ScenaViewerKeyboardAction::ResetView)
+    );
+    assert_eq!(ScenaViewerKeyboardAction::from_key("Tab"), None);
 }

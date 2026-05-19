@@ -69,6 +69,12 @@ names or `{ name, label }` objects, emits `scena-viewer-variants-ready` after
 population, and emits `scena-viewer-variant-change` with the selected variant
 name or `null` for the default material.
 
+The mobile and accessibility defaults are part of the element contract. The host is
+keyboard focusable by default, the canvas uses `touch-action: none`, the element
+sets role and ARIA labels when the host has not supplied them, and keyboard
+navigation emits `scena-viewer-key-control` for arrow-key orbit, `+` / `-` zoom,
+and `Escape` / `Home` reset events.
+
 ## Browser responsibilities
 
 The browser host owns:
