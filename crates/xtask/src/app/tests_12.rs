@@ -197,6 +197,33 @@ pub(crate) fn easy_scene_setup_contracts_reject_example_quat_literals() {
     );
 }
 
+#[test]
+pub(crate) fn easy_scene_setup_contracts_reject_missing_production_asset_profile() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/missing-production-assets");
+    write_easy_scene_fixture(
+        &fixture_root,
+        VALID_GUIDE,
+        "frame_bounds(()) bounds_for_transforms add_grid_floor",
+        r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
+    );
+    fs::write(
+        fixture_root.join("Cargo.toml"),
+        "default = []\nktx2 = [\"dep:ktx2\", \"dep:basisu_c_sys\"]\nmeshopt = [\"dep:meshopt\"]",
+    )
+    .expect("manifest fixture");
+    let mut findings = Vec::new();
+
+    check_easy_scene_setup_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "PRODUCTION-ASSET-PROFILE"),
+        "doctor must reject manifests without the named production-assets feature: {findings:?}",
+    );
+}
+
 const VALID_GUIDE: &str = "frame_bounds add_perspective_camera_default_for add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() EnvironmentPreset::Studio load_environment_preset EnvironmentPreset::ALL KTX2 cubemap presets are still future work khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.add_perspective_camera_default_for(bounds, (width, height))?;\n```";
 
 fn write_easy_scene_fixture(
@@ -226,12 +253,12 @@ fn write_easy_scene_fixture(
     fs::write(fixture_root.join("docs/guides/easy-scene-setup.md"), guide).expect("guide fixture");
     fs::write(
         fixture_root.join("Cargo.toml"),
-        "notify-debouncer-full = { version = \"0.7.0\", optional = true }\nhot-reload = [\"dep:notify-debouncer-full\"]\nkhronos-samples = []\nserde = { version = \"1\", features = [\"derive\"] }\nurlencoding = \"2\"",
+        "notify-debouncer-full = { version = \"0.7.0\", optional = true }\nhot-reload = [\"dep:notify-debouncer-full\"]\nkhronos-samples = []\ndefault = []\nktx2 = [\"dep:ktx2\", \"dep:basisu_c_sys\"]\nmeshopt = [\"dep:meshopt\"]\nproduction-assets = [\"ktx2\", \"meshopt\"]\nserde = { version = \"1\", features = [\"derive\"] }\nurlencoding = \"2\"",
     )
     .expect("manifest fixture");
     fs::write(
         fixture_root.join("docs/feature-flags.md"),
-        "khronos-samples Khronos glTF sample-asset catalog",
+        "khronos-samples Khronos glTF sample-asset catalog `production-assets` enables `ktx2` + `meshopt` features = [\"production-assets\"]",
     )
     .expect("feature flags fixture");
     fs::write(
@@ -348,7 +375,7 @@ fn write_easy_scene_fixture(
     .expect("visual proof fixture");
     fs::write(
         fixture_root.join("src/material.rs"),
-        "pub const GRAY: Color = Color; pub const BLUE: Color = Color; pub fn from_hex(value: &str) {} pub fn from_kelvin(kelvin: f32) {}",
+        "pub const TRANSPARENT: Color = Color; pub const GRAY: Color = Color; pub const BLUE: Color = Color; pub fn from_hex(value: &str) {} pub fn from_kelvin(kelvin: f32) {}",
     )
     .expect("material fixture");
     fs::write(
@@ -386,6 +413,11 @@ fn write_easy_scene_fixture(
         "round_a_color_named_constants_and_hex_alias_are_public round_a_color_kelvin_helper_is_clamped_and_ordered round_a_perspective_camera_lens_presets_are_named_degree_surfaces round_a_transform_looking_at_faces_target_with_requested_up",
     )
     .expect("round-a test fixture");
+    fs::write(
+        fixture_root.join("tests/production_asset_profile.rs"),
+        "production_asset_profile_enables_compressed_asset_decoders_without_default_bloat",
+    )
+    .expect("production asset profile test fixture");
     fs::write(
         fixture_root.join("tests/round_b_light_presets.rs"),
         "named_directional_light_presets_are_public_and_ordered named_point_light_presets_are_kelvin_tinted_and_range_limited",

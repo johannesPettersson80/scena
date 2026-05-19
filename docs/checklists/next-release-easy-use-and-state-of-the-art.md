@@ -187,6 +187,8 @@ Default policy to decide before implementation: keep the crate's default
 feature set lean unless package size, build time, and binary-size evidence
 support changing it. If KTX2 / meshopt stay optional, ship a documented
 `production-assets` profile or example command that enables them together.
+Current policy: defaults stay empty, and `production-assets` is the named
+profile that enables `ktx2` + `meshopt` together.
 
 Sub-items:
 
@@ -194,14 +196,16 @@ Sub-items:
   (`src/render/output.rs:62`, `#[default]` on `Tonemapper::PbrNeutral`;
   test at `tests/m1_geometry_materials.rs:719`).
 - **KTX2 / Basis textures (`KHR_texture_basisu`)** — Status:
-  **[ergonomic-gap]**. Feature flag exists at `Cargo.toml:45`, documented
+  **[proof-gap]**. Feature flag exists at `Cargo.toml:45`, documented
   in `docs/feature-flags.md:28`, decode path at `src/assets/texture.rs`,
-  marked `Supported` in extension diagnostics. Not on by default; no
-  benchmark proving the GPU memory win; no rendered-output regression
-  image of a KTX2-textured asset.
-- **meshopt (`EXT_meshopt_compression`)** — Status: **[ergonomic-gap]**.
+  marked `Supported` in extension diagnostics, and grouped under the
+  `production-assets` profile. Not on by default; no benchmark proving
+  the GPU memory win; no rendered-output regression image of a
+  KTX2-textured asset.
+- **meshopt (`EXT_meshopt_compression`)** — Status: **[proof-gap]**.
   Feature flag at `Cargo.toml`, marked `Supported` at
-  `src/assets/gltf/extensions.rs`. Not default; no proof artifact.
+  `src/assets/gltf/extensions.rs`, and grouped under the
+  `production-assets` profile. Not default; no proof artifact.
 - **Draco (`KHR_draco_mesh_compression`)** — Status: **[gap]**.
   Not a v1.4 critical-path item. Prefer meshopt for the next release;
   revisit Draco only behind an optional feature when a maintained decoder
@@ -1146,6 +1150,16 @@ Auto-framing helper implementation pass (2026-05-19):
   fill-correct active camera and rejects a zero-sized viewport before
   making a camera active. The remaining §1.2 gap is the
   `<scena-viewer>` browser-demo/reference-image path.
+
+Production asset profile implementation pass (2026-05-19):
+
+- Added the `production-assets` Cargo feature as the named compressed
+  glTF profile that enables `ktx2` + `meshopt` while keeping
+  `default = []`.
+- Updated `docs/feature-flags.md` so asset-heavy users can opt into the
+  profile without guessing the decoder feature pair. The remaining §1.3
+  work is measured package/build-size evidence and rendered reference
+  artifacts for KTX2 and meshopt assets.
 
 Ease-of-use implementation continuation (2026-05-19):
 

@@ -30,6 +30,7 @@ scena = { version = "1.3", features = ["controls", "controls-winit"] }
 | `ktx2` | KTX2/Basis texture descriptor and decode support for `KHR_texture_basisu` assets |
 | `meshopt` | meshopt-compressed glTF buffer decoding support |
 | `obj` | OBJ import path |
+| `production-assets` | compressed glTF asset profile; enables `ktx2` + `meshopt` without changing defaults |
 
 ## Recommended combinations
 
@@ -48,8 +49,11 @@ scena = { version = "1.3", features = ["controls", "controls-web"] }
 Asset-heavy viewer:
 
 ```toml
-scena = { version = "1.3", features = ["ktx2", "meshopt", "obj"] }
+scena = { version = "1.3", features = ["production-assets"] }
 ```
+
+Add `obj` separately when the application needs OBJ import in addition to
+production glTF compression support.
 
 Sample-driven examples/tests:
 

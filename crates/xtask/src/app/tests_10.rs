@@ -153,12 +153,12 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     .expect("guide fixture");
     fs::write(
         fixture_root.join("Cargo.toml"),
-        "notify-debouncer-full = { version = \"0.7.0\", optional = true }\nhot-reload = [\"dep:notify-debouncer-full\"]\nkhronos-samples = []\nserde = { version = \"1\", features = [\"derive\"] }\nurlencoding = \"2\"",
+        "notify-debouncer-full = { version = \"0.7.0\", optional = true }\nhot-reload = [\"dep:notify-debouncer-full\"]\nkhronos-samples = []\ndefault = []\nktx2 = [\"dep:ktx2\", \"dep:basisu_c_sys\"]\nmeshopt = [\"dep:meshopt\"]\nproduction-assets = [\"ktx2\", \"meshopt\"]\nserde = { version = \"1\", features = [\"derive\"] }\nurlencoding = \"2\"",
     )
     .expect("manifest fixture");
     fs::write(
         fixture_root.join("docs/feature-flags.md"),
-        "khronos-samples Khronos glTF sample-asset catalog",
+        "khronos-samples Khronos glTF sample-asset catalog `production-assets` enables `ktx2` + `meshopt` features = [\"production-assets\"]",
     )
     .expect("feature flags fixture");
     fs::write(
@@ -318,6 +318,10 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
         (
             "tests/round_a_easy_use.rs",
             "round_a_color_named_constants_and_hex_alias_are_public round_a_color_kelvin_helper_is_clamped_and_ordered round_a_perspective_camera_lens_presets_are_named_degree_surfaces round_a_transform_looking_at_faces_target_with_requested_up",
+        ),
+        (
+            "tests/production_asset_profile.rs",
+            "production_asset_profile_enables_compressed_asset_decoders_without_default_bloat",
         ),
         (
             "tests/round_b_light_presets.rs",

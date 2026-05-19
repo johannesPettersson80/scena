@@ -71,6 +71,7 @@ khronos-samples = []
 ktx2 = ["dep:ktx2", "dep:basisu_c_sys"]
 meshopt = ["dep:meshopt"]
 obj = []
+production-assets = ["ktx2", "meshopt"]
 
 [package.metadata.docs.rs]
 all-features = true

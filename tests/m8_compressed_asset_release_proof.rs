@@ -74,13 +74,12 @@ fn m8_ktx2_material_role_visual_rows_write_release_artifacts() {
     let files = textures
         .iter()
         .map(|(slot, rgba, color_space)| {
-            (
-                AssetPath::from(format!("memory://ktx2-{slot}.ktx2")),
-                tiny_basisu_ktx2_solid_rgba(*rgba, *color_space),
-            )
+            let bytes = tiny_basisu_ktx2_solid_rgba(*rgba, *color_space);
+            (AssetPath::from(format!("memory://ktx2-{slot}.ktx2")), bytes)
         })
         .collect::<Vec<_>>();
     let assets = Assets::with_fetcher(MemoryFetcher::new(files.clone()));
+    assert_ktx2_normal_texture_affects_cpu_preview_pixels();
     let mut rows = Vec::new();
 
     for (slot, _, color_space) in textures {
@@ -96,7 +95,7 @@ fn m8_ktx2_material_role_visual_rows_write_release_artifacts() {
 
         let material = material_for_slot(slot, texture);
         let frame = render_material(&assets, material);
-        assert_non_degenerate_frame(&frame, slot);
+        assert_material_role_frame(&frame, slot);
         let ppm_path = root.join(format!("ktx2-{slot}.ppm"));
         write_ppm(&ppm_path, 64, 64, &frame);
         let ppm_bytes = fs::read(&ppm_path).expect("ppm readable");
@@ -255,7 +254,7 @@ fn render_material<F: AssetFetcher>(assets: &Assets<F>, material: MaterialDesc) 
         .add()
         .expect("mesh inserts");
     scene
-        .directional_light(DirectionalLight::default().with_illuminance_lux(1.0))
+        .directional_light(DirectionalLight::default().with_illuminance_lux(12_000.0))
         .add()
         .expect("light inserts");
     let camera = scene.add_default_camera().expect("camera inserts");
@@ -267,26 +266,79 @@ fn render_material<F: AssetFetcher>(assets: &Assets<F>, material: MaterialDesc) 
     renderer.frame_rgba8().to_vec()
 }
 
+fn assert_material_role_frame(frame: &[u8], label: &str) {
+    if label == "normal" {
+        assert_visible_frame(frame, label);
+    } else {
+        assert_non_degenerate_frame(frame, label);
+    }
+}
+
 fn assert_non_degenerate_frame(frame: &[u8], label: &str) {
-    assert_eq!(frame.len(), 64 * 64 * 4);
+    assert_visible_frame(frame, label);
     let first = &frame[0..4];
     let distinct = frame
         .chunks_exact(4)
         .filter(|pixel| *pixel != first)
         .take(9)
         .count();
+    assert!(distinct > 0, "{label} frame must not be constant");
+}
+
+fn assert_visible_frame(frame: &[u8], label: &str) {
+    assert_eq!(frame.len(), 64 * 64 * 4);
     let bright = frame
         .chunks_exact(4)
         .filter(|pixel| pixel[0] > 16 || pixel[1] > 16 || pixel[2] > 16)
         .count();
-    assert!(distinct > 0, "{label} frame must not be constant");
     assert!(
         bright > 16,
         "{label} frame must contain visible foreground pixels"
     );
 }
 
+fn assert_ktx2_normal_texture_affects_cpu_preview_pixels() {
+    let flat = render_center_rgb_for_ktx2_normal_texture([128, 128, 255, 255]);
+    let inverted = render_center_rgb_for_ktx2_normal_texture([128, 128, 0, 255]);
+    let flat_luma = flat.iter().map(|channel| u16::from(*channel)).sum::<u16>();
+    let inverted_luma = inverted
+        .iter()
+        .map(|channel| u16::from(*channel))
+        .sum::<u16>();
+    assert_ne!(
+        flat, inverted,
+        "KTX2 normal texture pixels must affect CPU preview lighting instead of being silently ignored"
+    );
+    assert!(
+        flat_luma > inverted_luma,
+        "front-facing KTX2 normal map should receive more directional light than an inverted normal, flat={flat:?}, inverted={inverted:?}"
+    );
+}
+
+fn render_center_rgb_for_ktx2_normal_texture(pixel: [u8; 4]) -> [u8; 3] {
+    let path = format!(
+        "memory://ktx2-normal-{}-{}-{}.ktx2",
+        pixel[0], pixel[1], pixel[2]
+    );
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from(path.clone()),
+        tiny_basisu_ktx2_solid_rgba(pixel, TextureColorSpace::Linear),
+    )]));
+    let normal = pollster::block_on(assets.load_texture(path, TextureColorSpace::Linear))
+        .expect("KTX2 normal texture loads");
+    let frame = render_material(&assets, material_for_slot("normal", normal));
+    let center = ((64 / 2) * 64 + (64 / 2)) as usize * 4;
+    [frame[center], frame[center + 1], frame[center + 2]]
+}
+
 fn tiny_basisu_ktx2_solid_rgba(pixel: [u8; 4], color_space: TextureColorSpace) -> Vec<u8> {
+    tiny_basisu_ktx2_rgba8(&[pixel; 16], color_space)
+}
+
+fn tiny_basisu_ktx2_rgba8(
+    source_pixels: &[[u8; 4]; 16],
+    color_space: TextureColorSpace,
+) -> Vec<u8> {
     use basisu_c_sys::BasisTextureFormat;
     use basisu_c_sys::common;
     use basisu_c_sys::extra::{
@@ -295,13 +347,13 @@ fn tiny_basisu_ktx2_solid_rgba(pixel: [u8; 4], color_space: TextureColorSpace) -
 
     pollster::block_on(basisu_encoder_init());
     let mut encoder = BasisuEncoder::new();
-    let mut pixels = Vec::with_capacity(4 * 4 * 4);
-    for _ in 0..16 {
-        pixels.extend_from_slice(&pixel);
+    let mut encoded_pixels = Vec::with_capacity(4 * 4 * 4);
+    for pixel in source_pixels {
+        encoded_pixels.extend_from_slice(pixel);
     }
     encoder
         .set_image(SourceImage {
-            data: SourceImageData::Rgba8(&pixels),
+            data: SourceImageData::Rgba8(&encoded_pixels),
             size: wgpu::Extent3d {
                 width: 4,
                 height: 4,

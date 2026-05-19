@@ -179,6 +179,7 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
     next_release::check_viewer_capture_png(root, findings);
     next_release::check_asset_hot_reload(root, findings);
     khronos_samples::check_khronos_samples(root, findings);
+    next_release::check_production_asset_profile(root, findings);
     state_url::check_state_via_url(root, findings);
 
     for rel in ["src/lib.rs", "src/geometry.rs"] {
