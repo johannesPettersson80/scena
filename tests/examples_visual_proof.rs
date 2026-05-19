@@ -13,9 +13,9 @@ use std::fs;
 use std::path::PathBuf;
 
 use scena::{
-    Aabb, AnimationPlaybackState, Assets, Background, Color, ConnectOptions, ConnectionAlignment,
-    ConnectionError, ConnectorFrame, CursorPosition, DirectionalLight, GeometryDesc,
-    InteractionStyle, LabelDesc, MaterialDesc, OrbitControlAction, OrbitControls,
+    Aabb, AnimationPlaybackState, Assets, AutoExposureConfig, Background, Color, ConnectOptions,
+    ConnectionAlignment, ConnectionError, ConnectorFrame, CursorPosition, DirectionalLight,
+    GeometryDesc, InteractionStyle, LabelDesc, MaterialDesc, OrbitControlAction, OrbitControls,
     PerspectiveCamera, PointLight, PointerEvent, Profile, Renderer, RendererOptions, Scene,
     SourceCoordinateSystem, SourceUnits, TouchEvent, Transform, Vec3, Viewport,
 };
@@ -257,6 +257,45 @@ fn write_reference_docs_image_artifact(
         ),
     )
     .expect("reference docs-image metadata can be written");
+}
+
+fn write_auto_exposure_reference_docs_image_artifact(
+    name: &str,
+    source: &str,
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+    exposure_evs: &[f32],
+) {
+    let dir = artifact_dir();
+    let mut ppm = format!("P6\n{width} {height}\n255\n").into_bytes();
+    for pixel in rgba.chunks_exact(4) {
+        ppm.extend_from_slice(&pixel[..3]);
+    }
+    fs::write(dir.join(format!("{name}.ppm")), ppm)
+        .expect("auto-exposure reference docs-image PPM can be written");
+    let exposure_evs = exposure_evs
+        .iter()
+        .map(|value| format!("{value:.4}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    fs::write(
+        dir.join(format!("{name}.toml")),
+        format!(
+            "[artifact]\n\
+             name = \"{name}\"\n\
+             source = \"{source}\"\n\
+             format = \"ppm\"\n\
+             encoding = \"srgb8\"\n\
+             width = {width}\n\
+             height = {height}\n\
+             exposure_evs = [{exposure_evs}]\n\
+             proof_class = \"reference-image+docs-image\"\n\
+             generated = true\n\
+             screenshot = false\n"
+        ),
+    )
+    .expect("auto-exposure reference docs-image metadata can be written");
 }
 
 fn write_animated_docs_image_artifact(
@@ -772,6 +811,91 @@ fn render_orbit_control_motion_frame(controls: OrbitControls, width: u32, height
         .render_active(&scene)
         .expect("orbit animated-proof scene renders");
     renderer.frame_rgba8().to_vec()
+}
+
+#[test]
+fn round_c_auto_exposure_preset_reference_docs_image() {
+    let tile_width = 96;
+    let tile_height = 96;
+    let presets = [
+        AutoExposureConfig::product_studio(),
+        AutoExposureConfig::indoor(),
+        AutoExposureConfig::outdoor(),
+        AutoExposureConfig::mixed(),
+    ];
+    let width = tile_width * presets.len() as u32;
+    let height = tile_height;
+    let mut rgba = vec![0_u8; (width * height * 4) as usize];
+    let mut exposure_evs = Vec::new();
+    for (index, config) in presets.iter().enumerate() {
+        let (tile, exposure_ev) =
+            render_auto_exposure_preset_tile(*config, tile_width, tile_height);
+        assert!(
+            count_nonblack_pixels(&tile) > 0,
+            "auto-exposure preset tile {index} must render a visible subject"
+        );
+        exposure_evs.push(exposure_ev);
+        for y in 0..tile_height {
+            let dst_start = ((y * width + index as u32 * tile_width) * 4) as usize;
+            let src_start = (y * tile_width * 4) as usize;
+            let byte_count = (tile_width * 4) as usize;
+            rgba[dst_start..dst_start + byte_count]
+                .copy_from_slice(&tile[src_start..src_start + byte_count]);
+        }
+    }
+    assert!(
+        exposure_evs[1] > exposure_evs[2],
+        "indoor preset should lift the matched dim scene more than outdoor: {exposure_evs:?}"
+    );
+    write_auto_exposure_reference_docs_image_artifact(
+        "round-c-auto-exposure-preset-reference-docs-image",
+        "docs/guides/easy-scene-setup.md",
+        width,
+        height,
+        &rgba,
+        &exposure_evs,
+    );
+}
+
+fn render_auto_exposure_preset_tile(
+    config: AutoExposureConfig,
+    width: u32,
+    height: u32,
+) -> (Vec<u8>, f32) {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.9, 0.9, 0.2));
+    let material = assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(
+        0.22, 0.22, 0.22,
+    )));
+
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("auto-exposure preset subject inserts");
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::standard(),
+            Transform::at(Vec3::new(0.0, 0.0, 3.0)),
+        )
+        .expect("camera inserts");
+    scene.set_active_camera(camera).expect("active camera sets");
+
+    let mut renderer = Renderer::headless(width, height).expect("headless renderer builds");
+    renderer.set_background(Background::DarkStudio);
+    renderer.set_auto_exposure(config);
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("auto-exposure preset docs-image scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("auto-exposure preset docs-image scene renders");
+    let exposure_ev = renderer
+        .last_auto_exposure()
+        .expect("auto exposure result is recorded")
+        .exposure_ev();
+    (renderer.frame_rgba8().to_vec(), exposure_ev)
 }
 
 #[test]

@@ -121,7 +121,7 @@ pub(crate) fn easy_scene_setup_contracts_reject_round_a_raw_color_literals_in_fi
     );
 }
 
-const VALID_GUIDE: &str = "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```";
+const VALID_GUIDE: &str = "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed()\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```";
 
 fn write_easy_scene_fixture(
     fixture_root: &Path,
@@ -192,7 +192,7 @@ fn write_easy_scene_fixture(
     .expect("lights fixture");
     fs::write(
         fixture_root.join("tests/examples_visual_proof.rs"),
-        "frame_bounds_rendered_output_proves_fill_center_and_unclipped_object frame-bounds-rendered-output computed_distance projected_rect nonblack_pixel_rect round_a_named_color_swatch_docs_image round-a-named-color-swatch-docs-image round_a_lens_preset_comparison_docs_image round-a-lens-preset-comparison-docs-image round_b_light_preset_reference_docs_image round-b-light-preset-reference-docs-image round_b_material_preset_reference_docs_image round-b-material-preset-reference-docs-image round_b_background_preset_reference_docs_image round-b-background-preset-reference-docs-image round_b_orbit_control_preset_animated_docs_image round-b-orbit-control-preset-animated-docs-image reference-image+docs-image animated-proof+docs-image",
+        "frame_bounds_rendered_output_proves_fill_center_and_unclipped_object frame-bounds-rendered-output computed_distance projected_rect nonblack_pixel_rect round_a_named_color_swatch_docs_image round-a-named-color-swatch-docs-image round_a_lens_preset_comparison_docs_image round-a-lens-preset-comparison-docs-image round_b_light_preset_reference_docs_image round-b-light-preset-reference-docs-image round_b_material_preset_reference_docs_image round-b-material-preset-reference-docs-image round_b_background_preset_reference_docs_image round-b-background-preset-reference-docs-image round_b_orbit_control_preset_animated_docs_image round-b-orbit-control-preset-animated-docs-image round_c_auto_exposure_preset_reference_docs_image round-c-auto-exposure-preset-reference-docs-image reference-image+docs-image animated-proof+docs-image",
     )
     .expect("visual proof fixture");
     fs::write(
@@ -215,6 +215,11 @@ fn write_easy_scene_fixture(
         "pub fn set_background(background: Background) { self.set_background_color(background.color()); }",
     )
     .expect("render settings fixture");
+    fs::write(
+        fixture_root.join("src/render/exposure.rs"),
+        "pub const fn product_studio() {} pub const fn indoor() {} pub const fn outdoor() {} pub const fn mixed() {}",
+    )
+    .expect("auto exposure fixture");
     fs::write(
         fixture_root.join("src/scene/camera.rs"),
         "pub fn standard() {} pub fn wide_angle() {} pub fn portrait() {} pub fn telephoto() {} pub fn with_fov_degrees(degrees: f32) {}",
@@ -250,6 +255,11 @@ fn write_easy_scene_fixture(
         "named_orbit_damping_presets_are_public_and_ordered turntable_presets_expose_explicit_frame_advance_semantics presentation_combines_medium_damping_with_slow_turntable_motion",
     )
     .expect("orbit preset test fixture");
+    fs::write(
+        fixture_root.join("tests/round_c_auto_exposure_presets.rs"),
+        "named_auto_exposure_scenarios_are_public_and_ordered scenario_presets_drive_different_ev_solutions",
+    )
+    .expect("auto exposure preset test fixture");
     fs::write(fixture_root.join("src/lib.rs"), "").expect("lib fixture");
     fs::write(fixture_root.join("src/geometry.rs"), "").expect("geometry fixture");
     fs::write(fixture_root.join("demo/index.html"), diagnostics_html).expect("demo html fixture");

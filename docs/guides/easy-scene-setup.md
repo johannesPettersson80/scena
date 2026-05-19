@@ -43,7 +43,7 @@ let framing = scene.frame_bounds(
 
 let mut renderer = Renderer::headless(width, height)?;
 renderer.set_background(Background::Studio);
-renderer.set_auto_exposure(AutoExposureConfig::default());
+renderer.set_auto_exposure(AutoExposureConfig::product_studio());
 renderer.prepare_with_assets(&mut scene, &assets)?;
 renderer.render(&scene, camera)?;
 ```
@@ -67,10 +67,19 @@ scene.directional_light(DirectionalLight::fill_light()).add()?;
 scene.point_light(PointLight::bulb_warm()).add()?;
 ```
 
-Use `Renderer::set_auto_exposure(AutoExposureConfig::default())` to adapt output
-brightness from the rendered frame. Auto exposure prevents globally too-dark or
-too-bright frames. It does not change light direction, material albedo,
-roughness, dynamic range, or composition.
+Use named exposure scenarios to adapt output brightness from the rendered
+frame:
+
+```rust
+renderer.set_auto_exposure(AutoExposureConfig::product_studio());
+renderer.set_auto_exposure(AutoExposureConfig::indoor());
+renderer.set_auto_exposure(AutoExposureConfig::outdoor());
+renderer.set_auto_exposure(AutoExposureConfig::mixed());
+```
+
+Auto exposure prevents globally too-dark or too-bright frames. It does not
+change light direction, material albedo, roughness, dynamic range, or
+composition.
 
 Use named backgrounds for the first render instead of typing raw RGB values:
 

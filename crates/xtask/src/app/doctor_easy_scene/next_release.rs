@@ -188,3 +188,63 @@ pub(super) fn check_named_orbit_control_presets(root: &Path, findings: &mut Vec<
         }
     }
 }
+
+pub(super) fn check_named_auto_exposure_presets(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "NAMED-AUTO-EXPOSURE-PRESETS",
+        "src/render/exposure.rs",
+        &[
+            "pub const fn product_studio(",
+            "pub const fn indoor(",
+            "pub const fn outdoor(",
+            "pub const fn mixed(",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "NAMED-AUTO-EXPOSURE-PRESETS",
+        "tests/round_c_auto_exposure_presets.rs",
+        &[
+            "named_auto_exposure_scenarios_are_public_and_ordered",
+            "scenario_presets_drive_different_ev_solutions",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "NAMED-AUTO-EXPOSURE-PRESETS",
+        "tests/examples_visual_proof.rs",
+        &[
+            "round_c_auto_exposure_preset_reference_docs_image",
+            "round-c-auto-exposure-preset-reference-docs-image",
+            "reference-image+docs-image",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "NAMED-AUTO-EXPOSURE-PRESETS",
+        "docs/guides/easy-scene-setup.md",
+        &[
+            "AutoExposureConfig::product_studio()",
+            "AutoExposureConfig::indoor()",
+            "AutoExposureConfig::outdoor()",
+            "AutoExposureConfig::mixed()",
+        ],
+    );
+
+    let rel = "src/demo_page.rs";
+    if fs::read_to_string(root.join(rel))
+        .is_ok_and(|text| text.contains("AutoExposureConfig::new("))
+    {
+        findings.push(Finding::new(
+            "NAMED-AUTO-EXPOSURE-PRESETS",
+            format!(
+                "{rel} must use named AutoExposureConfig scenarios instead of raw exposure literals"
+            ),
+        ));
+    }
+}

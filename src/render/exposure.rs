@@ -38,6 +38,54 @@ impl AutoExposureConfig {
         }
     }
 
+    /// Product-viewer exposure for controlled studio lighting.
+    ///
+    /// Uses a slightly brighter target, a tight EV range, and an aggressive
+    /// highlight guard so light product surfaces do not wash out while the
+    /// renderer lifts a dark studio background.
+    pub const fn product_studio() -> Self {
+        Self {
+            target_luminance: 0.22,
+            min_ev: -1.5,
+            max_ev: 0.65,
+            highlight_percentile: 0.88,
+            highlight_target_luminance: 0.70,
+        }
+    }
+
+    /// Indoor exposure for moderately dim scenes with practical highlight headroom.
+    pub const fn indoor() -> Self {
+        Self {
+            target_luminance: 0.20,
+            min_ev: -2.5,
+            max_ev: 2.5,
+            highlight_percentile: 0.95,
+            highlight_target_luminance: 0.82,
+        }
+    }
+
+    /// Outdoor exposure for bright scenes where darkening is usually safer than lifting.
+    pub const fn outdoor() -> Self {
+        Self {
+            target_luminance: 0.16,
+            min_ev: -5.0,
+            max_ev: 0.75,
+            highlight_percentile: 0.98,
+            highlight_target_luminance: 0.90,
+        }
+    }
+
+    /// Conservative mixed-lighting exposure. Equivalent to [`Self::default`].
+    pub const fn mixed() -> Self {
+        Self {
+            target_luminance: DEFAULT_TARGET_LUMINANCE,
+            min_ev: DEFAULT_MIN_EV,
+            max_ev: DEFAULT_MAX_EV,
+            highlight_percentile: DEFAULT_HIGHLIGHT_PERCENTILE,
+            highlight_target_luminance: DEFAULT_HIGHLIGHT_TARGET_LUMINANCE,
+        }
+    }
+
     pub fn with_ev_range(mut self, min_ev: f32, max_ev: f32) -> Self {
         let min_ev = finite_or(min_ev, DEFAULT_MIN_EV);
         let max_ev = finite_or(max_ev, DEFAULT_MAX_EV);

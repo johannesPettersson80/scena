@@ -430,10 +430,17 @@ OrbitControls::from_framing(framing).turntable(6.0)   // auto-rotate, 6 RPM
 
 ### 2.9 `AutoExposureConfig` scenario presets
 
-Status: **[gap]**
+Status: **[shipped]** — implemented on branch
+`easy-use-state-art/round-b`.
 Owner: `src/render/exposure.rs`
-Proof: per-scenario rendered-output reference.
-Visual proof: reference-image + docs-image (one reference image per scenario on a matched scene to show the EV/highlight-guard outcome)
+Proof: `tests/round_c_auto_exposure_presets.rs` asserts the scenario
+settings and their different EV behavior; doctor rule
+`NAMED-AUTO-EXPOSURE-PRESETS` keeps the API, docs, demo sweep, and
+visual proof present.
+Visual proof: reference-image + docs-image
+`target/gate-artifacts/examples-visual/round-c-auto-exposure-preset-reference-docs-image.ppm`
+renders one matched scene under each scenario and records the solved EVs
+in adjacent metadata.
 
 ```rust
 AutoExposureConfig::product_studio()    // tight EV range, clean highlights
@@ -835,7 +842,7 @@ the rounds, not after — they're the strategic arc.
 
 8. - [ ] `Environment::*` curated KTX2 environment presets (§5)
 9. - [ ] `Assets::khronos::*` sample loaders (§4.1)
-10. - [ ] `AutoExposureConfig` scenario presets (§2.9)
+10. - [x] `AutoExposureConfig` scenario presets (§2.9)
 11. - [ ] Scene / Viewer one-call animation playback by clip name (§4.4)
 
 ### Round D — Tier 2 ergonomics

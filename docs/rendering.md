@@ -78,10 +78,11 @@ Environment data affects model-viewer lighting and product presentation.
 Applications can use bundled defaults for simple scenes or load an explicit
 environment for controlled output.
 
-Renderer-managed auto exposure is available through
-`Renderer::set_auto_exposure(AutoExposureConfig::default())`. Auto exposure
-adapts output brightness after a frame is rendered; lighting and materials
-still control shape, contrast, and dynamic range.
+Renderer-managed auto exposure is available through named scenarios such as
+`AutoExposureConfig::product_studio()`, `AutoExposureConfig::indoor()`,
+`AutoExposureConfig::outdoor()`, and `AutoExposureConfig::mixed()`. Auto
+exposure adapts output brightness after a frame is rendered; lighting and
+materials still control shape, contrast, and dynamic range.
 
 Use `Scene::add_grid_floor(&assets, GridFloorOptions::new().under_bounds(bounds))`
 when a model needs a matte reference floor. The floor helper derives size from

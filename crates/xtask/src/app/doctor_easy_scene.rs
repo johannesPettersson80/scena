@@ -164,6 +164,7 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
     next_release::check_honest_material_presets(root, findings);
     next_release::check_named_background_presets(root, findings);
     next_release::check_named_orbit_control_presets(root, findings);
+    next_release::check_named_auto_exposure_presets(root, findings);
 
     for rel in ["src/lib.rs", "src/geometry.rs"] {
         if fs::read_to_string(root.join(rel)).is_ok_and(|text| text.contains("FramingAngles")) {

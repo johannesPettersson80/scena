@@ -236,11 +236,7 @@ pub async fn attach_to_canvas(app: &mut DemoApp, canvas: HtmlCanvasElement) -> R
     }
     renderer.set_background_color(DEMO_BACKGROUND);
     renderer.set_exposure_ev(-0.35);
-    renderer.set_auto_exposure(
-        AutoExposureConfig::new(0.22)
-            .with_ev_range(-1.5, 0.65)
-            .with_highlight_guard(0.88, 0.70),
-    );
+    renderer.set_auto_exposure(AutoExposureConfig::product_studio());
     app.renderer = Some(renderer);
     log_timing("attach_to_canvas setup", step_start);
     log_timing("attach_to_canvas total", total_start);
