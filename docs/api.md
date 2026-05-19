@@ -228,6 +228,8 @@ Common import and connector contracts:
 - `ConnectionAlignment`
 - `ConnectionRoll`
 - `ConnectionLineOverlay`
+- `ConnectionMagnetPreview`
+- `ConnectionMagnetVisualCue`
 - `ConnectorRollPolicy`
 - `ConnectorPolarity`
 

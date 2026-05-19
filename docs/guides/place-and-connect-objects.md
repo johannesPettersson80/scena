@@ -50,6 +50,18 @@ scene.connect(source_frame, target_frame, options)?;
 Use `Scene::preview_connection` or `Scene::validate_connections` before applying a batch in
 an editor UI.
 
+Use `Scene::preview_connector_magnet` while dragging parts near a compatible
+mate. It returns the same solved ghost transform as `preview_connection`, plus
+the current connector distance, the active snap tolerance, and a
+`ConnectionMagnetVisualCue` for viewer styling:
+
+```rust
+let magnet = scene.preview_connector_magnet(source_frame, target_frame, options)?;
+if magnet.is_snap_ready() {
+    draw_outline(magnet.ghost_transform(), magnet.visual_cue().css_class());
+}
+```
+
 ## Imported Connectors
 
 For glTF assets with `extras.scena.connectors[]`, connect imports by stable names:

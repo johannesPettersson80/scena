@@ -11,6 +11,7 @@ use super::{
 mod error;
 mod imports;
 mod locks;
+mod magnet;
 mod metadata;
 mod options;
 mod parenting;
@@ -18,6 +19,7 @@ mod roll;
 mod scale;
 mod validation;
 pub use error::ConnectionError;
+pub use magnet::{ConnectionMagnetPreview, ConnectionMagnetVisualCue};
 pub use metadata::{ConnectorMetadata, ConnectorPolarity, ConnectorRollPolicy};
 pub use options::{
     ConnectOptions, ConnectionAlignment, ConnectionParenting, ConnectionRequest, ConnectionRoll,

@@ -44,8 +44,9 @@ pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
 pub use clipping::{ClippingPlane, ClippingPlaneSet};
 pub use connectors::{
     ConnectOptions, ConnectionAlignment, ConnectionError, ConnectionLineOverlay,
-    ConnectionParenting, ConnectionPreview, ConnectionRequest, ConnectionRoll, ConnectionWarning,
-    ConnectorFrame, ConnectorMetadata, ConnectorPolarity, ConnectorRollPolicy,
+    ConnectionMagnetPreview, ConnectionMagnetVisualCue, ConnectionParenting, ConnectionPreview,
+    ConnectionRequest, ConnectionRoll, ConnectionWarning, ConnectorFrame, ConnectorMetadata,
+    ConnectorPolarity, ConnectorRollPolicy,
 };
 pub use dirty::SceneDirtyState;
 pub use framing::{

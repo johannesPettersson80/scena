@@ -41,6 +41,20 @@ pub(crate) fn check_renderer_truth_connector_contracts(root: &Path, findings: &m
         root,
         findings,
         "ARCH-RENDER-TRUTH",
+        "src/scene/connectors/magnet.rs",
+        &[
+            "pub struct ConnectionMagnetPreview",
+            "pub enum ConnectionMagnetVisualCue",
+            "pub fn preview_connector_magnet",
+            "connector_magnet_tolerance",
+            "pub const fn ghost_transform",
+            "pub const fn css_class",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
         "src/scene/connectors/scale.rs",
         &["fn preserve_source_scale", "rotate_vec3"],
     );
@@ -190,8 +204,10 @@ pub(crate) fn check_renderer_truth_connector_contracts(root: &Path, findings: &m
             "m7_connection_reparenting_is_explicit_and_preserves_world_transform",
             "m7_connector_placement_preserves_fit_inside_scale_when_solving_position",
             "m7_connector_name_lookup_reports_ambiguity_with_typed_handles",
+            "m7_connector_magnet_preview_reports_snap_range_and_visual_cue_without_mutating",
             "m7_validate_connections_returns_preview_without_mutating_scene",
             "connection_line",
+            "ConnectionMagnetVisualCue::SnapReady",
             "m7_stale_import_connector_handle_after_hot_reload_is_detected",
             "m7_connector_placement_applies_source_units_before_solving",
             "m7_gltf_anchor_units_override_import_units_for_connection_solving",

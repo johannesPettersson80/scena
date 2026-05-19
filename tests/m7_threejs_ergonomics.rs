@@ -6,13 +6,13 @@ use std::time::Instant;
 
 use scena::{
     Aabb, AnchorFrame, AnimationTarget, AssetError, Assets, Backend, BuildError, CameraKey, Color,
-    ConnectOptions, ConnectionAlignment, ConnectionError, ConnectionRequest, ConnectorFrame,
-    ConnectorPolarity, ConnectorRollPolicy, DiagnosticCode, DiagnosticSeverity, GeometryDesc,
-    ImportAnchorDebugMetadata, ImportDiagnosticOverlayKind, ImportOptions, InstantiateError,
-    LabelDesc, LookupError, MaterialDesc, ModelHandle, NodeKey, NotPreparedReason, OrbitControls,
-    OrthographicCamera, PerspectiveCamera, PointerEvent, PrepareError, Primitive, RenderError,
-    Renderer, Scene, SourceCoordinateSystem, SourceUnits, SurfaceEvent, SurfaceSize,
-    SurfaceViewport, TouchEvent, Transform, Vec3, Vertex,
+    ConnectOptions, ConnectionAlignment, ConnectionError, ConnectionMagnetVisualCue,
+    ConnectionRequest, ConnectorFrame, ConnectorPolarity, ConnectorRollPolicy, DiagnosticCode,
+    DiagnosticSeverity, GeometryDesc, ImportAnchorDebugMetadata, ImportDiagnosticOverlayKind,
+    ImportOptions, InstantiateError, LabelDesc, LookupError, MaterialDesc, ModelHandle, NodeKey,
+    NotPreparedReason, OrbitControls, OrthographicCamera, PerspectiveCamera, PointerEvent,
+    PrepareError, Primitive, RenderError, Renderer, Scene, SourceCoordinateSystem, SourceUnits,
+    SurfaceEvent, SurfaceSize, SurfaceViewport, TouchEvent, Transform, Vec3, Vertex,
 };
 
 #[global_allocator]
@@ -123,6 +123,62 @@ fn m7_connectors_solve_parent_space_for_nested_nodes() {
             .translation,
         Vec3::new(25.0, 0.0, 0.0),
     );
+}
+
+#[test]
+fn m7_connector_magnet_preview_reports_snap_range_and_visual_cue_without_mutating() {
+    let mut scene = Scene::new();
+    let source = scene
+        .add_empty(scene.root(), Transform::IDENTITY)
+        .expect("source node inserts");
+    let target = scene
+        .add_empty(scene.root(), Transform::at(Vec3::new(0.04, 0.0, 0.0)))
+        .expect("target node inserts");
+
+    let source_connector =
+        ConnectorFrame::new(source, Transform::IDENTITY).with_snap_tolerance(0.05);
+    let target_connector = ConnectorFrame::new(target, Transform::IDENTITY);
+    let magnet = scene
+        .preview_connector_magnet(
+            source_connector,
+            target_connector,
+            ConnectOptions::default(),
+        )
+        .expect("magnet preview solves");
+
+    assert!(magnet.is_snap_ready());
+    assert_eq!(magnet.visual_cue(), ConnectionMagnetVisualCue::SnapReady);
+    assert_eq!(magnet.visual_cue().css_class(), "scena-magnet-ready");
+    assert!((magnet.distance() - 0.04).abs() < 0.0001);
+    assert_eq!(magnet.tolerance(), 0.05);
+    assert_vec3_near(
+        magnet.ghost_transform().translation,
+        Vec3::new(0.04, 0.0, 0.0),
+    );
+    assert_eq!(
+        scene
+            .node(source)
+            .expect("source node remains")
+            .transform()
+            .translation,
+        Vec3::ZERO,
+        "magnet preview must not mutate source placement",
+    );
+
+    let far_target = scene
+        .add_empty(scene.root(), Transform::at(Vec3::new(0.20, 0.0, 0.0)))
+        .expect("far target node inserts");
+    let far = scene
+        .preview_connector_magnet(
+            ConnectorFrame::new(source, Transform::IDENTITY).with_snap_tolerance(0.05),
+            ConnectorFrame::new(far_target, Transform::IDENTITY),
+            ConnectOptions::default(),
+        )
+        .expect("far magnet preview solves");
+
+    assert!(!far.is_snap_ready());
+    assert_eq!(far.visual_cue(), ConnectionMagnetVisualCue::OutOfRange);
+    assert_eq!(far.visual_cue().css_class(), "scena-magnet-out-of-range");
 }
 
 #[test]

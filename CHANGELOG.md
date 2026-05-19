@@ -4,6 +4,12 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Added connector magnet preview APIs for editor-style drag-to-assemble UIs:
+  `Scene::preview_connector_magnet`, `ConnectionMagnetPreview`, and
+  `ConnectionMagnetVisualCue`.
+
 ### Changed
 
 - Updated the browser demo showcase so connector mating is the default first
