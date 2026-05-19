@@ -25,6 +25,33 @@ For controls in browser-hosted viewers, see:
 cargo run --example orbit_controls_browser_adapter
 ```
 
+## Custom Element Foundation
+
+The `viewer-element` feature exports a browser registration function for the
+drop-in element surface:
+
+```html
+<scena-viewer
+  src="machine.glb"
+  environment="studio"
+  tone-mapping="neutral"
+  camera-controls
+  auto-rotate>
+</scena-viewer>
+```
+
+```js
+import init, { defineScenaViewer } from "./pkg/scena.js";
+
+await init();
+defineScenaViewer();
+```
+
+The first shipped foundation registers `<scena-viewer>`, creates a shadow DOM
+canvas, exposes model-viewer-style attributes, and dispatches structured
+attribute events. Asset loading, rendering, progress UI, drag/drop, and
+annotation overlays build on this surface in follow-up slices.
+
 ## Browser responsibilities
 
 The browser host owns:

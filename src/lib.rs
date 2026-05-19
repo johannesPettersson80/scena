@@ -19,6 +19,7 @@ pub mod reference_image;
 pub mod render;
 pub mod scene;
 pub mod viewer;
+pub mod viewer_element;
 
 pub use animation::{
     AnimationChannel, AnimationClip, AnimationClipKey, AnimationInterpolation, AnimationLoopMode,
@@ -100,6 +101,9 @@ pub use viewer::{
     InteractiveGltfViewerBuilder, ViewerCaptureError, ViewerPngError, first_render_gltf_headless,
     headless_gltf_viewer, interactive_gltf_viewer,
 };
+#[cfg(all(target_arch = "wasm32", feature = "viewer-element"))]
+pub use viewer_element::define_scena_viewer;
+pub use viewer_element::{SCENA_VIEWER_TAG, ScenaViewerAttributes};
 
 /// Crate-level result type for APIs that can return any structured `scena` error.
 pub type Result<T> = std::result::Result<T, Error>;

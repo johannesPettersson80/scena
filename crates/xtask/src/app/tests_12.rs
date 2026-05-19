@@ -627,4 +627,5 @@ pub(crate) fn write_easy_scene_fixture(
         "setStatus('demo', 'rendered');",
     )
     .expect("demo js fixture");
+    crate::app::tests_16::write_scena_viewer_element_easy_scene_fixture(fixture_root);
 }

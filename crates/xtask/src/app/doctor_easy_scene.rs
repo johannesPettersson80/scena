@@ -9,6 +9,7 @@ mod picking_outline_hover;
 mod production_asset_profile;
 mod reference_image_regression;
 mod round_a_primitives;
+mod scena_viewer_element;
 mod state_url;
 mod viewer_headless_png;
 mod viewer_load_progress;
@@ -192,6 +193,7 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
     asset_validation::check_asset_validation_doctor(root, findings);
     picking_outline_hover::check_picking_outline_hover(root, findings);
     reference_image_regression::check_reference_image_regression(root, findings);
+    scena_viewer_element::check_scena_viewer_element(root, findings);
     next_release::check_asset_hot_reload(root, findings);
     khronos_samples::check_khronos_samples(root, findings);
     production_asset_profile::check_production_asset_profile(root, findings);

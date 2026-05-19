@@ -114,15 +114,20 @@ rounds in §2 are the floor underneath them, not a substitute.
 
 ### 1.1 `<scena-viewer>` custom element with `<model-viewer>` attribute parity
 
-Status: **[gap]**
+Status: **[gap]** for full drop-in renderer parity; custom-element
+foundation **[shipped]**.
 Owner: `src/viewer.rs` for shared viewer behavior + a new thin browser
 adapter module / WASM package built directly on `web-sys` /
 `wasm-bindgen`. Do not add a Rust web-component framework unless a
 concrete missing browser API proves one is necessary. The adapter must
 delegate asset loading, framing, and rendering to `viewer` / `assets` /
 `scene`; it must not become a second renderer owner.
-Proof: WASM browser test rendering against three sample assets +
-side-by-side screenshot comparison with `<model-viewer>` on the same assets.
+Proof: foundation is `src/viewer_element.rs` with
+`defineScenaViewer()`, a shadow-canvas custom element, model-viewer-style
+attribute parsing, docs, and doctor rule `SCENA-VIEWER-ELEMENT`.
+Remaining proof for full parity: WASM browser test rendering against
+three sample assets + side-by-side screenshot comparison with
+`<model-viewer>` on the same assets.
 Visual proof: reference-image + browser-demo + animated-proof
 
 ```html
@@ -1318,6 +1323,15 @@ Picking/outline/hover reconciliation pass (2026-05-19):
   callbacks, and generated visual proof.
 - Added a `PICKING-OUTLINE-HOVER` doctor rule so this remains a
   source-enforced shipped claim instead of a stale checklist note.
+
+`<scena-viewer>` foundation implementation pass (2026-05-19):
+
+- Added `src/viewer_element.rs` with native-tested attribute parsing and a
+  wasm `defineScenaViewer()` export that registers `<scena-viewer>`,
+  creates a shadow DOM canvas, and emits structured ready/attribute events.
+- Added `SCENA-VIEWER-ELEMENT` doctor coverage for the feature flag,
+  public re-exports, browser docs, tests, and checklist evidence. Full
+  asset loading/rendering parity remains open under bet 1.1.
 
 Asset-validation doctor implementation pass (2026-05-19):
 

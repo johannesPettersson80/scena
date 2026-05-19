@@ -94,6 +94,8 @@ pub(crate) fn finding_reference(rule: &str) -> &'static str {
         || rule.contains("ASSETS")
     {
         "docs/assets.md"
+    } else if rule == "SCENA-VIEWER-ELEMENT" {
+        "docs/browser.md"
     } else if rule.contains("M7") || rule.contains("ERGONOMICS") {
         "docs/api.md"
     } else if rule.contains("VISUAL") || rule.contains("SCREENSHOT") {

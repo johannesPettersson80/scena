@@ -23,6 +23,8 @@ scena = { version = "1.3", features = ["controls", "controls-winit"] }
 | `controls-winit` | native-host controls adapter support |
 | `controls-web` | browser-host controls adapter support |
 | `browser-probe` | browser/WASM rendered-output probe entry points |
+| `demo-page` | browser demo page WASM exports |
+| `viewer-element` | `<scena-viewer>` custom-element registration surface |
 | `hot-reload` | native debounced asset-file watching for explicit reload loops |
 | `inspection` | scene inspection metadata and diagnostic output |
 | `icc` | ICC/color-management support through `lcms2` |
