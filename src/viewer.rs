@@ -1,6 +1,9 @@
 //! High-level viewer helpers built from `Scene`, `Assets`, and `Renderer`.
 
+mod capture;
 mod interaction;
+
+pub use capture::ViewerCaptureError;
 
 use crate::assets::{AssetPath, Assets};
 use crate::controls::{OrbitControlAction, OrbitControls, PointerEvent, TouchEvent};

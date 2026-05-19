@@ -437,3 +437,55 @@ pub(super) fn check_viewer_pointer_callbacks(root: &Path, findings: &mut Vec<Fin
         ],
     );
 }
+
+pub(super) fn check_viewer_capture_png(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "VIEWER-CAPTURE-PNG",
+        "src/viewer.rs",
+        &["mod capture;", "pub use capture::ViewerCaptureError;"],
+    );
+    require_contains(
+        root,
+        findings,
+        "VIEWER-CAPTURE-PNG",
+        "src/viewer/capture.rs",
+        &[
+            "pub enum ViewerCaptureError",
+            "pub fn capture_png_bytes(",
+            "pub fn capture_png(",
+            "png::Encoder::new",
+            "png::ColorType::Rgba",
+            "png::BitDepth::Eight",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VIEWER-CAPTURE-PNG",
+        "src/lib.rs",
+        &["ViewerCaptureError"],
+    );
+    require_contains(
+        root,
+        findings,
+        "VIEWER-CAPTURE-PNG",
+        "tests/round_d_viewer_capture_png.rs",
+        &[
+            "viewer_capture_png_bytes_decode_to_current_frame",
+            "viewer_capture_png_writes_reference_artifact",
+            "viewer-capture-png-reference.png",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VIEWER-CAPTURE-PNG",
+        "docs/guides/easy-scene-setup.md",
+        &[
+            "viewer.capture_png(\"frame.png\")?",
+            "viewer.capture_png_bytes()?",
+        ],
+    );
+}

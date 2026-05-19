@@ -669,17 +669,23 @@ viewer.hover_at(x, y)?;
 
 ### 4.6 Screenshot one-liner
 
-Status: **[ergonomic-gap]** — internal screenshot plumbing exists in
-`src/viewer.rs` ("convenience for screenshots and visual-proof
-artifacts"); not surfaced cleanly on the public viewer.
-Owner: `src/viewer.rs`
+Status: **[shipped]** — viewer capture APIs now encode the current
+RGBA8 frame through the existing `png` crate. `capture_png_bytes()` is
+available on `FirstRender`, `HeadlessGltfViewer`, and
+`InteractiveGltfViewer`; `capture_png(path)` is native-only file output.
+Owner: `src/viewer/capture.rs`
 Dependency note: use the already-present `png` crate directly for
 `capture_png_bytes`; keep `image` only where broader format support is
 actually exercised. Add `gif` only behind an optional stretch feature.
-Proof: unit/integration test that `capture_png_bytes()` decodes as a PNG
-with the same dimensions as `snapshot_rgba8`; file-writing helper tested
-behind native-only filesystem support. GIF remains stretch.
-Visual proof: reference-image (the captured PNG is itself the proof; CI diffs the captured bytes against a stored reference)
+Proof: `tests/round_d_viewer_capture_png.rs` asserts that
+`capture_png_bytes()` decodes as an RGBA8 PNG with the same dimensions
+and bytes as `snapshot_rgba8`, and that `capture_png(path)` writes the
+same bytes behind native-only filesystem support. `xtask doctor --full`
+rule `VIEWER-CAPTURE-PNG` pins the API, test, docs, and direct `png`
+crate usage. GIF remains stretch.
+Visual proof: reference-image via
+`target/gate-artifacts/viewer-capture/viewer-capture-png-reference.png`;
+the captured PNG is itself the proof.
 
 ```rust
 viewer.capture_png("frame.png")?;
@@ -871,7 +877,7 @@ the rounds, not after — they're the strategic arc.
 12. - [x] `ConnectOptions::with_axial_gap` (§4.3)
 13. - [x] `OrbitControls` bounds-relative zoom (§4.2)
 14. - [x] `Viewer::on_click` / `on_hover` callbacks (§4.5)
-15. - [ ] `Viewer::capture_png` (§4.6)
+15. - [x] `Viewer::capture_png` (§4.6)
 16. - [ ] Asset hot-reload (§4.7)
 17. - [ ] State-via-URL (§4.9)
 
@@ -1028,6 +1034,17 @@ Viewer callback implementation pass (2026-05-19):
   `tests/round_d_viewer_pointer_callbacks.rs`, generated animated docs
   image `round-d-viewer-pointer-callback-animated-docs-image`, and doctor
   rule `VIEWER-POINTER-CALLBACKS`.
+
+Viewer PNG capture implementation pass (2026-05-19):
+
+- Landed `capture_png_bytes()` and native-only `capture_png(path)` on
+  `FirstRender`, `HeadlessGltfViewer`, and `InteractiveGltfViewer`.
+  Encoding uses the existing `png` crate directly and returns structured
+  `ViewerCaptureError` values for invalid frame buffers, encoding errors,
+  or file-write errors. Proof is pinned by
+  `tests/round_d_viewer_capture_png.rs`, generated reference image
+  `viewer-capture-png-reference.png`, and doctor rule
+  `VIEWER-CAPTURE-PNG`.
 - Swept first-path docs, examples, and demo setup away from avoidable
   `PerspectiveCamera::default().with_aspect(...)` and raw color literals.
 - Added generated docs-image proof artifacts for the color swatch panel

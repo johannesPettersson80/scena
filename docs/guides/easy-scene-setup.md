@@ -204,6 +204,18 @@ scene.update_animation(mixer, delta_seconds)?;
 Keep the returned mixer key when the host needs to pause, seek, change speed,
 or switch loop mode.
 
+## Screenshot capture
+
+After rendering, viewers can encode the current RGBA8 frame directly as PNG
+bytes or write it to disk on native targets:
+
+```rust
+viewer.render_next_frame()?;
+viewer.capture_png("frame.png")?;
+
+let png = viewer.capture_png_bytes()?;
+```
+
 ## Connector mating
 
 Authored connectors let two imported assets find each other without application

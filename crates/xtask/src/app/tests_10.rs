@@ -158,7 +158,7 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     fs::create_dir_all(fixture_root.join("tests")).expect("fixture tests");
     fs::write(
         fixture_root.join("docs/guides/easy-scene-setup.md"),
-        "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at(\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```",
+        "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()?\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```",
     )
     .expect("guide fixture");
     fs::write(
@@ -194,9 +194,14 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     .expect("controls fixture");
     fs::write(
         fixture_root.join("src/viewer.rs"),
-        "mod interaction; click_callback: Option<ViewerPickCallback> hover_callback: Option<ViewerPickCallback>",
+        "mod capture; mod interaction; pub use capture::ViewerCaptureError; click_callback: Option<ViewerPickCallback> hover_callback: Option<ViewerPickCallback>",
     )
     .expect("viewer fixture");
+    fs::write(
+        fixture_root.join("src/viewer/capture.rs"),
+        "pub enum ViewerCaptureError {} pub fn capture_png_bytes() { png::Encoder::new(); png::ColorType::Rgba; png::BitDepth::Eight; } pub fn capture_png() {}",
+    )
+    .expect("viewer capture fixture");
     fs::write(
         fixture_root.join("src/viewer/interaction.rs"),
         "pub fn on_click<T>() {} pub fn on_hover<T>() {} pub fn clear_click_callback() {} pub fn clear_hover_callback() {} pub fn click_at() { pick_and_select_at(); } pub fn hover_at() { pick_and_hover_at(); } fn pick_and_select_at() {} fn pick_and_hover_at() {}",
@@ -237,7 +242,7 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
         "play_animation_by_name(&import",
     )
     .expect("animation example fixture");
-    fs::write(fixture_root.join("src/lib.rs"), "").expect("lib fixture");
+    fs::write(fixture_root.join("src/lib.rs"), "ViewerCaptureError").expect("lib fixture");
     fs::write(fixture_root.join("src/geometry.rs"), "").expect("geometry fixture");
     fs::write(fixture_root.join("src/geometry/bounds.rs"), "").expect("bounds fixture");
     fs::write(
@@ -330,6 +335,11 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
         "viewer_click_and_hover_callbacks_receive_hit_and_no_hit_results click_events hover_events",
     )
     .expect("viewer pointer callback test fixture");
+    fs::write(
+        fixture_root.join("tests/round_d_viewer_capture_png.rs"),
+        "viewer_capture_png_bytes_decode_to_current_frame viewer_capture_png_writes_reference_artifact viewer-capture-png-reference.png",
+    )
+    .expect("viewer PNG capture test fixture");
     fs::write(
         fixture_root.join("demo/index.html"),
         r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
