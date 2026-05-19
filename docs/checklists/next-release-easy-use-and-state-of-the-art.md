@@ -851,10 +851,19 @@ with proof and a clean public surface.
   Visual proof: reference-image via the same viewer-capture PNG artifact;
   a dedicated CPU/no-GPU diff fixture can be added when public
   reference-image tooling lands.
-- **Reference-image regression as a public API.** Status: **[ergonomic-gap]**
-  — `SCENA_REFERENCE_DIFF` already exists internally; surface as
-  `scena::regress(asset, expected)` for end users.
-  Visual proof: reference-image (self-referential — this feature *is* reference-image tooling for end users)
+- **Reference-image regression as a public API.** Status:
+  **[shipped]** for owned RGBA8 images. Owner: `src/reference_image.rs`.
+  `ReferenceImage::from_rgba8`, `regress`, and
+  `regress_with_tolerance` expose exact and tolerance-based comparison
+  without tying the API to one asset loader, renderer backend, or file
+  layout. PNG/file decoding can stay in user code or test helpers; the
+  public contract starts at deterministic RGBA8 frames.
+  Proof: `tests/reference_image_regression_api.rs` covers exact match,
+  tolerance failure reports, invalid RGBA lengths, and dimension
+  mismatches. Doctor rule `REFERENCE-IMAGE-REGRESSION` pins the API,
+  docs, test, and checklist entry.
+  Visual proof: reference-image (self-referential — this feature is the
+  public reference-image comparison primitive for end users)
 
 ---
 
@@ -1101,6 +1110,13 @@ Viewer PNG capture implementation pass (2026-05-19):
   `headless_viewer_builder_renders_gltf_to_png_bytes_without_gpu_setup`
   and `headless_viewer_builder_renders_gltf_to_png_file_without_gpu_setup`
   plus doctor rule `VIEWER-HEADLESS-PNG`.
+- Added public reference-image regression primitives:
+  `ReferenceImage::from_rgba8`, `ReferenceImageTolerance`, `regress`,
+  and `regress_with_tolerance`. The first public surface is deliberately
+  RGBA8-frame based so it works with viewer screenshots, readback, and
+  user-managed references without owning asset loading or filesystem
+  policy. Proof is pinned by `tests/reference_image_regression_api.rs`
+  and doctor rule `REFERENCE-IMAGE-REGRESSION`.
 
 Native hot-reload implementation pass (2026-05-19):
 

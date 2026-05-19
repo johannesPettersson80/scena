@@ -24,3 +24,19 @@ pub(crate) fn binary_render_asset_contracts_reject_text_fixtures_with_binary_ext
         "text fixtures must not be allowed to masquerade as binary render assets: {findings:?}",
     );
 }
+
+#[test]
+pub(crate) fn public_fields_in_struct_detects_material_desc_visibility_regressions() {
+    let source = r#"
+        pub struct MaterialDesc {
+            kind: MaterialKind,
+            pub base_color: Color,
+            pub(crate) roughness_factor: f32,
+        }
+    "#;
+
+    assert_eq!(
+        public_fields_in_struct(source, "MaterialDesc"),
+        vec!["pub base_color: Color", "pub(crate) roughness_factor: f32"]
+    );
+}

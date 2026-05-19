@@ -216,6 +216,23 @@ let png = headless_gltf_viewer("machine.glb")
     .await?;
 ```
 
+## Reference-image regression
+
+Turn a rendered RGBA8 frame into a deterministic visual regression check by
+comparing it with a stored reference image:
+
+```rust
+let actual = ReferenceImage::from_rgba8(width, height, viewer.snapshot_rgba8().to_vec())?;
+let expected = ReferenceImage::from_rgba8(width, height, expected_rgba8)?;
+
+let report = regress_with_tolerance(
+    &actual,
+    &expected,
+    ReferenceImageTolerance::new().with_max_abs_diff(2),
+)?;
+assert!(report.passed());
+```
+
 ## Asset load progress
 
 Viewer builders can forward `AssetLoadProgress` events while loading and keep

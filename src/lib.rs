@@ -15,6 +15,7 @@ pub mod geometry;
 pub mod material;
 pub mod picking;
 pub mod platform;
+pub mod reference_image;
 pub mod render;
 pub mod scene;
 pub mod viewer;
@@ -66,6 +67,10 @@ pub use picking::{CursorPosition, Hit, HitTarget, InteractionContext, Interactio
 #[cfg(not(target_arch = "wasm32"))]
 pub use platform::NativeWindowHandle;
 pub use platform::{PlatformSurface, SurfaceEvent, SurfaceKind, SurfaceSize, SurfaceViewport};
+pub use reference_image::{
+    ReferenceImage, ReferenceImageError, ReferenceImageReport, ReferenceImageTolerance, regress,
+    regress_with_tolerance,
+};
 pub use render::{
     AutoExposureConfig, AutoExposureResult, Background, OffscreenTarget, PixelReadback, Profile,
     Quality, RenderMode, Renderer, RendererOptions, Tonemapper,

@@ -306,7 +306,7 @@ pub(crate) fn easy_scene_setup_contracts_reject_missing_headless_png_one_liner()
     );
 }
 
-const VALID_GUIDE: &str = "frame_bounds add_perspective_camera_default_for add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? render_png_bytes() CPU headless renderer without requesting a GPU adapter AssetLoadProgress build_with_progress load_progress_events Material variants viewer.material_variants() viewer.set_active_material_variant(Some(\"blue\"))? viewer.set_active_material_variant(None)? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() EnvironmentPreset::Studio load_environment_preset EnvironmentPreset::ALL KTX2 cubemap presets are still future work khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.add_perspective_camera_default_for(bounds, (width, height))?;\n```";
+const VALID_GUIDE: &str = "frame_bounds add_perspective_camera_default_for add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? render_png_bytes() CPU headless renderer without requesting a GPU adapter Reference-image regression ReferenceImage::from_rgba8 regress_with_tolerance ReferenceImageTolerance::new().with_max_abs_diff AssetLoadProgress build_with_progress load_progress_events Material variants viewer.material_variants() viewer.set_active_material_variant(Some(\"blue\"))? viewer.set_active_material_variant(None)? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() EnvironmentPreset::Studio load_environment_preset EnvironmentPreset::ALL KTX2 cubemap presets are still future work khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.add_perspective_camera_default_for(bounds, (width, height))?;\n```";
 
 fn write_easy_scene_fixture(
     fixture_root: &Path,
@@ -347,9 +347,14 @@ fn write_easy_scene_fixture(
     .expect("feature flags fixture");
     fs::write(
         fixture_root.join("docs/checklists/next-release-easy-use-and-state-of-the-art.md"),
-        "CPU rasterizer fallback for no-GPU screenshots Status: **[shipped]** render_png_bytes()",
+        "CPU rasterizer fallback for no-GPU screenshots Status: **[shipped]** render_png_bytes() Reference-image regression as a public API Status:\n  **[shipped]** ReferenceImage::from_rgba8 REFERENCE-IMAGE-REGRESSION",
     )
     .expect("next release checklist fixture");
+    fs::write(
+        fixture_root.join("docs/api.md"),
+        "ReferenceImage::from_rgba8 regress regress_with_tolerance ReferenceImageError",
+    )
+    .expect("api fixture");
     fs::write(
         fixture_root.join("docs/guides/migrating-from-threejs.md"),
         "new THREE.Box3 controls.target.copy OrbitControls::from_framing spherical.theta spherical.phi azimuth_elevation",
@@ -568,6 +573,11 @@ fn write_easy_scene_fixture(
     )
     .expect("viewer PNG capture test fixture");
     fs::write(
+        fixture_root.join("tests/reference_image_regression_api.rs"),
+        "reference_image_regression_accepts_exact_rgba8_match reference_image_regression_reports_tolerance_failure reference_image_regression_rejects_invalid_rgba_length reference_image_regression_rejects_dimension_mismatch",
+    )
+    .expect("reference image regression test fixture");
+    fs::write(
         fixture_root.join("tests/first_render_api.rs"),
         "headless_gltf_viewer_surfaces_asset_load_progress .build_with_progress(|event| observed.push(event)) viewer.load_progress_events() AssetLoadProgress::LoadStarted AssetLoadProgress::Parsed AssetLoadProgress::Cached headless_gltf_viewer_switches_material_variants_and_reprepares material_variants_scene.gltf viewer.material_variants() viewer.set_active_material_variant(Some(\"midnight\")) viewer.active_material_variant()",
     )
@@ -604,9 +614,14 @@ fn write_easy_scene_fixture(
     .expect("url state test fixture");
     fs::write(
         fixture_root.join("src/lib.rs"),
-        "ViewerCaptureError ViewerPngError AssetHotReloadError AssetHotReloadWatcher AssetLoadProgress CameraOrbitUrlState CameraOrbitUrlStateError EnvironmentPreset EnvironmentPresetMetadata KhronosSample KhronosSampleMetadata KhronosSamples",
+        "pub mod reference_image; ReferenceImage ReferenceImageError ReferenceImageTolerance regress regress_with_tolerance ViewerCaptureError ViewerPngError AssetHotReloadError AssetHotReloadWatcher AssetLoadProgress CameraOrbitUrlState CameraOrbitUrlStateError EnvironmentPreset EnvironmentPresetMetadata KhronosSample KhronosSampleMetadata KhronosSamples",
     )
     .expect("lib fixture");
+    fs::write(
+        fixture_root.join("src/reference_image.rs"),
+        "pub struct ReferenceImage; pub struct ReferenceImageTolerance; pub struct ReferenceImageReport; pub enum ReferenceImageError { DiffExceeded(ReferenceImageReport) } pub fn regress() {} pub fn regress_with_tolerance() {}",
+    )
+    .expect("reference image fixture");
     fs::write(fixture_root.join("src/geometry.rs"), "").expect("geometry fixture");
     fs::write(fixture_root.join("demo/index.html"), diagnostics_html).expect("demo html fixture");
     fs::write(

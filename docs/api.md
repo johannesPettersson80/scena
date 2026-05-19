@@ -202,6 +202,9 @@ Common public event and output types:
 - `AdapterLimitsReport`
 - `AssetEvictionStats`
 - `AssetStoreId`
+- `ReferenceImage`
+- `ReferenceImageReport`
+- `ReferenceImageTolerance`
 
 Common asset-store calls:
 
@@ -247,6 +250,12 @@ Common viewer helpers:
 - `Renderer::headless_default()`
 - `Renderer::set_auto_exposure`
 
+Common visual-regression helpers:
+
+- `ReferenceImage::from_rgba8`
+- `regress`
+- `regress_with_tolerance`
+
 ## Errors and diagnostics
 
 Public failures use structured errors such as:
@@ -261,6 +270,7 @@ Public failures use structured errors such as:
 - `AnimationError`
 - `ConnectionError`
 - `ColorParseError`
+- `ReferenceImageError`
 - `ViewerCaptureError`
 - `ViewerPngError`
 
