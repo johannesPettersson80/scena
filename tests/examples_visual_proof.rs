@@ -899,6 +899,92 @@ fn render_auto_exposure_preset_tile(
 }
 
 #[test]
+fn round_c_animation_playback_reference_animated_docs_image() {
+    let frame_width = 96;
+    let frame_height = 96;
+    let assets = Assets::new();
+    let scene_asset =
+        pollster::block_on(assets.load_scene("tests/assets/gltf/animated_connector_scene.gltf"))
+            .expect("animated fixture loads");
+    let mut scene = Scene::new();
+    let import = scene
+        .instantiate(&scene_asset)
+        .expect("animated fixture instantiates");
+    let animated = import
+        .node("AnimatedMount")
+        .expect("animated node resolves");
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.35, 0.35, 0.35));
+    let material = assets.create_material(MaterialDesc::unlit(Color::CYAN));
+    scene
+        .mesh(geometry, material)
+        .parent(animated)
+        .add()
+        .expect("animated proof subject inserts");
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::standard(),
+            Transform::at(Vec3::new(0.45, 0.0, 3.0)),
+        )
+        .expect("camera inserts");
+    scene.set_active_camera(camera).expect("active camera sets");
+
+    let mixer = scene
+        .play_animation_by_name(&import, "MoveMount")
+        .expect("clip starts by name");
+    let mut frames = Vec::new();
+    frames.push(render_animation_playback_frame(
+        &mut scene,
+        &assets,
+        camera,
+        frame_width,
+        frame_height,
+    ));
+    for delta_seconds in [0.25, 0.25, 0.25] {
+        scene
+            .update_animation(mixer, delta_seconds)
+            .expect("animation advances");
+        frames.push(render_animation_playback_frame(
+            &mut scene,
+            &assets,
+            camera,
+            frame_width,
+            frame_height,
+        ));
+    }
+    assert_ne!(
+        frames.first(),
+        frames.last(),
+        "animation playback proof must show a changed rendered frame"
+    );
+    write_animated_docs_image_artifact(
+        "round-c-animation-playback-reference-animated-docs-image",
+        "docs/guides/easy-scene-setup.md",
+        frame_width,
+        frame_height,
+        &frames,
+    );
+}
+
+fn render_animation_playback_frame(
+    scene: &mut Scene,
+    assets: &Assets,
+    camera: scena::CameraKey,
+    width: u32,
+    height: u32,
+) -> Vec<u8> {
+    let mut renderer = Renderer::headless(width, height).expect("headless renderer builds");
+    renderer.set_background(Background::DarkStudio);
+    renderer
+        .prepare_with_assets(scene, assets)
+        .expect("animation playback scene prepares");
+    renderer
+        .render(scene, camera)
+        .expect("animation playback scene renders");
+    renderer.frame_rgba8().to_vec()
+}
+
+#[test]
 fn examples_visual_primitive_shapes_renders_box_to_ppm() {
     // Mirror examples/primitive_shapes.rs at the same headless renderer scale.
     let assets = Assets::new();

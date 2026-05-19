@@ -155,6 +155,19 @@ if matches!(controls.advance(delta_seconds), scena::OrbitControlAction::Orbit) {
 
 Host adapters can then apply the controls to the scene camera each frame.
 
+## Animation playback
+
+Imported glTF clips can be started by name without manually creating and
+starting a mixer:
+
+```rust
+let mixer = scene.play_animation_by_name(&import, "idle")?;
+scene.update_animation(mixer, delta_seconds)?;
+```
+
+Keep the returned mixer key when the host needs to pause, seek, change speed,
+or switch loop mode.
+
 ## Connector mating
 
 Authored connectors let two imported assets find each other without application

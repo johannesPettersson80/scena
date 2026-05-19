@@ -527,11 +527,11 @@ specifically, add **animated-proof** of the clip playing back.
 - **Animation update flow.** `src/scene/mixers.rs:10-104` has
   `create_animation_mixer`, `play_animation`, `pause`, `stop`, `seek`,
   `set_speed`, `set_loop_mode`, `update_animation`. `create_animation_mixer`
-  already takes a clip name. **Gap**: no one-call scene/viewer helper for
-  "play this named clip now" that creates the mixer, starts it, and makes
-  update-loop wiring obvious.
-  Proof: rendered-output proof of a known animation clip playing back at
-  fixed timestamps.
+  already takes a clip name. **Scene helper shipped**:
+  `Scene::play_animation_by_name` creates the mixer, starts it, and returns
+  the typed mixer handle. Viewer sugar remains deferred. Proof:
+  rendered-output proof of a known animation clip playing back at fixed
+  timestamps.
 - **KTX2 / Basis textures.** Feature flag at `Cargo.toml:45`, documented
   at `docs/feature-flags.md:28`, decode path at `src/assets/texture.rs`,
   marked `Supported` in extension diagnostics. **Gap**: not in default
@@ -610,27 +610,30 @@ system cannot prove.
 
 ### 4.4 One-call animation playback by clip name
 
-Status: **[ergonomic-gap]** — see §3.2. `create_animation_mixer` already
-accepts a clip name; the missing piece is a higher-level helper, not
-`AnimationMixer::play_by_name`.
-Owner: `src/scene/mixers.rs` + `src/viewer.rs`
-Proof: rendered-output regression at fixed timestamps plus an API test
-showing the helper creates the mixer, starts playback, and returns a typed
-handle for loop/speed control.
-Visual proof: reference-image + animated-proof (reference images at fixed timestamps freeze the clip; the GIF/recording shows playback for the docs)
+Status: **[shipped]** — `Scene::play_animation_by_name` is the primary
+surface; viewer sugar remains deferred until a concrete viewer workflow
+needs it.
+Owner: `src/scene/mixers.rs`
+Proof: `tests/round_c_animation_playback.rs` proves the helper creates
+and starts a mixer and returns the typed handle for update/loop/speed
+control; doctor rule `ONE-CALL-ANIMATION-PLAYBACK` keeps the API,
+example, docs, and rendered proof present.
+Visual proof: reference-image + animated-proof
+`target/gate-artifacts/examples-visual/round-c-animation-playback-reference-animated-docs-image.ppm`
+and its generated frame sequence render a visible child of an imported
+animated node at fixed timestamps.
 
 ```rust
 // preferred primary surface: Scene owns mixer creation and playback state
 let idle = scene.play_animation_by_name(&import, "idle")?;
 
-// optional convenience: Viewer delegates to the Scene-level helper
-let door = viewer.play_clip("door_open")?.with_loop(AnimationLoopMode::Once);
+scene.set_animation_loop_mode(idle, AnimationLoopMode::Once)?;
 ```
 
-Implementation decision before PR: pick the primary API surface first.
-Recommended default is `Scene::play_animation_by_name` because the scene
-already owns mixer handles; `Viewer::play_clip` should only exist as a
-thin convenience if the viewer needs to expose animations directly.
+Implementation decision: `Scene::play_animation_by_name` is the shipped
+primary API because the scene already owns mixer handles. `Viewer::play_clip`
+is deferred; add it only as a thin convenience if a viewer-specific
+workflow needs to expose animations directly.
 
 ### 4.5 Viewer pointer callbacks
 
@@ -843,7 +846,7 @@ the rounds, not after — they're the strategic arc.
 8. - [ ] `Environment::*` curated KTX2 environment presets (§5)
 9. - [ ] `Assets::khronos::*` sample loaders (§4.1)
 10. - [x] `AutoExposureConfig` scenario presets (§2.9)
-11. - [ ] Scene / Viewer one-call animation playback by clip name (§4.4)
+11. - [x] Scene / Viewer one-call animation playback by clip name (§4.4)
 
 ### Round D — Tier 2 ergonomics
 

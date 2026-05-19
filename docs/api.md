@@ -131,6 +131,13 @@ handles return structured errors.
 Scene builders return typed keys or handles. Hosts keep application-specific
 state in their own model and map the visible portion into `Scene`.
 
+Common animation calls:
+
+- `Scene::play_animation_by_name`
+- `Scene::update_animation`
+- `Scene::set_animation_loop_mode`
+- `Scene::set_animation_speed`
+
 ## Asset ownership
 
 `Assets` owns resource creation and loading:

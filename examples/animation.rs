@@ -8,8 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut scene = Scene::new();
     let import = scene.instantiate(&scene_asset)?;
-    let mixer = scene.create_animation_mixer(&import, "Square")?;
-    scene.play_animation(mixer)?;
+    let mixer = scene.play_animation_by_name(&import, "Square")?;
     scene.update_animation(mixer, 1.0 / 60.0)?;
 
     let camera = scene.add_perspective_camera(

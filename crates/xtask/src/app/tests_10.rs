@@ -147,6 +147,7 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     fs::create_dir_all(fixture_root.join("docs/guides")).expect("fixture guides");
     fs::create_dir_all(fixture_root.join("docs/release-notes")).expect("fixture release notes");
     fs::create_dir_all(fixture_root.join("demo")).expect("fixture demo");
+    fs::create_dir_all(fixture_root.join("examples")).expect("fixture examples");
     fs::create_dir_all(fixture_root.join("src/scene")).expect("fixture scene");
     fs::create_dir_all(fixture_root.join("src/material")).expect("fixture material");
     fs::create_dir_all(fixture_root.join("src/render")).expect("fixture render");
@@ -154,7 +155,7 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     fs::create_dir_all(fixture_root.join("tests")).expect("fixture tests");
     fs::write(
         fixture_root.join("docs/guides/easy-scene-setup.md"),
-        "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed()\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```",
+        "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```",
     )
     .expect("guide fixture");
     fs::write(
@@ -203,12 +204,22 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
         "studio docs pub fn sun() {} pub fn key_light() {} pub fn fill_light() {} pub fn rim_light() {} pub fn softbox() {} pub fn bulb_warm() {} pub fn bulb_cool() {}",
     )
     .expect("lights fixture");
+    fs::write(
+        fixture_root.join("src/scene/mixers.rs"),
+        "pub fn play_animation_by_name() { self.create_animation_mixer(); self.play_animation(mixer); }",
+    )
+    .expect("mixers fixture");
+    fs::write(
+        fixture_root.join("examples/animation.rs"),
+        "play_animation_by_name(&import",
+    )
+    .expect("animation example fixture");
     fs::write(fixture_root.join("src/lib.rs"), "").expect("lib fixture");
     fs::write(fixture_root.join("src/geometry.rs"), "").expect("geometry fixture");
     fs::write(fixture_root.join("src/geometry/bounds.rs"), "").expect("bounds fixture");
     fs::write(
         fixture_root.join("tests/examples_visual_proof.rs"),
-        "frame_bounds_rendered_output_proves_fill_center_and_unclipped_object frame-bounds-rendered-output computed_distance projected_rect nonblack_pixel_rect round_a_named_color_swatch_docs_image round-a-named-color-swatch-docs-image round_a_lens_preset_comparison_docs_image round-a-lens-preset-comparison-docs-image round_b_light_preset_reference_docs_image round-b-light-preset-reference-docs-image round_b_material_preset_reference_docs_image round-b-material-preset-reference-docs-image round_b_background_preset_reference_docs_image round-b-background-preset-reference-docs-image round_b_orbit_control_preset_animated_docs_image round-b-orbit-control-preset-animated-docs-image round_c_auto_exposure_preset_reference_docs_image round-c-auto-exposure-preset-reference-docs-image reference-image+docs-image animated-proof+docs-image",
+        "frame_bounds_rendered_output_proves_fill_center_and_unclipped_object frame-bounds-rendered-output computed_distance projected_rect nonblack_pixel_rect round_a_named_color_swatch_docs_image round-a-named-color-swatch-docs-image round_a_lens_preset_comparison_docs_image round-a-lens-preset-comparison-docs-image round_b_light_preset_reference_docs_image round-b-light-preset-reference-docs-image round_b_material_preset_reference_docs_image round-b-material-preset-reference-docs-image round_b_background_preset_reference_docs_image round-b-background-preset-reference-docs-image round_b_orbit_control_preset_animated_docs_image round-b-orbit-control-preset-animated-docs-image round_c_auto_exposure_preset_reference_docs_image round-c-auto-exposure-preset-reference-docs-image round_c_animation_playback_reference_animated_docs_image round-c-animation-playback-reference-animated-docs-image reference-image+docs-image animated-proof+docs-image",
     )
     .expect("visual proof fixture");
     fs::write(
@@ -276,6 +287,11 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
         "named_auto_exposure_scenarios_are_public_and_ordered scenario_presets_drive_different_ev_solutions",
     )
     .expect("auto exposure preset test fixture");
+    fs::write(
+        fixture_root.join("tests/round_c_animation_playback.rs"),
+        "scene_play_animation_by_name_creates_and_starts_mixer",
+    )
+    .expect("animation playback test fixture");
     fs::write(
         fixture_root.join("demo/index.html"),
         r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,

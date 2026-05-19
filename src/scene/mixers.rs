@@ -23,6 +23,38 @@ impl Scene {
             .insert(AnimationMixer::new(clip, import.live_flag())))
     }
 
+    /// Creates and starts a mixer for a named imported animation clip.
+    ///
+    /// This is the one-call path for "play this clip now". The returned
+    /// mixer key can still be passed to [`Self::update_animation`],
+    /// [`Self::set_animation_loop_mode`], [`Self::set_animation_speed`],
+    /// pause, seek, and stop helpers.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use scena::{Assets, Scene};
+    /// # async fn example() -> scena::Result<()> {
+    /// let assets = Assets::new();
+    /// let model = assets.load_scene("machine.glb").await?;
+    /// let mut scene = Scene::new();
+    /// let import = scene.instantiate(&model)?;
+    ///
+    /// let mixer = scene.play_animation_by_name(&import, "idle")?;
+    /// scene.update_animation(mixer, 1.0 / 60.0)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn play_animation_by_name(
+        &mut self,
+        import: &SceneImport,
+        clip_name: &str,
+    ) -> Result<AnimationMixerKey, AnimationError> {
+        let mixer = self.create_animation_mixer(import, clip_name)?;
+        self.play_animation(mixer)?;
+        Ok(mixer)
+    }
+
     pub fn animation_mixer(
         &self,
         mixer: AnimationMixerKey,

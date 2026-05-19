@@ -248,3 +248,49 @@ pub(super) fn check_named_auto_exposure_presets(root: &Path, findings: &mut Vec<
         ));
     }
 }
+
+pub(super) fn check_one_call_animation_playback(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ONE-CALL-ANIMATION-PLAYBACK",
+        "src/scene/mixers.rs",
+        &[
+            "pub fn play_animation_by_name(",
+            "self.create_animation_mixer(",
+            "self.play_animation(mixer)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ONE-CALL-ANIMATION-PLAYBACK",
+        "tests/round_c_animation_playback.rs",
+        &["scene_play_animation_by_name_creates_and_starts_mixer"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ONE-CALL-ANIMATION-PLAYBACK",
+        "tests/examples_visual_proof.rs",
+        &[
+            "round_c_animation_playback_reference_animated_docs_image",
+            "round-c-animation-playback-reference-animated-docs-image",
+            "animated-proof+docs-image",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ONE-CALL-ANIMATION-PLAYBACK",
+        "examples/animation.rs",
+        &["play_animation_by_name(&import"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ONE-CALL-ANIMATION-PLAYBACK",
+        "docs/guides/easy-scene-setup.md",
+        &["play_animation_by_name(&import"],
+    );
+}
