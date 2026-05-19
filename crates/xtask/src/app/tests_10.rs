@@ -412,6 +412,7 @@ pub(crate) fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs
         "setStatus('demo', 'rendered');",
     )
     .expect("demo js fixture");
+    crate::app::tests_15::write_asset_validation_easy_scene_fixture(fixture_root);
 }
 
 #[test]

@@ -3,6 +3,7 @@ use crate::app::prelude::*;
 pub(crate) fn run() {
     let outcome = match parse_command(env::args().skip(1).collect()) {
         Ok(Command::Doctor(mode)) => run_doctor(mode),
+        Ok(Command::AssetDoctor { input }) => run_asset_doctor(&input),
         Ok(Command::ArchitectureMap) => run_architecture_map(),
         Ok(Command::ClaimAudit) => run_claim_audit(),
         Ok(Command::ReleaseLaneArtifact(lane)) => run_release_lane_artifact(&lane),
@@ -43,6 +44,7 @@ pub(crate) enum DoctorMode {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Command {
     Doctor(DoctorMode),
+    AssetDoctor { input: String },
     ArchitectureMap,
     ClaimAudit,
     ReleaseLaneArtifact(String),
@@ -86,7 +88,11 @@ pub(crate) fn finding_reference(rule: &str) -> &'static str {
         || rule == "BINARY-ASSET-TRUTH-P9"
     {
         "docs/rendering.md"
-    } else if rule.contains("M8") || rule.contains("GLTF") || rule.contains("ASSETS") {
+    } else if rule.contains("M8")
+        || rule.contains("GLTF")
+        || rule.contains("ASSET")
+        || rule.contains("ASSETS")
+    {
         "docs/assets.md"
     } else if rule.contains("M7") || rule.contains("ERGONOMICS") {
         "docs/api.md"
@@ -120,6 +126,15 @@ pub(crate) fn parse_command(args: Vec<String>) -> Result<Command, String> {
             return Ok(Command::ClaimAudit);
         }
         return Err("claim-audit accepts no arguments".to_string());
+    }
+
+    if args.first().map(String::as_str) == Some("asset-doctor") {
+        if args.len() == 2 {
+            return Ok(Command::AssetDoctor {
+                input: args[1].clone(),
+            });
+        }
+        return Err("asset-doctor expects exactly one glTF/GLB input path".to_string());
     }
 
     if args.first().map(String::as_str) == Some("architecture-map") {
@@ -172,7 +187,7 @@ pub(crate) fn parse_command(args: Vec<String>) -> Result<Command, String> {
 
     if args.first().map(String::as_str) != Some("doctor") {
         return Err(format!(
-            "unknown command '{}'; expected 'doctor', 'architecture-map', 'claim-audit', 'release-lane-artifact', 'release-readiness', 'stage-release-artifacts', or 'visual-proof'",
+            "unknown command '{}'; expected 'doctor', 'asset-doctor', 'architecture-map', 'claim-audit', 'release-lane-artifact', 'release-readiness', 'stage-release-artifacts', or 'visual-proof'",
             args.first().map(String::as_str).unwrap_or("")
         ));
     }
@@ -198,6 +213,6 @@ pub(crate) fn parse_command(args: Vec<String>) -> Result<Command, String> {
 
 pub(crate) fn print_usage() {
     println!(
-        "Usage:\n  cargo run -p xtask -- doctor --docs\n  cargo run -p xtask -- doctor --architecture\n  cargo run -p xtask -- doctor --full\n  cargo run -p xtask -- architecture-map\n  cargo run -p xtask -- claim-audit\n  cargo run -p xtask -- release-lane-artifact <lane>\n  cargo run -p xtask -- release-readiness\n  cargo run -p xtask -- stage-release-artifacts <downloaded-root> <canonical-output-root>\n  cargo run -p xtask -- visual-proof --all-release-lanes\n  cargo run -p xtask -- visual-proof <lane> -- <command...>"
+        "Usage:\n  cargo run -p xtask -- doctor --docs\n  cargo run -p xtask -- doctor --architecture\n  cargo run -p xtask -- doctor --full\n  cargo run -p xtask -- asset-doctor <asset.gltf|asset.glb>\n  cargo run -p xtask -- architecture-map\n  cargo run -p xtask -- claim-audit\n  cargo run -p xtask -- release-lane-artifact <lane>\n  cargo run -p xtask -- release-readiness\n  cargo run -p xtask -- stage-release-artifacts <downloaded-root> <canonical-output-root>\n  cargo run -p xtask -- visual-proof --all-release-lanes\n  cargo run -p xtask -- visual-proof <lane> -- <command...>"
     );
 }

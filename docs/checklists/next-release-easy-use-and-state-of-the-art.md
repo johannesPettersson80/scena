@@ -237,13 +237,17 @@ compressed-asset proof suite)
 
 ### 1.4 Doctor → official validation + actionable scena guidance
 
-Status: **[ergonomic-gap]**
+Status: **[shipped]**
 Owner: new `xtask` doctor-assets lane under `crates/xtask/src/app/` plus
 the existing `src/assets/gltf/extensions.rs` diagnostics infrastructure.
-Proof: doctor lane that runs the official Khronos glTF Validator for
-spec-compliance validation, then runs scena-native checks for
-renderer-specific guidance and produces structured errors with `fix`
-strings; rustdoc example for each scena error variant.
+Proof: `cargo run -p xtask -- asset-doctor <asset.gltf|asset.glb>` runs
+the official Khronos glTF Validator CLI in stdout mode (`gltf_validator
+-o <asset>`, or `SCENA_GLTF_VALIDATOR=<path>`), then emits
+`scena.asset_doctor.v1` JSON with scena-native renderer guidance and
+`fix` strings. `tests_15` covers command parsing, the official-validator
+stdout contract, and required-clearcoat guidance. Doctor rule
+`ASSET-VALIDATION-DOCTOR` pins the CLI, docs, tests, checklist, and
+fix-string guidance.
 Visual proof: none (structured text errors; no rendered output)
 
 ```rust
@@ -1314,6 +1318,17 @@ Picking/outline/hover reconciliation pass (2026-05-19):
   callbacks, and generated visual proof.
 - Added a `PICKING-OUTLINE-HOVER` doctor rule so this remains a
   source-enforced shipped claim instead of a stale checklist note.
+
+Asset-validation doctor implementation pass (2026-05-19):
+
+- Added `cargo run -p xtask -- asset-doctor <asset.gltf|asset.glb>` as the
+  official-validation lane: it shells out to the Khronos glTF Validator in
+  stdout mode and fails closed if the executable is missing or does not
+  produce parseable JSON.
+- Added scena-native renderer guidance with structured `fix` strings for
+  required/degraded extensions such as clearcoat, Draco, KTX2, meshopt, and
+  WebP extension rebinding, plus `ASSET-VALIDATION-DOCTOR` source/doc/test
+  enforcement.
 
 Ease-of-use implementation continuation (2026-05-19):
 

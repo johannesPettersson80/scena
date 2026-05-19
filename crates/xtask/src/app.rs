@@ -1,6 +1,7 @@
 #![allow(unused_imports)]
 
 mod architecture_map;
+mod asset_validation;
 mod core;
 mod doctor_architecture;
 mod doctor_core;
@@ -40,6 +41,8 @@ mod tests_12;
 mod tests_13;
 #[cfg(test)]
 mod tests_14;
+#[cfg(test)]
+mod tests_15;
 mod util;
 mod visual_artifacts;
 mod visual_proof;

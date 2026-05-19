@@ -107,3 +107,27 @@ errors. Optional features report structured degraded or unsupported status when
 the application can continue safely.
 
 See [Errors](errors.md).
+
+## Asset Doctor
+
+Use the asset doctor when a model loads incorrectly or when deciding whether a
+third-party glTF/GLB is ready for scena:
+
+```bash
+cargo run -p xtask -- asset-doctor path/to/model.glb
+```
+
+The command first runs the official Khronos glTF Validator CLI in stdout mode
+(`gltf_validator -o <asset>`). Set `SCENA_GLTF_VALIDATOR` when the executable
+has a different path. The official validator owns glTF specification
+compliance; scena does not reimplement that subset.
+
+After the official validator runs, the command emits scena-specific renderer
+guidance as `scena.asset_doctor.v1` JSON. Each guidance entry includes a
+severity, status, message, and `fix` string for issues such as required
+clearcoat materials, Draco compression, feature-gated KTX2/meshopt assets, or
+deferred WebP texture-source rebinding.
+
+For example, a required `KHR_materials_clearcoat` asset gets an error telling
+the user to export a fallback material or wait for the matching renderer
+feature before making clearcoat required.

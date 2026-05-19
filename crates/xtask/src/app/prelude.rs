@@ -15,6 +15,10 @@ pub(crate) use crate::app::architecture_map::{
     declared_public_type_names, public_api_ownership_json, read_public_api_ownership,
     run_architecture_map, write_pretty_json_artifact,
 };
+pub(crate) use crate::app::asset_validation::{
+    AssetGuidanceFinding, AssetGuidanceSeverity, official_gltf_validator_args, run_asset_doctor,
+    scena_native_asset_guidance,
+};
 pub(crate) use crate::app::core::{
     Command, DoctorMode, Finding, VisualProofCommand, finding_reference, parse_command,
     print_usage, run,

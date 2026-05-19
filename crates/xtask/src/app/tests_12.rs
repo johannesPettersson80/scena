@@ -322,6 +322,7 @@ pub(crate) fn write_easy_scene_fixture(
         "Production-grade asset pipeline complete and production-profile ready Status: **[shipped]** for the production profile tests/m8_compressed_asset_release_proof.rs target/gate-artifacts/m8-compressed-assets CPU rasterizer fallback for no-GPU screenshots Status: **[shipped]** render_png_bytes() Reference-image regression as a public API Status:\n  **[shipped]** ReferenceImage::from_rgba8 REFERENCE-IMAGE-REGRESSION Follow/Fly library primitives **[shipped]** tests/camera_control_kit.rs CAMERA-CONTROL-KIT Picking + outline + hover Status: **[shipped]** PICKING-OUTLINE-HOVER examples_visual_picking_selection_hover_renders_styled_pick_to_ppm",
     )
     .expect("next release checklist fixture");
+    crate::app::tests_15::write_asset_validation_easy_scene_fixture(fixture_root);
     fs::write(
         fixture_root.join("docs/api.md"),
         "ReferenceImage::from_rgba8 regress regress_with_tolerance ReferenceImageError",
