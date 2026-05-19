@@ -16,6 +16,7 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
             "frame_bounds",
             "add_studio_lighting",
             "add_grid_floor",
+            "add_perspective_camera_default_for",
             "set_auto_exposure",
             "scene.mate",
             "project_world_point",
@@ -113,6 +114,7 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
         "src/scene/framing.rs",
         &[
             "pre-existing aspect",
+            "add_perspective_camera_default_for",
             "# Examples",
             "# Errors",
             "LookupError::UnsupportedCameraType",
@@ -212,7 +214,6 @@ fn check_easy_scene_guide_snippet(root: &Path, findings: &mut Vec<Finding>) {
         "Scene::new()",
         "scene.add_studio_lighting()",
         "scene.add_grid_floor(",
-        "scene.frame_bounds(",
     ];
     let mut in_rust = false;
     let mut block = String::new();
@@ -223,7 +224,10 @@ fn check_easy_scene_guide_snippet(root: &Path, findings: &mut Vec<Finding>) {
             continue;
         }
         if in_rust && line.trim_start().starts_with("```") {
-            if required.iter().all(|needle| block.contains(needle)) {
+            if required.iter().all(|needle| block.contains(needle))
+                && (block.contains("scene.frame_bounds(")
+                    || block.contains("scene.add_perspective_camera_default_for("))
+            {
                 return;
             }
             in_rust = false;
@@ -236,7 +240,7 @@ fn check_easy_scene_guide_snippet(root: &Path, findings: &mut Vec<Finding>) {
     }
     findings.push(Finding::new(
         "DOCS-EASY-SCENE-SETUP",
-        "easy scene setup guide must contain one Rust block with Scene::new, add_studio_lighting, add_grid_floor, and frame_bounds",
+        "easy scene setup guide must contain one Rust block with Scene::new, add_studio_lighting, add_grid_floor, and camera framing",
     ));
 }
 

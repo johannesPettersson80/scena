@@ -144,9 +144,10 @@ custom element.
 ### 1.2 Auto-framing as the default at the viewer level
 
 Status: **[ergonomic-gap]** — viewer builders already frame imported
-assets by default (`ViewerCommonOptions::frame_import = true`); the gap is
-the frictionless scene/helper/custom-element surface plus stored
-browser-rendered proof.
+assets by default (`ViewerCommonOptions::frame_import = true`), and the
+scene-level `Scene::add_perspective_camera_default_for(bounds, viewport)`
+helper now exists. The remaining gap is the custom-element/browser-demo
+surface plus stored browser-rendered proof.
 Owner: `src/viewer.rs` (`InteractiveGltfViewer`, `HeadlessGltfViewer`)
 and the future `<scena-viewer>`. Not on `Camera::default()` — that
 has no bounds or viewport.
@@ -170,7 +171,7 @@ let mut viewer = interactive_gltf_viewer("machine.glb", surface)
     .await?;                         // frames imported bounds by default
 viewer.render_next_frame()?;
 
-// desired explicit helper (Scene level)
+// explicit helper (Scene level)
 let camera = scene.add_perspective_camera_default_for(bounds, (w, h))?;
 ```
 
@@ -1134,6 +1135,17 @@ Doctor residue-rule closure (2026-05-19):
 - Added `Color::TRANSPARENT` and swept the demo background away from the
   raw `Color::from_linear_rgba(0.0, 0.0, 0.0, 0.0)` residue so the new
   rule can fail closed.
+
+Auto-framing helper implementation pass (2026-05-19):
+
+- Added `Scene::add_perspective_camera_default_for(bounds, viewport)` as
+  the explicit scene-level helper promised by §1.2. It inserts a
+  `PerspectiveCamera::standard()`, frames it through `frame_bounds`, and
+  makes it the active camera without preparing or rendering.
+- Added focused integration tests proving the helper creates a centered,
+  fill-correct active camera and rejects a zero-sized viewport before
+  making a camera active. The remaining §1.2 gap is the
+  `<scena-viewer>` browser-demo/reference-image path.
 
 Ease-of-use implementation continuation (2026-05-19):
 

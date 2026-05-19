@@ -1,7 +1,7 @@
 use scena::{
-    Aabb, Assets, FramingOptions, GeometryDesc, GridFloorOptions, LookupError, MaterialDesc,
-    MaterialKind, NodeKind, OrbitControls, OrthographicCamera, PerspectiveCamera, Scene, Transform,
-    Vec3,
+    Aabb, Angle, Assets, Camera, FramingOptions, GeometryDesc, GridFloorOptions, LookupError,
+    MaterialDesc, MaterialKind, NodeKind, OrbitControls, OrthographicCamera, PerspectiveCamera,
+    Scene, Transform, Vec3,
 };
 
 fn viewport() -> (u32, u32) {
@@ -31,6 +31,70 @@ fn corners(bounds: Aabb) -> [Vec3; 8] {
         Vec3::new(bounds.min.x, bounds.max.y, bounds.max.z),
         Vec3::new(bounds.max.x, bounds.max.y, bounds.max.z),
     ]
+}
+
+#[test]
+fn add_perspective_camera_default_for_inserts_active_framed_standard_camera() {
+    let (width, height) = desktop_viewport();
+    let mut scene = Scene::new();
+    let bounds = wide_bounds();
+
+    let camera = scene
+        .add_perspective_camera_default_for(bounds, (width, height))
+        .expect("default framed camera inserts");
+
+    assert_eq!(scene.active_camera(), Some(camera));
+    let Camera::Perspective(perspective) = scene.camera(camera).expect("camera exists") else {
+        panic!("helper must insert a perspective camera");
+    };
+    assert!(
+        (perspective.aspect - width as f32 / height as f32).abs() < 1.0e-6,
+        "{perspective:?}"
+    );
+    assert!(
+        (perspective.vertical_fov.radians() - Angle::from_degrees(46.0).radians()).abs() < 1.0e-6,
+        "{perspective:?}"
+    );
+
+    let mut min_x = f32::INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    for corner in corners(bounds) {
+        let projected = scene
+            .project_world_point(camera, corner, width, height)
+            .expect("projection succeeds")
+            .expect("corner is in front of the camera");
+        min_x = min_x.min(projected.x);
+        min_y = min_y.min(projected.y);
+        max_x = max_x.max(projected.x);
+        max_y = max_y.max(projected.y);
+    }
+    assert!(min_x >= 0.0 && min_y >= 0.0, "{min_x} {min_y}");
+    assert!(
+        max_x <= width as f32 && max_y <= height as f32,
+        "{max_x} {max_y}"
+    );
+    let fill = ((max_x - min_x) / width as f32).max((max_y - min_y) / height as f32);
+    assert!((0.66..=0.72).contains(&fill), "{fill}");
+}
+
+#[test]
+fn add_perspective_camera_default_for_rejects_invalid_viewport_without_active_camera() {
+    let mut scene = Scene::new();
+
+    let err = scene
+        .add_perspective_camera_default_for(wide_bounds(), (0, 720))
+        .expect_err("zero-width viewport is invalid");
+
+    assert!(matches!(
+        err,
+        LookupError::InvalidViewport {
+            width: 0,
+            height: 720
+        }
+    ));
+    assert_eq!(scene.active_camera(), None);
 }
 
 #[test]

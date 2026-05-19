@@ -9,8 +9,7 @@ applications can replace any part.
 
 ```rust
 use scena::{
-    Assets, AutoExposureConfig, Background, FramingOptions, GridFloorOptions,
-    PerspectiveCamera, Renderer, Scene, Transform,
+    Assets, AutoExposureConfig, Background, GridFloorOptions, Renderer, Scene,
 };
 
 let assets = Assets::new();
@@ -25,21 +24,7 @@ scene.add_grid_floor(&assets, GridFloorOptions::new().under_bounds(bounds))?;
 
 let width = 1280;
 let height = 720;
-let camera = scene.add_perspective_camera(
-    scene.root(),
-    PerspectiveCamera::standard(),
-    Transform::default(),
-)?;
-
-let framing = scene.frame_bounds(
-    camera,
-    bounds,
-    FramingOptions::new()
-        .three_quarter_front_right()
-        .fill(0.72)
-        .margin_px(48.0)
-        .viewport(width, height),
-)?;
+let camera = scene.add_perspective_camera_default_for(bounds, (width, height))?;
 
 let mut renderer = Renderer::headless(width, height)?;
 renderer.set_background(Background::Studio);
@@ -49,9 +34,9 @@ renderer.render(&scene, camera)?;
 ```
 
 The sequence is still explicit: load assets, instantiate scene state, add
-lights/floor/camera, frame the bounds, prepare, render. `frame_bounds()` mutates
-camera state and marks the scene dirty, but it does not fetch assets, prepare
-GPU resources, or render.
+lights/floor/camera, prepare, render. `add_perspective_camera_default_for()`
+uses `frame_bounds()` internally to mutate camera state and mark the scene
+dirty, but it does not fetch assets, prepare GPU resources, or render.
 
 ## Good defaults
 
@@ -104,6 +89,9 @@ let foot = assets.create_material(MaterialDesc::rubber());
 Use `Scene::frame_bounds()` instead of manually tuning camera distance. The
 framing solver projects the AABB into the requested viewport and solves from
 both axes, so portrait/mobile and wide objects stay centered and unclipped.
+For first renders where the default standard lens and front view are enough,
+`Scene::add_perspective_camera_default_for(bounds, (width, height))` inserts
+and activates the camera in one call.
 
 ## Camera views
 

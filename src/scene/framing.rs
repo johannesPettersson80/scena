@@ -5,7 +5,9 @@ use crate::material::{Color, MaterialDesc};
 
 use super::transforms::compose_transform;
 use super::view_math::{transform_aabb, union_aabb, world_to_view};
-use super::{Camera, CameraKey, DepthRange, NodeKey, NodeKind, Scene, Transform, Vec3};
+use super::{
+    Camera, CameraKey, DepthRange, NodeKey, NodeKind, PerspectiveCamera, Scene, Transform, Vec3,
+};
 
 mod fit;
 mod grid;
@@ -400,6 +402,52 @@ impl ScreenRect {
 }
 
 impl Scene {
+    /// Adds a standard perspective camera under the scene root and frames it to bounds.
+    ///
+    /// The helper is the scene-level equivalent of the viewer default: callers provide
+    /// world-space bounds and a target viewport, and scena creates an active camera using
+    /// [`PerspectiveCamera::standard`] plus [`Scene::frame_bounds`]. It does not prepare
+    /// renderer resources, upload GPU data, fetch assets, or render a frame.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::{Aabb, Scene, Vec3};
+    ///
+    /// let mut scene = Scene::new();
+    /// let bounds = Aabb::new(Vec3::new(-1.0, -0.5, -0.5), Vec3::new(1.0, 0.5, 0.5));
+    ///
+    /// let camera = scene
+    ///     .add_perspective_camera_default_for(bounds, (1280, 720))
+    ///     .unwrap();
+    /// assert_eq!(scene.active_camera(), Some(camera));
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LookupError::InvalidViewport`] when either viewport dimension is zero,
+    /// [`LookupError::InvalidBounds`] or [`LookupError::ImportHasNoBounds`] for invalid
+    /// bounds, and the same insertion/framing errors as [`Scene::add_perspective_camera`]
+    /// and [`Scene::frame_bounds`].
+    pub fn add_perspective_camera_default_for(
+        &mut self,
+        bounds: Aabb,
+        viewport: (u32, u32),
+    ) -> Result<CameraKey, LookupError> {
+        let options = FramingOptions::new().viewport(viewport.0, viewport.1);
+        ValidFramingOptions::new(options)?;
+        validate_bounds(bounds)?;
+
+        let camera = self.add_perspective_camera(
+            self.root,
+            PerspectiveCamera::standard(),
+            Transform::default(),
+        )?;
+        self.frame_bounds(camera, bounds, options)?;
+        self.set_active_camera(camera)?;
+        Ok(camera)
+    }
+
     /// Fits a perspective camera to world-space bounds without preparing or rendering.
     ///
     /// The camera is moved so the projected AABB fits the requested viewport
