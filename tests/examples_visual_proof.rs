@@ -19,7 +19,7 @@ use scena::{
     GeometryDesc, InteractionStyle, InteractiveGltfViewer, LabelDesc, MaterialDesc,
     OrbitControlAction, OrbitControls, PerspectiveCamera, PlatformSurface, PointLight,
     PointerEvent, Profile, Renderer, RendererOptions, Scene, SourceCoordinateSystem, SourceUnits,
-    TouchEvent, Transform, Vec3, Viewport, interactive_gltf_viewer,
+    TouchEvent, Transform, Vec3, Viewport, headless_gltf_viewer, interactive_gltf_viewer,
 };
 
 const ARTIFACT_WIDTH: u32 = 256;
@@ -1800,6 +1800,97 @@ fn round_d_viewer_pointer_callback_animated_docs_image() {
         frame_height,
         &[idle, hover, click, miss],
     );
+}
+
+#[test]
+fn viewer_material_variant_reference_docs_image() {
+    let tile_width = 96;
+    let tile_height = 96;
+    let variants = [None, Some("midnight"), Some("noon")];
+    let expected_dominant_channels = [0, 2, 1];
+    let mut tiles = Vec::new();
+
+    for (variant, expected_channel) in variants
+        .into_iter()
+        .zip(expected_dominant_channels.into_iter())
+    {
+        let frame = render_material_variant_tile(variant, tile_width, tile_height);
+        assert_eq!(
+            dominant_nonblack_channel(&frame),
+            expected_channel,
+            "material variant {variant:?} should render its expected color family",
+        );
+        tiles.push(frame);
+    }
+
+    let width = tile_width * tiles.len() as u32;
+    let height = tile_height;
+    let mut contact = vec![0_u8; (width * height * 4) as usize];
+    for (index, tile) in tiles.iter().enumerate() {
+        for y in 0..tile_height {
+            let dst_start = ((y * width + index as u32 * tile_width) * 4) as usize;
+            let src_start = (y * tile_width * 4) as usize;
+            let byte_count = (tile_width * 4) as usize;
+            contact[dst_start..dst_start + byte_count]
+                .copy_from_slice(&tile[src_start..src_start + byte_count]);
+        }
+    }
+
+    assert_frames_differ(
+        &tiles[0],
+        &tiles[1],
+        "default and midnight material variants must differ visually",
+    );
+    assert_frames_differ(
+        &tiles[1],
+        &tiles[2],
+        "midnight and noon material variants must differ visually",
+    );
+    write_reference_docs_image_artifact(
+        "viewer-material-variant-reference-docs-image",
+        "docs/guides/easy-scene-setup.md",
+        width,
+        height,
+        &contact,
+    );
+}
+
+fn render_material_variant_tile(variant: Option<&str>, width: u32, height: u32) -> Vec<u8> {
+    let mut viewer = pollster::block_on(
+        headless_gltf_viewer("tests/assets/gltf/material_variants_scene.gltf")
+            .size(width, height)
+            .build(),
+    )
+    .expect("material variants viewer builds");
+    if let Some(name) = variant {
+        viewer
+            .set_active_material_variant(Some(name))
+            .expect("material variant applies");
+    }
+    viewer
+        .render_next_frame()
+        .expect("material variant frame renders");
+    viewer.snapshot_rgba8().to_vec()
+}
+
+fn dominant_nonblack_channel(rgba: &[u8]) -> usize {
+    let mut sums = [0_u64; 3];
+    let mut visible = 0_u64;
+    for pixel in rgba.chunks_exact(4) {
+        if pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 0 {
+            continue;
+        }
+        sums[0] += u64::from(pixel[0]);
+        sums[1] += u64::from(pixel[1]);
+        sums[2] += u64::from(pixel[2]);
+        visible += 1;
+    }
+    assert!(visible > 0, "frame must contain visible material pixels");
+    sums.iter()
+        .enumerate()
+        .max_by_key(|(_, sum)| *sum)
+        .map(|(index, _)| index)
+        .expect("RGB channel sums are non-empty")
 }
 
 fn callback_state(

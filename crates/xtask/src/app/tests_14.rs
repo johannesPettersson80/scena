@@ -65,3 +65,30 @@ pub(crate) fn easy_scene_setup_contracts_reject_missing_compressed_asset_visual_
         "doctor must reject production-asset profiles without compressed visual proof: {findings:?}",
     );
 }
+
+#[test]
+pub(crate) fn easy_scene_setup_contracts_reject_missing_material_variant_visual_proof() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/missing-material-variant-proof");
+    write_easy_scene_fixture(
+        &fixture_root,
+        VALID_GUIDE,
+        "frame_bounds(()) bounds_for_transforms add_grid_floor",
+        r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
+    );
+    fs::write(
+        fixture_root.join("tests/examples_visual_proof.rs"),
+        "round_b_light_preset_reference_docs_image",
+    )
+    .expect("visual proof fixture without material variants");
+    let mut findings = Vec::new();
+
+    check_easy_scene_setup_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "VIEWER-MATERIAL-VARIANTS"),
+        "doctor must reject viewer material variants without generated visual proof: {findings:?}",
+    );
+}

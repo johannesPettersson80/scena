@@ -58,6 +58,17 @@ pub(super) fn check_viewer_material_variants(root: &Path, findings: &mut Vec<Fin
         root,
         findings,
         "VIEWER-MATERIAL-VARIANTS",
+        "tests/examples_visual_proof.rs",
+        &[
+            "viewer_material_variant_reference_docs_image",
+            "viewer-material-variant-reference-docs-image",
+            "reference-image+docs-image",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VIEWER-MATERIAL-VARIANTS",
         "docs/guides/easy-scene-setup.md",
         &[
             "Material variants",

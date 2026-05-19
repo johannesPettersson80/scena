@@ -810,15 +810,17 @@ specific competitor primitive.
   camera movement.
   Visual proof: browser-demo + animated-proof (labels visible in the demo; recording shows them tracking through camera orbit and animation)
 - **Variant switching for `KHR_materials_variants`.** Status:
-  **[ergonomic-gap]** overall; Viewer primitive **[shipped]**,
-  `<scena-viewer>` picker and rendered reference grid still missing.
+  **[ergonomic-gap]** overall; Viewer primitive and reference/docs-image
+  proof **[shipped]**, `<scena-viewer>` picker still missing.
   Extension diagnostics mark it supported and
   `Scene::set_active_variant(&import, Some(name))` exists. Viewers now
   expose `material_variants()`, `active_material_variant()`, and
   `set_active_material_variant(name)`; the setter delegates to the scene
   API and re-prepares before the next render. Owner: `src/viewer.rs` +
   future custom element.
-  Visual proof: reference-image + docs-image still required (one reference per variant on the same asset; tutorial shows the variant picker output)
+  Visual proof: reference-image + docs-image shipped through
+  `target/gate-artifacts/examples-visual/viewer-material-variant-reference-docs-image.ppm`;
+  browser-demo remains future custom-element proof.
 - **Loading progress primitives.** Status: **[ergonomic-gap]** overall;
   Viewer primitive **[shipped]**, `<scena-viewer>` progress UI still
   missing. `AssetLoadProgress` exists in `src/lib.rs` and is now surfaced
@@ -1253,6 +1255,16 @@ Viewer loading-progress implementation pass (2026-05-19):
 - Added focused headless and interactive viewer tests plus a
   `VIEWER-LOAD-PROGRESS` doctor rule so docs, tests, library re-export,
   and viewer APIs stay aligned.
+
+Viewer material-variant proof pass (2026-05-19):
+
+- Added generated reference/docs-image proof for the shipped viewer
+  `KHR_materials_variants` surface:
+  `viewer-material-variant-reference-docs-image.ppm` renders the default,
+  `midnight`, and `noon` variants from the same glTF fixture and asserts
+  the expected red / blue / green color families.
+- Extended `VIEWER-MATERIAL-VARIANTS` doctor coverage so the viewer API
+  cannot remain marked shipped without the generated visual proof.
 
 Viewer material-variants implementation pass (2026-05-19):
 
