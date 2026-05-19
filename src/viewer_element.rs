@@ -6,6 +6,7 @@
 //! `viewer-element` feature.
 
 use crate::Tonemapper;
+use crate::assets::AssetLoadProgress;
 
 pub const SCENA_VIEWER_TAG: &str = "scena-viewer";
 
@@ -17,6 +18,26 @@ pub struct ScenaViewerAttributes {
     camera_controls: bool,
     auto_rotate: bool,
     ar: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScenaViewerProgressPhase {
+    Idle,
+    Loading,
+    Fetching,
+    Parsing,
+    Caching,
+    Complete,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScenaViewerProgress {
+    phase: ScenaViewerProgressPhase,
+    path: Option<String>,
+    loaded_bytes: Option<usize>,
+    external_buffer_index: Option<usize>,
+    nodes: Option<usize>,
+    meshes: Option<usize>,
 }
 
 impl Default for ScenaViewerAttributes {
@@ -87,6 +108,129 @@ impl ScenaViewerAttributes {
     }
 }
 
+impl Default for ScenaViewerProgress {
+    fn default() -> Self {
+        Self {
+            phase: ScenaViewerProgressPhase::Idle,
+            path: None,
+            loaded_bytes: None,
+            external_buffer_index: None,
+            nodes: None,
+            meshes: None,
+        }
+    }
+}
+
+impl ScenaViewerProgress {
+    pub fn from_asset_event(event: &AssetLoadProgress) -> Self {
+        match event {
+            AssetLoadProgress::LoadStarted { path } => Self::for_path(
+                ScenaViewerProgressPhase::Loading,
+                Some(path.as_str().to_string()),
+            ),
+            AssetLoadProgress::CacheHit { path } => Self::for_path(
+                ScenaViewerProgressPhase::Complete,
+                Some(path.as_str().to_string()),
+            ),
+            AssetLoadProgress::AssetFetched { path, bytes } => {
+                let mut progress = Self::for_path(
+                    ScenaViewerProgressPhase::Fetching,
+                    Some(path.as_str().to_string()),
+                );
+                progress.loaded_bytes = Some(*bytes);
+                progress
+            }
+            AssetLoadProgress::ExternalBufferFetched { path, index, bytes } => {
+                let mut progress = Self::for_path(
+                    ScenaViewerProgressPhase::Fetching,
+                    Some(path.as_str().to_string()),
+                );
+                progress.external_buffer_index = Some(*index);
+                progress.loaded_bytes = Some(*bytes);
+                progress
+            }
+            AssetLoadProgress::Parsed {
+                path,
+                nodes,
+                meshes,
+            } => {
+                let mut progress = Self::for_path(
+                    ScenaViewerProgressPhase::Parsing,
+                    Some(path.as_str().to_string()),
+                );
+                progress.nodes = Some(*nodes);
+                progress.meshes = Some(*meshes);
+                progress
+            }
+            AssetLoadProgress::Cached { path } => Self::for_path(
+                ScenaViewerProgressPhase::Complete,
+                Some(path.as_str().to_string()),
+            ),
+        }
+    }
+
+    fn for_path(phase: ScenaViewerProgressPhase, path: Option<String>) -> Self {
+        Self {
+            phase,
+            path,
+            ..Self::default()
+        }
+    }
+
+    pub const fn phase(&self) -> ScenaViewerProgressPhase {
+        self.phase
+    }
+
+    pub fn path(&self) -> Option<&str> {
+        self.path.as_deref()
+    }
+
+    pub const fn loaded_bytes(&self) -> Option<usize> {
+        self.loaded_bytes
+    }
+
+    pub const fn external_buffer_index(&self) -> Option<usize> {
+        self.external_buffer_index
+    }
+
+    pub const fn nodes(&self) -> Option<usize> {
+        self.nodes
+    }
+
+    pub const fn meshes(&self) -> Option<usize> {
+        self.meshes
+    }
+
+    pub const fn is_complete(&self) -> bool {
+        matches!(self.phase, ScenaViewerProgressPhase::Complete)
+    }
+
+    pub fn aria_text(&self) -> String {
+        let path = self.path.as_deref().unwrap_or("asset");
+        match self.phase {
+            ScenaViewerProgressPhase::Idle => "Ready".to_string(),
+            ScenaViewerProgressPhase::Loading => format!("Loading {path}"),
+            ScenaViewerProgressPhase::Fetching => {
+                match (self.external_buffer_index, self.loaded_bytes) {
+                    (Some(index), Some(bytes)) => {
+                        format!("Fetched external buffer {index} with {bytes} bytes from {path}")
+                    }
+                    (_, Some(bytes)) => format!("Fetched {bytes} bytes from {path}"),
+                    _ => format!("Fetching {path}"),
+                }
+            }
+            ScenaViewerProgressPhase::Parsing => match (self.nodes, self.meshes) {
+                (Some(nodes), Some(meshes)) => {
+                    format!("Parsed {path} with {nodes} nodes and {meshes} meshes")
+                }
+                _ => format!("Parsing {path}"),
+            },
+            ScenaViewerProgressPhase::Caching => format!("Caching {path}"),
+            ScenaViewerProgressPhase::Complete => format!("Loaded {path}"),
+        }
+    }
+}
+
 fn non_empty_string(value: &str) -> Option<String> {
     let trimmed = value.trim();
     (!trimmed.is_empty()).then(|| trimmed.to_string())
@@ -134,13 +278,29 @@ export function defineScenaViewerElement(tagName) {
       super();
       const root = this.attachShadow({ mode: "open" });
       const style = document.createElement("style");
-      style.textContent = ":host{display:block;min-width:160px;min-height:120px;contain:content}:host([hidden]){display:none}canvas{display:block;width:100%;height:100%;touch-action:none;background:transparent}";
+      style.textContent = ":host{display:block;min-width:160px;min-height:120px;contain:content;position:relative}:host([hidden]){display:none}canvas{display:block;width:100%;height:100%;touch-action:none;background:transparent}[part=progress]{position:absolute;left:12px;right:12px;bottom:12px;display:grid;gap:6px;color:#f8fafc;font:12px/1.4 system-ui,sans-serif;text-shadow:0 1px 2px #0f172a}[part=progress][hidden]{display:none}[part=progress]::before{content:\"\";display:block;height:4px;border-radius:999px;background:rgba(15,23,42,.52)}[part=progress-bar]{height:4px;margin-top:-10px;border-radius:999px;background:#60a5fa;transform-origin:left center;transform:scaleX(0)}[part=progress-status]{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}";
       const canvas = document.createElement("canvas");
       canvas.part = "canvas";
       canvas.tabIndex = 0;
       canvas.setAttribute("aria-label", "scena 3D viewer canvas");
-      root.append(style, canvas);
+      const progress = document.createElement("div");
+      progress.part = "progress";
+      progress.hidden = true;
+      progress.setAttribute("role", "progressbar");
+      progress.setAttribute("aria-live", "polite");
+      const bar = document.createElement("div");
+      bar.part = "progress-bar";
+      const status = document.createElement("span");
+      status.part = "progress-status";
+      progress.append(bar, status);
+      root.append(style, canvas, progress);
       this._canvas = canvas;
+      this._progress = progress;
+      this._progressBar = bar;
+      this._progressStatus = status;
+      this.addEventListener("scena-viewer-progress", (event) => {
+        this.setLoadProgress(event.detail || {});
+      });
     }
 
     connectedCallback() {
@@ -161,6 +321,31 @@ export function defineScenaViewerElement(tagName) {
 
     get canvas() {
       return this._canvas;
+    }
+
+    setLoadProgress(detail) {
+      const phase = String(detail.phase || "loading");
+      const complete = phase === "complete" || detail.complete === true;
+      const text = String(detail.ariaText || detail.label || (complete ? "Loaded" : "Loading"));
+      const value = Number(detail.value ?? detail.ratio ?? detail.percent);
+      this._progress.hidden = complete && detail.keepVisible !== true;
+      this._progress.dataset.phase = phase;
+      this._progress.setAttribute("aria-label", text);
+      this._progressStatus.textContent = text;
+      if (Number.isFinite(value)) {
+        const clamped = Math.max(0, Math.min(1, value > 1 ? value / 100 : value));
+        this._progress.setAttribute("aria-valuemin", "0");
+        this._progress.setAttribute("aria-valuemax", "100");
+        this._progress.setAttribute("aria-valuenow", String(Math.round(clamped * 100)));
+        this._progressBar.style.transform = `scaleX(${clamped})`;
+      } else {
+        this._progress.removeAttribute("aria-valuenow");
+        this._progressBar.style.transform = complete ? "scaleX(1)" : "scaleX(.35)";
+      }
+      this.dispatchEvent(new CustomEvent("scena-viewer-progress-rendered", {
+        bubbles: true,
+        detail: { phase, text, complete }
+      }));
     }
 
     _booleanAttribute(name) {

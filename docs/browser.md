@@ -49,8 +49,12 @@ defineScenaViewer();
 
 The first shipped foundation registers `<scena-viewer>`, creates a shadow DOM
 canvas, exposes model-viewer-style attributes, and dispatches structured
-attribute events. Asset loading, rendering, progress UI, drag/drop, and
-annotation overlays build on this surface in follow-up slices.
+attribute events. The element also owns a shadow DOM progressbar. Hosts can
+dispatch a `scena-viewer-progress` event or call `setLoadProgress(detail)` with
+`phase`, `ariaText`, and optional `value` / `ratio` / `percent`; the element
+updates the visible status text, ARIA progress state, and emits
+`scena-viewer-progress-rendered` after the UI changes. Asset loading, rendering,
+drag/drop, and annotation overlays build on this surface in follow-up slices.
 
 ## Browser responsibilities
 

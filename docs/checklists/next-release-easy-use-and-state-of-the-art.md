@@ -850,19 +850,25 @@ specific competitor primitive.
   Visual proof: reference-image + docs-image shipped through
   `target/gate-artifacts/examples-visual/viewer-material-variant-reference-docs-image.ppm`;
   browser-demo remains future custom-element proof.
-- **Loading progress primitives.** Status: **[ergonomic-gap]** overall;
-  Viewer primitive **[shipped]**, `<scena-viewer>` progress UI still
-  missing. `AssetLoadProgress` exists in `src/lib.rs` and is now surfaced
+- **Loading progress primitives.** Status: **[proof-gap]** overall;
+  Viewer primitive and `<scena-viewer>` progress UI surface **[shipped]**.
+  `AssetLoadProgress` exists in `src/lib.rs` and is now surfaced
   through `HeadlessGltfViewerBuilder::build_with_progress`,
   `HeadlessGltfViewerBuilder::render_with_progress`,
   `InteractiveGltfViewerBuilder::build_with_progress`,
   `InteractiveGltfViewerBuilder::build_async_with_progress`, plus
   `load_progress_events()` accessors on built viewers and `FirstRender`.
+  `<scena-viewer>` now exposes `ScenaViewerProgress` /
+  `ScenaViewerProgressPhase`, a shadow DOM `progressbar`, structured
+  `scena-viewer-progress` ingestion, and a
+  `scena-viewer-progress-rendered` event.
   Proof: loader progress test over cache hit, external buffer, texture
   decode, and cancellation paths; viewer progress tests in
-  `tests/first_render_api.rs` and `tests/m7_interactive_viewer.rs`.
-  Visual proof: animated-proof + browser-demo still required for the
-  future custom element progress bar on a throttled connection.
+  `tests/first_render_api.rs` and `tests/m7_interactive_viewer.rs`;
+  custom-element progress mapping in `tests/scena_viewer_element.rs`;
+  doctor rule `SCENA-VIEWER-ELEMENT` pins the browser UI surface.
+  Visual proof: animated-proof + browser-demo still required for a
+  throttled-connection custom-element recording.
 - **Mobile-first + a11y defaults.** Status: **[gap]**. Owner:
   `<scena-viewer>` (bet 1.1). Proof: Playwright mobile viewport tests for
   touch/pinch plus keyboard/ARIA smoke checks.
@@ -1332,6 +1338,18 @@ Picking/outline/hover reconciliation pass (2026-05-19):
 - Added `SCENA-VIEWER-ELEMENT` doctor coverage for the feature flag,
   public re-exports, browser docs, tests, and checklist evidence. Full
   asset loading/rendering parity remains open under bet 1.1.
+
+`<scena-viewer>` progress UI implementation pass (2026-05-19):
+
+- Added `ScenaViewerProgress` / `ScenaViewerProgressPhase` as the typed
+  bridge from `AssetLoadProgress` events to accessible custom-element UI
+  labels.
+- Extended the custom element with a shadow DOM progressbar,
+  `setLoadProgress(detail)`, `scena-viewer-progress` ingestion, and
+  `scena-viewer-progress-rendered` notification.
+- Reclassified loading progress from ergonomic gap to proof gap: the UI
+  surface is shipped and source-enforced; a throttled browser recording is
+  still required as visual proof.
 
 Asset-validation doctor implementation pass (2026-05-19):
 

@@ -17,6 +17,8 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
             "pub mod viewer_element;",
             "SCENA_VIEWER_TAG",
             "ScenaViewerAttributes",
+            "ScenaViewerProgress",
+            "ScenaViewerProgressPhase",
             "define_scena_viewer",
         ],
     );
@@ -29,11 +31,20 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
             "pub const SCENA_VIEWER_TAG",
             "pub struct ScenaViewerAttributes",
             "from_pairs",
+            "pub enum ScenaViewerProgressPhase",
+            "pub struct ScenaViewerProgress",
+            "from_asset_event",
+            "aria_text",
             "defineScenaViewerElement",
             "customElements.define",
             "attachShadow",
             "observedAttributes",
             "scena-viewer-ready",
+            "setLoadProgress",
+            "progress.part = \"progress\"",
+            "progressbar",
+            "scena-viewer-progress",
+            "scena-viewer-progress-rendered",
         ],
     );
     require_contains(
@@ -44,6 +55,7 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
         &[
             "scena_viewer_attributes_parse_model_viewer_style_surface",
             "scena_viewer_attributes_default_to_safe_drop_in_viewer_values",
+            "scena_viewer_progress_maps_asset_events_to_accessible_details",
             "camera-controls",
             "tone-mapping",
         ],
@@ -59,6 +71,8 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
             "viewer-element",
             "shadow DOM",
             "canvas",
+            "progressbar",
+            "scena-viewer-progress",
         ],
     );
     require_contains(
@@ -70,6 +84,8 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
             "custom-element\nfoundation **[shipped]**",
             "src/viewer_element.rs",
             "SCENA-VIEWER-ELEMENT",
+            "ScenaViewerProgress",
+            "scena-viewer-progress-rendered",
             "Full\n  asset loading/rendering parity remains open under bet 1.1",
         ],
     );

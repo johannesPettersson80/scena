@@ -13,24 +13,24 @@ pub(crate) fn write_scena_viewer_element_easy_scene_fixture(fixture_root: &Path)
     fs::write(
         fixture_root.join("src/lib.rs"),
         format!(
-            "{} pub mod viewer_element; SCENA_VIEWER_TAG ScenaViewerAttributes define_scena_viewer",
+            "{} pub mod viewer_element; SCENA_VIEWER_TAG ScenaViewerAttributes ScenaViewerProgress ScenaViewerProgressPhase define_scena_viewer",
             fs::read_to_string(fixture_root.join("src/lib.rs")).expect("lib fixture")
         ),
     )
     .expect("lib viewer-element fixture");
     fs::write(
         fixture_root.join("src/viewer_element.rs"),
-        "pub const SCENA_VIEWER_TAG pub struct ScenaViewerAttributes from_pairs defineScenaViewerElement customElements.define attachShadow observedAttributes scena-viewer-ready",
+        r#"pub const SCENA_VIEWER_TAG pub struct ScenaViewerAttributes from_pairs pub enum ScenaViewerProgressPhase pub struct ScenaViewerProgress from_asset_event aria_text defineScenaViewerElement customElements.define attachShadow observedAttributes scena-viewer-ready setLoadProgress progress.part = "progress" role", "progressbar" scena-viewer-progress scena-viewer-progress-rendered"#,
     )
     .expect("viewer element fixture");
     fs::write(
         fixture_root.join("tests/scena_viewer_element.rs"),
-        "scena_viewer_attributes_parse_model_viewer_style_surface scena_viewer_attributes_default_to_safe_drop_in_viewer_values camera-controls tone-mapping",
+        "scena_viewer_attributes_parse_model_viewer_style_surface scena_viewer_attributes_default_to_safe_drop_in_viewer_values scena_viewer_progress_maps_asset_events_to_accessible_details camera-controls tone-mapping",
     )
     .expect("viewer element test fixture");
     fs::write(
         fixture_root.join("docs/browser.md"),
-        "<scena-viewer defineScenaViewer viewer-element shadow DOM canvas",
+        "<scena-viewer defineScenaViewer viewer-element shadow DOM canvas progressbar scena-viewer-progress",
     )
     .expect("browser docs fixture");
     let checklist_path =
@@ -38,7 +38,7 @@ pub(crate) fn write_scena_viewer_element_easy_scene_fixture(fixture_root: &Path)
     let mut checklist =
         fs::read_to_string(&checklist_path).expect("next release checklist fixture");
     checklist.push_str(
-        " custom-element\nfoundation **[shipped]** src/viewer_element.rs SCENA-VIEWER-ELEMENT Full\n  asset loading/rendering parity remains open under bet 1.1",
+        " custom-element\nfoundation **[shipped]** src/viewer_element.rs SCENA-VIEWER-ELEMENT ScenaViewerProgress scena-viewer-progress-rendered Full\n  asset loading/rendering parity remains open under bet 1.1",
     );
     fs::write(checklist_path, checklist).expect("next release checklist viewer element fixture");
 }
@@ -63,5 +63,33 @@ pub(crate) fn easy_scene_setup_contracts_reject_missing_scena_viewer_element_fou
             .iter()
             .any(|finding| finding.rule == "SCENA-VIEWER-ELEMENT"),
         "doctor must reject <scena-viewer> foundation claims without the source, docs, and tests: {findings:?}",
+    );
+}
+
+#[test]
+pub(crate) fn easy_scene_setup_contracts_reject_missing_scena_viewer_progress_ui() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root =
+        root.join("target/xtask-doctor-regressions/missing-scena-viewer-progress-ui");
+    write_easy_scene_fixture(
+        &fixture_root,
+        VALID_GUIDE,
+        "frame_bounds(()) bounds_for_transforms add_grid_floor",
+        r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
+    );
+    fs::write(
+        fixture_root.join("src/viewer_element.rs"),
+        "pub const SCENA_VIEWER_TAG pub struct ScenaViewerAttributes from_pairs defineScenaViewerElement customElements.define attachShadow observedAttributes scena-viewer-ready",
+    )
+    .expect("viewer element fixture without progress ui");
+    let mut findings = Vec::new();
+
+    check_easy_scene_setup_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "SCENA-VIEWER-ELEMENT"),
+        "doctor must reject <scena-viewer> that drops the progressbar and structured progress events: {findings:?}",
     );
 }
