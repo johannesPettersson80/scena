@@ -493,6 +493,7 @@ function assertScenaViewerElementProof(result) {
     ["variant_change", "painted"],
     ["annotation_count", 1],
     ["annotation_visible", 1],
+    ["annotation_update_visible", 1],
     ["inspector_overlay", "Diagnostics"],
     ["inspector_warnings", 1],
     ["inspector_fixture_schema", "scena.scena_viewer_inspector_snapshot.v1"],
@@ -502,6 +503,13 @@ function assertScenaViewerElementProof(result) {
     if (checks[key] !== value) {
       throw new Error(`<scena-viewer> proof expected ${key}=${value}: ${JSON.stringify(result)}`);
     }
+  }
+  if (
+    !Array.isArray(checks.annotation_tracking_sequence) ||
+    checks.annotation_tracking_sequence.length !== 2 ||
+    checks.annotation_tracking_sequence[0] === checks.annotation_tracking_sequence[1]
+  ) {
+    throw new Error(`<scena-viewer> proof did not exercise annotation tracking updates: ${JSON.stringify(result)}`);
   }
   if (
     !Array.isArray(checks.drop_accepted_names) ||

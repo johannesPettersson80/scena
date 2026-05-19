@@ -18,6 +18,10 @@ All notable user-facing changes are recorded here.
   browser proof so the live overlay is fed from source-controlled renderer
   diagnostics data before screenshot capture.
 
+- Added annotation tracking assertions to the `<scena-viewer>` browser proof,
+  verifying that a slotted annotation moves when the host supplies updated
+  screen-space projections.
+
 - Added connector magnet preview APIs for editor-style drag-to-assemble UIs:
   `Scene::preview_connector_magnet`, `ConnectionMagnetPreview`, and
   `ConnectionMagnetVisualCue`.

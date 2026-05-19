@@ -113,6 +113,11 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
   const annotationsRendered = once(viewer, "scena-viewer-annotations-rendered");
   viewer.setAnnotationProjections([{ id: "bearing-label", x: 144, y: 72, visible: true }]);
   const annotationsRenderedDetail = await annotationsRendered;
+  const firstAnnotationTransform = getComputedStyle(annotation).transform;
+  const annotationsUpdated = once(viewer, "scena-viewer-annotations-rendered");
+  viewer.setAnnotationProjections([{ id: "bearing-label", x: 188, y: 96, visible: true }]);
+  const annotationsUpdatedDetail = await annotationsUpdated;
+  const secondAnnotationTransform = getComputedStyle(annotation).transform;
 
   const inspectorRendered = once(viewer, "scena-viewer-inspector-rendered");
   const inspectorSnapshot = await loadInspectorSnapshot();
@@ -141,7 +146,9 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     variant_change: variantChangeDetail.name,
     annotation_count: annotationRequestDetail.anchors.length,
     annotation_visible: annotationsRenderedDetail.visible,
-    annotation_transform: getComputedStyle(annotation).transform,
+    annotation_update_visible: annotationsUpdatedDetail.visible,
+    annotation_tracking_sequence: [firstAnnotationTransform, secondAnnotationTransform],
+    annotation_transform: secondAnnotationTransform,
     inspector_overlay: inspectorDetail.overlay,
     inspector_warnings: inspectorDetail.warnings,
     inspector_fixture_schema: inspectorSnapshot.schema,
@@ -169,6 +176,10 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     checks.variant_change === "painted" &&
     checks.annotation_count === 1 &&
     checks.annotation_visible === 1 &&
+    checks.annotation_update_visible === 1 &&
+    Array.isArray(checks.annotation_tracking_sequence) &&
+    checks.annotation_tracking_sequence.length === 2 &&
+    checks.annotation_tracking_sequence[0] !== checks.annotation_tracking_sequence[1] &&
     checks.annotation_transform !== "none" &&
     checks.inspector_overlay === "Diagnostics" &&
     checks.inspector_warnings === 1 &&

@@ -97,7 +97,9 @@ The annotation overlay uses slotted HTML with `slot="annotation"` and
 attributes. The element emits `scena-viewer-annotations-request` with parsed
 anchors and accepts `setAnnotationProjections([{ id, x, y, visible }])`,
 then emits `scena-viewer-annotations-rendered` after applying the screen-space
-positions.
+positions. The browser proof records an `annotation_tracking_sequence` by
+applying two projection updates to the same slotted label and asserting that
+the CSS transform changes while the annotation remains visible.
 
 The same M6 browser probe also records camera-control-kit proof for the shared
 Rust control APIs. `scena.m6.camera_control_kit_browser_proof.v1` runs browser

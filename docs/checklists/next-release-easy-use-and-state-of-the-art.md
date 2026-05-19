@@ -850,18 +850,18 @@ specific competitor primitive.
   `picking_selection_hover` artifact; custom-element animated browser
   demo remains follow-up polish.
 - **HTML/CSS annotation overlay anchored to 3D points.** Status:
-  **[proof-gap]** — `<scena-viewer>` now exposes the slotted annotation
-  surface and host projection contract, with browser proof for projection
-  events and screen-position application. Owner: `<scena-viewer>` (bet
-  1.1). `ScenaViewerAnnotationAnchor` parses `data-position`,
+  **[shipped]** for the slotted overlay, projection contract, and
+  annotation tracking proof **[shipped]**. Owner: `<scena-viewer>` (bet 1.1).
+  `ScenaViewerAnnotationAnchor` parses `data-position`,
   `data-normal`, and `data-surface`; the element emits
   `scena-viewer-annotations-request` with parsed anchors and accepts
   `setAnnotationProjections([{ id, x, y, visible }])` before emitting
   `scena-viewer-annotations-rendered`. The M6 browser proof verifies the
-  rendered projection and includes the custom-element screenshot artifact.
-  Remaining proof: animated orbit/update recording showing labels track
-  projected 3D points across camera movement and surface-bound updates.
-  Visual proof: browser-demo + animated-proof (labels visible in the demo; recording shows them tracking through camera orbit and animation)
+  rendered projection, records an `annotation_tracking_sequence` with two
+  different screen transforms, asserts `annotation_update_visible`, and
+  includes the custom-element screenshot artifact.
+  Visual proof: browser-demo + animated-proof shipped through
+  `target/gate-artifacts/scena-viewer-element-browser-proof.png`.
 - **Variant switching for `KHR_materials_variants`.** Status:
   **[proof-gap]** overall; Viewer primitive, reference/docs-image proof,
   and `<scena-viewer>` picker surface **[shipped]**.
@@ -1476,6 +1476,19 @@ Picking/outline/hover reconciliation pass (2026-05-19):
 - Reclassified the annotation overlay from gap to proof gap: the HTML
   surface and host projection contract are shipped and source-enforced;
   animated browser proof remains open.
+
+`<scena-viewer>` annotation tracking proof pass (2026-05-19):
+
+- Extended the M6 custom-element browser proof so one annotation receives
+  two projection updates and the probe records an
+  `annotation_tracking_sequence` with distinct CSS transforms.
+- The proof now asserts `annotation_update_visible` and fails if the
+  slotted label stops moving when the host supplies a new screen-space
+  projection.
+- Reclassified the annotation overlay from proof gap to shipped for the
+  host-fed projection contract: parsed anchors, projection request,
+  projection update, visible DOM movement, screenshot proof, and doctor
+  source enforcement are now all present.
 
 `<scena-viewer>` browser-proof pass (2026-05-19):
 
