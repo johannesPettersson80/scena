@@ -130,7 +130,18 @@ drag orbits around the framed object:
 
 ```rust
 let framing = scene.frame_bounds(camera, bounds, FramingOptions::new().viewport(width, height))?;
-let controls = scena::OrbitControls::from_framing(framing);
+let controls = scena::OrbitControls::from_framing(framing).cinematic();
+```
+
+Use `presentation()` or `turntable(rpm)` when the host should advance the
+camera between input events:
+
+```rust
+let mut controls = scena::OrbitControls::from_framing(framing).presentation();
+let delta_seconds = 1.0 / 60.0;
+if matches!(controls.advance(delta_seconds), scena::OrbitControlAction::Orbit) {
+    controls.apply_to_scene(&mut scene, camera)?;
+}
 ```
 
 Host adapters can then apply the controls to the scene camera each frame.

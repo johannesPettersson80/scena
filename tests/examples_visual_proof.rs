@@ -15,9 +15,9 @@ use std::path::PathBuf;
 use scena::{
     Aabb, AnimationPlaybackState, Assets, Background, Color, ConnectOptions, ConnectionAlignment,
     ConnectionError, ConnectorFrame, CursorPosition, DirectionalLight, GeometryDesc,
-    InteractionStyle, LabelDesc, MaterialDesc, OrbitControls, PerspectiveCamera, PointLight,
-    PointerEvent, Profile, Renderer, RendererOptions, Scene, SourceCoordinateSystem, SourceUnits,
-    TouchEvent, Transform, Vec3, Viewport,
+    InteractionStyle, LabelDesc, MaterialDesc, OrbitControlAction, OrbitControls,
+    PerspectiveCamera, PointLight, PointerEvent, Profile, Renderer, RendererOptions, Scene,
+    SourceCoordinateSystem, SourceUnits, TouchEvent, Transform, Vec3, Viewport,
 };
 
 const ARTIFACT_WIDTH: u32 = 256;
@@ -257,6 +257,61 @@ fn write_reference_docs_image_artifact(
         ),
     )
     .expect("reference docs-image metadata can be written");
+}
+
+fn write_animated_docs_image_artifact(
+    name: &str,
+    source: &str,
+    frame_width: u32,
+    frame_height: u32,
+    frames: &[Vec<u8>],
+) {
+    let dir = artifact_dir();
+    let contact_width = frame_width * frames.len() as u32;
+    let contact_height = frame_height;
+    let mut contact = vec![0_u8; (contact_width * contact_height * 4) as usize];
+    for (index, frame) in frames.iter().enumerate() {
+        let mut ppm = format!("P6\n{frame_width} {frame_height}\n255\n").into_bytes();
+        for pixel in frame.chunks_exact(4) {
+            ppm.extend_from_slice(&pixel[..3]);
+        }
+        fs::write(dir.join(format!("{name}-{index:02}.ppm")), ppm)
+            .expect("animated-proof frame PPM can be written");
+        for y in 0..frame_height {
+            let dst_start = ((y * contact_width + index as u32 * frame_width) * 4) as usize;
+            let src_start = (y * frame_width * 4) as usize;
+            let byte_count = (frame_width * 4) as usize;
+            contact[dst_start..dst_start + byte_count]
+                .copy_from_slice(&frame[src_start..src_start + byte_count]);
+        }
+    }
+    let mut contact_ppm = format!("P6\n{contact_width} {contact_height}\n255\n").into_bytes();
+    for pixel in contact.chunks_exact(4) {
+        contact_ppm.extend_from_slice(&pixel[..3]);
+    }
+    fs::write(dir.join(format!("{name}.ppm")), contact_ppm)
+        .expect("animated-proof contact-sheet PPM can be written");
+    fs::write(
+        dir.join(format!("{name}.toml")),
+        format!(
+            "[artifact]\n\
+             name = \"{name}\"\n\
+             source = \"{source}\"\n\
+             format = \"ppm-sequence\"\n\
+             encoding = \"srgb8\"\n\
+             frame_width = {frame_width}\n\
+             frame_height = {frame_height}\n\
+             contact_sheet = \"{name}.ppm\"\n\
+             contact_width = {contact_width}\n\
+             contact_height = {contact_height}\n\
+             frame_count = {}\n\
+             proof_class = \"animated-proof+docs-image\"\n\
+             generated = true\n\
+             screenshot = false\n",
+            frames.len()
+        ),
+    )
+    .expect("animated-proof metadata can be written");
 }
 
 fn srgb8_from_linear(color: Color) -> [u8; 4] {
@@ -657,6 +712,65 @@ fn render_background_preset_tile(background: Background, width: u32, height: u32
     renderer
         .render_active(&scene)
         .expect("background preset docs-image scene renders");
+    renderer.frame_rgba8().to_vec()
+}
+
+#[test]
+fn round_b_orbit_control_preset_animated_docs_image() {
+    let frame_width = 96;
+    let frame_height = 96;
+    let mut frames = Vec::new();
+    for controls in [
+        OrbitControls::new(Vec3::ZERO, 2.0).presentation(),
+        OrbitControls::new(Vec3::ZERO, 2.0)
+            .cinematic()
+            .turntable(6.0),
+    ] {
+        let mut controls = controls;
+        let first = render_orbit_control_motion_frame(controls, frame_width, frame_height);
+        frames.push(first.clone());
+        for _ in 0..3 {
+            assert_eq!(controls.advance(0.5), OrbitControlAction::Orbit);
+            let frame = render_orbit_control_motion_frame(controls, frame_width, frame_height);
+            assert_ne!(
+                frame, first,
+                "orbit preset animated proof must show a changed frame after advancing"
+            );
+            frames.push(frame);
+        }
+    }
+    write_animated_docs_image_artifact(
+        "round-b-orbit-control-preset-animated-docs-image",
+        "docs/guides/easy-scene-setup.md",
+        frame_width,
+        frame_height,
+        &frames,
+    );
+}
+
+fn render_orbit_control_motion_frame(controls: OrbitControls, width: u32, height: u32) -> Vec<u8> {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 0.4, 0.3));
+    let material = assets.create_material(MaterialDesc::unlit(Color::CYAN));
+
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .add()
+        .expect("orbit proof subject inserts");
+    let camera = scene.add_default_camera().expect("default camera inserts");
+    controls
+        .apply_to_scene(&mut scene, camera)
+        .expect("orbit controls apply for animated proof");
+
+    let mut renderer = Renderer::headless(width, height).expect("headless renderer builds");
+    renderer.set_background(Background::DarkStudio);
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("orbit animated-proof scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("orbit animated-proof scene renders");
     renderer.frame_rgba8().to_vec()
 }
 

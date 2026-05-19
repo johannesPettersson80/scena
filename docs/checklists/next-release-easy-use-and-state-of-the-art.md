@@ -408,13 +408,18 @@ renderer.set_background(Background::DarkStudio);
 
 ### 2.8 `OrbitControls` named damping presets
 
-Status: **[gap]**
+Status: **[shipped]** — implemented on branch
+`easy-use-state-art/round-b`.
 Owner: `src/controls.rs`
-Proof: unit test on damping values; browser test on `presentation()` and
-`turntable(rpm)` for the auto-rotate behavior. `presentation()` and
-`turntable()` require explicit auto-rotate state and frame-advance
-semantics, not just damping constants.
-Visual proof: animated-proof + docs-image (short GIF per preset showing the motion character — cinematic vs snappy is the spec; static image cannot show it)
+Proof: `tests/round_b_orbit_controls_presets.rs` asserts named damping
+values, `presentation()`'s slow turntable behavior, `turntable(rpm)`'s
+explicit speed, and `advance(delta_seconds)` frame-advance semantics;
+doctor rule `NAMED-ORBIT-CONTROL-PRESETS` keeps the API, tests, visual
+proof, and demo sweep present.
+Visual proof: animated-proof + docs-image
+`target/gate-artifacts/examples-visual/round-b-orbit-control-preset-animated-docs-image.ppm`
+plus its generated frame sequence shows `presentation()` and
+`turntable(6.0)` changing camera pose over time.
 
 ```rust
 OrbitControls::from_framing(framing).cinematic()      // heavy damping
@@ -787,7 +792,7 @@ teachable.
       `vertical_fov: Angle::from_degrees(<lit>)`, raw FOV setter calls, or
       equivalent. Do not key the rule to dead API names like
       `with_fov(<float>)`.
-- [ ] Ban inline `with_damping(<float>)` in `src/demo_page*` if a named
+- [x] Ban inline `with_damping(<float>)` in `src/demo_page*` if a named
       damping preset would do.
 - [ ] Ban inline `Quat::from_*(<float>, ...)` in `examples/` **except**
       in the dedicated transform escape-hatch example.
@@ -824,7 +829,7 @@ the rounds, not after — they're the strategic arc.
 4. - [x] Light presets (§2.5)
 5. - [x] `MaterialDesc` honest PBR presets (§2.6 — matte/plastic/metal/rubber only)
 6. - [x] `Background` enum (§2.7)
-7. - [ ] `OrbitControls` named damping presets (§2.8)
+7. - [x] `OrbitControls` named damping presets (§2.8)
 
 ### Round C — bundled content + feature shortcuts
 

@@ -133,3 +133,58 @@ pub(super) fn check_named_background_presets(root: &Path, findings: &mut Vec<Fin
         ],
     );
 }
+
+pub(super) fn check_named_orbit_control_presets(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "NAMED-ORBIT-CONTROL-PRESETS",
+        "src/controls.rs",
+        &[
+            "pub fn cinematic(",
+            "pub fn snappy(",
+            "pub fn presentation(",
+            "pub fn turntable(",
+            "pub fn advance(",
+            "pub const fn auto_rotate_rpm(",
+            "pub fn auto_rotate_radians_per_second(",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "NAMED-ORBIT-CONTROL-PRESETS",
+        "tests/round_b_orbit_controls_presets.rs",
+        &[
+            "named_orbit_damping_presets_are_public_and_ordered",
+            "turntable_presets_expose_explicit_frame_advance_semantics",
+            "presentation_combines_medium_damping_with_slow_turntable_motion",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "NAMED-ORBIT-CONTROL-PRESETS",
+        "tests/examples_visual_proof.rs",
+        &[
+            "round_b_orbit_control_preset_animated_docs_image",
+            "round-b-orbit-control-preset-animated-docs-image",
+            "animated-proof+docs-image",
+        ],
+    );
+
+    for rel in ["src/demo_page.rs", "src/demo_page/imports.rs"] {
+        let path = root.join(rel);
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        if text.contains(".with_damping(") {
+            findings.push(Finding::new(
+                "NAMED-ORBIT-CONTROL-PRESETS",
+                format!(
+                    "{rel} must use named OrbitControls presets instead of raw damping literals"
+                ),
+            ));
+        }
+    }
+}

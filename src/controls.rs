@@ -1,9 +1,16 @@
 //! Platform-neutral orbit, pan, fly, and focus controls.
 
+use std::f32::consts::TAU;
+
 use crate::diagnostics::LookupError;
 use crate::scene::FramingOutcome;
 use crate::scene::Vec3;
 use crate::scene::{CameraKey, Scene, Transform};
+
+const CINEMATIC_DAMPING: f32 = 0.18;
+const PRESENTATION_DAMPING: f32 = 0.12;
+const SNAPPY_DAMPING: f32 = 0.04;
+const PRESENTATION_RPM: f32 = 1.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -68,6 +75,7 @@ pub struct OrbitControls {
     yaw_radians: f32,
     pitch_radians: f32,
     damping_factor: f32,
+    auto_rotate_rpm: f32,
     orbiting: bool,
     panning: bool,
 }
@@ -80,6 +88,7 @@ impl OrbitControls {
             yaw_radians: 0.0,
             pitch_radians: 0.0,
             damping_factor: 0.0,
+            auto_rotate_rpm: 0.0,
             orbiting: false,
             panning: false,
         }
@@ -115,6 +124,67 @@ impl OrbitControls {
             0.0
         };
         self
+    }
+
+    /// Applies a slow, high-damping orbit feel for product-viewer scenes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::{OrbitControls, Vec3};
+    ///
+    /// let controls = OrbitControls::new(Vec3::ZERO, 2.0).cinematic();
+    /// assert!(controls.damping_factor() > 0.0);
+    /// ```
+    pub fn cinematic(self) -> Self {
+        self.with_damping(CINEMATIC_DAMPING)
+    }
+
+    /// Applies a light-damping orbit feel for direct manipulation.
+    pub fn snappy(self) -> Self {
+        self.with_damping(SNAPPY_DAMPING)
+    }
+
+    /// Applies medium damping plus a slow turntable auto-rotate.
+    ///
+    /// Hosts advance the turntable explicitly with [`Self::advance`] before
+    /// applying the controls to the scene camera.
+    pub fn presentation(self) -> Self {
+        self.with_damping(PRESENTATION_DAMPING)
+            .turntable(PRESENTATION_RPM)
+    }
+
+    /// Sets the auto-rotate speed in revolutions per minute.
+    ///
+    /// Negative values rotate in the opposite direction. Non-finite values
+    /// disable auto-rotate.
+    pub fn turntable(mut self, rpm: f32) -> Self {
+        self.auto_rotate_rpm = if rpm.is_finite() {
+            rpm.clamp(-120.0, 120.0)
+        } else {
+            0.0
+        };
+        self
+    }
+
+    /// Advances turntable auto-rotation by the provided frame duration.
+    ///
+    /// Returns [`OrbitControlAction::Orbit`] when the yaw changed, so host
+    /// loops can call [`Self::apply_to_scene`] and schedule a redraw. User
+    /// pointer or touch interaction temporarily owns the orbit state, so
+    /// auto-rotate is skipped while the controls are actively orbiting or
+    /// panning.
+    pub fn advance(&mut self, delta_seconds: f32) -> OrbitControlAction {
+        if !delta_seconds.is_finite()
+            || delta_seconds <= 0.0
+            || self.auto_rotate_rpm == 0.0
+            || self.orbiting
+            || self.panning
+        {
+            return OrbitControlAction::None;
+        }
+        self.yaw_radians += self.auto_rotate_radians_per_second() * delta_seconds;
+        OrbitControlAction::Orbit
     }
 
     pub fn with_angles(mut self, yaw_radians: f32, pitch_radians: f32) -> Self {
@@ -206,6 +276,14 @@ impl OrbitControls {
 
     pub const fn damping_factor(&self) -> f32 {
         self.damping_factor
+    }
+
+    pub const fn auto_rotate_rpm(&self) -> f32 {
+        self.auto_rotate_rpm
+    }
+
+    pub fn auto_rotate_radians_per_second(&self) -> f32 {
+        self.auto_rotate_rpm * TAU / 60.0
     }
 
     pub fn apply_to_scene(&self, scene: &mut Scene, camera: CameraKey) -> Result<(), LookupError> {

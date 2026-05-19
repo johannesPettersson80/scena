@@ -113,7 +113,7 @@ async fn load_gltf_from_bytes_internal(
     let controls = framing
         .map(OrbitControls::from_framing)
         .unwrap_or_else(|| OrbitControls::new(Vec3::ZERO, 2.0))
-        .with_damping(0.12);
+        .cinematic();
 
     Ok(DemoApp {
         assets,
