@@ -168,6 +168,7 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
     next_release::check_one_call_animation_playback(root, findings);
     next_release::check_connector_axial_gap(root, findings);
     next_release::check_orbit_zoom_limits(root, findings);
+    next_release::check_viewer_pointer_callbacks(root, findings);
 
     for rel in ["src/lib.rs", "src/geometry.rs"] {
         if fs::read_to_string(root.join(rel)).is_ok_and(|text| text.contains("FramingAngles")) {

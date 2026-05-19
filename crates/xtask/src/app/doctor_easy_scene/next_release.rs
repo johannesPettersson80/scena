@@ -373,3 +373,67 @@ pub(super) fn check_orbit_zoom_limits(root: &Path, findings: &mut Vec<Finding>) 
         &["zoom_limits_bounds_relative(0.5, 4.0)"],
     );
 }
+
+pub(super) fn check_viewer_pointer_callbacks(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "VIEWER-POINTER-CALLBACKS",
+        "src/viewer.rs",
+        &[
+            "mod interaction;",
+            "click_callback: Option<ViewerPickCallback>",
+            "hover_callback: Option<ViewerPickCallback>",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VIEWER-POINTER-CALLBACKS",
+        "src/viewer/interaction.rs",
+        &[
+            "pub fn on_click<",
+            "pub fn on_hover<",
+            "pub fn clear_click_callback(",
+            "pub fn clear_hover_callback(",
+            "pub fn click_at(",
+            "pub fn hover_at(",
+            "pick_and_select_at(",
+            "pick_and_hover_at(",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VIEWER-POINTER-CALLBACKS",
+        "tests/round_d_viewer_pointer_callbacks.rs",
+        &[
+            "viewer_click_and_hover_callbacks_receive_hit_and_no_hit_results",
+            "click_events",
+            "hover_events",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VIEWER-POINTER-CALLBACKS",
+        "tests/examples_visual_proof.rs",
+        &[
+            "round_d_viewer_pointer_callback_animated_docs_image",
+            "round-d-viewer-pointer-callback-animated-docs-image",
+            "animated-proof+docs-image",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VIEWER-POINTER-CALLBACKS",
+        "docs/guides/easy-scene-setup.md",
+        &[
+            "viewer.on_click(",
+            "viewer.on_hover(",
+            "viewer.click_at(",
+            "viewer.hover_at(",
+        ],
+    );
+}

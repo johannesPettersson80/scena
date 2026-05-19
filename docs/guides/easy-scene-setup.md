@@ -164,6 +164,33 @@ if matches!(controls.advance(delta_seconds), scena::OrbitControlAction::Orbit) {
 
 Host adapters can then apply the controls to the scene camera each frame.
 
+## Viewer pointer callbacks
+
+Interactive viewers can route host pointer coordinates through the same typed
+picking path used by direct scene queries. The callback receives hit, miss, and
+error results without bypassing selection or hover state updates.
+
+```rust
+use std::cell::RefCell;
+use std::rc::Rc;
+
+let selected = Rc::new(RefCell::new(None));
+let hovered = Rc::new(RefCell::new(None));
+
+viewer.on_click({
+    let selected = Rc::clone(&selected);
+    move |result| *selected.borrow_mut() = result.ok().flatten().map(|hit| hit.target)
+});
+
+viewer.on_hover({
+    let hovered = Rc::clone(&hovered);
+    move |result| *hovered.borrow_mut() = result.ok().flatten().map(|hit| hit.target)
+});
+
+viewer.hover_at(pointer_x, pointer_y)?;
+viewer.click_at(pointer_x, pointer_y)?;
+```
+
 ## Animation playback
 
 Imported glTF clips can be started by name without manually creating and

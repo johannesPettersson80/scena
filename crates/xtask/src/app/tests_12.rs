@@ -121,7 +121,7 @@ pub(crate) fn easy_scene_setup_contracts_reject_round_a_raw_color_literals_in_fi
     );
 }
 
-const VALID_GUIDE: &str = "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0)\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```";
+const VALID_GUIDE: &str = "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at(\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```";
 
 fn write_easy_scene_fixture(
     fixture_root: &Path,
@@ -136,6 +136,7 @@ fn write_easy_scene_fixture(
         "docs/guides",
         "docs/release-notes",
         "src",
+        "src/viewer",
         "src/material",
         "src/render",
         "src/demo_page",
@@ -178,6 +179,16 @@ fn write_easy_scene_fixture(
     )
     .expect("controls fixture");
     fs::write(
+        fixture_root.join("src/viewer.rs"),
+        "mod interaction; click_callback: Option<ViewerPickCallback> hover_callback: Option<ViewerPickCallback>",
+    )
+    .expect("viewer fixture");
+    fs::write(
+        fixture_root.join("src/viewer/interaction.rs"),
+        "pub fn on_click<T>() {} pub fn on_hover<T>() {} pub fn clear_click_callback() {} pub fn clear_hover_callback() {} pub fn click_at() { pick_and_select_at(); } pub fn hover_at() { pick_and_hover_at(); } fn pick_and_select_at() {} fn pick_and_hover_at() {}",
+    )
+    .expect("viewer interaction fixture");
+    fs::write(
         fixture_root.join("src/demo_page/connectors.rs"),
         "project_world_point",
     )
@@ -214,7 +225,7 @@ fn write_easy_scene_fixture(
     .expect("animation example fixture");
     fs::write(
         fixture_root.join("tests/examples_visual_proof.rs"),
-        "frame_bounds_rendered_output_proves_fill_center_and_unclipped_object frame-bounds-rendered-output computed_distance projected_rect nonblack_pixel_rect round_a_named_color_swatch_docs_image round-a-named-color-swatch-docs-image round_a_lens_preset_comparison_docs_image round-a-lens-preset-comparison-docs-image round_b_light_preset_reference_docs_image round-b-light-preset-reference-docs-image round_b_material_preset_reference_docs_image round-b-material-preset-reference-docs-image round_b_background_preset_reference_docs_image round-b-background-preset-reference-docs-image round_b_orbit_control_preset_animated_docs_image round-b-orbit-control-preset-animated-docs-image round_c_auto_exposure_preset_reference_docs_image round-c-auto-exposure-preset-reference-docs-image round_c_animation_playback_reference_animated_docs_image round-c-animation-playback-reference-animated-docs-image round_d_orbit_zoom_limit_animated_docs_image round-d-orbit-zoom-limit-animated-docs-image reference-image+docs-image animated-proof+docs-image",
+        "frame_bounds_rendered_output_proves_fill_center_and_unclipped_object frame-bounds-rendered-output computed_distance projected_rect nonblack_pixel_rect round_a_named_color_swatch_docs_image round-a-named-color-swatch-docs-image round_a_lens_preset_comparison_docs_image round-a-lens-preset-comparison-docs-image round_b_light_preset_reference_docs_image round-b-light-preset-reference-docs-image round_b_material_preset_reference_docs_image round-b-material-preset-reference-docs-image round_b_background_preset_reference_docs_image round-b-background-preset-reference-docs-image round_b_orbit_control_preset_animated_docs_image round-b-orbit-control-preset-animated-docs-image round_c_auto_exposure_preset_reference_docs_image round-c-auto-exposure-preset-reference-docs-image round_c_animation_playback_reference_animated_docs_image round-c-animation-playback-reference-animated-docs-image round_d_orbit_zoom_limit_animated_docs_image round-d-orbit-zoom-limit-animated-docs-image round_d_viewer_pointer_callback_animated_docs_image round-d-viewer-pointer-callback-animated-docs-image reference-image+docs-image animated-proof+docs-image",
     )
     .expect("visual proof fixture");
     fs::write(
@@ -297,6 +308,11 @@ fn write_easy_scene_fixture(
         "orbit_zoom_limits_are_relative_to_current_framed_distance wheel_and_pinch_zoom_are_clamped_to_named_limits",
     )
     .expect("orbit zoom-limit test fixture");
+    fs::write(
+        fixture_root.join("tests/round_d_viewer_pointer_callbacks.rs"),
+        "viewer_click_and_hover_callbacks_receive_hit_and_no_hit_results click_events hover_events",
+    )
+    .expect("viewer pointer callback test fixture");
     fs::write(fixture_root.join("src/lib.rs"), "").expect("lib fixture");
     fs::write(fixture_root.join("src/geometry.rs"), "").expect("geometry fixture");
     fs::write(fixture_root.join("demo/index.html"), diagnostics_html).expect("demo html fixture");

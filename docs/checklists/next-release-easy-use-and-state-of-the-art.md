@@ -646,16 +646,25 @@ workflow needs to expose animations directly.
 
 ### 4.5 Viewer pointer callbacks
 
-Status: **[ergonomic-gap]** — `InteractiveGltfViewer::pick_at(x, y)`
-exists in `src/viewer.rs`. Missing: callback registration.
+Status: **[shipped]** — `InteractiveGltfViewer::pick_at(x, y)`
+exists in `src/viewer.rs`, and `on_click` / `on_hover` callbacks now
+route through the same typed picking path as `click_at` / `hover_at`.
 Owner: `src/viewer.rs`
-Proof: browser test that click / hover callbacks receive hit, no-hit, and
-stale-scene cases without bypassing the existing picking API.
-Visual proof: animated-proof + browser-demo (recording shows click → callback fires; demo page lets users see hover/click feedback live)
+Proof: `tests/round_d_viewer_pointer_callbacks.rs` asserts that click
+and hover callbacks receive hit and no-hit results without bypassing the
+existing picking API; `xtask doctor --full` rule
+`VIEWER-POINTER-CALLBACKS` pins the API, test, docs, and visual proof.
+Visual proof: animated-proof + docs-image via
+`target/gate-artifacts/examples-visual/round-d-viewer-pointer-callback-animated-docs-image.ppm`;
+the frame sequence renders the imported viewer scene plus callback-state
+markers generated from the actual callback results. Browser-demo remains
+deferred to the `<scena-viewer>` / live demo surface.
 
 ```rust
-viewer.on_click(|hit| ...);
-viewer.on_hover(|hit| ...);
+viewer.on_click(|result| ...);
+viewer.on_hover(|result| ...);
+viewer.click_at(x, y)?;
+viewer.hover_at(x, y)?;
 ```
 
 ### 4.6 Screenshot one-liner
@@ -861,7 +870,7 @@ the rounds, not after — they're the strategic arc.
 
 12. - [x] `ConnectOptions::with_axial_gap` (§4.3)
 13. - [x] `OrbitControls` bounds-relative zoom (§4.2)
-14. - [ ] `Viewer::on_click` / `on_hover` callbacks (§4.5)
+14. - [x] `Viewer::on_click` / `on_hover` callbacks (§4.5)
 15. - [ ] `Viewer::capture_png` (§4.6)
 16. - [ ] Asset hot-reload (§4.7)
 17. - [ ] State-via-URL (§4.9)
@@ -1008,6 +1017,17 @@ Round A implementation pass (2026-05-19):
   `easy-use-state-art/round-a`: `Color` constants / `from_hex` /
   `from_kelvin`, `PerspectiveCamera` lens presets / `with_fov_degrees`,
   and `Transform::looking_at`.
+
+Viewer callback implementation pass (2026-05-19):
+
+- Landed `InteractiveGltfViewer::on_click` / `on_hover` callback
+  registration and `click_at` / `hover_at` helpers on branch
+  `easy-use-state-art/round-b`. The closure receives the same typed
+  `Result<Option<Hit>, LookupError>` returned by direct picking, so hit,
+  miss, and structured errors remain observable. Proof is pinned by
+  `tests/round_d_viewer_pointer_callbacks.rs`, generated animated docs
+  image `round-d-viewer-pointer-callback-animated-docs-image`, and doctor
+  rule `VIEWER-POINTER-CALLBACKS`.
 - Swept first-path docs, examples, and demo setup away from avoidable
   `PerspectiveCamera::default().with_aspect(...)` and raw color literals.
 - Added generated docs-image proof artifacts for the color swatch panel

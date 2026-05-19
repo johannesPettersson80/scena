@@ -11,13 +11,15 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::{cell::RefCell, rc::Rc};
 
 use scena::{
     Aabb, AnimationPlaybackState, Assets, AutoExposureConfig, Background, Color, ConnectOptions,
     ConnectionAlignment, ConnectionError, ConnectorFrame, CursorPosition, DirectionalLight,
-    GeometryDesc, InteractionStyle, LabelDesc, MaterialDesc, OrbitControlAction, OrbitControls,
-    PerspectiveCamera, PointLight, PointerEvent, Profile, Renderer, RendererOptions, Scene,
-    SourceCoordinateSystem, SourceUnits, TouchEvent, Transform, Vec3, Viewport,
+    GeometryDesc, InteractionStyle, InteractiveGltfViewer, LabelDesc, MaterialDesc,
+    OrbitControlAction, OrbitControls, PerspectiveCamera, PlatformSurface, PointLight,
+    PointerEvent, Profile, Renderer, RendererOptions, Scene, SourceCoordinateSystem, SourceUnits,
+    TouchEvent, Transform, Vec3, Viewport, interactive_gltf_viewer,
 };
 
 const ARTIFACT_WIDTH: u32 = 256;
@@ -1677,6 +1679,231 @@ fn examples_visual_picking_selection_hover_renders_styled_pick_to_ppm() {
         ARTIFACT_HEIGHT,
         frame,
     );
+}
+
+#[test]
+fn round_d_viewer_pointer_callback_animated_docs_image() {
+    let frame_width = 96;
+    let frame_height = 64;
+    let mut viewer = interactive_gltf_viewer(
+        "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+        PlatformSurface::native_window(frame_width, frame_height),
+    )
+    .build()
+    .expect("interactive viewer builds");
+    let hover_style = InteractionStyle::outline(Color::from_srgb_u8(255, 210, 64), 2.0);
+    let selection_style = InteractionStyle::outline(Color::from_srgb_u8(255, 64, 180), 3.0);
+
+    let (hit_x, hit_y) = viewer_hit_coordinate(&viewer, frame_width, frame_height);
+    let click_events: Rc<RefCell<Vec<&'static str>>> = Rc::default();
+    let hover_events: Rc<RefCell<Vec<&'static str>>> = Rc::default();
+    viewer.on_click({
+        let click_events = Rc::clone(&click_events);
+        move |result| click_events.borrow_mut().push(callback_state(result))
+    });
+    viewer.on_hover({
+        let hover_events = Rc::clone(&hover_events);
+        move |result| hover_events.borrow_mut().push(callback_state(result))
+    });
+
+    let idle_scene = render_interactive_viewer_scene_frame(
+        &mut viewer,
+        frame_width,
+        frame_height,
+        hover_style,
+        selection_style,
+    );
+    assert_interactive_viewer_frame_visible(&idle_scene, "idle");
+    let idle = overlay_pointer_callback_state(
+        idle_scene,
+        frame_width,
+        frame_height,
+        PointerCallbackVisualState::Idle,
+    );
+
+    viewer
+        .hover_at(hit_x, hit_y)
+        .expect("hover callback pick runs");
+    let hover_scene = render_interactive_viewer_scene_frame(
+        &mut viewer,
+        frame_width,
+        frame_height,
+        hover_style,
+        selection_style,
+    );
+    assert_interactive_viewer_frame_visible(&hover_scene, "hover");
+    let hover = overlay_pointer_callback_state(
+        hover_scene,
+        frame_width,
+        frame_height,
+        PointerCallbackVisualState::HoverHit,
+    );
+
+    viewer
+        .click_at(hit_x, hit_y)
+        .expect("click callback pick runs");
+    let click_scene = render_interactive_viewer_scene_frame(
+        &mut viewer,
+        frame_width,
+        frame_height,
+        hover_style,
+        selection_style,
+    );
+    assert_interactive_viewer_frame_visible(&click_scene, "click");
+    let click = overlay_pointer_callback_state(
+        click_scene,
+        frame_width,
+        frame_height,
+        PointerCallbackVisualState::ClickHit,
+    );
+
+    viewer
+        .hover_at(10_000.0, 10_000.0)
+        .expect("hover miss callback pick runs");
+    let miss_scene = render_interactive_viewer_scene_frame(
+        &mut viewer,
+        frame_width,
+        frame_height,
+        hover_style,
+        selection_style,
+    );
+    assert_interactive_viewer_frame_visible(&miss_scene, "miss");
+    let miss = overlay_pointer_callback_state(
+        miss_scene,
+        frame_width,
+        frame_height,
+        PointerCallbackVisualState::HoverMiss,
+    );
+
+    assert_eq!(&*click_events.borrow(), &["hit"]);
+    assert_eq!(&*hover_events.borrow(), &["hit", "miss"]);
+    assert_frames_differ(
+        &idle,
+        &hover,
+        "viewer hover callback proof should show the hover-hit state",
+    );
+    assert_frames_differ(
+        &hover,
+        &click,
+        "viewer click callback proof should show the click-hit state",
+    );
+    assert_frames_differ(
+        &click,
+        &miss,
+        "viewer hover miss callback proof should show the miss state",
+    );
+
+    write_animated_docs_image_artifact(
+        "round-d-viewer-pointer-callback-animated-docs-image",
+        "docs/guides/easy-scene-setup.md",
+        frame_width,
+        frame_height,
+        &[idle, hover, click, miss],
+    );
+}
+
+fn callback_state(
+    result: std::result::Result<Option<scena::Hit>, scena::LookupError>,
+) -> &'static str {
+    match result {
+        Ok(Some(_)) => "hit",
+        Ok(None) => "miss",
+        Err(_) => "error",
+    }
+}
+
+fn viewer_hit_coordinate(viewer: &InteractiveGltfViewer, width: u32, height: u32) -> (f32, f32) {
+    for y in (4..height).step_by(4) {
+        for x in (4..width).step_by(4) {
+            if viewer
+                .pick_at(x as f32, y as f32)
+                .expect("viewer hit search pick runs")
+                .is_some()
+            {
+                return (x as f32, y as f32);
+            }
+        }
+    }
+    panic!("interactive viewer fixture should expose at least one pickable pixel");
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PointerCallbackVisualState {
+    Idle,
+    HoverHit,
+    ClickHit,
+    HoverMiss,
+}
+
+fn assert_interactive_viewer_frame_visible(frame: &[u8], label: &str) {
+    assert!(
+        count_nonblack_pixels(frame) > 0,
+        "viewer pointer callback {label} frame must render at least one nonblack scene pixel"
+    );
+}
+
+fn overlay_pointer_callback_state(
+    mut frame: Vec<u8>,
+    width: u32,
+    height: u32,
+    state: PointerCallbackVisualState,
+) -> Vec<u8> {
+    let colors = match state {
+        PointerCallbackVisualState::Idle => [[72, 72, 72], [72, 72, 72], [72, 72, 72]],
+        PointerCallbackVisualState::HoverHit => [[255, 210, 64], [72, 72, 72], [72, 72, 72]],
+        PointerCallbackVisualState::ClickHit => [[255, 210, 64], [255, 64, 180], [72, 72, 72]],
+        PointerCallbackVisualState::HoverMiss => [[72, 72, 72], [255, 64, 180], [120, 120, 120]],
+    };
+    let marker_size = 5_u32;
+    let marker_gap = 2_u32;
+    let top = height.saturating_sub(marker_size + marker_gap);
+    for (index, color) in colors.into_iter().enumerate() {
+        let left = marker_gap + index as u32 * (marker_size + marker_gap);
+        paint_marker(&mut frame, width, left, top, marker_size, color);
+    }
+    frame
+}
+
+fn paint_marker(frame: &mut [u8], width: u32, left: u32, top: u32, size: u32, color: [u8; 3]) {
+    for y in top..top + size {
+        for x in left..left + size {
+            let index = ((y * width + x) * 4) as usize;
+            frame[index] = color[0];
+            frame[index + 1] = color[1];
+            frame[index + 2] = color[2];
+            frame[index + 3] = 255;
+        }
+    }
+}
+
+fn assert_frames_differ(before: &[u8], after: &[u8], message: &str) {
+    let changed_pixels = before
+        .chunks_exact(4)
+        .zip(after.chunks_exact(4))
+        .filter(|(left, right)| left != right)
+        .count();
+    assert!(changed_pixels > 0, "{message}; changed_pixels=0");
+}
+
+fn render_interactive_viewer_scene_frame(
+    viewer: &mut InteractiveGltfViewer,
+    width: u32,
+    height: u32,
+    hover_style: InteractionStyle,
+    selection_style: InteractionStyle,
+) -> Vec<u8> {
+    let assets = viewer.assets().clone();
+    let camera = viewer.camera();
+    let mut renderer = Renderer::headless(width, height).expect("headless renderer builds");
+    renderer.set_hover_style(hover_style);
+    renderer.set_selection_style(selection_style);
+    renderer
+        .prepare_with_assets(viewer.scene_mut(), &assets)
+        .expect("interactive viewer callback scene prepares");
+    renderer
+        .render(viewer.scene(), camera)
+        .expect("interactive viewer callback scene renders");
+    renderer.frame_rgba8().to_vec()
 }
 
 #[test]
