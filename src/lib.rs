@@ -40,6 +40,8 @@ pub use assets::{
 };
 #[cfg(all(feature = "hot-reload", not(target_arch = "wasm32")))]
 pub use assets::{AssetHotReloadError, AssetHotReloadWatcher};
+#[cfg(feature = "khronos-samples")]
+pub use assets::{KhronosSample, KhronosSampleMetadata, KhronosSamples};
 pub use controls::{
     CameraOrbitUrlState, CameraOrbitUrlStateError, OrbitControlAction, OrbitControls,
     PointerButton, PointerEvent, PointerEventKind, TouchEvent, TouchEventKind,

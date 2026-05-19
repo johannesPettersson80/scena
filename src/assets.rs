@@ -18,6 +18,8 @@ mod gc;
 mod gltf;
 #[cfg(all(feature = "hot-reload", not(target_arch = "wasm32")))]
 mod hot_reload;
+#[cfg(feature = "khronos-samples")]
+mod khronos;
 mod load;
 #[cfg(feature = "obj")]
 mod obj;
@@ -39,6 +41,8 @@ pub use gltf::{
 };
 #[cfg(all(feature = "hot-reload", not(target_arch = "wasm32")))]
 pub use hot_reload::{AssetHotReloadError, AssetHotReloadWatcher};
+#[cfg(feature = "khronos-samples")]
+pub use khronos::{KhronosSample, KhronosSampleMetadata, KhronosSamples};
 pub use load::{
     AssetLoadControl, AssetLoadOptions, AssetLoadProgress, AssetLoadReport, AssetLoadWarning,
 };

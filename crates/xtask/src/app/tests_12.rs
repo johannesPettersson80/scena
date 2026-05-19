@@ -121,7 +121,7 @@ pub(crate) fn easy_scene_setup_contracts_reject_round_a_raw_color_literals_in_fi
     );
 }
 
-const VALID_GUIDE: &str = "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string()\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```";
+const VALID_GUIDE: &str = "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```";
 
 fn write_easy_scene_fixture(
     fixture_root: &Path,
@@ -150,9 +150,14 @@ fn write_easy_scene_fixture(
     fs::write(fixture_root.join("docs/guides/easy-scene-setup.md"), guide).expect("guide fixture");
     fs::write(
         fixture_root.join("Cargo.toml"),
-        "notify-debouncer-full = { version = \"0.7.0\", optional = true }\nhot-reload = [\"dep:notify-debouncer-full\"]\nserde = { version = \"1\", features = [\"derive\"] }\nurlencoding = \"2\"",
+        "notify-debouncer-full = { version = \"0.7.0\", optional = true }\nhot-reload = [\"dep:notify-debouncer-full\"]\nkhronos-samples = []\nserde = { version = \"1\", features = [\"derive\"] }\nurlencoding = \"2\"",
     )
     .expect("manifest fixture");
+    fs::write(
+        fixture_root.join("docs/feature-flags.md"),
+        "khronos-samples Khronos glTF sample-asset catalog",
+    )
+    .expect("feature flags fixture");
     fs::write(
         fixture_root.join("docs/guides/migrating-from-threejs.md"),
         "new THREE.Box3 controls.target.copy OrbitControls::from_framing spherical.theta spherical.phi azimuth_elevation",
@@ -192,9 +197,14 @@ fn write_easy_scene_fixture(
     .expect("controls url state fixture");
     fs::write(
         fixture_root.join("src/assets.rs"),
-        "mod hot_reload; pub use hot_reload::{AssetHotReloadError, AssetHotReloadWatcher};",
+        "mod hot_reload; mod khronos; pub use hot_reload::{AssetHotReloadError, AssetHotReloadWatcher}; pub use khronos::{KhronosSample, KhronosSampleMetadata, KhronosSamples};",
     )
     .expect("assets fixture");
+    fs::write(
+        fixture_root.join("src/assets/khronos.rs"),
+        "pub enum KhronosSample {} pub const ALL: &[KhronosSample] = &[]; PACKAGE_SIZE_BUDGET_BYTES pub fn khronos(&self) {} pub async fn water_bottle() {} pub async fn transmission_test() {} pub async fn rigged_simple() {} primary_sha256 license_reference",
+    )
+    .expect("khronos samples fixture");
     fs::write(
         fixture_root.join("src/assets/hot_reload.rs"),
         "use notify_debouncer_full::{new_debouncer, DebounceEventResult}; use notify_debouncer_full::notify::RecursiveMode; pub struct AssetHotReloadWatcher; pub enum AssetHotReloadError {} fn watch_scene_for_hot_reload() { new_debouncer; RecursiveMode::NonRecursive; } fn drain_changed_scenes() {}",
@@ -351,13 +361,18 @@ fn write_easy_scene_fixture(
     )
     .expect("asset hot reload test fixture");
     fs::write(
+        fixture_root.join("tests/round_c_khronos_samples.rs"),
+        "khronos_sample_catalog_exposes_manifest_metadata_and_package_budget khronos_sample_loader_loads_every_catalog_entry_without_user_paths khronos_sample_loader_has_named_shortcuts_for_headline_assets khronos_sample_loader_renders_rigged_sample_reference_artifact rigged-simple-sample-loader-reference.ppm",
+    )
+    .expect("khronos sample test fixture");
+    fs::write(
         fixture_root.join("tests/round_d_viewer_url_state.rs"),
         "camera_orbit_url_state_round_trips_orbit_controls camera_orbit_url_state_accepts_compact_checklist_query_shape camera_orbit_url_state_omits_asset_urls_and_secrets framing_outcome_exports_camera_orbit_url_state",
     )
     .expect("url state test fixture");
     fs::write(
         fixture_root.join("src/lib.rs"),
-        "ViewerCaptureError AssetHotReloadError AssetHotReloadWatcher CameraOrbitUrlState CameraOrbitUrlStateError",
+        "ViewerCaptureError AssetHotReloadError AssetHotReloadWatcher CameraOrbitUrlState CameraOrbitUrlStateError KhronosSample KhronosSampleMetadata KhronosSamples",
     )
     .expect("lib fixture");
     fs::write(fixture_root.join("src/geometry.rs"), "").expect("geometry fixture");

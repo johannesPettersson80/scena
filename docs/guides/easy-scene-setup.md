@@ -241,6 +241,22 @@ for path in watcher.drain_changed_scenes()? {
 }
 ```
 
+## Khronos sample assets
+
+Enable the `khronos-samples` feature when examples, tests, or demos need
+canonical glTF sample assets without hard-coding local fixture paths. The
+catalog carries source commit, license reference, checksum, file list, and
+contract metadata so sample use stays auditable.
+
+```rust
+let bottle = assets.khronos().water_bottle().await?;
+let rig = assets.khronos().rigged_simple().await?;
+let transmission = assets.khronos().transmission_test().await?;
+```
+
+Use `KhronosSample::ALL` when a compatibility test should iterate the checked
+catalog.
+
 ## URL camera state
 
 Orbit camera state can be serialized into a shareable query string without

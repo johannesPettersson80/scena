@@ -148,14 +148,19 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     }
     fs::write(
         fixture_root.join("docs/guides/easy-scene-setup.md"),
-        "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string()\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```",
+        "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```",
     )
     .expect("guide fixture");
     fs::write(
         fixture_root.join("Cargo.toml"),
-        "notify-debouncer-full = { version = \"0.7.0\", optional = true }\nhot-reload = [\"dep:notify-debouncer-full\"]\nserde = { version = \"1\", features = [\"derive\"] }\nurlencoding = \"2\"",
+        "notify-debouncer-full = { version = \"0.7.0\", optional = true }\nhot-reload = [\"dep:notify-debouncer-full\"]\nkhronos-samples = []\nserde = { version = \"1\", features = [\"derive\"] }\nurlencoding = \"2\"",
     )
     .expect("manifest fixture");
+    fs::write(
+        fixture_root.join("docs/feature-flags.md"),
+        "khronos-samples Khronos glTF sample-asset catalog",
+    )
+    .expect("feature flags fixture");
     fs::write(
         fixture_root.join("docs/guides/migrating-from-threejs.md"),
         "new THREE.Box3 controls.target.copy OrbitControls::from_framing spherical.theta spherical.phi azimuth_elevation",
@@ -194,9 +199,14 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     .expect("controls url state fixture");
     fs::write(
         fixture_root.join("src/assets.rs"),
-        "mod hot_reload; pub use hot_reload::{AssetHotReloadError, AssetHotReloadWatcher};",
+        "mod hot_reload; mod khronos; pub use hot_reload::{AssetHotReloadError, AssetHotReloadWatcher}; pub use khronos::{KhronosSample, KhronosSampleMetadata, KhronosSamples};",
     )
     .expect("assets fixture");
+    fs::write(
+        fixture_root.join("src/assets/khronos.rs"),
+        "pub enum KhronosSample {} pub const ALL: &[KhronosSample] = &[]; PACKAGE_SIZE_BUDGET_BYTES pub fn khronos(&self) {} pub async fn water_bottle() {} pub async fn transmission_test() {} pub async fn rigged_simple() {} primary_sha256 license_reference",
+    )
+    .expect("khronos samples fixture");
     fs::write(
         fixture_root.join("src/assets/hot_reload.rs"),
         "use notify_debouncer_full::{new_debouncer, DebounceEventResult}; use notify_debouncer_full::notify::RecursiveMode; pub struct AssetHotReloadWatcher; pub enum AssetHotReloadError {} fn watch_scene_for_hot_reload() { new_debouncer; RecursiveMode::NonRecursive; } fn drain_changed_scenes() {}",
@@ -254,7 +264,7 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     .expect("animation example fixture");
     fs::write(
         fixture_root.join("src/lib.rs"),
-        "ViewerCaptureError AssetHotReloadError AssetHotReloadWatcher CameraOrbitUrlState CameraOrbitUrlStateError",
+        "ViewerCaptureError AssetHotReloadError AssetHotReloadWatcher CameraOrbitUrlState CameraOrbitUrlStateError KhronosSample KhronosSampleMetadata KhronosSamples",
     )
     .expect("lib fixture");
     fs::write(fixture_root.join("src/geometry.rs"), "").expect("geometry fixture");
@@ -299,71 +309,66 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
         "pub fn looking_at() {}",
     )
     .expect("math fixture");
-    fs::write(
-        fixture_root.join("tests/round_a_easy_use.rs"),
-        "round_a_color_named_constants_and_hex_alias_are_public round_a_color_kelvin_helper_is_clamped_and_ordered round_a_perspective_camera_lens_presets_are_named_degree_surfaces round_a_transform_looking_at_faces_target_with_requested_up",
-    )
-    .expect("round-a test fixture");
-    fs::write(
-        fixture_root.join("tests/round_b_light_presets.rs"),
-        "named_directional_light_presets_are_public_and_ordered named_point_light_presets_are_kelvin_tinted_and_range_limited",
-    )
-    .expect("light preset test fixture");
-    fs::write(
-        fixture_root.join("tests/round_b_material_presets.rs"),
-        "honest_material_presets_are_public_pbr_shortcuts",
-    )
-    .expect("material preset test fixture");
-    fs::write(
-        fixture_root.join("tests/round_b_background_presets.rs"),
-        "named_background_presets_map_to_public_colors renderer_set_background_uses_named_scheme",
-    )
-    .expect("background preset test fixture");
-    fs::write(
-        fixture_root.join("tests/round_b_orbit_controls_presets.rs"),
-        "named_orbit_damping_presets_are_public_and_ordered turntable_presets_expose_explicit_frame_advance_semantics presentation_combines_medium_damping_with_slow_turntable_motion",
-    )
-    .expect("orbit preset test fixture");
-    fs::write(
-        fixture_root.join("tests/round_c_auto_exposure_presets.rs"),
-        "named_auto_exposure_scenarios_are_public_and_ordered scenario_presets_drive_different_ev_solutions",
-    )
-    .expect("auto exposure preset test fixture");
-    fs::write(
-        fixture_root.join("tests/round_c_animation_playback.rs"),
-        "scene_play_animation_by_name_creates_and_starts_mixer",
-    )
-    .expect("animation playback test fixture");
-    fs::write(
-        fixture_root.join("tests/round_d_connector_axial_gap.rs"),
-        "connect_options_axial_gap_offsets_along_target_forward_axis axial_gap_sanitizes_invalid_or_negative_values_to_zero",
-    )
-    .expect("axial gap test fixture");
-    fs::write(
-        fixture_root.join("tests/round_d_orbit_zoom_limits.rs"),
-        "orbit_zoom_limits_are_relative_to_current_framed_distance wheel_and_pinch_zoom_are_clamped_to_named_limits",
-    )
-    .expect("orbit zoom-limit test fixture");
-    fs::write(
-        fixture_root.join("tests/round_d_viewer_pointer_callbacks.rs"),
-        "viewer_click_and_hover_callbacks_receive_hit_and_no_hit_results click_events hover_events",
-    )
-    .expect("viewer pointer callback test fixture");
-    fs::write(
-        fixture_root.join("tests/round_d_viewer_capture_png.rs"),
-        "viewer_capture_png_bytes_decode_to_current_frame viewer_capture_png_writes_reference_artifact viewer-capture-png-reference.png",
-    )
-    .expect("viewer PNG capture test fixture");
-    fs::write(
-        fixture_root.join("tests/round_d_asset_hot_reload.rs"),
-        "asset_hot_reload_watcher_reports_debounced_file_change_and_reload_updates_retained_asset asset-hot-reload-animated-proof.ppm reload_scene(&first) replace_import(&import, &reloaded)",
-    )
-    .expect("asset hot reload test fixture");
-    fs::write(
-        fixture_root.join("tests/round_d_viewer_url_state.rs"),
-        "camera_orbit_url_state_round_trips_orbit_controls camera_orbit_url_state_accepts_compact_checklist_query_shape camera_orbit_url_state_omits_asset_urls_and_secrets framing_outcome_exports_camera_orbit_url_state",
-    )
-    .expect("url state test fixture");
+    for (path, text) in [
+        (
+            "tests/round_a_easy_use.rs",
+            "round_a_color_named_constants_and_hex_alias_are_public round_a_color_kelvin_helper_is_clamped_and_ordered round_a_perspective_camera_lens_presets_are_named_degree_surfaces round_a_transform_looking_at_faces_target_with_requested_up",
+        ),
+        (
+            "tests/round_b_light_presets.rs",
+            "named_directional_light_presets_are_public_and_ordered named_point_light_presets_are_kelvin_tinted_and_range_limited",
+        ),
+        (
+            "tests/round_b_material_presets.rs",
+            "honest_material_presets_are_public_pbr_shortcuts",
+        ),
+        (
+            "tests/round_b_background_presets.rs",
+            "named_background_presets_map_to_public_colors renderer_set_background_uses_named_scheme",
+        ),
+        (
+            "tests/round_b_orbit_controls_presets.rs",
+            "named_orbit_damping_presets_are_public_and_ordered turntable_presets_expose_explicit_frame_advance_semantics presentation_combines_medium_damping_with_slow_turntable_motion",
+        ),
+        (
+            "tests/round_c_auto_exposure_presets.rs",
+            "named_auto_exposure_scenarios_are_public_and_ordered scenario_presets_drive_different_ev_solutions",
+        ),
+        (
+            "tests/round_c_animation_playback.rs",
+            "scene_play_animation_by_name_creates_and_starts_mixer",
+        ),
+        (
+            "tests/round_d_connector_axial_gap.rs",
+            "connect_options_axial_gap_offsets_along_target_forward_axis axial_gap_sanitizes_invalid_or_negative_values_to_zero",
+        ),
+        (
+            "tests/round_d_orbit_zoom_limits.rs",
+            "orbit_zoom_limits_are_relative_to_current_framed_distance wheel_and_pinch_zoom_are_clamped_to_named_limits",
+        ),
+        (
+            "tests/round_d_viewer_pointer_callbacks.rs",
+            "viewer_click_and_hover_callbacks_receive_hit_and_no_hit_results click_events hover_events",
+        ),
+        (
+            "tests/round_d_viewer_capture_png.rs",
+            "viewer_capture_png_bytes_decode_to_current_frame viewer_capture_png_writes_reference_artifact viewer-capture-png-reference.png",
+        ),
+        (
+            "tests/round_d_asset_hot_reload.rs",
+            "asset_hot_reload_watcher_reports_debounced_file_change_and_reload_updates_retained_asset asset-hot-reload-animated-proof.ppm reload_scene(&first) replace_import(&import, &reloaded)",
+        ),
+        (
+            "tests/round_c_khronos_samples.rs",
+            "khronos_sample_catalog_exposes_manifest_metadata_and_package_budget khronos_sample_loader_loads_every_catalog_entry_without_user_paths khronos_sample_loader_has_named_shortcuts_for_headline_assets khronos_sample_loader_renders_rigged_sample_reference_artifact rigged-simple-sample-loader-reference.ppm",
+        ),
+        (
+            "tests/round_d_viewer_url_state.rs",
+            "camera_orbit_url_state_round_trips_orbit_controls camera_orbit_url_state_accepts_compact_checklist_query_shape camera_orbit_url_state_omits_asset_urls_and_secrets framing_outcome_exports_camera_orbit_url_state",
+        ),
+    ] {
+        fs::write(fixture_root.join(path), text).expect("test fixture");
+    }
     fs::write(
         fixture_root.join("demo/index.html"),
         r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,

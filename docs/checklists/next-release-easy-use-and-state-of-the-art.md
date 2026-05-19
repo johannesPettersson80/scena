@@ -564,18 +564,25 @@ produces a stored PNG with a CI diff threshold.
 
 ### 4.1 Bundled Khronos sample loader
 
-Status: **[gap]**
-Owner: `src/assets/khronos.rs` (new) behind `khronos-samples` feature.
-Proof: each sample loads and renders without user-supplied local file
-paths, with license/checksum metadata and a package-size budget. Prefer
-checked download/cache or dev-fixture resolution; do not silently bloat
-the default published crate with large binaries.
-Visual proof: reference-image + browser-demo (one reference image per sample; the cloudflare demo lists them for users to click through)
+Status: **[shipped]** for the checked fixture catalog — implemented in
+`src/assets/khronos.rs` behind the `khronos-samples` feature. The shipped
+API exposes the current audited fixtures (`WaterBottle`, `TransmissionTest`,
+animation/skin/morph samples, texture samples, unlit/alpha samples) through
+`assets.khronos()`. Do not claim `DamagedHelmet` or `DragonAttenuation`
+until those specific assets are vendored or fetched through a checked cache.
+Proof: `tests/round_c_khronos_samples.rs` loads every catalog entry without
+user-supplied local file paths, checks source/license/checksum/file-list
+metadata and package-size budget, and generates
+`target/gate-artifacts/khronos-samples/rigged-simple-sample-loader-reference.ppm`.
+No sample bytes are embedded into the library binary; the default feature set
+remains unchanged.
+Visual proof: reference-image shipped for one catalog path; browser-demo and
+per-sample reference grid remain follow-up proof work.
 
 ```rust
-Assets::khronos::water_bottle().await?
-Assets::khronos::damaged_helmet().await?
-Assets::khronos::dragon_attenuation().await?       // transmissive control
+assets.khronos().water_bottle().await?
+assets.khronos().rigged_simple().await?
+assets.khronos().transmission_test().await?       // transmissive control
 ```
 
 ### 4.2 `OrbitControls` bounds-relative zoom
@@ -879,7 +886,7 @@ the rounds, not after — they're the strategic arc.
 ### Round C — bundled content + feature shortcuts
 
 8. - [ ] `Environment::*` curated KTX2 environment presets (§5)
-9. - [ ] `Assets::khronos::*` sample loaders (§4.1)
+9. - [x] `Assets::khronos::*` sample loaders (§4.1)
 10. - [x] `AutoExposureConfig` scenario presets (§2.9)
 11. - [x] Scene / Viewer one-call animation playback by clip name (§4.4)
 
@@ -1085,6 +1092,20 @@ State-via-URL implementation pass (2026-05-19):
   token, credentialed asset URL, and other application query parameters are
   not preserved. Proof is pinned by `tests/round_d_viewer_url_state.rs` and
   doctor rule `STATE-VIA-URL`.
+
+Khronos sample-loader implementation pass (2026-05-19):
+
+- Landed the feature-gated `khronos-samples` catalog and
+  `assets.khronos()` loader in `src/assets/khronos.rs`. The catalog uses the
+  already checked fixture set from `tests/assets/gltf/khronos`, carries source
+  commit/license/checksum/file-list metadata, and keeps the default feature
+  set unchanged.
+- Proof is pinned by `tests/round_c_khronos_samples.rs`, including
+  all-catalog load coverage, package-size budget, named shortcuts, and the
+  generated reference artifact
+  `target/gate-artifacts/khronos-samples/rigged-simple-sample-loader-reference.ppm`.
+  `DamagedHelmet` and `DragonAttenuation` remain intentionally unclaimed
+  until those exact fixtures are vendored or fetched through a checked cache.
 
 Ease-of-use implementation continuation (2026-05-19):
 

@@ -23,8 +23,10 @@ scena = { version = "1.3", features = ["controls", "controls-winit"] }
 | `controls-winit` | native-host controls adapter support |
 | `controls-web` | browser-host controls adapter support |
 | `browser-probe` | browser/WASM rendered-output probe entry points |
+| `hot-reload` | native debounced asset-file watching for explicit reload loops |
 | `inspection` | scene inspection metadata and diagnostic output |
 | `icc` | ICC/color-management support through `lcms2` |
+| `khronos-samples` | checked Khronos glTF sample-asset catalog and loader helpers |
 | `ktx2` | KTX2/Basis texture descriptor and decode support for `KHR_texture_basisu` assets |
 | `meshopt` | meshopt-compressed glTF buffer decoding support |
 | `obj` | OBJ import path |
@@ -47,6 +49,12 @@ Asset-heavy viewer:
 
 ```toml
 scena = { version = "1.3", features = ["ktx2", "meshopt", "obj"] }
+```
+
+Sample-driven examples/tests:
+
+```toml
+scena = { version = "1.3", features = ["khronos-samples"] }
 ```
 
 Diagnostic tooling:
