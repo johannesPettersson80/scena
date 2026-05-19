@@ -511,6 +511,50 @@ function assertScenaViewerElementProof(result) {
   }
 }
 
+function assertCameraControlKitProof(result) {
+  if (
+    !result ||
+    result.schema !== "scena.m6.camera_control_kit_browser_proof.v1" ||
+    result.status !== "passed" ||
+    !result.screenshot_metadata ||
+    !/^[0-9a-f]{64}$/.test(result.screenshot_metadata.sha256 || "")
+  ) {
+    throw new Error(`camera control kit browser proof did not pass: ${JSON.stringify(result)}`);
+  }
+  const actions = new Set(result.orbit && result.orbit.actions);
+  for (const action of ["BeginOrbit", "Orbit", "Zoom", "End"]) {
+    if (!actions.has(action)) {
+      throw new Error(`camera control kit proof did not include orbit action ${action}: ${JSON.stringify(result)}`);
+    }
+  }
+  if (result.orbit.distance_after_zoom >= result.orbit.initial_distance) {
+    throw new Error(`camera control kit proof did not zoom closer: ${JSON.stringify(result)}`);
+  }
+  if (!result.follow || result.follow.camera_translation[1] <= result.follow.target_translation[1]) {
+    throw new Error(`camera control kit proof did not place follow camera above target: ${JSON.stringify(result)}`);
+  }
+  if (!result.fly || result.fly.camera_translation[0] <= 0 || result.fly.camera_translation[2] >= 0) {
+    throw new Error(`camera control kit proof did not move fly camera in local axes: ${JSON.stringify(result)}`);
+  }
+}
+
+async function runCameraControlKitProof(page, artifactDir) {
+  const result = await page.evaluate(() => window.scenaCameraControlKitProbe());
+  const screenshotPath = path.join(artifactDir, "camera-control-kit-browser-proof.png");
+  await page
+    .locator("section[data-proof=\"camera-control-kit\"]")
+    .screenshot({ path: screenshotPath });
+  const screenshot = fs.readFileSync(screenshotPath);
+  result.screenshot_metadata = {
+    path: path.relative(process.cwd(), screenshotPath),
+    mime: "image/png",
+    sha256: crypto.createHash("sha256").update(screenshot).digest("hex"),
+    bytes: screenshot.length,
+  };
+  assertCameraControlKitProof(result);
+  return result;
+}
+
 async function runScenaViewerElementProof(page, artifactDir) {
   const result = await page.evaluate(() => window.scenaViewerElementProbe());
   const screenshotPath = path.join(artifactDir, "scena-viewer-element-browser-proof.png");
@@ -587,6 +631,7 @@ async function main() {
     try {
       await viewerElementPage.goto(url);
       results.push(await runScenaViewerElementProof(viewerElementPage, artifactDir));
+      results.push(await runCameraControlKitProof(viewerElementPage, artifactDir));
     } finally {
       await viewerElementPage.close();
     }

@@ -48,6 +48,43 @@ pub(super) fn check_camera_control_kit(root: &Path, findings: &mut Vec<Finding>)
         root,
         findings,
         "CAMERA-CONTROL-KIT",
+        "src/browser_probe.rs",
+        &[
+            "m6CameraControlKitProbe",
+            "scena.m6.camera_control_kit_browser_proof.v1",
+            "FollowControls::behind_and_above",
+            "FlyControls::new",
+            "PointerEvent::primary_pressed",
+            "PointerEvent::wheel",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "CAMERA-CONTROL-KIT",
+        "tests/browser/m6_rust_wasm_renderer_probe.js",
+        &[
+            "assertCameraControlKitProof",
+            "runCameraControlKitProof",
+            "camera-control-kit-browser-proof.png",
+            "scena.m6.camera_control_kit_browser_proof.v1",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "CAMERA-CONTROL-KIT",
+        "tests/browser/m6_rust_wasm_renderer_probe_page.js",
+        &[
+            "m6CameraControlKitProbe",
+            "scenaCameraControlKitProbe",
+            "scena.m6.camera_control_kit_browser_proof.v1",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "CAMERA-CONTROL-KIT",
         "docs/guides/easy-scene-setup.md",
         &[
             "FollowControls::behind_and_above",
@@ -66,6 +103,8 @@ pub(super) fn check_camera_control_kit(root: &Path, findings: &mut Vec<Finding>)
             "library primitives",
             "**[shipped]**",
             "tests/camera_control_kit.rs",
+            "camera-control-kit-browser-proof.png",
+            "scena.m6.camera_control_kit_browser_proof.v1",
             "CAMERA-CONTROL-KIT",
         ],
     );

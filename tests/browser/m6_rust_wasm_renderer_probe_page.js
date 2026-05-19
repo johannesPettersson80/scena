@@ -4,6 +4,7 @@ import init, {
   m6RenderWebgpuProbe,
   m6RenderSurfaceLifecycleProbe,
   m6RenderBenchmarkProbe,
+  m6CameraControlKitProbe,
   m6RenderStateLifecycleProbe,
   m6RenderWorkflowProbe,
 } from "/pkg/scena.js";
@@ -173,6 +174,25 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     screenshot_selector: "scena-viewer[data-proof=\"custom-element\"]",
     checks,
   };
+};
+
+window.scenaCameraControlKitProbe = async function scenaCameraControlKitProbe() {
+  await ensureInit();
+  const result = JSON.parse(m6CameraControlKitProbe());
+  if (result.schema !== "scena.m6.camera_control_kit_browser_proof.v1") {
+    throw new Error(`unexpected camera-control-kit schema: ${result.schema}`);
+  }
+  const panel = document.createElement("section");
+  panel.dataset.proof = "camera-control-kit";
+  panel.style.cssText = "display:grid;gap:6px;width:360px;margin-top:12px;padding:12px;background:#0f172a;color:#e2e8f0;font:12px system-ui,sans-serif";
+  panel.innerHTML = `
+    <strong>Camera controls</strong>
+    <span>Orbit: ${result.orbit.actions.join(" -> ")}</span>
+    <span>Follow: ${result.follow.camera_translation.map((value) => value.toFixed(2)).join(", ")}</span>
+    <span>Fly: ${result.fly.camera_translation.map((value) => value.toFixed(2)).join(", ")}</span>
+  `;
+  document.body.append(panel);
+  return result;
 };
 
 function createCanvas(backend, workflow = "triangle") {

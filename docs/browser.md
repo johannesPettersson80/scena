@@ -94,6 +94,13 @@ anchors and accepts `setAnnotationProjections([{ id, x, y, visible }])`,
 then emits `scena-viewer-annotations-rendered` after applying the screen-space
 positions.
 
+The same M6 browser probe also records camera-control-kit proof for the shared
+Rust control APIs. `scena.m6.camera_control_kit_browser_proof.v1` runs browser
+input through `OrbitControls`, applies `FollowControls` and `FlyControls`, and
+writes `target/gate-artifacts/camera-control-kit-browser-proof.png`. This proves
+the browser input-to-motion contract for the library controls; full
+custom-element gesture recordings remain a later `<scena-viewer>` proof.
+
 ## Browser responsibilities
 
 The browser host owns:

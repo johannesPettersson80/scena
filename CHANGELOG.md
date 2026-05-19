@@ -11,6 +11,9 @@ All notable user-facing changes are recorded here.
   annotation projection, inspector overlay, keyboard events, and mobile/a11y
   DOM defaults.
 
+- Added M6 browser proof for the camera-control kit, covering Rust/WASM orbit
+  pointer input, follow-camera placement, and fly-camera local movement.
+
 - Added connector magnet preview APIs for editor-style drag-to-assemble UIs:
   `Scene::preview_connector_magnet`, `ConnectionMagnetPreview`, and
   `ConnectionMagnetVisualCue`.

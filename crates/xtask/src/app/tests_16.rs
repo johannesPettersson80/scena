@@ -48,14 +48,19 @@ pub(crate) fn write_scena_viewer_element_easy_scene_fixture(fixture_root: &Path)
     fs::create_dir_all(fixture_root.join("tests/browser")).expect("viewer browser fixture dir");
     fs::write(
         fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe.js"),
-        "assertScenaViewerElementProof runScenaViewerElementProof scena-viewer-element-browser-proof.png SCENA_BROWSER_VIEWER_ELEMENT_ONLY scena.scena_viewer_element_browser_proof.v1",
+        "assertScenaViewerElementProof runScenaViewerElementProof scena-viewer-element-browser-proof.png assertCameraControlKitProof runCameraControlKitProof camera-control-kit-browser-proof.png SCENA_BROWSER_VIEWER_ELEMENT_ONLY scena.scena_viewer_element_browser_proof.v1 scena.m6.camera_control_kit_browser_proof.v1",
     )
     .expect("viewer element browser runner fixture");
     fs::write(
         fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe_page.js"),
-        "defineScenaViewer scenaViewerElementProbe scena.scena_viewer_element_browser_proof.v1 scena-viewer-progress-rendered scena-viewer-file-drop scena-viewer-drop-error scena-viewer-variant-change scena-viewer-annotations-rendered scena-viewer-inspector-rendered scena-viewer-key-control",
+        "defineScenaViewer m6CameraControlKitProbe scenaViewerElementProbe scenaCameraControlKitProbe scena.scena_viewer_element_browser_proof.v1 scena.m6.camera_control_kit_browser_proof.v1 scena-viewer-progress-rendered scena-viewer-file-drop scena-viewer-drop-error scena-viewer-variant-change scena-viewer-annotations-rendered scena-viewer-inspector-rendered scena-viewer-key-control",
     )
     .expect("viewer element browser page fixture");
+    fs::write(
+        fixture_root.join("src/browser_probe.rs"),
+        "m6CameraControlKitProbe scena.m6.camera_control_kit_browser_proof.v1 FollowControls::behind_and_above FlyControls::new PointerEvent::primary_pressed PointerEvent::wheel",
+    )
+    .expect("camera control browser proof fixture");
     fs::write(
         fixture_root.join("docs/browser.md"),
         "<scena-viewer defineScenaViewer viewer-element shadow DOM canvas progressbar scena-viewer-progress drag-and-drop scena-viewer-file-drop scena-viewer-drop-error material variant picker scena-viewer-variant-change mobile accessibility keyboard scena-viewer-key-control inspector/dev overlay setInspectorSnapshot scena-viewer-inspector-rendered annotation overlay data-position scena-viewer-annotations-request scena-viewer-annotations-rendered SCENA_BROWSER_VIEWER_ELEMENT_ONLY=1 scena-viewer-element-browser-proof.png",
@@ -66,7 +71,7 @@ pub(crate) fn write_scena_viewer_element_easy_scene_fixture(fixture_root: &Path)
     let mut checklist =
         fs::read_to_string(&checklist_path).expect("next release checklist fixture");
     checklist.push_str(
-        " custom-element\nfoundation and browser UI proof **[shipped]** src/viewer_element.rs SCENA-VIEWER-ELEMENT ScenaViewerProgress scena-viewer-progress-rendered ScenaViewerDropDecision scena-viewer-file-drop ScenaViewerVariantSelection scena-viewer-variant-change ScenaViewerAccessibilityDefaults scena-viewer-key-control ScenaViewerInspectorSnapshot scena-viewer-inspector-rendered ScenaViewerAnnotationAnchor scena-viewer-annotations-rendered scena.scena_viewer_element_browser_proof.v1 scena-viewer-element-browser-proof.png Full\n  asset loading/rendering parity remains open under bet 1.1",
+        " custom-element\nfoundation and browser UI proof **[shipped]** src/viewer_element.rs SCENA-VIEWER-ELEMENT ScenaViewerProgress scena-viewer-progress-rendered ScenaViewerDropDecision scena-viewer-file-drop ScenaViewerVariantSelection scena-viewer-variant-change ScenaViewerAccessibilityDefaults scena-viewer-key-control ScenaViewerInspectorSnapshot scena-viewer-inspector-rendered ScenaViewerAnnotationAnchor scena-viewer-annotations-rendered scena.scena_viewer_element_browser_proof.v1 scena-viewer-element-browser-proof.png Full\n  asset loading/rendering parity remains open under bet 1.1 camera control browser proof **[shipped]** camera-control-kit-browser-proof.png scena.m6.camera_control_kit_browser_proof.v1",
     );
     fs::write(checklist_path, checklist).expect("next release checklist viewer element fixture");
 }

@@ -26,6 +26,8 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "browser_probe_readback_rgba8",
             "renderer-owned-gpu-copy",
             "scena.m6.browser_renderer_probe.v1",
+            "m6CameraControlKitProbe",
+            "scena.m6.camera_control_kit_browser_proof.v1",
         ],
     );
     require_contains(
@@ -172,8 +174,12 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
             "assertScenaViewerElementProof",
             "runScenaViewerElementProof",
             "scena-viewer-element-browser-proof.png",
+            "assertCameraControlKitProof",
+            "runCameraControlKitProof",
+            "camera-control-kit-browser-proof.png",
             "SCENA_BROWSER_VIEWER_ELEMENT_ONLY",
             "scena.scena_viewer_element_browser_proof.v1",
+            "scena.m6.camera_control_kit_browser_proof.v1",
             "assertSurfaceLifecycleProbe",
             "assertNoScenaGpuValidationErrors",
             "scena wgpu uncaptured error",
@@ -210,8 +216,11 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
         &[
             "m6RenderWebgl2Probe",
             "defineScenaViewer",
+            "m6CameraControlKitProbe",
             "scenaViewerElementProbe",
+            "scenaCameraControlKitProbe",
             "scena.scena_viewer_element_browser_proof.v1",
+            "scena.m6.camera_control_kit_browser_proof.v1",
             "scena-viewer-progress-rendered",
             "scena-viewer-file-drop",
             "scena-viewer-drop-error",
