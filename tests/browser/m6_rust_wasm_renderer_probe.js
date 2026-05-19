@@ -470,6 +470,44 @@ function assertTexturedConnectorViewerProof(backend, result) {
   }
 }
 
+function assertConnectorMagnetPreviewProof(backend, result) {
+  const metadata = result && result.metadata ? result.metadata : {};
+  const sequence = metadata.magnet_sequence;
+  if (
+    metadata.proof_class !== "connector-magnet-preview" ||
+    !Array.isArray(sequence) ||
+    sequence.length !== 2
+  ) {
+    throw new Error(
+      `${backend} connector-magnet-preview did not record the required magnet sequence: ${JSON.stringify(result)}`,
+    );
+  }
+  const [outOfRange, ready] = sequence;
+  if (
+    outOfRange.visual_cue !== "scena-magnet-out-of-range" ||
+    outOfRange.snap_ready !== false ||
+    !(outOfRange.distance > outOfRange.tolerance)
+  ) {
+    throw new Error(
+      `${backend} connector-magnet-preview did not prove the out-of-range cue: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    ready.visual_cue !== "scena-magnet-ready" ||
+    ready.snap_ready !== true ||
+    !(ready.distance <= ready.tolerance)
+  ) {
+    throw new Error(
+      `${backend} connector-magnet-preview did not prove the snap-ready cue: ${JSON.stringify(result)}`,
+    );
+  }
+  if (!result.pixels || result.pixels.nonblack <= 0) {
+    throw new Error(
+      `${backend} connector-magnet-preview did not render visible browser pixels: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
 function assertScenaViewerElementProof(result) {
   if (
     !result ||
@@ -688,6 +726,7 @@ async function main() {
     "anchor-alignment",
     "connector-before",
     "connector-after",
+    "connector-magnet-preview",
     "coordinate-units",
     "static-batching",
     "layers-helper-on-top",
@@ -790,6 +829,10 @@ async function main() {
         assertTexturedConnectorViewerProof(
           backend,
           workflowResults.get("textured-connector-viewer"),
+        );
+        assertConnectorMagnetPreviewProof(
+          backend,
+          workflowResults.get("connector-magnet-preview"),
         );
         const connectorBefore = workflowResults.get("connector-before");
         const connectorAfter = workflowResults.get("connector-after");

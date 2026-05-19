@@ -93,12 +93,21 @@ pub(crate) fn check_m7_visual_browser_contracts(root: &Path, findings: &mut Vec<
             "anchor-alignment",
             "connector-before",
             "connector-after",
-            "ConnectorFrame::new",
-            "ConnectOptions::default",
             "coordinate-units",
             "static-batching",
             "layers-helper-on-top",
             "beginner-diagnostics",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/browser_probe/workflows/ergonomics/connectors.rs",
+        &[
+            "connector_connection_scene",
+            "ConnectorFrame::new",
+            "ConnectOptions::default",
         ],
     );
     require_contains(

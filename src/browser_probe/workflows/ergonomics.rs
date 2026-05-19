@@ -3,11 +3,12 @@ use wasm_bindgen::prelude::JsValue;
 
 use super::{WorkflowScene, add_default_camera};
 use crate::{
-    Aabb, AlphaMode, Assets, Color, ConnectOptions, ConnectorFrame, DiagnosticSeverity,
-    DirectionalLight, GeometryDesc, MaterialDesc, Primitive, Renderer, RetainPolicy, Scene,
-    SourceCoordinateSystem, SourceUnits, TextureColorSpace, TextureTransform, Transform, Vec3,
+    Aabb, AlphaMode, Assets, Color, DiagnosticSeverity, DirectionalLight, GeometryDesc,
+    MaterialDesc, Primitive, Renderer, RetainPolicy, Scene, SourceCoordinateSystem, SourceUnits,
+    TextureColorSpace, TextureTransform, Transform, Vec3,
 };
 
+mod connectors;
 mod source_materials;
 mod viewer;
 
@@ -15,8 +16,9 @@ pub(super) async fn build_ergonomics_scene(workflow: &str) -> Result<WorkflowSce
     match workflow {
         "camera-framing" => camera_framing_scene(),
         "anchor-alignment" => anchor_alignment_scene().await,
-        "connector-before" => connector_connection_scene(false),
-        "connector-after" => connector_connection_scene(true),
+        "connector-before" => connectors::connector_connection_scene(false),
+        "connector-after" => connectors::connector_connection_scene(true),
+        "connector-magnet-preview" => connectors::connector_magnet_preview_scene(),
         "coordinate-units" => coordinate_units_scene(),
         "static-batching" => static_batching_scene(),
         "layers-helper-on-top" => layers_helper_on_top_scene(),
@@ -95,53 +97,6 @@ async fn anchor_alignment_scene() -> Result<WorkflowScene, JsValue> {
         scene,
         camera,
         metadata: json!({ "anchor": "inspection", "anchor_debug_count": anchor_debug.len() }),
-    })
-}
-
-fn connector_connection_scene(connected: bool) -> Result<WorkflowScene, JsValue> {
-    let assets = Assets::new();
-    let source_geometry = assets.create_geometry(GeometryDesc::box_xyz(0.28, 0.2, 0.2));
-    let target_geometry = assets.create_geometry(GeometryDesc::box_xyz(0.28, 0.2, 0.2));
-    let source_material =
-        assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(255, 70, 40)));
-    let target_material =
-        assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(40, 120, 255)));
-    let mut scene = Scene::new();
-    let source = scene
-        .mesh(source_geometry, source_material)
-        .transform(Transform::at(Vec3::new(-0.65, 0.0, 0.0)))
-        .add()
-        .map_err(|error| JsValue::from_str(&format!("source connector mesh failed: {error:?}")))?;
-    let target = scene
-        .mesh(target_geometry, target_material)
-        .transform(Transform::at(Vec3::new(0.45, 0.0, 0.0)))
-        .add()
-        .map_err(|error| JsValue::from_str(&format!("target connector mesh failed: {error:?}")))?;
-    let mut connection_line = None;
-    if connected {
-        let preview = scene
-            .connect(
-                ConnectorFrame::new(source, Transform::at(Vec3::new(0.14, 0.0, 0.0)))
-                    .named("source-face"),
-                ConnectorFrame::new(target, Transform::at(Vec3::new(-0.14, 0.0, 0.0)))
-                    .named("target-face"),
-                ConnectOptions::default(),
-            )
-            .map_err(|error| JsValue::from_str(&format!("connector solve failed: {error:?}")))?;
-        connection_line = Some(preview.connection_line());
-    }
-    let camera = add_default_camera(&mut scene)?;
-    Ok(WorkflowScene {
-        assets,
-        scene,
-        camera,
-        metadata: json!({
-            "connected": connected,
-            "connection_line": connection_line.map(|line| json!({
-                "start": [line.start().x, line.start().y, line.start().z],
-                "end": [line.end().x, line.end().y, line.end().z],
-            })),
-        }),
     })
 }
 

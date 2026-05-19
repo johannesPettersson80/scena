@@ -32,6 +32,10 @@ All notable user-facing changes are recorded here.
   `Scene::preview_connector_magnet`, `ConnectionMagnetPreview`, and
   `ConnectionMagnetVisualCue`.
 
+- Added M6 browser proof for connector magnet previews, covering
+  out-of-range and snap-ready visual cue metadata plus visible rendered
+  pixels.
+
 ### Changed
 
 - Updated the browser demo showcase so connector mating is the default first

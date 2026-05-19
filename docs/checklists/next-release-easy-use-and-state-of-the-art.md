@@ -943,14 +943,21 @@ scena could own a distinct Rust / digital-twin workflow if implemented
 with proof and a clean public surface.
 
 - **Connector "magnet" snapping with visual cues.** Status:
-  **[proof-gap]** — library-level magnetic preview is shipped. Owner:
+  **[shipped]** for the library-level magnetic preview and browser
+  rendered cue proof. Owner:
   `src/scene/connectors/`. `Scene::preview_connector_magnet` reuses the
   existing connection solver and returns `ConnectionMagnetPreview` with
   distance, tolerance, ghost transform, connection line, and
   `ConnectionMagnetVisualCue` styling (`scena-magnet-ready` /
-  `scena-magnet-out-of-range`). Remaining proof: animated browser demo
-  of drag-to-assemble ghost + green outline behavior.
-  Visual proof: animated-proof + browser-demo (recording shows ghost + green outline as a part approaches a valid mate within tolerance)
+  `scena-magnet-out-of-range`). The M6 browser workflow
+  `connector-magnet-preview` renders both the out-of-range and snap-ready
+  states, records the measured distance/tolerance sequence, and asserts
+  visible browser pixels through `assertConnectorMagnetPreviewProof`.
+  Literal pointer-driven drag interaction remains part of the broader
+  `<scena-viewer>` renderer parity bet.
+  Visual proof: browser-demo + reference-image via
+  `target/gate-artifacts/m6-rust-wasm-renderer-probe.json`
+  (`connector-magnet-preview` workflow with `magnet_sequence`).
 - **CPU rasterizer fallback for no-GPU screenshots.** Status:
   **[shipped]**. Owner: `src/viewer/capture.rs`.
   `HeadlessGltfViewerBuilder::render_png_bytes()` and native
@@ -1561,9 +1568,14 @@ Connector magnet preview pass (2026-05-19):
 - The magnet path reuses the existing connector validation and
   `preview_connection` solver, then reports distance against the
   connector-authored snap tolerance and exposes stable CSS cue names.
-- Reclassified connector magnet snapping from gap to proof gap: the
-  library contract is shipped and source-enforced; animated browser
-  drag-to-assemble proof remains open.
+- Added the M6 `connector-magnet-preview` browser workflow and
+  `assertConnectorMagnetPreviewProof`, which render out-of-range and
+  snap-ready states, record the measured distance/tolerance sequence, and
+  fail if the cue metadata or visible pixels disappear.
+- Reclassified connector magnet snapping from proof gap to shipped for
+  the library contract plus generated browser proof. Literal
+  pointer-driven drag interaction remains scoped to the broader
+  `<scena-viewer>` parity bet.
 
 Asset-validation doctor implementation pass (2026-05-19):
 
