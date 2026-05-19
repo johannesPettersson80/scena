@@ -31,12 +31,12 @@ pub use assets::FileAssetFetcher;
 pub use assets::{
     AssetEvictionStats, AssetFetcher, AssetLoadControl, AssetLoadOptions, AssetLoadProgress,
     AssetLoadReport, AssetLoadWarning, AssetPath, AssetStoreId, Assets, DefaultAssetFetcher,
-    EnvironmentDerivative, EnvironmentDesc, EnvironmentHandle, EnvironmentSourceKind,
-    GeometryHandle, GltfDecoderPolicy, GltfExtensionDiagnostic, GltfExtensionStatus,
-    MaterialHandle, MaterialVariantBinding, ModelHandle, RetainPolicy, SceneAsset,
-    SceneAssetAnchor, SceneAssetClip, SceneAssetLight, SceneAssetMesh, SceneAssetNode, TextureDesc,
-    TextureFilter, TextureHandle, TextureSamplerDesc, TextureSourceFormat, TextureWrap,
-    WasmEnvironmentDelivery,
+    EnvironmentDerivative, EnvironmentDesc, EnvironmentHandle, EnvironmentPreset,
+    EnvironmentPresetMetadata, EnvironmentSourceKind, GeometryHandle, GltfDecoderPolicy,
+    GltfExtensionDiagnostic, GltfExtensionStatus, MaterialHandle, MaterialVariantBinding,
+    ModelHandle, RetainPolicy, SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetLight,
+    SceneAssetMesh, SceneAssetNode, TextureDesc, TextureFilter, TextureHandle, TextureSamplerDesc,
+    TextureSourceFormat, TextureWrap, WasmEnvironmentDelivery,
 };
 #[cfg(all(feature = "hot-reload", not(target_arch = "wasm32")))]
 pub use assets::{AssetHotReloadError, AssetHotReloadWatcher};

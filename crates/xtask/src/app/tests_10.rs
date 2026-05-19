@@ -148,7 +148,7 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     }
     fs::write(
         fixture_root.join("docs/guides/easy-scene-setup.md"),
-        "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```",
+        "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() EnvironmentPreset::Studio load_environment_preset EnvironmentPreset::ALL KTX2 cubemap presets are still future work khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```",
     )
     .expect("guide fixture");
     fs::write(
@@ -197,21 +197,26 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
         "pub struct CameraOrbitUrlState #[derive(Serialize, Deserialize)] pub enum CameraOrbitUrlStateError from_url_query to_query_string camera-orbit camera-target urlencoding::encode urlencoding::decode",
     )
     .expect("controls url state fixture");
-    fs::write(
-        fixture_root.join("src/assets.rs"),
-        "mod hot_reload; mod khronos; pub use hot_reload::{AssetHotReloadError, AssetHotReloadWatcher}; pub use khronos::{KhronosSample, KhronosSampleMetadata, KhronosSamples};",
-    )
-    .expect("assets fixture");
-    fs::write(
-        fixture_root.join("src/assets/khronos.rs"),
-        "pub enum KhronosSample {} pub const ALL: &[KhronosSample] = &[]; PACKAGE_SIZE_BUDGET_BYTES pub fn khronos(&self) {} pub async fn water_bottle() {} pub async fn transmission_test() {} pub async fn rigged_simple() {} primary_sha256 license_reference",
-    )
-    .expect("khronos samples fixture");
-    fs::write(
-        fixture_root.join("src/assets/hot_reload.rs"),
-        "use notify_debouncer_full::{new_debouncer, DebounceEventResult}; use notify_debouncer_full::notify::RecursiveMode; pub struct AssetHotReloadWatcher; pub enum AssetHotReloadError {} fn watch_scene_for_hot_reload() { new_debouncer; RecursiveMode::NonRecursive; } fn drain_changed_scenes() {}",
-    )
-    .expect("asset hot reload fixture");
+    for (path, text) in [
+        (
+            "src/assets.rs",
+            "mod environment_preset; mod hot_reload; mod khronos; pub use environment_preset::{EnvironmentPreset, EnvironmentPresetMetadata}; pub use hot_reload::{AssetHotReloadError, AssetHotReloadWatcher}; pub use khronos::{KhronosSample, KhronosSampleMetadata, KhronosSamples};",
+        ),
+        (
+            "src/assets/environment_preset.rs",
+            "pub enum EnvironmentPreset { NeutralStudio, Studio } pub struct EnvironmentPresetMetadata pub const ALL: &[EnvironmentPreset] = &[]; PACKAGE_SIZE_BUDGET_BYTES pub async fn load_environment_preset() {} source_sha256 source_url license environment-preset-reference-docs-image.ppm",
+        ),
+        (
+            "src/assets/khronos.rs",
+            "pub enum KhronosSample {} pub const ALL: &[KhronosSample] = &[]; PACKAGE_SIZE_BUDGET_BYTES pub fn khronos(&self) {} pub async fn water_bottle() {} pub async fn transmission_test() {} pub async fn rigged_simple() {} primary_sha256 license_reference",
+        ),
+        (
+            "src/assets/hot_reload.rs",
+            "use notify_debouncer_full::{new_debouncer, DebounceEventResult}; use notify_debouncer_full::notify::RecursiveMode; pub struct AssetHotReloadWatcher; pub enum AssetHotReloadError {} fn watch_scene_for_hot_reload() { new_debouncer; RecursiveMode::NonRecursive; } fn drain_changed_scenes() {}",
+        ),
+    ] {
+        fs::write(fixture_root.join(path), text).expect("asset fixture");
+    }
     fs::write(
         fixture_root.join("src/viewer.rs"),
         "mod capture; mod interaction; pub use capture::ViewerCaptureError; click_callback: Option<ViewerPickCallback> hover_callback: Option<ViewerPickCallback>",
@@ -264,7 +269,7 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     .expect("animation example fixture");
     fs::write(
         fixture_root.join("src/lib.rs"),
-        "ViewerCaptureError AssetHotReloadError AssetHotReloadWatcher CameraOrbitUrlState CameraOrbitUrlStateError KhronosSample KhronosSampleMetadata KhronosSamples",
+        "ViewerCaptureError AssetHotReloadError AssetHotReloadWatcher CameraOrbitUrlState CameraOrbitUrlStateError EnvironmentPreset EnvironmentPresetMetadata KhronosSample KhronosSampleMetadata KhronosSamples",
     )
     .expect("lib fixture");
     fs::write(fixture_root.join("src/geometry.rs"), "").expect("geometry fixture");
@@ -361,6 +366,10 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
         (
             "tests/round_c_khronos_samples.rs",
             "khronos_sample_catalog_exposes_manifest_metadata_and_package_budget khronos_sample_loader_loads_every_catalog_entry_without_user_paths khronos_sample_loader_has_named_shortcuts_for_headline_assets khronos_sample_loader_renders_rigged_sample_reference_artifact rigged-simple-sample-loader-reference.ppm",
+        ),
+        (
+            "tests/round_c_environment_presets.rs",
+            "environment_preset_catalog_exposes_metadata_and_package_budget environment_presets_load_without_user_supplied_paths environment_presets_render_reference_contact_sheet environment-preset-reference-docs-image.ppm",
         ),
         (
             "tests/round_d_viewer_url_state.rs",
@@ -640,39 +649,5 @@ pub(crate) fn doctor_rejects_m5_release_cargo_missing_metadata_regression() {
             .any(|finding| finding.rule == "ARCH-M5-RELEASE"),
         "doctor must reject Cargo.toml stubs that drop the v1 release-metadata \
          surface: {findings:?}",
-    );
-}
-
-#[test]
-pub(crate) fn doctor_rejects_visual_browser_m1_missing_artifact_regression() {
-    // VISUAL-BROWSER-M1: each browser-probe workflow must declare its
-    // visual artifact under `target/gate-artifacts/m6-browser-visual/`
-    // with a renderer/color/tolerance/source contract; absence regresses
-    // the M6 browser parity gate.
-    let root = repo_root().expect("test runs inside the scena workspace");
-    let fixture_root = root.join("target/xtask-doctor-regressions/visual-browser-m1-stub");
-    let stub_path = fixture_root.join("src/browser_probe/workflows/pbr.rs");
-    fs::create_dir_all(stub_path.parent().expect("workflow parent")).expect("fixture dir");
-    fs::write(
-        &stub_path,
-        "// Stub workflow without the visual-artifact declarations.\n",
-    )
-    .expect("workflow fixture");
-    let mut findings = Vec::new();
-
-    require_contains(
-        &fixture_root,
-        &mut findings,
-        "VISUAL-BROWSER-M1",
-        "src/browser_probe/workflows/pbr.rs",
-        &["pbr-environment-lit", "renderer", "tolerance"],
-    );
-
-    assert!(
-        findings
-            .iter()
-            .any(|finding| finding.rule == "VISUAL-BROWSER-M1"),
-        "doctor must reject browser-probe workflows that drop their visual \
-         artifact declarations: {findings:?}",
     );
 }

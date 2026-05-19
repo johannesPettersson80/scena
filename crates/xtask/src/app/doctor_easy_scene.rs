@@ -1,5 +1,6 @@
 use crate::app::prelude::*;
 
+mod environment_presets;
 mod khronos_samples;
 mod next_release;
 mod state_url;
@@ -165,6 +166,7 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
     next_release::check_named_light_presets(root, findings);
     next_release::check_honest_material_presets(root, findings);
     next_release::check_named_background_presets(root, findings);
+    environment_presets::check_environment_presets(root, findings);
     next_release::check_named_orbit_control_presets(root, findings);
     next_release::check_named_auto_exposure_presets(root, findings);
     next_release::check_one_call_animation_playback(root, findings);

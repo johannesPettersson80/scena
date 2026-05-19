@@ -121,7 +121,7 @@ pub(crate) fn easy_scene_setup_contracts_reject_round_a_raw_color_literals_in_fi
     );
 }
 
-const VALID_GUIDE: &str = "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```";
+const VALID_GUIDE: &str = "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() EnvironmentPreset::Studio load_environment_preset EnvironmentPreset::ALL KTX2 cubemap presets are still future work khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```";
 
 fn write_easy_scene_fixture(
     fixture_root: &Path,
@@ -197,9 +197,14 @@ fn write_easy_scene_fixture(
     .expect("controls url state fixture");
     fs::write(
         fixture_root.join("src/assets.rs"),
-        "mod hot_reload; mod khronos; pub use hot_reload::{AssetHotReloadError, AssetHotReloadWatcher}; pub use khronos::{KhronosSample, KhronosSampleMetadata, KhronosSamples};",
+        "mod environment_preset; mod hot_reload; mod khronos; pub use environment_preset::{EnvironmentPreset, EnvironmentPresetMetadata}; pub use hot_reload::{AssetHotReloadError, AssetHotReloadWatcher}; pub use khronos::{KhronosSample, KhronosSampleMetadata, KhronosSamples};",
     )
     .expect("assets fixture");
+    fs::write(
+        fixture_root.join("src/assets/environment_preset.rs"),
+        "pub enum EnvironmentPreset { NeutralStudio, Studio } pub struct EnvironmentPresetMetadata pub const ALL: &[EnvironmentPreset] = &[]; PACKAGE_SIZE_BUDGET_BYTES pub async fn load_environment_preset() {} source_sha256 source_url license environment-preset-reference-docs-image.ppm",
+    )
+    .expect("environment preset fixture");
     fs::write(
         fixture_root.join("src/assets/khronos.rs"),
         "pub enum KhronosSample {} pub const ALL: &[KhronosSample] = &[]; PACKAGE_SIZE_BUDGET_BYTES pub fn khronos(&self) {} pub async fn water_bottle() {} pub async fn transmission_test() {} pub async fn rigged_simple() {} primary_sha256 license_reference",
@@ -366,13 +371,18 @@ fn write_easy_scene_fixture(
     )
     .expect("khronos sample test fixture");
     fs::write(
+        fixture_root.join("tests/round_c_environment_presets.rs"),
+        "environment_preset_catalog_exposes_metadata_and_package_budget environment_presets_load_without_user_supplied_paths environment_presets_render_reference_contact_sheet environment-preset-reference-docs-image.ppm",
+    )
+    .expect("environment preset test fixture");
+    fs::write(
         fixture_root.join("tests/round_d_viewer_url_state.rs"),
         "camera_orbit_url_state_round_trips_orbit_controls camera_orbit_url_state_accepts_compact_checklist_query_shape camera_orbit_url_state_omits_asset_urls_and_secrets framing_outcome_exports_camera_orbit_url_state",
     )
     .expect("url state test fixture");
     fs::write(
         fixture_root.join("src/lib.rs"),
-        "ViewerCaptureError AssetHotReloadError AssetHotReloadWatcher CameraOrbitUrlState CameraOrbitUrlStateError KhronosSample KhronosSampleMetadata KhronosSamples",
+        "ViewerCaptureError AssetHotReloadError AssetHotReloadWatcher CameraOrbitUrlState CameraOrbitUrlStateError EnvironmentPreset EnvironmentPresetMetadata KhronosSample KhronosSampleMetadata KhronosSamples",
     )
     .expect("lib fixture");
     fs::write(fixture_root.join("src/geometry.rs"), "").expect("geometry fixture");

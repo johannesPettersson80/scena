@@ -12,6 +12,7 @@ use crate::material::{Color, MaterialDesc, TextureColorSpace};
 use crate::scene::Transform;
 
 mod environment;
+mod environment_preset;
 mod environment_projection;
 mod fetch;
 mod gc;
@@ -30,6 +31,7 @@ pub use environment::{
     EnvironmentCubemapFaces, EnvironmentDerivative, EnvironmentDesc, EnvironmentSourceKind,
     WasmEnvironmentDelivery,
 };
+pub use environment_preset::{EnvironmentPreset, EnvironmentPresetMetadata};
 #[cfg(target_arch = "wasm32")]
 pub use fetch::BrowserAssetFetcher;
 #[cfg(not(target_arch = "wasm32"))]

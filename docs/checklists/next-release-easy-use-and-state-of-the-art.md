@@ -754,16 +754,20 @@ Visual proof: none (URL serialization is text spec)
 Cross-cutting features that delight users; each corresponds to a
 specific competitor primitive.
 
-- **Bundled studio environments as a Rust enum.** Status: **[gap]**.
-  Owner: `src/assets/environment_preset.rs`. Ship a small manifest of
-  curated KTX2 cubemaps with license/checksum metadata; embed only if
-  package-size evidence says it is acceptable, otherwise use checked
-  download/cache. Proof: rendered reference per preset plus package-size
-  budget.
-  Visual proof: reference-image + docs-image + browser-demo (per-environment reference on the same subject; tutorial picker; demo page environment selector)
+- **Bundled studio environments as a Rust enum.** Status: **[shipped]**
+  for the checked HDR/fixture catalog; KTX2 cubemap presets remain future
+  work because the environment loader does not yet own a KTX2 cubemap
+  decode path. Owner: `src/assets/environment_preset.rs`. The shipped
+  `EnvironmentPreset` catalog exposes `NeutralStudio` and `Studio` with
+  license/checksum/file-list/source metadata and a package-size budget.
+  Proof: `tests/round_c_environment_presets.rs` loads each preset without
+  user-supplied paths and writes
+  `target/gate-artifacts/environment-presets/environment-preset-reference-docs-image.ppm`.
+  Visual proof: reference-image + docs-image shipped for the checked catalog; browser-demo and KTX2 cubemap preset grid remain follow-up proof work.
   ```rust
-  scene.set_environment(Environment::Studio)?;
-  // variants: Studio, Apartment, City, Sunset, Warehouse, Park, Dawn, Lobby
+  let environment = assets.load_environment_preset(EnvironmentPreset::Studio).await?;
+  renderer.set_environment(environment);
+  // checked variants today: NeutralStudio, Studio
   ```
 - **Camera control kit.** Status: **[gap]**. Owner: `src/controls.rs`.
   Minimum: Orbit, Turntable/Presentation, Follow, Fly. Proof: browser
@@ -885,7 +889,7 @@ the rounds, not after — they're the strategic arc.
 
 ### Round C — bundled content + feature shortcuts
 
-8. - [ ] `Environment::*` curated KTX2 environment presets (§5)
+8. - [x] `EnvironmentPreset::*` checked environment presets (§5)
 9. - [x] `Assets::khronos::*` sample loaders (§4.1)
 10. - [x] `AutoExposureConfig` scenario presets (§2.9)
 11. - [x] Scene / Viewer one-call animation playback by clip name (§4.4)
@@ -1106,6 +1110,19 @@ Khronos sample-loader implementation pass (2026-05-19):
   `target/gate-artifacts/khronos-samples/rigged-simple-sample-loader-reference.ppm`.
   `DamagedHelmet` and `DragonAttenuation` remain intentionally unclaimed
   until those exact fixtures are vendored or fetched through a checked cache.
+
+Environment preset implementation pass (2026-05-19):
+
+- Landed the public `EnvironmentPreset` catalog and
+  `Assets::load_environment_preset` in `src/assets/environment_preset.rs`.
+  The current catalog is deliberately limited to checked environment inputs
+  the renderer can already load: the neutral studio fixture and Poly Haven
+  `studio_small_03` HDR. KTX2 cubemap presets remain unclaimed until the
+  environment loader owns that decode path.
+- Proof is pinned by `tests/round_c_environment_presets.rs`, including
+  metadata/package-budget checks, all-preset load coverage, and generated
+  reference artifact
+  `target/gate-artifacts/environment-presets/environment-preset-reference-docs-image.ppm`.
 
 Ease-of-use implementation continuation (2026-05-19):
 

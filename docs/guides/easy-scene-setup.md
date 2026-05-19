@@ -241,6 +241,25 @@ for path in watcher.drain_changed_scenes()? {
 }
 ```
 
+## Environment presets
+
+Use `EnvironmentPreset` when examples, product viewers, or screenshots need a
+named environment without hard-coding asset paths. The current preset catalog
+uses the checked neutral fixture and a bundled Poly Haven studio HDR with
+license, checksum, file-list, and package-size metadata.
+
+```rust
+let environment = assets
+    .load_environment_preset(EnvironmentPreset::Studio)
+    .await?;
+renderer.set_environment(environment);
+```
+
+Use `EnvironmentPreset::ALL` when compatibility proof should render every
+checked preset. KTX2 cubemap presets are still future work; the shipped catalog
+is intentionally limited to the environment formats the renderer can load
+today.
+
 ## Khronos sample assets
 
 Enable the `khronos-samples` feature when examples, tests, or demos need
