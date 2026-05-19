@@ -56,6 +56,13 @@ updates the visible status text, ARIA progress state, and emits
 `scena-viewer-progress-rendered` after the UI changes. Asset loading, rendering,
 drag/drop, and annotation overlays build on this surface in follow-up slices.
 
+The element handles browser drag-and-drop ingestion for `.glb` and `.gltf`
+files. Valid drops emit `scena-viewer-file-drop` with the accepted `File`
+objects and names. Invalid or mixed drops emit `scena-viewer-drop-error` with
+rejected names and a user-facing message. The custom element owns validation
+and browser events; renderer loading and visual proof are still explicit
+follow-up work.
+
 ## Browser responsibilities
 
 The browser host owns:

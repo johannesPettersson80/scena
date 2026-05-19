@@ -754,11 +754,16 @@ rendering without rebuilding the scene by hand.
 
 ### 4.8 Drag-and-drop in the WASM viewer
 
-Status: **[gap]**
+Status: **[proof-gap]** — `<scena-viewer>` now owns the browser
+drag/drop ingestion surface and validates dropped `.glb` / `.gltf`
+filenames through `ScenaViewerDropDecision`; full render-after-drop proof
+is still missing.
 Owner: `<scena-viewer>` (bet 1.1).
-Proof: Playwright test drops GLB/glTF files onto the custom element,
-renders the result, and surfaces structured validation errors for rejected
-files.
+Proof: native drop-decision test in `tests/scena_viewer_element.rs`;
+custom element dispatches `scena-viewer-file-drop` for accepted `File`
+objects and `scena-viewer-drop-error` for rejected drops. Remaining proof:
+Playwright test drops GLB/glTF files onto the custom element, renders the
+result, and surfaces structured validation errors for rejected files.
 Visual proof: animated-proof + browser-demo (recording shows drag-drop ingestion; the cloudflare demo accepts dropped files)
 
 ### 4.9 State-via-URL serializer
@@ -1350,6 +1355,17 @@ Picking/outline/hover reconciliation pass (2026-05-19):
 - Reclassified loading progress from ergonomic gap to proof gap: the UI
   surface is shipped and source-enforced; a throttled browser recording is
   still required as visual proof.
+
+`<scena-viewer>` drag/drop ingestion pass (2026-05-19):
+
+- Added `ScenaViewerDropDecision`, `ScenaViewerDropKind`, and
+  `ScenaViewerDroppedFile` so supported dropped asset names are validated
+  without duplicating string checks in every host.
+- Extended the custom element with dragover/drop handling and structured
+  `scena-viewer-file-drop` / `scena-viewer-drop-error` events.
+- Reclassified WASM drag-and-drop from gap to proof gap: ingestion and
+  validation are shipped and source-enforced; render-after-drop browser
+  proof remains open.
 
 Asset-validation doctor implementation pass (2026-05-19):
 

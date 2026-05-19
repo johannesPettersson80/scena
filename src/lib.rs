@@ -104,7 +104,8 @@ pub use viewer::{
 #[cfg(all(target_arch = "wasm32", feature = "viewer-element"))]
 pub use viewer_element::define_scena_viewer;
 pub use viewer_element::{
-    SCENA_VIEWER_TAG, ScenaViewerAttributes, ScenaViewerProgress, ScenaViewerProgressPhase,
+    SCENA_VIEWER_TAG, ScenaViewerAttributes, ScenaViewerDropDecision, ScenaViewerDropKind,
+    ScenaViewerDroppedFile, ScenaViewerProgress, ScenaViewerProgressPhase,
 };
 
 /// Crate-level result type for APIs that can return any structured `scena` error.

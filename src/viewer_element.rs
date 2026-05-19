@@ -21,6 +21,24 @@ pub struct ScenaViewerAttributes {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScenaViewerDropKind {
+    Glb,
+    Gltf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScenaViewerDroppedFile {
+    name: String,
+    kind: ScenaViewerDropKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ScenaViewerDropDecision {
+    accepted: Vec<ScenaViewerDroppedFile>,
+    rejected: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScenaViewerProgressPhase {
     Idle,
     Loading,
@@ -105,6 +123,98 @@ impl ScenaViewerAttributes {
 
     pub const fn ar(&self) -> bool {
         self.ar
+    }
+}
+
+impl ScenaViewerDropDecision {
+    pub fn from_file_names<I, N>(names: I) -> Self
+    where
+        I: IntoIterator<Item = N>,
+        N: AsRef<str>,
+    {
+        let mut decision = Self::default();
+        for name in names {
+            let trimmed = name.as_ref().trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            match ScenaViewerDropKind::from_file_name(trimmed) {
+                Some(kind) => decision.accepted.push(ScenaViewerDroppedFile {
+                    name: trimmed.to_string(),
+                    kind,
+                }),
+                None => decision.rejected.push(trimmed.to_string()),
+            }
+        }
+        decision
+    }
+
+    pub fn accepted(&self) -> &[ScenaViewerDroppedFile] {
+        &self.accepted
+    }
+
+    pub fn rejected(&self) -> &[String] {
+        &self.rejected
+    }
+
+    pub fn has_accepted_files(&self) -> bool {
+        !self.accepted.is_empty()
+    }
+
+    pub fn has_rejections(&self) -> bool {
+        !self.rejected.is_empty()
+    }
+
+    pub fn status_text(&self) -> String {
+        match (self.accepted.len(), self.rejected.is_empty()) {
+            (0, true) => "Drop a .glb or .gltf file".to_string(),
+            (0, false) => format!(
+                "Rejected {}; expected .glb or .gltf",
+                self.rejected.join(", ")
+            ),
+            (1, true) => "Accepted 1 glTF file".to_string(),
+            (count, true) => format!("Accepted {count} glTF files"),
+            (1, false) => format!(
+                "Accepted 1 glTF file; rejected {}",
+                self.rejected.join(", ")
+            ),
+            (count, false) => {
+                format!(
+                    "Accepted {count} glTF files; rejected {}",
+                    self.rejected.join(", ")
+                )
+            }
+        }
+    }
+}
+
+impl ScenaViewerDroppedFile {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn kind(&self) -> ScenaViewerDropKind {
+        self.kind
+    }
+}
+
+impl ScenaViewerDropKind {
+    pub fn from_file_name(name: &str) -> Option<Self> {
+        let lower = name.trim().to_ascii_lowercase();
+        if lower.ends_with(".glb") {
+            Some(Self::Glb)
+        } else if lower.ends_with(".gltf") {
+            Some(Self::Gltf)
+        } else {
+            None
+        }
+    }
+
+    pub const fn extension(self) -> &'static str {
+        match self {
+            Self::Glb => "glb",
+            Self::Gltf => "gltf",
+        }
     }
 }
 
@@ -301,6 +411,12 @@ export function defineScenaViewerElement(tagName) {
       this.addEventListener("scena-viewer-progress", (event) => {
         this.setLoadProgress(event.detail || {});
       });
+      this.addEventListener("dragenter", (event) => this._handleDragOver(event));
+      this.addEventListener("dragover", (event) => this._handleDragOver(event));
+      this.addEventListener("dragleave", () => {
+        delete this.dataset.drag;
+      });
+      this.addEventListener("drop", (event) => this._handleDrop(event));
     }
 
     connectedCallback() {
@@ -346,6 +462,49 @@ export function defineScenaViewerElement(tagName) {
         bubbles: true,
         detail: { phase, text, complete }
       }));
+    }
+
+    _handleDragOver(event) {
+      event.preventDefault();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = "copy";
+      }
+      this.dataset.drag = "over";
+    }
+
+    _handleDrop(event) {
+      event.preventDefault();
+      delete this.dataset.drag;
+      const files = Array.from(event.dataTransfer?.files || []);
+      const accepted = [];
+      const rejected = [];
+      for (const file of files) {
+        if (this._isSupportedAssetFile(file.name)) {
+          accepted.push(file);
+        } else {
+          rejected.push(file.name || "unnamed file");
+        }
+      }
+      const acceptedNames = accepted.map((file) => file.name);
+      if (accepted.length > 0) {
+        this.dispatchEvent(new CustomEvent("scena-viewer-file-drop", {
+          bubbles: true,
+          detail: { files: accepted, names: acceptedNames, rejectedNames: rejected }
+        }));
+      }
+      if (accepted.length === 0 || rejected.length > 0) {
+        const message = accepted.length === 0
+          ? "Drop a .glb or .gltf file"
+          : `Rejected ${rejected.join(", ")}`;
+        this.dispatchEvent(new CustomEvent("scena-viewer-drop-error", {
+          bubbles: true,
+          detail: { names: rejected, acceptedNames, message }
+        }));
+      }
+    }
+
+    _isSupportedAssetFile(name) {
+      return /\.(glb|gltf)$/i.test(String(name || ""));
     }
 
     _booleanAttribute(name) {
