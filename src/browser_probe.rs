@@ -11,9 +11,9 @@ use web_sys::HtmlCanvasElement;
 use workflows::{build_workflow_scene, scene_with_triangle};
 
 use crate::{
-    Assets, Backend, CameraKey, EnvironmentHandle, FlyControls, FollowControls, OrbitControlAction,
-    OrbitControls, PerspectiveCamera, PixelReadback, PlatformSurface, PointerEvent, Renderer,
-    Scene, Transform, Vec3,
+    AssetError, AssetFetcher, AssetPath, Assets, Backend, CameraKey, EnvironmentHandle,
+    FlyControls, FollowControls, OrbitControlAction, OrbitControls, PerspectiveCamera,
+    PixelReadback, PlatformSurface, PointerEvent, Renderer, Scene, SceneAsset, Transform, Vec3,
 };
 
 #[wasm_bindgen(js_name = m6RenderWebgl2Probe)]
@@ -34,6 +34,17 @@ pub async fn m6_render_workflow_probe(
 ) -> Result<String, JsValue> {
     let backend = parse_browser_backend(&backend)?;
     render_workflow_probe(canvas, backend, &workflow).await
+}
+
+#[wasm_bindgen(js_name = m6RenderDroppedFileProbe)]
+pub async fn m6_render_dropped_file_probe(
+    canvas: HtmlCanvasElement,
+    backend: String,
+    bytes: Box<[u8]>,
+    file_name: String,
+) -> Result<String, JsValue> {
+    let backend = parse_browser_backend(&backend)?;
+    render_dropped_file_probe(canvas, backend, &bytes, &file_name).await
 }
 
 #[wasm_bindgen(js_name = m6RenderSurfaceLifecycleProbe)]
@@ -201,11 +212,103 @@ async fn render_workflow_probe(
     .await
 }
 
-async fn render_scene(
+async fn render_dropped_file_probe(
+    canvas: HtmlCanvasElement,
+    backend: Backend,
+    bytes: &[u8],
+    file_name: &str,
+) -> Result<String, JsValue> {
+    let dropped_path = AssetPath::from(format!("memory:dropped/{file_name}"));
+    let assets = Assets::with_fetcher(DroppedFileFetcher {
+        path: dropped_path.clone(),
+        bytes: bytes.to_vec(),
+    });
+    let scene_asset = load_scene_asset_from_bytes(&assets, dropped_path.clone()).await?;
+    let mut scene = Scene::new();
+    let import = scene.instantiate(&scene_asset).map_err(|error| {
+        JsValue::from_str(&format!("dropped file instantiate failed: {error:?}"))
+    })?;
+    let roots = import.roots().len();
+    let bounds = import.bounds_world(&scene);
+    let camera = if let Some(bounds) = bounds {
+        scene
+            .add_perspective_camera_default_for(
+                bounds,
+                (canvas.width().max(1), canvas.height().max(1)),
+            )
+            .map_err(|error| JsValue::from_str(&format!("dropped file frame failed: {error:?}")))?
+    } else {
+        let camera = scene
+            .add_perspective_camera(
+                scene.root(),
+                PerspectiveCamera::standard(),
+                Transform::at(Vec3::new(0.0, 0.0, 2.0)),
+            )
+            .map_err(|error| {
+                JsValue::from_str(&format!("dropped file camera failed: {error:?}"))
+            })?;
+        scene.set_active_camera(camera).map_err(|error| {
+            JsValue::from_str(&format!("dropped file active camera failed: {error:?}"))
+        })?;
+        camera
+    };
+    scene
+        .add_studio_lighting()
+        .map_err(|error| JsValue::from_str(&format!("dropped file lighting failed: {error:?}")))?;
+    render_scene(
+        canvas,
+        backend,
+        "scena-viewer-drop-render",
+        &assets,
+        &mut scene,
+        camera,
+        json!({
+            "proof_class": "scena-viewer-drop-render",
+            "file_name": file_name,
+            "dropped_bytes": bytes.len(),
+            "roots": roots,
+            "framed": bounds.is_some(),
+        }),
+        None,
+    )
+    .await
+}
+
+async fn load_scene_asset_from_bytes(
+    assets: &Assets<DroppedFileFetcher>,
+    path: AssetPath,
+) -> Result<SceneAsset, JsValue> {
+    assets
+        .load_scene(path)
+        .await
+        .map_err(|error| JsValue::from_str(&format!("dropped file load_scene failed: {error:?}")))
+}
+
+#[derive(Debug, Clone)]
+struct DroppedFileFetcher {
+    path: AssetPath,
+    bytes: Vec<u8>,
+}
+
+impl AssetFetcher for DroppedFileFetcher {
+    type Future<'a> = std::future::Ready<Result<Vec<u8>, AssetError>>;
+
+    fn fetch<'a>(&'a self, path: &'a AssetPath) -> Self::Future<'a> {
+        if path.as_str() == self.path.as_str() {
+            std::future::ready(Ok(self.bytes.clone()))
+        } else {
+            std::future::ready(Err(AssetError::NotFound {
+                path: path.as_str().to_string(),
+            }))
+        }
+    }
+}
+
+async fn render_scene<F: AssetFetcher>(
     canvas: HtmlCanvasElement,
     backend: Backend,
     workflow: &str,
-    assets: &Assets,
+    assets: &Assets<F>,
     scene: &mut Scene,
     camera: crate::CameraKey,
     metadata: serde_json::Value,

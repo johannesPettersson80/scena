@@ -28,6 +28,10 @@ All notable user-facing changes are recorded here.
 - Added `<scena-viewer>` mobile gesture proof and host events for touch orbit,
   pinch zoom, wheel zoom, and keyboard reset handling.
 
+- Added `<scena-viewer>` drag/drop render-after-drop browser proof: accepted
+  GLB `File` bytes are loaded through the browser asset pipeline and rendered
+  into the element canvas.
+
 - Added connector magnet preview APIs for editor-style drag-to-assemble UIs:
   `Scene::preview_connector_magnet`, `ConnectionMagnetPreview`, and
   `ConnectionMagnetVisualCue`.

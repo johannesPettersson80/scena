@@ -756,21 +756,24 @@ rendering without rebuilding the scene by hand.
 
 ### 4.8 Drag-and-drop in the WASM viewer
 
-Status: **[proof-gap]** — `<scena-viewer>` now owns the browser
+Status: **[shipped]** — `<scena-viewer>` now owns the browser
 drag/drop ingestion surface, validates dropped `.glb` / `.gltf`
-filenames through `ScenaViewerDropDecision`, and has Playwright browser
-proof for accepted/rejected drop events. Full render-after-drop proof is
-still missing.
+filenames through `ScenaViewerDropDecision`, and has Playwright
+render-after-drop proof **[shipped]** for accepted/rejected drop events
+plus the rendered accepted result.
 Owner: `<scena-viewer>` (bet 1.1).
 Proof: native drop-decision test in `tests/scena_viewer_element.rs`;
 custom element dispatches `scena-viewer-file-drop` for accepted `File`
 objects and `scena-viewer-drop-error` for rejected drops. The focused M6
 browser proof writes
 `target/gate-artifacts/scena-viewer-element-browser-proof.png` and records
-`scena.scena_viewer_element_browser_proof.v1`. Remaining proof:
-Playwright test drops GLB/glTF files onto the custom element and renders
-the accepted result.
-Visual proof: animated-proof + browser-demo (recording shows drag-drop ingestion; the cloudflare demo accepts dropped files)
+`scena.scena_viewer_element_browser_proof.v1`; it drops a GLB `File`,
+loads the dropped bytes through the browser asset pipeline, renders the
+accepted result into the element canvas with proof class
+`scena-viewer-drop-render`, and asserts visible pixels.
+Visual proof: browser-demo shipped through the generated custom-element
+browser proof artifact. Animated recording remains optional polish for
+the public Cloudflare demo, not a blocker for the library contract.
 
 ### 4.9 State-via-URL serializer
 
@@ -1424,9 +1427,12 @@ Picking/outline/hover reconciliation pass (2026-05-19):
   without duplicating string checks in every host.
 - Extended the custom element with dragover/drop handling and structured
   `scena-viewer-file-drop` / `scena-viewer-drop-error` events.
-- Reclassified WASM drag-and-drop from gap to proof gap: ingestion and
-  validation are shipped and source-enforced; render-after-drop browser
-  proof remains open.
+- Added M6 render-after-drop proof: the Playwright fixture drops a GLB
+  `File`, passes the accepted bytes to `m6RenderDroppedFileProbe`, renders
+  the parsed asset into the `<scena-viewer>` canvas, and asserts visible
+  pixels under proof class `scena-viewer-drop-render`.
+- Reclassified WASM drag-and-drop from proof gap to shipped for
+  ingestion, validation, and render-after-drop browser proof.
 
 `<scena-viewer>` material-variant picker pass (2026-05-19):
 

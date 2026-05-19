@@ -68,8 +68,10 @@ The element handles browser drag-and-drop ingestion for `.glb` and `.gltf`
 files. Valid drops emit `scena-viewer-file-drop` with the accepted `File`
 objects and names. Invalid or mixed drops emit `scena-viewer-drop-error` with
 rejected names and a user-facing message. The custom element owns validation
-and browser events; renderer loading and render-after-drop proof remain
-explicit follow-up work.
+and browser events, and the M6 browser proof now renders the accepted dropped
+GLB bytes into the element canvas through the renderer-owned
+`scena-viewer-drop-render` proof path. This is the render-after-drop
+contract for the custom element.
 
 Hosts can expose material variants through the built-in material variant picker
 with `setMaterialVariants(variants, activeName)`. The picker accepts string

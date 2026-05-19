@@ -564,9 +564,14 @@ function assertScenaViewerElementProof(result) {
     !Array.isArray(checks.drop_accepted_names) ||
     !checks.drop_accepted_names.includes("accepted-machine.glb") ||
     !Array.isArray(checks.drop_rejected_names) ||
-    !checks.drop_rejected_names.includes("notes.txt")
+    !checks.drop_rejected_names.includes("notes.txt") ||
+    checks.drop_render_status !== "passed" ||
+    checks.drop_render_workflow !== "scena-viewer-drop-render" ||
+    checks.drop_render_file_name !== "accepted-machine.glb" ||
+    !(checks.drop_render_roots > 0) ||
+    !(checks.drop_render_pixels_nonblack > 0)
   ) {
-    throw new Error(`<scena-viewer> proof did not exercise drag/drop decisions: ${JSON.stringify(result)}`);
+    throw new Error(`<scena-viewer> proof did not exercise drag/drop render-after-drop: ${JSON.stringify(result)}`);
   }
 }
 

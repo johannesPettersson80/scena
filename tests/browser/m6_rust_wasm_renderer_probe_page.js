@@ -5,6 +5,7 @@ import init, {
   m6RenderSurfaceLifecycleProbe,
   m6RenderBenchmarkProbe,
   m6CameraControlKitProbe,
+  m6RenderDroppedFileProbe,
   m6RenderStateLifecycleProbe,
   m6RenderWorkflowProbe,
 } from "/pkg/scena.js";
@@ -41,8 +42,13 @@ function once(target, eventName) {
 }
 
 async function dispatchDrop(viewer) {
+  const response = await fetch("/fixtures/gltf/load_unit.glb");
+  if (!response.ok) {
+    throw new Error(`drop fixture load failed: ${response.status}`);
+  }
+  const droppedBytes = await response.arrayBuffer();
   const dataTransfer = new DataTransfer();
-  dataTransfer.items.add(new File(["{}"], "accepted-machine.glb", { type: "model/gltf-binary" }));
+  dataTransfer.items.add(new File([droppedBytes], "accepted-machine.glb", { type: "model/gltf-binary" }));
   dataTransfer.items.add(new File(["not a model"], "notes.txt", { type: "text/plain" }));
   const accepted = once(viewer, "scena-viewer-file-drop");
   const rejected = once(viewer, "scena-viewer-drop-error");
@@ -54,6 +60,32 @@ async function dispatchDrop(viewer) {
   return {
     accepted: await accepted,
     rejected: await rejected,
+  };
+}
+
+async function renderDroppedFileIntoViewer(viewer, backend, dropDetail) {
+  const droppedFile = dropDetail.accepted.files[0];
+  const bytes = new Uint8Array(await droppedFile.arrayBuffer());
+  viewer.canvas.width = 96;
+  viewer.canvas.height = 64;
+  const raw = await m6RenderDroppedFileProbe(viewer.canvas, backend, bytes, droppedFile.name);
+  const rendered = JSON.parse(raw);
+  const readback = await readRenderedPixelsWithRetry(backend, viewer.canvas, "scena-viewer-drop-render");
+  const rendererPixels =
+    rendered.renderer_readback && rendered.renderer_readback.pixel_statistics;
+  const pixels = rendererPixels && rendererPixels.nonblack > 0 ? rendererPixels : readback.pixels;
+  const passed =
+    rendered.workflow === "scena-viewer-drop-render" &&
+    rendered.draw_calls > 0 &&
+    rendered.gpu_submissions > 0 &&
+    pixels &&
+    pixels.nonblack > 0;
+  return {
+    ...rendered,
+    status: passed ? "passed" : "failed",
+    pixels,
+    pixel_source: rendererPixels && rendererPixels.nonblack > 0 ? "renderer-owned-gpu-copy" : "canvas-readback",
+    pixel_readback_attempts: readback.attempts,
   };
 }
 
@@ -141,6 +173,7 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
   viewer.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowLeft" }));
   const keyboardDetail = await keyboard;
   const dropDetail = await dispatchDrop(viewer);
+  const dropRender = await renderDroppedFileIntoViewer(viewer, "webgl2", dropDetail);
   await nextFrame();
 
   const checks = {
@@ -171,6 +204,11 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     drop_accepted_names: dropDetail.accepted.names,
     drop_rejected_names: dropDetail.rejected.names,
     drop_error_message: dropDetail.rejected.message,
+    drop_render_status: dropRender.status,
+    drop_render_workflow: dropRender.workflow,
+    drop_render_file_name: dropRender.metadata.file_name,
+    drop_render_roots: dropRender.metadata.roots,
+    drop_render_pixels_nonblack: dropRender.pixels.nonblack,
   };
 
   const passed =
@@ -208,7 +246,12 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     checks.keyboard_action === "orbit-left" &&
     checks.drop_accepted_names.includes("accepted-machine.glb") &&
     checks.drop_rejected_names.includes("notes.txt") &&
-    checks.drop_error_message.includes("notes.txt");
+    checks.drop_error_message.includes("notes.txt") &&
+    checks.drop_render_status === "passed" &&
+    checks.drop_render_workflow === "scena-viewer-drop-render" &&
+    checks.drop_render_file_name === "accepted-machine.glb" &&
+    checks.drop_render_roots > 0 &&
+    checks.drop_render_pixels_nonblack > 0;
 
   return {
     schema: "scena.scena_viewer_element_browser_proof.v1",
