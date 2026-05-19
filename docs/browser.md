@@ -58,9 +58,11 @@ The element also owns a shadow DOM progressbar. Hosts can
 dispatch a `scena-viewer-progress` event or call `setLoadProgress(detail)` with
 `phase`, `ariaText`, and optional `value` / `ratio` / `percent`; the element
 updates the visible status text, ARIA progress state, and emits
-`scena-viewer-progress-rendered` after the UI changes. Asset loading and
-rendering remain explicit host responsibilities until full renderer parity lands
-under the `<scena-viewer>` roadmap item.
+`scena-viewer-progress-rendered` after the UI changes. The browser proof
+records a `progress_sequence` by dispatching `loading` and `fetching` phases
+and asserting that the ARIA value and progressbar transform update between
+events. Asset loading and rendering remain explicit host responsibilities until
+full renderer parity lands under the `<scena-viewer>` roadmap item.
 
 The element handles browser drag-and-drop ingestion for `.glb` and `.gltf`
 files. Valid drops emit `scena-viewer-file-drop` with the accepted `File`

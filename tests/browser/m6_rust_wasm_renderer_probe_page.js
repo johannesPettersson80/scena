@@ -88,12 +88,25 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
   const canvas = root.querySelector("canvas");
   const progress = root.querySelector("[part=progress]");
   const progressBar = root.querySelector("[part=progress-bar]");
-  const progressRendered = once(viewer, "scena-viewer-progress-rendered");
-  viewer.dispatchEvent(new CustomEvent("scena-viewer-progress", {
-    bubbles: true,
-    detail: { phase: "fetching", value: 0.42, ariaText: "Fetching model" },
-  }));
-  const progressDetail = await progressRendered;
+  const progressSequence = [];
+  async function renderProgress(detail) {
+    const progressRendered = once(viewer, "scena-viewer-progress-rendered");
+    viewer.dispatchEvent(new CustomEvent("scena-viewer-progress", {
+      bubbles: true,
+      detail,
+    }));
+    const rendered = await progressRendered;
+    progressSequence.push({
+      phase: rendered.phase,
+      text: rendered.text,
+      valueNow: progress.getAttribute("aria-valuenow"),
+      barTransform: progressBar.style.transform,
+      hidden: progress.hidden,
+    });
+    return rendered;
+  }
+  await renderProgress({ phase: "loading", ariaText: "Loading model" });
+  const progressDetail = await renderProgress({ phase: "fetching", value: 0.42, ariaText: "Fetching model" });
 
   const variantsReady = once(viewer, "scena-viewer-variants-ready");
   viewer.setMaterialVariants([
@@ -142,6 +155,7 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     progress_phase: progressDetail.phase,
     progress_value_now: progress.getAttribute("aria-valuenow"),
     progress_bar_transform: progressBar.style.transform,
+    progress_sequence: progressSequence,
     variant_names: variantReadyDetail.names,
     variant_change: variantChangeDetail.name,
     annotation_count: annotationRequestDetail.anchors.length,
@@ -170,6 +184,14 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     checks.progress_phase === "fetching" &&
     checks.progress_value_now === "42" &&
     checks.progress_bar_transform === "scaleX(0.42)" &&
+    Array.isArray(checks.progress_sequence) &&
+    checks.progress_sequence.length === 2 &&
+    checks.progress_sequence[0].phase === "loading" &&
+    checks.progress_sequence[0].valueNow === null &&
+    checks.progress_sequence[0].barTransform === "scaleX(0.35)" &&
+    checks.progress_sequence[1].phase === "fetching" &&
+    checks.progress_sequence[1].valueNow === "42" &&
+    checks.progress_sequence[1].barTransform === "scaleX(0.42)" &&
     Array.isArray(checks.variant_names) &&
     checks.variant_names.includes("raw") &&
     checks.variant_names.includes("painted") &&

@@ -505,6 +505,17 @@ function assertScenaViewerElementProof(result) {
     }
   }
   if (
+    !Array.isArray(checks.progress_sequence) ||
+    checks.progress_sequence.length !== 2 ||
+    checks.progress_sequence[0].phase !== "loading" ||
+    checks.progress_sequence[0].valueNow !== null ||
+    checks.progress_sequence[1].phase !== "fetching" ||
+    checks.progress_sequence[1].valueNow !== "42" ||
+    checks.progress_sequence[1].barTransform !== "scaleX(0.42)"
+  ) {
+    throw new Error(`<scena-viewer> proof did not exercise progress phase sequencing: ${JSON.stringify(result)}`);
+  }
+  if (
     !Array.isArray(checks.annotation_tracking_sequence) ||
     checks.annotation_tracking_sequence.length !== 2 ||
     checks.annotation_tracking_sequence[0] === checks.annotation_tracking_sequence[1]

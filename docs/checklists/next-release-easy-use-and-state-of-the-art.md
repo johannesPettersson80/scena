@@ -878,8 +878,8 @@ specific competitor primitive.
   custom-element browser-demo proof for picker events shipped through
   `target/gate-artifacts/scena-viewer-element-browser-proof.png`; full
   picker-to-rendered-variant proof remains future custom-element work.
-- **Loading progress primitives.** Status: **[proof-gap]** overall;
-  Viewer primitive and `<scena-viewer>` progress UI surface **[shipped]**.
+- **Loading progress primitives.** Status: **[shipped]** for loader,
+  viewer, and `<scena-viewer>` progress sequencing.
   `AssetLoadProgress` exists in `src/lib.rs` and is now surfaced
   through `HeadlessGltfViewerBuilder::build_with_progress`,
   `HeadlessGltfViewerBuilder::render_with_progress`,
@@ -894,11 +894,12 @@ specific competitor primitive.
   decode, and cancellation paths; viewer progress tests in
   `tests/first_render_api.rs` and `tests/m7_interactive_viewer.rs`;
   custom-element progress mapping in `tests/scena_viewer_element.rs`;
-  focused Playwright proof in the M6 browser probe; doctor rule
-  `SCENA-VIEWER-ELEMENT` pins the browser UI surface.
+  focused Playwright proof in the M6 browser probe records
+  `progress_sequence` across `loading` and `fetching` phases; doctor rule
+  `SCENA-VIEWER-ELEMENT` pins the browser UI surface and
+  loading progress sequence proof **[shipped]**.
   Visual proof: browser-demo proof shipped through
-  `target/gate-artifacts/scena-viewer-element-browser-proof.png`;
-  animated-proof still required for a throttled-connection recording.
+  `target/gate-artifacts/scena-viewer-element-browser-proof.png`.
 - **Mobile-first + a11y defaults.** Status: **[proof-gap]** —
   `<scena-viewer>` now ships explicit mobile/ARIA/keyboard defaults.
   Owner: `<scena-viewer>` (bet 1.1). `ScenaViewerAccessibilityDefaults`
@@ -1489,6 +1490,17 @@ Picking/outline/hover reconciliation pass (2026-05-19):
   host-fed projection contract: parsed anchors, projection request,
   projection update, visible DOM movement, screenshot proof, and doctor
   source enforcement are now all present.
+
+`<scena-viewer>` loading progress sequence proof pass (2026-05-19):
+
+- Extended the M6 custom-element browser proof so it dispatches multiple
+  progress updates and records a `progress_sequence` with the DOM phase,
+  ARIA value, progressbar transform, and visibility after each update.
+- The browser runner now fails if the proof does not cover both the
+  indeterminate `loading` state and determinate `fetching` state.
+- Reclassified loading progress primitives from proof gap to shipped for
+  loader events, viewer event capture, accessible custom-element progress
+  UI, browser sequence proof, and doctor source enforcement.
 
 `<scena-viewer>` browser-proof pass (2026-05-19):
 

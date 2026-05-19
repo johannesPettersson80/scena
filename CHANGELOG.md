@@ -22,6 +22,9 @@ All notable user-facing changes are recorded here.
   verifying that a slotted annotation moves when the host supplies updated
   screen-space projections.
 
+- Added loading progress sequence assertions to the `<scena-viewer>` browser
+  proof, verifying both indeterminate and determinate progress UI updates.
+
 - Added connector magnet preview APIs for editor-style drag-to-assemble UIs:
   `Scene::preview_connector_magnet`, `ConnectionMagnetPreview`, and
   `ConnectionMagnetVisualCue`.
