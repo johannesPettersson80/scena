@@ -51,8 +51,10 @@ palette = { version = "0.7.6", default-features = false, features = ["std"] }
 png = "0.18"
 radiant = "0.3"
 raw-window-handle = "0.6.2"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 slotmap = "1.0"
+urlencoding = "2"
 wgpu = { version = "29.0.3", features = ["webgl"] }
 
 [features]

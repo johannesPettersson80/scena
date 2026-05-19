@@ -143,28 +143,17 @@ pub(crate) fn easy_scene_setup_contracts_reject_open_diagnostics_and_public_fram
 
 fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     let _ = fs::remove_dir_all(fixture_root);
-    fs::create_dir_all(fixture_root.join("src/demo_page")).expect("fixture demo_page");
-    fs::create_dir_all(fixture_root.join("docs/guides")).expect("fixture guides");
-    fs::create_dir_all(fixture_root.join("docs/release-notes")).expect("fixture release notes");
-    fs::create_dir_all(fixture_root.join("demo")).expect("fixture demo");
-    fs::create_dir_all(fixture_root.join("examples")).expect("fixture examples");
-    fs::create_dir_all(fixture_root.join("src/assets")).expect("fixture assets");
-    fs::create_dir_all(fixture_root.join("src/viewer")).expect("fixture viewer");
-    fs::create_dir_all(fixture_root.join("src/scene")).expect("fixture scene");
-    fs::create_dir_all(fixture_root.join("src/scene/connectors"))
-        .expect("fixture scene connectors");
-    fs::create_dir_all(fixture_root.join("src/material")).expect("fixture material");
-    fs::create_dir_all(fixture_root.join("src/render")).expect("fixture render");
-    fs::create_dir_all(fixture_root.join("src/geometry")).expect("fixture geometry");
-    fs::create_dir_all(fixture_root.join("tests")).expect("fixture tests");
+    for dir in "src/demo_page docs/guides docs/release-notes demo examples src/assets src/viewer src/controls src/scene src/scene/connectors src/material src/render src/geometry tests".split_whitespace() {
+        fs::create_dir_all(fixture_root.join(dir)).expect("fixture dir");
+    }
     fs::write(
         fixture_root.join("docs/guides/easy-scene-setup.md"),
-        "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded)\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```",
+        "frame_bounds add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string()\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.frame_bounds(camera, bounds, FramingOptions::new().azimuth_elevation(-27.5, 17.8))?;\n```",
     )
     .expect("guide fixture");
     fs::write(
         fixture_root.join("Cargo.toml"),
-        "notify-debouncer-full = { version = \"0.7.0\", optional = true }\nhot-reload = [\"dep:notify-debouncer-full\"]",
+        "notify-debouncer-full = { version = \"0.7.0\", optional = true }\nhot-reload = [\"dep:notify-debouncer-full\"]\nserde = { version = \"1\", features = [\"derive\"] }\nurlencoding = \"2\"",
     )
     .expect("manifest fixture");
     fs::write(
@@ -195,9 +184,14 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     fs::write(fixture_root.join("src/demo_page.rs"), demo_page_rs).expect("demo fixture");
     fs::write(
         fixture_root.join("src/controls.rs"),
-        "pub fn cinematic() {} pub fn snappy() {} pub fn presentation() {} pub fn turntable() {} pub fn advance() {} pub const fn auto_rotate_rpm() {} pub fn auto_rotate_radians_per_second() {} pub fn zoom_limits_bounds_relative() {} pub fn with_distance_limits() {} pub const fn min_distance() {} pub const fn max_distance() {} fn clamp_distance() {}",
+        "mod url_state; CameraOrbitUrlState CameraOrbitUrlStateError pub fn cinematic() {} pub fn snappy() {} pub fn presentation() {} pub fn turntable() {} pub fn advance() {} pub const fn auto_rotate_rpm() {} pub fn auto_rotate_radians_per_second() {} pub fn zoom_limits_bounds_relative() {} pub fn with_distance_limits() {} pub const fn min_distance() {} pub const fn max_distance() {} fn clamp_distance() {}",
     )
     .expect("controls fixture");
+    fs::write(
+        fixture_root.join("src/controls/url_state.rs"),
+        "pub struct CameraOrbitUrlState #[derive(Serialize, Deserialize)] pub enum CameraOrbitUrlStateError from_url_query to_query_string camera-orbit camera-target urlencoding::encode urlencoding::decode",
+    )
+    .expect("controls url state fixture");
     fs::write(
         fixture_root.join("src/assets.rs"),
         "mod hot_reload; pub use hot_reload::{AssetHotReloadError, AssetHotReloadWatcher};",
@@ -260,7 +254,7 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     .expect("animation example fixture");
     fs::write(
         fixture_root.join("src/lib.rs"),
-        "ViewerCaptureError AssetHotReloadError AssetHotReloadWatcher",
+        "ViewerCaptureError AssetHotReloadError AssetHotReloadWatcher CameraOrbitUrlState CameraOrbitUrlStateError",
     )
     .expect("lib fixture");
     fs::write(fixture_root.join("src/geometry.rs"), "").expect("geometry fixture");
@@ -365,6 +359,11 @@ fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
         "asset_hot_reload_watcher_reports_debounced_file_change_and_reload_updates_retained_asset asset-hot-reload-animated-proof.ppm reload_scene(&first) replace_import(&import, &reloaded)",
     )
     .expect("asset hot reload test fixture");
+    fs::write(
+        fixture_root.join("tests/round_d_viewer_url_state.rs"),
+        "camera_orbit_url_state_round_trips_orbit_controls camera_orbit_url_state_accepts_compact_checklist_query_shape camera_orbit_url_state_omits_asset_urls_and_secrets framing_outcome_exports_camera_orbit_url_state",
+    )
+    .expect("url state test fixture");
     fs::write(
         fixture_root.join("demo/index.html"),
         r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,

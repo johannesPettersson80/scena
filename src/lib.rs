@@ -41,8 +41,8 @@ pub use assets::{
 #[cfg(all(feature = "hot-reload", not(target_arch = "wasm32")))]
 pub use assets::{AssetHotReloadError, AssetHotReloadWatcher};
 pub use controls::{
-    OrbitControlAction, OrbitControls, PointerButton, PointerEvent, PointerEventKind, TouchEvent,
-    TouchEventKind,
+    CameraOrbitUrlState, CameraOrbitUrlStateError, OrbitControlAction, OrbitControls,
+    PointerButton, PointerEvent, PointerEventKind, TouchEvent, TouchEventKind,
 };
 pub use diagnostics::{
     AdapterLimitsReport, AlphaPipelineStatus, AnimationError, AssetError, Backend, BuildError,

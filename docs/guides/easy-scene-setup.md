@@ -241,6 +241,23 @@ for path in watcher.drain_changed_scenes()? {
 }
 ```
 
+## URL camera state
+
+Orbit camera state can be serialized into a shareable query string without
+including asset URLs, tokens, or other application parameters. The value uses
+model-viewer-style `camera-orbit` / `camera-target` keys with concrete units.
+
+```rust
+let query = controls.url_state().to_query_string();
+let state = CameraOrbitUrlState::from_url_query(&query)?;
+controls = controls.with_url_state(state)?;
+
+let framed_query = framing.url_state().to_query_string();
+```
+
+The parser also accepts compact `?camera-orbit=-28,18,2.5` links and emits the
+canonical unit form when reserialized.
+
 ## Connector mating
 
 Authored connectors let two imported assets find each other without application

@@ -1,6 +1,7 @@
 use crate::app::prelude::*;
 
 mod next_release;
+mod state_url;
 
 pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<Finding>) {
     require_contains(
@@ -171,6 +172,7 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
     next_release::check_viewer_pointer_callbacks(root, findings);
     next_release::check_viewer_capture_png(root, findings);
     next_release::check_asset_hot_reload(root, findings);
+    state_url::check_state_via_url(root, findings);
 
     for rel in ["src/lib.rs", "src/geometry.rs"] {
         if fs::read_to_string(root.join(rel)).is_ok_and(|text| text.contains("FramingAngles")) {

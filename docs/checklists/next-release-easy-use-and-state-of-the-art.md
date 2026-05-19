@@ -723,17 +723,21 @@ Visual proof: animated-proof + browser-demo (recording shows drag-drop ingestion
 
 ### 4.9 State-via-URL serializer
 
-Status: **[gap]**
-Owner: new helper on `FramingOutcome` + `OrbitControls`.
-Dependency note: use direct `serde` derives for structured camera/orbit
-state and `urlencoding` for percent-encoding. Do not serialize asset URLs
-with credentials or other secrets.
-Proof: round-trip test for camera/orbit state plus a privacy test proving
-serialized URLs do not include credentialed asset URLs or other secrets.
+Status: **[shipped]** — `CameraOrbitUrlState` lives in
+`src/controls/url_state.rs` with helpers on `FramingOutcome` and
+`OrbitControls`.
+Dependency note: direct `serde` derives are used for structured camera/orbit
+state and `urlencoding` is used for percent-encoding. Serialized output
+contains only camera state; asset URLs with credentials, tokens, and other
+application query parameters are ignored on parse and never emitted.
+Proof: `tests/round_d_viewer_url_state.rs` covers camera/orbit round-trip,
+compact checklist query compatibility, `FramingOutcome` export, `serde`
+round-trip, and a privacy test proving credentialed asset URLs and tokens
+are not serialized.
 Visual proof: none (URL serialization is text spec)
 
 ```rust
-?camera-orbit=-28,18,2.5         // round-trip-compatible with model-viewer
+?camera-orbit=-28deg%2018deg%202.5m // model-viewer-style query value
 ```
 
 ---
@@ -886,7 +890,7 @@ the rounds, not after — they're the strategic arc.
 14. - [x] `Viewer::on_click` / `on_hover` callbacks (§4.5)
 15. - [x] `Viewer::capture_png` (§4.6)
 16. - [x] Asset hot-reload (§4.7)
-17. - [ ] State-via-URL (§4.9)
+17. - [x] State-via-URL (§4.9)
 
 ### Strategic arc (parallel with rounds)
 
@@ -1070,6 +1074,17 @@ Native hot-reload implementation pass (2026-05-19):
   and lens-preset comparison under `target/gate-artifacts/examples-visual/`.
 - Added `ROUND-A-EASY-USE-PRIMITIVES` doctor coverage so the source,
   tests, visual proof, and first-path API style remain enforced.
+
+State-via-URL implementation pass (2026-05-19):
+
+- Landed `CameraOrbitUrlState` plus helpers on `OrbitControls` and
+  `FramingOutcome`. The canonical query uses model-viewer-style concrete
+  units for `camera-orbit` / `camera-target`, while the parser also accepts
+  the earlier compact checklist form `?camera-orbit=-28,18,2.5`.
+- The serializer intentionally emits only camera state. Parsed `src`,
+  token, credentialed asset URL, and other application query parameters are
+  not preserved. Proof is pinned by `tests/round_d_viewer_url_state.rs` and
+  doctor rule `STATE-VIA-URL`.
 
 Ease-of-use implementation continuation (2026-05-19):
 

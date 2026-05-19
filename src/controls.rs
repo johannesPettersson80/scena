@@ -2,6 +2,9 @@
 
 use std::f32::consts::TAU;
 
+mod url_state;
+pub use url_state::{CameraOrbitUrlState, CameraOrbitUrlStateError};
+
 use crate::diagnostics::LookupError;
 use crate::scene::FramingOutcome;
 use crate::scene::Vec3;
