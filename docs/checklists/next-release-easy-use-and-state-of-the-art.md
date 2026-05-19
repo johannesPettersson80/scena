@@ -793,10 +793,19 @@ specific competitor primitive.
   renderer.set_environment(environment);
   // checked variants today: NeutralStudio, Studio
   ```
-- **Camera control kit.** Status: **[gap]**. Owner: `src/controls.rs`.
-  Minimum: Orbit, Turntable/Presentation, Follow, Fly. Proof: browser
-  interaction test per mode.
-  Visual proof: animated-proof + browser-demo (one short recording per mode showing the input → motion mapping)
+- **Camera control kit.** Status: **[ergonomic-gap]** overall;
+  Orbit/Turntable/Presentation plus Follow/Fly library primitives
+  **[shipped]**, browser interaction proofs remain future custom-element
+  work. Owner: `src/controls.rs`. `OrbitControls` covers orbit,
+  turntable, and presentation movement; `FollowControls` tracks a scene
+  node from a named offset; `FlyControls` exposes host-driven local
+  movement and look deltas without platform coupling.
+  Proof: `tests/camera_control_kit.rs` covers Follow/Fly scene application
+  and the `CAMERA-CONTROL-KIT` doctor rule pins the public API, guide,
+  checklist, and test contract.
+  Visual proof: animated-proof + browser-demo still required for the
+  future `<scena-viewer>` interaction surface (one short recording per
+  mode showing the input → motion mapping)
 - **Picking + outline + hover.** Status: **[gap]** overall. Owner:
   `src/picking.rs` + `src/render/`. Picking exists at `src/picking.rs`;
   outline rendering is missing. Proof: browser hit-test plus rendered
@@ -1274,6 +1283,17 @@ Viewer material-variants implementation pass (2026-05-19):
 - Added a real glTF variant fixture, focused viewer tests, and a
   `VIEWER-MATERIAL-VARIANTS` doctor rule. Remaining work is the
   `<scena-viewer>` picker plus rendered reference/docs images.
+
+Camera-control kit implementation pass (2026-05-19):
+
+- Added library-owned `FollowControls` and `FlyControls` alongside the
+  existing orbit, turntable, and presentation modes. The new controls stay
+  platform-neutral: hosts pass input deltas explicitly and apply the
+  resulting camera pose through `Scene`.
+- Added focused Follow/Fly scene-application tests and a
+  `CAMERA-CONTROL-KIT` doctor rule so the guide, checklist, public
+  re-exports, and test proof stay aligned. Remaining proof is the
+  browser-demo/animated custom-element interaction surface.
 
 Ease-of-use implementation continuation (2026-05-19):
 

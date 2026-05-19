@@ -152,6 +152,28 @@ if matches!(controls.advance(delta_seconds), scena::OrbitControlAction::Orbit) {
 
 Host adapters can then apply the controls to the scene camera each frame.
 
+Use `FollowControls` when a camera should track a moving node from a stable
+offset:
+
+```rust
+let target_node = import.root;
+scena::FollowControls::behind_and_above(3.0, 1.25)
+    .apply_to_scene(&mut scene, camera, target_node)?;
+```
+
+Use `FlyControls` for CAD-style inspection or first-person navigation where
+the host owns keyboard, pointer, or gamepad input and sends local movement
+deltas explicitly:
+
+```rust
+let mut fly = scena::FlyControls::new(Vec3::ZERO)
+    .with_yaw_pitch_degrees(90.0, 0.0);
+
+fly.move_local(forward, right, up, delta_seconds);
+fly.look_delta(pointer_delta_x, pointer_delta_y);
+fly.apply_to_scene(&mut scene, camera)?;
+```
+
 ## Viewer pointer callbacks
 
 Interactive viewers can route host pointer coordinates through the same typed

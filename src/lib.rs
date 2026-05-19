@@ -44,8 +44,8 @@ pub use assets::{AssetHotReloadError, AssetHotReloadWatcher};
 #[cfg(feature = "khronos-samples")]
 pub use assets::{KhronosSample, KhronosSampleMetadata, KhronosSamples};
 pub use controls::{
-    CameraOrbitUrlState, CameraOrbitUrlStateError, OrbitControlAction, OrbitControls,
-    PointerButton, PointerEvent, PointerEventKind, TouchEvent, TouchEventKind,
+    CameraOrbitUrlState, CameraOrbitUrlStateError, FlyControls, FollowControls, OrbitControlAction,
+    OrbitControls, PointerButton, PointerEvent, PointerEventKind, TouchEvent, TouchEventKind,
 };
 pub use diagnostics::{
     AdapterLimitsReport, AlphaPipelineStatus, AnimationError, AssetError, Backend, BuildError,

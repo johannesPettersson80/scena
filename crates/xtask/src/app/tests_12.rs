@@ -252,34 +252,6 @@ pub(crate) fn easy_scene_setup_contracts_reject_missing_viewer_load_progress_sur
 }
 
 #[test]
-pub(crate) fn easy_scene_setup_contracts_reject_missing_viewer_material_variant_surface() {
-    let root = repo_root().expect("test runs inside the scena workspace");
-    let fixture_root =
-        root.join("target/xtask-doctor-regressions/missing-viewer-material-variants");
-    write_easy_scene_fixture(
-        &fixture_root,
-        VALID_GUIDE,
-        "frame_bounds(()) bounds_for_transforms add_grid_floor",
-        r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
-    );
-    fs::write(
-        fixture_root.join("src/viewer.rs"),
-        "mod capture; mod interaction; mod load_progress; pub use capture::{ViewerCaptureError, ViewerPngError}; click_callback: Option<ViewerPickCallback> hover_callback: Option<ViewerPickCallback> load_progress_events: Vec<AssetLoadProgress>",
-    )
-    .expect("viewer fixture without material variants");
-    let mut findings = Vec::new();
-
-    check_easy_scene_setup_contracts(&fixture_root, &mut findings);
-
-    assert!(
-        findings
-            .iter()
-            .any(|finding| finding.rule == "VIEWER-MATERIAL-VARIANTS"),
-        "doctor must reject viewer surfaces that do not expose material variants: {findings:?}",
-    );
-}
-
-#[test]
 pub(crate) fn easy_scene_setup_contracts_reject_missing_headless_png_one_liner() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-doctor-regressions/missing-headless-png");
@@ -306,7 +278,7 @@ pub(crate) fn easy_scene_setup_contracts_reject_missing_headless_png_one_liner()
     );
 }
 
-pub(crate) const VALID_GUIDE: &str = "frame_bounds add_perspective_camera_default_for add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? render_png_bytes() CPU headless renderer without requesting a GPU adapter Reference-image regression ReferenceImage::from_rgba8 regress_with_tolerance ReferenceImageTolerance::new().with_max_abs_diff AssetLoadProgress build_with_progress load_progress_events Material variants viewer.material_variants() viewer.set_active_material_variant(Some(\"blue\"))? viewer.set_active_material_variant(None)? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() EnvironmentPreset::Studio load_environment_preset EnvironmentPreset::ALL KTX2 cubemap presets are still future work khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.add_perspective_camera_default_for(bounds, (width, height))?;\n```";
+pub(crate) const VALID_GUIDE: &str = "frame_bounds add_perspective_camera_default_for add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) FollowControls::behind_and_above FlyControls::new move_local with_yaw_pitch_degrees viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? render_png_bytes() CPU headless renderer without requesting a GPU adapter Reference-image regression ReferenceImage::from_rgba8 regress_with_tolerance ReferenceImageTolerance::new().with_max_abs_diff AssetLoadProgress build_with_progress load_progress_events Material variants viewer.material_variants() viewer.set_active_material_variant(Some(\"blue\"))? viewer.set_active_material_variant(None)? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() EnvironmentPreset::Studio load_environment_preset EnvironmentPreset::ALL KTX2 cubemap presets are still future work khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.add_perspective_camera_default_for(bounds, (width, height))?;\n```";
 
 pub(crate) fn write_easy_scene_fixture(
     fixture_root: &Path,
@@ -347,7 +319,7 @@ pub(crate) fn write_easy_scene_fixture(
     .expect("feature flags fixture");
     fs::write(
         fixture_root.join("docs/checklists/next-release-easy-use-and-state-of-the-art.md"),
-        "Production-grade asset pipeline complete and production-profile ready Status: **[shipped]** for the production profile tests/m8_compressed_asset_release_proof.rs target/gate-artifacts/m8-compressed-assets CPU rasterizer fallback for no-GPU screenshots Status: **[shipped]** render_png_bytes() Reference-image regression as a public API Status:\n  **[shipped]** ReferenceImage::from_rgba8 REFERENCE-IMAGE-REGRESSION",
+        "Production-grade asset pipeline complete and production-profile ready Status: **[shipped]** for the production profile tests/m8_compressed_asset_release_proof.rs target/gate-artifacts/m8-compressed-assets CPU rasterizer fallback for no-GPU screenshots Status: **[shipped]** render_png_bytes() Reference-image regression as a public API Status:\n  **[shipped]** ReferenceImage::from_rgba8 REFERENCE-IMAGE-REGRESSION Follow/Fly library primitives **[shipped]** tests/camera_control_kit.rs CAMERA-CONTROL-KIT",
     )
     .expect("next release checklist fixture");
     fs::write(
@@ -383,10 +355,15 @@ pub(crate) fn write_easy_scene_fixture(
     fs::write(fixture_root.join("src/demo_page.rs"), demo_rs).expect("demo fixture");
     fs::write(
         fixture_root.join("src/controls.rs"),
-        "mod url_state; CameraOrbitUrlState CameraOrbitUrlStateError pub fn cinematic() {} pub fn snappy() {} pub fn presentation() {} pub fn turntable() {} pub fn advance() {} pub const fn auto_rotate_rpm() {} pub fn auto_rotate_radians_per_second() {} pub fn zoom_limits_bounds_relative() {} pub fn with_distance_limits() {} pub const fn min_distance() {} pub const fn max_distance() {} fn clamp_distance() {}",
+        "mod camera_kit; mod url_state; pub use camera_kit::{FlyControls, FollowControls}; CameraOrbitUrlState CameraOrbitUrlStateError pub fn cinematic() {} pub fn snappy() {} pub fn presentation() {} pub fn turntable() {} pub fn advance() {} pub const fn auto_rotate_rpm() {} pub fn auto_rotate_radians_per_second() {} pub fn zoom_limits_bounds_relative() {} pub fn with_distance_limits() {} pub const fn min_distance() {} pub const fn max_distance() {} fn clamp_distance() {}",
     )
     .expect("controls fixture");
     fs::create_dir_all(fixture_root.join("src/controls")).expect("controls module dir");
+    fs::write(
+        fixture_root.join("src/controls/camera_kit.rs"),
+        "pub struct FollowControls; pub fn behind_and_above() {} pub fn with_target_offset() {} pub struct FlyControls; pub fn with_yaw_pitch_degrees() {} pub fn move_local() {} pub fn look_delta() {} pub fn apply_to_scene() {}",
+    )
+    .expect("camera control kit fixture");
     fs::write(
         fixture_root.join("src/controls/url_state.rs"),
         "pub struct CameraOrbitUrlState #[derive(Serialize, Deserialize)] pub enum CameraOrbitUrlStateError from_url_query to_query_string camera-orbit camera-target urlencoding::encode urlencoding::decode",
@@ -618,8 +595,13 @@ pub(crate) fn write_easy_scene_fixture(
     )
     .expect("url state test fixture");
     fs::write(
+        fixture_root.join("tests/camera_control_kit.rs"),
+        "follow_controls_track_node_with_named_offset fly_controls_move_in_camera_local_axes_and_apply_to_scene",
+    )
+    .expect("camera control kit test fixture");
+    fs::write(
         fixture_root.join("src/lib.rs"),
-        "pub mod reference_image; ReferenceImage ReferenceImageError ReferenceImageTolerance regress regress_with_tolerance ViewerCaptureError ViewerPngError AssetHotReloadError AssetHotReloadWatcher AssetLoadProgress CameraOrbitUrlState CameraOrbitUrlStateError EnvironmentPreset EnvironmentPresetMetadata KhronosSample KhronosSampleMetadata KhronosSamples",
+        "pub mod reference_image; ReferenceImage ReferenceImageError ReferenceImageTolerance regress regress_with_tolerance ViewerCaptureError ViewerPngError AssetHotReloadError AssetHotReloadWatcher AssetLoadProgress CameraOrbitUrlState CameraOrbitUrlStateError FollowControls FlyControls EnvironmentPreset EnvironmentPresetMetadata KhronosSample KhronosSampleMetadata KhronosSamples",
     )
     .expect("lib fixture");
     fs::write(

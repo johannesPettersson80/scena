@@ -1,5 +1,6 @@
 use crate::app::prelude::*;
 
+mod camera_control_kit;
 mod environment_presets;
 mod khronos_samples;
 mod next_release;
@@ -185,6 +186,7 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
     viewer_headless_png::check_viewer_headless_png(root, findings);
     viewer_load_progress::check_viewer_load_progress(root, findings);
     viewer_material_variants::check_viewer_material_variants(root, findings);
+    camera_control_kit::check_camera_control_kit(root, findings);
     reference_image_regression::check_reference_image_regression(root, findings);
     next_release::check_asset_hot_reload(root, findings);
     khronos_samples::check_khronos_samples(root, findings);

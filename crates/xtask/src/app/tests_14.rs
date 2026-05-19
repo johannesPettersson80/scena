@@ -92,3 +92,58 @@ pub(crate) fn easy_scene_setup_contracts_reject_missing_material_variant_visual_
         "doctor must reject viewer material variants without generated visual proof: {findings:?}",
     );
 }
+
+#[test]
+pub(crate) fn easy_scene_setup_contracts_reject_missing_viewer_material_variant_surface() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root =
+        root.join("target/xtask-doctor-regressions/missing-viewer-material-variants");
+    write_easy_scene_fixture(
+        &fixture_root,
+        VALID_GUIDE,
+        "frame_bounds(()) bounds_for_transforms add_grid_floor",
+        r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
+    );
+    fs::write(
+        fixture_root.join("src/viewer.rs"),
+        "mod capture; mod interaction; mod load_progress; pub use capture::{ViewerCaptureError, ViewerPngError}; click_callback: Option<ViewerPickCallback> hover_callback: Option<ViewerPickCallback> load_progress_events: Vec<AssetLoadProgress>",
+    )
+    .expect("viewer fixture without material variants");
+    let mut findings = Vec::new();
+
+    check_easy_scene_setup_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "VIEWER-MATERIAL-VARIANTS"),
+        "doctor must reject viewer surfaces that do not expose material variants: {findings:?}",
+    );
+}
+
+#[test]
+pub(crate) fn easy_scene_setup_contracts_reject_missing_camera_control_kit() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/missing-camera-control-kit");
+    write_easy_scene_fixture(
+        &fixture_root,
+        VALID_GUIDE,
+        "frame_bounds(()) bounds_for_transforms add_grid_floor",
+        r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
+    );
+    fs::write(
+        fixture_root.join("src/controls.rs"),
+        "pub struct OrbitControls; pub fn cinematic() {} pub fn presentation() {}",
+    )
+    .expect("controls fixture without follow/fly controls");
+    let mut findings = Vec::new();
+
+    check_easy_scene_setup_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "CAMERA-CONTROL-KIT"),
+        "doctor must reject controls that do not expose follow and fly modes: {findings:?}",
+    );
+}

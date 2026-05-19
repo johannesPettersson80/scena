@@ -2,7 +2,9 @@
 
 use std::f32::consts::TAU;
 
+mod camera_kit;
 mod url_state;
+pub use camera_kit::{FlyControls, FollowControls};
 pub use url_state::{CameraOrbitUrlState, CameraOrbitUrlStateError};
 
 use crate::diagnostics::LookupError;
@@ -471,11 +473,18 @@ const PAN_UNITS_PER_PIXEL: f32 = 0.001;
 const ZOOM_SCALE: f32 = 0.1;
 const MIN_DISTANCE: f32 = 0.001;
 const MAX_PITCH_RADIANS: f32 = 1.553_343;
-
 fn sanitize_distance_limit(value: f32, fallback: f32) -> f32 {
     if value.is_finite() && value > 0.0 {
         value
     } else {
         fallback
     }
+}
+
+fn sanitize_finite(value: f32, fallback: f32) -> f32 {
+    if value.is_finite() { value } else { fallback }
+}
+
+fn sanitize_vec3(value: Vec3, fallback: Vec3) -> Vec3 {
+    if value.is_finite() { value } else { fallback }
 }
