@@ -63,6 +63,12 @@ rejected names and a user-facing message. The custom element owns validation
 and browser events; renderer loading and visual proof are still explicit
 follow-up work.
 
+Hosts can expose material variants through the built-in material variant picker
+with `setMaterialVariants(variants, activeName)`. The picker accepts string
+names or `{ name, label }` objects, emits `scena-viewer-variants-ready` after
+population, and emits `scena-viewer-variant-change` with the selected variant
+name or `null` for the default material.
+
 ## Browser responsibilities
 
 The browser host owns:

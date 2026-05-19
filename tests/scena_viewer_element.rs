@@ -1,6 +1,7 @@
 use scena::{
     AssetLoadProgress, AssetPath, SCENA_VIEWER_TAG, ScenaViewerAttributes, ScenaViewerDropDecision,
-    ScenaViewerDropKind, ScenaViewerProgress, ScenaViewerProgressPhase, Tonemapper,
+    ScenaViewerDropKind, ScenaViewerProgress, ScenaViewerProgressPhase,
+    ScenaViewerVariantSelection, Tonemapper,
 };
 
 #[test]
@@ -99,4 +100,28 @@ fn scena_viewer_drop_decision_accepts_gltf_and_reports_rejections() {
         decision.status_text(),
         "Accepted 2 glTF files; rejected notes.txt"
     );
+}
+
+#[test]
+fn scena_viewer_variant_selection_tracks_available_and_active_names() {
+    let selection =
+        ScenaViewerVariantSelection::from_names(["midnight", "noon"]).with_active("noon");
+
+    assert_eq!(selection.options().len(), 2);
+    assert_eq!(selection.options()[0].name(), "midnight");
+    assert_eq!(selection.options()[0].label(), "midnight");
+    assert_eq!(selection.options()[1].name(), "noon");
+    assert_eq!(selection.active(), Some("noon"));
+    assert!(selection.has_active_variant());
+    assert_eq!(selection.status_text(), "2 material variants; active noon");
+
+    let unknown =
+        ScenaViewerVariantSelection::from_names(["midnight", "noon"]).with_active("missing");
+    assert_eq!(unknown.active(), None);
+    assert!(!unknown.has_active_variant());
+    assert_eq!(unknown.status_text(), "2 material variants");
+
+    let empty = ScenaViewerVariantSelection::from_names(std::iter::empty::<&str>());
+    assert!(empty.options().is_empty());
+    assert_eq!(empty.status_text(), "No material variants");
 }

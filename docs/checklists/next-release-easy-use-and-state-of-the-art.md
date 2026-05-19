@@ -844,14 +844,16 @@ specific competitor primitive.
   camera movement.
   Visual proof: browser-demo + animated-proof (labels visible in the demo; recording shows them tracking through camera orbit and animation)
 - **Variant switching for `KHR_materials_variants`.** Status:
-  **[ergonomic-gap]** overall; Viewer primitive and reference/docs-image
-  proof **[shipped]**, `<scena-viewer>` picker still missing.
+  **[proof-gap]** overall; Viewer primitive, reference/docs-image proof,
+  and `<scena-viewer>` picker surface **[shipped]**.
   Extension diagnostics mark it supported and
   `Scene::set_active_variant(&import, Some(name))` exists. Viewers now
   expose `material_variants()`, `active_material_variant()`, and
   `set_active_material_variant(name)`; the setter delegates to the scene
-  API and re-prepares before the next render. Owner: `src/viewer.rs` +
-  future custom element.
+  API and re-prepares before the next render. `<scena-viewer>` exposes
+  `ScenaViewerVariantSelection`, `setMaterialVariants(...)`, and
+  `scena-viewer-variant-change` for a host-owned picker-to-renderer
+  binding. Owner: `src/viewer.rs` + `src/viewer_element.rs`.
   Visual proof: reference-image + docs-image shipped through
   `target/gate-artifacts/examples-visual/viewer-material-variant-reference-docs-image.ppm`;
   browser-demo remains future custom-element proof.
@@ -1366,6 +1368,18 @@ Picking/outline/hover reconciliation pass (2026-05-19):
 - Reclassified WASM drag-and-drop from gap to proof gap: ingestion and
   validation are shipped and source-enforced; render-after-drop browser
   proof remains open.
+
+`<scena-viewer>` material-variant picker pass (2026-05-19):
+
+- Added `ScenaViewerVariantSelection` / `ScenaViewerVariantOption` as the
+  typed picker model for available and active `KHR_materials_variants`
+  names.
+- Extended the custom element with `setMaterialVariants(...)`,
+  `scena-viewer-variants-ready`, and `scena-viewer-variant-change` so hosts
+  can bind the picker to the existing viewer/scene variant setter.
+- Reclassified variant switching from ergonomic gap to proof gap: the
+  picker surface is shipped and source-enforced; browser-demo proof remains
+  open.
 
 Asset-validation doctor implementation pass (2026-05-19):
 
