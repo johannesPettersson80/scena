@@ -813,14 +813,15 @@ specific competitor primitive.
   renderer.set_environment(environment);
   // checked variants today: NeutralStudio, Studio
   ```
-- **Camera control kit.** Status: **[proof-gap]** overall;
-  Orbit/Turntable/Presentation plus Follow/Fly library primitives and a
-  Rust/WASM browser input-to-motion proof are **[shipped]**. Animated
-  `<scena-viewer>` gesture recording remains future proof work. Owner:
+- **Camera control kit.** Status: **[shipped]** for library primitives,
+  Rust/WASM browser input-to-motion proof, and custom-element gesture
+  event proof. Owner:
   `src/controls.rs`. `OrbitControls` covers orbit, turntable, and
   presentation movement; `FollowControls` tracks a scene node from a named
   offset; `FlyControls` exposes host-driven local movement and look deltas
-  without platform coupling.
+  without platform coupling. `<scena-viewer>` now emits host-wirable
+  `scena-viewer-gesture-control` events for orbit, pinch zoom, and wheel
+  zoom when `camera-controls` is enabled.
   Proof: `tests/camera_control_kit.rs` covers Follow/Fly scene application;
   the M6 Playwright probe exports
   `scena.m6.camera_control_kit_browser_proof.v1`, runs real
@@ -828,11 +829,12 @@ specific competitor primitive.
   and `FlyControls` in Rust/WASM, and writes
   `target/gate-artifacts/camera-control-kit-browser-proof.png`. The
   `CAMERA-CONTROL-KIT` and `VISUAL-BROWSER-M6` doctor rules pin the public
-  API, guide, checklist, test, and browser-proof contract.
+  API, guide, checklist, test, and browser-proof contract. The M6 mobile
+  proof also records the custom-element touch orbit, pinch zoom, wheel
+  zoom, and keyboard reset event surface.
   Visual proof: browser-demo shipped for browser input-to-motion via the
-  generated Playwright artifact; animated-proof still required for the
-  future custom-element gesture surface (one short recording per mode
-  showing the input → motion mapping)
+  generated Playwright artifact plus
+  `target/gate-artifacts/scena-viewer-mobile-a11y-browser-proof.png`.
 - **Picking + outline + hover.** Status: **[shipped]** for the library
   renderer surface. Owner: `src/picking.rs` + `src/render/`.
   `Scene::pick_and_select_with_assets` and
@@ -1545,9 +1547,10 @@ Camera-control browser-proof pass (2026-05-19):
   `target/gate-artifacts/camera-control-kit-browser-proof.png` and records
   orbit/follow/fly camera translations so browser proof fails if input no
   longer produces motion.
-- Reclassified the camera control kit from ergonomic gap to proof gap:
-  library APIs and browser input-to-motion proof are shipped and
-  source-enforced; animated custom-element gesture recordings remain open.
+- Reclassified the camera control kit from ergonomic gap to shipped:
+  library APIs, browser input-to-motion proof, and custom-element gesture
+  event proof are shipped and source-enforced. Direct camera-motion binding
+  inside `<scena-viewer>` remains part of the full renderer parity bet.
 
 Connector magnet preview pass (2026-05-19):
 
