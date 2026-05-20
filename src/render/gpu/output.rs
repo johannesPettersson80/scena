@@ -319,6 +319,15 @@ mod tests {
                 && GPU_TRIANGLE_SHADER.contains("var anisotropy_sampler: sampler")
                 && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(22)")
                 && GPU_TRIANGLE_SHADER.contains("var anisotropy_texture: texture_2d_array<f32>")
+                && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(23)")
+                && GPU_TRIANGLE_SHADER.contains("var iridescence_sampler: sampler")
+                && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(24)")
+                && GPU_TRIANGLE_SHADER.contains("var iridescence_texture: texture_2d_array<f32>")
+                && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(25)")
+                && GPU_TRIANGLE_SHADER.contains("var iridescence_thickness_sampler: sampler")
+                && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(26)")
+                && GPU_TRIANGLE_SHADER
+                    .contains("var iridescence_thickness_texture: texture_2d_array<f32>")
                 && GPU_TRIANGLE_SHADER.contains("material_layer_index: vec4<u32>")
                 && GPU_TRIANGLE_SHADER.contains("textureSample(base_color_texture"),
             "GPU fragment shader must expose material texture bindings as 2D-array views \
@@ -346,6 +355,10 @@ mod tests {
                     .contains("var sheen_roughness_texture: texture_2d<f32>")
                 && GPU_TRIANGLE_SHADER_TEXTURE_2D
                     .contains("var anisotropy_texture: texture_2d<f32>")
+                && GPU_TRIANGLE_SHADER_TEXTURE_2D
+                    .contains("var iridescence_texture: texture_2d<f32>")
+                && GPU_TRIANGLE_SHADER_TEXTURE_2D
+                    .contains("var iridescence_thickness_texture: texture_2d<f32>")
                 && GPU_TRIANGLE_SHADER_TEXTURE_2D.contains(
                     "let base_color_sample = textureSample(base_color_texture, base_color_sampler, transformed_uv)"
                 )
@@ -370,11 +383,14 @@ mod tests {
                 && GPU_TRIANGLE_SHADER.contains("textureSample(sheen_color_texture")
                 && GPU_TRIANGLE_SHADER.contains("textureSample(sheen_roughness_texture")
                 && GPU_TRIANGLE_SHADER.contains("textureSample(anisotropy_texture")
+                && GPU_TRIANGLE_SHADER.contains("textureSample(iridescence_texture")
+                && GPU_TRIANGLE_SHADER.contains("textureSample(iridescence_thickness_texture")
                 && GPU_TRIANGLE_SHADER.contains("base_color_factor")
                 && GPU_TRIANGLE_SHADER.contains("emissive_strength")
                 && GPU_TRIANGLE_SHADER.contains("clearcoat_factors")
                 && GPU_TRIANGLE_SHADER.contains("sheen_factors")
                 && GPU_TRIANGLE_SHADER.contains("anisotropy_factors")
+                && GPU_TRIANGLE_SHADER.contains("iridescence_factors")
                 && GPU_TRIANGLE_SHADER.contains("metallic_roughness_alpha"),
             "GPU material shader must sample every prepared glTF material texture role and \
              consume material factor uniforms before backend material parity can be claimed"
@@ -429,6 +445,23 @@ mod tests {
                     && shader.contains("tangent_handedness")
                     && shader.contains("shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);"),
                 "{name} shader must apply KHR_materials_anisotropy direction, strength, and rotation instead of silently dropping them"
+            );
+        }
+    }
+
+    #[test]
+    fn triangle_shader_applies_iridescence_lobe_in_native_and_webgl2_variants() {
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            assert!(
+                shader.contains("iridescence_light_contribution")
+                    && shader.contains("let iridescence_factor = clamp(material.iridescence_factors.x * iridescence_sample.r, 0.0, 1.0);")
+                    && shader.contains("let iridescence_thickness = mix(material.iridescence_factors.z, material.iridescence_factors.w, clamp(iridescence_thickness_sample.g, 0.0, 1.0));")
+                    && shader.contains("material.iridescence_factors.y")
+                    && shader.contains("shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);"),
+                "{name} shader must apply KHR_materials_iridescence factor, IOR, and thickness texture channels instead of silently dropping them"
             );
         }
     }

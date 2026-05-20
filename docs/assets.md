@@ -104,6 +104,9 @@ See:
 - optional `KHR_materials_anisotropy` strength/rotation parsing plus
   anisotropy direction/strength texture-slot sampling for the CPU/reference
   material path and GPU shader/material path,
+- optional `KHR_materials_iridescence` factor, IOR, thickness-range parsing
+  plus iridescence factor/thickness texture-slot sampling for the
+  CPU/reference material path and GPU shader/material path,
 - material variants.
 
 KTX2/Basis and meshopt support are available through feature flags. See
@@ -141,8 +144,8 @@ compliance; scena does not reimplement that subset.
 After the official validator runs, the command emits scena-specific renderer
 guidance as `scena.asset_doctor.v1` JSON. Each guidance entry includes a
 severity, status, message, and `fix` string for issues such as required
-clearcoat, sheen, or anisotropy materials, Draco compression, feature-gated
-KTX2/meshopt assets, or deferred WebP texture-source rebinding.
+clearcoat, sheen, anisotropy, or iridescence materials, Draco compression,
+feature-gated KTX2/meshopt assets, or deferred WebP texture-source rebinding.
 
 For example, optional `KHR_materials_clearcoat` factors and texture slots are
 preserved and the CPU/reference plus GPU shader/material paths sample
@@ -155,4 +158,8 @@ same required-extension release-proof guard.
 Optional `KHR_materials_anisotropy` factors and texture slots are preserved
 and sampled through the same CPU/reference plus GPU shader/material paths; a
 required anisotropy asset keeps the same release-proof guard until approved
+backend evidence exists.
+Optional `KHR_materials_iridescence` factors and texture slots are preserved
+and sampled through the same CPU/reference plus GPU shader/material paths; a
+required iridescence asset keeps the same release-proof guard until approved
 backend evidence exists.

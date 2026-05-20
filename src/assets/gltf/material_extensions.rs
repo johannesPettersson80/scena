@@ -27,6 +27,16 @@ pub(super) struct AnisotropyExtension {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub(super) struct IridescenceExtension {
+    pub(super) factor: f32,
+    pub(super) ior: f32,
+    pub(super) thickness_minimum: f32,
+    pub(super) thickness_maximum: f32,
+    pub(super) texture: Option<ExtensionTextureInfo>,
+    pub(super) thickness_texture: Option<ExtensionTextureInfo>,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub(super) struct ExtensionTextureInfo {
     pub(super) index: usize,
     pub(super) transform: Option<TextureTransform>,
@@ -91,6 +101,28 @@ pub(super) fn anisotropy_extension(
         strength: read_factor(extension, "anisotropyStrength").unwrap_or(0.0),
         rotation: read_factor(extension, "anisotropyRotation").unwrap_or(0.0),
         texture: read_extension_texture_info(extension, "anisotropyTexture"),
+    })
+}
+
+pub(super) fn iridescence_extension(
+    document: &Document,
+    material_index: usize,
+) -> Option<IridescenceExtension> {
+    let extension = document
+        .as_json()
+        .materials
+        .get(material_index)?
+        .extensions
+        .as_ref()?
+        .others
+        .get("KHR_materials_iridescence")?;
+    Some(IridescenceExtension {
+        factor: read_factor(extension, "iridescenceFactor").unwrap_or(0.0),
+        ior: read_factor(extension, "iridescenceIor").unwrap_or(1.3),
+        thickness_minimum: read_factor(extension, "iridescenceThicknessMinimum").unwrap_or(100.0),
+        thickness_maximum: read_factor(extension, "iridescenceThicknessMaximum").unwrap_or(400.0),
+        texture: read_extension_texture_info(extension, "iridescenceTexture"),
+        thickness_texture: read_extension_texture_info(extension, "iridescenceThicknessTexture"),
     })
 }
 

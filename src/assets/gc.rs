@@ -95,6 +95,8 @@ impl<F> Assets<F> {
                     material.sheen_color_texture(),
                     material.sheen_roughness_texture(),
                     material.anisotropy_texture(),
+                    material.iridescence_texture(),
+                    material.iridescence_thickness_texture(),
                 ]
                 .into_iter()
                 .flatten()

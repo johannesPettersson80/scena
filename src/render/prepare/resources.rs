@@ -35,6 +35,8 @@ pub(in crate::render) struct PreparedMaterialSlot {
     pub(in crate::render) sheen_color: Option<PreparedMaterialTexture>,
     pub(in crate::render) sheen_roughness: Option<PreparedMaterialTexture>,
     pub(in crate::render) anisotropy: Option<PreparedMaterialTexture>,
+    pub(in crate::render) iridescence: Option<PreparedMaterialTexture>,
+    pub(in crate::render) iridescence_thickness: Option<PreparedMaterialTexture>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -351,6 +353,16 @@ fn collect_backend_material_slot<F>(
         material.anisotropy_texture(),
         material.anisotropy_texture_transform(),
     );
+    let iridescence = collect_backend_material_texture(
+        assets,
+        material.iridescence_texture(),
+        material.iridescence_texture_transform(),
+    );
+    let iridescence_thickness = collect_backend_material_texture(
+        assets,
+        material.iridescence_thickness_texture(),
+        material.iridescence_thickness_texture_transform(),
+    );
     if matches!(material.kind(), MaterialKind::Unlit)
         && base_color.is_none()
         && normal.is_none()
@@ -363,6 +375,8 @@ fn collect_backend_material_slot<F>(
         && sheen_color.is_none()
         && sheen_roughness.is_none()
         && anisotropy.is_none()
+        && iridescence.is_none()
+        && iridescence_thickness.is_none()
     {
         return None;
     }
@@ -379,6 +393,8 @@ fn collect_backend_material_slot<F>(
         sheen_color,
         sheen_roughness,
         anisotropy,
+        iridescence,
+        iridescence_thickness,
         material,
     })
 }
@@ -422,6 +438,8 @@ fn collect_material_textures<F>(
         material.sheen_color_texture(),
         material.sheen_roughness_texture(),
         material.anisotropy_texture(),
+        material.iridescence_texture(),
+        material.iridescence_thickness_texture(),
     ]
     .into_iter()
     .flatten()
@@ -470,7 +488,7 @@ fn collect_material_texture_diagnostics_from_material<F>(
     }
 }
 
-fn material_texture_slots(material: &MaterialDesc) -> [(&'static str, Option<TextureHandle>); 11] {
+fn material_texture_slots(material: &MaterialDesc) -> [(&'static str, Option<TextureHandle>); 13] {
     [
         ("base_color", material.base_color_texture()),
         ("normal", material.normal_texture()),
@@ -486,6 +504,11 @@ fn material_texture_slots(material: &MaterialDesc) -> [(&'static str, Option<Tex
         ("sheen_color", material.sheen_color_texture()),
         ("sheen_roughness", material.sheen_roughness_texture()),
         ("anisotropy", material.anisotropy_texture()),
+        ("iridescence", material.iridescence_texture()),
+        (
+            "iridescence_thickness",
+            material.iridescence_thickness_texture(),
+        ),
     ]
 }
 
@@ -641,6 +664,8 @@ mod tests {
         let sheen_color = decoded_test_texture(&assets);
         let sheen_roughness = decoded_test_texture(&assets);
         let anisotropy = decoded_test_texture(&assets);
+        let iridescence = decoded_test_texture(&assets);
+        let iridescence_thickness = decoded_test_texture(&assets);
         let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.25, 0.25, 0.25));
         let material_with_textures = assets.create_material(
             MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.25, 0.75)
@@ -659,7 +684,10 @@ mod tests {
                 .with_sheen_roughness_factor(1.0)
                 .with_sheen_roughness_texture(sheen_roughness)
                 .with_anisotropy_strength_factor(1.0)
-                .with_anisotropy_texture(anisotropy),
+                .with_anisotropy_texture(anisotropy)
+                .with_iridescence_factor(1.0)
+                .with_iridescence_texture(iridescence)
+                .with_iridescence_thickness_texture(iridescence_thickness),
         );
         let material_without_textures =
             assets.create_material(MaterialDesc::pbr_metallic_roughness(
@@ -727,6 +755,17 @@ mod tests {
         assert_eq!(
             slots[0].anisotropy.as_ref().map(|slot| slot.handle),
             Some(anisotropy)
+        );
+        assert_eq!(
+            slots[0].iridescence.as_ref().map(|slot| slot.handle),
+            Some(iridescence)
+        );
+        assert_eq!(
+            slots[0]
+                .iridescence_thickness
+                .as_ref()
+                .map(|slot| slot.handle),
+            Some(iridescence_thickness)
         );
         assert_eq!(
             slots[1].handle, material_without_textures,

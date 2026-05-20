@@ -185,6 +185,34 @@ pub(super) fn create_batched_material_resources(
         },
         || MaterialTextureUpload::from_anisotropy_texture(None),
     );
+    let iridescence = create_batched_role_resource(
+        device,
+        queue,
+        "iridescence",
+        layer_count,
+        material_slots,
+        |slot| {
+            MaterialTextureUpload::from_iridescence_texture(
+                slot.iridescence.as_ref().map(|texture| &texture.desc),
+            )
+        },
+        || MaterialTextureUpload::from_iridescence_texture(None),
+    );
+    let iridescence_thickness = create_batched_role_resource(
+        device,
+        queue,
+        "iridescence_thickness",
+        layer_count,
+        material_slots,
+        |slot| {
+            MaterialTextureUpload::from_iridescence_thickness_texture(
+                slot.iridescence_thickness
+                    .as_ref()
+                    .map(|texture| &texture.desc),
+            )
+        },
+        || MaterialTextureUpload::from_iridescence_thickness_texture(None),
+    );
     let texture_bindings = vec![
         base_color,
         normal,
@@ -197,6 +225,8 @@ pub(super) fn create_batched_material_resources(
         sheen_color,
         sheen_roughness,
         anisotropy,
+        iridescence,
+        iridescence_thickness,
     ];
     let texture_byte_len = texture_bindings
         .iter()
@@ -278,6 +308,8 @@ where
             "sheen_color" => "scena.material.batched_sheen_color",
             "sheen_roughness" => "scena.material.batched_sheen_roughness",
             "anisotropy" => "scena.material.batched_anisotropy",
+            "iridescence" => "scena.material.batched_iridescence",
+            "iridescence_thickness" => "scena.material.batched_iridescence_thickness",
             _ => "scena.material.batched_texture",
         }),
         size: wgpu::Extent3d {

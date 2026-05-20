@@ -27,6 +27,8 @@ pub enum MaterialTextureRole {
     SheenColor,
     SheenRoughness,
     Anisotropy,
+    Iridescence,
+    IridescenceThickness,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,6 +106,8 @@ pub(in crate::render) fn compute_material_batch_plan(
         MaterialTextureRole::SheenColor,
         MaterialTextureRole::SheenRoughness,
         MaterialTextureRole::Anisotropy,
+        MaterialTextureRole::Iridescence,
+        MaterialTextureRole::IridescenceThickness,
     ] {
         if matches!(
             role,
@@ -172,6 +176,8 @@ fn role_texture(role: MaterialTextureRole, slot: &PreparedMaterialSlot) -> Optio
         MaterialTextureRole::SheenColor => slot.sheen_color.as_ref(),
         MaterialTextureRole::SheenRoughness => slot.sheen_roughness.as_ref(),
         MaterialTextureRole::Anisotropy => slot.anisotropy.as_ref(),
+        MaterialTextureRole::Iridescence => slot.iridescence.as_ref(),
+        MaterialTextureRole::IridescenceThickness => slot.iridescence_thickness.as_ref(),
     }?;
     Some(&texture.desc)
 }
@@ -275,6 +281,8 @@ mod tests {
             sheen_color: None,
             sheen_roughness: None,
             anisotropy: None,
+            iridescence: None,
+            iridescence_thickness: None,
         }
     }
 
@@ -325,6 +333,32 @@ mod tests {
         slot.anisotropy = Some(PreparedMaterialTexture {
             handle: Default::default(),
             desc: anisotropy,
+            transform: None,
+        });
+        slot
+    }
+
+    fn material_slot_with_iridescence(
+        handle: MaterialHandle,
+        iridescence: TextureDesc,
+    ) -> PreparedMaterialSlot {
+        let mut slot = material_slot_with_base_color(handle, texture_desc(default_sampler()));
+        slot.iridescence = Some(PreparedMaterialTexture {
+            handle: Default::default(),
+            desc: iridescence,
+            transform: None,
+        });
+        slot
+    }
+
+    fn material_slot_with_iridescence_thickness(
+        handle: MaterialHandle,
+        iridescence_thickness: TextureDesc,
+    ) -> PreparedMaterialSlot {
+        let mut slot = material_slot_with_base_color(handle, texture_desc(default_sampler()));
+        slot.iridescence_thickness = Some(PreparedMaterialTexture {
+            handle: Default::default(),
+            desc: iridescence_thickness,
             transform: None,
         });
         slot
@@ -466,6 +500,50 @@ mod tests {
         assert_eq!(
             plan.incompatible_role,
             Some(MaterialTextureRole::Anisotropy)
+        );
+        assert_eq!(
+            plan.incompatible_reason,
+            Some(MaterialBatchIncompatibility::SamplerMismatch),
+        );
+    }
+
+    #[test]
+    fn iridescence_sampler_mismatch_blocks_batching_with_diagnostic_role() {
+        let slots = vec![
+            material_slot_with_iridescence(assets_handle(), texture_desc(default_sampler())),
+            material_slot_with_iridescence(assets_handle(), texture_desc(nearest_sampler())),
+        ];
+        let plan = compute_material_batch_plan(&slots);
+        assert!(!plan.batchable);
+        assert_eq!(plan.layer_count, 0);
+        assert_eq!(
+            plan.incompatible_role,
+            Some(MaterialTextureRole::Iridescence)
+        );
+        assert_eq!(
+            plan.incompatible_reason,
+            Some(MaterialBatchIncompatibility::SamplerMismatch),
+        );
+    }
+
+    #[test]
+    fn iridescence_thickness_sampler_mismatch_blocks_batching_with_diagnostic_role() {
+        let slots = vec![
+            material_slot_with_iridescence_thickness(
+                assets_handle(),
+                texture_desc(default_sampler()),
+            ),
+            material_slot_with_iridescence_thickness(
+                assets_handle(),
+                texture_desc(nearest_sampler()),
+            ),
+        ];
+        let plan = compute_material_batch_plan(&slots);
+        assert!(!plan.batchable);
+        assert_eq!(plan.layer_count, 0);
+        assert_eq!(
+            plan.incompatible_role,
+            Some(MaterialTextureRole::IridescenceThickness)
         );
         assert_eq!(
             plan.incompatible_reason,

@@ -580,6 +580,172 @@ fn m8_anisotropy_texture_slot_is_parsed_from_gltf() {
 }
 
 #[test]
+fn m8_iridescence_material_factors_are_parsed_from_gltf() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://iridescence-factors.gltf"),
+        br#"{
+            "asset": { "version": "2.0" },
+            "extensionsUsed": ["KHR_materials_iridescence"],
+            "materials": [
+                {
+                    "pbrMetallicRoughness": {
+                        "baseColorFactor": [0.7, 0.7, 0.7, 1.0],
+                        "metallicFactor": 0.0,
+                        "roughnessFactor": 0.35
+                    },
+                    "extensions": {
+                        "KHR_materials_iridescence": {
+                            "iridescenceFactor": 0.65,
+                            "iridescenceIor": 1.42,
+                            "iridescenceThicknessMinimum": 120.0,
+                            "iridescenceThicknessMaximum": 520.0
+                        }
+                    }
+                }
+            ],
+            "meshes": [{
+                "primitives": [
+                    { "attributes": { "POSITION": 0 }, "indices": 1, "material": 0 }
+                ]
+            }],
+            "nodes": [{ "name": "IridescenceMat", "mesh": 0 }],
+            "buffers": [{ "byteLength": 42, "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAABAAIA" }],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0,  "byteLength": 36 },
+                { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
+            ],
+            "accessors": [
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
+            ]
+        }"#
+        .to_vec(),
+    )]));
+
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://iridescence-factors.gltf")).expect("loads");
+    let material = assets
+        .material(scene_asset.nodes()[0].meshes()[0].material())
+        .expect("material");
+
+    assert_eq!(
+        material.iridescence_factor(),
+        0.65,
+        "KHR_materials_iridescence.iridescenceFactor must propagate into MaterialDesc"
+    );
+    assert_eq!(
+        material.iridescence_ior(),
+        1.42,
+        "KHR_materials_iridescence.iridescenceIor must propagate into MaterialDesc"
+    );
+    assert_eq!(
+        material.iridescence_thickness_minimum_nm(),
+        120.0,
+        "KHR_materials_iridescence.iridescenceThicknessMinimum must propagate"
+    );
+    assert_eq!(
+        material.iridescence_thickness_maximum_nm(),
+        520.0,
+        "KHR_materials_iridescence.iridescenceThicknessMaximum must propagate"
+    );
+}
+
+#[test]
+fn m8_iridescence_texture_slots_are_parsed_from_gltf() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://iridescence-textures.gltf"),
+        br#"{
+            "asset": { "version": "2.0" },
+            "extensionsUsed": ["KHR_materials_iridescence", "KHR_texture_transform"],
+            "images": [
+                { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==" }
+            ],
+            "textures": [{ "source": 0 }],
+            "materials": [
+                {
+                    "extensions": {
+                        "KHR_materials_iridescence": {
+                            "iridescenceFactor": 0.9,
+                            "iridescenceTexture": {
+                                "index": 0,
+                                "extensions": {
+                                    "KHR_texture_transform": { "offset": [0.2, 0.3] }
+                                }
+                            },
+                            "iridescenceThicknessMinimum": 100.0,
+                            "iridescenceThicknessMaximum": 650.0,
+                            "iridescenceThicknessTexture": {
+                                "index": 0,
+                                "extensions": {
+                                    "KHR_texture_transform": { "scale": [0.5, 0.75] }
+                                }
+                            }
+                        }
+                    }
+                }
+            ],
+            "meshes": [{
+                "primitives": [
+                    { "attributes": { "POSITION": 0 }, "indices": 1, "material": 0 }
+                ]
+            }],
+            "nodes": [{ "name": "IridescenceTextureMat", "mesh": 0 }],
+            "buffers": [{ "byteLength": 42, "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAABAAIA" }],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0,  "byteLength": 36 },
+                { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
+            ],
+            "accessors": [
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
+            ]
+        }"#
+        .to_vec(),
+    )]));
+
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://iridescence-textures.gltf")).expect("loads");
+    let material = assets
+        .material(scene_asset.nodes()[0].meshes()[0].material())
+        .expect("material");
+
+    let iridescence = material
+        .iridescence_texture()
+        .expect("iridescence texture is parsed");
+    let thickness = material
+        .iridescence_thickness_texture()
+        .expect("iridescence thickness texture is parsed");
+    assert_eq!(
+        assets
+            .texture(iridescence)
+            .expect("iridescence texture descriptor")
+            .color_space(),
+        TextureColorSpace::Linear
+    );
+    assert_eq!(
+        assets
+            .texture(thickness)
+            .expect("iridescence thickness texture descriptor")
+            .color_space(),
+        TextureColorSpace::Linear
+    );
+    assert_eq!(
+        material
+            .iridescence_texture_transform()
+            .expect("iridescence transform")
+            .offset(),
+        [0.2, 0.3]
+    );
+    assert_eq!(
+        material
+            .iridescence_thickness_texture_transform()
+            .expect("iridescence thickness transform")
+            .scale(),
+        [0.5, 0.75]
+    );
+}
+
+#[test]
 fn m8_optional_real_world_gltf_extensions_report_degradation_metadata() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from("memory://extensions.gltf"),
@@ -2519,6 +2685,23 @@ fn m8_anisotropy_png_texture_affects_cpu_preview_pixels() {
 }
 
 #[test]
+fn m8_iridescence_png_textures_affect_cpu_preview_pixels() {
+    let off = render_center_rgb_for_iridescence_textures([0, 0, 0, 255], [0, 255, 0, 255]);
+    let thin = render_center_rgb_for_iridescence_textures([255, 0, 0, 255], [0, 0, 0, 255]);
+    let thick = render_center_rgb_for_iridescence_textures([255, 0, 0, 255], [0, 255, 0, 255]);
+
+    assert_ne!(
+        off, thin,
+        "iridescenceTexture R channel must multiply iridescenceFactor and affect CPU preview pixels",
+    );
+    assert_ne!(
+        dominant_rgb_channel(thin),
+        dominant_rgb_channel(thick),
+        "iridescenceThicknessTexture G channel must shift the thin-film hue in CPU preview pixels: thin={thin:?} thick={thick:?}",
+    );
+}
+
+#[test]
 fn m8_missing_texture_slots_fail_with_actionable_asset_error() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from("memory://missing-texture.gltf"),
@@ -3770,6 +3953,48 @@ fn render_max_luminance_for_anisotropy_texture(pixel: [u8; 4]) -> u8 {
             .with_anisotropy_strength_factor(1.0)
             .with_anisotropy_texture(texture),
     )
+}
+
+fn render_center_rgb_for_iridescence_textures(
+    iridescence_pixel: [u8; 4],
+    thickness_pixel: [u8; 4],
+) -> [u8; 3] {
+    let iridescence_png = png_rgba8(1, 1, &[iridescence_pixel]);
+    let thickness_png = png_rgba8(1, 1, &[thickness_pixel]);
+    let iridescence_uri = format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(iridescence_png)
+    );
+    let thickness_uri = format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(thickness_png)
+    );
+    let assets = Assets::new();
+    let iridescence =
+        pollster::block_on(assets.load_texture(iridescence_uri, TextureColorSpace::Linear))
+            .expect("iridescence texture loads");
+    let thickness =
+        pollster::block_on(assets.load_texture(thickness_uri, TextureColorSpace::Linear))
+            .expect("iridescence thickness texture loads");
+    render_center_rgb_with_assets(
+        &assets,
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(150, 150, 150), 0.0, 0.35)
+            .with_iridescence_factor(1.0)
+            .with_iridescence_ior(1.3)
+            .with_iridescence_thickness_range_nm(100.0, 650.0)
+            .with_iridescence_texture(iridescence)
+            .with_iridescence_thickness_texture(thickness),
+    )
+}
+
+fn dominant_rgb_channel(value: [u8; 3]) -> usize {
+    if value[0] >= value[1] && value[0] >= value[2] {
+        0
+    } else if value[1] >= value[2] {
+        1
+    } else {
+        2
+    }
 }
 
 fn render_center_rgb_with_assets(assets: &Assets, material: MaterialDesc) -> [u8; 3] {

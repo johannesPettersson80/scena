@@ -1,12 +1,16 @@
 use super::pbr_contract::{
     PbrMaterial, anisotropy_light_contribution, clearcoat_light_contribution,
-    directional_illuminance_lux, inverse_square_range_attenuation, punctual_intensity_candela,
-    punctual_light_contribution, roughness_or_min, sheen_light_contribution, spot_cone_attenuation,
+    directional_illuminance_lux, inverse_square_range_attenuation, iridescence_light_contribution,
+    punctual_intensity_candela, punctual_light_contribution, roughness_or_min,
+    sheen_light_contribution, spot_cone_attenuation,
 };
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
-use crate::scene::{Light, Quat, Scene, Transform, Vec3};
+use crate::scene::{Light, Scene, Vec3};
 
 use super::environment::PreparedEnvironmentLighting;
+
+mod math;
+use math::*;
 
 #[derive(Clone)]
 pub(super) struct MaterialShadingInput {
@@ -25,6 +29,8 @@ pub(super) struct MaterialShadingInput {
     pub(super) sheen_color_texture: Color,
     pub(super) sheen_roughness_texture: f32,
     pub(super) anisotropy_texture: Vec3,
+    pub(super) iridescence_texture: f32,
+    pub(super) iridescence_thickness_texture: f32,
     pub(super) environment: PreparedEnvironmentLighting,
     pub(super) directional_shadow_factor: f32,
 }
@@ -275,6 +281,10 @@ fn shade_pbr_base_color(
         roughness_or_min(material.sheen_roughness_factor() * input.sheen_roughness_texture);
     let anisotropy_strength = material.anisotropy_strength_factor();
     let anisotropy_rotation = material.anisotropy_rotation_radians();
+    let iridescence_factor = material.iridescence_factor();
+    let iridescence_ior = material.iridescence_ior();
+    let iridescence_thickness_minimum = material.iridescence_thickness_minimum_nm();
+    let iridescence_thickness_maximum = material.iridescence_thickness_maximum_nm();
     let mut shaded = Vec3::ZERO;
 
     for light in &lights.directional {
@@ -329,6 +339,22 @@ fn shade_pbr_base_color(
                 input.anisotropy_texture,
             ),
         );
+        shaded = add_vec3(
+            shaded,
+            iridescence_light_contribution(
+                pbr_material,
+                normal,
+                view,
+                incoming,
+                radiance,
+                iridescence_factor,
+                iridescence_ior,
+                iridescence_thickness_minimum,
+                iridescence_thickness_maximum,
+                input.iridescence_texture,
+                input.iridescence_thickness_texture,
+            ),
+        );
     }
     for light in &lights.point {
         let to_light = subtract_vec3(light.position, input.position);
@@ -377,6 +403,22 @@ fn shade_pbr_base_color(
                 anisotropy_strength,
                 anisotropy_rotation,
                 input.anisotropy_texture,
+            ),
+        );
+        shaded = add_vec3(
+            shaded,
+            iridescence_light_contribution(
+                pbr_material,
+                normal,
+                view,
+                incoming,
+                radiance,
+                iridescence_factor,
+                iridescence_ior,
+                iridescence_thickness_minimum,
+                iridescence_thickness_maximum,
+                input.iridescence_texture,
+                input.iridescence_thickness_texture,
             ),
         );
     }
@@ -436,6 +478,22 @@ fn shade_pbr_base_color(
                 input.anisotropy_texture,
             ),
         );
+        shaded = add_vec3(
+            shaded,
+            iridescence_light_contribution(
+                pbr_material,
+                normal,
+                view,
+                incoming,
+                radiance,
+                iridescence_factor,
+                iridescence_ior,
+                iridescence_thickness_minimum,
+                iridescence_thickness_maximum,
+                input.iridescence_texture,
+                input.iridescence_thickness_texture,
+            ),
+        );
     }
     shaded = add_vec3(
         shaded,
@@ -445,86 +503,6 @@ fn shade_pbr_base_color(
     );
 
     Color::from_linear_rgba(shaded.x, shaded.y, shaded.z, base.a)
-}
-
-fn multiply_color(left: Color, right: Color) -> Color {
-    Color::from_linear_rgba(
-        left.r * right.r,
-        left.g * right.g,
-        left.b * right.b,
-        left.a * right.a,
-    )
-}
-
-fn light_direction(transform: Transform) -> Vec3 {
-    normalize_or(
-        rotate_vec3(transform.rotation, Vec3::new(0.0, 0.0, -1.0)),
-        Vec3::new(0.0, 0.0, -1.0),
-    )
-}
-
-fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
-    let length_squared = rotation.x * rotation.x
-        + rotation.y * rotation.y
-        + rotation.z * rotation.z
-        + rotation.w * rotation.w;
-    if length_squared <= f32::EPSILON || !length_squared.is_finite() {
-        return vector;
-    }
-    let inverse_length = length_squared.sqrt().recip();
-    let qx = rotation.x * inverse_length;
-    let qy = rotation.y * inverse_length;
-    let qz = rotation.z * inverse_length;
-    let qw = rotation.w * inverse_length;
-    let tx = 2.0 * (qy * vector.z - qz * vector.y);
-    let ty = 2.0 * (qz * vector.x - qx * vector.z);
-    let tz = 2.0 * (qx * vector.y - qy * vector.x);
-    Vec3::new(
-        vector.x + qw * tx + (qy * tz - qz * ty),
-        vector.y + qw * ty + (qz * tx - qx * tz),
-        vector.z + qw * tz + (qx * ty - qy * tx),
-    )
-}
-
-fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(left.x + right.x, left.y + right.y, left.z + right.z)
-}
-
-fn subtract_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(left.x - right.x, left.y - right.y, left.z - right.z)
-}
-
-fn negate_vec3(vector: Vec3) -> Vec3 {
-    Vec3::new(-vector.x, -vector.y, -vector.z)
-}
-
-fn dot_vec3(left: Vec3, right: Vec3) -> f32 {
-    left.x * right.x + left.y * right.y + left.z * right.z
-}
-
-fn length_vec3(vector: Vec3) -> f32 {
-    dot_vec3(vector, vector).sqrt()
-}
-
-fn normalize_or(vector: Vec3, fallback: Vec3) -> Vec3 {
-    let length = length_vec3(vector);
-    if length <= f32::EPSILON || !length.is_finite() {
-        fallback
-    } else {
-        Vec3::new(vector.x / length, vector.y / length, vector.z / length)
-    }
-}
-
-fn scale_color(color: Color, scale: f32) -> Vec3 {
-    Vec3::new(color.r * scale, color.g * scale, color.b * scale)
-}
-
-fn clamp_unit(value: f32) -> f32 {
-    if value.is_finite() {
-        value.clamp(0.0, 1.0)
-    } else {
-        0.0
-    }
 }
 
 #[cfg(test)]

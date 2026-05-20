@@ -30,6 +30,7 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
         render_clearcoat_material_feature(),
         render_sheen_material_feature(),
         render_anisotropy_material_feature(),
+        render_iridescence_material_feature(),
     ];
     let expected_artifacts = [
         "m8-unlit-textured-asset",
@@ -43,6 +44,7 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
         "m8-clearcoat-material-feature",
         "m8-sheen-material-feature",
         "m8-anisotropy-material-feature",
+        "m8-iridescence-material-feature",
     ];
     for expected in expected_artifacts {
         assert!(
@@ -112,6 +114,20 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
             assert!(
                 on > off + 2,
                 "anisotropy visual proof must brighten the right-side direction/strength response; \
+                 off={off:?} on={on:?}"
+            );
+        }
+        if artifact.name == "m8-iridescence-material-feature" {
+            let off = max_rgb_in_region(&artifact.rgba, artifact.width, 0, artifact.width / 2);
+            let on = max_rgb_in_region(
+                &artifact.rgba,
+                artifact.width,
+                artifact.width / 2,
+                artifact.width,
+            );
+            assert!(
+                on[2] > off[2] + 2 && on[2] >= on[0],
+                "iridescence visual proof must add a thickness-driven colored lobe; \
                  off={off:?} on={on:?}"
             );
         }
@@ -578,6 +594,51 @@ fn render_anisotropy_material_feature() -> VisualArtifact {
     left
 }
 
+fn render_iridescence_material_feature() -> VisualArtifact {
+    let assets = Assets::new();
+    let off_texture = load_pixel_texture(&assets, [0, 0, 0, 255], TextureColorSpace::Linear);
+    let on_texture = load_pixel_texture(&assets, [255, 0, 0, 255], TextureColorSpace::Linear);
+    let thickness_texture =
+        load_pixel_texture(&assets, [0, 255, 0, 255], TextureColorSpace::Linear);
+    let base = MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(180, 180, 180), 1.0, 0.18)
+        .with_iridescence_factor(1.0)
+        .with_iridescence_ior(1.45)
+        .with_iridescence_thickness_range_nm(120.0, 520.0)
+        .with_iridescence_thickness_texture(thickness_texture);
+    let off = base.clone().with_iridescence_texture(off_texture);
+    let on = base.with_iridescence_texture(on_texture);
+    let mut left = render_material_box(
+        "m8-iridescence-left",
+        &assets,
+        off,
+        None,
+        true,
+        "iridescence-before",
+    );
+    let right = render_material_box(
+        "m8-iridescence-right",
+        &assets,
+        on,
+        None,
+        true,
+        "iridescence-after",
+    );
+
+    for y in 0..left.height {
+        for x in left.width / 2..left.width {
+            let src = ((y * right.width + x) * 4) as usize;
+            let dst = ((y * left.width + x) * 4) as usize;
+            left.rgba[dst..dst + 4].copy_from_slice(&right.rgba[src..src + 4]);
+        }
+    }
+    left.name = "m8-iridescence-material-feature";
+    left.proof_class = "iridescence-before-after-cpu-headless-256";
+    left.source_hash = Some(fnv1a64_hex(
+        b"generated-rust-scene:m8-iridescence-material-feature:iridescence-before-after",
+    ));
+    left
+}
+
 fn render_material_box<F>(
     name: &'static str,
     assets: &Assets<F>,
@@ -763,6 +824,20 @@ fn max_luminance_in_region(rgba: &[u8], width: u32, min_x: u32, max_x: u32) -> u
         }
     }
     max_luminance
+}
+
+fn max_rgb_in_region(rgba: &[u8], width: u32, min_x: u32, max_x: u32) -> [u16; 3] {
+    let height = rgba.len() as u32 / width / 4;
+    let mut max_rgb = [0, 0, 0];
+    for y in 0..height {
+        for x in min_x..max_x {
+            let pixel = pixel_at(rgba, width, x, y);
+            max_rgb[0] = max_rgb[0].max(u16::from(pixel[0]));
+            max_rgb[1] = max_rgb[1].max(u16::from(pixel[1]));
+            max_rgb[2] = max_rgb[2].max(u16::from(pixel[2]));
+        }
+    }
+    max_rgb
 }
 
 fn write_ppm_artifact(dir: &Path, artifact: &VisualArtifact) {

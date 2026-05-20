@@ -81,6 +81,12 @@ struct MaterialUniform {
     // .y = anisotropyRotation radians
     // .z, .w = reserved
     anisotropy_factors: vec4<f32>,
+    // KHR_materials_iridescence scalar factors.
+    // .x = iridescenceFactor
+    // .y = iridescenceIor
+    // .z = iridescenceThicknessMinimum
+    // .w = iridescenceThicknessMaximum
+    iridescence_factors: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -183,6 +189,18 @@ var anisotropy_sampler: sampler;
 @group(1) @binding(22)
 var anisotropy_texture: texture_2d_array<f32>;
 
+@group(1) @binding(23)
+var iridescence_sampler: sampler;
+
+@group(1) @binding(24)
+var iridescence_texture: texture_2d_array<f32>;
+
+@group(1) @binding(25)
+var iridescence_thickness_sampler: sampler;
+
+@group(1) @binding(26)
+var iridescence_thickness_texture: texture_2d_array<f32>;
+
 @vertex
 fn vs_main(in: VertexIn) -> VertexOut {
     var out: VertexOut;
@@ -216,6 +234,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let sheen_color_sample = textureSample(sheen_color_texture, sheen_color_sampler, in.tex_coord0, material_layer);
     let sheen_roughness_sample = textureSample(sheen_roughness_texture, sheen_roughness_sampler, in.tex_coord0, material_layer);
     let anisotropy_sample = textureSample(anisotropy_texture, anisotropy_sampler, in.tex_coord0, material_layer);
+    let iridescence_sample = textureSample(iridescence_texture, iridescence_sampler, in.tex_coord0, material_layer);
+    let iridescence_thickness_sample = textureSample(iridescence_thickness_texture, iridescence_thickness_sampler, in.tex_coord0, material_layer);
     // Phase 5.1: apply normalTexture.scale to the tangent-space X/Y
     // components before TBN reconstruction. Z stays unscaled so the
     // unit-length invariant holds after normalize().
@@ -246,6 +266,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let sheen_roughness = clamp(material.sheen_factors.a * sheen_roughness_sample.a, 0.04, 1.0);
     let anisotropy_direction = anisotropy_sample.rg * 2.0 - vec2<f32>(1.0, 1.0);
     let anisotropy_strength = clamp(material.anisotropy_factors.x * anisotropy_sample.b, 0.0, 1.0);
+    let iridescence_factor = clamp(material.iridescence_factors.x * iridescence_sample.r, 0.0, 1.0);
+    let iridescence_thickness = mix(material.iridescence_factors.z, material.iridescence_factors.w, clamp(iridescence_thickness_sample.g, 0.0, 1.0));
     let metallic = clamp(material.metallic_roughness_alpha.x * metallic_roughness_sample.b, 0.0, 1.0);
     let roughness = clamp(material.metallic_roughness_alpha.y * metallic_roughness_sample.g, 0.04, 1.0);
     // Phase 5.1: occlusionTexture.strength lerps between 1.0 and the
@@ -278,6 +300,9 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
             anisotropy_strength,
             material.anisotropy_factors.y,
             anisotropy_direction,
+            iridescence_factor,
+            material.iridescence_factors.y,
+            iridescence_thickness,
             in.world_position,
             in.shadow_visibility,
         );
@@ -332,6 +357,9 @@ fn pbr_punctual_lighting(
     anisotropy_strength: f32,
     anisotropy_rotation: f32,
     anisotropy_direction: vec2<f32>,
+    iridescence_factor: f32,
+    iridescence_ior: f32,
+    iridescence_thickness: f32,
     world_position: vec3<f32>,
     shadow_visibility: f32,
 ) -> vec3<f32> {
@@ -355,6 +383,7 @@ fn pbr_punctual_lighting(
         shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
         shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
         shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
+        shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);
     }
     if camera.lighting.point_light_position_intensity.w > 0.0 {
         let to_light = camera.lighting.point_light_position_intensity.xyz - world_position;
@@ -366,6 +395,7 @@ fn pbr_punctual_lighting(
         shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
         shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
         shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
+        shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);
     }
     if camera.lighting.spot_light_position_intensity.w > 0.0 {
         let to_light = camera.lighting.spot_light_position_intensity.xyz - world_position;
@@ -383,6 +413,7 @@ fn pbr_punctual_lighting(
         shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
         shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
         shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
+        shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);
     }
     return shaded;
 }
@@ -559,6 +590,49 @@ fn anisotropy_light_contribution(
     let f0 = vec3<f32>(0.04) * (1.0 - metallic) + base * metallic;
     let fresnel = fresnel_schlick(v_dot_h, f0);
     return fresnel * distribution * visibility * radiance * n_dot_l * strength;
+}
+
+fn iridescence_light_contribution(
+    base: vec3<f32>,
+    metallic: f32,
+    roughness: f32,
+    normal: vec3<f32>,
+    view: vec3<f32>,
+    incoming: vec3<f32>,
+    radiance: vec3<f32>,
+    factor: f32,
+    ior: f32,
+    thickness_nm: f32,
+) -> vec3<f32> {
+    if factor <= 0.0 {
+        return vec3<f32>(0.0);
+    }
+    let n_dot_l = max(dot(normal, incoming), 0.0);
+    if n_dot_l <= 0.0 {
+        return vec3<f32>(0.0);
+    }
+    let n_dot_v = max(dot(normal, view), 0.001);
+    let half_vector = normalize(view + incoming);
+    let n_dot_h = max(dot(normal, half_vector), 0.0);
+    let v_dot_h = max(dot(view, half_vector), 0.0);
+    let alpha = roughness * roughness;
+    let distribution = distribution_ggx(n_dot_h, alpha);
+    let geometry = geometry_smith(n_dot_v, n_dot_l, roughness);
+    let film_color = iridescence_film_color(thickness_nm, ior);
+    let f0 = (vec3<f32>(0.04) * (1.0 - metallic) + base * metallic) * film_color;
+    let fresnel = fresnel_schlick(v_dot_h, f0);
+    let specular = fresnel * film_color * (distribution * geometry / max(4.0 * n_dot_v * n_dot_l, 0.0001));
+    return specular * radiance * n_dot_l * factor;
+}
+
+fn iridescence_film_color(thickness_nm: f32, ior: f32) -> vec3<f32> {
+    let safe_ior = select(1.3, ior, ior > 0.0);
+    let phase = max(thickness_nm, 0.0) * safe_ior / 650.0 * PI * 1.25;
+    return clamp(vec3<f32>(
+        sin(phase) * 0.5 + 0.5,
+        sin(phase + 2.0 * PI / 3.0) * 0.5 + 0.5,
+        sin(phase + 4.0 * PI / 3.0) * 0.5 + 0.5,
+    ), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
 fn distribution_ggx(n_dot_h: f32, alpha: f32) -> f32 {

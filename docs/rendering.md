@@ -72,6 +72,9 @@ Material workflows include:
 - anisotropy strength/rotation factors plus anisotropy direction/strength
   texture sampling on the CPU/reference path and GPU shader/material resource
   path,
+- iridescence factor, IOR, thickness-range factors plus iridescence
+  factor/thickness texture sampling on the CPU/reference path and GPU
+  shader/material resource path,
 - vertex colors,
 - texture slots,
 - alpha modes,
@@ -97,6 +100,12 @@ texture's red/green direction channels and blue strength channel, and the
 WebGPU/WebGL2 shader variants carry the role through the same material uniform
 and bind-group path. Approved backend screenshot or readback proof remains
 capability-gated release evidence.
+Optional glTF `KHR_materials_iridescence` factor, IOR, thickness range, and
+texture slots are parsed into `MaterialDesc`. The CPU/reference path samples
+the iridescence factor texture's red channel and thickness texture's green
+channel, and the WebGPU/WebGL2 shader variants carry those roles through the
+same material uniform and bind-group path. Approved backend screenshot or
+readback proof remains capability-gated release evidence.
 
 ## Environment
 

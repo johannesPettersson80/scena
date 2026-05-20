@@ -37,7 +37,7 @@ This lets applications present clear UI instead of failing silently.
 - Texture arrays and texture limits.
 - Shadow support.
 - Environment lighting support.
-- Material feature support such as clearcoat, sheen, and anisotropy
+- Material feature support such as clearcoat, sheen, anisotropy, and iridescence
   factor/texture sampling in CPU/reference and GPU shader paths versus
   backend-gated release proof.
 - Postprocessing support such as subtle bloom, headless CPU SSAO, and

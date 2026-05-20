@@ -90,6 +90,14 @@ All notable user-facing changes are recorded here.
   and strength channels, and WebGPU/WebGL2 shader variants carry the same
   role through material uniforms and bind groups.
 
+- Added iridescence material support across the CPU/reference path and GPU
+  shader/material resource path: `MaterialDesc` exposes iridescence factor,
+  IOR, thickness range, and factor/thickness texture slots, optional glTF
+  `KHR_materials_iridescence` factors and textures are parsed, CPU preview
+  samples the factor red channel and thickness green channel, and
+  WebGPU/WebGL2 shader variants carry the same roles through material
+  uniforms and bind groups.
+
 - Added capability-gated wide-gamut output reporting: capability reports now
   expose `wide_gamut_output`, browser M4 smoke artifacts record Display P3
   canvas color-space probes, and diagnostics keep output treated as sRGB until

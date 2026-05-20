@@ -25,7 +25,7 @@ pub(super) fn check_sheen_material_contracts(root: &Path, findings: &mut Vec<Fin
         root,
         findings,
         "ASSETS-M8",
-        "src/material.rs",
+        "src/material/extensions.rs",
         &[
             "with_sheen_color_factor",
             "with_sheen_roughness_factor",
@@ -96,7 +96,7 @@ pub(super) fn check_sheen_material_contracts(root: &Path, findings: &mut Vec<Fin
         "ASSETS-M8",
         "src/render/gpu/material_uniform.rs",
         &[
-            "MATERIAL_UNIFORM_BYTE_LEN: u64 = 160",
+            "MATERIAL_UNIFORM_BYTE_LEN: u64 = 176",
             "sheen_factors",
             "material.sheen_color_factor()",
             "material.sheen_roughness_factor()",

@@ -113,11 +113,13 @@ fn optional_extension_help(extension: &str) -> &'static str {
         "KHR_materials_anisotropy" => {
             "anisotropy material extension strength/rotation factors and direction/strength texture slots are parsed, and CPU/reference plus GPU shader paths sample the same roles; structured degradation remains for required usage until approved backend screenshot or readback proof covers the target lane"
         }
+        "KHR_materials_iridescence" => {
+            "iridescence material extension factor, IOR, thickness range, and factor/thickness texture slots are parsed, and CPU/reference plus GPU shader paths sample the same roles; structured degradation remains for required usage until approved backend screenshot or readback proof covers the target lane"
+        }
         "KHR_materials_transmission"
         | "KHR_materials_ior"
         | "KHR_materials_volume"
         | "KHR_materials_specular"
-        | "KHR_materials_iridescence"
         | "KHR_materials_dispersion" => {
             "material extension is optional in this glTF and currently uses structured degradation; required usage fails during asset load"
         }
@@ -184,11 +186,13 @@ fn optional_extension_suggested_fix(extension: &str) -> &'static str {
         "KHR_materials_anisotropy" => {
             "Keep KHR_materials_anisotropy optional unless CPU/reference anisotropy is enough, or export a fallback material without anisotropy for required assets that depend on unproven backend parity."
         }
+        "KHR_materials_iridescence" => {
+            "Keep KHR_materials_iridescence optional unless CPU/reference iridescence is enough, or export a fallback material without iridescence for required assets that depend on unproven backend parity."
+        }
         "KHR_materials_transmission"
         | "KHR_materials_ior"
         | "KHR_materials_volume"
         | "KHR_materials_specular"
-        | "KHR_materials_iridescence"
         | "KHR_materials_dispersion" => {
             "Export a fallback material without the extension, or keep the extension optional until the matching renderer feature is supported."
         }

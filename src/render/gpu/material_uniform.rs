@@ -5,7 +5,7 @@ use crate::material::{AlphaMode, MaterialDesc, MaterialKind, TextureTransform};
 /// correct layer when a `texture_2d_array<f32>` collapses N per-material bind
 /// groups into one shared bind group with dynamic-offset uniform. Per-material
 /// fall-back still allocates a 1-layer array and writes layer index 0.
-pub(super) const MATERIAL_UNIFORM_BYTE_LEN: u64 = 160;
+pub(super) const MATERIAL_UNIFORM_BYTE_LEN: u64 = 176;
 
 /// `min_uniform_buffer_offset_alignment` floor across every wgpu adapter we
 /// target. The shared per-batch material uniform buffer pads each entry up to
@@ -40,6 +40,12 @@ pub(super) struct MaterialUniformUpload {
     /// .y = anisotropyRotation radians
     /// .z, .w = reserved
     pub(super) anisotropy_factors: [f32; 4],
+    /// KHR_materials_iridescence scalar lanes.
+    /// .x = iridescenceFactor
+    /// .y = iridescenceIor
+    /// .z = iridescenceThicknessMinimum
+    /// .w = iridescenceThicknessMaximum
+    pub(super) iridescence_factors: [f32; 4],
 }
 
 impl MaterialUniformUpload {
@@ -108,6 +114,12 @@ impl MaterialUniformUpload {
                 0.0,
                 0.0,
             ],
+            iridescence_factors: [
+                material.iridescence_factor(),
+                material.iridescence_ior(),
+                material.iridescence_thickness_minimum_nm(),
+                material.iridescence_thickness_maximum_nm(),
+            ],
         }
     }
 
@@ -149,6 +161,7 @@ impl MaterialUniformUpload {
             clearcoat_factors: [0.0, 0.0, 1.0, 0.0],
             sheen_factors: [0.0, 0.0, 0.0, 0.0],
             anisotropy_factors: [0.0, 0.0, 0.0, 0.0],
+            iridescence_factors: [0.0, 1.3, 100.0, 400.0],
         }
     }
 
@@ -190,6 +203,11 @@ impl MaterialUniformUpload {
             let byte_offset = 144 + index * 4;
             bytes[byte_offset..byte_offset + 4].copy_from_slice(&value.to_ne_bytes());
         }
+        // iridescence_factors follows at offset 160.
+        for (index, value) in self.iridescence_factors.into_iter().enumerate() {
+            let byte_offset = 160 + index * 4;
+            bytes[byte_offset..byte_offset + 4].copy_from_slice(&value.to_ne_bytes());
+        }
         bytes
     }
 }
@@ -226,6 +244,9 @@ mod tests {
         .with_sheen_roughness_factor(0.42)
         .with_anisotropy_strength_factor(0.8)
         .with_anisotropy_rotation_radians(1.57)
+        .with_iridescence_factor(0.65)
+        .with_iridescence_ior(1.42)
+        .with_iridescence_thickness_range_nm(120.0, 520.0)
         .with_alpha_mode(AlphaMode::Mask { cutoff: 0.45 });
 
         let upload = MaterialUniformUpload::from_material(Some(&material), None);
@@ -236,12 +257,14 @@ mod tests {
         assert_eq!(upload.clearcoat_factors, [0.85, 0.18, 1.75, 0.0]);
         assert_eq!(upload.sheen_factors, [0.7, 0.2, 0.1, 0.42]);
         assert_eq!(upload.anisotropy_factors, [0.8, 1.57, 0.0, 0.0]);
+        assert_eq!(upload.iridescence_factors, [0.65, 1.42, 120.0, 520.0]);
         assert_eq!(
             upload.encode().len(),
             MATERIAL_UNIFORM_BYTE_LEN as usize,
             "material uniform must reserve transform, base color, emissive, metallic, \
              roughness, alpha-mask, material_layer_index, texture_strengths, and \
-             clearcoat/sheen/anisotropy factor lanes (9 vec4<f32> + 1 vec4<u32> = 160 bytes)"
+             clearcoat/sheen/anisotropy/iridescence factor lanes \
+             (10 vec4<f32> + 1 vec4<u32> = 176 bytes)"
         );
     }
 

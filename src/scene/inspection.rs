@@ -98,6 +98,8 @@ pub struct SceneMaterialInspection {
     sheen_color_texture: Option<SceneTextureInspection>,
     sheen_roughness_texture: Option<SceneTextureInspection>,
     anisotropy_texture: Option<SceneTextureInspection>,
+    iridescence_texture: Option<SceneTextureInspection>,
+    iridescence_thickness_texture: Option<SceneTextureInspection>,
 }
 
 impl Scene {
@@ -482,6 +484,22 @@ impl SceneMaterialInspection {
     pub const fn anisotropy_texture(&self) -> Option<SceneTextureInspection> {
         self.anisotropy_texture
     }
+
+    pub const fn has_iridescence_texture(&self) -> bool {
+        self.iridescence_texture.is_some()
+    }
+
+    pub const fn iridescence_texture(&self) -> Option<SceneTextureInspection> {
+        self.iridescence_texture
+    }
+
+    pub const fn has_iridescence_thickness_texture(&self) -> bool {
+        self.iridescence_thickness_texture.is_some()
+    }
+
+    pub const fn iridescence_thickness_texture(&self) -> Option<SceneTextureInspection> {
+        self.iridescence_thickness_texture
+    }
 }
 
 const fn mesh_geometry(kind: &NodeKind) -> Option<GeometryHandle> {
@@ -533,6 +551,11 @@ impl SceneMaterialInspection {
             sheen_color_texture: texture_preview(desc.sheen_color_texture(), assets),
             sheen_roughness_texture: texture_preview(desc.sheen_roughness_texture(), assets),
             anisotropy_texture: texture_preview(desc.anisotropy_texture(), assets),
+            iridescence_texture: texture_preview(desc.iridescence_texture(), assets),
+            iridescence_thickness_texture: texture_preview(
+                desc.iridescence_thickness_texture(),
+                assets,
+            ),
         }
     }
 }

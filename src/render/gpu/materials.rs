@@ -2,8 +2,7 @@ use crate::render::prepare::{PreparedMaterialSlot, compute_material_batch_plan};
 
 use super::material_batched::{MaterialBatchedResources, create_batched_material_resources};
 use super::material_bindings::{
-    MATERIAL_TEXTURE_BINDING_INDICES, MaterialTextureBindingMode,
-    create_material_texture_layout_entries,
+    MaterialTextureBindingMode, create_material_texture_layout_entries,
 };
 use super::material_mips::{downsample_rgba8_mip, mip_level_extents};
 use super::material_uniform::{
@@ -12,6 +11,9 @@ use super::material_uniform::{
 pub(super) use super::material_upload::{
     MaterialTextureUpload, address_mode, filter_mode, mipmap_filter_mode,
 };
+
+mod bind_group;
+pub(super) use bind_group::create_material_bind_group;
 
 /// Plan line 778 commit 2: material GPU resources can take one of two shapes.
 ///
@@ -298,6 +300,26 @@ fn create_material_resource(
         ),
         texture_binding_mode,
     );
+    let iridescence = create_texture_binding_resource(
+        device,
+        queue,
+        "iridescence",
+        MaterialTextureUpload::from_iridescence_texture(
+            slot.and_then(|slot| slot.iridescence.as_ref())
+                .map(|texture| &texture.desc),
+        ),
+        texture_binding_mode,
+    );
+    let iridescence_thickness = create_texture_binding_resource(
+        device,
+        queue,
+        "iridescence_thickness",
+        MaterialTextureUpload::from_iridescence_thickness_texture(
+            slot.and_then(|slot| slot.iridescence_thickness.as_ref())
+                .map(|texture| &texture.desc),
+        ),
+        texture_binding_mode,
+    );
     let texture_bindings = vec![
         base_color,
         normal,
@@ -310,6 +332,8 @@ fn create_material_resource(
         sheen_color,
         sheen_roughness,
         anisotropy,
+        iridescence,
+        iridescence_thickness,
     ];
     let texture_byte_len = texture_bindings
         .iter()
@@ -375,6 +399,8 @@ fn create_texture_binding_resource(
                 "sheen_color" => "scena.material.sheen_color",
                 "sheen_roughness" => "scena.material.sheen_roughness",
                 "anisotropy" => "scena.material.anisotropy",
+                "iridescence" => "scena.material.iridescence",
+                "iridescence_thickness" => "scena.material.iridescence_thickness",
                 _ => "scena.material.texture",
             }
         } else {
@@ -390,6 +416,8 @@ fn create_texture_binding_resource(
                 "sheen_color" => "scena.material.fallback_sheen_color",
                 "sheen_roughness" => "scena.material.fallback_sheen_roughness",
                 "anisotropy" => "scena.material.fallback_anisotropy",
+                "iridescence" => "scena.material.fallback_iridescence",
+                "iridescence_thickness" => "scena.material.fallback_iridescence_thickness",
                 _ => "scena.material.fallback_texture",
             }
         }),
@@ -502,140 +530,5 @@ pub(super) fn write_material_texture_layer_mips(
     }
 }
 
-pub(super) fn create_material_bind_group(
-    device: &wgpu::Device,
-    layout: &wgpu::BindGroupLayout,
-    texture_bindings: &[MaterialTextureBindingResources],
-    uniform: &wgpu::Buffer,
-) -> wgpu::BindGroup {
-    let mut entries = Vec::with_capacity(MATERIAL_TEXTURE_BINDING_INDICES.len() * 2 + 1);
-    for (bindings, resources) in MATERIAL_TEXTURE_BINDING_INDICES
-        .into_iter()
-        .zip(texture_bindings)
-    {
-        entries.push(wgpu::BindGroupEntry {
-            binding: bindings.sampler,
-            resource: wgpu::BindingResource::Sampler(resources.sampler()),
-        });
-        entries.push(wgpu::BindGroupEntry {
-            binding: bindings.texture,
-            resource: wgpu::BindingResource::TextureView(resources.view()),
-        });
-    }
-    entries.push(wgpu::BindGroupEntry {
-        binding: 2,
-        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-            buffer: uniform,
-            offset: 0,
-            // The dynamic-offset path slices a single MATERIAL_UNIFORM_BYTE_LEN
-            // window out of the larger buffer; per-material fall-back uses
-            // the same window with offset 0.
-            size: std::num::NonZeroU64::new(MATERIAL_UNIFORM_BYTE_LEN),
-        }),
-    });
-
-    device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("scena.material.fallback_bind_group"),
-        layout,
-        entries: &entries,
-    })
-}
-
 #[cfg(test)]
-mod tests {
-    use crate::assets::{AssetPath, TextureDesc, TextureSamplerDesc, TextureSourceFormat};
-    use crate::material::TextureColorSpace;
-
-    #[test]
-    fn material_resources_define_shader_visible_texture_bindings() {
-        let source = include_str!("materials.rs");
-        let bindings_source = include_str!("material_bindings.rs");
-        let batched_source = include_str!("material_batched.rs");
-        assert!(
-            bindings_source.contains("SamplerBindingType::Filtering")
-                && bindings_source.contains("TextureSampleType::Float { filterable: true }")
-                && bindings_source.contains("NORMAL_BINDINGS")
-                && bindings_source.contains("METALLIC_ROUGHNESS_BINDINGS")
-                && bindings_source.contains("OCCLUSION_BINDINGS")
-                && bindings_source.contains("EMISSIVE_BINDINGS")
-                && bindings_source.contains("CLEARCOAT_BINDINGS")
-                && bindings_source.contains("CLEARCOAT_ROUGHNESS_BINDINGS")
-                && bindings_source.contains("CLEARCOAT_NORMAL_BINDINGS")
-                && bindings_source.contains("SHEEN_COLOR_BINDINGS")
-                && bindings_source.contains("SHEEN_ROUGHNESS_BINDINGS")
-                && bindings_source.contains("ANISOTROPY_BINDINGS")
-                && bindings_source.contains("MATERIAL_TEXTURE_BINDING_INDICES")
-                && bindings_source.contains("Self::Texture2d => wgpu::TextureViewDimension::D2")
-                && bindings_source.contains("TextureViewDimension::D2Array")
-                && source.contains("MaterialTextureUpload")
-                && source.contains("MaterialUniformUpload")
-                && source.contains("binding: 2")
-                && source.contains("scena.material.uniform")
-                && source.contains("scena.material.base_color")
-                && source.contains("scena.material.normal")
-                && source.contains("scena.material.metallic_roughness")
-                && source.contains("scena.material.occlusion")
-                && source.contains("scena.material.emissive")
-                && source.contains("scena.material.clearcoat")
-                && source.contains("scena.material.clearcoat_roughness")
-                && source.contains("scena.material.clearcoat_normal")
-                && source.contains("scena.material.sheen_color")
-                && source.contains("scena.material.sheen_roughness")
-                && source.contains("scena.material.anisotropy")
-                && source.contains("scena.material.fallback_base_color")
-                && source.contains("scena.material.fallback_bind_group")
-                && batched_source.contains("scena.material.batched_uniform")
-                && batched_source.contains("scena.material.batched_clearcoat")
-                && batched_source.contains("scena.material.batched_clearcoat_roughness")
-                && batched_source.contains("scena.material.batched_clearcoat_normal")
-                && batched_source.contains("scena.material.batched_sheen_color")
-                && batched_source.contains("scena.material.batched_sheen_roughness")
-                && batched_source.contains("scena.material.batched_anisotropy"),
-            "backend material scaffolding must allocate a sampler, texture view, and bind group \
-             plus the batched array path that closes plan line 778"
-        );
-    }
-
-    #[test]
-    fn decoded_base_color_texture_becomes_backend_upload() {
-        let texture = TextureDesc::new_with_bytes(
-            AssetPath::from(
-                "data:image/png;base64,\
-                 iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
-            ),
-            TextureColorSpace::Srgb,
-            TextureSamplerDesc::default(),
-            TextureSourceFormat::Png,
-            None,
-        )
-        .expect("inline PNG texture decodes");
-
-        let upload = super::MaterialTextureUpload::from_base_color_texture(Some(&texture));
-
-        assert!(upload.uses_decoded_texture);
-        assert_eq!(upload.width, 1);
-        assert_eq!(upload.height, 1);
-        assert_eq!(upload.rgba8, &[255, 0, 0, 255]);
-        assert_eq!(upload.format, wgpu::TextureFormat::Rgba8UnormSrgb);
-    }
-
-    #[test]
-    fn wgpu_material_upload_uses_texture_sampler_metadata() {
-        let source = include_str!("materials.rs");
-        let upload_source = include_str!("material_upload.rs");
-        assert!(
-            source.contains("address_mode(upload.sampler.wrap_s())")
-                && source.contains("address_mode(upload.sampler.wrap_t())")
-                && source.contains("filter_mode(upload.sampler.mag_filter())")
-                && source.contains("filter_mode(upload.sampler.min_filter())")
-                && source.contains("mipmap_filter_mode(upload.sampler.min_filter())")
-                && upload_source
-                    .contains("TextureWrap::MirroredRepeat => wgpu::AddressMode::MirrorRepeat")
-                && upload_source.contains("TextureWrap::Repeat => wgpu::AddressMode::Repeat")
-                && upload_source.contains("TextureFilter::Nearest")
-                && upload_source.contains("TextureFilter::LinearMipmapLinear"),
-            "wgpu material upload must honor glTF sampler wrap/filter metadata instead of \
-             hardcoding linear clamp-to-edge"
-        );
-    }
-}
+mod tests;

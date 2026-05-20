@@ -220,6 +220,54 @@ pub(super) fn anisotropy_light_contribution(
     scale_vec3(multiply_vec3(specular, radiance), n_dot_l)
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(super) fn iridescence_light_contribution(
+    material: PbrMaterial,
+    normal: Vec3,
+    view: Vec3,
+    incoming: Vec3,
+    radiance: Vec3,
+    factor: f32,
+    ior: f32,
+    thickness_minimum_nm: f32,
+    thickness_maximum_nm: f32,
+    texture_strength: f32,
+    thickness_texture: f32,
+) -> Vec3 {
+    let factor = clamp_unit(factor) * clamp_unit(texture_strength);
+    if factor <= f32::EPSILON {
+        return Vec3::ZERO;
+    }
+    let incoming = normalize_or(incoming, Vec3::ZERO);
+    let n_dot_l = dot_vec3(normal, incoming).max(0.0);
+    if n_dot_l <= f32::EPSILON {
+        return Vec3::ZERO;
+    }
+    let normal = normalize_or(normal, Vec3::new(0.0, 0.0, 1.0));
+    let view = normalize_or(view, normal);
+    let half_vector = normalize_or(add_vec3(view, incoming), normal);
+    let n_dot_v = dot_vec3(normal, view).max(MIN_N_DOT_V);
+    let n_dot_h = dot_vec3(normal, half_vector).max(0.0);
+    let v_dot_h = dot_vec3(view, half_vector).max(0.0);
+    let roughness = roughness_or_min(material.roughness);
+    let alpha = roughness * roughness;
+    let distribution = distribution_ggx(n_dot_h, alpha);
+    let geometry = geometry_smith(n_dot_v, n_dot_l, roughness);
+    let thickness = mix_scalar(
+        finite_non_negative(thickness_minimum_nm),
+        finite_non_negative(thickness_maximum_nm),
+        thickness_texture,
+    );
+    let film_color = iridescence_film_color(thickness, ior);
+    let tinted_f0 = multiply_vec3(material.f0(), film_color);
+    let fresnel = fresnel_schlick(v_dot_h, tinted_f0);
+    let specular = scale_vec3(
+        multiply_vec3(fresnel, film_color),
+        distribution * geometry * factor / (4.0 * n_dot_v * n_dot_l).max(MIN_DENOMINATOR),
+    );
+    scale_vec3(multiply_vec3(specular, radiance), n_dot_l)
+}
+
 pub(super) fn environment_split_sum_contribution(
     material: PbrMaterial,
     normal: Vec3,
@@ -456,6 +504,21 @@ fn rotated_anisotropy_direction(texture_direction_strength: Vec3, rotation: f32)
     (x * cos - y * sin, x * sin + y * cos)
 }
 
+fn iridescence_film_color(thickness_nm: f32, ior: f32) -> Vec3 {
+    let thickness_nm = finite_non_negative(thickness_nm);
+    let ior = if ior.is_finite() && ior > 0.0 {
+        ior
+    } else {
+        1.3
+    };
+    let phase = (thickness_nm * ior / 650.0) * PI * 1.25;
+    Vec3::new(
+        (phase.sin() * 0.5 + 0.5).clamp(0.0, 1.0),
+        ((phase + 2.0 * PI / 3.0).sin() * 0.5 + 0.5).clamp(0.0, 1.0),
+        ((phase + 4.0 * PI / 3.0).sin() * 0.5 + 0.5).clamp(0.0, 1.0),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -601,5 +664,48 @@ mod tests {
             Vec3::ZERO,
             "anisotropyTexture blue channel must multiply anisotropyStrength"
         );
+    }
+
+    #[test]
+    fn iridescence_light_contribution_uses_factor_thickness_and_textures() {
+        let material = PbrMaterial::new(Vec3::new(0.72, 0.72, 0.72), 0.0, 0.35);
+        let normal = Vec3::new(0.0, 0.0, 1.0);
+        let view = normalize_or(Vec3::new(0.2, 0.0, 1.0), normal);
+        let incoming = normalize_or(Vec3::new(0.15, 0.0, 1.0), normal);
+        let radiance = Vec3::new(1.0, 1.0, 1.0);
+        let off = iridescence_light_contribution(
+            material, normal, view, incoming, radiance, 0.0, 1.3, 100.0, 400.0, 1.0, 1.0,
+        );
+        let thin = iridescence_light_contribution(
+            material, normal, view, incoming, radiance, 1.0, 1.3, 100.0, 250.0, 1.0, 0.0,
+        );
+        let thick = iridescence_light_contribution(
+            material, normal, view, incoming, radiance, 1.0, 1.3, 100.0, 650.0, 1.0, 1.0,
+        );
+        let texture_off = iridescence_light_contribution(
+            material, normal, view, incoming, radiance, 1.0, 1.3, 100.0, 650.0, 0.0, 1.0,
+        );
+
+        assert_eq!(off, Vec3::ZERO);
+        assert_eq!(texture_off, Vec3::ZERO);
+        assert!(
+            max_component(thin) > 0.0 && max_component(thick) > 0.0,
+            "iridescence should add a thin-film colored specular contribution"
+        );
+        assert_ne!(
+            dominant_channel(thin),
+            dominant_channel(thick),
+            "iridescence thickness must shift the visible hue, not only brighten uniformly"
+        );
+    }
+
+    fn dominant_channel(value: Vec3) -> usize {
+        if value.x >= value.y && value.x >= value.z {
+            0
+        } else if value.y >= value.z {
+            1
+        } else {
+            2
+        }
     }
 }

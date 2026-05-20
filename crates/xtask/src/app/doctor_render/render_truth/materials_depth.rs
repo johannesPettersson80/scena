@@ -100,8 +100,17 @@ pub(crate) fn check_renderer_truth_material_depth_contracts(
             "scena.material.occlusion",
             "scena.material.emissive",
             "scena.material.fallback_base_color",
-            "scena.material.fallback_bind_group",
             "texture_byte_len",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/render/gpu/materials/bind_group.rs",
+        &[
+            "create_material_bind_group",
+            "scena.material.fallback_bind_group",
         ],
     );
     require_contains(

@@ -262,6 +262,40 @@ pub(super) fn anisotropy_texture_sample(
         .unwrap_or(Vec3::new(1.0, 0.0, 1.0))
 }
 
+pub(super) fn iridescence_texture_sample(
+    assets: &Assets<impl Sized>,
+    material: &MaterialDesc,
+    uv: [f32; 2],
+) -> f32 {
+    let Some(texture) = material.iridescence_texture() else {
+        return 1.0;
+    };
+    assets
+        .sample_texture(
+            texture,
+            transform_texture_uv(uv, material.iridescence_texture_transform()),
+        )
+        .map(|sample| sample.r.clamp(0.0, 1.0))
+        .unwrap_or(1.0)
+}
+
+pub(super) fn iridescence_thickness_texture_sample(
+    assets: &Assets<impl Sized>,
+    material: &MaterialDesc,
+    uv: [f32; 2],
+) -> f32 {
+    let Some(texture) = material.iridescence_thickness_texture() else {
+        return 1.0;
+    };
+    assets
+        .sample_texture(
+            texture,
+            transform_texture_uv(uv, material.iridescence_thickness_texture_transform()),
+        )
+        .map(|sample| sample.g.clamp(0.0, 1.0))
+        .unwrap_or(1.0)
+}
+
 pub(super) fn multiply_color(left: Color, right: Color) -> Color {
     Color::from_linear_rgba(
         left.r * right.r,
@@ -322,6 +356,11 @@ fn material_texture_slots(
         ("sheen_color", material.sheen_color_texture()),
         ("sheen_roughness", material.sheen_roughness_texture()),
         ("anisotropy", material.anisotropy_texture()),
+        ("iridescence", material.iridescence_texture()),
+        (
+            "iridescence_thickness",
+            material.iridescence_thickness_texture(),
+        ),
     ]
     .into_iter()
     .filter_map(|(slot, texture)| texture.map(|texture| (slot, texture)))

@@ -11,7 +11,8 @@ use super::lighting::{MaterialShadingInput, material_color};
 use super::materials::{
     anisotropy_texture_sample, base_color_texture_sample, clearcoat_normal_texture_sample,
     clearcoat_roughness_texture_sample, clearcoat_texture_sample, emissive_texture_sample,
-    material_pass, metallic_roughness_texture_sample, multiply_color, normal_texture_sample,
+    iridescence_texture_sample, iridescence_thickness_texture_sample, material_pass,
+    metallic_roughness_texture_sample, multiply_color, normal_texture_sample,
     occlusion_texture_sample, render_material_slot, sheen_color_texture_sample,
     sheen_roughness_texture_sample,
 };
@@ -238,6 +239,16 @@ fn append_triangle_primitives<F>(
                                 corner.uv,
                             ),
                             anisotropy_texture: anisotropy_texture_sample(
+                                source.assets,
+                                source.material,
+                                corner.uv,
+                            ),
+                            iridescence_texture: iridescence_texture_sample(
+                                source.assets,
+                                source.material,
+                                corner.uv,
+                            ),
+                            iridescence_thickness_texture: iridescence_thickness_texture_sample(
                                 source.assets,
                                 source.material,
                                 corner.uv,

@@ -74,6 +74,14 @@ impl<'a> MaterialTextureUpload<'a> {
         Self::from_linear_texture(texture, FALLBACK_ANISOTROPY_RGBA8)
     }
 
+    pub(super) fn from_iridescence_texture(texture: Option<&'a TextureDesc>) -> Self {
+        Self::from_linear_texture(texture, FALLBACK_WHITE_RGBA8)
+    }
+
+    pub(super) fn from_iridescence_thickness_texture(texture: Option<&'a TextureDesc>) -> Self {
+        Self::from_linear_texture(texture, FALLBACK_WHITE_RGBA8)
+    }
+
     pub(super) fn from_linear_texture(
         texture: Option<&'a TextureDesc>,
         fallback_rgba8: &'a [u8; 4],

@@ -12,7 +12,7 @@ use crate::material::{AlphaMode, Color, MaterialDesc, TextureColorSpace, Texture
 
 use super::super::{AssetPath, AssetStorage, MaterialHandle};
 use super::material_extensions::{
-    anisotropy_extension, clearcoat_extension, extension_texture_transform,
+    anisotropy_extension, clearcoat_extension, extension_texture_transform, iridescence_extension,
     read_extension_texture_info, sheen_extension,
 };
 use super::textures::{GltfTexture, texture_slot};
@@ -285,6 +285,43 @@ pub(super) fn parse_materials(
                     }
                 }
             }
+            if let Some(iridescence) = iridescence_extension(document, material_index) {
+                desc = desc
+                    .with_iridescence_factor(iridescence.factor)
+                    .with_iridescence_ior(iridescence.ior)
+                    .with_iridescence_thickness_range_nm(
+                        iridescence.thickness_minimum,
+                        iridescence.thickness_maximum,
+                    );
+                if let Some(info) = iridescence.texture {
+                    let texture = texture_slot(
+                        path,
+                        "iridescenceTexture",
+                        info.index,
+                        textures,
+                        storage,
+                        TextureColorSpace::Linear,
+                    )?;
+                    desc = desc.with_iridescence_texture(texture);
+                    if let Some(transform) = info.transform {
+                        desc = desc.with_iridescence_texture_transform(transform);
+                    }
+                }
+                if let Some(info) = iridescence.thickness_texture {
+                    let texture = texture_slot(
+                        path,
+                        "iridescenceThicknessTexture",
+                        info.index,
+                        textures,
+                        storage,
+                        TextureColorSpace::Linear,
+                    )?;
+                    desc = desc.with_iridescence_thickness_texture(texture);
+                    if let Some(transform) = info.transform {
+                        desc = desc.with_iridescence_thickness_texture_transform(transform);
+                    }
+                }
+            }
             desc = match material.alpha_mode() {
                 ::gltf::material::AlphaMode::Opaque => desc,
                 ::gltf::material::AlphaMode::Mask => desc.with_alpha_mode(AlphaMode::Mask {
@@ -414,6 +451,24 @@ fn validate_material_texture_indices(
                 read_extension_texture_info(anisotropy, "anisotropyTexture").map(|info| info.index),
                 texture_count,
             )?;
+        }
+        if let Some(iridescence) = material
+            .extensions
+            .as_ref()
+            .and_then(|extensions| extensions.others.get("KHR_materials_iridescence"))
+        {
+            for (slot, key) in [
+                ("iridescenceTexture", "iridescenceTexture"),
+                ("iridescenceThicknessTexture", "iridescenceThicknessTexture"),
+            ] {
+                validate_texture_info(
+                    path,
+                    material_index,
+                    slot,
+                    read_extension_texture_info(iridescence, key).map(|info| info.index),
+                    texture_count,
+                )?;
+            }
         }
     }
     Ok(())

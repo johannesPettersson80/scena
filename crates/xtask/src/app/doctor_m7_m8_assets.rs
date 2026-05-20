@@ -4,6 +4,7 @@ mod asset_matrix;
 mod assets_materials;
 mod clearcoat_materials;
 mod ergonomics;
+mod iridescence_materials;
 mod manifest_helpers;
 mod material_texture_diagnostics;
 mod sheen_materials;
