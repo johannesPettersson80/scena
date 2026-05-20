@@ -875,8 +875,9 @@ specific competitor primitive.
   Visual proof: browser-demo + animated-proof shipped through
   `target/gate-artifacts/scena-viewer-element-browser-proof.png`.
 - **Variant switching for `KHR_materials_variants`.** Status:
-  **[proof-gap]** overall; Viewer primitive, reference/docs-image proof,
-  and `<scena-viewer>` picker surface **[shipped]**.
+  **[shipped]** overall; Viewer primitive, reference/docs-image proof,
+  `<scena-viewer>` picker surface, and picker-to-rendered-variant proof
+  **[shipped]**.
   Extension diagnostics mark it supported and
   `Scene::set_active_variant(&import, Some(name))` exists. Viewers now
   expose `material_variants()`, `active_material_variant()`, and
@@ -884,12 +885,18 @@ specific competitor primitive.
   API and re-prepares before the next render. `<scena-viewer>` exposes
   `ScenaViewerVariantSelection`, `setMaterialVariants(...)`, and
   `scena-viewer-variant-change` for a host-owned picker-to-renderer
-  binding. Owner: `src/viewer.rs` + `src/viewer_element.rs`.
+  binding. The M6 custom-element proof selects `noon`, renders
+  `tests/assets/gltf/material_variants_scene.gltf` into the element
+  canvas through `scena-viewer-material-variant-render`, and asserts
+  visible green-dominant pixels from the selected material. Owner:
+  `src/viewer.rs` + `src/viewer_element.rs` +
+  `src/browser_probe/material_variant.rs`.
   Visual proof: reference-image + docs-image shipped through
   `target/gate-artifacts/examples-visual/viewer-material-variant-reference-docs-image.ppm`;
   custom-element browser-demo proof for picker events shipped through
-  `target/gate-artifacts/scena-viewer-element-browser-proof.png`; full
-  picker-to-rendered-variant proof remains future custom-element work.
+  `target/gate-artifacts/scena-viewer-element-browser-proof.png`;
+  picker-to-rendered-variant proof **[shipped]** through the same artifact
+  and proof class `scena-viewer-material-variant-render`.
 - **Loading progress primitives.** Status: **[shipped]** for loader,
   viewer, and `<scena-viewer>` progress sequencing.
   `AssetLoadProgress` exists in `src/lib.rs` and is now surfaced
@@ -1453,9 +1460,14 @@ Picking/outline/hover reconciliation pass (2026-05-19):
 - Extended the custom element with `setMaterialVariants(...)`,
   `scena-viewer-variants-ready`, and `scena-viewer-variant-change` so hosts
   can bind the picker to the existing viewer/scene variant setter.
-- Reclassified variant switching from ergonomic gap to proof gap: the
-  picker surface is shipped and source-enforced; browser-demo proof remains
-  open.
+- Added M6 picker-to-rendered-variant proof **[shipped]**: selecting
+  `noon` in the custom-element picker renders the real
+  `material_variants_scene.gltf` fixture through
+  `scena-viewer-material-variant-render` and asserts green-dominant pixels
+  from the active material.
+- Reclassified variant switching from proof gap to shipped for viewer API,
+  docs/reference image, custom-element picker events, and rendered selected
+  variant proof.
 
 `<scena-viewer>` mobile/a11y defaults pass (2026-05-19):
 

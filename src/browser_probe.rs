@@ -1,6 +1,7 @@
 //! WASM-only browser proof hooks used by release-gate probes.
 
 mod dropped_file;
+mod material_variant;
 mod probes;
 mod report;
 mod workflows;
@@ -46,6 +47,16 @@ pub async fn m6_render_dropped_file_probe(
 ) -> Result<String, JsValue> {
     let backend = parse_browser_backend(&backend)?;
     dropped_file::render_dropped_file_probe(canvas, backend, &bytes, &file_name).await
+}
+
+#[wasm_bindgen(js_name = m6RenderMaterialVariantProbe)]
+pub async fn m6_render_material_variant_probe(
+    canvas: HtmlCanvasElement,
+    backend: String,
+    variant_name: String,
+) -> Result<String, JsValue> {
+    let backend = parse_browser_backend(&backend)?;
+    material_variant::render_material_variant_probe(canvas, backend, &variant_name).await
 }
 
 #[wasm_bindgen(js_name = m6RenderSurfaceLifecycleProbe)]

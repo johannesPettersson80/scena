@@ -81,7 +81,11 @@ Hosts can expose material variants through the built-in material variant picker
 with `setMaterialVariants(variants, activeName)`. The picker accepts string
 names or `{ name, label }` objects, emits `scena-viewer-variants-ready` after
 population, and emits `scena-viewer-variant-change` with the selected variant
-name or `null` for the default material.
+name or `null` for the default material. The M6 browser proof includes a
+picker-to-rendered-variant path: the selected `noon` variant from
+`material_variants_scene.gltf` is rendered into the element canvas under
+`scena-viewer-material-variant-render`, and the proof asserts visible
+green-dominant pixels from the selected material.
 
 The mobile and accessibility defaults are part of the element contract. The host is
 keyboard focusable by default, the canvas uses `touch-action: none`, the element

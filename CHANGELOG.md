@@ -34,6 +34,9 @@ All notable user-facing changes are recorded here.
 - Added custom-element auto-framing proof metadata for dropped GLB renders:
   the M6 browser proof now asserts projected bounds are inside the viewport,
   centered, and fill-correct under `viewer-level-auto-framing`.
+- Added custom-element material-variant render proof: selecting the `noon`
+  variant now renders `material_variants_scene.gltf` into the viewer canvas
+  under `scena-viewer-material-variant-render`.
 
 - Added connector magnet preview APIs for editor-style drag-to-assemble UIs:
   `Scene::preview_connector_magnet`, `ConnectionMagnetPreview`, and

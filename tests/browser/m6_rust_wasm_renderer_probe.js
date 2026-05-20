@@ -528,7 +528,7 @@ function assertScenaViewerElementProof(result) {
     ["canvas_touch_action", "none"],
     ["progress_phase", "fetching"],
     ["progress_value_now", "42"],
-    ["variant_change", "painted"],
+    ["variant_change", "noon"],
     ["annotation_count", 1],
     ["annotation_visible", 1],
     ["annotation_update_visible", 1],
@@ -552,6 +552,16 @@ function assertScenaViewerElementProof(result) {
     checks.progress_sequence[1].barTransform !== "scaleX(0.42)"
   ) {
     throw new Error(`<scena-viewer> proof did not exercise progress phase sequencing: ${JSON.stringify(result)}`);
+  }
+  if (
+    checks.variant_render_status !== "passed" ||
+    checks.variant_render_workflow !== "scena-viewer-material-variant-render" ||
+    checks.variant_render_selected !== "noon" ||
+    checks.variant_render_active !== "noon" ||
+    checks.variant_render_green_dominant !== true ||
+    !(checks.variant_render_pixels_nonblack > 0)
+  ) {
+    throw new Error(`<scena-viewer> proof did not render the selected material variant: ${JSON.stringify(result)}`);
   }
   if (
     !Array.isArray(checks.annotation_tracking_sequence) ||

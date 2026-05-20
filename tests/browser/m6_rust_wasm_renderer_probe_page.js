@@ -6,6 +6,7 @@ import init, {
   m6RenderBenchmarkProbe,
   m6CameraControlKitProbe,
   m6RenderDroppedFileProbe,
+  m6RenderMaterialVariantProbe,
   m6RenderStateLifecycleProbe,
   m6RenderWorkflowProbe,
 } from "/pkg/scena.js";
@@ -89,6 +90,43 @@ async function renderDroppedFileIntoViewer(viewer, backend, dropDetail) {
   };
 }
 
+async function renderSelectedVariantIntoViewer(viewer, backend, variantName) {
+  viewer.canvas.width = 96;
+  viewer.canvas.height = 64;
+  const raw = await m6RenderMaterialVariantProbe(viewer.canvas, backend, variantName);
+  const rendered = JSON.parse(raw);
+  const readback = await readRenderedPixelsWithRetry(
+    backend,
+    viewer.canvas,
+    "scena-viewer-material-variant-render",
+  );
+  const rendererPixels =
+    rendered.renderer_readback && rendered.renderer_readback.pixel_statistics;
+  const pixels = rendererPixels && rendererPixels.nonblack > 0 ? rendererPixels : readback.pixels;
+  const center = (pixels && pixels.center) || [];
+  const greenDominant =
+    center.length >= 3 &&
+    center[1] > center[0] + 20 &&
+    center[1] > center[2] + 20;
+  const passed =
+    rendered.workflow === "scena-viewer-material-variant-render" &&
+    rendered.metadata.proof_class === "scena-viewer-material-variant-render" &&
+    rendered.metadata.selected_variant === variantName &&
+    rendered.metadata.active_variant === variantName &&
+    rendered.draw_calls > 0 &&
+    pixels &&
+    pixels.nonblack > 0 &&
+    greenDominant;
+  return {
+    ...rendered,
+    status: passed ? "passed" : "failed",
+    pixels,
+    green_dominant: greenDominant,
+    pixel_source: rendererPixels && rendererPixels.nonblack > 0 ? "renderer-owned-gpu-copy" : "canvas-readback",
+    pixel_readback_attempts: readback.attempts,
+  };
+}
+
 window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
   await ensureInit();
   const defined = defineScenaViewer();
@@ -142,15 +180,16 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
 
   const variantsReady = once(viewer, "scena-viewer-variants-ready");
   viewer.setMaterialVariants([
-    { name: "raw", label: "Raw metal" },
-    { name: "painted", label: "Painted" },
-  ], "raw");
+    { name: "midnight", label: "Midnight" },
+    { name: "noon", label: "Noon" },
+  ], "midnight");
   const variantReadyDetail = await variantsReady;
   const variantChange = once(viewer, "scena-viewer-variant-change");
   const variantPicker = root.querySelector("[part=variant-picker]");
-  variantPicker.value = "painted";
+  variantPicker.value = "noon";
   variantPicker.dispatchEvent(new Event("change", { bubbles: true }));
   const variantChangeDetail = await variantChange;
+  const variantRender = await renderSelectedVariantIntoViewer(viewer, "webgl2", variantChangeDetail.name);
 
   const annotationRequest = once(viewer, "scena-viewer-annotations-request");
   viewer.requestAnnotationProjections();
@@ -191,6 +230,12 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     progress_sequence: progressSequence,
     variant_names: variantReadyDetail.names,
     variant_change: variantChangeDetail.name,
+    variant_render_status: variantRender.status,
+    variant_render_workflow: variantRender.workflow,
+    variant_render_selected: variantRender.metadata.selected_variant,
+    variant_render_active: variantRender.metadata.active_variant,
+    variant_render_green_dominant: variantRender.green_dominant,
+    variant_render_pixels_nonblack: variantRender.pixels.nonblack,
     annotation_count: annotationRequestDetail.anchors.length,
     annotation_visible: annotationsRenderedDetail.visible,
     annotation_update_visible: annotationsUpdatedDetail.visible,
@@ -236,9 +281,15 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     checks.progress_sequence[1].valueNow === "42" &&
     checks.progress_sequence[1].barTransform === "scaleX(0.42)" &&
     Array.isArray(checks.variant_names) &&
-    checks.variant_names.includes("raw") &&
-    checks.variant_names.includes("painted") &&
-    checks.variant_change === "painted" &&
+    checks.variant_names.includes("midnight") &&
+    checks.variant_names.includes("noon") &&
+    checks.variant_change === "noon" &&
+    checks.variant_render_status === "passed" &&
+    checks.variant_render_workflow === "scena-viewer-material-variant-render" &&
+    checks.variant_render_selected === "noon" &&
+    checks.variant_render_active === "noon" &&
+    checks.variant_render_green_dominant === true &&
+    checks.variant_render_pixels_nonblack > 0 &&
     checks.annotation_count === 1 &&
     checks.annotation_visible === 1 &&
     checks.annotation_update_visible === 1 &&
