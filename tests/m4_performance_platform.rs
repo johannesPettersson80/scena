@@ -6,9 +6,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use scena::{
     Assets, Backend, CameraKey, CapabilityStatus, Color, GeometryDesc, GeometryTopology,
-    GeometryVertex, HardwareTier, MaterialDesc, OrbitControlAction, OrbitControls, PlatformSurface,
-    PointerButton, PointerEvent, PointerEventKind, Profile, Quality, RenderError, RenderMode,
-    Renderer, RendererOptions, Scene, SurfaceEvent, Transform, Vec3,
+    GeometryVertex, HardwareTier, MaterialDesc, OrbitControlAction, OrbitControls,
+    OutputColorSpace, PlatformSurface, PointerButton, PointerEvent, PointerEventKind, Profile,
+    Quality, RenderError, RenderMode, Renderer, RendererOptions, Scene, SurfaceEvent, Transform,
+    Vec3,
 };
 
 #[global_allocator]
@@ -241,6 +242,53 @@ fn renderer_options_apply_profile_quality_and_render_mode_precedence() {
         "explicit quality overrides profile and hardware defaults"
     );
     assert_eq!(renderer.render_mode(), RenderMode::OnChange);
+}
+
+#[test]
+fn display_p3_output_requires_explicit_canvas_configuration_proof() {
+    let renderer = Renderer::headless_with_options(
+        16,
+        16,
+        RendererOptions::default().with_output_color_space(OutputColorSpace::DisplayP3),
+    )
+    .expect("renderer builds");
+
+    assert_eq!(renderer.output_color_space(), OutputColorSpace::DisplayP3);
+    assert_eq!(
+        renderer.capabilities().wide_gamut_output,
+        CapabilityStatus::FeatureDisabled,
+        "Display P3 requests on headless output must not imply a wide-gamut browser surface"
+    );
+
+    let webgl2_display_p3 =
+        scena::Capabilities::for_attached_gpu_backend(Backend::WebGl2).with_display_p3_output(true);
+    assert_eq!(
+        webgl2_display_p3.output_stage,
+        scena::OutputStageStatus::PbrNeutralDisplayP3
+    );
+    assert_eq!(
+        webgl2_display_p3.color_target_format,
+        "Rgba8UnormSrgb+DisplayP3Canvas"
+    );
+    assert_eq!(
+        webgl2_display_p3.wide_gamut_output,
+        CapabilityStatus::Supported,
+        "the renderer may claim Display P3 only after its canvas output path configured display-p3"
+    );
+    assert!(
+        webgl2_display_p3.diagnostics().iter().all(|diagnostic| {
+            diagnostic.code != scena::DiagnosticCode::WideGamutOutputUnavailable
+        }),
+        "supported Display P3 output should not emit the unavailable diagnostic"
+    );
+
+    let webgpu_without_config = scena::Capabilities::for_attached_gpu_backend(Backend::WebGpu)
+        .with_display_p3_output(false);
+    assert_eq!(
+        webgpu_without_config.wide_gamut_output,
+        CapabilityStatus::Degraded,
+        "an attached browser backend without renderer-owned color-space configuration remains degraded"
+    );
 }
 
 #[test]

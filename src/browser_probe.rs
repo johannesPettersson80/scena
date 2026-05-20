@@ -14,8 +14,8 @@ use workflows::{build_workflow_scene, scene_with_triangle};
 
 use crate::{
     AssetFetcher, Assets, Backend, CameraKey, EnvironmentHandle, FlyControls, FollowControls,
-    OrbitControlAction, OrbitControls, PerspectiveCamera, PixelReadback, PlatformSurface,
-    PointerEvent, Renderer, Scene, Transform, Vec3,
+    OrbitControlAction, OrbitControls, OutputColorSpace, PerspectiveCamera, PixelReadback,
+    PlatformSurface, PointerEvent, Renderer, RendererOptions, Scene, Transform, Vec3,
 };
 
 #[wasm_bindgen(js_name = m6RenderWebgl2Probe)]
@@ -36,6 +36,28 @@ pub async fn m6_render_workflow_probe(
 ) -> Result<String, JsValue> {
     let backend = parse_browser_backend(&backend)?;
     render_workflow_probe(canvas, backend, &workflow).await
+}
+
+#[wasm_bindgen(js_name = m6RenderDisplayP3Probe)]
+pub async fn m6_render_display_p3_probe(
+    canvas: HtmlCanvasElement,
+    backend: String,
+) -> Result<String, JsValue> {
+    let backend = parse_browser_backend(&backend)?;
+    let assets = Assets::new();
+    let (mut scene, camera) = scene_with_triangle();
+    render_scene_with_options(
+        canvas,
+        backend,
+        "display-p3-output",
+        &assets,
+        &mut scene,
+        camera,
+        json!({ "requested_output_color_space": "DisplayP3" }),
+        None,
+        RendererOptions::default().with_output_color_space(OutputColorSpace::DisplayP3),
+    )
+    .await
 }
 
 #[wasm_bindgen(js_name = m6RenderDroppedFileProbe)]
@@ -234,6 +256,31 @@ async fn render_scene<F: AssetFetcher>(
     metadata: serde_json::Value,
     environment: Option<EnvironmentHandle>,
 ) -> Result<String, JsValue> {
+    render_scene_with_options(
+        canvas,
+        backend,
+        workflow,
+        assets,
+        scene,
+        camera,
+        metadata,
+        environment,
+        RendererOptions::default(),
+    )
+    .await
+}
+
+async fn render_scene_with_options<F: AssetFetcher>(
+    canvas: HtmlCanvasElement,
+    backend: Backend,
+    workflow: &str,
+    assets: &Assets<F>,
+    scene: &mut Scene,
+    camera: crate::CameraKey,
+    metadata: serde_json::Value,
+    environment: Option<EnvironmentHandle>,
+    renderer_options: RendererOptions,
+) -> Result<String, JsValue> {
     let width = canvas.width();
     let height = canvas.height();
     let surface = match backend {
@@ -246,7 +293,7 @@ async fn render_scene<F: AssetFetcher>(
             return Err(JsValue::from_str("browser probe requires WebGL2 or WebGPU"));
         }
     };
-    let mut renderer = Renderer::from_surface_async(surface)
+    let mut renderer = Renderer::from_surface_async_with_options(surface, renderer_options)
         .await
         .map_err(|error| JsValue::from_str(&format!("build failed: {error:?}")))?;
     if let Some(environment) = environment {
@@ -277,6 +324,7 @@ async fn render_scene<F: AssetFetcher>(
         "metadata": metadata,
         "capabilities": capabilities_json(*capabilities),
         "diagnostics": diagnostics_json(renderer.diagnostics()),
+        "requested_output_color_space": format!("{:?}", renderer.output_color_space()),
         "backend": format!("{:?}", capabilities.backend),
         "gpu_device": capabilities.gpu_device,
         "surface_attached": capabilities.surface_attached,

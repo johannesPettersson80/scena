@@ -2,7 +2,7 @@ use std::cell::Cell;
 use std::marker::PhantomData;
 
 use crate::diagnostics::{
-    Backend, BuildError, Capabilities, DebugOverlay, HardwareTier, RendererStats,
+    Backend, BuildError, Capabilities, DebugOverlay, HardwareTier, OutputColorSpace, RendererStats,
 };
 use crate::material::Color;
 use crate::picking::InteractionStyle;
@@ -121,7 +121,13 @@ impl Renderer {
                 }
                 PlatformSurfaceAttachment::BrowserWebGpuCanvas(canvas) => {
                     let backend = backend_for_attached_surface(kind);
-                    let gpu = gpu::request_browser_surface_gpu(backend, size, canvas).await?;
+                    let gpu = gpu::request_browser_surface_gpu(
+                        backend,
+                        size,
+                        canvas,
+                        options.output_color_space(),
+                    )
+                    .await?;
                     return Self::from_raster_target(
                         size.width,
                         size.height,
@@ -133,7 +139,13 @@ impl Renderer {
                 }
                 PlatformSurfaceAttachment::BrowserWebGl2Canvas(canvas) => {
                     let backend = backend_for_attached_surface(kind);
-                    let gpu = gpu::request_browser_surface_gpu(backend, size, canvas).await?;
+                    let gpu = gpu::request_browser_surface_gpu(
+                        backend,
+                        size,
+                        canvas,
+                        options.output_color_space(),
+                    )
+                    .await?;
                     return Self::from_raster_target(
                         size.width,
                         size.height,
@@ -180,13 +192,19 @@ impl Renderer {
         validate_target_size(width, height)
             .map_err(|()| BuildError::InvalidTargetSize { width, height })?;
         let has_gpu = gpu.is_some();
+        let output_color_space = options.output_color_space();
+        let display_p3_configured = output_color_space == OutputColorSpace::DisplayP3
+            && gpu
+                .as_ref()
+                .is_some_and(GpuDeviceState::display_p3_canvas_configured);
         let capabilities = if surface_attached {
             Capabilities::for_attached_gpu_backend(backend)
         } else if has_gpu {
             Capabilities::for_gpu_backend(backend)
         } else {
             Capabilities::for_backend(backend)
-        };
+        }
+        .with_display_p3_output(display_p3_configured);
         let target = RasterTarget {
             width,
             height,
@@ -220,6 +238,7 @@ impl Renderer {
             profile,
             quality,
             render_mode,
+            output_color_space,
             render_generation: 0,
             last_rendered_generation: None,
             debug_overlay: DebugOverlay::None,

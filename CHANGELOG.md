@@ -116,6 +116,12 @@ All notable user-facing changes are recorded here.
   canvas color-space probes, and diagnostics keep output treated as sRGB until
   a backend-specific probe proves otherwise.
 
+- Added renderer-owned Display P3 browser output configuration via
+  `OutputColorSpace` and
+  `RendererOptions::with_output_color_space(OutputColorSpace::DisplayP3)`,
+  with M6 WebGL2/WebGPU browser proof that records effective `display-p3`
+  canvas presentation and `wide_gamut_output = Supported`.
+
 - Added viewer-level animation playback sugar:
   `HeadlessGltfViewer::play_clip(...)` and
   `InteractiveGltfViewer::play_clip(...)` start a named clip on the loaded

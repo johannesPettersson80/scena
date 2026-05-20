@@ -10,5 +10,7 @@ impl GpuDeviceState {
             }
             surface.surface.configure(&self.device, &surface.config);
         }
+        #[cfg(target_arch = "wasm32")]
+        self.refresh_browser_canvas_output_color_space(target.backend);
     }
 }

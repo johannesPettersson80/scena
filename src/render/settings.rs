@@ -1,5 +1,5 @@
 use crate::assets::EnvironmentHandle;
-use crate::diagnostics::DebugOverlay;
+use crate::diagnostics::{DebugOverlay, OutputColorSpace};
 use crate::material::Color;
 use crate::picking::InteractionStyle;
 
@@ -41,6 +41,7 @@ pub struct RendererOptions {
     profile: Profile,
     quality: Option<Quality>,
     render_mode: Option<RenderMode>,
+    output_color_space: OutputColorSpace,
 }
 
 impl RendererOptions {
@@ -59,6 +60,11 @@ impl RendererOptions {
         self
     }
 
+    pub const fn with_output_color_space(mut self, output_color_space: OutputColorSpace) -> Self {
+        self.output_color_space = output_color_space;
+        self
+    }
+
     pub const fn profile(self) -> Profile {
         self.profile
     }
@@ -69,6 +75,10 @@ impl RendererOptions {
 
     pub const fn explicit_render_mode(self) -> Option<RenderMode> {
         self.render_mode
+    }
+
+    pub const fn output_color_space(self) -> OutputColorSpace {
+        self.output_color_space
     }
 }
 
@@ -83,6 +93,10 @@ impl Renderer {
 
     pub fn render_mode(&self) -> RenderMode {
         self.render_mode
+    }
+
+    pub fn output_color_space(&self) -> OutputColorSpace {
+        self.output_color_space
     }
 
     pub fn exposure_ev(&self) -> f32 {

@@ -101,7 +101,8 @@ impl Renderer {
             Capabilities::for_gpu_backend(backend)
         } else {
             Capabilities::for_backend(backend)
-        };
+        }
+        .with_display_p3_output(false);
         self.stats.target_width = size.width;
         self.stats.target_height = size.height;
         self.surface_lost = None;

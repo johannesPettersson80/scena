@@ -227,6 +227,45 @@ pub(crate) fn doctor_rejects_m4_platform_missing_dirty_state_regression() {
 }
 
 #[test]
+pub(crate) fn doctor_rejects_display_p3_without_renderer_output_contract() {
+    // ARCH-M4-PLATFORM: Display P3 is only shippable when RendererOptions,
+    // capabilities, and browser proof all pin the renderer-owned canvas
+    // color-space configuration path.
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/display-p3-output-stub");
+    fs::create_dir_all(fixture_root.join("src/render")).expect("render fixture dir");
+    fs::create_dir_all(fixture_root.join("src/diagnostics")).expect("diagnostics fixture dir");
+    fs::create_dir_all(fixture_root.join("tests/browser")).expect("browser fixture dir");
+    fs::write(
+        fixture_root.join("src/render/settings.rs"),
+        "pub struct RendererOptions { render_mode: RenderMode }\n",
+    )
+    .expect("settings fixture");
+    fs::write(
+        fixture_root.join("src/diagnostics/capabilities.rs"),
+        "pub struct Capabilities { pub wide_gamut_output: CapabilityStatus }\n",
+    )
+    .expect("capabilities fixture");
+    fs::write(
+        fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe_page.js"),
+        "window.scenaM6RustWasmRendererProbe = async () => ({ status: 'passed' });\n",
+    )
+    .expect("browser proof fixture");
+    let mut findings = Vec::new();
+
+    check_m4_platform_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-M4-PLATFORM"
+                && (finding.message.contains("OutputColorSpace")
+                    || finding.message.contains("scenaM6DisplayP3OutputProbe"))
+        }),
+        "doctor must reject Display P3 capability claims without renderer-owned output contract proof: {findings:?}",
+    );
+}
+
+#[test]
 pub(crate) fn doctor_rejects_release_ci_silent_artifact_upload_regression() {
     // RELEASE-CI-M9: CI workflows must use `if-no-files-found: error` on artifact
     // upload so a silent missing-artifacts upload doesn't pretend the lane passed.

@@ -10,9 +10,6 @@ pub(crate) fn check_renderer_truth_camera_shader_contracts(
         "ARCH-RENDER-TRUTH",
         "src/diagnostics/capabilities.rs",
         &[
-            "const fn forward_pbr_status",
-            "const fn directional_shadow_status",
-            "const fn punctual_shadow_status",
             "CapabilityStatus::Degraded",
             "DiagnosticCode::ForwardPbrDegraded",
             "DiagnosticCode::DirectionalShadowsDegraded",
@@ -20,6 +17,18 @@ pub(crate) fn check_renderer_truth_camera_shader_contracts(
             "DiagnosticCode::SpotShadowsDisabled",
             "DiagnosticCode::AmbientOcclusionDisabled",
             "DiagnosticCode::GpuCullingDisabled",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/diagnostics/capability_status.rs",
+        &[
+            "const fn forward_pbr_status",
+            "const fn directional_shadow_status",
+            "const fn punctual_shadow_status",
+            "CapabilityStatus::Degraded",
             "const fn bloom_status",
             "const fn ambient_occlusion_status",
             "fn gpu_frustum_culling_status",

@@ -8,7 +8,7 @@ pub(crate) fn check_renderer_truth_capability_claim_contracts(
         root,
         findings,
         "ARCH-RENDER-TRUTH",
-        "src/diagnostics/capabilities.rs",
+        "src/diagnostics/capability_status.rs",
         &[
             "forward_pbr_status(_backend: Backend) -> CapabilityStatus {\n    CapabilityStatus::Supported",
             "directional_shadow_status(_backend: Backend) -> CapabilityStatus {\n    CapabilityStatus::Supported",

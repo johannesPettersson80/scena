@@ -1,4 +1,6 @@
 #[cfg(target_arch = "wasm32")]
+mod browser_color_space;
+#[cfg(target_arch = "wasm32")]
 mod browser_exposure;
 mod browser_readback;
 mod build;
@@ -25,6 +27,7 @@ mod vertices;
 
 #[cfg(target_arch = "wasm32")]
 use crate::diagnostics::Backend;
+use crate::diagnostics::OutputColorSpace;
 
 #[cfg(target_arch = "wasm32")]
 use self::browser_readback::BrowserReadbackResources;
@@ -45,6 +48,8 @@ pub(super) struct GpuDeviceState {
     surface: Option<GpuSurfaceState>,
     pending_destructions: u64,
     resources: Option<GpuPreparedResources>,
+    output_color_space: OutputColorSpace,
+    display_p3_canvas_configured: bool,
     #[cfg(target_arch = "wasm32")]
     browser_canvas: Option<web_sys::HtmlCanvasElement>,
 }
@@ -162,6 +167,10 @@ struct GpuPreparedResources {
 }
 
 impl GpuDeviceState {
+    pub(super) const fn display_p3_canvas_configured(&self) -> bool {
+        self.display_p3_canvas_configured
+    }
+
     pub(super) fn prepared_resource_stats(&self) -> GpuResourceStats {
         self.resources
             .as_ref()

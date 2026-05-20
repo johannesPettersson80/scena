@@ -28,9 +28,22 @@ pub(crate) fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Findin
             "pub uniform_buffer_max_bytes: u32",
             "pub compute_shaders: CapabilityStatus",
             "pub storage_buffers: CapabilityStatus",
+            "pub enum OutputColorSpace",
+            "PbrNeutralDisplayP3",
+            "with_display_p3_output",
+            "Rgba8UnormSrgb+DisplayP3Canvas",
             "uniform_buffer_max_bytes",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M4-PLATFORM",
+        "src/diagnostics/capability_status.rs",
+        &[
             "HardwareTier::Medium",
             "Backend::WebGl2 => 128",
+            "wide_gamut_output_status",
         ],
     );
     require_contains(
@@ -43,6 +56,8 @@ pub(crate) fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Findin
             "pub enum Quality",
             "pub enum RenderMode",
             "pub struct RendererOptions",
+            "with_output_color_space",
+            "output_color_space",
             "OnChange",
         ],
     );
@@ -72,9 +87,22 @@ pub(crate) fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Findin
         &[
             "headless_with_options",
             "from_surface_with_options",
+            "options.output_color_space()",
             "RenderMode::OnChange",
             "resolve_quality",
             "resolve_render_mode",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M4-PLATFORM",
+        "src/render/gpu/browser_color_space.rs",
+        &[
+            "scenaPrepareBrowserCanvasOutputColorSpace",
+            "GPUCanvasConfiguration.colorSpace",
+            "drawingBufferColorSpace",
+            "RendererOptions::with_output_color_space",
         ],
     );
     require_contains(
@@ -158,6 +186,7 @@ pub(crate) fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Findin
             "uniform_buffer_max_bytes",
             "transform_dirty_state_propagates_through_world_transform_queries",
             "renderer_options_apply_profile_quality_and_render_mode_precedence",
+            "display_p3_output_requires_explicit_canvas_configuration_proof",
             "on_change_render_static_idle_records_skipped_frame_stats",
             "render_on_change_static_idle_skip_has_zero_allocations",
             "cpu_frustum_culling_drops_offscreen_renderables_before_draw",
@@ -207,6 +236,20 @@ pub(crate) fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Findin
             "color_space",
             "loss",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M4-PLATFORM",
+        "tests/browser/m6_rust_wasm_renderer_probe_page.js",
+        &["scenaM6DisplayP3OutputProbe", "canvas_output_color_space"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M4-PLATFORM",
+        "tests/browser/m6_rust_wasm_renderer_probe.js",
+        &["assertDisplayP3OutputProof", "scenaM6DisplayP3OutputProbe"],
     );
     require_contains(
         root,

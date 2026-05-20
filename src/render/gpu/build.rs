@@ -1,4 +1,4 @@
-use crate::diagnostics::{Backend, BuildError};
+use crate::diagnostics::{Backend, BuildError, OutputColorSpace};
 
 use super::{GpuDeviceState, GpuSurfaceState};
 
@@ -30,6 +30,8 @@ pub(in crate::render) async fn request_headless_gpu(
         surface: None,
         pending_destructions: 0,
         resources: None,
+        output_color_space: OutputColorSpace::Srgb,
+        display_p3_canvas_configured: false,
     })
 }
 
@@ -78,11 +80,21 @@ pub(in crate::render) async fn request_browser_surface_gpu(
     backend: Backend,
     size: crate::platform::SurfaceSize,
     canvas: web_sys::HtmlCanvasElement,
+    output_color_space: OutputColorSpace,
 ) -> Result<GpuDeviceState, BuildError> {
+    if backend == Backend::WebGpu && output_color_space == OutputColorSpace::DisplayP3 {
+        super::browser_color_space::prepare_browser_canvas_output_color_space(
+            backend,
+            &canvas,
+            output_color_space,
+        );
+    }
     let instance = instance_for_backend(backend);
     let surface = create_browser_canvas_surface(&instance, backend, &canvas)?;
-    let mut state = request_gpu_for_surface(backend, size, instance, surface).await?;
+    let mut state =
+        request_gpu_for_surface(backend, size, instance, surface, output_color_space).await?;
     state.browser_canvas = Some(canvas);
+    state.refresh_browser_canvas_output_color_space(backend);
     Ok(state)
 }
 
@@ -96,7 +108,7 @@ async fn request_surface_gpu(
     let surface = instance
         .create_surface(target)
         .map_err(|_| BuildError::CreateSurface { backend })?;
-    request_gpu_for_surface(backend, size, instance, surface).await
+    request_gpu_for_surface(backend, size, instance, surface, OutputColorSpace::Srgb).await
 }
 
 async fn request_gpu_for_surface(
@@ -104,6 +116,7 @@ async fn request_gpu_for_surface(
     size: crate::platform::SurfaceSize,
     instance: wgpu::Instance,
     surface: wgpu::Surface<'static>,
+    output_color_space: OutputColorSpace,
 ) -> Result<GpuDeviceState, BuildError> {
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
@@ -143,6 +156,8 @@ async fn request_gpu_for_surface(
         surface: Some(GpuSurfaceState { surface, config }),
         pending_destructions: 0,
         resources: None,
+        output_color_space,
+        display_p3_canvas_configured: false,
         #[cfg(target_arch = "wasm32")]
         browser_canvas: None,
     })

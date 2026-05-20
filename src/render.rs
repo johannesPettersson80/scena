@@ -22,7 +22,8 @@ mod surface;
 use crate::assets::EnvironmentHandle;
 use crate::diagnostics::{
     Backend, Capabilities, CapabilityReport, ChangeKind, DebugOverlay, DevicePoll, Diagnostic,
-    GpuAdapterReport, NotPreparedReason, RenderError, RenderOutcome, RendererStats,
+    GpuAdapterReport, NotPreparedReason, OutputColorSpace, RenderError, RenderOutcome,
+    RendererStats,
 };
 use crate::geometry::Primitive;
 use crate::material::Color;
@@ -69,6 +70,7 @@ pub struct Renderer {
     profile: Profile,
     quality: Quality,
     render_mode: RenderMode,
+    output_color_space: OutputColorSpace,
     render_generation: u64,
     last_rendered_generation: Option<u64>,
     debug_overlay: DebugOverlay,

@@ -651,18 +651,19 @@ the rendered result is part of the contract.
   Visual proof: reference-image order-invariance pair shipped via
   `target/gate-artifacts/m2-visual/oit-overlap-order-invariance.ppm`.
 - **Wide-gamut output (Display P3)** — Status: **[shipped]** for
-  capability-gated reporting and browser probe evidence. PBR Neutral
-  targets sRGB; `Capabilities::wide_gamut_output` is disabled for
-  headless/unattached reports, degraded for attached browser backends until
-  the recorded canvas color-space probe proves Display P3, and paired with
-  `DiagnosticCode::WideGamutOutputUnavailable` when unavailable. **[gap]**
-  remains for a Rust renderer output path that configures and proves
-  Display P3 presentation end to end. Proof:
-  `capability_matrix_reports_hardware_tier_and_backend_feature_states`
-  asserts disabled/degraded capability states, the M4 browser smoke records
-  `drawingBufferColorSpace` / `GPUCanvasConfiguration.colorSpace` probe
-  results, and `doctor --full` source-enforces the capability field,
-  diagnostic code, and browser artifact shape.
+  capability-gated reporting, renderer-owned browser output configuration,
+  and browser proof evidence. PBR Neutral targets sRGB by default;
+  `RendererOptions::with_output_color_space(OutputColorSpace::DisplayP3)`
+  requests the wide-gamut path, `Capabilities::wide_gamut_output` remains
+  disabled for headless/unattached reports and degraded until the active
+  browser canvas is configured as Display P3, and
+  `DiagnosticCode::WideGamutOutputUnavailable` is emitted when unavailable.
+  Proof: `display_p3_output_requires_explicit_canvas_configuration_proof`
+  asserts the public option/capability contract, the M6 browser probe records
+  `scenaM6DisplayP3OutputProbe` for WebGL2 `drawingBufferColorSpace` and
+  WebGPU `GPUCanvasConfiguration.colorSpace` with effective `display-p3`,
+  and `doctor --full` source-enforces the option, capability, browser output
+  configuration, and proof artifact shape.
 - **Draco mesh compression** (`KHR_draco_mesh_compression`).
   Proof: decode/import assertions against a known compressed fixture,
   package-size/build-time impact for any optional feature, and a rendered
@@ -1881,6 +1882,24 @@ Wide-gamut capability probe pass (2026-05-19):
 - Reclassified wide-gamut output to shipped for capability-gated reporting
   and browser probe evidence only; renderer-level Display P3 presentation
   remains an explicit gap until it has backend visual proof.
+
+Display P3 renderer output pass (2026-05-20):
+
+- Added `OutputColorSpace` and
+  `RendererOptions::with_output_color_space(OutputColorSpace::DisplayP3)`
+  so Display P3 is requested through the renderer options path instead of
+  host-side probe-only code.
+- Added renderer-owned browser canvas configuration for WebGL2
+  `drawingBufferColorSpace` and WebGPU `GPUCanvasConfiguration.colorSpace`;
+  capabilities now switch to `wide_gamut_output = Supported`,
+  `OutputStageStatus::PbrNeutralDisplayP3`, and
+  `Rgba8UnormSrgb+DisplayP3Canvas` only after the active canvas reports
+  effective `display-p3`.
+- Extended the M6 browser proof with `scenaM6DisplayP3OutputProbe`.
+  `target/gate-artifacts/m6-rust-wasm-renderer-probe.json` records passed
+  WebGL2 and WebGPU `display-p3-output` results with
+  `RendererOptions::with_output_color_space` as the injection path and
+  nonblack rendered pixels.
 
 Animation proof reconciliation pass (2026-05-19):
 

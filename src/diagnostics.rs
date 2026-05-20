@@ -12,6 +12,7 @@ use crate::scene::{
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 mod browser_timing;
 mod capabilities;
+mod capability_status;
 mod diagnostic;
 mod display;
 mod help;
@@ -19,7 +20,7 @@ mod help;
 pub(crate) use browser_timing::browser_timing_enabled;
 pub use capabilities::{
     AdapterLimitsReport, AlphaPipelineStatus, Backend, Capabilities, CapabilityReport,
-    CapabilityStatus, GpuAdapterReport, HardwareTier, OutputStageStatus,
+    CapabilityStatus, GpuAdapterReport, HardwareTier, OutputColorSpace, OutputStageStatus,
 };
 pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
 

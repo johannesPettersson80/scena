@@ -799,6 +799,33 @@ function renderedOutputFingerprint(result) {
   return null;
 }
 
+function assertDisplayP3OutputProof(backend, result) {
+  const output = result.canvas_output_color_space || {};
+  if (result.status !== "passed") {
+    throw new Error(`${backend} Display P3 proof did not render: ${JSON.stringify(result)}`);
+  }
+  if (result.requested_output_color_space !== "DisplayP3") {
+    throw new Error(`${backend} Display P3 proof did not use the RendererOptions output-color-space path: ${JSON.stringify(result)}`);
+  }
+  if (result.capabilities.wide_gamut_output !== "Supported") {
+    throw new Error(`${backend} Display P3 proof did not report supported wide gamut: ${JSON.stringify(result)}`);
+  }
+  if (result.capabilities.output_stage !== "PbrNeutralDisplayP3") {
+    throw new Error(`${backend} Display P3 proof did not switch output stage: ${JSON.stringify(result)}`);
+  }
+  if (result.capabilities.color_target_format !== "Rgba8UnormSrgb+DisplayP3Canvas") {
+    throw new Error(`${backend} Display P3 proof did not record the canvas color target: ${JSON.stringify(result)}`);
+  }
+  if (
+    output.requested !== "display-p3" ||
+    output.configured !== true ||
+    output.effective !== "display-p3" ||
+    output.display_p3 !== true
+  ) {
+    throw new Error(`${backend} Display P3 canvas output was not configured end to end: ${JSON.stringify(result)}`);
+  }
+}
+
 async function main() {
   const { chromium } = loadPlaywright();
   const browserRoot = __dirname;
@@ -907,6 +934,12 @@ async function main() {
             `${backend} Rust/WASM renderer probe failed: ${JSON.stringify(result)}${consoleSuffix}`,
           );
         }
+        const displayP3Result = await page.evaluate(
+          (name) => window.scenaM6DisplayP3OutputProbe(name),
+          backend,
+        );
+        results.push(displayP3Result);
+        assertDisplayP3OutputProof(backend, displayP3Result);
         const workflowResults = new Map();
         for (const workflow of workflows) {
           let workflowResult;

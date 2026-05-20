@@ -25,6 +25,24 @@ For controls in browser-hosted viewers, see:
 cargo run --example orbit_controls_browser_adapter
 ```
 
+## Output Color Space
+
+Browser renderers default to sRGB output. To request wide-gamut presentation,
+build the renderer with
+`RendererOptions::with_output_color_space(OutputColorSpace::DisplayP3)`.
+Scena only reports `Capabilities::wide_gamut_output = Supported` after the
+renderer-owned canvas path configures the active browser surface as Display P3:
+WebGL2 uses `drawingBufferColorSpace`, and WebGPU uses
+`GPUCanvasConfiguration.colorSpace`. Headless, unattached, or unproven browser
+surfaces remain sRGB/degraded and emit
+`DiagnosticCode::WideGamutOutputUnavailable`.
+
+The M6 browser proof records this under
+`scenaM6DisplayP3OutputProbe` in
+`target/gate-artifacts/m6-rust-wasm-renderer-probe.json`; both WebGL2 and
+WebGPU proof rows must show effective `display-p3` and nonblack rendered
+pixels before Display P3 is treated as shipped.
+
 ## Custom Element Foundation
 
 The `viewer-element` feature exports a browser registration function for the

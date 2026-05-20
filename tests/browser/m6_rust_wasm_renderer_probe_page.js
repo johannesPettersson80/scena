@@ -6,6 +6,7 @@ import init, {
   m6RenderBenchmarkProbe,
   m6CameraControlKitProbe,
   m6RenderDroppedFileProbe,
+  m6RenderDisplayP3Probe,
   m6RenderMaterialVariantProbe,
   m6RenderStateLifecycleProbe,
   m6RenderWorkflowProbe,
@@ -707,6 +708,37 @@ function readRenderedPixels(backend, canvas) {
   return readCanvasPixels(canvas);
 }
 
+function probeCanvasOutputColorSpace(backend, canvas) {
+  const state = canvas.__scenaOutputColorSpace || {};
+  if (backend === "webgl2") {
+    const gl = canvas.getContext("webgl2", { antialias: false, preserveDrawingBuffer: true });
+    const supported = !!gl && "drawingBufferColorSpace" in gl;
+    const effective = supported ? gl.drawingBufferColorSpace : state.effective || null;
+    return {
+      api: "webgl2",
+      property: "drawingBufferColorSpace",
+      requested: state.requested || null,
+      supported,
+      configured: effective === state.requested,
+      effective,
+      display_p3: effective === "display-p3",
+      injected_by: state.injected_by || null,
+      error: state.error || null,
+    };
+  }
+  return {
+    api: "webgpu",
+    property: "GPUCanvasConfiguration.colorSpace",
+    requested: state.requested || null,
+    supported: state.supported === true,
+    configured: state.configured === true,
+    effective: state.effective || null,
+    display_p3: state.display_p3 === true,
+    injected_by: state.injected_by || null,
+    error: state.error || null,
+  };
+}
+
 async function readRenderedPixelsWithRetry(backend, canvas, workflow) {
   const maxAttempts = backend === "webgpu" ? 8 : 2;
   let lastPixels = null;
@@ -736,6 +768,7 @@ async function runProbe(backend, workflow, render) {
     backend === "webgpu" && rendererReadback && rendererReadback.nonblack > 0;
   const pixelStatistics = useRendererReadback ? rendererReadback : readback.pixels;
   result.workflow = workflow;
+  result.canvas_output_color_space = probeCanvasOutputColorSpace(backend, canvas);
   result.pixels = pixelStatistics;
   result.pixel_source = useRendererReadback ? "renderer-owned-gpu-copy" : "canvas-readback";
   result.pixel_readback_attempts = readback.attempts;
@@ -780,6 +813,12 @@ window.scenaM6RustWasmWorkflowProbe = async function scenaM6RustWasmWorkflowProb
 ) {
   return runProbe(backend, workflow, (canvas) =>
     m6RenderWorkflowProbe(canvas, backend, workflow),
+  );
+};
+
+window.scenaM6DisplayP3OutputProbe = async function scenaM6DisplayP3OutputProbe(backend) {
+  return runProbe(backend, "display-p3-output", (canvas) =>
+    m6RenderDisplayP3Probe(canvas, backend),
   );
 };
 

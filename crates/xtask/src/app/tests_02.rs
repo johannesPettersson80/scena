@@ -43,11 +43,15 @@ pub(crate) fn doctor_rejects_shader_clip_position_passthrough_regression() {
 pub(crate) fn doctor_rejects_supported_forward_pbr_regression() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root = root.join("target/xtask-doctor-regressions/supported-pbr");
-    let capabilities_path = fixture_root.join("src/diagnostics/capabilities.rs");
-    fs::create_dir_all(capabilities_path.parent().expect("capabilities parent"))
-        .expect("fixture dir");
+    let capability_status_path = fixture_root.join("src/diagnostics/capability_status.rs");
+    fs::create_dir_all(
+        capability_status_path
+            .parent()
+            .expect("capability status parent"),
+    )
+    .expect("fixture dir");
     fs::write(
-        &capabilities_path,
+        &capability_status_path,
         "const fn forward_pbr_status(_backend: Backend) -> CapabilityStatus {\n    CapabilityStatus::Supported\n}\n",
     )
     .expect("capability fixture");
@@ -57,7 +61,7 @@ pub(crate) fn doctor_rejects_supported_forward_pbr_regression() {
         &fixture_root,
         &mut findings,
         "ARCH-RENDER-TRUTH",
-        "src/diagnostics/capabilities.rs",
+        "src/diagnostics/capability_status.rs",
         &[
             "forward_pbr_status(_backend: Backend) -> CapabilityStatus {\n    CapabilityStatus::Supported",
         ],
