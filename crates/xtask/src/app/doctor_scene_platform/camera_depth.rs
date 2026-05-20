@@ -337,8 +337,14 @@ pub(crate) fn check_origin_shift_contracts(root: &Path, findings: &mut Vec<Findi
         &[
             "let origin_shift = scene.origin_shift()",
             "prepared_primitive",
-            "transform_position",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ORIGIN-SHIFT",
+        "src/render/prepare/primitives.rs",
+        &["transform_position"],
     );
     require_contains(
         root,

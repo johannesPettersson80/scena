@@ -34,6 +34,7 @@ pub(in crate::render) struct PreparedMaterialSlot {
     pub(in crate::render) clearcoat_normal: Option<PreparedMaterialTexture>,
     pub(in crate::render) sheen_color: Option<PreparedMaterialTexture>,
     pub(in crate::render) sheen_roughness: Option<PreparedMaterialTexture>,
+    pub(in crate::render) anisotropy: Option<PreparedMaterialTexture>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -345,6 +346,11 @@ fn collect_backend_material_slot<F>(
         material.sheen_roughness_texture(),
         material.sheen_roughness_texture_transform(),
     );
+    let anisotropy = collect_backend_material_texture(
+        assets,
+        material.anisotropy_texture(),
+        material.anisotropy_texture_transform(),
+    );
     if matches!(material.kind(), MaterialKind::Unlit)
         && base_color.is_none()
         && normal.is_none()
@@ -356,6 +362,7 @@ fn collect_backend_material_slot<F>(
         && clearcoat_normal.is_none()
         && sheen_color.is_none()
         && sheen_roughness.is_none()
+        && anisotropy.is_none()
     {
         return None;
     }
@@ -371,6 +378,7 @@ fn collect_backend_material_slot<F>(
         clearcoat_normal,
         sheen_color,
         sheen_roughness,
+        anisotropy,
         material,
     })
 }
@@ -413,6 +421,7 @@ fn collect_material_textures<F>(
         material.clearcoat_normal_texture(),
         material.sheen_color_texture(),
         material.sheen_roughness_texture(),
+        material.anisotropy_texture(),
     ]
     .into_iter()
     .flatten()
@@ -461,7 +470,7 @@ fn collect_material_texture_diagnostics_from_material<F>(
     }
 }
 
-fn material_texture_slots(material: &MaterialDesc) -> [(&'static str, Option<TextureHandle>); 10] {
+fn material_texture_slots(material: &MaterialDesc) -> [(&'static str, Option<TextureHandle>); 11] {
     [
         ("base_color", material.base_color_texture()),
         ("normal", material.normal_texture()),
@@ -476,6 +485,7 @@ fn material_texture_slots(material: &MaterialDesc) -> [(&'static str, Option<Tex
         ("clearcoat_normal", material.clearcoat_normal_texture()),
         ("sheen_color", material.sheen_color_texture()),
         ("sheen_roughness", material.sheen_roughness_texture()),
+        ("anisotropy", material.anisotropy_texture()),
     ]
 }
 
@@ -630,6 +640,7 @@ mod tests {
         let clearcoat_normal = decoded_test_texture(&assets);
         let sheen_color = decoded_test_texture(&assets);
         let sheen_roughness = decoded_test_texture(&assets);
+        let anisotropy = decoded_test_texture(&assets);
         let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.25, 0.25, 0.25));
         let material_with_textures = assets.create_material(
             MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.25, 0.75)
@@ -646,7 +657,9 @@ mod tests {
                 .with_sheen_color_factor(Color::WHITE)
                 .with_sheen_color_texture(sheen_color)
                 .with_sheen_roughness_factor(1.0)
-                .with_sheen_roughness_texture(sheen_roughness),
+                .with_sheen_roughness_texture(sheen_roughness)
+                .with_anisotropy_strength_factor(1.0)
+                .with_anisotropy_texture(anisotropy),
         );
         let material_without_textures =
             assets.create_material(MaterialDesc::pbr_metallic_roughness(
@@ -710,6 +723,10 @@ mod tests {
         assert_eq!(
             slots[0].sheen_roughness.as_ref().map(|slot| slot.handle),
             Some(sheen_roughness)
+        );
+        assert_eq!(
+            slots[0].anisotropy.as_ref().map(|slot| slot.handle),
+            Some(anisotropy)
         );
         assert_eq!(
             slots[1].handle, material_without_textures,

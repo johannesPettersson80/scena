@@ -64,8 +64,12 @@ pub(super) const SHEEN_ROUGHNESS_BINDINGS: TextureBindingIndices = TextureBindin
     sampler: 19,
     texture: 20,
 };
+pub(super) const ANISOTROPY_BINDINGS: TextureBindingIndices = TextureBindingIndices {
+    sampler: 21,
+    texture: 22,
+};
 
-pub(super) const MATERIAL_TEXTURE_BINDING_INDICES: [TextureBindingIndices; 10] = [
+pub(super) const MATERIAL_TEXTURE_BINDING_INDICES: [TextureBindingIndices; 11] = [
     BASE_COLOR_BINDINGS,
     NORMAL_BINDINGS,
     METALLIC_ROUGHNESS_BINDINGS,
@@ -76,6 +80,7 @@ pub(super) const MATERIAL_TEXTURE_BINDING_INDICES: [TextureBindingIndices; 10] =
     CLEARCOAT_NORMAL_BINDINGS,
     SHEEN_COLOR_BINDINGS,
     SHEEN_ROUGHNESS_BINDINGS,
+    ANISOTROPY_BINDINGS,
 ];
 
 pub(super) fn create_material_texture_layout_entries(

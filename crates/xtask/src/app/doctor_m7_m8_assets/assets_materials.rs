@@ -1,3 +1,4 @@
+use super::anisotropy_materials::check_anisotropy_material_contracts;
 use super::asset_instancing::check_m8_instancing_contracts;
 use super::clearcoat_materials::check_clearcoat_material_contracts;
 use super::material_texture_diagnostics::check_material_texture_diagnostic_contracts;
@@ -8,6 +9,7 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
     check_m8_instancing_contracts(root, findings);
     check_clearcoat_material_contracts(root, findings);
     check_sheen_material_contracts(root, findings);
+    check_anisotropy_material_contracts(root, findings);
     check_m8_visual_material_contracts(root, findings);
     require_contains(
         root,
@@ -121,6 +123,7 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "KHR_materials_sheen",
             "KHR_materials_specular",
             "KHR_materials_iridescence",
+            "KHR_materials_anisotropy",
             "EXT_texture_webp",
             "KHR_texture_basisu",
             "KHR_draco_mesh_compression",

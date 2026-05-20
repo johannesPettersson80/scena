@@ -250,11 +250,14 @@ pub(crate) fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Find
         findings,
         "ARCH-M3B-ANIMATION",
         "src/render/prepare.rs",
-        &[
-            "scene.skin_matrices(node)",
-            "skinned_vertices",
-            "InvalidSkinGeometry",
-        ],
+        &["scene.skin_matrices(node)"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3B-ANIMATION",
+        "src/render/prepare/primitives.rs",
+        &["skinned_vertices", "InvalidSkinGeometry"],
     );
     require_contains(
         root,

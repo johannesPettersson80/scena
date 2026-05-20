@@ -172,6 +172,19 @@ pub(super) fn create_batched_material_resources(
         },
         || MaterialTextureUpload::from_sheen_roughness_texture(None),
     );
+    let anisotropy = create_batched_role_resource(
+        device,
+        queue,
+        "anisotropy",
+        layer_count,
+        material_slots,
+        |slot| {
+            MaterialTextureUpload::from_anisotropy_texture(
+                slot.anisotropy.as_ref().map(|texture| &texture.desc),
+            )
+        },
+        || MaterialTextureUpload::from_anisotropy_texture(None),
+    );
     let texture_bindings = vec![
         base_color,
         normal,
@@ -183,6 +196,7 @@ pub(super) fn create_batched_material_resources(
         clearcoat_normal,
         sheen_color,
         sheen_roughness,
+        anisotropy,
     ];
     let texture_byte_len = texture_bindings
         .iter()
@@ -263,6 +277,7 @@ where
             "clearcoat_normal" => "scena.material.batched_clearcoat_normal",
             "sheen_color" => "scena.material.batched_sheen_color",
             "sheen_roughness" => "scena.material.batched_sheen_roughness",
+            "anisotropy" => "scena.material.batched_anisotropy",
             _ => "scena.material.batched_texture",
         }),
         size: wgpu::Extent3d {

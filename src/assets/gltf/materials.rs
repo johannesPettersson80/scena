@@ -12,7 +12,8 @@ use crate::material::{AlphaMode, Color, MaterialDesc, TextureColorSpace, Texture
 
 use super::super::{AssetPath, AssetStorage, MaterialHandle};
 use super::material_extensions::{
-    clearcoat_extension, extension_texture_transform, read_extension_texture_info, sheen_extension,
+    anisotropy_extension, clearcoat_extension, extension_texture_transform,
+    read_extension_texture_info, sheen_extension,
 };
 use super::textures::{GltfTexture, texture_slot};
 
@@ -265,6 +266,25 @@ pub(super) fn parse_materials(
                     }
                 }
             }
+            if let Some(anisotropy) = anisotropy_extension(document, material_index) {
+                desc = desc
+                    .with_anisotropy_strength_factor(anisotropy.strength)
+                    .with_anisotropy_rotation_radians(anisotropy.rotation);
+                if let Some(info) = anisotropy.texture {
+                    let texture = texture_slot(
+                        path,
+                        "anisotropyTexture",
+                        info.index,
+                        textures,
+                        storage,
+                        TextureColorSpace::Linear,
+                    )?;
+                    desc = desc.with_anisotropy_texture(texture);
+                    if let Some(transform) = info.transform {
+                        desc = desc.with_anisotropy_texture_transform(transform);
+                    }
+                }
+            }
             desc = match material.alpha_mode() {
                 ::gltf::material::AlphaMode::Opaque => desc,
                 ::gltf::material::AlphaMode::Mask => desc.with_alpha_mode(AlphaMode::Mask {
@@ -381,6 +401,19 @@ fn validate_material_texture_indices(
                     texture_count,
                 )?;
             }
+        }
+        if let Some(anisotropy) = material
+            .extensions
+            .as_ref()
+            .and_then(|extensions| extensions.others.get("KHR_materials_anisotropy"))
+        {
+            validate_texture_info(
+                path,
+                material_index,
+                "anisotropyTexture",
+                read_extension_texture_info(anisotropy, "anisotropyTexture").map(|info| info.index),
+                texture_count,
+            )?;
         }
     }
     Ok(())

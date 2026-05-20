@@ -63,10 +63,16 @@ pub(crate) fn check_prepare_asset_contracts(root: &Path, findings: &mut Vec<Find
         &[
             "fn collect_prepared_primitives",
             "PrepareError::AssetsRequired",
-            "fn append_geometry_primitives",
             "TransparentPrimitive",
             "total_cmp",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-ASSETS",
+        "src/render/prepare/primitives.rs",
+        &["fn append_geometry_primitives"],
     );
     require_contains(
         root,

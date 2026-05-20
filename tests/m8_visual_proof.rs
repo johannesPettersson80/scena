@@ -29,6 +29,7 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
         render_environment_color_management(),
         render_clearcoat_material_feature(),
         render_sheen_material_feature(),
+        render_anisotropy_material_feature(),
     ];
     let expected_artifacts = [
         "m8-unlit-textured-asset",
@@ -41,6 +42,7 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
         "m8-environment-color-management",
         "m8-clearcoat-material-feature",
         "m8-sheen-material-feature",
+        "m8-anisotropy-material-feature",
     ];
     for expected in expected_artifacts {
         assert!(
@@ -96,6 +98,21 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
                 red_sheen > black_sheen + 4,
                 "sheen visual proof must brighten the right-side texture/factor response; \
                  black={black_sheen:?} red={red_sheen:?}"
+            );
+        }
+        if artifact.name == "m8-anisotropy-material-feature" {
+            let off =
+                max_luminance_in_region(&artifact.rgba, artifact.width, 0, artifact.width / 2);
+            let on = max_luminance_in_region(
+                &artifact.rgba,
+                artifact.width,
+                artifact.width / 2,
+                artifact.width,
+            );
+            assert!(
+                on > off + 2,
+                "anisotropy visual proof must brighten the right-side direction/strength response; \
+                 off={off:?} on={on:?}"
             );
         }
         write_ppm_artifact(&artifact_dir, &artifact);
@@ -517,6 +534,46 @@ fn render_sheen_material_feature() -> VisualArtifact {
     left.proof_class = "sheen-before-after-cpu-headless-256";
     left.source_hash = Some(fnv1a64_hex(
         b"generated-rust-scene:m8-sheen-material-feature:sheen-before-after",
+    ));
+    left
+}
+
+fn render_anisotropy_material_feature() -> VisualArtifact {
+    let assets = Assets::new();
+    let off_texture = load_pixel_texture(&assets, [255, 128, 0, 255], TextureColorSpace::Linear);
+    let on_texture = load_pixel_texture(&assets, [255, 128, 255, 255], TextureColorSpace::Linear);
+    let base = MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(150, 150, 150), 1.0, 0.42)
+        .with_anisotropy_strength_factor(1.0);
+    let off = base.clone().with_anisotropy_texture(off_texture);
+    let on = base.with_anisotropy_texture(on_texture);
+    let mut left = render_material_box(
+        "m8-anisotropy-left",
+        &assets,
+        off,
+        None,
+        true,
+        "anisotropy-before",
+    );
+    let right = render_material_box(
+        "m8-anisotropy-right",
+        &assets,
+        on,
+        None,
+        true,
+        "anisotropy-after",
+    );
+
+    for y in 0..left.height {
+        for x in left.width / 2..left.width {
+            let src = ((y * right.width + x) * 4) as usize;
+            let dst = ((y * left.width + x) * 4) as usize;
+            left.rgba[dst..dst + 4].copy_from_slice(&right.rgba[src..src + 4]);
+        }
+    }
+    left.name = "m8-anisotropy-material-feature";
+    left.proof_class = "anisotropy-before-after-cpu-headless-256";
+    left.source_hash = Some(fnv1a64_hex(
+        b"generated-rust-scene:m8-anisotropy-material-feature:anisotropy-before-after",
     ));
     left
 }

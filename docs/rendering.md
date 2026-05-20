@@ -69,6 +69,9 @@ Material workflows include:
   shader/material resource path,
 - sheen color/roughness factors plus sheen color and sheen roughness texture
   sampling on the CPU/reference path and GPU shader/material resource path,
+- anisotropy strength/rotation factors plus anisotropy direction/strength
+  texture sampling on the CPU/reference path and GPU shader/material resource
+  path,
 - vertex colors,
 - texture slots,
 - alpha modes,
@@ -88,6 +91,12 @@ slots are also parsed into `MaterialDesc`. The CPU/reference path samples the
 sheen color texture's RGB channels and the sheen roughness texture's alpha
 channel, and the WebGPU/WebGL2 shader variants carry those roles through the
 same material uniform and bind-group path.
+Optional glTF `KHR_materials_anisotropy` strength, rotation, and texture slots
+are parsed into `MaterialDesc`. The CPU/reference path samples the anisotropy
+texture's red/green direction channels and blue strength channel, and the
+WebGPU/WebGL2 shader variants carry the role through the same material uniform
+and bind-group path. Approved backend screenshot or readback proof remains
+capability-gated release evidence.
 
 ## Environment
 

@@ -19,6 +19,8 @@ pub(super) fn check_m8_visual_material_contracts(root: &Path, findings: &mut Vec
             "clearcoat-before-after-cpu-headless-256",
             "m8-sheen-material-feature",
             "sheen-before-after-cpu-headless-256",
+            "m8-anisotropy-material-feature",
+            "anisotropy-before-after-cpu-headless-256",
             "max_luminance_in_region",
             "(256, 256)",
             "png_rgba8",

@@ -96,7 +96,7 @@ pub(super) fn check_sheen_material_contracts(root: &Path, findings: &mut Vec<Fin
         "ASSETS-M8",
         "src/render/gpu/material_uniform.rs",
         &[
-            "MATERIAL_UNIFORM_BYTE_LEN: u64 = 144",
+            "MATERIAL_UNIFORM_BYTE_LEN: u64 = 160",
             "sheen_factors",
             "material.sheen_color_factor()",
             "material.sheen_roughness_factor()",

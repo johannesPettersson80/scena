@@ -1,7 +1,7 @@
 use super::pbr_contract::{
-    PbrMaterial, clearcoat_light_contribution, directional_illuminance_lux,
-    inverse_square_range_attenuation, punctual_intensity_candela, punctual_light_contribution,
-    roughness_or_min, sheen_light_contribution, spot_cone_attenuation,
+    PbrMaterial, anisotropy_light_contribution, clearcoat_light_contribution,
+    directional_illuminance_lux, inverse_square_range_attenuation, punctual_intensity_candela,
+    punctual_light_contribution, roughness_or_min, sheen_light_contribution, spot_cone_attenuation,
 };
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
 use crate::scene::{Light, Quat, Scene, Transform, Vec3};
@@ -12,6 +12,8 @@ use super::environment::PreparedEnvironmentLighting;
 pub(super) struct MaterialShadingInput {
     pub(super) position: Vec3,
     pub(super) normal: Vec3,
+    pub(super) tangent: Vec3,
+    pub(super) tangent_handedness: f32,
     pub(super) camera_position: Option<Vec3>,
     pub(super) base_color_texture: Color,
     pub(super) metallic_roughness_texture: (f32, f32),
@@ -22,6 +24,7 @@ pub(super) struct MaterialShadingInput {
     pub(super) clearcoat_normal: Vec3,
     pub(super) sheen_color_texture: Color,
     pub(super) sheen_roughness_texture: f32,
+    pub(super) anisotropy_texture: Vec3,
     pub(super) environment: PreparedEnvironmentLighting,
     pub(super) directional_shadow_factor: f32,
 }
@@ -270,6 +273,8 @@ fn shade_pbr_base_color(
     );
     let sheen_roughness =
         roughness_or_min(material.sheen_roughness_factor() * input.sheen_roughness_texture);
+    let anisotropy_strength = material.anisotropy_strength_factor();
+    let anisotropy_rotation = material.anisotropy_rotation_radians();
     let mut shaded = Vec3::ZERO;
 
     for light in &lights.directional {
@@ -309,6 +314,21 @@ fn shade_pbr_base_color(
                 sheen_roughness,
             ),
         );
+        shaded = add_vec3(
+            shaded,
+            anisotropy_light_contribution(
+                pbr_material,
+                normal,
+                input.tangent,
+                input.tangent_handedness,
+                view,
+                incoming,
+                radiance,
+                anisotropy_strength,
+                anisotropy_rotation,
+                input.anisotropy_texture,
+            ),
+        );
     }
     for light in &lights.point {
         let to_light = subtract_vec3(light.position, input.position);
@@ -342,6 +362,21 @@ fn shade_pbr_base_color(
                 radiance,
                 sheen_color,
                 sheen_roughness,
+            ),
+        );
+        shaded = add_vec3(
+            shaded,
+            anisotropy_light_contribution(
+                pbr_material,
+                normal,
+                input.tangent,
+                input.tangent_handedness,
+                view,
+                incoming,
+                radiance,
+                anisotropy_strength,
+                anisotropy_rotation,
+                input.anisotropy_texture,
             ),
         );
     }
@@ -384,6 +419,21 @@ fn shade_pbr_base_color(
                 radiance,
                 sheen_color,
                 sheen_roughness,
+            ),
+        );
+        shaded = add_vec3(
+            shaded,
+            anisotropy_light_contribution(
+                pbr_material,
+                normal,
+                input.tangent,
+                input.tangent_handedness,
+                view,
+                incoming,
+                radiance,
+                anisotropy_strength,
+                anisotropy_rotation,
+                input.anisotropy_texture,
             ),
         );
     }

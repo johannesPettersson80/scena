@@ -450,6 +450,136 @@ fn m8_sheen_texture_slots_are_parsed_from_gltf() {
 }
 
 #[test]
+fn m8_anisotropy_material_factors_are_parsed_from_gltf() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://anisotropy-factors.gltf"),
+        br#"{
+            "asset": { "version": "2.0" },
+            "extensionsUsed": ["KHR_materials_anisotropy"],
+            "materials": [
+                {
+                    "pbrMetallicRoughness": {
+                        "baseColorFactor": [0.5, 0.5, 0.5, 1.0],
+                        "metallicFactor": 1.0,
+                        "roughnessFactor": 0.38
+                    },
+                    "extensions": {
+                        "KHR_materials_anisotropy": {
+                            "anisotropyStrength": 0.8,
+                            "anisotropyRotation": 1.57
+                        }
+                    }
+                }
+            ],
+            "meshes": [{
+                "primitives": [
+                    { "attributes": { "POSITION": 0 }, "indices": 1, "material": 0 }
+                ]
+            }],
+            "nodes": [{ "name": "AnisotropyMat", "mesh": 0 }],
+            "buffers": [{ "byteLength": 42, "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAABAAIA" }],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0,  "byteLength": 36 },
+                { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
+            ],
+            "accessors": [
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
+            ]
+        }"#
+        .to_vec(),
+    )]));
+
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://anisotropy-factors.gltf")).expect("loads");
+    let material = assets
+        .material(scene_asset.nodes()[0].meshes()[0].material())
+        .expect("material");
+
+    assert_eq!(
+        material.anisotropy_strength_factor(),
+        0.8,
+        "KHR_materials_anisotropy.anisotropyStrength must propagate into MaterialDesc",
+    );
+    assert_eq!(
+        material.anisotropy_rotation_radians(),
+        1.57,
+        "KHR_materials_anisotropy.anisotropyRotation must propagate into MaterialDesc",
+    );
+}
+
+#[test]
+fn m8_anisotropy_texture_slot_is_parsed_from_gltf() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://anisotropy-texture.gltf"),
+        br#"{
+            "asset": { "version": "2.0" },
+            "extensionsUsed": ["KHR_materials_anisotropy", "KHR_texture_transform"],
+            "images": [
+                { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==" }
+            ],
+            "textures": [{ "source": 0 }],
+            "materials": [
+                {
+                    "extensions": {
+                        "KHR_materials_anisotropy": {
+                            "anisotropyStrength": 0.9,
+                            "anisotropyRotation": 0.25,
+                            "anisotropyTexture": {
+                                "index": 0,
+                                "extensions": {
+                                    "KHR_texture_transform": { "offset": [0.2, 0.3] }
+                                }
+                            }
+                        }
+                    }
+                }
+            ],
+            "meshes": [{
+                "primitives": [
+                    { "attributes": { "POSITION": 0 }, "indices": 1, "material": 0 }
+                ]
+            }],
+            "nodes": [{ "name": "AnisotropyTextureMat", "mesh": 0 }],
+            "buffers": [{ "byteLength": 42, "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAABAAIA" }],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0,  "byteLength": 36 },
+                { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
+            ],
+            "accessors": [
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
+            ]
+        }"#
+        .to_vec(),
+    )]));
+
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://anisotropy-texture.gltf")).expect("loads");
+    let material = assets
+        .material(scene_asset.nodes()[0].meshes()[0].material())
+        .expect("material");
+
+    let anisotropy = material
+        .anisotropy_texture()
+        .expect("anisotropy texture is parsed");
+    assert_eq!(
+        assets
+            .texture(anisotropy)
+            .expect("anisotropy texture descriptor")
+            .color_space(),
+        TextureColorSpace::Linear
+    );
+    assert_eq!(
+        material
+            .anisotropy_texture_transform()
+            .expect("anisotropy transform")
+            .offset(),
+        [0.2, 0.3]
+    );
+}
+
+#[test]
 fn m8_optional_real_world_gltf_extensions_report_degradation_metadata() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from("memory://extensions.gltf"),
@@ -2378,6 +2508,17 @@ fn m8_sheen_png_textures_affect_cpu_preview_pixels() {
 }
 
 #[test]
+fn m8_anisotropy_png_texture_affects_cpu_preview_pixels() {
+    let no_anisotropy = render_max_luminance_for_anisotropy_texture([255, 128, 0, 255]);
+    let full_anisotropy = render_max_luminance_for_anisotropy_texture([255, 128, 255, 255]);
+
+    assert!(
+        full_anisotropy > no_anisotropy,
+        "anisotropy texture B channel must multiply anisotropyStrength and affect CPU preview lighting: off={no_anisotropy} on={full_anisotropy}",
+    );
+}
+
+#[test]
 fn m8_missing_texture_slots_fail_with_actionable_asset_error() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from("memory://missing-texture.gltf"),
@@ -3613,6 +3754,21 @@ fn render_max_luminance_for_sheen_roughness_texture(pixel: [u8; 4]) -> u8 {
             .with_sheen_color_factor(Color::WHITE)
             .with_sheen_roughness_factor(1.0)
             .with_sheen_roughness_texture(texture),
+    )
+}
+
+fn render_max_luminance_for_anisotropy_texture(pixel: [u8; 4]) -> u8 {
+    let png = png_rgba8(1, 1, &[pixel]);
+    let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+    let uri = format!("data:image/png;base64,{encoded}");
+    let assets = Assets::new();
+    let texture = pollster::block_on(assets.load_texture(uri, TextureColorSpace::Linear))
+        .expect("anisotropy texture loads");
+    render_max_luminance_with_assets(
+        &assets,
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(150, 150, 150), 1.0, 0.42)
+            .with_anisotropy_strength_factor(1.0)
+            .with_anisotropy_texture(texture),
     )
 }
 

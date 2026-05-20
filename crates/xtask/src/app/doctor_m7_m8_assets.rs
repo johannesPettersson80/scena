@@ -1,3 +1,4 @@
+mod anisotropy_materials;
 mod asset_instancing;
 mod asset_matrix;
 mod assets_materials;

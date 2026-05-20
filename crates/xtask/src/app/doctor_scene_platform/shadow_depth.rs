@@ -62,7 +62,7 @@ pub(crate) fn check_directional_shadow_contracts(root: &Path, findings: &mut Vec
         root,
         findings,
         "ARCH-DIRECTIONAL-SHADOW",
-        "src/render/prepare.rs",
+        "src/render/prepare/primitives.rs",
         &[
             "shadow_visibility_a",
             "shadow_visibility_b",

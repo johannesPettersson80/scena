@@ -32,6 +32,10 @@ pub(super) const fn non_negative_or(value: f32, fallback: f32) -> f32 {
     }
 }
 
+pub(super) const fn finite_or(value: f32, fallback: f32) -> f32 {
+    if value.is_finite() { value } else { fallback }
+}
+
 pub(super) const fn positive_or(value: f32, fallback: f32) -> f32 {
     if !value.is_finite() || value <= 0.0 {
         fallback

@@ -26,6 +26,7 @@ pub enum MaterialTextureRole {
     ClearcoatNormal,
     SheenColor,
     SheenRoughness,
+    Anisotropy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,6 +103,7 @@ pub(in crate::render) fn compute_material_batch_plan(
         MaterialTextureRole::ClearcoatNormal,
         MaterialTextureRole::SheenColor,
         MaterialTextureRole::SheenRoughness,
+        MaterialTextureRole::Anisotropy,
     ] {
         if matches!(
             role,
@@ -169,6 +171,7 @@ fn role_texture(role: MaterialTextureRole, slot: &PreparedMaterialSlot) -> Optio
         MaterialTextureRole::ClearcoatNormal => slot.clearcoat_normal.as_ref(),
         MaterialTextureRole::SheenColor => slot.sheen_color.as_ref(),
         MaterialTextureRole::SheenRoughness => slot.sheen_roughness.as_ref(),
+        MaterialTextureRole::Anisotropy => slot.anisotropy.as_ref(),
     }?;
     Some(&texture.desc)
 }
@@ -271,6 +274,7 @@ mod tests {
             clearcoat_normal: None,
             sheen_color: None,
             sheen_roughness: None,
+            anisotropy: None,
         }
     }
 
@@ -308,6 +312,19 @@ mod tests {
         slot.sheen_roughness = Some(PreparedMaterialTexture {
             handle: Default::default(),
             desc: sheen_roughness,
+            transform: None,
+        });
+        slot
+    }
+
+    fn material_slot_with_anisotropy(
+        handle: MaterialHandle,
+        anisotropy: TextureDesc,
+    ) -> PreparedMaterialSlot {
+        let mut slot = material_slot_with_base_color(handle, texture_desc(default_sampler()));
+        slot.anisotropy = Some(PreparedMaterialTexture {
+            handle: Default::default(),
+            desc: anisotropy,
             transform: None,
         });
         slot
@@ -430,6 +447,25 @@ mod tests {
         assert_eq!(
             plan.incompatible_role,
             Some(MaterialTextureRole::SheenRoughness),
+        );
+        assert_eq!(
+            plan.incompatible_reason,
+            Some(MaterialBatchIncompatibility::SamplerMismatch),
+        );
+    }
+
+    #[test]
+    fn anisotropy_sampler_mismatch_blocks_batching_with_diagnostic_role() {
+        let slots = vec![
+            material_slot_with_anisotropy(assets_handle(), texture_desc(default_sampler())),
+            material_slot_with_anisotropy(assets_handle(), texture_desc(nearest_sampler())),
+        ];
+        let plan = compute_material_batch_plan(&slots);
+        assert!(!plan.batchable);
+        assert_eq!(plan.layer_count, 0);
+        assert_eq!(
+            plan.incompatible_role,
+            Some(MaterialTextureRole::Anisotropy)
         );
         assert_eq!(
             plan.incompatible_reason,

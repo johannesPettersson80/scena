@@ -83,6 +83,13 @@ All notable user-facing changes are recorded here.
   the RGB and alpha texture channels, and WebGPU/WebGL2 shader variants carry
   the same roles through material uniforms and bind groups.
 
+- Added anisotropy material support across the CPU/reference path and GPU
+  shader/material resource path: `MaterialDesc` exposes anisotropy strength,
+  rotation, and texture slots, optional glTF `KHR_materials_anisotropy`
+  factors and textures are parsed, CPU preview samples the texture direction
+  and strength channels, and WebGPU/WebGL2 shader variants carry the same
+  role through material uniforms and bind groups.
+
 - Added capability-gated wide-gamut output reporting: capability reports now
   expose `wide_gamut_output`, browser M4 smoke artifacts record Display P3
   canvas color-space probes, and diagnostics keep output treated as sRGB until

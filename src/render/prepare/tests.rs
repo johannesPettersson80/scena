@@ -3,6 +3,7 @@ use crate::assets::Assets;
 use crate::diagnostics::Backend;
 use crate::geometry::GeometryDesc;
 use crate::material::{Color, MaterialDesc};
+use crate::render::prepare::cpu_bake::baked_shadow_visibility;
 use crate::scene::Transform;
 
 #[test]

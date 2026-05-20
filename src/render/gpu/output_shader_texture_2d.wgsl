@@ -75,6 +75,11 @@ struct MaterialUniform {
     // .rgb = sheenColorFactor
     // .a = sheenRoughnessFactor
     sheen_factors: vec4<f32>,
+    // KHR_materials_anisotropy scalar factors.
+    // .x = anisotropyStrength
+    // .y = anisotropyRotation radians
+    // .z, .w = reserved
+    anisotropy_factors: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -171,6 +176,12 @@ var sheen_roughness_sampler: sampler;
 @group(1) @binding(20)
 var sheen_roughness_texture: texture_2d<f32>;
 
+@group(1) @binding(21)
+var anisotropy_sampler: sampler;
+
+@group(1) @binding(22)
+var anisotropy_texture: texture_2d<f32>;
+
 @vertex
 fn vs_main(in: VertexIn) -> VertexOut {
     var out: VertexOut;
@@ -202,6 +213,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let clearcoat_normal_sample = textureSample(clearcoat_normal_texture, clearcoat_normal_sampler, in.tex_coord0).rgb;
     let sheen_color_sample = textureSample(sheen_color_texture, sheen_color_sampler, in.tex_coord0);
     let sheen_roughness_sample = textureSample(sheen_roughness_texture, sheen_roughness_sampler, in.tex_coord0);
+    let anisotropy_sample = textureSample(anisotropy_texture, anisotropy_sampler, in.tex_coord0);
     // Phase 5.1: apply normalTexture.scale to the tangent-space X/Y
     // components before TBN reconstruction. Z stays unscaled so the
     // unit-length invariant holds after normalize().
@@ -230,6 +242,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let clearcoat_normal = normalize(clearcoat_tangent_normal.x * world_tangent + clearcoat_tangent_normal.y * bitangent + clearcoat_tangent_normal.z * world_normal);
     let sheen_color = material.sheen_factors.rgb * sheen_color_sample.rgb;
     let sheen_roughness = clamp(material.sheen_factors.a * sheen_roughness_sample.a, 0.04, 1.0);
+    let anisotropy_direction = anisotropy_sample.rg * 2.0 - vec2<f32>(1.0, 1.0);
+    let anisotropy_strength = clamp(material.anisotropy_factors.x * anisotropy_sample.b, 0.0, 1.0);
     let metallic = clamp(material.metallic_roughness_alpha.x * metallic_roughness_sample.b, 0.0, 1.0);
     let roughness = clamp(material.metallic_roughness_alpha.y * metallic_roughness_sample.g, 0.04, 1.0);
     // Phase 5.1: occlusionTexture.strength lerps between 1.0 and the
@@ -257,6 +271,11 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
             clearcoat_roughness,
             sheen_color,
             sheen_roughness,
+            world_tangent,
+            in.tangent.w,
+            anisotropy_strength,
+            material.anisotropy_factors.y,
+            anisotropy_direction,
             in.world_position,
             in.shadow_visibility,
         );
@@ -306,6 +325,11 @@ fn pbr_punctual_lighting(
     clearcoat_roughness: f32,
     sheen_color: vec3<f32>,
     sheen_roughness: f32,
+    world_tangent: vec3<f32>,
+    tangent_handedness: f32,
+    anisotropy_strength: f32,
+    anisotropy_rotation: f32,
+    anisotropy_direction: vec2<f32>,
     world_position: vec3<f32>,
     shadow_visibility: f32,
 ) -> vec3<f32> {
@@ -328,6 +352,7 @@ fn pbr_punctual_lighting(
         shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
         shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
         shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
+        shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
     }
     if camera.lighting.point_light_position_intensity.w > 0.0 {
         let to_light = camera.lighting.point_light_position_intensity.xyz - world_position;
@@ -338,6 +363,7 @@ fn pbr_punctual_lighting(
         shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
         shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
         shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
+        shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
     }
     if camera.lighting.spot_light_position_intensity.w > 0.0 {
         let to_light = camera.lighting.spot_light_position_intensity.xyz - world_position;
@@ -354,6 +380,7 @@ fn pbr_punctual_lighting(
         shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
         shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
         shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
+        shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
     }
     return shaded;
 }
@@ -486,10 +513,92 @@ fn sheen_light_contribution(
     return sheen * radiance * n_dot_l;
 }
 
+fn anisotropy_light_contribution(
+    base: vec3<f32>,
+    metallic: f32,
+    roughness: f32,
+    normal: vec3<f32>,
+    tangent: vec3<f32>,
+    tangent_handedness: f32,
+    view: vec3<f32>,
+    incoming: vec3<f32>,
+    radiance: vec3<f32>,
+    strength: f32,
+    rotation: f32,
+    direction: vec2<f32>,
+) -> vec3<f32> {
+    if strength <= 0.0 {
+        return vec3<f32>(0.0);
+    }
+    let n_dot_l = max(dot(normal, incoming), 0.0);
+    if n_dot_l <= 0.0 {
+        return vec3<f32>(0.0);
+    }
+    let safe_tangent = normalize(tangent - normal * dot(tangent, normal));
+    let bitangent = normalize(cross(normal, safe_tangent) * select(-1.0, 1.0, tangent_handedness >= 0.0));
+    let anisotropy_direction = rotated_anisotropy_direction(direction, rotation);
+    let anisotropic_t = normalize(safe_tangent * anisotropy_direction.x + bitangent * anisotropy_direction.y);
+    let anisotropic_b = normalize(cross(normal, anisotropic_t));
+    let n_dot_v = max(dot(normal, view), 0.001);
+    let half_vector = normalize(view + incoming);
+    let n_dot_h = max(dot(normal, half_vector), 0.0);
+    let v_dot_h = max(dot(view, half_vector), 0.0);
+    let t_dot_v = dot(anisotropic_t, view);
+    let b_dot_v = dot(anisotropic_b, view);
+    let t_dot_l = dot(anisotropic_t, incoming);
+    let b_dot_l = dot(anisotropic_b, incoming);
+    let t_dot_h = dot(anisotropic_t, half_vector);
+    let b_dot_h = dot(anisotropic_b, half_vector);
+    let base_alpha = roughness * roughness;
+    let tangent_alpha = mix(base_alpha, 1.0, strength * strength);
+    let bitangent_alpha = base_alpha;
+    let distribution = distribution_ggx_anisotropic(n_dot_h, t_dot_h, b_dot_h, tangent_alpha, bitangent_alpha);
+    let visibility = visibility_ggx_anisotropic(n_dot_l, n_dot_v, b_dot_v, t_dot_v, t_dot_l, b_dot_l, tangent_alpha, bitangent_alpha);
+    let f0 = vec3<f32>(0.04) * (1.0 - metallic) + base * metallic;
+    let fresnel = fresnel_schlick(v_dot_h, f0);
+    return fresnel * distribution * visibility * radiance * n_dot_l * strength;
+}
+
 fn distribution_ggx(n_dot_h: f32, alpha: f32) -> f32 {
     let alpha_squared = alpha * alpha;
     let denominator = n_dot_h * n_dot_h * (alpha_squared - 1.0) + 1.0;
     return alpha_squared / max(PI * denominator * denominator, 0.0001);
+}
+
+fn distribution_ggx_anisotropic(n_dot_h: f32, t_dot_h: f32, b_dot_h: f32, tangent_alpha: f32, bitangent_alpha: f32) -> f32 {
+    let alpha_product = max(tangent_alpha * bitangent_alpha, 0.0001);
+    let f = vec3<f32>(
+        bitangent_alpha * t_dot_h,
+        tangent_alpha * b_dot_h,
+        alpha_product * n_dot_h,
+    );
+    let w2 = alpha_product / max(dot(f, f), 0.0001);
+    return alpha_product * w2 * w2 / PI;
+}
+
+fn visibility_ggx_anisotropic(
+    n_dot_l: f32,
+    n_dot_v: f32,
+    b_dot_v: f32,
+    t_dot_v: f32,
+    t_dot_l: f32,
+    b_dot_l: f32,
+    tangent_alpha: f32,
+    bitangent_alpha: f32,
+) -> f32 {
+    let ggx_v = n_dot_l * length(vec3<f32>(tangent_alpha * t_dot_v, bitangent_alpha * b_dot_v, n_dot_v));
+    let ggx_l = n_dot_v * length(vec3<f32>(tangent_alpha * t_dot_l, bitangent_alpha * b_dot_l, n_dot_l));
+    return clamp(0.5 / max(ggx_v + ggx_l, 0.0001), 0.0, 1.0);
+}
+
+fn rotated_anisotropy_direction(direction: vec2<f32>, rotation: f32) -> vec2<f32> {
+    let normalized_direction = select(vec2<f32>(1.0, 0.0), normalize(direction), length(direction) > 0.0001);
+    let sin_r = sin(rotation);
+    let cos_r = cos(rotation);
+    return vec2<f32>(
+        normalized_direction.x * cos_r - normalized_direction.y * sin_r,
+        normalized_direction.x * sin_r + normalized_direction.y * cos_r,
+    );
 }
 
 fn geometry_smith(n_dot_v: f32, n_dot_l: f32, roughness: f32) -> f32 {

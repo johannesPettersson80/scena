@@ -20,6 +20,13 @@ pub(super) struct SheenExtension {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub(super) struct AnisotropyExtension {
+    pub(super) strength: f32,
+    pub(super) rotation: f32,
+    pub(super) texture: Option<ExtensionTextureInfo>,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub(super) struct ExtensionTextureInfo {
     pub(super) index: usize,
     pub(super) transform: Option<TextureTransform>,
@@ -65,6 +72,25 @@ pub(super) fn sheen_extension(
         roughness_factor: read_factor(extension, "sheenRoughnessFactor").unwrap_or(0.0),
         color_texture: read_extension_texture_info(extension, "sheenColorTexture"),
         roughness_texture: read_extension_texture_info(extension, "sheenRoughnessTexture"),
+    })
+}
+
+pub(super) fn anisotropy_extension(
+    document: &Document,
+    material_index: usize,
+) -> Option<AnisotropyExtension> {
+    let extension = document
+        .as_json()
+        .materials
+        .get(material_index)?
+        .extensions
+        .as_ref()?
+        .others
+        .get("KHR_materials_anisotropy")?;
+    Some(AnisotropyExtension {
+        strength: read_factor(extension, "anisotropyStrength").unwrap_or(0.0),
+        rotation: read_factor(extension, "anisotropyRotation").unwrap_or(0.0),
+        texture: read_extension_texture_info(extension, "anisotropyTexture"),
     })
 }
 

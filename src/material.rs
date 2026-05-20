@@ -8,7 +8,9 @@ mod scalars;
 mod types;
 
 pub use color::{Color, ColorParseError};
-use scalars::{clamp_degrees_or, clamp_unit_or, non_negative_or, positive_or, sanitize_alpha_mode};
+use scalars::{
+    clamp_degrees_or, clamp_unit_or, finite_or, non_negative_or, positive_or, sanitize_alpha_mode,
+};
 pub use types::{AlphaMode, MaterialKind, TextureColorSpace, TextureTransform};
 
 pub const DEFAULT_STROKE_WIDTH_PX: f32 = 1.0;
@@ -28,6 +30,7 @@ pub struct MaterialDesc {
     clearcoat_normal_texture: Option<TextureHandle>,
     sheen_color_texture: Option<TextureHandle>,
     sheen_roughness_texture: Option<TextureHandle>,
+    anisotropy_texture: Option<TextureHandle>,
     alpha_mode: AlphaMode,
     emissive: Color,
     emissive_strength: f32,
@@ -37,6 +40,8 @@ pub struct MaterialDesc {
     clearcoat_roughness_factor: f32,
     sheen_color_factor: Color,
     sheen_roughness_factor: f32,
+    anisotropy_strength_factor: f32,
+    anisotropy_rotation_radians: f32,
     /// glTF spec `normalTexture.scale` — scales tangent-space normal
     /// X/Y components before TBN reconstruction. Default 1.0.
     normal_scale: f32,
@@ -54,6 +59,7 @@ pub struct MaterialDesc {
     clearcoat_normal_texture_transform: Option<TextureTransform>,
     sheen_color_texture_transform: Option<TextureTransform>,
     sheen_roughness_texture_transform: Option<TextureTransform>,
+    anisotropy_texture_transform: Option<TextureTransform>,
     clearcoat_normal_scale: f32,
     stroke_width_px: Option<f32>,
     edge_angle_threshold_degrees: Option<f32>,
@@ -61,45 +67,7 @@ pub struct MaterialDesc {
 
 impl MaterialDesc {
     pub const fn unlit(base_color: Color) -> Self {
-        Self {
-            kind: MaterialKind::Unlit,
-            base_color,
-            base_color_texture: None,
-            normal_texture: None,
-            metallic_roughness_texture: None,
-            occlusion_texture: None,
-            emissive_texture: None,
-            clearcoat_texture: None,
-            clearcoat_roughness_texture: None,
-            clearcoat_normal_texture: None,
-            sheen_color_texture: None,
-            sheen_roughness_texture: None,
-            alpha_mode: AlphaMode::Opaque,
-            emissive: Color::BLACK,
-            emissive_strength: 1.0,
-            metallic_factor: 0.0,
-            roughness_factor: 1.0,
-            clearcoat_factor: 0.0,
-            clearcoat_roughness_factor: 0.0,
-            sheen_color_factor: Color::BLACK,
-            sheen_roughness_factor: 0.0,
-            normal_scale: 1.0,
-            occlusion_strength: 1.0,
-            double_sided: false,
-            base_color_texture_transform: None,
-            normal_texture_transform: None,
-            metallic_roughness_texture_transform: None,
-            occlusion_texture_transform: None,
-            emissive_texture_transform: None,
-            clearcoat_texture_transform: None,
-            clearcoat_roughness_texture_transform: None,
-            clearcoat_normal_texture_transform: None,
-            sheen_color_texture_transform: None,
-            sheen_roughness_texture_transform: None,
-            clearcoat_normal_scale: 1.0,
-            stroke_width_px: None,
-            edge_angle_threshold_degrees: None,
-        }
+        Self::base(MaterialKind::Unlit, base_color, 0.0, 1.0, None, None)
     }
 
     pub const fn pbr_metallic_roughness(
@@ -107,45 +75,14 @@ impl MaterialDesc {
         metallic_factor: f32,
         roughness_factor: f32,
     ) -> Self {
-        Self {
-            kind: MaterialKind::PbrMetallicRoughness,
+        Self::base(
+            MaterialKind::PbrMetallicRoughness,
             base_color,
-            base_color_texture: None,
-            normal_texture: None,
-            metallic_roughness_texture: None,
-            occlusion_texture: None,
-            emissive_texture: None,
-            clearcoat_texture: None,
-            clearcoat_roughness_texture: None,
-            clearcoat_normal_texture: None,
-            sheen_color_texture: None,
-            sheen_roughness_texture: None,
-            alpha_mode: AlphaMode::Opaque,
-            emissive: Color::BLACK,
-            emissive_strength: 1.0,
-            metallic_factor: clamp_unit_or(metallic_factor, 0.0),
-            roughness_factor: clamp_unit_or(roughness_factor, 1.0),
-            clearcoat_factor: 0.0,
-            clearcoat_roughness_factor: 0.0,
-            sheen_color_factor: Color::BLACK,
-            sheen_roughness_factor: 0.0,
-            normal_scale: 1.0,
-            occlusion_strength: 1.0,
-            double_sided: false,
-            base_color_texture_transform: None,
-            normal_texture_transform: None,
-            metallic_roughness_texture_transform: None,
-            occlusion_texture_transform: None,
-            emissive_texture_transform: None,
-            clearcoat_texture_transform: None,
-            clearcoat_roughness_texture_transform: None,
-            clearcoat_normal_texture_transform: None,
-            sheen_color_texture_transform: None,
-            sheen_roughness_texture_transform: None,
-            clearcoat_normal_scale: 1.0,
-            stroke_width_px: None,
-            edge_angle_threshold_degrees: None,
-        }
+            clamp_unit_or(metallic_factor, 0.0),
+            clamp_unit_or(roughness_factor, 1.0),
+            None,
+            None,
+        )
     }
 
     /// Creates a screen-space stroke material for line-topology geometry and polylines.
@@ -178,10 +115,28 @@ impl MaterialDesc {
         width_px: f32,
         edge_angle_threshold_degrees: Option<f32>,
     ) -> Self {
-        // Keep the three technical constructors aligned until render-path-specific fields split.
+        let stroke_width_px = Some(positive_or(width_px, DEFAULT_STROKE_WIDTH_PX));
+        Self::base(
+            kind,
+            color,
+            0.0,
+            1.0,
+            stroke_width_px,
+            edge_angle_threshold_degrees,
+        )
+    }
+
+    const fn base(
+        kind: MaterialKind,
+        base_color: Color,
+        metallic_factor: f32,
+        roughness_factor: f32,
+        stroke_width_px: Option<f32>,
+        edge_angle_threshold_degrees: Option<f32>,
+    ) -> Self {
         Self {
             kind,
-            base_color: color,
+            base_color,
             base_color_texture: None,
             normal_texture: None,
             metallic_roughness_texture: None,
@@ -192,15 +147,18 @@ impl MaterialDesc {
             clearcoat_normal_texture: None,
             sheen_color_texture: None,
             sheen_roughness_texture: None,
+            anisotropy_texture: None,
             alpha_mode: AlphaMode::Opaque,
             emissive: Color::BLACK,
             emissive_strength: 1.0,
-            metallic_factor: 0.0,
-            roughness_factor: 1.0,
+            metallic_factor,
+            roughness_factor,
             clearcoat_factor: 0.0,
             clearcoat_roughness_factor: 0.0,
             sheen_color_factor: Color::BLACK,
             sheen_roughness_factor: 0.0,
+            anisotropy_strength_factor: 0.0,
+            anisotropy_rotation_radians: 0.0,
             normal_scale: 1.0,
             occlusion_strength: 1.0,
             double_sided: false,
@@ -214,8 +172,9 @@ impl MaterialDesc {
             clearcoat_normal_texture_transform: None,
             sheen_color_texture_transform: None,
             sheen_roughness_texture_transform: None,
+            anisotropy_texture_transform: None,
             clearcoat_normal_scale: 1.0,
-            stroke_width_px: Some(positive_or(width_px, DEFAULT_STROKE_WIDTH_PX)),
+            stroke_width_px,
             edge_angle_threshold_degrees,
         }
     }
@@ -308,6 +267,14 @@ impl MaterialDesc {
         self.sheen_roughness_texture_transform
     }
 
+    pub const fn anisotropy_texture(&self) -> Option<TextureHandle> {
+        self.anisotropy_texture
+    }
+
+    pub const fn anisotropy_texture_transform(&self) -> Option<TextureTransform> {
+        self.anisotropy_texture_transform
+    }
+
     pub const fn alpha_mode(&self) -> AlphaMode {
         self.alpha_mode
     }
@@ -349,6 +316,16 @@ impl MaterialDesc {
     /// Returns the scalar `KHR_materials_sheen.sheenRoughnessFactor`.
     pub const fn sheen_roughness_factor(&self) -> f32 {
         self.sheen_roughness_factor
+    }
+
+    /// Returns `KHR_materials_anisotropy.anisotropyStrength`.
+    pub const fn anisotropy_strength_factor(&self) -> f32 {
+        self.anisotropy_strength_factor
+    }
+
+    /// Returns `KHR_materials_anisotropy.anisotropyRotation` in radians.
+    pub const fn anisotropy_rotation_radians(&self) -> f32 {
+        self.anisotropy_rotation_radians
     }
 
     pub const fn clearcoat_normal_scale(&self) -> f32 {
@@ -543,6 +520,16 @@ impl MaterialDesc {
         self
     }
 
+    pub const fn with_anisotropy_texture(mut self, texture: TextureHandle) -> Self {
+        self.anisotropy_texture = Some(texture);
+        self
+    }
+
+    pub const fn with_anisotropy_texture_transform(mut self, transform: TextureTransform) -> Self {
+        self.anisotropy_texture_transform = Some(transform);
+        self
+    }
+
     pub const fn with_alpha_mode(mut self, alpha_mode: AlphaMode) -> Self {
         self.alpha_mode = sanitize_alpha_mode(alpha_mode);
         self
@@ -590,6 +577,26 @@ impl MaterialDesc {
     /// Sets the scalar sheen roughness from `KHR_materials_sheen`.
     pub const fn with_sheen_roughness_factor(mut self, sheen_roughness_factor: f32) -> Self {
         self.sheen_roughness_factor = clamp_unit_or(sheen_roughness_factor, 0.0);
+        self
+    }
+
+    /// Sets the scalar anisotropy strength from `KHR_materials_anisotropy`.
+    ///
+    /// Values are clamped to `[0, 1]`; `NaN` falls back to `0`.
+    pub const fn with_anisotropy_strength_factor(
+        mut self,
+        anisotropy_strength_factor: f32,
+    ) -> Self {
+        self.anisotropy_strength_factor = clamp_unit_or(anisotropy_strength_factor, 0.0);
+        self
+    }
+
+    /// Sets the anisotropy rotation in tangent space, in radians.
+    pub const fn with_anisotropy_rotation_radians(
+        mut self,
+        anisotropy_rotation_radians: f32,
+    ) -> Self {
+        self.anisotropy_rotation_radians = finite_or(anisotropy_rotation_radians, 0.0);
         self
     }
 

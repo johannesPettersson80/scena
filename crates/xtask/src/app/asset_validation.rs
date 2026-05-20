@@ -252,12 +252,23 @@ fn extension_guidance(extension: &str, required: bool) -> Option<AssetGuidanceFi
             message: "Sheen factors plus sheen color and roughness texture slots are CPU/reference-supported and wired through the GPU shader path, but required sheen can still depend on approved GPU/browser rendered-output proof that is not release-proven.".to_string(),
             fix: "If the look depends on backend parity, export a fallback material without sheen or keep KHR_materials_sheen optional until approved backend screenshots or readback proof cover the target lane.".to_string(),
         }),
+        "KHR_materials_anisotropy" => Some(AssetGuidanceFinding {
+            extension: extension.to_string(),
+            required,
+            severity: if required {
+                AssetGuidanceSeverity::Error
+            } else {
+                AssetGuidanceSeverity::Warning
+            },
+            status: "degraded",
+            message: "Anisotropy strength, rotation, and direction/strength texture slots are CPU/reference-supported and wired through the GPU shader path, but required anisotropy can still depend on approved GPU/browser rendered-output proof that is not release-proven.".to_string(),
+            fix: "If the look depends on backend parity, export a fallback material without anisotropy or keep KHR_materials_anisotropy optional until approved backend screenshots or readback proof cover the target lane.".to_string(),
+        }),
         "KHR_materials_transmission"
         | "KHR_materials_ior"
         | "KHR_materials_volume"
         | "KHR_materials_specular"
         | "KHR_materials_iridescence"
-        | "KHR_materials_anisotropy"
         | "KHR_materials_dispersion" => Some(AssetGuidanceFinding {
             extension: extension.to_string(),
             required,

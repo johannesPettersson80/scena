@@ -97,6 +97,7 @@ pub struct SceneMaterialInspection {
     clearcoat_normal_texture: Option<SceneTextureInspection>,
     sheen_color_texture: Option<SceneTextureInspection>,
     sheen_roughness_texture: Option<SceneTextureInspection>,
+    anisotropy_texture: Option<SceneTextureInspection>,
 }
 
 impl Scene {
@@ -473,6 +474,14 @@ impl SceneMaterialInspection {
     pub const fn sheen_roughness_texture(&self) -> Option<SceneTextureInspection> {
         self.sheen_roughness_texture
     }
+
+    pub const fn has_anisotropy_texture(&self) -> bool {
+        self.anisotropy_texture.is_some()
+    }
+
+    pub const fn anisotropy_texture(&self) -> Option<SceneTextureInspection> {
+        self.anisotropy_texture
+    }
 }
 
 const fn mesh_geometry(kind: &NodeKind) -> Option<GeometryHandle> {
@@ -523,6 +532,7 @@ impl SceneMaterialInspection {
             clearcoat_normal_texture: texture_preview(desc.clearcoat_normal_texture(), assets),
             sheen_color_texture: texture_preview(desc.sheen_color_texture(), assets),
             sheen_roughness_texture: texture_preview(desc.sheen_roughness_texture(), assets),
+            anisotropy_texture: texture_preview(desc.anisotropy_texture(), assets),
         }
     }
 }

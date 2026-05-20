@@ -31,7 +31,7 @@ pub(crate) fn check_renderer_truth_material_depth_contracts(
         root,
         findings,
         "ARCH-RENDER-TRUTH",
-        "src/render/prepare.rs",
+        "src/render/prepare/primitives.rs",
         &["accumulate_vertex_tangents", "authored_vertex_tangents"],
     );
     require_contains(

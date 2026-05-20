@@ -315,6 +315,10 @@ mod tests {
                 && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(20)")
                 && GPU_TRIANGLE_SHADER
                     .contains("var sheen_roughness_texture: texture_2d_array<f32>")
+                && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(21)")
+                && GPU_TRIANGLE_SHADER.contains("var anisotropy_sampler: sampler")
+                && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(22)")
+                && GPU_TRIANGLE_SHADER.contains("var anisotropy_texture: texture_2d_array<f32>")
                 && GPU_TRIANGLE_SHADER.contains("material_layer_index: vec4<u32>")
                 && GPU_TRIANGLE_SHADER.contains("textureSample(base_color_texture"),
             "GPU fragment shader must expose material texture bindings as 2D-array views \
@@ -340,6 +344,8 @@ mod tests {
                     .contains("var sheen_color_texture: texture_2d<f32>")
                 && GPU_TRIANGLE_SHADER_TEXTURE_2D
                     .contains("var sheen_roughness_texture: texture_2d<f32>")
+                && GPU_TRIANGLE_SHADER_TEXTURE_2D
+                    .contains("var anisotropy_texture: texture_2d<f32>")
                 && GPU_TRIANGLE_SHADER_TEXTURE_2D.contains(
                     "let base_color_sample = textureSample(base_color_texture, base_color_sampler, transformed_uv)"
                 )
@@ -363,10 +369,12 @@ mod tests {
                 && GPU_TRIANGLE_SHADER.contains("textureSample(clearcoat_normal_texture")
                 && GPU_TRIANGLE_SHADER.contains("textureSample(sheen_color_texture")
                 && GPU_TRIANGLE_SHADER.contains("textureSample(sheen_roughness_texture")
+                && GPU_TRIANGLE_SHADER.contains("textureSample(anisotropy_texture")
                 && GPU_TRIANGLE_SHADER.contains("base_color_factor")
                 && GPU_TRIANGLE_SHADER.contains("emissive_strength")
                 && GPU_TRIANGLE_SHADER.contains("clearcoat_factors")
                 && GPU_TRIANGLE_SHADER.contains("sheen_factors")
+                && GPU_TRIANGLE_SHADER.contains("anisotropy_factors")
                 && GPU_TRIANGLE_SHADER.contains("metallic_roughness_alpha"),
             "GPU material shader must sample every prepared glTF material texture role and \
              consume material factor uniforms before backend material parity can be claimed"
@@ -402,6 +410,25 @@ mod tests {
                     && shader.contains("let sheen_roughness = clamp(material.sheen_factors.a * sheen_roughness_sample.a, 0.04, 1.0);")
                     && shader.contains("shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);"),
                 "{name} shader must apply KHR_materials_sheen color and roughness texture channels instead of silently dropping them"
+            );
+        }
+    }
+
+    #[test]
+    fn triangle_shader_applies_anisotropy_lobe_in_native_and_webgl2_variants() {
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            assert!(
+                shader.contains("anisotropy_light_contribution")
+                    && shader.contains("let anisotropy_direction = anisotropy_sample.rg * 2.0 - vec2<f32>(1.0, 1.0);")
+                    && shader.contains("let anisotropy_strength = clamp(material.anisotropy_factors.x * anisotropy_sample.b, 0.0, 1.0);")
+                    && shader.contains("material.anisotropy_factors.y")
+                    && shader.contains("world_tangent")
+                    && shader.contains("tangent_handedness")
+                    && shader.contains("shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);"),
+                "{name} shader must apply KHR_materials_anisotropy direction, strength, and rotation instead of silently dropping them"
             );
         }
     }

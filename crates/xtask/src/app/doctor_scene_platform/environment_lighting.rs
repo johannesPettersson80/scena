@@ -324,8 +324,16 @@ pub(crate) fn check_direct_light_shading_contracts(root: &Path, findings: &mut V
         "src/render/prepare.rs",
         &[
             "mod lighting;",
-            "use self::lighting::{MaterialShadingInput, PreparedLights, material_color};",
             "let lights = PreparedLights::from_scene(scene, origin_shift)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIRECT-LIGHT-SHADING",
+        "src/render/prepare/primitives.rs",
+        &[
+            "use super::lighting::{MaterialShadingInput, material_color};",
             "material_color(",
             "MaterialShadingInput {",
             ".map(CameraProjection::camera_position)",

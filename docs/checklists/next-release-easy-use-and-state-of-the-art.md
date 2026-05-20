@@ -536,13 +536,14 @@ the rendered result is part of the contract.
   `ARCH-FXAA-OUTPUT` keeps the post-output proof wired.
   Visual proof: reference-image ON/OFF at a fixed exposure shipped via
   `target/gate-artifacts/m2-visual/bloom-on-off.ppm`.
-- **Material features**: Status: **[shipped]** for clearcoat and sheen
-  scalar factors plus clearcoat, clearcoat-roughness, clearcoat-normal,
-  sheen-color, and sheen-roughness texture sampling on the CPU/reference
-  path, and for WebGPU/WebGL2 shader/material resource wiring for
-  punctual-light clearcoat and sheen lobes. **[proof-gap]** remains for
+- **Material features**: Status: **[shipped]** for clearcoat, sheen, and
+  anisotropy scalar factors plus clearcoat, clearcoat-roughness,
+  clearcoat-normal, sheen-color, sheen-roughness, and anisotropy
+  direction/strength texture sampling on the CPU/reference path, and for
+  WebGPU/WebGL2 shader/material resource wiring for punctual-light
+  clearcoat, sheen, and anisotropy lobes. **[proof-gap]** remains for
   approved backend screenshot/readback release evidence. **[gap]** remains
-  for anisotropy, iridescence, and dispersion.
+  for iridescence and dispersion.
   Owner: `src/material.rs`, `src/assets/gltf/materials.rs`,
   `src/render/prepare/lighting.rs`, `src/render/gpu/materials.rs`,
   `src/render/gpu/material_uniform.rs`, and
@@ -562,13 +563,23 @@ the rendered result is part of the contract.
   roughness texture slots plus transforms propagate,
   `m8_sheen_png_textures_affect_cpu_preview_pixels` proves the CPU preview
   samples sheen color RGB and roughness alpha channels,
+  `m8_anisotropy_material_factors_are_parsed_from_gltf` asserts optional
+  `KHR_materials_anisotropy` strength and rotation factors propagate into
+  `MaterialDesc`,
+  `m8_anisotropy_texture_slot_is_parsed_from_gltf` asserts anisotropy
+  texture slots plus transforms propagate,
+  `m8_anisotropy_png_texture_affects_cpu_preview_pixels` proves the CPU
+  preview samples anisotropy texture direction and strength channels,
   `clearcoat_light_contribution_adds_dielectric_lobe` keeps the PBR
   math owned by `pbr_contract`,
   `sheen_light_contribution_adds_colored_lobe` keeps the sheen lobe owned
-  by `pbr_contract`, and
+  by `pbr_contract`,
+  `anisotropy_light_contribution_uses_strength_texture_and_direction`
+  keeps the anisotropy lobe owned by `pbr_contract`, and
   `material_uniform_upload_encodes_material_factors`,
   `triangle_shader_applies_clearcoat_lobe_in_native_and_webgl2_variants`,
   `triangle_shader_applies_sheen_lobe_in_native_and_webgl2_variants`,
+  `triangle_shader_applies_anisotropy_lobe_in_native_and_webgl2_variants`,
   `material_resources_define_shader_visible_texture_bindings`, and
   `backend_material_slots_preserve_all_texture_roles_and_material_only_slots`
   pin GPU uniform, shader, bind-group, and prepare-resource contracts.
@@ -578,13 +589,16 @@ the rendered result is part of the contract.
   backend proof lane. CPU visual proof:
   `m8_headless_visual_artifacts_cover_material_texture_environment_paths`
   writes the `m8-clearcoat-material-feature` and
-  `m8-sheen-material-feature` before/after artifacts.
+  `m8-sheen-material-feature` and `m8-anisotropy-material-feature`
+  before/after artifacts.
   Visual proof: reference-image before/after shipped for scalar clearcoat
   and sheen via `target/gate-artifacts/m8-visual/m8-clearcoat-material-feature.ppm`
-  and `target/gate-artifacts/m8-visual/m8-sheen-material-feature.ppm`;
+  and `target/gate-artifacts/m8-visual/m8-sheen-material-feature.ppm`,
+  and for anisotropy via
+  `target/gate-artifacts/m8-visual/m8-anisotropy-material-feature.ppm`;
   approved backend reference-image or readback proof is still required for
-  release-grade GPU/WebGPU/WebGL2 clearcoat/sheen parity and for each
-  remaining material family.
+  release-grade GPU/WebGPU/WebGL2 clearcoat/sheen/anisotropy parity and for
+  each remaining material family.
 - **Clustered / tiled light culling.** Babylon 9 made this baseline.
   Proof: many-light stress scene proves correct light selection,
   stable frame time / allocation behavior, and no dropped-light fallback.
@@ -1255,9 +1269,9 @@ Items trimmed for honesty:
 
 - **Material presets**: `clear_glass`, `frosted_glass`, `chrome`,
   `brushed_steel`, `leather` remain deferred until the remaining material
-  feature lanes land: approved backend clearcoat proof, sheen, anisotropy,
-  OIT, and SSR. Clearcoat texture support alone is not enough to make those
-  preset names honest.
+  feature lanes land: approved backend clearcoat/sheen/anisotropy proof,
+  iridescence, dispersion, OIT, and SSR. Clearcoat texture support alone is
+  not enough to make those preset names honest.
 
 Item reworded:
 
@@ -1869,6 +1883,25 @@ Sheen material pass (2026-05-20):
   material bind groups, material uniforms, and both shader variants to carry
   sheen color and sheen roughness roles.
 - Reclassified sheen from a pure implementation gap to shipped
+  CPU/reference plus shader/resource wiring with a proof gap: focused tests,
+  generated M8 visual proof, and doctor rules pin the contract, while
+  approved backend screenshot or readback proof remains required for
+  release-grade GPU/WebGPU/WebGL2 parity.
+
+Anisotropy material pass (2026-05-20):
+
+- Added `MaterialDesc` anisotropy strength/rotation factors and anisotropy
+  texture slots, including `KHR_texture_transform` preservation.
+- Parsed optional glTF `KHR_materials_anisotropy` factors and texture slots
+  into `MaterialDesc`, retained them through asset GC and scene inspection,
+  and included them in material texture resource accounting.
+- Added CPU/reference sampling for the anisotropy texture red/green direction
+  channels and blue strength channel, with the anisotropy lobe owned by
+  `src/render/prepare/pbr_contract.rs`.
+- Extended prepared material slots, material batching, GPU texture uploads,
+  material bind groups, material uniforms, and both shader variants to carry
+  the anisotropy role.
+- Reclassified anisotropy from a pure implementation gap to shipped
   CPU/reference plus shader/resource wiring with a proof gap: focused tests,
   generated M8 visual proof, and doctor rules pin the contract, while
   approved backend screenshot or readback proof remains required for

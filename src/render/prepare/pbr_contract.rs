@@ -149,6 +149,77 @@ pub(super) fn sheen_light_contribution(
     scale_vec3(multiply_vec3(sheen, radiance), n_dot_l)
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(super) fn anisotropy_light_contribution(
+    material: PbrMaterial,
+    normal: Vec3,
+    tangent: Vec3,
+    tangent_handedness: f32,
+    view: Vec3,
+    incoming: Vec3,
+    radiance: Vec3,
+    strength: f32,
+    rotation: f32,
+    texture_direction_strength: Vec3,
+) -> Vec3 {
+    let strength = clamp_unit(strength) * clamp_unit(texture_direction_strength.z);
+    if strength <= f32::EPSILON {
+        return Vec3::ZERO;
+    }
+    let incoming = normalize_or(incoming, Vec3::ZERO);
+    let n_dot_l = dot_vec3(normal, incoming).max(0.0);
+    if n_dot_l <= f32::EPSILON {
+        return Vec3::ZERO;
+    }
+    let normal = normalize_or(normal, Vec3::new(0.0, 0.0, 1.0));
+    let view = normalize_or(view, normal);
+    let tangent = normalize_or(
+        subtract_vec3(tangent, scale_vec3(normal, dot_vec3(tangent, normal))),
+        fallback_tangent(normal),
+    );
+    let bitangent = normalize_or(
+        scale_vec3(cross_vec3(normal, tangent), tangent_handedness.signum()),
+        fallback_tangent(normal),
+    );
+    let direction = rotated_anisotropy_direction(texture_direction_strength, rotation);
+    let anisotropic_tangent = normalize_or(
+        add_vec3(
+            scale_vec3(tangent, direction.0),
+            scale_vec3(bitangent, direction.1),
+        ),
+        tangent,
+    );
+    let anisotropic_bitangent = normalize_or(cross_vec3(normal, anisotropic_tangent), bitangent);
+    let half_vector = normalize_or(add_vec3(view, incoming), normal);
+    let n_dot_v = dot_vec3(normal, view).max(MIN_N_DOT_V);
+    let n_dot_h = dot_vec3(normal, half_vector).max(0.0);
+    let v_dot_h = dot_vec3(view, half_vector).max(0.0);
+    let t_dot_v = dot_vec3(anisotropic_tangent, view);
+    let b_dot_v = dot_vec3(anisotropic_bitangent, view);
+    let t_dot_l = dot_vec3(anisotropic_tangent, incoming);
+    let b_dot_l = dot_vec3(anisotropic_bitangent, incoming);
+    let t_dot_h = dot_vec3(anisotropic_tangent, half_vector);
+    let b_dot_h = dot_vec3(anisotropic_bitangent, half_vector);
+    let base_alpha = material.roughness * material.roughness;
+    let tangent_alpha = mix_scalar(base_alpha, 1.0, strength * strength);
+    let bitangent_alpha = base_alpha;
+    let distribution =
+        distribution_ggx_anisotropic(n_dot_h, t_dot_h, b_dot_h, tangent_alpha, bitangent_alpha);
+    let visibility = visibility_ggx_anisotropic(
+        n_dot_l,
+        n_dot_v,
+        b_dot_v,
+        t_dot_v,
+        t_dot_l,
+        b_dot_l,
+        tangent_alpha,
+        bitangent_alpha,
+    );
+    let fresnel = fresnel_schlick(v_dot_h, material.f0());
+    let specular = scale_vec3(fresnel, distribution * visibility * strength);
+    scale_vec3(multiply_vec3(specular, radiance), n_dot_l)
+}
+
 pub(super) fn environment_split_sum_contribution(
     material: PbrMaterial,
     normal: Vec3,
@@ -222,6 +293,49 @@ fn distribution_ggx(n_dot_h: f32, alpha: f32) -> f32 {
     alpha_squared / (PI * denominator * denominator).max(MIN_DENOMINATOR)
 }
 
+fn distribution_ggx_anisotropic(
+    n_dot_h: f32,
+    t_dot_h: f32,
+    b_dot_h: f32,
+    tangent_alpha: f32,
+    bitangent_alpha: f32,
+) -> f32 {
+    let alpha_product = (tangent_alpha * bitangent_alpha).max(MIN_DENOMINATOR);
+    let f = Vec3::new(
+        bitangent_alpha * t_dot_h,
+        tangent_alpha * b_dot_h,
+        alpha_product * n_dot_h,
+    );
+    let w2 = alpha_product / dot_vec3(f, f).max(MIN_DENOMINATOR);
+    alpha_product * w2 * w2 / PI
+}
+
+#[allow(clippy::too_many_arguments)]
+fn visibility_ggx_anisotropic(
+    n_dot_l: f32,
+    n_dot_v: f32,
+    b_dot_v: f32,
+    t_dot_v: f32,
+    t_dot_l: f32,
+    b_dot_l: f32,
+    tangent_alpha: f32,
+    bitangent_alpha: f32,
+) -> f32 {
+    let ggx_v = n_dot_l
+        * length_vec3(Vec3::new(
+            tangent_alpha * t_dot_v,
+            bitangent_alpha * b_dot_v,
+            n_dot_v,
+        ));
+    let ggx_l = n_dot_v
+        * length_vec3(Vec3::new(
+            tangent_alpha * t_dot_l,
+            bitangent_alpha * b_dot_l,
+            n_dot_l,
+        ));
+    (0.5 / (ggx_v + ggx_l).max(MIN_DENOMINATOR)).clamp(0.0, 1.0)
+}
+
 fn geometry_smith(n_dot_v: f32, n_dot_l: f32, roughness: f32) -> f32 {
     let k = ((roughness + 1.0) * (roughness + 1.0)) / 8.0;
     geometry_schlick_ggx(n_dot_v, k) * geometry_schlick_ggx(n_dot_l, k)
@@ -288,12 +402,25 @@ fn mix_vec3(left: Vec3, right: Vec3, amount: f32) -> Vec3 {
     add_vec3(scale_vec3(left, 1.0 - amount), scale_vec3(right, amount))
 }
 
+fn mix_scalar(left: f32, right: f32, amount: f32) -> f32 {
+    let amount = clamp_unit(amount);
+    left * (1.0 - amount) + right * amount
+}
+
 fn dot_vec3(left: Vec3, right: Vec3) -> f32 {
     left.x * right.x + left.y * right.y + left.z * right.z
 }
 
 fn length_vec3(vector: Vec3) -> f32 {
     dot_vec3(vector, vector).sqrt()
+}
+
+fn cross_vec3(left: Vec3, right: Vec3) -> Vec3 {
+    Vec3::new(
+        left.y * right.z - left.z * right.y,
+        left.z * right.x - left.x * right.z,
+        left.x * right.y - left.y * right.x,
+    )
 }
 
 fn normalize_or(vector: Vec3, fallback: Vec3) -> Vec3 {
@@ -303,6 +430,30 @@ fn normalize_or(vector: Vec3, fallback: Vec3) -> Vec3 {
     } else {
         Vec3::new(vector.x / length, vector.y / length, vector.z / length)
     }
+}
+
+fn fallback_tangent(normal: Vec3) -> Vec3 {
+    let axis = if normal.z.abs() < 0.9 {
+        Vec3::new(0.0, 0.0, 1.0)
+    } else {
+        Vec3::new(0.0, 1.0, 0.0)
+    };
+    normalize_or(cross_vec3(axis, normal), Vec3::new(1.0, 0.0, 0.0))
+}
+
+fn rotated_anisotropy_direction(texture_direction_strength: Vec3, rotation: f32) -> (f32, f32) {
+    let raw_x = texture_direction_strength.x;
+    let raw_y = texture_direction_strength.y;
+    let length = (raw_x * raw_x + raw_y * raw_y).sqrt();
+    let (x, y) = if length <= f32::EPSILON || !length.is_finite() {
+        (1.0, 0.0)
+    } else {
+        (raw_x / length, raw_y / length)
+    };
+    let rotation = if rotation.is_finite() { rotation } else { 0.0 };
+    let sin = rotation.sin();
+    let cos = rotation.cos();
+    (x * cos - y * sin, x * sin + y * cos)
 }
 
 #[cfg(test)]
@@ -378,6 +529,77 @@ mod tests {
         assert!(
             red.x > 0.0 && red.y == 0.0 && red.z == 0.0,
             "sheen must add a colored texture/factor-driven lobe"
+        );
+    }
+
+    #[test]
+    fn anisotropy_light_contribution_uses_strength_texture_and_direction() {
+        let material = PbrMaterial::new(Vec3::new(0.8, 0.8, 0.8), 1.0, 0.42);
+        let normal = Vec3::new(0.0, 0.0, 1.0);
+        let tangent = Vec3::new(1.0, 0.0, 0.0);
+        let view = normalize_or(Vec3::new(0.25, 0.0, 1.0), normal);
+        let incoming = normalize_or(Vec3::new(0.25, 0.0, 1.0), normal);
+        let radiance = Vec3::new(1.0, 1.0, 1.0);
+        let off = anisotropy_light_contribution(
+            material,
+            normal,
+            tangent,
+            1.0,
+            view,
+            incoming,
+            radiance,
+            0.0,
+            0.0,
+            Vec3::new(1.0, 0.5, 1.0),
+        );
+        let along_tangent = anisotropy_light_contribution(
+            material,
+            normal,
+            tangent,
+            1.0,
+            view,
+            incoming,
+            radiance,
+            1.0,
+            0.0,
+            Vec3::new(1.0, 0.5, 1.0),
+        );
+        let along_bitangent = anisotropy_light_contribution(
+            material,
+            normal,
+            tangent,
+            1.0,
+            view,
+            incoming,
+            radiance,
+            1.0,
+            PI * 0.5,
+            Vec3::new(1.0, 0.5, 1.0),
+        );
+
+        assert_eq!(off, Vec3::ZERO);
+        assert!(
+            along_tangent.x > along_bitangent.x * 1.5,
+            "anisotropy must shape the specular lobe around the tangent-space direction; \
+             tangent={along_tangent:?} bitangent={along_bitangent:?}"
+        );
+
+        let zero_texture_strength = anisotropy_light_contribution(
+            material,
+            normal,
+            tangent,
+            1.0,
+            view,
+            incoming,
+            radiance,
+            1.0,
+            0.0,
+            Vec3::new(1.0, 0.5, 0.0),
+        );
+        assert_eq!(
+            zero_texture_strength,
+            Vec3::ZERO,
+            "anisotropyTexture blue channel must multiply anisotropyStrength"
         );
     }
 }

@@ -11,6 +11,7 @@ use super::material_mips::mip_level_extents;
 const FALLBACK_WHITE_RGBA8: &[u8; 4] = &[255, 255, 255, 255];
 const FALLBACK_NORMAL_RGBA8: &[u8; 4] = &[128, 128, 255, 255];
 const FALLBACK_METALLIC_ROUGHNESS_RGBA8: &[u8; 4] = &[255, 255, 0, 255];
+const FALLBACK_ANISOTROPY_RGBA8: &[u8; 4] = &[255, 128, 255, 255];
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct MaterialTextureUpload<'a> {
@@ -67,6 +68,10 @@ impl<'a> MaterialTextureUpload<'a> {
 
     pub(super) fn from_sheen_roughness_texture(texture: Option<&'a TextureDesc>) -> Self {
         Self::from_linear_texture(texture, FALLBACK_WHITE_RGBA8)
+    }
+
+    pub(super) fn from_anisotropy_texture(texture: Option<&'a TextureDesc>) -> Self {
+        Self::from_linear_texture(texture, FALLBACK_ANISOTROPY_RGBA8)
     }
 
     pub(super) fn from_linear_texture(
