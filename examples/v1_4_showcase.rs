@@ -59,6 +59,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     render_animated_animation_playback(&out)?;
     render_animated_pointer_callbacks(&out)?;
     render_animated_hot_reload(&out)?;
+    render_material_extension_clearcoat(&out)?;
+    render_material_extension_sheen(&out)?;
+    render_material_extension_anisotropy(&out)?;
+    render_material_extension_iridescence(&out)?;
+    render_material_extension_dispersion(&out)?;
+    render_material_extension_transmission(&out)?;
 
     eprintln!("done — keepers go under docs/assets/v1.4-showcase/");
     Ok(())
@@ -1334,6 +1340,164 @@ fn render_hot_reload_frame(
     )?;
     scene.set_active_camera(camera)?;
     let mut renderer = Renderer::headless(width, height)?;
+    renderer.set_background(Background::DarkStudio);
+    renderer.set_exposure_ev(0.5);
+    renderer.prepare_with_assets(&mut scene, &assets)?;
+    renderer.render_active(&scene)?;
+    Ok(renderer.frame_rgba8().to_vec())
+}
+
+// ===========================================================================
+// §3.1 Material-extension before/after pairs — same sphere with the extension
+// factor at zero vs at its v1.4 ergonomic value. Control on the left, with-
+// extension on the right.
+// ===========================================================================
+
+fn render_material_extension_clearcoat(out: &Path) -> Result<(), Box<dyn Error>> {
+    let pair = compose_material_extension_pair(
+        MaterialDesc::plastic(Color::CHARCOAL),
+        MaterialDesc::plastic(Color::CHARCOAL)
+            .with_clearcoat_factor(1.0)
+            .with_clearcoat_roughness_factor(0.06),
+    )?;
+    write_png(
+        &pair,
+        PANEL_W * 2,
+        PANEL_H,
+        &out.join("material-extension-clearcoat.png"),
+    )?;
+    Ok(())
+}
+
+fn render_material_extension_sheen(out: &Path) -> Result<(), Box<dyn Error>> {
+    let pair = compose_material_extension_pair(
+        MaterialDesc::matte(Color::DARK_GRAY),
+        MaterialDesc::matte(Color::DARK_GRAY)
+            .with_sheen_color_factor(Color::WARM_WHITE)
+            .with_sheen_roughness_factor(0.35),
+    )?;
+    write_png(
+        &pair,
+        PANEL_W * 2,
+        PANEL_H,
+        &out.join("material-extension-sheen.png"),
+    )?;
+    Ok(())
+}
+
+fn render_material_extension_anisotropy(out: &Path) -> Result<(), Box<dyn Error>> {
+    let pair = compose_material_extension_pair(
+        MaterialDesc::metal(Color::LIGHT_GRAY),
+        MaterialDesc::metal(Color::LIGHT_GRAY)
+            .with_anisotropy_strength_factor(0.9)
+            .with_anisotropy_rotation_radians(0.7),
+    )?;
+    write_png(
+        &pair,
+        PANEL_W * 2,
+        PANEL_H,
+        &out.join("material-extension-anisotropy.png"),
+    )?;
+    Ok(())
+}
+
+fn render_material_extension_iridescence(out: &Path) -> Result<(), Box<dyn Error>> {
+    let pair = compose_material_extension_pair(
+        MaterialDesc::plastic(Color::COOL_WHITE),
+        MaterialDesc::plastic(Color::COOL_WHITE)
+            .with_iridescence_factor(1.0)
+            .with_iridescence_ior(1.34)
+            .with_iridescence_thickness_range_nm(220.0, 720.0),
+    )?;
+    write_png(
+        &pair,
+        PANEL_W * 2,
+        PANEL_H,
+        &out.join("material-extension-iridescence.png"),
+    )?;
+    Ok(())
+}
+
+fn render_material_extension_dispersion(out: &Path) -> Result<(), Box<dyn Error>> {
+    let pair = compose_material_extension_pair(
+        MaterialDesc::plastic(Color::COOL_WHITE),
+        MaterialDesc::plastic(Color::COOL_WHITE)
+            .with_dispersion_factor(0.95)
+            .with_ior(1.5),
+    )?;
+    write_png(
+        &pair,
+        PANEL_W * 2,
+        PANEL_H,
+        &out.join("material-extension-dispersion.png"),
+    )?;
+    Ok(())
+}
+
+fn render_material_extension_transmission(out: &Path) -> Result<(), Box<dyn Error>> {
+    let pair = compose_material_extension_pair(
+        MaterialDesc::plastic(Color::COOL_WHITE),
+        MaterialDesc::plastic(Color::COOL_WHITE)
+            .with_transmission_factor(0.9)
+            .with_ior(1.5)
+            .with_attenuation_distance(0.6)
+            .with_attenuation_color(Color::CYAN),
+    )?;
+    write_png(
+        &pair,
+        PANEL_W * 2,
+        PANEL_H,
+        &out.join("material-extension-transmission.png"),
+    )?;
+    Ok(())
+}
+
+fn compose_material_extension_pair(
+    control: MaterialDesc,
+    with_extension: MaterialDesc,
+) -> Result<Vec<u8>, Box<dyn Error>> {
+    let left = render_extension_sphere(control)?;
+    let right = render_extension_sphere(with_extension)?;
+    let composite_w = PANEL_W * 2;
+    let composite_h = PANEL_H;
+    let mut rgba = dark_studio_canvas(composite_w, composite_h);
+    composite_blit(&mut rgba, composite_w, &left, PANEL_W, PANEL_H, 0, 0);
+    composite_blit(&mut rgba, composite_w, &right, PANEL_W, PANEL_H, PANEL_W, 0);
+    Ok(rgba)
+}
+
+fn render_extension_sphere(material: MaterialDesc) -> Result<Vec<u8>, Box<dyn Error>> {
+    let assets = Assets::new();
+    let sphere = assets.create_geometry(GeometryDesc::sphere(0.5, 128, 96));
+    let material = assets.create_material(material);
+    let environment =
+        pollster::block_on(assets.load_environment_preset(EnvironmentPreset::Studio))?;
+    let mut scene = Scene::new();
+    scene.mesh(sphere, material).add()?;
+    scene
+        .directional_light(DirectionalLight::sun())
+        .transform(Transform::default().rotate_x_deg(-30.0).rotate_y_deg(20.0))
+        .add()?;
+    scene
+        .directional_light(DirectionalLight::fill_light())
+        .transform(Transform::default().rotate_x_deg(-10.0).rotate_y_deg(-120.0))
+        .add()?;
+    let camera = scene.add_perspective_camera(
+        scene.root(),
+        PerspectiveCamera::portrait(),
+        Transform::at(Vec3::new(0.0, 0.0, 1.8)),
+    )?;
+    scene.set_active_camera(camera)?;
+    // CPU/reference path. The full extension PBR lobes (clearcoat second-
+    // specular, sheen Charlie, anisotropic GGX, iridescence thin-film,
+    // dispersion channel-spread, transmission/volume) live in the WebGPU /
+    // WebGL2 shaders and are exercised by the M6 browser proof on the CI
+    // GPU lanes — not visible from a CPU/Pi render. The CPU path implements
+    // factor parsing and texture sampling so this render still proves the
+    // material descriptor round-trips, even if the lobe is not differentially
+    // visible in this snapshot.
+    let mut renderer = Renderer::headless(PANEL_W, PANEL_H)?;
+    renderer.set_environment(environment);
     renderer.set_background(Background::DarkStudio);
     renderer.set_exposure_ev(0.5);
     renderer.prepare_with_assets(&mut scene, &assets)?;

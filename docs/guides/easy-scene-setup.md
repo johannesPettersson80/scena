@@ -571,24 +571,75 @@ For OIT, the panels show the same three overlapping translucent planes
 inserted in opposite order — they should look identical, proving the
 draw order does not affect the result.
 
+### glTF material extensions
+
+`MaterialDesc` exposes builders for clearcoat, sheen, anisotropy,
+iridescence, dispersion, transmission, IOR, and volume / attenuation,
+plus the matching texture slots:
+
+```rust
+let lacquer = MaterialDesc::plastic(Color::CHARCOAL)
+    .with_clearcoat_factor(1.0)
+    .with_clearcoat_roughness_factor(0.06);
+
+let fabric = MaterialDesc::matte(Color::DARK_GRAY)
+    .with_sheen_color_factor(Color::WARM_WHITE)
+    .with_sheen_roughness_factor(0.35);
+
+let brushed = MaterialDesc::metal(Color::LIGHT_GRAY)
+    .with_anisotropy_strength_factor(0.9)
+    .with_anisotropy_rotation_radians(0.7);
+
+let film = MaterialDesc::plastic(Color::COOL_WHITE)
+    .with_iridescence_factor(1.0)
+    .with_iridescence_ior(1.34)
+    .with_iridescence_thickness_range_nm(220.0, 720.0);
+
+let glass = MaterialDesc::plastic(Color::COOL_WHITE)
+    .with_transmission_factor(0.9)
+    .with_ior(1.5)
+    .with_attenuation_distance(0.6)
+    .with_attenuation_color(Color::CYAN);
+```
+
+Visible before/after rendering for these lobes requires the WebGPU or
+WebGL2 backend; the CPU/reference path samples the factors and textures
+for regression tests but does not produce a differentially visible PBR
+contribution. The release-grade visible proof comes from the M6 browser
+proof — see
+`target/gate-artifacts/m6-rust-wasm-renderer-probe.json` (look for
+the `pbr-material-extensions` workflow and
+`browser-pbr-material-extension-composite` proof class), which is
+recorded against real-GPU CI runners.
+
 ## Browser viewer surfaces
 
 The browser side ships through `<scena-viewer>`, a custom element with
 `<model-viewer>`-style attributes (drag-and-drop, material variants,
-inspector overlay, mobile gestures). The screenshots below come from the
-M6 Playwright proof lane and are the rendered output a real browser
-shows when the element is loaded against the bundled assets:
+inspector overlay, mobile gestures). The Playwright lane in
+`tests/browser/m6_rust_wasm_renderer_probe.js` regenerates the proof
+artifacts on every release run, and the host-wirable event surface is
+documented under [`docs/browser.md`](../browser.md).
 
-| Surface | Screenshot |
-|---|---|
-| `<scena-viewer>` custom element (drag-drop, annotations, inspector, progress, variant picker) | ![scena-viewer element](../assets/v1.4-showcase/browser/scena-viewer-element-browser-proof.jpg) |
-| `<scena-viewer>` vs `<model-viewer>` three-asset parity | ![side-by-side parity](../assets/v1.4-showcase/browser/scena-viewer-model-viewer-parity-browser-proof.jpg) |
-| Mobile a11y — touch gestures + keyboard + role/label | ![mobile a11y](../assets/v1.4-showcase/browser/scena-viewer-mobile-a11y-browser-proof.jpg) |
-| Camera control kit — orbit / follow / fly through browser pointer + pinch | ![camera control kit](../assets/v1.4-showcase/browser/camera-control-kit-browser-proof.jpg) |
+![scena-viewer vs model-viewer three-asset parity — left column model-viewer reference, right column scena-viewer output for the same assets](../assets/v1.4-showcase/browser/scena-viewer-model-viewer-parity-browser-proof.jpg)
 
-The Playwright lane regenerates these on every release run; the
-host-wirable event surface for the custom element is documented under
-[`docs/browser.md`](../browser.md).
+The side-by-side above is honest evidence: scena's WebGL2 rendering of
+the WaterBottle and the animated morph cube is visibly behind
+`<model-viewer>`'s in this CI snapshot. Closing that gap is a
+known follow-up; the API surface for the custom element is shipped and
+the host-wirable event contract is stable. The remaining work is shader
+parity on the WebGPU / WebGL2 backends, tracked under the
+`<scena-viewer>` bet in the next-release roadmap.
+
+For the full set of browser-side proof artifacts (drag/drop event
+sequence, mobile gestures, keyboard a11y, camera control kit, loading
+progress, material-variant picker, annotation tracking, inspector
+overlay), see
+`target/gate-artifacts/m6-rust-wasm-renderer-probe.json` and the
+companion screenshots written next to it on the release CI runner —
+those records are the source of truth for "did the browser actually
+behave this way," and they belong to the CI lane rather than the docs
+tree.
 
 ## Troubleshooting
 
