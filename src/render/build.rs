@@ -201,6 +201,7 @@ impl Renderer {
             frame: vec![0; target.byte_len()],
             fxaa_scratch: vec![0; target.byte_len()],
             bloom_scratch: vec![0; target.byte_len()],
+            oit_scratch: vec![super::cpu::OitAccumPixel::default(); target.pixel_len()],
             linear_frame: (!has_gpu).then(|| vec![Color::BLACK; target.pixel_len()]),
             depth_frame: (!has_gpu).then(|| vec![f32::INFINITY; target.pixel_len()]),
             stats: RendererStats {
@@ -213,6 +214,7 @@ impl Renderer {
             gpu,
             output: OutputTransform::default(),
             anti_aliasing: Default::default(),
+            order_independent_transparency: None,
             screen_space_ambient_occlusion: None,
             bloom: None,
             profile,

@@ -406,6 +406,7 @@ pub struct RendererStats {
     pub depth_prepass_passes: u64,
     pub depth_prepass_draws: u64,
     pub ambient_occlusion_passes: u64,
+    pub order_independent_transparency_passes: u64,
     pub bloom_passes: u64,
     pub fxaa_passes: u64,
     pub live_logical_handles: u64,

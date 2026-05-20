@@ -4,8 +4,8 @@ use crate::material::Color;
 use crate::picking::InteractionStyle;
 
 use super::{
-    AntiAliasing, Background, PostBloomConfig, Renderer, ScreenSpaceAmbientOcclusionConfig,
-    Tonemapper,
+    AntiAliasing, Background, OrderIndependentTransparencyConfig, PostBloomConfig, Renderer,
+    ScreenSpaceAmbientOcclusionConfig, Tonemapper,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -121,6 +121,24 @@ impl Renderer {
 
     pub fn bloom(&self) -> Option<PostBloomConfig> {
         self.bloom
+    }
+
+    pub fn order_independent_transparency(&self) -> Option<OrderIndependentTransparencyConfig> {
+        self.order_independent_transparency
+    }
+
+    pub fn set_order_independent_transparency(
+        &mut self,
+        config: Option<OrderIndependentTransparencyConfig>,
+    ) {
+        if self.order_independent_transparency != config {
+            self.order_independent_transparency = config;
+            self.mark_output_changed();
+        }
+    }
+
+    pub fn clear_order_independent_transparency(&mut self) {
+        self.set_order_independent_transparency(None);
     }
 
     pub fn screen_space_ambient_occlusion(&self) -> Option<ScreenSpaceAmbientOcclusionConfig> {

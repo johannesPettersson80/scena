@@ -135,6 +135,20 @@ renderer.set_screen_space_ambient_occlusion(Some(
 The SSAO pass uses the CPU depth buffer to darken contact edges before bloom
 and FXAA. GPU/WebGPU/WebGL2 SSAO remains a separate capability-gated lane.
 
+Headless and descriptor-backed CPU renders can enable weighted blended
+order-independent transparency for overlapping alpha-blended surfaces:
+
+```rust
+renderer.set_order_independent_transparency(Some(
+    scena::OrderIndependentTransparencyConfig::weighted_blended(),
+));
+```
+
+This path resolves transparent overlap from a per-pixel accumulator, then
+composites the result over opaque pixels. It is reported through
+`RendererStats::order_independent_transparency_passes`. GPU/WebGPU/WebGL2
+OIT remains a separate capability-gated lane.
+
 For generated images, see [Headless rendering](headless-rendering.md).
 
 ## Lifecycle

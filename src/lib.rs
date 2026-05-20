@@ -74,9 +74,9 @@ pub use reference_image::{
 };
 pub use render::{
     AntiAliasing, AutoExposureConfig, AutoExposureResult, Background, OffscreenTarget,
-    PixelReadback, PostBloomConfig, Profile, Quality, RenderMode, Renderer, RendererOptions,
-    ScreenSpaceAmbientOcclusionConfig, Tonemapper, estimate_auto_exposure_from_linear_colors,
-    estimate_auto_exposure_from_srgb8,
+    OrderIndependentTransparencyConfig, PixelReadback, PostBloomConfig, Profile, Quality,
+    RenderMode, Renderer, RendererOptions, ScreenSpaceAmbientOcclusionConfig, Tonemapper,
+    estimate_auto_exposure_from_linear_colors, estimate_auto_exposure_from_srgb8,
 };
 pub use scene::{
     AnchorFrame, AnchorKey, Angle, Camera, CameraKey, ClippingPlane, ClippingPlaneKey,

@@ -161,8 +161,11 @@ pub(crate) fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding
             "pub directional_shadow_pcf_kernel: u8",
             "pub bloom: CapabilityStatus",
             "pub screen_space_ambient_occlusion: CapabilityStatus",
+            "pub order_independent_transparency: CapabilityStatus",
             "const fn bloom_status",
+            "const fn order_independent_transparency_status",
             "DiagnosticCode::AmbientOcclusionDisabled",
+            "DiagnosticCode::OrderIndependentTransparencyDisabled",
             "pub reversed_z_depth: CapabilityStatus",
         ],
     );
@@ -275,10 +278,12 @@ pub(crate) fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding
             "headless.spot_shadows",
             "headless.bloom",
             "headless.screen_space_ambient_occlusion",
+            "headless.order_independent_transparency",
             "DiagnosticCode::PointShadowsDisabled",
             "DiagnosticCode::SpotShadowsDisabled",
             "subtle output bloom is an explicit postprocess",
             "DiagnosticCode::AmbientOcclusionDisabled",
+            "DiagnosticCode::OrderIndependentTransparencyDisabled",
         ],
     );
     require_contains(

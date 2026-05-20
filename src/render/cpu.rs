@@ -4,7 +4,24 @@ use crate::scene::{ClippingPlane, Vec3};
 
 use super::RasterTarget;
 use super::camera::CameraProjection;
-use super::output::OutputTransform;
+use super::output::{OrderIndependentTransparencyConfig, OutputTransform};
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct OitAccumPixel {
+    color: [f32; 3],
+    alpha_weight: f32,
+    revealage: f32,
+}
+
+impl Default for OitAccumPixel {
+    fn default() -> Self {
+        Self {
+            color: [0.0; 3],
+            alpha_weight: 0.0,
+            revealage: 1.0,
+        }
+    }
+}
 
 pub(super) struct CpuFrame<'frame> {
     target: RasterTarget,
@@ -46,6 +63,19 @@ pub(super) fn clear_cpu(cpu_frame: &mut CpuFrame<'_>, color: Color) {
     }
     debug_assert_eq!(cpu_frame.linear_frame.len(), cpu_frame.target.pixel_len());
     debug_assert_eq!(cpu_frame.depth_frame.len(), cpu_frame.target.pixel_len());
+}
+
+pub(super) fn clear_order_independent_transparency(accum: &mut [OitAccumPixel]) {
+    for pixel in accum {
+        *pixel = OitAccumPixel::default();
+    }
+}
+
+pub(super) fn primitive_needs_order_independent_transparency(primitive: &Primitive) -> bool {
+    primitive
+        .vertices()
+        .iter()
+        .any(|vertex| clamp_alpha_or(vertex.color.a, 1.0) < 1.0 - f32::EPSILON)
 }
 
 pub(super) fn draw_primitive_cpu(
@@ -102,6 +132,100 @@ pub(super) fn draw_primitive_cpu(
             write_pixel(cpu_frame, x, y, color, depth);
         }
     }
+}
+
+pub(super) fn draw_order_independent_transparency_cpu(
+    cpu_frame: &mut CpuFrame<'_>,
+    primitive: &Primitive,
+    clipping_planes: &[ClippingPlane],
+    camera: &CameraProjection,
+    accum: &mut [OitAccumPixel],
+    config: OrderIndependentTransparencyConfig,
+) {
+    let [a, b, c] = primitive.vertices();
+    let Some(a) = ScreenVertex::from_vertex(*a, cpu_frame.target, camera) else {
+        return;
+    };
+    let Some(b) = ScreenVertex::from_vertex(*b, cpu_frame.target, camera) else {
+        return;
+    };
+    let Some(c) = ScreenVertex::from_vertex(*c, cpu_frame.target, camera) else {
+        return;
+    };
+
+    let min_x = a.x.min(b.x).min(c.x).floor().max(0.0) as u32;
+    let max_x =
+        a.x.max(b.x)
+            .max(c.x)
+            .ceil()
+            .min(cpu_frame.target.width as f32 - 1.0) as u32;
+    let min_y = a.y.min(b.y).min(c.y).floor().max(0.0) as u32;
+    let max_y =
+        a.y.max(b.y)
+            .max(c.y)
+            .ceil()
+            .min(cpu_frame.target.height as f32 - 1.0) as u32;
+
+    let area = edge(a, b, c.x, c.y);
+    if area.abs() <= f32::EPSILON {
+        return;
+    }
+
+    for y in min_y..=max_y {
+        for x in min_x..=max_x {
+            let px = x as f32 + 0.5;
+            let py = y as f32 + 0.5;
+            let w0 = edge(b, c, px, py) / area;
+            let w1 = edge(c, a, px, py) / area;
+            let w2 = edge(a, b, px, py) / area;
+            if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {
+                continue;
+            }
+            let position = mix_position(a.position, b.position, c.position, w0, w1, w2);
+            if is_clipped(position, clipping_planes) {
+                continue;
+            }
+            let depth = mix_depth(a.depth, b.depth, c.depth, w0, w1, w2);
+            if !depth.is_finite() {
+                continue;
+            }
+            let pixel_index = cpu_frame.target.pixel_index(x, y);
+            if depth > cpu_frame.depth_frame[pixel_index] + f32::EPSILON {
+                continue;
+            }
+            accumulate_order_independent_transparency(
+                &mut accum[pixel_index],
+                mix_color(a, b, c, w0, w1, w2),
+                config,
+            );
+        }
+    }
+}
+
+pub(super) fn resolve_order_independent_transparency_cpu(
+    cpu_frame: &mut CpuFrame<'_>,
+    accum: &[OitAccumPixel],
+) -> u64 {
+    let mut touched = false;
+    for (pixel_index, pixel) in accum.iter().enumerate() {
+        if pixel.alpha_weight <= f32::EPSILON {
+            continue;
+        }
+        touched = true;
+        let alpha = (1.0 - pixel.revealage).clamp(0.0, 1.0);
+        let transparent = Color::from_linear_rgba(
+            pixel.color[0] / pixel.alpha_weight,
+            pixel.color[1] / pixel.alpha_weight,
+            pixel.color[2] / pixel.alpha_weight,
+            alpha,
+        );
+        let blended = blend_source_over(transparent, cpu_frame.linear_frame[pixel_index]);
+        cpu_frame.linear_frame[pixel_index] = blended;
+        let byte_index = pixel_index * 4;
+        cpu_frame.frame[byte_index..byte_index + 4]
+            .copy_from_slice(&cpu_frame.output.encode_rgba8(blended));
+    }
+    u64::from(touched)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -203,6 +327,27 @@ fn write_pixel(cpu_frame: &mut CpuFrame<'_>, x: u32, y: u32, color: Color, depth
     let byte_index = pixel_index * 4;
     cpu_frame.frame[byte_index..byte_index + 4]
         .copy_from_slice(&cpu_frame.output.encode_rgba8(blended));
+}
+
+fn accumulate_order_independent_transparency(
+    pixel: &mut OitAccumPixel,
+    color: Color,
+    config: OrderIndependentTransparencyConfig,
+) {
+    let alpha = boosted_alpha(clamp_alpha_or(color.a, 1.0), config.coverage_boost());
+    if alpha <= 0.0 {
+        return;
+    }
+    pixel.color[0] += color.r * alpha;
+    pixel.color[1] += color.g * alpha;
+    pixel.color[2] += color.b * alpha;
+    pixel.alpha_weight += alpha;
+    pixel.revealage *= 1.0 - alpha;
+}
+
+fn boosted_alpha(alpha: f32, coverage_boost: f32) -> f32 {
+    let boost = coverage_boost.clamp(0.25, 4.0);
+    1.0 - (1.0 - alpha.clamp(0.0, 1.0)).powf(boost)
 }
 
 fn blend_source_over(source: Color, destination: Color) -> Color {

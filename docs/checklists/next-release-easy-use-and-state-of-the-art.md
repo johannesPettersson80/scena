@@ -548,10 +548,20 @@ the rendered result is part of the contract.
   Visual proof: reference-image before/after per light shape.
 - **Screen-space reflections (SSR).**
   Visual proof: reference-image ON/OFF on a reflective-floor control.
-- **Order-independent transparency (OIT).** Weighted-blended is the cheap
-  baseline.
-  Visual proof: reference-image order-invariance pair for overlapping
-  transparent surfaces.
+- **Order-independent transparency (OIT).** Status: **[shipped]** for
+  the headless CPU / descriptor-backed weighted-blended baseline.
+  `OrderIndependentTransparencyConfig::weighted_blended()` and
+  `Renderer::set_order_independent_transparency(...)` resolve transparent
+  overlap from a per-pixel accumulator, with
+  `RendererStats::order_independent_transparency_passes` and headless
+  `Capabilities::order_independent_transparency = Supported`. GPU,
+  WebGPU, and WebGL2 OIT remain future backend lanes and are not claimed.
+  Proof: `weighted_blended_transparency_is_order_independent_for_overlaps`
+  asserts opposite insertion orders produce the same overlap pixel, and
+  `tests/m2_visual_proof.rs` writes the
+  `oit-overlap-order-invariance` reference artifact.
+  Visual proof: reference-image order-invariance pair shipped via
+  `target/gate-artifacts/m2-visual/oit-overlap-order-invariance.ppm`.
 - **Wide-gamut output (Display P3)** — capability-gated. PBR Neutral
   targets sRGB; Display P3 is a `drawingBufferColorSpace` capability on
   WebGL/WebGPU. Needs measured proof per backend, not a blanket claim.
@@ -1700,3 +1710,18 @@ Anti-aliasing control and ON/OFF proof pass (2026-05-19):
   baseline.
 - Reclassified anti-aliasing from a genuine gap to shipped for the FXAA
   baseline while leaving MSAA/TAA as future renderer-quality lanes.
+
+Weighted blended OIT baseline pass (2026-05-19):
+
+- Added `OrderIndependentTransparencyConfig`,
+  `Renderer::set_order_independent_transparency(...)`,
+  `Renderer::clear_order_independent_transparency()`,
+  `RendererStats::order_independent_transparency_passes`, and
+  headless/described CPU capability reporting for the weighted-blended
+  transparency baseline.
+- Added a focused opposite-insertion-order test plus the M2
+  `oit-overlap-order-invariance` reference artifact to prove overlapping
+  transparent surfaces resolve independent of scene insertion order.
+- Reclassified OIT from a genuine renderer gap to shipped for the
+  headless CPU baseline while leaving GPU/WebGPU/WebGL2 OIT as explicit
+  future backend work.

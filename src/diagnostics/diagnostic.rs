@@ -23,6 +23,7 @@ pub enum DiagnosticCode {
     SpotShadowsDisabled,
     BloomDisabled,
     AmbientOcclusionDisabled,
+    OrderIndependentTransparencyDisabled,
     GpuCullingDisabled,
     MaterialTextureMissingDecodedPixels,
     DestructionQueuePressure,

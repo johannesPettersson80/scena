@@ -4,9 +4,9 @@ use scena::{
     Angle, AntiAliasing, AssetError, Assets, Backend, Capabilities, CapabilityStatus,
     ClippingPlane, ClippingPlaneSet, Color, DepthRange, DiagnosticCode, DiagnosticSeverity,
     DirectionalLight, EnvironmentSourceKind, GeometryDesc, GeometryTopology, Light, MaterialDesc,
-    NodeKind, OrthographicCamera, PerspectiveCamera, PointLight, PostBloomConfig, PrepareError,
-    Primitive, RenderMode, Renderer, RendererOptions, Scene, ScreenSpaceAmbientOcclusionConfig,
-    SpotLight, Transform, Vec3, Vertex,
+    NodeKind, OrderIndependentTransparencyConfig, OrthographicCamera, PerspectiveCamera,
+    PointLight, PostBloomConfig, PrepareError, Primitive, RenderMode, Renderer, RendererOptions,
+    Scene, ScreenSpaceAmbientOcclusionConfig, SpotLight, Transform, Vec3, Vertex,
 };
 
 const CAMERA_DISTANCE_FOR_NDC_FIXTURES: f32 = 1.732_050_8;
@@ -196,6 +196,57 @@ fn depth_contact_scene() -> Scene {
     scene
         .add_renderable(scene.root(), block.to_vec(), Transform::default())
         .expect("contact block inserts");
+    scene
+}
+
+fn overlapping_transparency_scene(red_first: bool) -> Scene {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            ndc_fixture_camera_transform(),
+        )
+        .expect("camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("camera becomes active");
+    let red = Primitive::triangle([
+        Vertex {
+            position: Vec3::new(-0.72, -0.72, 0.08),
+            color: Color::from_linear_rgba(1.0, 0.0, 0.0, 0.45),
+        },
+        Vertex {
+            position: Vec3::new(0.72, -0.72, 0.08),
+            color: Color::from_linear_rgba(1.0, 0.0, 0.0, 0.45),
+        },
+        Vertex {
+            position: Vec3::new(0.0, 0.72, 0.08),
+            color: Color::from_linear_rgba(1.0, 0.0, 0.0, 0.45),
+        },
+    ]);
+    let green = Primitive::triangle([
+        Vertex {
+            position: Vec3::new(-0.72, -0.72, -0.08),
+            color: Color::from_linear_rgba(0.0, 1.0, 0.0, 0.45),
+        },
+        Vertex {
+            position: Vec3::new(0.72, -0.72, -0.08),
+            color: Color::from_linear_rgba(0.0, 1.0, 0.0, 0.45),
+        },
+        Vertex {
+            position: Vec3::new(0.0, 0.72, -0.08),
+            color: Color::from_linear_rgba(0.0, 1.0, 0.0, 0.45),
+        },
+    ]);
+    let primitives = if red_first {
+        vec![red, green]
+    } else {
+        vec![green, red]
+    };
+    scene
+        .add_renderable(scene.root(), primitives, Transform::default())
+        .expect("transparent overlap inserts");
     scene
 }
 
@@ -1096,6 +1147,49 @@ fn screen_space_ambient_occlusion_darkens_depth_contact_edges() {
         far_floor[0] > occluded_contact[0] + 16,
         "far floor should stay visibly lighter than the contact shadow; \
          far={far_floor:?} contact={occluded_contact:?}"
+    );
+}
+
+#[test]
+fn weighted_blended_transparency_is_order_independent_for_overlaps() {
+    let mut red_first = overlapping_transparency_scene(true);
+    let mut green_first = overlapping_transparency_scene(false);
+    let mut red_renderer = Renderer::headless(12, 12).expect("red-first renderer builds");
+    let mut green_renderer = Renderer::headless(12, 12).expect("green-first renderer builds");
+    red_renderer.set_anti_aliasing(AntiAliasing::None);
+    green_renderer.set_anti_aliasing(AntiAliasing::None);
+    red_renderer.set_order_independent_transparency(Some(
+        OrderIndependentTransparencyConfig::weighted_blended(),
+    ));
+    green_renderer.set_order_independent_transparency(Some(
+        OrderIndependentTransparencyConfig::weighted_blended(),
+    ));
+
+    red_renderer
+        .prepare(&mut red_first)
+        .expect("red-first scene prepares");
+    green_renderer
+        .prepare(&mut green_first)
+        .expect("green-first scene prepares");
+    red_renderer
+        .render_active(&red_first)
+        .expect("red-first scene renders");
+    green_renderer
+        .render_active(&green_first)
+        .expect("green-first scene renders");
+
+    assert_eq!(
+        red_renderer.stats().order_independent_transparency_passes,
+        1
+    );
+    assert_eq!(
+        green_renderer.stats().order_independent_transparency_passes,
+        1
+    );
+    assert_eq!(
+        pixel_at(red_renderer.frame_rgba8(), 12, 6, 6),
+        pixel_at(green_renderer.frame_rgba8(), 12, 6, 6),
+        "weighted blended OIT should make overlapping transparent surfaces order-independent"
     );
 }
 

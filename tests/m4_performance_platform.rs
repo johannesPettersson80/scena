@@ -95,6 +95,11 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
         "CPU headless SSAO has depth-aware visual proof; GPU/browser lanes remain separate"
     );
     assert_eq!(
+        headless.order_independent_transparency,
+        CapabilityStatus::Supported,
+        "CPU headless OIT has overlap order-invariance proof; GPU/browser lanes remain separate"
+    );
+    assert_eq!(
         headless.gpu_frustum_culling,
         CapabilityStatus::FeatureDisabled
     );
@@ -151,6 +156,10 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
     assert_eq!(webgpu.per_instance_culling, CapabilityStatus::Supported);
     assert_eq!(webgpu.compute_shaders, CapabilityStatus::Supported);
     assert_eq!(webgpu.bloom, CapabilityStatus::Supported);
+    assert_eq!(
+        webgpu.order_independent_transparency,
+        CapabilityStatus::FeatureDisabled
+    );
     assert_eq!(webgpu.texture_arrays, CapabilityStatus::Supported);
     assert_eq!(webgpu.max_texture_array_layers, 256);
 
@@ -180,6 +189,12 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == scena::DiagnosticCode::AmbientOcclusionDisabled
             && diagnostic.message.contains("ambient occlusion")
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == scena::DiagnosticCode::OrderIndependentTransparencyDisabled
+            && diagnostic
+                .message
+                .contains("Order-independent transparency")
     }));
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == scena::DiagnosticCode::GpuCullingDisabled

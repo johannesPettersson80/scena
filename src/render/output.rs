@@ -80,6 +80,39 @@ pub enum AntiAliasing {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OrderIndependentTransparencyConfig {
+    coverage_boost: f32,
+}
+
+impl OrderIndependentTransparencyConfig {
+    pub const fn weighted_blended() -> Self {
+        Self {
+            coverage_boost: 1.0,
+        }
+    }
+
+    pub fn new(coverage_boost: f32) -> Self {
+        Self {
+            coverage_boost: if coverage_boost.is_finite() {
+                coverage_boost.clamp(0.25, 4.0)
+            } else {
+                1.0
+            },
+        }
+    }
+
+    pub const fn coverage_boost(self) -> f32 {
+        self.coverage_boost
+    }
+}
+
+impl Default for OrderIndependentTransparencyConfig {
+    fn default() -> Self {
+        Self::weighted_blended()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PostBloomConfig {
     threshold_srgb: u8,
     intensity: f32,

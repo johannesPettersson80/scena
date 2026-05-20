@@ -39,7 +39,8 @@ use self::gpu::GpuDeviceState;
 pub use self::offscreen::{OffscreenTarget, PixelReadback};
 use self::output::OutputTransform;
 pub use self::output::{
-    AntiAliasing, PostBloomConfig, ScreenSpaceAmbientOcclusionConfig, Tonemapper,
+    AntiAliasing, OrderIndependentTransparencyConfig, PostBloomConfig,
+    ScreenSpaceAmbientOcclusionConfig, Tonemapper,
 };
 pub use self::settings::{Profile, Quality, RenderMode, RendererOptions};
 
@@ -50,6 +51,7 @@ pub struct Renderer {
     frame: Vec<u8>,
     fxaa_scratch: Vec<u8>,
     bloom_scratch: Vec<u8>,
+    oit_scratch: Vec<cpu::OitAccumPixel>,
     // CPU-only linear scene-referred straight-alpha accumulator. Stores the source of truth
     // before every pixel is ACES+sRGB encoded into `frame`.
     linear_frame: Option<Vec<Color>>,
@@ -61,6 +63,7 @@ pub struct Renderer {
     gpu: Option<GpuDeviceState>,
     output: OutputTransform,
     anti_aliasing: AntiAliasing,
+    order_independent_transparency: Option<OrderIndependentTransparencyConfig>,
     screen_space_ambient_occlusion: Option<ScreenSpaceAmbientOcclusionConfig>,
     bloom: Option<PostBloomConfig>,
     profile: Profile,
@@ -146,6 +149,7 @@ impl Renderer {
         loop {
             if self.gpu.is_some() {
                 self.draw_gpu(&camera_projection)?;
+                self.stats.order_independent_transparency_passes = 0;
             } else {
                 let (primitives, clipping_planes) = {
                     let prepared = self.prepared_state(scene)?;
@@ -170,14 +174,43 @@ impl Renderer {
                     &mut self.frame,
                 );
                 cpu::clear_cpu(&mut cpu_frame, self.background_color);
-                for primitive in &primitives {
-                    cpu::draw_primitive_cpu(
-                        &mut cpu_frame,
-                        primitive,
-                        &clipping_planes,
-                        &camera_projection,
-                    );
-                }
+                self.stats.order_independent_transparency_passes =
+                    if let Some(config) = self.order_independent_transparency {
+                        cpu::clear_order_independent_transparency(&mut self.oit_scratch);
+                        for primitive in &primitives {
+                            if cpu::primitive_needs_order_independent_transparency(primitive) {
+                                cpu::draw_order_independent_transparency_cpu(
+                                    &mut cpu_frame,
+                                    primitive,
+                                    &clipping_planes,
+                                    &camera_projection,
+                                    &mut self.oit_scratch,
+                                    config,
+                                );
+                            } else {
+                                cpu::draw_primitive_cpu(
+                                    &mut cpu_frame,
+                                    primitive,
+                                    &clipping_planes,
+                                    &camera_projection,
+                                );
+                            }
+                        }
+                        cpu::resolve_order_independent_transparency_cpu(
+                            &mut cpu_frame,
+                            &self.oit_scratch,
+                        )
+                    } else {
+                        for primitive in &primitives {
+                            cpu::draw_primitive_cpu(
+                                &mut cpu_frame,
+                                primitive,
+                                &clipping_planes,
+                                &camera_projection,
+                            );
+                        }
+                        0
+                    };
             }
             self.stats.ambient_occlusion_passes = match (
                 self.screen_space_ambient_occlusion,

@@ -61,6 +61,11 @@ All notable user-facing changes are recorded here.
 - Added `AntiAliasing` and `Renderer::set_anti_aliasing(...)` so FXAA remains
   the default but can be disabled for exact-pixel or ON/OFF visual proof.
 
+- Added a headless CPU weighted blended order-independent transparency
+  baseline via `OrderIndependentTransparencyConfig` and
+  `Renderer::set_order_independent_transparency(...)`, with order-invariance
+  visual proof for overlapping alpha-blended surfaces.
+
 ### Changed
 
 - Updated the browser demo showcase so connector mating is the default first

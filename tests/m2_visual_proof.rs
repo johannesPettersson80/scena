@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 
 use scena::{
     AntiAliasing, Assets, ClippingPlane, ClippingPlaneSet, Color, DirectionalLight, GeometryDesc,
-    GeometryTopology, MaterialDesc, PerspectiveCamera, PostBloomConfig, Primitive, Renderer, Scene,
-    ScreenSpaceAmbientOcclusionConfig, Transform, Vec3, Vertex,
+    GeometryTopology, MaterialDesc, OrderIndependentTransparencyConfig, PerspectiveCamera,
+    PostBloomConfig, Primitive, Renderer, Scene, ScreenSpaceAmbientOcclusionConfig, Transform,
+    Vec3, Vertex,
 };
 
 const M2_HEADLESS_FIXTURE_METADATA: &str = include_str!("visual/fixtures/m2-headless-core.toml");
@@ -132,7 +133,7 @@ struct ReferenceSpec {
     rgba_hash: String,
 }
 
-fn visual_fixtures() -> [VisualFixture; 8] {
+fn visual_fixtures() -> [VisualFixture; 9] {
     [
         VisualFixture {
             name: "direct-lights-pbr",
@@ -182,6 +183,13 @@ fn visual_fixtures() -> [VisualFixture; 8] {
             height: 16,
             render: render_ssao_contact_on_off,
             validate: validate_ssao_contact_on_off,
+        },
+        VisualFixture {
+            name: "oit-overlap-order-invariance",
+            width: 32,
+            height: 16,
+            render: render_oit_overlap_order_invariance,
+            validate: validate_oit_overlap_order_invariance,
         },
         VisualFixture {
             name: "clipping-half-space",
@@ -580,6 +588,31 @@ fn render_clipping_half_space() -> VisualProof {
     render_scene(scene)
 }
 
+fn render_oit_overlap_order_invariance() -> VisualProof {
+    let (left, left_stats) = render_oit_overlap_scene(true);
+    let (right, stats) = render_oit_overlap_scene(false);
+    assert_eq!(left_stats.order_independent_transparency_passes, 1);
+    assert_eq!(stats.order_independent_transparency_passes, 1);
+    let mut frame = vec![0; 32 * 16 * 4];
+    blit_frame(&left, 16, 16, &mut frame, 32, 0, 0);
+    blit_frame(&right, 16, 16, &mut frame, 32, 16, 0);
+    VisualProof { frame, stats }
+}
+
+fn render_oit_overlap_scene(red_first: bool) -> (Vec<u8>, scena::RendererStats) {
+    let mut scene = overlapping_transparency_scene(red_first);
+    let mut renderer = Renderer::headless(16, 16).expect("OIT renderer builds");
+    renderer.set_anti_aliasing(AntiAliasing::None);
+    renderer.set_order_independent_transparency(Some(
+        OrderIndependentTransparencyConfig::weighted_blended(),
+    ));
+    renderer.prepare(&mut scene).expect("OIT scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("OIT scene renders through active camera");
+    (renderer.frame_rgba8().to_vec(), renderer.stats())
+}
+
 fn render_scene_with_assets(mut scene: Scene, assets: &Assets) -> VisualProof {
     let mut renderer = Renderer::headless(16, 16).expect("headless renderer builds");
     renderer
@@ -604,6 +637,47 @@ fn render_scene(mut scene: Scene) -> VisualProof {
         frame: renderer.frame_rgba8().to_vec(),
         stats: renderer.stats(),
     }
+}
+
+fn overlapping_transparency_scene(red_first: bool) -> Scene {
+    let (mut scene, _camera) = scene_with_camera();
+    let red = Primitive::triangle([
+        Vertex {
+            position: Vec3::new(-0.72, -0.72, 0.08),
+            color: Color::from_linear_rgba(1.0, 0.0, 0.0, 0.45),
+        },
+        Vertex {
+            position: Vec3::new(0.72, -0.72, 0.08),
+            color: Color::from_linear_rgba(1.0, 0.0, 0.0, 0.45),
+        },
+        Vertex {
+            position: Vec3::new(0.0, 0.72, 0.08),
+            color: Color::from_linear_rgba(1.0, 0.0, 0.0, 0.45),
+        },
+    ]);
+    let green = Primitive::triangle([
+        Vertex {
+            position: Vec3::new(-0.72, -0.72, -0.08),
+            color: Color::from_linear_rgba(0.0, 1.0, 0.0, 0.45),
+        },
+        Vertex {
+            position: Vec3::new(0.72, -0.72, -0.08),
+            color: Color::from_linear_rgba(0.0, 1.0, 0.0, 0.45),
+        },
+        Vertex {
+            position: Vec3::new(0.0, 0.72, -0.08),
+            color: Color::from_linear_rgba(0.0, 1.0, 0.0, 0.45),
+        },
+    ]);
+    let primitives = if red_first {
+        vec![red, green]
+    } else {
+        vec![green, red]
+    };
+    scene
+        .add_renderable(scene.root(), primitives, Transform::default())
+        .expect("transparent overlap inserts");
+    scene
 }
 
 fn scene_with_camera() -> (Scene, scena::CameraKey) {
@@ -711,6 +785,20 @@ fn validate_ssao_contact_on_off(proof: &VisualProof) {
     );
 }
 
+fn validate_oit_overlap_order_invariance(proof: &VisualProof) {
+    assert_eq!(proof.stats.order_independent_transparency_passes, 1);
+    let red_first = pixel_at(&proof.frame, 32, 8, 8);
+    let green_first = pixel_at(&proof.frame, 32, 24, 8);
+    assert_eq!(
+        red_first, green_first,
+        "left/right OIT proof uses opposite insertion orders and should resolve to identical overlap pixels"
+    );
+    assert!(
+        red_first[0] > 40 && red_first[1] > 40 && red_first[2] < 5,
+        "resolved overlap should visibly contain the red and green transparent surfaces; got {red_first:?}",
+    );
+}
+
 fn validate_clipping_half_space(proof: &VisualProof) {
     assert_eq!(pixel_at(&proof.frame, 16, 3, 8), [0, 0, 0, 255]);
     assert_eq!(pixel_at(&proof.frame, 16, 12, 8), [240, 240, 240, 255]);
@@ -812,6 +900,24 @@ fn rgba_fnv1a64(frame: &[u8]) -> String {
         hash = hash.wrapping_mul(0x100000001b3);
     }
     format!("fnv1a64:{hash:016x}")
+}
+
+fn blit_frame(
+    source: &[u8],
+    source_width: u32,
+    source_height: u32,
+    target: &mut [u8],
+    target_width: u32,
+    target_x: u32,
+    target_y: u32,
+) {
+    for y in 0..source_height {
+        let source_start = (y * source_width * 4) as usize;
+        let source_end = source_start + (source_width * 4) as usize;
+        let target_start = (((target_y + y) * target_width + target_x) * 4) as usize;
+        let target_end = target_start + (source_width * 4) as usize;
+        target[target_start..target_end].copy_from_slice(&source[source_start..source_end]);
+    }
 }
 
 fn pixel_at(frame: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {

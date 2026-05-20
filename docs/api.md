@@ -59,7 +59,11 @@ Additive public API changes after 1.3.0:
 - `Renderer::set_screen_space_ambient_occlusion`
 - `Renderer::clear_screen_space_ambient_occlusion`
 - `ScreenSpaceAmbientOcclusionConfig`
+- `Renderer::set_order_independent_transparency`
+- `Renderer::clear_order_independent_transparency`
+- `OrderIndependentTransparencyConfig`
 - `RendererStats::ambient_occlusion_passes`
+- `RendererStats::order_independent_transparency_passes`
 - `RendererStats::bloom_passes`
 
 ## Core types

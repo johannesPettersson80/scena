@@ -91,6 +91,7 @@ pub struct Capabilities {
     pub ibl_brdf_lut_default_size: u32,
     pub bloom: CapabilityStatus,
     pub screen_space_ambient_occlusion: CapabilityStatus,
+    pub order_independent_transparency: CapabilityStatus,
     pub texture_compression_basisu: CapabilityStatus,
     pub hardware_instancing: CapabilityStatus,
     /// Phase 1F: whether the backend can sample from `texture_2d_array<f32>`
@@ -143,6 +144,7 @@ impl Capabilities {
             ibl_brdf_lut_default_size: ibl_default_size(backend),
             bloom: bloom_status(backend),
             screen_space_ambient_occlusion: ambient_occlusion_status(backend),
+            order_independent_transparency: order_independent_transparency_status(backend),
             texture_compression_basisu: texture_compression_basisu_status(backend),
             hardware_instancing: hardware_instancing_status(backend),
             texture_arrays: texture_arrays_status(backend),
@@ -181,6 +183,7 @@ impl Capabilities {
             ibl_brdf_lut_default_size: ibl_default_size(backend),
             bloom: bloom_status(backend),
             screen_space_ambient_occlusion: ambient_occlusion_status(backend),
+            order_independent_transparency: order_independent_transparency_status(backend),
             texture_compression_basisu: texture_compression_basisu_status(backend),
             hardware_instancing: hardware_instancing_status(backend),
             texture_arrays: texture_arrays_status(backend),
@@ -219,6 +222,7 @@ impl Capabilities {
             ibl_brdf_lut_default_size: ibl_default_size(backend),
             bloom: bloom_status(backend),
             screen_space_ambient_occlusion: ambient_occlusion_status(backend),
+            order_independent_transparency: order_independent_transparency_status(backend),
             texture_compression_basisu: texture_compression_basisu_status(backend),
             hardware_instancing: hardware_instancing_status(backend),
             texture_arrays: texture_arrays_status(backend),
@@ -279,6 +283,13 @@ impl Capabilities {
                 DiagnosticCode::AmbientOcclusionDisabled,
                 "Screen-space ambient occlusion is disabled until SSAO or GTAO has depth-aware visual proof",
                 "do not market SSAO/GTAO; use authored occlusion textures or baked lighting until the ambient-occlusion gate closes",
+            ));
+        }
+        if self.order_independent_transparency == CapabilityStatus::FeatureDisabled {
+            diagnostics.push(Diagnostic::warning(
+                DiagnosticCode::OrderIndependentTransparencyDisabled,
+                "Order-independent transparency is disabled until a backend has overlap order-invariance proof",
+                "sort alpha-blended surfaces back-to-front or use opaque/masked fallbacks until the OIT gate closes for this backend",
             ));
         }
         if self.gpu_frustum_culling == CapabilityStatus::FeatureDisabled {
@@ -359,14 +370,7 @@ const fn hardware_tier(backend: Backend, gpu_device: bool) -> HardwareTier {
 }
 
 const fn reversed_z_depth_status(backend: Backend) -> CapabilityStatus {
-    match backend {
-        Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu => {
-            CapabilityStatus::Supported
-        }
-        Backend::Headless | Backend::SurfaceDescriptor | Backend::WebGl2 => {
-            CapabilityStatus::FeatureDisabled
-        }
-    }
+    gpu_only_status(backend)
 }
 
 const fn directional_shadow_map_default_size(backend: Backend) -> u32 {
@@ -413,19 +417,19 @@ const fn ambient_occlusion_status(backend: Backend) -> CapabilityStatus {
     }
 }
 
+const fn order_independent_transparency_status(backend: Backend) -> CapabilityStatus {
+    match backend {
+        Backend::Headless | Backend::SurfaceDescriptor => CapabilityStatus::Supported,
+        _ => CapabilityStatus::FeatureDisabled,
+    }
+}
+
 const fn texture_compression_basisu_status(_backend: Backend) -> CapabilityStatus {
     CapabilityStatus::FeatureDisabled
 }
 
 const fn hardware_instancing_status(backend: Backend) -> CapabilityStatus {
-    match backend {
-        Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu => {
-            CapabilityStatus::Supported
-        }
-        Backend::Headless | Backend::SurfaceDescriptor | Backend::WebGl2 => {
-            CapabilityStatus::FeatureDisabled
-        }
-    }
+    gpu_only_status(backend)
 }
 
 /// Phase 1F: backend-level support for sampling `texture_2d_array<f32>` /
@@ -453,25 +457,11 @@ const fn max_texture_array_layers(backend: Backend) -> u32 {
 }
 
 const fn fragment_high_precision_status(backend: Backend) -> CapabilityStatus {
-    match backend {
-        Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu => {
-            CapabilityStatus::Supported
-        }
-        Backend::Headless | Backend::SurfaceDescriptor | Backend::WebGl2 => {
-            CapabilityStatus::FeatureDisabled
-        }
-    }
+    gpu_only_status(backend)
 }
 
 const fn uniform_buffer_status(backend: Backend) -> CapabilityStatus {
-    match backend {
-        Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu => {
-            CapabilityStatus::Supported
-        }
-        Backend::Headless | Backend::SurfaceDescriptor | Backend::WebGl2 => {
-            CapabilityStatus::FeatureDisabled
-        }
-    }
+    gpu_only_status(backend)
 }
 
 const fn uniform_buffer_max_bytes(backend: Backend) -> u32 {
@@ -527,17 +517,14 @@ const fn per_instance_culling_status(backend: Backend) -> CapabilityStatus {
 }
 
 const fn compute_shader_status(backend: Backend) -> CapabilityStatus {
-    match backend {
-        Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu => {
-            CapabilityStatus::Supported
-        }
-        Backend::Headless | Backend::SurfaceDescriptor | Backend::WebGl2 => {
-            CapabilityStatus::FeatureDisabled
-        }
-    }
+    gpu_only_status(backend)
 }
 
 const fn storage_buffer_status(backend: Backend) -> CapabilityStatus {
+    gpu_only_status(backend)
+}
+
+const fn gpu_only_status(backend: Backend) -> CapabilityStatus {
     match backend {
         Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu => {
             CapabilityStatus::Supported

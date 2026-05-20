@@ -68,6 +68,15 @@ nonblack_pixels = 226
 rgba_hash = "fnv1a64:7ce7e7a593346e71"
 
 [[reference]]
+name = "oit-overlap-order-invariance"
+max_abs_diff = 0
+center_rgba = [0, 0, 0, 255]
+left_mid_rgba = [0, 0, 0, 255]
+right_mid_rgba = [0, 0, 0, 255]
+nonblack_pixels = 122
+rgba_hash = "fnv1a64:fee9d02337ae6b19"
+
+[[reference]]
 name = "clipping-half-space"
 max_abs_diff = 0
 center_rgba = [240, 240, 240, 255]

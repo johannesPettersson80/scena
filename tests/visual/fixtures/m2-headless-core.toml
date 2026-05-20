@@ -52,6 +52,11 @@ required_surface = "headless-cpu"
 contract = "screen-space ambient occlusion darkens depth contact edges compared with the off render"
 
 [[fixture]]
+name = "oit-overlap-order-invariance"
+required_surface = "headless-cpu"
+contract = "weighted blended order-independent transparency resolves overlapping surfaces identically under opposite insertion orders"
+
+[[fixture]]
 name = "clipping-half-space"
 required_surface = "headless-cpu"
 contract = "active clipping planes discard pixels in the rejected half-space"
