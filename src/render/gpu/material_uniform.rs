@@ -48,7 +48,7 @@ pub(super) struct MaterialUniformUpload {
     pub(super) iridescence_factors: [f32; 4],
     /// KHR_materials_dispersion scalar lanes.
     /// .x = dispersion
-    /// .y = IOR used for channel spread until KHR_materials_ior is promoted
+    /// .y = KHR_materials_ior.ior for channel spread
     /// .z, .w = reserved
     pub(super) dispersion_factors: [f32; 4],
 }
@@ -125,7 +125,7 @@ impl MaterialUniformUpload {
                 material.iridescence_thickness_minimum_nm(),
                 material.iridescence_thickness_maximum_nm(),
             ],
-            dispersion_factors: [material.dispersion_factor(), 1.5, 0.0, 0.0],
+            dispersion_factors: [material.dispersion_factor(), material.ior(), 0.0, 0.0],
         }
     }
 
@@ -259,6 +259,7 @@ mod tests {
         .with_iridescence_factor(0.65)
         .with_iridescence_ior(1.42)
         .with_iridescence_thickness_range_nm(120.0, 520.0)
+        .with_ior(1.7)
         .with_dispersion_factor(0.36)
         .with_alpha_mode(AlphaMode::Mask { cutoff: 0.45 });
 
@@ -271,7 +272,7 @@ mod tests {
         assert_eq!(upload.sheen_factors, [0.7, 0.2, 0.1, 0.42]);
         assert_eq!(upload.anisotropy_factors, [0.8, 1.57, 0.0, 0.0]);
         assert_eq!(upload.iridescence_factors, [0.65, 1.42, 120.0, 520.0]);
-        assert_eq!(upload.dispersion_factors, [0.36, 1.5, 0.0, 0.0]);
+        assert_eq!(upload.dispersion_factors, [0.36, 1.7, 0.0, 0.0]);
         assert_eq!(
             upload.encode().len(),
             MATERIAL_UNIFORM_BYTE_LEN as usize,

@@ -68,6 +68,22 @@ impl MaterialDesc {
         self.iridescence_thickness_texture_transform
     }
 
+    pub const fn transmission_texture(&self) -> Option<TextureHandle> {
+        self.transmission_texture
+    }
+
+    pub const fn transmission_texture_transform(&self) -> Option<TextureTransform> {
+        self.transmission_texture_transform
+    }
+
+    pub const fn thickness_texture(&self) -> Option<TextureHandle> {
+        self.thickness_texture
+    }
+
+    pub const fn thickness_texture_transform(&self) -> Option<TextureTransform> {
+        self.thickness_texture_transform
+    }
+
     /// Returns the scalar `KHR_materials_clearcoat.clearcoatFactor`.
     ///
     /// The renderer multiplies this value by the sampled clearcoat texture
@@ -128,6 +144,31 @@ impl MaterialDesc {
     /// Returns `KHR_materials_dispersion.dispersion` as `20 / Abbe number`.
     pub const fn dispersion_factor(&self) -> f32 {
         self.dispersion_factor
+    }
+
+    /// Returns `KHR_materials_transmission.transmissionFactor`.
+    pub const fn transmission_factor(&self) -> f32 {
+        self.transmission_factor
+    }
+
+    /// Returns `KHR_materials_ior.ior`.
+    pub const fn ior(&self) -> f32 {
+        self.ior
+    }
+
+    /// Returns `KHR_materials_volume.thicknessFactor`, in scene units.
+    pub const fn thickness_factor(&self) -> f32 {
+        self.thickness_factor
+    }
+
+    /// Returns `KHR_materials_volume.attenuationDistance`, in scene units.
+    pub const fn attenuation_distance(&self) -> f32 {
+        self.attenuation_distance
+    }
+
+    /// Returns `KHR_materials_volume.attenuationColor`.
+    pub const fn attenuation_color(&self) -> Color {
+        self.attenuation_color
     }
 
     pub const fn with_clearcoat_texture(mut self, texture: TextureHandle) -> Self {
@@ -227,6 +268,29 @@ impl MaterialDesc {
         self
     }
 
+    pub const fn with_transmission_texture(mut self, texture: TextureHandle) -> Self {
+        self.transmission_texture = Some(texture);
+        self
+    }
+
+    pub const fn with_transmission_texture_transform(
+        mut self,
+        transform: TextureTransform,
+    ) -> Self {
+        self.transmission_texture_transform = Some(transform);
+        self
+    }
+
+    pub const fn with_thickness_texture(mut self, texture: TextureHandle) -> Self {
+        self.thickness_texture = Some(texture);
+        self
+    }
+
+    pub const fn with_thickness_texture_transform(mut self, transform: TextureTransform) -> Self {
+        self.thickness_texture_transform = Some(transform);
+        self
+    }
+
     /// Sets the scalar clearcoat layer strength from `KHR_materials_clearcoat`.
     ///
     /// Values are clamped to `[0, 1]`; `NaN` falls back to `0`.
@@ -316,5 +380,57 @@ impl MaterialDesc {
     pub const fn with_dispersion_factor(mut self, dispersion_factor: f32) -> Self {
         self.dispersion_factor = non_negative_or(dispersion_factor, 0.0);
         self
+    }
+
+    /// Sets the scalar transmission strength from `KHR_materials_transmission`.
+    ///
+    /// Values are clamped to `[0, 1]`; `NaN` falls back to `0`.
+    pub const fn with_transmission_factor(mut self, transmission_factor: f32) -> Self {
+        self.transmission_factor = clamp_unit_or(transmission_factor, 0.0);
+        self
+    }
+
+    /// Sets the material index of refraction from `KHR_materials_ior`.
+    pub const fn with_ior(mut self, ior: f32) -> Self {
+        self.ior = ior_or(ior, 1.5);
+        self
+    }
+
+    /// Sets `KHR_materials_volume.thicknessFactor`, in scene units.
+    pub const fn with_thickness_factor(mut self, thickness_factor: f32) -> Self {
+        self.thickness_factor = non_negative_or(thickness_factor, 0.0);
+        self
+    }
+
+    /// Sets `KHR_materials_volume.attenuationDistance`, in scene units.
+    pub const fn with_attenuation_distance(mut self, attenuation_distance: f32) -> Self {
+        self.attenuation_distance = attenuation_distance_or(attenuation_distance);
+        self
+    }
+
+    /// Sets `KHR_materials_volume.attenuationColor`.
+    pub const fn with_attenuation_color(mut self, attenuation_color: Color) -> Self {
+        self.attenuation_color = Color::from_linear_rgb(
+            clamp_unit_or(attenuation_color.r, 1.0),
+            clamp_unit_or(attenuation_color.g, 1.0),
+            clamp_unit_or(attenuation_color.b, 1.0),
+        );
+        self
+    }
+}
+
+const fn ior_or(value: f32, fallback: f32) -> f32 {
+    if value.is_finite() && (value == 0.0 || value >= 1.0) {
+        value
+    } else {
+        fallback
+    }
+}
+
+const fn attenuation_distance_or(value: f32) -> f32 {
+    if value.is_nan() || value <= 0.0 {
+        f32::INFINITY
+    } else {
+        value
     }
 }

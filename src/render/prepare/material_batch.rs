@@ -29,6 +29,8 @@ pub enum MaterialTextureRole {
     Anisotropy,
     Iridescence,
     IridescenceThickness,
+    Transmission,
+    Thickness,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,6 +110,8 @@ pub(in crate::render) fn compute_material_batch_plan(
         MaterialTextureRole::Anisotropy,
         MaterialTextureRole::Iridescence,
         MaterialTextureRole::IridescenceThickness,
+        MaterialTextureRole::Transmission,
+        MaterialTextureRole::Thickness,
     ] {
         if matches!(
             role,
@@ -178,6 +182,8 @@ fn role_texture(role: MaterialTextureRole, slot: &PreparedMaterialSlot) -> Optio
         MaterialTextureRole::Anisotropy => slot.anisotropy.as_ref(),
         MaterialTextureRole::Iridescence => slot.iridescence.as_ref(),
         MaterialTextureRole::IridescenceThickness => slot.iridescence_thickness.as_ref(),
+        MaterialTextureRole::Transmission => slot.transmission.as_ref(),
+        MaterialTextureRole::Thickness => slot.thickness.as_ref(),
     }?;
     Some(&texture.desc)
 }
@@ -283,6 +289,8 @@ mod tests {
             anisotropy: None,
             iridescence: None,
             iridescence_thickness: None,
+            transmission: None,
+            thickness: None,
         }
     }
 

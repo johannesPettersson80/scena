@@ -799,6 +799,119 @@ fn m8_dispersion_material_factor_is_parsed_from_gltf() {
 }
 
 #[test]
+fn m8_transmission_ior_volume_material_factors_are_parsed_from_gltf() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://transmission-volume.gltf"),
+        br#"{
+            "asset": { "version": "2.0" },
+            "extensionsUsed": [
+                "KHR_materials_transmission",
+                "KHR_materials_ior",
+                "KHR_materials_volume",
+                "KHR_texture_transform"
+            ],
+            "materials": [{
+                "pbrMetallicRoughness": {
+                    "baseColorFactor": [0.85, 0.92, 1.0, 0.62],
+                    "metallicFactor": 0.0,
+                    "roughnessFactor": 0.08
+                },
+                "extensions": {
+                    "KHR_materials_transmission": {
+                        "transmissionFactor": 0.72,
+                        "transmissionTexture": {
+                            "index": 0,
+                            "extensions": {
+                                "KHR_texture_transform": {
+                                    "offset": [0.1, 0.2],
+                                    "scale": [0.5, 0.75]
+                                }
+                            }
+                        }
+                    },
+                    "KHR_materials_ior": {
+                        "ior": 1.7
+                    },
+                    "KHR_materials_volume": {
+                        "thicknessFactor": 0.45,
+                        "thicknessTexture": {
+                            "index": 1,
+                            "extensions": {
+                                "KHR_texture_transform": {
+                                    "offset": [0.3, 0.4],
+                                    "scale": [0.25, 0.5]
+                                }
+                            }
+                        },
+                        "attenuationDistance": 2.5,
+                        "attenuationColor": [0.3, 0.55, 0.9]
+                    }
+                }
+            }],
+            "textures": [{ "source": 0 }, { "source": 1 }],
+            "images": [
+                { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==" },
+                { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==" }
+            ],
+            "meshes": [{
+                "primitives": [
+                    { "attributes": { "POSITION": 0 }, "indices": 1, "material": 0 }
+                ]
+            }],
+            "nodes": [{ "name": "TransmissionVolumeMat", "mesh": 0 }],
+            "buffers": [{ "byteLength": 42, "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAABAAIA" }],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0,  "byteLength": 36 },
+                { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
+            ],
+            "accessors": [
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
+            ]
+        }"#
+        .to_vec(),
+    )]));
+
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://transmission-volume.gltf")).expect("loads");
+    let material = assets
+        .material(scene_asset.nodes()[0].meshes()[0].material())
+        .expect("material");
+
+    assert_eq!(material.transmission_factor(), 0.72);
+    assert_eq!(material.ior(), 1.7);
+    assert_eq!(material.thickness_factor(), 0.45);
+    assert_eq!(material.attenuation_distance(), 2.5);
+    assert_eq!(
+        material.attenuation_color(),
+        Color::from_linear_rgb(0.3, 0.55, 0.9)
+    );
+
+    let transmission = material
+        .transmission_texture()
+        .expect("transmission texture is parsed");
+    let thickness = material
+        .thickness_texture()
+        .expect("thickness texture is parsed");
+    assert!(assets.texture(transmission).is_some());
+    assert!(assets.texture(thickness).is_some());
+    assert_eq!(
+        material
+            .transmission_texture_transform()
+            .expect("transmission transform")
+            .offset(),
+        [0.1, 0.2]
+    );
+    assert_eq!(
+        material
+            .thickness_texture_transform()
+            .expect("thickness transform")
+            .scale(),
+        [0.25, 0.5]
+    );
+}
+
+#[test]
 fn m8_optional_real_world_gltf_extensions_report_degradation_metadata() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from("memory://extensions.gltf"),
@@ -2770,6 +2883,23 @@ fn m8_dispersion_factor_affects_cpu_preview_pixels() {
 }
 
 #[test]
+fn m8_transmission_volume_textures_affect_cpu_preview_pixels() {
+    let blocked =
+        render_center_rgb_for_transmission_volume_textures([0, 0, 0, 255], [0, 255, 0, 255]);
+    let blue_glass =
+        render_center_rgb_for_transmission_volume_textures([255, 0, 0, 255], [0, 255, 0, 255]);
+
+    assert!(
+        blue_glass[2] > blocked[2] + 12,
+        "transmissionTexture R and volume thickness/attenuation must affect CPU preview pixels: blocked={blocked:?} blue_glass={blue_glass:?}",
+    );
+    assert!(
+        blue_glass[2] > blue_glass[0] + 12 && blue_glass[2] > blue_glass[1] + 6,
+        "volume attenuation color should tint transmitted glass toward blue: {blue_glass:?}",
+    );
+}
+
+#[test]
 fn m8_missing_texture_slots_fail_with_actionable_asset_error() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from("memory://missing-texture.gltf"),
@@ -4061,6 +4191,40 @@ fn render_center_rgb_for_dispersion_factor(dispersion: f32) -> [u8; 3] {
         &assets,
         MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(165, 165, 165), 0.0, 0.24)
             .with_dispersion_factor(dispersion),
+    )
+}
+
+fn render_center_rgb_for_transmission_volume_textures(
+    transmission_pixel: [u8; 4],
+    thickness_pixel: [u8; 4],
+) -> [u8; 3] {
+    let assets = Assets::new();
+    let transmission_png = png_rgba8(1, 1, &[transmission_pixel]);
+    let transmission_uri = format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(transmission_png)
+    );
+    let thickness_png = png_rgba8(1, 1, &[thickness_pixel]);
+    let thickness_uri = format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(thickness_png)
+    );
+    let transmission =
+        pollster::block_on(assets.load_texture(transmission_uri, TextureColorSpace::Linear))
+            .expect("transmission texture loads");
+    let thickness =
+        pollster::block_on(assets.load_texture(thickness_uri, TextureColorSpace::Linear))
+            .expect("thickness texture loads");
+    render_center_rgb_with_assets(
+        &assets,
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(190, 205, 230), 0.0, 0.08)
+            .with_transmission_factor(1.0)
+            .with_transmission_texture(transmission)
+            .with_ior(1.7)
+            .with_thickness_factor(2.0)
+            .with_thickness_texture(thickness)
+            .with_attenuation_distance(1.0)
+            .with_attenuation_color(Color::from_linear_rgb(0.08, 0.35, 1.0)),
     )
 }
 

@@ -52,9 +52,11 @@ fn material_resources_define_shader_visible_texture_bindings() {
             && batched_source.contains("scena.material.batched_sheen_roughness")
             && batched_source.contains("scena.material.batched_anisotropy")
             && batched_source.contains("scena.material.batched_iridescence")
-            && batched_source.contains("scena.material.batched_iridescence_thickness"),
+            && batched_source.contains("scena.material.batched_iridescence_thickness")
+            && batched_source.contains("template.browser_image.is_some()")
+            && batched_source.contains("wgpu::TextureUsages::RENDER_ATTACHMENT"),
         "backend material scaffolding must allocate a sampler, texture view, and bind group \
-         plus the batched array path that closes plan line 778"
+         plus the batched array path and browser ImageBitmap upload usage that closes plan line 778"
     );
 }
 

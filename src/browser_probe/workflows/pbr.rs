@@ -260,6 +260,105 @@ pub(super) fn shadow_visibility_scene() -> Result<WorkflowScene, JsValue> {
     })
 }
 
+pub(super) async fn material_extensions_scene() -> Result<WorkflowScene, JsValue> {
+    let assets = Assets::new();
+    let scalar = assets
+        .load_texture(
+            rgba_png_data_uri([255, 128, 255, 255])?,
+            crate::TextureColorSpace::Linear,
+        )
+        .await
+        .map_err(|error| {
+            JsValue::from_str(&format!(
+                "material-extension scalar texture failed: {error:?}"
+            ))
+        })?;
+    let sheen = assets
+        .load_texture(
+            rgba_png_data_uri([255, 32, 16, 255])?,
+            crate::TextureColorSpace::Srgb,
+        )
+        .await
+        .map_err(|error| {
+            JsValue::from_str(&format!(
+                "material-extension sheen texture failed: {error:?}"
+            ))
+        })?;
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.22, 0.44, 0.05));
+    let materials = [
+        assets.create_material(
+            MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(180, 54, 36), 0.0, 0.32)
+                .with_clearcoat_factor(1.0)
+                .with_clearcoat_texture(scalar)
+                .with_double_sided(true),
+        ),
+        assets.create_material(
+            MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(96, 92, 88), 0.0, 0.72)
+                .with_sheen_color_factor(Color::WHITE)
+                .with_sheen_color_texture(sheen)
+                .with_sheen_roughness_factor(0.35)
+                .with_double_sided(true),
+        ),
+        assets.create_material(
+            MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(150, 150, 150), 1.0, 0.42)
+                .with_anisotropy_strength_factor(1.0)
+                .with_anisotropy_texture(scalar)
+                .with_double_sided(true),
+        ),
+        assets.create_material(
+            MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(180, 180, 180), 0.0, 0.18)
+                .with_iridescence_factor(1.0)
+                .with_iridescence_texture(scalar)
+                .with_iridescence_thickness_texture(scalar)
+                .with_iridescence_thickness_range_nm(120.0, 520.0)
+                .with_double_sided(true),
+        ),
+        assets.create_material(
+            MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(165, 165, 165), 0.0, 0.24)
+                .with_dispersion_factor(1.0)
+                .with_ior(1.7)
+                .with_double_sided(true),
+        ),
+    ];
+    let mut scene = Scene::new();
+    for (index, material) in materials.into_iter().enumerate() {
+        let x = -0.72 + index as f32 * 0.36;
+        scene
+            .mesh(geometry, material)
+            .transform(Transform::at(Vec3::new(x, 0.0, 0.0)))
+            .add()
+            .map_err(|error| {
+                JsValue::from_str(&format!(
+                    "material-extension mesh {index} failed: {error:?}"
+                ))
+            })?;
+    }
+    scene
+        .directional_light(DirectionalLight::default().with_illuminance_lux(18_000.0))
+        .add()
+        .map_err(|error| {
+            JsValue::from_str(&format!("material-extension light failed: {error:?}"))
+        })?;
+    let camera = add_default_camera(&mut scene)?;
+    Ok(WorkflowScene {
+        assets,
+        scene,
+        camera,
+        metadata: json!({
+            "proof_class": "browser-pbr-material-extension-composite",
+            "material_kind": "pbr-metallic-roughness",
+            "extensions": [
+                "KHR_materials_clearcoat",
+                "KHR_materials_sheen",
+                "KHR_materials_anisotropy",
+                "KHR_materials_iridescence",
+                "KHR_materials_dispersion"
+            ],
+            "readback": "browser-screenshot-or-renderer-owned-copy",
+        }),
+    })
+}
+
 fn rgba_png_data_uri(pixel: [u8; 4]) -> Result<String, JsValue> {
     let mut bytes = Vec::new();
     {

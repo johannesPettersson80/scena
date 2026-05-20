@@ -295,6 +295,16 @@ where
         template.height,
         template.sampler.min_filter(),
     );
+    #[cfg(target_arch = "wasm32")]
+    let texture_usage = if template.browser_image.is_some() {
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::RENDER_ATTACHMENT
+    } else {
+        wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    let texture_usage = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST;
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(match label {
             "base_color" => "scena.material.batched_base_color",
@@ -321,7 +331,7 @@ where
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: template.format,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        usage: texture_usage,
         view_formats: &[],
     });
     // Fix for batched-fallback bug: when a slot's role upload does not

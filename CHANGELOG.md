@@ -109,7 +109,16 @@ All notable user-facing changes are recorded here.
   parsed, CPU preview applies channel-spread specular shading, and
   WebGPU/WebGL2 shader variants carry the same scalar through material
   uniforms. Required dispersion remains release-proof guarded until approved
-  backend evidence and full transmission/volume glass behavior exist.
+  backend evidence exists.
+
+- Added transmission, IOR, and volume material support on the CPU/reference
+  path: `MaterialDesc` exposes transmission and thickness texture slots,
+  scalar transmission, IOR, thickness, attenuation distance, and attenuation
+  color, optional glTF `KHR_materials_transmission`, `KHR_materials_ior`, and
+  `KHR_materials_volume` values are parsed, and CPU preview samples
+  transmission and thickness textures. M8 proof records CPU before/after
+  transmission-volume artifacts, while full physical GPU/WebGPU/WebGL2 glass
+  parity remains a future backend lane.
 
 - Added capability-gated wide-gamut output reporting: capability reports now
   expose `wide_gamut_output`, browser M4 smoke artifacts record Display P3

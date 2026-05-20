@@ -32,6 +32,8 @@ pub(super) struct MaterialShadingInput {
     pub(super) anisotropy_texture: Vec3,
     pub(super) iridescence_texture: f32,
     pub(super) iridescence_thickness_texture: f32,
+    pub(super) transmission_texture: f32,
+    pub(super) thickness_texture: f32,
     pub(super) environment: PreparedEnvironmentLighting,
     pub(super) directional_shadow_factor: f32,
 }
@@ -287,6 +289,11 @@ fn shade_pbr_base_color(
     let iridescence_thickness_minimum = material.iridescence_thickness_minimum_nm();
     let iridescence_thickness_maximum = material.iridescence_thickness_maximum_nm();
     let dispersion_factor = material.dispersion_factor();
+    let transmission_factor = material.transmission_factor();
+    let ior = material.ior();
+    let thickness_factor = material.thickness_factor();
+    let attenuation_color = material.attenuation_color();
+    let attenuation_distance = material.attenuation_distance();
     let layered_lobes = LayeredMaterialLobes {
         pbr_material,
         normal,
@@ -308,6 +315,16 @@ fn shade_pbr_base_color(
         iridescence_texture: input.iridescence_texture,
         iridescence_thickness_texture: input.iridescence_thickness_texture,
         dispersion_factor,
+        transmission_factor: transmission_factor * input.transmission_texture,
+        ior,
+        thickness_factor,
+        thickness_texture: input.thickness_texture,
+        attenuation_color: Vec3::new(
+            attenuation_color.r,
+            attenuation_color.g,
+            attenuation_color.b,
+        ),
+        attenuation_distance,
     };
     let mut shaded = Vec3::ZERO;
 

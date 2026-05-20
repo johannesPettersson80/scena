@@ -18,8 +18,8 @@ pub(crate) fn check_m7_inspection_contracts(root: &Path, findings: &mut Vec<Find
             "pub struct SceneNodeInspection",
             "pub struct SceneDrawInspection",
             "pub struct SceneCameraFrustumInspection",
-            "pub struct SceneMaterialInspection",
             "pub struct SceneNormalInspection",
+            "pub use material::SceneMaterialInspection",
             "pub fn inspect_with_assets",
             "pub fn draw_list",
             "pub fn camera_frustums",
@@ -32,15 +32,26 @@ pub(crate) fn check_m7_inspection_contracts(root: &Path, findings: &mut Vec<Find
             "pub const fn mesh_material",
             "pub const fn material_preview",
             "world_transform: self.world_transform(node_key).unwrap_or(node.transform)",
-            "pub const fn base_color_texture",
             "pub const fn primitive_count",
             "pub const fn world_transform",
             "pub const fn corners",
             "pub fn segments",
-            "pub const fn has_base_color_texture",
             "pub const fn camera",
             "pub const fn light",
             "pub const fn bounds",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/scene/inspection/material.rs",
+        &[
+            "pub struct SceneMaterialInspection",
+            "pub const fn base_color_texture",
+            "pub const fn has_base_color_texture",
+            "pub const fn transmission_texture",
+            "pub const fn thickness_texture",
         ],
     );
     require_contains(

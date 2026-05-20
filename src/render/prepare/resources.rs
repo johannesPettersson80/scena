@@ -37,6 +37,8 @@ pub(in crate::render) struct PreparedMaterialSlot {
     pub(in crate::render) anisotropy: Option<PreparedMaterialTexture>,
     pub(in crate::render) iridescence: Option<PreparedMaterialTexture>,
     pub(in crate::render) iridescence_thickness: Option<PreparedMaterialTexture>,
+    pub(in crate::render) transmission: Option<PreparedMaterialTexture>,
+    pub(in crate::render) thickness: Option<PreparedMaterialTexture>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -363,6 +365,16 @@ fn collect_backend_material_slot<F>(
         material.iridescence_thickness_texture(),
         material.iridescence_thickness_texture_transform(),
     );
+    let transmission = collect_backend_material_texture(
+        assets,
+        material.transmission_texture(),
+        material.transmission_texture_transform(),
+    );
+    let thickness = collect_backend_material_texture(
+        assets,
+        material.thickness_texture(),
+        material.thickness_texture_transform(),
+    );
     if matches!(material.kind(), MaterialKind::Unlit)
         && base_color.is_none()
         && normal.is_none()
@@ -377,6 +389,8 @@ fn collect_backend_material_slot<F>(
         && anisotropy.is_none()
         && iridescence.is_none()
         && iridescence_thickness.is_none()
+        && transmission.is_none()
+        && thickness.is_none()
     {
         return None;
     }
@@ -395,6 +409,8 @@ fn collect_backend_material_slot<F>(
         anisotropy,
         iridescence,
         iridescence_thickness,
+        transmission,
+        thickness,
         material,
     })
 }
@@ -440,6 +456,8 @@ fn collect_material_textures<F>(
         material.anisotropy_texture(),
         material.iridescence_texture(),
         material.iridescence_thickness_texture(),
+        material.transmission_texture(),
+        material.thickness_texture(),
     ]
     .into_iter()
     .flatten()
@@ -488,7 +506,7 @@ fn collect_material_texture_diagnostics_from_material<F>(
     }
 }
 
-fn material_texture_slots(material: &MaterialDesc) -> [(&'static str, Option<TextureHandle>); 13] {
+fn material_texture_slots(material: &MaterialDesc) -> [(&'static str, Option<TextureHandle>); 15] {
     [
         ("base_color", material.base_color_texture()),
         ("normal", material.normal_texture()),
@@ -509,6 +527,8 @@ fn material_texture_slots(material: &MaterialDesc) -> [(&'static str, Option<Tex
             "iridescence_thickness",
             material.iridescence_thickness_texture(),
         ),
+        ("transmission", material.transmission_texture()),
+        ("thickness", material.thickness_texture()),
     ]
 }
 
@@ -666,6 +686,8 @@ mod tests {
         let anisotropy = decoded_test_texture(&assets);
         let iridescence = decoded_test_texture(&assets);
         let iridescence_thickness = decoded_test_texture(&assets);
+        let transmission = decoded_test_texture(&assets);
+        let thickness = decoded_test_texture(&assets);
         let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.25, 0.25, 0.25));
         let material_with_textures = assets.create_material(
             MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.25, 0.75)
@@ -687,7 +709,11 @@ mod tests {
                 .with_anisotropy_texture(anisotropy)
                 .with_iridescence_factor(1.0)
                 .with_iridescence_texture(iridescence)
-                .with_iridescence_thickness_texture(iridescence_thickness),
+                .with_iridescence_thickness_texture(iridescence_thickness)
+                .with_transmission_factor(1.0)
+                .with_transmission_texture(transmission)
+                .with_thickness_factor(1.0)
+                .with_thickness_texture(thickness),
         );
         let material_without_textures =
             assets.create_material(MaterialDesc::pbr_metallic_roughness(
@@ -766,6 +792,14 @@ mod tests {
                 .as_ref()
                 .map(|slot| slot.handle),
             Some(iridescence_thickness)
+        );
+        assert_eq!(
+            slots[0].transmission.as_ref().map(|slot| slot.handle),
+            Some(transmission)
+        );
+        assert_eq!(
+            slots[0].thickness.as_ref().map(|slot| slot.handle),
+            Some(thickness)
         );
         assert_eq!(
             slots[1].handle, material_without_textures,

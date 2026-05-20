@@ -97,6 +97,8 @@ impl<F> Assets<F> {
                     material.anisotropy_texture(),
                     material.iridescence_texture(),
                     material.iridescence_thickness_texture(),
+                    material.transmission_texture(),
+                    material.thickness_texture(),
                 ]
                 .into_iter()
                 .flatten()

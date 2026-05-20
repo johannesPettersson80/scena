@@ -453,6 +453,52 @@ function assertShadowVisibilityProof(backend, result) {
   }
 }
 
+function assertMaterialExtensionProof(backend, result) {
+  const metadata = result.metadata || {};
+  const extensions = new Set(metadata.extensions || []);
+  for (const extension of [
+    "KHR_materials_clearcoat",
+    "KHR_materials_sheen",
+    "KHR_materials_anisotropy",
+    "KHR_materials_iridescence",
+    "KHR_materials_dispersion",
+  ]) {
+    if (!extensions.has(extension)) {
+      throw new Error(
+        `${backend} pbr-material-extensions proof missed ${extension}: ${JSON.stringify(result)}`,
+      );
+    }
+  }
+  if (
+    metadata.proof_class !== "browser-pbr-material-extension-composite" ||
+    metadata.readback !== "browser-screenshot-or-renderer-owned-copy"
+  ) {
+    throw new Error(
+      `${backend} pbr-material-extensions proof did not record release readback metadata: ${JSON.stringify(result)}`,
+    );
+  }
+  if (!result.stats || result.stats.material_texture_bindings < 5) {
+    throw new Error(
+      `${backend} pbr-material-extensions proof did not bind extension textures: ${JSON.stringify(result)}`,
+    );
+  }
+  if (!result.pixels || result.pixels.nonblack <= 0) {
+    throw new Error(
+      `${backend} pbr-material-extensions proof did not render visible extension materials: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    typeof result.canvas_data_url !== "string" ||
+    !result.canvas_data_url.startsWith("data:image/png;base64,") ||
+    !result.screenshot_metadata ||
+    !result.screenshot_metadata.pixel_statistics
+  ) {
+    throw new Error(
+      `${backend} pbr-material-extensions proof did not preserve screenshot/readback evidence: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
 function assertTexturedConnectorViewerProof(backend, result) {
   const metadata = result.metadata || {};
   if (
@@ -862,6 +908,7 @@ async function main() {
     "pbr-normal-map",
     "pbr-environment",
     "pbr-shadow-visibility",
+    "pbr-material-extensions",
     "camera-framing",
     "anchor-alignment",
     "connector-before",
@@ -977,6 +1024,7 @@ async function main() {
         assertNormalMapProof(backend, workflowResults.get("pbr-normal-map"));
         assertEnvironmentLightProof(backend, workflowResults.get("pbr-environment"));
         assertShadowVisibilityProof(backend, workflowResults.get("pbr-shadow-visibility"));
+        assertMaterialExtensionProof(backend, workflowResults.get("pbr-material-extensions"));
         assertMaterialTextureProof(backend, workflowResults.get("material-textures"));
         assertSourceGltfMaterialProof(backend, workflowResults.get("source-gltf-materials"));
         assertTexturedConnectorViewerProof(

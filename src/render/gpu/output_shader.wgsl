@@ -89,7 +89,7 @@ struct MaterialUniform {
     iridescence_factors: vec4<f32>,
     // KHR_materials_dispersion scalar factors.
     // .x = dispersion
-    // .y = IOR used for channel spread until KHR_materials_ior is promoted
+    // .y = KHR_materials_ior.ior for channel spread
     // .z, .w = reserved
     dispersion_factors: vec4<f32>,
 };

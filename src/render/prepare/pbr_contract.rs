@@ -10,6 +10,8 @@ use crate::scene::Vec3;
 
 mod dispersion;
 pub(super) use dispersion::dispersion_light_contribution;
+mod transmission;
+pub(super) use transmission::transmission_volume_light_contribution;
 
 pub(super) const DIELECTRIC_F0: f32 = 0.04;
 pub(super) const MIN_ROUGHNESS: f32 = 0.04;

@@ -296,6 +296,40 @@ pub(super) fn iridescence_thickness_texture_sample(
         .unwrap_or(1.0)
 }
 
+pub(super) fn transmission_texture_sample(
+    assets: &Assets<impl Sized>,
+    material: &MaterialDesc,
+    uv: [f32; 2],
+) -> f32 {
+    let Some(texture) = material.transmission_texture() else {
+        return 1.0;
+    };
+    assets
+        .sample_texture(
+            texture,
+            transform_texture_uv(uv, material.transmission_texture_transform()),
+        )
+        .map(|sample| sample.r.clamp(0.0, 1.0))
+        .unwrap_or(1.0)
+}
+
+pub(super) fn thickness_texture_sample(
+    assets: &Assets<impl Sized>,
+    material: &MaterialDesc,
+    uv: [f32; 2],
+) -> f32 {
+    let Some(texture) = material.thickness_texture() else {
+        return 1.0;
+    };
+    assets
+        .sample_texture(
+            texture,
+            transform_texture_uv(uv, material.thickness_texture_transform()),
+        )
+        .map(|sample| sample.g.clamp(0.0, 1.0))
+        .unwrap_or(1.0)
+}
+
 pub(super) fn multiply_color(left: Color, right: Color) -> Color {
     Color::from_linear_rgba(
         left.r * right.r,
@@ -361,6 +395,8 @@ fn material_texture_slots(
             "iridescence_thickness",
             material.iridescence_thickness_texture(),
         ),
+        ("transmission", material.transmission_texture()),
+        ("thickness", material.thickness_texture()),
     ]
     .into_iter()
     .filter_map(|(slot, texture)| texture.map(|texture| (slot, texture)))

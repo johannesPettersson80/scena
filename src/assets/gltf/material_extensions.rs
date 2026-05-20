@@ -1,6 +1,9 @@
 use ::gltf::Document;
 
+use crate::diagnostics::AssetError;
 use crate::material::{Color, TextureTransform};
+
+use super::super::AssetPath;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct ClearcoatExtension {
@@ -39,6 +42,25 @@ pub(super) struct IridescenceExtension {
 #[derive(Debug, Clone, Copy)]
 pub(super) struct DispersionExtension {
     pub(super) factor: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct TransmissionExtension {
+    pub(super) factor: f32,
+    pub(super) texture: Option<ExtensionTextureInfo>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct IorExtension {
+    pub(super) ior: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct VolumeExtension {
+    pub(super) thickness_factor: f32,
+    pub(super) thickness_texture: Option<ExtensionTextureInfo>,
+    pub(super) attenuation_distance: f32,
+    pub(super) attenuation_color: Color,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -148,6 +170,65 @@ pub(super) fn dispersion_extension(
     })
 }
 
+pub(super) fn transmission_extension(
+    document: &Document,
+    material_index: usize,
+) -> Option<TransmissionExtension> {
+    let extension = document
+        .as_json()
+        .materials
+        .get(material_index)?
+        .extensions
+        .as_ref()?
+        .others
+        .get("KHR_materials_transmission")?;
+    Some(TransmissionExtension {
+        factor: read_factor(extension, "transmissionFactor").unwrap_or(0.0),
+        texture: read_extension_texture_info(extension, "transmissionTexture"),
+    })
+}
+
+pub(super) fn ior_extension(document: &Document, material_index: usize) -> Option<IorExtension> {
+    let extension = document
+        .as_json()
+        .materials
+        .get(material_index)?
+        .extensions
+        .as_ref()?
+        .others
+        .get("KHR_materials_ior")?;
+    Some(IorExtension {
+        ior: read_factor(extension, "ior").unwrap_or(1.5),
+    })
+}
+
+pub(super) fn volume_extension(
+    document: &Document,
+    material_index: usize,
+) -> Option<VolumeExtension> {
+    let extension = document
+        .as_json()
+        .materials
+        .get(material_index)?
+        .extensions
+        .as_ref()?
+        .others
+        .get("KHR_materials_volume")?;
+    let attenuation_color =
+        read_vec3_factor(extension, "attenuationColor").unwrap_or([1.0, 1.0, 1.0]);
+    Some(VolumeExtension {
+        thickness_factor: read_factor(extension, "thicknessFactor").unwrap_or(0.0),
+        thickness_texture: read_extension_texture_info(extension, "thicknessTexture"),
+        attenuation_distance: read_factor(extension, "attenuationDistance")
+            .unwrap_or(f32::INFINITY),
+        attenuation_color: Color::from_linear_rgb(
+            attenuation_color[0],
+            attenuation_color[1],
+            attenuation_color[2],
+        ),
+    })
+}
+
 pub(super) fn read_extension_texture_info(
     extension: &serde_json::Value,
     key: &str,
@@ -163,6 +244,139 @@ pub(super) fn read_extension_texture_info(
         transform,
         scale: read_factor(info, "scale"),
     })
+}
+
+pub(super) fn validate_material_texture_indices(
+    path: &AssetPath,
+    document: &Document,
+    texture_count: usize,
+) -> Result<(), AssetError> {
+    let raw = document.as_json();
+    for (material_index, material) in raw.materials.iter().enumerate() {
+        let pbr = &material.pbr_metallic_roughness;
+        validate_texture_info(
+            path,
+            "baseColorTexture",
+            pbr.base_color_texture
+                .as_ref()
+                .map(|info| info.index.value()),
+            texture_count,
+        )?;
+        validate_texture_info(
+            path,
+            "metallicRoughnessTexture",
+            pbr.metallic_roughness_texture
+                .as_ref()
+                .map(|info| info.index.value()),
+            texture_count,
+        )?;
+        for (slot, index) in [
+            (
+                "normalTexture",
+                material
+                    .normal_texture
+                    .as_ref()
+                    .map(|info| info.index.value()),
+            ),
+            (
+                "occlusionTexture",
+                material
+                    .occlusion_texture
+                    .as_ref()
+                    .map(|info| info.index.value()),
+            ),
+            (
+                "emissiveTexture",
+                material
+                    .emissive_texture
+                    .as_ref()
+                    .map(|info| info.index.value()),
+            ),
+        ] {
+            validate_texture_info(path, slot, index, texture_count)?;
+        }
+        validate_extension_texture_slots(path, material_index, material, texture_count)?;
+    }
+    Ok(())
+}
+
+fn validate_extension_texture_slots(
+    path: &AssetPath,
+    _material_index: usize,
+    material: &::gltf::json::material::Material,
+    texture_count: usize,
+) -> Result<(), AssetError> {
+    let Some(extensions) = material.extensions.as_ref() else {
+        return Ok(());
+    };
+    for (extension, slots) in [
+        (
+            "KHR_materials_clearcoat",
+            &[
+                ("clearcoatTexture", "clearcoatTexture"),
+                ("clearcoatRoughnessTexture", "clearcoatRoughnessTexture"),
+                ("clearcoatNormalTexture", "clearcoatNormalTexture"),
+            ][..],
+        ),
+        (
+            "KHR_materials_sheen",
+            &[
+                ("sheenColorTexture", "sheenColorTexture"),
+                ("sheenRoughnessTexture", "sheenRoughnessTexture"),
+            ][..],
+        ),
+        (
+            "KHR_materials_anisotropy",
+            &[("anisotropyTexture", "anisotropyTexture")][..],
+        ),
+        (
+            "KHR_materials_iridescence",
+            &[
+                ("iridescenceTexture", "iridescenceTexture"),
+                ("iridescenceThicknessTexture", "iridescenceThicknessTexture"),
+            ][..],
+        ),
+        (
+            "KHR_materials_transmission",
+            &[("transmissionTexture", "transmissionTexture")][..],
+        ),
+        (
+            "KHR_materials_volume",
+            &[("thicknessTexture", "thicknessTexture")][..],
+        ),
+    ] {
+        let Some(value) = extensions.others.get(extension) else {
+            continue;
+        };
+        for (slot, key) in slots {
+            validate_texture_info(
+                path,
+                slot,
+                read_extension_texture_info(value, key).map(|info| info.index),
+                texture_count,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_texture_info(
+    path: &AssetPath,
+    material_slot: &'static str,
+    index: Option<usize>,
+    texture_count: usize,
+) -> Result<(), AssetError> {
+    if let Some(index) = index
+        && index >= texture_count
+    {
+        return Err(AssetError::MissingTexture {
+            path: path.as_str().to_string(),
+            material_slot: material_slot.to_string(),
+            texture_index: index,
+            help: "export the referenced image or remove the broken material slot",
+        });
+    }
+    Ok(())
 }
 
 fn read_factor(value: &serde_json::Value, key: &str) -> Option<f32> {

@@ -13,7 +13,8 @@ use crate::material::{AlphaMode, Color, MaterialDesc, TextureColorSpace, Texture
 use super::super::{AssetPath, AssetStorage, MaterialHandle};
 use super::material_extensions::{
     anisotropy_extension, clearcoat_extension, dispersion_extension, extension_texture_transform,
-    iridescence_extension, read_extension_texture_info, sheen_extension,
+    ior_extension, iridescence_extension, sheen_extension, transmission_extension,
+    validate_material_texture_indices, volume_extension,
 };
 use super::textures::{GltfTexture, texture_slot};
 
@@ -325,6 +326,46 @@ pub(super) fn parse_materials(
             if let Some(dispersion) = dispersion_extension(document, material_index) {
                 desc = desc.with_dispersion_factor(dispersion.factor);
             }
+            if let Some(transmission) = transmission_extension(document, material_index) {
+                desc = desc.with_transmission_factor(transmission.factor);
+                if let Some(info) = transmission.texture {
+                    let texture = texture_slot(
+                        path,
+                        "transmissionTexture",
+                        info.index,
+                        textures,
+                        storage,
+                        TextureColorSpace::Linear,
+                    )?;
+                    desc = desc.with_transmission_texture(texture);
+                    if let Some(transform) = info.transform {
+                        desc = desc.with_transmission_texture_transform(transform);
+                    }
+                }
+            }
+            if let Some(ior) = ior_extension(document, material_index) {
+                desc = desc.with_ior(ior.ior);
+            }
+            if let Some(volume) = volume_extension(document, material_index) {
+                desc = desc
+                    .with_thickness_factor(volume.thickness_factor)
+                    .with_attenuation_distance(volume.attenuation_distance)
+                    .with_attenuation_color(volume.attenuation_color);
+                if let Some(info) = volume.thickness_texture {
+                    let texture = texture_slot(
+                        path,
+                        "thicknessTexture",
+                        info.index,
+                        textures,
+                        storage,
+                        TextureColorSpace::Linear,
+                    )?;
+                    desc = desc.with_thickness_texture(texture);
+                    if let Some(transform) = info.transform {
+                        desc = desc.with_thickness_texture_transform(transform);
+                    }
+                }
+            }
             desc = match material.alpha_mode() {
                 ::gltf::material::AlphaMode::Opaque => desc,
                 ::gltf::material::AlphaMode::Mask => desc.with_alpha_mode(AlphaMode::Mask {
@@ -347,154 +388,6 @@ pub(super) fn parse_materials(
         log_material_step("parse_materials total", total_start);
     }
     materials
-}
-
-fn validate_material_texture_indices(
-    path: &AssetPath,
-    document: &Document,
-    texture_count: usize,
-) -> Result<(), AssetError> {
-    let raw = document.as_json();
-    for (material_index, material) in raw.materials.iter().enumerate() {
-        let pbr = &material.pbr_metallic_roughness;
-        validate_texture_info(
-            path,
-            material_index,
-            "baseColorTexture",
-            pbr.base_color_texture
-                .as_ref()
-                .map(|info| info.index.value()),
-            texture_count,
-        )?;
-        validate_texture_info(
-            path,
-            material_index,
-            "metallicRoughnessTexture",
-            pbr.metallic_roughness_texture
-                .as_ref()
-                .map(|info| info.index.value()),
-            texture_count,
-        )?;
-        validate_texture_info(
-            path,
-            material_index,
-            "normalTexture",
-            material
-                .normal_texture
-                .as_ref()
-                .map(|info| info.index.value()),
-            texture_count,
-        )?;
-        validate_texture_info(
-            path,
-            material_index,
-            "occlusionTexture",
-            material
-                .occlusion_texture
-                .as_ref()
-                .map(|info| info.index.value()),
-            texture_count,
-        )?;
-        validate_texture_info(
-            path,
-            material_index,
-            "emissiveTexture",
-            material
-                .emissive_texture
-                .as_ref()
-                .map(|info| info.index.value()),
-            texture_count,
-        )?;
-        if let Some(clearcoat) = material
-            .extensions
-            .as_ref()
-            .and_then(|extensions| extensions.others.get("KHR_materials_clearcoat"))
-        {
-            for (slot, key) in [
-                ("clearcoatTexture", "clearcoatTexture"),
-                ("clearcoatRoughnessTexture", "clearcoatRoughnessTexture"),
-                ("clearcoatNormalTexture", "clearcoatNormalTexture"),
-            ] {
-                validate_texture_info(
-                    path,
-                    material_index,
-                    slot,
-                    read_extension_texture_info(clearcoat, key).map(|info| info.index),
-                    texture_count,
-                )?;
-            }
-        }
-        if let Some(sheen) = material
-            .extensions
-            .as_ref()
-            .and_then(|extensions| extensions.others.get("KHR_materials_sheen"))
-        {
-            for (slot, key) in [
-                ("sheenColorTexture", "sheenColorTexture"),
-                ("sheenRoughnessTexture", "sheenRoughnessTexture"),
-            ] {
-                validate_texture_info(
-                    path,
-                    material_index,
-                    slot,
-                    read_extension_texture_info(sheen, key).map(|info| info.index),
-                    texture_count,
-                )?;
-            }
-        }
-        if let Some(anisotropy) = material
-            .extensions
-            .as_ref()
-            .and_then(|extensions| extensions.others.get("KHR_materials_anisotropy"))
-        {
-            validate_texture_info(
-                path,
-                material_index,
-                "anisotropyTexture",
-                read_extension_texture_info(anisotropy, "anisotropyTexture").map(|info| info.index),
-                texture_count,
-            )?;
-        }
-        if let Some(iridescence) = material
-            .extensions
-            .as_ref()
-            .and_then(|extensions| extensions.others.get("KHR_materials_iridescence"))
-        {
-            for (slot, key) in [
-                ("iridescenceTexture", "iridescenceTexture"),
-                ("iridescenceThicknessTexture", "iridescenceThicknessTexture"),
-            ] {
-                validate_texture_info(
-                    path,
-                    material_index,
-                    slot,
-                    read_extension_texture_info(iridescence, key).map(|info| info.index),
-                    texture_count,
-                )?;
-            }
-        }
-    }
-    Ok(())
-}
-
-fn validate_texture_info(
-    path: &AssetPath,
-    _material_index: usize,
-    material_slot: &'static str,
-    index: Option<usize>,
-    texture_count: usize,
-) -> Result<(), AssetError> {
-    if let Some(index) = index
-        && index >= texture_count
-    {
-        return Err(AssetError::MissingTexture {
-            path: path.as_str().to_string(),
-            material_slot: material_slot.to_string(),
-            texture_index: index,
-            help: "export the referenced image or remove the broken material slot",
-        });
-    }
-    Ok(())
 }
 
 fn texture_transform(info: &Info<'_>) -> Option<TextureTransform> {

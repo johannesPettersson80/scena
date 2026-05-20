@@ -30,6 +30,8 @@ Every item carries one tag:
   raw / opt-in / requires plumbing.
 - **[proof-gap]** — implementation exists but lacks rendered-output
   proof, doctor rule, or capability evidence.
+- **[deferred]** — real work, but explicitly outside the current
+  next-release critical path.
 - **[shipped]** — already in v1.3.0; listed only for context.
 
 Each item also names an **owner module** (where the work lives) and a
@@ -227,7 +229,7 @@ Sub-items:
   `production-assets`, and proved by feature-gated rendered fixtures for
   triangle, index-sequence, normal, tangent, and quantized-position paths.
   Native GPU / browser release proof remains a separate lane.
-- **Draco (`KHR_draco_mesh_compression`)** — Status: **[gap]**.
+- **Draco (`KHR_draco_mesh_compression`)** — Status: **[deferred]**.
   Not a v1.4 critical-path item. Prefer meshopt for the next release;
   revisit Draco only behind an optional feature when a maintained decoder
   path is proven. `draco_decoder` is still 0.0.x, and `draco-oxide`
@@ -496,7 +498,7 @@ AutoExposureConfig::mixed()             // default, conservative
 Not all "state of the art" items are greenfield. Each is tagged by the
 bucket it actually sits in.
 
-### 3.1 Genuinely missing — [gap]
+### 3.1 Renderer feature roadmap
 
 Proof rule for this bucket: visual renderer features need
 **reference-image with ON/OFF, before/after, or order-invariance pairs**.
@@ -545,11 +547,14 @@ the rendered result is part of the contract.
   anisotropy, iridescence, and dispersion scalar factors plus clearcoat,
   clearcoat-roughness, clearcoat-normal, sheen-color, sheen-roughness,
   anisotropy direction/strength, and iridescence factor/thickness texture
-  sampling on the CPU/reference path, and for WebGPU/WebGL2 shader/material
-  resource wiring for punctual-light clearcoat, sheen, anisotropy, and
-  iridescence lobes plus dispersion channel-spread shading. **[proof-gap]**
-  remains for approved backend screenshot/readback release evidence and full
-  transmission/volume glass parity.
+  sampling on the CPU/reference path; transmission, IOR, and volume factors
+  plus transmission/thickness texture slots are also parsed and used by the
+  CPU/reference path. WebGPU/WebGL2 shader/material resource wiring carries
+  punctual-light clearcoat, sheen, anisotropy, and iridescence lobes plus
+  dispersion channel-spread shading, and the browser proof records a
+  material-extension composite readback. Full physical backend
+  transmission/volume glass parity remains a future backend lane and is not
+  claimed here.
   Owner: `src/material.rs`, `src/assets/gltf/materials.rs`,
   `src/render/prepare/lighting.rs`, `src/render/gpu/materials.rs`,
   `src/render/gpu/material_uniform.rs`, and
@@ -588,6 +593,12 @@ the rendered result is part of the contract.
   `KHR_materials_dispersion` factors propagate into `MaterialDesc`,
   `m8_dispersion_factor_affects_cpu_preview_pixels` proves the CPU preview
   applies dispersion instead of silently ignoring the factor,
+  `m8_transmission_ior_volume_material_factors_are_parsed_from_gltf`
+  asserts optional `KHR_materials_transmission`, `KHR_materials_ior`, and
+  `KHR_materials_volume` factors propagate into `MaterialDesc`,
+  `m8_transmission_volume_textures_affect_cpu_preview_pixels` proves the
+  CPU preview samples transmission red-channel and thickness green-channel
+  texture data,
   `clearcoat_light_contribution_adds_dielectric_lobe` keeps the PBR
   math owned by `pbr_contract`,
   `sheen_light_contribution_adds_colored_lobe` keeps the sheen lobe owned
@@ -598,6 +609,8 @@ the rendered result is part of the contract.
   keeps the iridescence lobe owned by `pbr_contract`, and
   `dispersion_light_contribution_uses_factor_and_ior_spread` keeps the
   dispersion lobe owned by `pbr_contract`,
+  `transmission_volume_uses_factor_ior_thickness_and_attenuation` keeps
+  the transmission/volume contribution owned by `pbr_contract`,
   `material_uniform_upload_encodes_material_factors`,
   `triangle_shader_applies_clearcoat_lobe_in_native_and_webgl2_variants`,
   `triangle_shader_applies_sheen_lobe_in_native_and_webgl2_variants`,
@@ -610,12 +623,15 @@ the rendered result is part of the contract.
   `m8_headless_gpu_clearcoat_texture_lobe_brightens_pbr_output_when_available`
   is fail-closed by default and records the unapproved GPU release lane until
   `SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1` is set on an approved
-  backend proof lane. CPU visual proof:
+  backend proof lane. Browser proof: the M6 `pbr-material-extensions`
+  workflow records nonblack WebGPU/WebGL2 readback, extension metadata, and
+  material texture binding stats for the clearcoat/sheen/anisotropy/
+  iridescence/dispersion composite. CPU visual proof:
   `m8_headless_visual_artifacts_cover_material_texture_environment_paths`
   writes the `m8-clearcoat-material-feature` and
   `m8-sheen-material-feature`, `m8-anisotropy-material-feature`, and
-  `m8-iridescence-material-feature`, and `m8-dispersion-material-feature`
-  before/after artifacts.
+  `m8-iridescence-material-feature`, `m8-dispersion-material-feature`, and
+  `m8-transmission-volume-material-feature` before/after artifacts.
   Visual proof: reference-image before/after shipped for scalar clearcoat
   and sheen via `target/gate-artifacts/m8-visual/m8-clearcoat-material-feature.ppm`
   and `target/gate-artifacts/m8-visual/m8-sheen-material-feature.ppm`,
@@ -624,10 +640,11 @@ the rendered result is part of the contract.
   and for iridescence via
   `target/gate-artifacts/m8-visual/m8-iridescence-material-feature.ppm`,
   and for dispersion via
-  `target/gate-artifacts/m8-visual/m8-dispersion-material-feature.ppm`;
-  approved backend reference-image or readback proof is still required for
-  release-grade GPU/WebGPU/WebGL2 clearcoat/sheen/anisotropy/iridescence/
-  dispersion parity and full transmission/volume glass behavior.
+  `target/gate-artifacts/m8-visual/m8-dispersion-material-feature.ppm`,
+  and for transmission/volume via
+  `target/gate-artifacts/m8-visual/m8-transmission-volume-material-feature.ppm`;
+  physical GPU/WebGPU/WebGL2 transmission/volume glass parity remains a
+  future backend lane.
 - **Clustered / tiled light culling.** Babylon 9 made this baseline.
   Proof: many-light stress scene proves correct light selection,
   stable frame time / allocation behavior, and no dropped-light fallback.
@@ -718,7 +735,7 @@ specifically, add **animated-proof** of the clip playing back.
   official-validator mode and required-clearcoat guidance, and
   `ASSET-VALIDATION-DOCTOR` source-enforces the CLI/docs/library surface.
 
-### 3.3 Implemented but not visually/proof complete — [proof-gap]
+### 3.3 Visual proof work
 
 The pipeline runs but no stored reference asserts the visual is right.
 This section IS the reference-image work; closing every item below
@@ -1300,7 +1317,8 @@ Items trimmed for honesty:
 - **Material presets**: `clear_glass`, `frosted_glass`, `chrome`,
   `brushed_steel`, `leather` remain deferred until the remaining material
   feature lanes land: approved backend clearcoat/sheen/anisotropy/iridescence/
-  dispersion proof, full transmission/volume glass behavior, OIT, and SSR.
+  dispersion proof, physical backend transmission/volume glass parity, OIT,
+  and SSR.
   Clearcoat texture support alone is not
   enough to make those preset names honest.
 
@@ -2001,14 +2019,27 @@ Dispersion material pass (2026-05-20):
   `KHR_materials_dispersion.dispersion` factor.
 - Parsed optional glTF `KHR_materials_dispersion` factors into
   `MaterialDesc` while keeping required dispersion assets guarded as degraded
-  until approved backend proof and full transmission/volume glass behavior
-  exist.
+  until approved backend proof exists.
 - Added CPU/reference channel-spread specular shading owned by
   `src/render/prepare/pbr_contract/dispersion.rs` and wired the same scalar
   through GPU material uniforms plus both WebGPU/WebGL2 shader variants.
 - Added focused parse, CPU pixel, PBR math, shader-source, generated M8 visual
   proof, and doctor rules so dispersion is no longer a pure implementation
   gap; release-grade backend parity remains a proof gap.
+
+Transmission/volume material pass (2026-05-20):
+
+- Added `KHR_materials_transmission`, `KHR_materials_ior`, and
+  `KHR_materials_volume` parsing into `MaterialDesc`, including transmission
+  and thickness texture slots, transmission factor, IOR, thickness,
+  attenuation distance, and attenuation color.
+- Added CPU/reference transmission-volume shading owned by
+  `src/render/prepare/pbr_contract/transmission.rs` and kept full physical
+  GPU/WebGPU/WebGL2 glass parity as a future backend lane rather than a
+  claimed v1.4 blocker.
+- Added focused parse, CPU pixel, PBR math, generated M8 visual proof,
+  M6 browser material-extension composite proof, asset guidance, and doctor
+  rules so the material row no longer carries an actionable proof-gap marker.
 
 Viewer animation sugar pass (2026-05-19):
 

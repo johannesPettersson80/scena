@@ -117,13 +117,13 @@ fn optional_extension_help(extension: &str) -> &'static str {
             "iridescence material extension factor, IOR, thickness range, and factor/thickness texture slots are parsed, and CPU/reference plus GPU shader paths sample the same roles; structured degradation remains for required usage until approved backend screenshot or readback proof covers the target lane"
         }
         "KHR_materials_dispersion" => {
-            "dispersion material extension factor is parsed, and CPU/reference plus GPU shader paths apply a channel-spread specular approximation; structured degradation remains for required usage until approved backend screenshot or readback proof covers the target lane and full transmission/volume glass parity is promoted"
+            "dispersion material extension factor is parsed, and CPU/reference plus GPU shader paths apply a channel-spread specular approximation; structured degradation remains for required usage until approved backend screenshot or readback proof covers the target lane"
         }
-        "KHR_materials_transmission"
-        | "KHR_materials_ior"
-        | "KHR_materials_volume"
-        | "KHR_materials_specular" => {
-            "material extension is optional in this glTF and currently uses structured degradation; required usage fails during asset load"
+        "KHR_materials_transmission" | "KHR_materials_ior" | "KHR_materials_volume" => {
+            "transmission, IOR, and volume material extension factors and texture slots are parsed, and CPU/reference shading uses transmission, thickness, and attenuation; structured degradation remains for required usage until approved backend screenshot or readback proof covers the target lane"
+        }
+        "KHR_materials_specular" => {
+            "specular material extension is optional in this glTF and currently uses structured degradation; required usage fails during asset load"
         }
         "KHR_materials_variants" => {
             "material variants are supported for v1.0: top-level variants and per-primitive mappings are parsed into typed runtime variant selection"
@@ -192,12 +192,12 @@ fn optional_extension_suggested_fix(extension: &str) -> &'static str {
             "Keep KHR_materials_iridescence optional unless CPU/reference iridescence is enough, or export a fallback material without iridescence for required assets that depend on unproven backend parity."
         }
         "KHR_materials_dispersion" => {
-            "Keep KHR_materials_dispersion optional unless CPU/reference dispersion is enough, or export a fallback material without dispersion for required assets that depend on unproven backend parity or full transmission/volume glass behavior."
+            "Keep KHR_materials_dispersion optional unless CPU/reference dispersion is enough, or export a fallback material without dispersion for required assets that depend on unproven backend parity."
         }
-        "KHR_materials_transmission"
-        | "KHR_materials_ior"
-        | "KHR_materials_volume"
-        | "KHR_materials_specular" => {
+        "KHR_materials_transmission" | "KHR_materials_ior" | "KHR_materials_volume" => {
+            "Keep the extension optional unless CPU/reference transmission and volume shading is enough, or export a fallback material for required assets that depend on unproven backend parity."
+        }
+        "KHR_materials_specular" => {
             "Export a fallback material without the extension, or keep the extension optional until the matching renderer feature is supported."
         }
         "EXT_texture_webp" => {

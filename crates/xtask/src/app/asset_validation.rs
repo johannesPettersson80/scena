@@ -285,13 +285,28 @@ fn extension_guidance(extension: &str, required: bool) -> Option<AssetGuidanceFi
                 AssetGuidanceSeverity::Warning
             },
             status: "degraded",
-            message: "Dispersion factors are CPU/reference-supported and wired through the GPU shader path as channel-spread specular approximation, but required dispersion can still depend on approved GPU/browser rendered-output proof and full transmission/volume glass behavior that are not release-proven.".to_string(),
-            fix: "If the look depends on backend parity or full glass transmission behavior, export a fallback material without dispersion or keep KHR_materials_dispersion optional until approved backend screenshots or readback proof cover the target lane.".to_string(),
+            message: "Dispersion factors are CPU/reference-supported and wired through the GPU shader path as channel-spread specular approximation, but required dispersion can still depend on approved GPU/browser rendered-output proof that is not release-proven.".to_string(),
+            fix: "If the look depends on backend parity, export a fallback material without dispersion or keep KHR_materials_dispersion optional until approved backend screenshots or readback proof cover the target lane.".to_string(),
         }),
         "KHR_materials_transmission"
         | "KHR_materials_ior"
-        | "KHR_materials_volume"
-        | "KHR_materials_specular" => Some(AssetGuidanceFinding {
+        | "KHR_materials_volume" => Some(AssetGuidanceFinding {
+            extension: extension.to_string(),
+            required,
+            severity: if required {
+                AssetGuidanceSeverity::Error
+            } else {
+                AssetGuidanceSeverity::Warning
+            },
+            status: "degraded",
+            message: format!(
+                "{extension} factors and texture slots are CPU/reference-supported for transmission and volume shading, but required usage can still depend on approved GPU/browser rendered-output proof that is not release-proven."
+            ),
+            fix: format!(
+                "If the look depends on backend parity for {extension}, export a fallback material without {extension} or keep the extension optional until approved backend screenshots or readback proof cover the target lane."
+            ),
+        }),
+        "KHR_materials_specular" => Some(AssetGuidanceFinding {
             extension: extension.to_string(),
             required,
             severity: if required {

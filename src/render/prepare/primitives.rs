@@ -14,7 +14,7 @@ use super::materials::{
     iridescence_texture_sample, iridescence_thickness_texture_sample, material_pass,
     metallic_roughness_texture_sample, multiply_color, normal_texture_sample,
     occlusion_texture_sample, render_material_slot, sheen_color_texture_sample,
-    sheen_roughness_texture_sample,
+    sheen_roughness_texture_sample, thickness_texture_sample, transmission_texture_sample,
 };
 use super::strokes;
 use super::tangents::{accumulate_vertex_tangents, authored_vertex_tangents};
@@ -249,6 +249,16 @@ fn append_triangle_primitives<F>(
                                 corner.uv,
                             ),
                             iridescence_thickness_texture: iridescence_thickness_texture_sample(
+                                source.assets,
+                                source.material,
+                                corner.uv,
+                            ),
+                            transmission_texture: transmission_texture_sample(
+                                source.assets,
+                                source.material,
+                                corner.uv,
+                            ),
+                            thickness_texture: thickness_texture_sample(
                                 source.assets,
                                 source.material,
                                 corner.uv,
