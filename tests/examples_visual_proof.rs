@@ -8,6 +8,12 @@
 //! skipped: they describe runtime patterns (event loop, attached canvas,
 //! diagnostic introspection) that don't have a single deterministic frame to
 //! capture.
+//!
+//! Gated to non-wasm32 targets: every test in this file renders through the
+//! CPU headless renderer and writes PPM/PNG artifacts via `std::fs::write`,
+//! which is not meaningful in the browser test runner. The wasm32 release
+//! lane still compiles the rest of the crate against `m6_browser_renderer_parity`.
+#![cfg(not(target_arch = "wasm32"))]
 
 use std::fs;
 use std::path::PathBuf;
