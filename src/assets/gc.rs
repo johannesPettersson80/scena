@@ -92,6 +92,8 @@ impl<F> Assets<F> {
                     material.clearcoat_texture(),
                     material.clearcoat_roughness_texture(),
                     material.clearcoat_normal_texture(),
+                    material.sheen_color_texture(),
+                    material.sheen_roughness_texture(),
                 ]
                 .into_iter()
                 .flatten()

@@ -76,6 +76,13 @@ All notable user-facing changes are recorded here.
   M8 proof records a CPU before/after clearcoat render and a fail-closed
   headless-GPU lane until approved backend screenshots exist.
 
+- Added sheen material support across the CPU/reference path and GPU
+  shader/material resource path: `MaterialDesc` exposes sheen color and
+  roughness factors plus sheen color/roughness texture slots, optional glTF
+  `KHR_materials_sheen` factors and textures are parsed, CPU preview samples
+  the RGB and alpha texture channels, and WebGPU/WebGL2 shader variants carry
+  the same roles through material uniforms and bind groups.
+
 - Added capability-gated wide-gamut output reporting: capability reports now
   expose `wide_gamut_output`, browser M4 smoke artifacts record Display P3
   canvas color-space probes, and diagnostics keep output treated as sRGB until

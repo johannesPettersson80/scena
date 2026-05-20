@@ -536,12 +536,13 @@ the rendered result is part of the contract.
   `ARCH-FXAA-OUTPUT` keeps the post-output proof wired.
   Visual proof: reference-image ON/OFF at a fixed exposure shipped via
   `target/gate-artifacts/m2-visual/bloom-on-off.ppm`.
-- **Material features**: Status: **[shipped]** for scalar clearcoat
-  factors plus clearcoat, clearcoat-roughness, and clearcoat-normal texture
-  sampling on the CPU/reference path, and for WebGPU/WebGL2 shader/material
-  resource wiring for a punctual-light clearcoat lobe. **[proof-gap]**
-  remains for approved backend screenshot/readback release evidence.
-  **[gap]** remains for sheen, anisotropy, iridescence, and dispersion.
+- **Material features**: Status: **[shipped]** for clearcoat and sheen
+  scalar factors plus clearcoat, clearcoat-roughness, clearcoat-normal,
+  sheen-color, and sheen-roughness texture sampling on the CPU/reference
+  path, and for WebGPU/WebGL2 shader/material resource wiring for
+  punctual-light clearcoat and sheen lobes. **[proof-gap]** remains for
+  approved backend screenshot/readback release evidence. **[gap]** remains
+  for anisotropy, iridescence, and dispersion.
   Owner: `src/material.rs`, `src/assets/gltf/materials.rs`,
   `src/render/prepare/lighting.rs`, `src/render/gpu/materials.rs`,
   `src/render/gpu/material_uniform.rs`, and
@@ -555,10 +556,19 @@ the rendered result is part of the contract.
   green channel,
   `m8_clearcoat_normal_texture_affects_cpu_preview_pixels` proves the CPU
   preview samples clearcoat normal textures for the clearcoat lobe,
+  `m8_sheen_material_factors_are_parsed_from_gltf` asserts optional
+  `KHR_materials_sheen` factors propagate into `MaterialDesc`,
+  `m8_sheen_texture_slots_are_parsed_from_gltf` asserts sheen color and
+  roughness texture slots plus transforms propagate,
+  `m8_sheen_png_textures_affect_cpu_preview_pixels` proves the CPU preview
+  samples sheen color RGB and roughness alpha channels,
   `clearcoat_light_contribution_adds_dielectric_lobe` keeps the PBR
-  math owned by `pbr_contract`, and
+  math owned by `pbr_contract`,
+  `sheen_light_contribution_adds_colored_lobe` keeps the sheen lobe owned
+  by `pbr_contract`, and
   `material_uniform_upload_encodes_material_factors`,
   `triangle_shader_applies_clearcoat_lobe_in_native_and_webgl2_variants`,
+  `triangle_shader_applies_sheen_lobe_in_native_and_webgl2_variants`,
   `material_resources_define_shader_visible_texture_bindings`, and
   `backend_material_slots_preserve_all_texture_roles_and_material_only_slots`
   pin GPU uniform, shader, bind-group, and prepare-resource contracts.
@@ -567,12 +577,14 @@ the rendered result is part of the contract.
   `SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1` is set on an approved
   backend proof lane. CPU visual proof:
   `m8_headless_visual_artifacts_cover_material_texture_environment_paths`
-  writes the `m8-clearcoat-material-feature` before/after artifact.
-  Visual proof: reference-image before/after shipped for scalar
-  clearcoat via `target/gate-artifacts/m8-visual/m8-clearcoat-material-feature.ppm`;
+  writes the `m8-clearcoat-material-feature` and
+  `m8-sheen-material-feature` before/after artifacts.
+  Visual proof: reference-image before/after shipped for scalar clearcoat
+  and sheen via `target/gate-artifacts/m8-visual/m8-clearcoat-material-feature.ppm`
+  and `target/gate-artifacts/m8-visual/m8-sheen-material-feature.ppm`;
   approved backend reference-image or readback proof is still required for
-  release-grade GPU/WebGPU/WebGL2 clearcoat parity and for each remaining
-  material family.
+  release-grade GPU/WebGPU/WebGL2 clearcoat/sheen parity and for each
+  remaining material family.
 - **Clustered / tiled light culling.** Babylon 9 made this baseline.
   Proof: many-light stress scene proves correct light selection,
   stable frame time / allocation behavior, and no dropped-light fallback.
@@ -1841,6 +1853,26 @@ GPU clearcoat shader/resource pass (2026-05-20):
   shipped shader/resource wiring with a proof gap: focused source tests and
   doctor rules pin the contract, while the headless-GPU release lane remains
   fail-closed until approved backend screenshot or readback proof is run.
+
+Sheen material pass (2026-05-20):
+
+- Added `MaterialDesc` sheen color/roughness factors and sheen color plus
+  sheen roughness texture slots, including `KHR_texture_transform`
+  preservation.
+- Parsed optional glTF `KHR_materials_sheen` factors and texture slots into
+  `MaterialDesc`, retained them through asset GC and scene inspection, and
+  included them in material texture resource accounting.
+- Added CPU/reference sampling for the sheen color texture RGB channels and
+  sheen roughness texture alpha channel, with the sheen lobe owned by
+  `src/render/prepare/pbr_contract.rs`.
+- Extended prepared material slots, material batching, GPU texture uploads,
+  material bind groups, material uniforms, and both shader variants to carry
+  sheen color and sheen roughness roles.
+- Reclassified sheen from a pure implementation gap to shipped
+  CPU/reference plus shader/resource wiring with a proof gap: focused tests,
+  generated M8 visual proof, and doctor rules pin the contract, while
+  approved backend screenshot or readback proof remains required for
+  release-grade GPU/WebGPU/WebGL2 parity.
 
 Viewer animation sugar pass (2026-05-19):
 

@@ -206,6 +206,39 @@ pub(super) fn clearcoat_roughness_texture_sample(
         .unwrap_or(1.0)
 }
 
+pub(super) fn sheen_color_texture_sample(
+    assets: &Assets<impl Sized>,
+    material: &MaterialDesc,
+    uv: [f32; 2],
+) -> Color {
+    let Some(texture) = material.sheen_color_texture() else {
+        return Color::WHITE;
+    };
+    assets
+        .sample_texture(
+            texture,
+            transform_texture_uv(uv, material.sheen_color_texture_transform()),
+        )
+        .unwrap_or(Color::WHITE)
+}
+
+pub(super) fn sheen_roughness_texture_sample(
+    assets: &Assets<impl Sized>,
+    material: &MaterialDesc,
+    uv: [f32; 2],
+) -> f32 {
+    let Some(texture) = material.sheen_roughness_texture() else {
+        return 1.0;
+    };
+    assets
+        .sample_texture(
+            texture,
+            transform_texture_uv(uv, material.sheen_roughness_texture_transform()),
+        )
+        .map(|sample| sample.a.clamp(0.0, 1.0))
+        .unwrap_or(1.0)
+}
+
 pub(super) fn multiply_color(left: Color, right: Color) -> Color {
     Color::from_linear_rgba(
         left.r * right.r,
@@ -263,6 +296,8 @@ fn material_texture_slots(
             material.clearcoat_roughness_texture(),
         ),
         ("clearcoat_normal", material.clearcoat_normal_texture()),
+        ("sheen_color", material.sheen_color_texture()),
+        ("sheen_roughness", material.sheen_roughness_texture()),
     ]
     .into_iter()
     .filter_map(|(slot, texture)| texture.map(|texture| (slot, texture)))

@@ -1,13 +1,12 @@
-use crate::assets::{
-    Assets, GeometryHandle, MaterialHandle, TextureDesc, TextureHandle, TextureSamplerDesc,
-    TextureSourceFormat,
-};
+use crate::assets::{Assets, GeometryHandle, MaterialHandle, TextureHandle};
 use crate::geometry::{Aabb, GeometryTopology};
-use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind, TextureColorSpace};
+use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
 
 use super::{CameraKey, InstanceId, LightKey, NodeKey, NodeKind, Scene, Transform, Vec3};
 
 mod builders;
+mod texture;
+pub use texture::SceneTextureInspection;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SceneInspectionReport {
@@ -96,16 +95,8 @@ pub struct SceneMaterialInspection {
     clearcoat_texture: Option<SceneTextureInspection>,
     clearcoat_roughness_texture: Option<SceneTextureInspection>,
     clearcoat_normal_texture: Option<SceneTextureInspection>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SceneTextureInspection {
-    texture: TextureHandle,
-    color_space: TextureColorSpace,
-    sampler: TextureSamplerDesc,
-    source_format: TextureSourceFormat,
-    decoded_dimensions: Option<(u32, u32)>,
-    has_decoded_pixels: bool,
+    sheen_color_texture: Option<SceneTextureInspection>,
+    sheen_roughness_texture: Option<SceneTextureInspection>,
 }
 
 impl Scene {
@@ -466,31 +457,21 @@ impl SceneMaterialInspection {
     pub const fn clearcoat_normal_texture(&self) -> Option<SceneTextureInspection> {
         self.clearcoat_normal_texture
     }
-}
 
-impl SceneTextureInspection {
-    pub const fn texture(&self) -> TextureHandle {
-        self.texture
+    pub const fn has_sheen_color_texture(&self) -> bool {
+        self.sheen_color_texture.is_some()
     }
 
-    pub const fn color_space(&self) -> TextureColorSpace {
-        self.color_space
+    pub const fn sheen_color_texture(&self) -> Option<SceneTextureInspection> {
+        self.sheen_color_texture
     }
 
-    pub const fn sampler(&self) -> TextureSamplerDesc {
-        self.sampler
+    pub const fn has_sheen_roughness_texture(&self) -> bool {
+        self.sheen_roughness_texture.is_some()
     }
 
-    pub const fn source_format(&self) -> TextureSourceFormat {
-        self.source_format
-    }
-
-    pub const fn decoded_dimensions(&self) -> Option<(u32, u32)> {
-        self.decoded_dimensions
-    }
-
-    pub const fn has_decoded_pixels(&self) -> bool {
-        self.has_decoded_pixels
+    pub const fn sheen_roughness_texture(&self) -> Option<SceneTextureInspection> {
+        self.sheen_roughness_texture
     }
 }
 
@@ -540,6 +521,8 @@ impl SceneMaterialInspection {
                 assets,
             ),
             clearcoat_normal_texture: texture_preview(desc.clearcoat_normal_texture(), assets),
+            sheen_color_texture: texture_preview(desc.sheen_color_texture(), assets),
+            sheen_roughness_texture: texture_preview(desc.sheen_roughness_texture(), assets),
         }
     }
 }
@@ -552,19 +535,6 @@ fn texture_preview<F>(
     assets
         .texture(texture)
         .map(|desc| SceneTextureInspection::new(texture, desc))
-}
-
-impl SceneTextureInspection {
-    fn new(texture: TextureHandle, desc: TextureDesc) -> Self {
-        Self {
-            texture,
-            color_space: desc.color_space(),
-            sampler: desc.sampler(),
-            source_format: desc.source_format(),
-            decoded_dimensions: desc.decoded_dimensions(),
-            has_decoded_pixels: desc.has_decoded_pixels(),
-        }
-    }
 }
 
 const fn camera_key(kind: &NodeKind) -> Option<CameraKey> {

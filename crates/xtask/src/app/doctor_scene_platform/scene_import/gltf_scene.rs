@@ -62,9 +62,15 @@ pub(crate) fn check_m3a_gltf_scene_contracts(root: &Path, findings: &mut Vec<Fin
         root,
         findings,
         "ARCH-M3A-SCENE-IMPORT",
+        "src/material/types.rs",
+        &["pub struct TextureTransform"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
         "src/material.rs",
         &[
-            "pub struct TextureTransform",
             "pub const fn base_color_texture_transform",
             "pub const fn with_base_color_texture_transform",
         ],

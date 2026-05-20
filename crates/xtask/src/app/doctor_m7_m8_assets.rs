@@ -5,7 +5,9 @@ mod clearcoat_materials;
 mod ergonomics;
 mod manifest_helpers;
 mod material_texture_diagnostics;
+mod sheen_materials;
 mod state_of_art;
+mod visual_materials;
 
 pub(crate) use asset_matrix::{
     binary_render_asset_extension, check_binary_render_asset_contracts,

@@ -11,6 +11,9 @@ use crate::diagnostics::AssetError;
 use crate::material::{AlphaMode, Color, MaterialDesc, TextureColorSpace, TextureTransform};
 
 use super::super::{AssetPath, AssetStorage, MaterialHandle};
+use super::material_extensions::{
+    clearcoat_extension, extension_texture_transform, read_extension_texture_info, sheen_extension,
+};
 use super::textures::{GltfTexture, texture_slot};
 
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
@@ -229,6 +232,39 @@ pub(super) fn parse_materials(
                     }
                 }
             }
+            if let Some(sheen) = sheen_extension(document, material_index) {
+                desc = desc
+                    .with_sheen_color_factor(sheen.color_factor)
+                    .with_sheen_roughness_factor(sheen.roughness_factor);
+                if let Some(info) = sheen.color_texture {
+                    let texture = texture_slot(
+                        path,
+                        "sheenColorTexture",
+                        info.index,
+                        textures,
+                        storage,
+                        TextureColorSpace::Srgb,
+                    )?;
+                    desc = desc.with_sheen_color_texture(texture);
+                    if let Some(transform) = info.transform {
+                        desc = desc.with_sheen_color_texture_transform(transform);
+                    }
+                }
+                if let Some(info) = sheen.roughness_texture {
+                    let texture = texture_slot(
+                        path,
+                        "sheenRoughnessTexture",
+                        info.index,
+                        textures,
+                        storage,
+                        TextureColorSpace::Linear,
+                    )?;
+                    desc = desc.with_sheen_roughness_texture(texture);
+                    if let Some(transform) = info.transform {
+                        desc = desc.with_sheen_roughness_texture_transform(transform);
+                    }
+                }
+            }
             desc = match material.alpha_mode() {
                 ::gltf::material::AlphaMode::Opaque => desc,
                 ::gltf::material::AlphaMode::Mask => desc.with_alpha_mode(AlphaMode::Mask {
@@ -251,65 +287,6 @@ pub(super) fn parse_materials(
         log_material_step("parse_materials total", total_start);
     }
     materials
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ClearcoatExtension {
-    factor: f32,
-    roughness_factor: f32,
-    texture: Option<ClearcoatTextureInfo>,
-    roughness_texture: Option<ClearcoatTextureInfo>,
-    normal_texture: Option<ClearcoatTextureInfo>,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ClearcoatTextureInfo {
-    index: usize,
-    transform: Option<TextureTransform>,
-    scale: Option<f32>,
-}
-
-fn clearcoat_extension(document: &Document, material_index: usize) -> Option<ClearcoatExtension> {
-    let extension = document
-        .as_json()
-        .materials
-        .get(material_index)?
-        .extensions
-        .as_ref()?
-        .others
-        .get("KHR_materials_clearcoat")?;
-    Some(ClearcoatExtension {
-        factor: read_factor(extension, "clearcoatFactor").unwrap_or(0.0),
-        roughness_factor: read_factor(extension, "clearcoatRoughnessFactor").unwrap_or(0.0),
-        texture: read_clearcoat_texture_info(extension, "clearcoatTexture"),
-        roughness_texture: read_clearcoat_texture_info(extension, "clearcoatRoughnessTexture"),
-        normal_texture: read_clearcoat_texture_info(extension, "clearcoatNormalTexture"),
-    })
-}
-
-fn read_clearcoat_texture_info(
-    extension: &serde_json::Value,
-    key: &str,
-) -> Option<ClearcoatTextureInfo> {
-    let info = extension.get(key)?;
-    let index = usize::try_from(info.get("index")?.as_u64()?).ok()?;
-    let transform = extension_texture_transform(
-        info.get("extensions")
-            .and_then(|extensions| extensions.get("KHR_texture_transform")),
-    );
-    Some(ClearcoatTextureInfo {
-        index,
-        transform,
-        scale: read_factor(info, "scale"),
-    })
-}
-
-fn read_factor(value: &serde_json::Value, key: &str) -> Option<f32> {
-    value
-        .get(key)?
-        .as_f64()
-        .filter(|value| value.is_finite())
-        .map(|value| value as f32)
 }
 
 fn validate_material_texture_indices(
@@ -382,7 +359,25 @@ fn validate_material_texture_indices(
                     path,
                     material_index,
                     slot,
-                    read_clearcoat_texture_info(clearcoat, key).map(|info| info.index),
+                    read_extension_texture_info(clearcoat, key).map(|info| info.index),
+                    texture_count,
+                )?;
+            }
+        }
+        if let Some(sheen) = material
+            .extensions
+            .as_ref()
+            .and_then(|extensions| extensions.others.get("KHR_materials_sheen"))
+        {
+            for (slot, key) in [
+                ("sheenColorTexture", "sheenColorTexture"),
+                ("sheenRoughnessTexture", "sheenRoughnessTexture"),
+            ] {
+                validate_texture_info(
+                    path,
+                    material_index,
+                    slot,
+                    read_extension_texture_info(sheen, key).map(|info| info.index),
                     texture_count,
                 )?;
             }
@@ -420,29 +415,6 @@ fn texture_transform(info: &Info<'_>) -> Option<TextureTransform> {
             transform.tex_coord(),
         )
     })
-}
-
-fn extension_texture_transform(value: Option<&serde_json::Value>) -> Option<TextureTransform> {
-    let value = value?;
-    let offset = read_vec2(value, "offset").unwrap_or([0.0, 0.0]);
-    let rotation = value
-        .get("rotation")
-        .and_then(serde_json::Value::as_f64)
-        .map(|value| value as f32)
-        .unwrap_or(0.0);
-    let scale = read_vec2(value, "scale").unwrap_or([1.0, 1.0]);
-    let tex_coord = value
-        .get("texCoord")
-        .and_then(serde_json::Value::as_u64)
-        .and_then(|value| u32::try_from(value).ok());
-    Some(TextureTransform::new(offset, rotation, scale, tex_coord))
-}
-
-fn read_vec2(value: &serde_json::Value, key: &str) -> Option<[f32; 2]> {
-    let array = value.get(key)?.as_array()?;
-    let x = array.first()?.as_f64()? as f32;
-    let y = array.get(1)?.as_f64()? as f32;
-    Some([x, y])
 }
 
 fn normal_texture_transform(

@@ -24,6 +24,8 @@ pub enum MaterialTextureRole {
     Clearcoat,
     ClearcoatRoughness,
     ClearcoatNormal,
+    SheenColor,
+    SheenRoughness,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +100,8 @@ pub(in crate::render) fn compute_material_batch_plan(
         MaterialTextureRole::Clearcoat,
         MaterialTextureRole::ClearcoatRoughness,
         MaterialTextureRole::ClearcoatNormal,
+        MaterialTextureRole::SheenColor,
+        MaterialTextureRole::SheenRoughness,
     ] {
         if matches!(
             role,
@@ -163,6 +167,8 @@ fn role_texture(role: MaterialTextureRole, slot: &PreparedMaterialSlot) -> Optio
         MaterialTextureRole::Clearcoat => slot.clearcoat.as_ref(),
         MaterialTextureRole::ClearcoatRoughness => slot.clearcoat_roughness.as_ref(),
         MaterialTextureRole::ClearcoatNormal => slot.clearcoat_normal.as_ref(),
+        MaterialTextureRole::SheenColor => slot.sheen_color.as_ref(),
+        MaterialTextureRole::SheenRoughness => slot.sheen_roughness.as_ref(),
     }?;
     Some(&texture.desc)
 }
@@ -263,6 +269,8 @@ mod tests {
             clearcoat: None,
             clearcoat_roughness: None,
             clearcoat_normal: None,
+            sheen_color: None,
+            sheen_roughness: None,
         }
     }
 
@@ -287,6 +295,19 @@ mod tests {
         slot.clearcoat_roughness = Some(PreparedMaterialTexture {
             handle: Default::default(),
             desc: clearcoat_roughness,
+            transform: None,
+        });
+        slot
+    }
+
+    fn material_slot_with_sheen_roughness(
+        handle: MaterialHandle,
+        sheen_roughness: TextureDesc,
+    ) -> PreparedMaterialSlot {
+        let mut slot = material_slot_with_base_color(handle, texture_desc(default_sampler()));
+        slot.sheen_roughness = Some(PreparedMaterialTexture {
+            handle: Default::default(),
+            desc: sheen_roughness,
             transform: None,
         });
         slot
@@ -390,6 +411,25 @@ mod tests {
         assert_eq!(
             plan.incompatible_role,
             Some(MaterialTextureRole::ClearcoatRoughness),
+        );
+        assert_eq!(
+            plan.incompatible_reason,
+            Some(MaterialBatchIncompatibility::SamplerMismatch),
+        );
+    }
+
+    #[test]
+    fn sheen_roughness_sampler_mismatch_blocks_batching_with_diagnostic_role() {
+        let slots = vec![
+            material_slot_with_sheen_roughness(assets_handle(), texture_desc(default_sampler())),
+            material_slot_with_sheen_roughness(assets_handle(), texture_desc(nearest_sampler())),
+        ];
+        let plan = compute_material_batch_plan(&slots);
+        assert!(!plan.batchable);
+        assert_eq!(plan.layer_count, 0);
+        assert_eq!(
+            plan.incompatible_role,
+            Some(MaterialTextureRole::SheenRoughness),
         );
         assert_eq!(
             plan.incompatible_reason,

@@ -1,6 +1,7 @@
-use crate::assets::{MaterialHandle, TextureHandle};
-use crate::geometry::{Primitive, SkinningMatrix};
-use crate::scene::{Transform, Vec3};
+use crate::assets::{Assets, MaterialHandle, TextureHandle};
+use crate::geometry::{GeometryDesc, Primitive, SkinningMatrix};
+use crate::material::MaterialDesc;
+use crate::scene::{NodeKey, Transform, Vec3};
 
 use super::super::{RasterTarget, camera::CameraProjection};
 use super::environment::PreparedEnvironmentLighting;
@@ -15,6 +16,19 @@ pub(super) struct TransparentPrimitive {
 pub(super) struct PrimitiveSinks<'out> {
     pub(super) primitives: &'out mut Vec<Primitive>,
     pub(super) transparent_primitives: &'out mut Vec<TransparentPrimitive>,
+}
+
+pub(super) struct GeometryPrimitiveSource<'a, F> {
+    pub(super) node: NodeKey,
+    pub(super) material_handle: MaterialHandle,
+    pub(super) geometry: &'a GeometryDesc,
+    pub(super) material: &'a MaterialDesc,
+    pub(super) assets: &'a Assets<F>,
+}
+
+pub(in crate::render) struct PreparedScene {
+    pub(in crate::render) primitives: Vec<Primitive>,
+    pub(in crate::render) light_from_world: [f32; 16],
 }
 
 #[derive(Clone)]

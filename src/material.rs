@@ -4,47 +4,15 @@ use crate::assets::TextureHandle;
 
 mod color;
 mod presets;
+mod scalars;
+mod types;
 
 pub use color::{Color, ColorParseError};
+use scalars::{clamp_degrees_or, clamp_unit_or, non_negative_or, positive_or, sanitize_alpha_mode};
+pub use types::{AlphaMode, MaterialKind, TextureColorSpace, TextureTransform};
 
 pub const DEFAULT_STROKE_WIDTH_PX: f32 = 1.0;
 pub const DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES: f32 = 30.0;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TextureColorSpace {
-    Linear,
-    Srgb,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TextureTransform {
-    offset: [f32; 2],
-    rotation_radians: f32,
-    scale: [f32; 2],
-    tex_coord: Option<u32>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Discriminant for [`MaterialDesc`]; selects the shading model and which metadata fields apply.
-pub enum MaterialKind {
-    /// Unlit color material for flat UI, labels, helper meshes, and simple preview surfaces.
-    Unlit,
-    /// Physically based metallic-roughness material for lit mesh surfaces.
-    PbrMetallicRoughness,
-    /// Screen-space stroke material for line-topology geometry and polylines.
-    Line,
-    /// Screen-space stroke material that renders triangle mesh edges as a wire overlay.
-    Wireframe,
-    /// Screen-space stroke material for extracted triangle-pair boundaries above an angle threshold.
-    Edge,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum AlphaMode {
-    Opaque,
-    Mask { cutoff: f32 },
-    Blend,
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MaterialDesc {
@@ -58,6 +26,8 @@ pub struct MaterialDesc {
     clearcoat_texture: Option<TextureHandle>,
     clearcoat_roughness_texture: Option<TextureHandle>,
     clearcoat_normal_texture: Option<TextureHandle>,
+    sheen_color_texture: Option<TextureHandle>,
+    sheen_roughness_texture: Option<TextureHandle>,
     alpha_mode: AlphaMode,
     emissive: Color,
     emissive_strength: f32,
@@ -65,6 +35,8 @@ pub struct MaterialDesc {
     roughness_factor: f32,
     clearcoat_factor: f32,
     clearcoat_roughness_factor: f32,
+    sheen_color_factor: Color,
+    sheen_roughness_factor: f32,
     /// glTF spec `normalTexture.scale` — scales tangent-space normal
     /// X/Y components before TBN reconstruction. Default 1.0.
     normal_scale: f32,
@@ -80,41 +52,11 @@ pub struct MaterialDesc {
     clearcoat_texture_transform: Option<TextureTransform>,
     clearcoat_roughness_texture_transform: Option<TextureTransform>,
     clearcoat_normal_texture_transform: Option<TextureTransform>,
+    sheen_color_texture_transform: Option<TextureTransform>,
+    sheen_roughness_texture_transform: Option<TextureTransform>,
     clearcoat_normal_scale: f32,
     stroke_width_px: Option<f32>,
     edge_angle_threshold_degrees: Option<f32>,
-}
-
-impl TextureTransform {
-    pub const fn new(
-        offset: [f32; 2],
-        rotation_radians: f32,
-        scale: [f32; 2],
-        tex_coord: Option<u32>,
-    ) -> Self {
-        Self {
-            offset,
-            rotation_radians,
-            scale,
-            tex_coord,
-        }
-    }
-
-    pub const fn offset(self) -> [f32; 2] {
-        self.offset
-    }
-
-    pub const fn rotation_radians(self) -> f32 {
-        self.rotation_radians
-    }
-
-    pub const fn scale(self) -> [f32; 2] {
-        self.scale
-    }
-
-    pub const fn tex_coord(self) -> Option<u32> {
-        self.tex_coord
-    }
 }
 
 impl MaterialDesc {
@@ -130,6 +72,8 @@ impl MaterialDesc {
             clearcoat_texture: None,
             clearcoat_roughness_texture: None,
             clearcoat_normal_texture: None,
+            sheen_color_texture: None,
+            sheen_roughness_texture: None,
             alpha_mode: AlphaMode::Opaque,
             emissive: Color::BLACK,
             emissive_strength: 1.0,
@@ -137,6 +81,8 @@ impl MaterialDesc {
             roughness_factor: 1.0,
             clearcoat_factor: 0.0,
             clearcoat_roughness_factor: 0.0,
+            sheen_color_factor: Color::BLACK,
+            sheen_roughness_factor: 0.0,
             normal_scale: 1.0,
             occlusion_strength: 1.0,
             double_sided: false,
@@ -148,6 +94,8 @@ impl MaterialDesc {
             clearcoat_texture_transform: None,
             clearcoat_roughness_texture_transform: None,
             clearcoat_normal_texture_transform: None,
+            sheen_color_texture_transform: None,
+            sheen_roughness_texture_transform: None,
             clearcoat_normal_scale: 1.0,
             stroke_width_px: None,
             edge_angle_threshold_degrees: None,
@@ -170,6 +118,8 @@ impl MaterialDesc {
             clearcoat_texture: None,
             clearcoat_roughness_texture: None,
             clearcoat_normal_texture: None,
+            sheen_color_texture: None,
+            sheen_roughness_texture: None,
             alpha_mode: AlphaMode::Opaque,
             emissive: Color::BLACK,
             emissive_strength: 1.0,
@@ -177,6 +127,8 @@ impl MaterialDesc {
             roughness_factor: clamp_unit_or(roughness_factor, 1.0),
             clearcoat_factor: 0.0,
             clearcoat_roughness_factor: 0.0,
+            sheen_color_factor: Color::BLACK,
+            sheen_roughness_factor: 0.0,
             normal_scale: 1.0,
             occlusion_strength: 1.0,
             double_sided: false,
@@ -188,6 +140,8 @@ impl MaterialDesc {
             clearcoat_texture_transform: None,
             clearcoat_roughness_texture_transform: None,
             clearcoat_normal_texture_transform: None,
+            sheen_color_texture_transform: None,
+            sheen_roughness_texture_transform: None,
             clearcoat_normal_scale: 1.0,
             stroke_width_px: None,
             edge_angle_threshold_degrees: None,
@@ -236,6 +190,8 @@ impl MaterialDesc {
             clearcoat_texture: None,
             clearcoat_roughness_texture: None,
             clearcoat_normal_texture: None,
+            sheen_color_texture: None,
+            sheen_roughness_texture: None,
             alpha_mode: AlphaMode::Opaque,
             emissive: Color::BLACK,
             emissive_strength: 1.0,
@@ -243,6 +199,8 @@ impl MaterialDesc {
             roughness_factor: 1.0,
             clearcoat_factor: 0.0,
             clearcoat_roughness_factor: 0.0,
+            sheen_color_factor: Color::BLACK,
+            sheen_roughness_factor: 0.0,
             normal_scale: 1.0,
             occlusion_strength: 1.0,
             double_sided: false,
@@ -254,6 +212,8 @@ impl MaterialDesc {
             clearcoat_texture_transform: None,
             clearcoat_roughness_texture_transform: None,
             clearcoat_normal_texture_transform: None,
+            sheen_color_texture_transform: None,
+            sheen_roughness_texture_transform: None,
             clearcoat_normal_scale: 1.0,
             stroke_width_px: Some(positive_or(width_px, DEFAULT_STROKE_WIDTH_PX)),
             edge_angle_threshold_degrees,
@@ -332,6 +292,22 @@ impl MaterialDesc {
         self.clearcoat_normal_texture_transform
     }
 
+    pub const fn sheen_color_texture(&self) -> Option<TextureHandle> {
+        self.sheen_color_texture
+    }
+
+    pub const fn sheen_color_texture_transform(&self) -> Option<TextureTransform> {
+        self.sheen_color_texture_transform
+    }
+
+    pub const fn sheen_roughness_texture(&self) -> Option<TextureHandle> {
+        self.sheen_roughness_texture
+    }
+
+    pub const fn sheen_roughness_texture_transform(&self) -> Option<TextureTransform> {
+        self.sheen_roughness_texture_transform
+    }
+
     pub const fn alpha_mode(&self) -> AlphaMode {
         self.alpha_mode
     }
@@ -363,6 +339,16 @@ impl MaterialDesc {
     /// Returns the untextured `KHR_materials_clearcoat.clearcoatRoughnessFactor`.
     pub const fn clearcoat_roughness_factor(&self) -> f32 {
         self.clearcoat_roughness_factor
+    }
+
+    /// Returns the scalar `KHR_materials_sheen.sheenColorFactor`.
+    pub const fn sheen_color_factor(&self) -> Color {
+        self.sheen_color_factor
+    }
+
+    /// Returns the scalar `KHR_materials_sheen.sheenRoughnessFactor`.
+    pub const fn sheen_roughness_factor(&self) -> f32 {
+        self.sheen_roughness_factor
     }
 
     pub const fn clearcoat_normal_scale(&self) -> f32 {
@@ -534,6 +520,29 @@ impl MaterialDesc {
         self
     }
 
+    pub const fn with_sheen_color_texture(mut self, texture: TextureHandle) -> Self {
+        self.sheen_color_texture = Some(texture);
+        self
+    }
+
+    pub const fn with_sheen_color_texture_transform(mut self, transform: TextureTransform) -> Self {
+        self.sheen_color_texture_transform = Some(transform);
+        self
+    }
+
+    pub const fn with_sheen_roughness_texture(mut self, texture: TextureHandle) -> Self {
+        self.sheen_roughness_texture = Some(texture);
+        self
+    }
+
+    pub const fn with_sheen_roughness_texture_transform(
+        mut self,
+        transform: TextureTransform,
+    ) -> Self {
+        self.sheen_roughness_texture_transform = Some(transform);
+        self
+    }
+
     pub const fn with_alpha_mode(mut self, alpha_mode: AlphaMode) -> Self {
         self.alpha_mode = sanitize_alpha_mode(alpha_mode);
         self
@@ -568,6 +577,22 @@ impl MaterialDesc {
         self
     }
 
+    /// Sets the scalar sheen color from `KHR_materials_sheen`.
+    pub const fn with_sheen_color_factor(mut self, sheen_color_factor: Color) -> Self {
+        self.sheen_color_factor = Color::from_linear_rgb(
+            clamp_unit_or(sheen_color_factor.r, 0.0),
+            clamp_unit_or(sheen_color_factor.g, 0.0),
+            clamp_unit_or(sheen_color_factor.b, 0.0),
+        );
+        self
+    }
+
+    /// Sets the scalar sheen roughness from `KHR_materials_sheen`.
+    pub const fn with_sheen_roughness_factor(mut self, sheen_roughness_factor: f32) -> Self {
+        self.sheen_roughness_factor = clamp_unit_or(sheen_roughness_factor, 0.0);
+        self
+    }
+
     pub const fn with_double_sided(mut self, double_sided: bool) -> Self {
         self.double_sided = double_sided;
         self
@@ -577,57 +602,5 @@ impl MaterialDesc {
 impl Default for MaterialDesc {
     fn default() -> Self {
         Self::pbr_metallic_roughness(Color::WHITE, 0.0, 1.0)
-    }
-}
-
-const fn sanitize_alpha_mode(alpha_mode: AlphaMode) -> AlphaMode {
-    match alpha_mode {
-        AlphaMode::Opaque => AlphaMode::Opaque,
-        AlphaMode::Mask { cutoff } => AlphaMode::Mask {
-            cutoff: clamp_unit_or(cutoff, 0.5),
-        },
-        AlphaMode::Blend => AlphaMode::Blend,
-    }
-}
-
-const fn clamp_unit_or(value: f32, fallback: f32) -> f32 {
-    if value.is_nan() {
-        fallback
-    } else if value < 0.0 {
-        0.0
-    } else if value > 1.0 {
-        1.0
-    } else {
-        value
-    }
-}
-
-const fn non_negative_or(value: f32, fallback: f32) -> f32 {
-    if value.is_nan() {
-        fallback
-    } else if value < 0.0 {
-        0.0
-    } else {
-        value
-    }
-}
-
-const fn positive_or(value: f32, fallback: f32) -> f32 {
-    if !value.is_finite() || value <= 0.0 {
-        fallback
-    } else {
-        value
-    }
-}
-
-const fn clamp_degrees_or(value: f32, fallback: f32) -> f32 {
-    if !value.is_finite() {
-        fallback
-    } else if value < 0.0 {
-        0.0
-    } else if value > 180.0 {
-        180.0
-    } else {
-        value
     }
 }

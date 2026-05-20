@@ -107,10 +107,12 @@ fn optional_extension_help(extension: &str) -> &'static str {
         "KHR_materials_clearcoat" => {
             "clearcoat factors and texture slots are parsed, and clearcoat/roughness/normal texture channels are wired through CPU/reference and GPU shader paths; structured degradation remains for required usage until approved backend screenshot or readback proof covers the target lane"
         }
+        "KHR_materials_sheen" => {
+            "sheen material extension factors and color/roughness texture slots are parsed, and CPU/reference plus GPU shader paths sample the same roles; structured degradation remains for required usage until approved backend screenshot or readback proof covers the target lane"
+        }
         "KHR_materials_transmission"
         | "KHR_materials_ior"
         | "KHR_materials_volume"
-        | "KHR_materials_sheen"
         | "KHR_materials_specular"
         | "KHR_materials_iridescence"
         | "KHR_materials_anisotropy"
@@ -174,10 +176,12 @@ fn optional_extension_suggested_fix(extension: &str) -> &'static str {
         "KHR_materials_clearcoat" => {
             "Keep KHR_materials_clearcoat optional unless CPU/reference clearcoat is enough, or export a fallback material without clearcoat for required assets that depend on unproven backend parity."
         }
+        "KHR_materials_sheen" => {
+            "Keep KHR_materials_sheen optional unless CPU/reference sheen is enough, or export a fallback material without sheen for required assets that depend on unproven backend parity."
+        }
         "KHR_materials_transmission"
         | "KHR_materials_ior"
         | "KHR_materials_volume"
-        | "KHR_materials_sheen"
         | "KHR_materials_specular"
         | "KHR_materials_iridescence"
         | "KHR_materials_anisotropy"

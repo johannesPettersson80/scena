@@ -61,6 +61,7 @@ mod extensions;
 mod external;
 mod instancing;
 mod lights;
+mod material_extensions;
 mod material_variants;
 mod materials;
 mod meshes;

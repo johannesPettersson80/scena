@@ -67,6 +67,8 @@ Material workflows include:
 - clearcoat factor/roughness plus clearcoat, clearcoat-roughness, and
   clearcoat-normal texture sampling on the CPU/reference path and GPU
   shader/material resource path,
+- sheen color/roughness factors plus sheen color and sheen roughness texture
+  sampling on the CPU/reference path and GPU shader/material resource path,
 - vertex colors,
 - texture slots,
 - alpha modes,
@@ -81,6 +83,11 @@ clearcoat normal texture for the clearcoat specular lobe. The WebGPU/WebGL2
 shader variants now carry the same factor and texture roles through material
 uniforms, bind groups, and punctual-light shading. Approved backend screenshot
 or readback proof remains capability-gated release evidence.
+Optional glTF `KHR_materials_sheen` color and roughness factors and texture
+slots are also parsed into `MaterialDesc`. The CPU/reference path samples the
+sheen color texture's RGB channels and the sheen roughness texture's alpha
+channel, and the WebGPU/WebGL2 shader variants carry those roles through the
+same material uniform and bind-group path.
 
 ## Environment
 

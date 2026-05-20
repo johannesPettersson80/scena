@@ -1,7 +1,7 @@
 use super::pbr_contract::{
     PbrMaterial, clearcoat_light_contribution, directional_illuminance_lux,
     inverse_square_range_attenuation, punctual_intensity_candela, punctual_light_contribution,
-    roughness_or_min, spot_cone_attenuation,
+    roughness_or_min, sheen_light_contribution, spot_cone_attenuation,
 };
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
 use crate::scene::{Light, Quat, Scene, Transform, Vec3};
@@ -20,6 +20,8 @@ pub(super) struct MaterialShadingInput {
     pub(super) clearcoat_texture: f32,
     pub(super) clearcoat_roughness_texture: f32,
     pub(super) clearcoat_normal: Vec3,
+    pub(super) sheen_color_texture: Color,
+    pub(super) sheen_roughness_texture: f32,
     pub(super) environment: PreparedEnvironmentLighting,
     pub(super) directional_shadow_factor: f32,
 }
@@ -260,6 +262,14 @@ fn shade_pbr_base_color(
     let clearcoat_roughness =
         roughness_or_min(material.clearcoat_roughness_factor() * input.clearcoat_roughness_texture);
     let clearcoat_normal = normalize_or(input.clearcoat_normal, normal);
+    let sheen_color_factor = material.sheen_color_factor();
+    let sheen_color = Vec3::new(
+        sheen_color_factor.r * input.sheen_color_texture.r,
+        sheen_color_factor.g * input.sheen_color_texture.g,
+        sheen_color_factor.b * input.sheen_color_texture.b,
+    );
+    let sheen_roughness =
+        roughness_or_min(material.sheen_roughness_factor() * input.sheen_roughness_texture);
     let mut shaded = Vec3::ZERO;
 
     for light in &lights.directional {
@@ -288,6 +298,17 @@ fn shade_pbr_base_color(
                 clearcoat_roughness,
             ),
         );
+        shaded = add_vec3(
+            shaded,
+            sheen_light_contribution(
+                normal,
+                view,
+                incoming,
+                radiance,
+                sheen_color,
+                sheen_roughness,
+            ),
+        );
     }
     for light in &lights.point {
         let to_light = subtract_vec3(light.position, input.position);
@@ -310,6 +331,17 @@ fn shade_pbr_base_color(
                 radiance,
                 clearcoat_factor,
                 clearcoat_roughness,
+            ),
+        );
+        shaded = add_vec3(
+            shaded,
+            sheen_light_contribution(
+                normal,
+                view,
+                incoming,
+                radiance,
+                sheen_color,
+                sheen_roughness,
             ),
         );
     }
@@ -341,6 +373,17 @@ fn shade_pbr_base_color(
                 radiance,
                 clearcoat_factor,
                 clearcoat_roughness,
+            ),
+        );
+        shaded = add_vec3(
+            shaded,
+            sheen_light_contribution(
+                normal,
+                view,
+                incoming,
+                radiance,
+                sheen_color,
+                sheen_roughness,
             ),
         );
     }

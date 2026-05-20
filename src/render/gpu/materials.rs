@@ -268,6 +268,26 @@ fn create_material_resource(
         ),
         texture_binding_mode,
     );
+    let sheen_color = create_texture_binding_resource(
+        device,
+        queue,
+        "sheen_color",
+        MaterialTextureUpload::from_sheen_color_texture(
+            slot.and_then(|slot| slot.sheen_color.as_ref())
+                .map(|texture| &texture.desc),
+        ),
+        texture_binding_mode,
+    );
+    let sheen_roughness = create_texture_binding_resource(
+        device,
+        queue,
+        "sheen_roughness",
+        MaterialTextureUpload::from_sheen_roughness_texture(
+            slot.and_then(|slot| slot.sheen_roughness.as_ref())
+                .map(|texture| &texture.desc),
+        ),
+        texture_binding_mode,
+    );
     let texture_bindings = vec![
         base_color,
         normal,
@@ -277,6 +297,8 @@ fn create_material_resource(
         clearcoat,
         clearcoat_roughness,
         clearcoat_normal,
+        sheen_color,
+        sheen_roughness,
     ];
     let texture_byte_len = texture_bindings
         .iter()
@@ -339,6 +361,8 @@ fn create_texture_binding_resource(
                 "clearcoat" => "scena.material.clearcoat",
                 "clearcoat_roughness" => "scena.material.clearcoat_roughness",
                 "clearcoat_normal" => "scena.material.clearcoat_normal",
+                "sheen_color" => "scena.material.sheen_color",
+                "sheen_roughness" => "scena.material.sheen_roughness",
                 _ => "scena.material.texture",
             }
         } else {
@@ -351,6 +375,8 @@ fn create_texture_binding_resource(
                 "clearcoat" => "scena.material.fallback_clearcoat",
                 "clearcoat_roughness" => "scena.material.fallback_clearcoat_roughness",
                 "clearcoat_normal" => "scena.material.fallback_clearcoat_normal",
+                "sheen_color" => "scena.material.fallback_sheen_color",
+                "sheen_roughness" => "scena.material.fallback_sheen_roughness",
                 _ => "scena.material.fallback_texture",
             }
         }),
@@ -522,6 +548,8 @@ mod tests {
                 && bindings_source.contains("CLEARCOAT_BINDINGS")
                 && bindings_source.contains("CLEARCOAT_ROUGHNESS_BINDINGS")
                 && bindings_source.contains("CLEARCOAT_NORMAL_BINDINGS")
+                && bindings_source.contains("SHEEN_COLOR_BINDINGS")
+                && bindings_source.contains("SHEEN_ROUGHNESS_BINDINGS")
                 && bindings_source.contains("MATERIAL_TEXTURE_BINDING_INDICES")
                 && bindings_source.contains("Self::Texture2d => wgpu::TextureViewDimension::D2")
                 && bindings_source.contains("TextureViewDimension::D2Array")
@@ -537,12 +565,16 @@ mod tests {
                 && source.contains("scena.material.clearcoat")
                 && source.contains("scena.material.clearcoat_roughness")
                 && source.contains("scena.material.clearcoat_normal")
+                && source.contains("scena.material.sheen_color")
+                && source.contains("scena.material.sheen_roughness")
                 && source.contains("scena.material.fallback_base_color")
                 && source.contains("scena.material.fallback_bind_group")
                 && batched_source.contains("scena.material.batched_uniform")
                 && batched_source.contains("scena.material.batched_clearcoat")
                 && batched_source.contains("scena.material.batched_clearcoat_roughness")
-                && batched_source.contains("scena.material.batched_clearcoat_normal"),
+                && batched_source.contains("scena.material.batched_clearcoat_normal")
+                && batched_source.contains("scena.material.batched_sheen_color")
+                && batched_source.contains("scena.material.batched_sheen_roughness"),
             "backend material scaffolding must allocate a sampler, texture view, and bind group \
              plus the batched array path that closes plan line 778"
         );

@@ -1,10 +1,8 @@
 use crate::assets::{Assets, TextureHandle};
 use crate::diagnostics::PrepareError;
-use crate::geometry::{
-    GeometryDesc, GeometryTopology, Primitive, PrimitiveVertexAttributes, Vertex,
-};
-use crate::material::{MaterialDesc, MaterialKind};
-use crate::scene::{NodeKey, Scene, Vec3};
+use crate::geometry::{GeometryTopology, Primitive, PrimitiveVertexAttributes, Vertex};
+use crate::material::MaterialKind;
+use crate::scene::{Scene, Vec3};
 
 use self::cpu_bake::{
     CpuBakeCorner, baked_shadow_visibility, cpu_texture_subdivisions, push_material_pass_primitive,
@@ -25,7 +23,8 @@ use self::materials::{
     base_color_texture_sample, clearcoat_normal_texture_sample, clearcoat_roughness_texture_sample,
     clearcoat_texture_sample, emissive_texture_sample, material_pass,
     metallic_roughness_texture_sample, multiply_color, normal_texture_sample,
-    occlusion_texture_sample, render_material_slot, validate_material_texture_handles,
+    occlusion_texture_sample, render_material_slot, sheen_color_texture_sample,
+    sheen_roughness_texture_sample, validate_material_texture_handles,
 };
 pub(super) use self::resources::{
     PreparedLogicalResourceStats, PreparedMaterialSlot, collect_backend_material_slots,
@@ -41,7 +40,10 @@ use self::transforms::{
     compose_transform, identity_matrix4, normal_from_model_matrix, prepared_primitive,
     transform_normal, transform_position, world_from_model_matrix,
 };
-use self::types::{DeformationInputs, PrimitiveBakeParams, PrimitiveSinks, TransparentPrimitive};
+use self::types::{
+    DeformationInputs, GeometryPrimitiveSource, PreparedScene, PrimitiveBakeParams, PrimitiveSinks,
+    TransparentPrimitive,
+};
 use super::{RasterTarget, camera::CameraProjection};
 
 mod cpu_bake;
@@ -64,16 +66,6 @@ mod tangents;
 mod tests;
 pub(super) mod transforms;
 mod types;
-
-/// Collected primitives plus the directional-light view-projection matrix
-/// derived from the shadow occluders used during preparation. The matrix is
-/// the orthographic transform that maps world-space to light-clip-space and
-/// is consumed by the GPU shadow caster pass + fragment-shader shadow
-/// sampling. Phase 1B foundation for scena-wgpu-architect F3.
-pub(super) struct PreparedScene {
-    pub(super) primitives: Vec<Primitive>,
-    pub(super) light_from_world: [f32; 16],
-}
 
 pub(super) fn collect_prepared_primitives<F>(
     target: RasterTarget,
@@ -245,14 +237,6 @@ pub(super) fn collect_prepared_primitives<F>(
         primitives,
         light_from_world,
     })
-}
-
-struct GeometryPrimitiveSource<'a, F> {
-    node: NodeKey,
-    material_handle: crate::assets::MaterialHandle,
-    geometry: &'a GeometryDesc,
-    material: &'a MaterialDesc,
-    assets: &'a Assets<F>,
 }
 
 fn append_geometry_primitives<F>(
@@ -456,6 +440,16 @@ fn append_triangle_primitives<F>(
                                 corner.uv,
                             ),
                             clearcoat_normal,
+                            sheen_color_texture: sheen_color_texture_sample(
+                                source.assets,
+                                source.material,
+                                corner.uv,
+                            ),
+                            sheen_roughness_texture: sheen_roughness_texture_sample(
+                                source.assets,
+                                source.material,
+                                corner.uv,
+                            ),
                             environment: params.environment_lighting.clone(),
                             directional_shadow_factor: corner.shadow_visibility,
                         },

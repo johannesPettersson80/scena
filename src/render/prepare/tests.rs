@@ -1,7 +1,8 @@
 use super::*;
 use crate::assets::Assets;
 use crate::diagnostics::Backend;
-use crate::material::Color;
+use crate::geometry::GeometryDesc;
+use crate::material::{Color, MaterialDesc};
 use crate::scene::Transform;
 
 #[test]

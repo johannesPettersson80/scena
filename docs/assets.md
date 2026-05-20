@@ -98,6 +98,9 @@ See:
 - optional `KHR_materials_clearcoat` scalar factor/roughness parsing plus
   clearcoat, clearcoat-roughness, and clearcoat-normal texture-slot
   sampling for the CPU/reference material path and GPU shader/material path,
+- optional `KHR_materials_sheen` color/roughness factor parsing plus sheen
+  color and sheen roughness texture-slot sampling for the CPU/reference
+  material path and GPU shader/material path,
 - material variants.
 
 KTX2/Basis and meshopt support are available through feature flags. See
@@ -135,11 +138,14 @@ compliance; scena does not reimplement that subset.
 After the official validator runs, the command emits scena-specific renderer
 guidance as `scena.asset_doctor.v1` JSON. Each guidance entry includes a
 severity, status, message, and `fix` string for issues such as required
-clearcoat materials, Draco compression, feature-gated KTX2/meshopt assets, or
-deferred WebP texture-source rebinding.
+clearcoat or sheen materials, Draco compression, feature-gated KTX2/meshopt
+assets, or deferred WebP texture-source rebinding.
 
 For example, optional `KHR_materials_clearcoat` factors and texture slots are
 preserved and the CPU/reference plus GPU shader/material paths sample
 clearcoat, roughness, and clearcoat-normal texture channels, but a required
 clearcoat asset still gets an error when its look may depend on approved
 backend screenshot or readback proof that is not yet release-proven.
+Optional `KHR_materials_sheen` factors and texture slots are also preserved
+and sampled through the CPU/reference plus GPU shader/material paths, with the
+same required-extension release-proof guard.

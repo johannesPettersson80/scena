@@ -118,6 +118,37 @@ pub(super) fn clearcoat_light_contribution(
     scale_vec3(multiply_vec3(specular, radiance), n_dot_l)
 }
 
+pub(super) fn sheen_light_contribution(
+    normal: Vec3,
+    view: Vec3,
+    incoming: Vec3,
+    radiance: Vec3,
+    color: Vec3,
+    roughness: f32,
+) -> Vec3 {
+    let color = clamp_vec3_unit(color);
+    if max_component(color) <= f32::EPSILON {
+        return Vec3::ZERO;
+    }
+    let incoming = normalize_or(incoming, Vec3::ZERO);
+    let n_dot_l = dot_vec3(normal, incoming).max(0.0);
+    if n_dot_l <= f32::EPSILON {
+        return Vec3::ZERO;
+    }
+    let n_dot_v = dot_vec3(normal, view).max(MIN_N_DOT_V);
+    let half_vector = normalize_or(add_vec3(view, incoming), normal);
+    let n_dot_h = dot_vec3(normal, half_vector).max(0.0);
+    let roughness = roughness_or_min(roughness);
+    let alpha = roughness * roughness;
+    let distribution = distribution_ggx(n_dot_h, alpha);
+    let geometry = geometry_smith(n_dot_v, n_dot_l, roughness);
+    let sheen = scale_vec3(
+        color,
+        distribution * geometry / (4.0 * n_dot_v * n_dot_l).max(MIN_DENOMINATOR),
+    );
+    scale_vec3(multiply_vec3(sheen, radiance), n_dot_l)
+}
+
 pub(super) fn environment_split_sum_contribution(
     material: PbrMaterial,
     normal: Vec3,
@@ -224,6 +255,18 @@ fn clamp_unit(value: f32) -> f32 {
     }
 }
 
+fn clamp_vec3_unit(value: Vec3) -> Vec3 {
+    Vec3::new(
+        clamp_unit(value.x),
+        clamp_unit(value.y),
+        clamp_unit(value.z),
+    )
+}
+
+fn max_component(value: Vec3) -> f32 {
+    value.x.max(value.y).max(value.z)
+}
+
 fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
     Vec3::new(left.x + right.x, left.y + right.y, left.z + right.z)
 }
@@ -312,6 +355,29 @@ mod tests {
         assert!(
             on.x > 0.0 && on.y > 0.0 && on.z > 0.0,
             "clearcoat must add a white dielectric specular lobe"
+        );
+    }
+
+    #[test]
+    fn sheen_light_contribution_adds_colored_lobe() {
+        let normal = Vec3::new(0.0, 0.0, 1.0);
+        let view = normal;
+        let incoming = normal;
+        let radiance = Vec3::new(1.0, 1.0, 1.0);
+        let off = sheen_light_contribution(normal, view, incoming, radiance, Vec3::ZERO, 0.35);
+        let red = sheen_light_contribution(
+            normal,
+            view,
+            incoming,
+            radiance,
+            Vec3::new(1.0, 0.0, 0.0),
+            0.35,
+        );
+
+        assert_eq!(off, Vec3::ZERO);
+        assert!(
+            red.x > 0.0 && red.y == 0.0 && red.z == 0.0,
+            "sheen must add a colored texture/factor-driven lobe"
         );
     }
 }

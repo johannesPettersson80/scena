@@ -32,6 +32,8 @@ pub(in crate::render) struct PreparedMaterialSlot {
     pub(in crate::render) clearcoat: Option<PreparedMaterialTexture>,
     pub(in crate::render) clearcoat_roughness: Option<PreparedMaterialTexture>,
     pub(in crate::render) clearcoat_normal: Option<PreparedMaterialTexture>,
+    pub(in crate::render) sheen_color: Option<PreparedMaterialTexture>,
+    pub(in crate::render) sheen_roughness: Option<PreparedMaterialTexture>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -333,12 +335,27 @@ fn collect_backend_material_slot<F>(
         material.clearcoat_normal_texture(),
         material.clearcoat_normal_texture_transform(),
     );
+    let sheen_color = collect_backend_material_texture(
+        assets,
+        material.sheen_color_texture(),
+        material.sheen_color_texture_transform(),
+    );
+    let sheen_roughness = collect_backend_material_texture(
+        assets,
+        material.sheen_roughness_texture(),
+        material.sheen_roughness_texture_transform(),
+    );
     if matches!(material.kind(), MaterialKind::Unlit)
         && base_color.is_none()
         && normal.is_none()
         && metallic_roughness.is_none()
         && occlusion.is_none()
         && emissive.is_none()
+        && clearcoat.is_none()
+        && clearcoat_roughness.is_none()
+        && clearcoat_normal.is_none()
+        && sheen_color.is_none()
+        && sheen_roughness.is_none()
     {
         return None;
     }
@@ -352,6 +369,8 @@ fn collect_backend_material_slot<F>(
         clearcoat,
         clearcoat_roughness,
         clearcoat_normal,
+        sheen_color,
+        sheen_roughness,
         material,
     })
 }
@@ -392,6 +411,8 @@ fn collect_material_textures<F>(
         material.clearcoat_texture(),
         material.clearcoat_roughness_texture(),
         material.clearcoat_normal_texture(),
+        material.sheen_color_texture(),
+        material.sheen_roughness_texture(),
     ]
     .into_iter()
     .flatten()
@@ -440,7 +461,7 @@ fn collect_material_texture_diagnostics_from_material<F>(
     }
 }
 
-fn material_texture_slots(material: &MaterialDesc) -> [(&'static str, Option<TextureHandle>); 8] {
+fn material_texture_slots(material: &MaterialDesc) -> [(&'static str, Option<TextureHandle>); 10] {
     [
         ("base_color", material.base_color_texture()),
         ("normal", material.normal_texture()),
@@ -453,6 +474,8 @@ fn material_texture_slots(material: &MaterialDesc) -> [(&'static str, Option<Tex
             material.clearcoat_roughness_texture(),
         ),
         ("clearcoat_normal", material.clearcoat_normal_texture()),
+        ("sheen_color", material.sheen_color_texture()),
+        ("sheen_roughness", material.sheen_roughness_texture()),
     ]
 }
 
@@ -605,6 +628,8 @@ mod tests {
         let clearcoat = decoded_test_texture(&assets);
         let clearcoat_roughness = decoded_test_texture(&assets);
         let clearcoat_normal = decoded_test_texture(&assets);
+        let sheen_color = decoded_test_texture(&assets);
+        let sheen_roughness = decoded_test_texture(&assets);
         let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.25, 0.25, 0.25));
         let material_with_textures = assets.create_material(
             MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.25, 0.75)
@@ -617,7 +642,11 @@ mod tests {
                 .with_clearcoat_texture(clearcoat)
                 .with_clearcoat_roughness_factor(1.0)
                 .with_clearcoat_roughness_texture(clearcoat_roughness)
-                .with_clearcoat_normal_texture(clearcoat_normal),
+                .with_clearcoat_normal_texture(clearcoat_normal)
+                .with_sheen_color_factor(Color::WHITE)
+                .with_sheen_color_texture(sheen_color)
+                .with_sheen_roughness_factor(1.0)
+                .with_sheen_roughness_texture(sheen_roughness),
         );
         let material_without_textures =
             assets.create_material(MaterialDesc::pbr_metallic_roughness(
@@ -673,6 +702,14 @@ mod tests {
         assert_eq!(
             slots[0].clearcoat_normal.as_ref().map(|slot| slot.handle),
             Some(clearcoat_normal)
+        );
+        assert_eq!(
+            slots[0].sheen_color.as_ref().map(|slot| slot.handle),
+            Some(sheen_color)
+        );
+        assert_eq!(
+            slots[0].sheen_roughness.as_ref().map(|slot| slot.handle),
+            Some(sheen_roughness)
         );
         assert_eq!(
             slots[1].handle, material_without_textures,

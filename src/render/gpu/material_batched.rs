@@ -146,6 +146,32 @@ pub(super) fn create_batched_material_resources(
         },
         || MaterialTextureUpload::from_clearcoat_normal_texture(None),
     );
+    let sheen_color = create_batched_role_resource(
+        device,
+        queue,
+        "sheen_color",
+        layer_count,
+        material_slots,
+        |slot| {
+            MaterialTextureUpload::from_sheen_color_texture(
+                slot.sheen_color.as_ref().map(|texture| &texture.desc),
+            )
+        },
+        || MaterialTextureUpload::from_sheen_color_texture(None),
+    );
+    let sheen_roughness = create_batched_role_resource(
+        device,
+        queue,
+        "sheen_roughness",
+        layer_count,
+        material_slots,
+        |slot| {
+            MaterialTextureUpload::from_sheen_roughness_texture(
+                slot.sheen_roughness.as_ref().map(|texture| &texture.desc),
+            )
+        },
+        || MaterialTextureUpload::from_sheen_roughness_texture(None),
+    );
     let texture_bindings = vec![
         base_color,
         normal,
@@ -155,6 +181,8 @@ pub(super) fn create_batched_material_resources(
         clearcoat,
         clearcoat_roughness,
         clearcoat_normal,
+        sheen_color,
+        sheen_roughness,
     ];
     let texture_byte_len = texture_bindings
         .iter()
@@ -233,6 +261,8 @@ where
             "clearcoat" => "scena.material.batched_clearcoat",
             "clearcoat_roughness" => "scena.material.batched_clearcoat_roughness",
             "clearcoat_normal" => "scena.material.batched_clearcoat_normal",
+            "sheen_color" => "scena.material.batched_sheen_color",
+            "sheen_roughness" => "scena.material.batched_sheen_roughness",
             _ => "scena.material.batched_texture",
         }),
         size: wgpu::Extent3d {

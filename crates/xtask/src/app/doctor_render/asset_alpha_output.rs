@@ -51,12 +51,18 @@ pub(crate) fn check_asset_api_contracts(root: &Path, findings: &mut Vec<Finding>
         root,
         findings,
         "ARCH-ASSET-API",
+        "src/material/types.rs",
+        &["pub enum MaterialKind"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ASSET-API",
         "src/material.rs",
         &[
             "pub struct MaterialDesc",
             "pub const DEFAULT_STROKE_WIDTH_PX",
             "pub const DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES",
-            "pub enum MaterialKind",
             "Unlit",
             "PbrMetallicRoughness",
             "Line",
@@ -95,7 +101,6 @@ pub(crate) fn check_asset_api_contracts(root: &Path, findings: &mut Vec<Finding>
             "pub const fn edge_angle_threshold_degrees(&self) -> Option<f32>",
             "metallic_factor: clamp_unit_or",
             "roughness_factor: clamp_unit_or",
-            "cutoff: clamp_unit_or",
             "self.emissive_strength = non_negative_or",
             "DEFAULT_STROKE_WIDTH_PX",
             "DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES",
@@ -155,6 +160,13 @@ pub(crate) fn check_render_alpha_contracts(root: &Path, findings: &mut Vec<Findi
             "BackendPassthrough",
             "pub alpha_pipeline: AlphaPipelineStatus",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ASSET-API",
+        "src/material/scalars.rs",
+        &["cutoff: clamp_unit_or"],
     );
     require_contains(
         root,

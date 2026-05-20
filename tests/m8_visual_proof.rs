@@ -28,6 +28,7 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
         render_texture_slots(),
         render_environment_color_management(),
         render_clearcoat_material_feature(),
+        render_sheen_material_feature(),
     ];
     let expected_artifacts = [
         "m8-unlit-textured-asset",
@@ -39,6 +40,7 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
         "m8-texture-slots",
         "m8-environment-color-management",
         "m8-clearcoat-material-feature",
+        "m8-sheen-material-feature",
     ];
     for expected in expected_artifacts {
         assert!(
@@ -79,6 +81,21 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
                 clearcoat_highlight > matte_highlight + 4,
                 "clearcoat visual proof must brighten the right-side specular response; \
                  matte={matte_highlight:?} clearcoat={clearcoat_highlight:?}"
+            );
+        }
+        if artifact.name == "m8-sheen-material-feature" {
+            let black_sheen =
+                max_luminance_in_region(&artifact.rgba, artifact.width, 0, artifact.width / 2);
+            let red_sheen = max_luminance_in_region(
+                &artifact.rgba,
+                artifact.width,
+                artifact.width / 2,
+                artifact.width,
+            );
+            assert!(
+                red_sheen > black_sheen + 4,
+                "sheen visual proof must brighten the right-side texture/factor response; \
+                 black={black_sheen:?} red={red_sheen:?}"
             );
         }
         write_ppm_artifact(&artifact_dir, &artifact);
@@ -459,6 +476,47 @@ fn render_clearcoat_material_feature() -> VisualArtifact {
     left.proof_class = "clearcoat-before-after-cpu-headless-256";
     left.source_hash = Some(fnv1a64_hex(
         b"generated-rust-scene:m8-clearcoat-material-feature:clearcoat-before-after",
+    ));
+    left
+}
+
+fn render_sheen_material_feature() -> VisualArtifact {
+    let assets = Assets::new();
+    let black = load_pixel_texture(&assets, [0, 0, 0, 255], TextureColorSpace::Srgb);
+    let red = load_pixel_texture(&assets, [255, 0, 0, 255], TextureColorSpace::Srgb);
+    let base = MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(104, 96, 92), 0.0, 0.72)
+        .with_sheen_color_factor(Color::WHITE)
+        .with_sheen_roughness_factor(0.35);
+    let no_sheen = base.clone().with_sheen_color_texture(black);
+    let red_sheen = base.with_sheen_color_texture(red);
+    let mut left = render_material_box(
+        "m8-sheen-left",
+        &assets,
+        no_sheen,
+        None,
+        true,
+        "sheen-before",
+    );
+    let right = render_material_box(
+        "m8-sheen-right",
+        &assets,
+        red_sheen,
+        None,
+        true,
+        "sheen-after",
+    );
+
+    for y in 0..left.height {
+        for x in left.width / 2..left.width {
+            let src = ((y * right.width + x) * 4) as usize;
+            let dst = ((y * left.width + x) * 4) as usize;
+            left.rgba[dst..dst + 4].copy_from_slice(&right.rgba[src..src + 4]);
+        }
+    }
+    left.name = "m8-sheen-material-feature";
+    left.proof_class = "sheen-before-after-cpu-headless-256";
+    left.source_hash = Some(fnv1a64_hex(
+        b"generated-rust-scene:m8-sheen-material-feature:sheen-before-after",
     ));
     left
 }

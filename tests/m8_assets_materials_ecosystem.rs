@@ -299,6 +299,157 @@ fn m8_clearcoat_texture_slots_are_parsed_from_gltf() {
 }
 
 #[test]
+fn m8_sheen_material_factors_are_parsed_from_gltf() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://sheen-factors.gltf"),
+        br#"{
+            "asset": { "version": "2.0" },
+            "extensionsUsed": ["KHR_materials_sheen"],
+            "materials": [
+                {
+                    "pbrMetallicRoughness": {
+                        "baseColorFactor": [0.5, 0.5, 0.5, 1.0],
+                        "metallicFactor": 0.0,
+                        "roughnessFactor": 0.7
+                    },
+                    "extensions": {
+                        "KHR_materials_sheen": {
+                            "sheenColorFactor": [0.7, 0.2, 0.1],
+                            "sheenRoughnessFactor": 0.42
+                        }
+                    }
+                }
+            ],
+            "meshes": [{
+                "primitives": [
+                    { "attributes": { "POSITION": 0 }, "indices": 1, "material": 0 }
+                ]
+            }],
+            "nodes": [{ "name": "SheenMat", "mesh": 0 }],
+            "buffers": [{ "byteLength": 42, "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAABAAIA" }],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0,  "byteLength": 36 },
+                { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
+            ],
+            "accessors": [
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
+            ]
+        }"#
+        .to_vec(),
+    )]));
+
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://sheen-factors.gltf")).expect("loads");
+    let material = assets
+        .material(scene_asset.nodes()[0].meshes()[0].material())
+        .expect("material");
+
+    assert_eq!(
+        material.sheen_color_factor(),
+        Color::from_linear_rgb(0.7, 0.2, 0.1),
+        "KHR_materials_sheen.sheenColorFactor must propagate into MaterialDesc",
+    );
+    assert_eq!(
+        material.sheen_roughness_factor(),
+        0.42,
+        "KHR_materials_sheen.sheenRoughnessFactor must propagate into MaterialDesc",
+    );
+}
+
+#[test]
+fn m8_sheen_texture_slots_are_parsed_from_gltf() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://sheen-textures.gltf"),
+        br#"{
+            "asset": { "version": "2.0" },
+            "extensionsUsed": ["KHR_materials_sheen", "KHR_texture_transform"],
+            "images": [
+                { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==" }
+            ],
+            "textures": [{ "source": 0 }],
+            "materials": [
+                {
+                    "extensions": {
+                        "KHR_materials_sheen": {
+                            "sheenColorFactor": [0.6, 0.4, 0.2],
+                            "sheenColorTexture": {
+                                "index": 0,
+                                "extensions": {
+                                    "KHR_texture_transform": { "offset": [0.3, 0.4] }
+                                }
+                            },
+                            "sheenRoughnessFactor": 0.75,
+                            "sheenRoughnessTexture": {
+                                "index": 0,
+                                "extensions": {
+                                    "KHR_texture_transform": { "scale": [0.5, 0.25] }
+                                }
+                            }
+                        }
+                    }
+                }
+            ],
+            "meshes": [{
+                "primitives": [
+                    { "attributes": { "POSITION": 0 }, "indices": 1, "material": 0 }
+                ]
+            }],
+            "nodes": [{ "name": "SheenTextureMat", "mesh": 0 }],
+            "buffers": [{ "byteLength": 42, "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAABAAIA" }],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0,  "byteLength": 36 },
+                { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
+            ],
+            "accessors": [
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
+            ]
+        }"#
+        .to_vec(),
+    )]));
+
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://sheen-textures.gltf")).expect("loads");
+    let material = assets
+        .material(scene_asset.nodes()[0].meshes()[0].material())
+        .expect("material");
+
+    let sheen_color = material.sheen_color_texture().expect("sheen color texture");
+    let sheen_roughness = material
+        .sheen_roughness_texture()
+        .expect("sheen roughness texture");
+    assert_eq!(
+        assets
+            .texture(sheen_color)
+            .expect("sheen color texture descriptor")
+            .color_space(),
+        TextureColorSpace::Srgb
+    );
+    assert_eq!(
+        assets
+            .texture(sheen_roughness)
+            .expect("sheen roughness texture descriptor")
+            .color_space(),
+        TextureColorSpace::Linear
+    );
+    assert_eq!(
+        material
+            .sheen_color_texture_transform()
+            .expect("sheen color transform")
+            .offset(),
+        [0.3, 0.4]
+    );
+    assert_eq!(
+        material
+            .sheen_roughness_texture_transform()
+            .expect("sheen roughness transform")
+            .scale(),
+        [0.5, 0.25]
+    );
+}
+
+#[test]
 fn m8_optional_real_world_gltf_extensions_report_degradation_metadata() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from("memory://extensions.gltf"),
@@ -2209,6 +2360,24 @@ fn m8_clearcoat_normal_texture_affects_cpu_preview_pixels() {
 }
 
 #[test]
+fn m8_sheen_png_textures_affect_cpu_preview_pixels() {
+    let black_sheen = render_center_rgb_for_sheen_color_texture([0, 0, 0, 255]);
+    let red_sheen = render_center_rgb_for_sheen_color_texture([255, 0, 0, 255]);
+
+    assert!(
+        red_sheen[0] > black_sheen[0],
+        "sheen color texture RGB must affect CPU preview lighting instead of being silently ignored: black={black_sheen:?} red={red_sheen:?}",
+    );
+
+    let polished = render_max_luminance_for_sheen_roughness_texture([0, 0, 0, 0]);
+    let rough = render_max_luminance_for_sheen_roughness_texture([0, 0, 0, 255]);
+    assert_ne!(
+        polished, rough,
+        "sheen roughness texture alpha channel must affect CPU preview lighting instead of being silently ignored",
+    );
+}
+
+#[test]
 fn m8_missing_texture_slots_fail_with_actionable_asset_error() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from("memory://missing-texture.gltf"),
@@ -3415,6 +3584,38 @@ fn render_max_luminance_for_clearcoat_normal_texture(pixel: [u8; 4]) -> u8 {
     )
 }
 
+fn render_center_rgb_for_sheen_color_texture(pixel: [u8; 4]) -> [u8; 3] {
+    let png = png_rgba8(1, 1, &[pixel]);
+    let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+    let uri = format!("data:image/png;base64,{encoded}");
+    let assets = Assets::new();
+    let texture = pollster::block_on(assets.load_texture(uri, TextureColorSpace::Srgb))
+        .expect("sheen color texture loads");
+    render_center_rgb_with_assets(
+        &assets,
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(104, 96, 92), 0.0, 0.72)
+            .with_sheen_color_factor(Color::WHITE)
+            .with_sheen_roughness_factor(0.35)
+            .with_sheen_color_texture(texture),
+    )
+}
+
+fn render_max_luminance_for_sheen_roughness_texture(pixel: [u8; 4]) -> u8 {
+    let png = png_rgba8(1, 1, &[pixel]);
+    let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+    let uri = format!("data:image/png;base64,{encoded}");
+    let assets = Assets::new();
+    let texture = pollster::block_on(assets.load_texture(uri, TextureColorSpace::Linear))
+        .expect("sheen roughness texture loads");
+    render_max_luminance_with_assets(
+        &assets,
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(104, 96, 92), 0.0, 0.72)
+            .with_sheen_color_factor(Color::WHITE)
+            .with_sheen_roughness_factor(1.0)
+            .with_sheen_roughness_texture(texture),
+    )
+}
+
 fn render_center_rgb_with_assets(assets: &Assets, material: MaterialDesc) -> [u8; 3] {
     let frame = render_frame_with_assets(assets, material);
     let center = ((48 / 2) * 48 + (48 / 2)) as usize * 4;
@@ -3533,6 +3734,8 @@ fn scene_texture_descs<F>(
                 material.clearcoat_texture(),
                 material.clearcoat_roughness_texture(),
                 material.clearcoat_normal_texture(),
+                material.sheen_color_texture(),
+                material.sheen_roughness_texture(),
             ]
         })
         .flatten()

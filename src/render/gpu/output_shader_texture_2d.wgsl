@@ -71,6 +71,10 @@ struct MaterialUniform {
     // .z = clearcoatNormalTexture.scale
     // .w = reserved
     clearcoat_factors: vec4<f32>,
+    // KHR_materials_sheen scalar factors.
+    // .rgb = sheenColorFactor
+    // .a = sheenRoughnessFactor
+    sheen_factors: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -155,6 +159,18 @@ var clearcoat_normal_sampler: sampler;
 @group(1) @binding(16)
 var clearcoat_normal_texture: texture_2d<f32>;
 
+@group(1) @binding(17)
+var sheen_color_sampler: sampler;
+
+@group(1) @binding(18)
+var sheen_color_texture: texture_2d<f32>;
+
+@group(1) @binding(19)
+var sheen_roughness_sampler: sampler;
+
+@group(1) @binding(20)
+var sheen_roughness_texture: texture_2d<f32>;
+
 @vertex
 fn vs_main(in: VertexIn) -> VertexOut {
     var out: VertexOut;
@@ -184,6 +200,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let clearcoat_sample = textureSample(clearcoat_texture, clearcoat_sampler, in.tex_coord0);
     let clearcoat_roughness_sample = textureSample(clearcoat_roughness_texture, clearcoat_roughness_sampler, in.tex_coord0);
     let clearcoat_normal_sample = textureSample(clearcoat_normal_texture, clearcoat_normal_sampler, in.tex_coord0).rgb;
+    let sheen_color_sample = textureSample(sheen_color_texture, sheen_color_sampler, in.tex_coord0);
+    let sheen_roughness_sample = textureSample(sheen_roughness_texture, sheen_roughness_sampler, in.tex_coord0);
     // Phase 5.1: apply normalTexture.scale to the tangent-space X/Y
     // components before TBN reconstruction. Z stays unscaled so the
     // unit-length invariant holds after normalize().
@@ -210,6 +228,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     );
     let clearcoat_tangent_normal = normalize(scaled_clearcoat_normal);
     let clearcoat_normal = normalize(clearcoat_tangent_normal.x * world_tangent + clearcoat_tangent_normal.y * bitangent + clearcoat_tangent_normal.z * world_normal);
+    let sheen_color = material.sheen_factors.rgb * sheen_color_sample.rgb;
+    let sheen_roughness = clamp(material.sheen_factors.a * sheen_roughness_sample.a, 0.04, 1.0);
     let metallic = clamp(material.metallic_roughness_alpha.x * metallic_roughness_sample.b, 0.0, 1.0);
     let roughness = clamp(material.metallic_roughness_alpha.y * metallic_roughness_sample.g, 0.04, 1.0);
     // Phase 5.1: occlusionTexture.strength lerps between 1.0 and the
@@ -235,6 +255,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
             clearcoat_normal,
             clearcoat_factor,
             clearcoat_roughness,
+            sheen_color,
+            sheen_roughness,
             in.world_position,
             in.shadow_visibility,
         );
@@ -282,6 +304,8 @@ fn pbr_punctual_lighting(
     clearcoat_normal: vec3<f32>,
     clearcoat_factor: f32,
     clearcoat_roughness: f32,
+    sheen_color: vec3<f32>,
+    sheen_roughness: f32,
     world_position: vec3<f32>,
     shadow_visibility: f32,
 ) -> vec3<f32> {
@@ -303,6 +327,7 @@ fn pbr_punctual_lighting(
             camera.lighting.directional_light_direction_intensity.w * gpu_shadow;
         shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
         shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
+        shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
     }
     if camera.lighting.point_light_position_intensity.w > 0.0 {
         let to_light = camera.lighting.point_light_position_intensity.xyz - world_position;
@@ -312,6 +337,7 @@ fn pbr_punctual_lighting(
             camera.lighting.point_light_position_intensity.w * attenuation;
         shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
         shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
+        shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
     }
     if camera.lighting.spot_light_position_intensity.w > 0.0 {
         let to_light = camera.lighting.spot_light_position_intensity.xyz - world_position;
@@ -327,6 +353,7 @@ fn pbr_punctual_lighting(
             camera.lighting.spot_light_position_intensity.w * attenuation * cone;
         shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
         shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
+        shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
     }
     return shaded;
 }
@@ -431,6 +458,32 @@ fn clearcoat_light_contribution(
     let fresnel = fresnel_schlick(v_dot_h, vec3<f32>(0.04));
     let specular = fresnel * (distribution * geometry / max(4.0 * n_dot_v * n_dot_l, 0.0001));
     return specular * radiance * n_dot_l * factor;
+}
+
+fn sheen_light_contribution(
+    normal: vec3<f32>,
+    view: vec3<f32>,
+    incoming: vec3<f32>,
+    radiance: vec3<f32>,
+    color: vec3<f32>,
+    roughness: f32,
+) -> vec3<f32> {
+    let sheen_color_clamped = clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));
+    if max(sheen_color_clamped.r, max(sheen_color_clamped.g, sheen_color_clamped.b)) <= 0.0 {
+        return vec3<f32>(0.0);
+    }
+    let n_dot_l = max(dot(normal, incoming), 0.0);
+    if n_dot_l <= 0.0 {
+        return vec3<f32>(0.0);
+    }
+    let n_dot_v = max(dot(normal, view), 0.001);
+    let half_vector = normalize(view + incoming);
+    let n_dot_h = max(dot(normal, half_vector), 0.0);
+    let alpha = roughness * roughness;
+    let distribution = distribution_ggx(n_dot_h, alpha);
+    let geometry = geometry_smith(n_dot_v, n_dot_l, roughness);
+    let sheen = sheen_color_clamped * (distribution * geometry / max(4.0 * n_dot_v * n_dot_l, 0.0001));
+    return sheen * radiance * n_dot_l;
 }
 
 fn distribution_ggx(n_dot_h: f32, alpha: f32) -> f32 {

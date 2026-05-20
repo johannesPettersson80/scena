@@ -85,7 +85,7 @@ pub(super) fn check_clearcoat_material_contracts(root: &Path, findings: &mut Vec
         "ASSETS-M8",
         "src/render/gpu/material_uniform.rs",
         &[
-            "MATERIAL_UNIFORM_BYTE_LEN: u64 = 128",
+            "MATERIAL_UNIFORM_BYTE_LEN: u64 = 144",
             "clearcoat_factors",
             "material.clearcoat_factor()",
             "material.clearcoat_roughness_factor()",
