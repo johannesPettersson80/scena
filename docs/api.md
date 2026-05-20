@@ -54,6 +54,8 @@ Additive public API changes after 1.3.0:
 - `Renderer::set_bloom`
 - `Renderer::clear_bloom`
 - `PostBloomConfig`
+- `Renderer::set_anti_aliasing`
+- `AntiAliasing`
 - `Renderer::set_screen_space_ambient_occlusion`
 - `Renderer::clear_screen_space_ambient_occlusion`
 - `ScreenSpaceAmbientOcclusionConfig`

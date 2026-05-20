@@ -38,7 +38,9 @@ pub use self::exposure::{
 use self::gpu::GpuDeviceState;
 pub use self::offscreen::{OffscreenTarget, PixelReadback};
 use self::output::OutputTransform;
-pub use self::output::{PostBloomConfig, ScreenSpaceAmbientOcclusionConfig, Tonemapper};
+pub use self::output::{
+    AntiAliasing, PostBloomConfig, ScreenSpaceAmbientOcclusionConfig, Tonemapper,
+};
 pub use self::settings::{Profile, Quality, RenderMode, RendererOptions};
 
 #[derive(Debug)]
@@ -58,6 +60,7 @@ pub struct Renderer {
     capabilities: Capabilities,
     gpu: Option<GpuDeviceState>,
     output: OutputTransform,
+    anti_aliasing: AntiAliasing,
     screen_space_ambient_occlusion: Option<ScreenSpaceAmbientOcclusionConfig>,
     bloom: Option<PostBloomConfig>,
     profile: Profile,
@@ -198,8 +201,12 @@ impl Renderer {
                     bloom,
                 )
             });
-            self.stats.fxaa_passes =
-                output::apply_fxaa_rgba8(self.target, &mut self.frame, &mut self.fxaa_scratch);
+            self.stats.fxaa_passes = match self.anti_aliasing {
+                AntiAliasing::None => 0,
+                AntiAliasing::Fxaa => {
+                    output::apply_fxaa_rgba8(self.target, &mut self.frame, &mut self.fxaa_scratch)
+                }
+            };
             if auto_exposure_attempted || !self.apply_managed_auto_exposure_after_render() {
                 break;
             }

@@ -3,7 +3,10 @@ use crate::diagnostics::DebugOverlay;
 use crate::material::Color;
 use crate::picking::InteractionStyle;
 
-use super::{Background, PostBloomConfig, Renderer, ScreenSpaceAmbientOcclusionConfig, Tonemapper};
+use super::{
+    AntiAliasing, Background, PostBloomConfig, Renderer, ScreenSpaceAmbientOcclusionConfig,
+    Tonemapper,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
@@ -96,6 +99,17 @@ impl Renderer {
 
     pub fn tonemapper(&self) -> Tonemapper {
         self.output.tonemapper()
+    }
+
+    pub fn anti_aliasing(&self) -> AntiAliasing {
+        self.anti_aliasing
+    }
+
+    pub fn set_anti_aliasing(&mut self, anti_aliasing: AntiAliasing) {
+        if self.anti_aliasing != anti_aliasing {
+            self.anti_aliasing = anti_aliasing;
+            self.mark_output_changed();
+        }
     }
 
     pub fn set_tonemapper(&mut self, tonemapper: Tonemapper) {

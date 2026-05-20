@@ -501,10 +501,17 @@ capability / performance items need structural or measured proof first
 data, allocation/performance gates), plus a rendered reference only when
 the rendered result is part of the contract.
 
-- **Anti-aliasing.** MSAA at minimum; TAA preferred. Owner: `src/render/`.
-  Proof: rendered-output diff against a non-AA reference showing edge
-  quality.
-  Visual proof: reference-image ON/OFF.
+- **Anti-aliasing.** Status: **[shipped]** for the FXAA output-space
+  baseline. `AntiAliasing::Fxaa` is the default and
+  `Renderer::set_anti_aliasing(AntiAliasing::None)` gives deterministic
+  unfiltered output for exact-pixel and ON/OFF proof. MSAA/TAA remain
+  future quality lanes, not part of this claim. Proof:
+  `anti_aliasing_can_be_disabled_for_on_off_visual_proof` asserts the
+  aliased edge stays hard with AA disabled and becomes visibly smoothed
+  with FXAA, while `tests/m2_visual_proof.rs` writes the
+  `anti-aliasing-on-off` reference artifact.
+  Visual proof: reference-image ON/OFF shipped via
+  `target/gate-artifacts/m2-visual/anti-aliasing-on-off.ppm`.
 - **Contact shadows / SSAO.** Status: **[shipped]** for the headless
   CPU / descriptor-backed depth-buffer baseline. `ScreenSpaceAmbientOcclusionConfig::subtle()`
   and `Renderer::set_screen_space_ambient_occlusion(...)` run a
@@ -1683,3 +1690,13 @@ Headless SSAO/contact-shadow baseline pass (2026-05-19):
 - Reclassified contact shadows / SSAO from a genuine renderer gap to
   shipped for the headless CPU baseline while keeping GPU/WebGPU/WebGL2
   SSAO as explicit future backend work.
+
+Anti-aliasing control and ON/OFF proof pass (2026-05-19):
+
+- Added `AntiAliasing` and `Renderer::set_anti_aliasing(...)` so FXAA is
+  explicit and can be disabled for exact-pixel captures and visual proof.
+- Added a focused ON/OFF test plus the M2 `anti-aliasing-on-off`
+  reference artifact to prove edge smoothing against an unfiltered
+  baseline.
+- Reclassified anti-aliasing from a genuine gap to shipped for the FXAA
+  baseline while leaving MSAA/TAA as future renderer-quality lanes.

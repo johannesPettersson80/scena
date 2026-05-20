@@ -58,6 +58,9 @@ All notable user-facing changes are recorded here.
   `Renderer::set_screen_space_ambient_occlusion(...)`, with ON/OFF visual
   proof for depth-contact darkening.
 
+- Added `AntiAliasing` and `Renderer::set_anti_aliasing(...)` so FXAA remains
+  the default but can be disabled for exact-pixel or ON/OFF visual proof.
+
 ### Changed
 
 - Updated the browser demo showcase so connector mating is the default first

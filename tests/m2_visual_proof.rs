@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use scena::{
-    Assets, ClippingPlane, ClippingPlaneSet, Color, DirectionalLight, GeometryDesc,
+    AntiAliasing, Assets, ClippingPlane, ClippingPlaneSet, Color, DirectionalLight, GeometryDesc,
     GeometryTopology, MaterialDesc, PerspectiveCamera, PostBloomConfig, Primitive, Renderer, Scene,
     ScreenSpaceAmbientOcclusionConfig, Transform, Vec3, Vertex,
 };
@@ -132,7 +132,7 @@ struct ReferenceSpec {
     rgba_hash: String,
 }
 
-fn visual_fixtures() -> [VisualFixture; 7] {
+fn visual_fixtures() -> [VisualFixture; 8] {
     [
         VisualFixture {
             name: "direct-lights-pbr",
@@ -161,6 +161,13 @@ fn visual_fixtures() -> [VisualFixture; 7] {
             height: 16,
             render: render_fxaa_edge,
             validate: validate_fxaa_edge,
+        },
+        VisualFixture {
+            name: "anti-aliasing-on-off",
+            width: 32,
+            height: 16,
+            render: render_anti_aliasing_on_off,
+            validate: validate_anti_aliasing_on_off,
         },
         VisualFixture {
             name: "bloom-on-off",
@@ -281,6 +288,84 @@ fn render_fxaa_edge() -> VisualProof {
         )
         .expect("FXAA fixture primitives insert");
     render_scene(scene)
+}
+
+fn render_anti_aliasing_on_off() -> VisualProof {
+    let mut off_scene = fxaa_edge_scene();
+    let mut off_renderer = Renderer::headless(16, 16).expect("AA-off renderer builds");
+    off_renderer.set_anti_aliasing(AntiAliasing::None);
+    off_renderer
+        .prepare(&mut off_scene)
+        .expect("AA-off scene prepares");
+    off_renderer
+        .render_active(&off_scene)
+        .expect("AA-off scene renders");
+
+    let mut on_scene = fxaa_edge_scene();
+    let mut on_renderer = Renderer::headless(16, 16).expect("AA-on renderer builds");
+    on_renderer.set_anti_aliasing(AntiAliasing::Fxaa);
+    on_renderer
+        .prepare(&mut on_scene)
+        .expect("AA-on scene prepares");
+    on_renderer
+        .render_active(&on_scene)
+        .expect("AA-on scene renders");
+
+    let mut frame = vec![0_u8; 32 * 16 * 4];
+    for y in 0..16 {
+        for x in 0..16 {
+            let source = ((y * 16 + x) * 4) as usize;
+            let left = ((y * 32 + x) * 4) as usize;
+            let right = ((y * 32 + x + 16) * 4) as usize;
+            frame[left..left + 4].copy_from_slice(&off_renderer.frame_rgba8()[source..source + 4]);
+            frame[right..right + 4].copy_from_slice(&on_renderer.frame_rgba8()[source..source + 4]);
+        }
+    }
+    VisualProof {
+        frame,
+        stats: on_renderer.stats(),
+    }
+}
+
+fn fxaa_edge_scene() -> Scene {
+    let (mut scene, _camera) = scene_with_camera();
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![
+                Primitive::triangle([
+                    Vertex {
+                        position: Vec3::new(-1.0, -1.0, 0.0),
+                        color: Color::WHITE,
+                    },
+                    Vertex {
+                        position: Vec3::new(0.0, -1.0, 0.0),
+                        color: Color::WHITE,
+                    },
+                    Vertex {
+                        position: Vec3::new(0.0, 1.0, 0.0),
+                        color: Color::WHITE,
+                    },
+                ]),
+                Primitive::triangle([
+                    Vertex {
+                        position: Vec3::new(-1.0, -1.0, 0.0),
+                        color: Color::WHITE,
+                    },
+                    Vertex {
+                        position: Vec3::new(0.0, 1.0, 0.0),
+                        color: Color::WHITE,
+                    },
+                    Vertex {
+                        position: Vec3::new(-1.0, 1.0, 0.0),
+                        color: Color::WHITE,
+                    },
+                ]),
+            ],
+            Transform::default(),
+        )
+        .expect("FXAA fixture primitives insert");
+    scene
 }
 
 fn render_bloom_on_off() -> VisualProof {
@@ -586,6 +671,18 @@ fn validate_fxaa_edge(proof: &VisualProof) {
     assert_eq!(proof.stats.fxaa_passes, 1);
     assert_eq!(pixel_at(&proof.frame, 16, 12, 8), [0, 0, 0, 255]);
     assert!(pixel_at(&proof.frame, 16, 8, 8)[0] > 0);
+}
+
+fn validate_anti_aliasing_on_off(proof: &VisualProof) {
+    assert_eq!(proof.stats.fxaa_passes, 1);
+    let aliased_dark_edge = pixel_at(&proof.frame, 32, 8, 8);
+    let smoothed_dark_edge = pixel_at(&proof.frame, 32, 24, 8);
+    assert_eq!(aliased_dark_edge, [0, 0, 0, 255]);
+    assert!(
+        smoothed_dark_edge[0] > 20,
+        "right-side FXAA proof should smooth the dark side of the hard edge; \
+         off={aliased_dark_edge:?} on={smoothed_dark_edge:?}",
+    );
 }
 
 fn validate_bloom_on_off(proof: &VisualProof) {

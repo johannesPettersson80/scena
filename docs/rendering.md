@@ -115,6 +115,14 @@ renderer.set_bloom(Some(scena::PostBloomConfig::subtle()));
 The bloom pass runs on the output frame before FXAA and is reported through
 `RendererStats::bloom_passes`.
 
+FXAA is the default anti-aliasing path. Disable it only for visual proof or
+when a host wants exact unfiltered pixels:
+
+```rust
+renderer.set_anti_aliasing(scena::AntiAliasing::None);
+renderer.set_anti_aliasing(scena::AntiAliasing::Fxaa);
+```
+
 Headless and descriptor-backed CPU renders can also enable the depth-aware
 screen-space ambient occlusion baseline:
 

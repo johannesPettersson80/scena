@@ -72,6 +72,13 @@ pub enum Tonemapper {
     PbrNeutral,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AntiAliasing {
+    None,
+    #[default]
+    Fxaa,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PostBloomConfig {
     threshold_srgb: u8,

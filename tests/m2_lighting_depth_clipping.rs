@@ -1,12 +1,12 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use scena::{
-    Angle, AssetError, Assets, Backend, Capabilities, CapabilityStatus, ClippingPlane,
-    ClippingPlaneSet, Color, DepthRange, DiagnosticCode, DiagnosticSeverity, DirectionalLight,
-    EnvironmentSourceKind, GeometryDesc, GeometryTopology, Light, MaterialDesc, NodeKind,
-    OrthographicCamera, PerspectiveCamera, PointLight, PostBloomConfig, PrepareError, Primitive,
-    RenderMode, Renderer, RendererOptions, Scene, ScreenSpaceAmbientOcclusionConfig, SpotLight,
-    Transform, Vec3, Vertex,
+    Angle, AntiAliasing, AssetError, Assets, Backend, Capabilities, CapabilityStatus,
+    ClippingPlane, ClippingPlaneSet, Color, DepthRange, DiagnosticCode, DiagnosticSeverity,
+    DirectionalLight, EnvironmentSourceKind, GeometryDesc, GeometryTopology, Light, MaterialDesc,
+    NodeKind, OrthographicCamera, PerspectiveCamera, PointLight, PostBloomConfig, PrepareError,
+    Primitive, RenderMode, Renderer, RendererOptions, Scene, ScreenSpaceAmbientOcclusionConfig,
+    SpotLight, Transform, Vec3, Vertex,
 };
 
 const CAMERA_DISTANCE_FOR_NDC_FIXTURES: f32 = 1.732_050_8;
@@ -987,6 +987,39 @@ fn fxaa_pass_runs_after_pbr_neutral_without_second_tonemap() {
     assert!(
         right_edge[0] > 0,
         "FXAA smooths the dark edge pixel without changing solid black"
+    );
+}
+
+#[test]
+fn anti_aliasing_can_be_disabled_for_on_off_visual_proof() {
+    let mut aliased_scene = split_screen_fxaa_scene();
+    let mut aliased = Renderer::headless(8, 8).expect("aliased renderer builds");
+    aliased.set_anti_aliasing(AntiAliasing::None);
+    aliased
+        .prepare(&mut aliased_scene)
+        .expect("aliased scene prepares");
+    aliased
+        .render_active(&aliased_scene)
+        .expect("aliased scene renders");
+    assert_eq!(aliased.stats().fxaa_passes, 0);
+
+    let mut smoothed_scene = split_screen_fxaa_scene();
+    let mut smoothed = Renderer::headless(8, 8).expect("FXAA renderer builds");
+    smoothed.set_anti_aliasing(AntiAliasing::Fxaa);
+    smoothed
+        .prepare(&mut smoothed_scene)
+        .expect("FXAA scene prepares");
+    smoothed
+        .render_active(&smoothed_scene)
+        .expect("FXAA scene renders");
+    assert_eq!(smoothed.stats().fxaa_passes, 1);
+
+    let aliased_edge = pixel_at(aliased.frame_rgba8(), 8, 4, 4);
+    let smoothed_edge = pixel_at(smoothed.frame_rgba8(), 8, 4, 4);
+    assert_eq!(aliased_edge, [0, 0, 0, 255]);
+    assert!(
+        smoothed_edge[0] > aliased_edge[0] + 20,
+        "FXAA should brighten the dark side of the hard edge; aliased={aliased_edge:?} smoothed={smoothed_edge:?}",
     );
 }
 
