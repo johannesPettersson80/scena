@@ -1,6 +1,12 @@
 use crate::geometry::{Primitive, PrimitiveVertexAttributes, Vertex};
 use crate::scene::{Quat, Transform, Vec3};
 
+pub(super) const fn identity_matrix4() -> [f32; 16] {
+    [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ]
+}
+
 pub(super) fn transform_primitive(
     primitive: &Primitive,
     transform: Transform,

@@ -37,8 +37,9 @@ This lets applications present clear UI instead of failing silently.
 - Texture arrays and texture limits.
 - Shadow support.
 - Environment lighting support.
-- Material feature support such as CPU/reference scalar clearcoat versus
-  backend-gated clearcoat texture and GPU lanes.
+- Material feature support such as CPU/reference clearcoat factor and
+  clearcoat-roughness texture sampling versus backend-gated clearcoat normal
+  shading and GPU lanes.
 - Postprocessing support such as subtle bloom, headless CPU SSAO, and
   headless CPU weighted blended OIT.
 - Wide-gamut output, which is only claimed when a browser canvas color-space

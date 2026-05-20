@@ -89,6 +89,9 @@ impl<F> Assets<F> {
                     material.metallic_roughness_texture(),
                     material.occlusion_texture(),
                     material.emissive_texture(),
+                    material.clearcoat_texture(),
+                    material.clearcoat_roughness_texture(),
+                    material.clearcoat_normal_texture(),
                 ]
                 .into_iter()
                 .flatten()

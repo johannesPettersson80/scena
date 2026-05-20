@@ -1,6 +1,7 @@
 mod asset_instancing;
 mod asset_matrix;
 mod assets_materials;
+mod clearcoat_materials;
 mod ergonomics;
 mod manifest_helpers;
 mod material_texture_diagnostics;

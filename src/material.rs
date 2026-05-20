@@ -55,6 +55,9 @@ pub struct MaterialDesc {
     metallic_roughness_texture: Option<TextureHandle>,
     occlusion_texture: Option<TextureHandle>,
     emissive_texture: Option<TextureHandle>,
+    clearcoat_texture: Option<TextureHandle>,
+    clearcoat_roughness_texture: Option<TextureHandle>,
+    clearcoat_normal_texture: Option<TextureHandle>,
     alpha_mode: AlphaMode,
     emissive: Color,
     emissive_strength: f32,
@@ -74,6 +77,10 @@ pub struct MaterialDesc {
     metallic_roughness_texture_transform: Option<TextureTransform>,
     occlusion_texture_transform: Option<TextureTransform>,
     emissive_texture_transform: Option<TextureTransform>,
+    clearcoat_texture_transform: Option<TextureTransform>,
+    clearcoat_roughness_texture_transform: Option<TextureTransform>,
+    clearcoat_normal_texture_transform: Option<TextureTransform>,
+    clearcoat_normal_scale: f32,
     stroke_width_px: Option<f32>,
     edge_angle_threshold_degrees: Option<f32>,
 }
@@ -120,6 +127,9 @@ impl MaterialDesc {
             metallic_roughness_texture: None,
             occlusion_texture: None,
             emissive_texture: None,
+            clearcoat_texture: None,
+            clearcoat_roughness_texture: None,
+            clearcoat_normal_texture: None,
             alpha_mode: AlphaMode::Opaque,
             emissive: Color::BLACK,
             emissive_strength: 1.0,
@@ -135,6 +145,10 @@ impl MaterialDesc {
             metallic_roughness_texture_transform: None,
             occlusion_texture_transform: None,
             emissive_texture_transform: None,
+            clearcoat_texture_transform: None,
+            clearcoat_roughness_texture_transform: None,
+            clearcoat_normal_texture_transform: None,
+            clearcoat_normal_scale: 1.0,
             stroke_width_px: None,
             edge_angle_threshold_degrees: None,
         }
@@ -153,6 +167,9 @@ impl MaterialDesc {
             metallic_roughness_texture: None,
             occlusion_texture: None,
             emissive_texture: None,
+            clearcoat_texture: None,
+            clearcoat_roughness_texture: None,
+            clearcoat_normal_texture: None,
             alpha_mode: AlphaMode::Opaque,
             emissive: Color::BLACK,
             emissive_strength: 1.0,
@@ -168,6 +185,10 @@ impl MaterialDesc {
             metallic_roughness_texture_transform: None,
             occlusion_texture_transform: None,
             emissive_texture_transform: None,
+            clearcoat_texture_transform: None,
+            clearcoat_roughness_texture_transform: None,
+            clearcoat_normal_texture_transform: None,
+            clearcoat_normal_scale: 1.0,
             stroke_width_px: None,
             edge_angle_threshold_degrees: None,
         }
@@ -212,6 +233,9 @@ impl MaterialDesc {
             metallic_roughness_texture: None,
             occlusion_texture: None,
             emissive_texture: None,
+            clearcoat_texture: None,
+            clearcoat_roughness_texture: None,
+            clearcoat_normal_texture: None,
             alpha_mode: AlphaMode::Opaque,
             emissive: Color::BLACK,
             emissive_strength: 1.0,
@@ -227,6 +251,10 @@ impl MaterialDesc {
             metallic_roughness_texture_transform: None,
             occlusion_texture_transform: None,
             emissive_texture_transform: None,
+            clearcoat_texture_transform: None,
+            clearcoat_roughness_texture_transform: None,
+            clearcoat_normal_texture_transform: None,
+            clearcoat_normal_scale: 1.0,
             stroke_width_px: Some(positive_or(width_px, DEFAULT_STROKE_WIDTH_PX)),
             edge_angle_threshold_degrees,
         }
@@ -280,6 +308,30 @@ impl MaterialDesc {
         self.emissive_texture_transform
     }
 
+    pub const fn clearcoat_texture(&self) -> Option<TextureHandle> {
+        self.clearcoat_texture
+    }
+
+    pub const fn clearcoat_texture_transform(&self) -> Option<TextureTransform> {
+        self.clearcoat_texture_transform
+    }
+
+    pub const fn clearcoat_roughness_texture(&self) -> Option<TextureHandle> {
+        self.clearcoat_roughness_texture
+    }
+
+    pub const fn clearcoat_roughness_texture_transform(&self) -> Option<TextureTransform> {
+        self.clearcoat_roughness_texture_transform
+    }
+
+    pub const fn clearcoat_normal_texture(&self) -> Option<TextureHandle> {
+        self.clearcoat_normal_texture
+    }
+
+    pub const fn clearcoat_normal_texture_transform(&self) -> Option<TextureTransform> {
+        self.clearcoat_normal_texture_transform
+    }
+
     pub const fn alpha_mode(&self) -> AlphaMode {
         self.alpha_mode
     }
@@ -300,11 +352,10 @@ impl MaterialDesc {
         self.roughness_factor
     }
 
-    /// Returns the untextured `KHR_materials_clearcoat.clearcoatFactor`.
+    /// Returns the scalar `KHR_materials_clearcoat.clearcoatFactor`.
     ///
-    /// A value of `0.0` disables the clearcoat layer. This first clearcoat
-    /// baseline supports scalar factors on the CPU/reference path; clearcoat
-    /// texture slots remain a separate glTF support lane.
+    /// The renderer multiplies this value by the sampled clearcoat texture
+    /// when one is present.
     pub const fn clearcoat_factor(&self) -> f32 {
         self.clearcoat_factor
     }
@@ -312,6 +363,10 @@ impl MaterialDesc {
     /// Returns the untextured `KHR_materials_clearcoat.clearcoatRoughnessFactor`.
     pub const fn clearcoat_roughness_factor(&self) -> f32 {
         self.clearcoat_roughness_factor
+    }
+
+    pub const fn clearcoat_normal_scale(&self) -> f32 {
+        self.clearcoat_normal_scale
     }
 
     pub const fn double_sided(&self) -> bool {
@@ -435,6 +490,47 @@ impl MaterialDesc {
 
     pub const fn with_emissive_texture_transform(mut self, transform: TextureTransform) -> Self {
         self.emissive_texture_transform = Some(transform);
+        self
+    }
+
+    pub const fn with_clearcoat_texture(mut self, texture: TextureHandle) -> Self {
+        self.clearcoat_texture = Some(texture);
+        self
+    }
+
+    pub const fn with_clearcoat_texture_transform(mut self, transform: TextureTransform) -> Self {
+        self.clearcoat_texture_transform = Some(transform);
+        self
+    }
+
+    pub const fn with_clearcoat_roughness_texture(mut self, texture: TextureHandle) -> Self {
+        self.clearcoat_roughness_texture = Some(texture);
+        self
+    }
+
+    pub const fn with_clearcoat_roughness_texture_transform(
+        mut self,
+        transform: TextureTransform,
+    ) -> Self {
+        self.clearcoat_roughness_texture_transform = Some(transform);
+        self
+    }
+
+    pub const fn with_clearcoat_normal_texture(mut self, texture: TextureHandle) -> Self {
+        self.clearcoat_normal_texture = Some(texture);
+        self
+    }
+
+    pub const fn with_clearcoat_normal_texture_transform(
+        mut self,
+        transform: TextureTransform,
+    ) -> Self {
+        self.clearcoat_normal_texture_transform = Some(transform);
+        self
+    }
+
+    pub const fn with_clearcoat_normal_scale(mut self, scale: f32) -> Self {
+        self.clearcoat_normal_scale = non_negative_or(scale, 1.0);
         self
     }
 

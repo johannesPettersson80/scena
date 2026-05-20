@@ -17,6 +17,8 @@ pub(super) struct MaterialShadingInput {
     pub(super) metallic_roughness_texture: (f32, f32),
     pub(super) occlusion_texture: f32,
     pub(super) emissive_texture: Color,
+    pub(super) clearcoat_texture: f32,
+    pub(super) clearcoat_roughness_texture: f32,
     pub(super) environment: PreparedEnvironmentLighting,
     pub(super) directional_shadow_factor: f32,
 }
@@ -253,8 +255,9 @@ fn shade_pbr_base_color(
     let roughness =
         roughness_or_min(material.roughness_factor() * input.metallic_roughness_texture.1);
     let pbr_material = PbrMaterial::new(base_rgb, metallic, roughness);
-    let clearcoat_factor = material.clearcoat_factor();
-    let clearcoat_roughness = roughness_or_min(material.clearcoat_roughness_factor());
+    let clearcoat_factor = clamp_unit(material.clearcoat_factor() * input.clearcoat_texture);
+    let clearcoat_roughness =
+        roughness_or_min(material.clearcoat_roughness_factor() * input.clearcoat_roughness_texture);
     let mut shaded = Vec3::ZERO;
 
     for light in &lights.directional {

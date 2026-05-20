@@ -368,6 +368,9 @@ fn collect_material_textures<F>(
         material.metallic_roughness_texture(),
         material.occlusion_texture(),
         material.emissive_texture(),
+        material.clearcoat_texture(),
+        material.clearcoat_roughness_texture(),
+        material.clearcoat_normal_texture(),
     ]
     .into_iter()
     .flatten()
@@ -416,13 +419,19 @@ fn collect_material_texture_diagnostics_from_material<F>(
     }
 }
 
-fn material_texture_slots(material: &MaterialDesc) -> [(&'static str, Option<TextureHandle>); 5] {
+fn material_texture_slots(material: &MaterialDesc) -> [(&'static str, Option<TextureHandle>); 8] {
     [
         ("base_color", material.base_color_texture()),
         ("normal", material.normal_texture()),
         ("metallic_roughness", material.metallic_roughness_texture()),
         ("occlusion", material.occlusion_texture()),
         ("emissive", material.emissive_texture()),
+        ("clearcoat", material.clearcoat_texture()),
+        (
+            "clearcoat_roughness",
+            material.clearcoat_roughness_texture(),
+        ),
+        ("clearcoat_normal", material.clearcoat_normal_texture()),
     ]
 }
 

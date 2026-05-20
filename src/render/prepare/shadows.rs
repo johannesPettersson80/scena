@@ -1,10 +1,11 @@
-use crate::assets::Assets;
+use crate::assets::{Assets, MaterialHandle};
 use crate::diagnostics::PrepareError;
 use crate::geometry::{Aabb, GeometryDesc, GeometryTopology, GeometryVertex};
 use crate::scene::{NodeKey, Scene, Transform, Vec3};
 
 use super::DeformationInputs;
 use super::lighting::PreparedLights;
+use super::materials::render_material_slot;
 use super::transforms::{compose_transform, transform_position, transform_primitive};
 
 #[derive(Clone, Copy)]
@@ -82,6 +83,23 @@ pub(super) fn collect_shadow_occluders<F>(
     }
 
     Ok(occluders)
+}
+
+pub(super) fn cpu_shadow_visibility_required(
+    scene: &Scene,
+    backend_material_slots: &[MaterialHandle],
+) -> bool {
+    for (_node, mesh, _transform) in scene.mesh_nodes() {
+        if render_material_slot(mesh.material(), backend_material_slots) == 0 {
+            return true;
+        }
+    }
+    for (_node, instance_set, _transform) in scene.instance_set_nodes() {
+        if render_material_slot(instance_set.material(), backend_material_slots) == 0 {
+            return true;
+        }
+    }
+    false
 }
 
 pub(super) fn collect_shadow_projection_points<F>(

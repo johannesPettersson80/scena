@@ -145,6 +145,40 @@ pub(super) fn occlusion_texture_sample(
         .unwrap_or(1.0)
 }
 
+pub(super) fn clearcoat_texture_sample(
+    assets: &Assets<impl Sized>,
+    material: &MaterialDesc,
+    uv: [f32; 2],
+) -> f32 {
+    let Some(texture) = material.clearcoat_texture() else {
+        return 1.0;
+    };
+    assets
+        .sample_texture(
+            texture,
+            transform_texture_uv(uv, material.clearcoat_texture_transform()),
+        )
+        .map(|sample| sample.r.clamp(0.0, 1.0))
+        .unwrap_or(1.0)
+}
+
+pub(super) fn clearcoat_roughness_texture_sample(
+    assets: &Assets<impl Sized>,
+    material: &MaterialDesc,
+    uv: [f32; 2],
+) -> f32 {
+    let Some(texture) = material.clearcoat_roughness_texture() else {
+        return 1.0;
+    };
+    assets
+        .sample_texture(
+            texture,
+            transform_texture_uv(uv, material.clearcoat_roughness_texture_transform()),
+        )
+        .map(|sample| sample.g.clamp(0.0, 1.0))
+        .unwrap_or(1.0)
+}
+
 pub(super) fn multiply_color(left: Color, right: Color) -> Color {
     Color::from_linear_rgba(
         left.r * right.r,
@@ -196,6 +230,12 @@ fn material_texture_slots(
         ("metallic_roughness", material.metallic_roughness_texture()),
         ("occlusion", material.occlusion_texture()),
         ("emissive", material.emissive_texture()),
+        ("clearcoat", material.clearcoat_texture()),
+        (
+            "clearcoat_roughness",
+            material.clearcoat_roughness_texture(),
+        ),
+        ("clearcoat_normal", material.clearcoat_normal_texture()),
     ]
     .into_iter()
     .filter_map(|(slot, texture)| texture.map(|texture| (slot, texture)))

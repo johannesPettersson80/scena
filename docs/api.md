@@ -64,8 +64,15 @@ Additive public API changes after 1.3.0:
 - `OrderIndependentTransparencyConfig`
 - `MaterialDesc::with_clearcoat_factor`
 - `MaterialDesc::with_clearcoat_roughness_factor`
+- `MaterialDesc::with_clearcoat_texture`
+- `MaterialDesc::with_clearcoat_roughness_texture`
+- `MaterialDesc::with_clearcoat_normal_texture`
 - `MaterialDesc::clearcoat_factor`
 - `MaterialDesc::clearcoat_roughness_factor`
+- `MaterialDesc::clearcoat_texture`
+- `MaterialDesc::clearcoat_roughness_texture`
+- `MaterialDesc::clearcoat_normal_texture`
+- `MaterialDesc::clearcoat_normal_scale`
 - `RendererStats::ambient_occlusion_passes`
 - `RendererStats::order_independent_transparency_passes`
 - `RendererStats::bloom_passes`

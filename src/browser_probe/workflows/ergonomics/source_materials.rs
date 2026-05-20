@@ -42,6 +42,9 @@ pub(super) async fn source_gltf_materials_scene() -> Result<WorkflowScene, JsVal
         material.metallic_roughness_texture(),
         material.occlusion_texture(),
         material.emissive_texture(),
+        material.clearcoat_texture(),
+        material.clearcoat_roughness_texture(),
+        material.clearcoat_normal_texture(),
     ]
     .into_iter()
     .flatten()

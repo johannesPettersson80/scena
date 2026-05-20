@@ -93,6 +93,9 @@ pub struct SceneMaterialInspection {
     metallic_roughness_texture: Option<SceneTextureInspection>,
     occlusion_texture: Option<SceneTextureInspection>,
     emissive_texture: Option<SceneTextureInspection>,
+    clearcoat_texture: Option<SceneTextureInspection>,
+    clearcoat_roughness_texture: Option<SceneTextureInspection>,
+    clearcoat_normal_texture: Option<SceneTextureInspection>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -439,6 +442,30 @@ impl SceneMaterialInspection {
     pub const fn emissive_texture(&self) -> Option<SceneTextureInspection> {
         self.emissive_texture
     }
+
+    pub const fn has_clearcoat_texture(&self) -> bool {
+        self.clearcoat_texture.is_some()
+    }
+
+    pub const fn clearcoat_texture(&self) -> Option<SceneTextureInspection> {
+        self.clearcoat_texture
+    }
+
+    pub const fn has_clearcoat_roughness_texture(&self) -> bool {
+        self.clearcoat_roughness_texture.is_some()
+    }
+
+    pub const fn clearcoat_roughness_texture(&self) -> Option<SceneTextureInspection> {
+        self.clearcoat_roughness_texture
+    }
+
+    pub const fn has_clearcoat_normal_texture(&self) -> bool {
+        self.clearcoat_normal_texture.is_some()
+    }
+
+    pub const fn clearcoat_normal_texture(&self) -> Option<SceneTextureInspection> {
+        self.clearcoat_normal_texture
+    }
 }
 
 impl SceneTextureInspection {
@@ -507,6 +534,12 @@ impl SceneMaterialInspection {
             metallic_roughness_texture: texture_preview(desc.metallic_roughness_texture(), assets),
             occlusion_texture: texture_preview(desc.occlusion_texture(), assets),
             emissive_texture: texture_preview(desc.emissive_texture(), assets),
+            clearcoat_texture: texture_preview(desc.clearcoat_texture(), assets),
+            clearcoat_roughness_texture: texture_preview(
+                desc.clearcoat_roughness_texture(),
+                assets,
+            ),
+            clearcoat_normal_texture: texture_preview(desc.clearcoat_normal_texture(), assets),
         }
     }
 }

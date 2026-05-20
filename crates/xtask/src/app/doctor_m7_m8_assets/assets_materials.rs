@@ -1,8 +1,10 @@
 use super::asset_instancing::check_m8_instancing_contracts;
+use super::clearcoat_materials::check_clearcoat_material_contracts;
 use super::material_texture_diagnostics::check_material_texture_diagnostic_contracts;
 use crate::app::prelude::*;
 pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Vec<Finding>) {
     check_m8_instancing_contracts(root, findings);
+    check_clearcoat_material_contracts(root, findings);
     require_contains(
         root,
         findings,
@@ -129,7 +131,6 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
         &[
             "m8_missing_texture_slots_fail_with_actionable_asset_error",
             "m8_modern_optional_extensions_have_explicit_v1x_defer_metadata",
-            "m8_clearcoat_material_factors_are_parsed_from_gltf",
             "m8_metallic_roughness_factors_affect_cpu_preview_pixels",
             "GltfDecoderPolicy::FeatureFlag",
             "GltfDecoderPolicy::External",

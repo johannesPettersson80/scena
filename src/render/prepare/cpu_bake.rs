@@ -31,6 +31,9 @@ pub(super) fn cpu_texture_subdivisions(
         || material.metallic_roughness_texture().is_some()
         || material.occlusion_texture().is_some()
         || material.emissive_texture().is_some()
+        || material.clearcoat_texture().is_some()
+        || material.clearcoat_roughness_texture().is_some()
+        || material.clearcoat_normal_texture().is_some()
     {
         48
     } else {

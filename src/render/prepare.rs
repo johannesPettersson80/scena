@@ -22,23 +22,24 @@ pub(in crate::render) use self::environment::{
 use self::lighting::{MaterialShadingInput, PreparedLights, material_color};
 pub(super) use self::lighting::{PreparedGpuLightUniform, collect_gpu_light_uniform};
 use self::materials::{
-    base_color_texture_sample, emissive_texture_sample, material_pass,
-    metallic_roughness_texture_sample, multiply_color, normal_texture_sample,
-    occlusion_texture_sample, render_material_slot, validate_material_texture_handles,
+    base_color_texture_sample, clearcoat_roughness_texture_sample, clearcoat_texture_sample,
+    emissive_texture_sample, material_pass, metallic_roughness_texture_sample, multiply_color,
+    normal_texture_sample, occlusion_texture_sample, render_material_slot,
+    validate_material_texture_handles,
 };
 pub(super) use self::resources::{
     PreparedLogicalResourceStats, PreparedMaterialSlot, collect_backend_material_slots,
     collect_logical_resource_stats, collect_material_texture_diagnostics,
 };
-use self::shadows::collect_shadow_occluders;
+use self::shadows::{collect_shadow_occluders, cpu_shadow_visibility_required};
 pub(super) use self::stats::{
     PreparedDepthStats, PreparedEnvironmentStats, PreparedLightingStats,
     collect_depth_prepass_stats, collect_environment_prepare_stats, collect_lighting_stats,
 };
 use self::tangents::{accumulate_vertex_tangents, authored_vertex_tangents};
 use self::transforms::{
-    compose_transform, normal_from_model_matrix, prepared_primitive, transform_normal,
-    transform_position, world_from_model_matrix,
+    compose_transform, identity_matrix4, normal_from_model_matrix, prepared_primitive,
+    transform_normal, transform_position, world_from_model_matrix,
 };
 use self::types::{DeformationInputs, PrimitiveBakeParams, PrimitiveSinks, TransparentPrimitive};
 use super::{RasterTarget, camera::CameraProjection};
@@ -246,29 +247,6 @@ pub(super) fn collect_prepared_primitives<F>(
     })
 }
 
-fn cpu_shadow_visibility_required(
-    scene: &Scene,
-    backend_material_slots: &[crate::assets::MaterialHandle],
-) -> bool {
-    for (_node, mesh, _transform) in scene.mesh_nodes() {
-        if render_material_slot(mesh.material(), backend_material_slots) == 0 {
-            return true;
-        }
-    }
-    for (_node, instance_set, _transform) in scene.instance_set_nodes() {
-        if render_material_slot(instance_set.material(), backend_material_slots) == 0 {
-            return true;
-        }
-    }
-    false
-}
-
-const fn identity_matrix4() -> [f32; 16] {
-    [
-        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-    ]
-}
-
 struct GeometryPrimitiveSource<'a, F> {
     node: NodeKey,
     material_handle: crate::assets::MaterialHandle,
@@ -457,6 +435,16 @@ fn append_triangle_primitives<F>(
                                 corner.uv,
                             ),
                             emissive_texture: emissive_texture_sample(
+                                source.assets,
+                                source.material,
+                                corner.uv,
+                            ),
+                            clearcoat_texture: clearcoat_texture_sample(
+                                source.assets,
+                                source.material,
+                                corner.uv,
+                            ),
+                            clearcoat_roughness_texture: clearcoat_roughness_texture_sample(
                                 source.assets,
                                 source.material,
                                 corner.uv,

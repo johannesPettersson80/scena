@@ -183,6 +183,122 @@ fn m8_clearcoat_material_factors_are_parsed_from_gltf() {
 }
 
 #[test]
+fn m8_clearcoat_texture_slots_are_parsed_from_gltf() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://clearcoat-textures.gltf"),
+        br#"{
+            "asset": { "version": "2.0" },
+            "extensionsUsed": ["KHR_materials_clearcoat", "KHR_texture_transform"],
+            "images": [
+                { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==" }
+            ],
+            "textures": [{ "source": 0 }],
+            "materials": [
+                {
+                    "extensions": {
+                        "KHR_materials_clearcoat": {
+                            "clearcoatFactor": 0.8,
+                            "clearcoatTexture": {
+                                "index": 0,
+                                "extensions": {
+                                    "KHR_texture_transform": { "offset": [0.1, 0.2] }
+                                }
+                            },
+                            "clearcoatRoughnessFactor": 0.4,
+                            "clearcoatRoughnessTexture": {
+                                "index": 0,
+                                "extensions": {
+                                    "KHR_texture_transform": { "scale": [0.25, 0.5] }
+                                }
+                            },
+                            "clearcoatNormalTexture": {
+                                "index": 0,
+                                "scale": 1.75,
+                                "extensions": {
+                                    "KHR_texture_transform": { "texCoord": 1 }
+                                }
+                            }
+                        }
+                    }
+                }
+            ],
+            "meshes": [{
+                "primitives": [
+                    { "attributes": { "POSITION": 0 }, "indices": 1, "material": 0 }
+                ]
+            }],
+            "nodes": [{ "name": "ClearcoatTextureMat", "mesh": 0 }],
+            "buffers": [{ "byteLength": 42, "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAABAAIA" }],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0,  "byteLength": 36 },
+                { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
+            ],
+            "accessors": [
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
+            ]
+        }"#
+        .to_vec(),
+    )]));
+
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://clearcoat-textures.gltf")).expect("loads");
+    let meshes: Vec<_> = scene_asset.nodes()[0].meshes().to_vec();
+    let material = assets.material(meshes[0].material()).expect("material");
+
+    let clearcoat = material.clearcoat_texture().expect("clearcoat texture");
+    let roughness = material
+        .clearcoat_roughness_texture()
+        .expect("clearcoat roughness texture");
+    let normal = material
+        .clearcoat_normal_texture()
+        .expect("clearcoat normal texture");
+    assert_eq!(
+        assets
+            .texture(clearcoat)
+            .expect("clearcoat texture descriptor")
+            .color_space(),
+        TextureColorSpace::Linear
+    );
+    assert_eq!(
+        assets
+            .texture(roughness)
+            .expect("clearcoat roughness texture descriptor")
+            .color_space(),
+        TextureColorSpace::Linear
+    );
+    assert_eq!(
+        assets
+            .texture(normal)
+            .expect("clearcoat normal texture descriptor")
+            .color_space(),
+        TextureColorSpace::Linear
+    );
+    assert_eq!(
+        material
+            .clearcoat_texture_transform()
+            .expect("clearcoat transform")
+            .offset(),
+        [0.1, 0.2]
+    );
+    assert_eq!(
+        material
+            .clearcoat_roughness_texture_transform()
+            .expect("roughness transform")
+            .scale(),
+        [0.25, 0.5]
+    );
+    assert_eq!(
+        material
+            .clearcoat_normal_texture_transform()
+            .expect("normal transform")
+            .tex_coord(),
+        Some(1)
+    );
+    assert_eq!(material.clearcoat_normal_scale(), 1.75);
+}
+
+#[test]
 fn m8_optional_real_world_gltf_extensions_report_degradation_metadata() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from("memory://extensions.gltf"),
@@ -1983,6 +2099,24 @@ fn m8_occlusion_png_texture_affects_cpu_preview_pixels() {
 }
 
 #[test]
+fn m8_clearcoat_png_textures_affect_cpu_preview_pixels() {
+    let no_clearcoat = render_max_luminance_for_clearcoat_texture([0, 0, 0, 255]);
+    let full_clearcoat = render_max_luminance_for_clearcoat_texture([255, 0, 0, 255]);
+
+    assert!(
+        full_clearcoat > no_clearcoat,
+        "clearcoat texture R channel must affect CPU preview lighting instead of being silently ignored: off={no_clearcoat} on={full_clearcoat}",
+    );
+
+    let polished = render_max_luminance_for_clearcoat_roughness_texture([0, 0, 0, 255]);
+    let rough = render_max_luminance_for_clearcoat_roughness_texture([0, 255, 0, 255]);
+    assert_ne!(
+        polished, rough,
+        "clearcoat roughness texture G channel must affect CPU preview lighting instead of being silently ignored",
+    );
+}
+
+#[test]
 fn m8_missing_texture_slots_fail_with_actionable_asset_error() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from("memory://missing-texture.gltf"),
@@ -3141,7 +3275,53 @@ fn render_center_rgb_for_occlusion_texture(pixel: [u8; 4]) -> [u8; 3] {
     )
 }
 
+fn render_max_luminance_for_clearcoat_texture(pixel: [u8; 4]) -> u8 {
+    let png = png_rgba8(1, 1, &[pixel]);
+    let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+    let uri = format!("data:image/png;base64,{encoded}");
+    let assets = Assets::new();
+    let texture = pollster::block_on(assets.load_texture(uri, TextureColorSpace::Linear))
+        .expect("clearcoat texture loads");
+    render_max_luminance_with_assets(
+        &assets,
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(188, 48, 32), 0.0, 0.62)
+            .with_clearcoat_factor(1.0)
+            .with_clearcoat_roughness_factor(0.12)
+            .with_clearcoat_texture(texture),
+    )
+}
+
+fn render_max_luminance_for_clearcoat_roughness_texture(pixel: [u8; 4]) -> u8 {
+    let png = png_rgba8(1, 1, &[pixel]);
+    let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+    let uri = format!("data:image/png;base64,{encoded}");
+    let assets = Assets::new();
+    let texture = pollster::block_on(assets.load_texture(uri, TextureColorSpace::Linear))
+        .expect("clearcoat roughness texture loads");
+    render_max_luminance_with_assets(
+        &assets,
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(188, 48, 32), 0.0, 0.62)
+            .with_clearcoat_factor(1.0)
+            .with_clearcoat_roughness_factor(1.0)
+            .with_clearcoat_roughness_texture(texture),
+    )
+}
+
 fn render_center_rgb_with_assets(assets: &Assets, material: MaterialDesc) -> [u8; 3] {
+    let frame = render_frame_with_assets(assets, material);
+    let center = ((48 / 2) * 48 + (48 / 2)) as usize * 4;
+    [frame[center], frame[center + 1], frame[center + 2]]
+}
+
+fn render_max_luminance_with_assets(assets: &Assets, material: MaterialDesc) -> u8 {
+    render_frame_with_assets(assets, material)
+        .chunks_exact(4)
+        .map(|rgba| rgba[0].max(rgba[1]).max(rgba[2]))
+        .max()
+        .unwrap_or(0)
+}
+
+fn render_frame_with_assets(assets: &Assets, material: MaterialDesc) -> Vec<u8> {
     let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.75, 0.75, 0.75));
     let material = assets.create_material(material);
     let mut scene = Scene::new();
@@ -3161,10 +3341,7 @@ fn render_center_rgb_with_assets(assets: &Assets, material: MaterialDesc) -> [u8
         .prepare_with_assets(&mut scene, assets)
         .expect("scene prepares");
     renderer.render(&scene, camera).expect("scene renders");
-
-    let center = ((48 / 2) * 48 + (48 / 2)) as usize * 4;
-    let frame = renderer.frame_rgba8();
-    [frame[center], frame[center + 1], frame[center + 2]]
+    renderer.frame_rgba8().to_vec()
 }
 
 fn sample_rgb(frame: &[u8], width: u32, height: u32, x: u32, y: u32) -> [u8; 3] {
@@ -3234,6 +3411,9 @@ fn scene_texture_descs<F>(
                 material.metallic_roughness_texture(),
                 material.occlusion_texture(),
                 material.emissive_texture(),
+                material.clearcoat_texture(),
+                material.clearcoat_roughness_texture(),
+                material.clearcoat_normal_texture(),
             ]
         })
         .flatten()

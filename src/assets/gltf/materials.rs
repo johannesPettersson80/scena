@@ -180,10 +180,54 @@ pub(super) fn parse_materials(
             if let Some(strength) = material.emissive_strength() {
                 desc = desc.with_emissive_strength(strength);
             }
-            if let Some(clearcoat) = clearcoat_factors(document, material_index) {
+            if let Some(clearcoat) = clearcoat_extension(document, material_index) {
                 desc = desc
                     .with_clearcoat_factor(clearcoat.factor)
                     .with_clearcoat_roughness_factor(clearcoat.roughness_factor);
+                if let Some(info) = clearcoat.texture {
+                    let texture = texture_slot(
+                        path,
+                        "clearcoatTexture",
+                        info.index,
+                        textures,
+                        storage,
+                        TextureColorSpace::Linear,
+                    )?;
+                    desc = desc.with_clearcoat_texture(texture);
+                    if let Some(transform) = info.transform {
+                        desc = desc.with_clearcoat_texture_transform(transform);
+                    }
+                }
+                if let Some(info) = clearcoat.roughness_texture {
+                    let texture = texture_slot(
+                        path,
+                        "clearcoatRoughnessTexture",
+                        info.index,
+                        textures,
+                        storage,
+                        TextureColorSpace::Linear,
+                    )?;
+                    desc = desc.with_clearcoat_roughness_texture(texture);
+                    if let Some(transform) = info.transform {
+                        desc = desc.with_clearcoat_roughness_texture_transform(transform);
+                    }
+                }
+                if let Some(info) = clearcoat.normal_texture {
+                    let texture = texture_slot(
+                        path,
+                        "clearcoatNormalTexture",
+                        info.index,
+                        textures,
+                        storage,
+                        TextureColorSpace::Linear,
+                    )?;
+                    desc = desc
+                        .with_clearcoat_normal_texture(texture)
+                        .with_clearcoat_normal_scale(info.scale.unwrap_or(1.0));
+                    if let Some(transform) = info.transform {
+                        desc = desc.with_clearcoat_normal_texture_transform(transform);
+                    }
+                }
             }
             desc = match material.alpha_mode() {
                 ::gltf::material::AlphaMode::Opaque => desc,
@@ -210,12 +254,22 @@ pub(super) fn parse_materials(
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ClearcoatFactors {
+struct ClearcoatExtension {
     factor: f32,
     roughness_factor: f32,
+    texture: Option<ClearcoatTextureInfo>,
+    roughness_texture: Option<ClearcoatTextureInfo>,
+    normal_texture: Option<ClearcoatTextureInfo>,
 }
 
-fn clearcoat_factors(document: &Document, material_index: usize) -> Option<ClearcoatFactors> {
+#[derive(Debug, Clone, Copy)]
+struct ClearcoatTextureInfo {
+    index: usize,
+    transform: Option<TextureTransform>,
+    scale: Option<f32>,
+}
+
+fn clearcoat_extension(document: &Document, material_index: usize) -> Option<ClearcoatExtension> {
     let extension = document
         .as_json()
         .materials
@@ -224,9 +278,29 @@ fn clearcoat_factors(document: &Document, material_index: usize) -> Option<Clear
         .as_ref()?
         .others
         .get("KHR_materials_clearcoat")?;
-    Some(ClearcoatFactors {
+    Some(ClearcoatExtension {
         factor: read_factor(extension, "clearcoatFactor").unwrap_or(0.0),
         roughness_factor: read_factor(extension, "clearcoatRoughnessFactor").unwrap_or(0.0),
+        texture: read_clearcoat_texture_info(extension, "clearcoatTexture"),
+        roughness_texture: read_clearcoat_texture_info(extension, "clearcoatRoughnessTexture"),
+        normal_texture: read_clearcoat_texture_info(extension, "clearcoatNormalTexture"),
+    })
+}
+
+fn read_clearcoat_texture_info(
+    extension: &serde_json::Value,
+    key: &str,
+) -> Option<ClearcoatTextureInfo> {
+    let info = extension.get(key)?;
+    let index = usize::try_from(info.get("index")?.as_u64()?).ok()?;
+    let transform = extension_texture_transform(
+        info.get("extensions")
+            .and_then(|extensions| extensions.get("KHR_texture_transform")),
+    );
+    Some(ClearcoatTextureInfo {
+        index,
+        transform,
+        scale: read_factor(info, "scale"),
     })
 }
 
@@ -294,6 +368,25 @@ fn validate_material_texture_indices(
                 .map(|info| info.index.value()),
             texture_count,
         )?;
+        if let Some(clearcoat) = material
+            .extensions
+            .as_ref()
+            .and_then(|extensions| extensions.others.get("KHR_materials_clearcoat"))
+        {
+            for (slot, key) in [
+                ("clearcoatTexture", "clearcoatTexture"),
+                ("clearcoatRoughnessTexture", "clearcoatRoughnessTexture"),
+                ("clearcoatNormalTexture", "clearcoatNormalTexture"),
+            ] {
+                validate_texture_info(
+                    path,
+                    material_index,
+                    slot,
+                    read_clearcoat_texture_info(clearcoat, key).map(|info| info.index),
+                    texture_count,
+                )?;
+            }
+        }
     }
     Ok(())
 }
