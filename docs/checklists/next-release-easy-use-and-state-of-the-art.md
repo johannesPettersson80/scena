@@ -645,13 +645,19 @@ the rendered result is part of the contract.
   `target/gate-artifacts/m8-visual/m8-transmission-volume-material-feature.ppm`;
   physical GPU/WebGPU/WebGL2 transmission/volume glass parity remains a
   future backend lane.
-- **Clustered / tiled light culling.** Babylon 9 made this baseline.
+- **Clustered / tiled light culling.** Status: **[deferred]**. Not a
+  v1.4 critical-path item; keep it as future GPU/backend scale work.
+  Babylon 9 made this baseline.
   Proof: many-light stress scene proves correct light selection,
   stable frame time / allocation behavior, and no dropped-light fallback.
   Visual proof: reference-image of the stress scene; not an ON/OFF gate.
-- **Area lights with LTC** (rect/disc/sphere).
+- **Area lights with LTC** (rect/disc/sphere). Status:
+  **[deferred]**. Not a v1.4 critical-path item; keep it as a future
+  physically richer lighting lane.
   Visual proof: reference-image before/after per light shape.
-- **Screen-space reflections (SSR).**
+- **Screen-space reflections (SSR).** Status: **[deferred]**. Not a
+  v1.4 critical-path item; keep it as a future reflective-floor backend
+  lane.
   Visual proof: reference-image ON/OFF on a reflective-floor control.
 - **Order-independent transparency (OIT).** Status: **[shipped]** for
   the headless CPU / descriptor-backed weighted-blended baseline.
@@ -681,7 +687,9 @@ the rendered result is part of the contract.
   WebGPU `GPUCanvasConfiguration.colorSpace` with effective `display-p3`,
   and `doctor --full` source-enforces the option, capability, browser output
   configuration, and proof artifact shape.
-- **Draco mesh compression** (`KHR_draco_mesh_compression`).
+- **Draco mesh compression** (`KHR_draco_mesh_compression`). Status:
+  **[deferred]**. Mirrors the §1.3 Draco decision; not a v1.4
+  critical-path item.
   Proof: decode/import assertions against a known compressed fixture,
   package-size/build-time impact for any optional feature, and a rendered
   reference proving the decoded asset survives the normal pipeline.
@@ -696,9 +704,10 @@ the rendered result is part of the contract.
   Visual proof: reference-image of the repeated-part fixture; not an
   ON/OFF renderer-feature gate.
 
-### 3.2 Implemented but not ergonomic — [ergonomic-gap]
+### 3.2 Ergonomics closed out
 
-These exist in the source but the user surface or default story isn't there.
+These started as source-level features with missing user surfaces or
+default stories. The active rows below are now status-tagged explicitly.
 
 Visual proof for this bucket: **reference-image of a known asset rendered
 through each feature path** (KTX2-textured asset render, meshopt
@@ -1760,6 +1769,15 @@ Picking/outline/hover reconciliation pass (2026-05-19):
   drop-in renderer parity proof: custom element foundation, browser UI
   proof, and three-asset side-by-side `<model-viewer>` comparison are all
   present.
+
+Roadmap status closeout pass (2026-05-20):
+
+- Marked the remaining untagged §3.1 research lanes as `[deferred]`
+  instead of leaving them as implicit active gaps: clustered/tiled light
+  culling, LTC area lights, SSR, and the duplicate Draco row now point to
+  future backend or decoder lanes.
+- Renamed the §3.2 heading so `[ergonomic-gap]` appears only in legend or
+  history text, not as an active section status.
 
 Camera-control browser-proof pass (2026-05-19):
 
