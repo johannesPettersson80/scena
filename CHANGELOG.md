@@ -31,6 +31,9 @@ All notable user-facing changes are recorded here.
 - Added `<scena-viewer>` drag/drop render-after-drop browser proof: accepted
   GLB `File` bytes are loaded through the browser asset pipeline and rendered
   into the element canvas.
+- Added custom-element auto-framing proof metadata for dropped GLB renders:
+  the M6 browser proof now asserts projected bounds are inside the viewport,
+  centered, and fill-correct under `viewer-level-auto-framing`.
 
 - Added connector magnet preview APIs for editor-style drag-to-assemble UIs:
   `Scene::preview_connector_magnet`, `ConnectionMagnetPreview`, and

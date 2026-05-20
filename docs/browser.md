@@ -71,7 +71,11 @@ rejected names and a user-facing message. The custom element owns validation
 and browser events, and the M6 browser proof now renders the accepted dropped
 GLB bytes into the element canvas through the renderer-owned
 `scena-viewer-drop-render` proof path. This is the render-after-drop
-contract for the custom element.
+contract for the custom element. The same proof records
+`viewer-level-auto-framing` metadata from the rendered asset's projected
+bounds, including viewport containment, centering, and fill fraction, so the
+browser path proves the model is visible without host-side `frame_bounds()`
+calls.
 
 Hosts can expose material variants through the built-in material variant picker
 with `setMaterialVariants(variants, activeName)`. The picker accepts string

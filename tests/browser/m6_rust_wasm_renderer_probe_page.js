@@ -209,6 +209,11 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     drop_render_file_name: dropRender.metadata.file_name,
     drop_render_roots: dropRender.metadata.roots,
     drop_render_pixels_nonblack: dropRender.pixels.nonblack,
+    drop_render_auto_frame_status: dropRender.metadata.auto_frame.status,
+    drop_render_auto_frame_proof_class: dropRender.metadata.auto_frame.proof_class,
+    drop_render_auto_frame_inside_viewport: dropRender.metadata.auto_frame.inside_viewport,
+    drop_render_auto_frame_centered: dropRender.metadata.auto_frame.centered,
+    drop_render_auto_frame_fill_fraction: dropRender.metadata.auto_frame.fill_fraction,
   };
 
   const passed =
@@ -251,7 +256,13 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     checks.drop_render_workflow === "scena-viewer-drop-render" &&
     checks.drop_render_file_name === "accepted-machine.glb" &&
     checks.drop_render_roots > 0 &&
-    checks.drop_render_pixels_nonblack > 0;
+    checks.drop_render_pixels_nonblack > 0 &&
+    checks.drop_render_auto_frame_status === "passed" &&
+    checks.drop_render_auto_frame_proof_class === "viewer-level-auto-framing" &&
+    checks.drop_render_auto_frame_inside_viewport === true &&
+    checks.drop_render_auto_frame_centered === true &&
+    checks.drop_render_auto_frame_fill_fraction > 0.2 &&
+    checks.drop_render_auto_frame_fill_fraction <= 0.75;
 
   return {
     schema: "scena.scena_viewer_element_browser_proof.v1",

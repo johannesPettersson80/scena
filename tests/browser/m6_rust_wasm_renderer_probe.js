@@ -569,9 +569,14 @@ function assertScenaViewerElementProof(result) {
     checks.drop_render_workflow !== "scena-viewer-drop-render" ||
     checks.drop_render_file_name !== "accepted-machine.glb" ||
     !(checks.drop_render_roots > 0) ||
-    !(checks.drop_render_pixels_nonblack > 0)
+    !(checks.drop_render_pixels_nonblack > 0) ||
+    checks.drop_render_auto_frame_status !== "passed" ||
+    checks.drop_render_auto_frame_proof_class !== "viewer-level-auto-framing" ||
+    checks.drop_render_auto_frame_inside_viewport !== true ||
+    checks.drop_render_auto_frame_centered !== true ||
+    !(checks.drop_render_auto_frame_fill_fraction > 0.2 && checks.drop_render_auto_frame_fill_fraction <= 0.75)
   ) {
-    throw new Error(`<scena-viewer> proof did not exercise drag/drop render-after-drop: ${JSON.stringify(result)}`);
+    throw new Error(`<scena-viewer> proof did not exercise drag/drop render-after-drop with auto-framing: ${JSON.stringify(result)}`);
   }
 }
 

@@ -150,17 +150,21 @@ custom element.
 
 ### 1.2 Auto-framing as the default at the viewer level
 
-Status: **[ergonomic-gap]** — viewer builders already frame imported
-assets by default (`ViewerCommonOptions::frame_import = true`), and the
-scene-level `Scene::add_perspective_camera_default_for(bounds, viewport)`
-helper now exists. The remaining gap is the custom-element/browser-demo
-surface plus stored browser-rendered proof.
+Status: **[shipped]** — viewer builders already frame imported assets by
+default (`ViewerCommonOptions::frame_import = true`), the scene-level
+`Scene::add_perspective_camera_default_for(bounds, viewport)` helper now
+exists, and the `<scena-viewer>` browser proof records viewer-level
+auto-framing metadata from a real dropped GLB render.
 Owner: `src/viewer.rs` (`InteractiveGltfViewer`, `HeadlessGltfViewer`)
 and the future `<scena-viewer>`. Not on `Camera::default()` — that
 has no bounds or viewport.
-Proof: viewer-level integration test asserting "load → render" produces
-a centered, fill-correct frame without any `frame_bounds()` call in user
-code, plus a browser screenshot artifact for the custom element path.
+Proof: viewer-level integration tests assert "load → render" produces a
+centered, fill-correct frame without any `frame_bounds()` call in user
+code. The focused M6 custom-element proof drops a GLB `File`, loads the
+accepted bytes through `m6RenderDroppedFileProbe`, renders into the
+element canvas, and records `viewer-level-auto-framing` projected-bounds
+metadata: inside viewport, centered, and fill fraction `0.6991069` on the
+96x64 WebGL2 proof path.
 Visual proof: reference-image + browser-demo
 
 ```rust
@@ -770,7 +774,10 @@ browser proof writes
 `scena.scena_viewer_element_browser_proof.v1`; it drops a GLB `File`,
 loads the dropped bytes through the browser asset pipeline, renders the
 accepted result into the element canvas with proof class
-`scena-viewer-drop-render`, and asserts visible pixels.
+`scena-viewer-drop-render`, asserts visible pixels, and records
+viewer-level auto-framing browser proof **[shipped]** under
+`viewer-level-auto-framing` with projected-bounds containment, centering,
+and fill-fraction checks.
 Visual proof: browser-demo shipped through the generated custom-element
 browser proof artifact. Animated recording remains optional polish for
 the public Cloudflare demo, not a blocker for the library contract.
@@ -1431,6 +1438,10 @@ Picking/outline/hover reconciliation pass (2026-05-19):
   `File`, passes the accepted bytes to `m6RenderDroppedFileProbe`, renders
   the parsed asset into the `<scena-viewer>` canvas, and asserts visible
   pixels under proof class `scena-viewer-drop-render`.
+- Added viewer-level auto-framing browser proof **[shipped]** to the same
+  path: the proof records `viewer-level-auto-framing` projected-bounds
+  metadata and asserts the dropped GLB is inside the viewport, centered,
+  and fill-correct without host-side `frame_bounds()` calls.
 - Reclassified WASM drag-and-drop from proof gap to shipped for
   ingestion, validation, and render-after-drop browser proof.
 
