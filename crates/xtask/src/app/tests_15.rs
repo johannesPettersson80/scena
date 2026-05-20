@@ -3,6 +3,7 @@ use crate::app::tests_12::{VALID_GUIDE, write_easy_scene_fixture};
 
 pub(crate) fn write_asset_validation_easy_scene_fixture(fixture_root: &Path) {
     fs::create_dir_all(fixture_root.join("crates/xtask/src/app")).expect("xtask fixture dir");
+    fs::create_dir_all(fixture_root.join("src/assets/gltf")).expect("gltf fixture dir");
     fs::write(
         fixture_root.join("docs/assets.md"),
         "cargo run -p xtask -- asset-doctor official Khronos glTF Validator SCENA_GLTF_VALIDATOR scena.asset_doctor.v1 fix",
@@ -20,9 +21,14 @@ pub(crate) fn write_asset_validation_easy_scene_fixture(fixture_root: &Path) {
     .expect("asset validation fixture");
     fs::write(
         fixture_root.join("crates/xtask/src/app/tests_15.rs"),
-        "parse_command_accepts_asset_doctor_path asset_doctor_native_guidance_reports_required_clearcoat_with_fix asset_doctor_official_validator_uses_khronos_stdout_mode",
+        "parse_command_accepts_asset_doctor_path asset_doctor_native_guidance_reports_required_clearcoat_with_fix asset_doctor_official_validator_uses_khronos_stdout_mode suggested_fix",
     )
     .expect("asset validation test fixture");
+    fs::write(
+        fixture_root.join("src/assets/gltf/extensions.rs"),
+        "GltfExtensionDiagnostic suggested_fix decoder_policy",
+    )
+    .expect("gltf extension diagnostic fixture");
     let checklist_path =
         fixture_root.join("docs/checklists/next-release-easy-use-and-state-of-the-art.md");
     let mut checklist =

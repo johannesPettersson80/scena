@@ -288,6 +288,10 @@ Most errors include a stable category plus contextual data. Use pattern matching
 for application behavior and `.help()` or diagnostics output for user-facing
 messages.
 
+glTF extension diagnostics from `SceneAsset::extension_diagnostics()` also
+include `suggested_fix()` and `decoder_policy()` so importer and asset-review
+UIs can show the same actionable remediation used by the asset doctor.
+
 ## Stats and capabilities
 
 `Renderer` exposes runtime information for:

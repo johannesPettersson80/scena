@@ -258,7 +258,9 @@ the official Khronos glTF Validator CLI in stdout mode (`gltf_validator
 `fix` strings. `tests_15` covers command parsing, the official-validator
 stdout contract, and required-clearcoat guidance. Doctor rule
 `ASSET-VALIDATION-DOCTOR` pins the CLI, docs, tests, checklist, and
-fix-string guidance.
+fix-string guidance. `GltfExtensionDiagnostic::suggested_fix()` also
+surfaces the same remediation class through library diagnostics for importer
+and asset-review UIs.
 Visual proof: none (structured text errors; no rendered output)
 
 ```rust
@@ -273,10 +275,10 @@ renderer guidance such as "this asset uses clearcoat, but this pipeline
 will render the matte fallback until clearcoat support lands." Do not
 reimplement a private subset of the glTF Validator against the `gltf`
 AST unless the official validator cannot run in CI or `xtask`.
-`GltfExtensionDiagnostic` already returns `extension`, `status`, `help`,
-`decoder_policy` (`src/assets/gltf/extensions.rs:24-45`). The ergonomic
-gap is surfacing this as user-facing typed errors with `fix` hints on
-every `Assets::load_*` path, not just internal diagnostics.
+`GltfExtensionDiagnostic` returns `extension`, `status`, `help`,
+`suggested_fix`, and `decoder_policy`; the asset doctor combines those
+renderer-aware policies with official validator output instead of asking
+users to infer remediation from raw extension names.
 
 ---
 
@@ -579,10 +581,15 @@ specifically, add **animated-proof** of the clip playing back.
   production profile. The feature-gated proof suite renders decoded
   compressed fixtures for the supported bufferView modes and metadata
   paths. Native GPU and browser release lanes remain future proof work.
-- **glTF extension diagnostics.** `GltfExtensionDiagnostic` exists at
-  `src/assets/gltf/extensions.rs`. **Gap**: not surfaced as typed
-  user-facing errors with `fix` hints and not yet combined with official
-  Khronos glTF Validator output (covered by bet 1.4).
+- **glTF extension diagnostics.** Status: **[shipped]**.
+  `GltfExtensionDiagnostic` exposes typed `extension`, `status`, `help`,
+  `suggested_fix`, and `decoder_policy` metadata for importer UIs. The
+  `asset-doctor` lane combines official Khronos glTF Validator output with
+  scena-native `fix` guidance for renderer-specific extension policy.
+  Proof: `m8_optional_real_world_gltf_extensions_report_degradation_metadata`
+  asserts actionable fixes for clearcoat and Draco, `tests_15` covers
+  official-validator mode and required-clearcoat guidance, and
+  `ASSET-VALIDATION-DOCTOR` source-enforces the CLI/docs/library surface.
 
 ### 3.3 Implemented but not visually/proof complete — [proof-gap]
 
@@ -1151,8 +1158,8 @@ Items reframed from "missing" to "implemented but [ergonomic|proof]-gap":
   first reframed as an optional-profile proof gap; the later compressed
   asset proof pass below closes the local production-profile proof.
 - **glTF extension diagnostics** — exist at `src/assets/gltf/extensions.rs`.
-  Now an ergonomic gap (not surfaced as user-facing typed errors with
-  `fix` hints).
+  Initially reframed as an ergonomic gap; the later asset-validation and
+  fix-hint passes close the user-facing `fix`/validator combination.
 
 Items trimmed for honesty:
 
@@ -1644,3 +1651,14 @@ Subtle bloom implementation pass (2026-05-19):
 - Reclassified subtle bloom from a genuine renderer gap to shipped for
   the threshold / blur / composite baseline; HDR pre-tonemap bloom can
   still replace this later if the renderer grows an HDR postprocess chain.
+
+glTF extension diagnostic fix-hint pass (2026-05-19):
+
+- Added `GltfExtensionDiagnostic::suggested_fix()` so library consumers can
+  surface actionable remediation without shelling out to `asset-doctor`.
+- Extended the M8 extension diagnostics proof to assert clearcoat fallback
+  guidance and Draco-to-meshopt guidance, then source-enforced the library
+  method through `ASSET-VALIDATION-DOCTOR`.
+- Reclassified glTF extension diagnostics from an ergonomic gap to shipped
+  for typed status, help, decoder policy, suggested fix hints, and official
+  validator combination through the asset doctor.

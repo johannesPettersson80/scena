@@ -50,6 +50,9 @@ All notable user-facing changes are recorded here.
   out-of-range and snap-ready visual cue metadata plus visible rendered
   pixels.
 
+- Added `GltfExtensionDiagnostic::suggested_fix()` so asset import UIs can
+  surface actionable extension remediation alongside status and decoder policy.
+
 ### Changed
 
 - Updated the browser demo showcase so connector mating is the default first

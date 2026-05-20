@@ -25,6 +25,7 @@ pub struct GltfExtensionDiagnostic {
     extension: String,
     status: GltfExtensionStatus,
     help: &'static str,
+    suggested_fix: &'static str,
     decoder_policy: GltfDecoderPolicy,
 }
 
@@ -39,6 +40,10 @@ impl GltfExtensionDiagnostic {
 
     pub const fn help(&self) -> &'static str {
         self.help
+    }
+
+    pub const fn suggested_fix(&self) -> &'static str {
+        self.suggested_fix
     }
 
     pub const fn decoder_policy(&self) -> GltfDecoderPolicy {
@@ -81,6 +86,7 @@ pub(super) fn collect_extension_diagnostics(
             extension: extension.clone(),
             status: optional_extension_status(extension),
             help: optional_extension_help(extension),
+            suggested_fix: optional_extension_suggested_fix(extension),
             decoder_policy: optional_extension_decoder_policy(extension),
         })
         .collect()
@@ -104,7 +110,9 @@ fn optional_extension_help(extension: &str) -> &'static str {
         | "KHR_materials_volume"
         | "KHR_materials_sheen"
         | "KHR_materials_specular"
-        | "KHR_materials_iridescence" => {
+        | "KHR_materials_iridescence"
+        | "KHR_materials_anisotropy"
+        | "KHR_materials_dispersion" => {
             "material extension is optional in this glTF and currently uses structured degradation; required usage fails during asset load"
         }
         "KHR_materials_variants" => {
@@ -139,6 +147,48 @@ fn optional_extension_help(extension: &str) -> &'static str {
     }
 }
 
+fn optional_extension_suggested_fix(extension: &str) -> &'static str {
+    match extension {
+        "KHR_materials_variants" | "EXT_mesh_gpu_instancing" => {
+            "No action needed for this extension."
+        }
+        "KHR_texture_basisu" => {
+            if cfg!(feature = "ktx2") {
+                "No action needed when the ktx2 or production-assets feature is enabled."
+            } else {
+                "Enable the production-assets or ktx2 feature, or export PNG/JPEG/WebP fallback textures."
+            }
+        }
+        "EXT_meshopt_compression" => {
+            if cfg!(feature = "meshopt") {
+                "No action needed when the meshopt or production-assets feature is enabled."
+            } else {
+                "Enable the production-assets or meshopt feature, or export an uncompressed buffer fallback."
+            }
+        }
+        "KHR_draco_mesh_compression" => {
+            "Re-export the asset uncompressed or with EXT_meshopt_compression; revisit Draco when a maintained decoder is adopted."
+        }
+        "KHR_materials_clearcoat"
+        | "KHR_materials_transmission"
+        | "KHR_materials_ior"
+        | "KHR_materials_volume"
+        | "KHR_materials_sheen"
+        | "KHR_materials_specular"
+        | "KHR_materials_iridescence"
+        | "KHR_materials_anisotropy"
+        | "KHR_materials_dispersion" => {
+            "Export a fallback material without the extension, or keep the extension optional until the matching renderer feature is supported."
+        }
+        "EXT_texture_webp" => {
+            "Re-export with PNG/JPEG/WebP image URIs outside EXT_texture_webp, or use KTX2 through the ktx2 feature."
+        }
+        _ => {
+            "Make the extension optional with a visual fallback, or add an explicit scena decoder/support policy before relying on it."
+        }
+    }
+}
+
 fn optional_extension_decoder_policy(extension: &str) -> GltfDecoderPolicy {
     match extension {
         "KHR_texture_basisu" => GltfDecoderPolicy::FeatureFlag {
@@ -165,6 +215,8 @@ fn optional_extension_decoder_policy(extension: &str) -> GltfDecoderPolicy {
         | "KHR_materials_sheen"
         | "KHR_materials_specular"
         | "KHR_materials_iridescence"
+        | "KHR_materials_anisotropy"
+        | "KHR_materials_dispersion"
         | "EXT_texture_webp" => GltfDecoderPolicy::V1xDeferred,
         _ => GltfDecoderPolicy::V1xDeferred,
     }

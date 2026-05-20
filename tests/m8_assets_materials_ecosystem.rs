@@ -265,6 +265,24 @@ fn m8_optional_real_world_gltf_extensions_report_degradation_metadata() {
             license: "Apache-2.0-compatible decoder required"
         }
     );
+    let clearcoat = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.extension() == "KHR_materials_clearcoat")
+        .expect("clearcoat diagnostic exists");
+    assert!(
+        clearcoat.suggested_fix().contains("fallback material"),
+        "clearcoat degradation should tell users what to export instead: {:?}",
+        clearcoat.suggested_fix()
+    );
+    let draco = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.extension() == "KHR_draco_mesh_compression")
+        .expect("draco diagnostic exists");
+    assert!(
+        draco.suggested_fix().contains("EXT_meshopt_compression"),
+        "Draco degradation should point users to the maintained compression path: {:?}",
+        draco.suggested_fix()
+    );
 }
 
 #[test]

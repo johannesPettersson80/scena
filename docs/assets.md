@@ -106,6 +106,13 @@ Unsupported required glTF extensions fail explicitly with structured asset
 errors. Optional features report structured degraded or unsupported status when
 the application can continue safely.
 
+Use `SceneAsset::extension_diagnostics()` to inspect optional extension
+handling in application code. Each `GltfExtensionDiagnostic` exposes the
+extension name, support status, decoder policy, user-facing help text, and a
+`suggested_fix()` string so importer UIs can tell users whether to enable a
+feature flag, export a fallback material, or choose a different compression
+path.
+
 See [Errors](errors.md).
 
 ## Asset Doctor

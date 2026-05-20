@@ -12,6 +12,13 @@ pub(super) fn check_asset_validation_doctor(root: &Path, findings: &mut Vec<Find
         root,
         findings,
         "ASSET-VALIDATION-DOCTOR",
+        "src/assets/gltf/extensions.rs",
+        &["GltfExtensionDiagnostic", "suggested_fix", "decoder_policy"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSET-VALIDATION-DOCTOR",
         "crates/xtask/src/app/asset_validation.rs",
         &[
             "SCENA_GLTF_VALIDATOR",
@@ -32,6 +39,7 @@ pub(super) fn check_asset_validation_doctor(root: &Path, findings: &mut Vec<Find
             "parse_command_accepts_asset_doctor_path",
             "asset_doctor_native_guidance_reports_required_clearcoat_with_fix",
             "asset_doctor_official_validator_uses_khronos_stdout_mode",
+            "suggested_fix",
         ],
     );
     require_contains(
