@@ -10,6 +10,7 @@ mod draw_uniform;
 mod environment;
 mod lifecycle;
 mod material_batched;
+mod material_bindings;
 mod material_mips;
 mod material_uniform;
 mod material_upload;
@@ -27,7 +28,7 @@ use crate::diagnostics::Backend;
 
 #[cfg(target_arch = "wasm32")]
 use self::browser_readback::BrowserReadbackResources;
-use self::materials::MaterialTextureBindingMode;
+use self::material_bindings::MaterialTextureBindingMode;
 use self::shadow::ShadowCasterResources;
 pub(super) use self::stats::GpuResourceStats;
 use self::vertices::{DrawUniformValue, PrimitiveDrawBatch};

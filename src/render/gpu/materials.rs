@@ -1,6 +1,10 @@
 use crate::render::prepare::{PreparedMaterialSlot, compute_material_batch_plan};
 
 use super::material_batched::{MaterialBatchedResources, create_batched_material_resources};
+use super::material_bindings::{
+    MATERIAL_TEXTURE_BINDING_INDICES, MaterialTextureBindingMode,
+    create_material_texture_layout_entries,
+};
 use super::material_mips::{downsample_rgba8_mip, mip_level_extents};
 use super::material_uniform::{
     MATERIAL_UNIFORM_BYTE_LEN, MATERIAL_UNIFORM_ENTRY_STRIDE, MaterialUniformUpload,
@@ -8,53 +12,6 @@ use super::material_uniform::{
 pub(super) use super::material_upload::{
     MaterialTextureUpload, address_mode, filter_mode, mipmap_filter_mode,
 };
-
-const BASE_COLOR_BINDINGS: TextureBindingIndices = TextureBindingIndices {
-    sampler: 0,
-    texture: 1,
-};
-const NORMAL_BINDINGS: TextureBindingIndices = TextureBindingIndices {
-    sampler: 3,
-    texture: 4,
-};
-const METALLIC_ROUGHNESS_BINDINGS: TextureBindingIndices = TextureBindingIndices {
-    sampler: 5,
-    texture: 6,
-};
-const OCCLUSION_BINDINGS: TextureBindingIndices = TextureBindingIndices {
-    sampler: 7,
-    texture: 8,
-};
-const EMISSIVE_BINDINGS: TextureBindingIndices = TextureBindingIndices {
-    sampler: 9,
-    texture: 10,
-};
-
-#[derive(Debug, Clone, Copy)]
-struct TextureBindingIndices {
-    sampler: u32,
-    texture: u32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-pub(super) enum MaterialTextureBindingMode {
-    Texture2d,
-    Texture2dArray,
-}
-
-impl MaterialTextureBindingMode {
-    fn view_dimension(self) -> wgpu::TextureViewDimension {
-        match self {
-            Self::Texture2d => wgpu::TextureViewDimension::D2,
-            Self::Texture2dArray => wgpu::TextureViewDimension::D2Array,
-        }
-    }
-
-    fn supports_batching(self) -> bool {
-        matches!(self, Self::Texture2dArray)
-    }
-}
 
 /// Plan line 778 commit 2: material GPU resources can take one of two shapes.
 ///
@@ -132,62 +89,25 @@ pub(super) fn create_material_bind_group_layout(
     device: &wgpu::Device,
     texture_binding_mode: MaterialTextureBindingMode,
 ) -> wgpu::BindGroupLayout {
-    let mut entries = vec![
-        texture_sampler_layout_entry(BASE_COLOR_BINDINGS.sampler),
-        texture_layout_entry(BASE_COLOR_BINDINGS.texture, texture_binding_mode),
-        wgpu::BindGroupLayoutEntry {
-            binding: 2,
-            visibility: wgpu::ShaderStages::FRAGMENT,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                // Plan line 778 commit 2: dynamic-offset uniform so the
-                // batched path can swap material slots without rebinding.
-                // Per-material fall-back uses offset 0.
-                has_dynamic_offset: true,
-                min_binding_size: std::num::NonZeroU64::new(MATERIAL_UNIFORM_BYTE_LEN),
-            },
-            count: None,
+    let mut entries = create_material_texture_layout_entries(texture_binding_mode);
+    entries.push(wgpu::BindGroupLayoutEntry {
+        binding: 2,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            // Plan line 778 commit 2: dynamic-offset uniform so the
+            // batched path can swap material slots without rebinding.
+            // Per-material fall-back uses offset 0.
+            has_dynamic_offset: true,
+            min_binding_size: std::num::NonZeroU64::new(MATERIAL_UNIFORM_BYTE_LEN),
         },
-    ];
-    for bindings in [
-        NORMAL_BINDINGS,
-        METALLIC_ROUGHNESS_BINDINGS,
-        OCCLUSION_BINDINGS,
-        EMISSIVE_BINDINGS,
-    ] {
-        entries.push(texture_sampler_layout_entry(bindings.sampler));
-        entries.push(texture_layout_entry(bindings.texture, texture_binding_mode));
-    }
+        count: None,
+    });
 
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("scena.material.bind_group_layout"),
         entries: &entries,
     })
-}
-
-fn texture_sampler_layout_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
-    wgpu::BindGroupLayoutEntry {
-        binding,
-        visibility: wgpu::ShaderStages::FRAGMENT,
-        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-        count: None,
-    }
-}
-
-fn texture_layout_entry(
-    binding: u32,
-    texture_binding_mode: MaterialTextureBindingMode,
-) -> wgpu::BindGroupLayoutEntry {
-    wgpu::BindGroupLayoutEntry {
-        binding,
-        visibility: wgpu::ShaderStages::FRAGMENT,
-        ty: wgpu::BindingType::Texture {
-            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-            view_dimension: texture_binding_mode.view_dimension(),
-            multisampled: false,
-        },
-        count: None,
-    }
 }
 
 pub(super) fn create_material_resources(
@@ -318,7 +238,46 @@ fn create_material_resource(
         ),
         texture_binding_mode,
     );
-    let texture_bindings = vec![base_color, normal, metallic_roughness, occlusion, emissive];
+    let clearcoat = create_texture_binding_resource(
+        device,
+        queue,
+        "clearcoat",
+        MaterialTextureUpload::from_clearcoat_texture(
+            slot.and_then(|slot| slot.clearcoat.as_ref())
+                .map(|texture| &texture.desc),
+        ),
+        texture_binding_mode,
+    );
+    let clearcoat_roughness = create_texture_binding_resource(
+        device,
+        queue,
+        "clearcoat_roughness",
+        MaterialTextureUpload::from_clearcoat_roughness_texture(
+            slot.and_then(|slot| slot.clearcoat_roughness.as_ref())
+                .map(|texture| &texture.desc),
+        ),
+        texture_binding_mode,
+    );
+    let clearcoat_normal = create_texture_binding_resource(
+        device,
+        queue,
+        "clearcoat_normal",
+        MaterialTextureUpload::from_clearcoat_normal_texture(
+            slot.and_then(|slot| slot.clearcoat_normal.as_ref())
+                .map(|texture| &texture.desc),
+        ),
+        texture_binding_mode,
+    );
+    let texture_bindings = vec![
+        base_color,
+        normal,
+        metallic_roughness,
+        occlusion,
+        emissive,
+        clearcoat,
+        clearcoat_roughness,
+        clearcoat_normal,
+    ];
     let texture_byte_len = texture_bindings
         .iter()
         .map(|binding| binding.byte_len)
@@ -377,6 +336,9 @@ fn create_texture_binding_resource(
                 "metallic_roughness" => "scena.material.metallic_roughness",
                 "occlusion" => "scena.material.occlusion",
                 "emissive" => "scena.material.emissive",
+                "clearcoat" => "scena.material.clearcoat",
+                "clearcoat_roughness" => "scena.material.clearcoat_roughness",
+                "clearcoat_normal" => "scena.material.clearcoat_normal",
                 _ => "scena.material.texture",
             }
         } else {
@@ -386,6 +348,9 @@ fn create_texture_binding_resource(
                 "metallic_roughness" => "scena.material.fallback_metallic_roughness",
                 "occlusion" => "scena.material.fallback_occlusion",
                 "emissive" => "scena.material.fallback_emissive",
+                "clearcoat" => "scena.material.fallback_clearcoat",
+                "clearcoat_roughness" => "scena.material.fallback_clearcoat_roughness",
+                "clearcoat_normal" => "scena.material.fallback_clearcoat_normal",
                 _ => "scena.material.fallback_texture",
             }
         }),
@@ -504,15 +469,11 @@ pub(super) fn create_material_bind_group(
     texture_bindings: &[MaterialTextureBindingResources],
     uniform: &wgpu::Buffer,
 ) -> wgpu::BindGroup {
-    let binding_indices = [
-        BASE_COLOR_BINDINGS,
-        NORMAL_BINDINGS,
-        METALLIC_ROUGHNESS_BINDINGS,
-        OCCLUSION_BINDINGS,
-        EMISSIVE_BINDINGS,
-    ];
-    let mut entries = Vec::with_capacity(11);
-    for (bindings, resources) in binding_indices.into_iter().zip(texture_bindings) {
+    let mut entries = Vec::with_capacity(MATERIAL_TEXTURE_BINDING_INDICES.len() * 2 + 1);
+    for (bindings, resources) in MATERIAL_TEXTURE_BINDING_INDICES
+        .into_iter()
+        .zip(texture_bindings)
+    {
         entries.push(wgpu::BindGroupEntry {
             binding: bindings.sampler,
             resource: wgpu::BindingResource::Sampler(resources.sampler()),
@@ -549,28 +510,39 @@ mod tests {
     #[test]
     fn material_resources_define_shader_visible_texture_bindings() {
         let source = include_str!("materials.rs");
+        let bindings_source = include_str!("material_bindings.rs");
         let batched_source = include_str!("material_batched.rs");
         assert!(
-            source.contains("SamplerBindingType::Filtering")
-                && source.contains("TextureSampleType::Float { filterable: true }")
+            bindings_source.contains("SamplerBindingType::Filtering")
+                && bindings_source.contains("TextureSampleType::Float { filterable: true }")
+                && bindings_source.contains("NORMAL_BINDINGS")
+                && bindings_source.contains("METALLIC_ROUGHNESS_BINDINGS")
+                && bindings_source.contains("OCCLUSION_BINDINGS")
+                && bindings_source.contains("EMISSIVE_BINDINGS")
+                && bindings_source.contains("CLEARCOAT_BINDINGS")
+                && bindings_source.contains("CLEARCOAT_ROUGHNESS_BINDINGS")
+                && bindings_source.contains("CLEARCOAT_NORMAL_BINDINGS")
+                && bindings_source.contains("MATERIAL_TEXTURE_BINDING_INDICES")
+                && bindings_source.contains("Self::Texture2d => wgpu::TextureViewDimension::D2")
+                && bindings_source.contains("TextureViewDimension::D2Array")
                 && source.contains("MaterialTextureUpload")
                 && source.contains("MaterialUniformUpload")
                 && source.contains("binding: 2")
-                && source.contains("NORMAL_BINDINGS")
-                && source.contains("METALLIC_ROUGHNESS_BINDINGS")
-                && source.contains("OCCLUSION_BINDINGS")
-                && source.contains("EMISSIVE_BINDINGS")
                 && source.contains("scena.material.uniform")
                 && source.contains("scena.material.base_color")
                 && source.contains("scena.material.normal")
                 && source.contains("scena.material.metallic_roughness")
                 && source.contains("scena.material.occlusion")
                 && source.contains("scena.material.emissive")
+                && source.contains("scena.material.clearcoat")
+                && source.contains("scena.material.clearcoat_roughness")
+                && source.contains("scena.material.clearcoat_normal")
                 && source.contains("scena.material.fallback_base_color")
                 && source.contains("scena.material.fallback_bind_group")
-                && source.contains("Self::Texture2d => wgpu::TextureViewDimension::D2")
-                && source.contains("TextureViewDimension::D2Array")
-                && batched_source.contains("scena.material.batched_uniform"),
+                && batched_source.contains("scena.material.batched_uniform")
+                && batched_source.contains("scena.material.batched_clearcoat")
+                && batched_source.contains("scena.material.batched_clearcoat_roughness")
+                && batched_source.contains("scena.material.batched_clearcoat_normal"),
             "backend material scaffolding must allocate a sampler, texture view, and bind group \
              plus the batched array path that closes plan line 778"
         );

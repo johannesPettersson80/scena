@@ -49,6 +49,18 @@ impl<'a> MaterialTextureUpload<'a> {
         Self::from_base_color_texture(texture)
     }
 
+    pub(super) fn from_clearcoat_texture(texture: Option<&'a TextureDesc>) -> Self {
+        Self::from_linear_texture(texture, FALLBACK_WHITE_RGBA8)
+    }
+
+    pub(super) fn from_clearcoat_roughness_texture(texture: Option<&'a TextureDesc>) -> Self {
+        Self::from_linear_texture(texture, FALLBACK_WHITE_RGBA8)
+    }
+
+    pub(super) fn from_clearcoat_normal_texture(texture: Option<&'a TextureDesc>) -> Self {
+        Self::from_linear_texture(texture, FALLBACK_NORMAL_RGBA8)
+    }
+
     pub(super) fn from_linear_texture(
         texture: Option<&'a TextureDesc>,
         fallback_rgba8: &'a [u8; 4],

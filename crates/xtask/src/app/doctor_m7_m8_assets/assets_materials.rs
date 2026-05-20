@@ -424,10 +424,19 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "MaterialUniformUpload",
             "MATERIAL_UNIFORM_BYTE_LEN",
             "binding: 2",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/gpu/material_bindings.rs",
+        &[
             "NORMAL_BINDINGS",
             "METALLIC_ROUGHNESS_BINDINGS",
             "OCCLUSION_BINDINGS",
             "EMISSIVE_BINDINGS",
+            "MATERIAL_TEXTURE_BINDING_INDICES",
             "SamplerBindingType::Filtering",
             "TextureSampleType::Float { filterable: true }",
         ],

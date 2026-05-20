@@ -94,12 +94,6 @@ pub(crate) fn check_renderer_truth_material_depth_contracts(
             "material_texture_byte_len",
             "Vec<MaterialTextureResources>",
             "binding: 2",
-            "NORMAL_BINDINGS",
-            "METALLIC_ROUGHNESS_BINDINGS",
-            "OCCLUSION_BINDINGS",
-            "EMISSIVE_BINDINGS",
-            "SamplerBindingType::Filtering",
-            "TextureSampleType::Float { filterable: true }",
             "scena.material.base_color",
             "scena.material.normal",
             "scena.material.metallic_roughness",
@@ -108,6 +102,21 @@ pub(crate) fn check_renderer_truth_material_depth_contracts(
             "scena.material.fallback_base_color",
             "scena.material.fallback_bind_group",
             "texture_byte_len",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/render/gpu/material_bindings.rs",
+        &[
+            "NORMAL_BINDINGS",
+            "METALLIC_ROUGHNESS_BINDINGS",
+            "OCCLUSION_BINDINGS",
+            "EMISSIVE_BINDINGS",
+            "MATERIAL_TEXTURE_BINDING_INDICES",
+            "SamplerBindingType::Filtering",
+            "TextureSampleType::Float { filterable: true }",
         ],
     );
     // Plan line 778 commit 2: per-role uploads + sampler/filter helpers live

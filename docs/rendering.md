@@ -65,7 +65,8 @@ Material workflows include:
 - unlit materials,
 - metallic-roughness materials,
 - clearcoat factor/roughness plus clearcoat, clearcoat-roughness, and
-  clearcoat-normal texture sampling on the CPU/reference path,
+  clearcoat-normal texture sampling on the CPU/reference path and GPU
+  shader/material resource path,
 - vertex colors,
 - texture slots,
 - alpha modes,
@@ -76,8 +77,10 @@ Create materials through `Assets` and attach them to scene renderables.
 Optional glTF `KHR_materials_clearcoat` scalar factors and texture slots are
 parsed into `MaterialDesc`. The CPU/reference path samples the clearcoat
 factor texture's red channel, clearcoat roughness texture's green channel, and
-clearcoat normal texture for the clearcoat specular lobe. GPU/WebGPU/WebGL2
-clearcoat shading remains a separate capability-gated lane.
+clearcoat normal texture for the clearcoat specular lobe. The WebGPU/WebGL2
+shader variants now carry the same factor and texture roles through material
+uniforms, bind groups, and punctual-light shading. Approved backend screenshot
+or readback proof remains capability-gated release evidence.
 
 ## Environment
 

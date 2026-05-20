@@ -66,6 +66,12 @@ struct MaterialUniform {
     // .y = occlusionTexture.strength (default 1.0)
     // .z, .w = reserved
     texture_strengths: vec4<f32>,
+    // KHR_materials_clearcoat scalar factors.
+    // .x = clearcoatFactor
+    // .y = clearcoatRoughnessFactor
+    // .z = clearcoatNormalTexture.scale
+    // .w = reserved
+    clearcoat_factors: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -132,6 +138,24 @@ var emissive_sampler: sampler;
 @group(1) @binding(10)
 var emissive_texture: texture_2d_array<f32>;
 
+@group(1) @binding(11)
+var clearcoat_sampler: sampler;
+
+@group(1) @binding(12)
+var clearcoat_texture: texture_2d_array<f32>;
+
+@group(1) @binding(13)
+var clearcoat_roughness_sampler: sampler;
+
+@group(1) @binding(14)
+var clearcoat_roughness_texture: texture_2d_array<f32>;
+
+@group(1) @binding(15)
+var clearcoat_normal_sampler: sampler;
+
+@group(1) @binding(16)
+var clearcoat_normal_texture: texture_2d_array<f32>;
+
 @vertex
 fn vs_main(in: VertexIn) -> VertexOut {
     var out: VertexOut;
@@ -159,6 +183,9 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let metallic_roughness_sample = textureSample(metallic_roughness_texture, metallic_roughness_sampler, in.tex_coord0, material_layer);
     let occlusion_sample = textureSample(occlusion_texture, occlusion_sampler, in.tex_coord0, material_layer).r;
     let emissive_sample = textureSample(emissive_texture, emissive_sampler, in.tex_coord0, material_layer).rgb;
+    let clearcoat_sample = textureSample(clearcoat_texture, clearcoat_sampler, in.tex_coord0, material_layer);
+    let clearcoat_roughness_sample = textureSample(clearcoat_roughness_texture, clearcoat_roughness_sampler, in.tex_coord0, material_layer);
+    let clearcoat_normal_sample = textureSample(clearcoat_normal_texture, clearcoat_normal_sampler, in.tex_coord0, material_layer).rgb;
     // Phase 5.1: apply normalTexture.scale to the tangent-space X/Y
     // components before TBN reconstruction. Z stays unscaled so the
     // unit-length invariant holds after normalize().
@@ -174,6 +201,17 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let world_tangent = normalize(in.tangent.xyz);
     let bitangent = normalize(cross(world_normal, world_tangent) * in.tangent.w);
     let normal = normalize(normal_sample.x * world_tangent + normal_sample.y * bitangent + normal_sample.z * world_normal);
+    let clearcoat_factor = clamp(material.clearcoat_factors.x * clearcoat_sample.r, 0.0, 1.0);
+    let clearcoat_roughness = clamp(material.clearcoat_factors.y * clearcoat_roughness_sample.g, 0.04, 1.0);
+    let clearcoat_normal_scale = material.clearcoat_factors.z;
+    let raw_clearcoat_normal = clearcoat_normal_sample * 2.0 - vec3<f32>(1.0);
+    let scaled_clearcoat_normal = vec3<f32>(
+        raw_clearcoat_normal.x * clearcoat_normal_scale,
+        raw_clearcoat_normal.y * clearcoat_normal_scale,
+        raw_clearcoat_normal.z,
+    );
+    let clearcoat_tangent_normal = normalize(scaled_clearcoat_normal);
+    let clearcoat_normal = normalize(clearcoat_tangent_normal.x * world_tangent + clearcoat_tangent_normal.y * bitangent + clearcoat_tangent_normal.z * world_normal);
     let metallic = clamp(material.metallic_roughness_alpha.x * metallic_roughness_sample.b, 0.0, 1.0);
     let roughness = clamp(material.metallic_roughness_alpha.y * metallic_roughness_sample.g, 0.04, 1.0);
     // Phase 5.1: occlusionTexture.strength lerps between 1.0 and the
@@ -196,6 +234,9 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
             roughness,
             normal,
             view,
+            clearcoat_normal,
+            clearcoat_factor,
+            clearcoat_roughness,
             in.world_position,
             in.shadow_visibility,
         );
@@ -240,6 +281,9 @@ fn pbr_punctual_lighting(
     roughness: f32,
     normal: vec3<f32>,
     view: vec3<f32>,
+    clearcoat_normal: vec3<f32>,
+    clearcoat_factor: f32,
+    clearcoat_roughness: f32,
     world_position: vec3<f32>,
     shadow_visibility: f32,
 ) -> vec3<f32> {
@@ -260,6 +304,7 @@ fn pbr_punctual_lighting(
         let radiance = camera.lighting.directional_light_color_count.rgb *
             camera.lighting.directional_light_direction_intensity.w * gpu_shadow;
         shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
+        shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
     }
     if camera.lighting.point_light_position_intensity.w > 0.0 {
         let to_light = camera.lighting.point_light_position_intensity.xyz - world_position;
@@ -268,6 +313,7 @@ fn pbr_punctual_lighting(
         let radiance = camera.lighting.point_light_color_range.rgb *
             camera.lighting.point_light_position_intensity.w * attenuation;
         shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
+        shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
     }
     if camera.lighting.spot_light_position_intensity.w > 0.0 {
         let to_light = camera.lighting.spot_light_position_intensity.xyz - world_position;
@@ -282,6 +328,7 @@ fn pbr_punctual_lighting(
         let radiance = camera.lighting.spot_light_color_range.rgb *
             camera.lighting.spot_light_position_intensity.w * attenuation * cone;
         shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
+        shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
     }
     return shaded;
 }
@@ -359,6 +406,33 @@ fn pbr_light_contribution(
     let diffuse_energy = (vec3<f32>(1.0) - fresnel) * (1.0 - metallic);
     let diffuse = diffuse_energy * base / PI;
     return (diffuse + specular) * radiance * n_dot_l;
+}
+
+fn clearcoat_light_contribution(
+    normal: vec3<f32>,
+    view: vec3<f32>,
+    incoming: vec3<f32>,
+    radiance: vec3<f32>,
+    factor: f32,
+    roughness: f32,
+) -> vec3<f32> {
+    if factor <= 0.0 {
+        return vec3<f32>(0.0);
+    }
+    let n_dot_l = max(dot(normal, incoming), 0.0);
+    if n_dot_l <= 0.0 {
+        return vec3<f32>(0.0);
+    }
+    let n_dot_v = max(dot(normal, view), 0.001);
+    let half_vector = normalize(view + incoming);
+    let n_dot_h = max(dot(normal, half_vector), 0.0);
+    let v_dot_h = max(dot(view, half_vector), 0.0);
+    let alpha = roughness * roughness;
+    let distribution = distribution_ggx(n_dot_h, alpha);
+    let geometry = geometry_smith(n_dot_v, n_dot_l, roughness);
+    let fresnel = fresnel_schlick(v_dot_h, vec3<f32>(0.04));
+    let specular = fresnel * (distribution * geometry / max(4.0 * n_dot_v * n_dot_l, 0.0001));
+    return specular * radiance * n_dot_l * factor;
 }
 
 fn distribution_ggx(n_dot_h: f32, alpha: f32) -> f32 {

@@ -1,7 +1,8 @@
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
 use super::super::RasterTarget;
-use super::materials::{MaterialResources, MaterialTextureBindingMode};
+use super::material_bindings::MaterialTextureBindingMode;
+use super::materials::MaterialResources;
 use super::pipeline::{BYTES_PER_PIXEL, create_unlit_pipeline};
 use super::pipeline::{UnlitPass, encode_unlit_pass};
 use super::vertices::PrimitiveDrawBatch;

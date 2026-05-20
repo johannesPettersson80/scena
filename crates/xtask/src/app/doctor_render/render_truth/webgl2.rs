@@ -146,6 +146,14 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
             "address_mode(upload.sampler.wrap_s())",
             "filter_mode(upload.sampler.min_filter())",
             "queue.write_texture",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/render/gpu/material_bindings.rs",
+        &[
             "Self::Texture2d => wgpu::TextureViewDimension::D2",
             "TextureViewDimension::D2Array",
         ],

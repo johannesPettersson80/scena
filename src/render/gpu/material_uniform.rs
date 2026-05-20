@@ -5,7 +5,7 @@ use crate::material::{AlphaMode, MaterialDesc, MaterialKind, TextureTransform};
 /// correct layer when a `texture_2d_array<f32>` collapses N per-material bind
 /// groups into one shared bind group with dynamic-offset uniform. Per-material
 /// fall-back still allocates a 1-layer array and writes layer index 0.
-pub(super) const MATERIAL_UNIFORM_BYTE_LEN: u64 = 112;
+pub(super) const MATERIAL_UNIFORM_BYTE_LEN: u64 = 128;
 
 /// `min_uniform_buffer_offset_alignment` floor across every wgpu adapter we
 /// target. The shared per-batch material uniform buffer pads each entry up to
@@ -25,6 +25,12 @@ pub(super) struct MaterialUniformUpload {
     /// .y = occlusionTexture.strength (default 1.0)
     /// .z, .w = reserved
     pub(super) texture_strengths: [f32; 4],
+    /// KHR_materials_clearcoat scalar lanes.
+    /// .x = clearcoatFactor
+    /// .y = clearcoatRoughnessFactor
+    /// .z = clearcoatNormalTexture.scale
+    /// .w = reserved
+    pub(super) clearcoat_factors: [f32; 4],
 }
 
 impl MaterialUniformUpload {
@@ -75,6 +81,12 @@ impl MaterialUniformUpload {
                 0.0,
                 0.0,
             ],
+            clearcoat_factors: [
+                material.clearcoat_factor(),
+                material.clearcoat_roughness_factor(),
+                material.clearcoat_normal_scale(),
+                0.0,
+            ],
         }
     }
 
@@ -113,6 +125,7 @@ impl MaterialUniformUpload {
             metallic_roughness_alpha: [0.0, 1.0, 0.0, 0.0],
             material_layer_index: [0, 0, 0, 0],
             texture_strengths: [1.0, 1.0, 0.0, 0.0],
+            clearcoat_factors: [0.0, 0.0, 1.0, 0.0],
         }
     }
 
@@ -137,6 +150,11 @@ impl MaterialUniformUpload {
         // texture_strengths follows at offset 96.
         for (index, value) in self.texture_strengths.into_iter().enumerate() {
             let byte_offset = 96 + index * 4;
+            bytes[byte_offset..byte_offset + 4].copy_from_slice(&value.to_ne_bytes());
+        }
+        // clearcoat_factors follows at offset 112.
+        for (index, value) in self.clearcoat_factors.into_iter().enumerate() {
+            let byte_offset = 112 + index * 4;
             bytes[byte_offset..byte_offset + 4].copy_from_slice(&value.to_ne_bytes());
         }
         bytes
@@ -168,6 +186,9 @@ mod tests {
         )
         .with_emissive(Color::from_linear_rgba(0.1, 0.2, 0.3, 1.0))
         .with_emissive_strength(2.5)
+        .with_clearcoat_factor(0.85)
+        .with_clearcoat_roughness_factor(0.18)
+        .with_clearcoat_normal_scale(1.75)
         .with_alpha_mode(AlphaMode::Mask { cutoff: 0.45 });
 
         let upload = MaterialUniformUpload::from_material(Some(&material), None);
@@ -175,12 +196,13 @@ mod tests {
         assert_eq!(upload.base_color_factor, [0.2, 0.4, 0.6, 0.8]);
         assert_eq!(upload.emissive_strength, [0.1, 0.2, 0.3, 2.5]);
         assert_eq!(upload.metallic_roughness_alpha, [0.3, 0.7, 0.45, 0.0]);
+        assert_eq!(upload.clearcoat_factors, [0.85, 0.18, 1.75, 0.0]);
         assert_eq!(
             upload.encode().len(),
-            112,
+            MATERIAL_UNIFORM_BYTE_LEN as usize,
             "material uniform must reserve transform, base color, emissive, metallic, \
-             roughness, alpha-mask, material_layer_index, and texture_strengths \
-             lanes (6 vec4<f32> + 1 vec4<u32> = 112 bytes)"
+             roughness, alpha-mask, material_layer_index, texture_strengths, and \
+             clearcoat_factors lanes (7 vec4<f32> + 1 vec4<u32> = 128 bytes)"
         );
     }
 

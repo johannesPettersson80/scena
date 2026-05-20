@@ -1899,6 +1899,87 @@ fn m8_headless_gpu_environment_uniform_tints_pbr_output_when_available() {
 }
 
 #[test]
+fn m8_headless_gpu_clearcoat_texture_lobe_brightens_pbr_output_when_available() {
+    if skip_unstable_headless_gpu_release_lane(
+        "m8_headless_gpu_clearcoat_texture_lobe_brightens_pbr_output_when_available",
+        "local headless GPU clearcoat readback is not trusted as release evidence until approved backend screenshots exist",
+    ) {
+        return;
+    }
+
+    let clearcoat_off = png_rgba8(1, 1, &[[0, 255, 128, 255]]);
+    let clearcoat_on = png_rgba8(1, 1, &[[255, 255, 128, 255]]);
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![
+        (
+            AssetPath::from("memory://gpu-clearcoat/off.png"),
+            clearcoat_off,
+        ),
+        (
+            AssetPath::from("memory://gpu-clearcoat/on.png"),
+            clearcoat_on,
+        ),
+    ]));
+    let off = pollster::block_on(
+        assets.load_texture("memory://gpu-clearcoat/off.png", TextureColorSpace::Linear),
+    )
+    .expect("clearcoat off texture loads");
+    let on = pollster::block_on(
+        assets.load_texture("memory://gpu-clearcoat/on.png", TextureColorSpace::Linear),
+    )
+    .expect("clearcoat on texture loads");
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.55, 0.55, 0.05));
+    let matte = assets.create_material(
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(188, 48, 32), 0.0, 0.62)
+            .with_clearcoat_factor(1.0)
+            .with_clearcoat_roughness_factor(0.12)
+            .with_clearcoat_texture(off)
+            .with_double_sided(true),
+    );
+    let coated = assets.create_material(
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(188, 48, 32), 0.0, 0.62)
+            .with_clearcoat_factor(1.0)
+            .with_clearcoat_roughness_factor(0.12)
+            .with_clearcoat_texture(on)
+            .with_double_sided(true),
+    );
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, matte)
+        .transform(Transform::at(Vec3::new(-0.4, 0.0, 0.0)))
+        .add()
+        .expect("clearcoat-off mesh inserts");
+    scene
+        .mesh(geometry, coated)
+        .transform(Transform::at(Vec3::new(0.4, 0.0, 0.0)))
+        .add()
+        .expect("clearcoat-on mesh inserts");
+    scene
+        .directional_light(DirectionalLight::default().with_illuminance_lux(24_000.0))
+        .add()
+        .expect("directional light inserts");
+    let camera = scene.add_default_camera().expect("camera inserts");
+    let mut renderer = match Renderer::headless_gpu(96, 64) {
+        Ok(renderer) => renderer,
+        Err(_) => return,
+    };
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("GPU clearcoat scene prepares");
+    renderer
+        .render(&scene, camera)
+        .expect("GPU clearcoat scene renders");
+
+    let frame = renderer.frame_rgba8();
+    let matte = max_luminance_in_region(frame, 96, 0, 48);
+    let coated = max_luminance_in_region(frame, 96, 48, 96);
+    assert!(
+        coated > matte + 8,
+        "GPU clearcoat texture R channel should brighten the coated material; matte={matte} coated={coated}",
+    );
+}
+
+#[test]
 fn m8_environment_hdr_lights_pbr_preview_pixels() {
     let environment_path = AssetPath::from("memory://studio-blue_2x1.hdr");
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
@@ -3376,6 +3457,17 @@ fn sample_rgb(frame: &[u8], width: u32, height: u32, x: u32, y: u32) -> [u8; 3] 
     assert!(y < height);
     let offset = ((y * width + x) as usize) * 4;
     [frame[offset], frame[offset + 1], frame[offset + 2]]
+}
+
+fn max_luminance_in_region(rgba: &[u8], width: u32, min_x: u32, max_x: u32) -> u16 {
+    rgba.chunks_exact(4)
+        .enumerate()
+        .filter_map(|(index, pixel)| {
+            let x = (index as u32) % width;
+            (x >= min_x && x < max_x).then_some(u16::from(pixel[0].max(pixel[1]).max(pixel[2])))
+        })
+        .max()
+        .unwrap_or(0)
 }
 
 fn render_environment_preview_center<F>(

@@ -271,9 +271,9 @@ AssetError::UnsupportedTextureFormat {
 ```
 
 The official validator owns glTF spec compliance; scena owns actionable
-renderer guidance such as "this asset uses required clearcoat, but only
-CPU/reference clearcoat texture paths are release-proven; GPU/WebGPU/WebGL2
-backend parity is still degraded." Do not
+renderer guidance such as "this asset uses required clearcoat; CPU/reference
+and GPU shader paths are wired, but approved GPU/WebGPU/WebGL2 rendered-output
+proof is still missing for the target lane." Do not
 reimplement a private subset of the glTF Validator against the `gltf`
 AST unless the official validator cannot run in CI or `xtask`.
 `GltfExtensionDiagnostic` returns `extension`, `status`, `help`,
@@ -538,12 +538,14 @@ the rendered result is part of the contract.
   `target/gate-artifacts/m2-visual/bloom-on-off.ppm`.
 - **Material features**: Status: **[shipped]** for scalar clearcoat
   factors plus clearcoat, clearcoat-roughness, and clearcoat-normal texture
-  sampling on the CPU/reference path. **[gap]** remains for
-  GPU/WebGPU/WebGL2 clearcoat shading, sheen,
-  anisotropy, iridescence, and dispersion. Owner: `src/material.rs`,
-  `src/assets/gltf/materials.rs`, and `src/render/prepare/lighting.rs`
-  for the shipped baseline; GPU material uniforms/shaders own the
-  remaining backend lanes. Proof:
+  sampling on the CPU/reference path, and for WebGPU/WebGL2 shader/material
+  resource wiring for a punctual-light clearcoat lobe. **[proof-gap]**
+  remains for approved backend screenshot/readback release evidence.
+  **[gap]** remains for sheen, anisotropy, iridescence, and dispersion.
+  Owner: `src/material.rs`, `src/assets/gltf/materials.rs`,
+  `src/render/prepare/lighting.rs`, `src/render/gpu/materials.rs`,
+  `src/render/gpu/material_uniform.rs`, and
+  `src/render/gpu/output_shader*.wgsl`. Proof:
   `m8_clearcoat_material_factors_are_parsed_from_gltf` asserts optional
   `KHR_materials_clearcoat` scalar factors propagate into `MaterialDesc`,
   `m8_clearcoat_texture_slots_are_parsed_from_gltf` asserts clearcoat,
@@ -555,11 +557,22 @@ the rendered result is part of the contract.
   preview samples clearcoat normal textures for the clearcoat lobe,
   `clearcoat_light_contribution_adds_dielectric_lobe` keeps the PBR
   math owned by `pbr_contract`, and
+  `material_uniform_upload_encodes_material_factors`,
+  `triangle_shader_applies_clearcoat_lobe_in_native_and_webgl2_variants`,
+  `material_resources_define_shader_visible_texture_bindings`, and
+  `backend_material_slots_preserve_all_texture_roles_and_material_only_slots`
+  pin GPU uniform, shader, bind-group, and prepare-resource contracts.
+  `m8_headless_gpu_clearcoat_texture_lobe_brightens_pbr_output_when_available`
+  is fail-closed by default and records the unapproved GPU release lane until
+  `SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1` is set on an approved
+  backend proof lane. CPU visual proof:
   `m8_headless_visual_artifacts_cover_material_texture_environment_paths`
   writes the `m8-clearcoat-material-feature` before/after artifact.
   Visual proof: reference-image before/after shipped for scalar
   clearcoat via `target/gate-artifacts/m8-visual/m8-clearcoat-material-feature.ppm`;
-  reference-image before/after still required per remaining feature.
+  approved backend reference-image or readback proof is still required for
+  release-grade GPU/WebGPU/WebGL2 clearcoat parity and for each remaining
+  material family.
 - **Clustered / tiled light culling.** Babylon 9 made this baseline.
   Proof: many-light stress scene proves correct light selection,
   stable frame time / allocation behavior, and no dropped-light fallback.
@@ -1230,8 +1243,8 @@ Items trimmed for honesty:
 
 - **Material presets**: `clear_glass`, `frosted_glass`, `chrome`,
   `brushed_steel`, `leather` remain deferred until the remaining material
-  feature lanes land: GPU clearcoat proof, sheen, anisotropy, OIT, and SSR.
-  CPU/reference clearcoat texture support alone is not enough to make those
+  feature lanes land: approved backend clearcoat proof, sheen, anisotropy,
+  OIT, and SSR. Clearcoat texture support alone is not enough to make those
   preset names honest.
 
 Item reworded:
@@ -1815,6 +1828,19 @@ Clearcoat texture-slot pass (2026-05-19):
   Reclassified material features from scalar-only shipped to CPU/reference
   clearcoat texture shipped while keeping GPU/WebGPU/WebGL2 clearcoat as an
   open backend gap.
+
+GPU clearcoat shader/resource pass (2026-05-20):
+
+- Extended prepared material slots, material batching, GPU texture uploads,
+  material bind groups, and material uniforms to carry clearcoat,
+  clearcoat-roughness, and clearcoat-normal texture roles.
+- Updated the WebGPU/native `texture_2d_array` shader and WebGL2
+  `texture_2d` shader variant to sample those roles and add a
+  punctual-light clearcoat lobe from `clearcoat_factors`.
+- Reclassified GPU/WebGPU/WebGL2 clearcoat from a pure implementation gap to
+  shipped shader/resource wiring with a proof gap: focused source tests and
+  doctor rules pin the contract, while the headless-GPU release lane remains
+  fail-closed until approved backend screenshot or readback proof is run.
 
 Viewer animation sugar pass (2026-05-19):
 

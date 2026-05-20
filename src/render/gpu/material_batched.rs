@@ -105,7 +105,57 @@ pub(super) fn create_batched_material_resources(
         },
         || MaterialTextureUpload::from_emissive_texture(None),
     );
-    let texture_bindings = vec![base_color, normal, metallic_roughness, occlusion, emissive];
+    let clearcoat = create_batched_role_resource(
+        device,
+        queue,
+        "clearcoat",
+        layer_count,
+        material_slots,
+        |slot| {
+            MaterialTextureUpload::from_clearcoat_texture(
+                slot.clearcoat.as_ref().map(|texture| &texture.desc),
+            )
+        },
+        || MaterialTextureUpload::from_clearcoat_texture(None),
+    );
+    let clearcoat_roughness = create_batched_role_resource(
+        device,
+        queue,
+        "clearcoat_roughness",
+        layer_count,
+        material_slots,
+        |slot| {
+            MaterialTextureUpload::from_clearcoat_roughness_texture(
+                slot.clearcoat_roughness
+                    .as_ref()
+                    .map(|texture| &texture.desc),
+            )
+        },
+        || MaterialTextureUpload::from_clearcoat_roughness_texture(None),
+    );
+    let clearcoat_normal = create_batched_role_resource(
+        device,
+        queue,
+        "clearcoat_normal",
+        layer_count,
+        material_slots,
+        |slot| {
+            MaterialTextureUpload::from_clearcoat_normal_texture(
+                slot.clearcoat_normal.as_ref().map(|texture| &texture.desc),
+            )
+        },
+        || MaterialTextureUpload::from_clearcoat_normal_texture(None),
+    );
+    let texture_bindings = vec![
+        base_color,
+        normal,
+        metallic_roughness,
+        occlusion,
+        emissive,
+        clearcoat,
+        clearcoat_roughness,
+        clearcoat_normal,
+    ];
     let texture_byte_len = texture_bindings
         .iter()
         .map(MaterialTextureBindingResources::byte_len)
@@ -180,6 +230,9 @@ where
             "metallic_roughness" => "scena.material.batched_metallic_roughness",
             "occlusion" => "scena.material.batched_occlusion",
             "emissive" => "scena.material.batched_emissive",
+            "clearcoat" => "scena.material.batched_clearcoat",
+            "clearcoat_roughness" => "scena.material.batched_clearcoat_roughness",
+            "clearcoat_normal" => "scena.material.batched_clearcoat_normal",
             _ => "scena.material.batched_texture",
         }),
         size: wgpu::Extent3d {

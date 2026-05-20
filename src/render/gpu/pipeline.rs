@@ -1,5 +1,6 @@
+use super::material_bindings::MaterialTextureBindingMode;
 use super::material_uniform::MATERIAL_UNIFORM_ENTRY_STRIDE;
-use super::materials::{MaterialResources, MaterialTextureBindingMode};
+use super::materials::MaterialResources;
 use super::output::{
     DRAW_UNIFORM_ENTRY_STRIDE, GPU_TRIANGLE_SHADER, GPU_TRIANGLE_SHADER_TEXTURE_2D,
 };

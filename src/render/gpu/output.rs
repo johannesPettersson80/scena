@@ -292,6 +292,20 @@ mod tests {
                 && GPU_TRIANGLE_SHADER.contains("var emissive_sampler: sampler")
                 && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(10)")
                 && GPU_TRIANGLE_SHADER.contains("var emissive_texture: texture_2d_array<f32>")
+                && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(11)")
+                && GPU_TRIANGLE_SHADER.contains("var clearcoat_sampler: sampler")
+                && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(12)")
+                && GPU_TRIANGLE_SHADER.contains("var clearcoat_texture: texture_2d_array<f32>")
+                && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(13)")
+                && GPU_TRIANGLE_SHADER.contains("var clearcoat_roughness_sampler: sampler")
+                && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(14)")
+                && GPU_TRIANGLE_SHADER
+                    .contains("var clearcoat_roughness_texture: texture_2d_array<f32>")
+                && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(15)")
+                && GPU_TRIANGLE_SHADER.contains("var clearcoat_normal_sampler: sampler")
+                && GPU_TRIANGLE_SHADER.contains("@group(1) @binding(16)")
+                && GPU_TRIANGLE_SHADER
+                    .contains("var clearcoat_normal_texture: texture_2d_array<f32>")
                 && GPU_TRIANGLE_SHADER.contains("material_layer_index: vec4<u32>")
                 && GPU_TRIANGLE_SHADER.contains("textureSample(base_color_texture"),
             "GPU fragment shader must expose material texture bindings as 2D-array views \
@@ -307,6 +321,12 @@ mod tests {
             ) && GPU_TRIANGLE_SHADER_TEXTURE_2D.contains("var normal_texture: texture_2d<f32>")
                 && GPU_TRIANGLE_SHADER_TEXTURE_2D
                     .contains("var metallic_roughness_texture: texture_2d<f32>")
+                && GPU_TRIANGLE_SHADER_TEXTURE_2D
+                    .contains("var clearcoat_texture: texture_2d<f32>")
+                && GPU_TRIANGLE_SHADER_TEXTURE_2D
+                    .contains("var clearcoat_roughness_texture: texture_2d<f32>")
+                && GPU_TRIANGLE_SHADER_TEXTURE_2D
+                    .contains("var clearcoat_normal_texture: texture_2d<f32>")
                 && GPU_TRIANGLE_SHADER_TEXTURE_2D.contains(
                     "let base_color_sample = textureSample(base_color_texture, base_color_sampler, transformed_uv)"
                 )
@@ -325,12 +345,33 @@ mod tests {
                 && GPU_TRIANGLE_SHADER.contains("textureSample(metallic_roughness_texture")
                 && GPU_TRIANGLE_SHADER.contains("textureSample(occlusion_texture")
                 && GPU_TRIANGLE_SHADER.contains("textureSample(emissive_texture")
+                && GPU_TRIANGLE_SHADER.contains("textureSample(clearcoat_texture")
+                && GPU_TRIANGLE_SHADER.contains("textureSample(clearcoat_roughness_texture")
+                && GPU_TRIANGLE_SHADER.contains("textureSample(clearcoat_normal_texture")
                 && GPU_TRIANGLE_SHADER.contains("base_color_factor")
                 && GPU_TRIANGLE_SHADER.contains("emissive_strength")
+                && GPU_TRIANGLE_SHADER.contains("clearcoat_factors")
                 && GPU_TRIANGLE_SHADER.contains("metallic_roughness_alpha"),
             "GPU material shader must sample every prepared glTF material texture role and \
              consume material factor uniforms before backend material parity can be claimed"
         );
+    }
+
+    #[test]
+    fn triangle_shader_applies_clearcoat_lobe_in_native_and_webgl2_variants() {
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            assert!(
+                shader.contains("clearcoat_light_contribution")
+                    && shader.contains("let clearcoat_factor = clamp(material.clearcoat_factors.x * clearcoat_sample.r, 0.0, 1.0);")
+                    && shader.contains("let clearcoat_roughness = clamp(material.clearcoat_factors.y * clearcoat_roughness_sample.g, 0.04, 1.0);")
+                    && shader.contains("let clearcoat_normal_scale = material.clearcoat_factors.z;")
+                    && shader.contains("shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);"),
+                "{name} shader must apply KHR_materials_clearcoat factors plus clearcoat, roughness, and normal texture channels instead of silently dropping them"
+            );
+        }
     }
 
     #[test]

@@ -29,6 +29,9 @@ pub(in crate::render) struct PreparedMaterialSlot {
     pub(in crate::render) metallic_roughness: Option<PreparedMaterialTexture>,
     pub(in crate::render) occlusion: Option<PreparedMaterialTexture>,
     pub(in crate::render) emissive: Option<PreparedMaterialTexture>,
+    pub(in crate::render) clearcoat: Option<PreparedMaterialTexture>,
+    pub(in crate::render) clearcoat_roughness: Option<PreparedMaterialTexture>,
+    pub(in crate::render) clearcoat_normal: Option<PreparedMaterialTexture>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -315,6 +318,21 @@ fn collect_backend_material_slot<F>(
         material.emissive_texture(),
         material.emissive_texture_transform(),
     );
+    let clearcoat = collect_backend_material_texture(
+        assets,
+        material.clearcoat_texture(),
+        material.clearcoat_texture_transform(),
+    );
+    let clearcoat_roughness = collect_backend_material_texture(
+        assets,
+        material.clearcoat_roughness_texture(),
+        material.clearcoat_roughness_texture_transform(),
+    );
+    let clearcoat_normal = collect_backend_material_texture(
+        assets,
+        material.clearcoat_normal_texture(),
+        material.clearcoat_normal_texture_transform(),
+    );
     if matches!(material.kind(), MaterialKind::Unlit)
         && base_color.is_none()
         && normal.is_none()
@@ -331,6 +349,9 @@ fn collect_backend_material_slot<F>(
         metallic_roughness,
         occlusion,
         emissive,
+        clearcoat,
+        clearcoat_roughness,
+        clearcoat_normal,
         material,
     })
 }
@@ -581,6 +602,9 @@ mod tests {
         let metallic_roughness = decoded_test_texture(&assets);
         let occlusion = decoded_test_texture(&assets);
         let emissive = decoded_test_texture(&assets);
+        let clearcoat = decoded_test_texture(&assets);
+        let clearcoat_roughness = decoded_test_texture(&assets);
+        let clearcoat_normal = decoded_test_texture(&assets);
         let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.25, 0.25, 0.25));
         let material_with_textures = assets.create_material(
             MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.25, 0.75)
@@ -588,7 +612,12 @@ mod tests {
                 .with_normal_texture(normal)
                 .with_metallic_roughness_texture(metallic_roughness)
                 .with_occlusion_texture(occlusion)
-                .with_emissive_texture(emissive),
+                .with_emissive_texture(emissive)
+                .with_clearcoat_factor(1.0)
+                .with_clearcoat_texture(clearcoat)
+                .with_clearcoat_roughness_factor(1.0)
+                .with_clearcoat_roughness_texture(clearcoat_roughness)
+                .with_clearcoat_normal_texture(clearcoat_normal),
         );
         let material_without_textures =
             assets.create_material(MaterialDesc::pbr_metallic_roughness(
@@ -629,6 +658,21 @@ mod tests {
         assert_eq!(
             slots[0].emissive.as_ref().map(|slot| slot.handle),
             Some(emissive)
+        );
+        assert_eq!(
+            slots[0].clearcoat.as_ref().map(|slot| slot.handle),
+            Some(clearcoat)
+        );
+        assert_eq!(
+            slots[0]
+                .clearcoat_roughness
+                .as_ref()
+                .map(|slot| slot.handle),
+            Some(clearcoat_roughness)
+        );
+        assert_eq!(
+            slots[0].clearcoat_normal.as_ref().map(|slot| slot.handle),
+            Some(clearcoat_normal)
         );
         assert_eq!(
             slots[1].handle, material_without_textures,

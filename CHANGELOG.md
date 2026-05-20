@@ -66,13 +66,15 @@ All notable user-facing changes are recorded here.
   `Renderer::set_order_independent_transparency(...)`, with order-invariance
   visual proof for overlapping alpha-blended surfaces.
 
-- Added clearcoat material support on the CPU/reference path:
-  `MaterialDesc` now exposes clearcoat factor/roughness builders plus
-  clearcoat, clearcoat-roughness, and clearcoat-normal texture slots. Optional
-  glTF `KHR_materials_clearcoat` factors and texture slots are parsed, the CPU
-  preview samples clearcoat, roughness, and clearcoat-normal texture channels,
-  and M8 visual proof records a before/after clearcoat render. GPU/browser
-  clearcoat remains a future backend lane.
+- Added clearcoat material support across the CPU/reference path and GPU
+  shader/material resource path: `MaterialDesc` now exposes clearcoat
+  factor/roughness builders plus clearcoat, clearcoat-roughness, and
+  clearcoat-normal texture slots. Optional glTF `KHR_materials_clearcoat`
+  factors and texture slots are parsed, the CPU preview samples clearcoat,
+  roughness, and clearcoat-normal texture channels, and the WebGPU/WebGL2
+  shader variants sample the same roles for a punctual-light clearcoat lobe.
+  M8 proof records a CPU before/after clearcoat render and a fail-closed
+  headless-GPU lane until approved backend screenshots exist.
 
 - Added capability-gated wide-gamut output reporting: capability reports now
   expose `wide_gamut_output`, browser M4 smoke artifacts record Display P3

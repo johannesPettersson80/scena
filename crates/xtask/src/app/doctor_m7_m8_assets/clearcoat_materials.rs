@@ -54,4 +54,143 @@ pub(super) fn check_clearcoat_material_contracts(root: &Path, findings: &mut Vec
             "clearcoat_normal_texture",
         ],
     );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/prepare/resources.rs",
+        &[
+            "clearcoat_roughness",
+            "clearcoat_normal",
+            "collect_backend_material_slot",
+            "backend_material_slots_preserve_all_texture_roles_and_material_only_slots",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/prepare/material_batch.rs",
+        &[
+            "MaterialTextureRole::Clearcoat",
+            "MaterialTextureRole::ClearcoatRoughness",
+            "MaterialTextureRole::ClearcoatNormal",
+            "clearcoat_roughness_sampler_mismatch_blocks_batching_with_diagnostic_role",
+            "clearcoat_normal_map_uses_per_material_path_until_texture_array_proven",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/gpu/material_uniform.rs",
+        &[
+            "MATERIAL_UNIFORM_BYTE_LEN: u64 = 128",
+            "clearcoat_factors",
+            "material.clearcoat_factor()",
+            "material.clearcoat_roughness_factor()",
+            "material.clearcoat_normal_scale()",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/gpu/material_upload.rs",
+        &[
+            "from_clearcoat_texture",
+            "from_clearcoat_roughness_texture",
+            "from_clearcoat_normal_texture",
+            "FALLBACK_NORMAL_RGBA8",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/gpu/material_bindings.rs",
+        &[
+            "CLEARCOAT_BINDINGS",
+            "CLEARCOAT_ROUGHNESS_BINDINGS",
+            "CLEARCOAT_NORMAL_BINDINGS",
+            "MATERIAL_TEXTURE_BINDING_INDICES",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/gpu/materials.rs",
+        &[
+            "MaterialTextureUpload::from_clearcoat_texture",
+            "MaterialTextureUpload::from_clearcoat_roughness_texture",
+            "MaterialTextureUpload::from_clearcoat_normal_texture",
+            "scena.material.clearcoat",
+            "scena.material.clearcoat_roughness",
+            "scena.material.clearcoat_normal",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/gpu/material_batched.rs",
+        &[
+            "scena.material.batched_clearcoat",
+            "scena.material.batched_clearcoat_roughness",
+            "scena.material.batched_clearcoat_normal",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/gpu/output_shader.wgsl",
+        &[
+            "clearcoat_factors: vec4<f32>",
+            "var clearcoat_texture: texture_2d_array<f32>",
+            "var clearcoat_roughness_texture: texture_2d_array<f32>",
+            "var clearcoat_normal_texture: texture_2d_array<f32>",
+            "material.clearcoat_factors.x * clearcoat_sample.r",
+            "material.clearcoat_factors.y * clearcoat_roughness_sample.g",
+            "material.clearcoat_factors.z",
+            "clearcoat_light_contribution",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/gpu/output_shader_texture_2d.wgsl",
+        &[
+            "clearcoat_factors: vec4<f32>",
+            "var clearcoat_texture: texture_2d<f32>",
+            "var clearcoat_roughness_texture: texture_2d<f32>",
+            "var clearcoat_normal_texture: texture_2d<f32>",
+            "material.clearcoat_factors.x * clearcoat_sample.r",
+            "clearcoat_light_contribution",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/render/gpu/output.rs",
+        &[
+            "triangle_shader_applies_clearcoat_lobe_in_native_and_webgl2_variants",
+            "triangle_shader_samples_all_material_texture_roles",
+            "triangle_shader_texture_2d_variant_declares_webgl2_material_bindings",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "tests/m8_assets_materials_ecosystem.rs",
+        &[
+            "m8_headless_gpu_clearcoat_texture_lobe_brightens_pbr_output_when_available",
+            "SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS",
+            "gpu-release-gaps",
+        ],
+    );
 }

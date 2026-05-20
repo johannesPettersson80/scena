@@ -21,6 +21,9 @@ pub enum MaterialTextureRole {
     MetallicRoughness,
     Occlusion,
     Emissive,
+    Clearcoat,
+    ClearcoatRoughness,
+    ClearcoatNormal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,8 +95,15 @@ pub(in crate::render) fn compute_material_batch_plan(
         MaterialTextureRole::MetallicRoughness,
         MaterialTextureRole::Occlusion,
         MaterialTextureRole::Emissive,
+        MaterialTextureRole::Clearcoat,
+        MaterialTextureRole::ClearcoatRoughness,
+        MaterialTextureRole::ClearcoatNormal,
     ] {
-        if role == MaterialTextureRole::Normal && role_is_populated(role, slots) {
+        if matches!(
+            role,
+            MaterialTextureRole::Normal | MaterialTextureRole::ClearcoatNormal
+        ) && role_is_populated(role, slots)
+        {
             return MaterialBatchPlan {
                 batchable: false,
                 layer_count: 0,
@@ -150,6 +160,9 @@ fn role_texture(role: MaterialTextureRole, slot: &PreparedMaterialSlot) -> Optio
         MaterialTextureRole::MetallicRoughness => slot.metallic_roughness.as_ref(),
         MaterialTextureRole::Occlusion => slot.occlusion.as_ref(),
         MaterialTextureRole::Emissive => slot.emissive.as_ref(),
+        MaterialTextureRole::Clearcoat => slot.clearcoat.as_ref(),
+        MaterialTextureRole::ClearcoatRoughness => slot.clearcoat_roughness.as_ref(),
+        MaterialTextureRole::ClearcoatNormal => slot.clearcoat_normal.as_ref(),
     }?;
     Some(&texture.desc)
 }
@@ -247,6 +260,9 @@ mod tests {
             metallic_roughness: None,
             occlusion: None,
             emissive: None,
+            clearcoat: None,
+            clearcoat_roughness: None,
+            clearcoat_normal: None,
         }
     }
 
@@ -258,6 +274,19 @@ mod tests {
         slot.normal = Some(PreparedMaterialTexture {
             handle: Default::default(),
             desc: normal,
+            transform: None,
+        });
+        slot
+    }
+
+    fn material_slot_with_clearcoat_roughness(
+        handle: MaterialHandle,
+        clearcoat_roughness: TextureDesc,
+    ) -> PreparedMaterialSlot {
+        let mut slot = material_slot_with_base_color(handle, texture_desc(default_sampler()));
+        slot.clearcoat_roughness = Some(PreparedMaterialTexture {
+            handle: Default::default(),
+            desc: clearcoat_roughness,
             transform: None,
         });
         slot
@@ -344,6 +373,31 @@ mod tests {
     }
 
     #[test]
+    fn clearcoat_roughness_sampler_mismatch_blocks_batching_with_diagnostic_role() {
+        let slots = vec![
+            material_slot_with_clearcoat_roughness(
+                assets_handle(),
+                texture_desc(default_sampler()),
+            ),
+            material_slot_with_clearcoat_roughness(
+                assets_handle(),
+                texture_desc(nearest_sampler()),
+            ),
+        ];
+        let plan = compute_material_batch_plan(&slots);
+        assert!(!plan.batchable);
+        assert_eq!(plan.layer_count, 0);
+        assert_eq!(
+            plan.incompatible_role,
+            Some(MaterialTextureRole::ClearcoatRoughness),
+        );
+        assert_eq!(
+            plan.incompatible_reason,
+            Some(MaterialBatchIncompatibility::SamplerMismatch),
+        );
+    }
+
+    #[test]
     fn format_mismatch_blocks_batching_with_diagnostic_role() {
         let slots = vec![
             material_slot_with_base_color(assets_handle(), texture_desc(default_sampler())),
@@ -376,6 +430,29 @@ mod tests {
         assert!(!plan.batchable);
         assert_eq!(plan.layer_count, 0);
         assert_eq!(plan.incompatible_role, Some(MaterialTextureRole::Normal));
+        assert_eq!(
+            plan.incompatible_reason,
+            Some(MaterialBatchIncompatibility::NormalMapBatchingDeferred),
+        );
+    }
+
+    #[test]
+    fn clearcoat_normal_map_uses_per_material_path_until_texture_array_proven() {
+        let mut left =
+            material_slot_with_base_color(assets_handle(), texture_desc(default_sampler()));
+        left.clearcoat_normal = Some(PreparedMaterialTexture {
+            handle: Default::default(),
+            desc: texture_desc(default_sampler()),
+            transform: None,
+        });
+        let right = material_slot_with_base_color(assets_handle(), texture_desc(default_sampler()));
+        let plan = compute_material_batch_plan(&[left, right]);
+        assert!(!plan.batchable);
+        assert_eq!(plan.layer_count, 0);
+        assert_eq!(
+            plan.incompatible_role,
+            Some(MaterialTextureRole::ClearcoatNormal),
+        );
         assert_eq!(
             plan.incompatible_reason,
             Some(MaterialBatchIncompatibility::NormalMapBatchingDeferred),
