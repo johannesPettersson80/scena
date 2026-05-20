@@ -263,8 +263,11 @@ fn render_subject_with_lens(
         .add()?;
     scene.add_studio_lighting()?;
 
-    let camera =
-        scene.add_perspective_camera(scene.root(), lens, Transform::at(Vec3::new(0.0, 1.4, 3.0)))?;
+    let camera = scene.add_perspective_camera(
+        scene.root(),
+        lens,
+        Transform::at(Vec3::new(0.0, 1.4, 3.0)),
+    )?;
     scene.look_at_point(camera, Vec3::new(0.0, 0.5, 0.0))?;
     scene.set_active_camera(camera)?;
 
@@ -315,7 +318,12 @@ fn render_light_presets(out: &Path) -> Result<(), Box<dyn Error>> {
             row * panel_h,
         );
     }
-    write_png(&rgba, composite_w, composite_h, &out.join("light-presets.png"))?;
+    write_png(
+        &rgba,
+        composite_w,
+        composite_h,
+        &out.join("light-presets.png"),
+    )?;
     Ok(())
 }
 
@@ -638,7 +646,12 @@ fn render_capture_png_showcase(out: &Path) -> Result<(), Box<dyn Error>> {
     renderer.prepare_with_assets(&mut scene, &assets)?;
     renderer.render_active(&scene)?;
 
-    write_png(renderer.frame_rgba8(), 960, 540, &out.join("capture-png.png"))?;
+    write_png(
+        renderer.frame_rgba8(),
+        960,
+        540,
+        &out.join("capture-png.png"),
+    )?;
     Ok(())
 }
 
@@ -768,8 +781,24 @@ fn render_connector_magnet_preview(out: &Path) -> Result<(), Box<dyn Error>> {
     let composite_w = panel_w * 2;
     let composite_h = panel_h;
     let mut rgba = dark_studio_canvas(composite_w, composite_h);
-    composite_blit(&mut rgba, composite_w, &out_of_range, panel_w, panel_h, 0, 0);
-    composite_blit(&mut rgba, composite_w, &snap_ready, panel_w, panel_h, panel_w, 0);
+    composite_blit(
+        &mut rgba,
+        composite_w,
+        &out_of_range,
+        panel_w,
+        panel_h,
+        0,
+        0,
+    );
+    composite_blit(
+        &mut rgba,
+        composite_w,
+        &snap_ready,
+        panel_w,
+        panel_h,
+        panel_w,
+        0,
+    );
     write_png(
         &rgba,
         composite_w,
@@ -779,11 +808,7 @@ fn render_connector_magnet_preview(out: &Path) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn render_connector_pair(
-    detach: f32,
-    width: u32,
-    height: u32,
-) -> Result<Vec<u8>, Box<dyn Error>> {
+fn render_connector_pair(detach: f32, width: u32, height: u32) -> Result<Vec<u8>, Box<dyn Error>> {
     let assets = Assets::new();
     let drive = pollster::block_on(assets.load_scene("tests/assets/gltf/drive_unit.glb"))?;
     let load = pollster::block_on(assets.load_scene("tests/assets/gltf/load_unit.glb"))?;
@@ -936,7 +961,15 @@ fn render_oit_order_invariance(out: &Path) -> Result<(), Box<dyn Error>> {
     let composite_h = panel_h;
     let mut rgba = dark_studio_canvas(composite_w, composite_h);
     composite_blit(&mut rgba, composite_w, &order_a, panel_w, panel_h, 0, 0);
-    composite_blit(&mut rgba, composite_w, &order_b, panel_w, panel_h, panel_w, 0);
+    composite_blit(
+        &mut rgba,
+        composite_w,
+        &order_b,
+        panel_w,
+        panel_h,
+        panel_w,
+        0,
+    );
     write_png(
         &rgba,
         composite_w,
@@ -946,7 +979,11 @@ fn render_oit_order_invariance(out: &Path) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn render_oit_scene(reverse_order: bool, width: u32, height: u32) -> Result<Vec<u8>, Box<dyn Error>> {
+fn render_oit_scene(
+    reverse_order: bool,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, Box<dyn Error>> {
     let assets = Assets::new();
     let plane = assets.create_geometry(GeometryDesc::box_xyz(0.6, 0.6, 0.02));
     let translucent_red = Color::from_linear_rgba(Color::RED.r, Color::RED.g, Color::RED.b, 0.45);
@@ -959,9 +996,8 @@ fn render_oit_scene(reverse_order: bool, width: u32, height: u32) -> Result<Vec<
     let green = assets.create_material(
         MaterialDesc::plastic(translucent_green).with_alpha_mode(AlphaMode::Blend),
     );
-    let blue = assets.create_material(
-        MaterialDesc::plastic(translucent_blue).with_alpha_mode(AlphaMode::Blend),
-    );
+    let blue = assets
+        .create_material(MaterialDesc::plastic(translucent_blue).with_alpha_mode(AlphaMode::Blend));
 
     let mut scene = Scene::new();
     let mats = if reverse_order {
@@ -970,12 +1006,23 @@ fn render_oit_scene(reverse_order: bool, width: u32, height: u32) -> Result<Vec<
         [red, green, blue]
     };
     let offsets = if reverse_order {
-        [Vec3::new(0.0, 0.0, 0.3), Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, -0.3)]
+        [
+            Vec3::new(0.0, 0.0, 0.3),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, -0.3),
+        ]
     } else {
-        [Vec3::new(0.0, 0.0, -0.3), Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.3)]
+        [
+            Vec3::new(0.0, 0.0, -0.3),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, 0.3),
+        ]
     };
     for (mat, offset) in mats.into_iter().zip(offsets) {
-        scene.mesh(plane, mat).transform(Transform::at(offset)).add()?;
+        scene
+            .mesh(plane, mat)
+            .transform(Transform::at(offset))
+            .add()?;
     }
     scene.add_studio_lighting()?;
     let camera = scene.add_perspective_camera(
@@ -988,8 +1035,9 @@ fn render_oit_scene(reverse_order: bool, width: u32, height: u32) -> Result<Vec<
     let mut renderer = Renderer::headless(width, height)?;
     renderer.set_background(Background::DarkStudio);
     renderer.set_exposure_ev(0.5);
-    renderer
-        .set_order_independent_transparency(Some(OrderIndependentTransparencyConfig::weighted_blended()));
+    renderer.set_order_independent_transparency(Some(
+        OrderIndependentTransparencyConfig::weighted_blended(),
+    ));
     renderer.prepare_with_assets(&mut scene, &assets)?;
     renderer.render_active(&scene)?;
     Ok(renderer.frame_rgba8().to_vec())
@@ -1011,7 +1059,15 @@ where
     let composite_h = PANEL_H;
     let mut rgba = dark_studio_canvas(composite_w, composite_h);
     composite_blit(&mut rgba, composite_w, &off_frame, PANEL_W, PANEL_H, 0, 0);
-    composite_blit(&mut rgba, composite_w, &on_frame, PANEL_W, PANEL_H, PANEL_W, 0);
+    composite_blit(
+        &mut rgba,
+        composite_w,
+        &on_frame,
+        PANEL_W,
+        PANEL_H,
+        PANEL_W,
+        0,
+    );
     Ok(rgba)
 }
 
@@ -1070,7 +1126,9 @@ fn scene_contact_corner() -> Result<(Scene, Assets), Box<dyn Error>> {
         .mesh(plinth, mat)
         .transform(Transform::at(Vec3::new(0.0, 0.0, 0.0)))
         .add()?;
-    scene.directional_light(DirectionalLight::key_light()).add()?;
+    scene
+        .directional_light(DirectionalLight::key_light())
+        .add()?;
     let camera = scene.add_perspective_camera(
         scene.root(),
         PerspectiveCamera::standard(),
@@ -1480,7 +1538,11 @@ fn render_extension_sphere(material: MaterialDesc) -> Result<Vec<u8>, Box<dyn Er
         .add()?;
     scene
         .directional_light(DirectionalLight::fill_light())
-        .transform(Transform::default().rotate_x_deg(-10.0).rotate_y_deg(-120.0))
+        .transform(
+            Transform::default()
+                .rotate_x_deg(-10.0)
+                .rotate_y_deg(-120.0),
+        )
         .add()?;
     let camera = scene.add_perspective_camera(
         scene.root(),
