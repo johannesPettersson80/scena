@@ -159,6 +159,10 @@ Common animation calls:
 - `Scene::set_animation_loop_mode`
 - `Scene::set_animation_speed`
 
+Viewer helpers also expose `play_clip(name)` for the loaded import. The
+returned mixer key is still scene-owned, so hosts explicitly drive update,
+loop, speed, prepare, and render.
+
 ## Asset ownership
 
 `Assets` owns resource creation and loading:

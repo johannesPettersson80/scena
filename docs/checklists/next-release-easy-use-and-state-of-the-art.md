@@ -730,13 +730,17 @@ system cannot prove.
 ### 4.4 One-call animation playback by clip name
 
 Status: **[shipped]** — `Scene::play_animation_by_name` is the primary
-surface; viewer sugar remains deferred until a concrete viewer workflow
-needs it.
-Owner: `src/scene/mixers.rs`
-Proof: `tests/round_c_animation_playback.rs` proves the helper creates
-and starts a mixer and returns the typed handle for update/loop/speed
-control; doctor rule `ONE-CALL-ANIMATION-PLAYBACK` keeps the API,
-example, docs, and rendered proof present.
+scene surface, and `HeadlessGltfViewer::play_clip(...)` /
+`InteractiveGltfViewer::play_clip(...)` are thin viewer conveniences for
+the loaded import.
+Owner: `src/scene/mixers.rs` for scene-owned mixer state and
+`src/viewer/animation.rs` for viewer sugar.
+Proof: `tests/round_c_animation_playback.rs` proves the scene helper
+creates and starts a mixer, returns the typed handle for update/loop/speed
+control, and that a headless viewer can start the same named clip without
+manually reaching through the import. Doctor rule
+`ONE-CALL-ANIMATION-PLAYBACK` keeps the API, example, docs, and rendered
+proof present.
 Visual proof: reference-image + animated-proof
 `target/gate-artifacts/examples-visual/round-c-animation-playback-reference-animated-docs-image.ppm`
 and its generated frame sequence render a visible child of an imported
@@ -749,10 +753,10 @@ let idle = scene.play_animation_by_name(&import, "idle")?;
 scene.set_animation_loop_mode(idle, AnimationLoopMode::Once)?;
 ```
 
-Implementation decision: `Scene::play_animation_by_name` is the shipped
-primary API because the scene already owns mixer handles. `Viewer::play_clip`
-is deferred; add it only as a thin convenience if a viewer-specific
-workflow needs to expose animations directly.
+Implementation decision: `Scene::play_animation_by_name` remains the
+owner API because the scene owns mixer handles. Viewer `play_clip` is
+deliberately thin sugar; it does not hide animation update, prepare, or
+render inside the call.
 
 ### 4.5 Viewer pointer callbacks
 
@@ -1789,3 +1793,11 @@ Animation proof reconciliation pass (2026-05-19):
   playback proof: the focused API test starts a named mixer and the
   generated docs-image proof renders fixed-timestamp frames that visibly
   change.
+
+Viewer animation sugar pass (2026-05-19):
+
+- Added `HeadlessGltfViewer::play_clip(...)` and
+  `InteractiveGltfViewer::play_clip(...)` as thin convenience surfaces over
+  `Scene::play_animation_by_name` for the viewer's loaded import.
+- Kept animation update, prepare, and render explicit by returning the
+  scene-owned mixer key; the host still drives `update_animation(...)`.

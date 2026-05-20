@@ -76,6 +76,11 @@ All notable user-facing changes are recorded here.
   canvas color-space probes, and diagnostics keep output treated as sRGB until
   a backend-specific probe proves otherwise.
 
+- Added viewer-level animation playback sugar:
+  `HeadlessGltfViewer::play_clip(...)` and
+  `InteractiveGltfViewer::play_clip(...)` start a named clip on the loaded
+  import while keeping animation update, prepare, and render explicit.
+
 ### Changed
 
 - Updated the browser demo showcase so connector mating is the default first

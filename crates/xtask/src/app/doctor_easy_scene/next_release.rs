@@ -265,8 +265,21 @@ pub(super) fn check_one_call_animation_playback(root: &Path, findings: &mut Vec<
         root,
         findings,
         "ONE-CALL-ANIMATION-PLAYBACK",
+        "src/viewer/animation.rs",
+        &[
+            "pub fn play_clip(",
+            "self.scene.play_animation_by_name(&self.import, name)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ONE-CALL-ANIMATION-PLAYBACK",
         "tests/round_c_animation_playback.rs",
-        &["scene_play_animation_by_name_creates_and_starts_mixer"],
+        &[
+            "scene_play_animation_by_name_creates_and_starts_mixer",
+            "headless_viewer_play_clip_starts_loaded_import_animation",
+        ],
     );
     require_contains(
         root,
@@ -291,7 +304,7 @@ pub(super) fn check_one_call_animation_playback(root: &Path, findings: &mut Vec<
         findings,
         "ONE-CALL-ANIMATION-PLAYBACK",
         "docs/guides/easy-scene-setup.md",
-        &["play_animation_by_name(&import"],
+        &["play_animation_by_name(&import", "viewer.play_clip("],
     );
 }
 

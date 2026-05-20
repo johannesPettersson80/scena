@@ -219,6 +219,13 @@ let mixer = scene.play_animation_by_name(&import, "idle")?;
 scene.update_animation(mixer, delta_seconds)?;
 ```
 
+Viewer helpers can start a clip on their loaded import directly:
+
+```rust
+let mixer = viewer.play_clip("idle")?;
+viewer.scene_mut().update_animation(mixer, delta_seconds)?;
+```
+
 Keep the returned mixer key when the host needs to pause, seek, change speed,
 or switch loop mode.
 

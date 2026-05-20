@@ -1,5 +1,6 @@
 //! High-level viewer helpers built from `Scene`, `Assets`, and `Renderer`.
 
+mod animation;
 mod capture;
 mod interaction;
 mod load_progress;
