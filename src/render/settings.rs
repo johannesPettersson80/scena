@@ -235,10 +235,15 @@ impl Renderer {
         }
     }
 
+    /// Current background clear color.
     pub fn background_color(&self) -> Color {
         self.background_color
     }
 
+    /// Sets the background to an explicit linear RGBA [`Color`].
+    ///
+    /// Prefer [`Renderer::set_background`] with a named [`Background`]
+    /// scheme; reach for this raw setter when a specific brand color is needed.
     pub fn set_background_color(&mut self, color: Color) {
         if self.background_color != color {
             self.background_color = color;
@@ -246,6 +251,22 @@ impl Renderer {
         }
     }
 
+    /// Sets the background from a named [`Background`] scheme.
+    ///
+    /// Equivalent to [`Renderer::set_background_color`] with the scheme's
+    /// resolved color. First-path code should reach for this method instead
+    /// of constructing raw colors.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use scena::{Background, Renderer};
+    /// # fn example() -> scena::Result<()> {
+    /// let mut renderer = Renderer::headless(1280, 720)?;
+    /// renderer.set_background(Background::Studio);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn set_background(&mut self, background: Background) {
         self.set_background_color(background.color());
     }

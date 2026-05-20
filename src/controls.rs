@@ -132,6 +132,17 @@ impl OrbitControls {
     /// is designed for the common `OrbitControls::from_framing(framing)` path:
     /// choose how close and far the user can zoom relative to the initial
     /// composition instead of hard-coding scene distances.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::{OrbitControls, Vec3};
+    ///
+    /// let controls = OrbitControls::new(Vec3::ZERO, 2.0)
+    ///     .zoom_limits_bounds_relative(0.5, 4.0);
+    /// assert!(controls.min_distance() <= controls.distance());
+    /// assert!(controls.max_distance() >= controls.distance());
+    /// ```
     pub fn zoom_limits_bounds_relative(self, min_factor: f32, max_factor: f32) -> Self {
         let base_distance = self.distance.max(MIN_DISTANCE);
         self.with_distance_limits(base_distance * min_factor, base_distance * max_factor)
@@ -176,6 +187,15 @@ impl OrbitControls {
     }
 
     /// Applies a light-damping orbit feel for direct manipulation.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::{OrbitControls, Vec3};
+    ///
+    /// let controls = OrbitControls::new(Vec3::ZERO, 2.0).snappy();
+    /// assert!(controls.damping_factor() > 0.0);
+    /// ```
     pub fn snappy(self) -> Self {
         self.with_damping(SNAPPY_DAMPING)
     }
@@ -184,6 +204,15 @@ impl OrbitControls {
     ///
     /// Hosts advance the turntable explicitly with [`Self::advance`] before
     /// applying the controls to the scene camera.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::{OrbitControls, Vec3};
+    ///
+    /// let mut controls = OrbitControls::new(Vec3::ZERO, 2.0).presentation();
+    /// controls.advance(1.0 / 60.0);
+    /// ```
     pub fn presentation(self) -> Self {
         self.with_damping(PRESENTATION_DAMPING)
             .turntable(PRESENTATION_RPM)
@@ -193,6 +222,15 @@ impl OrbitControls {
     ///
     /// Negative values rotate in the opposite direction. Non-finite values
     /// disable auto-rotate.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use scena::{OrbitControls, Vec3};
+    ///
+    /// let mut controls = OrbitControls::new(Vec3::ZERO, 2.0).turntable(6.0);
+    /// controls.advance(1.0 / 60.0);
+    /// ```
     pub fn turntable(mut self, rpm: f32) -> Self {
         self.auto_rotate_rpm = if rpm.is_finite() {
             rpm.clamp(-120.0, 120.0)

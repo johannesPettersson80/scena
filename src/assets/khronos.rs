@@ -1,3 +1,26 @@
+//! Bundled Khronos glTF sample loaders.
+//!
+//! Behind the `khronos-samples` feature, this module exposes a checked catalog
+//! of Khronos reference assets (`WaterBottle`, `RiggedSimple`, the transmission
+//! and texture tests, etc.) so applications and examples can demonstrate scena
+//! without shipping their own asset pipeline. The samples are loaded as
+//! ordinary [`SceneAsset`]s through the host's asset fetcher; no bytes are
+//! embedded into the library binary.
+//!
+//! # Examples
+//!
+//! ```no_run
+//! # #[cfg(feature = "khronos-samples")]
+//! # async fn example() -> scena::Result<()> {
+//! use scena::Assets;
+//!
+//! let assets = Assets::new();
+//! let bottle = assets.khronos().water_bottle().await?;
+//! let _ = bottle;
+//! # Ok(())
+//! # }
+//! ```
+
 use crate::diagnostics::AssetError;
 
 use super::{AssetFetcher, Assets, SceneAsset};
@@ -12,28 +35,57 @@ macro_rules! sample_path {
     };
 }
 
+/// Borrowed loader handle for the Khronos sample catalog.
+///
+/// Obtained from [`Assets::khronos`]. Each method loads one catalog entry
+/// through the host's asset fetcher and returns a [`SceneAsset`].
 #[derive(Debug, Clone, Copy)]
 pub struct KhronosSamples<'a, F> {
     assets: &'a Assets<F>,
 }
 
+/// One entry in the checked Khronos sample catalog.
+///
+/// Use [`KhronosSample::metadata`] for the asset's upstream name, file list,
+/// SHA-256 of the primary fixture, and contract describing what the asset
+/// exercises. Variants are marked `#[non_exhaustive]` so the catalog can grow
+/// without breaking matches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum KhronosSample {
+    /// Minimal skinned/animated cylinder used to exercise the skin and
+    /// animation channels in a small, self-contained fixture.
     RiggedSimple,
+    /// Minimal skinning fixture for skeleton + inverse bind matrices.
     SimpleSkin,
+    /// Minimal morph-target fixture.
     SimpleMorph,
+    /// Animated morph-target cube; the headline morph fixture.
     MorphCube,
+    /// Skinning with both matrix and TRS node hierarchies.
     RiggedFigure,
+    /// Larger skinning and animation hierarchy.
     BrainStem,
+    /// Alpha-blend and alpha-mask cutoff coverage with PBR textures.
     AlphaBlendModeTest,
+    /// Sampler filter, wrap-mode, and double-sided metadata coverage.
     TextureSettingsTest,
+    /// `KHR_texture_transform` offset / rotation / scale coverage.
     TextureTransformTest,
+    /// `KHR_materials_unlit` mapping coverage.
     UnlitTest,
+    /// Production-grade PBR product with millimeter-scale framing.
     WaterBottle,
+    /// `KHR_materials_transmission` control asset.
     TransmissionTest,
 }
 
+/// Static metadata for one [`KhronosSample`] catalog entry.
+///
+/// All fields are static strings or slices so the catalog can be inspected at
+/// `const` time. The metadata is what lets package-budget tests and license /
+/// provenance audits prove which upstream commit and license the bundled
+/// samples come from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KhronosSampleMetadata {
     name: &'static str,
@@ -45,32 +97,45 @@ pub struct KhronosSampleMetadata {
 }
 
 impl<F: AssetFetcher> Assets<F> {
+    /// Returns a borrowed handle for loading bundled Khronos sample assets.
+    ///
+    /// Feature-gated behind `khronos-samples`. The handle borrows `self`, so
+    /// the usual sequence is `assets.khronos().water_bottle().await?`.
     pub fn khronos(&self) -> KhronosSamples<'_, F> {
         KhronosSamples { assets: self }
     }
 }
 
 impl<'a, F: AssetFetcher> KhronosSamples<'a, F> {
+    /// Loads a catalog entry by enum identity.
+    ///
+    /// Equivalent to looking the sample's primary path up through
+    /// [`KhronosSample::metadata`] and feeding it to
+    /// [`Assets::load_scene`](super::Assets::load_scene).
     pub async fn load(&self, sample: KhronosSample) -> Result<SceneAsset, AssetError> {
         self.assets
             .load_scene(sample.metadata().primary_path())
             .await
     }
 
+    /// Loads [`KhronosSample::WaterBottle`] — the headline PBR product asset.
     pub async fn water_bottle(&self) -> Result<SceneAsset, AssetError> {
         self.load(KhronosSample::WaterBottle).await
     }
 
+    /// Loads [`KhronosSample::TransmissionTest`] — the transmission control asset.
     pub async fn transmission_test(&self) -> Result<SceneAsset, AssetError> {
         self.load(KhronosSample::TransmissionTest).await
     }
 
+    /// Loads [`KhronosSample::RiggedSimple`] — the headline skinning fixture.
     pub async fn rigged_simple(&self) -> Result<SceneAsset, AssetError> {
         self.load(KhronosSample::RiggedSimple).await
     }
 }
 
 impl KhronosSample {
+    /// Every variant in the checked catalog, in display order.
     pub const ALL: &'static [Self] = &[
         Self::RiggedSimple,
         Self::SimpleSkin,
@@ -91,6 +156,8 @@ impl KhronosSample {
     /// bytes into the library binary.
     pub const PACKAGE_SIZE_BUDGET_BYTES: u64 = 9_000_000;
 
+    /// Returns the static metadata for this sample — primary path, full file
+    /// list, SHA-256 of the primary fixture, upstream name, and contract.
     pub const fn metadata(self) -> KhronosSampleMetadata {
         match self {
             Self::RiggedSimple => KhronosSampleMetadata {
@@ -247,38 +314,47 @@ impl KhronosSample {
 }
 
 impl KhronosSampleMetadata {
+    /// The catalog identifier (`"WaterBottle"`, `"RiggedSimple"`, …).
     pub const fn name(self) -> &'static str {
         self.name
     }
 
+    /// The upstream Khronos sample name, when it differs from the catalog name.
     pub const fn upstream_name(self) -> Option<&'static str> {
         self.upstream_name
     }
 
+    /// The primary file path passed to the asset fetcher when loading the sample.
     pub const fn primary_path(self) -> &'static str {
         self.primary_path
     }
 
+    /// Every file that the sample depends on (primary glTF/GLB plus referenced bin/png/jpg).
     pub const fn files(self) -> &'static [&'static str] {
         self.files
     }
 
+    /// SHA-256 of the primary fixture; used by package-budget tests to detect drift.
     pub const fn primary_sha256(self) -> &'static str {
         self.primary_sha256
     }
 
+    /// One-line description of what behavior the sample exercises.
     pub const fn contract(self) -> &'static str {
         self.contract
     }
 
+    /// Upstream repository URL where the bundled samples were sourced from.
     pub const fn source_repository(self) -> &'static str {
         SOURCE_REPOSITORY
     }
 
+    /// Pinned upstream commit hash for provenance.
     pub const fn source_commit(self) -> &'static str {
         SOURCE_COMMIT
     }
 
+    /// Pointer to the upstream license directory.
     pub const fn license_reference(self) -> &'static str {
         LICENSE_REFERENCE
     }

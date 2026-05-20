@@ -2,9 +2,81 @@
 
 All notable user-facing changes are recorded here.
 
-## [Unreleased]
+## [1.4.0] - 2026-05-20
 
 ### Added
+
+- Added `Color` named constants (`TRANSPARENT`, `BLACK`, `WHITE`, `GRAY`,
+  `LIGHT_GRAY`, `DARK_GRAY`, `CHARCOAL`, `STUDIO_BACKDROP`, `WARM_WHITE`,
+  `COOL_WHITE`, `RED`, `GREEN`, `BLUE`, `ORANGE`, `YELLOW`, `CYAN`,
+  `MAGENTA`) plus `Color::from_hex` and `Color::from_kelvin` so first-path
+  scene code can pick named colors instead of raw RGB literals.
+- Added `PerspectiveCamera` lens presets `wide_angle`, `standard`,
+  `portrait`, `telephoto`, and the explicit `with_fov_degrees` escape
+  hatch.
+- Added `Transform::looking_at` for facing a node at a target point.
+- Added directional light presets `DirectionalLight::sun`, `key_light`,
+  `fill_light`, `rim_light`, and point light presets
+  `PointLight::softbox`, `bulb_warm`, `bulb_cool`.
+- Added `MaterialDesc` PBR presets `matte`, `plastic`, `metal`, `rubber`
+  (the "honest" four; glass/chrome/leather remain deferred until the
+  renderer can back the visual claim).
+- Added `Background` enum (`Studio`, `DarkStudio`, `NeutralGray`,
+  `White`, `Black`, `Sky`, `Transparent`, `Custom(Color)`) and
+  `Renderer::set_background`.
+- Added `OrbitControls` named damping/auto-rotate presets `cinematic`,
+  `snappy`, `presentation`, `turntable(rpm)`, plus
+  `zoom_limits_bounds_relative` for framing-relative zoom clamps.
+- Added `AutoExposureConfig` scenario presets `product_studio`, `indoor`,
+  `outdoor`, `mixed`.
+- Added bundled `EnvironmentPreset` catalog (`NeutralStudio`, `Studio`)
+  with checked license/source/SHA-256 metadata and
+  `Assets::load_environment_preset`.
+- Added bundled Khronos sample loader (`KhronosSample`, `KhronosSamples`,
+  `KhronosSampleMetadata`, `Assets::khronos`) behind the
+  `khronos-samples` feature, with shortcut methods for `water_bottle`,
+  `transmission_test`, `rigged_simple`.
+- Added one-call scene animation playback `Scene::play_animation_by_name`
+  and viewer-level sugar `HeadlessGltfViewer::play_clip` /
+  `InteractiveGltfViewer::play_clip`.
+- Added connector-mating axial gap helper `ConnectOptions::with_axial_gap`
+  for editor-style drag-to-assemble workflows.
+- Added viewer pointer callbacks `InteractiveGltfViewer::on_click` /
+  `on_hover` / `clear_click_callback` / `clear_hover_callback`, plus
+  asset-aware `pick_at`, `click_at`, `hover_at`,
+  `pick_and_select_at`, `pick_and_hover_at`.
+- Added one-liner screenshot capture via
+  `HeadlessGltfViewer::capture_png` / `capture_png_bytes`,
+  `InteractiveGltfViewer::capture_png` / `capture_png_bytes`,
+  `FirstRender::capture_png` / `capture_png_bytes`, and the
+  one-shot `HeadlessGltfViewerBuilder::render_png` /
+  `render_png_bytes` pipeline. Structured error types
+  `ViewerCaptureError` and `ViewerPngError` accompany the API.
+- Added native asset hot reload (`Assets::watch_scene_for_hot_reload`,
+  `Assets::reload_scene`, `AssetHotReloadWatcher`, `AssetHotReloadError`)
+  behind the `hot-reload` feature, backed by `notify-debouncer-full`.
+- Added `CameraOrbitUrlState` for sharing camera/orbit state via URL
+  query strings without leaking asset URLs or credentials.
+- Added `Scene::add_perspective_camera_default_for(bounds, viewport)` so
+  the common load → frame → camera path is one call.
+- Added scene-owned animation mixer helpers `Scene::create_animation_mixer`,
+  `animation_mixer`, `play_animation`, `pause_animation`, `stop_animation`,
+  `seek_animation`, `set_animation_speed`, `set_animation_loop_mode`,
+  `update_animation`.
+- Added `ReferenceImage::from_rgba8`, `regress`, and
+  `regress_with_tolerance` so applications can write reference-image
+  regression tests against scena RGBA8 frames without depending on a
+  specific asset loader, renderer backend, or file layout.
+- Added `FollowControls` and `FlyControls` companion control kits with
+  named offset and local-motion APIs.
+- Added `<scena-viewer>` custom element foundation
+  (`defineScenaViewer()`, shadow-canvas custom element, model-viewer
+  attribute parsing) plus a host-wirable event surface:
+  `ScenaViewerDropDecision`, `ScenaViewerVariantSelection`,
+  `ScenaViewerInspectorSnapshot`, `ScenaViewerProgress`,
+  `ScenaViewerProgressPhase`, `ScenaViewerAccessibilityDefaults`,
+  `ScenaViewerKeyboardAction`, `ScenaViewerGestureAction`,
+  `ScenaViewerAnnotationAnchor`.
 
 - Added browser proof for `<scena-viewer>` custom-element surfaces in the M6
   Playwright probe, covering progress UI, drag/drop events, material variants,

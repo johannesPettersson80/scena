@@ -91,6 +91,76 @@ scene.frame_bounds(
 For a complete load-light-floor-frame-render flow, see
 [Easy scene setup](easy-scene-setup.md).
 
+## Compose The Scene With Named Primitives
+
+Three.js tends to take raw hex colors, numeric intensities, and
+metalness/roughness floats inline. `scena` ships named primitives for the
+same ideas so first-path code reads like the workflow it expresses.
+
+```js
+// Three.js
+scene.background = new THREE.Color(0x1a1d28);
+
+const key = new THREE.DirectionalLight(0xffffff, 3.0);
+key.position.set(2.5, 4.0, 3.0);
+scene.add(key);
+
+const fill = new THREE.DirectionalLight(0xc8d8ff, 1.2);
+fill.position.set(-3.5, 2.0, 1.5);
+scene.add(fill);
+
+const steel = new THREE.MeshStandardMaterial({
+  color: 0xb0b6c2,
+  metalness: 1.0,
+  roughness: 0.32,
+});
+
+renderer.toneMappingExposure = 1.0;
+```
+
+```rust
+// scena
+renderer.set_background(Background::DarkStudio);
+
+scene.directional_light(DirectionalLight::key_light()).add()?;
+scene.directional_light(DirectionalLight::fill_light()).add()?;
+
+let steel = assets.create_material(MaterialDesc::metal(Color::LIGHT_GRAY));
+
+renderer.set_auto_exposure(AutoExposureConfig::product_studio());
+```
+
+The named primitives are paired with [`Color::WHITE`], [`Color::CHARCOAL`],
+[`Color::from_kelvin`], [`Color::from_hex`], `MaterialDesc::matte`,
+`MaterialDesc::plastic`, `MaterialDesc::metal`, `MaterialDesc::rubber`,
+`Background::Studio` / `DarkStudio` / `NeutralGray` / `Sky` /
+`Transparent`, and `AutoExposureConfig::product_studio` / `indoor` /
+`outdoor` / `mixed`. Raw constructors (`Color::from_srgb_u8`, raw FOV,
+`with_damping(<f32>)`) remain available as escape hatches; the named
+primitives are the first-path defaults.
+
+## Camera Controls
+
+Three.js `OrbitControls` is configured by setting `enableDamping = true`,
+`dampingFactor = 0.05`, and `autoRotate = true` separately. `scena`
+[`OrbitControls`] composes those choices into named presets:
+
+```rust
+let controls = OrbitControls::from_framing(framing)
+    .cinematic()                          // heavy damping, product feel
+    .zoom_limits_bounds_relative(0.5, 4.0);
+
+let presentation = OrbitControls::from_framing(framing).presentation();
+let turntable = OrbitControls::from_framing(framing).turntable(6.0);
+let direct = OrbitControls::from_framing(framing).snappy();
+```
+
+[`Color::WHITE`]: ../api.md
+[`Color::CHARCOAL`]: ../api.md
+[`Color::from_kelvin`]: ../api.md
+[`Color::from_hex`]: ../api.md
+[`OrbitControls`]: ../api.md
+
 ## Connect Objects
 
 Prefer named anchors or connectors over copied matrices:

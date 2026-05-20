@@ -43,6 +43,17 @@ impl AutoExposureConfig {
     /// Uses a slightly brighter target, a tight EV range, and an aggressive
     /// highlight guard so light product surfaces do not wash out while the
     /// renderer lifts a dark studio background.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use scena::{AutoExposureConfig, Renderer};
+    /// # fn example() -> scena::Result<()> {
+    /// let mut renderer = Renderer::headless(1280, 720)?;
+    /// renderer.set_auto_exposure(AutoExposureConfig::product_studio());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub const fn product_studio() -> Self {
         Self {
             target_luminance: 0.22,
@@ -54,6 +65,17 @@ impl AutoExposureConfig {
     }
 
     /// Indoor exposure for moderately dim scenes with practical highlight headroom.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use scena::{AutoExposureConfig, Renderer};
+    /// # fn example() -> scena::Result<()> {
+    /// let mut renderer = Renderer::headless(1280, 720)?;
+    /// renderer.set_auto_exposure(AutoExposureConfig::indoor());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub const fn indoor() -> Self {
         Self {
             target_luminance: 0.20,
@@ -65,6 +87,17 @@ impl AutoExposureConfig {
     }
 
     /// Outdoor exposure for bright scenes where darkening is usually safer than lifting.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use scena::{AutoExposureConfig, Renderer};
+    /// # fn example() -> scena::Result<()> {
+    /// let mut renderer = Renderer::headless(1280, 720)?;
+    /// renderer.set_auto_exposure(AutoExposureConfig::outdoor());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub const fn outdoor() -> Self {
         Self {
             target_luminance: 0.16,
@@ -76,6 +109,17 @@ impl AutoExposureConfig {
     }
 
     /// Conservative mixed-lighting exposure. Equivalent to [`Self::default`].
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use scena::{AutoExposureConfig, Renderer};
+    /// # fn example() -> scena::Result<()> {
+    /// let mut renderer = Renderer::headless(1280, 720)?;
+    /// renderer.set_auto_exposure(AutoExposureConfig::mixed());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub const fn mixed() -> Self {
         Self {
             target_luminance: DEFAULT_TARGET_LUMINANCE,

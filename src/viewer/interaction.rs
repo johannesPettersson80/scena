@@ -10,6 +10,19 @@ impl InteractiveGltfViewer {
     /// `Ok(Some(hit))` for a hit, `Ok(None)` for an empty click, and `Err(_)`
     /// for picking failures. This keeps application glue on the viewer API
     /// without bypassing the existing asset-aware picking path.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use scena::InteractiveGltfViewer;
+    /// # fn example(viewer: &mut InteractiveGltfViewer) {
+    /// viewer.on_click(|result| {
+    ///     if let Ok(Some(hit)) = result {
+    ///         println!("picked {:?}", hit.target());
+    ///     }
+    /// });
+    /// # }
+    /// ```
     pub fn on_click<F>(&mut self, callback: F) -> &mut Self
     where
         F: FnMut(std::result::Result<Option<Hit>, LookupError>) + 'static,
@@ -19,6 +32,19 @@ impl InteractiveGltfViewer {
     }
 
     /// Registers a callback fired by [`Self::hover_at`].
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use scena::InteractiveGltfViewer;
+    /// # fn example(viewer: &mut InteractiveGltfViewer) {
+    /// viewer.on_hover(|result| {
+    ///     if matches!(result, Ok(Some(_))) {
+    ///         println!("hovering over a hit");
+    ///     }
+    /// });
+    /// # }
+    /// ```
     pub fn on_hover<F>(&mut self, callback: F) -> &mut Self
     where
         F: FnMut(std::result::Result<Option<Hit>, LookupError>) + 'static,

@@ -7,6 +7,10 @@ use crate::diagnostics::AnimationError;
 use super::{Scene, SceneImport, Transform};
 
 impl Scene {
+    /// Creates a paused mixer for a named imported animation clip.
+    ///
+    /// Returns the mixer key without starting playback. For the one-call "play
+    /// this now" path, use [`Self::play_animation_by_name`].
     pub fn create_animation_mixer(
         &mut self,
         import: &SceneImport,
@@ -55,6 +59,7 @@ impl Scene {
         Ok(mixer)
     }
 
+    /// Borrows the mixer state for a given key.
     pub fn animation_mixer(
         &self,
         mixer: AnimationMixerKey,
@@ -64,16 +69,20 @@ impl Scene {
             .ok_or(AnimationError::MixerNotFound(mixer))
     }
 
+    /// Starts the mixer; resumes from the current time if it was paused.
     pub fn play_animation(&mut self, mixer: AnimationMixerKey) -> Result<(), AnimationError> {
         self.animation_mixer_mut(mixer)?.play();
         Ok(())
     }
 
+    /// Pauses the mixer at its current time. The next
+    /// [`Self::play_animation`] resumes from the same time.
     pub fn pause_animation(&mut self, mixer: AnimationMixerKey) -> Result<(), AnimationError> {
         self.animation_mixer_mut(mixer)?.pause();
         Ok(())
     }
 
+    /// Stops the mixer and snaps the animated nodes back to time zero.
     pub fn stop_animation(&mut self, mixer: AnimationMixerKey) -> Result<(), AnimationError> {
         let clip = {
             let mixer = self.animation_mixer_mut(mixer)?;
@@ -84,6 +93,8 @@ impl Scene {
         Ok(())
     }
 
+    /// Seeks the mixer to a specific time in seconds and applies the resulting
+    /// pose to the animated nodes.
     pub fn seek_animation(
         &mut self,
         mixer: AnimationMixerKey,
@@ -98,6 +109,8 @@ impl Scene {
         Ok(())
     }
 
+    /// Sets the playback speed multiplier. `1.0` is real-time; negative values
+    /// play the clip in reverse.
     pub fn set_animation_speed(
         &mut self,
         mixer: AnimationMixerKey,
@@ -107,6 +120,7 @@ impl Scene {
         Ok(())
     }
 
+    /// Sets the loop mode (loop, once, ping-pong).
     pub fn set_animation_loop_mode(
         &mut self,
         mixer: AnimationMixerKey,
@@ -116,6 +130,9 @@ impl Scene {
         Ok(())
     }
 
+    /// Advances the mixer by `delta_seconds` and applies the resulting pose to
+    /// animated nodes. Hosts are expected to call this once per frame for
+    /// every active mixer.
     pub fn update_animation(
         &mut self,
         mixer: AnimationMixerKey,

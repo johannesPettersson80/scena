@@ -105,7 +105,7 @@ Equivalent `Cargo.toml` entry:
 
 ```toml
 [dependencies]
-scena = "1.3"
+scena = "1.4"
 ```
 
 Use a sibling checkout when developing `scena` and an application together:
@@ -310,6 +310,7 @@ state until the host calls `prepare()` again.
 | [`docs/guides/units-axes-handedness.md`](docs/guides/units-axes-handedness.md) | unit, axis, and handedness behavior for imported assets |
 | [`docs/guides/authoring-gltf-anchors-connectors.md`](docs/guides/authoring-gltf-anchors-connectors.md) | authoring metadata for CAD-style placement workflows |
 | [`docs/guides/troubleshooting-misplaced-assets.md`](docs/guides/troubleshooting-misplaced-assets.md) | practical checks for invisible, mis-scaled, or rotated imports |
+| [`docs/release-notes/v1.4.0.md`](docs/release-notes/v1.4.0.md) | v1.4.0 release notes for easy-use named primitives, bundled content, viewer ergonomics, `<scena-viewer>` element, and renderer-feature coverage |
 | [`docs/release-notes/v1.3.0.md`](docs/release-notes/v1.3.0.md) | v1.3.0 release notes for easy scene setup, connector showcase materials, and browser demo proof |
 | [`docs/release-notes/v1.1.0.md`](docs/release-notes/v1.1.0.md) | v1.1.0 release notes for the wgpu-backed WebGL2 renderer |
 | [`docs/release-notes/v1.0.1.md`](docs/release-notes/v1.0.1.md) | v1.0.1 release notes and package documentation update |

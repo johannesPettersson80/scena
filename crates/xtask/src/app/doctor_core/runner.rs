@@ -426,6 +426,7 @@ pub(crate) const REQUIRED_DOCS: &[&str] = &[
     "docs/guides/place-and-connect-objects.md",
     "docs/guides/troubleshooting-misplaced-assets.md",
     "docs/guides/units-axes-handedness.md",
+    "docs/release-notes/v1.4.0.md",
     "docs/release-notes/v1.3.0.md",
     "docs/release-notes/v1.2.0.md",
     ".codex/skills/scena-doctor/SKILL.md",

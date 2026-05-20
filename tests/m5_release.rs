@@ -65,6 +65,7 @@ fn m5_release_surface_files_and_examples_are_present() {
         "docs/release-notes/v1.0.2.md",
         "docs/release-notes/v1.1.0.md",
         "docs/release-notes/v1.3.0.md",
+        "docs/release-notes/v1.4.0.md",
         "examples/primitive_shapes.rs",
         "examples/easy_model_viewer.rs",
         "examples/glb_model_viewer.rs",
@@ -91,7 +92,7 @@ fn m5_release_surface_files_and_examples_are_present() {
 fn m5_package_metadata_is_ready_for_dry_run() {
     let manifest = fs::read_to_string(root().join("Cargo.toml")).expect("Cargo.toml is readable");
     for needle in [
-        "version = \"1.3.0\"",
+        "version = \"1.4.0\"",
         "rust-version = ",
         "license = \"MIT OR Apache-2.0\"",
         "documentation = \"https://docs.rs/scena\"",
