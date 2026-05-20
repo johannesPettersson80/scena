@@ -12,12 +12,39 @@ import init, {
 } from "/pkg/scena.js";
 
 let initialized = false;
+let modelViewerInitialized = false;
+
+const SCENA_VIEWER_PARITY_ASSETS = [
+  {
+    label: "Framed glTF camera",
+    source: "/fixtures/gltf/non_ndc_camera_scene.gltf",
+    workflow: "model-viewer",
+  },
+  {
+    label: "Animated morph asset",
+    source: "/fixtures/gltf/khronos/MorphCube/AnimatedMorphCube.gltf",
+    workflow: "animation",
+  },
+  {
+    label: "Textured material asset",
+    source: "/fixtures/gltf/khronos/WaterBottle/WaterBottle.gltf",
+    workflow: "source-gltf-materials",
+  },
+];
 
 async function ensureInit() {
   if (!initialized) {
     await init();
     initialized = true;
   }
+}
+
+async function ensureModelViewer() {
+  if (!modelViewerInitialized) {
+    await import("/model-viewer/model-viewer.min.js");
+    modelViewerInitialized = true;
+  }
+  await customElements.whenDefined("model-viewer");
 }
 
 async function nextFrame() {
@@ -126,6 +153,160 @@ async function renderSelectedVariantIntoViewer(viewer, backend, variantName) {
     pixel_readback_attempts: readback.attempts,
   };
 }
+
+function waitForModelViewerLoaded(viewer, source) {
+  if (viewer.loaded) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error(`model-viewer timed out loading ${source}`)),
+      15000,
+    );
+    viewer.addEventListener("load", () => {
+      clearTimeout(timeout);
+      resolve();
+    }, { once: true });
+    viewer.addEventListener("error", (event) => {
+      clearTimeout(timeout);
+      reject(new Error(`model-viewer failed loading ${source}: ${event.detail || event.type}`));
+    }, { once: true });
+  });
+}
+
+async function renderWorkflowIntoCanvas(canvas, backend, workflow) {
+  canvas.width = 160;
+  canvas.height = 120;
+  const raw = await m6RenderWorkflowProbe(canvas, backend, workflow);
+  const result = JSON.parse(raw);
+  const readback = await readRenderedPixelsWithRetry(backend, canvas, workflow);
+  const rendererReadback =
+    result.renderer_readback && result.renderer_readback.pixel_statistics;
+  const useRendererReadback =
+    backend === "webgpu" && rendererReadback && rendererReadback.nonblack > 0;
+  const pixelStatistics = useRendererReadback ? rendererReadback : readback.pixels;
+  result.workflow = workflow;
+  result.pixels = pixelStatistics;
+  result.pixel_source = useRendererReadback ? "renderer-owned-gpu-copy" : "canvas-readback";
+  result.pixel_readback_attempts = readback.attempts;
+  result.canvas_data_url = canvas.toDataURL("image/png");
+  result.status =
+    result.draw_calls > 0 &&
+    result.gpu_submissions > 0 &&
+    result.pixels &&
+    result.pixels.nonblack > 0
+      ? "passed"
+      : "failed";
+  return result;
+}
+
+function modelViewerCanvasReady(viewer) {
+  const canvas = viewer.shadowRoot && viewer.shadowRoot.querySelector("canvas");
+  return Boolean(canvas && canvas.width > 0 && canvas.height > 0);
+}
+
+window.scenaViewerModelViewerParityProbe =
+  async function scenaViewerModelViewerParityProbe(backend = "webgl2") {
+    await ensureInit();
+    await ensureModelViewer();
+    defineScenaViewer();
+    await customElements.whenDefined("scena-viewer");
+
+    document.body.style.margin = "0";
+    const section = document.createElement("section");
+    section.dataset.proof = "scena-viewer-model-viewer-parity";
+    section.style.cssText = "display:grid;gap:12px;width:900px;padding:16px;background:#0b1020;color:#e5e7eb;font:12px system-ui,sans-serif";
+    const title = document.createElement("strong");
+    title.textContent = "<scena-viewer> / <model-viewer> asset parity";
+    section.append(title);
+    document.body.append(section);
+
+    const assets = [];
+    for (const asset of SCENA_VIEWER_PARITY_ASSETS) {
+      const row = document.createElement("div");
+      row.dataset.asset = asset.workflow;
+      row.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:stretch";
+
+      const referencePane = document.createElement("div");
+      referencePane.style.cssText = "display:grid;gap:4px;padding:8px;background:#111827";
+      const referenceLabel = document.createElement("span");
+      referenceLabel.textContent = `model-viewer: ${asset.label}`;
+      const modelViewer = document.createElement("model-viewer");
+      modelViewer.setAttribute("src", asset.source);
+      modelViewer.setAttribute("camera-controls", "");
+      modelViewer.setAttribute("reveal", "auto");
+      modelViewer.style.cssText = "display:block;width:100%;height:170px;background:#111827";
+      referencePane.append(referenceLabel, modelViewer);
+
+      const scenaPane = document.createElement("div");
+      scenaPane.style.cssText = "display:grid;gap:4px;padding:8px;background:#111827";
+      const scenaLabel = document.createElement("span");
+      scenaLabel.textContent = `scena-viewer: ${asset.label}`;
+      const scenaViewer = document.createElement("scena-viewer");
+      scenaViewer.setAttribute("src", asset.source);
+      scenaViewer.setAttribute("camera-controls", "");
+      scenaViewer.setAttribute("tone-mapping", "neutral");
+      scenaViewer.style.cssText = "display:block;width:100%;height:170px;background:#111827;color:#f8fafc";
+      scenaPane.append(scenaLabel, scenaViewer);
+
+      const ready = once(scenaViewer, "scena-viewer-ready");
+      row.append(referencePane, scenaPane);
+      section.append(row);
+
+      await ready;
+      await waitForModelViewerLoaded(modelViewer, asset.source);
+      await nextFrame();
+      await nextFrame();
+
+      const canvas = scenaViewer.shadowRoot.querySelector("canvas");
+      const render = await renderWorkflowIntoCanvas(canvas, backend, asset.workflow);
+      const referenceRect = modelViewer.getBoundingClientRect();
+      const scenaRect = scenaViewer.getBoundingClientRect();
+      assets.push({
+        label: asset.label,
+        source: asset.source,
+        workflow: asset.workflow,
+        side_by_side: true,
+        model_viewer_tag: modelViewer.tagName,
+        scena_viewer_tag: scenaViewer.tagName,
+        model_viewer_loaded: modelViewer.loaded === true,
+        model_viewer_canvas_ready: modelViewerCanvasReady(modelViewer),
+        model_viewer_width: Math.round(referenceRect.width),
+        model_viewer_height: Math.round(referenceRect.height),
+        scena_width: Math.round(scenaRect.width),
+        scena_height: Math.round(scenaRect.height),
+        scena_backend: backend,
+        scena_render_status: render.status,
+        scena_pixels_nonblack: render.pixels && render.pixels.nonblack,
+        scena_pixel_source: render.pixel_source,
+        scena_workflow: render.workflow,
+        scene_api: render.scene_api,
+        assets_api: render.assets_api,
+      });
+    }
+
+    const passed =
+      assets.length === SCENA_VIEWER_PARITY_ASSETS.length &&
+      assets.every((asset) =>
+        asset.side_by_side === true &&
+        asset.model_viewer_tag === "MODEL-VIEWER" &&
+        asset.scena_viewer_tag === "SCENA-VIEWER" &&
+        asset.model_viewer_loaded === true &&
+        asset.model_viewer_canvas_ready === true &&
+        asset.scena_render_status === "passed" &&
+        asset.scena_pixels_nonblack > 0,
+      );
+
+    return {
+      schema: "scena.scena_viewer_model_viewer_parity_proof.v1",
+      status: passed ? "passed" : "failed",
+      proof_class: "three_asset_side_by_side",
+      visual_proof: "side-by-side-screenshot",
+      model_viewer_package: "@google/model-viewer",
+      screenshot_selector: "section[data-proof=\"scena-viewer-model-viewer-parity\"]",
+      assets,
+    };
+  };
 
 window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
   await ensureInit();

@@ -159,9 +159,7 @@ pub(crate) fn architecture_owner_for_source_path(rel: &Path) -> &'static str {
         "geometry"
     } else if path.starts_with("src/material") {
         "material"
-    } else if path.starts_with("src/reference_image") {
-        "render"
-    } else if path.starts_with("src/render") {
+    } else if path.starts_with("src/reference_image") || path.starts_with("src/render") {
         "render"
     } else if path.starts_with("src/animation") {
         "animation"

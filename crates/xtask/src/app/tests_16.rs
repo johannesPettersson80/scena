@@ -11,6 +11,11 @@ pub(crate) fn write_scena_viewer_element_easy_scene_fixture(fixture_root: &Path)
     )
     .expect("manifest viewer-element fixture");
     fs::write(
+        fixture_root.join("package.json"),
+        r#"{"devDependencies":{"@google/model-viewer":"^4.2.0"}}"#,
+    )
+    .expect("package fixture");
+    fs::write(
         fixture_root.join("src/lib.rs"),
         format!(
             "{} pub mod viewer_element; SCENA_VIEWER_TAG ScenaViewerAccessibilityDefaults ScenaViewerAnnotationAnchor ScenaViewerAnnotationError ScenaViewerAttributes ScenaViewerDropDecision ScenaViewerDropKind ScenaViewerDroppedFile ScenaViewerGestureAction ScenaViewerInspectorDiagnostic ScenaViewerInspectorSnapshot ScenaViewerKeyboardAction ScenaViewerProgress ScenaViewerProgressPhase ScenaViewerVariantOption ScenaViewerVariantSelection define_scena_viewer",
@@ -49,12 +54,12 @@ pub(crate) fn write_scena_viewer_element_easy_scene_fixture(fixture_root: &Path)
     fs::create_dir_all(fixture_root.join("tests/assets/viewer")).expect("viewer fixture asset dir");
     fs::write(
         fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe.js"),
-        "assertScenaViewerElementProof runScenaViewerElementProof scena-viewer-element-browser-proof.png assertScenaViewerMobileA11yProof runScenaViewerMobileA11yProof scena-viewer-mobile-a11y-browser-proof.png assertCameraControlKitProof runCameraControlKitProof camera-control-kit-browser-proof.png SCENA_BROWSER_VIEWER_ELEMENT_ONLY scena.scena_viewer_element_browser_proof.v1 scena.scena_viewer_mobile_a11y_browser_proof.v1 scena.m6.camera_control_kit_browser_proof.v1 progress_sequence drop_render_status drop_render_auto_frame_status viewer-level-auto-framing scena-viewer-drop-render variant_render_status scena-viewer-material-variant-render annotation_tracking_sequence annotation_update_visible inspector_fixture_schema scena.scena_viewer_inspector_snapshot.v1",
+        "assertScenaViewerElementProof runScenaViewerElementProof scena-viewer-element-browser-proof.png assertScenaViewerParityProof runScenaViewerParityProof scena-viewer-model-viewer-parity-browser-proof.png assertScenaViewerMobileA11yProof runScenaViewerMobileA11yProof scena-viewer-mobile-a11y-browser-proof.png assertCameraControlKitProof runCameraControlKitProof camera-control-kit-browser-proof.png @google/model-viewer model-viewer.min.js SCENA_BROWSER_VIEWER_ELEMENT_ONLY scena.scena_viewer_element_browser_proof.v1 scena.scena_viewer_model_viewer_parity_proof.v1 scena.scena_viewer_mobile_a11y_browser_proof.v1 scena.m6.camera_control_kit_browser_proof.v1 three_asset_side_by_side side-by-side-screenshot progress_sequence drop_render_status drop_render_auto_frame_status viewer-level-auto-framing scena-viewer-drop-render variant_render_status scena-viewer-material-variant-render annotation_tracking_sequence annotation_update_visible inspector_fixture_schema scena.scena_viewer_inspector_snapshot.v1",
     )
     .expect("viewer element browser runner fixture");
     fs::write(
         fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe_page.js"),
-        "defineScenaViewer m6CameraControlKitProbe m6RenderDroppedFileProbe m6RenderMaterialVariantProbe scenaViewerElementProbe scenaViewerMobileA11yProbe scenaCameraControlKitProbe scena.scena_viewer_element_browser_proof.v1 scena.scena_viewer_mobile_a11y_browser_proof.v1 scena.m6.camera_control_kit_browser_proof.v1 loadInspectorSnapshot /fixtures/viewer/inspector_snapshot.json scena.scena_viewer_inspector_snapshot.v1 scena-viewer-progress-rendered progress_sequence scena-viewer-file-drop scena-viewer-drop-error renderDroppedFileIntoViewer drop_render_pixels_nonblack drop_render_auto_frame_status viewer-level-auto-framing renderSelectedVariantIntoViewer variant_render_green_dominant scena-viewer-material-variant-render scena-viewer-variant-change scena-viewer-annotations-rendered annotation_tracking_sequence annotation_update_visible scena-viewer-inspector-rendered scena-viewer-key-control scena-viewer-gesture-control pinch-zoom",
+        "defineScenaViewer m6CameraControlKitProbe m6RenderDroppedFileProbe m6RenderMaterialVariantProbe scenaViewerElementProbe scenaViewerModelViewerParityProbe scenaViewerMobileA11yProbe scenaCameraControlKitProbe SCENA_VIEWER_PARITY_ASSETS scena.scena_viewer_element_browser_proof.v1 scena.scena_viewer_model_viewer_parity_proof.v1 scena.scena_viewer_mobile_a11y_browser_proof.v1 scena.m6.camera_control_kit_browser_proof.v1 /model-viewer/model-viewer.min.js model-viewer source-gltf-materials AnimatedMorphCube.gltf WaterBottle.gltf three_asset_side_by_side side-by-side-screenshot model_viewer_loaded scena_pixels_nonblack loadInspectorSnapshot /fixtures/viewer/inspector_snapshot.json scena.scena_viewer_inspector_snapshot.v1 scena-viewer-progress-rendered progress_sequence scena-viewer-file-drop scena-viewer-drop-error renderDroppedFileIntoViewer drop_render_pixels_nonblack drop_render_auto_frame_status viewer-level-auto-framing renderSelectedVariantIntoViewer variant_render_green_dominant scena-viewer-material-variant-render scena-viewer-variant-change scena-viewer-annotations-rendered annotation_tracking_sequence annotation_update_visible scena-viewer-inspector-rendered scena-viewer-key-control scena-viewer-gesture-control pinch-zoom",
     )
     .expect("viewer element browser page fixture");
     fs::write(
@@ -69,7 +74,7 @@ pub(crate) fn write_scena_viewer_element_easy_scene_fixture(fixture_root: &Path)
     .expect("camera control browser proof fixture");
     fs::write(
         fixture_root.join("docs/browser.md"),
-        "<scena-viewer defineScenaViewer viewer-element shadow DOM canvas progressbar scena-viewer-progress drag-and-drop scena-viewer-file-drop scena-viewer-drop-error render-after-drop scena-viewer-drop-render viewer-level-auto-framing material variant picker scena-viewer-variant-change picker-to-rendered-variant scena-viewer-material-variant-render mobile accessibility keyboard scena-viewer-key-control scena-viewer-gesture-control pinch-zoom inspector/dev overlay setInspectorSnapshot scena-viewer-inspector-rendered annotation overlay data-position scena-viewer-annotations-request scena-viewer-annotations-rendered SCENA_BROWSER_VIEWER_ELEMENT_ONLY=1 scena-viewer-element-browser-proof.png",
+        "<scena-viewer defineScenaViewer viewer-element shadow DOM canvas progressbar scena-viewer-progress drag-and-drop scena-viewer-file-drop scena-viewer-drop-error render-after-drop scena-viewer-drop-render viewer-level-auto-framing material variant picker scena-viewer-variant-change picker-to-rendered-variant scena-viewer-material-variant-render mobile accessibility keyboard scena-viewer-key-control scena-viewer-gesture-control pinch-zoom inspector/dev overlay setInspectorSnapshot scena-viewer-inspector-rendered annotation overlay data-position scena-viewer-annotations-request scena-viewer-annotations-rendered SCENA_BROWSER_VIEWER_ELEMENT_ONLY=1 scena-viewer-element-browser-proof.png scena-viewer-model-viewer-parity-browser-proof.png @google/model-viewer three-asset side-by-side",
     )
     .expect("browser docs fixture");
     let checklist_path =
@@ -77,7 +82,7 @@ pub(crate) fn write_scena_viewer_element_easy_scene_fixture(fixture_root: &Path)
     let mut checklist =
         fs::read_to_string(&checklist_path).expect("next release checklist fixture");
     checklist.push_str(
-        " custom-element\nfoundation and browser UI proof **[shipped]** src/viewer_element.rs SCENA-VIEWER-ELEMENT ScenaViewerProgress scena-viewer-progress-rendered loading progress sequence proof **[shipped]** ScenaViewerDropDecision scena-viewer-file-drop render-after-drop proof **[shipped]** scena-viewer-drop-render viewer-level auto-framing browser proof **[shipped]** viewer-level-auto-framing ScenaViewerVariantSelection scena-viewer-variant-change picker-to-rendered-variant proof **[shipped]** scena-viewer-material-variant-render ScenaViewerAccessibilityDefaults scena-viewer-key-control ScenaViewerGestureAction scena-viewer-gesture-control mobile/a11y gesture proof **[shipped]** ScenaViewerInspectorSnapshot scena-viewer-inspector-rendered scena.scena_viewer_inspector_snapshot.v1 ScenaViewerAnnotationAnchor scena-viewer-annotations-rendered annotation tracking proof **[shipped]** scena.scena_viewer_element_browser_proof.v1 scena-viewer-element-browser-proof.png Full\n  asset loading/rendering parity remains open under bet 1.1 camera control browser proof **[shipped]** camera-control-kit-browser-proof.png scena.m6.camera_control_kit_browser_proof.v1",
+        " custom-element foundation, browser UI proof src/viewer_element.rs SCENA-VIEWER-ELEMENT ScenaViewerProgress scena-viewer-progress-rendered loading progress sequence proof **[shipped]** ScenaViewerDropDecision scena-viewer-file-drop render-after-drop proof **[shipped]** scena-viewer-drop-render viewer-level auto-framing browser proof **[shipped]** viewer-level-auto-framing ScenaViewerVariantSelection scena-viewer-variant-change picker-to-rendered-variant proof **[shipped]** scena-viewer-material-variant-render ScenaViewerAccessibilityDefaults scena-viewer-key-control ScenaViewerGestureAction scena-viewer-gesture-control mobile/a11y gesture proof **[shipped]** ScenaViewerInspectorSnapshot scena-viewer-inspector-rendered scena.scena_viewer_inspector_snapshot.v1 ScenaViewerAnnotationAnchor scena-viewer-annotations-rendered annotation tracking proof **[shipped]** scena.scena_viewer_element_browser_proof.v1 scena-viewer-element-browser-proof.png scena.scena_viewer_model_viewer_parity_proof.v1 scena-viewer-model-viewer-parity-browser-proof.png Three-asset side-by-side `<model-viewer>` parity proof **[shipped]** camera control browser proof **[shipped]** camera-control-kit-browser-proof.png scena.m6.camera_control_kit_browser_proof.v1",
     );
     fs::write(checklist_path, checklist).expect("next release checklist viewer element fixture");
 }
@@ -376,5 +381,34 @@ pub(crate) fn easy_scene_setup_contracts_reject_missing_scena_viewer_annotation_
             .iter()
             .any(|finding| finding.rule == "SCENA-VIEWER-ELEMENT"),
         "doctor must reject <scena-viewer> annotation proof without a tracking sequence: {findings:?}",
+    );
+}
+
+#[test]
+pub(crate) fn easy_scene_setup_contracts_reject_missing_scena_viewer_parity_proof() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root =
+        root.join("target/xtask-doctor-regressions/missing-scena-viewer-parity-proof");
+    write_easy_scene_fixture(
+        &fixture_root,
+        VALID_GUIDE,
+        "frame_bounds(()) bounds_for_transforms add_grid_floor",
+        r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
+    );
+    write_scena_viewer_element_easy_scene_fixture(&fixture_root);
+    fs::write(
+        fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe.js"),
+        "assertScenaViewerElementProof runScenaViewerElementProof scena-viewer-element-browser-proof.png assertScenaViewerMobileA11yProof runScenaViewerMobileA11yProof scena-viewer-mobile-a11y-browser-proof.png SCENA_BROWSER_VIEWER_ELEMENT_ONLY scena.scena_viewer_element_browser_proof.v1 progress_sequence",
+    )
+    .expect("viewer element fixture without parity proof");
+    let mut findings = Vec::new();
+
+    check_easy_scene_setup_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "SCENA-VIEWER-ELEMENT"),
+        "doctor must reject <scena-viewer> parity claims without three-asset side-by-side browser proof: {findings:?}",
     );
 }

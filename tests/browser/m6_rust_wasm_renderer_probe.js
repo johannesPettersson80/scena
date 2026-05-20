@@ -4,6 +4,7 @@ const http = require("http");
 const path = require("path");
 
 const MODEL_VIEWER_FIXTURE = "/fixtures/gltf/non_ndc_camera_scene.gltf";
+const MODEL_VIEWER_BUNDLE = "model-viewer.min.js";
 
 function loadPlaywright() {
   return require("playwright");
@@ -15,10 +16,15 @@ function contentType(file) {
   if (file.endsWith(".json")) return "application/json; charset=utf-8";
   if (file.endsWith(".html")) return "text/html; charset=utf-8";
   if (file.endsWith(".gltf")) return "model/gltf+json";
+  if (file.endsWith(".glb")) return "model/gltf-binary";
+  if (file.endsWith(".bin")) return "application/octet-stream";
+  if (file.endsWith(".png")) return "image/png";
+  if (file.endsWith(".jpg") || file.endsWith(".jpeg")) return "image/jpeg";
+  if (file.endsWith(".webp")) return "image/webp";
   return "application/octet-stream";
 }
 
-function serve(browserRoot, pkgRoot, fixtureRoot) {
+function serve(browserRoot, pkgRoot, fixtureRoot, modelViewerRoot) {
   const server = http.createServer((request, response) => {
     const url = request.url === "/" ? "/m6_rust_wasm_renderer_probe.html" : request.url;
     let base = browserRoot;
@@ -29,6 +35,9 @@ function serve(browserRoot, pkgRoot, fixtureRoot) {
     } else if (url.startsWith("/fixtures/")) {
       base = fixtureRoot;
       relative = url.slice("/fixtures/".length);
+    } else if (url.startsWith("/model-viewer/")) {
+      base = modelViewerRoot;
+      relative = url.slice("/model-viewer/".length);
     }
     const file = path.join(base, path.normalize(relative));
     if (!file.startsWith(base)) {
@@ -590,6 +599,52 @@ function assertScenaViewerElementProof(result) {
   }
 }
 
+function assertScenaViewerParityProof(result) {
+  if (
+    !result ||
+    result.schema !== "scena.scena_viewer_model_viewer_parity_proof.v1" ||
+    result.status !== "passed" ||
+    result.proof_class !== "three_asset_side_by_side" ||
+    result.visual_proof !== "side-by-side-screenshot" ||
+    !result.screenshot_metadata ||
+    !/^[0-9a-f]{64}$/.test(result.screenshot_metadata.sha256 || "") ||
+    typeof result.model_viewer_package !== "string" ||
+    !result.model_viewer_package.startsWith("@google/model-viewer@")
+  ) {
+    throw new Error(`<scena-viewer> parity proof did not pass: ${JSON.stringify(result)}`);
+  }
+  const expectedSources = new Set([
+    "/fixtures/gltf/non_ndc_camera_scene.gltf",
+    "/fixtures/gltf/khronos/MorphCube/AnimatedMorphCube.gltf",
+    "/fixtures/gltf/khronos/WaterBottle/WaterBottle.gltf",
+  ]);
+  if (!Array.isArray(result.assets) || result.assets.length !== expectedSources.size) {
+    throw new Error(`<scena-viewer> parity proof did not cover three assets: ${JSON.stringify(result)}`);
+  }
+  for (const asset of result.assets) {
+    if (!expectedSources.delete(asset.source)) {
+      throw new Error(`<scena-viewer> parity proof used unexpected or duplicate asset: ${JSON.stringify(asset)}`);
+    }
+    if (
+      asset.side_by_side !== true ||
+      asset.model_viewer_tag !== "MODEL-VIEWER" ||
+      asset.scena_viewer_tag !== "SCENA-VIEWER" ||
+      asset.model_viewer_loaded !== true ||
+      asset.model_viewer_canvas_ready !== true ||
+      asset.scena_render_status !== "passed" ||
+      asset.scena_backend !== "webgl2" ||
+      !(asset.scena_pixels_nonblack > 0) ||
+      !(asset.model_viewer_width > 0) ||
+      !(asset.model_viewer_height > 0)
+    ) {
+      throw new Error(`<scena-viewer> parity asset did not prove side-by-side rendering: ${JSON.stringify(asset)}`);
+    }
+  }
+  if (expectedSources.size !== 0) {
+    throw new Error(`<scena-viewer> parity proof missed assets: ${Array.from(expectedSources).join(", ")}`);
+  }
+}
+
 function assertCameraControlKitProof(result) {
   if (
     !result ||
@@ -702,6 +757,37 @@ async function runScenaViewerElementProof(page, artifactDir) {
   return result;
 }
 
+function modelViewerPackageVersion() {
+  const modelViewerPackage = JSON.parse(
+    fs.readFileSync(
+      path.join(process.cwd(), "node_modules", "@google", "model-viewer", "package.json"),
+      "utf8",
+    ),
+  );
+  return `@google/model-viewer@${modelViewerPackage.version}`;
+}
+
+async function runScenaViewerParityProof(page, artifactDir) {
+  const result = await page.evaluate(() => window.scenaViewerModelViewerParityProbe("webgl2"));
+  result.model_viewer_package = modelViewerPackageVersion();
+  const screenshotPath = path.join(
+    artifactDir,
+    "scena-viewer-model-viewer-parity-browser-proof.png",
+  );
+  await page
+    .locator(result.screenshot_selector || "section[data-proof=\"scena-viewer-model-viewer-parity\"]")
+    .screenshot({ path: screenshotPath });
+  const screenshot = fs.readFileSync(screenshotPath);
+  result.screenshot_metadata = {
+    path: path.relative(process.cwd(), screenshotPath),
+    mime: "image/png",
+    sha256: crypto.createHash("sha256").update(screenshot).digest("hex"),
+    bytes: screenshot.length,
+  };
+  assertScenaViewerParityProof(result);
+  return result;
+}
+
 function renderedOutputFingerprint(result) {
   const readback = result && result.renderer_readback;
   if (readback && typeof readback.rgba8_fnv1a64 === "string") {
@@ -718,10 +804,17 @@ async function main() {
   const browserRoot = __dirname;
   const pkgRoot = path.join(process.cwd(), "target", "m6-browser-pkg");
   const fixtureRoot = path.join(process.cwd(), "tests", "assets");
+  const modelViewerRoot = path.join(
+    process.cwd(),
+    "node_modules",
+    "@google",
+    "model-viewer",
+    "dist",
+  );
   const artifactDir = path.join(process.cwd(), "target", "gate-artifacts");
   fs.mkdirSync(artifactDir, { recursive: true });
 
-  const { server, url } = await serve(browserRoot, pkgRoot, fixtureRoot);
+  const { server, url } = await serve(browserRoot, pkgRoot, fixtureRoot, modelViewerRoot);
   const selectedBackends = configuredBackends();
   const viewerElementOnly = process.env.SCENA_BROWSER_VIEWER_ELEMENT_ONLY === "1";
   const browser = await chromium.launch({
@@ -765,6 +858,13 @@ async function main() {
       results.push(await runCameraControlKitProof(viewerElementPage, artifactDir));
     } finally {
       await viewerElementPage.close();
+    }
+    const viewerParityPage = await browser.newPage({ viewport: { width: 960, height: 760 } });
+    try {
+      await viewerParityPage.goto(url);
+      results.push(await runScenaViewerParityProof(viewerParityPage, artifactDir));
+    } finally {
+      await viewerParityPage.close();
     }
     const mobileA11yPage = await browser.newPage({ viewport: { width: 390, height: 640 }, isMobile: true, hasTouch: true });
     try {

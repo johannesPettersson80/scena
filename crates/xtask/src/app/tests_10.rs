@@ -107,7 +107,7 @@ pub(crate) fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs
     }
     fs::write(
         fixture_root.join("docs/guides/easy-scene-setup.md"),
-        "frame_bounds add_perspective_camera_default_for add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import zoom_limits_bounds_relative(0.5, 4.0) FollowControls::behind_and_above FlyControls::new move_local with_yaw_pitch_degrees viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( InteractionStyle::outline renderer.set_hover_style renderer.set_selection_style viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? render_png_bytes() CPU headless renderer without requesting a GPU adapter Reference-image regression ReferenceImage::from_rgba8 regress_with_tolerance ReferenceImageTolerance::new().with_max_abs_diff AssetLoadProgress build_with_progress load_progress_events Material variants viewer.material_variants() viewer.set_active_material_variant(Some(\"blue\"))? viewer.set_active_material_variant(None)? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() EnvironmentPreset::Studio load_environment_preset EnvironmentPreset::ALL KTX2 cubemap presets are still future work khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.add_perspective_camera_default_for(bounds, (width, height))?;\n```",
+        "frame_bounds add_perspective_camera_default_for add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import viewer.play_clip( zoom_limits_bounds_relative(0.5, 4.0) FollowControls::behind_and_above FlyControls::new move_local with_yaw_pitch_degrees viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( InteractionStyle::outline renderer.set_hover_style renderer.set_selection_style viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? render_png_bytes() CPU headless renderer without requesting a GPU adapter Reference-image regression ReferenceImage::from_rgba8 regress_with_tolerance ReferenceImageTolerance::new().with_max_abs_diff AssetLoadProgress build_with_progress load_progress_events Material variants viewer.material_variants() viewer.set_active_material_variant(Some(\"blue\"))? viewer.set_active_material_variant(None)? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() EnvironmentPreset::Studio load_environment_preset EnvironmentPreset::ALL KTX2 cubemap presets are still future work khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.add_perspective_camera_default_for(bounds, (width, height))?;\n```",
     )
     .expect("guide fixture");
     fs::write(
@@ -185,19 +185,21 @@ pub(crate) fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs
             "src/assets/hot_reload.rs",
             "use notify_debouncer_full::{new_debouncer, DebounceEventResult}; use notify_debouncer_full::notify::RecursiveMode; pub struct AssetHotReloadWatcher; pub enum AssetHotReloadError {} fn watch_scene_for_hot_reload() { new_debouncer; RecursiveMode::NonRecursive; } fn drain_changed_scenes() {}",
         ),
+        (
+            "src/viewer.rs",
+            "mod animation; mod capture; mod interaction; mod load_progress; mod material_variants; pub use capture::{ViewerCaptureError, ViewerPngError}; click_callback: Option<ViewerPickCallback> hover_callback: Option<ViewerPickCallback> load_progress_events: Vec<AssetLoadProgress>",
+        ),
+        (
+            "src/viewer/animation.rs",
+            "pub fn play_clip() { self.scene.play_animation_by_name(&self.import, name); }",
+        ),
+        (
+            "src/viewer/load_progress.rs",
+            "pub async fn build_with_progress<T>() {} pub async fn render_with_progress<T>() {} pub fn build_with_progress<T>() {} pub async fn build_async_with_progress<T>() {} pub fn load_progress_events(&self) -> &[AssetLoadProgress] { &[] }",
+        ),
     ] {
-        fs::write(fixture_root.join(path), text).expect("asset fixture");
+        fs::write(fixture_root.join(path), text).expect("fixture write");
     }
-    fs::write(
-        fixture_root.join("src/viewer.rs"),
-        "mod capture; mod interaction; mod load_progress; mod material_variants; pub use capture::{ViewerCaptureError, ViewerPngError}; click_callback: Option<ViewerPickCallback> hover_callback: Option<ViewerPickCallback> load_progress_events: Vec<AssetLoadProgress>",
-    )
-    .expect("viewer fixture");
-    fs::write(
-        fixture_root.join("src/viewer/load_progress.rs"),
-        "pub async fn build_with_progress<T>() {} pub async fn render_with_progress<T>() {} pub fn build_with_progress<T>() {} pub async fn build_async_with_progress<T>() {} pub fn load_progress_events(&self) -> &[AssetLoadProgress] { &[] }",
-    )
-    .expect("viewer progress fixture");
     fs::write(
         fixture_root.join("src/viewer/material_variants.rs"),
         "pub fn material_variants(&self) -> &[String] { &[] } pub fn active_material_variant(&self) -> Option<String> { None } pub fn set_active_material_variant(&mut self, name: Option<&str>) -> crate::Result<()> { self.scene.set_active_variant(&self.import, name)?; self.prepare() }",
@@ -344,7 +346,7 @@ pub(crate) fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs
         ),
         (
             "tests/round_c_animation_playback.rs",
-            "scene_play_animation_by_name_creates_and_starts_mixer",
+            "scene_play_animation_by_name_creates_and_starts_mixer headless_viewer_play_clip_starts_loaded_import_animation",
         ),
         (
             "tests/round_d_connector_axial_gap.rs",

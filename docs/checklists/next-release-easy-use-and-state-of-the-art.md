@@ -114,8 +114,9 @@ rounds in §2 are the floor underneath them, not a substitute.
 
 ### 1.1 `<scena-viewer>` custom element with `<model-viewer>` attribute parity
 
-Status: **[gap]** for full drop-in renderer parity; custom-element
-foundation and browser UI proof **[shipped]**.
+Status: **[shipped]** for the current drop-in renderer parity proof:
+custom-element foundation, browser UI proof, and three-asset side-by-side
+comparison with `<model-viewer>` are all source-enforced.
 Owner: `src/viewer.rs` for shared viewer behavior + a new thin browser
 adapter module / WASM package built directly on `web-sys` /
 `wasm-bindgen`. Do not add a Rust web-component framework unless a
@@ -126,10 +127,14 @@ Proof: foundation is `src/viewer_element.rs` with
 `defineScenaViewer()`, a shadow-canvas custom element, model-viewer-style
 attribute parsing, docs, doctor rule `SCENA-VIEWER-ELEMENT`, and the M6
 browser proof artifact
-`target/gate-artifacts/scena-viewer-element-browser-proof.png`.
-Remaining proof for full parity: WASM browser test rendering against
-three sample assets + side-by-side screenshot comparison with
-`<model-viewer>` on the same assets.
+`target/gate-artifacts/scena-viewer-element-browser-proof.png`, plus
+`target/gate-artifacts/scena-viewer-model-viewer-parity-browser-proof.png`
+from `scena.scena_viewer_model_viewer_parity_proof.v1`.
+Three-asset side-by-side `<model-viewer>` parity proof **[shipped]**:
+the M6 Playwright lane renders `non_ndc_camera_scene.gltf`,
+`AnimatedMorphCube.gltf`, and `WaterBottle.gltf` in renderer-backed
+`<scena-viewer>` panes next to actual `@google/model-viewer` reference
+panes for the same assets.
 Visual proof: reference-image + browser-demo + animated-proof
 
 ```html
@@ -1718,6 +1723,24 @@ Picking/outline/hover reconciliation pass (2026-05-19):
   source-enforced by `SCENA-VIEWER-ELEMENT` / `VISUAL-BROWSER-M6`.
   Full asset load/render parity and animated gesture proofs remain open
   under the relevant checklist items.
+
+`<scena-viewer>` model-viewer parity proof pass (2026-05-20):
+
+- Added the dev-only `@google/model-viewer` reference package to the M6
+  browser proof lane so parity screenshots use the actual custom element
+  locally rather than a CDN.
+- Added `scena.scena_viewer_model_viewer_parity_proof.v1`, which renders
+  `non_ndc_camera_scene.gltf`, `AnimatedMorphCube.gltf`, and
+  `WaterBottle.gltf` through renderer-backed `<scena-viewer>` panes next
+  to `<model-viewer>` panes for the same assets.
+- The proof writes
+  `target/gate-artifacts/scena-viewer-model-viewer-parity-browser-proof.png`,
+  asserts visible renderer pixels for all three assets, and is now
+  source-enforced by `SCENA-VIEWER-ELEMENT`.
+- Reclassified bet 1.1 from remaining proof gap to shipped for the current
+  drop-in renderer parity proof: custom element foundation, browser UI
+  proof, and three-asset side-by-side `<model-viewer>` comparison are all
+  present.
 
 Camera-control browser-proof pass (2026-05-19):
 

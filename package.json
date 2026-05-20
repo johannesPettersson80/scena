@@ -7,6 +7,7 @@
     "npm": "10.8.2"
   },
   "devDependencies": {
+    "@google/model-viewer": "4.2.0",
     "binaryen": "129.0.0",
     "brotli-cli": "2.1.1",
     "playwright": "1.59.1"

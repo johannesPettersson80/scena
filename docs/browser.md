@@ -52,7 +52,12 @@ canvas, exposes model-viewer-style attributes, and dispatches structured
 attribute events. The browser proof is part of the M6 probe package; run
 `SCENA_BROWSER_VIEWER_ELEMENT_ONLY=1 node tests/browser/m6_rust_wasm_renderer_probe.js`
 after building `target/m6-browser-pkg` with `--features browser-probe` to
-generate `target/gate-artifacts/scena-viewer-element-browser-proof.png`.
+generate `target/gate-artifacts/scena-viewer-element-browser-proof.png` and
+`target/gate-artifacts/scena-viewer-model-viewer-parity-browser-proof.png`.
+The parity proof uses the dev-only `@google/model-viewer` package locally and
+captures a three-asset side-by-side screenshot of `<model-viewer>` reference
+panes next to renderer-backed `<scena-viewer>` panes for the same glTF / GLB
+assets.
 
 The element also owns a shadow DOM progressbar. Hosts can
 dispatch a `scena-viewer-progress` event or call `setLoadProgress(detail)` with
@@ -61,8 +66,7 @@ updates the visible status text, ARIA progress state, and emits
 `scena-viewer-progress-rendered` after the UI changes. The browser proof
 records a `progress_sequence` by dispatching `loading` and `fetching` phases
 and asserting that the ARIA value and progressbar transform update between
-events. Asset loading and rendering remain explicit host responsibilities until
-full renderer parity lands under the `<scena-viewer>` roadmap item.
+events.
 
 The element handles browser drag-and-drop ingestion for `.glb` and `.gltf`
 files. Valid drops emit `scena-viewer-file-drop` with the accepted `File`
