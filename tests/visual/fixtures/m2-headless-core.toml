@@ -42,6 +42,11 @@ required_surface = "headless-cpu"
 contract = "subtle post-bloom expands bright output into a soft halo compared with the off render"
 
 [[fixture]]
+name = "ssao-contact-on-off"
+required_surface = "headless-cpu"
+contract = "screen-space ambient occlusion darkens depth contact edges compared with the off render"
+
+[[fixture]]
 name = "clipping-half-space"
 required_surface = "headless-cpu"
 contract = "active clipping planes discard pixels in the rejected half-space"

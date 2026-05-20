@@ -5,7 +5,8 @@ use scena::{
     ClippingPlaneSet, Color, DepthRange, DiagnosticCode, DiagnosticSeverity, DirectionalLight,
     EnvironmentSourceKind, GeometryDesc, GeometryTopology, Light, MaterialDesc, NodeKind,
     OrthographicCamera, PerspectiveCamera, PointLight, PostBloomConfig, PrepareError, Primitive,
-    RenderMode, Renderer, RendererOptions, Scene, SpotLight, Transform, Vec3, Vertex,
+    RenderMode, Renderer, RendererOptions, Scene, ScreenSpaceAmbientOcclusionConfig, SpotLight,
+    Transform, Vec3, Vertex,
 };
 
 const CAMERA_DISTANCE_FOR_NDC_FIXTURES: f32 = 1.732_050_8;
@@ -114,6 +115,87 @@ fn bloom_highlight_scene() -> Scene {
     scene
         .add_renderable(scene.root(), highlight.to_vec(), Transform::default())
         .expect("bloom highlight primitive inserts");
+    scene
+}
+
+fn depth_contact_scene() -> Scene {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            ndc_fixture_camera_transform(),
+        )
+        .expect("camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("camera becomes active");
+    let floor = [
+        Primitive::triangle([
+            Vertex {
+                position: Vec3::new(-0.75, -0.55, 0.0),
+                color: Color::WHITE,
+            },
+            Vertex {
+                position: Vec3::new(0.75, -0.55, 0.0),
+                color: Color::WHITE,
+            },
+            Vertex {
+                position: Vec3::new(0.75, 0.35, 0.0),
+                color: Color::WHITE,
+            },
+        ]),
+        Primitive::triangle([
+            Vertex {
+                position: Vec3::new(-0.75, -0.55, 0.0),
+                color: Color::WHITE,
+            },
+            Vertex {
+                position: Vec3::new(0.75, 0.35, 0.0),
+                color: Color::WHITE,
+            },
+            Vertex {
+                position: Vec3::new(-0.75, 0.35, 0.0),
+                color: Color::WHITE,
+            },
+        ]),
+    ];
+    let block = [
+        Primitive::triangle([
+            Vertex {
+                position: Vec3::new(-0.14, -0.18, 0.16),
+                color: Color::from_linear_rgb(0.72, 0.72, 0.72),
+            },
+            Vertex {
+                position: Vec3::new(0.14, -0.18, 0.16),
+                color: Color::from_linear_rgb(0.72, 0.72, 0.72),
+            },
+            Vertex {
+                position: Vec3::new(0.14, 0.18, 0.16),
+                color: Color::from_linear_rgb(0.72, 0.72, 0.72),
+            },
+        ]),
+        Primitive::triangle([
+            Vertex {
+                position: Vec3::new(-0.14, -0.18, 0.16),
+                color: Color::from_linear_rgb(0.72, 0.72, 0.72),
+            },
+            Vertex {
+                position: Vec3::new(0.14, 0.18, 0.16),
+                color: Color::from_linear_rgb(0.72, 0.72, 0.72),
+            },
+            Vertex {
+                position: Vec3::new(-0.14, 0.18, 0.16),
+                color: Color::from_linear_rgb(0.72, 0.72, 0.72),
+            },
+        ]),
+    ];
+    scene
+        .add_renderable(scene.root(), floor.to_vec(), Transform::default())
+        .expect("contact floor inserts");
+    scene
+        .add_renderable(scene.root(), block.to_vec(), Transform::default())
+        .expect("contact block inserts");
     scene
 }
 
@@ -941,6 +1023,46 @@ fn subtle_bloom_expands_bright_output_without_second_tonemap() {
             && bloomed_halo[2] > baseline_halo[2] + 4,
         "bloom should add a soft halo outside the source highlight without re-tonemapping; \
          baseline={baseline_halo:?} bloomed={bloomed_halo:?}",
+    );
+}
+
+#[test]
+fn screen_space_ambient_occlusion_darkens_depth_contact_edges() {
+    let mut baseline_scene = depth_contact_scene();
+    let mut baseline_renderer = Renderer::headless(48, 48).expect("baseline renderer builds");
+    baseline_renderer
+        .prepare(&mut baseline_scene)
+        .expect("baseline scene prepares");
+    baseline_renderer
+        .render_active(&baseline_scene)
+        .expect("baseline scene renders");
+    assert_eq!(baseline_renderer.stats().ambient_occlusion_passes, 0);
+
+    let mut occlusion_scene = depth_contact_scene();
+    let mut renderer = Renderer::headless(48, 48).expect("SSAO renderer builds");
+    renderer.set_screen_space_ambient_occlusion(Some(ScreenSpaceAmbientOcclusionConfig::subtle()));
+    renderer
+        .prepare(&mut occlusion_scene)
+        .expect("SSAO scene prepares");
+    renderer
+        .render_active(&occlusion_scene)
+        .expect("SSAO scene renders");
+
+    assert_eq!(renderer.stats().ambient_occlusion_passes, 1);
+    let baseline_contact = pixel_at(baseline_renderer.frame_rgba8(), 48, 18, 24);
+    let occluded_contact = pixel_at(renderer.frame_rgba8(), 48, 18, 24);
+    let far_floor = pixel_at(renderer.frame_rgba8(), 48, 12, 24);
+    assert!(
+        occluded_contact[0] + 18 < baseline_contact[0]
+            && occluded_contact[1] + 18 < baseline_contact[1]
+            && occluded_contact[2] + 18 < baseline_contact[2],
+        "SSAO should darken the floor near the foreground depth contact; \
+         baseline={baseline_contact:?} occluded={occluded_contact:?}"
+    );
+    assert!(
+        far_floor[0] > occluded_contact[0] + 16,
+        "far floor should stay visibly lighter than the contact shadow; \
+         far={far_floor:?} contact={occluded_contact:?}"
     );
 }
 

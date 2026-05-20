@@ -50,6 +50,15 @@ nonblack_pixels = 102
 rgba_hash = "fnv1a64:101dcfa11217ff01"
 
 [[reference]]
+name = "ssao-contact-on-off"
+max_abs_diff = 0
+center_rgba = [0, 0, 0, 255]
+left_mid_rgba = [240, 240, 240, 255]
+right_mid_rgba = [156, 156, 156, 255]
+nonblack_pixels = 226
+rgba_hash = "fnv1a64:7ce7e7a593346e71"
+
+[[reference]]
 name = "clipping-half-space"
 max_abs_diff = 0
 center_rgba = [240, 240, 240, 255]

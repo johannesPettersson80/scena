@@ -212,6 +212,7 @@ impl Renderer {
             capabilities,
             gpu,
             output: OutputTransform::default(),
+            screen_space_ambient_occlusion: None,
             bloom: None,
             profile,
             quality,

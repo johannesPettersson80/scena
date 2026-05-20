@@ -297,7 +297,11 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         findings,
         "ARCH-FXAA-OUTPUT",
         "src/diagnostics.rs",
-        &["pub bloom_passes: u64", "pub fxaa_passes: u64"],
+        &[
+            "pub ambient_occlusion_passes: u64",
+            "pub bloom_passes: u64",
+            "pub fxaa_passes: u64",
+        ],
     );
     require_contains(
         root,
@@ -307,8 +311,11 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         &[
             "bloom_scratch: Vec<u8>",
             "fxaa_scratch: Vec<u8>",
+            "screen_space_ambient_occlusion: Option<ScreenSpaceAmbientOcclusionConfig>",
+            "output::apply_screen_space_ambient_occlusion_rgba8(",
             "output::apply_bloom_rgba8(",
             "output::apply_fxaa_rgba8(self.target, &mut self.frame, &mut self.fxaa_scratch)",
+            "self.stats.ambient_occlusion_passes",
             "self.stats.bloom_passes",
             "self.stats.fxaa_passes",
         ],
@@ -320,6 +327,8 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         "src/render/output.rs",
         &[
             "pub struct PostBloomConfig",
+            "pub struct ScreenSpaceAmbientOcclusionConfig",
+            "pub(super) fn apply_screen_space_ambient_occlusion_rgba8",
             "pub(super) fn apply_bloom_rgba8",
             "pub(super) fn apply_fxaa_rgba8",
             "luma_from_srgb8",
@@ -334,6 +343,9 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         "tests/m2_lighting_depth_clipping.rs",
         &[
             "subtle_bloom_expands_bright_output_without_second_tonemap",
+            "screen_space_ambient_occlusion_darkens_depth_contact_edges",
+            "ScreenSpaceAmbientOcclusionConfig::subtle()",
+            "stats().ambient_occlusion_passes",
             "PostBloomConfig::subtle()",
             "stats().bloom_passes",
             "fxaa_pass_runs_after_pbr_neutral_without_second_tonemap",
@@ -348,8 +360,12 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         "tests/m2_visual_proof.rs",
         &[
             "bloom-on-off",
+            "ssao-contact-on-off",
+            "render_ssao_contact_on_off",
+            "validate_ssao_contact_on_off",
             "render_bloom_on_off",
             "validate_bloom_on_off",
+            "ScreenSpaceAmbientOcclusionConfig::subtle()",
             "PostBloomConfig::subtle()",
         ],
     );

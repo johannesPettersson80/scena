@@ -91,8 +91,8 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
     );
     assert_eq!(
         headless.screen_space_ambient_occlusion,
-        CapabilityStatus::FeatureDisabled,
-        "SSAO/GTAO is not implemented and must not be implied by depth support"
+        CapabilityStatus::Supported,
+        "CPU headless SSAO has depth-aware visual proof; GPU/browser lanes remain separate"
     );
     assert_eq!(
         headless.gpu_frustum_culling,

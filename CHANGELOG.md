@@ -53,6 +53,11 @@ All notable user-facing changes are recorded here.
 - Added `GltfExtensionDiagnostic::suggested_fix()` so asset import UIs can
   surface actionable extension remediation alongside status and decoder policy.
 
+- Added a headless CPU screen-space ambient occlusion baseline via
+  `ScreenSpaceAmbientOcclusionConfig` and
+  `Renderer::set_screen_space_ambient_occlusion(...)`, with ON/OFF visual
+  proof for depth-contact darkening.
+
 ### Changed
 
 - Updated the browser demo showcase so connector mating is the default first

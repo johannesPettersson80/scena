@@ -505,10 +505,19 @@ the rendered result is part of the contract.
   Proof: rendered-output diff against a non-AA reference showing edge
   quality.
   Visual proof: reference-image ON/OFF.
-- **Contact shadows / SSAO.** Single biggest "pro vs amateur" tell beyond
-  framing. Owner: `src/render/`. Proof: reference image of the grid floor
-  + model with and without contact shadows.
-  Visual proof: reference-image ON/OFF.
+- **Contact shadows / SSAO.** Status: **[shipped]** for the headless
+  CPU / descriptor-backed depth-buffer baseline. `ScreenSpaceAmbientOcclusionConfig::subtle()`
+  and `Renderer::set_screen_space_ambient_occlusion(...)` run a
+  depth-aware contact-darkening pass before bloom and FXAA, with
+  `RendererStats::ambient_occlusion_passes` and headless
+  `Capabilities::screen_space_ambient_occlusion = Supported`. GPU,
+  WebGPU, and WebGL2 SSAO remain future backend lanes and are not claimed.
+  Proof: `tests/m2_lighting_depth_clipping.rs` asserts a depth-contact
+  edge darkens while distant floor pixels stay lighter, and
+  `tests/m2_visual_proof.rs` writes the `ssao-contact-on-off` ON/OFF
+  reference artifact.
+  Visual proof: reference-image ON/OFF shipped via
+  `target/gate-artifacts/m2-visual/ssao-contact-on-off.ppm`.
 - **Subtle bloom in post.** Status: **[shipped]** for the output-space
   baseline. `PostBloomConfig::subtle()` and `Renderer::set_bloom(...)`
   run a threshold / blur / composite postprocess before FXAA, with
@@ -1662,3 +1671,15 @@ glTF extension diagnostic fix-hint pass (2026-05-19):
 - Reclassified glTF extension diagnostics from an ergonomic gap to shipped
   for typed status, help, decoder policy, suggested fix hints, and official
   validator combination through the asset doctor.
+
+Headless SSAO/contact-shadow baseline pass (2026-05-19):
+
+- Added `ScreenSpaceAmbientOcclusionConfig`, renderer setters/clearers,
+  `RendererStats::ambient_occlusion_passes`, and headless/described CPU
+  capability reporting for the depth-aware contact-darkening baseline.
+- Added a focused depth-contact test and an ON/OFF M2 visual fixture
+  `ssao-contact-on-off` so the checklist closes on rendered evidence, not
+  on a pretty single render.
+- Reclassified contact shadows / SSAO from a genuine renderer gap to
+  shipped for the headless CPU baseline while keeping GPU/WebGPU/WebGL2
+  SSAO as explicit future backend work.

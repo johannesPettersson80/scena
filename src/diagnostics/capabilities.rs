@@ -406,8 +406,11 @@ const fn bloom_status(_backend: Backend) -> CapabilityStatus {
     CapabilityStatus::Supported
 }
 
-const fn ambient_occlusion_status(_backend: Backend) -> CapabilityStatus {
-    CapabilityStatus::FeatureDisabled
+const fn ambient_occlusion_status(backend: Backend) -> CapabilityStatus {
+    match backend {
+        Backend::Headless | Backend::SurfaceDescriptor => CapabilityStatus::Supported,
+        _ => CapabilityStatus::FeatureDisabled,
+    }
 }
 
 const fn texture_compression_basisu_status(_backend: Backend) -> CapabilityStatus {

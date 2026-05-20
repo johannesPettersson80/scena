@@ -3,7 +3,7 @@ use crate::diagnostics::DebugOverlay;
 use crate::material::Color;
 use crate::picking::InteractionStyle;
 
-use super::{Background, PostBloomConfig, Renderer, Tonemapper};
+use super::{Background, PostBloomConfig, Renderer, ScreenSpaceAmbientOcclusionConfig, Tonemapper};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
@@ -107,6 +107,24 @@ impl Renderer {
 
     pub fn bloom(&self) -> Option<PostBloomConfig> {
         self.bloom
+    }
+
+    pub fn screen_space_ambient_occlusion(&self) -> Option<ScreenSpaceAmbientOcclusionConfig> {
+        self.screen_space_ambient_occlusion
+    }
+
+    pub fn set_screen_space_ambient_occlusion(
+        &mut self,
+        config: Option<ScreenSpaceAmbientOcclusionConfig>,
+    ) {
+        if self.screen_space_ambient_occlusion != config {
+            self.screen_space_ambient_occlusion = config;
+            self.mark_output_changed();
+        }
+    }
+
+    pub fn clear_screen_space_ambient_occlusion(&mut self) {
+        self.set_screen_space_ambient_occlusion(None);
     }
 
     pub fn set_bloom(&mut self, bloom: Option<PostBloomConfig>) {

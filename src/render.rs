@@ -38,7 +38,7 @@ pub use self::exposure::{
 use self::gpu::GpuDeviceState;
 pub use self::offscreen::{OffscreenTarget, PixelReadback};
 use self::output::OutputTransform;
-pub use self::output::{PostBloomConfig, Tonemapper};
+pub use self::output::{PostBloomConfig, ScreenSpaceAmbientOcclusionConfig, Tonemapper};
 pub use self::settings::{Profile, Quality, RenderMode, RendererOptions};
 
 #[derive(Debug)]
@@ -58,6 +58,7 @@ pub struct Renderer {
     capabilities: Capabilities,
     gpu: Option<GpuDeviceState>,
     output: OutputTransform,
+    screen_space_ambient_occlusion: Option<ScreenSpaceAmbientOcclusionConfig>,
     bloom: Option<PostBloomConfig>,
     profile: Profile,
     quality: Quality,
@@ -175,6 +176,20 @@ impl Renderer {
                     );
                 }
             }
+            self.stats.ambient_occlusion_passes = match (
+                self.screen_space_ambient_occlusion,
+                self.depth_frame.as_ref(),
+            ) {
+                (Some(config), Some(depth_frame)) => {
+                    output::apply_screen_space_ambient_occlusion_rgba8(
+                        self.target,
+                        &mut self.frame,
+                        depth_frame,
+                        config,
+                    )
+                }
+                _ => 0,
+            };
             self.stats.bloom_passes = self.bloom.map_or(0, |bloom| {
                 output::apply_bloom_rgba8(
                     self.target,

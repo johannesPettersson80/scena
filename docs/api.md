@@ -54,6 +54,10 @@ Additive public API changes after 1.3.0:
 - `Renderer::set_bloom`
 - `Renderer::clear_bloom`
 - `PostBloomConfig`
+- `Renderer::set_screen_space_ambient_occlusion`
+- `Renderer::clear_screen_space_ambient_occlusion`
+- `ScreenSpaceAmbientOcclusionConfig`
+- `RendererStats::ambient_occlusion_passes`
 - `RendererStats::bloom_passes`
 
 ## Core types

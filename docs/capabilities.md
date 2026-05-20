@@ -37,7 +37,7 @@ This lets applications present clear UI instead of failing silently.
 - Texture arrays and texture limits.
 - Shadow support.
 - Environment lighting support.
-- Postprocessing support such as subtle bloom.
+- Postprocessing support such as subtle bloom and headless CPU SSAO.
 - Surface and context-loss behavior.
 - Readback support.
 - WASM/browser support.

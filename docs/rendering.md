@@ -115,6 +115,18 @@ renderer.set_bloom(Some(scena::PostBloomConfig::subtle()));
 The bloom pass runs on the output frame before FXAA and is reported through
 `RendererStats::bloom_passes`.
 
+Headless and descriptor-backed CPU renders can also enable the depth-aware
+screen-space ambient occlusion baseline:
+
+```rust
+renderer.set_screen_space_ambient_occlusion(Some(
+    scena::ScreenSpaceAmbientOcclusionConfig::subtle(),
+));
+```
+
+The SSAO pass uses the CPU depth buffer to darken contact edges before bloom
+and FXAA. GPU/WebGPU/WebGL2 SSAO remains a separate capability-gated lane.
+
 For generated images, see [Headless rendering](headless-rendering.md).
 
 ## Lifecycle

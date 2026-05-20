@@ -119,6 +119,116 @@ impl Default for PostBloomConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScreenSpaceAmbientOcclusionConfig {
+    radius_px: u8,
+    intensity: f32,
+    depth_threshold: f32,
+}
+
+impl ScreenSpaceAmbientOcclusionConfig {
+    pub const fn subtle() -> Self {
+        Self {
+            radius_px: 3,
+            intensity: 0.45,
+            depth_threshold: 0.025,
+        }
+    }
+
+    pub fn new(radius_px: u8, intensity: f32, depth_threshold: f32) -> Self {
+        Self {
+            radius_px: radius_px.min(12),
+            intensity: if intensity.is_finite() {
+                intensity.clamp(0.0, 1.0)
+            } else {
+                0.0
+            },
+            depth_threshold: if depth_threshold.is_finite() {
+                depth_threshold.max(0.0)
+            } else {
+                0.0
+            },
+        }
+    }
+
+    pub const fn radius_px(self) -> u8 {
+        self.radius_px
+    }
+
+    pub const fn intensity(self) -> f32 {
+        self.intensity
+    }
+
+    pub const fn depth_threshold(self) -> f32 {
+        self.depth_threshold
+    }
+}
+
+impl Default for ScreenSpaceAmbientOcclusionConfig {
+    fn default() -> Self {
+        Self::subtle()
+    }
+}
+
+pub(super) fn apply_screen_space_ambient_occlusion_rgba8(
+    target: RasterTarget,
+    frame: &mut [u8],
+    depth_frame: &[f32],
+    config: ScreenSpaceAmbientOcclusionConfig,
+) -> u64 {
+    let radius = u32::from(config.radius_px());
+    let intensity = config.intensity().clamp(0.0, 1.0);
+    if target.width < 3 || target.height < 3 || radius == 0 || intensity <= 0.0 {
+        return 0;
+    }
+    debug_assert_eq!(frame.len(), target.byte_len());
+    debug_assert_eq!(depth_frame.len(), target.pixel_len());
+
+    let threshold = config.depth_threshold().max(0.0);
+    for y in 0..target.height {
+        for x in 0..target.width {
+            let pixel_index = target.pixel_index(x, y);
+            let center_depth = depth_frame[pixel_index];
+            if !center_depth.is_finite() {
+                continue;
+            }
+            let min_x = x.saturating_sub(radius);
+            let max_x = x.saturating_add(radius).min(target.width - 1);
+            let min_y = y.saturating_sub(radius);
+            let max_y = y.saturating_add(radius).min(target.height - 1);
+            let mut finite_samples = 0_u32;
+            let mut occluders = 0_u32;
+            for sample_y in min_y..=max_y {
+                for sample_x in min_x..=max_x {
+                    if sample_x == x && sample_y == y {
+                        continue;
+                    }
+                    let sample_depth = depth_frame[target.pixel_index(sample_x, sample_y)];
+                    if !sample_depth.is_finite() {
+                        continue;
+                    }
+                    finite_samples += 1;
+                    if sample_depth + threshold < center_depth {
+                        occluders += 1;
+                    }
+                }
+            }
+            if occluders == 0 || finite_samples == 0 {
+                continue;
+            }
+            let coverage = occluders as f32 / finite_samples as f32;
+            let darkening = (coverage * intensity).clamp(0.0, 0.65);
+            let offset = pixel_offset(target, x, y);
+            for channel in 0..3 {
+                frame[offset + channel] =
+                    (f32::from(frame[offset + channel]) * (1.0 - darkening)).round() as u8;
+            }
+        }
+    }
+
+    1
+}
+
 pub(super) fn apply_bloom_rgba8(
     target: RasterTarget,
     frame: &mut [u8],
