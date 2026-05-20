@@ -8,6 +8,9 @@ use std::f32::consts::PI;
 
 use crate::scene::Vec3;
 
+mod dispersion;
+pub(super) use dispersion::dispersion_light_contribution;
+
 pub(super) const DIELECTRIC_F0: f32 = 0.04;
 pub(super) const MIN_ROUGHNESS: f32 = 0.04;
 const MIN_DENOMINATOR: f32 = 0.0001;

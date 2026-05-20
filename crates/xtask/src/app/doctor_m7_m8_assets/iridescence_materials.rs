@@ -109,7 +109,7 @@ pub(super) fn check_iridescence_material_contracts(root: &Path, findings: &mut V
         "ASSETS-M8",
         "src/render/gpu/material_uniform.rs",
         &[
-            "MATERIAL_UNIFORM_BYTE_LEN: u64 = 176",
+            "MATERIAL_UNIFORM_BYTE_LEN: u64 = 192",
             "iridescence_factors",
             "material.iridescence_factor()",
             "material.iridescence_ior()",

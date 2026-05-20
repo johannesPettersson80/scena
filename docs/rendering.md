@@ -75,6 +75,8 @@ Material workflows include:
 - iridescence factor, IOR, thickness-range factors plus iridescence
   factor/thickness texture sampling on the CPU/reference path and GPU
   shader/material resource path,
+- dispersion factor parsing and channel-spread specular shading on the
+  CPU/reference path and GPU shader/material resource path,
 - vertex colors,
 - texture slots,
 - alpha modes,
@@ -106,6 +108,11 @@ the iridescence factor texture's red channel and thickness texture's green
 channel, and the WebGPU/WebGL2 shader variants carry those roles through the
 same material uniform and bind-group path. Approved backend screenshot or
 readback proof remains capability-gated release evidence.
+Optional glTF `KHR_materials_dispersion` factors are parsed into
+`MaterialDesc`. The CPU/reference path and WebGPU/WebGL2 shader variants apply
+the factor as a channel-spread specular approximation. Required dispersion
+assets still report degraded status until approved backend proof and full
+transmission/volume glass behavior are promoted.
 
 ## Environment
 

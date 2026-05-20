@@ -98,6 +98,14 @@ All notable user-facing changes are recorded here.
   WebGPU/WebGL2 shader variants carry the same roles through material
   uniforms and bind groups.
 
+- Added dispersion material support across the CPU/reference path and GPU
+  shader/material resource path: `MaterialDesc` exposes a non-negative
+  dispersion factor, optional glTF `KHR_materials_dispersion` factors are
+  parsed, CPU preview applies channel-spread specular shading, and
+  WebGPU/WebGL2 shader variants carry the same scalar through material
+  uniforms. Required dispersion remains release-proof guarded until approved
+  backend evidence and full transmission/volume glass behavior exist.
+
 - Added capability-gated wide-gamut output reporting: capability reports now
   expose `wide_gamut_output`, browser M4 smoke artifacts record Display P3
   canvas color-space probes, and diagnostics keep output treated as sRGB until

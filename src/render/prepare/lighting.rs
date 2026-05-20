@@ -1,15 +1,16 @@
 use super::pbr_contract::{
-    PbrMaterial, anisotropy_light_contribution, clearcoat_light_contribution,
-    directional_illuminance_lux, inverse_square_range_attenuation, iridescence_light_contribution,
+    PbrMaterial, directional_illuminance_lux, inverse_square_range_attenuation,
     punctual_intensity_candela, punctual_light_contribution, roughness_or_min,
-    sheen_light_contribution, spot_cone_attenuation,
+    spot_cone_attenuation,
 };
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
 use crate::scene::{Light, Scene, Vec3};
 
 use super::environment::PreparedEnvironmentLighting;
 
+mod lobes;
 mod math;
+use lobes::LayeredMaterialLobes;
 use math::*;
 
 #[derive(Clone)]
@@ -285,6 +286,29 @@ fn shade_pbr_base_color(
     let iridescence_ior = material.iridescence_ior();
     let iridescence_thickness_minimum = material.iridescence_thickness_minimum_nm();
     let iridescence_thickness_maximum = material.iridescence_thickness_maximum_nm();
+    let dispersion_factor = material.dispersion_factor();
+    let layered_lobes = LayeredMaterialLobes {
+        pbr_material,
+        normal,
+        clearcoat_normal,
+        view,
+        tangent: input.tangent,
+        tangent_handedness: input.tangent_handedness,
+        clearcoat_factor,
+        clearcoat_roughness,
+        sheen_color,
+        sheen_roughness,
+        anisotropy_strength,
+        anisotropy_rotation,
+        anisotropy_texture: input.anisotropy_texture,
+        iridescence_factor,
+        iridescence_ior,
+        iridescence_thickness_minimum,
+        iridescence_thickness_maximum,
+        iridescence_texture: input.iridescence_texture,
+        iridescence_thickness_texture: input.iridescence_thickness_texture,
+        dispersion_factor,
+    };
     let mut shaded = Vec3::ZERO;
 
     for light in &lights.directional {
@@ -302,59 +326,7 @@ fn shade_pbr_base_color(
             shaded,
             punctual_light_contribution(pbr_material, normal, view, incoming, radiance),
         );
-        shaded = add_vec3(
-            shaded,
-            clearcoat_light_contribution(
-                clearcoat_normal,
-                view,
-                incoming,
-                radiance,
-                clearcoat_factor,
-                clearcoat_roughness,
-            ),
-        );
-        shaded = add_vec3(
-            shaded,
-            sheen_light_contribution(
-                normal,
-                view,
-                incoming,
-                radiance,
-                sheen_color,
-                sheen_roughness,
-            ),
-        );
-        shaded = add_vec3(
-            shaded,
-            anisotropy_light_contribution(
-                pbr_material,
-                normal,
-                input.tangent,
-                input.tangent_handedness,
-                view,
-                incoming,
-                radiance,
-                anisotropy_strength,
-                anisotropy_rotation,
-                input.anisotropy_texture,
-            ),
-        );
-        shaded = add_vec3(
-            shaded,
-            iridescence_light_contribution(
-                pbr_material,
-                normal,
-                view,
-                incoming,
-                radiance,
-                iridescence_factor,
-                iridescence_ior,
-                iridescence_thickness_minimum,
-                iridescence_thickness_maximum,
-                input.iridescence_texture,
-                input.iridescence_thickness_texture,
-            ),
-        );
+        shaded = add_vec3(shaded, layered_lobes.contribution(incoming, radiance));
     }
     for light in &lights.point {
         let to_light = subtract_vec3(light.position, input.position);
@@ -368,59 +340,7 @@ fn shade_pbr_base_color(
             shaded,
             punctual_light_contribution(pbr_material, normal, view, incoming, radiance),
         );
-        shaded = add_vec3(
-            shaded,
-            clearcoat_light_contribution(
-                clearcoat_normal,
-                view,
-                incoming,
-                radiance,
-                clearcoat_factor,
-                clearcoat_roughness,
-            ),
-        );
-        shaded = add_vec3(
-            shaded,
-            sheen_light_contribution(
-                normal,
-                view,
-                incoming,
-                radiance,
-                sheen_color,
-                sheen_roughness,
-            ),
-        );
-        shaded = add_vec3(
-            shaded,
-            anisotropy_light_contribution(
-                pbr_material,
-                normal,
-                input.tangent,
-                input.tangent_handedness,
-                view,
-                incoming,
-                radiance,
-                anisotropy_strength,
-                anisotropy_rotation,
-                input.anisotropy_texture,
-            ),
-        );
-        shaded = add_vec3(
-            shaded,
-            iridescence_light_contribution(
-                pbr_material,
-                normal,
-                view,
-                incoming,
-                radiance,
-                iridescence_factor,
-                iridescence_ior,
-                iridescence_thickness_minimum,
-                iridescence_thickness_maximum,
-                input.iridescence_texture,
-                input.iridescence_thickness_texture,
-            ),
-        );
+        shaded = add_vec3(shaded, layered_lobes.contribution(incoming, radiance));
     }
     for light in &lights.spot {
         let to_light = subtract_vec3(light.position, input.position);
@@ -441,59 +361,7 @@ fn shade_pbr_base_color(
             shaded,
             punctual_light_contribution(pbr_material, normal, view, incoming, radiance),
         );
-        shaded = add_vec3(
-            shaded,
-            clearcoat_light_contribution(
-                clearcoat_normal,
-                view,
-                incoming,
-                radiance,
-                clearcoat_factor,
-                clearcoat_roughness,
-            ),
-        );
-        shaded = add_vec3(
-            shaded,
-            sheen_light_contribution(
-                normal,
-                view,
-                incoming,
-                radiance,
-                sheen_color,
-                sheen_roughness,
-            ),
-        );
-        shaded = add_vec3(
-            shaded,
-            anisotropy_light_contribution(
-                pbr_material,
-                normal,
-                input.tangent,
-                input.tangent_handedness,
-                view,
-                incoming,
-                radiance,
-                anisotropy_strength,
-                anisotropy_rotation,
-                input.anisotropy_texture,
-            ),
-        );
-        shaded = add_vec3(
-            shaded,
-            iridescence_light_contribution(
-                pbr_material,
-                normal,
-                view,
-                incoming,
-                radiance,
-                iridescence_factor,
-                iridescence_ior,
-                iridescence_thickness_minimum,
-                iridescence_thickness_maximum,
-                input.iridescence_texture,
-                input.iridescence_thickness_texture,
-            ),
-        );
+        shaded = add_vec3(shaded, layered_lobes.contribution(incoming, radiance));
     }
     shaded = add_vec3(
         shaded,

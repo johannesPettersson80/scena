@@ -125,6 +125,11 @@ impl MaterialDesc {
         self.iridescence_thickness_maximum_nm
     }
 
+    /// Returns `KHR_materials_dispersion.dispersion` as `20 / Abbe number`.
+    pub const fn dispersion_factor(&self) -> f32 {
+        self.dispersion_factor
+    }
+
     pub const fn with_clearcoat_texture(mut self, texture: TextureHandle) -> Self {
         self.clearcoat_texture = Some(texture);
         self
@@ -302,6 +307,14 @@ impl MaterialDesc {
     ) -> Self {
         self.iridescence_thickness_minimum_nm = non_negative_or(minimum_nm, 100.0);
         self.iridescence_thickness_maximum_nm = non_negative_or(maximum_nm, 400.0);
+        self
+    }
+
+    /// Sets the scalar dispersion strength from `KHR_materials_dispersion`.
+    ///
+    /// Values are sanitized to `>= 0`; `NaN` falls back to `0`.
+    pub const fn with_dispersion_factor(mut self, dispersion_factor: f32) -> Self {
+        self.dispersion_factor = non_negative_or(dispersion_factor, 0.0);
         self
     }
 }

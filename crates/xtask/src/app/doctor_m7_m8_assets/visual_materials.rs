@@ -23,6 +23,8 @@ pub(super) fn check_m8_visual_material_contracts(root: &Path, findings: &mut Vec
             "anisotropy-before-after-cpu-headless-256",
             "m8-iridescence-material-feature",
             "iridescence-before-after-cpu-headless-256",
+            "m8-dispersion-material-feature",
+            "dispersion-before-after-cpu-headless-256",
             "max_luminance_in_region",
             "max_rgb_in_region",
             "(256, 256)",

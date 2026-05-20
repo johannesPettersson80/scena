@@ -467,6 +467,23 @@ mod tests {
     }
 
     #[test]
+    fn triangle_shader_applies_dispersion_lobe_in_native_and_webgl2_variants() {
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            assert!(
+                shader.contains("dispersion_light_contribution")
+                    && shader.contains("dispersion_factors: vec4<f32>")
+                    && shader.contains("let dispersion_factor = max(material.dispersion_factors.x, 0.0);")
+                    && shader.contains("material.dispersion_factors.y")
+                    && shader.contains("shaded += dispersion_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, dispersion_factor, dispersion_ior);"),
+                "{name} shader must apply KHR_materials_dispersion factor and IOR spread instead of silently dropping them"
+            );
+        }
+    }
+
+    #[test]
     fn triangle_shader_applies_occlusion_strength_to_lit_pbr_output() {
         for (name, shader) in [
             ("texture_2d_array", GPU_TRIANGLE_SHADER),

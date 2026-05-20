@@ -746,6 +746,59 @@ fn m8_iridescence_texture_slots_are_parsed_from_gltf() {
 }
 
 #[test]
+fn m8_dispersion_material_factor_is_parsed_from_gltf() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://dispersion-factor.gltf"),
+        br#"{
+            "asset": { "version": "2.0" },
+            "extensionsUsed": ["KHR_materials_dispersion"],
+            "materials": [
+                {
+                    "pbrMetallicRoughness": {
+                        "baseColorFactor": [0.72, 0.72, 0.72, 1.0],
+                        "metallicFactor": 0.0,
+                        "roughnessFactor": 0.28
+                    },
+                    "extensions": {
+                        "KHR_materials_dispersion": {
+                            "dispersion": 0.36
+                        }
+                    }
+                }
+            ],
+            "meshes": [{
+                "primitives": [
+                    { "attributes": { "POSITION": 0 }, "indices": 1, "material": 0 }
+                ]
+            }],
+            "nodes": [{ "name": "DispersionMat", "mesh": 0 }],
+            "buffers": [{ "byteLength": 42, "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAABAAIA" }],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0,  "byteLength": 36 },
+                { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
+            ],
+            "accessors": [
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
+            ]
+        }"#
+        .to_vec(),
+    )]));
+
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://dispersion-factor.gltf")).expect("loads");
+    let material = assets
+        .material(scene_asset.nodes()[0].meshes()[0].material())
+        .expect("material");
+
+    assert_eq!(
+        material.dispersion_factor(),
+        0.36,
+        "KHR_materials_dispersion.dispersion must propagate into MaterialDesc"
+    );
+}
+
+#[test]
 fn m8_optional_real_world_gltf_extensions_report_degradation_metadata() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from("memory://extensions.gltf"),
@@ -917,6 +970,7 @@ fn m8_modern_optional_extensions_have_explicit_v1x_defer_metadata() {
                 "KHR_materials_sheen",
                 "KHR_materials_specular",
                 "KHR_materials_iridescence",
+                "KHR_materials_dispersion",
                 "EXT_texture_webp"
             ],
             "nodes": [{ "name": "Root" }]
@@ -932,6 +986,7 @@ fn m8_modern_optional_extensions_have_explicit_v1x_defer_metadata() {
         ("KHR_materials_sheen", "material extension"),
         ("KHR_materials_specular", "material extension"),
         ("KHR_materials_iridescence", "material extension"),
+        ("KHR_materials_dispersion", "material extension"),
         ("EXT_texture_webp", "WebP texture extension"),
     ] {
         let diagnostic = scene_asset
@@ -952,6 +1007,7 @@ fn m8_modern_optional_extensions_have_explicit_v1x_defer_metadata() {
         "KHR_materials_sheen",
         "KHR_materials_specular",
         "KHR_materials_iridescence",
+        "KHR_materials_dispersion",
         "EXT_texture_webp",
     ] {
         let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
@@ -2702,6 +2758,18 @@ fn m8_iridescence_png_textures_affect_cpu_preview_pixels() {
 }
 
 #[test]
+fn m8_dispersion_factor_affects_cpu_preview_pixels() {
+    let off = render_center_rgb_for_dispersion_factor(0.0);
+    let on = render_center_rgb_for_dispersion_factor(1.0);
+
+    assert_ne!(
+        dominant_rgb_channel(off),
+        dominant_rgb_channel(on),
+        "dispersion must separate the visible channel response instead of being silently ignored: off={off:?} on={on:?}",
+    );
+}
+
+#[test]
 fn m8_missing_texture_slots_fail_with_actionable_asset_error() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from("memory://missing-texture.gltf"),
@@ -3984,6 +4052,15 @@ fn render_center_rgb_for_iridescence_textures(
             .with_iridescence_thickness_range_nm(100.0, 650.0)
             .with_iridescence_texture(iridescence)
             .with_iridescence_thickness_texture(thickness),
+    )
+}
+
+fn render_center_rgb_for_dispersion_factor(dispersion: f32) -> [u8; 3] {
+    let assets = Assets::new();
+    render_center_rgb_with_assets(
+        &assets,
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(165, 165, 165), 0.0, 0.24)
+            .with_dispersion_factor(dispersion),
     )
 }
 

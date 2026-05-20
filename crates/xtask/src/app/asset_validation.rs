@@ -276,11 +276,22 @@ fn extension_guidance(extension: &str, required: bool) -> Option<AssetGuidanceFi
             message: "Iridescence factor, IOR, thickness range, and factor/thickness texture slots are CPU/reference-supported and wired through the GPU shader path, but required iridescence can still depend on approved GPU/browser rendered-output proof that is not release-proven.".to_string(),
             fix: "If the look depends on backend parity, export a fallback material without iridescence or keep KHR_materials_iridescence optional until approved backend screenshots or readback proof cover the target lane.".to_string(),
         }),
+        "KHR_materials_dispersion" => Some(AssetGuidanceFinding {
+            extension: extension.to_string(),
+            required,
+            severity: if required {
+                AssetGuidanceSeverity::Error
+            } else {
+                AssetGuidanceSeverity::Warning
+            },
+            status: "degraded",
+            message: "Dispersion factors are CPU/reference-supported and wired through the GPU shader path as channel-spread specular approximation, but required dispersion can still depend on approved GPU/browser rendered-output proof and full transmission/volume glass behavior that are not release-proven.".to_string(),
+            fix: "If the look depends on backend parity or full glass transmission behavior, export a fallback material without dispersion or keep KHR_materials_dispersion optional until approved backend screenshots or readback proof cover the target lane.".to_string(),
+        }),
         "KHR_materials_transmission"
         | "KHR_materials_ior"
         | "KHR_materials_volume"
-        | "KHR_materials_specular"
-        | "KHR_materials_dispersion" => Some(AssetGuidanceFinding {
+        | "KHR_materials_specular" => Some(AssetGuidanceFinding {
             extension: extension.to_string(),
             required,
             severity: if required {

@@ -12,8 +12,8 @@ use crate::material::{AlphaMode, Color, MaterialDesc, TextureColorSpace, Texture
 
 use super::super::{AssetPath, AssetStorage, MaterialHandle};
 use super::material_extensions::{
-    anisotropy_extension, clearcoat_extension, extension_texture_transform, iridescence_extension,
-    read_extension_texture_info, sheen_extension,
+    anisotropy_extension, clearcoat_extension, dispersion_extension, extension_texture_transform,
+    iridescence_extension, read_extension_texture_info, sheen_extension,
 };
 use super::textures::{GltfTexture, texture_slot};
 
@@ -321,6 +321,9 @@ pub(super) fn parse_materials(
                         desc = desc.with_iridescence_thickness_texture_transform(transform);
                     }
                 }
+            }
+            if let Some(dispersion) = dispersion_extension(document, material_index) {
+                desc = desc.with_dispersion_factor(dispersion.factor);
             }
             desc = match material.alpha_mode() {
                 ::gltf::material::AlphaMode::Opaque => desc,

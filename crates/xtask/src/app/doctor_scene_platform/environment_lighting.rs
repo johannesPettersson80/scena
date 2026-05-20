@@ -352,7 +352,7 @@ pub(crate) fn check_direct_light_shading_contracts(root: &Path, findings: &mut V
             "shade_pbr_base_color",
             "PbrMaterial::new",
             "punctual_light_contribution",
-            "clearcoat_light_contribution",
+            "LayeredMaterialLobes",
             "material.clearcoat_factor()",
             "material.clearcoat_roughness_factor()",
             "inverse_square_range_attenuation",
@@ -367,6 +367,19 @@ pub(crate) fn check_direct_light_shading_contracts(root: &Path, findings: &mut V
             "light.illuminance_lux()",
             "light.intensity_candela()",
             "spot_cone_attenuation",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DIRECT-LIGHT-SHADING",
+        "src/render/prepare/lighting/lobes.rs",
+        &[
+            "clearcoat_light_contribution",
+            "sheen_light_contribution",
+            "anisotropy_light_contribution",
+            "iridescence_light_contribution",
+            "dispersion_light_contribution",
         ],
     );
     require_contains(

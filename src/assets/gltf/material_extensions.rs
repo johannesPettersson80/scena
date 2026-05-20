@@ -37,6 +37,11 @@ pub(super) struct IridescenceExtension {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub(super) struct DispersionExtension {
+    pub(super) factor: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub(super) struct ExtensionTextureInfo {
     pub(super) index: usize,
     pub(super) transform: Option<TextureTransform>,
@@ -123,6 +128,23 @@ pub(super) fn iridescence_extension(
         thickness_maximum: read_factor(extension, "iridescenceThicknessMaximum").unwrap_or(400.0),
         texture: read_extension_texture_info(extension, "iridescenceTexture"),
         thickness_texture: read_extension_texture_info(extension, "iridescenceThicknessTexture"),
+    })
+}
+
+pub(super) fn dispersion_extension(
+    document: &Document,
+    material_index: usize,
+) -> Option<DispersionExtension> {
+    let extension = document
+        .as_json()
+        .materials
+        .get(material_index)?
+        .extensions
+        .as_ref()?
+        .others
+        .get("KHR_materials_dispersion")?;
+    Some(DispersionExtension {
+        factor: read_factor(extension, "dispersion").unwrap_or(0.0),
     })
 }
 

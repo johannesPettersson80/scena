@@ -537,13 +537,14 @@ the rendered result is part of the contract.
   Visual proof: reference-image ON/OFF at a fixed exposure shipped via
   `target/gate-artifacts/m2-visual/bloom-on-off.ppm`.
 - **Material features**: Status: **[shipped]** for clearcoat, sheen,
-  anisotropy, and iridescence scalar factors plus clearcoat,
+  anisotropy, iridescence, and dispersion scalar factors plus clearcoat,
   clearcoat-roughness, clearcoat-normal, sheen-color, sheen-roughness,
   anisotropy direction/strength, and iridescence factor/thickness texture
   sampling on the CPU/reference path, and for WebGPU/WebGL2 shader/material
   resource wiring for punctual-light clearcoat, sheen, anisotropy, and
-  iridescence lobes. **[proof-gap]** remains for approved backend
-  screenshot/readback release evidence. **[gap]** remains for dispersion.
+  iridescence lobes plus dispersion channel-spread shading. **[proof-gap]**
+  remains for approved backend screenshot/readback release evidence and full
+  transmission/volume glass parity.
   Owner: `src/material.rs`, `src/assets/gltf/materials.rs`,
   `src/render/prepare/lighting.rs`, `src/render/gpu/materials.rs`,
   `src/render/gpu/material_uniform.rs`, and
@@ -578,6 +579,10 @@ the rendered result is part of the contract.
   `m8_iridescence_png_textures_affect_cpu_preview_pixels` proves the CPU
   preview samples the iridescence factor red channel and thickness texture
   green channel,
+  `m8_dispersion_material_factor_is_parsed_from_gltf` asserts optional
+  `KHR_materials_dispersion` factors propagate into `MaterialDesc`,
+  `m8_dispersion_factor_affects_cpu_preview_pixels` proves the CPU preview
+  applies dispersion instead of silently ignoring the factor,
   `clearcoat_light_contribution_adds_dielectric_lobe` keeps the PBR
   math owned by `pbr_contract`,
   `sheen_light_contribution_adds_colored_lobe` keeps the sheen lobe owned
@@ -586,11 +591,14 @@ the rendered result is part of the contract.
   keeps the anisotropy lobe owned by `pbr_contract`,
   `iridescence_light_contribution_uses_factor_thickness_and_textures`
   keeps the iridescence lobe owned by `pbr_contract`, and
+  `dispersion_light_contribution_uses_factor_and_ior_spread` keeps the
+  dispersion lobe owned by `pbr_contract`,
   `material_uniform_upload_encodes_material_factors`,
   `triangle_shader_applies_clearcoat_lobe_in_native_and_webgl2_variants`,
   `triangle_shader_applies_sheen_lobe_in_native_and_webgl2_variants`,
   `triangle_shader_applies_anisotropy_lobe_in_native_and_webgl2_variants`,
   `triangle_shader_applies_iridescence_lobe_in_native_and_webgl2_variants`,
+  `triangle_shader_applies_dispersion_lobe_in_native_and_webgl2_variants`,
   `material_resources_define_shader_visible_texture_bindings`, and
   `backend_material_slots_preserve_all_texture_roles_and_material_only_slots`
   pin GPU uniform, shader, bind-group, and prepare-resource contracts.
@@ -601,17 +609,20 @@ the rendered result is part of the contract.
   `m8_headless_visual_artifacts_cover_material_texture_environment_paths`
   writes the `m8-clearcoat-material-feature` and
   `m8-sheen-material-feature`, `m8-anisotropy-material-feature`, and
-  `m8-iridescence-material-feature` before/after artifacts.
+  `m8-iridescence-material-feature`, and `m8-dispersion-material-feature`
+  before/after artifacts.
   Visual proof: reference-image before/after shipped for scalar clearcoat
   and sheen via `target/gate-artifacts/m8-visual/m8-clearcoat-material-feature.ppm`
   and `target/gate-artifacts/m8-visual/m8-sheen-material-feature.ppm`,
   and for anisotropy via
   `target/gate-artifacts/m8-visual/m8-anisotropy-material-feature.ppm`,
   and for iridescence via
-  `target/gate-artifacts/m8-visual/m8-iridescence-material-feature.ppm`;
+  `target/gate-artifacts/m8-visual/m8-iridescence-material-feature.ppm`,
+  and for dispersion via
+  `target/gate-artifacts/m8-visual/m8-dispersion-material-feature.ppm`;
   approved backend reference-image or readback proof is still required for
-  release-grade GPU/WebGPU/WebGL2 clearcoat/sheen/anisotropy/iridescence
-  parity and for each remaining material family.
+  release-grade GPU/WebGPU/WebGL2 clearcoat/sheen/anisotropy/iridescence/
+  dispersion parity and full transmission/volume glass behavior.
 - **Clustered / tiled light culling.** Babylon 9 made this baseline.
   Proof: many-light stress scene proves correct light selection,
   stable frame time / allocation behavior, and no dropped-light fallback.
@@ -1282,8 +1293,9 @@ Items trimmed for honesty:
 
 - **Material presets**: `clear_glass`, `frosted_glass`, `chrome`,
   `brushed_steel`, `leather` remain deferred until the remaining material
-  feature lanes land: approved backend clearcoat/sheen/anisotropy/iridescence
-  proof, dispersion, OIT, and SSR. Clearcoat texture support alone is not
+  feature lanes land: approved backend clearcoat/sheen/anisotropy/iridescence/
+  dispersion proof, full transmission/volume glass behavior, OIT, and SSR.
+  Clearcoat texture support alone is not
   enough to make those preset names honest.
 
 Item reworded:
@@ -1939,6 +1951,22 @@ Iridescence material pass (2026-05-20):
   generated M8 visual proof, and doctor rules pin the contract, while
   approved backend screenshot or readback proof remains required for
   release-grade GPU/WebGPU/WebGL2 parity.
+
+Dispersion material pass (2026-05-20):
+
+- Added `MaterialDesc::with_dispersion_factor(...)` and
+  `MaterialDesc::dispersion_factor()` for the scalar
+  `KHR_materials_dispersion.dispersion` factor.
+- Parsed optional glTF `KHR_materials_dispersion` factors into
+  `MaterialDesc` while keeping required dispersion assets guarded as degraded
+  until approved backend proof and full transmission/volume glass behavior
+  exist.
+- Added CPU/reference channel-spread specular shading owned by
+  `src/render/prepare/pbr_contract/dispersion.rs` and wired the same scalar
+  through GPU material uniforms plus both WebGPU/WebGL2 shader variants.
+- Added focused parse, CPU pixel, PBR math, shader-source, generated M8 visual
+  proof, and doctor rules so dispersion is no longer a pure implementation
+  gap; release-grade backend parity remains a proof gap.
 
 Viewer animation sugar pass (2026-05-19):
 

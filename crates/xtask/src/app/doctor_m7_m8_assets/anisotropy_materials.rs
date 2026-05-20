@@ -88,7 +88,7 @@ pub(super) fn check_anisotropy_material_contracts(root: &Path, findings: &mut Ve
         "ASSETS-M8",
         "src/render/gpu/material_uniform.rs",
         &[
-            "MATERIAL_UNIFORM_BYTE_LEN: u64 = 176",
+            "MATERIAL_UNIFORM_BYTE_LEN: u64 = 192",
             "anisotropy_factors",
             "material.anisotropy_strength_factor()",
             "material.anisotropy_rotation_radians()",

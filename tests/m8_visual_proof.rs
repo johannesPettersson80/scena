@@ -31,6 +31,7 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
         render_sheen_material_feature(),
         render_anisotropy_material_feature(),
         render_iridescence_material_feature(),
+        render_dispersion_material_feature(),
     ];
     let expected_artifacts = [
         "m8-unlit-textured-asset",
@@ -45,6 +46,7 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
         "m8-sheen-material-feature",
         "m8-anisotropy-material-feature",
         "m8-iridescence-material-feature",
+        "m8-dispersion-material-feature",
     ];
     for expected in expected_artifacts {
         assert!(
@@ -128,6 +130,20 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
             assert!(
                 on[2] > off[2] + 2 && on[2] >= on[0],
                 "iridescence visual proof must add a thickness-driven colored lobe; \
+                 off={off:?} on={on:?}"
+            );
+        }
+        if artifact.name == "m8-dispersion-material-feature" {
+            let off = max_rgb_in_region(&artifact.rgba, artifact.width, 0, artifact.width / 2);
+            let on = max_rgb_in_region(
+                &artifact.rgba,
+                artifact.width,
+                artifact.width / 2,
+                artifact.width,
+            );
+            assert!(
+                on[0] > off[0] + 2 || on[2] > off[2] + 2,
+                "dispersion visual proof must separate red/blue channel response; \
                  off={off:?} on={on:?}"
             );
         }
@@ -635,6 +651,44 @@ fn render_iridescence_material_feature() -> VisualArtifact {
     left.proof_class = "iridescence-before-after-cpu-headless-256";
     left.source_hash = Some(fnv1a64_hex(
         b"generated-rust-scene:m8-iridescence-material-feature:iridescence-before-after",
+    ));
+    left
+}
+
+fn render_dispersion_material_feature() -> VisualArtifact {
+    let assets = Assets::new();
+    let off = MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(165, 165, 165), 0.0, 0.24)
+        .with_dispersion_factor(0.0);
+    let on = MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(165, 165, 165), 0.0, 0.24)
+        .with_dispersion_factor(1.0);
+    let mut left = render_material_box(
+        "m8-dispersion-left",
+        &assets,
+        off,
+        None,
+        true,
+        "dispersion-before",
+    );
+    let right = render_material_box(
+        "m8-dispersion-right",
+        &assets,
+        on,
+        None,
+        true,
+        "dispersion-after",
+    );
+
+    for y in 0..left.height {
+        for x in left.width / 2..left.width {
+            let src = ((y * right.width + x) * 4) as usize;
+            let dst = ((y * left.width + x) * 4) as usize;
+            left.rgba[dst..dst + 4].copy_from_slice(&right.rgba[src..src + 4]);
+        }
+    }
+    left.name = "m8-dispersion-material-feature";
+    left.proof_class = "dispersion-before-after-cpu-headless-256";
+    left.source_hash = Some(fnv1a64_hex(
+        b"generated-rust-scene:m8-dispersion-material-feature:dispersion-before-after",
     ));
     left
 }

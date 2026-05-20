@@ -47,6 +47,7 @@ pub struct MaterialDesc {
     iridescence_ior: f32,
     iridescence_thickness_minimum_nm: f32,
     iridescence_thickness_maximum_nm: f32,
+    dispersion_factor: f32,
     /// glTF spec `normalTexture.scale` — scales tangent-space normal
     /// X/Y components before TBN reconstruction. Default 1.0.
     normal_scale: f32,
@@ -172,6 +173,7 @@ impl MaterialDesc {
             iridescence_ior: 1.3,
             iridescence_thickness_minimum_nm: 100.0,
             iridescence_thickness_maximum_nm: 400.0,
+            dispersion_factor: 0.0,
             normal_scale: 1.0,
             occlusion_strength: 1.0,
             double_sided: false,
