@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>scena live demo</title>
+    <title>scena 1.4 live demo</title>
     <link rel="icon" href="data:," />
     <style>
       :root {
@@ -75,6 +75,36 @@
         line-height: 1.05;
         font-weight: 680;
         letter-spacing: 0;
+        display: inline-flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+
+      .version-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        color: var(--bg);
+        background: var(--teal);
+      }
+
+      .new-callout {
+        margin: 6px 0 0 0;
+        padding: 8px 10px;
+        border-left: 3px solid var(--teal);
+        background: var(--panel-2);
+        color: var(--text);
+        font-size: 12px;
+        line-height: 1.45;
+        border-radius: 4px;
+      }
+
+      .new-callout strong {
+        color: var(--teal);
       }
 
       .brand p,
@@ -573,8 +603,13 @@
     <div class="app">
       <aside class="samples">
         <div class="brand">
-          <h1>scena</h1>
+          <h1>scena <span class="version-badge">v1.4</span></h1>
           <p>Three.js ergonomics, Rust types, running in your browser. Drop a model or snap authored connectors.</p>
+          <p class="new-callout">
+            <strong>New in 1.4:</strong> named presets for colors, lens, lights,
+            materials, backgrounds, exposure, and environments &mdash; pick a
+            sample on the right to see the matching code.
+          </p>
         </div>
         <div class="sample-picker">
           <p class="section-label">Try it now</p>

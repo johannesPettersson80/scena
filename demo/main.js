@@ -69,6 +69,19 @@ const SAMPLE_GROUPS = [
       },
     ],
   },
+  {
+    label: "v1.4 named presets",
+    samples: [
+      {
+        id: "v14-presets",
+        label: "Named preset code",
+        detail: "lens / light / material / bg / exposure / env",
+        path: "/samples/connector-snap/connector_snap_assembly.glb",
+        tone: "teal",
+        code: "v14-presets",
+      },
+    ],
+  },
 ];
 
 const SAMPLES = SAMPLE_GROUPS.flatMap((group) => group.samples);
@@ -292,6 +305,54 @@ window.__scenaDemoProbe = {
 };
 
 function updateCodePanel() {
+  if (activeAsset.code === "v14-presets") {
+    codeTitle.textContent = "v1.4 named presets";
+    codeSubtitle.textContent = "scena 1.4 — pick a name, not a number";
+    codeSnippet.textContent = `use scena::{
+    Assets, AutoExposureConfig, Background, Color, DirectionalLight,
+    EnvironmentPreset, MaterialDesc, OrbitControls, PerspectiveCamera,
+    Renderer, Scene,
+};
+
+let assets = Assets::new();
+let model = assets.load_scene("machine.glb").await?;
+let environment = assets
+    .load_environment_preset(EnvironmentPreset::Studio)
+    .await?;
+
+let mut scene = Scene::new();
+let import = scene.instantiate(&model)?;
+let bounds = import.bounds_world(&scene).unwrap();
+
+scene.add_studio_lighting()?;
+// or pick a single named light:
+scene.directional_light(DirectionalLight::sun()).add()?;
+
+let camera = scene.add_perspective_camera(
+    scene.root(),
+    PerspectiveCamera::standard(),         // wide_angle / portrait / telephoto
+    Default::default(),
+)?;
+let framing = scene.frame_bounds(camera, bounds, Default::default())?;
+let controls = OrbitControls::from_framing(framing).cinematic();
+
+let chrome = assets.create_material(MaterialDesc::metal(Color::LIGHT_GRAY));
+let bumper = assets.create_material(MaterialDesc::rubber());
+let body   = assets.create_material(MaterialDesc::plastic(Color::CHARCOAL));
+
+let mut renderer = Renderer::headless(1280, 720)?;
+renderer.set_environment(environment);
+renderer.set_background(Background::DarkStudio);
+renderer.set_auto_exposure(AutoExposureConfig::product_studio());
+renderer.prepare_with_assets(&mut scene, &assets)?;
+renderer.render_active(&scene)?;
+
+let _png = scena::headless_gltf_viewer("machine.glb")
+    .render_png_bytes()
+    .await?;`;
+    setConnectorStoryState("none");
+    return;
+  }
   codeTitle.textContent = activeAsset.code === "connector" ? "Connector snap" : "Rust";
   codeSubtitle.textContent =
     activeAsset.code === "connector" ? 'scene.mate(&drive, "shaft", &load, "hub")' : activeAsset.path;
