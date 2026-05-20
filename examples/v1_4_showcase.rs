@@ -250,7 +250,7 @@ fn render_subject_with_lens(
         .transform(Transform::at(Vec3::new(0.0, 0.5, 0.0)))
         .add()?;
     scene
-        .mesh(cylinder, plastic.clone())
+        .mesh(cylinder, plastic)
         .transform(Transform::at(Vec3::new(-0.7, 0.35, 0.0)))
         .add()?;
     scene
@@ -529,7 +529,7 @@ fn render_auto_exposure_presets(out: &Path) -> Result<(), Box<dyn Error>> {
         AutoExposureConfig::mixed(),
     ];
     let composite = compose_horizontal(configs.len() as u32, PANEL_W, PANEL_H, |i| {
-        render_subject_with_exposure(configs[i].clone(), PANEL_W, PANEL_H)
+        render_subject_with_exposure(configs[i], PANEL_W, PANEL_H)
     })?;
     write_png(
         &composite,
@@ -1119,7 +1119,7 @@ fn scene_contact_corner() -> Result<(Scene, Assets), Box<dyn Error>> {
     let mat = assets.create_material(MaterialDesc::plastic(Color::LIGHT_GRAY));
     let mut scene = Scene::new();
     scene
-        .mesh(sphere, mat.clone())
+        .mesh(sphere, mat)
         .transform(Transform::at(Vec3::new(0.0, 0.45, 0.0)))
         .add()?;
     scene

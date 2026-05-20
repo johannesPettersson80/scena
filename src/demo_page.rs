@@ -9,9 +9,9 @@ use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
 use crate::{
-    Assets, AutoExposureConfig, CameraKey, Color, FramingOptions, GridFloorOptions, NodeKey,
-    OrbitControls, PerspectiveCamera, PlatformSurface, PointerEvent, Renderer, Scene, SurfaceEvent,
-    Transform, Vec3,
+    AntiAliasing, Assets, AutoExposureConfig, Background, CameraKey, Color, FramingOptions,
+    GridFloorOptions, NodeKey, OrbitControls, PerspectiveCamera, PlatformSurface, PointerEvent,
+    PostBloomConfig, Renderer, Scene, SurfaceEvent, Transform, Vec3,
 };
 
 mod bounds;
@@ -363,6 +363,131 @@ fn log_renderer_auto_exposure(renderer: &Renderer) {
             .into(),
         );
     }
+}
+
+/// Switch the renderer background to a named [`Background`] scheme.
+///
+/// Accepted scheme keys (case-insensitive):
+/// `studio`, `dark_studio`, `neutral_gray`, `white`, `black`, `sky`,
+/// `transparent`.
+#[wasm_bindgen]
+pub fn set_background_scheme(app: &mut DemoApp, scheme: &str) -> Result<(), JsValue> {
+    let background = match scheme.to_ascii_lowercase().as_str() {
+        "studio" => Background::Studio,
+        "dark_studio" | "darkstudio" | "dark-studio" => Background::DarkStudio,
+        "neutral_gray" | "neutralgray" | "neutral-gray" => Background::NeutralGray,
+        "white" => Background::White,
+        "black" => Background::Black,
+        "sky" => Background::Sky,
+        "transparent" => Background::Transparent,
+        other => {
+            return Err(JsValue::from_str(&format!(
+                "unknown background scheme: {other}"
+            )));
+        }
+    };
+    let renderer = app.renderer.as_mut().ok_or_else(|| {
+        JsValue::from_str("attach_to_canvas must be called before set_background_scheme")
+    })?;
+    renderer.set_background(background);
+    Ok(())
+}
+
+/// Switch the renderer's auto-exposure to a named scenario.
+///
+/// Accepted preset keys: `product_studio`, `indoor`, `outdoor`, `mixed`.
+#[wasm_bindgen]
+pub fn set_auto_exposure_preset(app: &mut DemoApp, preset: &str) -> Result<(), JsValue> {
+    let config = match preset.to_ascii_lowercase().as_str() {
+        "product_studio" | "productstudio" | "product-studio" => {
+            AutoExposureConfig::product_studio()
+        }
+        "indoor" => AutoExposureConfig::indoor(),
+        "outdoor" => AutoExposureConfig::outdoor(),
+        "mixed" | "default" => AutoExposureConfig::mixed(),
+        other => {
+            return Err(JsValue::from_str(&format!(
+                "unknown auto-exposure preset: {other}"
+            )));
+        }
+    };
+    let renderer = app.renderer.as_mut().ok_or_else(|| {
+        JsValue::from_str("attach_to_canvas must be called before set_auto_exposure_preset")
+    })?;
+    renderer.set_auto_exposure(config);
+    Ok(())
+}
+
+/// Switch the renderer's anti-aliasing mode.
+///
+/// Accepted mode keys: `fxaa` (the default), `none`.
+#[wasm_bindgen]
+pub fn set_anti_aliasing_mode(app: &mut DemoApp, mode: &str) -> Result<(), JsValue> {
+    let setting = match mode.to_ascii_lowercase().as_str() {
+        "fxaa" | "on" | "true" => AntiAliasing::Fxaa,
+        "none" | "off" | "false" => AntiAliasing::None,
+        other => {
+            return Err(JsValue::from_str(&format!(
+                "unknown anti-aliasing mode: {other}"
+            )));
+        }
+    };
+    let renderer = app.renderer.as_mut().ok_or_else(|| {
+        JsValue::from_str("attach_to_canvas must be called before set_anti_aliasing_mode")
+    })?;
+    renderer.set_anti_aliasing(setting);
+    Ok(())
+}
+
+/// Toggle the subtle post bloom pass on or off.
+#[wasm_bindgen]
+pub fn set_bloom_enabled(app: &mut DemoApp, enabled: bool) -> Result<(), JsValue> {
+    let renderer = app.renderer.as_mut().ok_or_else(|| {
+        JsValue::from_str("attach_to_canvas must be called before set_bloom_enabled")
+    })?;
+    renderer.set_bloom(if enabled {
+        Some(PostBloomConfig::subtle())
+    } else {
+        None
+    });
+    Ok(())
+}
+
+/// Encode the latest rendered frame as PNG bytes for download or upload.
+///
+/// Requires that `tick` has been called at least once after `attach_to_canvas`
+/// so the renderer holds a populated readback buffer.
+#[wasm_bindgen]
+pub fn capture_png_bytes(app: &DemoApp) -> Result<Box<[u8]>, JsValue> {
+    use std::io::Cursor;
+    let renderer = app.renderer.as_ref().ok_or_else(|| {
+        JsValue::from_str("attach_to_canvas must be called before capture_png_bytes")
+    })?;
+    let stats = renderer.stats();
+    let width = stats.target_width;
+    let height = stats.target_height;
+    let frame = renderer.frame_rgba8();
+    let expected = width as usize * height as usize * 4;
+    if frame.len() != expected {
+        return Err(JsValue::from_str(&format!(
+            "renderer frame buffer is {} bytes; expected {} RGBA8 bytes",
+            frame.len(),
+            expected
+        )));
+    }
+    let mut bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(Cursor::new(&mut bytes), width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder
+            .write_header()
+            .map_err(|err| JsValue::from_str(&format!("png header failed: {err:?}")))?;
+        writer
+            .write_image_data(frame)
+            .map_err(|err| JsValue::from_str(&format!("png body failed: {err:?}")))?;
+    }
+    Ok(bytes.into_boxed_slice())
 }
 
 impl DemoApp {

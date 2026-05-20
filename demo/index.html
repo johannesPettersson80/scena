@@ -107,6 +107,77 @@
         color: var(--teal);
       }
 
+      .v14-controls {
+        display: grid;
+        gap: 8px;
+        padding: 10px 12px;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
+
+      .v14-controls summary {
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--teal);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        list-style: none;
+        outline: none;
+      }
+
+      .v14-controls summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .v14-row {
+        display: grid;
+        grid-template-columns: 100px 1fr;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .v14-row select {
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 4px 6px;
+        font-size: 12px;
+        font-family: inherit;
+      }
+
+      .v14-row select:focus {
+        outline: 1px solid var(--teal);
+      }
+
+      .v14-row-check {
+        grid-template-columns: 18px 1fr;
+      }
+
+      .v14-row-check input[type="checkbox"] {
+        margin: 0;
+      }
+
+      .v14-screenshot {
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--teal);
+        border-radius: 4px;
+        padding: 6px 10px;
+        font-size: 12px;
+        cursor: pointer;
+        font-family: inherit;
+      }
+
+      .v14-screenshot:hover {
+        background: var(--teal);
+        color: var(--bg);
+      }
+
       .brand p,
       .section-label,
       .metric span,
@@ -615,6 +686,42 @@
           <p class="section-label">Try it now</p>
           <div id="sample-list" class="sample-list"></div>
         </div>
+        <details id="v14-controls" class="v14-controls" open>
+          <summary>v1.4 controls</summary>
+          <label class="v14-row" for="v14-background">
+            <span>Background</span>
+            <select id="v14-background">
+              <option value="dark_studio" selected>DarkStudio</option>
+              <option value="studio">Studio</option>
+              <option value="neutral_gray">NeutralGray</option>
+              <option value="white">White</option>
+              <option value="black">Black</option>
+              <option value="sky">Sky</option>
+              <option value="transparent">Transparent</option>
+            </select>
+          </label>
+          <label class="v14-row" for="v14-auto-exposure">
+            <span>Auto exposure</span>
+            <select id="v14-auto-exposure">
+              <option value="product_studio" selected>product_studio</option>
+              <option value="indoor">indoor</option>
+              <option value="outdoor">outdoor</option>
+              <option value="mixed">mixed</option>
+            </select>
+          </label>
+          <label class="v14-row" for="v14-anti-aliasing">
+            <span>Anti-aliasing</span>
+            <select id="v14-anti-aliasing">
+              <option value="fxaa" selected>FXAA</option>
+              <option value="none">off</option>
+            </select>
+          </label>
+          <label class="v14-row v14-row-check" for="v14-bloom">
+            <input id="v14-bloom" type="checkbox" />
+            <span>Subtle bloom</span>
+          </label>
+          <button id="v14-screenshot" class="v14-screenshot" type="button">Download PNG</button>
+        </details>
         <div id="connector-story" class="connector-story">
           <p id="connector-claim">
             <strong>Authored connector mate.</strong> Watch scena align two parts using only authored connectors in their glTF files, no coordinates and no transform math.
@@ -662,6 +769,6 @@
         </details>
       </aside>
     </div>
-    <script type="module" src="./main.js?v=20260518-connector-story-1"></script>
+    <script type="module" src="./main.js?v=20260520-v14-runtime-controls-1"></script>
   </body>
 </html>

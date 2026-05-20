@@ -1,16 +1,21 @@
 import init, {
-  load_gltf_from_bytes,
-  load_gltf_with_floor_from_bytes,
-  load_gltf_with_view_from_bytes,
-  load_connector_snap_from_bytes,
   attach_to_canvas,
+  capture_png_bytes,
   connector_marker_positions,
   connector_replay_active,
   forward_pointer_event,
+  load_connector_snap_from_bytes,
+  load_gltf_from_bytes,
+  load_gltf_with_floor_from_bytes,
+  load_gltf_with_view_from_bytes,
   replay_connector_snap,
   resize,
+  set_anti_aliasing_mode,
+  set_auto_exposure_preset,
+  set_background_scheme,
+  set_bloom_enabled,
   tick,
-} from "./pkg/scena.js?v=20260518-waterbottle-facing-label-1";
+} from "./pkg/scena.js?v=20260520-v14-runtime-controls-1";
 
 const SAMPLE_GROUPS = [
   {
@@ -104,6 +109,11 @@ const statusTitle = document.getElementById("status-title");
 const statusDetail = document.getElementById("status-detail");
 const codeTitle = document.getElementById("code-title");
 const codeSubtitle = document.getElementById("code-subtitle");
+const v14BackgroundSelect = document.getElementById("v14-background");
+const v14AutoExposureSelect = document.getElementById("v14-auto-exposure");
+const v14AntiAliasingSelect = document.getElementById("v14-anti-aliasing");
+const v14BloomCheckbox = document.getElementById("v14-bloom");
+const v14ScreenshotButton = document.getElementById("v14-screenshot");
 const codeSnippet = document.getElementById("code-snippet");
 const copyButton = document.getElementById("copy-code");
 const replayButton = document.getElementById("replay-button");
@@ -426,7 +436,7 @@ async function start() {
   updateMetrics();
   beginPhase("initialising WASM");
   await init({
-    module_or_path: new URL("./pkg/scena_bg.wasm?v=20260518-connector-story-1", import.meta.url),
+    module_or_path: new URL("./pkg/scena_bg.wasm?v=20260520-v14-runtime-controls-1", import.meta.url),
   });
   wireDragDrop();
   wirePointer();
@@ -838,6 +848,56 @@ function wirePointer() {
     },
     { passive: false },
   );
+}
+
+function tryWasmCall(label, fn) {
+  if (!app || !attached) return;
+  try {
+    fn();
+    requestRender();
+  } catch (err) {
+    console.error(`${label} failed:`, err);
+  }
+}
+
+if (v14BackgroundSelect) {
+  v14BackgroundSelect.addEventListener("change", (event) => {
+    tryWasmCall("set_background_scheme", () => set_background_scheme(app, event.target.value));
+  });
+}
+if (v14AutoExposureSelect) {
+  v14AutoExposureSelect.addEventListener("change", (event) => {
+    tryWasmCall("set_auto_exposure_preset", () => set_auto_exposure_preset(app, event.target.value));
+  });
+}
+if (v14AntiAliasingSelect) {
+  v14AntiAliasingSelect.addEventListener("change", (event) => {
+    tryWasmCall("set_anti_aliasing_mode", () => set_anti_aliasing_mode(app, event.target.value));
+  });
+}
+if (v14BloomCheckbox) {
+  v14BloomCheckbox.addEventListener("change", (event) => {
+    tryWasmCall("set_bloom_enabled", () => set_bloom_enabled(app, event.target.checked));
+  });
+}
+if (v14ScreenshotButton) {
+  v14ScreenshotButton.addEventListener("click", () => {
+    if (!app || !attached) return;
+    try {
+      const bytes = capture_png_bytes(app);
+      const blob = new Blob([bytes], { type: "image/png" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `scena-${activeAsset.id || "frame"}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error("capture_png_bytes failed:", err);
+    }
+  });
 }
 
 start().catch((err) => {
