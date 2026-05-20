@@ -11,6 +11,11 @@ description: Use when working with scena Git state, branches, commits, tags, Git
   as separate facts.
 - Do not commit, tag, push, merge, close issues, or delete branches unless the user asks for
   that action.
+- Commit messages must describe the user-visible or code-level change in product terms.
+  Do not use internal planning labels such as "Round A", "Round B", checklist numbers, or
+  transient branch names unless the user explicitly asks for that wording. Before running
+  `git commit`, sanity-check that the subject would make sense to a maintainer reading
+  project history without the current chat context.
 - Before changing files, check the current branch and dirty tree when the task involves
   commits, branches, release work, or crash recovery.
 - Never discard dirty files you did not create unless the user explicitly asks and the exact
