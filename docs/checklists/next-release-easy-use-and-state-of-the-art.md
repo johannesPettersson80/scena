@@ -611,14 +611,18 @@ through each feature path** (KTX2-textured asset render, meshopt
 asset render, animation clip at fixed timestamps). For animation
 specifically, add **animated-proof** of the clip playing back.
 
-- **Animation update flow.** `src/scene/mixers.rs:10-104` has
-  `create_animation_mixer`, `play_animation`, `pause`, `stop`, `seek`,
-  `set_speed`, `set_loop_mode`, `update_animation`. `create_animation_mixer`
-  already takes a clip name. **Scene helper shipped**:
-  `Scene::play_animation_by_name` creates the mixer, starts it, and returns
-  the typed mixer handle. Viewer sugar remains deferred. Proof:
-  rendered-output proof of a known animation clip playing back at fixed
-  timestamps.
+- **Animation update flow.** Status: **[shipped]** for scene-owned
+  mixer creation, one-call named playback, and rendered-output proof.
+  `src/scene/mixers.rs` has `create_animation_mixer`, `play_animation`,
+  `pause`, `stop`, `seek`, `set_speed`, `set_loop_mode`,
+  `update_animation`, and `Scene::play_animation_by_name`, which creates
+  the mixer, starts it, and returns the typed mixer handle. Viewer sugar
+  remains deferred until a concrete viewer workflow needs it. Proof:
+  `tests/round_c_animation_playback.rs` proves the named helper starts a
+  mixer and moves an imported animated node, while
+  `round_c_animation_playback_reference_animated_docs_image` renders a
+  generated frame sequence at fixed timestamps and asserts the rendered
+  frames change.
 - **KTX2 / Basis textures.** Status: **[shipped]** for the optional
   production profile. The decode path and feature flag remain opt-in, and
   feature-gated rendered proof covers material texture roles. Native GPU
@@ -643,7 +647,10 @@ The pipeline runs but no stored reference asserts the visual is right.
 This section IS the reference-image work; closing every item below
 produces a stored PNG with a CI diff threshold.
 
-- Animation clip rendered-output regression test.
+- Animation clip rendered-output regression test — **[shipped]** through
+  `round_c_animation_playback_reference_animated_docs_image`, which
+  renders a generated frame sequence at fixed timestamps and asserts a
+  visible frame change.
 - KTX2-textured asset rendered-output regression test — **[shipped]**
   locally through `tests/m8_compressed_asset_release_proof.rs` with
   `--features production-assets`.
@@ -1775,3 +1782,10 @@ Wide-gamut capability probe pass (2026-05-19):
 - Reclassified wide-gamut output to shipped for capability-gated reporting
   and browser probe evidence only; renderer-level Display P3 presentation
   remains an explicit gap until it has backend visual proof.
+
+Animation proof reconciliation pass (2026-05-19):
+
+- Reconciled §3.2 / §3.3 with the already-shipped one-call animation
+  playback proof: the focused API test starts a named mixer and the
+  generated docs-image proof renders fixed-timestamp frames that visibly
+  change.
