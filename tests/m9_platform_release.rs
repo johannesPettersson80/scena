@@ -1476,6 +1476,7 @@ fn capability_fields(capabilities: Capabilities) -> serde_json::Value {
         "spot_shadows": { "state": format!("{:?}", capabilities.spot_shadows) },
         "bloom": { "state": format!("{:?}", capabilities.bloom) },
         "screen_space_ambient_occlusion": { "state": format!("{:?}", capabilities.screen_space_ambient_occlusion) },
+        "wide_gamut_output": { "state": format!("{:?}", capabilities.wide_gamut_output) },
         "texture_compression_basisu": { "state": format!("{:?}", capabilities.texture_compression_basisu) },
         "hardware_instancing": { "state": format!("{:?}", capabilities.hardware_instancing) },
         "texture_arrays": {

@@ -183,6 +183,8 @@ pub(crate) fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Findin
             "per_instance_culling",
             "texture_compression_basisu",
             "screen_space_ambient_occlusion",
+            "wide_gamut_output",
+            "drawingBufferColorSpace",
             "bloom",
             "hardware_instancing",
             "fragment_high_precision",
@@ -202,6 +204,7 @@ pub(crate) fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Findin
             "webgl2",
             "webgpu",
             "capabilities",
+            "color_space",
             "loss",
         ],
     );

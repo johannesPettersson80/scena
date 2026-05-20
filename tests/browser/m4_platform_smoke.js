@@ -84,6 +84,7 @@ async function main() {
     width: 64,
     height: 64,
     capabilities: results.map((result) => result.capabilities),
+    color_space: results.map((result) => ({ backend: result.backend, ...result.color_space })),
     loss: results.map((result) => ({ backend: result.backend, ...result.loss })),
     results,
   };

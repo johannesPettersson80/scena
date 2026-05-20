@@ -21,6 +21,7 @@ pub(super) fn capabilities_json(capabilities: crate::Capabilities) -> serde_json
         "bloom": format!("{:?}", capabilities.bloom),
         "screen_space_ambient_occlusion": format!("{:?}", capabilities.screen_space_ambient_occlusion),
         "order_independent_transparency": format!("{:?}", capabilities.order_independent_transparency),
+        "wide_gamut_output": format!("{:?}", capabilities.wide_gamut_output),
         "texture_compression_basisu": format!("{:?}", capabilities.texture_compression_basisu),
         "hardware_instancing": format!("{:?}", capabilities.hardware_instancing),
         "fragment_high_precision": format!("{:?}", capabilities.fragment_high_precision),

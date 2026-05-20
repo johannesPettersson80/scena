@@ -41,6 +41,8 @@ This lets applications present clear UI instead of failing silently.
   backend-gated clearcoat texture and GPU lanes.
 - Postprocessing support such as subtle bloom, headless CPU SSAO, and
   headless CPU weighted blended OIT.
+- Wide-gamut output, which is only claimed when a browser canvas color-space
+  probe proves Display P3 support for the active backend.
 - Surface and context-loss behavior.
 - Readback support.
 - WASM/browser support.

@@ -71,6 +71,11 @@ All notable user-facing changes are recorded here.
   glTF `KHR_materials_clearcoat` factors are parsed, and M8 visual proof
   records a before/after clearcoat render.
 
+- Added capability-gated wide-gamut output reporting: capability reports now
+  expose `wide_gamut_output`, browser M4 smoke artifacts record Display P3
+  canvas color-space probes, and diagnostics keep output treated as sRGB until
+  a backend-specific probe proves otherwise.
+
 ### Changed
 
 - Updated the browser demo showcase so connector mating is the default first

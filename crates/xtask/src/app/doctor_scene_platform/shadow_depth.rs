@@ -162,10 +162,13 @@ pub(crate) fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding
             "pub bloom: CapabilityStatus",
             "pub screen_space_ambient_occlusion: CapabilityStatus",
             "pub order_independent_transparency: CapabilityStatus",
+            "pub wide_gamut_output: CapabilityStatus",
             "const fn bloom_status",
             "const fn order_independent_transparency_status",
+            "const fn wide_gamut_output_status",
             "DiagnosticCode::AmbientOcclusionDisabled",
             "DiagnosticCode::OrderIndependentTransparencyDisabled",
+            "DiagnosticCode::WideGamutOutputUnavailable",
             "pub reversed_z_depth: CapabilityStatus",
         ],
     );

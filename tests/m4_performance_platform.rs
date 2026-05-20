@@ -100,6 +100,11 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
         "CPU headless OIT has overlap order-invariance proof; GPU/browser lanes remain separate"
     );
     assert_eq!(
+        headless.wide_gamut_output,
+        CapabilityStatus::FeatureDisabled,
+        "CPU/headless output targets sRGB; wide gamut must not be implied without a surface color-space probe"
+    );
+    assert_eq!(
         headless.gpu_frustum_culling,
         CapabilityStatus::FeatureDisabled
     );
@@ -145,6 +150,16 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
     );
     assert_eq!(webgl2.per_instance_culling, CapabilityStatus::Degraded);
     assert_eq!(webgl2.storage_buffers, CapabilityStatus::FeatureDisabled);
+    assert_eq!(
+        webgl2.wide_gamut_output,
+        CapabilityStatus::FeatureDisabled,
+        "unattached WebGL2 capabilities cannot claim a browser canvas color space"
+    );
+    assert_eq!(
+        scena::Capabilities::for_attached_gpu_backend(Backend::WebGl2).wide_gamut_output,
+        CapabilityStatus::Degraded,
+        "attached browser WebGL2 needs a measured drawingBufferColorSpace probe before claiming Display P3"
+    );
 
     let webgpu = scena::Capabilities::for_attached_gpu_backend(Backend::WebGpu);
     assert_eq!(webgpu.hardware_tier, HardwareTier::Medium);
@@ -159,6 +174,11 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
     assert_eq!(
         webgpu.order_independent_transparency,
         CapabilityStatus::FeatureDisabled
+    );
+    assert_eq!(
+        webgpu.wide_gamut_output,
+        CapabilityStatus::Degraded,
+        "attached WebGPU needs a measured canvas color-space probe before claiming Display P3"
     );
     assert_eq!(webgpu.texture_arrays, CapabilityStatus::Supported);
     assert_eq!(webgpu.max_texture_array_layers, 256);

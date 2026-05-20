@@ -318,6 +318,10 @@ UIs can show the same actionable remediation used by the asset doctor.
 
 Use capability reports when selecting optional effects or platform-specific
 paths. Use stats for testing, diagnostics, and performance visibility.
+`Capabilities::wide_gamut_output` is intentionally capability-gated: headless
+and unattached reports stay disabled, attached browser reports stay degraded
+until the browser smoke probe records Display P3 canvas support for the active
+backend.
 
 ## Where to go next
 

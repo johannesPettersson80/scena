@@ -64,10 +64,12 @@
       await readback.mapAsync(GPUMapMode.READ);
       const bytes = new Uint8Array(readback.getMappedRange()).slice();
       readback.unmap();
+      const colorSpace = probeWebGpuColorSpace(device, format);
       device.destroy();
       return {
         status: "rendered",
         center: centerPixel(bytes),
+        color_space: colorSpace,
         loss: {
           event_sequence: ["GPUDevice.destroy", "GPUDevice.lost"],
           retain_policy: "OnContextLossOnly",
@@ -75,6 +77,51 @@
           final_prepare_result: "requires prepare",
         },
       };
+    }
+
+    function probeWebGpuColorSpace(device, format) {
+      const probeCanvas = document.createElement("canvas");
+      probeCanvas.width = 1;
+      probeCanvas.height = 1;
+      const context = probeCanvas.getContext("webgpu");
+      if (!context) {
+        return {
+          api: "webgpu",
+          property: "GPUCanvasConfiguration.colorSpace",
+          requested: "display-p3",
+          supported: false,
+          effective: null,
+          display_p3: false,
+          error: "probe canvas webgpu context unavailable",
+        };
+      }
+      try {
+        context.configure({
+          device,
+          format,
+          alphaMode: "opaque",
+          colorSpace: "display-p3",
+        });
+        return {
+          api: "webgpu",
+          property: "GPUCanvasConfiguration.colorSpace",
+          requested: "display-p3",
+          supported: true,
+          effective: "display-p3",
+          display_p3: true,
+          error: null,
+        };
+      } catch (caught) {
+        return {
+          api: "webgpu",
+          property: "GPUCanvasConfiguration.colorSpace",
+          requested: "display-p3",
+          supported: false,
+          effective: null,
+          display_p3: false,
+          error: String(caught && caught.message ? caught.message : caught),
+        };
+      }
     }
 
     async function renderWebGl2(canvas) {
@@ -116,8 +163,9 @@
       };
     }
 
-    function capabilityReport(backend) {
+    function capabilityReport(backend, colorSpace) {
       const webgl2 = backend === "webgl2";
+      const wideGamut = colorSpace && colorSpace.display_p3 ? "Supported" : "Degraded";
       return {
         schema: "scena.capabilities.v1",
         lane: backend === "webgpu" ? "linux-webgpu-chromium" : "linux-webgl2-chromium",
@@ -130,6 +178,12 @@
           spot_shadows: { state: "FeatureDisabled" },
           bloom: { state: "Supported" },
           screen_space_ambient_occlusion: { state: "FeatureDisabled" },
+          wide_gamut_output: {
+            state: wideGamut,
+            requested: "display-p3",
+            effective: colorSpace ? colorSpace.effective : null,
+            probe: colorSpace ? colorSpace.property : "missing",
+          },
           texture_compression_basisu: { state: "FeatureDisabled" },
           hardware_instancing: { state: webgl2 ? "FeatureDisabled" : "Supported" },
           texture_arrays: { state: "Supported", max_layers: 256 },
@@ -164,15 +218,52 @@
       }
       const expected = backend === "webgpu" ? [0, 255, 0, 255] : [0, 0, 255, 255];
       const passed = result.center.every((value, index) => Math.abs(value - expected[index]) <= 1);
+      const colorSpace = probeCanvasColorSpace(backend, canvas, result);
       return {
         status: passed ? "passed" : "failed",
         backend,
         center: result.center,
         expected,
-        capabilities: capabilityReport(backend),
+        capabilities: capabilityReport(backend, colorSpace),
+        color_space: colorSpace,
         loss: result.loss,
       };
     };
+
+    function probeCanvasColorSpace(backend, canvas, result) {
+      if (backend === "webgl2") {
+        const gl = canvas.getContext("webgl2", { preserveDrawingBuffer: true });
+        const supported = !!gl && "drawingBufferColorSpace" in gl;
+        let effective = supported ? gl.drawingBufferColorSpace : null;
+        let error = null;
+        if (supported) {
+          try {
+            gl.drawingBufferColorSpace = "display-p3";
+            effective = gl.drawingBufferColorSpace;
+          } catch (caught) {
+            error = String(caught && caught.message ? caught.message : caught);
+          }
+        }
+        return {
+          api: "webgl2",
+          property: "drawingBufferColorSpace",
+          requested: "display-p3",
+          supported,
+          effective,
+          display_p3: effective === "display-p3",
+          error,
+        };
+      }
+      return result.color_space || {
+        api: "webgpu",
+        property: "GPUCanvasConfiguration.colorSpace",
+        requested: "display-p3",
+        supported: false,
+        effective: null,
+        display_p3: false,
+        error: "webgpu render did not expose color-space probe",
+      };
+    }
   </script>
 </body>
 </html>

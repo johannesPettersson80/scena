@@ -574,11 +574,19 @@ the rendered result is part of the contract.
   `oit-overlap-order-invariance` reference artifact.
   Visual proof: reference-image order-invariance pair shipped via
   `target/gate-artifacts/m2-visual/oit-overlap-order-invariance.ppm`.
-- **Wide-gamut output (Display P3)** — capability-gated. PBR Neutral
-  targets sRGB; Display P3 is a `drawingBufferColorSpace` capability on
-  WebGL/WebGPU. Needs measured proof per backend, not a blanket claim.
-  Proof: capability-matrix artifact per backend plus a color-space probe;
-  no blanket visual claim for unavailable backends.
+- **Wide-gamut output (Display P3)** — Status: **[shipped]** for
+  capability-gated reporting and browser probe evidence. PBR Neutral
+  targets sRGB; `Capabilities::wide_gamut_output` is disabled for
+  headless/unattached reports, degraded for attached browser backends until
+  the recorded canvas color-space probe proves Display P3, and paired with
+  `DiagnosticCode::WideGamutOutputUnavailable` when unavailable. **[gap]**
+  remains for a Rust renderer output path that configures and proves
+  Display P3 presentation end to end. Proof:
+  `capability_matrix_reports_hardware_tier_and_backend_feature_states`
+  asserts disabled/degraded capability states, the M4 browser smoke records
+  `drawingBufferColorSpace` / `GPUCanvasConfiguration.colorSpace` probe
+  results, and `doctor --full` source-enforces the capability field,
+  diagnostic code, and browser artifact shape.
 - **Draco mesh compression** (`KHR_draco_mesh_compression`).
   Proof: decode/import assertions against a known compressed fixture,
   package-size/build-time impact for any optional feature, and a rendered
@@ -1264,7 +1272,9 @@ quaternion literals), not dead or desired API names.
 
 Wide-gamut output: marked **capability-gated**, not blanket-claimed —
 PBR Neutral targets sRGB; Display P3 is a per-backend
-`drawingBufferColorSpace` capability. Needs measured proof per backend.
+`drawingBufferColorSpace` / `GPUCanvasConfiguration.colorSpace`
+capability. The first implementation slice should ship reporting and probe
+evidence before any visual-output claim.
 
 Round A implementation pass (2026-05-19):
 
@@ -1752,3 +1762,16 @@ Scalar clearcoat material baseline pass (2026-05-19):
   features from fully missing to shipped for scalar CPU clearcoat only;
   texture slots, GPU/WebGPU/WebGL2 clearcoat, sheen, anisotropy,
   iridescence, and dispersion remain open.
+
+Wide-gamut capability probe pass (2026-05-19):
+
+- Added `Capabilities::wide_gamut_output` and
+  `DiagnosticCode::WideGamutOutputUnavailable` so scena reports sRGB as the
+  default and only treats Display P3 as possible when an attached browser
+  surface has probe evidence.
+- Extended the M4 browser smoke to record WebGL2 `drawingBufferColorSpace`
+  and WebGPU `GPUCanvasConfiguration.colorSpace` probe results in the
+  capability artifact.
+- Reclassified wide-gamut output to shipped for capability-gated reporting
+  and browser probe evidence only; renderer-level Display P3 presentation
+  remains an explicit gap until it has backend visual proof.
