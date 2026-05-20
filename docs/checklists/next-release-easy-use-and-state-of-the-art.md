@@ -271,9 +271,9 @@ AssetError::UnsupportedTextureFormat {
 ```
 
 The official validator owns glTF spec compliance; scena owns actionable
-renderer guidance such as "this asset uses required clearcoat normal
-shading, but only CPU/reference clearcoat factor and roughness texture
-paths are release-proven." Do not
+renderer guidance such as "this asset uses required clearcoat, but only
+CPU/reference clearcoat texture paths are release-proven; GPU/WebGPU/WebGL2
+backend parity is still degraded." Do not
 reimplement a private subset of the glTF Validator against the `gltf`
 AST unless the official validator cannot run in CI or `xtask`.
 `GltfExtensionDiagnostic` returns `extension`, `status`, `help`,
@@ -537,10 +537,9 @@ the rendered result is part of the contract.
   Visual proof: reference-image ON/OFF at a fixed exposure shipped via
   `target/gate-artifacts/m2-visual/bloom-on-off.ppm`.
 - **Material features**: Status: **[shipped]** for scalar clearcoat
-  factors plus clearcoat and clearcoat-roughness texture sampling on the
-  CPU/reference path; clearcoat normal texture descriptors, transforms,
-  and scale are parsed and preserved. **[gap]** remains for clearcoat
-  normal shading, GPU/WebGPU/WebGL2 clearcoat shading, sheen,
+  factors plus clearcoat, clearcoat-roughness, and clearcoat-normal texture
+  sampling on the CPU/reference path. **[gap]** remains for
+  GPU/WebGPU/WebGL2 clearcoat shading, sheen,
   anisotropy, iridescence, and dispersion. Owner: `src/material.rs`,
   `src/assets/gltf/materials.rs`, and `src/render/prepare/lighting.rs`
   for the shipped baseline; GPU material uniforms/shaders own the
@@ -552,6 +551,8 @@ the rendered result is part of the contract.
   `m8_clearcoat_png_textures_affect_cpu_preview_pixels` proves the CPU
   preview samples the clearcoat texture red channel and roughness texture
   green channel,
+  `m8_clearcoat_normal_texture_affects_cpu_preview_pixels` proves the CPU
+  preview samples clearcoat normal textures for the clearcoat lobe,
   `clearcoat_light_contribution_adds_dielectric_lobe` keeps the PBR
   math owned by `pbr_contract`, and
   `m8_headless_visual_artifacts_cover_material_texture_environment_paths`
@@ -1229,9 +1230,9 @@ Items trimmed for honesty:
 
 - **Material presets**: `clear_glass`, `frosted_glass`, `chrome`,
   `brushed_steel`, `leather` remain deferred until the remaining material
-  feature lanes land: clearcoat normal shading, GPU clearcoat proof, sheen,
-  anisotropy, OIT, and SSR. CPU/reference clearcoat texture support alone is
-  not enough to make those preset names honest.
+  feature lanes land: GPU clearcoat proof, sheen, anisotropy, OIT, and SSR.
+  CPU/reference clearcoat texture support alone is not enough to make those
+  preset names honest.
 
 Item reworded:
 
@@ -1809,11 +1810,11 @@ Clearcoat texture-slot pass (2026-05-19):
 - Parsed optional glTF `KHR_materials_clearcoat` texture slots into
   `MaterialDesc`, retained them through asset GC and scene inspection, and
   included them in material texture resource accounting.
-- Added CPU/reference sampling for the clearcoat texture red channel and
-  clearcoat roughness texture green channel. Reclassified material features
-  from scalar-only shipped to CPU/reference clearcoat texture shipped while
-  keeping clearcoat normal shading and GPU/WebGPU/WebGL2 clearcoat as open
-  backend gaps.
+- Added CPU/reference sampling for the clearcoat texture red channel,
+  clearcoat roughness texture green channel, and clearcoat normal texture.
+  Reclassified material features from scalar-only shipped to CPU/reference
+  clearcoat texture shipped while keeping GPU/WebGPU/WebGL2 clearcoat as an
+  open backend gap.
 
 Viewer animation sugar pass (2026-05-19):
 

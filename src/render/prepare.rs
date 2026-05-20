@@ -22,10 +22,10 @@ pub(in crate::render) use self::environment::{
 use self::lighting::{MaterialShadingInput, PreparedLights, material_color};
 pub(super) use self::lighting::{PreparedGpuLightUniform, collect_gpu_light_uniform};
 use self::materials::{
-    base_color_texture_sample, clearcoat_roughness_texture_sample, clearcoat_texture_sample,
-    emissive_texture_sample, material_pass, metallic_roughness_texture_sample, multiply_color,
-    normal_texture_sample, occlusion_texture_sample, render_material_slot,
-    validate_material_texture_handles,
+    base_color_texture_sample, clearcoat_normal_texture_sample, clearcoat_roughness_texture_sample,
+    clearcoat_texture_sample, emissive_texture_sample, material_pass,
+    metallic_roughness_texture_sample, multiply_color, normal_texture_sample,
+    occlusion_texture_sample, render_material_slot, validate_material_texture_handles,
 };
 pub(super) use self::resources::{
     PreparedLogicalResourceStats, PreparedMaterialSlot, collect_backend_material_slots,
@@ -408,6 +408,12 @@ fn append_triangle_primitives<F>(
                     corner.uv,
                     corner.geometric_normal,
                 );
+                let clearcoat_normal = clearcoat_normal_texture_sample(
+                    source.assets,
+                    source.material,
+                    corner.uv,
+                    normal,
+                );
                 multiply_color(
                     material_color(
                         source.material,
@@ -449,6 +455,7 @@ fn append_triangle_primitives<F>(
                                 source.material,
                                 corner.uv,
                             ),
+                            clearcoat_normal,
                             environment: params.environment_lighting.clone(),
                             directional_shadow_factor: corner.shadow_visibility,
                         },

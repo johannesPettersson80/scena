@@ -70,9 +70,9 @@ All notable user-facing changes are recorded here.
   `MaterialDesc` now exposes clearcoat factor/roughness builders plus
   clearcoat, clearcoat-roughness, and clearcoat-normal texture slots. Optional
   glTF `KHR_materials_clearcoat` factors and texture slots are parsed, the CPU
-  preview samples clearcoat and roughness texture channels, and M8 visual proof
-  records a before/after clearcoat render. Clearcoat normal shading and
-  GPU/browser clearcoat remain future backend lanes.
+  preview samples clearcoat, roughness, and clearcoat-normal texture channels,
+  and M8 visual proof records a before/after clearcoat render. GPU/browser
+  clearcoat remains a future backend lane.
 
 - Added capability-gated wide-gamut output reporting: capability reports now
   expose `wide_gamut_output`, browser M4 smoke artifacts record Display P3

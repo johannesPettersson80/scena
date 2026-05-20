@@ -97,7 +97,7 @@ See:
 - texture transforms,
 - optional `KHR_materials_clearcoat` scalar factor/roughness parsing plus
   clearcoat, clearcoat-roughness, and clearcoat-normal texture-slot
-  preservation for the CPU/reference material path,
+  sampling for the CPU/reference material path,
 - material variants.
 
 KTX2/Basis and meshopt support are available through feature flags. See
@@ -139,7 +139,7 @@ clearcoat materials, Draco compression, feature-gated KTX2/meshopt assets, or
 deferred WebP texture-source rebinding.
 
 For example, optional `KHR_materials_clearcoat` factors and texture slots are
-preserved and the CPU/reference path samples clearcoat and roughness texture
-channels, but a required clearcoat asset still gets an error when its look may
-depend on clearcoat normal shading or backend support that is not yet
+preserved and the CPU/reference path samples clearcoat, roughness, and
+clearcoat-normal texture channels, but a required clearcoat asset still gets an
+error when its look may depend on backend support that is not yet
 release-proven.

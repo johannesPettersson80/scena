@@ -101,10 +101,37 @@ pub(super) fn normal_texture_sample(
     ) else {
         return fallback;
     };
+    normal_from_sample(sample, material.normal_scale(), fallback)
+}
+
+pub(super) fn clearcoat_normal_texture_sample(
+    assets: &Assets<impl Sized>,
+    material: &MaterialDesc,
+    uv: [f32; 2],
+    fallback: Vec3,
+) -> Vec3 {
+    let Some(texture) = material.clearcoat_normal_texture() else {
+        return fallback;
+    };
+    let Some(sample) = assets.sample_texture(
+        texture,
+        transform_texture_uv(uv, material.clearcoat_normal_texture_transform()),
+    ) else {
+        return fallback;
+    };
+    normal_from_sample(sample, material.clearcoat_normal_scale(), fallback)
+}
+
+fn normal_from_sample(sample: Color, scale: f32, fallback: Vec3) -> Vec3 {
+    let scale = if scale.is_finite() {
+        scale.max(0.0)
+    } else {
+        1.0
+    };
     normalize_or(
         Vec3::new(
-            sample.r.mul_add(2.0, -1.0),
-            sample.g.mul_add(2.0, -1.0),
+            sample.r.mul_add(2.0, -1.0) * scale,
+            sample.g.mul_add(2.0, -1.0) * scale,
             sample.b.mul_add(2.0, -1.0),
         ),
         fallback,

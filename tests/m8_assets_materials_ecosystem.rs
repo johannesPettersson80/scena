@@ -2117,6 +2117,17 @@ fn m8_clearcoat_png_textures_affect_cpu_preview_pixels() {
 }
 
 #[test]
+fn m8_clearcoat_normal_texture_affects_cpu_preview_pixels() {
+    let flat = render_max_luminance_for_clearcoat_normal_texture([128, 128, 255, 255]);
+    let tilted = render_max_luminance_for_clearcoat_normal_texture([255, 128, 128, 255]);
+
+    assert_ne!(
+        flat, tilted,
+        "clearcoat normal texture pixels must affect CPU preview lighting instead of being silently ignored",
+    );
+}
+
+#[test]
 fn m8_missing_texture_slots_fail_with_actionable_asset_error() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from("memory://missing-texture.gltf"),
@@ -3304,6 +3315,22 @@ fn render_max_luminance_for_clearcoat_roughness_texture(pixel: [u8; 4]) -> u8 {
             .with_clearcoat_factor(1.0)
             .with_clearcoat_roughness_factor(1.0)
             .with_clearcoat_roughness_texture(texture),
+    )
+}
+
+fn render_max_luminance_for_clearcoat_normal_texture(pixel: [u8; 4]) -> u8 {
+    let png = png_rgba8(1, 1, &[pixel]);
+    let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+    let uri = format!("data:image/png;base64,{encoded}");
+    let assets = Assets::new();
+    let texture = pollster::block_on(assets.load_texture(uri, TextureColorSpace::Linear))
+        .expect("clearcoat normal texture loads");
+    render_max_luminance_with_assets(
+        &assets,
+        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(188, 48, 32), 0.0, 0.62)
+            .with_clearcoat_factor(1.0)
+            .with_clearcoat_roughness_factor(0.12)
+            .with_clearcoat_normal_texture(texture),
     )
 }
 

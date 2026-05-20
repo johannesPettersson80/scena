@@ -36,6 +36,7 @@ pub(super) fn check_clearcoat_material_contracts(root: &Path, findings: &mut Vec
         &[
             "clearcoat_texture_sample",
             "clearcoat_roughness_texture_sample",
+            "clearcoat_normal_texture_sample",
         ],
     );
     require_contains(
@@ -47,6 +48,7 @@ pub(super) fn check_clearcoat_material_contracts(root: &Path, findings: &mut Vec
             "m8_clearcoat_material_factors_are_parsed_from_gltf",
             "m8_clearcoat_texture_slots_are_parsed_from_gltf",
             "m8_clearcoat_png_textures_affect_cpu_preview_pixels",
+            "m8_clearcoat_normal_texture_affects_cpu_preview_pixels",
             "clearcoat_texture",
             "clearcoat_roughness_texture",
             "clearcoat_normal_texture",

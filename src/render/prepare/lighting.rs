@@ -19,6 +19,7 @@ pub(super) struct MaterialShadingInput {
     pub(super) emissive_texture: Color,
     pub(super) clearcoat_texture: f32,
     pub(super) clearcoat_roughness_texture: f32,
+    pub(super) clearcoat_normal: Vec3,
     pub(super) environment: PreparedEnvironmentLighting,
     pub(super) directional_shadow_factor: f32,
 }
@@ -258,6 +259,7 @@ fn shade_pbr_base_color(
     let clearcoat_factor = clamp_unit(material.clearcoat_factor() * input.clearcoat_texture);
     let clearcoat_roughness =
         roughness_or_min(material.clearcoat_roughness_factor() * input.clearcoat_roughness_texture);
+    let clearcoat_normal = normalize_or(input.clearcoat_normal, normal);
     let mut shaded = Vec3::ZERO;
 
     for light in &lights.directional {
@@ -278,7 +280,7 @@ fn shade_pbr_base_color(
         shaded = add_vec3(
             shaded,
             clearcoat_light_contribution(
-                normal,
+                clearcoat_normal,
                 view,
                 incoming,
                 radiance,
@@ -302,7 +304,7 @@ fn shade_pbr_base_color(
         shaded = add_vec3(
             shaded,
             clearcoat_light_contribution(
-                normal,
+                clearcoat_normal,
                 view,
                 incoming,
                 radiance,
@@ -333,7 +335,7 @@ fn shade_pbr_base_color(
         shaded = add_vec3(
             shaded,
             clearcoat_light_contribution(
-                normal,
+                clearcoat_normal,
                 view,
                 incoming,
                 radiance,

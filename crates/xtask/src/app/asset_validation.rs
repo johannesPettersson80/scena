@@ -237,8 +237,8 @@ fn extension_guidance(extension: &str, required: bool) -> Option<AssetGuidanceFi
                 AssetGuidanceSeverity::Warning
             },
             status: "degraded",
-            message: "Clearcoat factors plus clearcoat and roughness texture slots are CPU/reference-supported, but required clearcoat can still depend on clearcoat normal shading or GPU/browser parity that is not release-proven.".to_string(),
-            fix: "If the look depends on clearcoat normal shading or backend parity, export a fallback material without clearcoat or keep KHR_materials_clearcoat optional until the full clearcoat lane is supported.".to_string(),
+            message: "Clearcoat factors plus clearcoat, roughness, and normal texture slots are CPU/reference-supported, but required clearcoat can still depend on GPU/browser parity that is not release-proven.".to_string(),
+            fix: "If the look depends on backend parity, export a fallback material without clearcoat or keep KHR_materials_clearcoat optional until the full clearcoat lane is supported.".to_string(),
         }),
         "KHR_materials_transmission"
         | "KHR_materials_ior"
