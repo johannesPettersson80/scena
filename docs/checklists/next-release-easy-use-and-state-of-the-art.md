@@ -271,8 +271,9 @@ AssetError::UnsupportedTextureFormat {
 ```
 
 The official validator owns glTF spec compliance; scena owns actionable
-renderer guidance such as "this asset uses clearcoat, but this pipeline
-will render the matte fallback until clearcoat support lands." Do not
+renderer guidance such as "this asset uses required clearcoat texture
+slots, but only optional scalar clearcoat factors are release-proven on
+the CPU/reference path." Do not
 reimplement a private subset of the glTF Validator against the `gltf`
 AST unless the official validator cannot run in CI or `xtask`.
 `GltfExtensionDiagnostic` returns `extension`, `status`, `help`,
@@ -535,11 +536,22 @@ the rendered result is part of the contract.
   `ARCH-FXAA-OUTPUT` keeps the post-output proof wired.
   Visual proof: reference-image ON/OFF at a fixed exposure shipped via
   `target/gate-artifacts/m2-visual/bloom-on-off.ppm`.
-- **Material features**: clearcoat, sheen, anisotropy, iridescence,
-  dispersion on top of the existing metal-rough + transmission. Owner:
-  `src/render/prepare/material_batch.rs` + shaders.
-  Visual proof: reference-image before/after per feature using Khronos
-  sample controls where available.
+- **Material features**: Status: **[shipped]** for scalar clearcoat
+  factors on the CPU/reference path; **[gap]** remains for clearcoat
+  texture slots, GPU/WebGPU/WebGL2 clearcoat shading, sheen,
+  anisotropy, iridescence, and dispersion. Owner: `src/material.rs`,
+  `src/assets/gltf/materials.rs`, and `src/render/prepare/lighting.rs`
+  for the shipped baseline; GPU material uniforms/shaders own the
+  remaining backend lanes. Proof:
+  `m8_clearcoat_material_factors_are_parsed_from_gltf` asserts optional
+  `KHR_materials_clearcoat` scalar factors propagate into `MaterialDesc`,
+  `clearcoat_light_contribution_adds_dielectric_lobe` keeps the PBR
+  math owned by `pbr_contract`, and
+  `m8_headless_visual_artifacts_cover_material_texture_environment_paths`
+  writes the `m8-clearcoat-material-feature` before/after artifact.
+  Visual proof: reference-image before/after shipped for scalar
+  clearcoat via `target/gate-artifacts/m8-visual/m8-clearcoat-material-feature.ppm`;
+  reference-image before/after still required per remaining feature.
 - **Clustered / tiled light culling.** Babylon 9 made this baseline.
   Proof: many-light stress scene proves correct light selection,
   stable frame time / allocation behavior, and no dropped-light fallback.
@@ -1190,9 +1202,10 @@ Items reframed from "missing" to "implemented but [ergonomic|proof]-gap":
 Items trimmed for honesty:
 
 - **Material presets**: `clear_glass`, `frosted_glass`, `chrome`,
-  `brushed_steel`, `leather` deferred until clearcoat / sheen /
-  anisotropy / OIT / SSR land — otherwise the names overpromise the
-  renderer.
+  `brushed_steel`, `leather` remain deferred until the remaining material
+  feature lanes land: clearcoat texture/GPU proof, sheen, anisotropy, OIT,
+  and SSR. Scalar CPU clearcoat alone is not enough to make those preset
+  names honest.
 
 Item reworded:
 
@@ -1683,8 +1696,8 @@ glTF extension diagnostic fix-hint pass (2026-05-19):
 - Added `GltfExtensionDiagnostic::suggested_fix()` so library consumers can
   surface actionable remediation without shelling out to `asset-doctor`.
 - Extended the M8 extension diagnostics proof to assert clearcoat fallback
-  guidance and Draco-to-meshopt guidance, then source-enforced the library
-  method through `ASSET-VALIDATION-DOCTOR`.
+  guidance for required assets, Draco-to-meshopt guidance, then
+  source-enforced the library method through `ASSET-VALIDATION-DOCTOR`.
 - Reclassified glTF extension diagnostics from an ergonomic gap to shipped
   for typed status, help, decoder policy, suggested fix hints, and official
   validator combination through the asset doctor.
@@ -1725,3 +1738,17 @@ Weighted blended OIT baseline pass (2026-05-19):
 - Reclassified OIT from a genuine renderer gap to shipped for the
   headless CPU baseline while leaving GPU/WebGPU/WebGL2 OIT as explicit
   future backend work.
+
+Scalar clearcoat material baseline pass (2026-05-19):
+
+- Added `MaterialDesc::with_clearcoat_factor(...)`,
+  `MaterialDesc::with_clearcoat_roughness_factor(...)`, and matching
+  getters for the scalar `KHR_materials_clearcoat` factors.
+- Parsed optional glTF clearcoat scalar factors into `MaterialDesc` and
+  added a CPU/reference PBR clearcoat lobe owned by
+  `src/render/prepare/pbr_contract.rs`.
+- Added parser proof, PBR math proof, and the generated M8 before/after
+  visual artifact `m8-clearcoat-material-feature`. Reclassified material
+  features from fully missing to shipped for scalar CPU clearcoat only;
+  texture slots, GPU/WebGPU/WebGL2 clearcoat, sheen, anisotropy,
+  iridescence, and dispersion remain open.

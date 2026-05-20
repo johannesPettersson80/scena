@@ -45,8 +45,8 @@ pub(super) fn parse_materials(
     validate_material_texture_indices(path, document, textures.len())?;
     let materials = document
         .materials()
-        .filter_map(|material| material.index().map(|_| material))
-        .map(|material| {
+        .filter_map(|material| material.index().map(|index| (index, material)))
+        .map(|(material_index, material)| {
             #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
             let material_start = material_now_ms();
             let pbr = material.pbr_metallic_roughness();
@@ -180,6 +180,11 @@ pub(super) fn parse_materials(
             if let Some(strength) = material.emissive_strength() {
                 desc = desc.with_emissive_strength(strength);
             }
+            if let Some(clearcoat) = clearcoat_factors(document, material_index) {
+                desc = desc
+                    .with_clearcoat_factor(clearcoat.factor)
+                    .with_clearcoat_roughness_factor(clearcoat.roughness_factor);
+            }
             desc = match material.alpha_mode() {
                 ::gltf::material::AlphaMode::Opaque => desc,
                 ::gltf::material::AlphaMode::Mask => desc.with_alpha_mode(AlphaMode::Mask {
@@ -202,6 +207,35 @@ pub(super) fn parse_materials(
         log_material_step("parse_materials total", total_start);
     }
     materials
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ClearcoatFactors {
+    factor: f32,
+    roughness_factor: f32,
+}
+
+fn clearcoat_factors(document: &Document, material_index: usize) -> Option<ClearcoatFactors> {
+    let extension = document
+        .as_json()
+        .materials
+        .get(material_index)?
+        .extensions
+        .as_ref()?
+        .others
+        .get("KHR_materials_clearcoat")?;
+    Some(ClearcoatFactors {
+        factor: read_factor(extension, "clearcoatFactor").unwrap_or(0.0),
+        roughness_factor: read_factor(extension, "clearcoatRoughnessFactor").unwrap_or(0.0),
+    })
+}
+
+fn read_factor(value: &serde_json::Value, key: &str) -> Option<f32> {
+    value
+        .get(key)?
+        .as_f64()
+        .filter(|value| value.is_finite())
+        .map(|value| value as f32)
 }
 
 fn validate_material_texture_indices(

@@ -95,6 +95,8 @@ See:
 - emissive textures,
 - alpha modes,
 - texture transforms,
+- optional `KHR_materials_clearcoat` scalar factor/roughness parsing for the
+  CPU/reference material path,
 - material variants.
 
 KTX2/Basis and meshopt support are available through feature flags. See
@@ -135,6 +137,7 @@ severity, status, message, and `fix` string for issues such as required
 clearcoat materials, Draco compression, feature-gated KTX2/meshopt assets, or
 deferred WebP texture-source rebinding.
 
-For example, a required `KHR_materials_clearcoat` asset gets an error telling
-the user to export a fallback material or wait for the matching renderer
-feature before making clearcoat required.
+For example, optional `KHR_materials_clearcoat` scalar factors are rendered on
+the CPU/reference path, but a required clearcoat asset still gets an error when
+its look may depend on texture slots or backend support that is not yet
+release-proven.

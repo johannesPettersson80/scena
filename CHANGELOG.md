@@ -66,6 +66,11 @@ All notable user-facing changes are recorded here.
   `Renderer::set_order_independent_transparency(...)`, with order-invariance
   visual proof for overlapping alpha-blended surfaces.
 
+- Added scalar clearcoat material support on the CPU/reference path:
+  `MaterialDesc` now exposes clearcoat factor/roughness builders, optional
+  glTF `KHR_materials_clearcoat` factors are parsed, and M8 visual proof
+  records a before/after clearcoat render.
+
 ### Changed
 
 - Updated the browser demo showcase so connector mating is the default first

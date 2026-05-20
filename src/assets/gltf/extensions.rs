@@ -104,8 +104,10 @@ fn optional_extension_status(extension: &str) -> GltfExtensionStatus {
 
 fn optional_extension_help(extension: &str) -> &'static str {
     match extension {
-        "KHR_materials_clearcoat"
-        | "KHR_materials_transmission"
+        "KHR_materials_clearcoat" => {
+            "scalar clearcoat factors are parsed and rendered on the CPU/reference path, but clearcoat texture slots and GPU/WebGPU/WebGL2 proof still use structured degradation; required usage fails until the full renderer feature is supported"
+        }
+        "KHR_materials_transmission"
         | "KHR_materials_ior"
         | "KHR_materials_volume"
         | "KHR_materials_sheen"
@@ -169,8 +171,10 @@ fn optional_extension_suggested_fix(extension: &str) -> &'static str {
         "KHR_draco_mesh_compression" => {
             "Re-export the asset uncompressed or with EXT_meshopt_compression; revisit Draco when a maintained decoder is adopted."
         }
-        "KHR_materials_clearcoat"
-        | "KHR_materials_transmission"
+        "KHR_materials_clearcoat" => {
+            "Keep KHR_materials_clearcoat optional unless scalar CPU/reference clearcoat is enough, or export a fallback material without clearcoat for required assets."
+        }
+        "KHR_materials_transmission"
         | "KHR_materials_ior"
         | "KHR_materials_volume"
         | "KHR_materials_sheen"

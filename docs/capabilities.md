@@ -37,6 +37,8 @@ This lets applications present clear UI instead of failing silently.
 - Texture arrays and texture limits.
 - Shadow support.
 - Environment lighting support.
+- Material feature support such as CPU/reference scalar clearcoat versus
+  backend-gated clearcoat texture and GPU lanes.
 - Postprocessing support such as subtle bloom, headless CPU SSAO, and
   headless CPU weighted blended OIT.
 - Surface and context-loss behavior.

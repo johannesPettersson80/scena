@@ -82,6 +82,42 @@ pub(super) fn punctual_light_contribution(
     )
 }
 
+pub(super) fn clearcoat_light_contribution(
+    normal: Vec3,
+    view: Vec3,
+    incoming: Vec3,
+    radiance: Vec3,
+    factor: f32,
+    roughness: f32,
+) -> Vec3 {
+    let factor = clamp_unit(factor);
+    if factor <= f32::EPSILON {
+        return Vec3::ZERO;
+    }
+    let incoming = normalize_or(incoming, Vec3::ZERO);
+    let n_dot_l = dot_vec3(normal, incoming).max(0.0);
+    if n_dot_l <= f32::EPSILON {
+        return Vec3::ZERO;
+    }
+    let n_dot_v = dot_vec3(normal, view).max(MIN_N_DOT_V);
+    let half_vector = normalize_or(add_vec3(view, incoming), normal);
+    let n_dot_h = dot_vec3(normal, half_vector).max(0.0);
+    let v_dot_h = dot_vec3(view, half_vector).max(0.0);
+    let roughness = roughness_or_min(roughness);
+    let alpha = roughness * roughness;
+    let distribution = distribution_ggx(n_dot_h, alpha);
+    let geometry = geometry_smith(n_dot_v, n_dot_l, roughness);
+    let fresnel = fresnel_schlick(
+        v_dot_h,
+        Vec3::new(DIELECTRIC_F0, DIELECTRIC_F0, DIELECTRIC_F0),
+    );
+    let specular = scale_vec3(
+        fresnel,
+        distribution * geometry * factor / (4.0 * n_dot_v * n_dot_l).max(MIN_DENOMINATOR),
+    );
+    scale_vec3(multiply_vec3(specular, radiance), n_dot_l)
+}
+
 pub(super) fn environment_split_sum_contribution(
     material: PbrMaterial,
     normal: Vec3,
@@ -260,6 +296,22 @@ mod tests {
             (directional_illuminance_lux(10_000.0) - 1.0).abs() < 1e-6,
             "a default 10k-lux directional light must be calibrated to renderer scene-linear \
              units instead of being injected as raw 10000x HDR radiance"
+        );
+    }
+
+    #[test]
+    fn clearcoat_light_contribution_adds_dielectric_lobe() {
+        let normal = Vec3::new(0.0, 0.0, 1.0);
+        let view = normal;
+        let incoming = normal;
+        let radiance = Vec3::new(1.0, 1.0, 1.0);
+        let off = clearcoat_light_contribution(normal, view, incoming, radiance, 0.0, 0.1);
+        let on = clearcoat_light_contribution(normal, view, incoming, radiance, 1.0, 0.1);
+
+        assert_eq!(off, Vec3::ZERO);
+        assert!(
+            on.x > 0.0 && on.y > 0.0 && on.z > 0.0,
+            "clearcoat must add a white dielectric specular lobe"
         );
     }
 }

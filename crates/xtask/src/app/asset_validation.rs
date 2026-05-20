@@ -228,8 +228,19 @@ fn extension_guidance(extension: &str, required: bool) -> Option<AssetGuidanceFi
             message: "Draco mesh compression is not part of scena's v1.4 production path.".to_string(),
             fix: "Re-export the asset uncompressed or with EXT_meshopt_compression; revisit Draco when a maintained decoder is adopted.".to_string(),
         }),
-        "KHR_materials_clearcoat"
-        | "KHR_materials_transmission"
+        "KHR_materials_clearcoat" => Some(AssetGuidanceFinding {
+            extension: extension.to_string(),
+            required,
+            severity: if required {
+                AssetGuidanceSeverity::Error
+            } else {
+                AssetGuidanceSeverity::Warning
+            },
+            status: "degraded",
+            message: "Scalar clearcoat factors are CPU/reference-supported, but required clearcoat can depend on texture slots or GPU/browser parity that is not release-proven.".to_string(),
+            fix: "If the look depends on clearcoat texture slots or backend parity, export a fallback material without clearcoat or keep KHR_materials_clearcoat optional until the full clearcoat lane is supported.".to_string(),
+        }),
+        "KHR_materials_transmission"
         | "KHR_materials_ior"
         | "KHR_materials_volume"
         | "KHR_materials_sheen"

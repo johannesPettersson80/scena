@@ -27,6 +27,7 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
         render_base_color_alpha(),
         render_texture_slots(),
         render_environment_color_management(),
+        render_clearcoat_material_feature(),
     ];
     let expected_artifacts = [
         "m8-unlit-textured-asset",
@@ -37,6 +38,7 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
         "m8-alpha-blend",
         "m8-texture-slots",
         "m8-environment-color-management",
+        "m8-clearcoat-material-feature",
     ];
     for expected in expected_artifacts {
         assert!(
@@ -62,6 +64,21 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
             assert!(
                 center[0] > 150 && center[1] < 80 && center[2] < 80,
                 "m8-texture-slots must prove decoded texture pixels affect output, got {center:?}"
+            );
+        }
+        if artifact.name == "m8-clearcoat-material-feature" {
+            let matte_highlight =
+                max_luminance_in_region(&artifact.rgba, artifact.width, 0, artifact.width / 2);
+            let clearcoat_highlight = max_luminance_in_region(
+                &artifact.rgba,
+                artifact.width,
+                artifact.width / 2,
+                artifact.width,
+            );
+            assert!(
+                clearcoat_highlight > matte_highlight + 4,
+                "clearcoat visual proof must brighten the right-side specular response; \
+                 matte={matte_highlight:?} clearcoat={clearcoat_highlight:?}"
             );
         }
         write_ppm_artifact(&artifact_dir, &artifact);
@@ -407,6 +424,45 @@ fn render_environment_color_management() -> VisualArtifact {
     artifact
 }
 
+fn render_clearcoat_material_feature() -> VisualArtifact {
+    let assets = Assets::new();
+    let matte = MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(188, 48, 32), 0.0, 0.62);
+    let clearcoat = matte
+        .clone()
+        .with_clearcoat_factor(0.9)
+        .with_clearcoat_roughness_factor(0.12);
+    let mut left = render_material_box(
+        "m8-clearcoat-left",
+        &assets,
+        matte,
+        None,
+        true,
+        "clearcoat-before",
+    );
+    let right = render_material_box(
+        "m8-clearcoat-right",
+        &assets,
+        clearcoat,
+        None,
+        true,
+        "clearcoat-after",
+    );
+
+    for y in 0..left.height {
+        for x in left.width / 2..left.width {
+            let src = ((y * right.width + x) * 4) as usize;
+            let dst = ((y * left.width + x) * 4) as usize;
+            left.rgba[dst..dst + 4].copy_from_slice(&right.rgba[src..src + 4]);
+        }
+    }
+    left.name = "m8-clearcoat-material-feature";
+    left.proof_class = "clearcoat-before-after-cpu-headless-256";
+    left.source_hash = Some(fnv1a64_hex(
+        b"generated-rust-scene:m8-clearcoat-material-feature:clearcoat-before-after",
+    ));
+    left
+}
+
 fn render_material_box<F>(
     name: &'static str,
     assets: &Assets<F>,
@@ -579,6 +635,19 @@ fn pixel_at(rgba: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
     rgba[offset..offset + 4]
         .try_into()
         .expect("pixel slice has four channels")
+}
+
+fn max_luminance_in_region(rgba: &[u8], width: u32, min_x: u32, max_x: u32) -> u16 {
+    let height = rgba.len() as u32 / width / 4;
+    let mut max_luminance = 0;
+    for y in 0..height {
+        for x in min_x..max_x {
+            let pixel = pixel_at(rgba, width, x, y);
+            max_luminance =
+                max_luminance.max(u16::from(pixel[0]) + u16::from(pixel[1]) + u16::from(pixel[2]));
+        }
+    }
+    max_luminance
 }
 
 fn write_ppm_artifact(dir: &Path, artifact: &VisualArtifact) {

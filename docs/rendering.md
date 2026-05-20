@@ -64,6 +64,7 @@ Material workflows include:
 
 - unlit materials,
 - metallic-roughness materials,
+- scalar clearcoat factor/roughness on the CPU/reference path,
 - vertex colors,
 - texture slots,
 - alpha modes,
@@ -71,6 +72,9 @@ Material workflows include:
 - ACES/sRGB output.
 
 Create materials through `Assets` and attach them to scene renderables.
+Optional glTF `KHR_materials_clearcoat` scalar factors are parsed into
+`MaterialDesc`; clearcoat texture slots and GPU/WebGPU/WebGL2 clearcoat shading
+remain separate capability-gated lanes.
 
 ## Environment
 

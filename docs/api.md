@@ -62,6 +62,10 @@ Additive public API changes after 1.3.0:
 - `Renderer::set_order_independent_transparency`
 - `Renderer::clear_order_independent_transparency`
 - `OrderIndependentTransparencyConfig`
+- `MaterialDesc::with_clearcoat_factor`
+- `MaterialDesc::with_clearcoat_roughness_factor`
+- `MaterialDesc::clearcoat_factor`
+- `MaterialDesc::clearcoat_roughness_factor`
 - `RendererStats::ambient_occlusion_passes`
 - `RendererStats::order_independent_transparency_passes`
 - `RendererStats::bloom_passes`

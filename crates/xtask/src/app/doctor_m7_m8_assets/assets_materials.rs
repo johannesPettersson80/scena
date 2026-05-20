@@ -129,6 +129,7 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
         &[
             "m8_missing_texture_slots_fail_with_actionable_asset_error",
             "m8_modern_optional_extensions_have_explicit_v1x_defer_metadata",
+            "m8_clearcoat_material_factors_are_parsed_from_gltf",
             "m8_metallic_roughness_factors_affect_cpu_preview_pixels",
             "GltfDecoderPolicy::FeatureFlag",
             "GltfDecoderPolicy::External",
@@ -218,6 +219,9 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "m8-alpha-blend",
             "m8-texture-slots",
             "m8-environment-color-management",
+            "m8-clearcoat-material-feature",
+            "clearcoat-before-after-cpu-headless-256",
+            "max_luminance_in_region",
             "(256, 256)",
             "png_rgba8",
             "TextureColorSpace::Srgb",

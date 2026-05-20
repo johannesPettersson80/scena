@@ -9,6 +9,8 @@ pub(crate) fn check_renderer_standard_math_contracts(root: &Path, findings: &mut
         &[
             "pbr_material_uses_gltf_dielectric_and_metallic_f0",
             "light_units_do_not_apply_scene_tuned_divisors_or_clamps",
+            "clearcoat_light_contribution",
+            "clearcoat_light_contribution_adds_dielectric_lobe",
         ],
     );
     require_contains(

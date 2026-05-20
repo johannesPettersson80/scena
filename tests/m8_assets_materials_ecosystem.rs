@@ -124,6 +124,65 @@ fn m8_normal_texture_scale_and_occlusion_strength_are_parsed_from_gltf() {
 }
 
 #[test]
+fn m8_clearcoat_material_factors_are_parsed_from_gltf() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://clearcoat-factors.gltf"),
+        br#"{
+            "asset": { "version": "2.0" },
+            "extensionsUsed": ["KHR_materials_clearcoat"],
+            "materials": [
+                {
+                    "pbrMetallicRoughness": {
+                        "baseColorFactor": [0.8, 0.1, 0.05, 1.0],
+                        "metallicFactor": 0.0,
+                        "roughnessFactor": 0.72
+                    },
+                    "extensions": {
+                        "KHR_materials_clearcoat": {
+                            "clearcoatFactor": 0.85,
+                            "clearcoatRoughnessFactor": 0.18
+                        }
+                    }
+                }
+            ],
+            "meshes": [{
+                "primitives": [
+                    { "attributes": { "POSITION": 0 }, "indices": 1, "material": 0 }
+                ]
+            }],
+            "nodes": [{ "name": "ClearcoatMat", "mesh": 0 }],
+            "buffers": [{ "byteLength": 42, "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAABAAIA" }],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0,  "byteLength": 36 },
+                { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
+            ],
+            "accessors": [
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
+            ]
+        }"#
+        .to_vec(),
+    )]));
+
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://clearcoat-factors.gltf")).expect("loads");
+    let meshes: Vec<_> = scene_asset.nodes()[0].meshes().to_vec();
+    assert_eq!(meshes.len(), 1);
+    let material = assets.material(meshes[0].material()).expect("material");
+
+    assert_eq!(
+        material.clearcoat_factor(),
+        0.85,
+        "KHR_materials_clearcoat.clearcoatFactor must propagate into MaterialDesc"
+    );
+    assert_eq!(
+        material.clearcoat_roughness_factor(),
+        0.18,
+        "KHR_materials_clearcoat.clearcoatRoughnessFactor must propagate into MaterialDesc"
+    );
+}
+
+#[test]
 fn m8_optional_real_world_gltf_extensions_report_degradation_metadata() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from("memory://extensions.gltf"),

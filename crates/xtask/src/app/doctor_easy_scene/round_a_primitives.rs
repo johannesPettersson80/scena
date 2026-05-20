@@ -5,7 +5,7 @@ pub(super) fn check_round_a_easy_use_primitives(root: &Path, findings: &mut Vec<
         root,
         findings,
         "ROUND-A-EASY-USE-PRIMITIVES",
-        "src/material.rs",
+        "src/material/color.rs",
         &[
             "pub const TRANSPARENT",
             "pub const GRAY",

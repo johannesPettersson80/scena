@@ -1,7 +1,7 @@
 use super::pbr_contract::{
-    PbrMaterial, directional_illuminance_lux, inverse_square_range_attenuation,
-    punctual_intensity_candela, punctual_light_contribution, roughness_or_min,
-    spot_cone_attenuation,
+    PbrMaterial, clearcoat_light_contribution, directional_illuminance_lux,
+    inverse_square_range_attenuation, punctual_intensity_candela, punctual_light_contribution,
+    roughness_or_min, spot_cone_attenuation,
 };
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
 use crate::scene::{Light, Quat, Scene, Transform, Vec3};
@@ -253,6 +253,8 @@ fn shade_pbr_base_color(
     let roughness =
         roughness_or_min(material.roughness_factor() * input.metallic_roughness_texture.1);
     let pbr_material = PbrMaterial::new(base_rgb, metallic, roughness);
+    let clearcoat_factor = material.clearcoat_factor();
+    let clearcoat_roughness = roughness_or_min(material.clearcoat_roughness_factor());
     let mut shaded = Vec3::ZERO;
 
     for light in &lights.directional {
@@ -270,6 +272,17 @@ fn shade_pbr_base_color(
             shaded,
             punctual_light_contribution(pbr_material, normal, view, incoming, radiance),
         );
+        shaded = add_vec3(
+            shaded,
+            clearcoat_light_contribution(
+                normal,
+                view,
+                incoming,
+                radiance,
+                clearcoat_factor,
+                clearcoat_roughness,
+            ),
+        );
     }
     for light in &lights.point {
         let to_light = subtract_vec3(light.position, input.position);
@@ -282,6 +295,17 @@ fn shade_pbr_base_color(
         shaded = add_vec3(
             shaded,
             punctual_light_contribution(pbr_material, normal, view, incoming, radiance),
+        );
+        shaded = add_vec3(
+            shaded,
+            clearcoat_light_contribution(
+                normal,
+                view,
+                incoming,
+                radiance,
+                clearcoat_factor,
+                clearcoat_roughness,
+            ),
         );
     }
     for light in &lights.spot {
@@ -302,6 +326,17 @@ fn shade_pbr_base_color(
         shaded = add_vec3(
             shaded,
             punctual_light_contribution(pbr_material, normal, view, incoming, radiance),
+        );
+        shaded = add_vec3(
+            shaded,
+            clearcoat_light_contribution(
+                normal,
+                view,
+                incoming,
+                radiance,
+                clearcoat_factor,
+                clearcoat_roughness,
+            ),
         );
     }
     shaded = add_vec3(

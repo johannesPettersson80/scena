@@ -265,11 +265,10 @@ pub(crate) fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs
         "frame_bounds_rendered_output_proves_fill_center_and_unclipped_object frame-bounds-rendered-output computed_distance projected_rect nonblack_pixel_rect round_a_named_color_swatch_docs_image round-a-named-color-swatch-docs-image round_a_lens_preset_comparison_docs_image round-a-lens-preset-comparison-docs-image round_b_light_preset_reference_docs_image round-b-light-preset-reference-docs-image round_b_material_preset_reference_docs_image round-b-material-preset-reference-docs-image round_b_background_preset_reference_docs_image round-b-background-preset-reference-docs-image round_b_orbit_control_preset_animated_docs_image round-b-orbit-control-preset-animated-docs-image round_c_auto_exposure_preset_reference_docs_image round-c-auto-exposure-preset-reference-docs-image round_c_animation_playback_reference_animated_docs_image round-c-animation-playback-reference-animated-docs-image round_d_orbit_zoom_limit_animated_docs_image round-d-orbit-zoom-limit-animated-docs-image round_d_viewer_pointer_callback_animated_docs_image round-d-viewer-pointer-callback-animated-docs-image examples_visual_picking_selection_hover_renders_styled_pick_to_ppm picking_selection_hover InteractionStyle::outline viewer_material_variant_reference_docs_image viewer-material-variant-reference-docs-image reference-image+docs-image animated-proof+docs-image",
     )
     .expect("visual proof fixture");
-    fs::write(
-        fixture_root.join("src/material.rs"),
-        "pub const TRANSPARENT: Color = Color; pub const GRAY: Color = Color; pub const BLUE: Color = Color; pub fn from_hex(value: &str) {} pub fn from_kelvin(kelvin: f32) {}",
-    )
-    .expect("material fixture");
+    let color_fixture = "pub const TRANSPARENT: Color = Color; pub const GRAY: Color = Color; pub const BLUE: Color = Color; pub fn from_hex(value: &str) {} pub fn from_kelvin(kelvin: f32) {}";
+    fs::write(fixture_root.join("src/material.rs"), color_fixture).expect("material fixture");
+    fs::write(fixture_root.join("src/material/color.rs"), color_fixture)
+        .expect("material color fixture");
     fs::write(
         fixture_root.join("src/material/presets.rs"),
         "pub const fn matte(color: Color) {} pub const fn plastic(color: Color) {} pub const fn metal(color: Color) {} pub const fn rubber() {}",
