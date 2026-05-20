@@ -70,6 +70,7 @@ pub(super) fn stats_json(stats: crate::RendererStats) -> serde_json::Value {
         "shadow_maps": stats.shadow_maps,
         "depth_prepass_passes": stats.depth_prepass_passes,
         "depth_prepass_draws": stats.depth_prepass_draws,
+        "bloom_passes": stats.bloom_passes,
         "fxaa_passes": stats.fxaa_passes,
         "live_logical_handles": stats.live_logical_handles,
         "pending_destructions": stats.pending_destructions,

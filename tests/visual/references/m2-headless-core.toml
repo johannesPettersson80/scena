@@ -41,6 +41,15 @@ nonblack_pixels = 134
 rgba_hash = "fnv1a64:3f13c2be20f3a8c4"
 
 [[reference]]
+name = "bloom-on-off"
+max_abs_diff = 0
+center_rgba = [0, 0, 0, 255]
+left_mid_rgba = [0, 0, 0, 255]
+right_mid_rgba = [0, 0, 0, 255]
+nonblack_pixels = 102
+rgba_hash = "fnv1a64:101dcfa11217ff01"
+
+[[reference]]
 name = "clipping-half-space"
 max_abs_diff = 0
 center_rgba = [240, 240, 240, 255]

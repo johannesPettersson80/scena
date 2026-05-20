@@ -76,6 +76,7 @@ impl Renderer {
         };
         self.frame.resize(self.target.byte_len(), 0);
         self.fxaa_scratch.resize(self.target.byte_len(), 0);
+        self.bloom_scratch.resize(self.target.byte_len(), 0);
         if let Some(linear_frame) = &mut self.linear_frame {
             linear_frame.resize(self.target.pixel_len(), Color::BLACK);
         }
@@ -147,6 +148,7 @@ impl Renderer {
         self.target.height = height;
         self.frame.resize(self.target.byte_len(), 0);
         self.fxaa_scratch.resize(self.target.byte_len(), 0);
+        self.bloom_scratch.resize(self.target.byte_len(), 0);
         if let Some(linear_frame) = &mut self.linear_frame {
             linear_frame.resize(self.target.pixel_len(), Color::BLACK);
         }

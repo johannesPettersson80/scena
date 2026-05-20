@@ -507,9 +507,16 @@ the rendered result is part of the contract.
   framing. Owner: `src/render/`. Proof: reference image of the grid floor
   + model with and without contact shadows.
   Visual proof: reference-image ON/OFF.
-- **Subtle bloom in post.** One low-threshold pass; the difference between
-  "rendered" and "photographed."
-  Visual proof: reference-image ON/OFF at a fixed exposure.
+- **Subtle bloom in post.** Status: **[shipped]** for the output-space
+  baseline. `PostBloomConfig::subtle()` and `Renderer::set_bloom(...)`
+  run a threshold / blur / composite postprocess before FXAA, with
+  `RendererStats::bloom_passes` and `Capabilities::bloom = Supported`.
+  Proof: `tests/m2_lighting_depth_clipping.rs` asserts the halo is
+  visible without a second tonemap, `tests/m2_visual_proof.rs` writes the
+  `bloom-on-off` reference artifact, and doctor rule
+  `ARCH-FXAA-OUTPUT` keeps the post-output proof wired.
+  Visual proof: reference-image ON/OFF at a fixed exposure shipped via
+  `target/gate-artifacts/m2-visual/bloom-on-off.ppm`.
 - **Material features**: clearcoat, sheen, anisotropy, iridescence,
   dispersion on top of the existing metal-rough + transmission. Owner:
   `src/render/prepare/material_batch.rs` + shaders.
@@ -1625,3 +1632,15 @@ Ease-of-use implementation continuation (2026-05-19):
 - Added doctor rules for each shipped slice so source APIs, focused
   tests, docs snippets, and generated visual-proof artifacts remain
   source-enforced instead of checklist-only claims.
+
+Subtle bloom implementation pass (2026-05-19):
+
+- Added `PostBloomConfig`, `Renderer::set_bloom(...)`,
+  `Renderer::clear_bloom()`, `RendererStats::bloom_passes`, and supported
+  bloom capability reporting for the output-space postprocess baseline.
+- Added focused proof that the halo appears outside the source highlight
+  without a second tonemap and an ON/OFF visual fixture at
+  `target/gate-artifacts/m2-visual/bloom-on-off.ppm`.
+- Reclassified subtle bloom from a genuine renderer gap to shipped for
+  the threshold / blur / composite baseline; HDR pre-tonemap bloom can
+  still replace this later if the renderer grows an HDR postprocess chain.

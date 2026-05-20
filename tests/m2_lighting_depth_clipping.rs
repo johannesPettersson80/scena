@@ -4,8 +4,8 @@ use scena::{
     Angle, AssetError, Assets, Backend, Capabilities, CapabilityStatus, ClippingPlane,
     ClippingPlaneSet, Color, DepthRange, DiagnosticCode, DiagnosticSeverity, DirectionalLight,
     EnvironmentSourceKind, GeometryDesc, GeometryTopology, Light, MaterialDesc, NodeKind,
-    OrthographicCamera, PerspectiveCamera, PointLight, PrepareError, Primitive, RenderMode,
-    Renderer, RendererOptions, Scene, SpotLight, Transform, Vec3, Vertex,
+    OrthographicCamera, PerspectiveCamera, PointLight, PostBloomConfig, PrepareError, Primitive,
+    RenderMode, Renderer, RendererOptions, Scene, SpotLight, Transform, Vec3, Vertex,
 };
 
 const CAMERA_DISTANCE_FOR_NDC_FIXTURES: f32 = 1.732_050_8;
@@ -66,6 +66,54 @@ fn split_screen_fxaa_scene() -> Scene {
     scene
         .add_renderable(scene.root(), white_left_half.to_vec(), Transform::default())
         .expect("split-screen primitive inserts");
+    scene
+}
+
+fn bloom_highlight_scene() -> Scene {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            ndc_fixture_camera_transform(),
+        )
+        .expect("camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("camera becomes active");
+    let highlight = [
+        Primitive::triangle([
+            Vertex {
+                position: Vec3::new(-0.16, -0.16, 0.0),
+                color: Color::WHITE,
+            },
+            Vertex {
+                position: Vec3::new(0.16, -0.16, 0.0),
+                color: Color::WHITE,
+            },
+            Vertex {
+                position: Vec3::new(0.16, 0.16, 0.0),
+                color: Color::WHITE,
+            },
+        ]),
+        Primitive::triangle([
+            Vertex {
+                position: Vec3::new(-0.16, -0.16, 0.0),
+                color: Color::WHITE,
+            },
+            Vertex {
+                position: Vec3::new(0.16, 0.16, 0.0),
+                color: Color::WHITE,
+            },
+            Vertex {
+                position: Vec3::new(-0.16, 0.16, 0.0),
+                color: Color::WHITE,
+            },
+        ]),
+    ];
+    scene
+        .add_renderable(scene.root(), highlight.to_vec(), Transform::default())
+        .expect("bloom highlight primitive inserts");
     scene
 }
 
@@ -857,6 +905,42 @@ fn fxaa_pass_runs_after_pbr_neutral_without_second_tonemap() {
     assert!(
         right_edge[0] > 0,
         "FXAA smooths the dark edge pixel without changing solid black"
+    );
+}
+
+#[test]
+fn subtle_bloom_expands_bright_output_without_second_tonemap() {
+    let mut scene_without_bloom = bloom_highlight_scene();
+    let mut baseline = Renderer::headless(32, 32).expect("baseline renderer builds");
+    baseline
+        .prepare(&mut scene_without_bloom)
+        .expect("baseline scene prepares");
+    baseline
+        .render_active(&scene_without_bloom)
+        .expect("baseline scene renders");
+    assert_eq!(baseline.stats().bloom_passes, 0);
+
+    let mut scene_with_bloom = bloom_highlight_scene();
+    let mut renderer = Renderer::headless(32, 32).expect("bloom renderer builds");
+    renderer.set_bloom(Some(PostBloomConfig::subtle()));
+    renderer
+        .prepare(&mut scene_with_bloom)
+        .expect("bloom scene prepares");
+    renderer
+        .render_active(&scene_with_bloom)
+        .expect("bloom scene renders");
+
+    assert_eq!(renderer.stats().bloom_passes, 1);
+    assert_eq!(renderer.stats().fxaa_passes, 1);
+
+    let baseline_halo = pixel_at(baseline.frame_rgba8(), 32, 20, 16);
+    let bloomed_halo = pixel_at(renderer.frame_rgba8(), 32, 20, 16);
+    assert!(
+        bloomed_halo[0] > baseline_halo[0] + 4
+            && bloomed_halo[1] > baseline_halo[1] + 4
+            && bloomed_halo[2] > baseline_halo[2] + 4,
+        "bloom should add a soft halo outside the source highlight without re-tonemapping; \
+         baseline={baseline_halo:?} bloomed={bloomed_halo:?}",
     );
 }
 

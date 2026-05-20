@@ -73,8 +73,8 @@ pub use reference_image::{
     regress_with_tolerance,
 };
 pub use render::{
-    AutoExposureConfig, AutoExposureResult, Background, OffscreenTarget, PixelReadback, Profile,
-    Quality, RenderMode, Renderer, RendererOptions, Tonemapper,
+    AutoExposureConfig, AutoExposureResult, Background, OffscreenTarget, PixelReadback,
+    PostBloomConfig, Profile, Quality, RenderMode, Renderer, RendererOptions, Tonemapper,
     estimate_auto_exposure_from_linear_colors, estimate_auto_exposure_from_srgb8,
 };
 pub use scene::{

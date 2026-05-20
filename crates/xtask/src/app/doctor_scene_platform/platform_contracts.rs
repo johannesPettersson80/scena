@@ -145,7 +145,7 @@ pub(crate) fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Findin
             "capability_matrix_reports_hardware_tier_and_backend_feature_states",
             "texture_compression_basisu",
             "screen_space_ambient_occlusion",
-            "BloomDisabled",
+            "subtle output bloom is an explicit postprocess",
             "AmbientOcclusionDisabled",
             "hardware_instancing",
             // Phase 1F: Capabilities::texture_arrays + max_texture_array_layers

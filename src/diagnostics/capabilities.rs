@@ -141,8 +141,8 @@ impl Capabilities {
             directional_shadow_pcf_kernel: 3,
             ibl_cubemap_default_size: ibl_default_size(backend),
             ibl_brdf_lut_default_size: ibl_default_size(backend),
-            bloom: postprocess_status(backend),
-            screen_space_ambient_occlusion: postprocess_status(backend),
+            bloom: bloom_status(backend),
+            screen_space_ambient_occlusion: ambient_occlusion_status(backend),
             texture_compression_basisu: texture_compression_basisu_status(backend),
             hardware_instancing: hardware_instancing_status(backend),
             texture_arrays: texture_arrays_status(backend),
@@ -179,8 +179,8 @@ impl Capabilities {
             directional_shadow_pcf_kernel: 3,
             ibl_cubemap_default_size: ibl_default_size(backend),
             ibl_brdf_lut_default_size: ibl_default_size(backend),
-            bloom: postprocess_status(backend),
-            screen_space_ambient_occlusion: postprocess_status(backend),
+            bloom: bloom_status(backend),
+            screen_space_ambient_occlusion: ambient_occlusion_status(backend),
             texture_compression_basisu: texture_compression_basisu_status(backend),
             hardware_instancing: hardware_instancing_status(backend),
             texture_arrays: texture_arrays_status(backend),
@@ -217,8 +217,8 @@ impl Capabilities {
             directional_shadow_pcf_kernel: 3,
             ibl_cubemap_default_size: ibl_default_size(backend),
             ibl_brdf_lut_default_size: ibl_default_size(backend),
-            bloom: postprocess_status(backend),
-            screen_space_ambient_occlusion: postprocess_status(backend),
+            bloom: bloom_status(backend),
+            screen_space_ambient_occlusion: ambient_occlusion_status(backend),
             texture_compression_basisu: texture_compression_basisu_status(backend),
             hardware_instancing: hardware_instancing_status(backend),
             texture_arrays: texture_arrays_status(backend),
@@ -402,7 +402,11 @@ const fn ibl_default_size(backend: Backend) -> u32 {
     }
 }
 
-const fn postprocess_status(_backend: Backend) -> CapabilityStatus {
+const fn bloom_status(_backend: Backend) -> CapabilityStatus {
+    CapabilityStatus::Supported
+}
+
+const fn ambient_occlusion_status(_backend: Backend) -> CapabilityStatus {
     CapabilityStatus::FeatureDisabled
 }
 

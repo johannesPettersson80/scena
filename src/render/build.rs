@@ -200,6 +200,7 @@ impl Renderer {
             prepared: None,
             frame: vec![0; target.byte_len()],
             fxaa_scratch: vec![0; target.byte_len()],
+            bloom_scratch: vec![0; target.byte_len()],
             linear_frame: (!has_gpu).then(|| vec![Color::BLACK; target.pixel_len()]),
             depth_frame: (!has_gpu).then(|| vec![f32::INFINITY; target.pixel_len()]),
             stats: RendererStats {
@@ -211,6 +212,7 @@ impl Renderer {
             capabilities,
             gpu,
             output: OutputTransform::default(),
+            bloom: None,
             profile,
             quality,
             render_mode,

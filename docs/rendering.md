@@ -106,6 +106,15 @@ GPU backends share the same wgpu/naga renderer path. Browser WebGL2 keeps a
 small material texture binding shim for wgpu 29's GL backend, but it does not
 use a separate raw WebGL renderer.
 
+Subtle postprocess bloom is opt-in:
+
+```rust
+renderer.set_bloom(Some(scena::PostBloomConfig::subtle()));
+```
+
+The bloom pass runs on the output frame before FXAA and is reported through
+`RendererStats::bloom_passes`.
+
 For generated images, see [Headless rendering](headless-rendering.md).
 
 ## Lifecycle

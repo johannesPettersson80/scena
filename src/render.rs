@@ -38,7 +38,7 @@ pub use self::exposure::{
 use self::gpu::GpuDeviceState;
 pub use self::offscreen::{OffscreenTarget, PixelReadback};
 use self::output::OutputTransform;
-pub use self::output::Tonemapper;
+pub use self::output::{PostBloomConfig, Tonemapper};
 pub use self::settings::{Profile, Quality, RenderMode, RendererOptions};
 
 #[derive(Debug)]
@@ -47,6 +47,7 @@ pub struct Renderer {
     prepared: Option<PreparedSceneState>,
     frame: Vec<u8>,
     fxaa_scratch: Vec<u8>,
+    bloom_scratch: Vec<u8>,
     // CPU-only linear scene-referred straight-alpha accumulator. Stores the source of truth
     // before every pixel is ACES+sRGB encoded into `frame`.
     linear_frame: Option<Vec<Color>>,
@@ -57,6 +58,7 @@ pub struct Renderer {
     capabilities: Capabilities,
     gpu: Option<GpuDeviceState>,
     output: OutputTransform,
+    bloom: Option<PostBloomConfig>,
     profile: Profile,
     quality: Quality,
     render_mode: RenderMode,
@@ -173,6 +175,14 @@ impl Renderer {
                     );
                 }
             }
+            self.stats.bloom_passes = self.bloom.map_or(0, |bloom| {
+                output::apply_bloom_rgba8(
+                    self.target,
+                    &mut self.frame,
+                    &mut self.bloom_scratch,
+                    bloom,
+                )
+            });
             self.stats.fxaa_passes =
                 output::apply_fxaa_rgba8(self.target, &mut self.frame, &mut self.fxaa_scratch);
             if auto_exposure_attempted || !self.apply_managed_auto_exposure_after_render() {

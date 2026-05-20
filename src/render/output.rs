@@ -72,6 +72,113 @@ pub enum Tonemapper {
     PbrNeutral,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PostBloomConfig {
+    threshold_srgb: u8,
+    intensity: f32,
+    radius_px: u8,
+}
+
+impl PostBloomConfig {
+    pub const fn subtle() -> Self {
+        Self {
+            threshold_srgb: 208,
+            intensity: 0.28,
+            radius_px: 3,
+        }
+    }
+
+    pub fn new(threshold_srgb: u8, intensity: f32, radius_px: u8) -> Self {
+        Self {
+            threshold_srgb,
+            intensity: if intensity.is_finite() {
+                intensity.clamp(0.0, 1.0)
+            } else {
+                0.0
+            },
+            radius_px: radius_px.min(12),
+        }
+    }
+
+    pub const fn threshold_srgb(self) -> u8 {
+        self.threshold_srgb
+    }
+
+    pub const fn intensity(self) -> f32 {
+        self.intensity
+    }
+
+    pub const fn radius_px(self) -> u8 {
+        self.radius_px
+    }
+}
+
+impl Default for PostBloomConfig {
+    fn default() -> Self {
+        Self::subtle()
+    }
+}
+
+pub(super) fn apply_bloom_rgba8(
+    target: RasterTarget,
+    frame: &mut [u8],
+    scratch: &mut [u8],
+    config: PostBloomConfig,
+) -> u64 {
+    let radius = u32::from(config.radius_px());
+    let intensity = config.intensity().clamp(0.0, 1.0);
+    if target.width < 3 || target.height < 3 || radius == 0 || intensity <= 0.0 {
+        return 0;
+    }
+    debug_assert_eq!(frame.len(), target.byte_len());
+    debug_assert_eq!(scratch.len(), target.byte_len());
+    scratch.fill(0);
+
+    for y in 0..target.height {
+        for x in 0..target.width {
+            let offset = pixel_offset(target, x, y);
+            if luma_from_srgb8(&frame[offset..offset + 4]) >= f32::from(config.threshold_srgb()) {
+                scratch[offset] = frame[offset];
+                scratch[offset + 1] = frame[offset + 1];
+                scratch[offset + 2] = frame[offset + 2];
+                scratch[offset + 3] = frame[offset + 3];
+            }
+        }
+    }
+
+    for y in 0..target.height {
+        for x in 0..target.width {
+            let min_x = x.saturating_sub(radius);
+            let max_x = x.saturating_add(radius).min(target.width - 1);
+            let min_y = y.saturating_sub(radius);
+            let max_y = y.saturating_add(radius).min(target.height - 1);
+            let mut sum = [0_u32; 3];
+            let mut sample_count = 0_u32;
+            for sample_y in min_y..=max_y {
+                for sample_x in min_x..=max_x {
+                    let sample = pixel_offset(target, sample_x, sample_y);
+                    sum[0] += u32::from(scratch[sample]);
+                    sum[1] += u32::from(scratch[sample + 1]);
+                    sum[2] += u32::from(scratch[sample + 2]);
+                    sample_count += 1;
+                }
+            }
+            if sum == [0, 0, 0] {
+                continue;
+            }
+            let output = pixel_offset(target, x, y);
+            for channel in 0..3 {
+                let bloom = (sum[channel] as f32 / sample_count as f32) * intensity;
+                frame[output + channel] = (f32::from(frame[output + channel]) + bloom)
+                    .round()
+                    .min(255.0) as u8;
+            }
+        }
+    }
+
+    1
+}
+
 pub(super) fn apply_fxaa_rgba8(target: RasterTarget, frame: &mut [u8], scratch: &mut [u8]) -> u64 {
     if target.width < 3 || target.height < 3 {
         return 0;

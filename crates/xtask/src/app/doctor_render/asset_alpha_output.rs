@@ -297,7 +297,7 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         findings,
         "ARCH-FXAA-OUTPUT",
         "src/diagnostics.rs",
-        &["pub fxaa_passes: u64"],
+        &["pub bloom_passes: u64", "pub fxaa_passes: u64"],
     );
     require_contains(
         root,
@@ -305,8 +305,11 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         "ARCH-FXAA-OUTPUT",
         "src/render.rs",
         &[
+            "bloom_scratch: Vec<u8>",
             "fxaa_scratch: Vec<u8>",
+            "output::apply_bloom_rgba8(",
             "output::apply_fxaa_rgba8(self.target, &mut self.frame, &mut self.fxaa_scratch)",
+            "self.stats.bloom_passes",
             "self.stats.fxaa_passes",
         ],
     );
@@ -316,6 +319,8 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         "ARCH-FXAA-OUTPUT",
         "src/render/output.rs",
         &[
+            "pub struct PostBloomConfig",
+            "pub(super) fn apply_bloom_rgba8",
             "pub(super) fn apply_fxaa_rgba8",
             "luma_from_srgb8",
             "FXAA_LUMA_THRESHOLD",
@@ -328,9 +333,24 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         "ARCH-FXAA-OUTPUT",
         "tests/m2_lighting_depth_clipping.rs",
         &[
+            "subtle_bloom_expands_bright_output_without_second_tonemap",
+            "PostBloomConfig::subtle()",
+            "stats().bloom_passes",
             "fxaa_pass_runs_after_pbr_neutral_without_second_tonemap",
             "stats.fxaa_passes",
             "[160, 160, 160, 255]",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-FXAA-OUTPUT",
+        "tests/m2_visual_proof.rs",
+        &[
+            "bloom-on-off",
+            "render_bloom_on_off",
+            "validate_bloom_on_off",
+            "PostBloomConfig::subtle()",
         ],
     );
     require_contains(

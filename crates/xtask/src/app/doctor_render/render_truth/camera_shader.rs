@@ -18,10 +18,10 @@ pub(crate) fn check_renderer_truth_camera_shader_contracts(
             "DiagnosticCode::DirectionalShadowsDegraded",
             "DiagnosticCode::PointShadowsDisabled",
             "DiagnosticCode::SpotShadowsDisabled",
-            "DiagnosticCode::BloomDisabled",
             "DiagnosticCode::AmbientOcclusionDisabled",
             "DiagnosticCode::GpuCullingDisabled",
-            "const fn postprocess_status",
+            "const fn bloom_status",
+            "const fn ambient_occlusion_status",
             "fn gpu_frustum_culling_status",
         ],
     );

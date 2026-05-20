@@ -86,8 +86,8 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
     );
     assert_eq!(
         headless.bloom,
-        CapabilityStatus::FeatureDisabled,
-        "bloom is not implemented and must not be implied by the FXAA/output stage"
+        CapabilityStatus::Supported,
+        "subtle output bloom is an explicit postprocess with rendered ON/OFF proof"
     );
     assert_eq!(
         headless.screen_space_ambient_occlusion,
@@ -150,6 +150,7 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
     );
     assert_eq!(webgpu.per_instance_culling, CapabilityStatus::Supported);
     assert_eq!(webgpu.compute_shaders, CapabilityStatus::Supported);
+    assert_eq!(webgpu.bloom, CapabilityStatus::Supported);
     assert_eq!(webgpu.texture_arrays, CapabilityStatus::Supported);
     assert_eq!(webgpu.max_texture_array_layers, 256);
 
@@ -170,10 +171,12 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
         diagnostic.code == scena::DiagnosticCode::SpotShadowsDisabled
             && diagnostic.message.contains("Spot shadows")
     }));
-    assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == scena::DiagnosticCode::BloomDisabled
-            && diagnostic.message.contains("Bloom")
-    }));
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != scena::DiagnosticCode::BloomDisabled),
+        "supported bloom must not emit the old disabled diagnostic: {diagnostics:?}",
+    );
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == scena::DiagnosticCode::AmbientOcclusionDisabled
             && diagnostic.message.contains("ambient occlusion")

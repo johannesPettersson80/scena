@@ -139,7 +139,7 @@ layer masks, and visibility are checked.
 
 ## Materials And Current Limits
 
-Three.js has mature GPU material and postprocessing stacks. This checkout still reports
-PBR, directional shadows, and WebGL2 material parity as degraded until backend visual proof
-lands. Use capability reports and diagnostics as the source of truth for what a backend can
-show today.
+Three.js has mature GPU material and postprocessing stacks. This checkout has a subtle
+post-bloom baseline, but still reports PBR, directional shadows, and WebGL2 material parity
+as degraded until backend visual proof lands. Use capability reports and diagnostics as the
+source of truth for what a backend can show today.

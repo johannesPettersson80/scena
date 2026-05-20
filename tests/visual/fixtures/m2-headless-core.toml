@@ -37,6 +37,11 @@ required_surface = "headless-cpu"
 contract = "FXAA runs after the ACES output transform without a second tonemap pass"
 
 [[fixture]]
+name = "bloom-on-off"
+required_surface = "headless-cpu"
+contract = "subtle post-bloom expands bright output into a soft halo compared with the off render"
+
+[[fixture]]
 name = "clipping-half-space"
 required_surface = "headless-cpu"
 contract = "active clipping planes discard pixels in the rejected half-space"

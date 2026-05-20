@@ -49,6 +49,13 @@ Additive public API changes in 1.3.0:
 - `AutoExposureConfig`
 - `AutoExposureResult`
 
+Additive public API changes after 1.3.0:
+
+- `Renderer::set_bloom`
+- `Renderer::clear_bloom`
+- `PostBloomConfig`
+- `RendererStats::bloom_passes`
+
 ## Core types
 
 | Type | Role |
@@ -196,6 +203,7 @@ Common public event and output types:
 
 - `SurfaceEvent`
 - `DebugOverlay`
+- `PostBloomConfig`
 - `RendererStats`
 - `CapabilityReport`
 - `GpuAdapterReport`

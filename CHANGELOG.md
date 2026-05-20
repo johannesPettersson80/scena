@@ -38,6 +38,10 @@ All notable user-facing changes are recorded here.
   variant now renders `material_variants_scene.gltf` into the viewer canvas
   under `scena-viewer-material-variant-render`.
 
+- Added subtle postprocess bloom via `PostBloomConfig` and
+  `Renderer::set_bloom(...)`, with `RendererStats::bloom_passes`,
+  supported capability reporting, and an ON/OFF headless visual proof.
+
 - Added connector magnet preview APIs for editor-style drag-to-assemble UIs:
   `Scene::preview_connector_magnet`, `ConnectionMagnetPreview`, and
   `ConnectionMagnetVisualCue`.

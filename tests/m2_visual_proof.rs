@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 
 use scena::{
     Assets, ClippingPlane, ClippingPlaneSet, Color, DirectionalLight, GeometryDesc,
-    GeometryTopology, MaterialDesc, PerspectiveCamera, Primitive, Renderer, Scene, Transform, Vec3,
-    Vertex,
+    GeometryTopology, MaterialDesc, PerspectiveCamera, PostBloomConfig, Primitive, Renderer, Scene,
+    Transform, Vec3, Vertex,
 };
 
 const M2_HEADLESS_FIXTURE_METADATA: &str = include_str!("visual/fixtures/m2-headless-core.toml");
@@ -132,7 +132,7 @@ struct ReferenceSpec {
     rgba_hash: String,
 }
 
-fn visual_fixtures() -> [VisualFixture; 5] {
+fn visual_fixtures() -> [VisualFixture; 6] {
     [
         VisualFixture {
             name: "direct-lights-pbr",
@@ -161,6 +161,13 @@ fn visual_fixtures() -> [VisualFixture; 5] {
             height: 16,
             render: render_fxaa_edge,
             validate: validate_fxaa_edge,
+        },
+        VisualFixture {
+            name: "bloom-on-off",
+            width: 32,
+            height: 16,
+            render: render_bloom_on_off,
+            validate: validate_bloom_on_off,
         },
         VisualFixture {
             name: "clipping-half-space",
@@ -267,6 +274,83 @@ fn render_fxaa_edge() -> VisualProof {
         )
         .expect("FXAA fixture primitives insert");
     render_scene(scene)
+}
+
+fn render_bloom_on_off() -> VisualProof {
+    let mut off_scene = bloom_highlight_scene();
+    let mut off_renderer = Renderer::headless(16, 16).expect("bloom-off renderer builds");
+    off_renderer
+        .prepare(&mut off_scene)
+        .expect("bloom-off scene prepares");
+    off_renderer
+        .render_active(&off_scene)
+        .expect("bloom-off scene renders");
+
+    let mut on_scene = bloom_highlight_scene();
+    let mut on_renderer = Renderer::headless(16, 16).expect("bloom-on renderer builds");
+    on_renderer.set_bloom(Some(PostBloomConfig::subtle()));
+    on_renderer
+        .prepare(&mut on_scene)
+        .expect("bloom-on scene prepares");
+    on_renderer
+        .render_active(&on_scene)
+        .expect("bloom-on scene renders");
+
+    let mut frame = vec![0_u8; 32 * 16 * 4];
+    for y in 0..16 {
+        for x in 0..16 {
+            let source = ((y * 16 + x) * 4) as usize;
+            let left = ((y * 32 + x) * 4) as usize;
+            let right = ((y * 32 + x + 16) * 4) as usize;
+            frame[left..left + 4].copy_from_slice(&off_renderer.frame_rgba8()[source..source + 4]);
+            frame[right..right + 4].copy_from_slice(&on_renderer.frame_rgba8()[source..source + 4]);
+        }
+    }
+    VisualProof {
+        frame,
+        stats: on_renderer.stats(),
+    }
+}
+
+fn bloom_highlight_scene() -> Scene {
+    let (mut scene, _camera) = scene_with_camera();
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![
+                Primitive::triangle([
+                    Vertex {
+                        position: Vec3::new(-0.2, -0.2, 0.0),
+                        color: Color::WHITE,
+                    },
+                    Vertex {
+                        position: Vec3::new(0.2, -0.2, 0.0),
+                        color: Color::WHITE,
+                    },
+                    Vertex {
+                        position: Vec3::new(0.2, 0.2, 0.0),
+                        color: Color::WHITE,
+                    },
+                ]),
+                Primitive::triangle([
+                    Vertex {
+                        position: Vec3::new(-0.2, -0.2, 0.0),
+                        color: Color::WHITE,
+                    },
+                    Vertex {
+                        position: Vec3::new(0.2, 0.2, 0.0),
+                        color: Color::WHITE,
+                    },
+                    Vertex {
+                        position: Vec3::new(-0.2, 0.2, 0.0),
+                        color: Color::WHITE,
+                    },
+                ]),
+            ],
+            Transform::default(),
+        )
+        .expect("bloom highlight primitives insert");
+    scene
 }
 
 fn render_clipping_half_space() -> VisualProof {
@@ -389,6 +473,19 @@ fn validate_fxaa_edge(proof: &VisualProof) {
     assert_eq!(proof.stats.fxaa_passes, 1);
     assert_eq!(pixel_at(&proof.frame, 16, 12, 8), [0, 0, 0, 255]);
     assert!(pixel_at(&proof.frame, 16, 8, 8)[0] > 0);
+}
+
+fn validate_bloom_on_off(proof: &VisualProof) {
+    assert_eq!(proof.stats.bloom_passes, 1);
+    let off_halo = pixel_at(&proof.frame, 32, 11, 8);
+    let on_halo = pixel_at(&proof.frame, 32, 27, 8);
+    assert!(
+        on_halo[0] > off_halo[0] + 2
+            && on_halo[1] > off_halo[1] + 2
+            && on_halo[2] > off_halo[2] + 2,
+        "right-side bloom proof must show a halo compared with the left-side off render; \
+         off={off_halo:?} on={on_halo:?}",
+    );
 }
 
 fn validate_clipping_half_space(proof: &VisualProof) {

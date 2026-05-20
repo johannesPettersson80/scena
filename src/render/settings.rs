@@ -3,7 +3,7 @@ use crate::diagnostics::DebugOverlay;
 use crate::material::Color;
 use crate::picking::InteractionStyle;
 
-use super::{Background, Renderer, Tonemapper};
+use super::{Background, PostBloomConfig, Renderer, Tonemapper};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
@@ -103,6 +103,21 @@ impl Renderer {
             self.output.set_tonemapper(tonemapper);
             self.mark_output_changed();
         }
+    }
+
+    pub fn bloom(&self) -> Option<PostBloomConfig> {
+        self.bloom
+    }
+
+    pub fn set_bloom(&mut self, bloom: Option<PostBloomConfig>) {
+        if self.bloom != bloom {
+            self.bloom = bloom;
+            self.mark_output_changed();
+        }
+    }
+
+    pub fn clear_bloom(&mut self) {
+        self.set_bloom(None);
     }
 
     pub fn debug_overlay(&self) -> DebugOverlay {
