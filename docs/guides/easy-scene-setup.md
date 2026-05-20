@@ -5,6 +5,13 @@ and render it" workflow. The helpers are composable: framing, lighting, floor
 placement, auto exposure, orbit controls, and connector mating stay separate so
 applications can replace any part.
 
+![A connector assembly rendered with scena's named presets: studio lighting + grid floor + dark studio background + product-studio exposure + Poly Haven studio HDR](../assets/v1.4-showcase/hero-connector-assembly.jpg)
+
+The image above is one render produced by following the steps on this page.
+Every image embedded below comes from
+[`examples/v1_4_showcase.rs`](../../examples/v1_4_showcase.rs); run it with
+`cargo run --example v1_4_showcase --release` to regenerate them.
+
 ## Minimal model viewer
 
 ```rust
@@ -52,6 +59,14 @@ scene.directional_light(DirectionalLight::fill_light()).add()?;
 scene.point_light(PointLight::bulb_warm()).add()?;
 ```
 
+![The same sphere lit by sun, key_light, fill_light, rim_light, softbox, bulb_warm, bulb_cool, and the add_studio_lighting() composite](../assets/v1.4-showcase/light-presets.jpg)
+
+Top row, left to right: `DirectionalLight::sun` (warm daylight),
+`key_light` (cool studio main), `fill_light` (softer counter),
+`rim_light` (subtle edge). Bottom row: `PointLight::softbox`,
+`PointLight::bulb_warm` (2700K), `PointLight::bulb_cool` (5600K), and
+the `Scene::add_studio_lighting()` key+fill+rim composite.
+
 Use named exposure scenarios to adapt output brightness from the rendered
 frame:
 
@@ -61,6 +76,8 @@ renderer.set_auto_exposure(AutoExposureConfig::indoor());
 renderer.set_auto_exposure(AutoExposureConfig::outdoor());
 renderer.set_auto_exposure(AutoExposureConfig::mixed());
 ```
+
+![Same metal sphere rendered under product_studio, indoor, outdoor, and mixed exposure scenarios](../assets/v1.4-showcase/auto-exposure-presets.jpg)
 
 Auto exposure prevents globally too-dark or too-bright frames. It does not
 change light direction, material albedo, roughness, dynamic range, or
@@ -74,6 +91,11 @@ renderer.set_background(Background::DarkStudio);
 renderer.set_background(Background::Custom(Color::from_hex("#f5f7fb")?));
 ```
 
+![The same orange sphere against Studio, DarkStudio, NeutralGray, White, Black, Sky, Transparent, and a Custom CHARCOAL backdrop](../assets/v1.4-showcase/background-presets.jpg)
+
+Only the background changes between panels above; the sphere itself is
+unchanged because exposure is held fixed.
+
 Use `Scene::add_grid_floor()` for a matte floor at a known plane. The default
 floor is dark, rough, non-metallic, and sized from object bounds so it grounds
 the object without becoming the subject.
@@ -84,6 +106,25 @@ metallic/roughness numbers:
 let body = assets.create_material(MaterialDesc::plastic(Color::BLUE));
 let shaft = assets.create_material(MaterialDesc::metal(Color::LIGHT_GRAY));
 let foot = assets.create_material(MaterialDesc::rubber());
+```
+
+![Sphere rendered four times: matte, plastic, metal, rubber](../assets/v1.4-showcase/material-presets.jpg)
+
+`matte` / `plastic` / `metal` / `rubber` are the four PBR presets that the
+renderer can back today. `metal` shows the studio HDR reflected as visible
+specular streaks; `rubber` is dark and so rough the environment barely
+registers; `plastic` is in between; `matte` has no specular at all.
+
+For colours, name the constant the design calls for instead of writing
+RGB literals — `Color::CHARCOAL`, `Color::WARM_WHITE`, `Color::ORANGE`,
+and so on:
+
+![Plastic spheres rendered in every named Color constant](../assets/v1.4-showcase/named-color-constants.jpg)
+
+```rust
+let backdrop = Color::CHARCOAL;          // sRGB #1a1d28, the DarkStudio backdrop hue
+let warm_bulb = Color::from_kelvin(3200.0);   // colour-temperature helper
+let accent = Color::from_hex("#0a84ff")?;    // designer-friendly hex
 ```
 
 Use `Scene::frame_bounds()` instead of manually tuning camera distance. The
@@ -120,6 +161,23 @@ FramingOptions::new().azimuth_elevation(-28.0, 18.0);
 Azimuth and elevation are in degrees and use the conventions documented on
 `FramingOptions::azimuth_elevation`.
 
+The camera's *lens* (field of view) is a separate choice from where the
+camera points. Pick a named lens preset rather than typing a raw FOV:
+
+![The same subject rendered through wide_angle, standard, portrait, and telephoto lens presets](../assets/v1.4-showcase/lens-presets.jpg)
+
+```rust
+PerspectiveCamera::wide_angle();   // ~84° vertical — establishing shot
+PerspectiveCamera::standard();     // ~46° vertical — default
+PerspectiveCamera::portrait();     // ~28° vertical — tighter
+PerspectiveCamera::telephoto();    // ~18° vertical — compressed perspective
+```
+
+When a project genuinely needs a non-preset field of view, the
+`PerspectiveCamera` builder exposes a `with_fov_degrees` escape hatch —
+see its rustdoc on docs.rs. Keep that escape-hatch call inside a
+project-local helper so the first-path examples stay on named presets.
+
 ## Orbit controls
 
 After framing, pass the returned `FramingOutcome` to controls so the first user
@@ -151,6 +209,23 @@ if matches!(controls.advance(delta_seconds), scena::OrbitControlAction::Orbit) {
 ```
 
 Host adapters can then apply the controls to the scene camera each frame.
+
+![Damped orbit motion — the cube rotates and decelerates with each frame](../assets/v1.4-showcase/animated-orbit-damping.gif)
+
+The cube above starts at full angular velocity and decays under
+`cinematic()` damping; user-driven orbit input would feel the same way.
+
+```rust
+let controls = OrbitControls::from_framing(framing)
+    .cinematic()
+    .zoom_limits_bounds_relative(0.5, 4.0);
+```
+
+![Zoom clamped at the framing-relative bounds — repeated zoom-in stops at the close limit, zoom-out stops at the far limit](../assets/v1.4-showcase/animated-orbit-zoom.gif)
+
+The zoom limits clamp wheel and pinch input relative to the framed
+distance, so users cannot accidentally fly through the subject or lose
+it off-screen.
 
 Use `FollowControls` when a camera should track a moving node from a stable
 offset:
@@ -209,6 +284,15 @@ renderer.set_hover_style(InteractionStyle::outline(Color::from_hex("#ffd240")?, 
 renderer.set_selection_style(InteractionStyle::outline(Color::from_hex("#40a0ff")?, 3.0));
 ```
 
+![Pickable sphere + cube on a plinth ready for hover / select interaction](../assets/v1.4-showcase/picking-outline-hover.jpg)
+
+The CPU headless renderer used for the screenshot above runs the pick and
+hover state through the same typed API; the outline overlay itself is
+drawn by the GPU backends (`headless_gpu`, native window, browser
+canvas) and shows up in the `<scena-viewer>` browser proof.
+
+![Pointer callback sequence: idle → hover sphere → hover cube → click cube → idle](../assets/v1.4-showcase/animated-pointer-callbacks.gif)
+
 ## Animation playback
 
 Imported glTF clips can be started by name without manually creating and
@@ -228,6 +312,8 @@ viewer.scene_mut().update_animation(mixer, delta_seconds)?;
 
 Keep the returned mixer key when the host needs to pause, seek, change speed,
 or switch loop mode.
+
+![A glTF clip playing back — the cyan subject moves through its keyframes](../assets/v1.4-showcase/animated-animation-playback.gif)
 
 ## Screenshot capture
 
@@ -252,6 +338,8 @@ let png = headless_gltf_viewer("machine.glb")
     .render_png_bytes()
     .await?;
 ```
+
+![A single rendered frame encoded directly via capture_png](../assets/v1.4-showcase/capture-png.jpg)
 
 ## Reference-image regression
 
@@ -308,6 +396,8 @@ viewer.render_next_frame()?;
 viewer.set_active_material_variant(None)?;
 ```
 
+![The same glTF scene rendered under three KHR_materials_variants selections: default, midnight, noon](../assets/v1.4-showcase/material-variants.jpg)
+
 ## Native asset hot reload
 
 On native targets, enable the `hot-reload` feature and retain source bytes for
@@ -333,6 +423,8 @@ for path in watcher.drain_changed_scenes()? {
 }
 ```
 
+![Asset reload before / after — sphere colour changes when the bytes change on disk](../assets/v1.4-showcase/animated-hot-reload.gif)
+
 ## Environment presets
 
 Use `EnvironmentPreset` when examples, product viewers, or screenshots need a
@@ -346,6 +438,13 @@ let environment = assets
     .await?;
 renderer.set_environment(environment);
 ```
+
+![Same metal sphere lit by NeutralStudio (left, no IBL specular) versus Studio HDR (right, visible mirror reflection)](../assets/v1.4-showcase/environment-presets.jpg)
+
+The metal sphere on the right reflects the studio HDR; on the left the
+neutral fixture gives no directional reflection. That contrast is the
+quickest way to verify the environment is actually bound to the
+renderer.
 
 Use `EnvironmentPreset::ALL` when compatibility proof should render every
 checked preset. KTX2 cubemap presets are still future work; the shipped catalog
@@ -364,6 +463,8 @@ let bottle = assets.khronos().water_bottle().await?;
 let rig = assets.khronos().rigged_simple().await?;
 let transmission = assets.khronos().transmission_test().await?;
 ```
+
+![RiggedSimple loaded from the bundled Khronos catalog with one call](../assets/v1.4-showcase/khronos-rigged-simple.jpg)
 
 Use `KhronosSample::ALL` when a compatibility test should iterate the checked
 catalog.
@@ -413,6 +514,81 @@ let label = scene.project_world_point(camera, connector_world_point, width, heig
 
 If an interpolation path arcs outside its endpoints, include sampled
 intermediate transforms in `bounds_for_transforms()`.
+
+For editor-style drag-to-assemble UIs, preview the snap before committing
+the mate so the host can render a ghost or a connection line:
+
+![Connector magnet preview — left: out of range, right: snap-ready](../assets/v1.4-showcase/connector-magnet-preview.jpg)
+
+```rust
+let preview = scene.preview_connector_magnet(
+    drive_connector,
+    load_connector,
+    ConnectOptions::default(),
+)?;
+if preview.is_snap_ready() {
+    // host draws the SnapReady cue (e.g. green outline)
+} else {
+    // host draws the OutOfRange cue (e.g. yellow / amber outline)
+}
+let ghost = preview.ghost_transform();
+let line = preview.connection_line();
+```
+
+`preview.visual_cue().css_class()` returns `scena-magnet-ready` or
+`scena-magnet-out-of-range` for host CSS styling; `accent_rgba()` returns
+linear RGBA when the host wants to render the cue itself.
+
+## Renderer features
+
+`scena` ships output-space anti-aliasing, screen-space ambient occlusion,
+subtle bloom, and weighted-blended order-independent transparency. Each is
+opt-in through a typed config on the renderer.
+
+```rust
+use scena::{
+    AntiAliasing, OrderIndependentTransparencyConfig, PostBloomConfig,
+    ScreenSpaceAmbientOcclusionConfig,
+};
+
+renderer.set_anti_aliasing(AntiAliasing::Fxaa); // default; AntiAliasing::None for crisp diff lanes
+renderer.set_bloom(Some(PostBloomConfig::subtle()));
+renderer.set_screen_space_ambient_occlusion(Some(ScreenSpaceAmbientOcclusionConfig::subtle()));
+renderer.set_order_independent_transparency(Some(OrderIndependentTransparencyConfig::weighted_blended()));
+```
+
+The ON/OFF pairs below are rendered side-by-side so the contribution of
+each effect stays visible:
+
+| Feature | Off ‖ On |
+|---|---|
+| FXAA anti-aliasing | ![AA off vs on](../assets/v1.4-showcase/renderer-aa-on-off.jpg) |
+| Subtle bloom | ![Bloom off vs on](../assets/v1.4-showcase/renderer-bloom-on-off.jpg) |
+| SSAO (contact darkening) | ![SSAO off vs on](../assets/v1.4-showcase/renderer-ssao-on-off.jpg) |
+| OIT (insertion-order independence) | ![OIT both orders look identical](../assets/v1.4-showcase/renderer-oit-order-invariance.jpg) |
+
+For OIT, the panels show the same three overlapping translucent planes
+inserted in opposite order — they should look identical, proving the
+draw order does not affect the result.
+
+## Browser viewer surfaces
+
+The browser side ships through `<scena-viewer>`, a custom element with
+`<model-viewer>`-style attributes (drag-and-drop, material variants,
+inspector overlay, mobile gestures). The screenshots below come from the
+M6 Playwright proof lane and are the rendered output a real browser
+shows when the element is loaded against the bundled assets:
+
+| Surface | Screenshot |
+|---|---|
+| `<scena-viewer>` custom element (drag-drop, annotations, inspector, progress, variant picker) | ![scena-viewer element](../assets/v1.4-showcase/browser/scena-viewer-element-browser-proof.jpg) |
+| `<scena-viewer>` vs `<model-viewer>` three-asset parity | ![side-by-side parity](../assets/v1.4-showcase/browser/scena-viewer-model-viewer-parity-browser-proof.jpg) |
+| Mobile a11y — touch gestures + keyboard + role/label | ![mobile a11y](../assets/v1.4-showcase/browser/scena-viewer-mobile-a11y-browser-proof.jpg) |
+| Camera control kit — orbit / follow / fly through browser pointer + pinch | ![camera control kit](../assets/v1.4-showcase/browser/camera-control-kit-browser-proof.jpg) |
+
+The Playwright lane regenerates these on every release run; the
+host-wirable event surface for the custom element is documented under
+[`docs/browser.md`](../browser.md).
 
 ## Troubleshooting
 
