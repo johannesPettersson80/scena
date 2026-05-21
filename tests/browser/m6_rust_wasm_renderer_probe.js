@@ -153,6 +153,10 @@ function isAllowedUnavailable(backend, error) {
   );
 }
 
+function compressedAssetProofEnabled() {
+  return process.env.SCENA_BROWSER_COMPRESSED_ASSETS === "1";
+}
+
 function assertNoScenaGpuValidationErrors(backend, consoleMessages) {
   const validationErrors = consoleMessages.filter(
     (message) =>
@@ -555,6 +559,88 @@ function assertMaterialPresetProof(backend, result) {
       `${backend} pbr-material-presets proof did not preserve screenshot/readback evidence: ${JSON.stringify(result)}`,
     );
   }
+}
+
+function assertCompressedAssetProof(backend, result) {
+  const metadata = result.metadata || {};
+  const ktx2 = metadata.ktx2_probe || {};
+  if (
+    metadata.proof_class !== "browser-compressed-asset-runtime" ||
+    metadata.meshopt_required_extension !== true ||
+    metadata.meshopt_decoder !== "EXT_meshopt_compression bufferView expansion"
+  ) {
+    throw new Error(
+      `${backend} compressed-assets proof did not record meshopt compressed metadata: ${JSON.stringify(result)}`,
+    );
+  }
+  if (!result.pixels || result.pixels.nonblack <= 0 || result.primitives < 1) {
+    throw new Error(
+      `${backend} compressed-assets proof did not render visible meshopt browser output: ${JSON.stringify(result)}`,
+    );
+  }
+  if (ktx2.status !== "fail-closed" || !String(ktx2.error || "").includes("KTX2/Basis")) {
+    throw new Error(
+      `${backend} compressed-assets proof did not record the current browser KTX2 fail-closed result: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+function writeCompressedAssetBrowserLaneArtifact(artifactDir, backend, result) {
+  const lane = backend === "webgpu" ? "browser-webgpu" : "browser-webgl2";
+  const root = path.join(artifactDir, "m8-compressed-assets");
+  fs.mkdirSync(root, { recursive: true });
+  const metadata = result.metadata || {};
+  const ktx2 = metadata.ktx2_probe || {};
+  const artifact = {
+    schema: "scena.compressed_asset_backend_lane.v1",
+    lane,
+    status: "partial-meshopt-passed-ktx2-fail-closed",
+    commit_sha: process.env.GITHUB_SHA || "local-checkout",
+    release_evidence: false,
+    reason:
+      "browser production-assets runtime rendered EXT_meshopt_compression, but KTX2/Basis remains fail-closed on the sync wasm texture path",
+    browser_runtime_evidence: true,
+    workflow: result.workflow,
+    backend: result.backend,
+    meshopt: {
+      status: "passed",
+      proof_class: metadata.proof_class,
+      pixels: result.pixels,
+      stats: result.stats,
+      screenshot_metadata: result.screenshot_metadata,
+    },
+    ktx2: {
+      status: ktx2.status,
+      error: ktx2.error || null,
+      release_evidence: false,
+    },
+  };
+  fs.writeFileSync(
+    path.join(root, `${lane}-compressed-lane.json`),
+    `${JSON.stringify(artifact, null, 2)}\n`,
+  );
+}
+
+function writeCompressedAssetBrowserLaneUnavailable(artifactDir, backend, error) {
+  const lane = backend === "webgpu" ? "browser-webgpu" : "browser-webgl2";
+  const root = path.join(artifactDir, "m8-compressed-assets");
+  fs.mkdirSync(root, { recursive: true });
+  fs.writeFileSync(
+    path.join(root, `${lane}-compressed-lane.json`),
+    `${JSON.stringify(
+      {
+        schema: "scena.compressed_asset_backend_lane.v1",
+        lane,
+        status: "unavailable",
+        commit_sha: process.env.GITHUB_SHA || "local-checkout",
+        release_evidence: false,
+        reason: String(error && error.message ? error.message : error),
+        browser_runtime_evidence: true,
+      },
+      null,
+      2,
+    )}\n`,
+  );
 }
 
 function assertTexturedConnectorViewerProof(backend, result) {
@@ -982,6 +1068,9 @@ async function main() {
     "textured-connector-viewer",
     "asset-cache-reload",
   ];
+  if (compressedAssetProofEnabled()) {
+    workflows.push("compressed-assets");
+  }
   const results = [];
   try {
     const viewerElementPage = await browser.newPage({ viewport: { width: 480, height: 320 } });
@@ -1087,6 +1176,11 @@ async function main() {
         assertMaterialPresetProof(backend, workflowResults.get("pbr-material-presets"));
         assertMaterialTextureProof(backend, workflowResults.get("material-textures"));
         assertSourceGltfMaterialProof(backend, workflowResults.get("source-gltf-materials"));
+        if (compressedAssetProofEnabled()) {
+          const compressedAssets = workflowResults.get("compressed-assets");
+          assertCompressedAssetProof(backend, compressedAssets);
+          writeCompressedAssetBrowserLaneArtifact(artifactDir, backend, compressedAssets);
+        }
         assertTexturedConnectorViewerProof(
           backend,
           workflowResults.get("textured-connector-viewer"),
@@ -1146,6 +1240,9 @@ async function main() {
       } catch (error) {
         if (!isAllowedUnavailable(backend, error)) {
           throw error;
+        }
+        if (compressedAssetProofEnabled()) {
+          writeCompressedAssetBrowserLaneUnavailable(artifactDir, backend, error);
         }
         results.push(unavailableResult(backend, error));
       } finally {

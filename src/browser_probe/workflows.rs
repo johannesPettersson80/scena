@@ -1,6 +1,7 @@
 use serde_json::json;
 use wasm_bindgen::prelude::JsValue;
 
+mod compressed;
 mod ergonomics;
 mod pbr;
 
@@ -32,6 +33,7 @@ pub(super) async fn build_workflow_scene(workflow: &str) -> Result<WorkflowScene
         "pbr-shadow-visibility" => Ok(pbr::shadow_visibility_scene()?),
         "pbr-material-extensions" => pbr::material_extensions_scene().await,
         "pbr-material-presets" => Ok(pbr::material_presets_scene()?),
+        "compressed-assets" => compressed::compressed_assets_scene().await,
         "source-gltf-materials" => ergonomics::build_ergonomics_scene(workflow).await,
         other => ergonomics::build_ergonomics_scene(other).await,
     }

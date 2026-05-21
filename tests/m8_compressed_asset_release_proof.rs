@@ -238,35 +238,210 @@ fn m8_ext_mesh_gpu_instancing_visual_row_writes_release_artifacts() {
 fn m8_compressed_native_gpu_lane_records_fail_closed_unavailable_artifact() {
     let root = artifact_root();
     fs::create_dir_all(&root).expect("artifact dir");
-    let lanes = [
-        (
-            "native-gpu",
-            match Renderer::headless_gpu(64, 64) {
-                Ok(_) => "available-needs-dedicated-rendered-output-lane",
-                Err(_) => "unavailable",
-            },
-        ),
-        ("browser-webgpu", "unavailable-local-rust-unit-test"),
-        ("browser-webgl2", "unavailable-local-rust-unit-test"),
-    ];
 
-    for (lane, status) in lanes {
-        write_json(
-            &root.join(format!("{lane}-compressed-lane.json")),
-            json!({
-                "schema": "scena.compressed_asset_backend_lane.v1",
-                "lane": lane,
-                "status": status,
-                "commit_sha": commit_label(),
-                "release_evidence": false,
-                "reason": "local unit tests must not promote backend availability or ignored tests into release proof"
-            }),
-        );
-        assert_ne!(
-            status, "passed",
-            "{lane} availability artifact must not masquerade as release proof"
+    if approved_unstable_headless_gpu_release_lane_enabled() {
+        match render_native_gpu_compressed_asset_lane(&root) {
+            Ok(artifact) => write_json(&root.join("native-gpu-compressed-lane.json"), artifact),
+            Err(reason) => {
+                write_compressed_backend_lane_artifact(
+                    &root,
+                    "native-gpu",
+                    "unavailable",
+                    false,
+                    &format!("approved native GPU compressed-asset run failed: {reason}"),
+                );
+                write_browser_compressed_lane_placeholders(&root);
+                panic!(
+                    "native compressed KTX2/meshopt GPU proof cannot be approved on this host: {reason}"
+                );
+            }
+        }
+        write_browser_compressed_lane_placeholders(&root);
+        return;
+    }
+
+    write_compressed_backend_lane_artifact(
+        &root,
+        "native-gpu",
+        match Renderer::headless_gpu(64, 64) {
+            Ok(_) => "available-needs-approved-rendered-output-lane",
+            Err(_) => "unavailable",
+        },
+        false,
+        "local unit tests must not promote backend availability into release proof; set SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1 on an approved native GPU lane",
+    );
+    write_browser_compressed_lane_placeholders(&root);
+}
+
+fn approved_unstable_headless_gpu_release_lane_enabled() -> bool {
+    std::env::var_os("SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS").is_some()
+}
+
+fn write_browser_compressed_lane_placeholders(root: &Path) {
+    for lane in ["browser-webgpu", "browser-webgl2"] {
+        write_compressed_backend_lane_artifact(
+            root,
+            lane,
+            "unavailable-local-rust-unit-test",
+            false,
+            "browser compressed-asset proof must come from a production-assets Playwright lane, not from a native Rust unit test",
         );
     }
+}
+
+fn write_compressed_backend_lane_artifact(
+    root: &Path,
+    lane: &str,
+    status: &str,
+    release_evidence: bool,
+    reason: &str,
+) {
+    write_json(
+        &root.join(format!("{lane}-compressed-lane.json")),
+        json!({
+            "schema": "scena.compressed_asset_backend_lane.v1",
+            "lane": lane,
+            "status": status,
+            "commit_sha": commit_label(),
+            "release_evidence": release_evidence,
+            "reason": reason,
+        }),
+    );
+}
+
+fn render_native_gpu_compressed_asset_lane(root: &Path) -> Result<serde_json::Value, String> {
+    let ktx2_source = tiny_basisu_ktx2_solid_rgba([230, 48, 32, 255], TextureColorSpace::Srgb);
+    let ktx2_path = AssetPath::from("memory://native-gpu-ktx2-base-color.ktx2");
+    let ktx2_assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        ktx2_path.clone(),
+        ktx2_source.clone(),
+    )]));
+    let texture =
+        pollster::block_on(ktx2_assets.load_texture(ktx2_path.as_str(), TextureColorSpace::Srgb))
+            .map_err(|error| format!("KTX2 texture load failed before GPU upload: {error:?}"))?;
+    let (ktx2_frame, ktx2_gpu) = render_material_native_gpu(
+        &ktx2_assets,
+        material_for_slot("base-color", texture),
+        "native-gpu-ktx2-base-color",
+    )?;
+    let ktx2_artifact = root.join("native-gpu-ktx2-base-color.ppm");
+    write_ppm(&ktx2_artifact, 64, 64, &ktx2_frame);
+
+    let meshopt_source = meshopt_triangle_gltf("TRIANGLES");
+    let meshopt_assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://native-gpu-meshopt-triangles.gltf"),
+        meshopt_source.clone().into_bytes(),
+    )]));
+    let scene_asset =
+        pollster::block_on(meshopt_assets.load_scene("memory://native-gpu-meshopt-triangles.gltf"))
+            .map_err(|error| format!("meshopt glTF load failed before GPU upload: {error:?}"))?;
+    let mut meshopt_scene = Scene::new();
+    meshopt_scene
+        .instantiate(&scene_asset)
+        .map_err(|error| format!("meshopt scene instantiate failed: {error:?}"))?;
+    let meshopt_camera = meshopt_scene
+        .add_default_camera()
+        .map_err(|error| format!("meshopt default camera insert failed: {error:?}"))?;
+    let (meshopt_frame, meshopt_gpu) = render_scene_native_gpu(
+        &meshopt_assets,
+        &mut meshopt_scene,
+        meshopt_camera,
+        "native-gpu-meshopt-triangles",
+    )?;
+    let meshopt_artifact = root.join("native-gpu-meshopt-triangles.ppm");
+    write_ppm(&meshopt_artifact, 64, 64, &meshopt_frame);
+
+    Ok(json!({
+        "schema": "scena.compressed_asset_backend_lane.v1",
+        "lane": "native-gpu",
+        "status": "passed",
+        "commit_sha": commit_label(),
+        "release_evidence": true,
+        "approved_env": "SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1",
+        "proof_class": "native-headless-gpu-rendered-output",
+        "decoders": {
+            "ktx2": "basisu_c_sys KTX2/Basis -> RGBA8 before GPU upload",
+            "meshopt": "EXT_meshopt_compression bufferView expansion before GPU upload"
+        },
+        "rows": [
+            {
+                "name": "native-gpu-ktx2-base-color",
+                "source_path": ktx2_path.as_str(),
+                "source_sha256": sha256_bytes(&ktx2_source),
+                "artifact": path_string(&ktx2_artifact),
+                "artifact_sha256": sha256_bytes(&fs::read(&ktx2_artifact).expect("KTX2 GPU artifact readable")),
+                "gpu": ktx2_gpu,
+            },
+            {
+                "name": "native-gpu-meshopt-triangles",
+                "source_path": "memory://native-gpu-meshopt-triangles.gltf",
+                "source_sha256": sha256_bytes(meshopt_source.as_bytes()),
+                "artifact": path_string(&meshopt_artifact),
+                "artifact_sha256": sha256_bytes(&fs::read(&meshopt_artifact).expect("meshopt GPU artifact readable")),
+                "gpu": meshopt_gpu,
+            }
+        ],
+    }))
+}
+
+fn render_material_native_gpu<F: AssetFetcher>(
+    assets: &Assets<F>,
+    material: MaterialDesc,
+    label: &str,
+) -> Result<(Vec<u8>, serde_json::Value), String> {
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.72, 0.72, 0.08));
+    let material = assets.create_material(material);
+    let mut scene = Scene::new();
+    scene
+        .mesh(geometry, material)
+        .transform(Transform::at(Vec3::ZERO))
+        .add()
+        .map_err(|error| format!("{label} mesh insert failed: {error:?}"))?;
+    scene
+        .directional_light(DirectionalLight::default().with_illuminance_lux(12_000.0))
+        .add()
+        .map_err(|error| format!("{label} light insert failed: {error:?}"))?;
+    let camera = scene
+        .add_default_camera()
+        .map_err(|error| format!("{label} default camera insert failed: {error:?}"))?;
+    render_scene_native_gpu(assets, &mut scene, camera, label)
+}
+
+fn render_scene_native_gpu<F: AssetFetcher>(
+    assets: &Assets<F>,
+    scene: &mut Scene,
+    camera: scena::CameraKey,
+    label: &str,
+) -> Result<(Vec<u8>, serde_json::Value), String> {
+    let mut renderer = Renderer::headless_gpu(64, 64)
+        .map_err(|error| format!("Renderer::headless_gpu unavailable: {error:?}"))?;
+    renderer
+        .prepare_with_assets(scene, assets)
+        .map_err(|error| format!("{label} native GPU prepare failed: {error:?}"))?;
+    let outcome = renderer
+        .render(scene, camera)
+        .map_err(|error| format!("{label} native GPU render failed: {error:?}"))?;
+    let frame = renderer.frame_rgba8().to_vec();
+    assert_non_degenerate_frame(&frame, label);
+    let capabilities = *renderer.capabilities();
+    let stats = renderer.stats();
+    Ok((
+        frame,
+        json!({
+            "backend": format!("{:?}", capabilities.backend),
+            "gpu_device": capabilities.gpu_device,
+            "surface_attached": capabilities.surface_attached,
+            "forward_pbr": format!("{:?}", capabilities.forward_pbr),
+            "texture_compression_basisu": format!("{:?}", capabilities.texture_compression_basisu),
+            "hardware_instancing": format!("{:?}", capabilities.hardware_instancing),
+            "readback_headless_screenshots": format!("{:?}", capabilities.readback_headless_screenshots),
+            "draw_calls": outcome.draw_calls,
+            "primitives": outcome.primitives,
+            "material_texture_bindings": stats.material_texture_bindings,
+            "material_textures_missing_decoded_pixels": stats.material_textures_missing_decoded_pixels,
+            "gpu_submissions": stats.gpu_submissions,
+        }),
+    ))
 }
 
 fn material_for_slot(slot: &str, texture: scena::TextureHandle) -> MaterialDesc {

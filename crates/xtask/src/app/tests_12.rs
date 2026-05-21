@@ -511,7 +511,7 @@ pub(crate) fn write_easy_scene_fixture(
     .expect("production asset profile test fixture");
     fs::write(
         fixture_root.join("tests/m8_compressed_asset_release_proof.rs"),
-        "m8_ktx2_material_role_visual_rows_write_release_artifacts m8_meshopt_visual_rows_write_release_artifacts m8_ext_mesh_gpu_instancing_visual_row_writes_release_artifacts m8_compressed_native_gpu_lane_records_fail_closed_unavailable_artifact scena.compressed_asset_visual_proof.v1",
+        "m8_ktx2_material_role_visual_rows_write_release_artifacts m8_meshopt_visual_rows_write_release_artifacts m8_ext_mesh_gpu_instancing_visual_row_writes_release_artifacts m8_compressed_native_gpu_lane_records_fail_closed_unavailable_artifact render_native_gpu_compressed_asset_lane SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS browser-webgpu browser-webgl2 release_evidence scena.compressed_asset_visual_proof.v1",
     )
     .expect("compressed asset proof test fixture");
     fs::write(

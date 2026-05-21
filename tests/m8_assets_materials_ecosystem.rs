@@ -2611,11 +2611,12 @@ fn m8_headless_gpu_transmission_volume_ibl_capability_when_available() {
     let mut renderer = match Renderer::headless_gpu(96, 64) {
         Ok(renderer) => renderer,
         Err(error) => {
-            record_fail_closed_headless_gpu_lane(
-                TEST_NAME,
-                &format!("Renderer::headless_gpu unavailable on this host: {error:?}"),
+            let reason = format!("Renderer::headless_gpu unavailable on this host: {error:?}");
+            record_fail_closed_headless_gpu_lane(TEST_NAME, &reason);
+            panic!(
+                "{TEST_NAME} cannot produce approved release evidence with \
+                 SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS set: {reason}"
             );
-            return;
         }
     };
     renderer.set_environment(environment);

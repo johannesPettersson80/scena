@@ -255,11 +255,16 @@ production-profile policy. `tests/m8_compressed_asset_release_proof.rs`
 runs with `--features production-assets`, loads KTX2 material-role
 textures, meshopt-compressed glTF fixtures, and an instanced glTF, renders
 them through the normal CPU headless path, and writes JSON + PPM artifacts
-under `target/gate-artifacts/m8-compressed-assets`. The native GPU and
-browser compressed-asset lanes write fail-closed unavailable artifacts
-instead of pretending local unit tests are release proof. Doctor rules
-`PRODUCTION-ASSET-PROFILE` and `ASSETS-M8` pin the profile and proof
-suite.
+under `target/gate-artifacts/m8-compressed-assets`. The native GPU lane is
+now strict when
+`SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1` is set: it must render
+KTX2 and meshopt through `Renderer::headless_gpu` or fail the run. Browser
+production-assets proof is runtime-backed by
+`SCENA_BROWSER_COMPRESSED_ASSETS=1 npm run browser:m6`; current WebGL2 and
+WebGPU artifacts render meshopt compressed output, but still record
+`release_evidence: false` because browser KTX2/Basis remains fail-closed
+on the sync wasm texture path. Doctor rules `PRODUCTION-ASSET-PROFILE`
+and `ASSETS-M8` pin the profile and proof suite.
 Visual proof: reference-image (KTX2-textured render, meshopt-compressed
 render, and instanced render artifacts written by the feature-gated
 compressed-asset proof suite)
@@ -1347,11 +1352,21 @@ release-evidence gaps; larger renderer research lanes follow.
        as fail-closed by default. This remains open until an approved
        GPU lane runs the gate with
        `SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1` and produces a
-       `release_evidence: true` artifact.
+       `release_evidence: true` artifact. Current local approved attempt:
+       the gate failed correctly with `Renderer::headless_gpu unavailable:
+       RequestDevice { backend: HeadlessGpu }`, so no release evidence was
+       produced on this host.
 4. - [ ] **Compressed asset native-GPU/browser release proof** —
        **[proof-gap]**. KTX2/Basis and meshopt are shipped for the
        optional `production-assets` profile with local CPU rendered proof,
-       but native GPU upload and browser release lanes remain open.
+       but full native GPU/browser release proof remains open. The native
+       GPU lane now fails approved runs unless KTX2 and meshopt both render
+       through `Renderer::headless_gpu`; the current host reports
+       `RequestDevice { backend: HeadlessGpu }`. Browser WebGL2/WebGPU
+       runtime proof now renders `EXT_meshopt_compression` under
+       `SCENA_BROWSER_COMPRESSED_ASSETS=1`, but the artifacts stay
+       `release_evidence: false` because KTX2/Basis browser decode is still
+       fail-closed.
 5. - [ ] **GPU/WebGPU/WebGL2 SSAO and OIT parity** — **[deferred]**.
        CPU/headless baselines are shipped; backend parity needs separate
        render passes, capability reporting, and browser visual proof.

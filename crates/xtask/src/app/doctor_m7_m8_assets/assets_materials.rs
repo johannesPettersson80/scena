@@ -1,6 +1,7 @@
 use super::anisotropy_materials::check_anisotropy_material_contracts;
 use super::asset_instancing::check_m8_instancing_contracts;
 use super::clearcoat_materials::check_clearcoat_material_contracts;
+use super::compressed_asset_proof::check_compressed_asset_proof_contracts;
 use super::dispersion_materials::check_dispersion_material_contracts;
 use super::iridescence_materials::check_iridescence_material_contracts;
 use super::material_texture_diagnostics::check_material_texture_diagnostic_contracts;
@@ -15,6 +16,7 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
     check_iridescence_material_contracts(root, findings);
     check_dispersion_material_contracts(root, findings);
     check_m8_visual_material_contracts(root, findings);
+    check_compressed_asset_proof_contracts(root, findings);
     require_contains(
         root,
         findings,
@@ -304,7 +306,6 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "m8_compressed_native_gpu_lane_records_fail_closed_unavailable_artifact",
             "browser-webgpu",
             "browser-webgl2",
-            "release_evidence\": false",
         ],
     );
     require_contains(

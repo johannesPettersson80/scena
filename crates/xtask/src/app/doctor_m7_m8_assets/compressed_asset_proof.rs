@@ -1,0 +1,41 @@
+use crate::app::prelude::*;
+
+pub(super) fn check_compressed_asset_proof_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "tests/m8_compressed_asset_release_proof.rs",
+        &[
+            "render_native_gpu_compressed_asset_lane",
+            "SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS",
+            "browser-webgpu",
+            "browser-webgl2",
+            "release_evidence",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/browser_probe/workflows/compressed.rs",
+        &[
+            "browser-compressed-asset-runtime",
+            "EXT_meshopt_compression",
+            "ktx2_probe",
+            "fail-closed",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "tests/browser/m6_rust_wasm_renderer_probe.js",
+        &[
+            "SCENA_BROWSER_COMPRESSED_ASSETS",
+            "compressed-assets",
+            "partial-meshopt-passed-ktx2-fail-closed",
+            "writeCompressedAssetBrowserLaneArtifact",
+        ],
+    );
+}

@@ -32,7 +32,14 @@ mod texture_ktx2;
 mod texture_source;
 
 use texture_ktx2::decode_ktx2_basisu_rgba8;
-#[cfg(feature = "ktx2")]
+#[cfg(all(
+    feature = "ktx2",
+    not(all(
+        target_arch = "wasm32",
+        target_vendor = "unknown",
+        target_os = "unknown"
+    ))
+))]
 use texture_ktx2::validate_rgba8_payload_len;
 #[cfg(target_arch = "wasm32")]
 use texture_source::browser_native_decode_format;
@@ -76,7 +83,14 @@ impl TexturePixels {
         }
     }
 
-    #[cfg(feature = "ktx2")]
+    #[cfg(all(
+        feature = "ktx2",
+        not(all(
+            target_arch = "wasm32",
+            target_vendor = "unknown",
+            target_os = "unknown"
+        ))
+    ))]
     fn from_mip_levels(path: &AssetPath, levels: Vec<TextureMipLevel>) -> Result<Self, AssetError> {
         if levels.is_empty() {
             return Err(AssetError::Parse {

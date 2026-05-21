@@ -3,6 +3,7 @@ mod asset_instancing;
 mod asset_matrix;
 mod assets_materials;
 mod clearcoat_materials;
+mod compressed_asset_proof;
 mod dispersion_materials;
 mod ergonomics;
 mod iridescence_materials;
