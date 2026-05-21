@@ -14,7 +14,7 @@ Equivalent `Cargo.toml` entry:
 
 ```toml
 [dependencies]
-scena = "1.4"
+scena = "1.5"
 ```
 
 Install the bundled CLI tool when you need it:

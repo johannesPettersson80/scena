@@ -7,11 +7,12 @@ and deterministic headless rendering.
 ## Start here
 
 - [README](../README.md): install, quick start, features, examples, and platform support.
-- [docs.rs API reference](https://docs.rs/scena/1.4.0/scena/): generated Rust API docs.
+- [docs.rs API reference](https://docs.rs/scena/1.5.0/scena/): generated Rust API docs.
 - [Getting started](getting-started.md): install, first scene, GLB loading, and output paths.
 - [Easy scene setup](guides/easy-scene-setup.md): frame models, add studio lighting,
   add a matte grid floor, enable auto exposure, and connect authored anchors.
 - [API overview](api.md): the main public types and how they fit together.
+- [v1.5.0 release notes](release-notes/v1.5.0.md): expanded material presets, WebGL2 texture clamping, and smooth-metal browser IBL improvements.
 - [v1.4.0 release notes](release-notes/v1.4.0.md): easy-use named primitives, bundled content, viewer ergonomics, `<scena-viewer>` element, and renderer-feature coverage.
 - [v1.3.0 release notes](release-notes/v1.3.0.md): easy scene setup API notes and required proof.
 

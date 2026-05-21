@@ -6,7 +6,7 @@ and render frames.
 
 The authoritative API reference is generated on docs.rs:
 
-<https://docs.rs/scena/1.4.0/scena/>
+<https://docs.rs/scena/1.5.0/scena/>
 
 Use this page as the conceptual map.
 
@@ -76,14 +76,6 @@ Named primitives — "write a name, not a number":
 - `MaterialDesc::matte`
 - `MaterialDesc::plastic`
 - `MaterialDesc::metal`
-- `MaterialDesc::rough_metal`
-- `MaterialDesc::chrome`
-- `MaterialDesc::brushed_steel`
-- `MaterialDesc::clearcoat_plastic`
-- `MaterialDesc::satin`
-- `MaterialDesc::leather`
-- `MaterialDesc::clear_glass`
-- `MaterialDesc::frosted_glass`
 - `MaterialDesc::rubber`
 - `Background` (enum: `Studio`, `DarkStudio`, `NeutralGray`, `White`,
   `Black`, `Sky`, `Transparent`, `Custom(Color)`)
@@ -185,6 +177,17 @@ Renderer features:
 - `RendererStats::ambient_occlusion_passes`
 - `RendererStats::order_independent_transparency_passes`
 - `RendererStats::bloom_passes`
+
+Additive public API changes in 1.5.0:
+
+- `MaterialDesc::rough_metal`
+- `MaterialDesc::chrome`
+- `MaterialDesc::brushed_steel`
+- `MaterialDesc::clearcoat_plastic`
+- `MaterialDesc::satin`
+- `MaterialDesc::leather`
+- `MaterialDesc::clear_glass`
+- `MaterialDesc::frosted_glass`
 
 ## Core types
 

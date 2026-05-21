@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-05-21
+
 ### Added
 
 - Expanded the honest `MaterialDesc` preset set with `rough_metal`,
