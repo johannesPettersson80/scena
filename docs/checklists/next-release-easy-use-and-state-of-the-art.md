@@ -2066,3 +2066,188 @@ Viewer animation sugar pass (2026-05-19):
   `Scene::play_animation_by_name` for the viewer's loaded import.
 - Kept animation update, prepare, and render explicit by returning the
   scene-owned mixer key; the host still drives `update_animation(...)`.
+
+## Live-demo smooth-metal investigation handoff (2026-05-21)
+
+Open question after a long debugging session on `scena-demo.pages.dev`:
+the `material-presets` sample's `metal` sphere reads as light-gray plastic
+with one bright spot in iPhone Safari and Windows Chrome, not as
+polished chrome. The session reverted off `main` (force-push back to
+`15b623b`); these notes record what was learned so the next pass does
+not relitigate the same dead ends.
+
+The reverted attempt lived across commits `2a853e7..218881d` on `main`
+(now gone — recover from reflog if needed).
+
+### Source of truth check
+
+Section 2.6 of this checklist already calls this out: `MaterialDesc::
+metal(Color::LIGHT_GRAY)` is **polished metal (roughness 0.28), not
+mirror chrome**. `chrome` is in the deferred list pending sharp
+environment reflections + SSR for floor reflection. The
+`HONEST-MATERIAL-PRESETS` doctor rule keeps the chrome name out until
+the renderer can back the claim. Any visual fix that tries to make a
+smooth `metal` sphere look like mirror chrome runs against that
+contract.
+
+### Five contributing factors found, in order of bite
+
+1. **WebGL2 prefilter quality is heavily downsampled.**
+   `src/render/prepare/environment_prefilter.rs::sample_count_for_roughness`
+   chooses 4/8/16 GGX importance samples for the `InteractiveWebGl2`
+   profile vs 32/96/192/384/768 for `Reference`. At metal roughness
+   0.28 (`stepped = 2`), WebGL2 runs 8 samples per direction. Eight
+   samples is not enough to resolve a 1k HDR's hot softbox on a
+   smooth-metal mip — the integral collapses to ~mean radiance.
+   Backend → profile mapping is in
+   `src/render/prepare/environment.rs:49-57`:
+   `Backend::WebGl2 => Self::InteractiveWebGl2`; everything else
+   (including `Backend::WebGpu` and the headless paths) routes to
+   `Reference`.
+
+2. **Local lavapipe and headless renders lie about the browser look.**
+   `examples/v1_4_showcase.rs::render_material_sphere` uses
+   `Renderer::headless(...)` → `Backend::Headless` → `Reference`
+   profile. The local `Renderer::headless_gpu(...)` lavapipe path also
+   resolves to `Reference`. The shipped browser demo went through
+   `Backend::WebGl2` and got the 8-sample profile. So screenshots
+   produced via the showcase example or any `headless_gpu` preview
+   tool **will show chrome character even when the production demo
+   does not**. Verify any future fix against the actual WebGL2 path
+   (real iPhone Safari, or Chrome forced to WebGL2 fallback) before
+   declaring it shipped.
+
+3. **The bundled demo HDR is the wrong Polyhaven file.**
+   `demo/samples/environment/white_studio_03_1k.hdr` (Polyhaven
+   `white_studio_03`) is *not* the file `EnvironmentPreset::Studio`
+   names (`tests/assets/environment/polyhaven/studio_small_03_1k.hdr`,
+   Polyhaven `studio_small_03`). The two are different studios.
+   ImageMagick mean/std on each (range clamped to 0..1 in 16-bit
+   sRGB):
+
+   | HDR | min | max | mean | std | std/mean |
+   | --- | --- | --- | --- | --- | --- |
+   | `white_studio_03_1k.hdr` (demo) | 0.003 | 1.000 | 0.443 | 0.258 | 0.58 |
+   | `studio_small_03_1k.hdr` (preset) | 0.000 | 1.000 | 0.183 | 0.256 | 1.40 |
+
+   The bundled demo HDR has no true blacks and ~2.4× the mean radiance;
+   relative contrast is roughly half of the polyhaven preset's. With
+   the existing prefilter on a smooth metallic sphere, the brighter
+   uniformity pre-filters to a near-flat specular cubemap. Side-by-side
+   A/B/C/D matrix (different HDR × different exposure setup) isolated
+   the HDR file as the only variable that changed the chrome ball's
+   reading. Demo loader is `src/demo_page.rs:31` (`DEMO_HDR_ENVIRONMENT`)
+   and `attach_to_canvas` at line 220.
+
+4. **WebGPU-first attach broke Windows Chrome.** Tried changing
+   `attach_to_canvas` to attempt
+   `PlatformSurface::browser_webgpu_canvas_element` first and fall back
+   to the existing WebGL2 surface. WebGPU attach succeeded on Windows
+   Chrome but the canvas rendered blank — no console errors, no
+   pageerror, status read `rendered`, the surface just produced no
+   visible pixels. iPhone Safari was unaffected (no WebGPU there).
+   This is the path forward if Codex wants Windows/Mac browsers on the
+   Reference IBL profile, but it needs a real root-cause pass on the
+   `browser_webgpu_canvas_element` surface + first-render lifecycle in
+   Chrome before reintroducing the attach.
+
+5. **`add_studio_lighting()` interferes with IBL specular on metallic
+   materials.** Three directional lights at 13.5 + 4.5 + 3.5 klx (the
+   key + fill + rim composite) flood smooth metallic surfaces with
+   diffuse white. Metal's PBR character comes almost entirely from IBL
+   specular reflection of the env. The directional flood masks the env
+   reflection until the metal sphere just reads as bright. `examples/
+   v1_4_showcase.rs::render_material_sphere` uses IBL only with a
+   manual `set_exposure_ev(0.5)` and no `add_studio_lighting`.
+
+### Knobs available if Codex wants to move the dial
+
+In rough cost order; pick the smallest one that satisfies the checklist:
+
+1. **Swap the demo HDR** — bundle `studio_small_03_1k.hdr` (the file
+   `EnvironmentPreset::Studio` already names) into the demo and point
+   `DEMO_HDR_ENVIRONMENT` at it. Update `demo/samples/SOURCES.md` and
+   the m8 test in `tests/m8_real_asset_proof.rs` that pins the old
+   demo HDR's path / SHA-256. This was tested in the reverted session
+   and visibly changed the chrome ball reading under `Reference`
+   quality. Effect under `InteractiveWebGl2` quality is less dramatic
+   (still gated by item 2).
+
+2. **Raise the WebGL2 prefilter sample count** in
+   `src/render/prepare/environment_prefilter.rs`. The 4/8/16 schedule
+   was set for first-frame budget on Khronos textured PBR samples
+   (whose surfaces have their own normal-map variation); it underserves
+   smooth metallic surfaces. Bumping to 16/48/96/128/192 still stays
+   well under the `Reference` 32/96/192/384/768 schedule and is plenty
+   for a smooth chrome ball. Adds ~500 ms to the first env upload on
+   a desktop browser; no per-frame cost. The `interactive_prefilter_
+   profile_caps_browser_runtime_work` test pins the old numbers — it
+   will need to relax to "stay below the Reference numbers" rather
+   than equal specific samples.
+
+3. **Investigate and reintroduce the WebGPU-first surface attach** in
+   `src/demo_page.rs::attach_to_canvas`. Goal: Windows / Mac / Linux
+   Chrome users get `Backend::WebGpu` → `Reference` quality. Required
+   prerequisite: trace why
+   `PlatformSurface::browser_webgpu_canvas_element` renders blank on
+   the current Chrome stable in scena 1.4.0. Likely candidates: surface
+   configure format/usage mismatch, missing pre-multiplied alpha, or
+   the WGSL pipeline not picking up the swapchain texture format. The
+   reverted attempt is in commits `f5398f1` and `218881d` for a
+   reference of where it lived.
+
+4. **Add a `MaterialDesc::chrome()` preset** with roughness ~0.04 and
+   tuned F0. Requires extending section 2.6 of this checklist with the
+   chrome row, removing `chrome` from the deferred list, AND landing
+   sharp environment reflections / SSR per the deferred-list condition.
+   Updating the `HONEST-MATERIAL-PRESETS` doctor rule + the
+   `round_b_material_presets.rs` test in lockstep. Don't try to do
+   this purely as a cosmetic patch — the rule will block the push.
+
+5. **Bundle a higher-contrast studio HDR** specifically tuned for
+   smooth-metal showcase (dark backdrop, hot point lights against
+   matte walls). Polyhaven has CC0 options. Would help the chrome
+   ball reading even under `InteractiveWebGl2` quality because the
+   prefilter's integral picks up actual blacks instead of uniform
+   mid-gray.
+
+### What was tried in the reverted session and why each failed
+
+For posterity, so the next pass does not retry these dead ends:
+
+- **Adding `PointLight::softbox` grids** to the synthetic
+  material-presets / lens-presets / auto-exposure scenes. Either
+  drowned out the IBL further (at 60k candela) or didn't show
+  distinct highlights (at 900 candela default).
+- **`MaterialDesc::metal(Color::CHARCOAL)`** for the chrome sphere.
+  Darkened the base so highlights were more visible but the user
+  rejected the dark-iron look — and rightly so per the checklist's
+  `metal(LIGHT_GRAY)` doc example.
+- **Lowering the metal sphere's roughness to 0.05 via
+  `pbr_metallic_roughness` directly.** Made no visible difference at
+  the WebGL2 prefilter quality — the source env content the prefilter
+  averaged was already smooth, so sharper sampling did not surface
+  new detail.
+- **Auto-exposure preset sweeps and manual `set_exposure_ev`** from
+  `-2.0` to `+1.0`. Exposure scales the whole image uniformly; it
+  cannot create the bright/dark contrast that makes chrome read as
+  chrome.
+- **Removing `add_studio_lighting()` entirely.** Mostly correct (the
+  Codex showcase example does the same) but does not by itself make
+  smooth metal read as chrome under the WebGL2 prefilter.
+
+### Suggested handoff checklist for Codex
+
+- [ ] Decide whether to ship aluminum honestly (label the sphere
+      "polished metal" + leave the visual as it is) or extend the
+      checklist to allow chrome.
+- [ ] If extending: pick one path from the knob list above. Run the
+      release-skill gate chain (fmt + clippy + test + doctor + cargo
+      doc) before pushing — the existing
+      `interactive_prefilter_profile_caps_browser_runtime_work` and
+      m8 test will block reworks of the prefilter schedule and HDR
+      bundle respectively until updated in lockstep.
+- [ ] Verify against a real `Backend::WebGl2` browser render (iPhone
+      Safari or desktop Chrome with WebGPU disabled) — local
+      `Renderer::headless` and `Renderer::headless_gpu` previews go
+      through `Reference` quality and will not show the bug.
