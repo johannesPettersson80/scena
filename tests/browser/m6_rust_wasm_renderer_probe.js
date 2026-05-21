@@ -499,6 +499,64 @@ function assertMaterialExtensionProof(backend, result) {
   }
 }
 
+function assertMaterialPresetProof(backend, result) {
+  const metadata = result.metadata || {};
+  const presets = new Set(metadata.preset_names || []);
+  for (const preset of [
+    "matte",
+    "plastic",
+    "metal",
+    "rough_metal",
+    "chrome",
+    "brushed_steel",
+    "clearcoat_plastic",
+    "satin",
+    "leather",
+    "clear_glass",
+    "frosted_glass",
+    "rubber",
+  ]) {
+    if (!presets.has(preset)) {
+      throw new Error(
+        `${backend} pbr-material-presets proof missed ${preset}: ${JSON.stringify(result)}`,
+      );
+    }
+  }
+  if (
+    metadata.proof_class !== "browser-pbr-material-preset-expanded-set" ||
+    metadata.glass_contract !== "blend-plus-transmission-preview-no-refraction-claim"
+  ) {
+    throw new Error(
+      `${backend} pbr-material-presets proof did not record preset contract metadata: ${JSON.stringify(result)}`,
+    );
+  }
+  if (backend === "webgl2" && metadata.webgl2_smooth_metal_sample_floor < 96) {
+    throw new Error(
+      `${backend} pbr-material-presets proof did not pin the raised smooth-metal sample floor: ${JSON.stringify(result)}`,
+    );
+  }
+  if (!result.stats || result.stats.materials < 12 || result.primitives < 12) {
+    throw new Error(
+      `${backend} pbr-material-presets proof did not prepare the expanded preset set: ${JSON.stringify(result)}`,
+    );
+  }
+  if (!result.pixels || result.pixels.nonblack <= 0) {
+    throw new Error(
+      `${backend} pbr-material-presets proof did not render visible preset output: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    typeof result.canvas_data_url !== "string" ||
+    !result.canvas_data_url.startsWith("data:image/png;base64,") ||
+    !result.screenshot_metadata ||
+    !result.screenshot_metadata.pixel_statistics
+  ) {
+    throw new Error(
+      `${backend} pbr-material-presets proof did not preserve screenshot/readback evidence: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
 function assertTexturedConnectorViewerProof(backend, result) {
   const metadata = result.metadata || {};
   if (
@@ -909,6 +967,7 @@ async function main() {
     "pbr-environment",
     "pbr-shadow-visibility",
     "pbr-material-extensions",
+    "pbr-material-presets",
     "camera-framing",
     "anchor-alignment",
     "connector-before",
@@ -1025,6 +1084,7 @@ async function main() {
         assertEnvironmentLightProof(backend, workflowResults.get("pbr-environment"));
         assertShadowVisibilityProof(backend, workflowResults.get("pbr-shadow-visibility"));
         assertMaterialExtensionProof(backend, workflowResults.get("pbr-material-extensions"));
+        assertMaterialPresetProof(backend, workflowResults.get("pbr-material-presets"));
         assertMaterialTextureProof(backend, workflowResults.get("material-textures"));
         assertSourceGltfMaterialProof(backend, workflowResults.get("source-gltf-materials"));
         assertTexturedConnectorViewerProof(

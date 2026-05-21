@@ -252,10 +252,44 @@ fn m9_capability_matrix_artifact_covers_required_lanes() {
     fs::create_dir_all(platform_dir()).expect("platform artifact dir");
     let measured_current_lane = render_default_scene_platform(32, 24);
     let measured_headless_cpu = render_default_scene_headless_cpu(32, 24);
+    let browser_results = read_browser_probe_results();
+    let wasm_size_artifact = read_wasm_size_artifact();
+    let lanes = [
+        "linux-native-vulkan",
+        "linux-webgl2-chromium",
+        "linux-webgpu-chromium",
+        "macos-metal",
+        "windows-dx12",
+        "wasm32-unknown-unknown",
+        HEADLESS_CPU_LANE,
+    ]
+    .into_iter()
+    .map(|lane| {
+        capability_matrix_row(
+            lane,
+            &measured_current_lane,
+            &measured_headless_cpu,
+            &browser_results,
+            wasm_size_artifact.as_ref(),
+        )
+    })
+    .collect::<Vec<_>>();
+    let status = if lanes.iter().all(|entry| entry["status"] == "measured") {
+        "passed"
+    } else {
+        // The local artifact must still write `"status": "incomplete"` when
+        // required host lanes are missing; doctor pins this fail-closed contract.
+        "incomplete"
+    };
+    let status_reason = if status == "passed" {
+        "current runner records measured artifacts from every required release lane"
+    } else {
+        "current runner records measured local/browser lanes; final release still requires measured artifacts from missing host lanes"
+    };
     let matrix = serde_json::json!({
         "schema": "scena.capabilities.v1",
-        "status": "incomplete",
-        "status_reason": "current runner records a measured lane row; public release requires measured adapter artifacts from every required lane",
+        "status": status,
+        "status_reason": status_reason,
         "commit": current_commit_label(),
         "commit_sha": current_commit_label(),
         "timestamp_unix_seconds": current_timestamp_unix_seconds(),
@@ -265,15 +299,7 @@ fn m9_capability_matrix_artifact_covers_required_lanes() {
         "artifact_paths": [
             path_string(&platform_dir().join("m9-capability-matrix.json"))
         ],
-        "lanes": [
-            capability_matrix_row("linux-native-vulkan", &measured_current_lane, &measured_headless_cpu),
-            capability_matrix_row("linux-webgl2-chromium", &measured_current_lane, &measured_headless_cpu),
-            capability_matrix_row("linux-webgpu-chromium", &measured_current_lane, &measured_headless_cpu),
-            capability_matrix_row("macos-metal", &measured_current_lane, &measured_headless_cpu),
-            capability_matrix_row("windows-dx12", &measured_current_lane, &measured_headless_cpu),
-            capability_matrix_row("wasm32-unknown-unknown", &measured_current_lane, &measured_headless_cpu),
-            capability_matrix_row(HEADLESS_CPU_LANE, &measured_current_lane, &measured_headless_cpu),
-        ],
+        "lanes": lanes,
     });
     let lanes = matrix["lanes"].as_array().expect("lanes array");
     for lane in [
@@ -306,6 +332,27 @@ fn m9_capability_matrix_artifact_covers_required_lanes() {
         current_row.get("adapter").is_some(),
         "measured lane rows must include adapter metadata, even when no adapter is available"
     );
+    if !browser_results.is_empty() {
+        for lane in ["linux-webgl2-chromium", "linux-webgpu-chromium"] {
+            let row = lanes
+                .iter()
+                .find(|entry| entry["lane"] == lane)
+                .expect("browser lane row exists");
+            assert_eq!(
+                row["status"], "measured",
+                "browser proof artifact must be folded into the M9 matrix for {lane}"
+            );
+            assert_eq!(row["measurement_source"], "browser-probe-runtime");
+        }
+    }
+    if wasm_size_artifact.is_some() {
+        let row = lanes
+            .iter()
+            .find(|entry| entry["lane"] == "wasm32-unknown-unknown")
+            .expect("wasm lane row exists");
+        assert_eq!(row["status"], "measured");
+        assert_eq!(row["measurement_source"], "wasm-size-gate-runtime");
+    }
     write_json(&platform_dir().join("m9-capability-matrix.json"), &matrix);
 }
 
@@ -1370,14 +1417,140 @@ fn capability_matrix_row(
     lane: &str,
     measured_current_lane: &RenderedArtifact,
     measured_headless_cpu: &RenderedArtifact,
+    browser_results: &[serde_json::Value],
+    wasm_size_artifact: Option<&serde_json::Value>,
 ) -> serde_json::Value {
     if lane == current_lane() {
         lane_capability_from_artifact(lane, measured_current_lane)
     } else if lane == HEADLESS_CPU_LANE {
         lane_capability_from_artifact(lane, measured_headless_cpu)
+    } else if lane == "linux-webgl2-chromium" {
+        browser_capability_from_probe(lane, "WebGl2", browser_results)
+            .unwrap_or_else(|| missing_lane_capability(lane))
+    } else if lane == "linux-webgpu-chromium" {
+        browser_capability_from_probe(lane, "WebGpu", browser_results)
+            .unwrap_or_else(|| missing_lane_capability(lane))
+    } else if lane == "wasm32-unknown-unknown" {
+        wasm_capability_from_artifact(lane, wasm_size_artifact)
+            .unwrap_or_else(|| missing_lane_capability(lane))
     } else {
         missing_lane_capability(lane)
     }
+}
+
+fn read_browser_probe_results() -> Vec<serde_json::Value> {
+    let path = root().join("target/gate-artifacts/m6-rust-wasm-renderer-probe.json");
+    if !path.is_file() {
+        return Vec::new();
+    }
+    let text = fs::read_to_string(&path).expect("m6 browser probe JSON reads");
+    let value: serde_json::Value =
+        serde_json::from_str(&text).expect("m6 browser probe JSON parses");
+    value
+        .get("results")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn read_wasm_size_artifact() -> Option<serde_json::Value> {
+    let path = root().join("target/gate-artifacts/m9-wasm-size.json");
+    if !path.is_file() {
+        return None;
+    }
+    let text = fs::read_to_string(&path).expect("m9 wasm-size JSON reads");
+    Some(serde_json::from_str(&text).expect("m9 wasm-size JSON parses"))
+}
+
+fn browser_capability_from_probe(
+    lane: &str,
+    backend: &str,
+    results: &[serde_json::Value],
+) -> Option<serde_json::Value> {
+    let result = results.iter().find(|result| {
+        result
+            .get("backend")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|value| value.eq_ignore_ascii_case(backend))
+            && result.get("status").and_then(serde_json::Value::as_str) == Some("passed")
+            && browser_nonblack_pixels(result) > 0
+    })?;
+    Some(serde_json::json!({
+        "lane": lane,
+        "status": "measured",
+        "measurement_source": "browser-probe-runtime",
+        "commit": current_commit_label(),
+        "commit_sha": current_commit_label(),
+        "timestamp_unix_seconds": current_timestamp_unix_seconds(),
+        "backend": result.get("backend").cloned().unwrap_or(serde_json::Value::Null),
+        "adapter": {
+            "available": result
+                .get("gpu_device")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            "runtime": "browser-canvas",
+        },
+        "host_gpu_available": result
+            .get("gpu_device")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+        "host_gpu_error": serde_json::Value::Null,
+        "capabilities": result
+            .get("capabilities")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+        "diagnostics": result
+            .get("diagnostics")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!([])),
+        "workflow": result.get("workflow").cloned().unwrap_or(serde_json::Value::Null),
+        "surface_attached": result
+            .get("surface_attached")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+        "pixel_statistics": browser_pixel_statistics(result)
+            .unwrap_or(serde_json::Value::Null),
+        "canvas_output_color_space": result
+            .get("canvas_output_color_space")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+    }))
+}
+
+fn browser_nonblack_pixels(result: &serde_json::Value) -> u64 {
+    browser_pixel_statistics(result)
+        .and_then(|pixels| pixels.get("nonblack").cloned())
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0)
+}
+
+fn browser_pixel_statistics(result: &serde_json::Value) -> Option<serde_json::Value> {
+    result
+        .get("renderer_readback")
+        .and_then(|readback| readback.get("pixel_statistics"))
+        .cloned()
+        .or_else(|| result.get("pixels").cloned())
+}
+
+fn wasm_capability_from_artifact(
+    lane: &str,
+    artifact: Option<&serde_json::Value>,
+) -> Option<serde_json::Value> {
+    let artifact = artifact?;
+    (artifact.get("status").and_then(serde_json::Value::as_str) == Some("passed")).then(|| {
+        serde_json::json!({
+            "lane": lane,
+            "status": "measured",
+            "measurement_source": "wasm-size-gate-runtime",
+            "commit": current_commit_label(),
+            "commit_sha": current_commit_label(),
+            "timestamp_unix_seconds": current_timestamp_unix_seconds(),
+            "capabilities": {
+                "wasm_bundle": artifact,
+            },
+            "diagnostics": [],
+        })
+    })
 }
 
 fn lane_capability_from_artifact(lane: &str, artifact: &RenderedArtifact) -> serde_json::Value {

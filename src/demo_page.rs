@@ -18,6 +18,7 @@ mod bounds;
 mod connectors;
 mod floor;
 mod imports;
+mod material_presets;
 mod replay;
 
 use bounds::{combined_import_bounds, union_optional_bounds};

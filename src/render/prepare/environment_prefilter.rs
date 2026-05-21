@@ -323,9 +323,11 @@ fn sample_count_for_roughness(roughness: f32, quality: EnvironmentPrefilterQuali
             _ => 768,
         },
         EnvironmentPrefilterQuality::InteractiveWebGl2 => match stepped {
-            0 => 4,
-            1 | 2 => 8,
-            _ => 16,
+            0 => 16,
+            1 => 48,
+            2 => 96,
+            3 | 4 => 128,
+            _ => 192,
         },
     }
 }
@@ -500,9 +502,19 @@ mod tests {
             "reference quality keeps the existing rough-environment sample count"
         );
         assert_eq!(
+            sample_count_for_roughness(0.28, EnvironmentPrefilterQuality::InteractiveWebGl2),
+            96,
+            "WebGL2 smooth-metal prefiltering must sample enough directions for chrome/brushed-metal presets"
+        );
+        assert_eq!(
             sample_count_for_roughness(1.0, EnvironmentPrefilterQuality::InteractiveWebGl2),
-            16,
-            "WebGL2 first-frame prefiltering must not run the reference offline sample count"
+            192,
+            "WebGL2 rough-environment prefiltering stays below reference quality while no longer using the old 16-sample cap"
+        );
+        assert!(
+            sample_count_for_roughness(1.0, EnvironmentPrefilterQuality::InteractiveWebGl2)
+                < sample_count_for_roughness(1.0, EnvironmentPrefilterQuality::Reference),
+            "interactive WebGL2 profile remains bounded below the reference offline sample count"
         );
         assert_eq!(
             build_brdf_lut_with_sample_count(4, 64).len(),

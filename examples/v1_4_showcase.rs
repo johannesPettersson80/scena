@@ -391,8 +391,8 @@ fn render_with_point(
 }
 
 // ===========================================================================
-// §2.6 MaterialDesc presets — matte / plastic / metal / rubber spheres
-// against the Studio HDR so reflections / specular response are visible.
+// §2.6 MaterialDesc presets — expanded PBR preset set against the Studio
+// HDR so reflections / specular response are visible.
 // ===========================================================================
 
 fn render_material_presets(out: &Path) -> Result<(), Box<dyn Error>> {
@@ -400,15 +400,37 @@ fn render_material_presets(out: &Path) -> Result<(), Box<dyn Error>> {
         MaterialDesc::matte(Color::BLUE),
         MaterialDesc::plastic(Color::BLUE),
         MaterialDesc::metal(Color::LIGHT_GRAY),
+        MaterialDesc::rough_metal(Color::LIGHT_GRAY),
+        MaterialDesc::chrome(),
+        MaterialDesc::brushed_steel(),
+        MaterialDesc::clearcoat_plastic(Color::BLUE),
+        MaterialDesc::satin(Color::MAGENTA),
+        MaterialDesc::leather(Color::ORANGE),
+        MaterialDesc::clear_glass(Color::CYAN),
+        MaterialDesc::frosted_glass(Color::COOL_WHITE),
         MaterialDesc::rubber(),
     ];
-    let composite = compose_horizontal(materials.len() as u32, PANEL_W, PANEL_H, |i| {
-        render_material_sphere(materials[i].clone(), PANEL_W, PANEL_H)
-    })?;
+    let columns = 4_u32;
+    let rows = materials.len().div_ceil(columns as usize) as u32;
+    let mut composite = dark_studio_canvas(PANEL_W * columns, PANEL_H * rows);
+    for (i, material) in materials.into_iter().enumerate() {
+        let tile = render_material_sphere(material, PANEL_W, PANEL_H)?;
+        let col = i as u32 % columns;
+        let row = i as u32 / columns;
+        composite_blit(
+            &mut composite,
+            PANEL_W * columns,
+            &tile,
+            PANEL_W,
+            PANEL_H,
+            col * PANEL_W,
+            row * PANEL_H,
+        );
+    }
     write_png(
         &composite,
-        PANEL_W * materials.len() as u32,
-        PANEL_H,
+        PANEL_W * columns,
+        PANEL_H * rows,
         &out.join("material-presets.png"),
     )?;
     Ok(())
@@ -420,7 +442,7 @@ fn render_material_sphere(
     height: u32,
 ) -> Result<Vec<u8>, Box<dyn Error>> {
     let assets = Assets::new();
-    let sphere = assets.create_geometry(GeometryDesc::sphere(0.5, 128, 96));
+    let sphere = assets.create_geometry(GeometryDesc::sphere(0.38, 128, 96));
     let material = assets.create_material(material);
     let environment =
         pollster::block_on(assets.load_environment_preset(EnvironmentPreset::Studio))?;

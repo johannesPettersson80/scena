@@ -60,8 +60,11 @@ closes the spec. Items can combine classes with `+`.
   material extensions) need ON/OFF or before/after pairs, not a single
   image.
 - **browser-demo** — live page on the Cloudflare demo or equivalent
-  that runs the code and shows the result. Used for integration, mobile
-  layout, controls, and WASM/WebGPU/WebGL behavior.
+  that runs the code and shows the result. This must be an actual
+  browser render using the host device GPU/backend (`Backend::WebGl2`
+  or `Backend::WebGpu`) through the demo page or browser probe; it must
+  not be a static screenshot pasted into the page. Used for integration,
+  mobile layout, controls, and WASM/WebGPU/WebGL behavior.
 - **animated-proof** — GIF / video / browser recording for motion or
   interaction: damping, hot reload, drag/drop, auto-rotate, picking,
   variant switching.
@@ -76,6 +79,14 @@ items need their own structured proof first, then rendered proof only
 where the render is part of the contract. A unit test alone is not enough
 for visual items — the v1.3.0 demo proved that code can compile, APIs can
 work, and the rendered result can still be wrong.
+
+For visual features that appear in public documentation, three proof
+surfaces are required before the item is fully closed:
+
+1. **reference-image** gate artifact for deterministic regression.
+2. **browser-demo** proof rendered live by the host browser/GPU.
+3. **public docs/demo media** embedded in the demo page, README, or guide,
+   regenerated from the checked harness after the implementation changes.
 
 ---
 
@@ -402,32 +413,50 @@ PointLight::bulb_warm()      // 2700K
 PointLight::bulb_cool()      // 5600K
 ```
 
-### 2.6 `MaterialDesc` PBR presets — honest set only
+### 2.6 `MaterialDesc` PBR presets — honest expanded set
 
 Status: **[shipped]** — implemented on branch
-`easy-use-state-art/round-b`.
+`easy-use-state-art/round-b`; 2026-05-21 follow-up expands the set
+behind WebGL2 IBL-quality and material-extension proof.
 Owner: `src/material/presets.rs` extending `MaterialDesc`
 Proof: `tests/round_b_material_presets.rs` asserts each preset's
-PBR material kind, base color, metallic factor, and roughness factor;
-rustdoc examples cover all four constructors; doctor rule
-`HONEST-MATERIAL-PRESETS` keeps overpromising glass/chrome/leather names
-out until the renderer can back them.
+PBR material kind, base color, metallic factor, roughness factor, and
+extension-specific lanes; rustdoc examples cover the preset
+constructors; doctor rule
+`HONEST-MATERIAL-PRESETS` keeps preset names, tests, checklist text, and
+visual proof aligned.
 Visual proof: reference-image + docs-image
 `target/gate-artifacts/examples-visual/round-b-material-preset-reference-docs-image.ppm`
-renders the four presets side-by-side on the same subject.
+renders the presets side-by-side on the same subject; M6 browser proof
+adds a WebGL2/WebGPU material-preset workflow so the browser path cannot
+fall behind the docs image.
 
 ```rust
 MaterialDesc::matte(Color)
 MaterialDesc::plastic(Color)
 MaterialDesc::metal(Color)
+MaterialDesc::rough_metal(Color)
+MaterialDesc::chrome()
+MaterialDesc::brushed_steel()
+MaterialDesc::clearcoat_plastic(Color)
+MaterialDesc::satin(Color)
+MaterialDesc::leather(Color)
+MaterialDesc::clear_glass(Color)
+MaterialDesc::frosted_glass(Color)
 MaterialDesc::rubber()
 ```
 
-**Deferred until the renderer can back the visual claim**:
-`brushed_steel`, `chrome` (need sharp environment reflections + SSR for
-floor reflection), `clear_glass` / `frosted_glass` (need transmission +
-IOR + OIT), `leather` (needs sheen). These names overpromise without
-the underlying material features in §3.1.
+Preset contract:
+
+- `chrome()` and `brushed_steel()` are backed by metallic roughness,
+  anisotropy where appropriate, and the raised WebGL2 environment
+  prefilter sample floor. They do not claim SSR floor reflections.
+- `clear_glass(Color)` and `frosted_glass(Color)` are transparent
+  transmission/IOR/volume presets with blend-mode browser previews. They
+  do not claim full refractive caustics or physical WebGPU/WebGL2 glass
+  parity.
+- `leather(Color)` is a smooth leather-like sheen preset, not a
+  procedural grain or normal-map material.
 
 ### 2.7 `Background` named scheme
 
@@ -645,6 +674,15 @@ the rendered result is part of the contract.
   `target/gate-artifacts/m8-visual/m8-transmission-volume-material-feature.ppm`;
   physical GPU/WebGPU/WebGL2 transmission/volume glass parity remains a
   future backend lane.
+- **WebGL2 IBL prefilter quality for smooth metals.** Status:
+  **[shipped]** for the raised interactive sample schedule used by
+  chrome/brushed-metal presets. `InteractiveWebGl2` keeps a bounded
+  first-frame budget but no longer uses the old 4/8/16 sample table that
+  flattened smooth-metal reflections toward mean radiance.
+  Proof: `interactive_prefilter_profile_caps_browser_runtime_work`
+  pins the WebGL2 sample floor below the Reference profile but high
+  enough for roughness-0.28 metal, and M6 material-preset browser proof
+  renders the expanded preset set through WebGL2/WebGPU.
 - **Clustered / tiled light culling.** Status: **[deferred]**. Not a
   v1.4 critical-path item; keep it as future GPU/backend scale work.
   Babylon 9 made this baseline.
@@ -720,7 +758,8 @@ specifically, add **animated-proof** of the clip playing back.
   `pause`, `stop`, `seek`, `set_speed`, `set_loop_mode`,
   `update_animation`, and `Scene::play_animation_by_name`, which creates
   the mixer, starts it, and returns the typed mixer handle. Viewer sugar
-  remains deferred until a concrete viewer workflow needs it. Proof:
+  is also shipped through `HeadlessGltfViewer::play_clip(...)` and
+  `InteractiveGltfViewer::play_clip(...)`. Proof:
   `tests/round_c_animation_playback.rs` proves the named helper starts a
   mixer and moves an imported animated node, while
   `round_c_animation_playback_reference_animated_docs_image` renders a
@@ -760,9 +799,20 @@ produces a stored PNG with a CI diff threshold.
 - meshopt-compressed asset rendered-output regression test — **[shipped]**
   locally through `tests/m8_compressed_asset_release_proof.rs` with
   `--features production-assets`.
-- Transmission + IBL combo capability evidence on the headless GPU lane.
+- Transmission + IBL combo capability evidence on the headless GPU lane —
+  **[proof-gap]**. CPU/reference transmission + IBL proof exists, and
+  browser preset proof records blend-mode glass previews with IBL. A
+  dedicated headless-GPU gate now exists at
+  `m8_headless_gpu_transmission_volume_ibl_capability_when_available`;
+  the current local artifact is fail-closed until an approved GPU lane
+  runs it with `SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1`.
 - Per-backend capability matrix evidence (Vulkan / Metal / DX12 / WebGPU
-  / WebGL2 fallback).
+  / WebGL2 fallback) — **[proof-gap]** for non-Linux host lanes only.
+  The local `m9-capability-matrix.json` now folds the M6 browser proof
+  into measured WebGL2/WebGPU rows and folds the wasm-size gate into the
+  wasm lane when those artifacts exist; it still reports
+  `status: incomplete` until macOS Metal and Windows DX12 hosts upload
+  measured lane artifacts.
 
 ---
 
@@ -1230,7 +1280,7 @@ the rounds, not after — they're the strategic arc.
 ### Round B — easy by name, continued
 
 4. - [x] Light presets (§2.5)
-5. - [x] `MaterialDesc` honest PBR presets (§2.6 — matte/plastic/metal/rubber only)
+5. - [x] `MaterialDesc` honest PBR presets (§2.6 — expanded set with WebGL2 IBL proof)
 6. - [x] `Background` enum (§2.7)
 7. - [x] `OrbitControls` named damping presets (§2.8)
 
@@ -1258,6 +1308,78 @@ the rounds, not after — they're the strategic arc.
 - **Bet 1.3** — production-grade asset pipeline (medium; mostly proof +
   production-profile/default policy)
 - **Bet 1.4** — doctor → per-asset validation (medium)
+
+### Prioritized remaining work after the material/WebGL2 pass
+
+Execute these in order. Items at the top close user-visible proof gaps or
+release-evidence gaps; larger renderer research lanes follow.
+
+1. - [x] **Public demo material proof**. The demo page renders the
+       expanded material-preset scene live in the browser using the host
+       device GPU/backend, not a static screenshot. Proof:
+       `demo/?sample=material-presets` calls the Rust
+       `load_material_presets_scene(...)` path and attaches it to the
+       browser canvas; browser screenshot artifact:
+       `target/gate-artifacts/demo-material-presets-browser.png`;
+       regenerated public showcase media:
+       `docs/assets/v1.4-showcase/material-presets.jpg`. The image shows
+       all current presets (`matte`, `plastic`, `metal`, `rough_metal`,
+       `chrome`, `brushed_steel`, `clearcoat_plastic`, `satin`,
+       `leather`, `clear_glass`, `frosted_glass`, `rubber`).
+2. - [x] **M9 browser/capability matrix reconciliation**. The local
+       `m9_capability_matrix_artifact_covers_required_lanes` writer now
+       folds `target/gate-artifacts/m6-rust-wasm-renderer-probe.json`
+       into measured `linux-webgl2-chromium` and
+       `linux-webgpu-chromium` rows when browser proof exists, and folds
+       `target/gate-artifacts/m9-wasm-size.json` into the wasm lane when
+       present. Current proof:
+       `target/gate-artifacts/m9-platform/m9-capability-matrix.json`
+       reports WebGL2/WebGPU as `measurement_source:
+       browser-probe-runtime`; macOS Metal and Windows DX12 remain
+       explicit `missing-lane-artifact` rows until those hosts produce
+       artifacts.
+3. - [ ] **Transmission + IBL headless GPU capability evidence** —
+       **[proof-gap]**. Gate added:
+       `m8_headless_gpu_transmission_volume_ibl_capability_when_available`
+       records a dedicated headless-GPU transmission/volume-under-IBL
+       assertion and writes
+       `target/gate-artifacts/gpu-release-gaps/m8_headless_gpu_transmission_volume_ibl_capability_when_available.json`
+       as fail-closed by default. This remains open until an approved
+       GPU lane runs the gate with
+       `SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS=1` and produces a
+       `release_evidence: true` artifact.
+4. - [ ] **Compressed asset native-GPU/browser release proof** —
+       **[proof-gap]**. KTX2/Basis and meshopt are shipped for the
+       optional `production-assets` profile with local CPU rendered proof,
+       but native GPU upload and browser release lanes remain open.
+5. - [ ] **GPU/WebGPU/WebGL2 SSAO and OIT parity** — **[deferred]**.
+       CPU/headless baselines are shipped; backend parity needs separate
+       render passes, capability reporting, and browser visual proof.
+6. - [ ] **Physical GPU/WebGPU/WebGL2 transmission/volume glass parity** —
+       **[deferred]**. Current glass presets are blend/transmission
+       previews with honest no-refraction/no-caustics wording. Full
+       physical glass needs backend shading/proof work.
+7. - [ ] **KTX2 cubemap environment presets/grid** — **[deferred]**.
+       Existing environment presets use checked HDR/fixture paths; KTX2
+       cubemap presets need a real decode/upload/prefilter path plus a
+       browser/demo grid.
+8. - [ ] **MSAA/TAA beyond current FXAA** — **[deferred]**. FXAA is the
+       shipped default. MSAA/TAA are future quality lanes with ON/OFF
+       proof requirements.
+9. - [ ] **Area lights with LTC** — **[deferred]**. Requires lighting
+       model, LUT/shader work, and before/after visual proof for
+       rect/disc/sphere lights.
+10. - [ ] **Clustered/tiled light culling** — **[deferred]**. Useful for
+       many-light scaling, but it is GPU architecture/performance work
+       rather than a blocking user-proof gap.
+11. - [ ] **Screen-space reflections** — **[deferred]**. Needs a robust
+       depth/normal-backed backend pass and reflective-floor ON/OFF proof;
+       keep it behind stronger browser proof because SSR can fail
+       visually while passing compile/unit checks.
+12. - [ ] **Draco mesh compression** — **[deferred]**. Meshopt is the
+       v1.4 compression path. Revisit Draco only behind an optional
+       feature when a maintained decoder path and package-size/build-time
+       evidence are proven.
 
 ---
 
@@ -1321,15 +1443,16 @@ Items reframed from "missing" to "implemented but [ergonomic|proof]-gap":
   Initially reframed as an ergonomic gap; the later asset-validation and
   fix-hint passes close the user-facing `fix`/validator combination.
 
-Items trimmed for honesty:
+Items originally trimmed for honesty, then reopened once the backing
+lanes landed:
 
 - **Material presets**: `clear_glass`, `frosted_glass`, `chrome`,
-  `brushed_steel`, `leather` remain deferred until the remaining material
-  feature lanes land: approved backend clearcoat/sheen/anisotropy/iridescence/
-  dispersion proof, physical backend transmission/volume glass parity, OIT,
-  and SSR.
-  Clearcoat texture support alone is not
-  enough to make those preset names honest.
+  `brushed_steel`, and `leather` were deferred until the material
+  feature lanes could back the names. The 2026-05-21 follow-up reopens
+  them with an explicit narrowed contract: chrome/brushed steel rely on
+  raised WebGL2 IBL quality and do not claim SSR floor reflections;
+  glass presets are blend/transmission previews and do not claim full
+  physical refraction.
 
 Item reworded:
 
@@ -2238,16 +2361,21 @@ For posterity, so the next pass does not retry these dead ends:
 
 ### Suggested handoff checklist for Codex
 
-- [ ] Decide whether to ship aluminum honestly (label the sphere
+- [x] Decide whether to ship aluminum honestly (label the sphere
       "polished metal" + leave the visual as it is) or extend the
-      checklist to allow chrome.
-- [ ] If extending: pick one path from the knob list above. Run the
+      checklist to allow chrome. Decision: extend the checklist with a
+      bounded chrome/brushed-metal contract and raised WebGL2 IBL
+      sample floor.
+- [x] If extending: pick one path from the knob list above. Run the
       release-skill gate chain (fmt + clippy + test + doctor + cargo
       doc) before pushing — the existing
       `interactive_prefilter_profile_caps_browser_runtime_work` and
       m8 test will block reworks of the prefilter schedule and HDR
       bundle respectively until updated in lockstep.
-- [ ] Verify against a real `Backend::WebGl2` browser render (iPhone
-      Safari or desktop Chrome with WebGPU disabled) — local
-      `Renderer::headless` and `Renderer::headless_gpu` previews go
-      through `Reference` quality and will not show the bug.
+- [x] Verify against a real `Backend::WebGl2` browser render (iPhone
+      Safari or desktop Chrome with WebGPU disabled). Proof:
+      `wasm-pack build --dev --target web --out-dir target/m6-browser-pkg
+      . --features browser-probe` and
+      `node tests/browser/m6_rust_wasm_renderer_probe.js` passed with the
+      `pbr-material-presets` workflow and
+      `browser-pbr-material-preset-expanded-set` metadata.

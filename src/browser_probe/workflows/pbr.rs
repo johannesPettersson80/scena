@@ -10,6 +10,9 @@ use crate::{
     MaterialDesc, PointLight, Scene, SpotLight, Transform, Vec3,
 };
 
+mod material_presets;
+pub(super) use material_presets::material_presets_scene;
+
 pub(super) fn point_light_scene() -> Result<WorkflowScene, JsValue> {
     let assets = Assets::new();
     let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.65, 0.65, 0.05));

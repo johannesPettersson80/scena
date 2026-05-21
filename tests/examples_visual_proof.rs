@@ -22,10 +22,11 @@ use std::{cell::RefCell, rc::Rc};
 use scena::{
     Aabb, AnimationPlaybackState, Assets, AutoExposureConfig, Background, Color, ConnectOptions,
     ConnectionAlignment, ConnectionError, ConnectorFrame, CursorPosition, DirectionalLight,
-    GeometryDesc, InteractionStyle, InteractiveGltfViewer, LabelDesc, MaterialDesc,
-    OrbitControlAction, OrbitControls, PerspectiveCamera, PlatformSurface, PointLight,
-    PointerEvent, Profile, Renderer, RendererOptions, Scene, SourceCoordinateSystem, SourceUnits,
-    TouchEvent, Transform, Vec3, Viewport, headless_gltf_viewer, interactive_gltf_viewer,
+    EnvironmentPreset, GeometryDesc, InteractionStyle, InteractiveGltfViewer, LabelDesc,
+    MaterialDesc, OrbitControlAction, OrbitControls, PerspectiveCamera, PlatformSurface,
+    PointLight, PointerEvent, Profile, Renderer, RendererOptions, Scene, SourceCoordinateSystem,
+    SourceUnits, TouchEvent, Transform, Vec3, Viewport, headless_gltf_viewer,
+    interactive_gltf_viewer,
 };
 
 const ARTIFACT_WIDTH: u32 = 256;
@@ -626,6 +627,34 @@ fn round_b_material_preset_reference_docs_image() {
             tile_width,
             tile_height,
         ),
+        render_material_preset_tile(
+            MaterialDesc::rough_metal(Color::LIGHT_GRAY),
+            tile_width,
+            tile_height,
+        ),
+        render_material_preset_tile(MaterialDesc::chrome(), tile_width, tile_height),
+        render_material_preset_tile(MaterialDesc::brushed_steel(), tile_width, tile_height),
+        render_material_preset_tile(
+            MaterialDesc::clearcoat_plastic(Color::BLUE),
+            tile_width,
+            tile_height,
+        ),
+        render_material_preset_tile(MaterialDesc::satin(Color::MAGENTA), tile_width, tile_height),
+        render_material_preset_tile(
+            MaterialDesc::leather(Color::ORANGE),
+            tile_width,
+            tile_height,
+        ),
+        render_material_preset_tile(
+            MaterialDesc::clear_glass(Color::CYAN),
+            tile_width,
+            tile_height,
+        ),
+        render_material_preset_tile(
+            MaterialDesc::frosted_glass(Color::COOL_WHITE),
+            tile_width,
+            tile_height,
+        ),
         render_material_preset_tile(MaterialDesc::rubber(), tile_width, tile_height),
     ];
     let width = tile_width * tiles.len() as u32;
@@ -657,6 +686,8 @@ fn render_material_preset_tile(material: MaterialDesc, width: u32, height: u32) 
     let assets = Assets::new();
     let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 0.35));
     let material = assets.create_material(material);
+    let environment = pollster::block_on(assets.load_environment_preset(EnvironmentPreset::Studio))
+        .expect("studio environment loads for material preset docs image");
 
     let mut scene = Scene::new();
     scene
@@ -677,6 +708,7 @@ fn render_material_preset_tile(material: MaterialDesc, width: u32, height: u32) 
     scene.set_active_camera(camera).expect("active camera sets");
 
     let mut renderer = Renderer::headless(width, height).expect("headless renderer builds");
+    renderer.set_environment(environment);
     renderer
         .prepare_with_assets(&mut scene, &assets)
         .expect("material preset docs-image scene prepares");

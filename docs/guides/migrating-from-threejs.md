@@ -132,10 +132,12 @@ renderer.set_auto_exposure(AutoExposureConfig::product_studio());
 
 The named primitives are paired with [`Color::WHITE`], [`Color::CHARCOAL`],
 [`Color::from_kelvin`], [`Color::from_hex`], `MaterialDesc::matte`,
-`MaterialDesc::plastic`, `MaterialDesc::metal`, `MaterialDesc::rubber`,
-`Background::Studio` / `DarkStudio` / `NeutralGray` / `Sky` /
-`Transparent`, and `AutoExposureConfig::product_studio` / `indoor` /
-`outdoor` / `mixed`. Raw constructors (`Color::from_srgb_u8`, raw FOV,
+`MaterialDesc::plastic`, `MaterialDesc::metal`, `rough_metal`, `chrome`,
+`brushed_steel`, `clearcoat_plastic`, `satin`, `leather`, `clear_glass`,
+`frosted_glass`, `MaterialDesc::rubber`, `Background::Studio` /
+`DarkStudio` / `NeutralGray` / `Sky` / `Transparent`, and
+`AutoExposureConfig::product_studio` / `indoor` / `outdoor` / `mixed`.
+Raw constructors (`Color::from_srgb_u8`, raw FOV,
 `with_damping(<f32>)`) remain available as escape hatches; the named
 primitives are the first-path defaults.
 

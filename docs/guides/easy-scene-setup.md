@@ -105,15 +105,18 @@ metallic/roughness numbers:
 ```rust
 let body = assets.create_material(MaterialDesc::plastic(Color::BLUE));
 let shaft = assets.create_material(MaterialDesc::metal(Color::LIGHT_GRAY));
+let cover = assets.create_material(MaterialDesc::clearcoat_plastic(Color::BLUE));
+let glass = assets.create_material(MaterialDesc::clear_glass(Color::CYAN));
 let foot = assets.create_material(MaterialDesc::rubber());
 ```
 
-![Sphere rendered four times: matte, plastic, metal, rubber](../assets/v1.4-showcase/material-presets.jpg)
+![Material presets rendered side-by-side](../assets/v1.4-showcase/material-presets.jpg)
 
-`matte` / `plastic` / `metal` / `rubber` are the four PBR presets that the
-renderer can back today. `metal` shows the studio HDR reflected as visible
-specular streaks; `rubber` is dark and so rough the environment barely
-registers; `plastic` is in between; `matte` has no specular at all.
+The first-path presets now cover matte, plastic, polished and rough metal,
+chrome, brushed steel, clearcoat plastic, satin, smooth leather-like sheen,
+transparent/frosted glass previews, and rubber. `clear_glass` and
+`frosted_glass` are blend-mode transmission/IOR/volume presets for browser
+preview; they do not claim full physical refraction or caustics.
 
 For colours, name the constant the design calls for instead of writing
 RGB literals — `Color::CHARCOAL`, `Color::WARM_WHITE`, `Color::ORANGE`,
@@ -578,28 +581,18 @@ iridescence, dispersion, transmission, IOR, and volume / attenuation,
 plus the matching texture slots:
 
 ```rust
-let lacquer = MaterialDesc::plastic(Color::CHARCOAL)
-    .with_clearcoat_factor(1.0)
-    .with_clearcoat_roughness_factor(0.06);
+let lacquer = MaterialDesc::clearcoat_plastic(Color::CHARCOAL);
 
-let fabric = MaterialDesc::matte(Color::DARK_GRAY)
-    .with_sheen_color_factor(Color::WARM_WHITE)
-    .with_sheen_roughness_factor(0.35);
+let fabric = MaterialDesc::satin(Color::DARK_GRAY);
 
-let brushed = MaterialDesc::metal(Color::LIGHT_GRAY)
-    .with_anisotropy_strength_factor(0.9)
-    .with_anisotropy_rotation_radians(0.7);
+let brushed = MaterialDesc::brushed_steel();
 
 let film = MaterialDesc::plastic(Color::COOL_WHITE)
     .with_iridescence_factor(1.0)
     .with_iridescence_ior(1.34)
     .with_iridescence_thickness_range_nm(220.0, 720.0);
 
-let glass = MaterialDesc::plastic(Color::COOL_WHITE)
-    .with_transmission_factor(0.9)
-    .with_ior(1.5)
-    .with_attenuation_distance(0.6)
-    .with_attenuation_color(Color::CYAN);
+let glass = MaterialDesc::frosted_glass(Color::COOL_WHITE);
 ```
 
 Visible before/after rendering for these lobes requires the WebGPU or

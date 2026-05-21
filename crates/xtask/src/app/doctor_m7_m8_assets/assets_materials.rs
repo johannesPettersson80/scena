@@ -183,6 +183,7 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "m8_headless_gpu_point_light_uniform_tints_pbr_output_when_available",
             "m8_headless_gpu_spot_light_uniform_tints_pbr_output_when_available",
             "m8_headless_gpu_tangent_space_normal_map_changes_pbr_lighting_when_available",
+            "m8_headless_gpu_transmission_volume_ibl_capability_when_available",
             "m8_transmission_ior_volume_material_factors_are_parsed_from_gltf",
             "m8_transmission_volume_textures_affect_cpu_preview_pixels",
             "transmission_texture",

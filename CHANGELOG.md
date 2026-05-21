@@ -2,6 +2,23 @@
 
 All notable user-facing changes are recorded here.
 
+## [Unreleased]
+
+### Added
+
+- Expanded the honest `MaterialDesc` preset set with `rough_metal`,
+  `chrome`, `brushed_steel`, `clearcoat_plastic`, `satin`, `leather`,
+  `clear_glass`, and `frosted_glass`, with docs, unit tests, generated
+  visual proof, browser proof metadata, and doctor coverage. Glass presets
+  are documented as blend/transmission previews rather than full refraction
+  claims.
+
+### Changed
+
+- Raised the interactive WebGL2 environment-prefilter sample schedule so
+  smooth-metal presets such as `chrome` and `brushed_steel` no longer use
+  the old 4/8/16 sample cap that flattened reflections toward mean radiance.
+
 ## [1.4.0] - 2026-05-20
 
 ### Added

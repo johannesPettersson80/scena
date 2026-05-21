@@ -76,6 +76,14 @@ Named primitives — "write a name, not a number":
 - `MaterialDesc::matte`
 - `MaterialDesc::plastic`
 - `MaterialDesc::metal`
+- `MaterialDesc::rough_metal`
+- `MaterialDesc::chrome`
+- `MaterialDesc::brushed_steel`
+- `MaterialDesc::clearcoat_plastic`
+- `MaterialDesc::satin`
+- `MaterialDesc::leather`
+- `MaterialDesc::clear_glass`
+- `MaterialDesc::frosted_glass`
 - `MaterialDesc::rubber`
 - `Background` (enum: `Studio`, `DarkStudio`, `NeutralGray`, `White`,
   `Black`, `Sky`, `Transparent`, `Custom(Color)`)

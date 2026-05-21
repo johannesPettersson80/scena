@@ -8,6 +8,7 @@ import init, {
   load_gltf_from_bytes,
   load_gltf_with_floor_from_bytes,
   load_gltf_with_view_from_bytes,
+  load_material_presets_scene,
   replay_connector_snap,
   resize,
   set_anti_aliasing_mode,
@@ -77,6 +78,13 @@ const SAMPLE_GROUPS = [
   {
     label: "v1.4 named presets",
     samples: [
+      {
+        id: "material-presets",
+        label: "Material presets",
+        detail: "12 PBR presets rendered live",
+        tone: "teal",
+        code: "material-presets",
+      },
       {
         id: "v14-presets",
         label: "Named preset code",
@@ -346,9 +354,11 @@ let camera = scene.add_perspective_camera(
 let framing = scene.frame_bounds(camera, bounds, Default::default())?;
 let controls = OrbitControls::from_framing(framing).cinematic();
 
-let chrome = assets.create_material(MaterialDesc::metal(Color::LIGHT_GRAY));
-let bumper = assets.create_material(MaterialDesc::rubber());
-let body   = assets.create_material(MaterialDesc::plastic(Color::CHARCOAL));
+let chrome  = assets.create_material(MaterialDesc::chrome());
+let brushed = assets.create_material(MaterialDesc::brushed_steel());
+let glass   = assets.create_material(MaterialDesc::clear_glass(Color::CYAN));
+let bumper  = assets.create_material(MaterialDesc::rubber());
+let body    = assets.create_material(MaterialDesc::clearcoat_plastic(Color::CHARCOAL));
 
 let mut renderer = Renderer::headless(1280, 720)?;
 renderer.set_environment(environment);
@@ -360,6 +370,41 @@ renderer.render_active(&scene)?;
 let _png = scena::headless_gltf_viewer("machine.glb")
     .render_png_bytes()
     .await?;`;
+    setConnectorStoryState("none");
+    return;
+  }
+  if (activeAsset.code === "material-presets") {
+    codeTitle.textContent = "Material presets";
+    codeSubtitle.textContent = "browser-rendered WebGL2 material proof";
+    codeSnippet.textContent = `use scena::{Assets, Color, EnvironmentPreset, MaterialDesc, Renderer, Scene};
+
+let assets = Assets::new();
+let environment = assets
+    .load_environment_preset(EnvironmentPreset::Studio)
+    .await?;
+
+let presets = [
+    MaterialDesc::matte(Color::BLUE),
+    MaterialDesc::plastic(Color::BLUE),
+    MaterialDesc::metal(Color::LIGHT_GRAY),
+    MaterialDesc::rough_metal(Color::LIGHT_GRAY),
+    MaterialDesc::chrome(),
+    MaterialDesc::brushed_steel(),
+    MaterialDesc::clearcoat_plastic(Color::BLUE),
+    MaterialDesc::satin(Color::MAGENTA),
+    MaterialDesc::leather(Color::ORANGE),
+    MaterialDesc::clear_glass(Color::CYAN),
+    MaterialDesc::frosted_glass(Color::COOL_WHITE),
+    MaterialDesc::rubber(),
+];
+
+let mut scene = Scene::new();
+// Add one sphere per preset, then frame the grid.
+
+let mut renderer = Renderer::from_surface_async(browser_surface).await?;
+renderer.set_environment(environment);
+renderer.prepare_with_assets(&mut scene, &assets)?;
+renderer.render_active(&scene)?;`;
     setConnectorStoryState("none");
     return;
   }
@@ -458,6 +503,10 @@ async function loadSample(sample) {
   updateCodePanel();
   beginPhase(sample.code === "connector" ? "fetching connector parts" : "fetching sample");
   try {
+    if (sample.code === "material-presets") {
+      await loadMaterialPresetsAndAttach(sample);
+      return;
+    }
     if (sample.code === "connector") {
       const [driveResponse, loadResponse] = await Promise.all([
         fetch(sample.drivePath),
@@ -480,6 +529,25 @@ async function loadSample(sample) {
     console.error("sample load failed:", err);
     setError(`load: ${err}`);
   }
+}
+
+async function loadMaterialPresetsAndAttach(asset) {
+  attached = false;
+  activeAsset = asset;
+  orbit = { yaw: -0.14, pitch: 0.1, distance: 2.8 };
+  replayActive = false;
+  frameCount = 0;
+  updateActiveButton();
+  updateCodePanel();
+  updateMetrics(0);
+  beginPhase("building material preset scene");
+  app = await load_material_presets_scene(canvas.width, canvas.height);
+  beginPhase("creating WebGL2 renderer");
+  await attach_to_canvas(app, canvas);
+  attached = true;
+  lastFrameAt = performance.now();
+  beginPhase("rendering browser material proof");
+  requestRender();
 }
 
 async function loadConnectorAndAttach(driveBytes, loadBytes, asset, byteLength) {

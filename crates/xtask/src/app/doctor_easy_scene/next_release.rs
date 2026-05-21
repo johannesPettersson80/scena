@@ -49,31 +49,26 @@ pub(super) fn check_honest_material_presets(root: &Path, findings: &mut Vec<Find
             "pub const fn matte(",
             "pub const fn plastic(",
             "pub const fn metal(",
+            "pub const fn rough_metal(",
+            "pub const fn chrome()",
+            "pub const fn brushed_steel()",
+            "pub const fn clearcoat_plastic(",
+            "pub const fn satin(",
+            "pub const fn leather(",
+            "pub const fn clear_glass(",
+            "pub const fn frosted_glass(",
             "pub const fn rubber()",
         ],
     );
-    if fs::read_to_string(root.join("src/material/presets.rs")).is_ok_and(|text| {
-        [
-            "pub fn chrome(",
-            "pub fn brushed_steel(",
-            "pub fn clear_glass(",
-            "pub fn frosted_glass(",
-            "pub fn leather(",
-        ]
-        .into_iter()
-        .any(|needle| text.contains(needle))
-    }) {
-        findings.push(Finding::new(
-            "HONEST-MATERIAL-PRESETS",
-            "material presets must not expose chrome/glass/leather names before the renderer supports their visual contract",
-        ));
-    }
     require_contains(
         root,
         findings,
         "HONEST-MATERIAL-PRESETS",
         "tests/round_b_material_presets.rs",
-        &["honest_material_presets_are_public_pbr_shortcuts"],
+        &[
+            "honest_material_presets_are_public_pbr_shortcuts",
+            "expanded_material_presets_use_only_backed_material_lanes",
+        ],
     );
     require_contains(
         root,
@@ -84,6 +79,40 @@ pub(super) fn check_honest_material_presets(root: &Path, findings: &mut Vec<Find
             "round_b_material_preset_reference_docs_image",
             "round-b-material-preset-reference-docs-image",
             "reference-image+docs-image",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "HONEST-MATERIAL-PRESETS",
+        "src/browser_probe/workflows/pbr/material_presets.rs",
+        &[
+            "material_presets_scene",
+            "browser-pbr-material-preset-expanded-set",
+            "webgl2_smooth_metal_sample_floor",
+            "blend-plus-transmission-preview-no-refraction-claim",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "HONEST-MATERIAL-PRESETS",
+        "tests/browser/m6_rust_wasm_renderer_probe.js",
+        &[
+            "assertMaterialPresetProof",
+            "pbr-material-presets",
+            "webgl2_smooth_metal_sample_floor < 96",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "WEBGL2-IBL-SMOOTH-METAL",
+        "src/render/prepare/environment_prefilter.rs",
+        &[
+            "sample_count_for_roughness(0.28, EnvironmentPrefilterQuality::InteractiveWebGl2)",
+            "2 => 96",
+            "_ => 192",
         ],
     );
 }
