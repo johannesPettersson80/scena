@@ -1343,7 +1343,37 @@ release-evidence gaps; larger renderer research lanes follow.
        browser-probe-runtime`; macOS Metal and Windows DX12 remain
        explicit `missing-lane-artifact` rows until those hosts produce
        artifacts.
-3. - [ ] **Transmission + IBL headless GPU capability evidence** —
+3. - [x] **WebGL2 oversized source-material texture regression** —
+       **[shipped]**. Trust-platform's Firefox/WebGL2 live
+       source-material frames were blank because two external YCB PNG
+       base-color textures are `4096x4096`, while the WebGL2/downlevel
+       wgpu device limit on that lane is `2048`. The Scena 1.4.0
+       browser upload path attempts to create `4096x4096`
+       `scena.material.base_color` textures, emits uncaptured wgpu
+       validation errors, and does not surface a structured render
+       failure to the consumer. Scena now clamps oversized browser
+       `ImageBitmap` textures to `2048` while preserving aspect ratio
+       before WebGL2 upload. Proof:
+       `cargo test browser_texture_resize_dimensions --lib` covers
+       `4096x4096` and aspect-preserving resize behavior; the host-safe
+       browser proof runs with `SCENA_BROWSER_BACKENDS=webgl2
+       SCENA_BROWSER_OVERSIZED_TEXTURE=1 npm run browser:m6` and writes
+       `target/gate-artifacts/m6-oversized-browser-texture-probe.json`.
+       That proof records source texture `2049x2049`, browser texture
+       `2048x2048`, one material texture binding, visible pixels, and
+       no wgpu validation errors. The default
+       `target/gate-artifacts/m6-rust-wasm-renderer-probe.json` remains
+       the WebGL2+WebGPU M9 browser matrix input. Downstream proof:
+       trust-platform's package gate rejects packaged PNGs above
+       `2048`, the YCB packaged textures were capped to `2048x2048`,
+       and `node scripts/trust_twin_robot_cell_playwright.mjs` now
+       passes with `renderer_origin: "scena_webgl"`,
+       `pixel_difference_count: 602108`, non-background ratios around
+       `0.28-0.29`, and `evidence_blockers: []`. The proof set includes
+       live browser screenshots, deterministic JSON gate artifacts, and
+       `target/gate-artifacts/trust-twin-robot-cell-picture-proof.html`
+       displaying the browser-rendered PNGs.
+4. - [ ] **Transmission + IBL headless GPU capability evidence** —
        **[proof-gap]**. Gate added:
        `m8_headless_gpu_transmission_volume_ibl_capability_when_available`
        records a dedicated headless-GPU transmission/volume-under-IBL
@@ -1356,7 +1386,7 @@ release-evidence gaps; larger renderer research lanes follow.
        the gate failed correctly with `Renderer::headless_gpu unavailable:
        RequestDevice { backend: HeadlessGpu }`, so no release evidence was
        produced on this host.
-4. - [ ] **Compressed asset native-GPU/browser release proof** —
+5. - [ ] **Compressed asset native-GPU/browser release proof** —
        **[proof-gap]**. KTX2/Basis and meshopt are shipped for the
        optional `production-assets` profile with local CPU rendered proof,
        but full native GPU/browser release proof remains open. The native
@@ -1367,31 +1397,31 @@ release-evidence gaps; larger renderer research lanes follow.
        `SCENA_BROWSER_COMPRESSED_ASSETS=1`, but the artifacts stay
        `release_evidence: false` because KTX2/Basis browser decode is still
        fail-closed.
-5. - [ ] **GPU/WebGPU/WebGL2 SSAO and OIT parity** — **[deferred]**.
+6. - [ ] **GPU/WebGPU/WebGL2 SSAO and OIT parity** — **[deferred]**.
        CPU/headless baselines are shipped; backend parity needs separate
        render passes, capability reporting, and browser visual proof.
-6. - [ ] **Physical GPU/WebGPU/WebGL2 transmission/volume glass parity** —
+7. - [ ] **Physical GPU/WebGPU/WebGL2 transmission/volume glass parity** —
        **[deferred]**. Current glass presets are blend/transmission
        previews with honest no-refraction/no-caustics wording. Full
        physical glass needs backend shading/proof work.
-7. - [ ] **KTX2 cubemap environment presets/grid** — **[deferred]**.
+8. - [ ] **KTX2 cubemap environment presets/grid** — **[deferred]**.
        Existing environment presets use checked HDR/fixture paths; KTX2
        cubemap presets need a real decode/upload/prefilter path plus a
        browser/demo grid.
-8. - [ ] **MSAA/TAA beyond current FXAA** — **[deferred]**. FXAA is the
+9. - [ ] **MSAA/TAA beyond current FXAA** — **[deferred]**. FXAA is the
        shipped default. MSAA/TAA are future quality lanes with ON/OFF
        proof requirements.
-9. - [ ] **Area lights with LTC** — **[deferred]**. Requires lighting
+10. - [ ] **Area lights with LTC** — **[deferred]**. Requires lighting
        model, LUT/shader work, and before/after visual proof for
        rect/disc/sphere lights.
-10. - [ ] **Clustered/tiled light culling** — **[deferred]**. Useful for
+11. - [ ] **Clustered/tiled light culling** — **[deferred]**. Useful for
        many-light scaling, but it is GPU architecture/performance work
        rather than a blocking user-proof gap.
-11. - [ ] **Screen-space reflections** — **[deferred]**. Needs a robust
+12. - [ ] **Screen-space reflections** — **[deferred]**. Needs a robust
        depth/normal-backed backend pass and reflective-floor ON/OFF proof;
        keep it behind stronger browser proof because SSR can fail
        visually while passing compile/unit checks.
-12. - [ ] **Draco mesh compression** — **[deferred]**. Meshopt is the
+13. - [ ] **Draco mesh compression** — **[deferred]**. Meshopt is the
        v1.4 compression path. Revisit Draco only behind an optional
        feature when a maintained decoder path and package-size/build-time
        evidence are proven.

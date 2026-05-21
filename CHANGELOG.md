@@ -19,6 +19,13 @@ All notable user-facing changes are recorded here.
   smooth-metal presets such as `chrome` and `brushed_steel` no longer use
   the old 4/8/16 sample cap that flattened reflections toward mean radiance.
 
+### Fixed
+
+- Browser texture loading now clamps oversized native `ImageBitmap` textures
+  to the WebGL2-safe 2048px max dimension before upload, preventing
+  uncaptured WebGL2/wgpu validation errors and blank source-material frames
+  for dense glTF assets with 4096px textures.
+
 ## [1.4.0] - 2026-05-20
 
 ### Added

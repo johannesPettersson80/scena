@@ -2,9 +2,11 @@ const fs = require("fs");
 const crypto = require("crypto");
 const http = require("http");
 const path = require("path");
+const zlib = require("zlib");
 
 const MODEL_VIEWER_FIXTURE = "/fixtures/gltf/non_ndc_camera_scene.gltf";
 const MODEL_VIEWER_BUNDLE = "model-viewer.min.js";
+const OVERSIZED_TEXTURE_DIMENSION = 2049;
 
 function loadPlaywright() {
   return require("playwright");
@@ -24,9 +26,206 @@ function contentType(file) {
   return "application/octet-stream";
 }
 
+let generatedOversizedTexturePng = null;
+let generatedOversizedTextureScene = null;
+
+function crc32(bytes) {
+  if (!crc32.table) {
+    crc32.table = Array.from({ length: 256 }, (_, index) => {
+      let value = index;
+      for (let bit = 0; bit < 8; bit += 1) {
+        value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+      }
+      return value >>> 0;
+    });
+  }
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc = crc32.table[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+  const typeBytes = Buffer.from(type, "ascii");
+  const body = Buffer.concat([typeBytes, data]);
+  const chunk = Buffer.alloc(12 + data.length);
+  chunk.writeUInt32BE(data.length, 0);
+  typeBytes.copy(chunk, 4);
+  data.copy(chunk, 8);
+  chunk.writeUInt32BE(crc32(body), 8 + data.length);
+  return chunk;
+}
+
+function solidPng(width, height, rgba) {
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+
+  const row = Buffer.allocUnsafe(width * 4 + 1);
+  row[0] = 0;
+  for (let offset = 1; offset < row.length; offset += 4) {
+    row[offset] = rgba[0];
+    row[offset + 1] = rgba[1];
+    row[offset + 2] = rgba[2];
+    row[offset + 3] = rgba[3];
+  }
+  const raw = Buffer.allocUnsafe(row.length * height);
+  for (let y = 0; y < height; y += 1) {
+    row.copy(raw, y * row.length);
+  }
+
+  return Buffer.concat([
+    signature,
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", zlib.deflateSync(raw, { level: 9 })),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+function oversizedTexturePng() {
+  if (!generatedOversizedTexturePng) {
+    generatedOversizedTexturePng = solidPng(
+      OVERSIZED_TEXTURE_DIMENSION,
+      OVERSIZED_TEXTURE_DIMENSION,
+      [220, 90, 40, 255],
+    );
+  }
+  return generatedOversizedTexturePng;
+}
+
+function oversizedTextureSceneGltf() {
+  if (generatedOversizedTextureScene) {
+    return generatedOversizedTextureScene;
+  }
+  const buffer = Buffer.alloc(140);
+  const positions = [
+    -0.7, -0.7, 0.0,
+     0.7, -0.7, 0.0,
+     0.7,  0.7, 0.0,
+    -0.7,  0.7, 0.0,
+  ];
+  const normals = [
+    0.0, 0.0, 1.0,
+    0.0, 0.0, 1.0,
+    0.0, 0.0, 1.0,
+    0.0, 0.0, 1.0,
+  ];
+  const texcoords = [
+    0.0, 1.0,
+    1.0, 1.0,
+    1.0, 0.0,
+    0.0, 0.0,
+  ];
+  const indices = [0, 1, 2, 0, 2, 3];
+  positions.forEach((value, index) => buffer.writeFloatLE(value, index * 4));
+  normals.forEach((value, index) => buffer.writeFloatLE(value, 48 + index * 4));
+  texcoords.forEach((value, index) => buffer.writeFloatLE(value, 96 + index * 4));
+  indices.forEach((value, index) => buffer.writeUInt16LE(value, 128 + index * 2));
+
+  generatedOversizedTextureScene = `${JSON.stringify({
+    asset: {
+      version: "2.0",
+      generator: "scena-m6-oversized-browser-texture-proof",
+    },
+    buffers: [
+      {
+        uri: `data:application/octet-stream;base64,${buffer.toString("base64")}`,
+        byteLength: buffer.length,
+      },
+    ],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: 48, target: 34962 },
+      { buffer: 0, byteOffset: 48, byteLength: 48, target: 34962 },
+      { buffer: 0, byteOffset: 96, byteLength: 32, target: 34962 },
+      { buffer: 0, byteOffset: 128, byteLength: 12, target: 34963 },
+    ],
+    accessors: [
+      {
+        bufferView: 0,
+        componentType: 5126,
+        count: 4,
+        type: "VEC3",
+        min: [-0.7, -0.7, 0.0],
+        max: [0.7, 0.7, 0.0],
+      },
+      {
+        bufferView: 1,
+        componentType: 5126,
+        count: 4,
+        type: "VEC3",
+        min: [0.0, 0.0, 1.0],
+        max: [0.0, 0.0, 1.0],
+      },
+      {
+        bufferView: 2,
+        componentType: 5126,
+        count: 4,
+        type: "VEC2",
+        min: [0.0, 0.0],
+        max: [1.0, 1.0],
+      },
+      {
+        bufferView: 3,
+        componentType: 5123,
+        count: 6,
+        type: "SCALAR",
+        min: [0],
+        max: [3],
+      },
+    ],
+    images: [{ uri: "oversized_texture.png", mimeType: "image/png" }],
+    samplers: [{ minFilter: 9729, magFilter: 9729, wrapS: 10497, wrapT: 10497 }],
+    textures: [{ source: 0, sampler: 0 }],
+    materials: [
+      {
+        name: "OversizedTextureMaterial",
+        doubleSided: true,
+        pbrMetallicRoughness: {
+          baseColorTexture: { index: 0 },
+          metallicFactor: 0.0,
+          roughnessFactor: 0.65,
+        },
+      },
+    ],
+    meshes: [
+      {
+        primitives: [
+          {
+            attributes: { POSITION: 0, NORMAL: 1, TEXCOORD_0: 2 },
+            indices: 3,
+            material: 0,
+            mode: 4,
+          },
+        ],
+      },
+    ],
+    nodes: [{ mesh: 0, name: "OversizedTextureQuad" }],
+    scenes: [{ nodes: [0] }],
+    scene: 0,
+  }, null, 2)}\n`;
+  return generatedOversizedTextureScene;
+}
+
 function serve(browserRoot, pkgRoot, fixtureRoot, modelViewerRoot) {
   const server = http.createServer((request, response) => {
     const url = request.url === "/" ? "/m6_rust_wasm_renderer_probe.html" : request.url;
+    if (url === "/fixtures/generated/oversized_texture_scene.gltf") {
+      response.writeHead(200, { "Content-Type": "model/gltf+json" });
+      response.end(oversizedTextureSceneGltf());
+      return;
+    }
+    if (url === "/fixtures/generated/oversized_texture.png") {
+      response.writeHead(200, { "Content-Type": "image/png" });
+      response.end(oversizedTexturePng());
+      return;
+    }
     let base = browserRoot;
     let relative = url.slice(1);
     if (url.startsWith("/pkg/")) {
@@ -155,6 +354,10 @@ function isAllowedUnavailable(backend, error) {
 
 function compressedAssetProofEnabled() {
   return process.env.SCENA_BROWSER_COMPRESSED_ASSETS === "1";
+}
+
+function oversizedTextureProofEnabled() {
+  return process.env.SCENA_BROWSER_OVERSIZED_TEXTURE === "1";
 }
 
 function assertNoScenaGpuValidationErrors(backend, consoleMessages) {
@@ -349,6 +552,50 @@ function assertSourceGltfMaterialProof(backend, result) {
       `${backend} source-gltf-materials did not render visible unlit/source/PBR comparison lanes: ${JSON.stringify(result)}`,
     );
   }
+}
+
+function assertOversizedBrowserTextureProof(backend, result) {
+  const metadata = result.metadata || {};
+  const size = metadata.browser_texture_size || [];
+  if (
+    metadata.proof_class !== "browser-oversized-source-texture-clamp" ||
+    metadata.fixture !== "/fixtures/generated/oversized_texture_scene.gltf" ||
+    !Array.isArray(metadata.source_texture_size) ||
+    metadata.source_texture_size[0] !== OVERSIZED_TEXTURE_DIMENSION ||
+    metadata.source_texture_size[1] !== OVERSIZED_TEXTURE_DIMENSION ||
+    metadata.max_browser_texture_dimension !== 2048 ||
+    !Array.isArray(size) ||
+    size[0] !== 2048 ||
+    size[1] !== 2048 ||
+    metadata.load_warnings !== 0
+  ) {
+    throw new Error(
+      `${backend} oversized-browser-texture proof did not record the expected over-limit browser texture clamp: ${JSON.stringify(result)}`,
+    );
+  }
+  if (!result.stats || result.stats.material_texture_bindings < 1) {
+    throw new Error(
+      `${backend} oversized-browser-texture proof did not bind the clamped source texture: ${JSON.stringify(result)}`,
+    );
+  }
+  if (!result.pixels || result.pixels.nonblack <= 0) {
+    throw new Error(
+      `${backend} oversized-browser-texture proof did not render visible pixels: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+function writeOversizedBrowserTextureArtifact(artifactDir, backend, result) {
+  const artifact = {
+    gate: "m6-oversized-browser-texture-probe",
+    status: "passed",
+    backend,
+    result,
+  };
+  fs.writeFileSync(
+    path.join(artifactDir, "m6-oversized-browser-texture-probe.json"),
+    `${JSON.stringify(artifact, null, 2)}\n`,
+  );
 }
 
 function assertPunctualLightProof(backend, result, channel, workflow) {
@@ -1068,6 +1315,9 @@ async function main() {
     "textured-connector-viewer",
     "asset-cache-reload",
   ];
+  if (oversizedTextureProofEnabled()) {
+    workflows.push("oversized-browser-texture");
+  }
   if (compressedAssetProofEnabled()) {
     workflows.push("compressed-assets");
   }
@@ -1176,6 +1426,11 @@ async function main() {
         assertMaterialPresetProof(backend, workflowResults.get("pbr-material-presets"));
         assertMaterialTextureProof(backend, workflowResults.get("material-textures"));
         assertSourceGltfMaterialProof(backend, workflowResults.get("source-gltf-materials"));
+        if (oversizedTextureProofEnabled()) {
+          const oversizedTexture = workflowResults.get("oversized-browser-texture");
+          assertOversizedBrowserTextureProof(backend, oversizedTexture);
+          writeOversizedBrowserTextureArtifact(artifactDir, backend, oversizedTexture);
+        }
         if (compressedAssetProofEnabled()) {
           const compressedAssets = workflowResults.get("compressed-assets");
           assertCompressedAssetProof(backend, compressedAssets);

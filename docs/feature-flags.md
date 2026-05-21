@@ -12,7 +12,7 @@ or in `Cargo.toml`:
 
 ```toml
 [dependencies]
-scena = { version = "1.3", features = ["controls", "controls-winit"] }
+scena = { version = "1.4", features = ["controls", "controls-winit"] }
 ```
 
 ## Features
@@ -39,19 +39,19 @@ scena = { version = "1.3", features = ["controls", "controls-winit"] }
 Native viewer:
 
 ```toml
-scena = { version = "1.3", features = ["controls", "controls-winit"] }
+scena = { version = "1.4", features = ["controls", "controls-winit"] }
 ```
 
 Browser viewer:
 
 ```toml
-scena = { version = "1.3", features = ["controls", "controls-web"] }
+scena = { version = "1.4", features = ["controls", "controls-web"] }
 ```
 
 Asset-heavy viewer:
 
 ```toml
-scena = { version = "1.3", features = ["production-assets"] }
+scena = { version = "1.4", features = ["production-assets"] }
 ```
 
 Add `obj` separately when the application needs OBJ import in addition to
@@ -60,13 +60,13 @@ production glTF compression support.
 Sample-driven examples/tests:
 
 ```toml
-scena = { version = "1.3", features = ["khronos-samples"] }
+scena = { version = "1.4", features = ["khronos-samples"] }
 ```
 
 Diagnostic tooling:
 
 ```toml
-scena = { version = "1.3", features = ["inspection"] }
+scena = { version = "1.4", features = ["inspection"] }
 ```
 
 ## Default feature set

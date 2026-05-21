@@ -25,6 +25,7 @@ pub(super) async fn build_ergonomics_scene(workflow: &str) -> Result<WorkflowSce
         "beginner-diagnostics" => beginner_diagnostics_scene(),
         "material-textures" => material_textures_scene().await,
         "source-gltf-materials" => source_materials::source_gltf_materials_scene().await,
+        "oversized-browser-texture" => source_materials::oversized_browser_texture_scene().await,
         "textured-connector-viewer" => viewer::textured_connector_viewer_scene().await,
         "asset-cache-reload" => asset_cache_reload_scene().await,
         other => Err(JsValue::from_str(&format!(

@@ -48,6 +48,8 @@ pub use khronos::{KhronosSample, KhronosSampleMetadata, KhronosSamples};
 pub use load::{
     AssetLoadControl, AssetLoadOptions, AssetLoadProgress, AssetLoadReport, AssetLoadWarning,
 };
+#[cfg(target_arch = "wasm32")]
+pub(crate) use texture::BROWSER_TEXTURE_MAX_DIMENSION_2D;
 pub use texture::{
     TextureDesc, TextureFilter, TextureSamplerDesc, TextureSourceFormat, TextureWrap,
 };

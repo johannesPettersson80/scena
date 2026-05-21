@@ -102,3 +102,72 @@ pub(super) async fn source_gltf_materials_scene() -> Result<WorkflowScene, JsVal
         }),
     })
 }
+
+pub(super) async fn oversized_browser_texture_scene() -> Result<WorkflowScene, JsValue> {
+    let assets = Assets::new();
+    let report = assets
+        .load_scene_with_report_options(
+            "/fixtures/generated/oversized_texture_scene.gltf",
+            AssetLoadOptions::default().with_strict_textures(true),
+        )
+        .await
+        .map_err(|error| {
+            JsValue::from_str(&format!("oversized texture fixture load failed: {error:?}"))
+        })?;
+    let scene_asset = report.asset().clone();
+    let source_material = scene_asset
+        .nodes()
+        .iter()
+        .find_map(|node| node.meshes().first().map(|mesh| mesh.material()))
+        .ok_or_else(|| JsValue::from_str("oversized texture fixture has no material"))?;
+    let material = assets.material(source_material).ok_or_else(|| {
+        JsValue::from_str("oversized texture fixture produced no source material descriptor")
+    })?;
+    let browser_texture_size = material
+        .base_color_texture()
+        .and_then(|texture| assets.texture(texture))
+        .and_then(|texture| {
+            #[cfg(target_arch = "wasm32")]
+            {
+                texture
+                    .browser_image()
+                    .map(|image| vec![image.width(), image.height()])
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let _ = texture;
+                None
+            }
+        });
+
+    let mut scene = Scene::new();
+    let import = scene.instantiate(&scene_asset).map_err(|error| {
+        JsValue::from_str(&format!("oversized texture instantiate failed: {error:?}"))
+    })?;
+    scene
+        .directional_light(DirectionalLight::default().with_illuminance_lux(20_000.0))
+        .add()
+        .map_err(|error| {
+            JsValue::from_str(&format!("oversized texture light failed: {error:?}"))
+        })?;
+    let camera = add_default_camera(&mut scene)?;
+    if let Some(bounds) = import.bounds_world(&scene) {
+        scene.frame(camera, bounds).map_err(|error| {
+            JsValue::from_str(&format!("oversized texture frame failed: {error:?}"))
+        })?;
+    }
+
+    Ok(WorkflowScene {
+        assets,
+        scene,
+        camera,
+        metadata: json!({
+            "proof_class": "browser-oversized-source-texture-clamp",
+            "fixture": "/fixtures/generated/oversized_texture_scene.gltf",
+            "source_texture_size": [2049, 2049],
+            "max_browser_texture_dimension": crate::assets::BROWSER_TEXTURE_MAX_DIMENSION_2D,
+            "browser_texture_size": browser_texture_size,
+            "load_warnings": report.warnings().len(),
+        }),
+    })
+}

@@ -14,7 +14,7 @@ Equivalent `Cargo.toml` entry:
 
 ```toml
 [dependencies]
-scena = "1.3"
+scena = "1.4"
 ```
 
 Install the bundled CLI tool when you need it:
@@ -107,6 +107,14 @@ Use native or browser examples when your application owns a window or canvas:
 
 - `examples/native_window.rs`
 - `examples/browser_canvas.rs`
+
+## Package browser builds
+
+When bundling a wasm build produced by `wasm-bindgen`, copy
+`pkg/snippets/**` alongside `scena.js` and `scena_bg.wasm`. The
+browser package imports inline JavaScript shims from that directory for
+canvas color-space setup; omitting it can make the module fail before
+Scena reports a render error.
 
 ## Add interaction
 
