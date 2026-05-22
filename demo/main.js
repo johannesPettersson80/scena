@@ -16,7 +16,7 @@ import init, {
   set_background_scheme,
   set_bloom_enabled,
   tick,
-} from "./pkg/scena.js?v=20260520-v14-runtime-controls-1";
+} from "./pkg/scena.js?v=20260522-scena-1.5.0-1";
 
 const SAMPLE_GROUPS = [
   {
@@ -481,7 +481,7 @@ async function start() {
   updateMetrics();
   beginPhase("initialising WASM");
   await init({
-    module_or_path: new URL("./pkg/scena_bg.wasm?v=20260520-v14-runtime-controls-1", import.meta.url),
+    module_or_path: new URL("./pkg/scena_bg.wasm?v=20260522-scena-1.5.0-1", import.meta.url),
   });
   wireDragDrop();
   wirePointer();
