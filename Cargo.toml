@@ -18,7 +18,7 @@ include = [
     "/docs/**/*.md",
     "/docs/assets/**/*.png",
     "/docs/assets/**/*.jpg",
-    "/docs/assets/v1.4-showcase/**/*.gif",
+    "/docs/assets/easy-scene-showcase/**/*.gif",
     "/README.md",
     "/CHANGELOG.md",
     "/LICENSE-*",

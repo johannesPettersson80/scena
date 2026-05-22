@@ -610,6 +610,20 @@ fn grid_floor_is_matte_bounds_derived_and_lies_on_floor_plane() {
 }
 
 #[test]
+fn grid_floor_under_bounds_defaults_to_lowest_bound() {
+    let assets = Assets::new();
+    let mut scene = Scene::new();
+    let bounds = Aabb::new(Vec3::new(-1.4, -0.35, -0.35), Vec3::new(1.2, 0.8, 0.42));
+
+    let floor = scene
+        .add_grid_floor(&assets, GridFloorOptions::new().under_bounds(bounds))
+        .expect("grid floor inserts under bounds");
+
+    assert_eq!(floor.bounds.min.y, bounds.min.y);
+    assert_eq!(floor.bounds.max.y, bounds.min.y);
+}
+
+#[test]
 fn bounds_for_transforms_unions_discrete_replay_poses() {
     let assets = Assets::new();
     let mut scene = Scene::new();

@@ -5,12 +5,12 @@ and render it" workflow. The helpers are composable: framing, lighting, floor
 placement, auto exposure, orbit controls, and connector mating stay separate so
 applications can replace any part.
 
-![A connector assembly rendered with scena's named presets: studio lighting + grid floor + dark studio background + product-studio exposure + Poly Haven studio HDR](../assets/v1.4-showcase/hero-connector-assembly.jpg)
+![A connector assembly rendered with scena's named presets: studio lighting + grid floor + dark studio background + product-studio exposure + Poly Haven studio HDR](../assets/easy-scene-showcase/hero-connector-assembly.jpg)
 
 The image above is one render produced by following the steps on this page.
 Every image embedded below comes from
-[`examples/v1_4_showcase.rs`](../../examples/v1_4_showcase.rs); run it with
-`cargo run --example v1_4_showcase --release` to regenerate them.
+[`examples/easy_scene_showcase.rs`](../../examples/easy_scene_showcase.rs); run it with
+`cargo run --example easy_scene_showcase --release` to regenerate them.
 
 ## Minimal model viewer
 
@@ -59,7 +59,7 @@ scene.directional_light(DirectionalLight::fill_light()).add()?;
 scene.point_light(PointLight::bulb_warm()).add()?;
 ```
 
-![The same sphere lit by sun, key_light, fill_light, rim_light, softbox, bulb_warm, bulb_cool, and the add_studio_lighting() composite](../assets/v1.4-showcase/light-presets.jpg)
+![The same sphere lit by sun, key_light, fill_light, rim_light, softbox, bulb_warm, bulb_cool, and the add_studio_lighting() composite](../assets/easy-scene-showcase/light-presets.jpg)
 
 Top row, left to right: `DirectionalLight::sun` (warm daylight),
 `key_light` (cool studio main), `fill_light` (softer counter),
@@ -77,7 +77,7 @@ renderer.set_auto_exposure(AutoExposureConfig::outdoor());
 renderer.set_auto_exposure(AutoExposureConfig::mixed());
 ```
 
-![Same metal sphere rendered under product_studio, indoor, outdoor, and mixed exposure scenarios](../assets/v1.4-showcase/auto-exposure-presets.jpg)
+![Same metal sphere rendered under product_studio, indoor, outdoor, and mixed exposure scenarios](../assets/easy-scene-showcase/auto-exposure-presets.jpg)
 
 Auto exposure prevents globally too-dark or too-bright frames. It does not
 change light direction, material albedo, roughness, dynamic range, or
@@ -91,7 +91,7 @@ renderer.set_background(Background::DarkStudio);
 renderer.set_background(Background::Custom(Color::from_hex("#f5f7fb")?));
 ```
 
-![The same orange sphere against Studio, DarkStudio, NeutralGray, White, Black, Sky, Transparent, and a Custom CHARCOAL backdrop](../assets/v1.4-showcase/background-presets.jpg)
+![The same orange sphere against Studio, DarkStudio, NeutralGray, White, Black, Sky, Transparent, and a Custom CHARCOAL backdrop](../assets/easy-scene-showcase/background-presets.jpg)
 
 Only the background changes between panels above; the sphere itself is
 unchanged because exposure is held fixed.
@@ -100,17 +100,24 @@ Use `Scene::add_grid_floor()` for a matte floor at a known plane. The default
 floor is dark, rough, non-metallic, and sized from object bounds so it grounds
 the object without becoming the subject.
 For simple authored geometry, prefer honest material presets over raw
-metallic/roughness numbers:
+metallic/roughness numbers. This covers the whole shipped preset family:
 
 ```rust
-let body = assets.create_material(MaterialDesc::plastic(Color::BLUE));
-let shaft = assets.create_material(MaterialDesc::metal(Color::LIGHT_GRAY));
-let cover = assets.create_material(MaterialDesc::clearcoat_plastic(Color::BLUE));
-let glass = assets.create_material(MaterialDesc::clear_glass(Color::CYAN));
-let foot = assets.create_material(MaterialDesc::rubber());
+let matte_panel = assets.create_material(MaterialDesc::matte(Color::DARK_GRAY));
+let plastic_shell = assets.create_material(MaterialDesc::plastic(Color::BLUE));
+let metal_shaft = assets.create_material(MaterialDesc::metal(Color::LIGHT_GRAY));
+let rough_casting = assets.create_material(MaterialDesc::rough_metal(Color::GRAY));
+let chrome_trim = assets.create_material(MaterialDesc::chrome());
+let brushed_rail = assets.create_material(MaterialDesc::brushed_steel());
+let coated_cover = assets.create_material(MaterialDesc::clearcoat_plastic(Color::ORANGE));
+let satin_fabric = assets.create_material(MaterialDesc::satin(Color::MAGENTA));
+let leather_grip = assets.create_material(MaterialDesc::leather(Color::CHARCOAL));
+let clear_window = assets.create_material(MaterialDesc::clear_glass(Color::CYAN));
+let frosted_lens = assets.create_material(MaterialDesc::frosted_glass(Color::COOL_WHITE));
+let rubber_foot = assets.create_material(MaterialDesc::rubber());
 ```
 
-![Material presets rendered side-by-side](../assets/v1.4-showcase/material-presets.jpg)
+![Material presets rendered side-by-side](../assets/easy-scene-showcase/material-presets.jpg)
 
 The first-path presets now cover matte, plastic, polished and rough metal,
 chrome, brushed steel, clearcoat plastic, satin, smooth leather-like sheen,
@@ -122,7 +129,7 @@ For colours, name the constant the design calls for instead of writing
 RGB literals — `Color::CHARCOAL`, `Color::WARM_WHITE`, `Color::ORANGE`,
 and so on:
 
-![Plastic spheres rendered in every named Color constant](../assets/v1.4-showcase/named-color-constants.jpg)
+![Plastic spheres rendered in every named Color constant](../assets/easy-scene-showcase/named-color-constants.jpg)
 
 ```rust
 let backdrop = Color::CHARCOAL;          // sRGB #1a1d28, the DarkStudio backdrop hue
@@ -167,7 +174,7 @@ Azimuth and elevation are in degrees and use the conventions documented on
 The camera's *lens* (field of view) is a separate choice from where the
 camera points. Pick a named lens preset rather than typing a raw FOV:
 
-![The same subject rendered through wide_angle, standard, portrait, and telephoto lens presets](../assets/v1.4-showcase/lens-presets.jpg)
+![The same subject rendered through wide_angle, standard, portrait, and telephoto lens presets](../assets/easy-scene-showcase/lens-presets.jpg)
 
 ```rust
 PerspectiveCamera::wide_angle();   // ~84° vertical — establishing shot
@@ -213,7 +220,7 @@ if matches!(controls.advance(delta_seconds), scena::OrbitControlAction::Orbit) {
 
 Host adapters can then apply the controls to the scene camera each frame.
 
-![Damped orbit motion — the cube rotates and decelerates with each frame](../assets/v1.4-showcase/animated-orbit-damping.gif)
+![Damped orbit motion — the cube rotates and decelerates with each frame](../assets/easy-scene-showcase/animated-orbit-damping.gif)
 
 The cube above starts at full angular velocity and decays under
 `cinematic()` damping; user-driven orbit input would feel the same way.
@@ -224,7 +231,7 @@ let controls = OrbitControls::from_framing(framing)
     .zoom_limits_bounds_relative(0.5, 4.0);
 ```
 
-![Zoom clamped at the framing-relative bounds — repeated zoom-in stops at the close limit, zoom-out stops at the far limit](../assets/v1.4-showcase/animated-orbit-zoom.gif)
+![Zoom clamped at the framing-relative bounds — repeated zoom-in stops at the close limit, zoom-out stops at the far limit](../assets/easy-scene-showcase/animated-orbit-zoom.gif)
 
 The zoom limits clamp wheel and pinch input relative to the framed
 distance, so users cannot accidentally fly through the subject or lose
@@ -287,14 +294,14 @@ renderer.set_hover_style(InteractionStyle::outline(Color::from_hex("#ffd240")?, 
 renderer.set_selection_style(InteractionStyle::outline(Color::from_hex("#40a0ff")?, 3.0));
 ```
 
-![Pickable sphere + cube on a plinth ready for hover / select interaction](../assets/v1.4-showcase/picking-outline-hover.jpg)
+![Pickable sphere + cube on a plinth ready for hover / select interaction](../assets/easy-scene-showcase/picking-outline-hover.jpg)
 
 The CPU headless renderer used for the screenshot above runs the pick and
 hover state through the same typed API; the outline overlay itself is
 drawn by the GPU backends (`headless_gpu`, native window, browser
 canvas) and shows up in the `<scena-viewer>` browser proof.
 
-![Pointer callback sequence: idle → hover sphere → hover cube → click cube → idle](../assets/v1.4-showcase/animated-pointer-callbacks.gif)
+![Pointer callback sequence: idle → hover sphere → hover cube → click cube → idle](../assets/easy-scene-showcase/animated-pointer-callbacks.gif)
 
 ## Animation playback
 
@@ -316,7 +323,7 @@ viewer.scene_mut().update_animation(mixer, delta_seconds)?;
 Keep the returned mixer key when the host needs to pause, seek, change speed,
 or switch loop mode.
 
-![A glTF clip playing back — the cyan subject moves through its keyframes](../assets/v1.4-showcase/animated-animation-playback.gif)
+![A glTF clip playing back — the cyan subject moves through its keyframes](../assets/easy-scene-showcase/animated-animation-playback.gif)
 
 ## Screenshot capture
 
@@ -342,7 +349,7 @@ let png = headless_gltf_viewer("machine.glb")
     .await?;
 ```
 
-![A single rendered frame encoded directly via capture_png](../assets/v1.4-showcase/capture-png.jpg)
+![A single rendered frame encoded directly via capture_png](../assets/easy-scene-showcase/capture-png.jpg)
 
 ## Reference-image regression
 
@@ -399,7 +406,7 @@ viewer.render_next_frame()?;
 viewer.set_active_material_variant(None)?;
 ```
 
-![The same glTF scene rendered under three KHR_materials_variants selections: default, midnight, noon](../assets/v1.4-showcase/material-variants.jpg)
+![The same glTF scene rendered under three KHR_materials_variants selections: default, midnight, noon](../assets/easy-scene-showcase/material-variants.jpg)
 
 ## Native asset hot reload
 
@@ -426,7 +433,7 @@ for path in watcher.drain_changed_scenes()? {
 }
 ```
 
-![Asset reload before / after — sphere colour changes when the bytes change on disk](../assets/v1.4-showcase/animated-hot-reload.gif)
+![Asset reload before / after — sphere colour changes when the bytes change on disk](../assets/easy-scene-showcase/animated-hot-reload.gif)
 
 ## Environment presets
 
@@ -442,7 +449,7 @@ let environment = assets
 renderer.set_environment(environment);
 ```
 
-![Same metal sphere lit by NeutralStudio (left, no IBL specular) versus Studio HDR (right, visible mirror reflection)](../assets/v1.4-showcase/environment-presets.jpg)
+![Same metal sphere lit by NeutralStudio (left, no IBL specular) versus Studio HDR (right, visible mirror reflection)](../assets/easy-scene-showcase/environment-presets.jpg)
 
 The metal sphere on the right reflects the studio HDR; on the left the
 neutral fixture gives no directional reflection. That contrast is the
@@ -467,7 +474,7 @@ let rig = assets.khronos().rigged_simple().await?;
 let transmission = assets.khronos().transmission_test().await?;
 ```
 
-![RiggedSimple loaded from the bundled Khronos catalog with one call](../assets/v1.4-showcase/khronos-rigged-simple.jpg)
+![RiggedSimple loaded from the bundled Khronos catalog with one call](../assets/easy-scene-showcase/khronos-rigged-simple.jpg)
 
 Use `KhronosSample::ALL` when a compatibility test should iterate the checked
 catalog.
@@ -521,7 +528,7 @@ intermediate transforms in `bounds_for_transforms()`.
 For editor-style drag-to-assemble UIs, preview the snap before committing
 the mate so the host can render a ghost or a connection line:
 
-![Connector magnet preview — left: out of range, right: snap-ready](../assets/v1.4-showcase/connector-magnet-preview.jpg)
+![Connector magnet preview — left: out of range, right: snap-ready](../assets/easy-scene-showcase/connector-magnet-preview.jpg)
 
 ```rust
 let preview = scene.preview_connector_magnet(
@@ -565,10 +572,10 @@ each effect stays visible:
 
 | Feature | Off ‖ On |
 |---|---|
-| FXAA anti-aliasing | ![AA off vs on](../assets/v1.4-showcase/renderer-aa-on-off.jpg) |
-| Subtle bloom | ![Bloom off vs on](../assets/v1.4-showcase/renderer-bloom-on-off.jpg) |
-| SSAO (contact darkening) | ![SSAO off vs on](../assets/v1.4-showcase/renderer-ssao-on-off.jpg) |
-| OIT (insertion-order independence) | ![OIT both orders look identical](../assets/v1.4-showcase/renderer-oit-order-invariance.jpg) |
+| FXAA anti-aliasing | ![AA off vs on](../assets/easy-scene-showcase/renderer-aa-on-off.jpg) |
+| Subtle bloom | ![Bloom off vs on](../assets/easy-scene-showcase/renderer-bloom-on-off.jpg) |
+| SSAO (contact darkening) | ![SSAO off vs on](../assets/easy-scene-showcase/renderer-ssao-on-off.jpg) |
+| OIT (insertion-order independence) | ![OIT both orders look identical](../assets/easy-scene-showcase/renderer-oit-order-invariance.jpg) |
 
 For OIT, the panels show the same three overlapping translucent planes
 inserted in opposite order — they should look identical, proving the
@@ -614,7 +621,7 @@ inspector overlay, mobile gestures). The Playwright lane in
 artifacts on every release run, and the host-wirable event surface is
 documented under [`docs/browser.md`](../browser.md).
 
-![scena-viewer vs model-viewer three-asset parity — left column model-viewer reference, right column scena-viewer output for the same assets](../assets/v1.4-showcase/browser/scena-viewer-model-viewer-parity-browser-proof.jpg)
+![scena-viewer vs model-viewer three-asset parity — left column model-viewer reference, right column scena-viewer output for the same assets](../assets/easy-scene-showcase/browser/scena-viewer-model-viewer-parity-browser-proof.jpg)
 
 The side-by-side above is honest evidence: scena's WebGL2 rendering of
 the WaterBottle and the animated morph cube is visibly behind

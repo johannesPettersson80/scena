@@ -1,6 +1,9 @@
 use crate::app::prelude::*;
 use crate::app::tests_10::write_minimal_easy_scene_fixture;
 use crate::app::tests_12::{VALID_GUIDE, write_easy_scene_fixture};
+use crate::app::tests_17::{
+    expanded_material_preset_guide, write_expanded_material_preset_doctor_fixture,
+};
 
 #[test]
 pub(crate) fn binary_render_asset_contracts_reject_text_fixtures_with_binary_extensions() {
@@ -48,10 +51,13 @@ pub(crate) fn easy_scene_setup_contracts_allow_azimuth_elevation_camera_view() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let fixture_root =
         root.join("target/xtask-doctor-regressions/easy-scene-azimuth-elevation-view");
+    let guide = expanded_material_preset_guide();
     write_minimal_easy_scene_fixture(
         &fixture_root,
         "frame_bounds(()) bounds_for_transforms add_grid_floor FramingOptions::new().azimuth_elevation(-27.5, 17.8)",
     );
+    fs::write(fixture_root.join("docs/guides/easy-scene-setup.md"), guide).expect("guide fixture");
+    write_expanded_material_preset_doctor_fixture(&fixture_root);
     let mut findings = Vec::new();
 
     check_easy_scene_setup_contracts(&fixture_root, &mut findings);

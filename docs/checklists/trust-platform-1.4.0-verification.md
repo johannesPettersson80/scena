@@ -1,9 +1,11 @@
 # Trust-platform 1.4.0 verification — WebGL2 source-material blank canvas
 
-Status: Confirmed root cause; Scena and downstream proof follow-up implemented
+Status: Historical v1.4.0 investigation; superseded by the v1.5.0 browser
+texture-clamping and material-proof release
 Date: 2026-05-21
-Applies to: scena 1.4.0 (latest crates.io / GitHub release), trust-platform
-trust-twin VS Code webview consumer, Playwright Firefox proof.
+Applies to: scena 1.4.0 (the released state on 2026-05-21 before v1.5.0
+was published), trust-platform trust-twin VS Code webview consumer,
+Playwright Firefox proof.
 Evidence baseline: clean `main` at `15b623b` (the v1.4.0 ship state),
 trust-platform downstream report dated 2026-05-21, and a local
 Firefox/WebGL2 probe with browser console capture.

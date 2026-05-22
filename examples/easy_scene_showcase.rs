@@ -1,16 +1,16 @@
-//! v1.4 showcase render harness.
+//! Easy scene showcase render harness.
 //!
 //! Produces presentation-quality PNGs that demonstrate every Round A/B/C/D
 //! named primitive. Hero shot uses scena's own connector parts assembled
 //! through the mate API; preset comparison grids use spheres so the
 //! material / light / background / exposure differences are visible.
-//! Output lands under `target/v1.4-showcase/` so a maintainer can inspect
-//! renders before committing the keepers to `docs/assets/v1.4-showcase/`.
+//! Output lands under `target/easy-scene-showcase/` so a maintainer can inspect
+//! renders before committing the keepers to `docs/assets/easy-scene-showcase/`.
 //!
 //! Run:
 //!
 //! ```bash
-//! cargo run --example v1_4_showcase --release
+//! cargo run --example easy_scene_showcase --release
 //! ```
 
 use std::error::Error;
@@ -33,9 +33,9 @@ const WIDE_W: u32 = 480;
 const WIDE_H: u32 = 320;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let out = PathBuf::from("target/v1.4-showcase");
+    let out = PathBuf::from("target/easy-scene-showcase");
     fs::create_dir_all(&out)?;
-    eprintln!("rendering v1.4 showcase into {}", out.display());
+    eprintln!("rendering easy scene showcase into {}", out.display());
 
     render_hero_connector(&out)?;
     render_color_constants(&out)?;
@@ -66,13 +66,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     render_material_extension_dispersion(&out)?;
     render_material_extension_transmission(&out)?;
 
-    eprintln!("done — keepers go under docs/assets/v1.4-showcase/");
+    eprintln!("done — keepers go under docs/assets/easy-scene-showcase/");
     Ok(())
 }
 
 // ===========================================================================
 // Hero — scena's connector assembly as a single static beauty render, using
-// every v1.4 ergonomic in one place (Background::DarkStudio, studio
+// the shipped easy-scene ergonomics in one place (Background::DarkStudio, studio
 // lighting, AutoExposureConfig::product_studio, EnvironmentPreset::Studio,
 // `add_perspective_camera_default_for`).
 // ===========================================================================

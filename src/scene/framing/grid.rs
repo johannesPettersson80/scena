@@ -27,9 +27,10 @@ impl GridFloorOptions {
         }
     }
 
-    /// Sizes and centers the floor from world-space bounds.
+    /// Sizes, centers, and places the floor under world-space bounds.
     pub const fn under_bounds(mut self, bounds: Aabb) -> Self {
         self.bounds = Some(bounds);
+        self.floor_y = bounds.min.y;
         self
     }
 

@@ -4,6 +4,19 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- Updated the easy scene setup guide so its material preset snippet shows
+  every v1.5 `MaterialDesc` preset, not only the earlier subset.
+- Corrected stale v1.5 documentation wording in material rustdocs, release
+  notes, and historical checklists, and added doctor coverage so the guide
+  cannot omit shipped material presets again.
+- Renamed the easy scene showcase example and documentation asset folder away
+  from the old v1.4-specific names.
+- Changed `GridFloorOptions::under_bounds` so the default floor plane is placed
+  at the supplied bounds' minimum Y, preventing generated showcase floors from
+  cutting through imported models.
+
 ## [1.5.0] - 2026-05-21
 
 ### Added
@@ -45,8 +58,8 @@ All notable user-facing changes are recorded here.
   `fill_light`, `rim_light`, and point light presets
   `PointLight::softbox`, `bulb_warm`, `bulb_cool`.
 - Added `MaterialDesc` PBR presets `matte`, `plastic`, `metal`, `rubber`
-  (the "honest" four; glass/chrome/leather remain deferred until the
-  renderer can back the visual claim).
+  (the v1.4 "honest" four; glass/chrome/leather were postponed until later
+  renderer proof).
 - Added `Background` enum (`Studio`, `DarkStudio`, `NeutralGray`,
   `White`, `Black`, `Sky`, `Transparent`, `Custom(Color)`) and
   `Renderer::set_background`.

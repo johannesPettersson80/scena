@@ -1,4 +1,4 @@
-# scena post-1.3.0 — Easy-use + state-of-the-art roadmap
+# scena v1.4-v1.5 easy-use + state-of-the-art roadmap and evidence log
 
 Created: 2026-05-18
 Reconciled: 2026-05-19 — staleness pass against current main; shipped items
@@ -13,12 +13,17 @@ and visual contracts stay owned by scena modules.
 Visual-proof pass: 2026-05-19 — every item declares its visual proof
 class so "code compiles, APIs work, but the render is wrong" cannot pass
 as success (the v1.3.0 demo failure mode).
+v1.5 cleanup: 2026-05-22 — this file is now both the historical execution
+log for the v1.4/v1.5 easy-use work and the backlog for still-open proof
+lanes. Historical investigation notes below are superseded where they
+conflict with the shipped §2.6 material preset contract.
 
 scena's signature is **easy to use**. This document is the gap inventory
 between "Rust renderer that works" and "easier than Three.js, more
-accurate than `<model-viewer>`." It is a planning document, not a
-contract; items become contracts as they're picked up, each with its own
-narrow implementation checklist (the way
+accurate than `<model-viewer>`." It started as a planning document and is
+now kept as an evidence log plus open-proof backlog; items become
+contracts as they're picked up, each with its own narrow implementation
+checklist (the way
 `easy-scene-setup-and-auto-framing.md` was structured for v1.3.0).
 
 ## Status legend
@@ -32,7 +37,7 @@ Every item carries one tag:
   proof, doctor rule, or capability evidence.
 - **[deferred]** — real work, but explicitly outside the current
   next-release critical path.
-- **[shipped]** — already in v1.3.0; listed only for context.
+- **[shipped]** — already shipped; listed with version/context where needed.
 
 Each item also names an **owner module** (where the work lives) and a
 **proof class** (what would close the item).
@@ -241,7 +246,7 @@ Sub-items:
   triangle, index-sequence, normal, tangent, and quantized-position paths.
   Native GPU / browser release proof remains a separate lane.
 - **Draco (`KHR_draco_mesh_compression`)** — Status: **[deferred]**.
-  Not a v1.4 critical-path item. Prefer meshopt for the next release;
+  Not part of the v1.4/v1.5 release closure. Prefer meshopt for the next release;
   revisit Draco only behind an optional feature when a maintained decoder
   path is proven. `draco_decoder` is still 0.0.x, and `draco-oxide`
   decoder support is not ready.
@@ -689,17 +694,17 @@ the rendered result is part of the contract.
   enough for roughness-0.28 metal, and M6 material-preset browser proof
   renders the expanded preset set through WebGL2/WebGPU.
 - **Clustered / tiled light culling.** Status: **[deferred]**. Not a
-  v1.4 critical-path item; keep it as future GPU/backend scale work.
+  v1.4/v1.5 release-closure item; keep it as future GPU/backend scale work.
   Babylon 9 made this baseline.
   Proof: many-light stress scene proves correct light selection,
   stable frame time / allocation behavior, and no dropped-light fallback.
   Visual proof: reference-image of the stress scene; not an ON/OFF gate.
 - **Area lights with LTC** (rect/disc/sphere). Status:
-  **[deferred]**. Not a v1.4 critical-path item; keep it as a future
+  **[deferred]**. Not a v1.4/v1.5 release-closure item; keep it as a future
   physically richer lighting lane.
   Visual proof: reference-image before/after per light shape.
 - **Screen-space reflections (SSR).** Status: **[deferred]**. Not a
-  v1.4 critical-path item; keep it as a future reflective-floor backend
+  v1.4/v1.5 release-closure item; keep it as a future reflective-floor backend
   lane.
   Visual proof: reference-image ON/OFF on a reflective-floor control.
 - **Order-independent transparency (OIT).** Status: **[shipped]** for
@@ -1327,7 +1332,7 @@ release-evidence gaps; larger renderer research lanes follow.
        browser canvas; browser screenshot artifact:
        `target/gate-artifacts/demo-material-presets-browser.png`;
        regenerated public showcase media:
-       `docs/assets/v1.4-showcase/material-presets.jpg`. The image shows
+       `docs/assets/easy-scene-showcase/material-presets.jpg`. The image shows
        all current presets (`matte`, `plastic`, `metal`, `rough_metal`,
        `chrome`, `brushed_steel`, `clearcoat_plastic`, `satin`,
        `leather`, `clear_glass`, `frosted_glass`, `rubber`).
@@ -2247,16 +2252,16 @@ not relitigate the same dead ends.
 The reverted attempt lived across commits `2a853e7..218881d` on `main`
 (now gone — recover from reflog if needed).
 
-### Source of truth check
+### Superseded source of truth check
 
-Section 2.6 of this checklist already calls this out: `MaterialDesc::
-metal(Color::LIGHT_GRAY)` is **polished metal (roughness 0.28), not
-mirror chrome**. `chrome` is in the deferred list pending sharp
-environment reflections + SSR for floor reflection. The
-`HONEST-MATERIAL-PRESETS` doctor rule keeps the chrome name out until
-the renderer can back the claim. Any visual fix that tries to make a
-smooth `metal` sphere look like mirror chrome runs against that
-contract.
+Current v1.5 status: `MaterialDesc::metal(Color::LIGHT_GRAY)` remains a
+generic polished-metal preset (roughness 0.28), not the chrome shortcut.
+`MaterialDesc::chrome()` and `MaterialDesc::brushed_steel()` are now
+shipped under the narrower §2.6 contract: they are backed by metallic
+roughness, anisotropy where appropriate, and the raised WebGL2
+environment-prefilter sample floor, but they do not claim SSR floor
+reflections. The pre-v1.5 wording below is retained only as debugging
+history.
 
 ### Five contributing factors found, in order of bite
 
@@ -2274,7 +2279,7 @@ contract.
    `Reference`.
 
 2. **Local lavapipe and headless renders lie about the browser look.**
-   `examples/v1_4_showcase.rs::render_material_sphere` uses
+   `examples/easy_scene_showcase.rs::render_material_sphere` uses
    `Renderer::headless(...)` → `Backend::Headless` → `Reference`
    profile. The local `Renderer::headless_gpu(...)` lavapipe path also
    resolves to `Reference`. The shipped browser demo went through
@@ -2325,12 +2330,14 @@ contract.
    diffuse white. Metal's PBR character comes almost entirely from IBL
    specular reflection of the env. The directional flood masks the env
    reflection until the metal sphere just reads as bright. `examples/
-   v1_4_showcase.rs::render_material_sphere` uses IBL only with a
+   easy_scene_showcase.rs::render_material_sphere` uses IBL only with a
    manual `set_exposure_ev(0.5)` and no `add_studio_lighting`.
 
-### Knobs available if Codex wants to move the dial
+### Historical knobs evaluated before the v1.5 material pass
 
-In rough cost order; pick the smallest one that satisfies the checklist:
+This list records the options considered during the reverted debugging
+session. Do not treat it as the current backlog unless the item also
+appears in the prioritized remaining-work section above.
 
 1. **Swap the demo HDR** — bundle `studio_small_03_1k.hdr` (the file
    `EnvironmentPreset::Studio` already names) into the demo and point
@@ -2364,13 +2371,12 @@ In rough cost order; pick the smallest one that satisfies the checklist:
    reverted attempt is in commits `f5398f1` and `218881d` for a
    reference of where it lived.
 
-4. **Add a `MaterialDesc::chrome()` preset** with roughness ~0.04 and
-   tuned F0. Requires extending section 2.6 of this checklist with the
-   chrome row, removing `chrome` from the deferred list, AND landing
-   sharp environment reflections / SSR per the deferred-list condition.
-   Updating the `HONEST-MATERIAL-PRESETS` doctor rule + the
-   `round_b_material_presets.rs` test in lockstep. Don't try to do
-   this purely as a cosmetic patch — the rule will block the push.
+4. **Resolved in v1.5: add `MaterialDesc::chrome()` and
+   `MaterialDesc::brushed_steel()` presets.** The shipped contract is the
+   narrowed §2.6 contract, not the older "wait for SSR" condition:
+   chrome/brushed steel rely on metallic roughness, anisotropy where
+   appropriate, and raised WebGL2 IBL quality. SSR and reflected floors
+   remain separate deferred renderer work.
 
 5. **Bundle a higher-contrast studio HDR** specifically tuned for
    smooth-metal showcase (dark backdrop, hot point lights against

@@ -31,10 +31,11 @@ impl MaterialDesc {
         Self::pbr_metallic_roughness(base_color, 0.0, 0.42)
     }
 
-    /// Metallic-roughness metal preset for honest bare-metal behavior.
+    /// Metallic-roughness metal preset for generic polished-metal behavior.
     ///
-    /// This is intentionally not named chrome or brushed steel; those require
-    /// renderer features that this preset does not claim.
+    /// Use `MaterialDesc::chrome` for a smoother mirror-like metal shortcut,
+    /// or `MaterialDesc::brushed_steel` for a texture-free anisotropic steel
+    /// shortcut. This preset stays a conservative, general bare-metal default.
     ///
     /// # Examples
     ///

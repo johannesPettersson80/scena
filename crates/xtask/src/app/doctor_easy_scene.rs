@@ -4,6 +4,7 @@ mod asset_validation;
 mod camera_control_kit;
 mod environment_presets;
 mod khronos_samples;
+mod material_presets;
 mod next_release;
 mod picking_outline_hover;
 mod production_asset_profile;
@@ -176,7 +177,7 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
     );
     round_a_primitives::check_round_a_easy_use_primitives(root, findings);
     next_release::check_named_light_presets(root, findings);
-    next_release::check_honest_material_presets(root, findings);
+    material_presets::check_honest_material_presets(root, findings);
     next_release::check_named_background_presets(root, findings);
     environment_presets::check_environment_presets(root, findings);
     next_release::check_named_orbit_control_presets(root, findings);
