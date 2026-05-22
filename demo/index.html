@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>scena 1.4 live demo</title>
+    <title>scena 1.5 live demo</title>
     <link rel="icon" href="data:," />
     <style>
       :root {
@@ -43,7 +43,7 @@
 
       .app {
         display: grid;
-        grid-template-columns: 260px minmax(0, 1fr) minmax(500px, 560px);
+        grid-template-columns: 224px minmax(0, 1fr) minmax(360px, 420px);
         width: 100vw;
         height: 100vh;
         min-width: 0;
@@ -59,9 +59,10 @@
       .samples {
         display: flex;
         flex-direction: column;
-        gap: 18px;
-        padding: 18px 16px;
+        gap: 12px;
+        padding: 14px 12px;
         border-right: 1px solid var(--line);
+        overflow-y: auto;
       }
 
       .brand {
@@ -71,7 +72,7 @@
 
       .brand h1 {
         margin: 0;
-        font-size: 22px;
+        font-size: 21px;
         line-height: 1.05;
         font-weight: 680;
         letter-spacing: 0;
@@ -93,13 +94,13 @@
       }
 
       .new-callout {
-        margin: 6px 0 0 0;
-        padding: 8px 10px;
+        margin: 4px 0 0 0;
+        padding: 7px 9px;
         border-left: 3px solid var(--teal);
         background: var(--panel-2);
         color: var(--text);
-        font-size: 12px;
-        line-height: 1.45;
+        font-size: 11px;
+        line-height: 1.36;
         border-radius: 4px;
       }
 
@@ -109,8 +110,8 @@
 
       .v14-controls {
         display: grid;
-        gap: 8px;
-        padding: 10px 12px;
+        gap: 7px;
+        padding: 9px 10px;
         background: var(--panel-2);
         border: 1px solid var(--line);
         border-radius: 6px;
@@ -133,10 +134,10 @@
 
       .v14-row {
         display: grid;
-        grid-template-columns: 100px 1fr;
+        grid-template-columns: 88px 1fr;
         align-items: center;
         gap: 8px;
-        font-size: 12px;
+        font-size: 11px;
         color: var(--muted);
       }
 
@@ -195,7 +196,7 @@
 
       .sample-list {
         display: grid;
-        gap: 8px;
+        gap: 7px;
       }
 
       .replay-button {
@@ -219,8 +220,8 @@
 
       .connector-story {
         display: grid;
-        gap: 10px;
-        padding: 14px 12px;
+        gap: 8px;
+        padding: 10px;
         background: #11161c;
         border: 1px solid var(--line);
         border-radius: 8px;
@@ -233,8 +234,8 @@
       .connector-story p {
         margin: 0;
         color: var(--muted);
-        font-size: 13px;
-        line-height: 1.42;
+        font-size: 12px;
+        line-height: 1.35;
       }
 
       .connector-story strong {
@@ -244,7 +245,7 @@
 
       .sample-group-label {
         grid-column: 1 / -1;
-        margin: 14px 0 2px;
+        margin: 10px 0 0;
         padding: 0;
         color: var(--muted);
         font-size: 11px;
@@ -256,9 +257,9 @@
       .sample-button {
         display: grid;
         grid-template-columns: 5px minmax(0, 1fr);
-        gap: 10px;
+        gap: 9px;
         align-items: center;
-        min-height: 48px;
+        min-height: 42px;
         padding: 0;
         color: var(--text);
         background: #11161c;
@@ -298,14 +299,14 @@
       }
 
       .sample-button strong {
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 650;
       }
 
       .sample-button small {
         margin-top: 2px;
         color: var(--muted);
-        font-size: 12px;
+        font-size: 11px;
       }
 
       .sample-button.active {
@@ -578,7 +579,7 @@
         font-weight: 620;
       }
 
-      @media (max-width: 1040px) {
+      @media (max-width: 1500px) {
         .app {
           grid-template-columns: 220px minmax(0, 1fr);
           grid-template-rows: minmax(0, 1fr) 260px;
@@ -674,20 +675,19 @@
     <div class="app">
       <aside class="samples">
         <div class="brand">
-          <h1>scena <span class="version-badge">v1.4</span></h1>
-          <p>Three.js ergonomics, Rust types, running in your browser. Drop a model or snap authored connectors.</p>
+          <h1>scena <span class="version-badge">v1.5</span></h1>
+          <p>Rust 3D viewer primitives, running in your browser.</p>
           <p class="new-callout">
-            <strong>New in 1.4:</strong> named presets for colors, lens, lights,
-            materials, backgrounds, exposure, and environments &mdash; pick a
-            sample on the right to see the matching code.
+            <strong>New in 1.5:</strong> expanded PBR material presets,
+            connector proof, real glTF samples, and matching code.
           </p>
         </div>
         <div class="sample-picker">
           <p class="section-label">Try it now</p>
           <div id="sample-list" class="sample-list"></div>
         </div>
-        <details id="v14-controls" class="v14-controls" open>
-          <summary>v1.4 controls</summary>
+        <details id="v14-controls" class="v14-controls">
+          <summary>Render controls</summary>
           <label class="v14-row" for="v14-background">
             <span>Background</span>
             <select id="v14-background">
@@ -703,6 +703,7 @@
           <label class="v14-row" for="v14-auto-exposure">
             <span>Auto exposure</span>
             <select id="v14-auto-exposure">
+              <option value="fixed_0_ev">Fixed 0.0 EV</option>
               <option value="product_studio" selected>product_studio</option>
               <option value="indoor">indoor</option>
               <option value="outdoor">outdoor</option>
@@ -769,6 +770,6 @@
         </details>
       </aside>
     </div>
-    <script type="module" src="./main.js?v=20260522-scena-1.5.0-1"></script>
+    <script type="module" src="./main.js?v=20260523-scena-1.5.x-1"></script>
   </body>
 </html>

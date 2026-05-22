@@ -1,5 +1,6 @@
 import init, {
   attach_to_canvas,
+  background_scheme_css_color,
   capture_png_bytes,
   connector_marker_positions,
   connector_replay_active,
@@ -15,8 +16,9 @@ import init, {
   set_auto_exposure_preset,
   set_background_scheme,
   set_bloom_enabled,
+  set_fixed_exposure_ev,
   tick,
-} from "./pkg/scena.js?v=20260522-scena-1.5.0-1";
+} from "./pkg/scena.js?v=20260523-scena-1.5.x-1";
 
 const SAMPLE_GROUPS = [
   {
@@ -76,7 +78,7 @@ const SAMPLE_GROUPS = [
     ],
   },
   {
-    label: "v1.4 named presets",
+    label: "v1.5 named presets",
     samples: [
       {
         id: "material-presets",
@@ -103,7 +105,6 @@ const ORBIT_RADIANS_PER_PIXEL = 0.01;
 const ZOOM_SCALE = 0.1;
 const MIN_DISTANCE = 0.001;
 const MAX_PITCH_RADIANS = 1.553343;
-const RESOLUTION_SCALE = Math.min(Math.max(window.devicePixelRatio || 1, 1), 1.5);
 const QUERY_PARAMS = new URLSearchParams(window.location.search);
 const TIMING_ENABLED = ["perf", "timing"].some((key) => {
   const value = QUERY_PARAMS.get(key);
@@ -324,8 +325,8 @@ window.__scenaDemoProbe = {
 
 function updateCodePanel() {
   if (activeAsset.code === "v14-presets") {
-    codeTitle.textContent = "v1.4 named presets";
-    codeSubtitle.textContent = "scena 1.4 — pick a name, not a number";
+    codeTitle.textContent = "v1.5 named presets";
+    codeSubtitle.textContent = "scena 1.5 — pick a name, not a number";
     codeSnippet.textContent = `use scena::{
     Assets, AutoExposureConfig, Background, Color, DirectionalLight,
     EnvironmentPreset, MaterialDesc, OrbitControls, PerspectiveCamera,
@@ -376,11 +377,11 @@ let _png = scena::headless_gltf_viewer("machine.glb")
   if (activeAsset.code === "material-presets") {
     codeTitle.textContent = "Material presets";
     codeSubtitle.textContent = "browser-rendered WebGL2 material proof";
-    codeSnippet.textContent = `use scena::{Assets, Color, EnvironmentPreset, MaterialDesc, Renderer, Scene};
+    codeSnippet.textContent = `use scena::{Assets, Color, MaterialDesc, Renderer, Scene};
 
 let assets = Assets::new();
 let environment = assets
-    .load_environment_preset(EnvironmentPreset::Studio)
+    .load_environment("samples/environment/white_studio_03_1k.hdr")
     .await?;
 
 let presets = [
@@ -462,16 +463,41 @@ let controls = OrbitControls::from_framing(framing)
 
 function bufferDimensions() {
   const rect = canvas.getBoundingClientRect();
+  const width = rect.width || canvas.clientWidth || window.innerWidth;
+  const height = rect.height || canvas.clientHeight || window.innerHeight;
   return {
-    width: Math.max(1, Math.floor((rect.width || window.innerWidth) * RESOLUTION_SCALE)),
-    height: Math.max(1, Math.floor((rect.height || window.innerHeight) * RESOLUTION_SCALE)),
+    width: Math.max(1, Math.round(width)),
+    height: Math.max(1, Math.round(height)),
   };
 }
 
 function applyBufferSize() {
   const { width, height } = bufferDimensions();
+  const changed = canvas.width !== width || canvas.height !== height;
   canvas.width = width;
   canvas.height = height;
+  return changed;
+}
+
+function applyCanvasBackground(scheme) {
+  try {
+    canvas.style.backgroundColor = background_scheme_css_color(scheme);
+  } catch (err) {
+    console.error("background_scheme_css_color failed:", err);
+  }
+}
+
+function resizeAttachedRenderer() {
+  const changed = applyBufferSize();
+  if (!app || !attached) return;
+  try {
+    if (changed) resize(app, canvas.width, canvas.height);
+    updateConnectorMarkers();
+    requestRender();
+  } catch (err) {
+    console.error("resize failed:", err);
+    setError(`resize: ${err}`);
+  }
 }
 
 async function start() {
@@ -481,7 +507,7 @@ async function start() {
   updateMetrics();
   beginPhase("initialising WASM");
   await init({
-    module_or_path: new URL("./pkg/scena_bg.wasm?v=20260522-scena-1.5.0-1", import.meta.url),
+    module_or_path: new URL("./pkg/scena_bg.wasm?v=20260523-scena-1.5.x-1", import.meta.url),
   });
   wireDragDrop();
   wirePointer();
@@ -541,10 +567,17 @@ async function loadMaterialPresetsAndAttach(asset) {
   updateCodePanel();
   updateMetrics(0);
   beginPhase("building material preset scene");
+  applyBufferSize();
   app = await load_material_presets_scene(canvas.width, canvas.height);
   beginPhase("creating WebGL2 renderer");
   await attach_to_canvas(app, canvas);
+  set_background_scheme(app, "dark_studio");
+  applyCanvasBackground("dark_studio");
+  set_fixed_exposure_ev(app, 0.0);
+  if (v14BackgroundSelect) v14BackgroundSelect.value = "dark_studio";
+  if (v14AutoExposureSelect) v14AutoExposureSelect.value = "fixed_0_ev";
   attached = true;
+  resizeAttachedRenderer();
   lastFrameAt = performance.now();
   beginPhase("rendering browser material proof");
   requestRender();
@@ -561,10 +594,13 @@ async function loadConnectorAndAttach(driveBytes, loadBytes, asset, byteLength) 
   updateCodePanel();
   updateMetrics(byteLength);
   beginPhase("building mate scene");
+  applyBufferSize();
   app = await load_connector_snap_from_bytes(driveBytes, loadBytes, canvas.width, canvas.height);
   beginPhase("creating WebGL2 renderer");
   await attach_to_canvas(app, canvas);
+  applyCanvasBackground("dark_studio");
   attached = true;
+  resizeAttachedRenderer();
   lastFrameAt = performance.now();
   beginPhase("preparing first frame");
   requestRender();
@@ -580,6 +616,7 @@ async function loadAndAttach(bytes, asset, byteLength) {
   updateCodePanel();
   updateMetrics(byteLength);
   beginPhase("parsing glTF");
+  applyBufferSize();
   if (asset.view) {
     app = await load_gltf_with_view_from_bytes(
       bytes,
@@ -595,7 +632,9 @@ async function loadAndAttach(bytes, asset, byteLength) {
   }
   beginPhase("creating WebGL2 renderer");
   await attach_to_canvas(app, canvas);
+  applyCanvasBackground("dark_studio");
   attached = true;
+  resizeAttachedRenderer();
   lastFrameAt = performance.now();
   beginPhase("preparing first frame");
   requestRender();
@@ -676,22 +715,18 @@ function wireActions() {
 
 function wireResize() {
   let scheduled = false;
-  window.addEventListener("resize", () => {
+  const scheduleResize = () => {
     if (scheduled) return;
     scheduled = true;
     requestAnimationFrame(() => {
       scheduled = false;
-      if (!app) return;
-      applyBufferSize();
-      try {
-        resize(app, canvas.width, canvas.height);
-        requestRender();
-      } catch (err) {
-        console.error("resize failed:", err);
-        setError(`resize: ${err}`);
-      }
+      resizeAttachedRenderer();
     });
-  });
+  };
+  window.addEventListener("resize", scheduleResize);
+  if ("ResizeObserver" in window) {
+    new ResizeObserver(scheduleResize).observe(canvas);
+  }
 }
 
 function isExternalUri(uri) {
@@ -865,8 +900,8 @@ function updateOrbitFromPointer(kind, deltaX, deltaY) {
 function wirePointer() {
   const scaled = (e) => {
     const rect = canvas.getBoundingClientRect();
-    const sx = canvas.width / rect.width;
-    const sy = canvas.height / rect.height;
+    const sx = canvas.width / Math.max(1, rect.width);
+    const sy = canvas.height / Math.max(1, rect.height);
     return {
       x: (e.clientX - rect.left) * sx,
       y: (e.clientY - rect.top) * sy,
@@ -930,12 +965,19 @@ function tryWasmCall(label, fn) {
 
 if (v14BackgroundSelect) {
   v14BackgroundSelect.addEventListener("change", (event) => {
-    tryWasmCall("set_background_scheme", () => set_background_scheme(app, event.target.value));
+    tryWasmCall("set_background_scheme", () => {
+      set_background_scheme(app, event.target.value);
+      applyCanvasBackground(event.target.value);
+    });
   });
 }
 if (v14AutoExposureSelect) {
   v14AutoExposureSelect.addEventListener("change", (event) => {
-    tryWasmCall("set_auto_exposure_preset", () => set_auto_exposure_preset(app, event.target.value));
+    if (event.target.value === "fixed_0_ev") {
+      tryWasmCall("set_fixed_exposure_ev", () => set_fixed_exposure_ev(app, 0.0));
+    } else {
+      tryWasmCall("set_auto_exposure_preset", () => set_auto_exposure_preset(app, event.target.value));
+    }
   });
 }
 if (v14AntiAliasingSelect) {
