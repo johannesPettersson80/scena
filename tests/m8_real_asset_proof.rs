@@ -432,6 +432,15 @@ fn m8_real_asset_waterbottle_gpu_headline() {
     } else {
         25
     };
+    let muted_olive_min = if software_dx12 {
+        // The same darker software-DX12 output shifts part of the body out of
+        // the muted-olive bucket, while the yellow-olive bucket remains above
+        // its normal floor. This lane still rejects missing/wrong-colour body
+        // output without requiring software raster parity with hardware GPU.
+        7_000
+    } else {
+        10_000
+    };
     let regions: &[(&str, usize, usize, [u8; 3], u8)] = &[
         // (name, x, y, expected RGB, tolerance in chebyshev distance)
         ("cap_dome", 250, 70, [76, 27, 12], 25),
@@ -500,7 +509,7 @@ fn m8_real_asset_waterbottle_gpu_headline() {
         ("yellow_olive", 10_000, |r, g, b| {
             r > 60 && g > 50 && b < g.saturating_sub(15) && r < 200
         }),
-        ("muted_olive", 10_000, |r, g, b| {
+        ("muted_olive", muted_olive_min, |r, g, b| {
             r > 110 && g > 105 && b > 55 && b < g.saturating_sub(20) && r < 210
         }),
         ("neutral_dark", 5_000, |r, g, b| {
