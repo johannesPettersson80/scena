@@ -302,7 +302,7 @@ pub(super) fn check_honest_material_presets(root: &Path, findings: &mut Vec<Find
         root,
         findings,
         "DEMO-MATERIAL-PRESETS-PROOF",
-        "demo/proof.html",
+        "demo/proof/index.html",
         &[
             "scena proof harness",
             "Render controls",

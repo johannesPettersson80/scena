@@ -61,7 +61,7 @@ try {
   if ((await page.locator("#sample-list").count()) !== 0) {
     throw new Error("technical sample sidebar leaked onto the public showcase page");
   }
-  if ((await page.locator("a[href='/proof.html']").count()) !== 1) {
+  if ((await page.locator("a[href='/proof/']").count()) !== 1) {
     throw new Error("public showcase must link to the technical proof harness");
   }
   await page.screenshot({ path: path.join(outDir, "root.png"), fullPage: false });
@@ -94,7 +94,7 @@ try {
   const proofErrors = [];
   const proof = await browser.newPage({ viewport: { width: 1366, height: 820 } });
   await wireErrorCapture(proof, proofErrors);
-  await proof.goto(urlFor("/proof.html"), { waitUntil: "domcontentloaded" });
+  await proof.goto(urlFor("/proof/"), { waitUntil: "domcontentloaded" });
   await proof.waitForFunction(() => document.querySelector("#sample-list"), { timeout: 30000 });
   const proofTitle = await proof.title();
   if (proofTitle !== "scena proof harness") {

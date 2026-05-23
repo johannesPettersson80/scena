@@ -380,11 +380,11 @@ fn const_name(line: &str) -> Option<&str> {
 }
 
 fn check_demo_diagnostics_contract(root: &Path, findings: &mut Vec<Finding>) {
-    let html_path = root.join("demo/proof.html");
+    let html_path = root.join("demo/proof/index.html");
     let Ok(html) = fs::read_to_string(&html_path) else {
         findings.push(Finding::new(
             "DEMO-DIAGNOSTICS",
-            "demo/proof.html could not be read",
+            "demo/proof/index.html could not be read",
         ));
         return;
     };

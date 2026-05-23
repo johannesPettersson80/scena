@@ -18,7 +18,10 @@
 /main.js
   Cache-Control: no-store
 
-/proof.html
+/proof/
+  Cache-Control: no-store
+
+/proof/index.html
   Cache-Control: no-store
 
 /proof.js
