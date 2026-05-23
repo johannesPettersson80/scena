@@ -246,6 +246,11 @@ pub async fn attach_to_canvas(app: &mut DemoApp, canvas: HtmlCanvasElement) -> R
 }
 
 #[wasm_bindgen]
+pub fn detach_from_canvas(app: &mut DemoApp) {
+    app.renderer = None;
+}
+
+#[wasm_bindgen]
 pub fn forward_pointer_event(
     app: &mut DemoApp,
     kind: &str,

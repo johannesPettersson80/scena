@@ -150,6 +150,68 @@ pub(crate) fn easy_scene_setup_contracts_reject_material_preset_guide_subset() {
 }
 
 pub(crate) fn write_expanded_material_preset_doctor_fixture(fixture_root: &Path) {
+    for rel in [
+        "src/material_showcase.rs",
+        "src/assets/material_presets.rs",
+        "src/diagnostics/diagnostic.rs",
+        "src/diagnostics/capabilities.rs",
+        "src/demo_page/material_presets.rs",
+        "tests/round_e_material_showcase.rs",
+        "tests/geometry_generated_uvs.rs",
+        "tests/round_e_source_backed_material_presets.rs",
+        "scripts/probe_cloudflare_material_presets.mjs",
+        "demo/proof/index.html",
+        "demo/internal-material-spheres.html",
+        "demo/internal-material-spheres.js",
+        "tests/visual/references/round_e_material_fixture.toml",
+        "tests/visual/references/round_e_material_thresholds.toml",
+        "tests/visual/references/round_e_failing_baseline.json",
+        "tests/visual/references/round_e_failing_baseline_glossy_grid.png",
+    ] {
+        copy_repo_fixture_file(fixture_root, rel);
+    }
+    for preset in ROUND_E_CLOUDFLARE_TEST_PRESETS {
+        copy_repo_fixture_file(
+            fixture_root,
+            &format!("tests/visual/references/round_e/{preset}.png"),
+        );
+    }
+    append_fixture_text(
+        fixture_root,
+        "src/demo_page.rs",
+        " samples/environment/white_studio_03_1k.hdr ",
+    );
+    append_fixture_text(
+        fixture_root,
+        "demo/index.html",
+        " scena 1.5 live showcase Beautiful 3D in Rust Twelve materials. Twelve names. technical proof ",
+    );
+    append_fixture_text(
+        fixture_root,
+        "demo/main.js",
+        " load_material_presets_scene(canvas.width, canvas.height) detach_from_canvas detachOtherStages set_fixed_exposure_ev(app, 0.0) applyCanvasBackground(\"dark_studio\") assets.material_presets().leather().await? ResizeObserver browser-rendered WebGL2 material showcase ",
+    );
+    append_fixture_text(
+        fixture_root,
+        "tests/examples_visual_proof.rs",
+        " assert_round_e_reference_docs_image_metrics round_e_material_reference_docs_image_metrics material_identity_thresholds material_preset_showcase ",
+    );
+    append_fixture_text(
+        fixture_root,
+        "package.json",
+        " cloudflare:materials scripts/probe_cloudflare_material_presets.mjs showcase:probe scripts/probe_showcase_demo.mjs ",
+    );
+    fs::write(
+        fixture_root.join("tests/m8_real_asset_proof.rs"),
+        "polyhaven_white_studio_demo_hdr_is_real_documented_neutral_radiance_file WHITE_STUDIO_DEMO_HDR_PATH",
+    )
+    .expect("white studio proof fixture");
+    fs::create_dir_all(fixture_root.join("demo/samples")).expect("demo samples fixture dir");
+    fs::write(
+        fixture_root.join("demo/samples/SOURCES.md"),
+        "ambientCG `Fabric001` ambientCG `Leather001` ambientCG `Rubber002` cea13f8f2b44ba8a9d4bced83d26ab344e39502dba24b0b4025b7bd3a180a4c2 8d3ac9280bec6a1e1e5384b93e5130414a085033290dde305bacaddd0aa6b96a CC0 white_studio_03 neutral studio HDRI ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b",
+    )
+    .expect("material source fixture");
     fs::write(
         fixture_root.join("src/material/presets.rs"),
         "pub const fn matte(color: Color) {} pub const fn plastic(color: Color) {} pub const fn metal(color: Color) {} pub const fn rough_metal(color: Color) {} pub const fn chrome() {} pub const fn brushed_steel() {} pub const fn clearcoat_plastic(color: Color) {} pub const fn satin(color: Color) {} pub const fn leather(color: Color) {} pub const fn clear_glass(color: Color) {} pub const fn frosted_glass(color: Color) {} pub const fn rubber() {}",
@@ -164,7 +226,7 @@ pub(crate) fn write_expanded_material_preset_doctor_fixture(fixture_root: &Path)
         .expect("browser pbr fixture dir");
     fs::write(
         fixture_root.join("src/browser_probe/workflows/pbr/material_presets.rs"),
-        "material_presets_scene browser-pbr-material-preset-expanded-set webgl2_smooth_metal_sample_floor scene-color-ior-thickness-rough-blur-sorted-transparency",
+        "material_presets_scene material_preset_showcase browser-pbr-material-preset-expanded-set webgl2_smooth_metal_sample_floor scene-color-ior-thickness-rough-blur-sorted-transparency /demo/samples/environment/white_studio_03_1k.hdr showcase_geometry source_surfaces",
     )
     .expect("browser material preset fixture");
     let browser_probe = fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe.js");
@@ -175,7 +237,7 @@ pub(crate) fn write_expanded_material_preset_doctor_fixture(fixture_root: &Path)
         browser_probe_fixture.push(' ');
     }
     browser_probe_fixture.push_str(
-        "assertMaterialPresetProof pbr-material-presets webgl2_smooth_metal_sample_floor < 96",
+        "assertMaterialPresetProof pbr-material-presets webgl2_smooth_metal_sample_floor < 96 /demo/samples/environment/white_studio_03_1k.hdr single-shape grid Assets::material_presets()",
     );
     fs::write(browser_probe, browser_probe_fixture).expect("browser probe fixture");
     fs::create_dir_all(fixture_root.join("src/render/prepare"))
@@ -185,6 +247,26 @@ pub(crate) fn write_expanded_material_preset_doctor_fixture(fixture_root: &Path)
         "sample_count_for_roughness(0.28, EnvironmentPrefilterQuality::InteractiveWebGl2) 2 => 96 _ => 192",
     )
     .expect("environment prefilter fixture");
+}
+
+fn copy_repo_fixture_file(fixture_root: &Path, rel: &str) {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let src = root.join(rel);
+    let dst = fixture_root.join(rel);
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent).expect("fixture parent dir");
+    }
+    fs::copy(&src, &dst).unwrap_or_else(|err| panic!("copy fixture {rel} from {src:?}: {err}"));
+}
+
+fn append_fixture_text(fixture_root: &Path, rel: &str, text: &str) {
+    let path = fixture_root.join(rel);
+    let mut current = fs::read_to_string(&path).unwrap_or_default();
+    current.push_str(text);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).expect("fixture parent dir");
+    }
+    fs::write(&path, current).expect("append fixture text");
 }
 
 fn write_round_e_threshold_fixture(root: &Path) {

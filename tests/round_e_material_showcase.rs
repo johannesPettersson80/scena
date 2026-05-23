@@ -265,10 +265,11 @@ fn internal_material_sphere_review_uses_no_local_glass_cards_or_panels() {
          square/card/panel; glass has to improve in the material or renderer path"
     );
     assert!(
-        source.contains("let backdrop_band_count = 96")
+        source.contains("material_studio_backdrop_geometry()")
             && source.contains(".add_studio_lighting()"),
         "the approved 12-sphere review scene keeps the same full-scene backdrop and global \
-         lighting while glass tuning stays in MaterialDesc / shader behavior"
+         lighting while using a single gradient backdrop mesh instead of dozens of per-band \
+         primitives"
     );
 }
 
@@ -288,5 +289,47 @@ fn public_material_presets_demo_uses_approved_sphere_showcase() {
             && scene_source
                 .contains("load_material_spheres_scene(viewport_width, viewport_height).await"),
         "the stable public WASM export must delegate to the approved 12-sphere showcase"
+    );
+}
+
+#[test]
+fn public_showcase_material_section_uses_live_spheres_not_png_proof_thumbnails() {
+    let demo_js = include_str!("../demo/main.js");
+    let demo_html = include_str!("../demo/index.html");
+
+    assert!(
+        demo_js.contains("load_material_presets_scene")
+            && !demo_js.contains("load_single_material_sphere_scene")
+            && !demo_js.contains("assets/showcase/materials/${id}.png"),
+        "the public materials section must render the approved browser 12-sphere scene once, \
+         not swap PNG proof thumbnails or rebuild a fresh single-material renderer per click"
+    );
+    assert!(
+        demo_html.contains("data-scene=\"material\"")
+            && demo_html.contains("material-choices")
+            && demo_html.contains("material-selected")
+            && !demo_html.contains("thumb-grid"),
+        "the public materials section should expose browser-rendered material choices, not the \
+         old PNG thumbnail grid"
+    );
+}
+
+#[test]
+fn public_showcase_detaches_inactive_webgl2_surfaces_before_loading_next_section() {
+    let demo_js = include_str!("../demo/main.js");
+    let wasm_exports = include_str!("../src/demo_page.rs");
+
+    assert!(
+        wasm_exports.contains("pub fn detach_from_canvas")
+            && wasm_exports.contains("app.renderer = None"),
+        "the browser showcase needs an explicit detach export so a WebGL2 page with several \
+         sections does not keep stale surfaces alive"
+    );
+    assert!(
+        demo_js.contains("detach_from_canvas")
+            && demo_js.contains("detachOtherStages")
+            && demo_js.contains("this.attached = false"),
+        "the public showcase must detach inactive WebGL2 surfaces before activating the next \
+         live section; otherwise later canvases fail with CreateSurface"
     );
 }

@@ -14,13 +14,29 @@ function urlFor(route) {
 
 async function waitForController(page, scene) {
   await page.waitForFunction(
-    (name) =>
-      window.__scenaShowcaseProbe
+    (name) => {
+      const entry = window.__scenaShowcaseProbe
         ?.controllers()
-        ?.some((entry) => entry.scene === name && entry.loaded && !entry.status.startsWith("loading")),
+        ?.find((candidate) => candidate.scene === name);
+      if (!entry?.loaded) return false;
+      if (/failed|error/i.test(entry.status)) return true;
+      return /rendered|assembled|mating connectors|browser-rendered WebGL2 material showcase/i.test(
+        entry.status,
+      );
+    },
     scene,
     { timeout: 90000 },
   );
+  const status = await page.evaluate(
+    (name) =>
+      window.__scenaShowcaseProbe
+        ?.controllers()
+        ?.find((candidate) => candidate.scene === name)?.status || "",
+    scene,
+  );
+  if (/failed|error/i.test(status)) {
+    throw new Error(`${scene} controller failed: ${status}`);
+  }
 }
 
 async function assertNoErrors(errors, label) {
@@ -75,7 +91,7 @@ try {
   });
   await waitForController(page, "material");
   const materialCode = await page.locator("#material-code").textContent();
-  if (!materialCode.includes("MaterialDesc::leather")) {
+  if (!materialCode.includes("assets.material_presets().leather().await?")) {
     throw new Error(`material code did not follow thumbnail selection: ${materialCode}`);
   }
   await page.screenshot({ path: path.join(outDir, "materials.png"), fullPage: false });

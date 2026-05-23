@@ -6,7 +6,7 @@ and render frames.
 
 The authoritative API reference is generated on docs.rs:
 
-<https://docs.rs/scena/1.5.0/scena/>
+<https://docs.rs/scena/latest/scena/>
 
 Use this page as the conceptual map.
 

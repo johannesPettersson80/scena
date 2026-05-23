@@ -1,8 +1,8 @@
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    Aabb, Assets, Color, FramingOptions, GeometryDesc, LabelDesc, MaterialDesc, OrbitControls,
-    PerspectiveCamera, Scene, Transform, Vec3,
+    Aabb, Assets, Color, FramingOptions, GeometryDesc, GeometryTopology, GeometryVertex, LabelDesc,
+    MaterialDesc, OrbitControls, PerspectiveCamera, Scene, Transform, Vec3,
 };
 
 use super::{DemoApp, log_timing, now_ms};
@@ -120,6 +120,50 @@ async fn load_material_proof_scene(
     })
 }
 
+fn material_studio_backdrop_geometry() -> GeometryDesc {
+    let vertices = vec![
+        GeometryVertex {
+            position: Vec3::new(-1.70, 0.82, -0.30),
+            normal: Vec3::new(0.0, 0.0, 1.0),
+        },
+        GeometryVertex {
+            position: Vec3::new(1.70, 0.82, -0.30),
+            normal: Vec3::new(0.0, 0.0, 1.0),
+        },
+        GeometryVertex {
+            position: Vec3::new(-1.70, 0.08, -0.30),
+            normal: Vec3::new(0.0, 0.0, 1.0),
+        },
+        GeometryVertex {
+            position: Vec3::new(1.70, 0.08, -0.30),
+            normal: Vec3::new(0.0, 0.0, 1.0),
+        },
+        GeometryVertex {
+            position: Vec3::new(-1.70, -0.82, -0.30),
+            normal: Vec3::new(0.0, 0.0, 1.0),
+        },
+        GeometryVertex {
+            position: Vec3::new(1.70, -0.82, -0.30),
+            normal: Vec3::new(0.0, 0.0, 1.0),
+        },
+    ];
+    let colors = vec![
+        Color::from_srgb_u8(5, 12, 20),
+        Color::from_srgb_u8(5, 12, 20),
+        Color::from_srgb_u8(15, 42, 59),
+        Color::from_srgb_u8(15, 42, 59),
+        Color::from_srgb_u8(10, 27, 38),
+        Color::from_srgb_u8(10, 27, 38),
+    ];
+    GeometryDesc::try_new_with_vertex_colors(
+        GeometryTopology::Triangles,
+        vertices,
+        vec![0, 2, 1, 1, 2, 3, 2, 4, 3, 3, 4, 5],
+        colors,
+    )
+    .expect("material studio backdrop geometry is valid")
+}
+
 #[wasm_bindgen]
 pub async fn load_material_spheres_scene(
     viewport_width: u32,
@@ -129,29 +173,16 @@ pub async fn load_material_spheres_scene(
     let assets = Assets::new();
     let mut scene = Scene::new();
     let sphere = assets.create_geometry(GeometryDesc::sphere(1.0, 72, 36));
-    let backdrop = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
-    let backdrop_band_count = 96;
-    for index in 0..backdrop_band_count {
-        let t = index as f32 / (backdrop_band_count - 1) as f32;
-        let center = (1.0 - (t * 2.0 - 1.0).abs()).powf(2.2);
-        let lower = t.powf(1.7);
-        let r = (5.0 + center * 10.0 + lower * 5.0).round() as u8;
-        let g = (12.0 + center * 30.0 + lower * 11.0).round() as u8;
-        let b = (20.0 + center * 39.0 + lower * 13.0).round() as u8;
-        let y = 0.82 - index as f32 * (1.64 / backdrop_band_count as f32);
-        let material = assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(r, g, b)));
-        scene
-            .mesh(backdrop, material)
-            .transform(Transform {
-                translation: Vec3::new(0.0, y, -0.30),
-                rotation: crate::Quat::IDENTITY,
-                scale: Vec3::new(3.40, 0.026, 0.018),
-            })
-            .add()
-            .map_err(|err| {
-                JsValue::from_str(&format!("add material studio backdrop failed: {err:?}"))
-            })?;
-    }
+    let backdrop = assets.create_geometry(material_studio_backdrop_geometry());
+    scene
+        .mesh(
+            backdrop,
+            assets.create_material(MaterialDesc::unlit(Color::WHITE)),
+        )
+        .add()
+        .map_err(|err| {
+            JsValue::from_str(&format!("add material studio backdrop failed: {err:?}"))
+        })?;
 
     for (index, preset) in material_preset_showcase().iter().enumerate() {
         let column = index % 6;
@@ -236,29 +267,16 @@ pub async fn load_single_material_sphere_scene(
     let assets = Assets::new();
     let mut scene = Scene::new();
     let sphere = assets.create_geometry(GeometryDesc::sphere(1.0, 72, 36));
-    let backdrop = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
-    let backdrop_band_count = 96;
-    for index in 0..backdrop_band_count {
-        let t = index as f32 / (backdrop_band_count - 1) as f32;
-        let center = (1.0 - (t * 2.0 - 1.0).abs()).powf(2.2);
-        let lower = t.powf(1.7);
-        let r = (5.0 + center * 10.0 + lower * 5.0).round() as u8;
-        let g = (12.0 + center * 30.0 + lower * 11.0).round() as u8;
-        let b = (20.0 + center * 39.0 + lower * 13.0).round() as u8;
-        let y = 0.82 - index as f32 * (1.64 / backdrop_band_count as f32);
-        let material = assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(r, g, b)));
-        scene
-            .mesh(backdrop, material)
-            .transform(Transform {
-                translation: Vec3::new(0.0, y, -0.30),
-                rotation: crate::Quat::IDENTITY,
-                scale: Vec3::new(1.75, 0.026, 0.018),
-            })
-            .add()
-            .map_err(|err| {
-                JsValue::from_str(&format!("add material studio backdrop failed: {err:?}"))
-            })?;
-    }
+    let backdrop = assets.create_geometry(material_studio_backdrop_geometry());
+    scene
+        .mesh(
+            backdrop,
+            assets.create_material(MaterialDesc::unlit(Color::WHITE)),
+        )
+        .add()
+        .map_err(|err| {
+            JsValue::from_str(&format!("add material studio backdrop failed: {err:?}"))
+        })?;
 
     let preset = material_preset_showcase()
         .iter()

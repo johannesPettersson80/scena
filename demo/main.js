@@ -2,20 +2,20 @@ import init, {
   attach_to_canvas,
   background_scheme_css_color,
   connector_marker_positions,
+  detach_from_canvas,
   connector_replay_active,
   forward_pointer_event,
   load_connector_snap_from_bytes,
   load_gltf_with_floor_from_bytes,
   load_gltf_with_view_from_bytes,
   load_material_presets_scene,
-  load_single_material_sphere_scene,
   replay_connector_snap,
   resize,
   set_fixed_exposure_ev,
   tick,
-} from "./pkg/scena.js?v=20260523-public-showcase-deploy-1";
+} from "./pkg/scena.js?v=20260523-scena-1.5.1-1";
 
-const WASM_URL = "./pkg/scena_bg.wasm?v=20260523-public-showcase-deploy-1";
+const WASM_URL = "./pkg/scena_bg.wasm?v=20260523-scena-1.5.1-1";
 const MAX_CANVAS_DIMENSION = 1600;
 
 const MATERIALS = [
@@ -26,11 +26,11 @@ const MATERIALS = [
   ["chrome", "Chrome", "MaterialDesc::chrome()"],
   ["brushed_steel", "Brushed steel", "MaterialDesc::brushed_steel()"],
   ["clearcoat_plastic", "Clearcoat plastic", "MaterialDesc::clearcoat_plastic(Color::BLUE)"],
-  ["satin", "Satin", "MaterialDesc::satin(Color::MAGENTA)"],
-  ["leather", "Leather", "MaterialDesc::leather(Color::ORANGE)"],
+  ["satin", "Satin", "assets.material_presets().satin().await?"],
+  ["leather", "Leather", "assets.material_presets().leather().await?"],
   ["clear_glass", "Clear glass", "MaterialDesc::clear_glass(Color::COOL_WHITE)"],
   ["frosted_glass", "Frosted glass", "MaterialDesc::frosted_glass(Color::WHITE)"],
-  ["rubber", "Rubber", "MaterialDesc::rubber()"],
+  ["rubber", "Rubber", "assets.material_presets().rubber().await?"],
 ];
 
 const controllers = new Map();
@@ -124,6 +124,7 @@ class LiveStage {
     this.app = null;
     this.loaded = false;
     this.active = false;
+    this.attached = false;
     this.renderScheduled = false;
     this.replayActive = false;
     this.lastFrameAt = performance.now();
@@ -134,8 +135,13 @@ class LiveStage {
   }
 
   async activate() {
+    detachOtherStages(this.scene);
     this.active = true;
-    if (!this.loaded) await this.load();
+    if (!this.loaded) {
+      await this.load();
+    } else if (!this.attached) {
+      await this.attachCurrentCanvas();
+    }
     if (this.scene === "connector") this.startConnectorLoop();
     this.requestRender();
   }
@@ -144,18 +150,19 @@ class LiveStage {
     this.active = false;
     window.clearTimeout(this.replayTimer);
     this.replayTimer = null;
+    this.detach();
   }
 
   async load() {
-    await ensureWasm();
+    const wasmReadyPromise = ensureWasm();
     setStatus(this.stage, "loading");
     try {
-      if (this.scene === "hero") await this.loadHero();
-      if (this.scene === "material") await this.loadMaterial(materialSelection);
-      if (this.scene === "model") await this.loadModel(this.stage.dataset.sample);
-      if (this.scene === "connector") await this.loadConnector();
+      if (this.scene === "hero") await this.loadHero(wasmReadyPromise);
+      if (this.scene === "material") await this.loadMaterial(materialSelection, wasmReadyPromise);
+      if (this.scene === "model") await this.loadModel(this.stage.dataset.sample, wasmReadyPromise);
+      if (this.scene === "connector") await this.loadConnector(wasmReadyPromise);
       this.loaded = true;
-      setStatus(this.stage, "rendered");
+      setStatus(this.stage, "rendering");
     } catch (error) {
       console.error(`showcase ${this.scene} failed`, error);
       setStatus(this.stage, `render failed: ${String(error).slice(0, 120)}`);
@@ -164,30 +171,57 @@ class LiveStage {
 
   async attach(app) {
     this.app = app;
+    await this.attachCurrentCanvas();
+  }
+
+  async attachCurrentCanvas() {
+    if (!this.app) return;
+    setStatus(this.stage, "rendering");
+    const { width, height } = canvasSize(this.canvas);
+    if (this.canvas.width !== width || this.canvas.height !== height) {
+      this.canvas.width = width;
+      this.canvas.height = height;
+    }
     await attach_to_canvas(this.app, this.canvas);
+    this.attached = true;
     this.lastFrameAt = performance.now();
   }
 
-  async loadHero() {
+  detach() {
+    if (!this.app || !this.attached) return;
+    try {
+      detach_from_canvas(this.app);
+    } catch (error) {
+      console.error(`detach ${this.scene} failed`, error);
+    }
+    this.attached = false;
+  }
+
+  async loadHero(wasmReadyPromise = ensureWasm()) {
     const { width, height } = canvasSize(this.canvas);
-    const bytes = await fetchBytes("/samples/connector-snap/connector_snap_assembly.glb");
+    const bytesPromise = fetchBytes("/samples/connector-snap/connector_snap_assembly.glb");
+    await wasmReadyPromise;
+    const bytes = await bytesPromise;
     const app = await load_gltf_with_view_from_bytes(bytes, width, height, true, -0.42, 0.28);
     await this.attach(app);
   }
 
-  async loadMaterial(preset) {
+  async loadMaterial(preset, wasmReadyPromise = ensureWasm()) {
     materialSelection = preset;
     this.stage.dataset.material = preset;
     const { width, height } = canvasSize(this.canvas);
-    const app = await load_single_material_sphere_scene(preset, width, height);
+    await wasmReadyPromise;
+    const app = await load_material_presets_scene(width, height);
     await this.attach(app);
     this.loaded = true;
     this.requestRender();
   }
 
-  async loadModel(path) {
+  async loadModel(path, wasmReadyPromise = ensureWasm()) {
     const { width, height } = canvasSize(this.canvas);
-    const bytes = await fetchBytes(path);
+    const bytesPromise = fetchBytes(path);
+    await wasmReadyPromise;
+    const bytes = await bytesPromise;
     const app = await load_gltf_with_floor_from_bytes(bytes, width, height);
     await this.attach(app);
   }
@@ -199,16 +233,18 @@ class LiveStage {
     const app = await load_gltf_with_floor_from_bytes(bytes, width, height);
     await this.attach(app);
     this.loaded = true;
-    setStatus(this.stage, label);
+    setStatus(this.stage, "rendering");
     this.requestRender();
   }
 
-  async loadConnector() {
+  async loadConnector(wasmReadyPromise = ensureWasm()) {
     const { width, height } = canvasSize(this.canvas);
-    const [driveBytes, loadBytes] = await Promise.all([
+    const bytesPromise = Promise.all([
       fetchBytes("/samples/connector-snap/drive_unit.glb"),
       fetchBytes("/samples/connector-snap/load_unit.glb"),
     ]);
+    await wasmReadyPromise;
+    const [driveBytes, loadBytes] = await bytesPromise;
     const app = await load_connector_snap_from_bytes(driveBytes, loadBytes, width, height);
     await this.attach(app);
     this.replayActive = false;
@@ -352,15 +388,14 @@ class LiveStage {
 }
 
 function createMaterialThumbs() {
-  const grid = document.getElementById("material-thumbs");
+  const grid = document.getElementById("material-choices");
   if (!grid) return;
   const buttons = MATERIALS.map(([id, label]) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "thumb-button";
+    button.className = "material-choice";
     button.dataset.material = id;
-    button.innerHTML = `<img alt="" src="assets/showcase/materials/${id}.png"><span></span>`;
-    button.querySelector("span").textContent = label;
+    button.textContent = label;
     button.addEventListener("click", () => selectMaterial(id));
     return button;
   });
@@ -371,23 +406,29 @@ function createMaterialThumbs() {
 function selectMaterial(id) {
   materialSelection = id;
   updateMaterialSelection();
-  const controller = controllers.get("material");
-  if (controller?.active) {
-    setStatus(controller.stage, "loading");
-    controller.loadMaterial(id).catch((error) => {
-      console.error("material load failed", error);
-      setStatus(controller.stage, `render failed: ${String(error).slice(0, 120)}`);
-    });
-  }
 }
 
 function updateMaterialSelection() {
   for (const button of document.querySelectorAll("[data-material]")) {
-    button.classList.toggle("active", button.dataset.material === materialSelection);
+    const active = button.dataset.material === materialSelection;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
   }
   const selected = MATERIALS.find(([id]) => id === materialSelection);
   const code = document.getElementById("material-code");
   if (code && selected) code.textContent = `let material = ${selected[2]};`;
+  const selectedLabel = document.getElementById("material-selected");
+  if (selectedLabel && selected) selectedLabel.textContent = `Selected: ${selected[1]}`;
+}
+
+function detachOtherStages(activeScene) {
+  for (const [scene, controller] of controllers) {
+    if (scene === activeScene) continue;
+    controller.active = false;
+    window.clearTimeout(controller.replayTimer);
+    controller.replayTimer = null;
+    controller.detach();
+  }
 }
 
 function wireSamples() {
@@ -405,7 +446,7 @@ function wireSamples() {
       try {
         await controller.loadModel(button.dataset.sample);
         controller.loaded = true;
-        setStatus(controller.stage, button.dataset.label);
+        setStatus(controller.stage, "rendering");
         controller.requestRender();
       } catch (error) {
         console.error("sample load failed", error);

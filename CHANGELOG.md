@@ -4,8 +4,17 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-05-23
+
 ### Changed
 
+- Reworked the public showcase material section to use the approved live
+  browser-rendered 12-sphere scene instead of PNG proof thumbnails, with
+  source-backed material preset code shown for satin, leather, and rubber.
+- Optimized the public showcase startup by lazy-loading below-fold static
+  images, starting hero/model GLB fetches in parallel with WASM
+  initialization, and replacing the material backdrop band stack with one
+  gradient mesh.
 - Updated the easy scene setup guide so its material preset snippet shows
   every v1.5 `MaterialDesc` preset, not only the earlier subset.
 - Corrected stale v1.5 documentation wording in material rustdocs, release
@@ -13,6 +22,12 @@ All notable user-facing changes are recorded here.
   cannot omit shipped material presets again.
 - Renamed the easy scene showcase example and documentation asset folder away
   from the old v1.4-specific names.
+
+### Fixed
+
+- Fixed the public showcase WebGL2 surface lifecycle so the materials, model
+  loading, and connector sections detach inactive canvases before activating
+  the next live renderer instead of leaving later canvases black.
 - Changed `GridFloorOptions::under_bounds` so the default floor plane is placed
   at the supplied bounds' minimum Y, preventing generated showcase floors from
   cutting through imported models.

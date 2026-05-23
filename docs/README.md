@@ -7,7 +7,7 @@ and deterministic headless rendering.
 ## Start here
 
 - [README](../README.md): install, quick start, features, examples, and platform support.
-- [docs.rs API reference](https://docs.rs/scena/1.5.0/scena/): generated Rust API docs.
+- [docs.rs API reference](https://docs.rs/scena/latest/scena/): generated Rust API docs.
 - [Getting started](getting-started.md): install, first scene, GLB loading, and output paths.
 - [Easy scene setup](guides/easy-scene-setup.md): frame models, add studio lighting,
   add a matte grid floor, enable auto exposure, and connect authored anchors.

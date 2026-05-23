@@ -240,6 +240,20 @@
         text-align: right;
       }
 
+      .material-selected {
+        position: absolute;
+        left: 18px;
+        top: 18px;
+        z-index: 4;
+        padding: 8px 12px;
+        color: rgba(245, 241, 232, 0.92);
+        background: rgba(13, 17, 24, 0.72);
+        border: 1px solid rgba(57, 200, 162, 0.42);
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 750;
+      }
+
       .materials,
       .easy,
       .install {
@@ -260,24 +274,25 @@
         align-items: start;
       }
 
-      .thumb-grid {
+      .material-choices {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 12px;
+        gap: 10px;
       }
 
-      .thumb-button {
-        display: grid;
-        gap: 8px;
-        padding: 0;
+      .material-choice {
+        min-height: 42px;
+        padding: 0 12px;
         color: var(--ink);
-        background: transparent;
-        border: 0;
+        background: rgba(255, 255, 255, 0.72);
+        border: 1px solid var(--line);
+        border-radius: 8px;
         cursor: pointer;
-        text-align: left;
+        text-align: center;
+        font-size: 13px;
+        font-weight: 750;
       }
 
-      .thumb-button img,
       .sample-chip img {
         display: block;
         width: 100%;
@@ -294,16 +309,11 @@
         background: #dfe5e4;
       }
 
-      .thumb-button img {
-        border: 2px solid transparent;
-        border-radius: 8px;
-      }
-
-      .thumb-button.active img {
+      .material-choice.active {
         border-color: var(--teal);
+        background: color-mix(in srgb, var(--teal), white 80%);
       }
 
-      .thumb-button span,
       .sample-chip span {
         color: var(--muted);
         font-size: 13px;
@@ -585,7 +595,7 @@
           padding: 42px 16px;
         }
 
-        .thumb-grid,
+        .material-choices,
         .easy-grid,
         .confidence-grid,
         .sample-row {
@@ -626,7 +636,7 @@ renderer.render(&scene)?;</code></pre>
             <button class="install-pill" type="button" data-copy-text="cargo add scena">cargo add scena</button>
           </div>
           <div class="link-row" aria-label="project links">
-            <a href="https://docs.rs/scena/1.5.0/scena/">docs.rs/scena</a>
+            <a href="https://docs.rs/scena/latest/scena/">docs.rs/scena</a>
             <a href="https://crates.io/crates/scena">crates.io</a>
             <a href="https://github.com/johannesPettersson80/scena">GitHub</a>
           </div>
@@ -645,7 +655,7 @@ renderer.render(&scene)?;</code></pre>
         </div>
         <div class="materials-layout">
           <div>
-            <div class="thumb-grid" id="material-thumbs"></div>
+            <div class="material-choices" id="material-choices"></div>
           </div>
           <div class="material-panel">
             <div class="switcher" aria-label="environment options">
@@ -653,10 +663,11 @@ renderer.render(&scene)?;</code></pre>
             </div>
             <div class="stage" data-scene="material" data-material="chrome">
               <canvas aria-label="selected material render"></canvas>
+              <div class="material-selected" id="material-selected">Selected: Chrome</div>
               <div class="stage-status">select a material</div>
             </div>
             <div class="mini-code" id="material-code">let material = MaterialDesc::chrome();</div>
-            <p class="honest-note">MaterialDesc::* ships as named PBR shortcuts in v1.5. Source-backed material presets and physical glass are capability-gated until their release proof is complete.</p>
+            <p class="honest-note">Rendered live in your browser. Matte through glass use MaterialDesc::*; satin, leather, and rubber use source-backed Assets::material_presets(). Full physical glass remains capability-gated until its release proof is complete.</p>
           </div>
         </div>
       </section>
@@ -675,7 +686,7 @@ renderer.render(&scene)?;</code></pre>
             </div>
             <div class="sample-row" id="sample-row">
               <button class="sample-chip" type="button" data-sample="/samples/connector-snap/connector_snap_assembly.glb" data-label="Connector assembly">
-                <img src="assets/showcase/models/connector.png" alt="" />
+                <img src="assets/showcase/models/connector.png" alt="" loading="lazy" decoding="async" />
                 <span>Connector assembly</span>
               </button>
             </div>
@@ -735,32 +746,32 @@ scene.mate(&drive, "shaft", &load, "hub")?;</code></pre>
         </div>
         <div class="easy-grid">
           <article class="easy-card">
-            <img src="assets/showcase/easy/camera-portrait.png" alt="" />
+            <img src="assets/showcase/easy/camera-portrait.png" alt="" loading="lazy" decoding="async" />
             <strong>Camera</strong>
             <code>PerspectiveCamera::portrait()</code>
           </article>
           <article class="easy-card">
-            <img src="assets/showcase/easy/key-light.png" alt="" />
+            <img src="assets/showcase/easy/key-light.png" alt="" loading="lazy" decoding="async" />
             <strong>Lighting</strong>
             <code>DirectionalLight::key_light()</code>
           </article>
           <article class="easy-card">
-            <img src="assets/showcase/easy/environment-studio.png" alt="" />
+            <img src="assets/showcase/easy/environment-studio.png" alt="" loading="lazy" decoding="async" />
             <strong>Environment</strong>
             <code>EnvironmentPreset::Studio</code>
           </article>
           <article class="easy-card">
-            <img src="assets/showcase/easy/background-dark-studio.png" alt="" />
+            <img src="assets/showcase/easy/background-dark-studio.png" alt="" loading="lazy" decoding="async" />
             <strong>Background</strong>
             <code>Background::DarkStudio</code>
           </article>
           <article class="easy-card">
-            <img src="assets/showcase/easy/auto-exposure-product.png" alt="" />
+            <img src="assets/showcase/easy/auto-exposure-product.png" alt="" loading="lazy" decoding="async" />
             <strong>Exposure</strong>
             <code>AutoExposureConfig::product_studio()</code>
           </article>
           <article class="easy-card">
-            <img src="assets/showcase/easy/material-chrome.png" alt="" />
+            <img src="assets/showcase/easy/material-chrome.png" alt="" loading="lazy" decoding="async" />
             <strong>Materials</strong>
             <code>MaterialDesc::chrome()</code>
           </article>
@@ -802,7 +813,7 @@ scene.mate(&drive, "shaft", &load, "hub")?;</code></pre>
           <h2>Add it to your project.</h2>
           <button class="install-line" type="button" data-copy-text="cargo add scena">cargo add scena</button>
           <div class="cta-row">
-            <a href="https://docs.rs/scena/1.5.0/scena/">Read the docs</a>
+            <a href="https://docs.rs/scena/latest/scena/">Read the docs</a>
             <a href="https://github.com/johannesPettersson80/scena">Star on GitHub</a>
           </div>
           <div class="link-row">
@@ -816,6 +827,6 @@ scene.mate(&drive, "shaft", &load, "hub")?;</code></pre>
       </section>
     </main>
 
-    <script type="module" src="./main.js?v=20260523-public-showcase-deploy-1"></script>
+    <script type="module" src="./main.js?v=20260523-scena-1.5.1-1"></script>
   </body>
 </html>
