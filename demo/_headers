@@ -17,3 +17,12 @@
 
 /main.js
   Cache-Control: no-store
+
+/proof.html
+  Cache-Control: no-store
+
+/proof.js
+  Cache-Control: no-store
+
+/assets/showcase/*
+  Cache-Control: public, max-age=31536000, immutable

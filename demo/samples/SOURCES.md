@@ -139,3 +139,69 @@ not depend on local-only generated files.
     `fa03218d4ef7b18ed39082bfdf9bc3925838806a299c56dc433c7d0c201a8c62`
   - `demo-512/Rubber002_512_OcclusionRoughnessMetallic.png` SHA-256
     `9a61567504f1eac44610568b6d8216439d9b5f065b8f7c609a351ff546768c5b`
+
+### `materials/ambientcg/Fabric001`
+
+- Source: ambientCG `Fabric001`
+- Source page: `https://ambientcg.com/a/Fabric001`
+- Direct download used: `https://ambientcg.com/get?file=Fabric001_1K-JPG.zip`
+- License: CC0
+- Download date: 2026-05-22
+- Selected resolution: 1K JPG
+- Original archive SHA-256:
+  `cea13f8f2b44ba8a9d4bced83d26ab344e39502dba24b0b4025b7bd3a180a4c2`
+- Demo role: source-backed satin/fabric preset proof.
+- Stored source files:
+  - `source/Fabric001_1K-JPG_Color.jpg` SHA-256
+    `e4d03bf5210d01b4b21a846b0256b5d322104094688a7f2f7babb84e8140a20a`
+  - `source/Fabric001_1K-JPG_NormalGL.jpg` SHA-256
+    `c2b8a5e28b31b330095500eb2d4b03c635e62d526f2fac0781f1409309be1d63`
+  - `source/Fabric001_1K-JPG_Roughness.jpg` SHA-256
+    `1ecb388fff96904e1eead5dd1ebb270e0645c222b96c4f7343b2e84a869ef7b7`
+  - `source/Fabric001_1K-JPG_Displacement.jpg` SHA-256
+    `0be8f670ee979513a460f1dd4efefaddef197ba6ce5a570a7f2868137c3164b7`
+- Derived demo texture:
+  - `Fabric001_1K-JPG_OcclusionRoughnessMetallic.png` SHA-256
+    `0c85299d73fd8f692a1dfab79ba96f38acb5791be91c5347e70e11b652de2b68`
+  - Derived with ImageMagick from a neutral white occlusion channel, source
+    roughness, and a black metalness channel.
+- Optimized public-demo 512px textures:
+  - `demo-512/Fabric001_512_Color.jpg` SHA-256
+    `d64d1a2f18efd2224f5fea847a675560c9440eaebc43bba3a92941f5fe58e2f3`
+  - `demo-512/Fabric001_512_NormalGL.jpg` SHA-256
+    `5d2d0aae0cd9cb107b6a72c09a81aaaeb33dc2c00fb4bb1338451561f76340d4`
+  - `demo-512/Fabric001_512_OcclusionRoughnessMetallic.png` SHA-256
+    `93bdfa143eb1b9dad76db52e261ef18dc45e3ced5a5375745b57c25764f2a134`
+
+### `materials/ambientcg/Leather001`
+
+- Source: ambientCG `Leather001`
+- Source page: `https://ambientcg.com/a/Leather001`
+- Direct download used: `https://ambientcg.com/get?file=Leather001_1K-JPG.zip`
+- License: CC0
+- Download date: 2026-05-22
+- Selected resolution: 1K JPG
+- Original archive SHA-256:
+  `8d3ac9280bec6a1e1e5384b93e5130414a085033290dde305bacaddd0aa6b96a`
+- Demo role: source-backed leather preset proof.
+- Stored source files:
+  - `source/Leather001_1K-JPG_Color.jpg` SHA-256
+    `65e1a0fcc16cd9939881abe8e92cfd27114ef2f62ebfe09f66203a293c12be66`
+  - `source/Leather001_1K-JPG_NormalGL.jpg` SHA-256
+    `9db4139a524ea674cf5b8e73538c1d26ce7576be29600c1cbf44445076237afa`
+  - `source/Leather001_1K-JPG_Roughness.jpg` SHA-256
+    `474c661108a552a7cf26efe038525f5545bfe0d7e9f42b4c2aacfa7b1293a811`
+  - `source/Leather001_1K-JPG_Displacement.jpg` SHA-256
+    `deaeb3b13e9215c3c45f10427ebc02d084310e8af12125ca3df8d7ffbe998ba1`
+- Derived demo texture:
+  - `Leather001_1K-JPG_OcclusionRoughnessMetallic.png` SHA-256
+    `082fba040253d5cdfb52139a65e449170ec2b2ecff8686f022292f0080846df2`
+  - Derived with ImageMagick from a neutral white occlusion channel, source
+    roughness, and a black metalness channel.
+- Optimized public-demo 512px textures:
+  - `demo-512/Leather001_512_Color.jpg` SHA-256
+    `15b209f6e68d894e6111e64e89e6a4b44ff59f94651335e37d44c8809dfcce15`
+  - `demo-512/Leather001_512_NormalGL.jpg` SHA-256
+    `b03b68d6f5ea2e8f3dcc05f1c7cd58109c54d5a6fef7030abbcf43a970b91e8c`
+  - `demo-512/Leather001_512_OcclusionRoughnessMetallic.png` SHA-256
+    `ad5f58f5fa127ea7b4937e8084886d98e96b16b42081648e0cd8250214a79c12`

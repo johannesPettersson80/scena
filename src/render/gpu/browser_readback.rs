@@ -4,7 +4,8 @@ use super::super::RasterTarget;
 use super::material_bindings::MaterialTextureBindingMode;
 use super::materials::MaterialResources;
 use super::pipeline::{BYTES_PER_PIXEL, create_unlit_pipeline};
-use super::pipeline::{UnlitPass, encode_unlit_pass};
+use super::pipeline::{ColorLoad, DrawFilter, UnlitPass, encode_unlit_pass};
+use super::transmission::TransmissionResources;
 use super::vertices::PrimitiveDrawBatch;
 
 #[derive(Debug)]
@@ -75,9 +76,11 @@ pub(super) struct BrowserReadbackPass<'a> {
     pub(super) depth_view: Option<&'a wgpu::TextureView>,
     pub(super) vertex_buffer: &'a wgpu::Buffer,
     pub(super) output_bind_group: &'a wgpu::BindGroup,
+    pub(super) opaque_output_bind_group: &'a wgpu::BindGroup,
     pub(super) draw_bind_group: &'a wgpu::BindGroup,
     pub(super) material_resources: &'a MaterialResources,
     pub(super) draw_batches: &'a [PrimitiveDrawBatch],
+    pub(super) transmission: &'a TransmissionResources,
     pub(super) clear_color: wgpu::Color,
 }
 
@@ -85,21 +88,73 @@ pub(super) fn encode_browser_readback_pass(
     encoder: &mut wgpu::CommandEncoder,
     pass: BrowserReadbackPass<'_>,
 ) {
-    encode_unlit_pass(
-        encoder,
-        UnlitPass {
-            view: &pass.readback.view,
-            depth_view: pass.depth_view,
-            vertex_buffer: pass.vertex_buffer,
-            output_bind_group: pass.output_bind_group,
-            draw_bind_group: pass.draw_bind_group,
-            material_resources: pass.material_resources,
-            draw_batches: pass.draw_batches,
-            pipeline: &pass.readback.pipeline,
-            clear_color: pass.clear_color,
-            label: "scena.browser.proof_readback_pass",
-        },
-    );
+    if has_transparent_batches(pass.draw_batches) {
+        encode_unlit_pass(
+            encoder,
+            UnlitPass {
+                view: &pass.transmission.view,
+                depth_view: None,
+                vertex_buffer: pass.vertex_buffer,
+                output_bind_group: pass.opaque_output_bind_group,
+                draw_bind_group: pass.draw_bind_group,
+                material_resources: pass.material_resources,
+                draw_batches: pass.draw_batches,
+                pipeline: &pass.transmission.pipeline,
+                color_load: ColorLoad::Clear(pass.clear_color),
+                draw_filter: DrawFilter::OpaqueOnly,
+                label: "scena.browser.proof_transmission_scene_color_pass",
+            },
+        );
+        encode_unlit_pass(
+            encoder,
+            UnlitPass {
+                view: &pass.readback.view,
+                depth_view: pass.depth_view,
+                vertex_buffer: pass.vertex_buffer,
+                output_bind_group: pass.output_bind_group,
+                draw_bind_group: pass.draw_bind_group,
+                material_resources: pass.material_resources,
+                draw_batches: pass.draw_batches,
+                pipeline: &pass.readback.pipeline,
+                color_load: ColorLoad::Clear(pass.clear_color),
+                draw_filter: DrawFilter::OpaqueOnly,
+                label: "scena.browser.proof_readback_opaque_pass",
+            },
+        );
+        encode_unlit_pass(
+            encoder,
+            UnlitPass {
+                view: &pass.readback.view,
+                depth_view: pass.depth_view,
+                vertex_buffer: pass.vertex_buffer,
+                output_bind_group: pass.output_bind_group,
+                draw_bind_group: pass.draw_bind_group,
+                material_resources: pass.material_resources,
+                draw_batches: pass.draw_batches,
+                pipeline: &pass.readback.pipeline,
+                color_load: ColorLoad::Load,
+                draw_filter: DrawFilter::TransparentOnly,
+                label: "scena.browser.proof_readback_transparent_pass",
+            },
+        );
+    } else {
+        encode_unlit_pass(
+            encoder,
+            UnlitPass {
+                view: &pass.readback.view,
+                depth_view: pass.depth_view,
+                vertex_buffer: pass.vertex_buffer,
+                output_bind_group: pass.output_bind_group,
+                draw_bind_group: pass.draw_bind_group,
+                material_resources: pass.material_resources,
+                draw_batches: pass.draw_batches,
+                pipeline: &pass.readback.pipeline,
+                color_load: ColorLoad::Clear(pass.clear_color),
+                draw_filter: DrawFilter::All,
+                label: "scena.browser.proof_readback_pass",
+            },
+        );
+    }
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
             texture: &pass.readback.texture,
@@ -125,4 +180,10 @@ pub(super) fn encode_browser_readback_pass(
 
 fn align_to(value: u32, alignment: u32) -> u32 {
     value.div_ceil(alignment) * alignment
+}
+
+fn has_transparent_batches(draw_batches: &[PrimitiveDrawBatch]) -> bool {
+    draw_batches
+        .iter()
+        .any(|batch| !batch.depth_prepass_eligible)
 }

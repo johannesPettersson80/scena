@@ -5,11 +5,11 @@ use std::cell::Cell;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use scena::{
-    Assets, Backend, CameraKey, CapabilityStatus, Color, GeometryDesc, GeometryTopology,
-    GeometryVertex, HardwareTier, MaterialDesc, OrbitControlAction, OrbitControls,
-    OutputColorSpace, PlatformSurface, PointerButton, PointerEvent, PointerEventKind, Profile,
-    Quality, RenderError, RenderMode, Renderer, RendererOptions, Scene, SurfaceEvent, Transform,
-    Vec3,
+    Assets, Backend, CameraKey, CapabilityStatus, Color, DiagnosticCode, DiagnosticSeverity,
+    GeometryDesc, GeometryTopology, GeometryVertex, HardwareTier, MaterialDesc, OrbitControlAction,
+    OrbitControls, OutputColorSpace, PlatformSurface, PointerButton, PointerEvent,
+    PointerEventKind, Profile, Quality, RenderError, RenderMode, Renderer, RendererOptions, Scene,
+    SurfaceEvent, Transform, Vec3,
 };
 
 #[global_allocator]
@@ -101,6 +101,11 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
         "CPU headless OIT has overlap order-invariance proof; GPU/browser lanes remain separate"
     );
     assert_eq!(
+        headless.physical_glass_transmission,
+        CapabilityStatus::Degraded,
+        "physical glass stays degraded until transmission, IOR/thickness/refraction, rough blur, and ordering proof all exist for the lane"
+    );
+    assert_eq!(
         headless.wide_gamut_output,
         CapabilityStatus::FeatureDisabled,
         "CPU/headless output targets sRGB; wide gamut must not be implied without a surface color-space probe"
@@ -157,14 +162,35 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
         "unattached WebGL2 capabilities cannot claim a browser canvas color space"
     );
     assert_eq!(
-        scena::Capabilities::for_attached_gpu_backend(Backend::WebGl2).wide_gamut_output,
+        webgl2.forward_pbr,
+        CapabilityStatus::Degraded,
+        "factory WebGL2 capabilities without an attached GPU device must stay degraded"
+    );
+    assert_eq!(
+        webgl2.physical_glass_transmission,
+        CapabilityStatus::Degraded,
+        "factory WebGL2 capabilities without an attached GPU device must not claim physical glass"
+    );
+    let attached_webgl2 = scena::Capabilities::for_attached_gpu_backend(Backend::WebGl2);
+    assert_eq!(
+        attached_webgl2.forward_pbr,
+        CapabilityStatus::Supported,
+        "attached WebGL2 now owns the shared GPU PBR path and must not keep the stale degraded claim"
+    );
+    assert_eq!(
+        attached_webgl2.physical_glass_transmission,
+        CapabilityStatus::Supported,
+        "attached WebGL2 has the opaque scene-color, refraction, rough-blur, and sorted transparent pass"
+    );
+    assert_eq!(
+        attached_webgl2.wide_gamut_output,
         CapabilityStatus::Degraded,
         "attached browser WebGL2 needs a measured drawingBufferColorSpace probe before claiming Display P3"
     );
 
     let webgpu = scena::Capabilities::for_attached_gpu_backend(Backend::WebGpu);
     assert_eq!(webgpu.hardware_tier, HardwareTier::Medium);
-    assert_eq!(webgpu.forward_pbr, CapabilityStatus::Degraded);
+    assert_eq!(webgpu.forward_pbr, CapabilityStatus::Supported);
     assert_eq!(
         webgpu.gpu_frustum_culling,
         CapabilityStatus::FeatureDisabled
@@ -177,6 +203,11 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
         CapabilityStatus::FeatureDisabled
     );
     assert_eq!(
+        webgpu.physical_glass_transmission,
+        CapabilityStatus::Supported,
+        "attached WebGPU uses the same physical transmission pipeline as WebGL2/native GPU"
+    );
+    assert_eq!(
         webgpu.wide_gamut_output,
         CapabilityStatus::Degraded,
         "attached WebGPU needs a measured canvas color-space probe before claiming Display P3"
@@ -185,10 +216,18 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
     assert_eq!(webgpu.max_texture_array_layers, 256);
 
     let diagnostics = webgpu.diagnostics();
-    assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == scena::DiagnosticCode::ForwardPbrDegraded
-            && diagnostic.message.contains("PBR")
-    }));
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != scena::DiagnosticCode::ForwardPbrDegraded),
+        "supported GPU PBR lanes must not emit the stale degraded diagnostic: {diagnostics:?}",
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != scena::DiagnosticCode::MaterialPresetFallback),
+        "supported GPU PBR lanes must not tell users material presets are fallback-only: {diagnostics:?}",
+    );
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == scena::DiagnosticCode::DirectionalShadowsDegraded
             && diagnostic.message.contains("Directional shadows")
@@ -217,10 +256,40 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
                 .message
                 .contains("Order-independent transparency")
     }));
+    assert!(
+        diagnostics.iter().all(|diagnostic| diagnostic.code
+            != scena::DiagnosticCode::PhysicalGlassTransmissionDegraded),
+        "supported GPU glass lanes must not emit the stale degraded diagnostic: {diagnostics:?}",
+    );
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == scena::DiagnosticCode::GpuCullingDisabled
             && diagnostic.message.contains("GPU culling")
     }));
+}
+
+#[test]
+fn material_preset_fallback_diagnostic_names_real_world_material_gaps() {
+    let diagnostics = scena::Capabilities::for_backend(Backend::WebGl2).diagnostics();
+    let diagnostic = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code() == DiagnosticCode::MaterialPresetFallback)
+        .expect("unapproved material preset lane reports a structured fallback diagnostic");
+
+    assert_eq!(diagnostic.severity(), DiagnosticSeverity::Warning);
+    assert!(
+        diagnostic.message().contains("real-world material presets")
+            && diagnostic.message().contains("brushed_steel")
+            && diagnostic.message().contains("clear_glass"),
+        "diagnostic must name the real-world material fallback, got: {}",
+        diagnostic.message()
+    );
+    assert!(
+        diagnostic
+            .help()
+            .is_some_and(|help| help.contains("Round E") && help.contains("capability row")),
+        "diagnostic help must point users to Round E capability proof, got: {:?}",
+        diagnostic.help()
+    );
 }
 
 #[test]

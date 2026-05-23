@@ -20,14 +20,17 @@ mod materials;
 mod output;
 mod pipeline;
 mod prepare_resources;
+mod scene_color;
 mod shadow;
 mod stats;
 mod surface_config;
+mod transmission;
 mod vertices;
 
 #[cfg(target_arch = "wasm32")]
 use crate::diagnostics::Backend;
 use crate::diagnostics::OutputColorSpace;
+use crate::platform::SurfaceSize;
 
 #[cfg(target_arch = "wasm32")]
 use self::browser_readback::BrowserReadbackResources;
@@ -92,6 +95,7 @@ struct GpuPreparedResources {
     vertex_buffer: wgpu::Buffer,
     output_uniform: wgpu::Buffer,
     output_bind_group: wgpu::BindGroup,
+    opaque_output_bind_group: wgpu::BindGroup,
     light_uniform: PreparedGpuLightUniform,
     /// Phase 1B: directional-light view-projection. See `prepare/shadows.rs`.
     light_from_world: [f32; 16],
@@ -107,6 +111,7 @@ struct GpuPreparedResources {
     environment_sampler: wgpu::Sampler,
     #[allow(dead_code)]
     brdf_lut_texture: wgpu::Texture,
+    transmission: transmission::TransmissionResources,
     depth_prepass: Option<depth::DepthPrepassResources>,
     #[allow(dead_code)]
     vertex_count: u32,
@@ -133,6 +138,7 @@ struct GpuPreparedResources {
     vertex_buffer: wgpu::Buffer,
     output_uniform: wgpu::Buffer,
     output_bind_group: wgpu::BindGroup,
+    opaque_output_bind_group: wgpu::BindGroup,
     light_uniform: PreparedGpuLightUniform,
     /// Phase 1B: directional-light view-projection matrix; mirrors the
     /// native variant. Uploaded into the camera uniform's light_from_world
@@ -150,6 +156,7 @@ struct GpuPreparedResources {
     environment_sampler: wgpu::Sampler,
     #[allow(dead_code)]
     brdf_lut_texture: wgpu::Texture,
+    transmission: transmission::TransmissionResources,
     depth_prepass: Option<depth::DepthPrepassResources>,
     surface_pipeline: wgpu::RenderPipeline,
     readback: Option<BrowserReadbackResources>,
@@ -176,5 +183,19 @@ impl GpuDeviceState {
             .as_ref()
             .map(|resources| resources.stats)
             .unwrap_or_default()
+    }
+
+    pub(super) fn clamp_surface_size_to_device_limits(&self, size: SurfaceSize) -> SurfaceSize {
+        build::clamp_surface_size_to_adapter_limits(
+            size,
+            self.device.limits().max_texture_dimension_2d,
+        )
+    }
+
+    pub(super) fn surface_size(&self) -> Option<SurfaceSize> {
+        self.surface.as_ref().map(|surface| SurfaceSize {
+            width: surface.config.width,
+            height: surface.config.height,
+        })
     }
 }

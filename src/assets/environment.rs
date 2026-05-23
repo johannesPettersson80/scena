@@ -2,11 +2,10 @@ use super::AssetPath;
 use crate::diagnostics::AssetError;
 use crate::scene::Vec3;
 
-/// Default cubemap face resolution for the IBL diffuse path. 64×64×6 RGBA32F
-/// is a real cube — large enough to drive a Lambertian diffuse sample without
-/// visible faceting, small enough to upload in <128 KB. The Phase 1C step 2
-/// GGX prefilter mip chain attaches to the same texture.
-pub const DEFAULT_ENVIRONMENT_CUBEMAP_FACE_RESOLUTION: u32 = 64;
+/// Default cubemap face resolution for HDR IBL. 256×256 faces preserve enough
+/// room-scale contrast for smooth-metal specular reflections while staying
+/// small enough for the demo/browser prefilter budget.
+pub const DEFAULT_ENVIRONMENT_CUBEMAP_FACE_RESOLUTION: u32 = 256;
 /// BRDF LUT default resolution for environment lighting. Matches the
 /// 64×64 grid built by `build_brdf_lut`.
 pub const DEFAULT_ENVIRONMENT_BRDF_LUT_SIZE: u32 = 64;
@@ -638,6 +637,15 @@ mod environment_cubemap_tests {
                 [0.56, 0.60, 0.68],
             ],
             "parser must read face radiance in the WebGPU px/nx/py/ny/pz/nz layer order"
+        );
+    }
+
+    #[test]
+    fn equirectangular_hdr_default_cubemap_resolution_matches_specular_ibl_fixture_resolution() {
+        assert_eq!(
+            DEFAULT_ENVIRONMENT_CUBEMAP_FACE_RESOLUTION, 256,
+            "real HDR environments need 256-pixel cubemap faces so smooth metals keep \
+             enough environment detail for specular IBL; 64-pixel faces flatten chrome"
         );
     }
 

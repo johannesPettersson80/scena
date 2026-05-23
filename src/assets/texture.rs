@@ -41,11 +41,13 @@ use texture_ktx2::decode_ktx2_basisu_rgba8;
     ))
 ))]
 use texture_ktx2::validate_rgba8_payload_len;
+#[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
+pub(crate) use texture_source::BROWSER_TEXTURE_MAX_DIMENSION_2D;
 #[cfg(target_arch = "wasm32")]
 use texture_source::browser_native_decode_format;
-use texture_source::resolve_texture_source_bytes;
 #[cfg(target_arch = "wasm32")]
-pub(crate) use texture_source::{BROWSER_TEXTURE_MAX_DIMENSION_2D, decode_browser_image_bitmap};
+pub(crate) use texture_source::decode_browser_image_bitmap;
+use texture_source::resolve_texture_source_bytes;
 
 #[derive(Debug, Clone)]
 pub struct TextureDesc {

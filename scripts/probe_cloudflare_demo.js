@@ -147,11 +147,8 @@ function assertForegroundCoverage(file, label, minWidthFraction, minHeightFracti
       { timeout: 90000 },
     );
 
-    const tagline = await page.locator(".brand p").textContent();
-    if (
-      tagline.trim() !==
-      "Three.js ergonomics, Rust types, running in your browser. Drop a model or snap authored connectors."
-    ) {
+    const tagline = await page.locator(".brand > p:not(.new-callout)").textContent();
+    if (tagline.trim() !== "Rust 3D viewer primitives, running in your browser.") {
       throw new Error(`demo tagline is stale: ${tagline}`);
     }
 
@@ -276,6 +273,7 @@ function assertForegroundCoverage(file, label, minWidthFraction, minHeightFracti
     const loadPath = await captureSample(page, outDir, "Load unit", "load-unit", "/samples/connector-snap/load_unit.glb");
     const waterBottlePaths = await captureSample(page, outDir, "Khronos PBR", "water-bottle", "/samples/khronos/WaterBottle.glb");
     const toyCarPath = await captureSample(page, outDir, "Khronos vehicle", "toy-car", "/samples/khronos/ToyCar.glb");
+    const materialPresetPath = await captureMaterialPresets(page, outDir);
     const waterBottlePath = waterBottlePaths.canvasPath;
     const waterBottlePagePath = waterBottlePaths.pagePath;
     const waterBottleStats = imageStats(waterBottlePath);
@@ -345,6 +343,8 @@ function assertForegroundCoverage(file, label, minWidthFraction, minHeightFracti
             waterBottlePagePath,
             waterBottlePath,
             toyCarPath.pagePath,
+            materialPresetPath.pagePath,
+            materialPresetPath.canvasPath,
             mobilePath,
             mobileCanvasPath,
           ],
@@ -362,7 +362,7 @@ function assertForegroundCoverage(file, label, minWidthFraction, minHeightFracti
 });
 
 async function captureSample(page, outDir, label, fileBase, expectedPath) {
-  await page.getByText(label).click();
+  await page.getByRole("button", { name: new RegExp(`^${escapeRegExp(label)}\\b`) }).click();
   await page.waitForFunction(
     (expected) => document.getElementById("status-title")?.textContent === expected,
     label,
@@ -393,6 +393,61 @@ async function captureSample(page, outDir, label, fileBase, expectedPath) {
     throw new Error(`${label} canvas looks blank: ${JSON.stringify(stats)}`);
   }
   return { pagePath, canvasPath };
+}
+
+async function captureMaterialPresets(page, outDir) {
+  await page.getByRole("button", { name: /^Material presets\b/ }).click();
+  await page.waitForFunction(
+    () => document.getElementById("status-title")?.textContent === "Material presets",
+    { timeout: 30000 },
+  );
+  await page.waitForFunction(
+    () => Number(document.getElementById("metric-frame")?.textContent || "0") >= 1,
+    { timeout: 90000 },
+  );
+  await page.waitForFunction(
+    () => document.getElementById("status-detail")?.textContent === "rendered",
+    { timeout: 90000 },
+  );
+  const canvasShape = await page.evaluate(() => {
+    const canvas = document.getElementById("canvas");
+    const rect = canvas.getBoundingClientRect();
+    return {
+      width: canvas.width,
+      height: canvas.height,
+      cssWidth: Math.round(rect.width),
+      cssHeight: Math.round(rect.height),
+    };
+  });
+  if (
+    Math.abs(canvasShape.width - canvasShape.cssWidth) > 1 ||
+    Math.abs(canvasShape.height - canvasShape.cssHeight) > 1
+  ) {
+    throw new Error(`material preset canvas backing buffer is stretched: ${JSON.stringify(canvasShape)}`);
+  }
+  const snippet = await page.locator("#code-snippet").textContent();
+  if (!snippet.includes("white_studio_03_1k.hdr")) {
+    throw new Error("material preset code snippet must show the approved white_studio_03 demo HDR");
+  }
+  for (const preset of ["chrome()", "brushed_steel()", "clear_glass", "frosted_glass", "rubber()"]) {
+    if (!snippet.includes(preset)) {
+      throw new Error(`material preset code snippet is missing ${preset}`);
+    }
+  }
+  const canvasPath = path.join(outDir, "material-presets-canvas.png");
+  await page.locator("#canvas").screenshot({ path: canvasPath });
+  const pagePath = path.join(outDir, "material-presets-page.png");
+  await page.screenshot({ path: pagePath, fullPage: true });
+  const stats = imageStats(canvasPath);
+  if (stats.mean < 0.005 || stats.deviation < 0.002) {
+    throw new Error(`Material presets canvas looks blank: ${JSON.stringify(stats)}`);
+  }
+  assertForegroundCoverage(canvasPath, "Material presets canvas", 0.30, 0.20);
+  return { pagePath, canvasPath };
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function connectorMarkerSnapshot(page) {

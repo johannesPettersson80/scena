@@ -1,1019 +1,526 @@
 import init, {
   attach_to_canvas,
   background_scheme_css_color,
-  capture_png_bytes,
   connector_marker_positions,
   connector_replay_active,
   forward_pointer_event,
   load_connector_snap_from_bytes,
-  load_gltf_from_bytes,
   load_gltf_with_floor_from_bytes,
   load_gltf_with_view_from_bytes,
   load_material_presets_scene,
+  load_single_material_sphere_scene,
   replay_connector_snap,
   resize,
-  set_anti_aliasing_mode,
-  set_auto_exposure_preset,
-  set_background_scheme,
-  set_bloom_enabled,
   set_fixed_exposure_ev,
   tick,
-} from "./pkg/scena.js?v=20260523-scena-material-glass-1";
+} from "./pkg/scena.js?v=20260523-public-showcase-deploy-1";
 
-const SAMPLE_GROUPS = [
-  {
-    label: "Showcase",
-    samples: [
-      {
-        id: "connector-snap",
-        label: "Connector snap",
-        detail: "drive_unit + load_unit",
-        path: "/samples/connector-snap/connector_snap_assembly.glb",
-        drivePath: "/samples/connector-snap/drive_unit.glb",
-        loadPath: "/samples/connector-snap/load_unit.glb",
-        tone: "teal",
-        code: "connector",
-      },
-      {
-        id: "drive-unit",
-        label: "Drive unit",
-        detail: "authored connector: shaft",
-        path: "/samples/connector-snap/drive_unit.glb",
-        tone: "blue",
-        code: "asset",
-        floor: true,
-      },
-      {
-        id: "load-unit",
-        label: "Load unit",
-        detail: "authored connector: hub",
-        path: "/samples/connector-snap/load_unit.glb",
-        tone: "amber",
-        code: "asset",
-        floor: true,
-      },
-    ],
-  },
-  {
-    label: "Khronos compatibility",
-    samples: [
-      {
-        id: "water-bottle",
-        label: "Khronos PBR",
-        detail: "textured PBR sample",
-        path: "/samples/khronos/WaterBottle.glb",
-        tone: "rust",
-        code: "asset",
-        view: { yaw: 1.34, pitch: 0.34 },
-      },
-      {
-        id: "toy-car",
-        label: "Khronos vehicle",
-        detail: "official GLB sample",
-        path: "/samples/khronos/ToyCar.glb",
-        tone: "blue",
-        code: "asset",
-        floor: true,
-      },
-    ],
-  },
-  {
-    label: "v1.5 named presets",
-    samples: [
-      {
-        id: "material-presets",
-        label: "Material presets",
-        detail: "12 PBR presets rendered live",
-        tone: "teal",
-        code: "material-presets",
-      },
-      {
-        id: "v14-presets",
-        label: "Named preset code",
-        detail: "lens / light / material / bg / exposure / env",
-        path: "/samples/connector-snap/connector_snap_assembly.glb",
-        tone: "teal",
-        code: "v14-presets",
-      },
-    ],
-  },
+const WASM_URL = "./pkg/scena_bg.wasm?v=20260523-public-showcase-deploy-1";
+const MAX_CANVAS_DIMENSION = 1600;
+
+const MATERIALS = [
+  ["matte", "Matte", "MaterialDesc::matte(Color::BLUE)"],
+  ["plastic", "Plastic", "MaterialDesc::plastic(Color::BLUE)"],
+  ["metal", "Metal", "MaterialDesc::metal(Color::LIGHT_GRAY)"],
+  ["rough_metal", "Rough metal", "MaterialDesc::rough_metal(Color::GRAY)"],
+  ["chrome", "Chrome", "MaterialDesc::chrome()"],
+  ["brushed_steel", "Brushed steel", "MaterialDesc::brushed_steel()"],
+  ["clearcoat_plastic", "Clearcoat plastic", "MaterialDesc::clearcoat_plastic(Color::BLUE)"],
+  ["satin", "Satin", "MaterialDesc::satin(Color::MAGENTA)"],
+  ["leather", "Leather", "MaterialDesc::leather(Color::ORANGE)"],
+  ["clear_glass", "Clear glass", "MaterialDesc::clear_glass(Color::COOL_WHITE)"],
+  ["frosted_glass", "Frosted glass", "MaterialDesc::frosted_glass(Color::WHITE)"],
+  ["rubber", "Rubber", "MaterialDesc::rubber()"],
 ];
 
-const SAMPLES = SAMPLE_GROUPS.flatMap((group) => group.samples);
+const controllers = new Map();
+let wasmReady = null;
+let materialSelection = "chrome";
 
-const ORBIT_RADIANS_PER_PIXEL = 0.01;
-const ZOOM_SCALE = 0.1;
-const MIN_DISTANCE = 0.001;
-const MAX_PITCH_RADIANS = 1.553343;
-const QUERY_PARAMS = new URLSearchParams(window.location.search);
-const TIMING_ENABLED = ["perf", "timing"].some((key) => {
-  const value = QUERY_PARAMS.get(key);
-  return value !== null && value !== "0" && value !== "false";
-});
-
-const canvas = document.getElementById("canvas");
-const dropzone = document.getElementById("dropzone");
-const sampleList = document.getElementById("sample-list");
-const statusTitle = document.getElementById("status-title");
-const statusDetail = document.getElementById("status-detail");
-const codeTitle = document.getElementById("code-title");
-const codeSubtitle = document.getElementById("code-subtitle");
-const v14BackgroundSelect = document.getElementById("v14-background");
-const v14AutoExposureSelect = document.getElementById("v14-auto-exposure");
-const v14AntiAliasingSelect = document.getElementById("v14-anti-aliasing");
-const v14BloomCheckbox = document.getElementById("v14-bloom");
-const v14ScreenshotButton = document.getElementById("v14-screenshot");
-const codeSnippet = document.getElementById("code-snippet");
-const copyButton = document.getElementById("copy-code");
-const replayButton = document.getElementById("replay-button");
-const connectorStory = document.getElementById("connector-story");
-const connectorResult = document.getElementById("connector-result");
-const connectorOverlay = document.getElementById("connector-overlay");
-const connectorMarkers = {
-  shaft: connectorOverlay?.querySelector('[data-connector="shaft"]'),
-  hub: connectorOverlay?.querySelector('[data-connector="hub"]'),
-};
-const metricFrame = document.getElementById("metric-frame");
-const metricBytes = document.getElementById("metric-bytes");
-const metricPhase = document.getElementById("metric-phase");
-
-let app = null;
-let attached = false;
-let renderScheduled = false;
-let frameCount = 0;
-let activeAsset = SAMPLES[0];
-let phaseStartedAt = performance.now();
-let lastFrameAt = performance.now();
-let pointerDown = false;
-let orbit = { yaw: -0.48, pitch: 0.31, distance: 2.0 };
-let replayActive = false;
-let connectorStoryState = "before";
-
-function buildSampleButtons() {
-  const children = [];
-  SAMPLE_GROUPS.forEach((group, index) => {
-    if (index > 0) {
-      const heading = document.createElement("p");
-      heading.className = "sample-group-label";
-      heading.textContent = group.label;
-      children.push(heading);
-    }
-    for (const sample of group.samples) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "sample-button";
-      button.dataset.sample = sample.id;
-      button.dataset.tone = sample.tone;
-      button.innerHTML = `<span><strong></strong><small></small></span>`;
-      button.querySelector("strong").textContent = sample.label;
-      button.querySelector("small").textContent = sample.detail;
-      button.addEventListener("click", () => loadSample(sample));
-      children.push(button);
-    }
-  });
-  sampleList.replaceChildren(...children);
-}
-
-function updateActiveButton() {
-  for (const button of sampleList.querySelectorAll(".sample-button")) {
-    button.classList.toggle("active", button.dataset.sample === activeAsset.id);
+function ensureWasm() {
+  if (!wasmReady) {
+    wasmReady = init({ module_or_path: new URL(WASM_URL, import.meta.url) });
   }
-  const isConnector = activeAsset.code === "connector";
-  replayButton.hidden = !isConnector;
-  connectorStory.hidden = !isConnector;
-  connectorOverlay.hidden = !isConnector;
-  updateConnectorMarkers();
+  return wasmReady;
 }
 
-function formatBytes(bytes) {
-  if (!bytes) return "0";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+function setStatus(stage, text) {
+  const status = stage.querySelector(".stage-status");
+  if (status) status.textContent = text;
 }
 
-function setStatus(title, detail) {
-  statusTitle.textContent = title;
-  statusDetail.textContent = detail;
-}
-
-function setPhase(label) {
-  const elapsedSeconds = ((performance.now() - phaseStartedAt) / 1000).toFixed(1);
-  metricPhase.textContent = label;
-  setStatus(activeAsset.label, `${label} · ${elapsedSeconds}s`);
-}
-
-function setReplayStatus() {
-  replayActive = true;
-  metricPhase.textContent = "replaying";
-  setConnectorStoryState("replaying");
-  setStatus(activeAsset.label, "replaying connector snap");
-}
-
-function beginPhase(label) {
-  phaseStartedAt = performance.now();
-  setPhase(label);
-  logDemo(`${activeAsset.label}: ${label}`);
-}
-
-function logDemo(message) {
-  if (TIMING_ENABLED) console.info(`[scena-demo] ${message}`);
-}
-
-function setError(text) {
-  attached = false;
-  metricPhase.textContent = "error";
-  setStatus(activeAsset.label, String(text).slice(0, 180));
-}
-
-function updateMetrics(bytes = null) {
-  metricFrame.textContent = String(frameCount);
-  if (bytes !== null) metricBytes.textContent = formatBytes(bytes);
-}
-
-function rustString(value) {
-  return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function codeLine(text, options = {}) {
-  const id = options.id ? ` id="${options.id}"` : "";
-  const className = options.className ? ` ${options.className}` : "";
-  return `<span${id} class="code-line${className}">${escapeHtml(text)}</span>`;
-}
-
-function setConnectorStoryState(state) {
-  connectorStoryState = state;
-  connectorOverlay.dataset.state = state;
-  document.getElementById("mate-line")?.classList.toggle("is-active", state === "replaying");
-  if (state === "replaying") {
-    connectorResult.textContent = 'Running scene.mate(&drive, "shaft", &load, "hub"): the shaft connector is moving to the hub connector.';
-  } else if (state === "aligned") {
-    connectorResult.textContent =
-      "Aligned via authored connectors: drive_unit (Y-up, mm) + load_unit (Z-up, m), mated without hand-entered coordinates.";
-  } else {
-    connectorResult.textContent =
-      "Before snap: drive_unit (Y-up, mm) and load_unit (Z-up, m) start separated.";
-  }
-  updateConnectorMarkers();
-}
-
-function updateConnectorMarkers() {
-  if (!connectorOverlay) return;
-  const isConnector = activeAsset.code === "connector" && attached && app;
-  if (!isConnector) {
-    for (const marker of Object.values(connectorMarkers)) {
-      if (marker) marker.dataset.visible = "false";
-    }
-    return;
-  }
-  try {
-    const positions = connector_marker_positions(
-      app,
-      Math.max(1, Math.round(canvas.clientWidth)),
-      Math.max(1, Math.round(canvas.clientHeight)),
-    );
-    const visiblePositions = {};
-    for (const [name, marker] of Object.entries(connectorMarkers)) {
-      const position = positions?.[name];
-      if (!marker || !position?.visible) {
-        if (marker) marker.dataset.visible = "false";
-        continue;
-      }
-      marker.style.left = `${position.x}px`;
-      marker.style.top = `${position.y}px`;
-      marker.dataset.visible = "true";
-      visiblePositions[name] = position;
-    }
-    const shaft = visiblePositions.shaft;
-    const hub = visiblePositions.hub;
-    const labelsOverlap =
-      shaft && hub && Math.hypot(shaft.x - hub.x, shaft.y - hub.y) < 72;
-    for (const [name, marker] of Object.entries(connectorMarkers)) {
-      if (!marker) continue;
-      if (!labelsOverlap) {
-        delete marker.dataset.cluster;
-      } else {
-        marker.dataset.cluster = name === "shaft" ? "left" : "right";
-      }
-    }
-  } catch (err) {
-    for (const marker of Object.values(connectorMarkers)) {
-      if (marker) marker.dataset.visible = "false";
-    }
-    if (TIMING_ENABLED) console.info("[scena-demo] connector marker projection skipped", err);
-  }
-}
-
-window.__scenaDemoProbe = {
-  connectorMarkerPositions() {
-    if (!app || activeAsset.code !== "connector") return null;
-    return connector_marker_positions(
-      app,
-      Math.max(1, Math.round(canvas.clientWidth)),
-      Math.max(1, Math.round(canvas.clientHeight)),
-    );
-  },
-};
-
-function updateCodePanel() {
-  if (activeAsset.code === "v14-presets") {
-    codeTitle.textContent = "v1.5 named presets";
-    codeSubtitle.textContent = "scena 1.5 — pick a name, not a number";
-    codeSnippet.textContent = `use scena::{
-    Assets, AutoExposureConfig, Background, Color, DirectionalLight,
-    EnvironmentPreset, MaterialDesc, OrbitControls, PerspectiveCamera,
-    Renderer, Scene,
-};
-
-let assets = Assets::new();
-let model = assets.load_scene("machine.glb").await?;
-let environment = assets
-    .load_environment_preset(EnvironmentPreset::Studio)
-    .await?;
-
-let mut scene = Scene::new();
-let import = scene.instantiate(&model)?;
-let bounds = import.bounds_world(&scene).unwrap();
-
-scene.add_studio_lighting()?;
-// or pick a single named light:
-scene.directional_light(DirectionalLight::sun()).add()?;
-
-let camera = scene.add_perspective_camera(
-    scene.root(),
-    PerspectiveCamera::standard(),         // wide_angle / portrait / telephoto
-    Default::default(),
-)?;
-let framing = scene.frame_bounds(camera, bounds, Default::default())?;
-let controls = OrbitControls::from_framing(framing).cinematic();
-
-let chrome  = assets.create_material(MaterialDesc::chrome());
-let brushed = assets.create_material(MaterialDesc::brushed_steel());
-let glass   = assets.create_material(MaterialDesc::clear_glass(Color::CYAN));
-let bumper  = assets.create_material(MaterialDesc::rubber());
-let body    = assets.create_material(MaterialDesc::clearcoat_plastic(Color::CHARCOAL));
-
-let mut renderer = Renderer::headless(1280, 720)?;
-renderer.set_environment(environment);
-renderer.set_background(Background::DarkStudio);
-renderer.set_auto_exposure(AutoExposureConfig::product_studio());
-renderer.prepare_with_assets(&mut scene, &assets)?;
-renderer.render_active(&scene)?;
-
-let _png = scena::headless_gltf_viewer("machine.glb")
-    .render_png_bytes()
-    .await?;`;
-    setConnectorStoryState("none");
-    return;
-  }
-  if (activeAsset.code === "material-presets") {
-    codeTitle.textContent = "Material presets";
-    codeSubtitle.textContent = "browser-rendered WebGL2 material showcase";
-    codeSnippet.textContent = `use scena::{Assets, Color, MaterialDesc, Renderer, Scene};
-
-let assets = Assets::new();
-let environment = assets
-    .load_environment("samples/environment/white_studio_03_1k.hdr")
-    .await?;
-
-let presets = [
-    MaterialDesc::matte(Color::BLUE),
-    MaterialDesc::plastic(Color::BLUE),
-    MaterialDesc::metal(Color::LIGHT_GRAY),
-    MaterialDesc::rough_metal(Color::LIGHT_GRAY),
-    MaterialDesc::chrome(),
-    MaterialDesc::brushed_steel(),
-    MaterialDesc::clearcoat_plastic(Color::BLUE),
-    MaterialDesc::satin(Color::MAGENTA),
-    MaterialDesc::leather(Color::ORANGE),
-    MaterialDesc::clear_glass(Color::CYAN),
-    MaterialDesc::frosted_glass(Color::COOL_WHITE),
-    MaterialDesc::rubber(),
-];
-
-let mut scene = Scene::new();
-// Add one sphere per preset, then frame the grid.
-
-let mut renderer = Renderer::from_surface_async(browser_surface).await?;
-renderer.set_environment(environment);
-renderer.prepare_with_assets(&mut scene, &assets)?;
-renderer.render_active(&scene)?;`;
-    setConnectorStoryState("none");
-    return;
-  }
-  codeTitle.textContent = activeAsset.code === "connector" ? "Connector snap" : "Rust";
-  codeSubtitle.textContent =
-    activeAsset.code === "connector" ? 'scene.mate(&drive, "shaft", &load, "hub")' : activeAsset.path;
-  if (activeAsset.code === "connector") {
-    codeSnippet.innerHTML = [
-      codeLine("let assets = Assets::new();"),
-      codeLine('let drive_part = assets.load_scene("drive_unit.glb").await?;'),
-      codeLine('let load_part  = assets.load_scene("load_unit.glb").await?;'),
-      codeLine(""),
-      codeLine("let mut scene = Scene::new();"),
-      codeLine("let drive = scene.instantiate(&drive_part)?;"),
-      codeLine("let load  = scene.instantiate(&load_part)?;"),
-      codeLine(""),
-      codeLine('scene.mate(&drive, "shaft", &load, "hub")?;', { id: "mate-line" }),
-    ].join("");
-    setConnectorStoryState(connectorStoryState);
-    return;
-  }
-
-  const viewOption = activeAsset.view
-    ? `.orbit(${orbit.yaw.toFixed(2)}, ${orbit.pitch.toFixed(2)})`
-    : `.isometric()`;
-
-  codeSnippet.textContent = `let assets = Assets::new();
-let scene_asset = assets
-    .load_scene("${rustString(activeAsset.path)}")
-    .await?;
-
-let mut scene = Scene::new();
-let import = scene.instantiate(&scene_asset)?;
-let bounds = import.bounds_world(&scene).ok_or("model has no bounds")?;
-scene.add_studio_lighting()?;
-scene.add_grid_floor(&assets, GridFloorOptions::new().under_bounds(bounds))?;
-
-let camera = scene.add_perspective_camera(
-    scene.root(),
-    PerspectiveCamera::default().with_aspect(width as f32 / height as f32),
-    Transform::default(),
-)?;
-	let framing = scene.frame_bounds(
-	    camera,
-	    bounds,
-	    FramingOptions::new()
-	        ${viewOption}
-	        .fill(0.72)
-	        .viewport(width, height),
-)?;
-
-let controls = OrbitControls::from_framing(framing)
-    .with_damping(0.12);`;
-}
-
-function bufferDimensions() {
+function canvasSize(canvas) {
   const rect = canvas.getBoundingClientRect();
-  const width = rect.width || canvas.clientWidth || window.innerWidth;
-  const height = rect.height || canvas.clientHeight || window.innerHeight;
-  return {
-    width: Math.max(1, Math.round(width)),
-    height: Math.max(1, Math.round(height)),
-  };
-}
-
-function applyBufferSize() {
-  const { width, height } = bufferDimensions();
-  const changed = canvas.width !== width || canvas.height !== height;
-  canvas.width = width;
-  canvas.height = height;
-  return changed;
+  let width = Math.max(1, Math.round(rect.width || canvas.clientWidth || 640));
+  let height = Math.max(1, Math.round(rect.height || canvas.clientHeight || 420));
+  const scale = Math.min(1, MAX_CANVAS_DIMENSION / Math.max(width, height));
+  width = Math.max(1, Math.round(width * scale));
+  height = Math.max(1, Math.round(height * scale));
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+  return { width, height };
 }
 
 function applyCanvasBackground(scheme) {
-  try {
-    canvas.style.backgroundColor = background_scheme_css_color(scheme);
-  } catch (err) {
-    console.error("background_scheme_css_color failed:", err);
-  }
+  const canvas = document.querySelector(".material-route canvas");
+  const stage = document.querySelector(".material-route .stage");
+  if (!canvas || !stage) return;
+  const cssColor = background_scheme_css_color(scheme);
+  canvas.style.background = cssColor;
+  stage.style.background = cssColor;
 }
 
-function resizeAttachedRenderer() {
-  const changed = applyBufferSize();
-  if (!app || !attached) return;
-  try {
-    if (changed) resize(app, canvas.width, canvas.height);
-    updateConnectorMarkers();
-    requestRender();
-  } catch (err) {
-    console.error("resize failed:", err);
-    setError(`resize: ${err}`);
-  }
-}
-
-async function start() {
-  buildSampleButtons();
-  applyBufferSize();
-  updateCodePanel();
-  updateMetrics();
-  beginPhase("initialising WASM");
-  await init({
-    module_or_path: new URL(
-      "./pkg/scena_bg.wasm?v=20260523-scena-material-glass-1",
-      import.meta.url,
-    ),
-  });
-  wireDragDrop();
-  wirePointer();
-  wireResize();
-  wireActions();
-
-  const params = new URLSearchParams(window.location.search);
-  const sampleParam = params.get("sample");
-  const sample = SAMPLES.find((entry) => entry.id === sampleParam) || SAMPLES[0];
-  await loadSample(sample);
-}
-
-async function loadSample(sample) {
-  activeAsset = sample;
-  if (sample.code === "connector") {
-    setConnectorStoryState("before");
-  }
-  updateActiveButton();
-  updateCodePanel();
-  beginPhase(sample.code === "connector" ? "fetching connector parts" : "fetching sample");
-  try {
-    if (sample.code === "material-presets") {
-      await loadMaterialPresetsAndAttach(sample);
-      return;
-    }
-    if (sample.code === "connector") {
-      const [driveResponse, loadResponse] = await Promise.all([
-        fetch(sample.drivePath),
-        fetch(sample.loadPath),
-      ]);
-      if (!driveResponse.ok) throw new Error(`drive HTTP ${driveResponse.status}`);
-      if (!loadResponse.ok) throw new Error(`load HTTP ${loadResponse.status}`);
-      const driveBytes = new Uint8Array(await driveResponse.arrayBuffer());
-      const loadBytes = new Uint8Array(await loadResponse.arrayBuffer());
-      logDemo(`${sample.label}: fetched ${driveBytes.byteLength + loadBytes.byteLength} connector bytes`);
-      await loadConnectorAndAttach(driveBytes, loadBytes, sample, driveBytes.byteLength + loadBytes.byteLength);
-      return;
-    }
-    const response = await fetch(sample.path);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    logDemo(`${sample.label}: fetched ${bytes.byteLength} bytes`);
-    await loadAndAttach(bytes, sample, bytes.byteLength);
-  } catch (err) {
-    console.error("sample load failed:", err);
-    setError(`load: ${err}`);
-  }
-}
-
-async function loadMaterialPresetsAndAttach(asset) {
-  attached = false;
-  activeAsset = asset;
-  orbit = { yaw: -0.14, pitch: 0.1, distance: 2.8 };
-  replayActive = false;
-  frameCount = 0;
-  updateActiveButton();
-  updateCodePanel();
-  updateMetrics(0);
-  beginPhase("building material preset scene");
-  applyBufferSize();
-  app = await load_material_presets_scene(canvas.width, canvas.height);
-  beginPhase("creating WebGL2 renderer");
-  await attach_to_canvas(app, canvas);
-  set_background_scheme(app, "dark_studio");
+async function runMaterialPresetRoute() {
+  document.body.innerHTML = `<main class="material-route">
+    <section class="section materials">
+      <div class="section-head">
+        <h1>Material presets</h1>
+        <p class="section-copy">browser-rendered WebGL2 material showcase</p>
+      </div>
+      <div class="stage">
+        <canvas aria-label="browser-rendered WebGL2 material showcase"></canvas>
+        <div class="stage-status">rendering browser material showcase</div>
+      </div>
+    </section>
+  </main>`;
+  await ensureWasm();
+  const stage = document.querySelector(".material-route .stage");
+  const canvas = stage.querySelector("canvas");
+  canvasSize(canvas);
   applyCanvasBackground("dark_studio");
+  const app = await load_material_presets_scene(canvas.width, canvas.height);
+  await attach_to_canvas(app, canvas);
   set_fixed_exposure_ev(app, 0.0);
-  if (v14BackgroundSelect) v14BackgroundSelect.value = "dark_studio";
-  if (v14AutoExposureSelect) v14AutoExposureSelect.value = "fixed_0_ev";
-  attached = true;
-  resizeAttachedRenderer();
-  lastFrameAt = performance.now();
-  beginPhase("rendering browser material showcase");
-  requestRender();
+  tick(app, 0.016);
+  setStatus(stage, "browser-rendered WebGL2 material showcase");
+  window.__scenaShowcaseProbe = {
+    controllers() {
+      return [
+        {
+          scene: "material-presets",
+          loaded: true,
+          active: true,
+          status: stage.querySelector(".stage-status")?.textContent || "",
+        },
+      ];
+    },
+    materialSelection() {
+      return "material-presets";
+    },
+  };
 }
 
-async function loadConnectorAndAttach(driveBytes, loadBytes, asset, byteLength) {
-  attached = false;
-  activeAsset = asset;
-  orbit = { yaw: -0.48, pitch: 0.31, distance: 2.0 };
-  replayActive = false;
-  frameCount = 0;
-  setConnectorStoryState("before");
-  updateActiveButton();
-  updateCodePanel();
-  updateMetrics(byteLength);
-  beginPhase("building mate scene");
-  applyBufferSize();
-  app = await load_connector_snap_from_bytes(driveBytes, loadBytes, canvas.width, canvas.height);
-  beginPhase("creating WebGL2 renderer");
-  await attach_to_canvas(app, canvas);
-  applyCanvasBackground("dark_studio");
-  attached = true;
-  resizeAttachedRenderer();
-  lastFrameAt = performance.now();
-  beginPhase("preparing first frame");
-  requestRender();
+async function fetchBytes(path) {
+  const response = await fetch(path);
+  if (!response.ok) throw new Error(`${path} HTTP ${response.status}`);
+  return new Uint8Array(await response.arrayBuffer());
 }
 
-async function loadAndAttach(bytes, asset, byteLength) {
-  attached = false;
-  activeAsset = asset;
-  orbit = { yaw: asset.view?.yaw ?? -0.46, pitch: asset.view?.pitch ?? 0.34, distance: 2.0 };
-  replayActive = false;
-  frameCount = 0;
-  updateActiveButton();
-  updateCodePanel();
-  updateMetrics(byteLength);
-  beginPhase("parsing glTF");
-  applyBufferSize();
-  if (asset.view) {
-    app = await load_gltf_with_view_from_bytes(
-      bytes,
-      canvas.width,
-      canvas.height,
-      Boolean(asset.floor),
-      orbit.yaw,
-      orbit.pitch,
-    );
-  } else {
-    const load = asset.floor ? load_gltf_with_floor_from_bytes : load_gltf_from_bytes;
-    app = await load(bytes, canvas.width, canvas.height);
+class LiveStage {
+  constructor(stage) {
+    this.stage = stage;
+    this.canvas = stage.querySelector("canvas");
+    this.scene = stage.dataset.scene;
+    this.app = null;
+    this.loaded = false;
+    this.active = false;
+    this.renderScheduled = false;
+    this.replayActive = false;
+    this.lastFrameAt = performance.now();
+    this.replayTimer = null;
+    this.pointerDown = false;
+    this.wirePointer();
+    this.wireResize();
   }
-  beginPhase("creating WebGL2 renderer");
-  await attach_to_canvas(app, canvas);
-  applyCanvasBackground("dark_studio");
-  attached = true;
-  resizeAttachedRenderer();
-  lastFrameAt = performance.now();
-  beginPhase("preparing first frame");
-  requestRender();
+
+  async activate() {
+    this.active = true;
+    if (!this.loaded) await this.load();
+    if (this.scene === "connector") this.startConnectorLoop();
+    this.requestRender();
+  }
+
+  deactivate() {
+    this.active = false;
+    window.clearTimeout(this.replayTimer);
+    this.replayTimer = null;
+  }
+
+  async load() {
+    await ensureWasm();
+    setStatus(this.stage, "loading");
+    try {
+      if (this.scene === "hero") await this.loadHero();
+      if (this.scene === "material") await this.loadMaterial(materialSelection);
+      if (this.scene === "model") await this.loadModel(this.stage.dataset.sample);
+      if (this.scene === "connector") await this.loadConnector();
+      this.loaded = true;
+      setStatus(this.stage, "rendered");
+    } catch (error) {
+      console.error(`showcase ${this.scene} failed`, error);
+      setStatus(this.stage, `render failed: ${String(error).slice(0, 120)}`);
+    }
+  }
+
+  async attach(app) {
+    this.app = app;
+    await attach_to_canvas(this.app, this.canvas);
+    this.lastFrameAt = performance.now();
+  }
+
+  async loadHero() {
+    const { width, height } = canvasSize(this.canvas);
+    const bytes = await fetchBytes("/samples/connector-snap/connector_snap_assembly.glb");
+    const app = await load_gltf_with_view_from_bytes(bytes, width, height, true, -0.42, 0.28);
+    await this.attach(app);
+  }
+
+  async loadMaterial(preset) {
+    materialSelection = preset;
+    this.stage.dataset.material = preset;
+    const { width, height } = canvasSize(this.canvas);
+    const app = await load_single_material_sphere_scene(preset, width, height);
+    await this.attach(app);
+    this.loaded = true;
+    this.requestRender();
+  }
+
+  async loadModel(path) {
+    const { width, height } = canvasSize(this.canvas);
+    const bytes = await fetchBytes(path);
+    const app = await load_gltf_with_floor_from_bytes(bytes, width, height);
+    await this.attach(app);
+  }
+
+  async loadDropped(bytes, label) {
+    await ensureWasm();
+    setStatus(this.stage, `loading ${label}`);
+    const { width, height } = canvasSize(this.canvas);
+    const app = await load_gltf_with_floor_from_bytes(bytes, width, height);
+    await this.attach(app);
+    this.loaded = true;
+    setStatus(this.stage, label);
+    this.requestRender();
+  }
+
+  async loadConnector() {
+    const { width, height } = canvasSize(this.canvas);
+    const [driveBytes, loadBytes] = await Promise.all([
+      fetchBytes("/samples/connector-snap/drive_unit.glb"),
+      fetchBytes("/samples/connector-snap/load_unit.glb"),
+    ]);
+    const app = await load_connector_snap_from_bytes(driveBytes, loadBytes, width, height);
+    await this.attach(app);
+    this.replayActive = false;
+    this.updateConnectorMarkers();
+  }
+
+  requestRender() {
+    if (!this.active || !this.app || this.renderScheduled) return;
+    this.renderScheduled = true;
+    requestAnimationFrame(() => {
+      this.renderScheduled = false;
+      if (!this.active || !this.app) return;
+      try {
+        const now = performance.now();
+        const dtSeconds = Math.min(0.08, Math.max(0.001, (now - this.lastFrameAt) / 1000));
+        this.lastFrameAt = now;
+        tick(this.app, dtSeconds);
+        this.updateConnectorMarkers();
+        if (this.scene === "connector") {
+          this.replayActive = connector_replay_active(this.app);
+          if (this.replayActive) {
+            setStatus(this.stage, "mating connectors");
+            this.requestRender();
+            return;
+          }
+          setStatus(this.stage, "assembled");
+          this.scheduleReplay();
+          return;
+        }
+        setStatus(this.stage, "rendered");
+      } catch (error) {
+        console.error(`showcase render ${this.scene} failed`, error);
+        setStatus(this.stage, `render failed: ${String(error).slice(0, 120)}`);
+      }
+    });
+  }
+
+  startConnectorLoop() {
+    if (!this.app || this.replayActive) return;
+    this.replayActive = true;
+    try {
+      replay_connector_snap(this.app);
+      this.lastFrameAt = performance.now();
+      this.requestRender();
+    } catch (error) {
+      console.error("connector replay failed", error);
+      setStatus(this.stage, `replay failed: ${String(error).slice(0, 120)}`);
+    }
+  }
+
+  scheduleReplay() {
+    if (!this.active || this.replayTimer) return;
+    this.replayTimer = window.setTimeout(() => {
+      this.replayTimer = null;
+      if (this.active) this.startConnectorLoop();
+    }, 2200);
+  }
+
+  updateConnectorMarkers() {
+    if (this.scene !== "connector" || !this.app) return;
+    const markers = this.stage.querySelectorAll(".connector-marker");
+    try {
+      const positions = connector_marker_positions(
+        this.app,
+        Math.max(1, Math.round(this.canvas.clientWidth)),
+        Math.max(1, Math.round(this.canvas.clientHeight)),
+      );
+      for (const marker of markers) {
+        const position = positions?.[marker.dataset.connector];
+        if (!position?.visible) {
+          marker.dataset.visible = "false";
+          continue;
+        }
+        marker.style.left = `${position.x}px`;
+        marker.style.top = `${position.y}px`;
+        marker.dataset.visible = "true";
+      }
+    } catch {
+      for (const marker of markers) marker.dataset.visible = "false";
+    }
+  }
+
+  wirePointer() {
+    this.canvas.addEventListener("pointerdown", (event) => {
+      if (!this.app) return;
+      this.pointerDown = true;
+      this.canvas.setPointerCapture?.(event.pointerId);
+      forward_pointer_event(this.app, "down", event.offsetX, event.offsetY, 0, 0);
+    });
+    this.canvas.addEventListener("pointermove", (event) => {
+      if (!this.app || !this.pointerDown) return;
+      forward_pointer_event(
+        this.app,
+        "move",
+        event.offsetX,
+        event.offsetY,
+        event.movementX,
+        event.movementY,
+      );
+      this.requestRender();
+    });
+    const endPointer = (event) => {
+      if (!this.app || !this.pointerDown) return;
+      this.pointerDown = false;
+      forward_pointer_event(this.app, "up", event.offsetX || 0, event.offsetY || 0, 0, 0);
+    };
+    this.canvas.addEventListener("pointerup", endPointer);
+    this.canvas.addEventListener("pointercancel", endPointer);
+    this.canvas.addEventListener(
+      "wheel",
+      (event) => {
+        if (!this.app) return;
+        event.preventDefault();
+        forward_pointer_event(this.app, "wheel", event.offsetX, event.offsetY, 0, event.deltaY);
+        this.requestRender();
+      },
+      { passive: false },
+    );
+  }
+
+  wireResize() {
+    let scheduled = false;
+    const onResize = () => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => {
+        scheduled = false;
+        const { width, height } = canvasSize(this.canvas);
+        if (!this.app) return;
+        try {
+          resize(this.app, width, height);
+          this.requestRender();
+        } catch (error) {
+          console.error(`resize ${this.scene} failed`, error);
+        }
+      });
+    };
+    window.addEventListener("resize", onResize);
+    if ("ResizeObserver" in window) new ResizeObserver(onResize).observe(this.canvas);
+  }
 }
 
-function requestRender() {
-  if (!attached || renderScheduled) return;
-  renderScheduled = true;
-  requestAnimationFrame(() => {
-    renderScheduled = false;
-    if (!attached) return;
-    try {
-      const now = performance.now();
-      const isReplayTick = replayActive && activeAsset.code === "connector";
-      const dtLimit = isReplayTick ? 0.12 : 0.05;
-      const dtSeconds = Math.min(dtLimit, Math.max(0.001, (now - lastFrameAt) / 1000));
-      lastFrameAt = now;
-      tick(app, dtSeconds);
-      frameCount += 1;
-      updateConnectorMarkers();
-      const stillReplaying = isReplayTick && connector_replay_active(app);
-      replayActive = stillReplaying;
-      if (stillReplaying) {
-        metricPhase.textContent = "replaying";
-        setStatus(activeAsset.label, "running scene.mate()");
-        requestRender();
-      } else {
-        metricPhase.textContent = "rendered";
-        if (activeAsset.code === "connector") {
-          if (isReplayTick) {
-            setConnectorStoryState("aligned");
-            setStatus(activeAsset.label, "aligned via authored connectors");
-          } else if (connectorStoryState === "before") {
-            setStatus(activeAsset.label, "before snap");
-          } else {
-            setStatus(activeAsset.label, "aligned via authored connectors");
-          }
+function createMaterialThumbs() {
+  const grid = document.getElementById("material-thumbs");
+  if (!grid) return;
+  const buttons = MATERIALS.map(([id, label]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "thumb-button";
+    button.dataset.material = id;
+    button.innerHTML = `<img alt="" src="assets/showcase/materials/${id}.png"><span></span>`;
+    button.querySelector("span").textContent = label;
+    button.addEventListener("click", () => selectMaterial(id));
+    return button;
+  });
+  grid.replaceChildren(...buttons);
+  updateMaterialSelection();
+}
+
+function selectMaterial(id) {
+  materialSelection = id;
+  updateMaterialSelection();
+  const controller = controllers.get("material");
+  if (controller?.active) {
+    setStatus(controller.stage, "loading");
+    controller.loadMaterial(id).catch((error) => {
+      console.error("material load failed", error);
+      setStatus(controller.stage, `render failed: ${String(error).slice(0, 120)}`);
+    });
+  }
+}
+
+function updateMaterialSelection() {
+  for (const button of document.querySelectorAll("[data-material]")) {
+    button.classList.toggle("active", button.dataset.material === materialSelection);
+  }
+  const selected = MATERIALS.find(([id]) => id === materialSelection);
+  const code = document.getElementById("material-code");
+  if (code && selected) code.textContent = `let material = ${selected[2]};`;
+}
+
+function wireSamples() {
+  const modelController = () => controllers.get("model");
+  for (const button of document.querySelectorAll(".sample-chip[data-sample]")) {
+    button.addEventListener("click", async () => {
+      const controller = modelController();
+      if (!controller) return;
+      controller.stage.dataset.sample = button.dataset.sample;
+      if (!controller.active) {
+        controller.stage.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+      setStatus(controller.stage, `loading ${button.dataset.label}`);
+      try {
+        await controller.loadModel(button.dataset.sample);
+        controller.loaded = true;
+        setStatus(controller.stage, button.dataset.label);
+        controller.requestRender();
+      } catch (error) {
+        console.error("sample load failed", error);
+        setStatus(controller.stage, `load failed: ${String(error).slice(0, 120)}`);
+      }
+    });
+  }
+}
+
+function wireDrop() {
+  const stage = document.querySelector('[data-scene="model"]');
+  const layer = stage?.querySelector(".drop-layer");
+  const controller = () => controllers.get("model");
+  if (!stage || !layer) return;
+  for (const type of ["dragenter", "dragover"]) {
+    window.addEventListener(type, (event) => {
+      event.preventDefault();
+      layer.classList.add("over");
+    });
+  }
+  for (const type of ["dragleave", "drop"]) {
+    window.addEventListener(type, () => layer.classList.remove("over"));
+  }
+  window.addEventListener("drop", async (event) => {
+    event.preventDefault();
+    const file = Array.from(event.dataTransfer?.files || []).find((entry) =>
+      /\.(glb|gltf)$/i.test(entry.name),
+    );
+    if (!file) return;
+    const active = controller();
+    if (!active) return;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    await active.loadDropped(bytes, file.name);
+  });
+}
+
+function wireCopyButtons() {
+  async function copyText(text, button) {
+    await navigator.clipboard.writeText(text);
+    const previous = button.textContent;
+    button.textContent = "Copied";
+    window.setTimeout(() => {
+      button.textContent = previous;
+    }, 1000);
+  }
+  for (const button of document.querySelectorAll("[data-copy]")) {
+    button.addEventListener("click", () => {
+      const target = document.querySelector(button.dataset.copy);
+      const text = target?.innerText || target?.textContent || "";
+      copyText(text, button).catch((error) => console.error("copy failed", error));
+    });
+  }
+  for (const button of document.querySelectorAll("[data-copy-text]")) {
+    button.addEventListener("click", () => {
+      copyText(button.dataset.copyText, button).catch((error) => console.error("copy failed", error));
+    });
+  }
+}
+
+function wireReplayButtons() {
+  for (const button of document.querySelectorAll(".replay")) {
+    button.addEventListener("click", () => controllers.get("connector")?.startConnectorLoop());
+  }
+}
+
+function observeStages() {
+  const stages = Array.from(document.querySelectorAll(".stage[data-scene]"));
+  for (const stage of stages) {
+    const controller = new LiveStage(stage);
+    controllers.set(stage.dataset.scene, controller);
+  }
+  const observer = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        const controller = controllers.get(entry.target.dataset.scene);
+        if (!controller) continue;
+        if (entry.isIntersecting) {
+          controller.activate();
         } else {
-          setStatus(activeAsset.label, "rendered");
+          controller.deactivate();
         }
       }
-      updateMetrics();
-    } catch (err) {
-      console.error("tick failed:", err);
-      setError(`render: ${err}`);
-    }
-  });
-}
-
-function wireActions() {
-  replayButton.addEventListener("click", () => {
-    if (!attached || activeAsset.code !== "connector") return;
-    try {
-      replay_connector_snap(app);
-      frameCount = 0;
-      lastFrameAt = performance.now();
-      setReplayStatus();
-      requestRender();
-    } catch (err) {
-      console.error("replay failed:", err);
-      setError(`replay: ${err}`);
-    }
-  });
-
-  copyButton.addEventListener("click", async () => {
-    const text = codeSnippet.innerText || codeSnippet.textContent || "";
-    try {
-      await navigator.clipboard.writeText(text);
-      copyButton.textContent = "Copied";
-      window.setTimeout(() => {
-        copyButton.textContent = "Copy";
-      }, 1000);
-    } catch (err) {
-      console.error("copy failed:", err);
-    }
-  });
-}
-
-function wireResize() {
-  let scheduled = false;
-  const scheduleResize = () => {
-    if (scheduled) return;
-    scheduled = true;
-    requestAnimationFrame(() => {
-      scheduled = false;
-      resizeAttachedRenderer();
-    });
-  };
-  window.addEventListener("resize", scheduleResize);
-  if ("ResizeObserver" in window) {
-    new ResizeObserver(scheduleResize).observe(canvas);
-  }
-}
-
-function isExternalUri(uri) {
-  return (
-    typeof uri === "string" &&
-    uri.length > 0 &&
-    !uri.startsWith("data:") &&
-    !uri.startsWith("http://") &&
-    !uri.startsWith("https://") &&
-    !uri.startsWith("blob:")
-  );
-}
-
-function mimeForPath(filePath) {
-  const lower = filePath.toLowerCase();
-  if (lower.endsWith(".bin")) return "application/octet-stream";
-  if (lower.endsWith(".png")) return "image/png";
-  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
-  if (lower.endsWith(".webp")) return "image/webp";
-  if (lower.endsWith(".ktx2")) return "image/ktx2";
-  return "application/octet-stream";
-}
-
-function normalizePath(filePath) {
-  return decodeURIComponent(filePath).replace(/^\.?\//, "");
-}
-
-function fileLookup(files) {
-  const lookup = new Map();
-  for (const file of files) {
-    const relative = normalizePath(file.webkitRelativePath || file.name);
-    lookup.set(relative, file);
-    lookup.set(pathBasename(relative), file);
-  }
-  return lookup;
-}
-
-function pathBasename(filePath) {
-  const normalized = normalizePath(filePath);
-  const slash = normalized.lastIndexOf("/");
-  return slash >= 0 ? normalized.slice(slash + 1) : normalized;
-}
-
-function arrayBufferToBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  const chunk = 0x8000;
-  for (let offset = 0; offset < bytes.length; offset += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk));
-  }
-  return btoa(binary);
-}
-
-async function embedUri(uri, lookup, missing) {
-  if (!isExternalUri(uri)) return uri;
-  const key = normalizePath(uri);
-  const file = lookup.get(key) || lookup.get(pathBasename(key));
-  if (!file) {
-    missing.add(uri);
-    return uri;
-  }
-  const base64 = arrayBufferToBase64(await file.arrayBuffer());
-  return `data:${mimeForPath(file.name)};base64,${base64}`;
-}
-
-async function bundleLocalGltf(gltfFile, files) {
-  const lookup = fileLookup(files);
-  const json = JSON.parse(await gltfFile.text());
-  const missing = new Set();
-
-  for (const buffer of json.buffers || []) {
-    if (buffer.uri) buffer.uri = await embedUri(buffer.uri, lookup, missing);
-  }
-  for (const image of json.images || []) {
-    if (image.uri) image.uri = await embedUri(image.uri, lookup, missing);
-  }
-
-  if (missing.size > 0) {
-    throw new Error(`missing referenced file(s): ${Array.from(missing).join(", ")}`);
-  }
-  return new TextEncoder().encode(JSON.stringify(json));
-}
-
-async function readDroppedAsset(files) {
-  const list = Array.from(files);
-  const glb = list.find((file) => file.name.toLowerCase().endsWith(".glb"));
-  if (glb) {
-    return {
-      bytes: new Uint8Array(await glb.arrayBuffer()),
-      asset: {
-        id: "drop",
-        label: glb.name,
-        detail: "dropped GLB",
-        path: glb.name,
-        tone: "teal",
-        code: "asset",
-      },
-      byteLength: glb.size,
-    };
-  }
-  const gltf = list.find((file) => file.name.toLowerCase().endsWith(".gltf"));
-  if (!gltf) throw new Error("drop a GLB or a glTF bundle");
-  const bytes = await bundleLocalGltf(gltf, list);
-  return {
-    bytes,
-    asset: {
-      id: "drop",
-      label: gltf.name,
-      detail: "dropped glTF bundle",
-      path: gltf.name,
-      tone: "teal",
-      code: "asset",
     },
-    byteLength: bytes.byteLength,
-  };
-}
-
-function wireDragDrop() {
-  for (const evt of ["dragover", "dragenter"]) {
-    window.addEventListener(evt, (e) => {
-      e.preventDefault();
-      dropzone.classList.add("over");
-    });
-  }
-  for (const evt of ["dragleave", "drop"]) {
-    window.addEventListener(evt, () => dropzone.classList.remove("over"));
-  }
-  window.addEventListener("drop", async (e) => {
-    e.preventDefault();
-    try {
-      beginPhase("reading dropped asset");
-      const dropped = await readDroppedAsset(e.dataTransfer?.files || []);
-      await loadAndAttach(dropped.bytes, dropped.asset, dropped.byteLength);
-      updateActiveButton();
-    } catch (err) {
-      console.error(err);
-      setError(`drop: ${err}`);
-    }
-  });
-}
-
-function safeForwardPointer(kind, x, y, dx, dy) {
-  if (!attached) return;
-  try {
-    forward_pointer_event(app, kind, x, y, dx, dy);
-  } catch (err) {
-    console.error("forward_pointer_event failed:", err);
-    setError(`pointer ${kind}: ${err}`);
-  }
-}
-
-function updateOrbitFromPointer(kind, deltaX, deltaY) {
-  if (kind === "down") {
-    pointerDown = true;
-  } else if (kind === "up") {
-    pointerDown = false;
-  } else if (kind === "move" && pointerDown) {
-    orbit.yaw += deltaX * ORBIT_RADIANS_PER_PIXEL;
-    orbit.pitch = Math.max(
-      -MAX_PITCH_RADIANS,
-      Math.min(MAX_PITCH_RADIANS, orbit.pitch + deltaY * ORBIT_RADIANS_PER_PIXEL),
-    );
-  } else if (kind === "wheel") {
-    const zoom = Math.max(0.05, 1.0 + deltaY * ZOOM_SCALE);
-    orbit.distance = Math.max(MIN_DISTANCE, orbit.distance * zoom);
-  }
-  updateCodePanel();
-  updateMetrics();
-}
-
-function wirePointer() {
-  const scaled = (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const sx = canvas.width / Math.max(1, rect.width);
-    const sy = canvas.height / Math.max(1, rect.height);
-    return {
-      x: (e.clientX - rect.left) * sx,
-      y: (e.clientY - rect.top) * sy,
-      sx,
-      sy,
-    };
-  };
-  canvas.addEventListener("pointerdown", (e) => {
-    if (!attached) return;
-    canvas.setPointerCapture(e.pointerId);
-    const p = scaled(e);
-    safeForwardPointer("down", p.x, p.y, 0, 0);
-    updateOrbitFromPointer("down", 0, 0);
-    requestRender();
-  });
-  canvas.addEventListener("pointerup", (e) => {
-    if (!attached) return;
-    canvas.releasePointerCapture(e.pointerId);
-    const p = scaled(e);
-    safeForwardPointer("up", p.x, p.y, 0, 0);
-    updateOrbitFromPointer("up", 0, 0);
-    requestRender();
-  });
-  canvas.addEventListener("pointermove", (e) => {
-    if (!attached) return;
-    const p = scaled(e);
-    const dx = e.movementX * p.sx;
-    const dy = e.movementY * p.sy;
-    safeForwardPointer("move", p.x, p.y, dx, dy);
-    updateOrbitFromPointer("move", dx, dy);
-    requestRender();
-  });
-  canvas.addEventListener(
-    "wheel",
-    (e) => {
-      if (!attached) return;
-      e.preventDefault();
-      const p = scaled(e);
-      // OrbitControls expects ~unit-scale wheel deltas; browser deltaY is
-      // ~100px per notch which would multiply distance ~11× per click.
-      const lineDelta =
-        e.deltaMode === 1 ? e.deltaY : e.deltaMode === 2 ? e.deltaY * 10 : e.deltaY / 100;
-      const normalized = Math.max(-2.0, Math.min(2.0, lineDelta));
-      safeForwardPointer("wheel", p.x, p.y, 0, normalized);
-      updateOrbitFromPointer("wheel", 0, normalized);
-      requestRender();
-    },
-    { passive: false },
+    { rootMargin: "220px 0px", threshold: 0.18 },
   );
+  for (const stage of stages) observer.observe(stage);
 }
 
-function tryWasmCall(label, fn) {
-  if (!app || !attached) return;
-  try {
-    fn();
-    requestRender();
-  } catch (err) {
-    console.error(`${label} failed:`, err);
-  }
+function exposeProbe() {
+  window.__scenaShowcaseProbe = {
+    controllers() {
+      return Array.from(controllers.values()).map((controller) => ({
+        scene: controller.scene,
+        loaded: controller.loaded,
+        active: controller.active,
+        status: controller.stage.querySelector(".stage-status")?.textContent || "",
+      }));
+    },
+    materialSelection() {
+      return materialSelection;
+    },
+  };
 }
 
-if (v14BackgroundSelect) {
-  v14BackgroundSelect.addEventListener("change", (event) => {
-    tryWasmCall("set_background_scheme", () => {
-      set_background_scheme(app, event.target.value);
-      applyCanvasBackground(event.target.value);
-    });
+if (new URLSearchParams(window.location.search).get("sample") === "material-presets") {
+  runMaterialPresetRoute().catch((error) => {
+    console.error("material preset route failed", error);
+    document.body.textContent = `render failed: ${String(error)}`;
   });
+} else {
+  createMaterialThumbs();
+  wireSamples();
+  wireDrop();
+  wireCopyButtons();
+  wireReplayButtons();
+  observeStages();
+  exposeProbe();
 }
-if (v14AutoExposureSelect) {
-  v14AutoExposureSelect.addEventListener("change", (event) => {
-    if (event.target.value === "fixed_0_ev") {
-      tryWasmCall("set_fixed_exposure_ev", () => set_fixed_exposure_ev(app, 0.0));
-    } else {
-      tryWasmCall("set_auto_exposure_preset", () => set_auto_exposure_preset(app, event.target.value));
-    }
-  });
-}
-if (v14AntiAliasingSelect) {
-  v14AntiAliasingSelect.addEventListener("change", (event) => {
-    tryWasmCall("set_anti_aliasing_mode", () => set_anti_aliasing_mode(app, event.target.value));
-  });
-}
-if (v14BloomCheckbox) {
-  v14BloomCheckbox.addEventListener("change", (event) => {
-    tryWasmCall("set_bloom_enabled", () => set_bloom_enabled(app, event.target.checked));
-  });
-}
-if (v14ScreenshotButton) {
-  v14ScreenshotButton.addEventListener("click", () => {
-    if (!app || !attached) return;
-    try {
-      const bytes = capture_png_bytes(app);
-      const blob = new Blob([bytes], { type: "image/png" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `scena-${activeAsset.id || "frame"}.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (err) {
-      console.error("capture_png_bytes failed:", err);
-    }
-  });
-}
-
-start().catch((err) => {
-  console.error("start failed:", err);
-  setError(`init failed: ${err}`);
-});

@@ -63,17 +63,26 @@ pub(super) fn create_output_bind_group_layout(device: &wgpu::Device) -> wgpu::Bi
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
-            // Phase 1C step 2: BRDF LUT (RG32Float). The split-sum specular
-            // composition reads (scale, bias) at (NoV, roughness) and folds
-            // them into the prefiltered specular sample.
+            // Opaque scene color sampled by the transparent transmission pass.
+            // This is the minimum real renderer capability for glass proof:
+            // transparent fragments can refract/blur the already-rendered
+            // background instead of relying on alpha blend alone. Binding 5
+            // stays unused so the shader can remain below WebGL2's 16 sampled
+            // texture limit while retaining stable group-0 binding numbers.
             wgpu::BindGroupLayoutEntry {
-                binding: 5,
+                binding: 6,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     view_dimension: wgpu::TextureViewDimension::D2,
                     multisampled: false,
                 },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 7,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
         ],
@@ -98,7 +107,8 @@ pub(super) fn create_output_bind_group(
     shadow_sampler: &wgpu::Sampler,
     environment_cubemap_view: &wgpu::TextureView,
     environment_sampler: &wgpu::Sampler,
-    brdf_lut_view: &wgpu::TextureView,
+    transmission_color_view: &wgpu::TextureView,
+    transmission_color_sampler: &wgpu::Sampler,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("scena.output.bind_group"),
@@ -125,8 +135,12 @@ pub(super) fn create_output_bind_group(
                 resource: wgpu::BindingResource::Sampler(environment_sampler),
             },
             wgpu::BindGroupEntry {
-                binding: 5,
-                resource: wgpu::BindingResource::TextureView(brdf_lut_view),
+                binding: 6,
+                resource: wgpu::BindingResource::TextureView(transmission_color_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 7,
+                resource: wgpu::BindingResource::Sampler(transmission_color_sampler),
             },
         ],
     })
@@ -431,6 +445,53 @@ mod tests {
     }
 
     #[test]
+    fn triangle_shader_applies_sheen_environment_lobe_in_native_and_webgl2_variants() {
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            assert!(
+                shader.contains("sheen_environment_lighting")
+                    && shader.contains("environment += sheen_environment_lighting(normal, view, sheen_color, sheen_roughness);"),
+                "{name} shader must apply KHR_materials_sheen under environment lighting; \
+                 direct-light-only sheen cannot prove satin/fabric material presets"
+            );
+        }
+    }
+
+    #[test]
+    fn triangle_shader_applies_scene_color_transmission_in_native_and_webgl2_variants() {
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            assert!(
+                shader.contains("var transmission_color_texture: texture_2d<f32>")
+                    && shader.contains("var transmission_color_sampler: sampler")
+                    && shader.contains("transmission_factors: vec4<f32>")
+                    && shader.contains("physical_transmission_color(")
+                    && shader.contains("let ior = max(material.transmission_factors.y, 1.01);")
+                    && shader.contains("let thickness = max(material.transmission_factors.z, 0.0);")
+                    && shader.contains("let view_dir = normalize(view);")
+                    && shader.contains("let normal_dir = normalize(normal);")
+                    && shader.contains("let refracted = refract(-view_dir, normal_dir, 1.0 / ior);")
+                    && shader.contains("let thickness_scale = 0.004 + min(thickness, 1.0) * 0.028;")
+                    && shader.contains("let blur_px = roughness * roughness * 12.0;")
+                    && shader.contains("let refracted_blurred =")
+                    && shader.contains("let rim_fresnel = pow(1.0 - n_dot_v, 5.0);")
+                    && shader.contains("let reflection_weight = clamp(0.08 + rim_fresnel * 0.42 + (1.0 - transmission) * 0.10, 0.08, 0.50);")
+                    && shader.contains("let tint_strength = clamp(transmission * 0.035, 0.0, 0.035);")
+                    && shader.contains("return vec4<f32>(mix(transmitted, reflected, reflection_weight), 1.0);")
+                    && shader.contains(
+                        "textureSample(transmission_color_texture, transmission_color_sampler"
+                    ),
+                "{name} shader must sample opaque scene color with IOR/thickness refraction \
+                 and roughness blur; alpha-blend-only glass is not enough for Round E material proof"
+            );
+        }
+    }
+
+    #[test]
     fn triangle_shader_applies_anisotropy_lobe_in_native_and_webgl2_variants() {
         for (name, shader) in [
             ("texture_2d_array", GPU_TRIANGLE_SHADER),
@@ -554,6 +615,40 @@ mod tests {
             "GPU PBR shader must consume prepared environment irradiance/specular uniforms \
              before backend IBL lighting can be claimed"
         );
+    }
+
+    #[test]
+    fn triangle_shader_applies_clearcoat_lobe_to_environment_ibl() {
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            assert!(
+                shader.contains("fn clearcoat_environment_lighting(")
+                    && shader.contains(
+                        "environment += clearcoat_environment_lighting(clearcoat_normal, view, clearcoat_factor, clearcoat_roughness);"
+                    ),
+                "{name} shader must add a separate clearcoat specular IBL lobe; \
+                 direct-light clearcoat alone makes coated materials read like ordinary glossy plastic under HDR"
+            );
+        }
+    }
+
+    #[test]
+    fn triangle_shader_applies_anisotropy_lobe_to_environment_ibl() {
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            assert!(
+                shader.contains("fn anisotropy_environment_lighting(")
+                    && shader.contains(
+                        "environment += anisotropy_environment_lighting(base.rgb, metallic, roughness, normal, world_tangent, in.tangent.w, view, anisotropy_strength, material.anisotropy_factors.y, anisotropy_direction);"
+                    ),
+                "{name} shader must route anisotropy into environment IBL; \
+                 direct-light-only anisotropy leaves brushed metal with round HDR highlights"
+            );
+        }
     }
 
     #[test]

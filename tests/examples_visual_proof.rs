@@ -19,14 +19,17 @@ use std::fs;
 use std::path::PathBuf;
 use std::{cell::RefCell, rc::Rc};
 
+use scena::material_showcase::{
+    MaterialShowcasePreset, glass_background_target_bars, material_preset_showcase,
+};
 use scena::{
     Aabb, AnimationPlaybackState, Assets, AutoExposureConfig, Background, Color, ConnectOptions,
     ConnectionAlignment, ConnectionError, ConnectorFrame, CursorPosition, DirectionalLight,
     EnvironmentPreset, GeometryDesc, InteractionStyle, InteractiveGltfViewer, LabelDesc,
     MaterialDesc, OrbitControlAction, OrbitControls, PerspectiveCamera, PlatformSurface,
-    PointLight, PointerEvent, Profile, Renderer, RendererOptions, Scene, SourceCoordinateSystem,
-    SourceUnits, TouchEvent, Transform, Vec3, Viewport, headless_gltf_viewer,
-    interactive_gltf_viewer,
+    PointLight, PointerEvent, Profile, Quat, Renderer, RendererOptions, Scene,
+    SourceCoordinateSystem, SourceUnits, TouchEvent, Transform, Vec3, Viewport,
+    headless_gltf_viewer, interactive_gltf_viewer,
 };
 
 const ARTIFACT_WIDTH: u32 = 256;
@@ -619,44 +622,11 @@ fn render_point_light_preset_tile(light: PointLight, width: u32, height: u32) ->
 fn round_b_material_preset_reference_docs_image() {
     let tile_width = 128;
     let tile_height = 128;
-    let tiles = [
-        render_material_preset_tile(MaterialDesc::matte(Color::BLUE), tile_width, tile_height),
-        render_material_preset_tile(MaterialDesc::plastic(Color::BLUE), tile_width, tile_height),
-        render_material_preset_tile(
-            MaterialDesc::metal(Color::LIGHT_GRAY),
-            tile_width,
-            tile_height,
-        ),
-        render_material_preset_tile(
-            MaterialDesc::rough_metal(Color::LIGHT_GRAY),
-            tile_width,
-            tile_height,
-        ),
-        render_material_preset_tile(MaterialDesc::chrome(), tile_width, tile_height),
-        render_material_preset_tile(MaterialDesc::brushed_steel(), tile_width, tile_height),
-        render_material_preset_tile(
-            MaterialDesc::clearcoat_plastic(Color::BLUE),
-            tile_width,
-            tile_height,
-        ),
-        render_material_preset_tile(MaterialDesc::satin(Color::MAGENTA), tile_width, tile_height),
-        render_material_preset_tile(
-            MaterialDesc::leather(Color::ORANGE),
-            tile_width,
-            tile_height,
-        ),
-        render_material_preset_tile(
-            MaterialDesc::clear_glass(Color::CYAN),
-            tile_width,
-            tile_height,
-        ),
-        render_material_preset_tile(
-            MaterialDesc::frosted_glass(Color::COOL_WHITE),
-            tile_width,
-            tile_height,
-        ),
-        render_material_preset_tile(MaterialDesc::rubber(), tile_width, tile_height),
-    ];
+    let tiles = material_preset_showcase()
+        .iter()
+        .copied()
+        .map(|preset| render_material_preset_tile(preset, tile_width, tile_height))
+        .collect::<Vec<_>>();
     let width = tile_width * tiles.len() as u32;
     let height = tile_height;
     let mut rgba = vec![0_u8; (width * height * 4) as usize];
@@ -682,16 +652,141 @@ fn round_b_material_preset_reference_docs_image() {
     );
 }
 
-fn render_material_preset_tile(material: MaterialDesc, width: u32, height: u32) -> Vec<u8> {
+#[test]
+fn round_e_material_reference_docs_image_metrics() {
+    assert_round_e_reference_docs_image_metrics();
+}
+
+fn assert_round_e_reference_docs_image_metrics() {
+    let thresholds = material_identity_thresholds();
+    let chrome = load_round_e_reference_image("chrome");
+    let chrome_luminance = luminance_percentiles(&foreground_luminance_values(&chrome));
+    assert!(
+        chrome_luminance.p99 >= thresholds.chrome_bright_reflection_luminance_p99_min,
+        "Round E chrome reference image p99 luminance {:.3} is below the material-identity floor {:.3}",
+        chrome_luminance.p99,
+        thresholds.chrome_bright_reflection_luminance_p99_min
+    );
+    assert!(
+        chrome_luminance.p05 <= thresholds.chrome_dark_reflection_luminance_p05_max,
+        "Round E chrome reference image p05 luminance {:.3} is above the dark-reflection ceiling {:.3}",
+        chrome_luminance.p05,
+        thresholds.chrome_dark_reflection_luminance_p05_max
+    );
+    assert!(
+        chrome_luminance.p99 / chrome_luminance.p10.max(1.0)
+            >= thresholds.chrome_specular_dynamic_range_min,
+        "Round E chrome reference image has insufficient dark/bright reflection dynamic range"
+    );
+
+    let brushed = load_round_e_reference_image("brushed_steel");
+    let brushed_aspect = highlight_aspect_ratio(&brushed);
+    assert!(
+        brushed_aspect >= thresholds.brushed_steel_reference_aspect_ratio_min,
+        "Round E brushed-steel reference image aspect ratio {brushed_aspect:.3} is below the reference-image floor {:.3}",
+        thresholds.brushed_steel_reference_aspect_ratio_min
+    );
+
+    let plastic = load_round_e_reference_image("plastic");
+    let clearcoat = load_round_e_reference_image("clearcoat_plastic");
+    let plastic_p99 = luminance_percentiles(&foreground_luminance_values(&plastic)).p99;
+    let clearcoat_p99 = luminance_percentiles(&foreground_luminance_values(&clearcoat)).p99;
+    let clearcoat_lobe_delta = ((clearcoat_p99 - plastic_p99) / 255.0).max(0.0);
+    assert!(
+        clearcoat_lobe_delta >= thresholds.clearcoat_lobe_delta_min,
+        "Round E clearcoat reference image lobe delta {clearcoat_lobe_delta:.3} is below {:.3}",
+        thresholds.clearcoat_lobe_delta_min
+    );
+
+    for (preset, minimum) in [
+        ("satin", thresholds.source_backed_variance_min),
+        ("leather", thresholds.source_backed_variance_min),
+        ("rubber", thresholds.source_backed_variance_min),
+    ] {
+        let image = load_round_e_reference_image(preset);
+        let stats = luminance_stats(&foreground_luminance_values(&image));
+        let variance = stats.stddev / 255.0;
+        assert!(
+            variance >= minimum,
+            "Round E {preset} reference image luminance variance {variance:.3} is below {minimum:.3}; \
+             source-backed materials must not collapse to a flat fill"
+        );
+    }
+
+    let clear_glass = load_round_e_reference_image("clear_glass");
+    let frosted_glass = load_round_e_reference_image("frosted_glass");
+    let target = dark_target_offset(&clear_glass);
+    assert!(
+        target.count >= thresholds.glass_dark_target_pixel_count_min
+            && target.offset_px >= thresholds.glass_refraction_offset_min,
+        "Round E clear-glass reference target count {} / offset {:.3} does not prove a visible background target",
+        target.count,
+        target.offset_px
+    );
+    let clear_edge = sobel_edge_energy(&clear_glass);
+    let frosted_edge = sobel_edge_energy(&frosted_glass);
+    assert!(
+        clear_edge > 0.0 && frosted_edge > 0.0,
+        "Round E glass reference images must contain a measurable background target; got clear edge {clear_edge:.4}, frosted edge {frosted_edge:.4}"
+    );
+
+    for (left, right) in [
+        ("metal", "rough_metal"),
+        ("metal", "chrome"),
+        ("chrome", "plastic"),
+        ("clearcoat_plastic", "plastic"),
+        ("clear_glass", "frosted_glass"),
+        ("rubber", "plastic"),
+    ] {
+        let left_image = load_round_e_reference_image(left);
+        let right_image = load_round_e_reference_image(right);
+        let delta = foreground_mean_rgb_distance(&left_image, &right_image);
+        assert!(
+            delta >= thresholds.neighbor_rgb_distance_min,
+            "Round E reference neighbor pair {left}/{right} has RGB distance {delta:.3}, below {:.3}",
+            thresholds.neighbor_rgb_distance_min
+        );
+    }
+}
+
+fn render_material_preset_tile(preset: MaterialShowcasePreset, width: u32, height: u32) -> Vec<u8> {
     let assets = Assets::new();
-    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 0.35));
-    let material = assets.create_material(material);
+    let geometry = assets.create_geometry(preset.geometry_desc());
+    let material = match preset.id {
+        "satin" => pollster::block_on(assets.material_presets().satin())
+            .expect("source-backed satin preset loads for docs image"),
+        "leather" => pollster::block_on(assets.material_presets().leather())
+            .expect("source-backed leather preset loads for docs image"),
+        "rubber" => pollster::block_on(assets.material_presets().rubber())
+            .expect("source-backed rubber preset loads for docs image"),
+        _ => assets.create_material(preset.material_desc().with_double_sided(true)),
+    };
     let environment = pollster::block_on(assets.load_environment_preset(EnvironmentPreset::Studio))
         .expect("studio environment loads for material preset docs image");
 
     let mut scene = Scene::new();
+    if preset.geometry.uses_background_target() {
+        let target = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
+        for bar in glass_background_target_bars() {
+            scene
+                .mesh(
+                    target,
+                    assets.create_material(MaterialDesc::matte(bar.color)),
+                )
+                .transform(Transform {
+                    translation: Vec3::new(0.0, 0.0, -0.14) + bar.offset,
+                    rotation: Quat::IDENTITY,
+                    scale: bar.scale,
+                })
+                .add()
+                .expect("material preset background target inserts");
+        }
+    }
+    let mut transform = preset.transform();
+    transform.translation = Vec3::ZERO;
     scene
         .mesh(geometry, material)
+        .transform(transform)
         .add()
         .expect("material preset subject inserts");
     scene
@@ -716,6 +811,351 @@ fn render_material_preset_tile(material: MaterialDesc, width: u32, height: u32) 
         .render_active(&scene)
         .expect("material preset docs-image scene renders");
     renderer.frame_rgba8().to_vec()
+}
+
+#[derive(Debug, Clone)]
+struct RgbaProofImage {
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MaterialIdentityThresholds {
+    chrome_specular_dynamic_range_min: f32,
+    chrome_dark_reflection_luminance_p05_max: f32,
+    chrome_bright_reflection_luminance_p99_min: f32,
+    brushed_steel_reference_aspect_ratio_min: f32,
+    clearcoat_lobe_delta_min: f32,
+    source_backed_variance_min: f32,
+    glass_dark_target_pixel_count_min: usize,
+    glass_refraction_offset_min: f32,
+    neighbor_rgb_distance_min: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LuminancePercentiles {
+    p05: f32,
+    p10: f32,
+    p99: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LuminanceStats {
+    stddev: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DarkTargetMetrics {
+    count: usize,
+    offset_px: f32,
+}
+
+fn material_identity_thresholds() -> MaterialIdentityThresholds {
+    MaterialIdentityThresholds {
+        chrome_specular_dynamic_range_min: 2.0,
+        chrome_dark_reflection_luminance_p05_max: 90.0,
+        chrome_bright_reflection_luminance_p99_min: 230.0,
+        // The model-viewer reference is a cropped oracle image, not the live
+        // WebGL2 proof crop. Keep this close to the committed reference output
+        // while still rejecting a round blob or flat plate.
+        brushed_steel_reference_aspect_ratio_min: 1.8,
+        clearcoat_lobe_delta_min: 0.05,
+        source_backed_variance_min: 0.02,
+        glass_dark_target_pixel_count_min: 64,
+        glass_refraction_offset_min: 4.0,
+        neighbor_rgb_distance_min: 6.0,
+    }
+}
+
+fn load_round_e_reference_image(preset: &str) -> RgbaProofImage {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/visual/references/round_e")
+        .join(format!("{preset}.png"));
+    let image = image::ImageReader::open(&path)
+        .unwrap_or_else(|err| {
+            panic!(
+                "Round E reference image {} is readable: {err}",
+                path.display()
+            )
+        })
+        .decode()
+        .unwrap_or_else(|err| panic!("Round E reference image {} decodes: {err}", path.display()))
+        .to_rgba8();
+    let (width, height) = image.dimensions();
+    assert!(
+        width >= 128 && height >= 128,
+        "Round E reference image {preset} must be a crop large enough for material metrics, got {width}x{height}"
+    );
+    RgbaProofImage {
+        width,
+        height,
+        rgba: image.into_raw(),
+    }
+}
+
+fn foreground_luminance_values(image: &RgbaProofImage) -> Vec<f32> {
+    foreground_pixel_offsets(image)
+        .into_iter()
+        .map(|offset| {
+            luminance_rgb(
+                image.rgba[offset],
+                image.rgba[offset + 1],
+                image.rgba[offset + 2],
+            )
+        })
+        .collect()
+}
+
+fn foreground_pixel_offsets(image: &RgbaProofImage) -> Vec<usize> {
+    let background = estimate_background_rgb(image);
+    let mut offsets = Vec::new();
+    for y in 0..image.height {
+        for x in 0..image.width {
+            let offset = ((y * image.width + x) as usize) * 4;
+            if image.rgba[offset + 3] <= 8 {
+                continue;
+            }
+            let distance = rgb_distance(
+                [
+                    image.rgba[offset] as f32,
+                    image.rgba[offset + 1] as f32,
+                    image.rgba[offset + 2] as f32,
+                ],
+                background,
+            );
+            if distance > 7.0 {
+                offsets.push(offset);
+            }
+        }
+    }
+    if offsets.len() >= 64 {
+        return offsets;
+    }
+    (0..image.rgba.len()).step_by(4).collect()
+}
+
+fn luminance_percentiles(values: &[f32]) -> LuminancePercentiles {
+    assert!(
+        !values.is_empty(),
+        "Round E material metric needs at least one luminance sample"
+    );
+    let mut values = values.to_vec();
+    values.sort_by(|left, right| left.total_cmp(right));
+    LuminancePercentiles {
+        p05: percentile_sorted(&values, 0.05),
+        p10: percentile_sorted(&values, 0.10),
+        p99: percentile_sorted(&values, 0.99),
+    }
+}
+
+fn luminance_stats(values: &[f32]) -> LuminanceStats {
+    assert!(
+        !values.is_empty(),
+        "Round E material metric needs at least one luminance sample"
+    );
+    let mean = values.iter().sum::<f32>() / values.len() as f32;
+    let variance = values
+        .iter()
+        .map(|value| {
+            let delta = value - mean;
+            delta * delta
+        })
+        .sum::<f32>()
+        / values.len() as f32;
+    LuminanceStats {
+        stddev: variance.sqrt(),
+    }
+}
+
+fn highlight_aspect_ratio(image: &RgbaProofImage) -> f32 {
+    let offsets = foreground_pixel_offsets(image);
+    if offsets.len() < 16 {
+        return 0.0;
+    }
+    let mut luminance = offsets
+        .iter()
+        .map(|offset| {
+            luminance_rgb(
+                image.rgba[*offset],
+                image.rgba[*offset + 1],
+                image.rgba[*offset + 2],
+            )
+        })
+        .collect::<Vec<_>>();
+    luminance.sort_by(|left, right| left.total_cmp(right));
+    let cutoff = percentile_sorted(&luminance, 0.95);
+    let mut total_weight = 0.0;
+    let mut mean_x = 0.0;
+    let mut mean_y = 0.0;
+    let mut highlights = Vec::new();
+    for offset in offsets {
+        let pixel_index = offset / 4;
+        let x = (pixel_index as u32 % image.width) as f32;
+        let y = (pixel_index as u32 / image.width) as f32;
+        let lum = luminance_rgb(
+            image.rgba[offset],
+            image.rgba[offset + 1],
+            image.rgba[offset + 2],
+        );
+        if lum < cutoff {
+            continue;
+        }
+        let weight = lum.max(1.0);
+        total_weight += weight;
+        mean_x += x * weight;
+        mean_y += y * weight;
+        highlights.push((x, y, weight));
+    }
+    if highlights.len() < 8 || total_weight <= 0.0 {
+        return 0.0;
+    }
+    mean_x /= total_weight;
+    mean_y /= total_weight;
+    let mut xx = 0.0;
+    let mut yy = 0.0;
+    let mut xy = 0.0;
+    for (x, y, weight) in highlights {
+        let dx = x - mean_x;
+        let dy = y - mean_y;
+        xx += weight * dx * dx;
+        yy += weight * dy * dy;
+        xy += weight * dx * dy;
+    }
+    xx /= total_weight;
+    yy /= total_weight;
+    xy /= total_weight;
+    let trace = xx + yy;
+    let determinant = xx * yy - xy * xy;
+    let discriminant = ((trace * trace) * 0.25 - determinant).max(0.0).sqrt();
+    let major = trace * 0.5 + discriminant;
+    let minor = (trace * 0.5 - discriminant).max(1e-6);
+    (major / minor).sqrt()
+}
+
+fn dark_target_offset(image: &RgbaProofImage) -> DarkTargetMetrics {
+    let background = estimate_background_rgb(image);
+    let background_luminance = luminance_rgb_f32(background);
+    let mut count = 0;
+    let mut sum_x = 0.0;
+    let mut sum_y = 0.0;
+    for y in 0..image.height {
+        for x in 0..image.width {
+            let offset = ((y * image.width + x) as usize) * 4;
+            let luminance = luminance_rgb(
+                image.rgba[offset],
+                image.rgba[offset + 1],
+                image.rgba[offset + 2],
+            );
+            if luminance >= background_luminance - 18.0 {
+                continue;
+            }
+            count += 1;
+            sum_x += x as f32;
+            sum_y += y as f32;
+        }
+    }
+    if count == 0 {
+        return DarkTargetMetrics {
+            count,
+            offset_px: 0.0,
+        };
+    }
+    let center_x = sum_x / count as f32;
+    let center_y = sum_y / count as f32;
+    DarkTargetMetrics {
+        count,
+        offset_px: ((center_x - image.width as f32 * 0.5).powi(2)
+            + (center_y - image.height as f32 * 0.5).powi(2))
+        .sqrt(),
+    }
+}
+
+fn sobel_edge_energy(image: &RgbaProofImage) -> f32 {
+    let width = image.width as usize;
+    let height = image.height as usize;
+    if width < 3 || height < 3 {
+        return 0.0;
+    }
+    let gray = image
+        .rgba
+        .chunks_exact(4)
+        .map(|pixel| luminance_rgb(pixel[0], pixel[1], pixel[2]))
+        .collect::<Vec<_>>();
+    let mut sum = 0.0;
+    let mut count = 0;
+    for y in 1..height - 1 {
+        for x in 1..width - 1 {
+            let sample = |x: usize, y: usize| gray[y * width + x];
+            let gx = -sample(x - 1, y - 1) + sample(x + 1, y - 1) - 2.0 * sample(x - 1, y)
+                + 2.0 * sample(x + 1, y)
+                - sample(x - 1, y + 1)
+                + sample(x + 1, y + 1);
+            let gy = -sample(x - 1, y - 1) - 2.0 * sample(x, y - 1) - sample(x + 1, y - 1)
+                + sample(x - 1, y + 1)
+                + 2.0 * sample(x, y + 1)
+                + sample(x + 1, y + 1);
+            sum += (gx * gx + gy * gy).sqrt() / 255.0;
+            count += 1;
+        }
+    }
+    sum / count as f32
+}
+
+fn foreground_mean_rgb_distance(left: &RgbaProofImage, right: &RgbaProofImage) -> f32 {
+    rgb_distance(foreground_mean_rgb(left), foreground_mean_rgb(right))
+}
+
+fn foreground_mean_rgb(image: &RgbaProofImage) -> [f32; 3] {
+    let offsets = foreground_pixel_offsets(image);
+    let mut sum = [0.0, 0.0, 0.0];
+    for offset in &offsets {
+        sum[0] += image.rgba[*offset] as f32;
+        sum[1] += image.rgba[*offset + 1] as f32;
+        sum[2] += image.rgba[*offset + 2] as f32;
+    }
+    let divisor = offsets.len().max(1) as f32;
+    [sum[0] / divisor, sum[1] / divisor, sum[2] / divisor]
+}
+
+fn estimate_background_rgb(image: &RgbaProofImage) -> [f32; 3] {
+    let corner_size = 8_u32.min((image.width.min(image.height) / 4).max(1));
+    let mut sum = [0.0, 0.0, 0.0];
+    let mut count = 0.0;
+    for (x0, y0) in [
+        (0, 0),
+        (image.width - corner_size, 0),
+        (0, image.height - corner_size),
+        (image.width - corner_size, image.height - corner_size),
+    ] {
+        for y in y0..y0 + corner_size {
+            for x in x0..x0 + corner_size {
+                let offset = ((y * image.width + x) as usize) * 4;
+                sum[0] += image.rgba[offset] as f32;
+                sum[1] += image.rgba[offset + 1] as f32;
+                sum[2] += image.rgba[offset + 2] as f32;
+                count += 1.0;
+            }
+        }
+    }
+    [sum[0] / count, sum[1] / count, sum[2] / count]
+}
+
+fn percentile_sorted(values: &[f32], percentile: f32) -> f32 {
+    values[((values.len() - 1) as f32 * percentile).floor() as usize]
+}
+
+fn luminance_rgb(red: u8, green: u8, blue: u8) -> f32 {
+    luminance_rgb_f32([red as f32, green as f32, blue as f32])
+}
+
+fn luminance_rgb_f32(rgb: [f32; 3]) -> f32 {
+    0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+}
+
+fn rgb_distance(left: [f32; 3], right: [f32; 3]) -> f32 {
+    ((left[0] - right[0]).powi(2) + (left[1] - right[1]).powi(2) + (left[2] - right[2]).powi(2))
+        .sqrt()
 }
 
 #[test]

@@ -46,7 +46,7 @@ impl MaterialDesc {
     /// assert_eq!(material.metallic_factor(), 1.0);
     /// ```
     pub const fn metal(base_color: Color) -> Self {
-        Self::pbr_metallic_roughness(base_color, 1.0, 0.28)
+        Self::pbr_metallic_roughness(base_color, 1.0, 0.42)
     }
 
     /// Rough bare-metal preset for less mirror-like product surfaces.
@@ -61,7 +61,7 @@ impl MaterialDesc {
     /// assert!(material.roughness_factor() > MaterialDesc::metal(Color::LIGHT_GRAY).roughness_factor());
     /// ```
     pub const fn rough_metal(base_color: Color) -> Self {
-        Self::pbr_metallic_roughness(base_color, 1.0, 0.62)
+        Self::pbr_metallic_roughness(base_color, 1.0, 0.82)
     }
 
     /// Smooth chrome preset backed by metallic roughness and environment reflection quality.
@@ -78,7 +78,7 @@ impl MaterialDesc {
     /// assert!(material.roughness_factor() < 0.1);
     /// ```
     pub const fn chrome() -> Self {
-        Self::pbr_metallic_roughness(Color::LIGHT_GRAY, 1.0, 0.04)
+        Self::pbr_metallic_roughness(Color::LIGHT_GRAY, 1.0, 0.02)
     }
 
     /// Brushed steel preset backed by metallic roughness plus scalar anisotropy.
@@ -157,8 +157,8 @@ impl MaterialDesc {
 
     /// Transparent glass preset backed by blend mode plus transmission, IOR, and volume metadata.
     ///
-    /// This is a browser-preview glass material, not a full refraction or
-    /// caustics model.
+    /// GPU backends sample the opaque scene color with IOR/thickness refraction
+    /// and roughness-driven blur where supported. This is not a caustics model.
     ///
     /// # Examples
     ///
@@ -170,21 +170,21 @@ impl MaterialDesc {
     /// assert_eq!(material.transmission_factor(), 1.0);
     /// ```
     pub const fn clear_glass(tint: Color) -> Self {
-        let base_color = Color::from_linear_rgba(tint.r, tint.g, tint.b, 0.28);
+        let base_color = Color::from_linear_rgba(tint.r, tint.g, tint.b, 0.20);
         Self::pbr_metallic_roughness(base_color, 0.0, 0.02)
             .with_alpha_mode(AlphaMode::Blend)
             .with_double_sided(true)
             .with_transmission_factor(1.0)
             .with_ior(1.45)
-            .with_thickness_factor(0.02)
+            .with_thickness_factor(0.08)
             .with_attenuation_distance(2.0)
             .with_attenuation_color(tint)
     }
 
     /// Frosted glass preset backed by blend mode plus rough transmission, IOR, and volume metadata.
     ///
-    /// This is a translucent material shortcut, not a physically complete
-    /// rough refraction model.
+    /// GPU backends use the shared scene-color transmission path with
+    /// roughness-driven blur where supported. This is not a caustics model.
     ///
     /// # Examples
     ///
@@ -196,13 +196,13 @@ impl MaterialDesc {
     /// assert!(material.roughness_factor() > MaterialDesc::clear_glass(Color::COOL_WHITE).roughness_factor());
     /// ```
     pub const fn frosted_glass(tint: Color) -> Self {
-        let base_color = Color::from_linear_rgba(tint.r, tint.g, tint.b, 0.42);
-        Self::pbr_metallic_roughness(base_color, 0.0, 0.62)
+        let base_color = Color::from_linear_rgba(tint.r, tint.g, tint.b, 0.88);
+        Self::pbr_metallic_roughness(base_color, 0.0, 1.0)
             .with_alpha_mode(AlphaMode::Blend)
             .with_double_sided(true)
-            .with_transmission_factor(0.72)
+            .with_transmission_factor(0.45)
             .with_ior(1.45)
-            .with_thickness_factor(0.08)
+            .with_thickness_factor(0.12)
             .with_attenuation_distance(1.25)
             .with_attenuation_color(tint)
     }

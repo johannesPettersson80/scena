@@ -229,13 +229,18 @@ impl PreparedEnvironmentLighting {
         } else {
             1.0
         };
-        Self {
-            diffuse_rgb,
-            specular_rgb: Vec3::new(
+        let specular_rgb = if cubemap.is_some() {
+            Vec3::new(1.0, 1.0, 1.0)
+        } else {
+            Vec3::new(
                 sanitize_environment_channel(irradiance[0]),
                 sanitize_environment_channel(irradiance[1]),
                 sanitize_environment_channel(irradiance[2]),
-            ),
+            )
+        };
+        Self {
+            diffuse_rgb,
+            specular_rgb,
             intensity,
             cubemap,
         }
@@ -488,10 +493,7 @@ mod tests {
             lighting.gpu_diffuse_intensity(),
             [0.401_568_65, 0.200_784_33, 0.100_392_16, 0.75],
         );
-        assert_vec4_close(
-            lighting.gpu_specular_intensity(),
-            [0.501_960_8, 0.250_980_4, 0.125_490_2, 0.75],
-        );
+        assert_vec4_close(lighting.gpu_specular_intensity(), [1.0, 1.0, 1.0, 0.75]);
     }
 
     fn rle_radiance_hdr_uniform(width: u32, height: u32, rgbe: [u8; 4]) -> Vec<u8> {

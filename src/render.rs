@@ -425,7 +425,7 @@ impl Renderer {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 impl Renderer {
     fn prepare_telemetry_for_test(&self) -> PrepareTelemetry {
         self.prepare_telemetry

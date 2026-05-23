@@ -19,8 +19,22 @@ pub(super) struct UnlitPass<'a> {
     pub(super) material_resources: &'a MaterialResources,
     pub(super) draw_batches: &'a [PrimitiveDrawBatch],
     pub(super) pipeline: &'a wgpu::RenderPipeline,
-    pub(super) clear_color: wgpu::Color,
+    pub(super) color_load: ColorLoad,
+    pub(super) draw_filter: DrawFilter,
     pub(super) label: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) enum ColorLoad {
+    Clear(wgpu::Color),
+    Load,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DrawFilter {
+    All,
+    OpaqueOnly,
+    TransparentOnly,
 }
 
 pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: UnlitPass<'_>) {
@@ -29,7 +43,10 @@ pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: Unli
         depth_slice: None,
         resolve_target: None,
         ops: wgpu::Operations {
-            load: wgpu::LoadOp::Clear(inputs.clear_color),
+            load: match inputs.color_load {
+                ColorLoad::Clear(color) => wgpu::LoadOp::Clear(color),
+                ColorLoad::Load => wgpu::LoadOp::Load,
+            },
             store: wgpu::StoreOp::Store,
         },
     });
@@ -60,7 +77,11 @@ pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: Unli
             let Some(fallback_material) = slots.first() else {
                 return;
             };
-            for batch in inputs.draw_batches {
+            for batch in inputs
+                .draw_batches
+                .iter()
+                .filter(|batch| inputs.draw_filter.includes(batch))
+            {
                 let material = slots
                     .get(batch.material_slot as usize)
                     .unwrap_or(fallback_material);
@@ -84,7 +105,11 @@ pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: Unli
             // draw; per-draw dynamic offset selects the per-material uniform
             // slot, and `material_layer_index` (encoded in the uniform)
             // selects the array layer for sampling.
-            for batch in inputs.draw_batches {
+            for batch in inputs
+                .draw_batches
+                .iter()
+                .filter(|batch| inputs.draw_filter.includes(batch))
+            {
                 let layer_index = (batch.material_slot as u64)
                     .min(u64::from(batched.layer_count.saturating_sub(1)));
                 let material_offset =
@@ -99,6 +124,16 @@ pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: Unli
                     0..1,
                 );
             }
+        }
+    }
+}
+
+impl DrawFilter {
+    fn includes(self, batch: &PrimitiveDrawBatch) -> bool {
+        match self {
+            DrawFilter::All => true,
+            DrawFilter::OpaqueOnly => batch.depth_prepass_eligible,
+            DrawFilter::TransparentOnly => !batch.depth_prepass_eligible,
         }
     }
 }
@@ -227,6 +262,24 @@ mod tests {
                 && implementation.contains("material_resources")
                 && implementation.contains("pass.set_bind_group(1, &material.bind_group"),
             "visible GPU color pass must bind material resources, not only camera uniforms"
+        );
+    }
+
+    #[test]
+    fn unlit_pipeline_can_split_opaque_and_transparent_draws_for_transmission() {
+        let source = include_str!("pipeline.rs");
+        let implementation = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("pipeline implementation precedes tests");
+        assert!(
+            implementation.contains("enum DrawFilter")
+                && implementation.contains("DrawFilter::OpaqueOnly")
+                && implementation.contains("DrawFilter::TransparentOnly")
+                && implementation.contains("LoadOp::Load")
+                && implementation.contains("depth_prepass_eligible"),
+            "physical glass needs an opaque scene-color pass followed by a transparent \
+             transmission pass; one all-material alpha-blended pass can still ship fake glass"
         );
     }
 }

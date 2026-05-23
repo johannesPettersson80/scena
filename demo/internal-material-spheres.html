@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>scena internal material sphere review</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        overflow: hidden;
+        color: #eef8ff;
+        background:
+          radial-gradient(circle at 50% 42%, rgba(52, 126, 144, 0.38), transparent 34rem),
+          linear-gradient(160deg, #06101a 0%, #0a2632 48%, #07141d 100%);
+      }
+
+      main {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: transparent;
+      }
+
+      .sphere-labels {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        display: grid;
+        grid-template-columns: repeat(6, 170px);
+        grid-template-rows: repeat(2, 24px);
+        column-gap: 80px;
+        row-gap: 315px;
+        transform: translate(-50%, -50%);
+        margin-top: 168px;
+        pointer-events: none;
+      }
+
+      .sphere-labels span {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: rgba(238, 248, 255, 0.94);
+        font-size: 13px;
+        font-weight: 650;
+        line-height: 1.1;
+        text-align: center;
+        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.82);
+        white-space: normal;
+      }
+
+      .hud {
+        position: absolute;
+        left: 24px;
+        right: 24px;
+        bottom: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        pointer-events: none;
+      }
+
+      .title {
+        min-width: 15rem;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+
+      p {
+        margin: 4px 0 0;
+        color: rgba(238, 248, 255, 0.72);
+        font-size: 12px;
+      }
+
+      .legend {
+        display: none;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
+        max-width: min(880px, 68vw);
+      }
+
+      .legend span {
+        padding: 5px 8px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 999px;
+        background: rgba(4, 16, 26, 0.42);
+        color: rgba(238, 248, 255, 0.82);
+        font-size: 11px;
+        line-height: 1;
+        white-space: nowrap;
+        backdrop-filter: blur(8px);
+      }
+
+      .status {
+        position: absolute;
+        top: 18px;
+        left: 24px;
+        padding: 8px 10px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 8px;
+        background: rgba(4, 16, 26, 0.54);
+        color: rgba(238, 248, 255, 0.78);
+        font-size: 12px;
+        backdrop-filter: blur(8px);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <canvas id="canvas" aria-label="12 material preset spheres"></canvas>
+      <div class="sphere-labels" aria-hidden="true">
+        <span>Matte</span>
+        <span>Plastic</span>
+        <span>Metal</span>
+        <span>Rough metal</span>
+        <span>Chrome</span>
+        <span>Brushed steel</span>
+        <span>Clearcoat plastic</span>
+        <span>Satin</span>
+        <span>Leather</span>
+        <span>Clear glass</span>
+        <span>Frosted glass</span>
+        <span>Rubber</span>
+      </div>
+      <div id="status" class="status">Loading WebGL2 material spheres</div>
+      <section class="hud" aria-label="material sphere legend">
+        <div class="title">
+          <h1>Material presets</h1>
+          <p>12 spheres rendered live by scena WebGL2</p>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./internal-material-spheres.js?v=20260523-internal-spheres-material-glass-1"></script>
+  </body>
+</html>

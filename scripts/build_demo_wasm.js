@@ -23,7 +23,13 @@ console.log(`[scena-demo-build] running: ${command} ${args.join(" ")}`);
 
 const child = spawn(command, args, {
   cwd: process.cwd(),
-  env: process.env,
+  env: {
+    ...process.env,
+    // Some builder hosts set native linker flags globally in Cargo config.
+    // wasm32-unknown-unknown links with rust-lld and rejects native linker
+    // arguments such as -fuse-ld=mold, so keep this wasm-pack build target-clean.
+    CARGO_ENCODED_RUSTFLAGS: "",
+  },
   stdio: ["ignore", "pipe", "pipe"],
 });
 

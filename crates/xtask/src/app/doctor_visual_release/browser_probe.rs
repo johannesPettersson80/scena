@@ -178,6 +178,7 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
         "VISUAL-BROWSER-M6",
         "src/browser_probe/report.rs",
         &[
+            "physical_glass_transmission",
             "material_bindings",
             "material_texture_bindings",
             "material_sampler_bindings",

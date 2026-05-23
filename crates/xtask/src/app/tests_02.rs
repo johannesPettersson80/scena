@@ -64,6 +64,7 @@ pub(crate) fn doctor_rejects_supported_forward_pbr_regression() {
         "src/diagnostics/capability_status.rs",
         &[
             "forward_pbr_status(_backend: Backend) -> CapabilityStatus {\n    CapabilityStatus::Supported",
+            "forward_pbr_status(\n    backend: Backend,\n    gpu_device: bool,\n) -> CapabilityStatus {\n    CapabilityStatus::Supported",
         ],
     );
 
@@ -73,6 +74,43 @@ pub(crate) fn doctor_rejects_supported_forward_pbr_regression() {
                 && finding.message.contains("CapabilityStatus::Supported")
         }),
         "doctor must reject false forward_pbr support claims: {findings:?}",
+    );
+}
+
+#[test]
+pub(crate) fn doctor_rejects_unconditional_supported_forward_pbr_with_gpu_device_signature() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/supported-pbr-gpu-device");
+    let capability_status_path = fixture_root.join("src/diagnostics/capability_status.rs");
+    fs::create_dir_all(
+        capability_status_path
+            .parent()
+            .expect("capability status parent"),
+    )
+    .expect("fixture dir");
+    fs::write(
+        &capability_status_path,
+        "const fn forward_pbr_status(\n    backend: Backend,\n    gpu_device: bool,\n) -> CapabilityStatus {\n    CapabilityStatus::Supported\n}\n",
+    )
+    .expect("capability fixture");
+    let mut findings = Vec::new();
+
+    forbid_contains(
+        &fixture_root,
+        &mut findings,
+        "ARCH-RENDER-TRUTH",
+        "src/diagnostics/capability_status.rs",
+        &[
+            "forward_pbr_status(\n    backend: Backend,\n    gpu_device: bool,\n) -> CapabilityStatus {\n    CapabilityStatus::Supported",
+        ],
+    );
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-RENDER-TRUTH"
+                && finding.message.contains("CapabilityStatus::Supported")
+        }),
+        "doctor must still reject unconditional forward_pbr support after the status helper gains a gpu_device guard: {findings:?}",
     );
 }
 

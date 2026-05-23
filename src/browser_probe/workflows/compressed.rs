@@ -1,8 +1,14 @@
+#[cfg(feature = "meshopt")]
 use base64::Engine;
+#[cfg(feature = "meshopt")]
 use serde_json::json;
 use wasm_bindgen::prelude::JsValue;
 
+#[cfg(not(feature = "meshopt"))]
+use super::WorkflowScene;
+#[cfg(feature = "meshopt")]
 use super::{WorkflowScene, add_default_camera};
+#[cfg(feature = "meshopt")]
 use crate::{Assets, Scene, TextureColorSpace};
 
 #[cfg(feature = "meshopt")]

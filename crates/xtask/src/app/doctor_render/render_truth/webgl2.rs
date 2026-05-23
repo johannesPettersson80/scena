@@ -46,9 +46,16 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
             "pub(in crate::render) fn render_to_surface",
             "surface.surface.get_current_texture()",
             "encode_shadow_caster_pass",
-            "encode_unlit_pass",
+            "encode_scene_color_passes",
             "surface_output.present();",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/render/gpu/scene_color.rs",
+        &["encode_unlit_pass", "ColorLoad::Load", "TransparentOnly"],
     );
     require_contains(
         root,

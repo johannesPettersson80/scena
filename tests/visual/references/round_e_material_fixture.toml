@@ -1,0 +1,239 @@
+[[presets.matte]]
+label = "Matte"
+source_surface = "MaterialDesc"
+geometry = "curved-panel"
+crop_window = [113, 193, 192, 192]
+camera = "reference-orbit:-18deg,18deg,1.2m; browser-crops:4x3"
+lighting_mode = "studio"
+environment_hdr_path = "demo/samples/environment/white_studio_03_1k.hdr"
+environment_hdr_sha256 = "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b"
+tonemapper = "model-viewer-neutral-reference"
+output_color_space = "srgb"
+exposure_ev = 0.0
+reference_renderer = "@google/model-viewer"
+reference_renderer_version = "4.2.0"
+reference_command = "node scripts/generate_round_e_model_viewer_references.mjs --write"
+reference_background = "#93969c"
+reference_path = "tests/visual/references/round_e/matte.png"
+reference_sha256 = "6a4df37f088c622d99819fccb07fae87c019066ba780ad3b6fe98241278d306f"
+claimed_lanes = ["cpu-reference", "webgl2-desktop-chromium", "webgpu-desktop-chromium", "native-headless-gpu"]
+
+[[presets.plastic]]
+label = "Plastic"
+source_surface = "MaterialDesc"
+geometry = "curved-panel"
+crop_window = [298, 193, 192, 192]
+camera = "reference-orbit:-18deg,18deg,1.2m; browser-crops:4x3"
+lighting_mode = "studio"
+environment_hdr_path = "demo/samples/environment/white_studio_03_1k.hdr"
+environment_hdr_sha256 = "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b"
+tonemapper = "model-viewer-neutral-reference"
+output_color_space = "srgb"
+exposure_ev = 0.0
+reference_renderer = "@google/model-viewer"
+reference_renderer_version = "4.2.0"
+reference_command = "node scripts/generate_round_e_model_viewer_references.mjs --write"
+reference_background = "#93969c"
+reference_path = "tests/visual/references/round_e/plastic.png"
+reference_sha256 = "69fea336a58406085f227ea873e94c982b375487ab2bc26afb5f0704ef4148e4"
+claimed_lanes = ["cpu-reference", "webgl2-desktop-chromium", "webgpu-desktop-chromium", "native-headless-gpu"]
+
+[[presets.metal]]
+label = "Metal"
+source_surface = "MaterialDesc"
+geometry = "curved-part"
+crop_window = [488, 193, 173, 192]
+camera = "reference-orbit:-18deg,18deg,1.2m; browser-crops:4x3"
+lighting_mode = "ibl-only"
+environment_hdr_path = "demo/samples/environment/white_studio_03_1k.hdr"
+environment_hdr_sha256 = "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b"
+tonemapper = "model-viewer-neutral-reference"
+output_color_space = "srgb"
+exposure_ev = 0.0
+reference_renderer = "@google/model-viewer"
+reference_renderer_version = "4.2.0"
+reference_command = "node scripts/generate_round_e_model_viewer_references.mjs --write"
+reference_background = "#93969c"
+reference_path = "tests/visual/references/round_e/metal.png"
+reference_sha256 = "a5bc2e47e743b4e890d6553141aab24496ad351b8bfb222697dab559ec170a76"
+claimed_lanes = ["cpu-reference", "webgl2-desktop-chromium", "webgpu-desktop-chromium", "native-headless-gpu"]
+
+[[presets.rough_metal]]
+label = "Rough metal"
+source_surface = "MaterialDesc"
+geometry = "curved-part"
+crop_window = [658, 193, 173, 192]
+camera = "reference-orbit:-18deg,18deg,1.2m; browser-crops:4x3"
+lighting_mode = "ibl-only"
+environment_hdr_path = "demo/samples/environment/white_studio_03_1k.hdr"
+environment_hdr_sha256 = "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b"
+tonemapper = "model-viewer-neutral-reference"
+output_color_space = "srgb"
+exposure_ev = 0.0
+reference_renderer = "@google/model-viewer"
+reference_renderer_version = "4.2.0"
+reference_command = "node scripts/generate_round_e_model_viewer_references.mjs --write"
+reference_background = "#93969c"
+reference_path = "tests/visual/references/round_e/rough_metal.png"
+reference_sha256 = "1b510beb50d491c1350e85d23f7c05c5c3a173340ebc506a7bd96829e8866d9d"
+claimed_lanes = ["cpu-reference", "webgl2-desktop-chromium", "webgpu-desktop-chromium", "native-headless-gpu"]
+
+[[presets.chrome]]
+label = "Chrome"
+source_surface = "MaterialDesc"
+geometry = "curved-part"
+crop_window = [113, 360, 192, 212]
+camera = "reference-orbit:-18deg,18deg,1.2m; browser-crops:4x3"
+lighting_mode = "ibl-only"
+environment_hdr_path = "demo/samples/environment/white_studio_03_1k.hdr"
+environment_hdr_sha256 = "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b"
+tonemapper = "model-viewer-neutral-reference"
+output_color_space = "srgb"
+exposure_ev = 0.0
+reference_renderer = "@google/model-viewer"
+reference_renderer_version = "4.2.0"
+reference_command = "node scripts/generate_round_e_model_viewer_references.mjs --write"
+reference_background = "#93969c"
+reference_path = "tests/visual/references/round_e/chrome.png"
+reference_sha256 = "4de2596f94e3eb8d08fd597b841d3f0e9a1daa723790c31ed5503d19ae1412bb"
+claimed_lanes = ["cpu-reference", "webgl2-desktop-chromium", "webgpu-desktop-chromium", "native-headless-gpu", "ios-safari", "android-chrome"]
+
+[[presets.brushed_steel]]
+label = "Brushed steel"
+source_surface = "MaterialDesc"
+geometry = "brushed-plate"
+crop_window = [261, 388, 269, 154]
+camera = "reference-orbit:-18deg,18deg,1.2m; browser-crops:4x3"
+lighting_mode = "ibl-only"
+environment_hdr_path = "demo/samples/environment/white_studio_03_1k.hdr"
+environment_hdr_sha256 = "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b"
+tonemapper = "model-viewer-neutral-reference"
+output_color_space = "srgb"
+exposure_ev = 0.0
+reference_renderer = "@google/model-viewer"
+reference_renderer_version = "4.2.0"
+reference_command = "node scripts/generate_round_e_model_viewer_references.mjs --write"
+reference_background = "#93969c"
+reference_path = "tests/visual/references/round_e/brushed_steel.png"
+reference_sha256 = "a31eb25aff75e8d7ade3911e4e8a6d2a7aa86533b2bd0741768d19fe6241d2bb"
+claimed_lanes = ["cpu-reference", "webgl2-desktop-chromium", "webgpu-desktop-chromium", "native-headless-gpu", "ios-safari", "android-chrome"]
+
+[[presets.clearcoat_plastic]]
+label = "Clearcoat plastic"
+source_surface = "MaterialDesc"
+geometry = "curved-panel"
+crop_window = [480, 360, 192, 212]
+camera = "reference-orbit:-18deg,18deg,1.2m; browser-crops:4x3"
+lighting_mode = "ibl-only"
+environment_hdr_path = "demo/samples/environment/white_studio_03_1k.hdr"
+environment_hdr_sha256 = "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b"
+tonemapper = "model-viewer-neutral-reference"
+output_color_space = "srgb"
+exposure_ev = 0.0
+reference_renderer = "@google/model-viewer"
+reference_renderer_version = "4.2.0"
+reference_command = "node scripts/generate_round_e_model_viewer_references.mjs --write"
+reference_background = "#93969c"
+reference_path = "tests/visual/references/round_e/clearcoat_plastic.png"
+reference_sha256 = "5cf2cce11bbf5d0f4d2364d24bd572d0a65d30149f55c164259819dd1162b02b"
+claimed_lanes = ["cpu-reference", "webgl2-desktop-chromium", "webgpu-desktop-chromium", "native-headless-gpu", "ios-safari", "android-chrome"]
+
+[[presets.satin]]
+label = "Satin"
+source_surface = "Assets::material_presets()"
+geometry = "folded-sheet"
+crop_window = [639, 379, 212, 173]
+camera = "reference-orbit:-18deg,18deg,1.2m; browser-crops:4x3"
+lighting_mode = "studio"
+environment_hdr_path = "demo/samples/environment/white_studio_03_1k.hdr"
+environment_hdr_sha256 = "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b"
+tonemapper = "model-viewer-neutral-reference"
+output_color_space = "srgb"
+exposure_ev = 0.0
+reference_renderer = "@google/model-viewer"
+reference_renderer_version = "4.2.0"
+reference_command = "node scripts/generate_round_e_model_viewer_references.mjs --write"
+reference_background = "#93969c"
+reference_path = "tests/visual/references/round_e/satin.png"
+reference_sha256 = "e4682a991125aba82faddf1de9acb4346b12028eb5378732653d65a72af988cd"
+claimed_lanes = ["cpu-reference", "webgl2-desktop-chromium", "webgpu-desktop-chromium", "native-headless-gpu"]
+
+[[presets.leather]]
+label = "Leather"
+source_surface = "Assets::material_presets()"
+geometry = "strap-panel"
+crop_window = [98, 553, 221, 154]
+camera = "reference-orbit:-18deg,18deg,1.2m; browser-crops:4x3"
+lighting_mode = "studio"
+environment_hdr_path = "demo/samples/environment/white_studio_03_1k.hdr"
+environment_hdr_sha256 = "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b"
+tonemapper = "model-viewer-neutral-reference"
+output_color_space = "srgb"
+exposure_ev = 0.0
+reference_renderer = "@google/model-viewer"
+reference_renderer_version = "4.2.0"
+reference_command = "node scripts/generate_round_e_model_viewer_references.mjs --write"
+reference_background = "#93969c"
+reference_path = "tests/visual/references/round_e/leather.png"
+reference_sha256 = "60b32a454abad1e61dbe7e35319e4cedfe73658ed6056dbf5d1d2670374fbbf9"
+claimed_lanes = ["cpu-reference", "webgl2-desktop-chromium", "webgpu-desktop-chromium", "native-headless-gpu"]
+
+[[presets.clear_glass]]
+label = "Clear glass"
+source_surface = "MaterialDesc"
+geometry = "glass-block-grid"
+crop_window = [299, 544, 192, 173]
+camera = "reference-orbit:-18deg,18deg,1.2m; browser-crops:4x3"
+lighting_mode = "ibl-only"
+environment_hdr_path = "demo/samples/environment/white_studio_03_1k.hdr"
+environment_hdr_sha256 = "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b"
+tonemapper = "model-viewer-neutral-reference"
+output_color_space = "srgb"
+exposure_ev = 0.0
+reference_renderer = "@google/model-viewer"
+reference_renderer_version = "4.2.0"
+reference_command = "node scripts/generate_round_e_model_viewer_references.mjs --write"
+reference_background = "#93969c"
+reference_path = "tests/visual/references/round_e/clear_glass.png"
+reference_sha256 = "da60add3dd8d94bb1783bec228a70f4bd33248a2e56a9842a432f76d96e4d9a8"
+claimed_lanes = ["cpu-reference", "webgl2-desktop-chromium", "webgpu-desktop-chromium", "native-headless-gpu", "ios-safari", "android-chrome"]
+
+[[presets.frosted_glass]]
+label = "Frosted glass"
+source_surface = "MaterialDesc"
+geometry = "glass-screen-grid"
+crop_window = [480, 544, 192, 173]
+camera = "reference-orbit:-18deg,18deg,1.2m; browser-crops:4x3"
+lighting_mode = "ibl-only"
+environment_hdr_path = "demo/samples/environment/white_studio_03_1k.hdr"
+environment_hdr_sha256 = "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b"
+tonemapper = "model-viewer-neutral-reference"
+output_color_space = "srgb"
+exposure_ev = 0.0
+reference_renderer = "@google/model-viewer"
+reference_renderer_version = "4.2.0"
+reference_command = "node scripts/generate_round_e_model_viewer_references.mjs --write"
+reference_background = "#93969c"
+reference_path = "tests/visual/references/round_e/frosted_glass.png"
+reference_sha256 = "8b6620ee699d4b98664d1fbab6d3a11d1dafbe69cad1ce2ddf73e595b1b2cd5b"
+claimed_lanes = ["cpu-reference", "webgl2-desktop-chromium", "webgpu-desktop-chromium", "native-headless-gpu"]
+
+[[presets.rubber]]
+label = "Rubber"
+source_surface = "Assets::material_presets()"
+geometry = "gasket-foot"
+crop_window = [648, 553, 192, 154]
+camera = "reference-orbit:-18deg,18deg,1.2m; browser-crops:4x3"
+lighting_mode = "studio"
+environment_hdr_path = "demo/samples/environment/white_studio_03_1k.hdr"
+environment_hdr_sha256 = "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b"
+tonemapper = "model-viewer-neutral-reference"
+output_color_space = "srgb"
+exposure_ev = 0.0
+reference_renderer = "@google/model-viewer"
+reference_renderer_version = "4.2.0"
+reference_command = "node scripts/generate_round_e_model_viewer_references.mjs --write"
+reference_background = "#93969c"
+reference_path = "tests/visual/references/round_e/rubber.png"
+reference_sha256 = "e2a4c26ccf2ee79fbfeb67b8a56f43bc245582d2a61d8b4c2716c16c28dc8cc3"
+claimed_lanes = ["cpu-reference", "webgl2-desktop-chromium", "webgpu-desktop-chromium", "native-headless-gpu"]

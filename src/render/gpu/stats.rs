@@ -80,7 +80,11 @@ pub(super) fn estimate_prepared_resource_stats(
     let readback_bytes = u64::from(padded_bytes_per_row) * u64::from(target.height);
     let vertex_bytes = (vertex_count * VERTEX_BYTE_LEN).max(4) as u64;
     let uniform_bytes = output::OUTPUT_UNIFORM_BYTE_LEN;
-    let pipelines = 1 + u64::from(has_surface_pipeline) + depth_prepass_passes;
+    let transmission_textures = 2;
+    let transmission_render_targets = 1;
+    let transmission_pipelines = 1;
+    let pipelines =
+        1 + u64::from(has_surface_pipeline) + depth_prepass_passes + transmission_pipelines;
     #[cfg(not(target_arch = "wasm32"))]
     let shadow_map_bytes = shadow_map_resolution
         .map(|resolution| {
@@ -110,20 +114,26 @@ pub(super) fn estimate_prepared_resource_stats(
         buffers: 3,
         #[cfg(target_arch = "wasm32")]
         buffers: 2,
+        // textures: 1 + material_texture_count + shadow_maps + depth_prepass_passes + transmission_textures
         #[cfg(not(target_arch = "wasm32"))]
-        textures: 1 + material_texture_count + shadow_maps + depth_prepass_passes,
+        textures: 1
+            + material_texture_count
+            + shadow_maps
+            + depth_prepass_passes
+            + transmission_textures,
         #[cfg(target_arch = "wasm32")]
-        textures: material_texture_count,
+        textures: material_texture_count + transmission_textures,
+        // render_targets: 1 + shadow_maps + depth_prepass_passes + transmission_render_targets
         #[cfg(not(target_arch = "wasm32"))]
-        render_targets: 1 + shadow_maps + depth_prepass_passes,
+        render_targets: 1 + shadow_maps + depth_prepass_passes + transmission_render_targets,
         #[cfg(target_arch = "wasm32")]
-        render_targets: 1,
+        render_targets: 1 + transmission_render_targets,
         pipelines,
         // Plan line 778 commit 2: the unlit pass binds 1 output bind group
         // + N material bind groups (1 when batched, slot count otherwise).
         // Adding `material_bind_groups` keeps the resource estimate
         // consistent with the actual GPU shape.
-        bind_groups: 1 + u64::from(material_bind_groups),
+        bind_groups: 2 + u64::from(material_bind_groups),
         shader_modules: pipelines,
         material_bind_groups,
         #[cfg(not(target_arch = "wasm32"))]
@@ -133,7 +143,8 @@ pub(super) fn estimate_prepared_resource_stats(
             + uniform_bytes
             + material_texture_bytes
             + shadow_map_bytes
-            + depth_prepass_bytes,
+            + depth_prepass_bytes
+            + texture_bytes,
         #[cfg(target_arch = "wasm32")]
         approximate_gpu_memory_bytes: vertex_bytes
             + uniform_bytes
@@ -164,12 +175,12 @@ mod tests {
         let stats = estimate_prepared_resource_stats(estimate_input(target, 3));
 
         assert_eq!(stats.buffers, 3);
-        assert_eq!(stats.textures, 2);
-        assert_eq!(stats.render_targets, 1);
-        assert_eq!(stats.pipelines, 1);
-        assert_eq!(stats.bind_groups, 2);
-        assert_eq!(stats.shader_modules, 1);
-        assert_eq!(stats.destruction_records(), 10);
+        assert_eq!(stats.textures, 4);
+        assert_eq!(stats.render_targets, 2);
+        assert_eq!(stats.pipelines, 2);
+        assert_eq!(stats.bind_groups, 3);
+        assert_eq!(stats.shader_modules, 2);
+        assert_eq!(stats.destruction_records(), 16);
         assert!(stats.approximate_gpu_memory_bytes > 0);
     }
 
@@ -201,9 +212,9 @@ mod tests {
             ..estimate_input(target, 3)
         });
 
-        assert_eq!(stats.textures, 3);
-        assert_eq!(stats.render_targets, 2);
-        assert_eq!(stats.destruction_records(), 12);
+        assert_eq!(stats.textures, 5);
+        assert_eq!(stats.render_targets, 3);
+        assert_eq!(stats.destruction_records(), 18);
         assert!(stats.approximate_gpu_memory_bytes >= 2048 * 2048 * 4);
     }
 
@@ -220,11 +231,11 @@ mod tests {
             ..estimate_input(target, 3)
         });
 
-        assert_eq!(stats.textures, 3);
-        assert_eq!(stats.render_targets, 2);
-        assert_eq!(stats.pipelines, 2);
-        assert_eq!(stats.shader_modules, 2);
-        assert_eq!(stats.destruction_records(), 14);
+        assert_eq!(stats.textures, 5);
+        assert_eq!(stats.render_targets, 3);
+        assert_eq!(stats.pipelines, 3);
+        assert_eq!(stats.shader_modules, 3);
+        assert_eq!(stats.destruction_records(), 20);
         assert!(stats.approximate_gpu_memory_bytes >= 4 * 4 * 4);
     }
 

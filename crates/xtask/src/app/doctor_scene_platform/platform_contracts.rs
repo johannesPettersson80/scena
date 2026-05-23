@@ -173,8 +173,10 @@ pub(crate) fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Findin
             "capability_matrix_reports_hardware_tier_and_backend_feature_states",
             "texture_compression_basisu",
             "screen_space_ambient_occlusion",
+            "physical_glass_transmission",
             "subtle output bloom is an explicit postprocess",
             "AmbientOcclusionDisabled",
+            "PhysicalGlassTransmissionDegraded",
             "hardware_instancing",
             // Phase 1F: Capabilities::texture_arrays + max_texture_array_layers
             // gate the per-role 2D-array texture batching planned for step 2.
@@ -212,6 +214,8 @@ pub(crate) fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Findin
             "per_instance_culling",
             "texture_compression_basisu",
             "screen_space_ambient_occlusion",
+            "order_independent_transparency",
+            "physical_glass_transmission",
             "wide_gamut_output",
             "drawingBufferColorSpace",
             "bloom",

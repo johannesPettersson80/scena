@@ -74,7 +74,7 @@ pub(super) fn push_material_pass_primitive(
         MaterialPass::Opaque => sinks.primitives.push(primitive),
         MaterialPass::Blend => sinks.transparent_primitives.push(TransparentPrimitive {
             depth: average_sort_depth(&primitive, camera_projection),
-            primitive,
+            primitive: primitive.without_depth_prepass(),
         }),
         MaterialPass::Mask { cutoff } => {
             if primitive

@@ -1,10 +1,125 @@
 use crate::app::prelude::*;
 use crate::app::tests_12::{VALID_GUIDE, write_easy_scene_fixture};
 
+const ROUND_E_CLOUDFLARE_TEST_PRESETS: &[&str] = &[
+    "matte",
+    "plastic",
+    "metal",
+    "rough_metal",
+    "chrome",
+    "brushed_steel",
+    "clearcoat_plastic",
+    "satin",
+    "leather",
+    "clear_glass",
+    "frosted_glass",
+    "rubber",
+];
+
 pub(crate) fn expanded_material_preset_guide() -> String {
     format!(
         "{VALID_GUIDE} viewer.play_clip(\n```rust\nlet matte = assets.create_material(MaterialDesc::matte(Color::GRAY));\nlet body = assets.create_material(MaterialDesc::plastic(Color::BLUE));\nlet shaft = assets.create_material(MaterialDesc::metal(Color::LIGHT_GRAY));\nlet rough = assets.create_material(MaterialDesc::rough_metal(Color::GRAY));\nlet chrome = assets.create_material(MaterialDesc::chrome());\nlet steel = assets.create_material(MaterialDesc::brushed_steel());\nlet cover = assets.create_material(MaterialDesc::clearcoat_plastic(Color::BLUE));\nlet satin = assets.create_material(MaterialDesc::satin(Color::GRAY));\nlet leather = assets.create_material(MaterialDesc::leather(Color::GRAY));\nlet glass = assets.create_material(MaterialDesc::clear_glass(Color::CYAN));\nlet frosted = assets.create_material(MaterialDesc::frosted_glass(Color::CYAN));\nlet foot = assets.create_material(MaterialDesc::rubber());\n```",
     )
+}
+
+#[test]
+pub(crate) fn cloudflare_material_proof_rejects_values_outside_committed_thresholds() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/round-e-cloudflare-proof");
+    write_round_e_threshold_fixture(&fixture_root);
+    fs::create_dir_all(fixture_root.join("target/gate-artifacts"))
+        .expect("cloudflare proof artifact dir");
+    fs::write(
+        fixture_root.join("target/gate-artifacts/round-e-cloudflare-material-proof.json"),
+        r#"{
+          "proof_class": "round-e-cloudflare-material-proof",
+          "status": "pass",
+          "fixture": {
+            "environment_hdr_path": "demo/samples/environment/white_studio_03_1k.hdr",
+            "environment_hdr_sha256": "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b",
+            "tonemapper": "model-viewer-neutral-reference",
+            "output_color_space": "srgb",
+            "exposure_ev": 0.0,
+            "webgl2_smooth_metal_sample_floor": 96
+          },
+          "cache_buster": { "bumped": true },
+          "wasm": { "checksum_matches_build": true },
+          "per_material": {
+            "chrome": {
+              "delta_e2000_vs_reference": 99.0,
+              "delta_e2000_max": 999.0,
+              "reference_delta_gate": "hard",
+              "passed_reference_delta": true,
+              "specular_dynamic_range": 2.0,
+              "luminance_p05": 40.0,
+              "luminance_p99": 240.0,
+              "neighbor_delta_e2000": 6.0
+            }
+          },
+          "neighbor_pairs": [
+            { "pair": ["metal", "rough_metal"], "delta_e2000": 6.0, "passed": true }
+          ]
+        }"#,
+    )
+    .expect("cloudflare proof artifact");
+    let mut findings = Vec::new();
+
+    crate::app::doctor_easy_scene::material_presets_cloudflare::check_round_e_cloudflare_material_proof(
+        &fixture_root,
+        &mut findings,
+    );
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "HONEST-MATERIAL-PRESETS"
+                && finding.message.contains("chrome delta_e2000_vs_reference")
+                && finding.message.contains("committed threshold")
+        }),
+        "doctor must compare artifact values against committed thresholds, not artifact-local thresholds: {findings:?}",
+    );
+}
+
+#[test]
+pub(crate) fn cloudflare_material_proof_fails_closed_on_reference_delta() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let script = fs::read_to_string(root.join("scripts/probe_cloudflare_material_presets.mjs"))
+        .expect("cloudflare material proof script");
+
+    assert!(
+        script.contains("Public material approval must fail closed"),
+        "public material proof must document why reference DeltaE is a hard gate",
+    );
+    assert!(
+        script.contains("return true;"),
+        "public material proof must not leave reference DeltaE in diagnostic-only mode",
+    );
+    assert!(
+        script.contains("metrics.reference_delta_gate === \"hard\"")
+            && script.contains("!metrics.passed_reference_delta"),
+        "public material proof must turn failed reference DeltaE into a script failure",
+    );
+}
+
+#[test]
+pub(crate) fn internal_material_sphere_page_is_review_only_and_bounded() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let html = fs::read_to_string(root.join("demo/internal-material-spheres.html"))
+        .expect("internal material sphere page");
+    let js = fs::read_to_string(root.join("demo/internal-material-spheres.js"))
+        .expect("internal material sphere script");
+
+    assert!(
+        html.contains("12 material preset spheres") && html.contains("sphere-labels"),
+        "internal review page must keep the requested twelve labeled sphere surface",
+    );
+    assert!(
+        js.contains("MAX_RENDER_DIMENSION = 1920"),
+        "internal review page must clamp browser render dimensions",
+    );
+    assert!(
+        js.contains("requestRender()") && !js.contains("function animate("),
+        "internal review page must use one-shot rendering, not a continuous animation loop",
+    );
 }
 
 #[test]
@@ -49,7 +164,7 @@ pub(crate) fn write_expanded_material_preset_doctor_fixture(fixture_root: &Path)
         .expect("browser pbr fixture dir");
     fs::write(
         fixture_root.join("src/browser_probe/workflows/pbr/material_presets.rs"),
-        "material_presets_scene browser-pbr-material-preset-expanded-set webgl2_smooth_metal_sample_floor blend-plus-transmission-preview-no-refraction-claim",
+        "material_presets_scene browser-pbr-material-preset-expanded-set webgl2_smooth_metal_sample_floor scene-color-ior-thickness-rough-blur-sorted-transparency",
     )
     .expect("browser material preset fixture");
     let browser_probe = fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe.js");
@@ -70,4 +185,73 @@ pub(crate) fn write_expanded_material_preset_doctor_fixture(fixture_root: &Path)
         "sample_count_for_roughness(0.28, EnvironmentPrefilterQuality::InteractiveWebGl2) 2 => 96 _ => 192",
     )
     .expect("environment prefilter fixture");
+}
+
+fn write_round_e_threshold_fixture(root: &Path) {
+    fs::create_dir_all(root.join("tests/visual/references"))
+        .expect("round e reference fixture dir");
+    fs::write(
+        root.join("tests/visual/references/round_e_material_thresholds.toml"),
+        r#"
+[chrome]
+specular_dynamic_range = 2.00
+dark_reflection_luminance_p05_max = 85.00
+bright_reflection_luminance_p99_min = 230.00
+reflection_edge_contrast = 0.30
+delta_e2000_max = 4.00
+
+[brushed_steel]
+anisotropy_aspect_ratio_direct = 3.00
+anisotropy_aspect_ratio_ibl = 2.00
+delta_e2000_max = 4.00
+
+[clearcoat_plastic]
+clearcoat_lobe_delta = 0.05
+delta_e2000_max = 4.00
+
+[clear_glass]
+background_delta_e2000_max = 8.00
+refraction_offset_min = 4.00
+delta_e2000_max = 4.00
+
+[frosted_glass]
+high_frequency_contrast_reduction_min = 0.50
+delta_e2000_max = 4.00
+
+[leather]
+texture_variance_min = 0.02
+delta_e2000_max = 4.00
+
+[rubber]
+roughness_variance_min = 0.02
+delta_e2000_max = 4.00
+
+[satin]
+sheen_width_min = 0.20
+delta_e2000_max = 4.00
+
+[global]
+neighbor_delta_e2000_min = 6.00
+reference_delta_e2000_max = 4.00
+"#,
+    )
+    .expect("round e thresholds");
+    let mut fixture = String::new();
+    for preset in ROUND_E_CLOUDFLARE_TEST_PRESETS {
+        fixture.push_str(&format!(
+            r#"
+[[presets.{preset}]]
+environment_hdr_path = "demo/samples/environment/white_studio_03_1k.hdr"
+environment_hdr_sha256 = "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b"
+tonemapper = "model-viewer-neutral-reference"
+output_color_space = "srgb"
+exposure_ev = 0.0
+"#,
+        ));
+    }
+    fs::write(
+        root.join("tests/visual/references/round_e_material_fixture.toml"),
+        fixture,
+    )
+    .expect("round e fixture");
 }

@@ -213,7 +213,7 @@ function oversizedTextureSceneGltf() {
   return generatedOversizedTextureScene;
 }
 
-function serve(browserRoot, pkgRoot, fixtureRoot, modelViewerRoot) {
+function serve(browserRoot, pkgRoot, fixtureRoot, modelViewerRoot, demoRoot) {
   const server = http.createServer((request, response) => {
     const url = request.url === "/" ? "/m6_rust_wasm_renderer_probe.html" : request.url;
     if (url === "/fixtures/generated/oversized_texture_scene.gltf") {
@@ -234,6 +234,12 @@ function serve(browserRoot, pkgRoot, fixtureRoot, modelViewerRoot) {
     } else if (url.startsWith("/fixtures/")) {
       base = fixtureRoot;
       relative = url.slice("/fixtures/".length);
+    } else if (url.startsWith("/demo/")) {
+      base = demoRoot;
+      relative = url.slice("/demo/".length);
+    } else if (url.startsWith("/samples/")) {
+      base = path.join(demoRoot, "samples");
+      relative = url.slice("/samples/".length);
     } else if (url.startsWith("/model-viewer/")) {
       base = modelViewerRoot;
       relative = url.slice("/model-viewer/".length);
@@ -775,11 +781,37 @@ function assertMaterialPresetProof(backend, result) {
   }
   if (
     metadata.proof_class !== "browser-pbr-material-preset-expanded-set" ||
-    metadata.glass_contract !== "blend-plus-transmission-preview-no-refraction-claim"
+    metadata.glass_contract !== "scene-color-ior-thickness-rough-blur-sorted-transparency" ||
+    metadata.environment_path !== "/demo/samples/environment/white_studio_03_1k.hdr"
   ) {
     throw new Error(
       `${backend} pbr-material-presets proof did not record preset contract metadata: ${JSON.stringify(result)}`,
     );
+  }
+  const geometry = new Set(metadata.showcase_geometry || []);
+  for (const requiredGeometry of [
+    "curved-panel",
+    "curved-part",
+    "brushed-plate",
+    "folded-sheet",
+    "strap-panel",
+    "glass-block-grid",
+    "glass-screen-grid",
+    "gasket-foot",
+  ]) {
+    if (!geometry.has(requiredGeometry)) {
+      throw new Error(
+        `${backend} pbr-material-presets proof still allows a single-shape grid: ${JSON.stringify(result)}`,
+      );
+    }
+  }
+  const sourceSurfaces = new Map((metadata.source_surfaces || []).map((entry) => [entry.id, entry.surface]));
+  for (const sourceBacked of ["satin", "leather", "rubber"]) {
+    if (sourceSurfaces.get(sourceBacked) !== "Assets::material_presets()") {
+      throw new Error(
+        `${backend} pbr-material-presets proof conflated ${sourceBacked} with MaterialDesc shortcuts: ${JSON.stringify(result)}`,
+      );
+    }
   }
   if (backend === "webgl2" && metadata.webgl2_smooth_metal_sample_floor < 96) {
     throw new Error(
@@ -1268,6 +1300,7 @@ async function main() {
   const browserRoot = __dirname;
   const pkgRoot = path.join(process.cwd(), "target", "m6-browser-pkg");
   const fixtureRoot = path.join(process.cwd(), "tests", "assets");
+  const demoRoot = path.join(process.cwd(), "demo");
   const modelViewerRoot = path.join(
     process.cwd(),
     "node_modules",
@@ -1278,7 +1311,7 @@ async function main() {
   const artifactDir = path.join(process.cwd(), "target", "gate-artifacts");
   fs.mkdirSync(artifactDir, { recursive: true });
 
-  const { server, url } = await serve(browserRoot, pkgRoot, fixtureRoot, modelViewerRoot);
+  const { server, url } = await serve(browserRoot, pkgRoot, fixtureRoot, modelViewerRoot, demoRoot);
   const selectedBackends = configuredBackends();
   const viewerElementOnly = process.env.SCENA_BROWSER_VIEWER_ELEMENT_ONLY === "1";
   const browser = await chromium.launch({

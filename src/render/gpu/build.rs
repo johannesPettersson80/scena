@@ -1,9 +1,10 @@
 use crate::diagnostics::{Backend, BuildError, OutputColorSpace};
+use crate::platform::SurfaceSize;
 
 use super::{GpuDeviceState, GpuSurfaceState};
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::platform::{BoxedNativeWindow, SurfaceSize};
+use crate::platform::BoxedNativeWindow;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(in crate::render) async fn request_headless_gpu(
@@ -82,6 +83,9 @@ pub(in crate::render) async fn request_browser_surface_gpu(
     canvas: web_sys::HtmlCanvasElement,
     output_color_space: OutputColorSpace,
 ) -> Result<GpuDeviceState, BuildError> {
+    if backend == Backend::WebGl2 {
+        prepare_webgl2_opaque_canvas_context(&canvas);
+    }
     if backend == Backend::WebGpu && output_color_space == OutputColorSpace::DisplayP3 {
         super::browser_color_space::prepare_browser_canvas_output_color_space(
             backend,
@@ -93,6 +97,11 @@ pub(in crate::render) async fn request_browser_surface_gpu(
     let surface = create_browser_canvas_surface(&instance, backend, &canvas)?;
     let mut state =
         request_gpu_for_surface(backend, size, instance, surface, output_color_space).await?;
+    let effective_size = state.surface_size().unwrap_or(size);
+    if effective_size != size {
+        canvas.set_width(effective_size.width);
+        canvas.set_height(effective_size.height);
+    }
     state.browser_canvas = Some(canvas);
     state.refresh_browser_canvas_output_color_space(backend);
     Ok(state)
@@ -143,9 +152,18 @@ async fn request_gpu_for_surface(
             "scena wgpu uncaptured error: {error:?}"
         )));
     }));
-    let config = surface
-        .get_default_config(&adapter, size.width, size.height)
+    let effective_size =
+        clamp_surface_size_to_adapter_limits(size, device.limits().max_texture_dimension_2d);
+    let mut config = surface
+        .get_default_config(&adapter, effective_size.width, effective_size.height)
         .ok_or(BuildError::SurfaceUnsupported { backend })?;
+    let capabilities = surface.get_capabilities(&adapter);
+    if capabilities
+        .alpha_modes
+        .contains(&wgpu::CompositeAlphaMode::Opaque)
+    {
+        config.alpha_mode = wgpu::CompositeAlphaMode::Opaque;
+    }
     surface.configure(&device, &config);
 
     Ok(GpuDeviceState {
@@ -161,6 +179,27 @@ async fn request_gpu_for_surface(
         #[cfg(target_arch = "wasm32")]
         browser_canvas: None,
     })
+}
+
+pub(super) fn clamp_surface_size_to_adapter_limits(
+    size: SurfaceSize,
+    max_texture_dimension_2d: u32,
+) -> SurfaceSize {
+    if max_texture_dimension_2d == 0
+        || (size.width <= max_texture_dimension_2d && size.height <= max_texture_dimension_2d)
+    {
+        return size;
+    }
+
+    let scale = max_texture_dimension_2d as f64 / size.width.max(size.height) as f64;
+    SurfaceSize {
+        width: ((size.width as f64 * scale).floor() as u32)
+            .max(1)
+            .min(max_texture_dimension_2d),
+        height: ((size.height as f64 * scale).floor() as u32)
+            .max(1)
+            .min(max_texture_dimension_2d),
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -194,6 +233,27 @@ fn create_browser_canvas_surface(
     .map_err(|_| BuildError::CreateSurface { backend })
 }
 
+#[cfg(target_arch = "wasm32")]
+fn prepare_webgl2_opaque_canvas_context(canvas: &web_sys::HtmlCanvasElement) {
+    let attributes = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(
+        &attributes,
+        &wasm_bindgen::JsValue::from_str("alpha"),
+        &wasm_bindgen::JsValue::FALSE,
+    );
+    let _ = js_sys::Reflect::set(
+        &attributes,
+        &wasm_bindgen::JsValue::from_str("premultipliedAlpha"),
+        &wasm_bindgen::JsValue::FALSE,
+    );
+    let _ = js_sys::Reflect::set(
+        &attributes,
+        &wasm_bindgen::JsValue::from_str("preserveDrawingBuffer"),
+        &wasm_bindgen::JsValue::TRUE,
+    );
+    let _ = canvas.get_context_with_context_options("webgl2", attributes.as_ref());
+}
+
 fn instance_for_backend(backend: Backend) -> wgpu::Instance {
     #[cfg(target_arch = "wasm32")]
     {
@@ -220,6 +280,52 @@ fn instance_for_backend(backend: Backend) -> wgpu::Instance {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
+    use crate::platform::SurfaceSize;
+
+    #[test]
+    fn browser_surface_config_prefers_opaque_alpha() {
+        let source = include_str!("build.rs");
+        assert!(
+            source.contains("CompositeAlphaMode::Opaque")
+                && source.contains("config.alpha_mode = wgpu::CompositeAlphaMode::Opaque")
+                && source.contains("prepare_webgl2_opaque_canvas_context")
+                && source.contains("\"alpha\"")
+                && source.contains("JsValue::FALSE"),
+            "browser material proof must configure an opaque surface when supported; otherwise \
+             the WebGL canvas clears to alpha 0 and screenshots composite over page/chrome backgrounds"
+        );
+    }
+
+    #[test]
+    fn oversized_surface_size_is_clamped_to_adapter_limit_preserving_aspect() {
+        assert_eq!(
+            super::clamp_surface_size_to_adapter_limits(
+                SurfaceSize {
+                    width: 2560,
+                    height: 1191,
+                },
+                2048,
+            ),
+            SurfaceSize {
+                width: 2048,
+                height: 952,
+            },
+        );
+        assert_eq!(
+            super::clamp_surface_size_to_adapter_limits(
+                SurfaceSize {
+                    width: 1440,
+                    height: 900,
+                },
+                2048,
+            ),
+            SurfaceSize {
+                width: 1440,
+                height: 900,
+            },
+        );
+    }
+
     #[test]
     fn v3d_vulkan_headless_adapter_is_rejected_by_default() {
         let info = wgpu::AdapterInfo {

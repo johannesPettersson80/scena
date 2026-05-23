@@ -13,6 +13,8 @@ pub mod demo_page;
 pub mod diagnostics;
 pub mod geometry;
 pub mod material;
+#[doc(hidden)]
+pub mod material_showcase;
 pub mod picking;
 pub mod platform;
 pub mod reference_image;
@@ -35,10 +37,11 @@ pub use assets::{
     AssetLoadReport, AssetLoadWarning, AssetPath, AssetStoreId, Assets, DefaultAssetFetcher,
     EnvironmentDerivative, EnvironmentDesc, EnvironmentHandle, EnvironmentPreset,
     EnvironmentPresetMetadata, EnvironmentSourceKind, GeometryHandle, GltfDecoderPolicy,
-    GltfExtensionDiagnostic, GltfExtensionStatus, MaterialHandle, MaterialVariantBinding,
-    ModelHandle, RetainPolicy, SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetLight,
-    SceneAssetMesh, SceneAssetNode, TextureDesc, TextureFilter, TextureHandle, TextureSamplerDesc,
-    TextureSourceFormat, TextureWrap, WasmEnvironmentDelivery,
+    GltfExtensionDiagnostic, GltfExtensionStatus, MaterialHandle, MaterialPresetAssets,
+    MaterialPresetProvenance, MaterialVariantBinding, ModelHandle, RetainPolicy, SceneAsset,
+    SceneAssetAnchor, SceneAssetClip, SceneAssetLight, SceneAssetMesh, SceneAssetNode, TextureDesc,
+    TextureFilter, TextureHandle, TextureSamplerDesc, TextureSourceFormat, TextureWrap,
+    WasmEnvironmentDelivery, source_backed_material_preset_provenance,
 };
 #[cfg(all(feature = "hot-reload", not(target_arch = "wasm32")))]
 pub use assets::{AssetHotReloadError, AssetHotReloadWatcher};

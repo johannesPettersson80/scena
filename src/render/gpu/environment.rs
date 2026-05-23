@@ -16,6 +16,7 @@ pub(super) struct OutputResources {
     pub(super) environment_sampler: wgpu::Sampler,
     pub(super) brdf_lut_texture: wgpu::Texture,
     pub(super) output_bind_group: wgpu::BindGroup,
+    pub(super) opaque_output_bind_group: wgpu::BindGroup,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -25,6 +26,9 @@ pub(super) fn build_output_resources(
     output_bind_group_layout: &wgpu::BindGroupLayout,
     draw_bind_group_layout: &wgpu::BindGroupLayout,
     output_uniform: &wgpu::Buffer,
+    transmission_color_view: &wgpu::TextureView,
+    transmission_placeholder_view: &wgpu::TextureView,
+    transmission_color_sampler: &wgpu::Sampler,
     directional_shadow_map_resolution: Option<u32>,
     environment_lighting: &PreparedEnvironmentLighting,
 ) -> OutputResources {
@@ -45,10 +49,6 @@ pub(super) fn build_output_resources(
     });
     let environment_sampler = create_environment_sampler(device);
     let brdf_lut_texture = create_brdf_lut_texture(device, queue, environment_lighting.cubemap());
-    let brdf_lut_view = brdf_lut_texture.create_view(&wgpu::TextureViewDescriptor {
-        label: Some("scena.output.brdf_lut_view"),
-        ..Default::default()
-    });
     let output_bind_group = create_output_bind_group(
         device,
         output_bind_group_layout,
@@ -57,7 +57,19 @@ pub(super) fn build_output_resources(
         &shadow_sampler,
         &environment_cubemap_view,
         &environment_sampler,
-        &brdf_lut_view,
+        transmission_color_view,
+        transmission_color_sampler,
+    );
+    let opaque_output_bind_group = create_output_bind_group(
+        device,
+        output_bind_group_layout,
+        output_uniform,
+        &shadow_caster.view,
+        &shadow_sampler,
+        &environment_cubemap_view,
+        &environment_sampler,
+        transmission_placeholder_view,
+        transmission_color_sampler,
     );
     OutputResources {
         shadow_caster,
@@ -66,6 +78,7 @@ pub(super) fn build_output_resources(
         environment_sampler,
         brdf_lut_texture,
         output_bind_group,
+        opaque_output_bind_group,
     }
 }
 

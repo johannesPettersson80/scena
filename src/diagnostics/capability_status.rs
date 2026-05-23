@@ -1,7 +1,25 @@
 use super::capabilities::{Backend, CapabilityStatus, HardwareTier};
 
-pub(in crate::diagnostics) const fn forward_pbr_status(_backend: Backend) -> CapabilityStatus {
-    CapabilityStatus::Degraded
+pub(in crate::diagnostics) const fn forward_pbr_status(
+    backend: Backend,
+    gpu_device: bool,
+) -> CapabilityStatus {
+    match (backend, gpu_device) {
+        (
+            Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu | Backend::WebGl2,
+            true,
+        ) => CapabilityStatus::Supported,
+        (
+            Backend::Headless
+            | Backend::HeadlessGpu
+            | Backend::SurfaceDescriptor
+            | Backend::NativeSurface
+            | Backend::WebGpu
+            | Backend::WebGl2,
+            false,
+        )
+        | (Backend::Headless | Backend::SurfaceDescriptor, true) => CapabilityStatus::Degraded,
+    }
 }
 
 pub(in crate::diagnostics) const fn directional_shadow_status(
@@ -90,6 +108,28 @@ pub(in crate::diagnostics) const fn order_independent_transparency_status(
     match backend {
         Backend::Headless | Backend::SurfaceDescriptor => CapabilityStatus::Supported,
         _ => CapabilityStatus::FeatureDisabled,
+    }
+}
+
+pub(in crate::diagnostics) const fn physical_glass_transmission_status(
+    backend: Backend,
+    gpu_device: bool,
+) -> CapabilityStatus {
+    match (backend, gpu_device) {
+        (
+            Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu | Backend::WebGl2,
+            true,
+        ) => CapabilityStatus::Supported,
+        (
+            Backend::Headless
+            | Backend::HeadlessGpu
+            | Backend::SurfaceDescriptor
+            | Backend::NativeSurface
+            | Backend::WebGpu
+            | Backend::WebGl2,
+            false,
+        )
+        | (Backend::Headless | Backend::SurfaceDescriptor, true) => CapabilityStatus::Degraded,
     }
 }
 

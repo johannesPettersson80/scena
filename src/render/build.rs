@@ -85,6 +85,7 @@ impl Renderer {
                 let backend = backend_for_attached_surface(kind);
                 let gpu =
                     pollster::block_on(gpu::request_native_surface_gpu(backend, size, window))?;
+                let size = gpu.surface_size().unwrap_or(size);
                 Self::from_raster_target(size.width, size.height, backend, Some(gpu), true, options)
             }
             #[cfg(target_arch = "wasm32")]
@@ -128,6 +129,7 @@ impl Renderer {
                         options.output_color_space(),
                     )
                     .await?;
+                    let size = gpu.surface_size().unwrap_or(size);
                     return Self::from_raster_target(
                         size.width,
                         size.height,
@@ -146,6 +148,7 @@ impl Renderer {
                         options.output_color_space(),
                     )
                     .await?;
+                    let size = gpu.surface_size().unwrap_or(size);
                     return Self::from_raster_target(
                         size.width,
                         size.height,
@@ -177,6 +180,7 @@ impl Renderer {
                 }
             };
             let backend = backend_for_attached_surface(kind);
+            let size = gpu.surface_size().unwrap_or(size);
             Self::from_raster_target(size.width, size.height, backend, Some(gpu), true, options)
         }
     }

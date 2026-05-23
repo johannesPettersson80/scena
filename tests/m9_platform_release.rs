@@ -20,6 +20,28 @@ const HEADLESS_CPU_LANE: &str = "headless-cpu";
 const PBR_DIRECTIONAL_RED_PPM: &str = "pbr-directional-red.ppm";
 const PBR_POINT_GREEN_PPM: &str = "pbr-point-green.ppm";
 const PBR_SPOT_BLUE_PPM: &str = "pbr-spot-blue.ppm";
+const ROUND_E_MATERIAL_PRESETS: &[&str] = &[
+    "matte",
+    "plastic",
+    "metal",
+    "rough_metal",
+    "chrome",
+    "brushed_steel",
+    "clearcoat_plastic",
+    "satin",
+    "leather",
+    "clear_glass",
+    "frosted_glass",
+    "rubber",
+];
+const ROUND_E_MATERIAL_LANES: &[&str] = &[
+    "cpu-reference",
+    "webgl2-desktop-chromium",
+    "webgpu-desktop-chromium",
+    "native-headless-gpu",
+    "ios-safari",
+    "android-chrome",
+];
 
 fn root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -300,6 +322,7 @@ fn m9_capability_matrix_artifact_covers_required_lanes() {
             path_string(&platform_dir().join("m9-capability-matrix.json"))
         ],
         "lanes": lanes,
+        "material_preset_lanes": material_preset_capability_rows(),
     });
     let lanes = matrix["lanes"].as_array().expect("lanes array");
     for lane in [
@@ -332,8 +355,26 @@ fn m9_capability_matrix_artifact_covers_required_lanes() {
         current_row.get("adapter").is_some(),
         "measured lane rows must include adapter metadata, even when no adapter is available"
     );
-    if !browser_results.is_empty() {
-        for lane in ["linux-webgl2-chromium", "linux-webgpu-chromium"] {
+    let current_row_expected_gpu_status =
+        if current_row["host_gpu_available"].as_bool().unwrap_or(false) {
+            "Supported"
+        } else {
+            "Degraded"
+        };
+    assert_eq!(
+        current_row["capabilities"]["forward_pbr"]["state"], current_row_expected_gpu_status,
+        "M9 capability rows must promote forward PBR only when the measured lane owns a GPU device"
+    );
+    assert_eq!(
+        current_row["capabilities"]["physical_glass_transmission"]["state"],
+        current_row_expected_gpu_status,
+        "M9 capability rows must expose physical glass status separately from forward_pbr and promote it only on measured GPU lanes"
+    );
+    for (lane, backend) in [
+        ("linux-webgl2-chromium", "WebGl2"),
+        ("linux-webgpu-chromium", "WebGpu"),
+    ] {
+        if browser_probe_has_passed_backend(&browser_results, backend) {
             let row = lanes
                 .iter()
                 .find(|entry| entry["lane"] == lane)
@@ -353,6 +394,29 @@ fn m9_capability_matrix_artifact_covers_required_lanes() {
         assert_eq!(row["status"], "measured");
         assert_eq!(row["measurement_source"], "wasm-size-gate-runtime");
     }
+    let material_rows = matrix["material_preset_lanes"]
+        .as_array()
+        .expect("material_preset_lanes array");
+    for preset in ROUND_E_MATERIAL_PRESETS {
+        for lane in ROUND_E_MATERIAL_LANES {
+            assert!(
+                material_rows.iter().any(|entry| {
+                    entry["preset"] == *preset
+                        && entry["lane"] == *lane
+                        && entry["status"].as_str().is_some()
+                }),
+                "M9 material capability matrix must include explicit row for {preset}/{lane}"
+            );
+        }
+    }
+    assert!(
+        material_rows.iter().any(|entry| {
+            entry["preset"] == "chrome"
+                && entry["lane"] == "ios-safari"
+                && entry["status"] == "proof-gap"
+        }),
+        "mobile material lanes must stay explicit proof-gap rows until mobile artifacts exist"
+    );
     write_json(&platform_dir().join("m9-capability-matrix.json"), &matrix);
 }
 
@@ -1438,6 +1502,76 @@ fn capability_matrix_row(
     }
 }
 
+fn material_preset_capability_rows() -> Vec<serde_json::Value> {
+    ROUND_E_MATERIAL_PRESETS
+        .iter()
+        .flat_map(|preset| {
+            ROUND_E_MATERIAL_LANES.iter().map(move |lane| {
+                let status = material_preset_lane_status(preset, lane);
+                serde_json::json!({
+                    "preset": preset,
+                    "lane": lane,
+                    "status": status,
+                    "measurement_source": material_preset_lane_source(&status),
+                    "public_demo_required": material_preset_lane_required_for_public_demo(preset, lane),
+                    "capability_contract": "real-world-material-preset",
+                })
+            })
+        })
+        .collect()
+}
+
+fn material_preset_lane_status(preset: &str, lane: &str) -> String {
+    if lane == "cpu-reference" {
+        return "measured".to_string();
+    }
+    if lane == "webgl2-desktop-chromium" && cloudflare_material_preset_passes(preset) {
+        return "measured".to_string();
+    }
+    "proof-gap".to_string()
+}
+
+fn material_preset_lane_source(status: &str) -> &'static str {
+    if status == "measured" {
+        "round-e-material-lane-artifact"
+    } else {
+        "missing-material-lane-artifact"
+    }
+}
+
+fn material_preset_lane_required_for_public_demo(preset: &str, lane: &str) -> bool {
+    matches!(
+        lane,
+        "webgl2-desktop-chromium" | "ios-safari" | "android-chrome"
+    ) && matches!(
+        preset,
+        "chrome" | "brushed_steel" | "clearcoat_plastic" | "clear_glass"
+    )
+}
+
+fn cloudflare_material_preset_passes(preset: &str) -> bool {
+    let path = root().join("target/gate-artifacts/round-e-cloudflare-material-proof.json");
+    let Ok(text) = fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return false;
+    };
+    value.get("status").and_then(serde_json::Value::as_str) == Some("pass")
+        && value
+            .get("errors")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(Vec::is_empty)
+        && value
+            .pointer(&format!("/per_material/{preset}/reference_delta_gate"))
+            .and_then(serde_json::Value::as_str)
+            == Some("hard")
+        && value
+            .pointer(&format!("/per_material/{preset}/passed_reference_delta"))
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+}
+
 fn read_browser_probe_results() -> Vec<serde_json::Value> {
     let path = root().join("target/gate-artifacts/m6-rust-wasm-renderer-probe.json");
     if !path.is_file() {
@@ -1515,6 +1649,17 @@ fn browser_capability_from_probe(
             .cloned()
             .unwrap_or(serde_json::Value::Null),
     }))
+}
+
+fn browser_probe_has_passed_backend(results: &[serde_json::Value], backend: &str) -> bool {
+    results.iter().any(|result| {
+        result
+            .get("backend")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|value| value.eq_ignore_ascii_case(backend))
+            && result.get("status").and_then(serde_json::Value::as_str) == Some("passed")
+            && browser_nonblack_pixels(result) > 0
+    })
 }
 
 fn browser_nonblack_pixels(result: &serde_json::Value) -> u64 {
@@ -1649,6 +1794,8 @@ fn capability_fields(capabilities: Capabilities) -> serde_json::Value {
         "spot_shadows": { "state": format!("{:?}", capabilities.spot_shadows) },
         "bloom": { "state": format!("{:?}", capabilities.bloom) },
         "screen_space_ambient_occlusion": { "state": format!("{:?}", capabilities.screen_space_ambient_occlusion) },
+        "order_independent_transparency": { "state": format!("{:?}", capabilities.order_independent_transparency) },
+        "physical_glass_transmission": { "state": format!("{:?}", capabilities.physical_glass_transmission) },
         "wide_gamut_output": { "state": format!("{:?}", capabilities.wide_gamut_output) },
         "texture_compression_basisu": { "state": format!("{:?}", capabilities.texture_compression_basisu) },
         "hardware_instancing": { "state": format!("{:?}", capabilities.hardware_instancing) },

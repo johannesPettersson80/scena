@@ -21,6 +21,7 @@ pub(super) fn capabilities_json(capabilities: crate::Capabilities) -> serde_json
         "bloom": format!("{:?}", capabilities.bloom),
         "screen_space_ambient_occlusion": format!("{:?}", capabilities.screen_space_ambient_occlusion),
         "order_independent_transparency": format!("{:?}", capabilities.order_independent_transparency),
+        "physical_glass_transmission": format!("{:?}", capabilities.physical_glass_transmission),
         "wide_gamut_output": format!("{:?}", capabilities.wide_gamut_output),
         "texture_compression_basisu": format!("{:?}", capabilities.texture_compression_basisu),
         "hardware_instancing": format!("{:?}", capabilities.hardware_instancing),
@@ -52,6 +53,20 @@ pub(super) fn diagnostics_json(diagnostics: &[crate::Diagnostic]) -> serde_json:
             })
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Backend, Capabilities};
+
+    #[test]
+    fn capabilities_json_reports_supported_gpu_material_statuses() {
+        let value = capabilities_json(Capabilities::for_attached_gpu_backend(Backend::WebGl2));
+
+        assert_eq!(value["forward_pbr"], "Supported");
+        assert_eq!(value["physical_glass_transmission"], "Supported");
+    }
 }
 
 pub(super) fn stats_json(stats: crate::RendererStats) -> serde_json::Value {

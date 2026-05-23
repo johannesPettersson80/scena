@@ -24,7 +24,7 @@ use super::stats::{PreparedResourceEstimateInput, estimate_prepared_resource_sta
 use super::vertices::{DrawUniformValue, VERTEX_BYTE_LEN, encode_vertices};
 use super::{
     GpuDeviceState, GpuPrepareOutcome, GpuPreparedResources, depth, environment,
-    material_texture_binding_mode, output,
+    material_texture_binding_mode, output, transmission,
 };
 
 impl GpuDeviceState {
@@ -148,22 +148,6 @@ impl GpuDeviceState {
             &draw_bind_group_layout,
             &draw_uniform_buffer,
         );
-        let environment::OutputResources {
-            shadow_caster,
-            shadow_sampler,
-            environment_cubemap,
-            environment_sampler,
-            brdf_lut_texture,
-            output_bind_group,
-        } = environment::build_output_resources(
-            &self.device,
-            &self.queue,
-            &output_bind_group_layout,
-            &draw_bind_group_layout,
-            &output_uniform,
-            lighting_stats.directional_shadow_map_resolution,
-            environment_lighting,
-        );
         let depth_prepass = (depth_stats.passes > 0).then(|| {
             depth::create_depth_prepass_resources(
                 &self.device,
@@ -176,6 +160,36 @@ impl GpuDeviceState {
         let depth_compare = depth_prepass
             .as_ref()
             .map(|depth_prepass| depth_prepass.color_compare);
+        let transmission = transmission::create_transmission_resources(
+            &self.device,
+            target,
+            GPU_COLOR_FORMAT,
+            &output_bind_group_layout,
+            &material_bind_group_layout,
+            &draw_bind_group_layout,
+            texture_binding_mode,
+            depth_compare,
+        );
+        let environment::OutputResources {
+            shadow_caster,
+            shadow_sampler,
+            environment_cubemap,
+            environment_sampler,
+            brdf_lut_texture,
+            output_bind_group,
+            opaque_output_bind_group,
+        } = environment::build_output_resources(
+            &self.device,
+            &self.queue,
+            &output_bind_group_layout,
+            &draw_bind_group_layout,
+            &output_uniform,
+            &transmission.view,
+            &transmission.placeholder_view,
+            &transmission.sampler,
+            lighting_stats.directional_shadow_map_resolution,
+            environment_lighting,
+        );
         let offscreen_pipeline = create_unlit_pipeline(
             &self.device,
             GPU_COLOR_FORMAT,
@@ -216,6 +230,7 @@ impl GpuDeviceState {
             vertex_buffer,
             output_uniform,
             output_bind_group,
+            opaque_output_bind_group,
             light_uniform,
             light_from_world,
             material_resources,
@@ -224,6 +239,7 @@ impl GpuDeviceState {
             environment_cubemap,
             environment_sampler,
             brdf_lut_texture,
+            transmission,
             depth_prepass,
             vertex_count: (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32,
             draw_batches,
@@ -302,22 +318,6 @@ impl GpuDeviceState {
             &draw_bind_group_layout,
             &draw_uniform_buffer,
         );
-        let environment::OutputResources {
-            shadow_caster,
-            shadow_sampler,
-            environment_cubemap,
-            environment_sampler,
-            brdf_lut_texture,
-            output_bind_group,
-        } = environment::build_output_resources(
-            &self.device,
-            &self.queue,
-            &output_bind_group_layout,
-            &draw_bind_group_layout,
-            &output_uniform,
-            lighting_stats.directional_shadow_map_resolution,
-            environment_lighting,
-        );
         let depth_prepass = (matches!(target.backend, Backend::WebGpu | Backend::WebGl2)
             && depth_stats.passes > 0)
             .then(|| {
@@ -332,6 +332,36 @@ impl GpuDeviceState {
         let depth_compare = depth_prepass
             .as_ref()
             .map(|depth_prepass| depth_prepass.color_compare);
+        let transmission = transmission::create_transmission_resources(
+            &self.device,
+            target,
+            surface.config.format,
+            &output_bind_group_layout,
+            &material_bind_group_layout,
+            &draw_bind_group_layout,
+            texture_binding_mode,
+            depth_compare,
+        );
+        let environment::OutputResources {
+            shadow_caster,
+            shadow_sampler,
+            environment_cubemap,
+            environment_sampler,
+            brdf_lut_texture,
+            output_bind_group,
+            opaque_output_bind_group,
+        } = environment::build_output_resources(
+            &self.device,
+            &self.queue,
+            &output_bind_group_layout,
+            &draw_bind_group_layout,
+            &output_uniform,
+            &transmission.view,
+            &transmission.placeholder_view,
+            &transmission.sampler,
+            lighting_stats.directional_shadow_map_resolution,
+            environment_lighting,
+        );
         let surface_pipeline = create_unlit_pipeline(
             &self.device,
             surface.config.format,
@@ -370,6 +400,7 @@ impl GpuDeviceState {
             vertex_buffer,
             output_uniform,
             output_bind_group,
+            opaque_output_bind_group,
             light_uniform,
             light_from_world,
             material_resources,
@@ -378,6 +409,7 @@ impl GpuDeviceState {
             environment_cubemap,
             environment_sampler,
             brdf_lut_texture,
+            transmission,
             depth_prepass,
             surface_pipeline,
             readback,

@@ -114,13 +114,15 @@ pub(crate) fn check_renderer_truth_camera_shader_contracts(
             "fn directional_shadow_factor",
             "textureSampleCompareLevel(shadow_map, shadow_sampler",
             "camera.light_from_world * vec4<f32>(world_position",
-            // Phase 1C step 2: GGX prefilter + BRDF LUT split-sum specular.
+            // Phase 1C step 2: GGX prefilter + analytic split-sum specular.
             "var environment_cubemap: texture_cube<f32>",
             "var environment_sampler: sampler",
-            "var brdf_lut: texture_2d<f32>",
             "let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection",
-            "let lut_sample = textureLoad(brdf_lut",
+            "fn brdf_lut_approx",
+            "let lut_sample = brdf_lut_approx",
             "f0 * lut_sample.x + vec3<f32>(lut_sample.y)",
+            "var transmission_color_texture: texture_2d<f32>",
+            "fn physical_transmission_color",
             "@location(2) normal: vec3<f32>",
             "@location(3) tex_coord0: vec2<f32>",
             "@location(4) tangent: vec4<f32>",

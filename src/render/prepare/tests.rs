@@ -57,3 +57,48 @@ fn asset_mesh_primitives_keep_model_draw_transform_for_gpu_templates() {
         "asset-backed GPU primitives must keep the model draw matrix so transform-only frames can update uniforms without rebuilding vertex bytes"
     );
 }
+
+#[test]
+fn blended_material_primitives_skip_gpu_depth_prepass() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
+    let material = assets.create_material(MaterialDesc::clear_glass(Color::CYAN));
+    let mut scene = Scene::new();
+    scene.mesh(geometry, material).add().expect("mesh inserts");
+    let material_slots = collect_backend_material_slots(&scene, Some(&assets));
+    let material_handles = material_slots
+        .iter()
+        .map(|slot| slot.handle)
+        .collect::<Vec<_>>();
+
+    let prepared = collect_prepared_primitives(
+        RasterTarget {
+            width: 64,
+            height: 64,
+            backend: Backend::WebGl2,
+        },
+        &scene,
+        Some(&assets),
+        None,
+        &[],
+        &material_handles,
+        PreparedEnvironmentLighting::default(),
+    )
+    .expect("scene prepares");
+
+    assert!(
+        prepared
+            .primitives
+            .iter()
+            .any(|primitive| !primitive.depth_prepass_eligible()),
+        "alpha-blended material primitives must not write the GPU depth pre-pass; \
+         otherwise glass occludes the scene it is supposed to transmit or blend over"
+    );
+    assert!(
+        prepared
+            .primitives
+            .iter()
+            .all(|primitive| !primitive.depth_prepass_eligible()),
+        "all primitives in this one-glass-mesh scene should be transparent pass primitives"
+    );
+}

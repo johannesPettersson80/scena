@@ -66,9 +66,16 @@ pub(crate) fn check_module_boundaries(root: &Path, findings: &mut Vec<Finding>) 
             "pub(in crate::render) fn render_to_surface",
             "GpuResourcesNotPrepared",
             "surface.surface.get_current_texture()",
-            "encode_unlit_pass",
+            "encode_scene_color_passes",
             "surface_output.present();",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-LIFECYCLE",
+        "src/render/gpu/scene_color.rs",
+        &["encode_unlit_pass", "ColorLoad::Load", "TransparentOnly"],
     );
     require_contains(
         root,

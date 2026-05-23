@@ -46,14 +46,17 @@ impl Renderer {
 
     pub fn recover_surface(&mut self, surface: PlatformSurface) -> Result<(), BuildError> {
         let (kind, size, attachment) = surface.into_parts();
-        let (backend, gpu, attached) = match attachment {
-            PlatformSurfaceAttachment::Descriptor => (Backend::SurfaceDescriptor, None, false),
+        let (backend, gpu, attached, size) = match attachment {
+            PlatformSurfaceAttachment::Descriptor => {
+                (Backend::SurfaceDescriptor, None, false, size)
+            }
             #[cfg(not(target_arch = "wasm32"))]
             PlatformSurfaceAttachment::NativeWindow(window) => {
                 let backend = backend_for_attached_surface(kind);
                 let gpu =
                     pollster::block_on(gpu::request_native_surface_gpu(backend, size, window))?;
-                (backend, Some(gpu), true)
+                let size = gpu.surface_size().unwrap_or(size);
+                (backend, Some(gpu), true, size)
             }
             #[cfg(target_arch = "wasm32")]
             PlatformSurfaceAttachment::BrowserWebGpuCanvas(_)
@@ -149,6 +152,13 @@ impl Renderer {
     pub(super) fn resize_target(&mut self, width: u32, height: u32) -> Result<(), RenderError> {
         validate_target_size(width, height)
             .map_err(|()| RenderError::InvalidSurfaceSize { width, height })?;
+        let size = if let Some(gpu) = &self.gpu {
+            gpu.clamp_surface_size_to_device_limits(crate::platform::SurfaceSize { width, height })
+        } else {
+            crate::platform::SurfaceSize { width, height }
+        };
+        let width = size.width;
+        let height = size.height;
         self.target.width = width;
         self.target.height = height;
         self.frame.resize(self.target.byte_len(), 0);

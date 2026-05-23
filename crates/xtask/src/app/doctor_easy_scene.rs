@@ -5,6 +5,8 @@ mod camera_control_kit;
 mod environment_presets;
 mod khronos_samples;
 mod material_presets;
+mod material_presets_baseline;
+pub(super) mod material_presets_cloudflare;
 mod next_release;
 mod picking_outline_hover;
 mod production_asset_profile;
@@ -178,6 +180,8 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
     round_a_primitives::check_round_a_easy_use_primitives(root, findings);
     next_release::check_named_light_presets(root, findings);
     material_presets::check_honest_material_presets(root, findings);
+    material_presets_baseline::check_material_presets_failing_baseline(root, findings);
+    material_presets_cloudflare::check_round_e_cloudflare_material_proof(root, findings);
     next_release::check_named_background_presets(root, findings);
     environment_presets::check_environment_presets(root, findings);
     next_release::check_named_orbit_control_presets(root, findings);
@@ -376,11 +380,11 @@ fn const_name(line: &str) -> Option<&str> {
 }
 
 fn check_demo_diagnostics_contract(root: &Path, findings: &mut Vec<Finding>) {
-    let html_path = root.join("demo/index.html");
+    let html_path = root.join("demo/proof.html");
     let Ok(html) = fs::read_to_string(&html_path) else {
         findings.push(Finding::new(
             "DEMO-DIAGNOSTICS",
-            "demo/index.html could not be read",
+            "demo/proof.html could not be read",
         ));
         return;
     };
@@ -420,7 +424,7 @@ fn check_demo_diagnostics_contract(root: &Path, findings: &mut Vec<Finding>) {
             "collapsed diagnostics must own the frame counter metric",
         ));
     }
-    if fs::read_to_string(root.join("demo/main.js"))
+    if fs::read_to_string(root.join("demo/proof.js"))
         .is_ok_and(|text| text.contains("frame ${") || text.contains("frame \""))
     {
         findings.push(Finding::new(

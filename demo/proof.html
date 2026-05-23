@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>scena proof harness</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f1115;
+        --panel: #171a20;
+        --panel-2: #10151a;
+        --line: #2c323b;
+        --text: #f4f0e8;
+        --muted: #aeb6c2;
+        --teal: #49d0aa;
+        --amber: #f0b85a;
+        --rust: #d87547;
+        --blue: #6fa8dc;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        font-family:
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        overflow: hidden;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: 224px minmax(0, 1fr) minmax(360px, 420px);
+        width: 100vw;
+        height: 100vh;
+        min-width: 0;
+      }
+
+      .samples,
+      .code {
+        min-width: 0;
+        background: var(--panel);
+        border-color: var(--line);
+      }
+
+      .samples {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 14px 12px;
+        border-right: 1px solid var(--line);
+        overflow-y: auto;
+      }
+
+      .brand {
+        display: grid;
+        gap: 6px;
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-size: 21px;
+        line-height: 1.05;
+        font-weight: 680;
+        letter-spacing: 0;
+        display: inline-flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+
+      .version-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        color: var(--bg);
+        background: var(--teal);
+      }
+
+      .new-callout {
+        margin: 4px 0 0 0;
+        padding: 7px 9px;
+        border-left: 3px solid var(--teal);
+        background: var(--panel-2);
+        color: var(--text);
+        font-size: 11px;
+        line-height: 1.36;
+        border-radius: 4px;
+      }
+
+      .new-callout strong {
+        color: var(--teal);
+      }
+
+      .v14-controls {
+        display: grid;
+        gap: 7px;
+        padding: 9px 10px;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
+
+      .v14-controls summary {
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--teal);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        list-style: none;
+        outline: none;
+      }
+
+      .v14-controls summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .v14-row {
+        display: grid;
+        grid-template-columns: 88px 1fr;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .v14-row select {
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 4px 6px;
+        font-size: 12px;
+        font-family: inherit;
+      }
+
+      .v14-row select:focus {
+        outline: 1px solid var(--teal);
+      }
+
+      .v14-row-check {
+        grid-template-columns: 18px 1fr;
+      }
+
+      .v14-row-check input[type="checkbox"] {
+        margin: 0;
+      }
+
+      .v14-screenshot {
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--teal);
+        border-radius: 4px;
+        padding: 6px 10px;
+        font-size: 12px;
+        cursor: pointer;
+        font-family: inherit;
+      }
+
+      .v14-screenshot:hover {
+        background: var(--teal);
+        color: var(--bg);
+      }
+
+      .brand p,
+      .section-label,
+      .metric span,
+      .drop-hint {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .section-label {
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .sample-list {
+        display: grid;
+        gap: 7px;
+      }
+
+      .replay-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 36px;
+        padding: 0 12px;
+        color: #07110f;
+        background: var(--teal);
+        border: 1px solid color-mix(in srgb, var(--teal), white 20%);
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .replay-button[hidden] {
+        display: none;
+      }
+
+      .connector-story {
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+        background: #11161c;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .connector-story[hidden] {
+        display: none;
+      }
+
+      .connector-story p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .connector-story strong {
+        color: var(--text);
+        font-weight: 680;
+      }
+
+      .sample-group-label {
+        grid-column: 1 / -1;
+        margin: 10px 0 0;
+        padding: 0;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+
+      .sample-button {
+        display: grid;
+        grid-template-columns: 5px minmax(0, 1fr);
+        gap: 9px;
+        align-items: center;
+        min-height: 42px;
+        padding: 0;
+        color: var(--text);
+        background: #11161c;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        cursor: pointer;
+        overflow: hidden;
+        text-align: left;
+      }
+
+      .sample-button::before {
+        content: "";
+        width: 5px;
+        height: 100%;
+        background: var(--blue);
+      }
+
+      .sample-button[data-tone="teal"]::before {
+        background: var(--teal);
+      }
+
+      .sample-button[data-tone="amber"]::before {
+        background: var(--amber);
+      }
+
+      .sample-button[data-tone="rust"]::before {
+        background: var(--rust);
+      }
+
+      .sample-button strong,
+      .sample-button small {
+        display: block;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: normal;
+      }
+
+      .sample-button strong {
+        font-size: 13px;
+        font-weight: 650;
+      }
+
+      .sample-button small {
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .sample-button.active {
+        border-color: var(--teal);
+        background: #14201e;
+      }
+
+      .viewport {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        background:
+          linear-gradient(
+            180deg,
+            #1a1d23 0%,
+            #1e222a 42%,
+            #262a33 64%,
+            #20242c 86%,
+            #1a1d23 100%
+          );
+      }
+
+      #canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        min-width: 0;
+        min-height: 0;
+        touch-action: none;
+      }
+
+      .connector-overlay {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 5;
+      }
+
+      .connector-overlay[hidden] {
+        display: none;
+      }
+
+      .connector-marker {
+        position: absolute;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 26px;
+        padding: 0 9px 0 6px;
+        color: #f7f2e8;
+        background: rgba(15, 17, 21, 0.78);
+        border: 1px solid rgba(73, 208, 170, 0.68);
+        border-radius: 999px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          "Liberation Mono",
+          monospace;
+        font-size: 11px;
+        line-height: 1;
+        opacity: 0;
+        transform: translate(-50%, -50%);
+        transition:
+          opacity 120ms ease,
+          border-color 120ms ease,
+          background-color 120ms ease;
+      }
+
+      .connector-marker::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border: 2px solid var(--teal);
+        border-radius: 50%;
+        background: rgba(73, 208, 170, 0.16);
+      }
+
+      .connector-marker[data-visible="true"] {
+        opacity: 1;
+      }
+
+      .connector-marker[data-cluster="left"] {
+        transform: translate(calc(-100% - 8px), -50%);
+      }
+
+      .connector-marker[data-cluster="right"] {
+        transform: translate(8px, -50%);
+      }
+
+      .status {
+        position: absolute;
+        left: 14px;
+        right: 14px;
+        bottom: 14px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        padding: 10px 12px;
+        background: rgba(15, 17, 21, 0.86);
+        border: 1px solid rgba(244, 240, 232, 0.14);
+        border-radius: 8px;
+        backdrop-filter: blur(10px);
+        z-index: 4;
+      }
+
+      .status strong,
+      .status span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .status strong {
+        font-size: 13px;
+      }
+
+      .status span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      #dropzone {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        pointer-events: none;
+        opacity: 0;
+        background: rgba(6, 10, 12, 0.72);
+        border: 2px solid var(--teal);
+        z-index: 8;
+      }
+
+      #dropzone.over {
+        opacity: 1;
+      }
+
+      #dropzone > div {
+        display: grid;
+        gap: 6px;
+        padding: 18px 22px;
+        background: rgba(23, 26, 32, 0.96);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        text-align: center;
+      }
+
+      #dropzone strong {
+        font-size: 15px;
+      }
+
+      .code {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        border-left: 1px solid var(--line);
+        min-width: 0;
+      }
+
+      .code-head,
+      .diagnostics {
+        padding: 14px 16px;
+      }
+
+      .code-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 4px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .code-title {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .code-head strong {
+        font-size: 14px;
+      }
+
+      .code-head span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .copy-button {
+        align-self: start;
+        min-height: 28px;
+        padding: 0 10px;
+        color: var(--text);
+        background: #11161c;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      pre {
+        margin: 0;
+        padding: 16px;
+        overflow: auto;
+        background: var(--panel-2);
+        color: #f7f2e8;
+        font-size: 12px;
+        line-height: 1.45;
+        letter-spacing: 0;
+        tab-size: 2;
+        white-space: pre;
+      }
+
+      code {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          "Liberation Mono",
+          monospace;
+      }
+
+      .code-line {
+        display: block;
+        margin: 0 -6px;
+        padding: 0 6px;
+        border-radius: 5px;
+      }
+
+      .code-line.is-active {
+        color: #ffffff;
+        background: rgba(73, 208, 170, 0.26);
+        box-shadow:
+          inset 3px 0 0 var(--teal),
+          0 0 0 1px rgba(73, 208, 170, 0.16);
+      }
+
+      .diagnostics {
+        border-top: 1px solid var(--line);
+      }
+
+      .diagnostics summary {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      .metrics {
+        display: grid;
+        gap: 8px;
+        padding-top: 10px;
+      }
+
+      .metric {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .metric strong {
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 620;
+      }
+
+      @media (max-width: 1500px) {
+        .app {
+          grid-template-columns: 220px minmax(0, 1fr);
+          grid-template-rows: minmax(0, 1fr) 260px;
+        }
+
+        .code {
+          grid-column: 1 / -1;
+          grid-template-rows: auto minmax(0, 1fr);
+          border-top: 1px solid var(--line);
+          border-left: 0;
+        }
+
+        .diagnostics {
+          display: none;
+        }
+      }
+
+      @media (max-width: 720px) {
+        body {
+          overflow: hidden;
+        }
+
+        .app {
+          display: flex;
+          flex-direction: column;
+          height: 100svh;
+          min-height: 100svh;
+          overflow-y: auto;
+        }
+
+        .samples {
+          order: 2;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .samples .connector-story {
+          order: 1;
+        }
+
+        .samples .replay-button {
+          order: 2;
+        }
+
+        .samples .brand {
+          order: 3;
+        }
+
+        .samples .sample-picker {
+          order: 4;
+        }
+
+        .samples > .drop-hint {
+          order: 5;
+        }
+
+        .viewport {
+          order: 1;
+          min-height: 430px;
+          height: 64vh;
+        }
+
+        .code {
+          order: 3;
+          display: none;
+        }
+
+        .sample-list {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .connector-marker {
+          font-size: 10px;
+          min-height: 24px;
+          padding-right: 8px;
+        }
+
+        .connector-marker[data-cluster="left"] {
+          transform: translate(calc(-100% - 12px), -50%);
+        }
+
+        .connector-marker[data-cluster="right"] {
+          transform: translate(12px, -50%);
+        }
+
+        .status {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="samples">
+        <div class="brand">
+          <h1>scena <span class="version-badge">v1.5</span></h1>
+          <p>Rust 3D viewer primitives, running in your browser.</p>
+          <p class="new-callout">
+            <strong>New in 1.5:</strong> expanded PBR material presets,
+            connector proof, real glTF samples, and matching code.
+          </p>
+        </div>
+        <div class="sample-picker">
+          <p class="section-label">Try it now</p>
+          <div id="sample-list" class="sample-list"></div>
+        </div>
+        <details id="v14-controls" class="v14-controls">
+          <summary>Render controls</summary>
+          <label class="v14-row" for="v14-background">
+            <span>Background</span>
+            <select id="v14-background">
+              <option value="dark_studio" selected>DarkStudio</option>
+              <option value="studio">Studio</option>
+              <option value="neutral_gray">NeutralGray</option>
+              <option value="white">White</option>
+              <option value="black">Black</option>
+              <option value="sky">Sky</option>
+              <option value="transparent">Transparent</option>
+            </select>
+          </label>
+          <label class="v14-row" for="v14-auto-exposure">
+            <span>Auto exposure</span>
+            <select id="v14-auto-exposure">
+              <option value="fixed_0_ev">Fixed 0.0 EV</option>
+              <option value="product_studio" selected>product_studio</option>
+              <option value="indoor">indoor</option>
+              <option value="outdoor">outdoor</option>
+              <option value="mixed">mixed</option>
+            </select>
+          </label>
+          <label class="v14-row" for="v14-anti-aliasing">
+            <span>Anti-aliasing</span>
+            <select id="v14-anti-aliasing">
+              <option value="fxaa" selected>FXAA</option>
+              <option value="none">off</option>
+            </select>
+          </label>
+          <label class="v14-row v14-row-check" for="v14-bloom">
+            <input id="v14-bloom" type="checkbox" />
+            <span>Subtle bloom</span>
+          </label>
+          <button id="v14-screenshot" class="v14-screenshot" type="button">Download PNG</button>
+        </details>
+        <div id="connector-story" class="connector-story">
+          <p id="connector-claim">
+            <strong>Authored connector mate.</strong> Watch scena align two parts using only authored connectors in their glTF files, no coordinates and no transform math.
+          </p>
+          <p id="connector-result">Before snap: drive_unit (Y-up, mm) and load_unit (Z-up, m) start separated.</p>
+        </div>
+        <button id="replay-button" class="replay-button" type="button">Run scene.mate()</button>
+        <p class="drop-hint">Drop a GLB, or a glTF file together with its referenced files.</p>
+      </aside>
+
+      <main class="viewport">
+        <canvas id="canvas" width="1280" height="720"></canvas>
+        <div id="connector-overlay" class="connector-overlay" data-state="before">
+          <div class="connector-marker" data-connector="shaft">shaft</div>
+          <div class="connector-marker" data-connector="hub">hub</div>
+        </div>
+        <div id="dropzone">
+          <div>
+            <strong>Drop asset</strong>
+            <span class="drop-hint">GLB or glTF bundle</span>
+          </div>
+        </div>
+        <div class="status" aria-live="polite">
+          <strong id="status-title">Starting</strong>
+          <span id="status-detail">WASM initialising</span>
+        </div>
+      </main>
+
+      <aside class="code">
+        <div class="code-head">
+          <div class="code-title">
+            <strong id="code-title">Rust</strong>
+            <span id="code-subtitle">Current scene path</span>
+          </div>
+          <button id="copy-code" class="copy-button" type="button">Copy</button>
+        </div>
+        <pre><code id="code-snippet"></code></pre>
+        <details id="diagnostics" class="diagnostics">
+          <summary>Diagnostics</summary>
+          <div class="metrics">
+            <div class="metric"><span>Frame</span><strong id="metric-frame">0</strong></div>
+            <div class="metric"><span>Asset bytes</span><strong id="metric-bytes">0</strong></div>
+            <div class="metric"><span>Load phase</span><strong id="metric-phase">idle</strong></div>
+          </div>
+        </details>
+      </aside>
+    </div>
+    <script type="module" src="./proof.js?v=20260523-public-showcase-deploy-1"></script>
+  </body>
+</html>

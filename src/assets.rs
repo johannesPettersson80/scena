@@ -22,6 +22,7 @@ mod hot_reload;
 #[cfg(feature = "khronos-samples")]
 mod khronos;
 mod load;
+mod material_presets;
 #[cfg(feature = "obj")]
 mod obj;
 mod scene_loading;
@@ -48,7 +49,10 @@ pub use khronos::{KhronosSample, KhronosSampleMetadata, KhronosSamples};
 pub use load::{
     AssetLoadControl, AssetLoadOptions, AssetLoadProgress, AssetLoadReport, AssetLoadWarning,
 };
-#[cfg(target_arch = "wasm32")]
+pub use material_presets::{
+    MaterialPresetAssets, MaterialPresetProvenance, source_backed_material_preset_provenance,
+};
+#[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
 pub(crate) use texture::BROWSER_TEXTURE_MAX_DIMENSION_2D;
 pub use texture::{
     TextureDesc, TextureFilter, TextureSamplerDesc, TextureSourceFormat, TextureWrap,

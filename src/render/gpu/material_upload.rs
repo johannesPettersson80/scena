@@ -10,7 +10,7 @@ use super::material_mips::mip_level_extents;
 
 const FALLBACK_WHITE_RGBA8: &[u8; 4] = &[255, 255, 255, 255];
 const FALLBACK_NORMAL_RGBA8: &[u8; 4] = &[128, 128, 255, 255];
-const FALLBACK_METALLIC_ROUGHNESS_RGBA8: &[u8; 4] = &[255, 255, 0, 255];
+const FALLBACK_METALLIC_ROUGHNESS_RGBA8: &[u8; 4] = &[255, 255, 255, 255];
 const FALLBACK_ANISOTROPY_RGBA8: &[u8; 4] = &[255, 128, 255, 255];
 
 #[derive(Debug, Clone, Copy)]
@@ -228,5 +228,19 @@ mod tests {
         assert_eq!(upload.height, 1);
         assert_eq!(upload.rgba8, &[255, 0, 0, 255]);
         assert_eq!(upload.format, wgpu::TextureFormat::Rgba8UnormSrgb);
+    }
+
+    #[test]
+    fn missing_metallic_roughness_texture_preserves_scalar_factors() {
+        let upload = MaterialTextureUpload::from_metallic_roughness_texture(None);
+
+        assert_eq!(
+            upload.rgba8,
+            &[255, 255, 255, 255],
+            "glTF metallic-roughness samples use G=roughness and B=metallic; the \
+             fallback texture must be white so scalar material factors are not zeroed"
+        );
+        assert_eq!(upload.format, wgpu::TextureFormat::Rgba8Unorm);
+        assert!(!upload.uses_decoded_texture);
     }
 }

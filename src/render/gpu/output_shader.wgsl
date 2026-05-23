@@ -92,6 +92,12 @@ struct MaterialUniform {
     // .y = KHR_materials_ior.ior for channel spread
     // .z, .w = reserved
     dispersion_factors: vec4<f32>,
+    // KHR_materials_transmission / volume scalar factors.
+    // .x = transmissionFactor
+    // .y = KHR_materials_ior.ior
+    // .z = thicknessFactor
+    // .w = attenuationDistance
+    transmission_factors: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -116,11 +122,11 @@ var environment_cubemap: texture_cube<f32>;
 @group(0) @binding(4)
 var environment_sampler: sampler;
 
-// Phase 1C step 2: split-sum BRDF LUT (RG32Float, NoV × roughness). The
-// fragment specular path samples it once per pixel to fold the fresnel
-// + geometry terms into the prefiltered cubemap radiance.
-@group(0) @binding(5)
-var brdf_lut: texture_2d<f32>;
+@group(0) @binding(6)
+var transmission_color_texture: texture_2d<f32>;
+
+@group(0) @binding(7)
+var transmission_color_sampler: sampler;
 
 @group(2) @binding(0)
 var<uniform> draw: DrawUniform;
@@ -315,17 +321,76 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
             in.world_position,
             in.shadow_visibility,
         );
-        let environment = pbr_environment_lighting(base.rgb, metallic, roughness, normal, view);
+        var environment = pbr_environment_lighting(base.rgb, metallic, roughness, normal, view);
+        environment += clearcoat_environment_lighting(clearcoat_normal, view, clearcoat_factor, clearcoat_roughness);
+        environment += sheen_environment_lighting(normal, view, sheen_color, sheen_roughness);
+        environment += anisotropy_environment_lighting(base.rgb, metallic, roughness, normal, world_tangent, in.tangent.w, view, anisotropy_strength, material.anisotropy_factors.y, anisotropy_direction);
         if has_punctual_light() || has_environment_light() {
             shaded_rgb = (direct + environment) * occlusion_applied;
         }
     }
     let shaded = vec4<f32>(shaded_rgb + emissive, base.a);
     let color_management_mode = camera.color_management.x;
-    return vec4<f32>(
-        apply_tonemapper(shaded.rgb * camera.camera_position_exposure.w, color_management_mode),
-        shaded.a,
+    let output_rgb = apply_tonemapper(shaded.rgb * camera.camera_position_exposure.w, color_management_mode);
+    let transmitted = physical_transmission_color(
+        in.position.xy,
+        normal,
+        view,
+        base.rgb,
+        roughness,
+        output_rgb,
     );
+    if transmitted.a > 0.0 {
+        return transmitted;
+    }
+    return vec4<f32>(output_rgb, shaded.a);
+}
+
+fn physical_transmission_color(
+    frag_coord: vec2<f32>,
+    normal: vec3<f32>,
+    view: vec3<f32>,
+    tint: vec3<f32>,
+    roughness: f32,
+    surface_rgb: vec3<f32>,
+) -> vec4<f32> {
+    let transmission = clamp(material.transmission_factors.x, 0.0, 1.0);
+    if transmission <= 0.001 {
+        return vec4<f32>(0.0);
+    }
+    let viewport = max(camera.viewport_near_far.xy, vec2<f32>(1.0, 1.0));
+    let uv = clamp(frag_coord / viewport, vec2<f32>(0.001), vec2<f32>(0.999));
+    let ior = max(material.transmission_factors.y, 1.01);
+    let thickness = max(material.transmission_factors.z, 0.0);
+    let view_dir = normalize(view);
+    let normal_dir = normalize(normal);
+    let n_dot_v = max(dot(normal_dir, view_dir), 0.0);
+    let rim_fresnel = pow(1.0 - n_dot_v, 5.0);
+    let refracted = refract(-view_dir, normal_dir, 1.0 / ior);
+    let thickness_scale = 0.004 + min(thickness, 1.0) * 0.028;
+    let refracted_uv = clamp(
+        uv + vec2<f32>(refracted.x, -refracted.y) * thickness_scale * transmission,
+        vec2<f32>(0.001),
+        vec2<f32>(0.999),
+    );
+    let texel = 1.0 / viewport;
+    let blur_px = roughness * roughness * 12.0;
+    let blur = texel * blur_px;
+    let straight = textureSample(transmission_color_texture, transmission_color_sampler, uv).rgb;
+    let refracted_center = textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv).rgb;
+    let refracted_blurred =
+        refracted_center * 0.36 +
+        textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv + vec2<f32>(blur.x, 0.0)).rgb * 0.16 +
+        textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv - vec2<f32>(blur.x, 0.0)).rgb * 0.16 +
+        textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv + vec2<f32>(0.0, blur.y)).rgb * 0.16 +
+        textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv - vec2<f32>(0.0, blur.y)).rgb * 0.16;
+    let refraction_mix = clamp(0.46 + roughness * 0.36 + rim_fresnel * 0.10, 0.46, 0.86);
+    let scene_color = mix(straight, refracted_blurred, refraction_mix);
+    let tint_strength = clamp(transmission * 0.035, 0.0, 0.035);
+    let transmitted = scene_color * mix(vec3<f32>(1.0), tint, tint_strength);
+    let reflection_weight = clamp(0.08 + rim_fresnel * 0.42 + (1.0 - transmission) * 0.10, 0.08, 0.50);
+    let reflected = surface_rgb * (1.08 + rim_fresnel * 0.72);
+    return vec4<f32>(mix(transmitted, reflected, reflection_weight), 1.0);
 }
 
 fn directional_shadow_factor(world_position: vec3<f32>) -> f32 {
@@ -443,6 +508,14 @@ fn has_environment_light() -> bool {
         camera.lighting.environment_specular_intensity.w > 0.0;
 }
 
+fn brdf_lut_approx(n_dot_v: f32, roughness: f32) -> vec2<f32> {
+    let c0 = vec4<f32>(-1.0, -0.0275, -0.572, 0.022);
+    let c1 = vec4<f32>(1.0, 0.0425, 1.04, -0.04);
+    let r = roughness * c0 + c1;
+    let a004 = min(r.x * r.x, exp2(-9.28 * n_dot_v)) * r.x + r.y;
+    return vec2<f32>(-1.04, 1.04) * a004 + r.zw;
+}
+
 fn pbr_environment_lighting(
     base: vec3<f32>,
     metallic: f32,
@@ -460,23 +533,91 @@ fn pbr_environment_lighting(
     // Phase 1C step 2: real diffuse + specular IBL.
     //   - Diffuse: prepared irradiance from the active environment.
     //   - Specular: GGX-prefiltered cubemap sampled in the reflection
-    //     direction at a roughness-driven mip, then composited with the
-    //     split-sum BRDF LUT into `prefiltered * (F0 * lut.x + lut.y)`.
+    //     direction at a roughness-driven mip, then composited with an
+    //     analytic split-sum BRDF approximation. The shader cannot bind the
+    //     BRDF LUT and physical transmission texture at the same time on
+    //     WebGL2's 16 sampled-texture floor.
     let diffuse_irradiance = camera.lighting.environment_diffuse_intensity.rgb;
     let diffuse = diffuse_energy * base * diffuse_irradiance * camera.lighting.environment_diffuse_intensity.w;
     let reflection = reflect(-view, normal);
     let prefilter_max_mip = 4.0;
     let prefilter_mip = clamp(roughness, 0.0, 1.0) * prefilter_max_mip;
     let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;
-    let lut_size = f32(textureDimensions(brdf_lut).x);
-    let lut_pixel = vec2<f32>(n_dot_v * lut_size, clamp(roughness, 0.0, 1.0) * lut_size);
-    let lut_coord = vec2<i32>(
-        clamp(i32(floor(lut_pixel.x)), 0, i32(lut_size) - 1),
-        clamp(i32(floor(lut_pixel.y)), 0, i32(lut_size) - 1),
-    );
-    let lut_sample = textureLoad(brdf_lut, lut_coord, 0).rg;
+    let lut_sample = brdf_lut_approx(n_dot_v, clamp(roughness, 0.0, 1.0));
     let specular = prefiltered * (f0 * lut_sample.x + vec3<f32>(lut_sample.y)) * camera.lighting.environment_specular_intensity.w;
     return diffuse + specular;
+}
+
+fn clearcoat_environment_lighting(
+    normal: vec3<f32>,
+    view: vec3<f32>,
+    factor: f32,
+    roughness: f32,
+) -> vec3<f32> {
+    if !has_environment_light() || factor <= 0.0 {
+        return vec3<f32>(0.0);
+    }
+    let n_dot_v = max(dot(normal, view), 0.001);
+    let reflection = reflect(-view, normal);
+    let prefilter_max_mip = 4.0;
+    let prefilter_mip = clamp(roughness, 0.0, 1.0) * prefilter_max_mip;
+    let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;
+    let lut_sample = brdf_lut_approx(n_dot_v, clamp(roughness, 0.0, 1.0));
+    let specular = prefiltered * (vec3<f32>(0.04) * lut_sample.x + vec3<f32>(lut_sample.y));
+    return specular * camera.lighting.environment_specular_intensity.w * factor;
+}
+
+fn sheen_environment_lighting(
+    normal: vec3<f32>,
+    view: vec3<f32>,
+    color: vec3<f32>,
+    roughness: f32,
+) -> vec3<f32> {
+    if !has_environment_light() {
+        return vec3<f32>(0.0);
+    }
+    let sheen_color = clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));
+    if max(sheen_color.r, max(sheen_color.g, sheen_color.b)) <= 0.0 {
+        return vec3<f32>(0.0);
+    }
+    let n_dot_v = max(dot(normal, view), 0.0);
+    let grazing = pow(1.0 - n_dot_v, mix(2.2, 0.65, clamp(roughness, 0.0, 1.0)));
+    let irradiance = camera.lighting.environment_diffuse_intensity.rgb * camera.lighting.environment_diffuse_intensity.w +
+        camera.lighting.environment_specular_intensity.rgb * camera.lighting.environment_specular_intensity.w;
+    let broadness = mix(0.26, 1.25, clamp(roughness, 0.0, 1.0));
+    return sheen_color * irradiance * grazing * broadness;
+}
+
+fn anisotropy_environment_lighting(
+    base: vec3<f32>,
+    metallic: f32,
+    roughness: f32,
+    normal: vec3<f32>,
+    tangent: vec3<f32>,
+    tangent_handedness: f32,
+    view: vec3<f32>,
+    strength: f32,
+    rotation: f32,
+    direction: vec2<f32>,
+) -> vec3<f32> {
+    if !has_environment_light() || strength <= 0.0 {
+        return vec3<f32>(0.0);
+    }
+    let safe_tangent = normalize(tangent - normal * dot(tangent, normal));
+    let bitangent = normalize(cross(normal, safe_tangent) * select(-1.0, 1.0, tangent_handedness >= 0.0));
+    let anisotropy_direction = rotated_anisotropy_direction(direction, rotation);
+    let anisotropic_t = normalize(safe_tangent * anisotropy_direction.x + bitangent * anisotropy_direction.y);
+    let anisotropic_normal = normalize(mix(normal, anisotropic_t, clamp(strength * 0.55, 0.0, 0.55)));
+    let n_dot_v = max(dot(normal, view), 0.001);
+    let reflection = reflect(-view, anisotropic_normal);
+    let directional_roughness = clamp(roughness * (1.0 - strength * 0.60), 0.04, 1.0);
+    let prefilter_max_mip = 4.0;
+    let prefilter_mip = directional_roughness * prefilter_max_mip;
+    let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;
+    let lut_sample = brdf_lut_approx(n_dot_v, directional_roughness);
+    let f0 = vec3<f32>(0.04) * (1.0 - metallic) + base * metallic;
+    let specular = prefiltered * (f0 * lut_sample.x + vec3<f32>(lut_sample.y));
+    return specular * camera.lighting.environment_specular_intensity.w * strength;
 }
 
 fn pbr_light_contribution(

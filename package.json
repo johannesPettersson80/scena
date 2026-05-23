@@ -14,7 +14,10 @@
   },
   "scripts": {
     "browser:m6": "node tests/browser/m6_rust_wasm_renderer_probe.js",
+    "cloudflare:materials": "node scripts/probe_cloudflare_material_presets.mjs",
     "demo:build": "node scripts/build_demo_wasm.js",
+    "showcase:assets": "node scripts/generate_showcase_assets.mjs",
+    "showcase:probe": "node scripts/probe_showcase_demo.mjs",
     "wasm:size": "node tests/release/m9_wasm_size_gate.js"
   }
 }

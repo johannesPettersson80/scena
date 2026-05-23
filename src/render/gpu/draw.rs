@@ -15,7 +15,7 @@ use super::GpuDeviceState;
 use super::browser_readback::{BrowserReadbackPass, encode_browser_readback_pass};
 use super::depth;
 use super::output::{OutputUniformUpload, encode_output_uniform};
-use super::pipeline::{UnlitPass, encode_unlit_pass};
+use super::scene_color::{SceneColorPasses, encode_scene_color_passes};
 use super::shadow::encode_shadow_caster_pass;
 impl GpuDeviceState {
     #[cfg(not(target_arch = "wasm32"))]
@@ -103,43 +103,49 @@ impl GpuDeviceState {
                 &resources.draw_batches,
             );
         }
-        encode_unlit_pass(
+        encode_scene_color_passes(
             &mut encoder,
-            UnlitPass {
-                view: &resources.view,
+            SceneColorPasses {
+                final_view: &resources.view,
+                final_pipeline: &resources.offscreen_pipeline,
                 depth_view: resources
                     .depth_prepass
                     .as_ref()
                     .map(|depth_prepass| &depth_prepass.view),
                 vertex_buffer: &resources.vertex_buffer,
                 output_bind_group: &resources.output_bind_group,
+                opaque_output_bind_group: &resources.opaque_output_bind_group,
                 draw_bind_group: &resources.draw_bind_group,
                 material_resources: &resources.material_resources,
                 draw_batches: &resources.draw_batches,
-                pipeline: &resources.offscreen_pipeline,
+                transmission_view: &resources.transmission.view,
+                transmission_pipeline: &resources.transmission.pipeline,
                 clear_color: wgpu_clear_color(background_color),
-                label: "scena.headless_gpu.render_pass",
+                base_label: "scena.headless_gpu.render_pass",
             },
         );
         if let (Some(surface_view), Some(surface_pipeline)) =
             (surface_view.as_ref(), resources.surface_pipeline.as_ref())
         {
-            encode_unlit_pass(
+            encode_scene_color_passes(
                 &mut encoder,
-                UnlitPass {
-                    view: surface_view,
+                SceneColorPasses {
+                    final_view: surface_view,
+                    final_pipeline: surface_pipeline,
                     depth_view: resources
                         .depth_prepass
                         .as_ref()
                         .map(|depth_prepass| &depth_prepass.view),
                     vertex_buffer: &resources.vertex_buffer,
                     output_bind_group: &resources.output_bind_group,
+                    opaque_output_bind_group: &resources.opaque_output_bind_group,
                     draw_bind_group: &resources.draw_bind_group,
                     material_resources: &resources.material_resources,
                     draw_batches: &resources.draw_batches,
-                    pipeline: surface_pipeline,
+                    transmission_view: &resources.transmission.view,
+                    transmission_pipeline: &resources.transmission.pipeline,
                     clear_color: wgpu_clear_color(background_color),
-                    label: "scena.surface.render_pass",
+                    base_label: "scena.surface.render_pass",
                 },
             );
         }
@@ -284,9 +290,11 @@ impl GpuDeviceState {
                         .map(|depth_prepass| &depth_prepass.view),
                     vertex_buffer: &resources.vertex_buffer,
                     output_bind_group: &resources.output_bind_group,
+                    opaque_output_bind_group: &resources.opaque_output_bind_group,
                     draw_bind_group: &resources.draw_bind_group,
                     material_resources: &resources.material_resources,
                     draw_batches: &resources.draw_batches,
+                    transmission: &resources.transmission,
                     clear_color: wgpu_clear_color(background_color),
                 },
             );
@@ -331,22 +339,25 @@ impl GpuDeviceState {
                 &resources.draw_batches,
             );
         }
-        encode_unlit_pass(
+        encode_scene_color_passes(
             &mut encoder,
-            UnlitPass {
-                view: &surface_view,
+            SceneColorPasses {
+                final_view: &surface_view,
+                final_pipeline: &resources.surface_pipeline,
                 depth_view: resources
                     .depth_prepass
                     .as_ref()
                     .map(|depth_prepass| &depth_prepass.view),
                 vertex_buffer: &resources.vertex_buffer,
                 output_bind_group: &resources.output_bind_group,
+                opaque_output_bind_group: &resources.opaque_output_bind_group,
                 draw_bind_group: &resources.draw_bind_group,
                 material_resources: &resources.material_resources,
                 draw_batches: &resources.draw_batches,
-                pipeline: &resources.surface_pipeline,
+                transmission_view: &resources.transmission.view,
+                transmission_pipeline: &resources.transmission.pipeline,
                 clear_color: wgpu_clear_color(background_color),
-                label: "scena.browser.surface_pass",
+                base_label: "scena.browser.render_pass",
             },
         );
         if let Some(readback) = resources.readback.as_ref() {
@@ -358,9 +369,11 @@ impl GpuDeviceState {
                     depth_view: None,
                     vertex_buffer: &resources.vertex_buffer,
                     output_bind_group: &resources.output_bind_group,
+                    opaque_output_bind_group: &resources.opaque_output_bind_group,
                     draw_bind_group: &resources.draw_bind_group,
                     material_resources: &resources.material_resources,
                     draw_batches: &resources.draw_batches,
+                    transmission: &resources.transmission,
                     clear_color: wgpu_clear_color(background_color),
                 },
             );

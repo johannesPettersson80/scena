@@ -102,6 +102,7 @@ pub struct Capabilities {
     pub bloom: CapabilityStatus,
     pub screen_space_ambient_occlusion: CapabilityStatus,
     pub order_independent_transparency: CapabilityStatus,
+    pub physical_glass_transmission: CapabilityStatus,
     pub wide_gamut_output: CapabilityStatus,
     pub texture_compression_basisu: CapabilityStatus,
     pub hardware_instancing: CapabilityStatus,
@@ -144,7 +145,7 @@ impl Capabilities {
             hardware_tier: hardware_tier(backend, false),
             output_stage: OutputStageStatus::PbrNeutralSrgb,
             alpha_pipeline: AlphaPipelineStatus::LinearSourceOver,
-            forward_pbr: forward_pbr_status(backend),
+            forward_pbr: forward_pbr_status(backend, false),
             directional_shadows: directional_shadow_status(backend),
             point_shadows: punctual_shadow_status(backend),
             spot_shadows: punctual_shadow_status(backend),
@@ -156,6 +157,7 @@ impl Capabilities {
             bloom: bloom_status(backend),
             screen_space_ambient_occlusion: ambient_occlusion_status(backend),
             order_independent_transparency: order_independent_transparency_status(backend),
+            physical_glass_transmission: physical_glass_transmission_status(backend, false),
             wide_gamut_output: wide_gamut_output_status(backend, false),
             texture_compression_basisu: CapabilityStatus::FeatureDisabled,
             hardware_instancing: hardware_instancing_status(backend),
@@ -184,7 +186,7 @@ impl Capabilities {
             hardware_tier: hardware_tier(backend, true),
             output_stage: OutputStageStatus::PbrNeutralSrgb,
             alpha_pipeline: AlphaPipelineStatus::LinearSourceOver,
-            forward_pbr: forward_pbr_status(backend),
+            forward_pbr: forward_pbr_status(backend, true),
             directional_shadows: directional_shadow_status(backend),
             point_shadows: punctual_shadow_status(backend),
             spot_shadows: punctual_shadow_status(backend),
@@ -196,6 +198,7 @@ impl Capabilities {
             bloom: bloom_status(backend),
             screen_space_ambient_occlusion: ambient_occlusion_status(backend),
             order_independent_transparency: order_independent_transparency_status(backend),
+            physical_glass_transmission: physical_glass_transmission_status(backend, true),
             wide_gamut_output: wide_gamut_output_status(backend, false),
             texture_compression_basisu: CapabilityStatus::FeatureDisabled,
             hardware_instancing: hardware_instancing_status(backend),
@@ -224,7 +227,7 @@ impl Capabilities {
             hardware_tier: hardware_tier(backend, true),
             output_stage: OutputStageStatus::PbrNeutralSrgb,
             alpha_pipeline: AlphaPipelineStatus::LinearSourceOver,
-            forward_pbr: forward_pbr_status(backend),
+            forward_pbr: forward_pbr_status(backend, true),
             directional_shadows: directional_shadow_status(backend),
             point_shadows: punctual_shadow_status(backend),
             spot_shadows: punctual_shadow_status(backend),
@@ -236,6 +239,7 @@ impl Capabilities {
             bloom: bloom_status(backend),
             screen_space_ambient_occlusion: ambient_occlusion_status(backend),
             order_independent_transparency: order_independent_transparency_status(backend),
+            physical_glass_transmission: physical_glass_transmission_status(backend, true),
             wide_gamut_output: wide_gamut_output_status(backend, true),
             texture_compression_basisu: CapabilityStatus::FeatureDisabled,
             hardware_instancing: hardware_instancing_status(backend),
@@ -275,6 +279,16 @@ impl Capabilities {
                 DiagnosticCode::ForwardPbrDegraded,
                 "PBR is reported as degraded until GPU material, texture, and IBL shading are proven",
                 "treat metallic-roughness output as a compatibility preview until the PBR visual gate closes",
+            ));
+            diagnostics.push(Diagnostic::warning(
+                DiagnosticCode::MaterialPresetFallback,
+                "Complete real-world material presets are in fallback on this lane: \
+                 chrome, brushed_steel, clearcoat_plastic, clear_glass, \
+                 frosted_glass, leather, rubber, and satin require approved \
+                 material proof before they can be claimed as complete",
+                "use MaterialDesc::* as scalar preview shortcuts, or claim \
+                 Assets::material_presets() only for lanes with Round E \
+                 reference, browser, and capability row proof artifacts",
             ));
         }
         if self.directional_shadows == CapabilityStatus::Degraded {
@@ -317,6 +331,13 @@ impl Capabilities {
                 DiagnosticCode::OrderIndependentTransparencyDisabled,
                 "Order-independent transparency is disabled until a backend has overlap order-invariance proof",
                 "sort alpha-blended surfaces back-to-front or use opaque/masked fallbacks until the OIT gate closes for this backend",
+            ));
+        }
+        if self.physical_glass_transmission != CapabilityStatus::Supported {
+            diagnostics.push(Diagnostic::warning(
+                DiagnosticCode::PhysicalGlassTransmissionDegraded,
+                "Physical glass transmission is degraded until the lane proves scene-color transmission, IOR/thickness refraction, rough-transmission blur, and transparency ordering",
+                "do not claim clear_glass/frosted_glass as complete real-world materials until the Round E glass and OIT proof artifacts pass for this backend",
             ));
         }
         if self.wide_gamut_output != CapabilityStatus::Supported {
