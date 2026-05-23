@@ -18,7 +18,7 @@ import init, {
   set_bloom_enabled,
   set_fixed_exposure_ev,
   tick,
-} from "./pkg/scena.js?v=20260523-scena-1.5.x-1";
+} from "./pkg/scena.js?v=20260523-scena-material-glass-1";
 
 const SAMPLE_GROUPS = [
   {
@@ -376,7 +376,7 @@ let _png = scena::headless_gltf_viewer("machine.glb")
   }
   if (activeAsset.code === "material-presets") {
     codeTitle.textContent = "Material presets";
-    codeSubtitle.textContent = "browser-rendered WebGL2 material proof";
+    codeSubtitle.textContent = "browser-rendered WebGL2 material showcase";
     codeSnippet.textContent = `use scena::{Assets, Color, MaterialDesc, Renderer, Scene};
 
 let assets = Assets::new();
@@ -507,7 +507,10 @@ async function start() {
   updateMetrics();
   beginPhase("initialising WASM");
   await init({
-    module_or_path: new URL("./pkg/scena_bg.wasm?v=20260523-scena-1.5.x-1", import.meta.url),
+    module_or_path: new URL(
+      "./pkg/scena_bg.wasm?v=20260523-scena-material-glass-1",
+      import.meta.url,
+    ),
   });
   wireDragDrop();
   wirePointer();
@@ -579,7 +582,7 @@ async function loadMaterialPresetsAndAttach(asset) {
   attached = true;
   resizeAttachedRenderer();
   lastFrameAt = performance.now();
-  beginPhase("rendering browser material proof");
+  beginPhase("rendering browser material showcase");
   requestRender();
 }
 
