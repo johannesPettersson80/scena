@@ -9,6 +9,7 @@ use super::floor::ground_import_at_floor;
 use super::{DemoApp, log_timing, now_ms};
 
 #[wasm_bindgen]
+#[cfg(feature = "proof-harness")]
 pub async fn load_gltf_from_bytes(
     bytes: Box<[u8]>,
     viewport_width: u32,
@@ -120,6 +121,8 @@ async fn load_gltf_from_bytes_internal(
         scene,
         camera,
         controls,
+        controls_dirty: false,
+        needs_prepare: true,
         renderer: None,
         connector_replay: None,
     })

@@ -30,6 +30,8 @@ milestone work from that RFC.
   evidence.
 - Use `scena-git-github` when working with branches, commits, tags, GitHub issues, pull
   requests, workflow runs, releases, or local-vs-remote state proof.
+- Use `scena-remote-builder` when compiling, running cargo tests, running doctor, or
+  preparing remote proof from the Hetzner CPU build machine.
 
 ## Skill Trigger Guidance
 
@@ -44,11 +46,13 @@ milestone work from that RFC.
   `xtask doctor` before considering the finding closed.
 - User-visible API, renderer behavior, docs/tutorial, crate metadata, publish readiness,
   or v1.0 release evidence also uses `scena-release-hygiene`.
+- Compile, test, clippy, doc, publish dry-run, and doctor proof must use
+  `scena-remote-builder` so the heavy Rust work runs on the remote machine.
 - Branch, commit, tag, issue, PR, workflow, release, crash-recovery, or local-vs-remote
   proof work also uses `scena-git-github`.
 - When multiple skills apply, use all relevant skills in this order: RFC scope, renderer
   architecture, area-specific implementation, quality proof, doctor enforcement, release
-  hygiene, then Git/GitHub follow-through.
+  hygiene, remote builder proof, then Git/GitHub follow-through.
 
 ## Architecture Rules
 
@@ -66,8 +70,8 @@ milestone work from that RFC.
 
 - For production implementation code, add or update the narrowest unit or integration test
   that captures the expected contract before changing the implementation.
-- Run the focused test and confirm it fails for the expected reason before patching
-  production code.
+- Run the focused test and confirm it fails for the expected reason on the remote builder
+  before patching production code.
 - Implement the smallest code change that makes the focused test pass, then run the broader
   required gates.
 - If a change cannot be meaningfully unit-tested first, record why in the checklist or final
@@ -77,18 +81,34 @@ milestone work from that RFC.
 
 ## Validation
 
+Heavy Rust work runs on the Hetzner CPU builder by default:
+
+- SSH alias: `scena-builder`
+- Remote repo path: `/home/johannes/projects/scena`
+- Keep the remote checkout matched to the work being validated. If local changes are not
+  committed and pushed, verify the remote tree is clean, then mirror the local working tree
+  to the remote repo with `rsync`, excluding `.git` and `target`.
+- Do not put private SSH key material or cloud credentials in this repo.
+
+Use this command shape for remote gates:
+
+```bash
+ssh scena-builder 'cd "$HOME/projects/scena" && <command>'
+```
+
 For any code change, run:
 
 ```bash
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
-cargo run -p xtask -- doctor --full
+ssh scena-builder 'cd "$HOME/projects/scena" && cargo fmt --check'
+ssh scena-builder 'cd "$HOME/projects/scena" && cargo clippy --all-targets -- -D warnings'
+ssh scena-builder 'cd "$HOME/projects/scena" && cargo test'
+ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --full'
 ```
 
 For browser, WebGPU/WebGL2, visual, or 3D rendering changes, add rendered-output proof.
 Prefer Playwright or a deterministic headless harness. Do not declare a visual fix from
-unit tests alone.
+unit tests alone. The Hetzner builder is a CPU build/test machine; use a real GPU machine
+for GPU-specific proof when hardware acceleration matters.
 
 When a bug or review finding exposes a silent-failure family, add or extend a doctor rule
 when the pattern can be checked from source, docs, manifests, or gate artifacts.

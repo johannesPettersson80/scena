@@ -1,4 +1,10 @@
 use super::AssetPath;
+use super::environment_hdr::{
+    DecodedEquirectangular, decode_radiance_hdr, parse_equirectangular_hdr_dimensions,
+};
+use super::environment_sidecar::{
+    EnvironmentPrefilterSidecar, EnvironmentSidecarProfile, sha256_hex,
+};
 use crate::diagnostics::AssetError;
 use crate::scene::Vec3;
 
@@ -333,6 +339,7 @@ pub struct EnvironmentDesc {
     brdf_lut_size: u32,
     wasm_delivery: WasmEnvironmentDelivery,
     derivatives: Vec<EnvironmentDerivative>,
+    prefilter_sidecar: Option<std::sync::Arc<EnvironmentPrefilterSidecar>>,
     /// When the environment originates from a Radiance HDR (equirectangular)
     /// the decoded pixel grid is kept here. `cubemap_faces()` then projects
     /// it into per-face radiance grids so the prefiltered specular pass
@@ -383,6 +390,7 @@ impl EnvironmentDesc {
                     sha256: DEFAULT_ENVIRONMENT_BRDF_LUT_SHA256.to_string(),
                 },
             ],
+            prefilter_sidecar: None,
             equirectangular_pixels: None,
         }
     }
@@ -403,6 +411,7 @@ impl EnvironmentDesc {
             brdf_lut_size: 0,
             wasm_delivery: WasmEnvironmentDelivery::SeparateFetch,
             derivatives: Vec::new(),
+            prefilter_sidecar: None,
             equirectangular_pixels: None,
         }
     }
@@ -434,7 +443,7 @@ impl EnvironmentDesc {
             source_path: path,
             source_kind: EnvironmentSourceKind::EquirectangularHdr,
             source_dimensions: Some(source_dimensions),
-            source_sha256: None,
+            source_sha256: Some(sha256_hex(source_bytes)),
             preview_irradiance_rgb: Some(preview_irradiance_rgb),
             license: None,
             generator: None,
@@ -442,8 +451,41 @@ impl EnvironmentDesc {
             brdf_lut_size: DEFAULT_ENVIRONMENT_BRDF_LUT_SIZE,
             wasm_delivery: WasmEnvironmentDelivery::SeparateFetch,
             derivatives: Vec::new(),
+            prefilter_sidecar: None,
             equirectangular_pixels: Some(std::sync::Arc::new(decoded)),
         })
+    }
+
+    pub(crate) fn from_equirectangular_hdr_sidecar_bytes(
+        path: impl Into<AssetPath>,
+        source_bytes: &[u8],
+        sidecar: EnvironmentPrefilterSidecar,
+    ) -> Result<Option<Self>, AssetError> {
+        let path = path.into();
+        let source_sha256 = sha256_hex(source_bytes);
+        if sidecar.source_sha256_hex() != source_sha256 {
+            return Ok(None);
+        }
+        let source_dimensions = parse_equirectangular_hdr_dimensions(&path);
+        let preview_irradiance_rgb = sidecar.diffuse_rgb();
+        let cubemap_resolution = sidecar.cubemap_resolution();
+        let brdf_lut_size = sidecar.brdf_lut_size();
+        Ok(Some(Self {
+            name: environment_name_from_path(&path).to_string(),
+            source_path: path,
+            source_kind: EnvironmentSourceKind::EquirectangularHdr,
+            source_dimensions,
+            source_sha256: Some(source_sha256),
+            preview_irradiance_rgb: Some(preview_irradiance_rgb),
+            license: None,
+            generator: None,
+            cubemap_resolution,
+            brdf_lut_size,
+            wasm_delivery: WasmEnvironmentDelivery::SeparateFetch,
+            derivatives: Vec::new(),
+            prefilter_sidecar: Some(std::sync::Arc::new(sidecar)),
+            equirectangular_pixels: None,
+        }))
     }
 
     pub fn name(&self) -> &str {
@@ -498,6 +540,27 @@ impl EnvironmentDesc {
         &self.derivatives
     }
 
+    pub(crate) fn prefilter_sidecar(
+        &self,
+        profile: EnvironmentSidecarProfile,
+    ) -> Option<&EnvironmentPrefilterSidecar> {
+        self.prefilter_sidecar
+            .as_deref()
+            .filter(|sidecar| sidecar.profile() == profile)
+    }
+
+    pub(crate) fn prefilter_sidecar_identity(&self) -> Option<String> {
+        self.prefilter_sidecar.as_ref().map(|sidecar| {
+            format!(
+                "{}|{}|{}|{}",
+                sidecar.profile().name(),
+                sidecar.source_sha256_hex(),
+                sidecar.cubemap_resolution(),
+                sidecar.brdf_lut_size()
+            )
+        })
+    }
+
     /// Returns the bundled cubemap radiance for this environment when one is
     /// available. Phase 1C step 1: only the bundled `neutral-studio` preview
     /// fixture decodes today. Equirectangular HDR sources will gain a real
@@ -541,266 +604,5 @@ pub(super) fn is_equirectangular_hdr_path(path: &AssetPath) -> bool {
     path.as_str().to_ascii_lowercase().ends_with(".hdr")
 }
 
-fn parse_equirectangular_hdr_dimensions(path: &AssetPath) -> Option<(u32, u32)> {
-    let stem = path
-        .as_str()
-        .rsplit('/')
-        .next()
-        .unwrap_or(path.as_str())
-        .strip_suffix(".hdr")?;
-    let dimensions = stem.rsplit('_').next()?;
-    let (width, height) = dimensions.split_once('x')?;
-    let width = width.parse().ok()?;
-    let height = height.parse().ok()?;
-    (width > 0 && height > 0).then_some((width, height))
-}
-
-/// Decoded equirectangular HDR pixel grid. Stored as row-major linear RGB
-/// floats so the cubemap projection pass can sample by (longitude, latitude).
-/// Built by the `radiant` crate, which handles both uncompressed RGBE and
-/// the RLE-compressed scanline format used by every real-world HDRI source.
-#[derive(Debug, Clone)]
-pub struct DecodedEquirectangular {
-    /// Width of the decoded image in pixels.
-    pub width: u32,
-    /// Height of the decoded image in pixels.
-    pub height: u32,
-    /// Row-major linear RGB pixels (length = width × height).
-    pub pixels: Vec<[f32; 3]>,
-}
-
-// `parse_radiance_hdr_preview` was the legacy "average radiance only" entry
-// point; the new `from_equirectangular_hdr_bytes` now inlines that summation
-// alongside keeping the full pixel grid for cubemap projection.
-
-/// Full-pixel decoder used by both the scalar irradiance path and the
-/// cubemap projection path. Wraps `radiant::load` which handles both raw
-/// and RLE-compressed RGBE scanlines plus the various header variants
-/// real-world HDR exporters emit. Translates radiant's errors into
-/// scena's `AssetError::Parse` with the asset path attached.
-pub(crate) fn decode_radiance_hdr(
-    path: &AssetPath,
-    source_bytes: &[u8],
-) -> Result<DecodedEquirectangular, AssetError> {
-    let image =
-        radiant::load(std::io::Cursor::new(source_bytes)).map_err(|error| AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: format!("Radiance HDR decode failed: {error}"),
-        })?;
-    let width: u32 = image.width.try_into().map_err(|_| AssetError::Parse {
-        path: path.as_str().to_string(),
-        reason: "Radiance HDR width does not fit in u32".to_string(),
-    })?;
-    let height: u32 = image.height.try_into().map_err(|_| AssetError::Parse {
-        path: path.as_str().to_string(),
-        reason: "Radiance HDR height does not fit in u32".to_string(),
-    })?;
-    let pixels = image
-        .data
-        .into_iter()
-        .map(|rgb| [rgb.r, rgb.g, rgb.b])
-        .collect::<Vec<_>>();
-    Ok(DecodedEquirectangular {
-        width,
-        height,
-        pixels,
-    })
-}
-
-// `find_bytes`, `parse_radiance_resolution`, and `decode_rgbe` previously
-// lived here as a hand-rolled Radiance HDR decoder. They were removed when
-// scena adopted the `radiant` crate (which properly handles RLE-compressed
-// scanlines and the various header variants real exporters emit) — see
-// `decode_radiance_hdr` above.
-
 #[cfg(test)]
-mod environment_cubemap_tests {
-    use super::*;
-
-    const NEUTRAL_STUDIO_FIXTURE: &str = include_str!(
-        "../../tests/assets/environment/generated/neutral-studio-cubemap.fixture.toml"
-    );
-
-    #[test]
-    fn cubemap_fixture_parser_decodes_six_faces_with_real_radiance_values() {
-        let parsed = EnvironmentCubemapFaces::try_parse_fixture(NEUTRAL_STUDIO_FIXTURE)
-            .expect("bundled SCENA_CUBEMAP_V1 fixture must parse");
-        assert_eq!(parsed.resolution, 256, "fixture declares 256-pixel faces");
-        assert_eq!(
-            parsed.face_radiance,
-            [
-                [0.78, 0.82, 0.88],
-                [0.62, 0.68, 0.76],
-                [1.00, 0.98, 0.92],
-                [0.28, 0.30, 0.34],
-                [0.70, 0.74, 0.82],
-                [0.56, 0.60, 0.68],
-            ],
-            "parser must read face radiance in the WebGPU px/nx/py/ny/pz/nz layer order"
-        );
-    }
-
-    #[test]
-    fn equirectangular_hdr_default_cubemap_resolution_matches_specular_ibl_fixture_resolution() {
-        assert_eq!(
-            DEFAULT_ENVIRONMENT_CUBEMAP_FACE_RESOLUTION, 256,
-            "real HDR environments need 256-pixel cubemap faces so smooth metals keep \
-             enough environment detail for specular IBL; 64-pixel faces flatten chrome"
-        );
-    }
-
-    #[test]
-    fn cubemap_fixture_parser_rejects_invalid_magic_header() {
-        assert!(
-            EnvironmentCubemapFaces::try_parse_fixture(
-                "OOPS_NOT_A_CUBEMAP\n[face.px]\nradiance = 1.0 1.0 1.0"
-            )
-            .is_none(),
-            "missing magic header must not silently degrade to a default cubemap"
-        );
-    }
-
-    #[test]
-    fn cubemap_fixture_parser_rejects_negative_radiance() {
-        let bad = "SCENA_CUBEMAP_V1\nresolution = 4\n[face.px]\nradiance = -0.1 0.0 0.0\n";
-        assert!(
-            EnvironmentCubemapFaces::try_parse_fixture(bad).is_none(),
-            "negative radiance is physically meaningless and must fail parsing"
-        );
-    }
-
-    #[test]
-    fn cube_face_direction_at_face_center_returns_face_normal() {
-        for (face_index, normal) in ENVIRONMENT_CUBEMAP_FACE_NORMALS.iter().enumerate() {
-            let direction = cube_face_direction(face_index, 0.0, 0.0);
-            let expected = Vec3::new(normal[0], normal[1], normal[2]);
-            let dx = direction.x - expected.x;
-            let dy = direction.y - expected.y;
-            let dz = direction.z - expected.z;
-            assert!(
-                dx * dx + dy * dy + dz * dz < 1e-6,
-                "face {face_index} center direction must equal the face normal"
-            );
-        }
-    }
-
-    #[test]
-    fn cubemap_face_pixels_at_face_center_recover_face_radiance() {
-        let mut radiance = [[0.0_f32; 3]; 6];
-        radiance[0] = [0.9, 0.1, 0.1];
-        radiance[1] = [0.1, 0.9, 0.1];
-        radiance[2] = [0.1, 0.1, 0.9];
-        radiance[3] = [0.5, 0.4, 0.3];
-        radiance[4] = [0.3, 0.4, 0.5];
-        radiance[5] = [0.7, 0.7, 0.7];
-        let cube = EnvironmentCubemapFaces {
-            face_radiance: radiance,
-            resolution: 8,
-            face_pixels: None,
-        };
-        let pixels = cube.build_face_pixels_rgba32f();
-        for (face_index, face_pixels) in pixels.iter().enumerate() {
-            let center_pixel_index = ((4 * 8) + 4) * 4;
-            let r = face_pixels[center_pixel_index];
-            let g = face_pixels[center_pixel_index + 1];
-            let b = face_pixels[center_pixel_index + 2];
-            let a = face_pixels[center_pixel_index + 3];
-            // The pixel sample at (4, 4) of an 8×8 face is offset by +0.5 / 8
-            // from u=v=0, so its direction tilts ~3.5° away from the face
-            // normal — adjacent faces contribute a small but non-zero share.
-            // We assert the dominant channel is recognizably the face's own
-            // peak channel rather than asserting an exact match.
-            let expected = radiance[face_index];
-            let dominant = expected.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-            assert!(
-                a == 1.0 && (r - g - b).abs() < 1.0,
-                "face {face_index} center alpha must be 1 and the radiance triplet is finite",
-            );
-            for (channel, raw) in [r, g, b].iter().enumerate() {
-                if (expected[channel] - dominant).abs() < 1e-6 {
-                    assert!(
-                        *raw > expected[channel] * 0.6,
-                        "face {face_index} dominant channel must retain >60% of its face-center radiance"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn cubemap_face_pixels_at_face_corners_blend_three_adjacent_faces() {
-        let radiance = [
-            [1.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0],
-            [0.0, 0.0, 0.0],
-        ];
-        let cube = EnvironmentCubemapFaces {
-            face_radiance: radiance,
-            resolution: 4,
-            face_pixels: None,
-        };
-        let pixels = cube.build_face_pixels_rgba32f();
-        let resolution = 4_usize;
-        let face_pixels = &pixels[0];
-        // Face 0 is +X. Pixel (0, 0) maps to direction
-        // Vec3::new(1, -v, -u) at u = v = -0.75 → (+1, +0.75, +0.75), i.e. the
-        // corner that touches +X, +Y, +Z. That corner pulls radiance from px,
-        // py and pz simultaneously, so all three channels must light up.
-        let top_left_index = 0;
-        let r = face_pixels[top_left_index];
-        let g = face_pixels[top_left_index + 1];
-        let b = face_pixels[top_left_index + 2];
-        assert!(
-            r > 0.0 && g > 0.0 && b > 0.0,
-            "px face top-left corner direction (+X,+Y,+Z) must blend px=red, py=green, pz=blue \
-             radiances; got r={r} g={g} b={b}"
-        );
-        // Conversely the diagonally opposite corner pixel (resolution-1,
-        // resolution-1) maps to (+X, -Y, -Z), so the px channel must remain
-        // dominant while py and pz fall to 0 (their face radiances do not
-        // illuminate the (-Y, -Z) hemisphere of this corner).
-        let bottom_right_index = ((resolution - 1) * resolution + (resolution - 1)) * 4;
-        let r2 = face_pixels[bottom_right_index];
-        let g2 = face_pixels[bottom_right_index + 1];
-        let b2 = face_pixels[bottom_right_index + 2];
-        assert!(
-            r2 > 0.0 && g2 == 0.0 && b2 == 0.0,
-            "px face (-Y,-Z) corner must keep red but drop py/pz contributions; \
-             got r={r2} g={g2} b={b2}"
-        );
-    }
-
-    #[test]
-    fn lambertian_irradiance_averages_six_face_radiances() {
-        let radiance = [
-            [0.78, 0.82, 0.88],
-            [0.62, 0.68, 0.76],
-            [1.00, 0.98, 0.92],
-            [0.28, 0.30, 0.34],
-            [0.70, 0.74, 0.82],
-            [0.56, 0.60, 0.68],
-        ];
-        let cube = EnvironmentCubemapFaces {
-            face_radiance: radiance,
-            resolution: 64,
-            face_pixels: None,
-        };
-        let irradiance = cube.lambertian_irradiance();
-        let expected = [
-            (0.78 + 0.62 + 1.00 + 0.28 + 0.70 + 0.56) / 6.0,
-            (0.82 + 0.68 + 0.98 + 0.30 + 0.74 + 0.60) / 6.0,
-            (0.88 + 0.76 + 0.92 + 0.34 + 0.82 + 0.68) / 6.0,
-        ];
-        for channel in 0..3 {
-            assert!(
-                (irradiance[channel] - expected[channel]).abs() < 1e-5,
-                "channel {channel} mean = {} must equal six-face average = {}",
-                irradiance[channel],
-                expected[channel]
-            );
-        }
-    }
-}
+mod environment_cubemap_tests;

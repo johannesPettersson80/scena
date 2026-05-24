@@ -13,6 +13,7 @@ mod production_asset_profile;
 mod reference_image_regression;
 mod round_a_primitives;
 mod scena_viewer_element;
+mod showcase_performance;
 mod state_url;
 mod viewer_headless_png;
 mod viewer_load_progress;
@@ -203,6 +204,7 @@ pub(crate) fn check_easy_scene_setup_contracts(root: &Path, findings: &mut Vec<F
     khronos_samples::check_khronos_samples(root, findings);
     production_asset_profile::check_production_asset_profile(root, findings);
     state_url::check_state_via_url(root, findings);
+    showcase_performance::check_showcase_performance_contracts(root, findings);
 
     for rel in ["src/lib.rs", "src/geometry.rs"] {
         if fs::read_to_string(root.join(rel)).is_ok_and(|text| text.contains("FramingAngles")) {

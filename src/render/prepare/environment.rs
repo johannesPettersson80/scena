@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use crate::assets::EnvironmentDesc;
+use crate::assets::{EnvironmentDesc, EnvironmentPrefilterSidecar, EnvironmentSidecarProfile};
+use crate::diagnostics::AssetError;
 use crate::diagnostics::Backend;
 use crate::scene::Vec3;
 
@@ -39,7 +40,7 @@ pub(in crate::render) const BRDF_LUT_SIZE: u32 = 64;
 const HDR_DIFFUSE_IBL_RESPONSE_SCALE: f32 = 0.8;
 const HDR_IBL_INTENSITY_SCALE: f32 = 0.75;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(in crate::render) enum EnvironmentLightingProfile {
     Reference,
     InteractiveWebGl2,
@@ -72,6 +73,13 @@ impl EnvironmentLightingProfile {
         match self {
             Self::Reference => 1024,
             Self::InteractiveWebGl2 => 64,
+        }
+    }
+
+    pub(crate) const fn sidecar_profile(self) -> EnvironmentSidecarProfile {
+        match self {
+            Self::Reference => EnvironmentSidecarProfile::Reference,
+            Self::InteractiveWebGl2 => EnvironmentSidecarProfile::InteractiveWebGl2,
         }
     }
 }
@@ -143,42 +151,62 @@ impl PreparedEnvironmentLighting {
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         let mut environment_step_start = environment_total_start;
 
-        let cubemap_faces = environment.cubemap_faces();
+        let sidecar_profile = profile.sidecar_profile();
+        let sidecar = environment.prefilter_sidecar(sidecar_profile);
+        let cubemap_faces = if sidecar.is_some() {
+            None
+        } else {
+            environment.cubemap_faces()
+        };
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
             environment_step_start = log_environment_step("cubemap_faces", environment_step_start);
         }
-        let cubemap = cubemap_faces.map(|faces| {
-            let resolution = faces.resolution();
-            let source_pixels = faces.build_face_pixels_rgba32f();
-            #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
-            let prefilter_start =
-                log_environment_step("build_face_pixels_rgba32f", environment_step_start);
-            let mips = prefilter_specular_cubemap_mips_with_quality(
-                &source_pixels,
-                resolution,
-                PREFILTER_MIP_COUNT,
-                profile.prefilter_quality(),
-            );
-            #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
-            let brdf_start =
-                log_environment_step("prefilter_specular_cubemap_mips", prefilter_start);
-            let brdf_lut = build_brdf_lut_with_sample_count(
-                profile.brdf_lut_size(),
-                profile.brdf_sample_count(),
-            );
+        let cubemap = if let Some(sidecar) = sidecar {
             #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
             {
-                log_environment_step("build_brdf_lut", brdf_start);
+                log_environment_step("load_prefilter_sidecar", environment_step_start);
             }
-            Arc::new(PreparedEnvironmentCubemap {
-                resolution,
-                mips,
-                mip_count: PREFILTER_MIP_COUNT,
-                brdf_lut,
-                brdf_lut_size: profile.brdf_lut_size(),
+            Some(Arc::new(PreparedEnvironmentCubemap {
+                resolution: sidecar.cubemap_resolution(),
+                mips: sidecar.mips().to_vec(),
+                mip_count: sidecar.mip_count(),
+                brdf_lut: sidecar.brdf_lut().to_vec(),
+                brdf_lut_size: sidecar.brdf_lut_size(),
+            }))
+        } else {
+            cubemap_faces.map(|faces| {
+                let resolution = faces.resolution();
+                let source_pixels = faces.build_face_pixels_rgba32f();
+                #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+                let prefilter_start =
+                    log_environment_step("build_face_pixels_rgba32f", environment_step_start);
+                let mips = prefilter_specular_cubemap_mips_with_quality(
+                    &source_pixels,
+                    resolution,
+                    PREFILTER_MIP_COUNT,
+                    profile.prefilter_quality(),
+                );
+                #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+                let brdf_start =
+                    log_environment_step("prefilter_specular_cubemap_mips", prefilter_start);
+                let brdf_lut = build_brdf_lut_with_sample_count(
+                    profile.brdf_lut_size(),
+                    profile.brdf_sample_count(),
+                );
+                #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
+                {
+                    log_environment_step("build_brdf_lut", brdf_start);
+                }
+                Arc::new(PreparedEnvironmentCubemap {
+                    resolution,
+                    mips,
+                    mip_count: PREFILTER_MIP_COUNT,
+                    brdf_lut,
+                    brdf_lut_size: profile.brdf_lut_size(),
+                })
             })
-        });
+        };
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
             log_environment_step("from_environment total", environment_total_start);
@@ -304,6 +332,57 @@ impl PreparedEnvironmentLighting {
             self.intensity,
         )
     }
+}
+
+#[doc(hidden)]
+pub fn precompute_environment_sidecar(
+    environment: &EnvironmentDesc,
+    profile: EnvironmentSidecarProfile,
+) -> Result<EnvironmentPrefilterSidecar, AssetError> {
+    let render_profile = match profile {
+        EnvironmentSidecarProfile::InteractiveWebGl2 => {
+            EnvironmentLightingProfile::InteractiveWebGl2
+        }
+        EnvironmentSidecarProfile::Reference => EnvironmentLightingProfile::Reference,
+    };
+    let source_sha = environment
+        .source_sha256()
+        .ok_or_else(|| AssetError::Parse {
+            path: environment.source_path().as_str().to_string(),
+            reason:
+                "environment sidecar generation requires source SHA-256; load the HDR from bytes"
+                    .to_string(),
+        })?;
+    let faces = environment
+        .cubemap_faces()
+        .ok_or_else(|| AssetError::Parse {
+            path: environment.source_path().as_str().to_string(),
+            reason: "environment sidecar generation requires decoded cubemap faces".to_string(),
+        })?;
+    let resolution = faces.resolution();
+    let source_pixels = faces.build_face_pixels_rgba32f();
+    let mips = prefilter_specular_cubemap_mips_with_quality(
+        &source_pixels,
+        resolution,
+        PREFILTER_MIP_COUNT,
+        render_profile.prefilter_quality(),
+    );
+    let brdf_lut = build_brdf_lut_with_sample_count(
+        render_profile.brdf_lut_size(),
+        render_profile.brdf_sample_count(),
+    );
+    let diffuse_rgb = environment
+        .preview_irradiance_rgb()
+        .unwrap_or_else(|| faces.lambertian_irradiance());
+    EnvironmentPrefilterSidecar::new(
+        profile,
+        source_sha,
+        resolution,
+        mips,
+        brdf_lut,
+        render_profile.brdf_lut_size(),
+        diffuse_rgb,
+    )
 }
 
 pub(in crate::render) fn collect_environment_lighting(

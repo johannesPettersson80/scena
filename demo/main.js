@@ -13,10 +13,14 @@ import init, {
   resize,
   set_fixed_exposure_ev,
   tick,
-} from "./pkg/scena.js?v=20260523-scena-1.5.1-1";
+  transfer_renderer_to,
+} from "./pkg/scena.js?v=20260524-scena-1.5.1-1";
 
-const WASM_URL = "./pkg/scena_bg.wasm?v=20260523-scena-1.5.1-1";
-const MAX_CANVAS_DIMENSION = 1600;
+const WASM_URL = "./pkg/scena_bg.wasm?v=20260524-scena-1.5.1-1";
+const MAX_CANVAS_DIMENSION = 2048;
+const MIN_CANVAS_RENDER_SCALE = 1.5;
+const MAX_DEVICE_PIXEL_RATIO = 2;
+const MIN_RENDERED_FRAME_COUNT = 1;
 
 const MATERIALS = [
   ["matte", "Matte", "MaterialDesc::matte(Color::BLUE)"],
@@ -34,6 +38,7 @@ const MATERIALS = [
 ];
 
 const controllers = new Map();
+const byteCache = new Map();
 let wasmReady = null;
 let materialSelection = "chrome";
 
@@ -51,14 +56,25 @@ function setStatus(stage, text) {
 
 function canvasSize(canvas) {
   const rect = canvas.getBoundingClientRect();
-  let width = Math.max(1, Math.round(rect.width || canvas.clientWidth || 640));
-  let height = Math.max(1, Math.round(rect.height || canvas.clientHeight || 420));
+  const cssWidth = Math.max(1, Math.round(rect.width || canvas.clientWidth || 640));
+  const cssHeight = Math.max(1, Math.round(rect.height || canvas.clientHeight || 420));
+  const pixelRatio = Math.max(
+    MIN_CANVAS_RENDER_SCALE,
+    Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO),
+  );
+  let width = Math.max(1, Math.round(cssWidth * pixelRatio));
+  let height = Math.max(1, Math.round(cssHeight * pixelRatio));
   const scale = Math.min(1, MAX_CANVAS_DIMENSION / Math.max(width, height));
   width = Math.max(1, Math.round(width * scale));
   height = Math.max(1, Math.round(height * scale));
   if (canvas.width !== width) canvas.width = width;
   if (canvas.height !== height) canvas.height = height;
-  return { width, height };
+  canvas.dataset.renderScale = (width / cssWidth).toFixed(2);
+  return { width, height, cssWidth, cssHeight, renderScale: width / cssWidth };
+}
+
+function nextAnimationFrame() {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
 function applyCanvasBackground(scheme) {
@@ -90,7 +106,11 @@ async function runMaterialPresetRoute() {
   applyCanvasBackground("dark_studio");
   const app = await load_material_presets_scene(canvas.width, canvas.height);
   await attach_to_canvas(app, canvas);
+  resize(app, canvas.width, canvas.height);
   set_fixed_exposure_ev(app, 0.0);
+  await nextAnimationFrame();
+  tick(app, 0.016);
+  await nextAnimationFrame();
   tick(app, 0.016);
   setStatus(stage, "browser-rendered WebGL2 material showcase");
   window.__scenaShowcaseProbe = {
@@ -111,9 +131,17 @@ async function runMaterialPresetRoute() {
 }
 
 async function fetchBytes(path) {
-  const response = await fetch(path);
-  if (!response.ok) throw new Error(`${path} HTTP ${response.status}`);
-  return new Uint8Array(await response.arrayBuffer());
+  const url = new URL(path, window.location.href).toString();
+  let promise = byteCache.get(url);
+  if (!promise) {
+    promise = fetch(url).then(async (response) => {
+      if (!response.ok) throw new Error(`${path} HTTP ${response.status}`);
+      return response.arrayBuffer();
+    });
+    byteCache.set(url, promise);
+  }
+  const buffer = await promise;
+  return new Uint8Array(buffer);
 }
 
 class LiveStage {
@@ -128,8 +156,12 @@ class LiveStage {
     this.renderScheduled = false;
     this.replayActive = false;
     this.lastFrameAt = performance.now();
+    this.framesSinceAttach = 0;
+    this.activationGeneration = 0;
+    this.visibleGeneration = 0;
     this.replayTimer = null;
     this.pointerDown = false;
+    this.loadingPromise = null;
     this.wirePointer();
     this.wireResize();
   }
@@ -137,9 +169,13 @@ class LiveStage {
   async activate() {
     detachOtherStages(this.scene);
     this.active = true;
+    this.activationGeneration += 1;
+    this.visibleGeneration = 0;
+    this.framesSinceAttach = 0;
     if (!this.loaded) {
       await this.load();
-    } else if (!this.attached) {
+    }
+    if (!this.attached) {
       await this.attachCurrentCanvas();
     }
     if (this.scene === "connector") this.startConnectorLoop();
@@ -154,6 +190,19 @@ class LiveStage {
   }
 
   async load() {
+    if (this.loadingPromise) {
+      await this.loadingPromise;
+      return;
+    }
+    this.loadingPromise = this.loadNow();
+    try {
+      await this.loadingPromise;
+    } finally {
+      this.loadingPromise = null;
+    }
+  }
+
+  async loadNow() {
     const wasmReadyPromise = ensureWasm();
     setStatus(this.stage, "loading");
     try {
@@ -169,6 +218,44 @@ class LiveStage {
     }
   }
 
+  async prepareScene() {
+    if (this.loaded) return;
+    if (this.loadingPromise) {
+      await this.loadingPromise;
+      return;
+    }
+    if (this.scene === "hero") return;
+    this.loadingPromise = this.prepareSceneNow();
+    try {
+      await this.loadingPromise;
+    } finally {
+      this.loadingPromise = null;
+    }
+  }
+
+  async prepareSceneNow() {
+    const wasmReadyPromise = ensureWasm();
+    setStatus(this.stage, "preparing");
+    try {
+      if (this.scene === "material") {
+        this.app = await this.buildMaterial(materialSelection, wasmReadyPromise);
+      }
+      if (this.scene === "model") {
+        this.app = await this.buildModel(this.stage.dataset.sample, wasmReadyPromise);
+      }
+      if (this.scene === "connector") {
+        this.app = await this.buildConnector(wasmReadyPromise);
+        this.replayActive = false;
+        this.updateConnectorMarkers();
+      }
+      this.loaded = Boolean(this.app);
+      if (this.loaded) setStatus(this.stage, "ready");
+    } catch (error) {
+      console.error(`prepareScene ${this.scene} failed`, error);
+      setStatus(this.stage, `prepare failed: ${String(error).slice(0, 120)}`);
+    }
+  }
+
   async attach(app) {
     this.app = app;
     await this.attachCurrentCanvas();
@@ -176,15 +263,15 @@ class LiveStage {
 
   async attachCurrentCanvas() {
     if (!this.app) return;
+    transferWarmRendererTo(this);
     setStatus(this.stage, "rendering");
     const { width, height } = canvasSize(this.canvas);
-    if (this.canvas.width !== width || this.canvas.height !== height) {
-      this.canvas.width = width;
-      this.canvas.height = height;
-    }
     await attach_to_canvas(this.app, this.canvas);
     this.attached = true;
+    this.framesSinceAttach = 0;
     this.lastFrameAt = performance.now();
+    resize(this.app, width, height);
+    await nextAnimationFrame();
   }
 
   detach() {
@@ -198,32 +285,42 @@ class LiveStage {
   }
 
   async loadHero(wasmReadyPromise = ensureWasm()) {
+    const app = await this.buildHero(wasmReadyPromise);
+    await this.attach(app);
+  }
+
+  async buildHero(wasmReadyPromise = ensureWasm()) {
     const { width, height } = canvasSize(this.canvas);
     const bytesPromise = fetchBytes("/samples/connector-snap/connector_snap_assembly.glb");
     await wasmReadyPromise;
     const bytes = await bytesPromise;
-    const app = await load_gltf_with_view_from_bytes(bytes, width, height, true, -0.42, 0.28);
-    await this.attach(app);
+    return load_gltf_with_view_from_bytes(bytes, width, height, true, -0.42, 0.28);
   }
 
   async loadMaterial(preset, wasmReadyPromise = ensureWasm()) {
+    const app = await this.buildMaterial(preset, wasmReadyPromise);
+    await this.attach(app);
+  }
+
+  async buildMaterial(preset, wasmReadyPromise = ensureWasm()) {
     materialSelection = preset;
     this.stage.dataset.material = preset;
     const { width, height } = canvasSize(this.canvas);
     await wasmReadyPromise;
-    const app = await load_material_presets_scene(width, height);
-    await this.attach(app);
-    this.loaded = true;
-    this.requestRender();
+    return load_material_presets_scene(width, height);
   }
 
   async loadModel(path, wasmReadyPromise = ensureWasm()) {
+    const app = await this.buildModel(path, wasmReadyPromise);
+    await this.attach(app);
+  }
+
+  async buildModel(path, wasmReadyPromise = ensureWasm()) {
     const { width, height } = canvasSize(this.canvas);
     const bytesPromise = fetchBytes(path);
     await wasmReadyPromise;
     const bytes = await bytesPromise;
-    const app = await load_gltf_with_floor_from_bytes(bytes, width, height);
-    await this.attach(app);
+    return load_gltf_with_floor_from_bytes(bytes, width, height);
   }
 
   async loadDropped(bytes, label) {
@@ -238,6 +335,13 @@ class LiveStage {
   }
 
   async loadConnector(wasmReadyPromise = ensureWasm()) {
+    const app = await this.buildConnector(wasmReadyPromise);
+    await this.attach(app);
+    this.replayActive = false;
+    this.updateConnectorMarkers();
+  }
+
+  async buildConnector(wasmReadyPromise = ensureWasm()) {
     const { width, height } = canvasSize(this.canvas);
     const bytesPromise = Promise.all([
       fetchBytes("/samples/connector-snap/drive_unit.glb"),
@@ -245,10 +349,7 @@ class LiveStage {
     ]);
     await wasmReadyPromise;
     const [driveBytes, loadBytes] = await bytesPromise;
-    const app = await load_connector_snap_from_bytes(driveBytes, loadBytes, width, height);
-    await this.attach(app);
-    this.replayActive = false;
-    this.updateConnectorMarkers();
+    return load_connector_snap_from_bytes(driveBytes, loadBytes, width, height);
   }
 
   requestRender() {
@@ -262,7 +363,14 @@ class LiveStage {
         const dtSeconds = Math.min(0.08, Math.max(0.001, (now - this.lastFrameAt) / 1000));
         this.lastFrameAt = now;
         tick(this.app, dtSeconds);
+        this.framesSinceAttach += 1;
         this.updateConnectorMarkers();
+        if (this.framesSinceAttach < MIN_RENDERED_FRAME_COUNT) {
+          setStatus(this.stage, "rendering");
+          this.requestRender();
+          return;
+        }
+        this.visibleGeneration = this.activationGeneration;
         if (this.scene === "connector") {
           this.replayActive = connector_replay_active(this.app);
           if (this.replayActive) {
@@ -374,6 +482,7 @@ class LiveStage {
         scheduled = false;
         const { width, height } = canvasSize(this.canvas);
         if (!this.app) return;
+        if (!this.attached) return;
         try {
           resize(this.app, width, height);
           this.requestRender();
@@ -429,6 +538,22 @@ function detachOtherStages(activeScene) {
     controller.replayTimer = null;
     controller.detach();
   }
+}
+
+function transferWarmRendererTo(target) {
+  if (!target.app) return false;
+  for (const controller of controllers.values()) {
+    if (controller === target || !controller.app) continue;
+    try {
+      if (transfer_renderer_to(controller.app, target.app)) {
+        controller.attached = false;
+        return true;
+      }
+    } catch (error) {
+      console.error(`renderer transfer ${controller.scene} -> ${target.scene} failed`, error);
+    }
+  }
+  return false;
 }
 
 function wireSamples() {
@@ -535,6 +660,42 @@ function observeStages() {
   for (const stage of stages) observer.observe(stage);
 }
 
+function waitForHeroRendered() {
+  const hero = controllers.get("hero");
+  if (!hero) return Promise.resolve();
+  return new Promise((resolve) => {
+    const check = () => {
+      if (hero.visibleGeneration > 0) {
+        resolve();
+        return;
+      }
+      requestAnimationFrame(check);
+    };
+    check();
+  });
+}
+
+function idleCallback(callback, options) {
+  if ("requestIdleCallback" in window) {
+    return window.requestIdleCallback(callback, options);
+  }
+  return window.setTimeout(callback, 200);
+}
+
+async function schedulePrefetch() {
+  await waitForHeroRendered();
+  idleCallback(
+    () => {
+      (async () => {
+        for (const scene of ["material", "model", "connector"]) {
+          await controllers.get(scene)?.prepareScene();
+        }
+      })().catch((error) => console.error("showcase prefetch failed", error));
+    },
+    { timeout: 4000 },
+  );
+}
+
 function exposeProbe() {
   window.__scenaShowcaseProbe = {
     controllers() {
@@ -542,7 +703,13 @@ function exposeProbe() {
         scene: controller.scene,
         loaded: controller.loaded,
         active: controller.active,
+        attached: controller.attached,
+        prepared: controller.loaded && !controller.attached,
         status: controller.stage.querySelector(".stage-status")?.textContent || "",
+        renderScale: Number(controller.canvas.dataset.renderScale || "1"),
+        activationGeneration: controller.activationGeneration,
+        visibleGeneration: controller.visibleGeneration,
+        renderedForActivation: controller.visibleGeneration === controller.activationGeneration,
       }));
     },
     materialSelection() {
@@ -564,4 +731,5 @@ if (new URLSearchParams(window.location.search).get("sample") === "material-pres
   wireReplayButtons();
   observeStages();
   exposeProbe();
+  schedulePrefetch().catch((error) => console.error("schedulePrefetch failed", error));
 }

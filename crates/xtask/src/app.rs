@@ -12,6 +12,7 @@ mod doctor_render;
 mod doctor_scene_platform;
 mod doctor_visual_release;
 mod prelude;
+mod prerender_environment;
 mod release;
 #[cfg(test)]
 mod tests_01;

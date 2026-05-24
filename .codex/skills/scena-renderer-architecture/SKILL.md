@@ -34,10 +34,12 @@ description: Use when implementing or refactoring scena renderer architecture, p
 
 ## Required Checks
 
-Run:
+Run on `scena-builder`:
 
 ```bash
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
+ssh scena-builder 'cd "$HOME/projects/scena" && cargo fmt --check'
+ssh scena-builder 'cd "$HOME/projects/scena" && cargo clippy --all-targets -- -D warnings'
+ssh scena-builder 'cd "$HOME/projects/scena" && cargo test'
 ```
+
+Use `scena-remote-builder` to sync local uncommitted work before running these gates.

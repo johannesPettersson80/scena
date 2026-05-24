@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>scena 1.5 live showcase</title>
     <link rel="icon" href="data:," />
+    <link rel="modulepreload" href="/main.js?v=20260524-scena-1.5.1-1" />
+    <link rel="modulepreload" href="/pkg/scena.js?v=20260524-scena-1.5.1-1" />
+    <link rel="preload" href="/pkg/scena_bg.wasm?v=20260524-scena-1.5.1-1" as="fetch" type="application/wasm" crossorigin />
+    <link rel="preload" href="/samples/connector-snap/connector_snap_assembly.glb" as="fetch" type="model/gltf-binary" crossorigin />
+    <link rel="preload" href="/samples/environment/white_studio_03_1k.hdr.prefilter.bin" as="fetch" crossorigin />
+    <link rel="prefetch" href="/samples/connector-snap/drive_unit.glb" as="fetch" type="model/gltf-binary" crossorigin />
+    <link rel="prefetch" href="/samples/connector-snap/load_unit.glb" as="fetch" type="model/gltf-binary" crossorigin />
     <style>
       :root {
         color-scheme: light dark;
@@ -827,6 +834,6 @@ scene.mate(&drive, "shaft", &load, "hub")?;</code></pre>
       </section>
     </main>
 
-    <script type="module" src="./main.js?v=20260523-scena-1.5.1-1"></script>
+    <script type="module" src="./main.js?v=20260524-scena-1.5.1-1"></script>
   </body>
 </html>

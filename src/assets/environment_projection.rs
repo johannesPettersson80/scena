@@ -5,7 +5,7 @@
 
 use crate::scene::Vec3;
 
-use super::environment::DecodedEquirectangular;
+use super::environment_hdr::DecodedEquirectangular;
 
 /// Bilinear-sample a Radiance equirectangular HDR in the given world-space
 /// direction. Direction → spherical (longitude, latitude) → equirect UV.

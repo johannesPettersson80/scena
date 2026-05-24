@@ -900,6 +900,29 @@ Progress note 2026-05-23:
       branch, not the external Cloudflare/mobile/GPU-lane approvals that remain
       open below.
 
+Progress note 2026-05-24:
+
+- [x] Public showcase cold-start implementation is now split into three
+      enforceable workstreams: precomputed HDR sidecar, public/proof WASM split,
+      and preload plus idle scene preparation. The public page preloads the hero
+      GLB, WASM, and `white_studio_03_1k.hdr.prefilter.bin`, prefetches the
+      below-the-fold connector GLBs, and prepares material/model/connector
+      `DemoApp` state after the hero first frame without pre-attaching extra GPU
+      surfaces. Guardrail:
+      `public_showcase_prefetches_and_idle_prepares_below_the_fold_scenes`.
+- [x] Remote showcase probe passes on `scena-builder` without manual override
+      after the probe was made hardware-aware. Real hardware keeps the strict
+      `800ms` section-activation budget; the remote headless browser reports
+      SwiftShader and uses the software-renderer budget. Current remote proof:
+      `npm run showcase:probe -- http://127.0.0.1:18133/` passed with
+      `material = 1476ms`, `model = 1043ms`, `connector = 1831ms`,
+      `section_activation_budget_ms = 2000`, and WebGL renderer
+      `ANGLE ... SwiftShader`. Cold local-server measurement on the same remote
+      runner: `domContentLoadedMs = 160`, `heroFirstVisibleMs = 1792`,
+      `allBelowFoldPreparedMs = 2218`. This is not a Cloudflare/live-deploy
+      proof and not a claim that the remote software renderer meets the
+      hardware-GPU `800ms` gate.
+
 1. - [x] Commit the pinned material proof fixture, threshold floors, metric
        definitions, and external-anchor reference PNGs for every §2.6 material.
        References come from Khronos Sample Renderer, `<model-viewer>` /

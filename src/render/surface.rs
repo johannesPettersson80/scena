@@ -115,6 +115,60 @@ impl Renderer {
         Ok(())
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub async fn attach_surface_async(
+        &mut self,
+        surface: PlatformSurface,
+    ) -> Result<(), BuildError> {
+        let (kind, size, attachment) = surface.into_parts();
+        match attachment {
+            PlatformSurfaceAttachment::BrowserWebGpuCanvas(canvas)
+            | PlatformSurfaceAttachment::BrowserWebGl2Canvas(canvas) => {
+                let backend = backend_for_attached_surface(kind);
+                if self.target.backend != backend {
+                    return Err(BuildError::UnsupportedBackend { backend });
+                }
+                let gpu = self
+                    .gpu
+                    .as_mut()
+                    .ok_or(BuildError::UnsupportedBackend { backend })?;
+                let size = gpu.attach_browser_surface(backend, size, canvas)?;
+                let display_p3_canvas_configured = gpu.display_p3_canvas_configured();
+                if self.target.width != size.width || self.target.height != size.height {
+                    self.resize_target(size.width, size.height).map_err(|_| {
+                        BuildError::InvalidTargetSize {
+                            width: size.width,
+                            height: size.height,
+                        }
+                    })?;
+                }
+                self.capabilities = Capabilities::for_attached_gpu_backend(backend)
+                    .with_display_p3_output(display_p3_canvas_configured);
+                self.surface_lost = None;
+                self.last_rendered_generation = None;
+                Ok(())
+            }
+            PlatformSurfaceAttachment::Descriptor => self.recover_surface(
+                PlatformSurface::browser_webgl2_canvas(size.width, size.height),
+            ),
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn attach_surface_async(
+        &mut self,
+        surface: PlatformSurface,
+    ) -> Result<(), BuildError> {
+        self.recover_surface(surface)
+    }
+
+    pub fn release_surface(&mut self) {
+        if let Some(gpu) = &mut self.gpu {
+            gpu.release_surface();
+        }
+        self.last_rendered_generation = None;
+    }
+
     pub fn recover_context<F>(
         &mut self,
         assets: &Assets<F>,
@@ -159,6 +213,9 @@ impl Renderer {
         };
         let width = size.width;
         let height = size.height;
+        if self.target.width == width && self.target.height == height {
+            return Ok(());
+        }
         self.target.width = width;
         self.target.height = height;
         self.frame.resize(self.target.byte_len(), 0);

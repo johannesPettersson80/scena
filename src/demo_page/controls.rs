@@ -1,8 +1,11 @@
+#[cfg(feature = "proof-harness")]
 use std::io::Cursor;
 
 use wasm_bindgen::prelude::*;
 
-use crate::{AntiAliasing, AutoExposureConfig, Background, Color, PostBloomConfig};
+#[cfg(feature = "proof-harness")]
+use crate::{AntiAliasing, AutoExposureConfig, PostBloomConfig};
+use crate::{Background, Color};
 
 use super::DemoApp;
 
@@ -12,6 +15,7 @@ use super::DemoApp;
 /// `studio`, `dark_studio`, `neutral_gray`, `white`, `black`, `sky`,
 /// `transparent`.
 #[wasm_bindgen]
+#[cfg(feature = "proof-harness")]
 pub fn set_background_scheme(app: &mut DemoApp, scheme: &str) -> Result<(), JsValue> {
     let background = background_from_scheme(scheme)?;
     let renderer = app.renderer.as_mut().ok_or_else(|| {
@@ -81,6 +85,7 @@ fn color_to_css_rgb(color: Color) -> String {
 ///
 /// Accepted preset keys: `product_studio`, `indoor`, `outdoor`, `mixed`.
 #[wasm_bindgen]
+#[cfg(feature = "proof-harness")]
 pub fn set_auto_exposure_preset(app: &mut DemoApp, preset: &str) -> Result<(), JsValue> {
     let config = match preset.to_ascii_lowercase().as_str() {
         "product_studio" | "productstudio" | "product-studio" => {
@@ -117,6 +122,7 @@ pub fn set_fixed_exposure_ev(app: &mut DemoApp, ev: f32) -> Result<(), JsValue> 
 ///
 /// Accepted mode keys: `fxaa` (the default), `none`.
 #[wasm_bindgen]
+#[cfg(feature = "proof-harness")]
 pub fn set_anti_aliasing_mode(app: &mut DemoApp, mode: &str) -> Result<(), JsValue> {
     let setting = match mode.to_ascii_lowercase().as_str() {
         "fxaa" | "on" | "true" => AntiAliasing::Fxaa,
@@ -136,6 +142,7 @@ pub fn set_anti_aliasing_mode(app: &mut DemoApp, mode: &str) -> Result<(), JsVal
 
 /// Toggle the subtle post bloom pass on or off.
 #[wasm_bindgen]
+#[cfg(feature = "proof-harness")]
 pub fn set_bloom_enabled(app: &mut DemoApp, enabled: bool) -> Result<(), JsValue> {
     let renderer = app.renderer.as_mut().ok_or_else(|| {
         JsValue::from_str("attach_to_canvas must be called before set_bloom_enabled")
@@ -153,6 +160,7 @@ pub fn set_bloom_enabled(app: &mut DemoApp, enabled: bool) -> Result<(), JsValue
 /// Requires that `tick` has been called at least once after `attach_to_canvas`
 /// so the renderer holds a populated readback buffer.
 #[wasm_bindgen]
+#[cfg(feature = "proof-harness")]
 pub fn capture_png_bytes(app: &DemoApp) -> Result<Box<[u8]>, JsValue> {
     let renderer = app.renderer.as_ref().ok_or_else(|| {
         JsValue::from_str("attach_to_canvas must be called before capture_png_bytes")

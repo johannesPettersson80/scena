@@ -84,6 +84,7 @@ pub(crate) use crate::app::doctor_visual_release::{
     check_visual_fixture_metadata, fixture_block, jobs_with_continue_on_error_release_readiness,
     require_contains_in_xtask_app_tree,
 };
+pub(crate) use crate::app::prerender_environment::run_prerender_environment;
 pub(crate) use crate::app::release::{
     MIN_BENCHMARK_SAMPLE_COUNT, RELEASE_ARTIFACT_MAX_AGE_SECONDS,
     RELEASE_ARTIFACT_MAX_FUTURE_SKEW_SECONDS, RELEASE_LANE_ARTIFACT_SUFFIXES,

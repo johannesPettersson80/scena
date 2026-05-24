@@ -9,6 +9,8 @@ pub(super) use self::diagnostics::{
 };
 pub(super) use self::dynamic::collect_dynamic_light_from_world;
 pub(super) use self::environment::collect_environment_lighting;
+#[doc(hidden)]
+pub use self::environment::precompute_environment_sidecar;
 pub(in crate::render) use self::environment::{
     EnvironmentLightingProfile, PreparedEnvironmentCubemap, PreparedEnvironmentLighting,
 };

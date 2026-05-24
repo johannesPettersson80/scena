@@ -13,11 +13,19 @@ pub(crate) fn check_asset_api_contracts(root: &Path, findings: &mut Vec<Finding>
             "Result<TextureHandle, AssetError>",
             "pub fn create_material(&self, material: impl Into<MaterialDesc>) -> MaterialHandle",
             "pub fn default_environment(&self) -> EnvironmentHandle",
-            "pub async fn load_environment",
-            "pub fn environment(&self, handle: EnvironmentHandle) -> Option<EnvironmentDesc>",
             "pub fn try_geometry",
             "pub fn try_material",
             "pub fn try_texture",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ASSET-API",
+        "src/assets/environment_loading.rs",
+        &[
+            "pub async fn load_environment",
+            "pub fn environment(&self, handle: EnvironmentHandle) -> Option<EnvironmentDesc>",
             "pub fn try_environment",
         ],
     );

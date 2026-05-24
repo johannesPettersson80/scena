@@ -43,6 +43,8 @@ pub use self::output::{
     AntiAliasing, OrderIndependentTransparencyConfig, PostBloomConfig,
     ScreenSpaceAmbientOcclusionConfig, Tonemapper,
 };
+#[doc(hidden)]
+pub use self::prepare::precompute_environment_sidecar;
 pub use self::settings::{Profile, Quality, RenderMode, RendererOptions};
 
 #[derive(Debug)]
@@ -81,7 +83,7 @@ pub struct Renderer {
     hover_style: InteractionStyle,
     selection_style: InteractionStyle,
     environment: Option<EnvironmentHandle>,
-    environment_lighting_cache: Option<environment_cache::EnvironmentLightingCache>,
+    environment_lighting_cache: environment_cache::EnvironmentLightingCache,
     background_color: Color,
     auto_exposure: Option<AutoExposureConfig>,
     last_auto_exposure: Option<AutoExposureResult>,
@@ -214,34 +216,42 @@ impl Renderer {
                         0
                     };
             }
-            self.stats.ambient_occlusion_passes = match (
-                self.screen_space_ambient_occlusion,
-                self.depth_frame.as_ref(),
-            ) {
-                (Some(config), Some(depth_frame)) => {
-                    output::apply_screen_space_ambient_occlusion_rgba8(
+            if cpu_frame_postprocess_applies(self.target.backend) {
+                self.stats.ambient_occlusion_passes = match (
+                    self.screen_space_ambient_occlusion,
+                    self.depth_frame.as_ref(),
+                ) {
+                    (Some(config), Some(depth_frame)) => {
+                        output::apply_screen_space_ambient_occlusion_rgba8(
+                            self.target,
+                            &mut self.frame,
+                            depth_frame,
+                            config,
+                        )
+                    }
+                    _ => 0,
+                };
+                self.stats.bloom_passes = self.bloom.map_or(0, |bloom| {
+                    output::apply_bloom_rgba8(
                         self.target,
                         &mut self.frame,
-                        depth_frame,
-                        config,
+                        &mut self.bloom_scratch,
+                        bloom,
                     )
-                }
-                _ => 0,
-            };
-            self.stats.bloom_passes = self.bloom.map_or(0, |bloom| {
-                output::apply_bloom_rgba8(
-                    self.target,
-                    &mut self.frame,
-                    &mut self.bloom_scratch,
-                    bloom,
-                )
-            });
-            self.stats.fxaa_passes = match self.anti_aliasing {
-                AntiAliasing::None => 0,
-                AntiAliasing::Fxaa => {
-                    output::apply_fxaa_rgba8(self.target, &mut self.frame, &mut self.fxaa_scratch)
-                }
-            };
+                });
+                self.stats.fxaa_passes = match self.anti_aliasing {
+                    AntiAliasing::None => 0,
+                    AntiAliasing::Fxaa => output::apply_fxaa_rgba8(
+                        self.target,
+                        &mut self.frame,
+                        &mut self.fxaa_scratch,
+                    ),
+                };
+            } else {
+                self.stats.ambient_occlusion_passes = 0;
+                self.stats.bloom_passes = 0;
+                self.stats.fxaa_passes = 0;
+            }
             if auto_exposure_attempted || !self.apply_managed_auto_exposure_after_render() {
                 break;
             }
@@ -423,6 +433,10 @@ impl Renderer {
 
         Ok(prepared)
     }
+}
+
+fn cpu_frame_postprocess_applies(backend: Backend) -> bool {
+    !matches!(backend, Backend::WebGl2 | Backend::WebGpu)
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]

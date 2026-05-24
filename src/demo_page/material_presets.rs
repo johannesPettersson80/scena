@@ -115,6 +115,8 @@ async fn load_material_proof_scene(
         scene,
         camera,
         controls,
+        controls_dirty: false,
+        needs_prepare: true,
         renderer: None,
         connector_replay: None,
     })
@@ -252,6 +254,8 @@ pub async fn load_material_spheres_scene(
         scene,
         camera,
         controls,
+        controls_dirty: false,
+        needs_prepare: true,
         renderer: None,
         connector_replay: None,
     })
@@ -350,6 +354,8 @@ pub async fn load_single_material_sphere_scene(
         scene,
         camera,
         controls,
+        controls_dirty: false,
+        needs_prepare: true,
         renderer: None,
         connector_replay: None,
     })

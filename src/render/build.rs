@@ -253,7 +253,7 @@ impl Renderer {
             hover_style: InteractionStyle::default(),
             selection_style: InteractionStyle::default(),
             environment: None,
-            environment_lighting_cache: None,
+            environment_lighting_cache: Default::default(),
             background_color: Color::BLACK,
             auto_exposure: None,
             last_auto_exposure: None,

@@ -24,11 +24,25 @@ description: Use when adding or reviewing scena tests, visual proof, browser/WAS
 Do not declare a browser-visible or WebGL/WebGPU rendering fix from unit tests alone.
 Capture rendered output and assert pixels/canvas state or screenshot differences.
 
+The Hetzner `scena-builder` host is the default CPU compile/test runner, not a real GPU
+proof machine. Use it for Rust tests, doctor, headless CPU proof, and compile gates. Use a
+real GPU machine when the proof depends on hardware-accelerated WebGPU/WebGL2 behavior.
+
+## Remote Gate Rule
+
+Use `scena-remote-builder` for all cargo compile/test/doctor gates. Keep the remote checkout
+matched to the work being validated, then run command shapes such as:
+
+```bash
+ssh scena-builder 'cd "$HOME/projects/scena" && cargo test'
+ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --full'
+```
+
 ## Unit Test First Workflow
 
 1. Identify the contract from the spec/checklist.
 2. Add or update the smallest unit or integration test that fails on the missing behavior.
-3. Run the focused test and verify the failure is the expected failure.
+3. Run the focused test and verify the failure is the expected failure on `scena-builder`.
 4. Patch production code.
 5. Rerun the focused test, then the required cargo and doctor gates.
 

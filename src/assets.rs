@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use base64::Engine;
 use slotmap::{SlotMap, new_key_type};
 
 use crate::diagnostics::AssetError;
@@ -12,8 +11,12 @@ use crate::material::{Color, MaterialDesc, TextureColorSpace};
 use crate::scene::Transform;
 
 mod environment;
+mod environment_hdr;
+mod environment_loading;
 mod environment_preset;
 mod environment_projection;
+#[doc(hidden)]
+pub mod environment_sidecar;
 mod fetch;
 mod gc;
 mod gltf;
@@ -33,6 +36,11 @@ pub use environment::{
     WasmEnvironmentDelivery,
 };
 pub use environment_preset::{EnvironmentPreset, EnvironmentPresetMetadata};
+#[doc(hidden)]
+pub use environment_sidecar::{
+    EnvironmentPrefilterSidecar, EnvironmentSidecarHeader, EnvironmentSidecarProfile,
+    SIDECAR_FILE_SUFFIX, parse_sidecar_header,
+};
 #[cfg(target_arch = "wasm32")]
 pub use fetch::BrowserAssetFetcher;
 #[cfg(not(target_arch = "wasm32"))]
@@ -58,7 +66,6 @@ pub use texture::{
     TextureDesc, TextureFilter, TextureSamplerDesc, TextureSourceFormat, TextureWrap,
 };
 
-use self::environment::{DEFAULT_ENVIRONMENT_SOURCE_PATH, is_equirectangular_hdr_path};
 use self::texture::{TextureCacheKey, validate_texture_source_format};
 
 new_key_type! {
@@ -400,68 +407,6 @@ impl<F> Assets<F> {
         self.insert_environment(EnvironmentDesc::neutral_studio())
     }
 
-    pub async fn load_environment(
-        &self,
-        path: impl Into<AssetPath>,
-    ) -> Result<EnvironmentHandle, AssetError>
-    where
-        F: AssetFetcher,
-    {
-        let path = path.into();
-        if let Some(handle) = self.storage().environment_lookup.get(&path).copied() {
-            return Ok(handle);
-        }
-        let environment = if path.as_str() == DEFAULT_ENVIRONMENT_SOURCE_PATH {
-            EnvironmentDesc::neutral_studio()
-        } else if is_equirectangular_hdr_path(&path) {
-            if let Some(source_bytes) = embedded_environment_bytes(&path)? {
-                EnvironmentDesc::from_equirectangular_hdr_bytes(path.clone(), &source_bytes)?
-            } else {
-                match self.fetcher.fetch(&path).await {
-                    Ok(source_bytes) => EnvironmentDesc::from_equirectangular_hdr_bytes(
-                        path.clone(),
-                        &source_bytes,
-                    )?,
-                    Err(AssetError::NotFound { .. } | AssetError::Io { .. }) => {
-                        EnvironmentDesc::from_equirectangular_hdr_path(path.clone())
-                    }
-                    Err(error) => return Err(error),
-                }
-            }
-        } else {
-            return Err(AssetError::UnsupportedEnvironmentFormat {
-                path: path.as_str().to_string(),
-                help: "use Radiance .hdr equirectangular input for the M2 environment path",
-            });
-        };
-        Ok(self.insert_environment(environment))
-    }
-
-    pub fn environment(&self, handle: EnvironmentHandle) -> Option<EnvironmentDesc> {
-        self.storage().environments.get(handle).cloned()
-    }
-
-    pub fn try_environment(
-        &self,
-        handle: EnvironmentHandle,
-    ) -> Result<EnvironmentDesc, AssetError> {
-        self.environment(handle)
-            .ok_or(AssetError::EnvironmentHandleNotFound {
-                environment: handle,
-            })
-    }
-
-    fn insert_environment(&self, environment: EnvironmentDesc) -> EnvironmentHandle {
-        let cache_key = environment.source_path().clone();
-        let mut storage = self.storage();
-        if let Some(handle) = storage.environment_lookup.get(&cache_key) {
-            return *handle;
-        }
-        let handle = storage.environments.insert(environment);
-        storage.environment_lookup.insert(cache_key, handle);
-        handle
-    }
-
     fn storage(&self) -> MutexGuard<'_, AssetStorage> {
         self.storage
             .lock()
@@ -535,33 +480,6 @@ fn warn_optional_texture_fetch_failed(path: &AssetPath, reason: &str) {
     {
         let _ = (path, reason);
     }
-}
-
-fn embedded_environment_bytes(path: &AssetPath) -> Result<Option<Vec<u8>>, AssetError> {
-    if !path.as_str().starts_with("data:") {
-        return Ok(None);
-    }
-    let Some((_, encoded)) = path.as_str().split_once(";base64,") else {
-        return Err(AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason:
-                "only base64 Radiance HDR data URIs are supported for embedded environment decoding"
-                    .to_string(),
-        });
-    };
-    let encoded = encoded
-        .split_once('#')
-        .map_or(encoded, |(payload, _fragment)| payload);
-    let encoded = encoded
-        .split_once('?')
-        .map_or(encoded, |(payload, _query)| payload);
-    base64::engine::general_purpose::STANDARD
-        .decode(encoded)
-        .map(Some)
-        .map_err(|error| AssetError::Parse {
-            path: path.as_str().to_string(),
-            reason: format!("invalid embedded environment base64: {error}"),
-        })
 }
 
 const fn texture_format_has_cpu_decoder(source_format: TextureSourceFormat) -> bool {

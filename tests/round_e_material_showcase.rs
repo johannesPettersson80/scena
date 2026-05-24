@@ -115,6 +115,7 @@ fn round_e_material_demo_camera_matches_external_reference_fixture() {
 #[test]
 fn round_e_material_demo_uses_fixed_fixture_exposure() {
     let wasm_exports = include_str!("../src/demo_page/controls.rs");
+    let demo_page = include_str!("../src/demo_page.rs");
     let demo_js = include_str!("../demo/main.js");
 
     assert!(
@@ -122,6 +123,13 @@ fn round_e_material_demo_uses_fixed_fixture_exposure() {
             && wasm_exports.contains("renderer.clear_auto_exposure()"),
         "Round E material proof needs a browser-exported fixed exposure path; managed \
          auto exposure lifts the dark studio background and invalidates external-reference comparisons"
+    );
+    assert!(
+        demo_page.contains("renderer.clear_auto_exposure()")
+            && !demo_page
+                .contains("renderer.set_auto_exposure(AutoExposureConfig::product_studio())"),
+        "the public live showcase must use curated fixed exposure on the hot path; managed browser \
+         auto exposure samples the canvas and adds a second first-frame render"
     );
     assert!(
         demo_js.contains("set_fixed_exposure_ev")
@@ -321,15 +329,331 @@ fn public_showcase_detaches_inactive_webgl2_surfaces_before_loading_next_section
 
     assert!(
         wasm_exports.contains("pub fn detach_from_canvas")
-            && wasm_exports.contains("app.renderer = None"),
-        "the browser showcase needs an explicit detach export so a WebGL2 page with several \
-         sections does not keep stale surfaces alive"
+            && wasm_exports.contains("renderer.release_surface()")
+            && wasm_exports.contains("pub fn transfer_renderer_to")
+            && wasm_exports.contains("target.renderer = Some(renderer)")
+            && wasm_exports.contains("renderer surface reuse failed; rebuilding renderer")
+            && !wasm_exports.contains("app.renderer = None"),
+        "the browser showcase must detach only the WebGL2 surface and keep the renderer alive; \
+         dropping app.renderer discards pipelines, prefiltered IBL, and uploaded GPU resources"
     );
     assert!(
         demo_js.contains("detach_from_canvas")
             && demo_js.contains("detachOtherStages")
+            && demo_js.contains("transferWarmRendererTo(this)")
+            && demo_js.contains("transfer_renderer_to(controller.app, target.app)")
             && demo_js.contains("this.attached = false"),
         "the public showcase must detach inactive WebGL2 surfaces before activating the next \
          live section; otherwise later canvases fail with CreateSurface"
+    );
+}
+
+#[test]
+fn public_showcase_renders_canvases_at_device_resolution() {
+    let demo_js = include_str!("../demo/main.js");
+
+    assert!(
+        demo_js.contains("MAX_DEVICE_PIXEL_RATIO")
+            && demo_js.contains("MIN_CANVAS_RENDER_SCALE")
+            && demo_js.contains("window.devicePixelRatio")
+            && demo_js.contains("cssWidth * pixelRatio")
+            && demo_js.contains("MAX_CANVAS_DIMENSION = 2048"),
+        "the public showcase must size the WebGL canvas backing store above CSS pixels, capped \
+         at WebGL2's safe 2048 dimension, so material sphere edges do not look pixelated"
+    );
+}
+
+#[test]
+fn public_showcase_waits_for_warm_frames_before_rendered_status() {
+    let demo_js = include_str!("../demo/main.js");
+
+    assert!(
+        demo_js.contains("MIN_RENDERED_FRAME_COUNT")
+            && demo_js.contains("MIN_RENDERED_FRAME_COUNT = 1")
+            && demo_js.contains("framesSinceAttach")
+            && demo_js.contains("await nextAnimationFrame()")
+            && demo_js.contains("resize(this.app, width, height)")
+            && demo_js.contains("renderedForActivation"),
+        "the public showcase must resize after attach and render warm-up frames before flipping \
+         a live section to rendered; otherwise a blank first frame can be reported as rendered"
+    );
+    assert!(
+        !demo_js
+            .contains("resize(this.app, width, height);\n          this.framesSinceAttach = 0;"),
+        "resize observers must not reset the warm-frame counter after attach; otherwise a noisy \
+         resize loop can leave hero/model stuck at rendering forever"
+    );
+}
+
+#[test]
+fn demo_tick_does_not_dirty_camera_controls_when_nothing_changed() {
+    let wasm_exports = include_str!("../src/demo_page.rs");
+
+    assert!(
+        wasm_exports.contains("controls_dirty: bool")
+            && wasm_exports.contains("needs_prepare: bool")
+            && wasm_exports.contains("if app.controls_dirty")
+            && wasm_exports.contains("app.controls_dirty = false")
+            && wasm_exports.contains("if app.needs_prepare")
+            && wasm_exports.contains("app.needs_prepare = false")
+            && wasm_exports
+                .contains("app.controls_dirty = !matches!(action, OrbitControlAction::None)"),
+        "demo tick must not call OrbitControls::apply_to_scene every frame when the user has not \
+         moved the camera; that bumps the scene transform revision and forces full WebGL2 GPU \
+         prepare work on every warm frame"
+    );
+}
+
+#[test]
+fn same_size_resize_does_not_invalidate_prepared_gpu_state() {
+    let surface_rs = include_str!("../src/render/surface.rs");
+
+    assert!(
+        surface_rs.contains("if self.target.width == width && self.target.height == height")
+            && surface_rs.contains("return Ok(());"),
+        "same-size browser resize events must not bump target_revision; otherwise every \
+         attach/ResizeObserver cycle invalidates prepared WebGL2 resources and re-runs full GPU \
+         prepare"
+    );
+}
+
+#[test]
+fn public_showcase_keeps_environment_cache_renderer_owned() {
+    let environment_cache_rs = include_str!("../src/render/environment_cache.rs");
+
+    assert!(
+        environment_cache_rs.contains("EnvironmentLightingCacheKey")
+            && environment_cache_rs.contains("entries: HashMap")
+            && environment_cache_rs.contains("source_sha256")
+            && !environment_cache_rs.contains("static GLOBAL_ENVIRONMENT_LIGHTING_CACHE")
+            && !environment_cache_rs.contains("OnceLock")
+            && !environment_cache_rs.contains("Mutex::new"),
+        "prepared HDR IBL reuse must stay renderer-owned and keyed by environment identity/profile; \
+         a process-wide render singleton violates the renderer architecture contract"
+    );
+    assert!(
+        environment_cache_rs.contains("active: Option<ActiveEnvironmentLightingCache>")
+            && environment_cache_rs.contains("pub(super) fn clear_active")
+            && environment_cache_rs.contains("self.environment_lighting_cache.entries.get(&key)"),
+        "each public showcase section keeps its own renderer after surface detach; its \
+         renderer-owned environment cache must survive detach/re-attach without relying on a \
+         global singleton"
+    );
+}
+
+#[test]
+fn public_showcase_reuses_browser_asset_bytes() {
+    let demo_js = include_str!("../demo/main.js");
+
+    assert!(
+        demo_js.contains("const byteCache = new Map()")
+            && demo_js.contains("byteCache.get(url)")
+            && demo_js.contains("return new Uint8Array(buffer)")
+            && !demo_js.contains("buffer.slice(0)"),
+        "the public showcase should reuse fetched GLB bytes across sections instead of issuing \
+         duplicate downloads and multi-megabyte buffer copies for the same asset"
+    );
+}
+
+#[test]
+fn public_showcase_probe_checks_visible_canvas_pixels() {
+    let probe = include_str!("../scripts/probe_showcase_demo.mjs");
+
+    assert!(
+        probe.contains("assertCanvasVisible")
+            && probe.contains("foregroundRatio")
+            && probe.contains("renderScale")
+            && probe.contains("renderedForActivation")
+            && probe.contains("model showcase"),
+        "the showcase browser probe must reject black/blank live canvases and low-resolution \
+         material canvases instead of trusting stale status text alone"
+    );
+}
+
+#[test]
+fn browser_gpu_live_render_skips_cpu_frame_postprocess_hot_path() {
+    let render_rs = include_str!("../src/render.rs");
+
+    assert!(
+        render_rs.contains("fn cpu_frame_postprocess_applies")
+            && render_rs.contains("Backend::WebGl2 | Backend::WebGpu")
+            && render_rs.contains("self.stats.fxaa_passes = 0"),
+        "browser live WebGL2/WebGPU rendering must not run CPU frame post-processing over \
+         renderer.frame_rgba8(); the visible canvas is rendered by the GPU surface and CPU FXAA \
+         only burns first-frame time"
+    );
+}
+
+#[test]
+fn public_showcase_prefetches_and_idle_prepares_below_the_fold_scenes() {
+    let demo_html = include_str!("../demo/index.html");
+    let demo_js = include_str!("../demo/main.js");
+    let probe = include_str!("../scripts/probe_showcase_demo.mjs");
+
+    for required in [
+        r#"<link rel="modulepreload" href="/main.js"#,
+        r#"<link rel="modulepreload" href="/pkg/scena.js"#,
+        r#"<link rel="preload" href="/pkg/scena_bg.wasm"#,
+        r#"<link rel="preload" href="/samples/connector-snap/connector_snap_assembly.glb""#,
+        r#"<link rel="preload" href="/samples/environment/white_studio_03_1k.hdr.prefilter.bin""#,
+        r#"<link rel="prefetch" href="/samples/connector-snap/drive_unit.glb""#,
+        r#"<link rel="prefetch" href="/samples/connector-snap/load_unit.glb""#,
+    ] {
+        assert!(
+            demo_html.contains(required),
+            "public showcase must provide resource hint {required}"
+        );
+    }
+
+    for required in [
+        "async prepareScene()",
+        "async prepareSceneNow()",
+        "function schedulePrefetch()",
+        "requestIdleCallback",
+        "setTimeout(callback, 200)",
+        "controllers.get(scene)?.prepareScene()",
+        "schedulePrefetch().catch",
+        "prepared: controller.loaded && !controller.attached",
+    ] {
+        assert!(
+            demo_js.contains(required),
+            "public showcase must keep idle scene preparation contract {required}"
+        );
+    }
+
+    for required in [
+        "waitForPreparedControllers",
+        "HARDWARE_SECTION_ACTIVATION_BUDGET_MS",
+        "SOFTWARE_SECTION_ACTIVATION_BUDGET_MS",
+        "browserWebglRendererInfo",
+        "isSoftwareWebglRenderer",
+        "activation_ms",
+    ] {
+        assert!(
+            probe.contains(required),
+            "showcase probe must enforce preloaded activation contract {required}"
+        );
+    }
+}
+
+#[test]
+fn public_showcase_uses_hdr_sidecar_without_parallel_render_cache() {
+    let environment_loading_rs = include_str!("../src/assets/environment_loading.rs");
+    let environment_rs = include_str!("../src/assets/environment.rs");
+    let sidecar_rs = include_str!("../src/assets/environment_sidecar.rs");
+    let prepare_environment_rs = include_str!("../src/render/prepare/environment.rs");
+    let environment_cache_rs = include_str!("../src/render/environment_cache.rs");
+    let xtask_rs = include_str!("../crates/xtask/src/app/prerender_environment.rs");
+    let doctor_rs =
+        include_str!("../crates/xtask/src/app/doctor_easy_scene/showcase_performance.rs");
+
+    assert!(
+        environment_loading_rs.contains("try_load_environment_sidecar")
+            && environment_loading_rs.contains("sidecar_path_for_environment")
+            && environment_loading_rs.contains("from_equirectangular_hdr_sidecar_bytes")
+            && environment_loading_rs.contains("EnvironmentPrefilterSidecar::parse"),
+        "Assets::load_environment must prefer a matching .prefilter.bin sidecar before the \
+         renderer reaches the expensive runtime prefilter path"
+    );
+    assert!(
+        environment_rs.contains("source_sha256: Some(sha256_hex(source_bytes))")
+            && environment_rs.contains("from_equirectangular_hdr_sidecar_bytes")
+            && environment_rs.contains("prefilter_sidecar(")
+            && environment_rs.contains("prefilter_sidecar_identity"),
+        "EnvironmentDesc must carry source SHA and sidecar metadata as asset data, not as a \
+         global renderer singleton"
+    );
+    assert!(
+        environment_loading_rs.contains("environment_from_hdr_bytes")
+            && environment_loading_rs.contains("from_equirectangular_hdr_sidecar_bytes")
+            && environment_loading_rs
+                .contains("from_equirectangular_hdr_bytes(path, source_bytes)"),
+        "Assets::load_environment must avoid full HDR decode when a matching sidecar is present \
+         and fall back to runtime HDR decode only when the sidecar is absent or stale"
+    );
+    assert!(
+        sidecar_rs.contains("SIDECAR_FILE_SUFFIX")
+            && sidecar_rs.contains("EnvironmentSidecarHeader")
+            && sidecar_rs.contains("bytemuck")
+            && sidecar_rs.contains("source_sha256"),
+        "environment sidecar format must stay binary and SHA-pinned"
+    );
+    assert!(
+        prepare_environment_rs.contains("environment.prefilter_sidecar(sidecar_profile)")
+            && prepare_environment_rs.contains("load_prefilter_sidecar")
+            && prepare_environment_rs.contains("prefilter_specular_cubemap_mips_with_quality"),
+        "render prepare must consume sidecars through the existing environment_lighting_for_prepare \
+         path and only fall back to runtime GGX prefilter when the sidecar is absent"
+    );
+    assert!(
+        environment_cache_rs.contains("EnvironmentLightingCache")
+            && environment_cache_rs.contains("prefilter_sidecar_identity")
+            && !environment_cache_rs.contains("OnceLock")
+            && !environment_cache_rs.contains("Mutex::new"),
+        "sidecar-backed prepared lighting must populate the existing renderer-owned environment \
+         cache; no parallel global cache is allowed"
+    );
+    assert!(
+        xtask_rs.contains("run_prerender_environment")
+            && xtask_rs.contains("EnvironmentSidecarProfile::InteractiveWebGl2")
+            && xtask_rs.contains("precompute_environment_sidecar"),
+        "xtask prerender-environment must be the source of truth for regenerating the sidecar"
+    );
+    assert!(
+        doctor_rs.contains("DEMO-HDR-SIDECAR-CURRENT")
+            && doctor_rs.contains("white_studio_03_1k.hdr.prefilter.bin")
+            && doctor_rs.contains("header.source_sha256_hex()")
+            && doctor_rs.contains("InteractiveWebGl2"),
+        "doctor must validate the committed demo HDR sidecar header without regenerating it"
+    );
+}
+
+#[test]
+fn public_and_proof_wasm_bundles_are_split() {
+    let cargo_toml = include_str!("../Cargo.toml");
+    let build_script = include_str!("../scripts/build_demo_wasm.js");
+    let package_json = include_str!("../package.json");
+    let proof_js = include_str!("../demo/proof.js");
+    let doctor_rs =
+        include_str!("../crates/xtask/src/app/doctor_easy_scene/showcase_performance.rs");
+
+    assert!(
+        cargo_toml.contains("proof-harness = [\"demo-page\"]"),
+        "proof-only wasm exports must be behind a proof-harness feature"
+    );
+    assert!(
+        cargo_toml.contains("[profile.release]")
+            && cargo_toml.contains("lto = true")
+            && cargo_toml.contains("codegen-units = 1")
+            && cargo_toml.contains("panic = \"abort\""),
+        "public showcase release WASM must keep size-oriented release profile settings so cold \
+         browser instantiation does not regress"
+    );
+    assert!(
+        build_script.contains("outDir: \"demo/pkg\"")
+            && build_script.contains("features: \"demo-page\"")
+            && build_script.contains("outDir: \"demo/proof/pkg\"")
+            && build_script.contains("features: \"demo-page,proof-harness,browser-probe\""),
+        "demo:build must build the lean public bundle and proof:build must build the proof bundle"
+    );
+    assert!(
+        package_json.contains("\"proof:build\"")
+            && proof_js.contains("from \"./proof/pkg/scena.js")
+            && proof_js.contains("./proof/pkg/scena_bg.wasm"),
+        "the proof harness must import its own proof bundle instead of the public showcase bundle"
+    );
+    assert!(
+        doctor_rs.contains("PUBLIC-SHOWCASE-WASM-SIZE")
+            && doctor_rs.contains("PUBLIC_SHOWCASE_WASM_BASELINE_RAW_BYTES")
+            && doctor_rs.contains("PUBLIC_SHOWCASE_WASM_BASELINE_BROTLI_BYTES")
+            && doctor_rs.contains("PROOF_HARNESS_WASM_BASELINE_RAW_BYTES")
+            && doctor_rs.contains("PROOF_HARNESS_WASM_BASELINE_BROTLI_BYTES")
+            && doctor_rs.contains(".size.json")
+            && doctor_rs.contains("if !public_exists && !proof_exists")
+            && doctor_rs.contains("return;")
+            && doctor_rs.contains("brotli_bytes"),
+        "doctor must enforce separate raw and brotli WASM size budgets for generated public \
+         and proof bundles while still allowing doctor --full to run before npm builds in a \
+         clean checkout"
     );
 }

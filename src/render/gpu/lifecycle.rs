@@ -36,6 +36,15 @@ impl GpuDeviceState {
         }
     }
 
+    pub(in crate::render) fn release_surface(&mut self) {
+        self.surface = None;
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.browser_canvas = None;
+            self.display_p3_canvas_configured = false;
+        }
+    }
+
     pub(in crate::render) fn clear_prepared_resources_for_context_recovery(&mut self) {
         self.release_prepared_resources();
     }

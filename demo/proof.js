@@ -18,7 +18,7 @@ import init, {
   set_bloom_enabled,
   set_fixed_exposure_ev,
   tick,
-} from "./pkg/scena.js?v=20260523-scena-1.5.1-1";
+} from "./proof/pkg/scena.js?v=20260524-scena-1.5.1-1";
 
 const SAMPLE_GROUPS = [
   {
@@ -508,7 +508,7 @@ async function start() {
   beginPhase("initialising WASM");
   await init({
     module_or_path: new URL(
-      "./pkg/scena_bg.wasm?v=20260523-scena-1.5.1-1",
+      "./proof/pkg/scena_bg.wasm?v=20260524-scena-1.5.1-1",
       import.meta.url,
     ),
   });

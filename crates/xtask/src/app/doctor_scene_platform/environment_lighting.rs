@@ -77,25 +77,34 @@ pub(crate) fn check_equirectangular_hdr_environment_contracts(
         root,
         findings,
         "ARCH-ENV-HDR",
-        "src/assets/environment.rs",
+        "src/assets/environment_hdr.rs",
         &[
-            "EnvironmentSourceKind::EquirectangularHdr",
-            "pub fn from_equirectangular_hdr_path",
-            "from_equirectangular_hdr_bytes",
-            "is_equirectangular_hdr_path",
             "parse_equirectangular_hdr_dimensions",
             "parse_radiance_hdr_preview",
+            "decode_radiance_hdr",
         ],
     );
     require_contains(
         root,
         findings,
         "ARCH-ENV-HDR",
-        "src/assets.rs",
+        "src/assets/environment_loading.rs",
         &[
             "AssetError::UnsupportedEnvironmentFormat",
             "embedded_environment_bytes",
             "only base64 Radiance HDR data URIs",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-HDR",
+        "src/assets/environment.rs",
+        &[
+            "EnvironmentSourceKind::EquirectangularHdr",
+            "pub fn from_equirectangular_hdr_path",
+            "from_equirectangular_hdr_bytes",
+            "is_equirectangular_hdr_path",
         ],
     );
     require_contains(
@@ -148,7 +157,7 @@ pub(crate) fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mu
         &[
             "pub(in crate::render) struct PreparedEnvironmentStats",
             "cubemaps: 1",
-            "prefilter_passes: 1",
+            "prefilter_passes: u64::from(environment.prefilter_sidecar_identity().is_none())",
             "brdf_luts: 1",
             "environment.cubemap_faces().is_some()",
         ],

@@ -12,13 +12,17 @@ unit tests, rendered-output proof, browser checks, or release gates.
 
 ## Commands
 
-Run the narrowest relevant doctor during development and the full doctor before handoff:
+Run the narrowest relevant doctor during development and the full doctor before handoff on
+`scena-builder`:
 
 ```bash
-cargo run -p xtask -- doctor --docs
-cargo run -p xtask -- doctor --architecture
-cargo run -p xtask -- doctor --full
+ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --docs'
+ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --architecture'
+ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --full'
 ```
+
+Use `scena-remote-builder` before running doctor if local work must be synced to the remote
+checkout.
 
 ## Workflow
 

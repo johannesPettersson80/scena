@@ -35,22 +35,24 @@ developer commands, diagnostics, or documented contracts.
 Breaking public API changes are allowed before `1.0.0`, but they must update examples,
 docs, and migration notes when users can reasonably have adopted the previous API.
 
-## Required Local Gates
+## Required Remote Gates
 
-Run before release-ready handoff:
+Run on `scena-builder` before release-ready handoff:
 
 ```bash
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
-cargo run -p xtask -- doctor --full
-RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features
+ssh scena-builder 'cd "$HOME/projects/scena" && cargo fmt --check'
+ssh scena-builder 'cd "$HOME/projects/scena" && cargo clippy --all-targets -- -D warnings'
+ssh scena-builder 'cd "$HOME/projects/scena" && cargo test'
+ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --full'
+ssh scena-builder 'cd "$HOME/projects/scena" && RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features'
 ```
 
 For publish-readiness:
 
 ```bash
-cargo publish --dry-run
+ssh scena-builder 'cd "$HOME/projects/scena" && cargo publish --dry-run'
 ```
 
 An unrun required gate is not a pass. Record the exact blocker when a gate cannot run.
+Use `scena-remote-builder` to sync local uncommitted work to the builder before running
+these gates.

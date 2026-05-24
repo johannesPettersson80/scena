@@ -35,13 +35,15 @@ pub use assets::FileAssetFetcher;
 pub use assets::{
     AssetEvictionStats, AssetFetcher, AssetLoadControl, AssetLoadOptions, AssetLoadProgress,
     AssetLoadReport, AssetLoadWarning, AssetPath, AssetStoreId, Assets, DefaultAssetFetcher,
-    EnvironmentDerivative, EnvironmentDesc, EnvironmentHandle, EnvironmentPreset,
-    EnvironmentPresetMetadata, EnvironmentSourceKind, GeometryHandle, GltfDecoderPolicy,
+    EnvironmentDerivative, EnvironmentDesc, EnvironmentHandle, EnvironmentPrefilterSidecar,
+    EnvironmentPreset, EnvironmentPresetMetadata, EnvironmentSidecarHeader,
+    EnvironmentSidecarProfile, EnvironmentSourceKind, GeometryHandle, GltfDecoderPolicy,
     GltfExtensionDiagnostic, GltfExtensionStatus, MaterialHandle, MaterialPresetAssets,
-    MaterialPresetProvenance, MaterialVariantBinding, ModelHandle, RetainPolicy, SceneAsset,
-    SceneAssetAnchor, SceneAssetClip, SceneAssetLight, SceneAssetMesh, SceneAssetNode, TextureDesc,
-    TextureFilter, TextureHandle, TextureSamplerDesc, TextureSourceFormat, TextureWrap,
-    WasmEnvironmentDelivery, source_backed_material_preset_provenance,
+    MaterialPresetProvenance, MaterialVariantBinding, ModelHandle, RetainPolicy,
+    SIDECAR_FILE_SUFFIX, SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetLight,
+    SceneAssetMesh, SceneAssetNode, TextureDesc, TextureFilter, TextureHandle, TextureSamplerDesc,
+    TextureSourceFormat, TextureWrap, WasmEnvironmentDelivery, parse_sidecar_header,
+    source_backed_material_preset_provenance,
 };
 #[cfg(all(feature = "hot-reload", not(target_arch = "wasm32")))]
 pub use assets::{AssetHotReloadError, AssetHotReloadWatcher};

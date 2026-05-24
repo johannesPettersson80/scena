@@ -9,9 +9,9 @@ use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
 use crate::{
-    Assets, AutoExposureConfig, CameraKey, Color, FramingOptions, GridFloorOptions, NodeKey,
-    OrbitControls, PerspectiveCamera, PlatformSurface, PointerEvent, Renderer, Scene, SurfaceEvent,
-    Transform, Vec3,
+    Assets, BuildError, CameraKey, Color, EnvironmentHandle, FramingOptions, GridFloorOptions,
+    NodeKey, OrbitControlAction, OrbitControls, PerspectiveCamera, PlatformSurface, PointerEvent,
+    Renderer, Scene, SurfaceEvent, Transform, Vec3,
 };
 
 mod bounds;
@@ -84,6 +84,8 @@ pub struct DemoApp {
     scene: Scene,
     camera: CameraKey,
     controls: OrbitControls,
+    controls_dirty: bool,
+    needs_prepare: bool,
     renderer: Option<Renderer>,
     connector_replay: Option<ConnectorReplay>,
 }
@@ -199,6 +201,8 @@ pub async fn load_connector_snap_from_bytes(
         scene,
         camera,
         controls,
+        controls_dirty: false,
+        needs_prepare: true,
         renderer: None,
         connector_replay: Some(ConnectorReplay {
             drive_root,
@@ -223,31 +227,99 @@ pub async fn attach_to_canvas(app: &mut DemoApp, canvas: HtmlCanvasElement) -> R
     let total_start = now_ms();
     let width = canvas.width();
     let height = canvas.height();
-    let surface = PlatformSurface::browser_webgl2_canvas_element(canvas, width, height);
-    let mut renderer = Renderer::from_surface_async(surface)
-        .await
-        .map_err(|err| JsValue::from_str(&format!("renderer creation failed: {err:?}")))?;
-    let step_start = log_timing("Renderer::from_surface_async(WebGL2)", total_start);
-    if demo_environment_enabled() {
-        let environment = app
-            .assets
-            .load_environment(DEMO_HDR_ENVIRONMENT)
+    let make_surface =
+        || PlatformSurface::browser_webgl2_canvas_element(canvas.clone(), width, height);
+    let environment = if demo_environment_enabled() {
+        Some(
+            app.assets
+                .load_environment(DEMO_HDR_ENVIRONMENT)
+                .await
+                .map_err(|err| JsValue::from_str(&format!("load_environment failed: {err:?}")))?,
+        )
+    } else {
+        None
+    };
+    let step_start = if let Some(mut renderer) = app.renderer.take() {
+        let before = renderer.stats();
+        match renderer.attach_surface_async(make_surface()).await {
+            Ok(()) => {
+                let after = renderer.stats();
+                if before.target_width != after.target_width
+                    || before.target_height != after.target_height
+                {
+                    app.needs_prepare = true;
+                }
+                configure_demo_renderer(&mut renderer, environment);
+                app.renderer = Some(renderer);
+                log_timing("Renderer::attach_surface_async(WebGL2)", total_start)
+            }
+            Err(err) => {
+                warn_renderer_rebuild_after_attach_failure(&err);
+                let mut renderer = Renderer::from_surface_async(make_surface()).await.map_err(
+                    |build_err| {
+                        JsValue::from_str(&format!(
+                            "renderer surface attach failed: {err:?}; fallback creation failed: {build_err:?}"
+                        ))
+                    },
+                )?;
+                configure_demo_renderer(&mut renderer, environment);
+                app.renderer = Some(renderer);
+                app.needs_prepare = true;
+                log_timing("Renderer::from_surface_async(WebGL2 fallback)", total_start)
+            }
+        }
+    } else {
+        let mut renderer = Renderer::from_surface_async(make_surface())
             .await
-            .map_err(|err| JsValue::from_str(&format!("load_environment failed: {err:?}")))?;
-        renderer.set_environment(environment);
-    }
-    renderer.set_background_color(DEMO_BACKGROUND);
-    renderer.set_exposure_ev(-0.35);
-    renderer.set_auto_exposure(AutoExposureConfig::product_studio());
-    app.renderer = Some(renderer);
+            .map_err(|err| JsValue::from_str(&format!("renderer creation failed: {err:?}")))?;
+        let step_start = log_timing("Renderer::from_surface_async(WebGL2)", total_start);
+        configure_demo_renderer(&mut renderer, environment);
+        app.renderer = Some(renderer);
+        step_start
+    };
     log_timing("attach_to_canvas setup", step_start);
     log_timing("attach_to_canvas total", total_start);
     Ok(())
 }
 
+fn configure_demo_renderer(renderer: &mut Renderer, environment: Option<EnvironmentHandle>) {
+    if let Some(environment) = environment {
+        renderer.set_environment(environment);
+    } else {
+        renderer.clear_environment();
+    }
+    renderer.set_background_color(DEMO_BACKGROUND);
+    renderer.set_exposure_ev(-0.35);
+    renderer.clear_auto_exposure();
+}
+
+fn warn_renderer_rebuild_after_attach_failure(err: &BuildError) {
+    #[cfg(target_arch = "wasm32")]
+    web_sys::console::warn_1(&JsValue::from_str(&format!(
+        "renderer surface reuse failed; rebuilding renderer: {err:?}"
+    )));
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = err;
+}
+
 #[wasm_bindgen]
 pub fn detach_from_canvas(app: &mut DemoApp) {
-    app.renderer = None;
+    if let Some(renderer) = app.renderer.as_mut() {
+        renderer.release_surface();
+    }
+}
+
+#[wasm_bindgen]
+pub fn transfer_renderer_to(source: &mut DemoApp, target: &mut DemoApp) -> bool {
+    if target.renderer.is_some() {
+        return false;
+    }
+    let Some(renderer) = source.renderer.take() else {
+        return false;
+    };
+    target.renderer = Some(renderer);
+    target.needs_prepare = true;
+    true
 }
 
 #[wasm_bindgen]
@@ -266,7 +338,11 @@ pub fn forward_pointer_event(
         "wheel" => PointerEvent::wheel(x, y, delta_y),
         _ => return,
     };
-    let _ = app.controls.handle_pointer(event);
+    let action = app.controls.handle_pointer(event);
+    app.controls_dirty = !matches!(action, OrbitControlAction::None);
+    if app.controls_dirty {
+        app.needs_prepare = true;
+    }
 }
 
 #[wasm_bindgen]
@@ -274,9 +350,14 @@ pub fn resize(app: &mut DemoApp, width: u32, height: u32) -> Result<(), JsValue>
     let Some(renderer) = app.renderer.as_mut() else {
         return Ok(());
     };
+    let before = renderer.stats();
     renderer
         .handle_surface_event(SurfaceEvent::Resize { width, height })
         .map_err(|err| JsValue::from_str(&format!("resize failed: {err:?}")))?;
+    let after = renderer.stats();
+    if before.target_width != after.target_width || before.target_height != after.target_height {
+        app.needs_prepare = true;
+    }
     Ok(())
 }
 
@@ -288,6 +369,7 @@ pub fn replay_connector_snap(app: &mut DemoApp) -> Result<(), JsValue> {
         app.scene
             .set_transform(replay.drive_root, replay.start)
             .map_err(|err| JsValue::from_str(&format!("replay reset failed: {err:?}")))?;
+        app.needs_prepare = true;
     }
     Ok(())
 }
@@ -332,17 +414,24 @@ pub fn connector_marker_positions(
 pub fn tick(app: &mut DemoApp, dt_seconds: f64) -> Result<(), JsValue> {
     let total_start = now_ms();
     app.apply_connector_replay(dt_seconds)?;
-    app.controls
-        .apply_to_scene(&mut app.scene, app.camera)
-        .map_err(|err| JsValue::from_str(&format!("apply_to_scene failed: {err:?}")))?;
+    if app.controls_dirty {
+        app.controls
+            .apply_to_scene(&mut app.scene, app.camera)
+            .map_err(|err| JsValue::from_str(&format!("apply_to_scene failed: {err:?}")))?;
+        app.controls_dirty = false;
+        app.needs_prepare = true;
+    }
     let step_start = log_timing("OrbitControls::apply_to_scene", total_start);
     let renderer = app
         .renderer
         .as_mut()
         .ok_or_else(|| JsValue::from_str("attach_to_canvas must be called before tick"))?;
-    renderer
-        .prepare_with_assets(&mut app.scene, &app.assets)
-        .map_err(|err| JsValue::from_str(&format!("prepare failed: {err:?}")))?;
+    if app.needs_prepare {
+        renderer
+            .prepare_with_assets(&mut app.scene, &app.assets)
+            .map_err(|err| JsValue::from_str(&format!("prepare failed: {err:?}")))?;
+        app.needs_prepare = false;
+    }
     let step_start = log_timing("Renderer::prepare_with_assets", step_start);
     renderer
         .render(&app.scene, app.camera)
@@ -391,6 +480,7 @@ impl DemoApp {
             .map_err(|err| {
                 JsValue::from_str(&format!("connector replay transform failed: {err:?}"))
             })?;
+        self.needs_prepare = true;
         if raw >= 1.0 {
             replay.active = false;
             self.scene
@@ -398,6 +488,7 @@ impl DemoApp {
                 .map_err(|err| {
                     JsValue::from_str(&format!("connector replay finish failed: {err:?}"))
                 })?;
+            self.needs_prepare = true;
         }
         Ok(())
     }

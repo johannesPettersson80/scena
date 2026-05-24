@@ -8,6 +8,7 @@ pub(crate) fn run() {
         Ok(Command::ClaimAudit) => run_claim_audit(),
         Ok(Command::ReleaseLaneArtifact(lane)) => run_release_lane_artifact(&lane),
         Ok(Command::ReleaseReadiness) => run_release_readiness(),
+        Ok(Command::PrerenderEnvironment { input }) => run_prerender_environment(&input),
         Ok(Command::StageReleaseArtifacts { input, output }) => {
             run_stage_release_artifacts(&input, &output)
         }
@@ -49,6 +50,7 @@ pub(crate) enum Command {
     ClaimAudit,
     ReleaseLaneArtifact(String),
     ReleaseReadiness,
+    PrerenderEnvironment { input: String },
     StageReleaseArtifacts { input: String, output: String },
     VisualProof(VisualProofCommand),
     Help,
@@ -160,6 +162,15 @@ pub(crate) fn parse_command(args: Vec<String>) -> Result<Command, String> {
         return Err("release-readiness accepts no arguments".to_string());
     }
 
+    if args.first().map(String::as_str) == Some("prerender-environment") {
+        if args.len() == 2 {
+            return Ok(Command::PrerenderEnvironment {
+                input: args[1].clone(),
+            });
+        }
+        return Err("prerender-environment expects exactly one HDR input path".to_string());
+    }
+
     if args.first().map(String::as_str) == Some("stage-release-artifacts") {
         if args.len() == 3 {
             return Ok(Command::StageReleaseArtifacts {
@@ -189,7 +200,7 @@ pub(crate) fn parse_command(args: Vec<String>) -> Result<Command, String> {
 
     if args.first().map(String::as_str) != Some("doctor") {
         return Err(format!(
-            "unknown command '{}'; expected 'doctor', 'asset-doctor', 'architecture-map', 'claim-audit', 'release-lane-artifact', 'release-readiness', 'stage-release-artifacts', or 'visual-proof'",
+            "unknown command '{}'; expected 'doctor', 'asset-doctor', 'architecture-map', 'claim-audit', 'release-lane-artifact', 'release-readiness', 'prerender-environment', 'stage-release-artifacts', or 'visual-proof'",
             args.first().map(String::as_str).unwrap_or("")
         ));
     }
@@ -215,6 +226,6 @@ pub(crate) fn parse_command(args: Vec<String>) -> Result<Command, String> {
 
 pub(crate) fn print_usage() {
     println!(
-        "Usage:\n  cargo run -p xtask -- doctor --docs\n  cargo run -p xtask -- doctor --architecture\n  cargo run -p xtask -- doctor --full\n  cargo run -p xtask -- asset-doctor <asset.gltf|asset.glb>\n  cargo run -p xtask -- architecture-map\n  cargo run -p xtask -- claim-audit\n  cargo run -p xtask -- release-lane-artifact <lane>\n  cargo run -p xtask -- release-readiness\n  cargo run -p xtask -- stage-release-artifacts <downloaded-root> <canonical-output-root>\n  cargo run -p xtask -- visual-proof --all-release-lanes\n  cargo run -p xtask -- visual-proof <lane> -- <command...>"
+        "Usage:\n  cargo run -p xtask -- doctor --docs\n  cargo run -p xtask -- doctor --architecture\n  cargo run -p xtask -- doctor --full\n  cargo run -p xtask -- asset-doctor <asset.gltf|asset.glb>\n  cargo run -p xtask -- architecture-map\n  cargo run -p xtask -- claim-audit\n  cargo run -p xtask -- release-lane-artifact <lane>\n  cargo run -p xtask -- release-readiness\n  cargo run -p xtask -- prerender-environment <input.hdr>\n  cargo run -p xtask -- stage-release-artifacts <downloaded-root> <canonical-output-root>\n  cargo run -p xtask -- visual-proof --all-release-lanes\n  cargo run -p xtask -- visual-proof <lane> -- <command...>"
     );
 }

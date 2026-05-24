@@ -22,6 +22,9 @@ description: Use when working with scena Git state, branches, commits, tags, Git
   paths have been compared against the target remote state.
 - If no GitHub remote exists yet, say that GitHub proof is unavailable and continue with
   local git evidence.
+- Treat the Hetzner build host as separate execution state. When reporting proof from
+  `scena-builder`, include both the local/remote GitHub evidence that matters and the remote
+  builder checkout state.
 
 ## Standard Evidence
 
@@ -49,11 +52,22 @@ gh run list --limit 10
 1. Fetch the live issue or PR before accepting its summary.
 2. Verify the claim in the current checkout before patching.
 3. Keep unrelated dirty files untouched.
-4. Run the required local gates and any feature-specific proof.
+4. Run the required cargo/doctor gates on `scena-builder` and any feature-specific proof.
 5. If asked to push or merge, verify the remote branch and monitor GitHub checks until the
    deciding run has completed.
 6. If asked to close an issue, leave a concise comment with the fix commit, version or
    release if applicable, and verification evidence.
+
+## Remote Builder Evidence
+
+Use `scena-remote-builder` before remote gates. For git-sensitive work, capture:
+
+```bash
+ssh scena-builder 'git -C "$HOME/projects/scena" status --short --branch'
+ssh scena-builder 'git -C "$HOME/projects/scena" log --oneline --decorate -1'
+```
+
+Do not confuse the remote builder checkout with GitHub branch state or the local checkout.
 
 ## Release Follow-Through
 

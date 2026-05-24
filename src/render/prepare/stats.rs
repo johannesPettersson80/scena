@@ -112,7 +112,7 @@ pub(in crate::render) fn collect_environment_prepare_stats(
         {
             PreparedEnvironmentStats {
                 cubemaps: 1,
-                prefilter_passes: 1,
+                prefilter_passes: u64::from(environment.prefilter_sidecar_identity().is_none()),
                 brdf_luts: 1,
             }
         }

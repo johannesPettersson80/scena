@@ -107,6 +107,51 @@ pub(in crate::render) async fn request_browser_surface_gpu(
     Ok(state)
 }
 
+#[cfg(target_arch = "wasm32")]
+impl GpuDeviceState {
+    pub(in crate::render) fn attach_browser_surface(
+        &mut self,
+        backend: Backend,
+        size: crate::platform::SurfaceSize,
+        canvas: web_sys::HtmlCanvasElement,
+    ) -> Result<crate::platform::SurfaceSize, BuildError> {
+        if backend == Backend::WebGl2 {
+            prepare_webgl2_opaque_canvas_context(&canvas);
+        }
+        if backend == Backend::WebGpu && self.output_color_space == OutputColorSpace::DisplayP3 {
+            super::browser_color_space::prepare_browser_canvas_output_color_space(
+                backend,
+                &canvas,
+                self.output_color_space,
+            );
+        }
+        let surface = create_browser_canvas_surface(&self.instance, backend, &canvas)?;
+        let effective_size = clamp_surface_size_to_adapter_limits(
+            size,
+            self.device.limits().max_texture_dimension_2d,
+        );
+        let mut config = surface
+            .get_default_config(&self.adapter, effective_size.width, effective_size.height)
+            .ok_or(BuildError::SurfaceUnsupported { backend })?;
+        let capabilities = surface.get_capabilities(&self.adapter);
+        if capabilities
+            .alpha_modes
+            .contains(&wgpu::CompositeAlphaMode::Opaque)
+        {
+            config.alpha_mode = wgpu::CompositeAlphaMode::Opaque;
+        }
+        surface.configure(&self.device, &config);
+        if effective_size != size {
+            canvas.set_width(effective_size.width);
+            canvas.set_height(effective_size.height);
+        }
+        self.surface = Some(GpuSurfaceState { surface, config });
+        self.browser_canvas = Some(canvas);
+        self.refresh_browser_canvas_output_color_space(backend);
+        Ok(effective_size)
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 async fn request_surface_gpu(
     backend: Backend,
