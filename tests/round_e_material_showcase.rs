@@ -386,6 +386,22 @@ fn public_showcase_waits_for_warm_frames_before_rendered_status() {
 }
 
 #[test]
+fn public_showcase_connector_replay_keeps_grid_lines_out_of_prepare_hot_path() {
+    let wasm_exports = include_str!("../src/demo_page.rs");
+
+    assert!(
+        wasm_exports.contains("let floor = scene\n        .add_grid_floor(")
+            && wasm_exports.contains("scene\n        .set_visible(floor.grid, false)")
+            && wasm_exports.contains(
+                "connector replay keeps the animated scene on the dynamic GPU prepare path"
+            ),
+        "the public connector replay must not keep decorative grid-line primitives visible during \
+         animation; line primitives are intentionally not depth-prepass eligible, and their \
+         presence forces a full WebGL2 prepare on every connector tick"
+    );
+}
+
+#[test]
 fn demo_tick_does_not_dirty_camera_controls_when_nothing_changed() {
     let wasm_exports = include_str!("../src/demo_page.rs");
 

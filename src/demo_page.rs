@@ -153,7 +153,7 @@ pub async fn load_connector_snap_from_bytes(
     let connector_bounds =
         union_optional_bounds(Some(drive_replay_bounds), load.bounds_world(&scene))
             .ok_or_else(|| JsValue::from_str("connector scene has no renderable bounds"))?;
-    scene
+    let floor = scene
         .add_grid_floor(
             &assets,
             GridFloorOptions::new()
@@ -162,6 +162,12 @@ pub async fn load_connector_snap_from_bytes(
                 .line_spacing(0.24),
         )
         .map_err(|err| JsValue::from_str(&format!("add_grid_floor failed: {err:?}")))?;
+    // The connector replay keeps the animated scene on the dynamic GPU prepare path.
+    // Grid lines expand to non-depth-prepass helper primitives, which force a full
+    // WebGL2 prepare when left visible during every replay transform update.
+    scene
+        .set_visible(floor.grid, false)
+        .map_err(|err| JsValue::from_str(&format!("hide connector grid line failed: {err:?}")))?;
 
     let camera = scene
         .add_perspective_camera(

@@ -73,6 +73,17 @@ pub(super) fn check_showcase_performance_contracts(root: &Path, findings: &mut V
             "--strip-producers",
         ],
     );
+    require_contains(
+        root,
+        findings,
+        "PUBLIC-SHOWCASE-CONNECTOR-REPLAY-HOT-PATH",
+        "src/demo_page.rs",
+        &[
+            "let floor = scene\n        .add_grid_floor(",
+            "scene\n        .set_visible(floor.grid, false)",
+            "connector replay keeps the animated scene on the dynamic GPU prepare path",
+        ],
+    );
 }
 
 fn check_demo_hdr_sidecar_current(root: &Path, findings: &mut Vec<Finding>) {

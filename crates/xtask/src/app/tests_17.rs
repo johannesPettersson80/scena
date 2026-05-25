@@ -179,7 +179,7 @@ pub(crate) fn write_expanded_material_preset_doctor_fixture(fixture_root: &Path)
     append_fixture_text(
         fixture_root,
         "src/demo_page.rs",
-        " samples/environment/white_studio_03_1k.hdr ",
+        " samples/environment/white_studio_03_1k.hdr let floor = scene\n        .add_grid_floor( scene\n        .set_visible(floor.grid, false) connector replay keeps the animated scene on the dynamic GPU prepare path ",
     );
     append_fixture_text(
         fixture_root,
@@ -247,6 +247,37 @@ pub(crate) fn write_expanded_material_preset_doctor_fixture(fixture_root: &Path)
         "sample_count_for_roughness(0.28, EnvironmentPrefilterQuality::InteractiveWebGl2) 2 => 96 _ => 192",
     )
     .expect("environment prefilter fixture");
+}
+
+#[test]
+pub(crate) fn showcase_performance_doctor_rejects_connector_grid_line_replay_hot_path() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root =
+        root.join("target/xtask-doctor-regressions/connector-grid-line-replay-hot-path");
+    write_easy_scene_fixture(
+        &fixture_root,
+        &expanded_material_preset_guide(),
+        "frame_bounds(()) bounds_for_transforms add_grid_floor FramingOptions::new().azimuth_elevation(-27.5, 17.8)",
+        r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
+    );
+    write_expanded_material_preset_doctor_fixture(&fixture_root);
+    fs::write(
+        fixture_root.join("src/demo_page.rs"),
+        "samples/environment/white_studio_03_1k.hdr let _floor = scene.add_grid_floor(&assets, GridFloorOptions::new())?",
+    )
+    .expect("bad demo page fixture");
+    let mut findings = Vec::new();
+
+    check_easy_scene_setup_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "PUBLIC-SHOWCASE-CONNECTOR-REPLAY-HOT-PATH"
+                && finding.message.contains("set_visible(floor.grid, false)")
+        }),
+        "doctor must reject connector replay scenes that leave grid-line primitives visible on \
+         the animated hot path: {findings:?}",
+    );
 }
 
 fn copy_repo_fixture_file(fixture_root: &Path, rel: &str) {
