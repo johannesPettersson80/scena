@@ -1,6 +1,26 @@
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::{Diagnostic, RendererStats};
+use crate::{AssetLoadReportV1, Diagnostic, RendererStats};
+
+pub const SCENE_HOST_ASSET_IMPORT_SCHEMA_V1: &str = "scena.scene_host_asset_import.v1";
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneHostAssetImportReportV1 {
+    pub schema: String,
+    pub import: u64,
+    pub asset_load_report: AssetLoadReportV1,
+}
+
+impl SceneHostAssetImportReportV1 {
+    pub fn new(import: u64, asset_load_report: AssetLoadReportV1) -> Self {
+        Self {
+            schema: SCENE_HOST_ASSET_IMPORT_SCHEMA_V1.to_owned(),
+            import,
+            asset_load_report,
+        }
+    }
+}
 
 pub(super) fn diagnostics_json(diagnostics: &[Diagnostic]) -> serde_json::Value {
     serde_json::Value::Array(

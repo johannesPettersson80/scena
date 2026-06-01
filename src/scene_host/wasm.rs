@@ -8,7 +8,7 @@ use crate::{
 
 #[wasm_bindgen]
 pub struct SceneHost {
-    core: SceneHostCore,
+    pub(super) core: SceneHostCore,
 }
 
 #[derive(Debug, Deserialize)]
@@ -537,7 +537,7 @@ fn render_outcome_json(outcome: RenderOutcome) -> String {
     .to_string()
 }
 
-fn js_error(error: impl Into<SceneHostError>) -> JsValue {
+pub(super) fn js_error(error: impl Into<SceneHostError>) -> JsValue {
     let error = error.into();
     let object = js_sys::Object::new();
     let _ = js_sys::Reflect::set(

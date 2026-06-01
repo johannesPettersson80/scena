@@ -1,37 +1,53 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use serde::{Deserialize, Serialize};
+
 use crate::diagnostics::AssetError;
 
-use super::AssetPath;
+use super::{AssetPath, SceneAsset, SceneAssetGeometrySummary};
+
+pub const ASSET_LOAD_REPORT_SCHEMA_V1: &str = "scena.asset_load_report.v1";
 
 #[derive(Debug, Clone)]
 pub struct AssetLoadControl {
     cancelled: Arc<AtomicBool>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AssetLoadReport<T> {
     pub(super) asset: T,
     pub(super) path: AssetPath,
     pub(super) cache_hit: bool,
     pub(super) fetched_bytes: usize,
     pub(super) external_buffers: usize,
+    pub(super) external_images: usize,
     pub(super) warnings: Vec<AssetLoadWarning>,
     pub(super) progress_events: Vec<AssetLoadProgress>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct AssetLoadOptions {
     strict_textures: bool,
+    strict_external_resources: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AssetLoadWarning {
-    ExternalImageMissing { path: AssetPath, reason: String },
+    ExternalBufferMissing {
+        path: AssetPath,
+        index: usize,
+        reason: String,
+    },
+    ExternalImageMissing {
+        path: AssetPath,
+        reason: String,
+    },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AssetLoadProgress {
     LoadStarted {
         path: AssetPath,
@@ -58,11 +74,67 @@ pub enum AssetLoadProgress {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub(super) struct AssetLoadTelemetry {
     pub(super) fetched_bytes: usize,
     pub(super) external_buffers: usize,
+    pub(super) external_images: usize,
     pub(super) warnings: Vec<AssetLoadWarning>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AssetLoadReportV1 {
+    pub schema: String,
+    pub path: String,
+    pub cache_hit: bool,
+    pub fetched_bytes: usize,
+    pub external_buffers: usize,
+    pub external_images: usize,
+    pub geometry: SceneAssetGeometrySummary,
+    pub warnings: Vec<AssetLoadWarningV1>,
+    pub progress_events: Vec<AssetLoadProgressV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AssetLoadWarningV1 {
+    ExternalBufferMissing {
+        path: String,
+        index: usize,
+        reason: String,
+    },
+    ExternalImageMissing {
+        path: String,
+        reason: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AssetLoadProgressV1 {
+    LoadStarted {
+        path: String,
+    },
+    CacheHit {
+        path: String,
+    },
+    AssetFetched {
+        path: String,
+        bytes: usize,
+    },
+    ExternalBufferFetched {
+        path: String,
+        index: usize,
+        bytes: usize,
+    },
+    Parsed {
+        path: String,
+        nodes: usize,
+        meshes: usize,
+    },
+    Cached {
+        path: String,
+    },
 }
 
 impl Default for AssetLoadControl {
@@ -118,6 +190,10 @@ impl<T> AssetLoadReport<T> {
         self.external_buffers
     }
 
+    pub const fn external_images(&self) -> usize {
+        self.external_images
+    }
+
     pub fn warnings(&self) -> &[AssetLoadWarning] {
         &self.warnings
     }
@@ -131,6 +207,7 @@ impl AssetLoadOptions {
     pub const fn new() -> Self {
         Self {
             strict_textures: false,
+            strict_external_resources: false,
         }
     }
 
@@ -141,6 +218,96 @@ impl AssetLoadOptions {
 
     pub const fn strict_textures(&self) -> bool {
         self.strict_textures
+    }
+
+    pub const fn with_strict_external_resources(mut self, strict_external_resources: bool) -> Self {
+        self.strict_external_resources = strict_external_resources;
+        self
+    }
+
+    pub const fn strict_external_resources(&self) -> bool {
+        self.strict_external_resources
+    }
+}
+
+impl AssetLoadReport<SceneAsset> {
+    pub fn to_schema_report(&self) -> AssetLoadReportV1 {
+        AssetLoadReportV1 {
+            schema: ASSET_LOAD_REPORT_SCHEMA_V1.to_owned(),
+            path: self.path.as_str().to_owned(),
+            cache_hit: self.cache_hit,
+            fetched_bytes: self.fetched_bytes,
+            external_buffers: self.external_buffers,
+            external_images: self.external_images,
+            geometry: self.asset.geometry_summary(),
+            warnings: self.warnings.iter().map(AssetLoadWarningV1::from).collect(),
+            progress_events: self
+                .progress_events
+                .iter()
+                .map(AssetLoadProgressV1::from)
+                .collect(),
+        }
+    }
+
+    pub fn to_schema_json(&self) -> serde_json::Value {
+        serde_json::to_value(self.to_schema_report())
+            .expect("asset load report schema contains only serializable fields")
+    }
+}
+
+impl From<&AssetLoadWarning> for AssetLoadWarningV1 {
+    fn from(warning: &AssetLoadWarning) -> Self {
+        match warning {
+            AssetLoadWarning::ExternalBufferMissing {
+                path,
+                index,
+                reason,
+            } => Self::ExternalBufferMissing {
+                path: path.as_str().to_owned(),
+                index: *index,
+                reason: reason.clone(),
+            },
+            AssetLoadWarning::ExternalImageMissing { path, reason } => Self::ExternalImageMissing {
+                path: path.as_str().to_owned(),
+                reason: reason.clone(),
+            },
+        }
+    }
+}
+
+impl From<&AssetLoadProgress> for AssetLoadProgressV1 {
+    fn from(progress: &AssetLoadProgress) -> Self {
+        match progress {
+            AssetLoadProgress::LoadStarted { path } => Self::LoadStarted {
+                path: path.as_str().to_owned(),
+            },
+            AssetLoadProgress::CacheHit { path } => Self::CacheHit {
+                path: path.as_str().to_owned(),
+            },
+            AssetLoadProgress::AssetFetched { path, bytes } => Self::AssetFetched {
+                path: path.as_str().to_owned(),
+                bytes: *bytes,
+            },
+            AssetLoadProgress::ExternalBufferFetched { path, index, bytes } => {
+                Self::ExternalBufferFetched {
+                    path: path.as_str().to_owned(),
+                    index: *index,
+                    bytes: *bytes,
+                }
+            }
+            AssetLoadProgress::Parsed {
+                path,
+                nodes,
+                meshes,
+            } => Self::Parsed {
+                path: path.as_str().to_owned(),
+                nodes: *nodes,
+                meshes: *meshes,
+            },
+            AssetLoadProgress::Cached { path } => Self::Cached {
+                path: path.as_str().to_owned(),
+            },
+        }
     }
 }
 

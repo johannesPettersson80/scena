@@ -13,7 +13,7 @@ use crate::{CameraKey, NodeKey};
 
 #[derive(Debug)]
 pub struct SceneHostCore<F = DefaultAssetFetcher> {
-    assets: Assets<F>,
+    pub(super) assets: Assets<F>,
     scene: Scene,
     renderer: Renderer,
     viewport: SurfaceViewport,
@@ -483,7 +483,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         parent.map_or(Ok(self.scene.root()), |parent| self.resolve_node(parent))
     }
 
-    fn resolve_node(&self, handle: u64) -> Result<NodeKey, SceneHostError> {
+    pub(super) fn resolve_node(&self, handle: u64) -> Result<NodeKey, SceneHostError> {
         self.node_handles
             .get(
                 handle,

@@ -5,12 +5,12 @@ use std::sync::{Arc, Mutex};
 
 use base64::Engine;
 use scena::{
-    AlphaMode, Angle, AssetError, AssetFetcher, AssetLoadControl, AssetLoadOptions,
-    AssetLoadProgress, AssetLoadWarning, AssetPath, Assets, Color, DiagnosticCode,
-    DirectionalLight, GeometryDesc, GltfDecoderPolicy, GltfExtensionStatus, MaterialDesc,
-    MaterialKind, NodeKind, NotPreparedReason, PointLight, RenderError, Renderer, RetainPolicy,
-    Scene, SpotLight, TextureColorSpace, TextureFilter, TextureSourceFormat, TextureWrap,
-    Transform, Vec3,
+    ASSET_LOAD_REPORT_SCHEMA_V1, AlphaMode, Angle, AssetError, AssetFetcher, AssetLoadControl,
+    AssetLoadOptions, AssetLoadProgress, AssetLoadReportV1, AssetLoadWarning, AssetLoadWarningV1,
+    AssetPath, Assets, Color, DiagnosticCode, DirectionalLight, GeometryDesc, GltfDecoderPolicy,
+    GltfExtensionStatus, MaterialDesc, MaterialKind, NodeKind, NotPreparedReason, PointLight,
+    RenderError, Renderer, RetainPolicy, Scene, SpotLight, TextureColorSpace, TextureFilter,
+    TextureSourceFormat, TextureWrap, Transform, Vec3,
 };
 
 fn unstable_headless_gpu_release_tests_enabled() -> bool {
@@ -1772,6 +1772,118 @@ fn m8_missing_external_image_records_load_warning() {
         "missing external image must be surfaced in AssetLoadReport warnings instead of being silently skipped: {:?}",
         report.warnings(),
     );
+}
+
+#[test]
+fn m8_asset_load_report_schema_serializes_warnings_geometry_and_cache_contract() {
+    let path = "memory://asset-report/missing-image-scene.gltf";
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from(path),
+        textured_triangle_gltf("missing.png").into_bytes(),
+    )]));
+
+    let first =
+        pollster::block_on(assets.load_scene_with_report(path)).expect("first load reports");
+    let schema_json = first.to_schema_json();
+
+    assert_eq!(schema_json["schema"], ASSET_LOAD_REPORT_SCHEMA_V1);
+    assert_eq!(schema_json["path"], path);
+    assert_eq!(schema_json["cache_hit"], false);
+    assert_eq!(schema_json["geometry"]["node_count"], 1);
+    assert_eq!(schema_json["geometry"]["mesh_count"], 1);
+    assert_eq!(schema_json["geometry"]["primitive_count"], 1);
+    assert_eq!(schema_json["warnings"][0]["kind"], "external_image_missing");
+    assert_eq!(
+        schema_json["warnings"][0]["path"],
+        "memory://asset-report/missing.png"
+    );
+
+    let decoded: AssetLoadReportV1 =
+        serde_json::from_value(schema_json).expect("asset load report schema decodes");
+    assert_eq!(decoded.schema, ASSET_LOAD_REPORT_SCHEMA_V1);
+    assert!(matches!(
+        decoded.warnings.as_slice(),
+        [AssetLoadWarningV1::ExternalImageMissing { path, reason }]
+            if path == "memory://asset-report/missing.png" && reason.contains("not found")
+    ));
+
+    let cached =
+        pollster::block_on(assets.load_scene_with_report(path)).expect("cached load reports");
+    assert!(cached.cache_hit());
+    assert!(
+        cached.warnings().iter().any(|warning| matches!(
+            warning,
+            AssetLoadWarning::ExternalImageMissing { path, reason }
+                if path.as_str() == "memory://asset-report/missing.png"
+                    && reason.contains("not found")
+        )),
+        "cache-hit reports must preserve load warnings needed for browser proof"
+    );
+    let cached_schema = cached.to_schema_report();
+    assert!(cached_schema.cache_hit);
+    assert!(matches!(
+        cached_schema.warnings.as_slice(),
+        [AssetLoadWarningV1::ExternalImageMissing { path, reason }]
+            if path == "memory://asset-report/missing.png" && reason.contains("not found")
+    ));
+}
+
+#[test]
+fn m8_missing_external_buffer_records_typed_load_warning() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://missing-external-buffer/scene.gltf"),
+        br#"{
+            "asset": { "version": "2.0" },
+            "nodes": [{ "name": "Root" }],
+            "buffers": [{ "byteLength": 0, "uri": "missing.bin" }]
+        }"#
+        .to_vec(),
+    )]));
+
+    let report = pollster::block_on(
+        assets.load_scene_with_report("memory://missing-external-buffer/scene.gltf"),
+    )
+    .expect("unused zero-length missing external buffer loads with typed warning");
+
+    assert!(report.warnings().iter().any(|warning| matches!(
+        warning,
+        AssetLoadWarning::ExternalBufferMissing { path, index, reason }
+            if path.as_str() == "memory://missing-external-buffer/missing.bin"
+                && *index == 0
+                && reason.contains("not found")
+    )));
+    assert!(matches!(
+        report.to_schema_report().warnings.as_slice(),
+        [AssetLoadWarningV1::ExternalBufferMissing { path, index, reason }]
+            if path == "memory://missing-external-buffer/missing.bin"
+                && *index == 0
+                && reason.contains("not found")
+    ));
+}
+
+#[test]
+fn m8_strict_scene_load_promotes_missing_external_buffer_to_error() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://strict-missing-external-buffer/scene.gltf"),
+        br#"{
+            "asset": { "version": "2.0" },
+            "nodes": [{ "name": "Root" }],
+            "buffers": [{ "byteLength": 0, "uri": "missing.bin" }]
+        }"#
+        .to_vec(),
+    )]));
+
+    let error = pollster::block_on(assets.load_scene_with_report_options(
+        "memory://strict-missing-external-buffer/scene.gltf",
+        AssetLoadOptions::default().with_strict_external_resources(true),
+    ))
+    .expect_err("strict external resources must fail when a referenced buffer is missing");
+
+    assert!(matches!(
+        error,
+        AssetError::NotFound { ref path }
+            if path == "memory://strict-missing-external-buffer/missing.bin"
+    ));
 }
 
 #[test]

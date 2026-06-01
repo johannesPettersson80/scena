@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use serde::{Deserialize, Serialize};
 use slotmap::{SlotMap, new_key_type};
 
 use crate::diagnostics::AssetError;
@@ -56,7 +57,8 @@ pub use hot_reload::{AssetHotReloadError, AssetHotReloadWatcher};
 #[cfg(feature = "khronos-samples")]
 pub use khronos::{KhronosSample, KhronosSampleMetadata, KhronosSamples};
 pub use load::{
-    AssetLoadControl, AssetLoadOptions, AssetLoadProgress, AssetLoadReport, AssetLoadWarning,
+    ASSET_LOAD_REPORT_SCHEMA_V1, AssetLoadControl, AssetLoadOptions, AssetLoadProgress,
+    AssetLoadProgressV1, AssetLoadReport, AssetLoadReportV1, AssetLoadWarning, AssetLoadWarningV1,
 };
 pub use material_presets::{
     MaterialPresetAssets, MaterialPresetProvenance, source_backed_material_preset_provenance,
@@ -85,7 +87,7 @@ pub enum RetainPolicy {
     Always,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct AssetPath(String);
 
 /// Process-unique identifier for an [`Assets`] store. Each [`Assets::new`] /
@@ -144,6 +146,7 @@ struct AssetStorage {
     textures: SlotMap<TextureHandle, TextureDesc>,
     environments: SlotMap<EnvironmentHandle, EnvironmentDesc>,
     scene_lookup: BTreeMap<AssetPath, SceneAsset>,
+    scene_load_telemetry: BTreeMap<AssetPath, load::AssetLoadTelemetry>,
     texture_lookup: BTreeMap<TextureCacheKey, TextureHandle>,
     environment_lookup: BTreeMap<AssetPath, EnvironmentHandle>,
     // Tracks descriptors minted directly by `Assets::create_<kind>` (user-created)
@@ -179,6 +182,7 @@ impl<F> Assets<F> {
                 textures: SlotMap::with_key(),
                 environments: SlotMap::with_key(),
                 scene_lookup: BTreeMap::new(),
+                scene_load_telemetry: BTreeMap::new(),
                 texture_lookup: BTreeMap::new(),
                 environment_lookup: BTreeMap::new(),
                 user_created_geometries: std::collections::BTreeSet::new(),

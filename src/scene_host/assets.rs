@@ -1,0 +1,30 @@
+use super::reporting::SceneHostAssetImportReportV1;
+use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
+use crate::{AssetFetcher, AssetPath};
+
+impl<F: AssetFetcher> SceneHostCore<F> {
+    pub async fn instantiate_url_with_report_json(
+        &mut self,
+        path: impl Into<AssetPath>,
+    ) -> Result<String, SceneHostError> {
+        self.instantiate_url_under_with_report_json(self.root_handle(), path)
+            .await
+    }
+
+    pub async fn instantiate_url_under_with_report_json(
+        &mut self,
+        parent: u64,
+        path: impl Into<AssetPath>,
+    ) -> Result<String, SceneHostError> {
+        let parent = self.resolve_node(parent)?;
+        let report = self.assets.load_scene_with_report(path).await?;
+        let import = self.instantiate_scene_asset_under(parent, report.asset())?;
+        let host_report = SceneHostAssetImportReportV1::new(import, report.to_schema_report());
+        serde_json::to_string(&host_report).map_err(|error| {
+            SceneHostError::new(
+                SceneHostErrorCode::Inspect,
+                format!("asset load report serialization failed: {error}"),
+            )
+        })
+    }
+}

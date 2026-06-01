@@ -39,6 +39,13 @@ impl<F: AssetFetcher> Assets<F> {
                 scene = scene.with_retained_source_bytes(bytes);
             }
             storage.scene_lookup.insert(path, scene.clone());
+            storage.scene_load_telemetry.insert(
+                scene.path().clone(),
+                AssetLoadTelemetry {
+                    fetched_bytes: bytes.len(),
+                    ..AssetLoadTelemetry::default()
+                },
+            );
             scene
         };
         #[cfg(target_arch = "wasm32")]
@@ -166,7 +173,19 @@ impl<F: AssetFetcher> Assets<F> {
             AssetLoadProgress::LoadStarted { path: path.clone() },
         );
         check_cancelled(&path, control)?;
-        if let Some(scene) = self.storage().scene_lookup.get(&path).cloned() {
+        if let Some((scene, telemetry)) = {
+            let storage = self.storage();
+            storage.scene_lookup.get(&path).cloned().map(|scene| {
+                (
+                    scene,
+                    storage
+                        .scene_load_telemetry
+                        .get(&path)
+                        .cloned()
+                        .unwrap_or_default(),
+                )
+            })
+        } {
             load::emit_progress(
                 &mut progress_events,
                 &mut progress,
@@ -177,8 +196,9 @@ impl<F: AssetFetcher> Assets<F> {
                 path,
                 cache_hit: true,
                 fetched_bytes: 0,
-                external_buffers: 0,
-                warnings: Vec::new(),
+                external_buffers: telemetry.external_buffers,
+                external_images: telemetry.external_images,
+                warnings: telemetry.warnings,
                 progress_events,
             });
         }
@@ -202,9 +222,13 @@ impl<F: AssetFetcher> Assets<F> {
             },
         );
         check_cancelled(&path, control)?;
-        self.storage()
-            .scene_lookup
-            .insert(path.clone(), scene.clone());
+        {
+            let mut storage = self.storage();
+            storage.scene_lookup.insert(path.clone(), scene.clone());
+            storage
+                .scene_load_telemetry
+                .insert(path.clone(), telemetry.clone());
+        }
         load::emit_progress(
             &mut progress_events,
             &mut progress,
@@ -216,6 +240,7 @@ impl<F: AssetFetcher> Assets<F> {
             cache_hit: false,
             fetched_bytes: telemetry.fetched_bytes,
             external_buffers: telemetry.external_buffers,
+            external_images: telemetry.external_images,
             warnings: telemetry.warnings,
             progress_events,
         })
@@ -260,11 +285,56 @@ impl<F: AssetFetcher> Assets<F> {
         let mut telemetry = AssetLoadTelemetry {
             fetched_bytes: bytes.len(),
             external_buffers: 0,
+            external_images: 0,
             warnings: Vec::new(),
         };
-        for (index, external_path) in external_paths {
+        for (index, external_path, byte_length) in external_paths {
             check_cancelled(&path, control)?;
-            let bytes = self.fetcher.fetch(&external_path).await?;
+            let bytes = match self.fetcher.fetch(&external_path).await {
+                Ok(bytes) => bytes,
+                Err(error @ AssetError::NotFound { .. }) => {
+                    let reason = "not found".to_string();
+                    if options.strict_external_resources() {
+                        return Err(error);
+                    }
+                    warn_external_buffer_missing(&external_path, &reason);
+                    telemetry
+                        .warnings
+                        .push(AssetLoadWarning::ExternalBufferMissing {
+                            path: external_path.clone(),
+                            index,
+                            reason,
+                        });
+                    if byte_length == 0 {
+                        external_buffers.insert(index, Vec::new());
+                        continue;
+                    }
+                    return Err(error);
+                }
+                Err(error @ AssetError::Io { .. }) => {
+                    let reason = match &error {
+                        AssetError::Io { reason, .. } => reason.clone(),
+                        _ => unreachable!("matched Io error above"),
+                    };
+                    if options.strict_external_resources() {
+                        return Err(error);
+                    }
+                    warn_external_buffer_missing(&external_path, &reason);
+                    telemetry
+                        .warnings
+                        .push(AssetLoadWarning::ExternalBufferMissing {
+                            path: external_path.clone(),
+                            index,
+                            reason,
+                        });
+                    if byte_length == 0 {
+                        external_buffers.insert(index, Vec::new());
+                        continue;
+                    }
+                    return Err(error);
+                }
+                Err(error) => return Err(error),
+            };
             load::emit_progress(
                 progress_events,
                 progress,
@@ -326,6 +396,7 @@ impl<F: AssetFetcher> Assets<F> {
             };
             telemetry.fetched_bytes = telemetry.fetched_bytes.saturating_add(bytes.len());
             external_images.insert(external_path, bytes);
+            telemetry.external_images = telemetry.external_images.saturating_add(1);
         }
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
@@ -399,6 +470,21 @@ fn warn_external_image_missing(path: &AssetPath, reason: &str) {
     {
         web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&format!(
             "scena asset warning: external glTF image '{}' could not be fetched: {}",
+            path.as_str(),
+            reason
+        )));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (path, reason);
+    }
+}
+
+fn warn_external_buffer_missing(path: &AssetPath, reason: &str) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&format!(
+            "scena asset warning: external glTF buffer '{}' could not be fetched: {}",
             path.as_str(),
             reason
         )));

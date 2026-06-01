@@ -124,7 +124,7 @@ impl SceneAsset {
     pub(super) fn external_buffer_paths(
         path: &AssetPath,
         bytes: &[u8],
-    ) -> Result<Vec<(usize, AssetPath)>, AssetError> {
+    ) -> Result<Vec<(usize, AssetPath, usize)>, AssetError> {
         external_buffer_paths(path, bytes)
     }
 

@@ -1,8 +1,9 @@
 #![cfg(all(feature = "scene-host", not(target_arch = "wasm32")))]
 
 use scena::{
-    AnnotationProjectionReportV1, AssetPath, Assets, Color, GeometryDesc, ImportOptions,
-    MaterialDesc, SceneHostCore, SceneHostErrorCode, SceneInspectionReportV1, Transform, Vec3,
+    ASSET_LOAD_REPORT_SCHEMA_V1, AnnotationProjectionReportV1, AssetPath, Assets, Color,
+    GeometryDesc, ImportOptions, MaterialDesc, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1, SceneHostCore,
+    SceneHostErrorCode, SceneInspectionReportV1, Transform, Vec3,
 };
 
 #[test]
@@ -193,6 +194,32 @@ fn scene_host_core_instantiates_glb_bytes_under_host_frame() {
             Some(Some(parent)) if parent == frame
         ));
     }
+}
+
+#[test]
+fn scene_host_url_instantiation_returns_asset_load_report_json() {
+    let mut host = SceneHostCore::headless(64, 64).expect("host builds");
+
+    let json = pollster::block_on(host.instantiate_url_with_report_json(AssetPath::from(
+        "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+    )))
+    .expect("asset instantiates and reports load metadata");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("host import report is JSON");
+
+    assert_eq!(value["schema"], SCENE_HOST_ASSET_IMPORT_SCHEMA_V1);
+    assert_eq!(
+        value["asset_load_report"]["schema"],
+        ASSET_LOAD_REPORT_SCHEMA_V1
+    );
+    assert_eq!(value["asset_load_report"]["cache_hit"], false);
+    assert_eq!(value["asset_load_report"]["geometry"]["primitive_count"], 1);
+    let import = value["import"].as_u64().expect("import handle is u64");
+    assert!(
+        !host
+            .import_roots(import)
+            .expect("reported import handle resolves")
+            .is_empty()
+    );
 }
 
 #[test]

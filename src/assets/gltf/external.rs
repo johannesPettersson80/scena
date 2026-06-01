@@ -14,15 +14,17 @@ use super::super::AssetPath;
 pub(super) fn external_buffer_paths(
     path: &AssetPath,
     bytes: &[u8],
-) -> Result<Vec<(usize, AssetPath)>, AssetError> {
+) -> Result<Vec<(usize, AssetPath, usize)>, AssetError> {
     let gltf = open_gltf(path, bytes)?;
     Ok(gltf
         .document
         .buffers()
         .filter_map(|buffer| match buffer.source() {
-            BufferSource::Uri(uri) if !uri.starts_with("data:") => {
-                Some((buffer.index(), resolve_relative_path(path, uri)))
-            }
+            BufferSource::Uri(uri) if !uri.starts_with("data:") => Some((
+                buffer.index(),
+                resolve_relative_path(path, uri),
+                buffer.length(),
+            )),
             _ => None,
         })
         .collect())

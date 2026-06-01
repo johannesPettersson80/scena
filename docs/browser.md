@@ -57,6 +57,8 @@ Construction and lookup stay domain-neutral:
 - `addEmpty(parent, translation, rotation, scale, tag)`
 - `instantiateGlb(bytes)` and `instantiateGlbUnder(parent, bytes)`
 - `instantiateUrl(url)` and `instantiateUrlUnder(parent, url)`
+- `instantiateUrlWithReportJson(url)` and
+  `instantiateUrlUnderWithReportJson(parent, url)`
 - `importRoots(importHandle)`
 - `nodeHandle(importHandle, path)`
 - `nodeHandleByName(importHandle, name)`
@@ -107,6 +109,13 @@ projection. `clearAnnotation(id)` removes an overlay anchor.
 handles. `nodeWorldBoundsJson(handle)` serializes the node subtree's
 world-space bounds, resolving asset-backed mesh and instance geometry through
 the host asset store.
+
+`instantiateUrlWithReportJson()` and `instantiateUrlUnderWithReportJson()`
+return schema `scena.scene_host_asset_import.v1`: the new import handle plus
+the nested `scena.asset_load_report.v1` report. That report includes
+node/mesh/primitive counts, asset bounds, fetched byte counts, cache-hit state,
+external resource counts, progress events, and typed missing-resource warnings.
+Cache-hit reports preserve warnings from the original load.
 
 `capture()` returns a JS object with `descriptorJson` and an `rgba8`
 `Uint8Array`. `captureJson()` returns only the descriptor JSON. The descriptor

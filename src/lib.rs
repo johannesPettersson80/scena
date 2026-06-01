@@ -36,8 +36,9 @@ pub use assets::BrowserAssetFetcher;
 #[cfg(not(target_arch = "wasm32"))]
 pub use assets::FileAssetFetcher;
 pub use assets::{
-    ASSET_GEOMETRY_SUMMARY_SCHEMA_V1, AssetEvictionStats, AssetFetcher, AssetLoadControl,
-    AssetLoadOptions, AssetLoadProgress, AssetLoadReport, AssetLoadWarning, AssetPath,
+    ASSET_GEOMETRY_SUMMARY_SCHEMA_V1, ASSET_LOAD_REPORT_SCHEMA_V1, AssetEvictionStats,
+    AssetFetcher, AssetLoadControl, AssetLoadOptions, AssetLoadProgress, AssetLoadProgressV1,
+    AssetLoadReport, AssetLoadReportV1, AssetLoadWarning, AssetLoadWarningV1, AssetPath,
     AssetStoreId, Assets, DefaultAssetFetcher, EnvironmentDerivative, EnvironmentDesc,
     EnvironmentHandle, EnvironmentPrefilterSidecar, EnvironmentPreset, EnvironmentPresetMetadata,
     EnvironmentSidecarHeader, EnvironmentSidecarProfile, EnvironmentSourceKind, GeometryHandle,
@@ -118,7 +119,10 @@ pub use scene::{
     SceneTextureInspection,
 };
 #[cfg(feature = "scene-host")]
-pub use scene_host::{SceneHostCore, SceneHostError, SceneHostErrorCode};
+pub use scene_host::{
+    SCENE_HOST_ASSET_IMPORT_SCHEMA_V1, SceneHostAssetImportReportV1, SceneHostCore, SceneHostError,
+    SceneHostErrorCode,
+};
 pub use viewer::{
     FirstRender, HeadlessGltfViewer, HeadlessGltfViewerBuilder, InteractiveGltfViewer,
     InteractiveGltfViewerBuilder, ViewerCaptureError, ViewerPngError, first_render_gltf_headless,

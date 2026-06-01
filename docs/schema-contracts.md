@@ -299,3 +299,60 @@ Small example:
   "source_coordinate_systems": []
 }
 ```
+
+### `scena.asset_load_report.v1`
+
+Produced by `AssetLoadReport<SceneAsset>::to_schema_json()` and represented by
+`AssetLoadReportV1`. `SceneHost.instantiateUrlWithReportJson()` wraps the same
+report together with the import handle that was created from it.
+
+Required top-level fields:
+
+- `schema`
+- `path`
+- `cache_hit`
+- `fetched_bytes`
+- `external_buffers`
+- `external_images`
+- `geometry`
+- `warnings`
+- `progress_events`
+
+`geometry` is the loaded asset's `scena.asset_geometry_summary.v1` report.
+Warnings are typed and currently include `external_image_missing` and
+`external_buffer_missing`. Cache-hit reports preserve warnings and external
+resource counts from the original load, while `fetched_bytes` remains `0` for
+the cache-hit call itself.
+
+Small example:
+
+```json
+{
+  "schema": "scena.asset_load_report.v1",
+  "path": "models/cell.glb",
+  "cache_hit": false,
+  "fetched_bytes": 4096,
+  "external_buffers": 1,
+  "external_images": 0,
+  "geometry": {
+    "schema": "scena.asset_geometry_summary.v1",
+    "node_count": 3,
+    "mesh_count": 1,
+    "primitive_count": 1,
+    "bounds": null,
+    "source_units": [],
+    "source_coordinate_systems": []
+  },
+  "warnings": [
+    {
+      "kind": "external_image_missing",
+      "path": "models/missing.png",
+      "reason": "not found"
+    }
+  ],
+  "progress_events": [
+    { "kind": "load_started", "path": "models/cell.glb" },
+    { "kind": "cached", "path": "models/cell.glb" }
+  ]
+}
+```

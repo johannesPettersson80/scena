@@ -49,6 +49,11 @@ Additive public API changes in `[Unreleased]`:
 - `SceneAsset::primitive_count`
 - `SceneAsset::bounds`
 - `SceneAsset::geometry_summary`
+- `ASSET_LOAD_REPORT_SCHEMA_V1`
+- `AssetLoadReportV1`, `AssetLoadWarningV1`, and `AssetLoadProgressV1`
+- `AssetLoadReport<SceneAsset>::to_schema_report`
+- `AssetLoadReport<SceneAsset>::to_schema_json`
+- `AssetLoadOptions::with_strict_external_resources`
 - `AnnotationAnchor`, `AnnotationAnchorTarget`,
   `AnnotationProjectionReportV1`, `AnnotationProjectionV1`,
   `SCENE_ANNOTATION_PROJECTION_SCHEMA_V1`,
@@ -56,6 +61,8 @@ Additive public API changes in `[Unreleased]`:
   `ASSET_GEOMETRY_SUMMARY_SCHEMA_V1`
 - `SceneHostCore` (gated behind `scene-host`)
 - `SceneHostError` and `SceneHostErrorCode` (gated behind `scene-host`)
+- `SCENE_HOST_ASSET_IMPORT_SCHEMA_V1` and
+  `SceneHostAssetImportReportV1` (gated behind `scene-host`)
 - `CAPTURE_SCHEMA_V1`
 - `capture_rgba8`
 - `Renderer::capture_rgba8`
@@ -95,6 +102,12 @@ anchors and call `Scene::annotation_projection_report` for schema
 which returns CSS-pixel projection coordinates. `SceneAsset::geometry_summary`
 returns schema `scena.asset_geometry_summary.v1` with node/mesh/primitive
 counts, asset-local bounds, and source metadata where the asset stores it.
+Phase 5 adds stable asset-load reports. Native callers use
+`AssetLoadReport<SceneAsset>::to_schema_json()` for
+`scena.asset_load_report.v1`; browser hosts can call
+`instantiateUrlWithReportJson` or `instantiateUrlUnderWithReportJson` to get
+the created import handle plus the same asset-load report. Cache-hit reports
+preserve typed warnings and external resource counts from the original load.
 
 Additive public API changes in 1.2.0:
 

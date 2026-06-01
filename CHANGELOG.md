@@ -25,6 +25,10 @@ All notable user-facing changes are recorded here.
 - Added per-node tint/highlight render state through `Scene::set_node_tint`,
   `Scene::node_tint`, `Node::tint`, `SceneHostCore::set_node_tint`, and WASM
   `setNodeTint` / `clearNodeTint`; inspection JSON now includes `nodes[].tint`.
+- Added `scena.asset_load_report.v1` for serializable scene asset load reports,
+  including geometry summaries, progress events, cache-hit warning retention,
+  typed missing image/buffer warnings, strict external-resource loading, and
+  SceneHost URL instantiate-with-report JSON.
 
 ### Fixed
 
