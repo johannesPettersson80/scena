@@ -372,7 +372,8 @@ This phase closes the public contract. It is not optional for user-visible API.
       capture descriptor, asset-load report JSON, and provenance.
 - [x] Add TypeScript/JavaScript snippets for browser host use.
 - [x] Add golden JSON fixtures under tests or docs schema fixtures and wire
-      them into doctor/source checks.
+      them into doctor/source checks and live-serde equality tests so fixture
+      drift fails before release.
 - [x] Add release notes and changelog entries for each shipped public phase.
 - [x] Run remote gates for implementation phases:
       `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`,

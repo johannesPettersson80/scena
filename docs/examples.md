@@ -79,7 +79,8 @@ browser host that owns its own render cadence.
 
 Golden JSON fixtures for these contracts live in
 `tests/assets/stable-contracts/` and are checked by `tests/stable_contracts.rs`
-plus `xtask doctor --full`.
+plus `xtask doctor --full`. Intentional contract-shape changes must update the
+matching fixture in the same reviewed change.
 
 ## CAD-style placement examples
 

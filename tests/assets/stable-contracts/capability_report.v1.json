@@ -1,17 +1,92 @@
 {
-  "schema": "scena.capability_report.v1",
-  "capabilities": {
-    "backend": "headless",
-    "color_target_format": "Rgba8UnormSrgb",
-    "forward_pbr": "degraded"
-  },
   "adapter": null,
+  "capabilities": {
+    "alpha_pipeline": "linear_source_over",
+    "backend": "headless",
+    "bloom": "supported",
+    "color_target_format": "Rgba8UnormSrgb",
+    "compute_shaders": "feature_disabled",
+    "default_clipping_planes": 8,
+    "directional_shadow_map_default_size": 2048,
+    "directional_shadow_map_max_size": 4096,
+    "directional_shadow_pcf_kernel": 3,
+    "directional_shadows": "degraded",
+    "forward_pbr": "degraded",
+    "fragment_high_precision": "feature_disabled",
+    "gpu_device": false,
+    "gpu_frustum_culling": "feature_disabled",
+    "hardware_instancing": "feature_disabled",
+    "hardware_tier": "low",
+    "ibl_brdf_lut_default_size": 256,
+    "ibl_cubemap_default_size": 256,
+    "max_clipping_planes": 16,
+    "max_texture_array_layers": 0,
+    "order_independent_transparency": "supported",
+    "output_stage": "pbr_neutral_srgb",
+    "per_instance_culling": "degraded",
+    "physical_glass_transmission": "degraded",
+    "point_shadows": "feature_disabled",
+    "readback_headless_screenshots": "supported",
+    "reversed_z_depth": "feature_disabled",
+    "screen_space_ambient_occlusion": "supported",
+    "spot_shadows": "feature_disabled",
+    "storage_buffers": "feature_disabled",
+    "surface_attached": false,
+    "texture_arrays": "feature_disabled",
+    "texture_compression_basisu": "feature_disabled",
+    "uniform_buffer_max_bytes": 0,
+    "uniform_buffers": "feature_disabled",
+    "wide_gamut_output": "feature_disabled"
+  },
   "diagnostics": [
     {
       "code": "forward_pbr_degraded",
-      "severity": "warning",
-      "message": "Forward PBR is degraded on this backend.",
-      "help": "Use capability data to select a proven renderer path."
+      "help": "treat metallic-roughness output as a compatibility preview until the PBR visual gate closes",
+      "message": "PBR is reported as degraded until GPU material, texture, and IBL shading are proven",
+      "severity": "warning"
+    },
+    {
+      "code": "material_preset_fallback",
+      "help": "use MaterialDesc::* as scalar preview shortcuts, or claim Assets::material_presets() only for lanes with Round E reference, browser, and capability row proof artifacts",
+      "message": "Complete real-world material presets are in fallback on this lane: chrome, brushed_steel, clearcoat_plastic, clear_glass, frosted_glass, leather, rubber, and satin require approved material proof before they can be claimed as complete",
+      "severity": "warning"
+    },
+    {
+      "code": "directional_shadows_degraded",
+      "help": "treat shadow-map counters as allocation metadata until the shadow visual gate closes",
+      "message": "Directional shadows are degraded until shadow maps are rendered and sampled into visible receiver pixels",
+      "severity": "warning"
+    },
+    {
+      "code": "point_shadows_disabled",
+      "help": "use unshadowed point lights or bake shadowing into assets until the point-shadow gate closes",
+      "message": "Point shadows are disabled until cube-map shadow rendering and receiver sampling are implemented",
+      "severity": "warning"
+    },
+    {
+      "code": "spot_shadows_disabled",
+      "help": "use unshadowed spot lights or bake shadowing into assets until the spot-shadow gate closes",
+      "message": "Spot shadows are disabled until projected spot shadow maps and receiver sampling are implemented",
+      "severity": "warning"
+    },
+    {
+      "code": "physical_glass_transmission_degraded",
+      "help": "do not claim clear_glass/frosted_glass as complete real-world materials until the Round E glass and OIT proof artifacts pass for this backend",
+      "message": "Physical glass transmission is degraded until the lane proves scene-color transmission, IOR/thickness refraction, rough-transmission blur, and transparency ordering",
+      "severity": "warning"
+    },
+    {
+      "code": "wide_gamut_output_unavailable",
+      "help": "treat output as sRGB unless a recorded canvas probe reports Display P3 for the active backend",
+      "message": "Wide-gamut output needs a browser surface color-space probe before Display P3 can be claimed",
+      "severity": "warning"
+    },
+    {
+      "code": "gpu_culling_disabled",
+      "help": "use CPU culling diagnostics and draw statistics until the GPU culling gate closes",
+      "message": "GPU culling is disabled until the compute path writes real culling decisions",
+      "severity": "warning"
     }
-  ]
+  ],
+  "schema": "scena.capability_report.v1"
 }

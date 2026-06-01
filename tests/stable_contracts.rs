@@ -1,9 +1,12 @@
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::json;
 use std::path::PathBuf;
 
 use scena::{
-    Aabb, Backend, CAPABILITY_REPORT_SCHEMA_V1, Capabilities, CapabilityReport, CapabilityReportV1,
-    Color, GeometryTopology, Quat, Transform, Vec3,
+    Aabb, AnnotationProjectionReportV1, AssetLoadReportV1, AssetProvenance, Backend,
+    CAPABILITY_REPORT_SCHEMA_V1, Capabilities, CapabilityReport, CapabilityReportV1,
+    CaptureDescriptor, Color, GeometryTopology, Quat, SceneAssetGeometrySummary, Transform, Vec3,
 };
 
 #[test]
@@ -147,6 +150,64 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
     );
 }
 
+#[test]
+fn capability_report_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<CapabilityReportV1>(
+        "tests/assets/stable-contracts/capability_report.v1.json",
+    );
+}
+
+#[cfg(feature = "inspection")]
+#[test]
+fn scene_inspection_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::SceneInspectionReportV1>(
+        "tests/assets/stable-contracts/scene_inspection.v1.json",
+    );
+}
+
+#[test]
+fn capture_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<CaptureDescriptor>(
+        "tests/assets/stable-contracts/capture.v1.json",
+    );
+}
+
+#[test]
+fn annotation_projection_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<AnnotationProjectionReportV1>(
+        "tests/assets/stable-contracts/annotation_projection.v1.json",
+    );
+}
+
+#[test]
+fn asset_geometry_summary_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<SceneAssetGeometrySummary>(
+        "tests/assets/stable-contracts/asset_geometry_summary.v1.json",
+    );
+}
+
+#[test]
+fn asset_load_report_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<AssetLoadReportV1>(
+        "tests/assets/stable-contracts/asset_load_report.v1.json",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_host_asset_import_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::SceneHostAssetImportReportV1>(
+        "tests/assets/stable-contracts/scene_host_asset_import.v1.json",
+    );
+}
+
+#[test]
+fn asset_provenance_golden_matches_live_value_serialization() {
+    assert_fixture_matches_live_serialization::<AssetProvenance>(
+        "tests/assets/stable-contracts/asset_provenance.json",
+    );
+}
+
 #[cfg(feature = "inspection")]
 #[test]
 fn scene_inspection_schema_uses_report_local_handles_and_topology_helpers() {
@@ -266,4 +327,20 @@ fn read_fixture_json(rel: &str) -> serde_json::Value {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel);
     let text = std::fs::read_to_string(&path).expect("stable contract fixture reads");
     serde_json::from_str(&text).expect("stable contract fixture is JSON")
+}
+
+fn assert_fixture_matches_live_serialization<T>(rel: &str)
+where
+    T: DeserializeOwned + Serialize,
+{
+    let fixture = read_fixture_json(rel);
+    let decoded: T = serde_json::from_value(fixture.clone()).unwrap_or_else(|error| {
+        panic!("{rel} must deserialize through the live contract: {error}")
+    });
+    let encoded =
+        serde_json::to_value(decoded).expect("live contract value serializes back to JSON");
+    assert_eq!(
+        encoded, fixture,
+        "{rel} must match live serialization; regenerate the fixture intentionally when the contract changes"
+    );
 }

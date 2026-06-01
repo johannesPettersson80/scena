@@ -84,8 +84,11 @@ Each new contract needs:
 
 The shipped v1 fixtures for this track live under
 `tests/assets/stable-contracts/`. `tests/stable_contracts.rs` parses those
-fixtures and asserts their schema strings or, for nested value contracts, their
-required fields.
+fixtures, asserts their schema strings or nested value fields, and checks that
+each fixture deserializes through the live Rust contract and serializes back to
+the same JSON. When a contract shape intentionally changes, regenerate or edit
+the matching fixture in the same commit and review the JSON diff as part of the
+public API change.
 
 ## Doctor coverage plan
 

@@ -37,7 +37,9 @@ All notable user-facing changes are recorded here.
 - Added stable-contract examples, golden JSON fixtures under
   `tests/assets/stable-contracts/`, and `xtask doctor` evidence checks for the
   shipped SceneHost, inspection, capability, capture, annotation, asset-load,
-  geometry-summary, and provenance contracts.
+  geometry-summary, and provenance contracts. The fixtures are also asserted
+  against live serde serialization so contract drift requires a visible fixture
+  update.
 
 ### Fixed
 
