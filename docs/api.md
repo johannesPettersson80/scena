@@ -65,6 +65,7 @@ Additive public API changes in `[Unreleased]`:
   `ASSET_GEOMETRY_SUMMARY_SCHEMA_V1`
 - `SceneHostCore` (gated behind `scene-host`)
 - `SceneHostError` and `SceneHostErrorCode` (gated behind `scene-host`)
+- `SceneHostCameraState` (gated behind `scene-host`)
 - `SCENE_HOST_ASSET_IMPORT_SCHEMA_V1` and
   `SceneHostAssetImportReportV1` (gated behind `scene-host`)
 - `CAPTURE_SCHEMA_V1`
@@ -119,6 +120,13 @@ and generated derivatives. `scena.asset_load_report.v1` and
 `scena.asset_geometry_summary.v1` include the same provenance value. Existing
 environment source accessors continue to delegate to the same provenance
 record.
+Phase 8 adds interactive `SceneHost` camera state without giving the host a
+render loop. Native code can call `SceneHostCore::set_camera`,
+`SceneHostCore::get_camera`, `SceneHostCore::camera_json`,
+`camera_pointer_down`, `camera_pointer_move`, `camera_pointer_up`, and
+`camera_wheel`. The WASM facade exposes the corresponding `setCamera`,
+`setCameraJson`, `getCameraJson`, `cameraPointerDown`, `cameraPointerMove`,
+`cameraPointerUp`, and `cameraWheel` methods.
 
 See `examples/scene_host_contracts.rs` and
 `examples/scene_host_browser_contracts.js` for native and browser contract

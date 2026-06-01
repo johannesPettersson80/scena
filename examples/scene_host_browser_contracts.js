@@ -59,3 +59,55 @@ export async function renderPushedFrame(state, poseByNode) {
 export function pickCssPixel(state, event) {
   return state.host.pick(event.offsetX, event.offsetY);
 }
+
+export function wireSceneHostCamera(canvas, state, requestFrame) {
+  let lastPointer = null;
+  const request = (action) => {
+    if (action !== "none" && action !== "begin_orbit" && action !== "end") {
+      requestFrame();
+    }
+  };
+  const buttonName = (button) => {
+    if (button === 2) {
+      return "secondary";
+    }
+    if (button === 1) {
+      return "auxiliary";
+    }
+    return "primary";
+  };
+
+  canvas.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    lastPointer = { x: event.clientX, y: event.clientY };
+    canvas.setPointerCapture?.(event.pointerId);
+    request(state.host.cameraPointerDown(event.clientX, event.clientY, buttonName(event.button)));
+  });
+
+  canvas.addEventListener("pointermove", (event) => {
+    if (!lastPointer) {
+      return;
+    }
+    event.preventDefault();
+    const dx = event.clientX - lastPointer.x;
+    const dy = event.clientY - lastPointer.y;
+    lastPointer = { x: event.clientX, y: event.clientY };
+    request(state.host.cameraPointerMove(event.clientX, event.clientY, dx, dy));
+  });
+
+  const endPointer = (event) => {
+    if (!lastPointer) {
+      return;
+    }
+    event.preventDefault();
+    lastPointer = null;
+    request(state.host.cameraPointerUp(event.clientX, event.clientY));
+  };
+  canvas.addEventListener("pointerup", endPointer);
+  canvas.addEventListener("pointercancel", endPointer);
+
+  canvas.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    request(state.host.cameraWheel(event.offsetX, event.offsetY, event.deltaY));
+  }, { passive: false });
+}

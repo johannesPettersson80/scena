@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 
+use super::camera::controls_from_scene_camera;
 use super::handles::HandleTable;
 use super::reporting::{diagnostics_json, stats_json};
 use super::{SceneHostError, SceneHostErrorCode};
 use crate::{
     Aabb, AssetFetcher, AssetPath, Assets, Backend, CaptureOptions, CaptureRgba8, CursorPosition,
-    DefaultAssetFetcher, HitTarget, ImportOptions, RenderOutcome, Renderer, Scene, SceneImport,
-    SurfaceEvent, SurfaceViewport, Transform, Vec3, Viewport, capture_rgba8,
+    DefaultAssetFetcher, HitTarget, ImportOptions, OrbitControls, RenderOutcome, Renderer, Scene,
+    SceneImport, SurfaceEvent, SurfaceViewport, Transform, Vec3, Viewport, capture_rgba8,
 };
 use crate::{AnnotationAnchor, Color};
 use crate::{CameraKey, NodeKey};
@@ -14,10 +15,11 @@ use crate::{CameraKey, NodeKey};
 #[derive(Debug)]
 pub struct SceneHostCore<F = DefaultAssetFetcher> {
     pub(super) assets: Assets<F>,
-    scene: Scene,
+    pub(super) scene: Scene,
     renderer: Renderer,
     viewport: SurfaceViewport,
-    active_camera: CameraKey,
+    pub(super) active_camera: CameraKey,
+    pub(super) camera_controls: OrbitControls,
     node_handles: HandleTable<NodeKey>,
     import_handles: HandleTable<SceneImport>,
     node_handle_map: BTreeMap<NodeKey, u64>,
@@ -56,12 +58,14 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     ) -> Result<Self, SceneHostError> {
         let mut scene = Scene::new();
         let active_camera = scene.add_default_camera()?;
+        let camera_controls = controls_from_scene_camera(&scene, active_camera, Vec3::ZERO)?;
         let mut host = Self {
             assets,
             scene,
             renderer,
             viewport,
             active_camera,
+            camera_controls,
             node_handles: HandleTable::new(),
             import_handles: HandleTable::new(),
             node_handle_map: BTreeMap::new(),
@@ -338,19 +342,6 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             SceneHostErrorCode::ImportHandleNotFound,
             SceneHostErrorCode::StaleImportHandle,
         )?;
-        Ok(())
-    }
-
-    pub fn frame_node(&mut self, node: u64) -> Result<(), SceneHostError> {
-        let node = self.resolve_node(node)?;
-        self.scene
-            .frame_node_with_assets(self.active_camera, node, &self.assets)?;
-        Ok(())
-    }
-
-    pub fn frame_all(&mut self) -> Result<(), SceneHostError> {
-        self.scene
-            .frame_all_with_assets(self.active_camera, &self.assets)?;
         Ok(())
     }
 

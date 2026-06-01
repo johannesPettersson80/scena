@@ -1,6 +1,7 @@
 //! Generic host facade over `Scene`, `Assets`, and `Renderer`.
 
 mod assets;
+mod camera;
 mod core;
 mod error;
 mod handles;
@@ -10,7 +11,10 @@ mod reporting;
 mod wasm;
 #[cfg(target_arch = "wasm32")]
 mod wasm_assets;
+#[cfg(target_arch = "wasm32")]
+mod wasm_camera;
 
+pub use camera::SceneHostCameraState;
 pub use core::SceneHostCore;
 pub use error::{SceneHostError, SceneHostErrorCode};
 pub use reporting::{SCENE_HOST_ASSET_IMPORT_SCHEMA_V1, SceneHostAssetImportReportV1};

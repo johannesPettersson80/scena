@@ -389,17 +389,18 @@ This phase is P1 for product webview usability. It is not required for the
 deterministic render-proof phases, which must keep using scripted/auto-framed
 camera state.
 
-- [ ] Expose interactive camera controls on `SceneHost` over WASM using scena's
+- [x] Expose interactive camera controls on `SceneHost` over WASM using scena's
       existing `OrbitControls` math from `controls.rs`.
-- [ ] Support orbit from pointer drag, dolly from wheel, and pan, with the
+- [x] Support orbit from pointer drag, dolly from wheel, and pan, with the
       embedder still owning the render cadence.
-- [ ] Add `set_camera` / `get_camera` host methods for saved viewpoints and
+- [x] Add `set_camera` / `get_camera` host methods for saved viewpoints and
       scripted viewpoints.
-- [ ] Keep this generic renderer capability. Do not reimplement orbit math in
+- [x] Keep this generic renderer capability. Do not reimplement orbit math in
       TypeScript and do not add application-domain vocabulary.
-- [ ] Tests:
-      native core camera-control tests plus browser rendered-output proof on a
-      real browser/GPU machine for the interactive webview path.
+- [x] Add native core camera-control tests for saved viewpoints, pointer orbit,
+      wheel dolly, and pan.
+- [ ] Add browser rendered-output proof on a real browser/GPU machine for the
+      interactive webview path.
 
 ## Deferred
 

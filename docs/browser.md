@@ -72,6 +72,12 @@ Frame operations use one host handle namespace:
 
 - `setTransform`
 - `setTransforms` with a JSON array of `{ node, translation, rotation, scale }`
+- `setCamera(target, yawRadians, pitchRadians, distance)`
+- `setCameraJson(json)` and `getCameraJson()`
+- `cameraPointerDown(x, y, "primary" | "secondary" | "auxiliary")`
+- `cameraPointerMove(x, y, deltaX, deltaY)`
+- `cameraPointerUp(x, y)`
+- `cameraWheel(x, y, deltaY)`
 - `setNodeTint`
 - `clearNodeTint`
 - `setNodeAnnotation`
@@ -87,6 +93,12 @@ Frame operations use one host handle namespace:
 - `inspectJson`
 - `annotationProjectionsJson`
 - `capture()` and `captureJson()`
+
+Camera input calls route through Rust `OrbitControls`: primary pointer drag
+orbits, secondary pointer drag pans, and wheel input dollies. They update the
+scene camera and return an action string such as `orbit`, `pan`, or `zoom`.
+The browser page still owns cadence: after a non-`none` action, call
+`prepare()` and `render()` when the embedding application is ready.
 
 `pick(x, y)` receives CSS pixels. `SceneHost` stores the current DPR and target
 size, applies DPR internally, and returns the same node handle namespace that

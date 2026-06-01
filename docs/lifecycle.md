@@ -69,7 +69,7 @@ back to asset loading, scene mutation, prepare, render, readback, or inspection.
 The host page owns scheduling. A typical frame is:
 
 ```text
-setTransforms -> prepare -> render -> inspectJson or readPixels when proof is needed
+setTransforms or camera input -> prepare -> render -> inspectJson or readPixels when proof is needed
 ```
 
 Asset fetches happen in `instantiateUrl` and `instantiateUrlUnder`, not inside

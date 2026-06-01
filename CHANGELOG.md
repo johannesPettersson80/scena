@@ -34,6 +34,11 @@ All notable user-facing changes are recorded here.
   license/generator metadata, and generated derivatives through one serde
   contract. `scena.asset_load_report.v1` and
   `scena.asset_geometry_summary.v1` now include the provenance value.
+- Added interactive `SceneHost` camera APIs for saved viewpoints and
+  Rust-owned orbit/pan/wheel input, exposed natively through
+  `SceneHostCameraState` and over WASM through `setCamera`, `getCameraJson`,
+  `cameraPointerDown`, `cameraPointerMove`, `cameraPointerUp`, and
+  `cameraWheel`.
 - Added stable-contract examples, golden JSON fixtures under
   `tests/assets/stable-contracts/`, and `xtask doctor` evidence checks for the
   shipped SceneHost, inspection, capability, capture, annotation, asset-load,

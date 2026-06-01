@@ -2,8 +2,9 @@
 
 use scena::{
     ASSET_LOAD_REPORT_SCHEMA_V1, AnnotationProjectionReportV1, AssetPath, Assets, Color,
-    GeometryDesc, ImportOptions, MaterialDesc, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1, SceneHostCore,
-    SceneHostErrorCode, SceneInspectionReportV1, Transform, Vec3,
+    GeometryDesc, ImportOptions, MaterialDesc, OrbitControlAction, PointerButton,
+    SCENE_HOST_ASSET_IMPORT_SCHEMA_V1, SceneHostCameraState, SceneHostCore, SceneHostErrorCode,
+    SceneInspectionReportV1, Transform, Vec3,
 };
 
 #[test]
@@ -430,4 +431,113 @@ fn scene_host_annotations_bounds_and_distance_use_host_handles() {
             .iter()
             .all(|projection| projection.id != "origin-label")
     );
+}
+
+#[test]
+fn scene_host_camera_viewpoint_round_trips_and_rejects_invalid_state() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+    let viewpoint = SceneHostCameraState {
+        target: Vec3::new(1.0, 2.0, 3.0),
+        distance: 6.0,
+        yaw_radians: 0.35,
+        pitch_radians: -0.2,
+    };
+
+    host.set_camera(viewpoint)
+        .expect("scripted camera viewpoint applies");
+
+    let actual = host.camera_state();
+    assert_eq!(actual, viewpoint);
+    let json: SceneHostCameraState =
+        serde_json::from_str(&host.camera_json().expect("camera serializes"))
+            .expect("camera JSON decodes");
+    assert_eq!(json, viewpoint);
+
+    let camera = host
+        .scene()
+        .active_camera()
+        .expect("host has an active camera");
+    let camera_node = host
+        .scene()
+        .camera_node(camera)
+        .expect("camera node exists");
+    let camera_transform = host
+        .scene()
+        .world_transform(camera_node)
+        .expect("camera has a world transform");
+    assert!(
+        !camera_transform
+            .translation
+            .abs_diff_eq(Vec3::ZERO, f32::EPSILON),
+        "set_camera must apply the saved viewpoint to the scene camera"
+    );
+
+    let invalid = SceneHostCameraState {
+        distance: 0.0,
+        ..viewpoint
+    };
+    let error = host
+        .set_camera(invalid)
+        .expect_err("non-positive distance is rejected");
+    assert_eq!(error.code(), SceneHostErrorCode::InvalidInput);
+}
+
+#[test]
+fn scene_host_camera_pointer_and_wheel_inputs_use_orbit_controls_without_rendering() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+    host.set_camera(SceneHostCameraState {
+        target: Vec3::ZERO,
+        distance: 4.0,
+        yaw_radians: 0.0,
+        pitch_radians: 0.0,
+    })
+    .expect("initial camera viewpoint applies");
+    let initial = host.camera_state();
+    let before_input_revision = host.scene().dirty_state().transform_revision;
+
+    assert_eq!(
+        host.camera_pointer_down(32.0, 32.0, PointerButton::Primary)
+            .expect("primary pointer starts orbit"),
+        OrbitControlAction::BeginOrbit
+    );
+    assert_eq!(
+        host.scene().dirty_state().transform_revision,
+        before_input_revision,
+        "pointer down records input state but does not render or mutate the camera"
+    );
+
+    assert_eq!(
+        host.camera_pointer_move(52.0, 44.0, 20.0, 12.0)
+            .expect("primary drag orbits"),
+        OrbitControlAction::Orbit
+    );
+    let orbit_state = host.camera_state();
+    assert!(orbit_state.yaw_radians > initial.yaw_radians);
+    assert!(orbit_state.pitch_radians > initial.pitch_radians);
+    assert_eq!(
+        host.camera_pointer_up(52.0, 44.0)
+            .expect("pointer release ends input"),
+        OrbitControlAction::End
+    );
+
+    let distance_before_wheel = host.camera_state().distance;
+    assert_eq!(
+        host.camera_wheel(52.0, 44.0, -1.0)
+            .expect("wheel dolly applies"),
+        OrbitControlAction::Zoom
+    );
+    assert!(host.camera_state().distance < distance_before_wheel);
+
+    let target_before_pan = host.camera_state().target;
+    assert_eq!(
+        host.camera_pointer_down(52.0, 44.0, PointerButton::Secondary)
+            .expect("secondary pointer starts pan"),
+        OrbitControlAction::Pan
+    );
+    assert_eq!(
+        host.camera_pointer_move(62.0, 36.0, 10.0, -8.0)
+            .expect("secondary drag pans"),
+        OrbitControlAction::Pan
+    );
+    assert_ne!(host.camera_state().target, target_before_pan);
 }

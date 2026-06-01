@@ -519,7 +519,7 @@ fn invalid_len(field: &str, expected: usize, actual: usize) -> JsValue {
     ))
 }
 
-fn vec3_array_from_slice(field: &str, values: &[f32]) -> Result<[f32; 3], JsValue> {
+pub(super) fn vec3_array_from_slice(field: &str, values: &[f32]) -> Result<[f32; 3], JsValue> {
     if values.len() != 3 {
         return Err(invalid_len(field, 3, values.len()));
     }
