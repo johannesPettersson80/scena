@@ -36,17 +36,17 @@ pub use assets::BrowserAssetFetcher;
 #[cfg(not(target_arch = "wasm32"))]
 pub use assets::FileAssetFetcher;
 pub use assets::{
-    AssetEvictionStats, AssetFetcher, AssetLoadControl, AssetLoadOptions, AssetLoadProgress,
-    AssetLoadReport, AssetLoadWarning, AssetPath, AssetStoreId, Assets, DefaultAssetFetcher,
-    EnvironmentDerivative, EnvironmentDesc, EnvironmentHandle, EnvironmentPrefilterSidecar,
-    EnvironmentPreset, EnvironmentPresetMetadata, EnvironmentSidecarHeader,
-    EnvironmentSidecarProfile, EnvironmentSourceKind, GeometryHandle, GltfDecoderPolicy,
-    GltfExtensionDiagnostic, GltfExtensionStatus, MaterialHandle, MaterialPresetAssets,
-    MaterialPresetProvenance, MaterialVariantBinding, ModelHandle, RetainPolicy,
-    SIDECAR_FILE_SUFFIX, SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetLight,
-    SceneAssetMesh, SceneAssetNode, TextureDesc, TextureFilter, TextureHandle, TextureSamplerDesc,
-    TextureSourceFormat, TextureWrap, WasmEnvironmentDelivery, parse_sidecar_header,
-    source_backed_material_preset_provenance,
+    ASSET_GEOMETRY_SUMMARY_SCHEMA_V1, AssetEvictionStats, AssetFetcher, AssetLoadControl,
+    AssetLoadOptions, AssetLoadProgress, AssetLoadReport, AssetLoadWarning, AssetPath,
+    AssetStoreId, Assets, DefaultAssetFetcher, EnvironmentDerivative, EnvironmentDesc,
+    EnvironmentHandle, EnvironmentPrefilterSidecar, EnvironmentPreset, EnvironmentPresetMetadata,
+    EnvironmentSidecarHeader, EnvironmentSidecarProfile, EnvironmentSourceKind, GeometryHandle,
+    GltfDecoderPolicy, GltfExtensionDiagnostic, GltfExtensionStatus, MaterialHandle,
+    MaterialPresetAssets, MaterialPresetProvenance, MaterialVariantBinding, ModelHandle,
+    RetainPolicy, SIDECAR_FILE_SUFFIX, SceneAsset, SceneAssetAnchor, SceneAssetClip,
+    SceneAssetGeometrySummary, SceneAssetLight, SceneAssetMesh, SceneAssetNode, TextureDesc,
+    TextureFilter, TextureHandle, TextureSamplerDesc, TextureSourceFormat, TextureWrap,
+    WasmEnvironmentDelivery, parse_sidecar_header, source_backed_material_preset_provenance,
 };
 #[cfg(all(feature = "hot-reload", not(target_arch = "wasm32")))]
 pub use assets::{AssetHotReloadError, AssetHotReloadWatcher};
@@ -94,19 +94,20 @@ pub use render::{
     estimate_auto_exposure_from_linear_colors, estimate_auto_exposure_from_srgb8,
 };
 pub use scene::{
-    AnchorFrame, AnchorKey, Angle, Camera, CameraKey, ClippingPlane, ClippingPlaneKey,
-    ClippingPlaneSet, ConnectOptions, ConnectionAlignment, ConnectionError, ConnectionLineOverlay,
-    ConnectionMagnetPreview, ConnectionMagnetVisualCue, ConnectionParenting, ConnectionPreview,
-    ConnectionRequest, ConnectionRoll, ConnectionWarning, ConnectorFrame, ConnectorKey,
-    ConnectorMetadata, ConnectorPolarity, ConnectorRollPolicy, DepthRange, DirectionalLight,
-    FramingOptions, FramingOutcome, GridFloorHandles, GridFloorOptions, ImportAnchor,
-    ImportAnchorDebugMetadata, ImportClip, ImportConnector, ImportOptions, ImportPivot, Instance,
-    InstanceCullingPolicy, InstanceId, InstanceSet, InstanceSetKey, LabelBillboard, LabelDesc,
-    LabelKey, LabelRasterization, Light, LightBuilder, LightKey, MeshBuilder, MeshNode,
-    ModelBuilder, ModelNode, Node, NodeKey, NodeKind, OrthographicCamera, PerspectiveCamera,
-    PointLight, ProjectedPoint, Quat, Scene, SceneDirtyState, SceneImport, SceneSkinBinding,
-    ScreenRect, SourceCoordinateSystem, SourceUnits, SpotLight, StudioLightingHandles, Transform,
-    Vec3,
+    AnchorFrame, AnchorKey, Angle, AnnotationAnchor, AnnotationAnchorTarget,
+    AnnotationProjectionReportV1, AnnotationProjectionV1, Camera, CameraKey, ClippingPlane,
+    ClippingPlaneKey, ClippingPlaneSet, ConnectOptions, ConnectionAlignment, ConnectionError,
+    ConnectionLineOverlay, ConnectionMagnetPreview, ConnectionMagnetVisualCue, ConnectionParenting,
+    ConnectionPreview, ConnectionRequest, ConnectionRoll, ConnectionWarning, ConnectorFrame,
+    ConnectorKey, ConnectorMetadata, ConnectorPolarity, ConnectorRollPolicy, DepthRange,
+    DirectionalLight, FramingOptions, FramingOutcome, GridFloorHandles, GridFloorOptions,
+    ImportAnchor, ImportAnchorDebugMetadata, ImportClip, ImportConnector, ImportOptions,
+    ImportPivot, Instance, InstanceCullingPolicy, InstanceId, InstanceSet, InstanceSetKey,
+    LabelBillboard, LabelDesc, LabelKey, LabelRasterization, Light, LightBuilder, LightKey,
+    MeshBuilder, MeshNode, ModelBuilder, ModelNode, Node, NodeKey, NodeKind, OrthographicCamera,
+    PerspectiveCamera, PointLight, ProjectedPoint, Quat, SCENE_ANNOTATION_PROJECTION_SCHEMA_V1,
+    Scene, SceneDirtyState, SceneImport, SceneSkinBinding, ScreenRect, SourceCoordinateSystem,
+    SourceUnits, SpotLight, StudioLightingHandles, Transform, Vec3,
 };
 #[cfg(feature = "inspection")]
 pub use scene::{

@@ -56,6 +56,7 @@ fn connector_lookup_error(error: LookupError, requested_name: &str) -> Connectio
             name: Some(requested_name.to_string()),
         },
         LookupError::NodeNotFound(node) => ConnectionError::NodeNotFound(node),
+        LookupError::CannotRemoveRootNode(node) => ConnectionError::NodeNotFound(node),
         LookupError::AmbiguousNodeName { matches, .. } => {
             ConnectionError::AmbiguousImportConnector {
                 name: requested_name.to_string(),

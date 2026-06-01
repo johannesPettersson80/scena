@@ -367,6 +367,9 @@ impl fmt::Display for LookupError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NodeNotFound(_) => write!(formatter, "node key does not exist in the scene"),
+            Self::CannotRemoveRootNode(_) => {
+                write!(formatter, "the scene root node cannot be removed")
+            }
             Self::NodeNameNotFound { name } => {
                 write!(formatter, "imported scene has no node named '{name}'")
             }

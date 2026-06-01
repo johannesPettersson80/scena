@@ -68,23 +68,7 @@ impl Scene {
 }
 
 pub(super) fn compose_transform(parent: Transform, child: Transform) -> Transform {
-    let scaled_child_translation = Vec3::new(
-        child.translation.x * parent.scale.x,
-        child.translation.y * parent.scale.y,
-        child.translation.z * parent.scale.z,
-    );
-    Transform {
-        translation: add_vec3(
-            parent.translation,
-            rotate_vec3(parent.rotation, scaled_child_translation),
-        ),
-        rotation: multiply_quat(parent.rotation, child.rotation),
-        scale: Vec3::new(
-            parent.scale.x * child.scale.x,
-            parent.scale.y * child.scale.y,
-            parent.scale.z * child.scale.z,
-        ),
-    }
+    Transform::compose(parent, child)
 }
 
 pub(super) fn local_transform_from_world(parent: Transform, world: Transform) -> Option<Transform> {
@@ -165,10 +149,6 @@ fn normalize_quat(value: Quat) -> Quat {
 
 fn subtract_vec3(left: Vec3, right: Vec3) -> Vec3 {
     Vec3::new(left.x - right.x, left.y - right.y, left.z - right.z)
-}
-
-fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {
-    Vec3::new(left.x + right.x, left.y + right.y, left.z + right.z)
 }
 
 fn is_invertible_scale(scale: Vec3) -> bool {

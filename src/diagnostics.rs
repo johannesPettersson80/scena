@@ -262,6 +262,7 @@ pub enum DebugOverlay {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LookupError {
     NodeNotFound(NodeKey),
+    CannotRemoveRootNode(NodeKey),
     NodeNameNotFound {
         name: String,
     },

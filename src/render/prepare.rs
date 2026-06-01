@@ -122,6 +122,7 @@ pub(super) fn collect_prepared_primitives<F>(
                 geometry: &geometry,
                 material: &material,
                 assets,
+                tint: scene.node_tint(node).unwrap_or(None),
             },
             DeformationInputs {
                 morph_weights: scene.morph_weights(node),
@@ -173,6 +174,7 @@ pub(super) fn collect_prepared_primitives<F>(
                     geometry: &geometry,
                     material: &material,
                     assets,
+                    tint: scene.node_tint(node).unwrap_or(None),
                 },
                 DeformationInputs::default(),
                 PrimitiveBakeParams {

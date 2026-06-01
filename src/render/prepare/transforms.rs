@@ -242,23 +242,7 @@ pub(in crate::render) fn normal_from_model_matrix(transform: Transform) -> [f32;
 }
 
 pub(super) fn compose_transform(parent: Transform, child: Transform) -> Transform {
-    let scaled_child_translation = Vec3::new(
-        child.translation.x * parent.scale.x,
-        child.translation.y * parent.scale.y,
-        child.translation.z * parent.scale.z,
-    );
-    Transform {
-        translation: add_vec3(
-            parent.translation,
-            rotate_vec3(parent.rotation, scaled_child_translation),
-        ),
-        rotation: multiply_quat(parent.rotation, child.rotation),
-        scale: Vec3::new(
-            parent.scale.x * child.scale.x,
-            parent.scale.y * child.scale.y,
-            parent.scale.z * child.scale.z,
-        ),
-    }
+    Transform::compose(parent, child)
 }
 
 pub(in crate::render) fn transform_position(
@@ -326,30 +310,6 @@ fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
         vector.x + qw * tx + (qy * tz - qz * ty),
         vector.y + qw * ty + (qz * tx - qx * tz),
         vector.z + qw * tz + (qx * ty - qy * tx),
-    )
-}
-
-fn multiply_quat(left: Quat, right: Quat) -> Quat {
-    normalize_quat(Quat::from_xyzw(
-        left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
-        left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,
-        left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w,
-        left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z,
-    ))
-}
-
-fn normalize_quat(value: Quat) -> Quat {
-    let length_squared =
-        value.x * value.x + value.y * value.y + value.z * value.z + value.w * value.w;
-    if length_squared <= f32::EPSILON || !length_squared.is_finite() {
-        return Quat::IDENTITY;
-    }
-    let inverse_length = length_squared.sqrt().recip();
-    Quat::from_xyzw(
-        value.x * inverse_length,
-        value.y * inverse_length,
-        value.z * inverse_length,
-        value.w * inverse_length,
     )
 }
 

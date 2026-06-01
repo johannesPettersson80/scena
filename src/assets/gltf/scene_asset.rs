@@ -1,8 +1,11 @@
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use crate::animation::{AnimationSourceChannel, AnimationSourceClip};
 use crate::geometry::Aabb;
-use crate::scene::{Light, Transform};
+use crate::scene::view_math::{transform_aabb, union_aabb};
+use crate::scene::{Light, SourceCoordinateSystem, SourceUnits, Transform};
+use serde::{Deserialize, Serialize};
 
 use super::{
     GltfExtensionDiagnostic, MaterialVariantBinding, SceneAssetAnchor, SceneAssetConnector,
@@ -10,9 +13,22 @@ use super::{
 };
 use crate::assets::{AssetPath, GeometryHandle, MaterialHandle};
 
+pub const ASSET_GEOMETRY_SUMMARY_SCHEMA_V1: &str = "scena.asset_geometry_summary.v1";
+
 #[derive(Debug, Clone)]
 pub struct SceneAsset {
     pub(in crate::assets::gltf) inner: Arc<SceneAssetData>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneAssetGeometrySummary {
+    pub schema: String,
+    pub node_count: usize,
+    pub mesh_count: usize,
+    pub primitive_count: usize,
+    pub bounds: Option<Aabb>,
+    pub source_units: Vec<SourceUnits>,
+    pub source_coordinate_systems: Vec<SourceCoordinateSystem>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -94,6 +110,31 @@ impl SceneAsset {
         self.inner.mesh_count
     }
 
+    pub fn primitive_count(&self) -> usize {
+        self.inner.nodes.iter().map(|node| node.meshes.len()).sum()
+    }
+
+    pub fn bounds(&self) -> Option<Aabb> {
+        let roots = self.root_indices();
+        roots
+            .into_iter()
+            .filter_map(|root| self.node_bounds_in_asset_space(root, Transform::IDENTITY))
+            .reduce(union_aabb)
+    }
+
+    pub fn geometry_summary(&self) -> SceneAssetGeometrySummary {
+        let source_units = self.source_units_summary();
+        SceneAssetGeometrySummary {
+            schema: ASSET_GEOMETRY_SUMMARY_SCHEMA_V1.to_owned(),
+            node_count: self.node_count(),
+            mesh_count: self.mesh_count(),
+            primitive_count: self.primitive_count(),
+            bounds: self.bounds(),
+            source_units,
+            source_coordinate_systems: Vec::new(),
+        }
+    }
+
     pub fn nodes(&self) -> &[SceneAssetNode] {
         &self.inner.nodes
     }
@@ -140,6 +181,61 @@ impl SceneAsset {
             Some(Arc::<[u8]>::from(bytes.to_vec()));
         self
     }
+
+    fn root_indices(&self) -> Vec<usize> {
+        let mut child_indices = BTreeSet::new();
+        for node in &self.inner.nodes {
+            child_indices.extend(node.children.iter().copied());
+        }
+        (0..self.inner.nodes.len())
+            .filter(|index| !child_indices.contains(index))
+            .collect()
+    }
+
+    fn node_bounds_in_asset_space(
+        &self,
+        node_index: usize,
+        asset_from_parent: Transform,
+    ) -> Option<Aabb> {
+        let node = self.inner.nodes.get(node_index)?;
+        let asset_from_node = Transform::compose(asset_from_parent, node.transform);
+        let mut bounds = node
+            .meshes
+            .iter()
+            .filter_map(|mesh| mesh_bounds_in_node_space(mesh, &node.instance_transforms))
+            .map(|bounds| transform_aabb(bounds, asset_from_node))
+            .reduce(union_aabb);
+
+        for child in &node.children {
+            if let Some(child_bounds) = self.node_bounds_in_asset_space(*child, asset_from_node) {
+                bounds =
+                    Some(bounds.map_or(child_bounds, |bounds| union_aabb(bounds, child_bounds)));
+            }
+        }
+        bounds
+    }
+
+    fn source_units_summary(&self) -> Vec<SourceUnits> {
+        let mut units = BTreeSet::new();
+        for node in &self.inner.nodes {
+            for anchor in &node.anchors {
+                if let Some(source_units) = anchor.source_units() {
+                    units.insert(source_units);
+                }
+            }
+        }
+        units.into_iter().collect()
+    }
+}
+
+fn mesh_bounds_in_node_space(mesh: &SceneAssetMesh, instances: &[Transform]) -> Option<Aabb> {
+    if instances.is_empty() {
+        return Some(mesh.bounds);
+    }
+    instances
+        .iter()
+        .map(|instance| transform_aabb(mesh.bounds, *instance))
+        .reduce(union_aabb)
 }
 
 impl PartialEq for SceneAsset {

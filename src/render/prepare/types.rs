@@ -1,6 +1,6 @@
 use crate::assets::{Assets, MaterialHandle, TextureHandle};
 use crate::geometry::{GeometryDesc, Primitive, SkinningMatrix};
-use crate::material::MaterialDesc;
+use crate::material::{Color, MaterialDesc};
 use crate::scene::{NodeKey, Transform, Vec3};
 
 use super::super::{RasterTarget, camera::CameraProjection};
@@ -24,6 +24,7 @@ pub(super) struct GeometryPrimitiveSource<'a, F> {
     pub(super) geometry: &'a GeometryDesc,
     pub(super) material: &'a MaterialDesc,
     pub(super) assets: &'a Assets<F>,
+    pub(super) tint: Option<Color>,
 }
 
 pub(in crate::render) struct PreparedScene {

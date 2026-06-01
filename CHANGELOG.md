@@ -4,6 +4,34 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Added the renderer charter, stable JSON contract policy, WASM scene-host
+  checklist, and browser renderer-fidelity dependency checklist that gate the
+  upcoming WASM integration work.
+- Added stable v1 serde contracts for capability reports and scene inspection,
+  including report-local inspection handles, topology helpers, and schema
+  constants for external JSON consumers.
+- Added the `scene-host` feature with a native-testable `SceneHostCore`, a
+  browser/WASM `SceneHost` facade, host-owned `u64` node/import handles,
+  construction primitives, per-frame batch transforms, CSS-pixel picking,
+  inspection JSON, and capability/diagnostic/stat JSON helpers.
+- Added `scena.capture.v1` with public RGBA8 capture descriptors, FNV-1a
+  pixel hashes, revision/camera/viewport/backend metadata, viewer and
+  `SceneHost` capture helpers, and deterministic CPU-headless capture tests.
+- Added public `Transform::compose` / `Transform * Transform` scene-graph TRS
+  composition plus recursive `Scene::remove_node`, `Scene::remove_import`, and
+  real `SceneHost` remove APIs with stale-handle invalidation.
+- Added per-node tint/highlight render state through `Scene::set_node_tint`,
+  `Scene::node_tint`, `Node::tint`, `SceneHostCore::set_node_tint`, and WASM
+  `setNodeTint` / `clearNodeTint`; inspection JSON now includes `nodes[].tint`.
+
+### Fixed
+
+- Hardened capture descriptors so `render -> mutate scene -> capture` fails
+  closed with `CaptureError::StaleRender` instead of binding new scene
+  revisions to an older framebuffer.
+
 ## [1.5.1] - 2026-05-23
 
 ### Changed

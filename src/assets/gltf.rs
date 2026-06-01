@@ -29,7 +29,8 @@ use self::materials::parse_materials;
 use self::meshes::parse_meshes;
 use self::scene_asset::SceneAssetData;
 pub use self::scene_asset::{
-    SceneAsset, SceneAssetClip, SceneAssetLight, SceneAssetMesh, SceneAssetNode,
+    ASSET_GEOMETRY_SUMMARY_SCHEMA_V1, SceneAsset, SceneAssetClip, SceneAssetGeometrySummary,
+    SceneAssetLight, SceneAssetMesh, SceneAssetNode,
 };
 pub use self::skins::SceneAssetSkin;
 use self::skins::parse_skins;

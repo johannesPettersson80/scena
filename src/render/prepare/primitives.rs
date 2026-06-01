@@ -79,7 +79,10 @@ fn append_triangle_primitives<F>(
         }
     }
 
-    let material_pass = material_pass(source.node, source.material)?;
+    let material_pass = match (material_pass(source.node, source.material)?, source.tint) {
+        (_, Some(tint)) if tint.a < 1.0 => super::materials::MaterialPass::Blend,
+        (pass, _) => pass,
+    };
     let morphed_vertices = deformation
         .morph_weights
         .and_then(|weights| source.geometry.morphed_vertices(weights));
@@ -278,7 +281,7 @@ fn append_triangle_primitives<F>(
                 uv: uv_a,
                 tangent: tangent_a.tangent,
                 tangent_handedness: tangent_a.handedness,
-                vertex_color: vertex_colors[triangle[0] as usize],
+                vertex_color: tinted_vertex_color(vertex_colors[triangle[0] as usize], source.tint),
                 shadow_visibility: shadow_visibility_a,
             },
             CpuBakeCorner {
@@ -287,7 +290,7 @@ fn append_triangle_primitives<F>(
                 uv: uv_b,
                 tangent: tangent_b.tangent,
                 tangent_handedness: tangent_b.handedness,
-                vertex_color: vertex_colors[triangle[1] as usize],
+                vertex_color: tinted_vertex_color(vertex_colors[triangle[1] as usize], source.tint),
                 shadow_visibility: shadow_visibility_b,
             },
             CpuBakeCorner {
@@ -296,7 +299,7 @@ fn append_triangle_primitives<F>(
                 uv: uv_c,
                 tangent: tangent_c.tangent,
                 tangent_handedness: tangent_c.handedness,
-                vertex_color: vertex_colors[triangle[2] as usize],
+                vertex_color: tinted_vertex_color(vertex_colors[triangle[2] as usize], source.tint),
                 shadow_visibility: shadow_visibility_c,
             },
         ];
@@ -327,4 +330,11 @@ fn append_triangle_primitives<F>(
     }
 
     Ok(())
+}
+
+fn tinted_vertex_color(
+    color: crate::material::Color,
+    tint: Option<crate::material::Color>,
+) -> crate::material::Color {
+    tint.map_or(color, |tint| multiply_color(color, tint))
 }

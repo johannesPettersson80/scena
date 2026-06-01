@@ -167,6 +167,36 @@ impl Scene {
         self.frame(camera, bounds)
     }
 
+    /// Returns the world-space bounds for a node subtree, including geometry
+    /// resolved through `Assets`.
+    pub fn node_world_bounds<F>(
+        &self,
+        node: NodeKey,
+        assets: &Assets<F>,
+    ) -> Result<Option<Aabb>, LookupError> {
+        if !self.nodes.contains_key(node) {
+            return Err(LookupError::NodeNotFound(node));
+        }
+        Ok(self
+            .node_subtree_bounds_world(node)
+            .into_iter()
+            .chain(self.asset_backed_node_subtree_bounds_world(node, assets))
+            .reduce(union_aabb))
+    }
+
+    /// Returns the distance between two node origins in world space.
+    pub fn world_distance(&self, a: NodeKey, b: NodeKey) -> Result<f32, LookupError> {
+        let a = self
+            .world_transform(a)
+            .ok_or(LookupError::NodeNotFound(a))?
+            .translation;
+        let b = self
+            .world_transform(b)
+            .ok_or(LookupError::NodeNotFound(b))?
+            .translation;
+        Ok((a - b).length())
+    }
+
     fn scene_bounds_world(&self) -> Option<Aabb> {
         self.mesh_bounds_nodes()
             .filter_map(|(node, bounds)| {

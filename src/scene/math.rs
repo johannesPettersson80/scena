@@ -11,6 +11,8 @@
 //! or accesses `.x`/`.y`/`.z`/`.w` continues to work — glam exposes the
 //! same field layout and the same constructors.
 
+use std::ops::Mul;
+
 use glam::Mat3;
 use serde::{Deserialize, Serialize};
 
@@ -51,6 +53,22 @@ impl Transform {
     pub const fn scale_by(mut self, scale: f32) -> Self {
         self.scale = Vec3::new(scale, scale, scale);
         self
+    }
+
+    /// Composes `parent` and `child` TRS transforms using scene-graph
+    /// semantics.
+    ///
+    /// The child translation is first scaled by the parent scale, then rotated
+    /// by the parent rotation, then offset by the parent translation. Rotation
+    /// is composed and normalized, and scale is multiplied component-wise.
+    pub fn compose(parent: Self, child: Self) -> Self {
+        let scaled_child_translation = child.translation * parent.scale;
+        Self {
+            translation: parent.translation
+                + rotate_vec3_by_quat(parent.rotation, scaled_child_translation),
+            rotation: compose_rotations(parent.rotation, child.rotation),
+            scale: parent.scale * child.scale,
+        }
     }
 
     /// Composes a degrees-around-X rotation onto the existing rotation, so
@@ -138,6 +156,14 @@ fn compose_rotations(base: Quat, added: Quat) -> Quat {
     product.normalize()
 }
 
+fn rotate_vec3_by_quat(rotation: Quat, vector: Vec3) -> Vec3 {
+    let length_sq = rotation.length_squared();
+    if length_sq <= f32::EPSILON || !length_sq.is_finite() {
+        return vector;
+    }
+    rotation.normalize() * vector
+}
+
 fn normalize_vec3(vector: Vec3) -> Option<Vec3> {
     let length_sq = vector.length_squared();
     if length_sq <= f32::EPSILON || !length_sq.is_finite() {
@@ -149,6 +175,14 @@ fn normalize_vec3(vector: Vec3) -> Option<Vec3> {
 impl Default for Transform {
     fn default() -> Self {
         Self::IDENTITY
+    }
+}
+
+impl Mul for Transform {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Self::compose(self, rhs)
     }
 }
 

@@ -102,3 +102,73 @@ fn blended_material_primitives_skip_gpu_depth_prepass() {
         "all primitives in this one-glass-mesh scene should be transparent pass primitives"
     );
 }
+
+#[test]
+fn node_tint_modulates_prepared_mesh_and_instance_set_vertex_colors() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
+    let material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+    let mut scene = Scene::new();
+    let mesh = scene
+        .mesh(geometry, material)
+        .transform(Transform::at(Vec3::new(-1.5, 0.0, 0.0)))
+        .add()
+        .expect("mesh inserts");
+    let instance_set = scene
+        .add_instance_set(
+            scene.root(),
+            geometry,
+            material,
+            Transform::at(Vec3::new(1.5, 0.0, 0.0)),
+        )
+        .expect("instance set inserts");
+    scene
+        .push_instance(instance_set, Transform::IDENTITY)
+        .expect("instance inserts");
+    let (instance_node, _, _) = scene
+        .instance_set_nodes()
+        .next()
+        .expect("instance-set node is visible");
+
+    scene
+        .set_node_tint(mesh, Some(Color::from_linear_rgba(1.0, 0.0, 0.0, 1.0)))
+        .expect("mesh tint sets");
+    scene
+        .set_node_tint(
+            instance_node,
+            Some(Color::from_linear_rgba(0.0, 0.0, 1.0, 1.0)),
+        )
+        .expect("instance-set tint sets");
+
+    let prepared = collect_prepared_primitives(
+        RasterTarget {
+            width: 64,
+            height: 64,
+            backend: Backend::Headless,
+        },
+        &scene,
+        Some(&assets),
+        None,
+        &[],
+        &[],
+        PreparedEnvironmentLighting::default(),
+    )
+    .expect("scene prepares");
+
+    assert!(
+        prepared.primitives.iter().any(|primitive| {
+            primitive.vertices().iter().all(|vertex| {
+                vertex.color.r > 0.9 && vertex.color.g <= 1.0e-6 && vertex.color.b <= 1.0e-6
+            })
+        }),
+        "mesh tint should modulate baked vertex colors"
+    );
+    assert!(
+        prepared.primitives.iter().any(|primitive| {
+            primitive.vertices().iter().all(|vertex| {
+                vertex.color.r <= 1.0e-6 && vertex.color.g <= 1.0e-6 && vertex.color.b > 0.9
+            })
+        }),
+        "instance-set tint should modulate baked vertex colors"
+    );
+}

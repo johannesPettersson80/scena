@@ -47,8 +47,9 @@ pub use fetch::BrowserAssetFetcher;
 pub use fetch::FileAssetFetcher;
 pub use fetch::{AssetFetcher, DefaultAssetFetcher};
 pub use gltf::{
-    GltfDecoderPolicy, GltfExtensionDiagnostic, GltfExtensionStatus, MaterialVariantBinding,
-    SceneAsset, SceneAssetAnchor, SceneAssetClip, SceneAssetLight, SceneAssetMesh, SceneAssetNode,
+    ASSET_GEOMETRY_SUMMARY_SCHEMA_V1, GltfDecoderPolicy, GltfExtensionDiagnostic,
+    GltfExtensionStatus, MaterialVariantBinding, SceneAsset, SceneAssetAnchor, SceneAssetClip,
+    SceneAssetGeometrySummary, SceneAssetLight, SceneAssetMesh, SceneAssetNode,
 };
 #[cfg(all(feature = "hot-reload", not(target_arch = "wasm32")))]
 pub use hot_reload::{AssetHotReloadError, AssetHotReloadWatcher};

@@ -116,7 +116,7 @@ pub(super) fn positive_min(values: [f32; 3]) -> f32 {
         .unwrap_or(1.0)
 }
 
-pub(super) fn transform_aabb(bounds: Aabb, transform: Transform) -> Aabb {
+pub(crate) fn transform_aabb(bounds: Aabb, transform: Transform) -> Aabb {
     aabb_corners(bounds)
         .into_iter()
         .map(|corner| transform_point(corner, transform))
@@ -191,7 +191,7 @@ pub(super) fn inverse_unit_quat(rotation: Quat) -> Quat {
     Quat::from_xyzw(-normalized.x, -normalized.y, -normalized.z, normalized.w)
 }
 
-pub(super) fn union_aabb(left: Aabb, right: Aabb) -> Aabb {
+pub(crate) fn union_aabb(left: Aabb, right: Aabb) -> Aabb {
     Aabb::new(
         Vec3::new(
             left.min.x.min(right.min.x),

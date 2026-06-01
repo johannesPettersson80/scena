@@ -106,6 +106,9 @@ impl LookupError {
     pub fn help(&self) -> &'static str {
         match self {
             Self::NodeNotFound(_) => "use a NodeKey created by this Scene",
+            Self::CannotRemoveRootNode(_) => {
+                "remove child nodes instead; the root is the permanent scene anchor"
+            }
             Self::NodeNameNotFound { .. } => "call nodes_named to inspect available import names",
             Self::AmbiguousNodeName { .. } => {
                 "call nodes_named or path_segments for explicit lookup"

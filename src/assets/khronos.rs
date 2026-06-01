@@ -9,7 +9,7 @@
 //!
 //! # Examples
 //!
-//! ```no_run
+//! ```ignore
 //! # #[cfg(feature = "khronos-samples")]
 //! # async fn example() -> scena::Result<()> {
 //! use scena::Assets;

@@ -10,6 +10,92 @@ The authoritative API reference is generated on docs.rs:
 
 Use this page as the conceptual map.
 
+Additive public API changes in `[Unreleased]`:
+
+- `Transform`, `Aabb`, `Color`, `GeometryTopology`, capability enums, and
+  capability report structs now serialize through stable serde shapes.
+- `CAPABILITY_REPORT_SCHEMA_V1`
+- `CapabilityReportV1`
+- `CapabilityReport::to_schema_report`
+- `CapabilityReport::to_schema_json`
+- `SCENE_INSPECTION_SCHEMA_V1` (gated behind `inspection`)
+- `SceneInspectionReportV1`, `SceneNodeInspectionV1`,
+  `SceneDrawInspectionV1`, `SceneCameraFrustumInspectionV1`,
+  `SceneNormalInspectionV1`, `SceneInspectionCountsV1`, and
+  `SceneInspectionRevisionsV1` (gated behind `inspection`)
+- `SceneInspectionReport::to_schema_report`
+- `SceneInspectionReport::to_schema_report_with_node_handles`
+- `SceneInspectionReport::to_schema_json`
+- `SceneInspectionReportV1::node_by_handle`
+- `SceneInspectionReportV1::children_of`
+- `SceneInspectionReportV1::roots`
+- `SceneInspectionReportV1::find_by_tag`
+- `Transform::compose`
+- `impl Mul<Transform> for Transform`
+- `Assets::load_scene_from_bytes`
+- `Scene::instantiate_under`
+- `Scene::set_transforms`
+- `Scene::set_node_tint`
+- `Scene::node_tint`
+- `Scene::set_annotation_anchor`
+- `Scene::clear_annotation_anchor`
+- `Scene::annotation_projection_report`
+- `Scene::world_distance`
+- `Scene::node_world_bounds`
+- `Node::tint`
+- `Scene::remove_node`
+- `Scene::remove_import`
+- `Scene::remove_tag`
+- `SceneAsset::primitive_count`
+- `SceneAsset::bounds`
+- `SceneAsset::geometry_summary`
+- `AnnotationAnchor`, `AnnotationAnchorTarget`,
+  `AnnotationProjectionReportV1`, `AnnotationProjectionV1`,
+  `SCENE_ANNOTATION_PROJECTION_SCHEMA_V1`,
+  `SceneAssetGeometrySummary`, and
+  `ASSET_GEOMETRY_SUMMARY_SCHEMA_V1`
+- `SceneHostCore` (gated behind `scene-host`)
+- `SceneHostError` and `SceneHostErrorCode` (gated behind `scene-host`)
+- `CAPTURE_SCHEMA_V1`
+- `capture_rgba8`
+- `Renderer::capture_rgba8`
+- `FirstRender::capture`
+- `HeadlessGltfViewer::capture`
+- `InteractiveGltfViewer::capture`
+- `CaptureDescriptor`, `CaptureRgba8`, `CaptureOptions`,
+  `CaptureRevisions`, `CaptureCamera`, `CaptureProjection`,
+  `CaptureViewport`, `CapturePayload`, `CapturePayloadKind`,
+  `CaptureAutoFrame`, `CaptureAutoFrameViewport`, `CapturePoint2`,
+  `CaptureScreenRect`, `CapturePixelSummary`, `CapturePixelBounds`, and
+  `CaptureError`
+- `fnv1a64_hex`, `sample_rgba8`, `summarize_rgba8`,
+  `summarize_pixel_readback`, and `auto_frame_metadata`
+
+The `scene-host` feature also exports a WASM `SceneHost` wrapper on
+`wasm32`. Its node handles are opaque `u64` values owned by the host. The same
+handle values are used for construction, transform updates, picking, and
+`inspectJson()` output. Phase 3 also exports real `capture()` /
+`captureJson()` methods that return `scena.capture.v1` metadata for the latest
+rendered RGBA8 frame; these are not placeholders. Capture descriptors are
+bound to the renderer's last rendered scene/camera state and fail with
+`CaptureError::StaleRender` if the scene is mutated before capture.
+Phase 4 adds real `removeNode` and `removeImport` host methods. Removed node
+handles are invalidated in the host table, so later use returns
+`SceneHostErrorCode::StaleNodeHandle` rather than aliasing a recycled node.
+Phase 4 also adds per-node tint/highlight render state. Native callers use
+`Scene::set_node_tint(node, Some(color))` or `None` to clear it; browser hosts
+use `setNodeTint` and `clearNodeTint`. Tint is node-owned render state, not a
+material clone, and `scena.scene_inspection.v1` reports it as
+`nodes[].tint`.
+Phase 4 also adds engine-owned annotation projection and geometry helpers.
+Native callers can store `AnnotationAnchor::node` / `AnnotationAnchor::world`
+anchors and call `Scene::annotation_projection_report` for schema
+`scena.annotation_projection.v1`. Browser hosts use `setNodeAnnotation`,
+`setWorldAnnotation`, `clearAnnotation`, and `annotationProjectionsJson()`,
+which returns CSS-pixel projection coordinates. `SceneAsset::geometry_summary`
+returns schema `scena.asset_geometry_summary.v1` with node/mesh/primitive
+counts, asset-local bounds, and source metadata where the asset stores it.
+
 Additive public API changes in 1.2.0:
 
 - `AssetLoadOptions`

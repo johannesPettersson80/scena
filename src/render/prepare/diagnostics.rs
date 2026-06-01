@@ -293,23 +293,7 @@ fn transform_point(point: Vec3, transform: Transform) -> Vec3 {
 }
 
 fn compose_transform(parent: Transform, child: Transform) -> Transform {
-    let scaled_child_translation = Vec3::new(
-        child.translation.x * parent.scale.x,
-        child.translation.y * parent.scale.y,
-        child.translation.z * parent.scale.z,
-    );
-    Transform {
-        translation: add_vec3(
-            parent.translation,
-            rotate_vec3(parent.rotation, scaled_child_translation),
-        ),
-        rotation: multiply_quat(parent.rotation, child.rotation),
-        scale: Vec3::new(
-            parent.scale.x * child.scale.x,
-            parent.scale.y * child.scale.y,
-            parent.scale.z * child.scale.z,
-        ),
-    }
+    Transform::compose(parent, child)
 }
 
 fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
@@ -333,29 +317,6 @@ fn rotate_vec3(rotation: Quat, vector: Vec3) -> Vec3 {
         vector.y + qw * ty + (qz * tx - qx * tz),
         vector.z + qw * tz + (qx * ty - qy * tx),
     )
-}
-
-fn multiply_quat(left: Quat, right: Quat) -> Quat {
-    normalize_quat(Quat::from_xyzw(
-        left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
-        left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,
-        left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w,
-        left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z,
-    ))
-}
-
-fn normalize_quat(quat: Quat) -> Quat {
-    let length = (quat.x * quat.x + quat.y * quat.y + quat.z * quat.z + quat.w * quat.w).sqrt();
-    if length <= f32::EPSILON || !length.is_finite() {
-        Quat::IDENTITY
-    } else {
-        Quat::from_xyzw(
-            quat.x / length,
-            quat.y / length,
-            quat.z / length,
-            quat.w / length,
-        )
-    }
 }
 
 const fn add_vec3(left: Vec3, right: Vec3) -> Vec3 {

@@ -15,6 +15,7 @@ use crate::material::Color;
 use crate::picking::InteractionContext;
 
 mod anchors;
+mod annotations;
 mod builders;
 mod camera;
 mod camera_controls;
@@ -34,6 +35,7 @@ mod mixers;
 mod morphs;
 mod origin;
 mod picking;
+mod removal;
 mod render_nodes;
 mod skinning;
 mod transforms;
@@ -41,6 +43,10 @@ mod view;
 pub(crate) mod view_math;
 mod visibility;
 pub use anchors::AnchorFrame;
+pub use annotations::{
+    AnnotationAnchor, AnnotationAnchorTarget, AnnotationProjectionReportV1, AnnotationProjectionV1,
+    SCENE_ANNOTATION_PROJECTION_SCHEMA_V1,
+};
 pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
 pub use clipping::{ClippingPlane, ClippingPlaneSet};
 pub use connectors::{
@@ -94,6 +100,7 @@ pub struct Scene {
     animation_mixers: SlotMap<AnimationMixerKey, AnimationMixer>,
     labels: SlotMap<LabelKey, LabelDesc>,
     anchors: SlotMap<AnchorKey, AnchorFrame>,
+    annotations: BTreeMap<String, AnnotationAnchor>,
     connectors: SlotMap<ConnectorKey, ConnectorFrame>,
     connection_locked_nodes: BTreeSet<NodeKey>,
     node_bounds: BTreeMap<NodeKey, Aabb>,
@@ -185,6 +192,7 @@ impl Scene {
             animation_mixers: SlotMap::with_key(),
             labels: SlotMap::with_key(),
             anchors: SlotMap::with_key(),
+            annotations: BTreeMap::new(),
             connectors: SlotMap::with_key(),
             connection_locked_nodes: BTreeSet::new(),
             node_bounds: BTreeMap::new(),

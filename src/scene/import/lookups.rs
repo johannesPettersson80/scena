@@ -274,7 +274,7 @@ impl SceneImport {
             .fold(None, |bounds, next| Some(union_optional(bounds, next)))
     }
 
-    pub(super) fn ensure_live(&self) -> Result<(), LookupError> {
+    pub(in crate::scene) fn ensure_live(&self) -> Result<(), LookupError> {
         if self.is_live() {
             Ok(())
         } else {
@@ -286,7 +286,7 @@ impl SceneImport {
         self.live.load(Ordering::Acquire)
     }
 
-    pub(super) fn mark_stale(&self) {
+    pub(in crate::scene) fn mark_stale(&self) {
         self.live.store(false, Ordering::Release);
     }
 }
