@@ -32,7 +32,12 @@ All notable user-facing changes are recorded here.
 - Added generic `AssetProvenance` metadata on loaded scene assets, textures,
   and environments so asset consumers can inspect source paths, SHA-256 hashes,
   license/generator metadata, and generated derivatives through one serde
-  contract.
+  contract. `scena.asset_load_report.v1` and
+  `scena.asset_geometry_summary.v1` now include the provenance value.
+- Added stable-contract examples, golden JSON fixtures under
+  `tests/assets/stable-contracts/`, and `xtask doctor` evidence checks for the
+  shipped SceneHost, inspection, capability, capture, annotation, asset-load,
+  geometry-summary, and provenance contracts.
 
 ### Fixed
 

@@ -399,6 +399,52 @@ pub(crate) fn doctor_rejects_public_contract_forbidden_vocab_regression() {
 }
 
 #[test]
+pub(crate) fn doctor_rejects_missing_stable_contract_release_evidence_regression() {
+    // STABLE-CONTRACT-EVIDENCE: public JSON contracts must keep docs,
+    // examples, and golden fixtures together. This fixture plants only the
+    // schema docs and expects the docs doctor to reject the missing example
+    // and fixture evidence.
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root =
+        root.join("target/xtask-doctor-regressions/stable-contract-evidence-missing");
+    let docs_dir = fixture_root.join("docs");
+    fs::create_dir_all(&docs_dir).expect("docs dir");
+    fs::write(
+        docs_dir.join("schema-contracts.md"),
+        "# Stable JSON contract policy\n\n\
+         scena.scene_inspection.v1\n\
+         scena.capability_report.v1\n\
+         scena.capture.v1\n\
+         scena.annotation_projection.v1\n\
+         scena.asset_geometry_summary.v1\n\
+         scena.asset_load_report.v1\n\
+         scena.scene_host_asset_import.v1\n\
+         tests/assets/stable-contracts\n",
+    )
+    .expect("schema contract fixture");
+    let mut findings = Vec::new();
+
+    check_stable_contract_release_evidence(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "STABLE-CONTRACT-EVIDENCE"
+                && finding.message.contains("examples/scene_host_contracts.rs")
+        }),
+        "doctor must reject missing native contract example: {findings:?}",
+    );
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "STABLE-CONTRACT-EVIDENCE"
+                && finding
+                    .message
+                    .contains("tests/assets/stable-contracts/capture.v1.json")
+        }),
+        "doctor must reject missing golden JSON fixtures: {findings:?}",
+    );
+}
+
+#[test]
 pub(crate) fn doctor_rejects_required_module_layout_with_missing_files_regression() {
     // ARCH-REQUIRED: the architecture doctor must reject any workspace
     // checkout missing one of the canonical source modules listed in

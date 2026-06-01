@@ -1,0 +1,58 @@
+{
+  "schema": "scena.capture.v1",
+  "width": 64,
+  "height": 64,
+  "pixel_format": "rgba8",
+  "payload": {
+    "kind": "rgba8",
+    "byte_length": 16384,
+    "fnv1a64": "0123456789abcdef"
+  },
+  "revisions": {
+    "structure": 3,
+    "transform": 2,
+    "interaction": 0
+  },
+  "camera": {
+    "active": true,
+    "world_transform": {
+      "translation": [0.0, 0.0, 2.0],
+      "rotation": [0.0, 0.0, 0.0, 1.0],
+      "scale": [1.0, 1.0, 1.0]
+    },
+    "projection": {
+      "kind": "perspective",
+      "vertical_fov_radians": 1.0471976,
+      "aspect": 1.0,
+      "near": 0.01,
+      "far": 1000.0
+    }
+  },
+  "viewport": {
+    "width": 64,
+    "height": 64,
+    "logical_width": 64.0,
+    "logical_height": 64.0,
+    "device_pixel_ratio": 1.0
+  },
+  "backend": "headless",
+  "capabilities": {
+    "backend": "headless",
+    "color_target_format": "Rgba8UnormSrgb",
+    "forward_pbr": "degraded"
+  },
+  "auto_frame": null,
+  "pixels": {
+    "nonblack": 1024,
+    "bbox": {
+      "min_x": 16,
+      "min_y": 16,
+      "max_x": 47,
+      "max_y": 47,
+      "width": 32,
+      "height": 32
+    },
+    "center": [255, 255, 255, 255],
+    "fnv1a64": "0123456789abcdef"
+  }
+}

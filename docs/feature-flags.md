@@ -35,14 +35,11 @@ scena = { version = "1.4", features = ["controls", "controls-winit"] }
 | `obj` | OBJ import path |
 | `production-assets` | compressed glTF asset profile; enables `ktx2` + `meshopt` without changing defaults |
 
-## Planned integration flags
-
-These flags are planned by the WASM scene-host and stable-contract work. They
-are not shipped until they appear in `Cargo.toml`.
-
-| Planned feature | Purpose |
-|---|---|
-| `stable-contracts` | stable JSON schema helpers for inspection, capabilities, capture, annotation projection, asset geometry, and asset-load reports |
+Stable JSON contracts are exported by their owner surfaces rather than a
+separate feature. Capability, capture, asset-load, asset-geometry, and
+provenance value contracts are available with the default crate APIs.
+Inspection contracts require `inspection`; the browser/native host facade
+requires `scene-host`, which enables `inspection`.
 
 ## Recommended combinations
 
@@ -83,6 +80,12 @@ Browser host facade:
 
 ```toml
 scena = { version = "1.4", features = ["scene-host"] }
+```
+
+Browser host with controls:
+
+```toml
+scena = { version = "1.4", features = ["scene-host", "controls-web"] }
 ```
 
 ## Default feature set

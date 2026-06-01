@@ -40,6 +40,11 @@ name = "scene_inspection"
 path = "examples/scene_inspection.rs"
 required-features = ["inspection"]
 
+[[example]]
+name = "scene_host_contracts"
+path = "examples/scene_host_contracts.rs"
+required-features = ["scene-host"]
+
 [dependencies]
 base64 = "0.22"
 bytemuck = { version = "1", features = ["derive"] }

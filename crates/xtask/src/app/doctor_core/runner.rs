@@ -38,6 +38,7 @@ pub(crate) fn run_docs_doctor(root: &Path, findings: &mut Vec<Finding>) {
     check_markdown_links(root, findings);
     check_for_stale_doc_terms(root, findings);
     check_required_doc_contracts(root, findings);
+    check_stable_contract_release_evidence(root, findings);
     check_easy_scene_setup_contracts(root, findings);
     check_demo_build_heartbeat_contract(root, findings);
     check_default_environment_manifest(root, findings);

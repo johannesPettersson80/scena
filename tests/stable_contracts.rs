@@ -1,4 +1,5 @@
 use serde_json::json;
+use std::path::PathBuf;
 
 use scena::{
     Aabb, Backend, CAPABILITY_REPORT_SCHEMA_V1, Capabilities, CapabilityReport, CapabilityReportV1,
@@ -87,6 +88,63 @@ fn capability_report_schema_is_versioned_and_round_trips() {
     assert_eq!(decoded.schema, CAPABILITY_REPORT_SCHEMA_V1);
     assert_eq!(decoded.capabilities.backend, Backend::Headless);
     assert_eq!(decoded.capabilities.color_target_format, "Rgba8UnormSrgb");
+}
+
+#[test]
+fn stable_contract_golden_fixtures_are_versioned_json() {
+    let fixtures = [
+        (
+            "tests/assets/stable-contracts/capability_report.v1.json",
+            "scena.capability_report.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/scene_inspection.v1.json",
+            "scena.scene_inspection.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/capture.v1.json",
+            "scena.capture.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/annotation_projection.v1.json",
+            "scena.annotation_projection.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/asset_geometry_summary.v1.json",
+            "scena.asset_geometry_summary.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/asset_load_report.v1.json",
+            "scena.asset_load_report.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/scene_host_asset_import.v1.json",
+            "scena.scene_host_asset_import.v1",
+        ),
+    ];
+
+    for (rel, schema) in fixtures {
+        let fixture = read_fixture_json(rel);
+        assert_eq!(fixture["schema"], schema, "{rel} schema drifted");
+    }
+
+    let provenance = read_fixture_json("tests/assets/stable-contracts/asset_provenance.json");
+    for field in [
+        "source_path",
+        "source_sha256",
+        "license",
+        "generator",
+        "derivatives",
+    ] {
+        assert!(
+            provenance.get(field).is_some(),
+            "asset provenance fixture missing {field}"
+        );
+    }
+    assert!(
+        provenance.get("schema").is_none(),
+        "AssetProvenance is a nested value contract and must not grow a standalone schema"
+    );
 }
 
 #[cfg(feature = "inspection")]
@@ -202,4 +260,10 @@ fn scene_inspection_schema_uses_report_local_handles_and_topology_helpers() {
     let decoded: SceneInspectionReportV1 =
         serde_json::from_value(schema_json).expect("schema report deserializes");
     assert_eq!(decoded, schema);
+}
+
+fn read_fixture_json(rel: &str) -> serde_json::Value {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel);
+    let text = std::fs::read_to_string(&path).expect("stable contract fixture reads");
+    serde_json::from_str(&text).expect("stable contract fixture is JSON")
 }

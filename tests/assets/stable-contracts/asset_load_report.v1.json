@@ -1,0 +1,49 @@
+{
+  "schema": "scena.asset_load_report.v1",
+  "path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+  "cache_hit": false,
+  "fetched_bytes": 4096,
+  "external_buffers": 1,
+  "external_images": 0,
+  "provenance": {
+    "source_path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+    "source_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "license": null,
+    "generator": null,
+    "derivatives": []
+  },
+  "geometry": {
+    "schema": "scena.asset_geometry_summary.v1",
+    "node_count": 3,
+    "mesh_count": 1,
+    "primitive_count": 1,
+    "bounds": null,
+    "provenance": {
+      "source_path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+      "source_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "license": null,
+      "generator": null,
+      "derivatives": []
+    },
+    "source_units": [],
+    "source_coordinate_systems": []
+  },
+  "warnings": [
+    {
+      "kind": "external_buffer_missing",
+      "path": "tests/assets/gltf/missing.bin",
+      "index": 0,
+      "reason": "not found"
+    }
+  ],
+  "progress_events": [
+    {
+      "kind": "load_started",
+      "path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
+    },
+    {
+      "kind": "cached",
+      "path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
+    }
+  ]
+}

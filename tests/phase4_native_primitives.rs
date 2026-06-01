@@ -313,6 +313,11 @@ fn scene_asset_geometry_summary_counts_bounds_and_source_metadata() {
     assert_eq!(summary.node_count, scene_asset.node_count());
     assert_eq!(summary.mesh_count, scene_asset.mesh_count());
     assert_eq!(
+        summary.provenance.source_path().as_str(),
+        "tests/assets/gltf/nested_mesh_bounds_scene.gltf"
+    );
+    assert!(summary.provenance.source_sha256().is_some());
+    assert_eq!(
         summary.primitive_count,
         scene_asset
             .nodes()

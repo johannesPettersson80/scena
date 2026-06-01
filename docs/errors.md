@@ -45,6 +45,7 @@ as preparing again after stale renderer state.
 | Scene changed after prepare | call `prepare()` again |
 | Surface resized | forward the surface event, then prepare again |
 | Missing asset file | fix path or fetcher configuration |
+| Missing external glTF buffer or image | inspect `scena.asset_load_report.v1` warnings; serve the referenced resource or enable strict external-resource loading to fail closed |
 | Unsupported required glTF extension | enable the relevant feature or choose an asset variant without that required extension |
 | Missing named node or anchor | inspect imported names and paths |
 | Removing the scene root | remove child nodes instead; the root is the permanent scene anchor |
@@ -59,6 +60,13 @@ as preparing again after stale renderer state.
 `SceneHostErrorCode::Capture` wraps capture descriptor/readback failures from
 the browser/native host facade. The host still returns structured errors; it
 does not silently drop capture metadata.
+
+`SceneHostErrorCode::NodeHandleNotFound`,
+`SceneHostErrorCode::ImportHandleNotFound`,
+`SceneHostErrorCode::StaleNodeHandle`, and
+`SceneHostErrorCode::StaleImportHandle` are stable host-handle failures. They
+distinguish fabricated handles, wrong handle namespaces, and generation-stale
+handles after removal.
 
 ## Diagnostics
 

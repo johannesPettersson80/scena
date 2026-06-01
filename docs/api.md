@@ -115,8 +115,15 @@ preserve typed warnings and external resource counts from the original load.
 Phase 6 adds generic `AssetProvenance` metadata. Loaded `SceneAsset`,
 `TextureDesc`, and `EnvironmentDesc` values expose `provenance()` with a
 serde-stable source path, optional source SHA-256, optional license/generator,
-and generated derivatives. Existing environment source accessors continue to
-delegate to the same provenance record.
+and generated derivatives. `scena.asset_load_report.v1` and
+`scena.asset_geometry_summary.v1` include the same provenance value. Existing
+environment source accessors continue to delegate to the same provenance
+record.
+
+See `examples/scene_host_contracts.rs` and
+`examples/scene_host_browser_contracts.js` for native and browser contract
+usage. Golden JSON fixtures for the shipped v1 reports live under
+`tests/assets/stable-contracts/`.
 
 Additive public API changes in 1.2.0:
 

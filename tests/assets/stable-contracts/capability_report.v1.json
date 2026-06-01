@@ -1,0 +1,17 @@
+{
+  "schema": "scena.capability_report.v1",
+  "capabilities": {
+    "backend": "headless",
+    "color_target_format": "Rgba8UnormSrgb",
+    "forward_pbr": "degraded"
+  },
+  "adapter": null,
+  "diagnostics": [
+    {
+      "code": "forward_pbr_degraded",
+      "severity": "warning",
+      "message": "Forward PBR is degraded on this backend.",
+      "help": "Use capability data to select a proven renderer path."
+    }
+  ]
+}

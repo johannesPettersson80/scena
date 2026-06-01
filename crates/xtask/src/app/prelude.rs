@@ -42,8 +42,8 @@ pub(crate) use crate::app::doctor_core::{
 };
 pub(crate) use crate::app::doctor_docs::{
     check_demo_build_heartbeat_contract, check_for_stale_doc_terms, check_markdown_links,
-    check_required_doc_contracts, check_source_scope, collect_markdown, is_external_link,
-    markdown_files, markdown_link_targets, require_contains,
+    check_required_doc_contracts, check_source_scope, check_stable_contract_release_evidence,
+    collect_markdown, is_external_link, markdown_files, markdown_link_targets, require_contains,
 };
 pub(crate) use crate::app::doctor_easy_scene::check_easy_scene_setup_contracts;
 pub(crate) use crate::app::doctor_m7_m8_assets::{

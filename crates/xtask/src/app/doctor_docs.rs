@@ -173,6 +173,140 @@ pub(crate) fn check_required_doc_contracts(root: &Path, findings: &mut Vec<Findi
     );
 }
 
+pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut Vec<Finding>) {
+    const FIXTURES: &[(&str, &str)] = &[
+        (
+            "tests/assets/stable-contracts/capability_report.v1.json",
+            "scena.capability_report.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/scene_inspection.v1.json",
+            "scena.scene_inspection.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/capture.v1.json",
+            "scena.capture.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/annotation_projection.v1.json",
+            "scena.annotation_projection.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/asset_geometry_summary.v1.json",
+            "scena.asset_geometry_summary.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/asset_load_report.v1.json",
+            "scena.asset_load_report.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/scene_host_asset_import.v1.json",
+            "scena.scene_host_asset_import.v1",
+        ),
+    ];
+    const REQUIRED_FILES: &[&str] = &[
+        "examples/scene_host_contracts.rs",
+        "examples/scene_host_browser_contracts.js",
+        "tests/assets/stable-contracts/asset_provenance.json",
+        "docs/checklists/scene-host-browser-gpu-proof.md",
+    ];
+
+    require_files(root, findings, "STABLE-CONTRACT-EVIDENCE", REQUIRED_FILES);
+    for (rel, expected_schema) in FIXTURES {
+        require_files(root, findings, "STABLE-CONTRACT-EVIDENCE", &[*rel]);
+        let Ok(text) = fs::read_to_string(root.join(rel)) else {
+            continue;
+        };
+        let Ok(json) = serde_json::from_str::<Value>(&text) else {
+            findings.push(Finding::new(
+                "STABLE-CONTRACT-EVIDENCE",
+                format!("{rel} must be valid JSON"),
+            ));
+            continue;
+        };
+        if json.get("schema").and_then(Value::as_str) != Some(*expected_schema) {
+            findings.push(Finding::new(
+                "STABLE-CONTRACT-EVIDENCE",
+                format!("{rel} must carry schema {expected_schema}"),
+            ));
+        }
+    }
+
+    require_contains(
+        root,
+        findings,
+        "STABLE-CONTRACT-EVIDENCE",
+        "tests/assets/stable-contracts/asset_provenance.json",
+        &[
+            "source_path",
+            "source_sha256",
+            "license",
+            "generator",
+            "derivatives",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "STABLE-CONTRACT-EVIDENCE",
+        "Cargo.toml",
+        &[
+            "name = \"scene_host_contracts\"",
+            "path = \"examples/scene_host_contracts.rs\"",
+            "required-features = [\"scene-host\"]",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "STABLE-CONTRACT-EVIDENCE",
+        "docs/schema-contracts.md",
+        &[
+            "tests/assets/stable-contracts",
+            "scena.scene_host_asset_import.v1",
+            "AssetProvenance",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "STABLE-CONTRACT-EVIDENCE",
+        "docs/examples.md",
+        &[
+            "scene_host_contracts.rs",
+            "scene_host_browser_contracts.js",
+            "tests/assets/stable-contracts",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "STABLE-CONTRACT-EVIDENCE",
+        "docs/browser.md",
+        &[
+            "examples/scene_host_browser_contracts.js",
+            "Real browser/GPU proof remains a separate gate",
+            "scene-host-browser-gpu-proof.md",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "STABLE-CONTRACT-EVIDENCE",
+        "docs/checklists/scene-host-browser-gpu-proof.md",
+        &[
+            "Status: open",
+            "Real browser/GPU machine required",
+            "scena.scene_host_browser_proof.v1",
+            "SceneHost.capture()",
+            "annotationProjectionsJson()",
+            "inspectJson()",
+            "renderer-fidelity-dependencies.md",
+            "target/gate-artifacts/scene-host-browser-proof/scene-host-browser-proof.json",
+        ],
+    );
+}
+
 pub(crate) fn check_demo_build_heartbeat_contract(root: &Path, findings: &mut Vec<Finding>) {
     require_contains(
         root,

@@ -82,6 +82,11 @@ Each new contract needs:
 - a snapshot/golden JSON test for the smallest representative scene/report,
 - a negative or stale-handle test when the contract includes handles.
 
+The shipped v1 fixtures for this track live under
+`tests/assets/stable-contracts/`. `tests/stable_contracts.rs` parses those
+fixtures and asserts their schema strings or, for nested value contracts, their
+required fields.
+
 ## Doctor coverage plan
 
 `xtask doctor` should enforce these contract surfaces as they land:
@@ -165,9 +170,8 @@ Required top-level fields:
 - `revisions`
 
 Node IDs in standalone native inspection are deterministic report-local `u64`
-handles. Host-backed inspection must use the host handle namespace once the
-generic browser host lands. Raw slotmap keys and asset handles are intentionally
-absent from this wire contract.
+handles. Host-backed inspection uses the `SceneHost` handle namespace. Raw
+slotmap keys and asset handles are intentionally absent from this wire contract.
 
 Native host adapters can pass their own node map with
 `SceneInspectionReport::to_schema_report_with_node_handles`. Nodes not present
@@ -312,6 +316,7 @@ Required top-level fields:
 - `mesh_count`
 - `primitive_count`
 - `bounds`
+- `provenance`
 - `source_units`
 - `source_coordinate_systems`
 
@@ -332,6 +337,13 @@ Small example:
     "min": [-0.5, -0.5, -0.5],
     "max": [0.5, 0.5, 0.5]
   },
+  "provenance": {
+    "source_path": "models/cell.glb",
+    "source_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "license": null,
+    "generator": null,
+    "derivatives": []
+  },
   "source_units": ["millimeters"],
   "source_coordinate_systems": []
 }
@@ -351,15 +363,17 @@ Required top-level fields:
 - `fetched_bytes`
 - `external_buffers`
 - `external_images`
+- `provenance`
 - `geometry`
 - `warnings`
 - `progress_events`
 
-`geometry` is the loaded asset's `scena.asset_geometry_summary.v1` report.
-Warnings are typed and currently include `external_image_missing` and
-`external_buffer_missing`. Cache-hit reports preserve warnings and external
-resource counts from the original load, while `fetched_bytes` remains `0` for
-the cache-hit call itself.
+`provenance` is the loaded asset's `AssetProvenance` value. `geometry` is the
+loaded asset's `scena.asset_geometry_summary.v1` report and carries the same
+provenance value. Warnings are typed and currently include
+`external_image_missing` and `external_buffer_missing`. Cache-hit reports
+preserve warnings and external resource counts from the original load, while
+`fetched_bytes` remains `0` for the cache-hit call itself.
 
 Small example:
 
@@ -371,12 +385,26 @@ Small example:
   "fetched_bytes": 4096,
   "external_buffers": 1,
   "external_images": 0,
+  "provenance": {
+    "source_path": "models/cell.glb",
+    "source_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "license": null,
+    "generator": null,
+    "derivatives": []
+  },
   "geometry": {
     "schema": "scena.asset_geometry_summary.v1",
     "node_count": 3,
     "mesh_count": 1,
     "primitive_count": 1,
     "bounds": null,
+    "provenance": {
+      "source_path": "models/cell.glb",
+      "source_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "license": null,
+      "generator": null,
+      "derivatives": []
+    },
     "source_units": [],
     "source_coordinate_systems": []
   },
@@ -391,5 +419,64 @@ Small example:
     { "kind": "load_started", "path": "models/cell.glb" },
     { "kind": "cached", "path": "models/cell.glb" }
   ]
+}
+```
+
+### `scena.scene_host_asset_import.v1`
+
+Produced by `SceneHostCore::instantiate_url_with_report_json`,
+`SceneHostCore::instantiate_url_under_with_report_json`, and the matching WASM
+`SceneHost` methods. Represented by `SceneHostAssetImportReportV1`.
+
+Required top-level fields:
+
+- `schema`
+- `import`
+- `asset_load_report`
+
+`import` is a generation-checked host import handle. `asset_load_report` is the
+nested `scena.asset_load_report.v1` report for the asset load that produced the
+import. The same host owns the import handle, node handle namespace, and
+inspection handle namespace.
+
+Small example:
+
+```json
+{
+  "schema": "scena.scene_host_asset_import.v1",
+  "import": 7,
+  "asset_load_report": {
+    "schema": "scena.asset_load_report.v1",
+    "path": "models/part.glb",
+    "cache_hit": false,
+    "fetched_bytes": 4096,
+    "external_buffers": 0,
+    "external_images": 0,
+    "provenance": {
+      "source_path": "models/part.glb",
+      "source_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "license": null,
+      "generator": null,
+      "derivatives": []
+    },
+    "geometry": {
+      "schema": "scena.asset_geometry_summary.v1",
+      "node_count": 1,
+      "mesh_count": 1,
+      "primitive_count": 1,
+      "bounds": null,
+      "provenance": {
+        "source_path": "models/part.glb",
+        "source_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "license": null,
+        "generator": null,
+        "derivatives": []
+      },
+      "source_units": [],
+      "source_coordinate_systems": []
+    },
+    "warnings": [],
+    "progress_events": []
+  }
 }
 ```

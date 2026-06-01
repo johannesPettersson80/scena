@@ -64,6 +64,8 @@ The explicit lifecycle keeps frame rendering predictable:
 create or attach canvas -> load/instantiate assets -> update scene -> prepare -> render
 ```
 
+It does not create a second browser-only lifecycle; every host operation maps
+back to asset loading, scene mutation, prepare, render, readback, or inspection.
 The host page owns scheduling. A typical frame is:
 
 ```text

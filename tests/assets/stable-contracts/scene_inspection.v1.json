@@ -1,0 +1,47 @@
+{
+  "schema": "scena.scene_inspection.v1",
+  "nodes": [
+    {
+      "handle": 1,
+      "parent": null,
+      "kind": "empty",
+      "tags": [
+        "root"
+      ],
+      "local_transform": {
+        "translation": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "world_transform": {
+        "translation": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "visible": true,
+      "bounds": null,
+      "layer_mask": 1,
+      "render_group": 0,
+      "helper_on_top": false,
+      "tint": null
+    }
+  ],
+  "draw_list": [],
+  "camera_frustums": [],
+  "normal_overlays": [],
+  "active_camera": null,
+  "counts": {
+    "visible_drawable": 0,
+    "cameras": 0,
+    "lights": 0,
+    "anchors": 0,
+    "connectors": 0,
+    "bounded_nodes": 0,
+    "clipping_planes": 0
+  },
+  "revisions": {
+    "structure": 1,
+    "transform": 0,
+    "interaction": 0
+  }
+}

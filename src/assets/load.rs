@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::diagnostics::AssetError;
 
-use super::{AssetPath, SceneAsset, SceneAssetGeometrySummary};
+use super::{AssetPath, AssetProvenance, SceneAsset, SceneAssetGeometrySummary};
 
 pub const ASSET_LOAD_REPORT_SCHEMA_V1: &str = "scena.asset_load_report.v1";
 
@@ -90,6 +90,7 @@ pub struct AssetLoadReportV1 {
     pub fetched_bytes: usize,
     pub external_buffers: usize,
     pub external_images: usize,
+    pub provenance: AssetProvenance,
     pub geometry: SceneAssetGeometrySummary,
     pub warnings: Vec<AssetLoadWarningV1>,
     pub progress_events: Vec<AssetLoadProgressV1>,
@@ -239,6 +240,7 @@ impl AssetLoadReport<SceneAsset> {
             fetched_bytes: self.fetched_bytes,
             external_buffers: self.external_buffers,
             external_images: self.external_images,
+            provenance: self.asset.provenance().clone(),
             geometry: self.asset.geometry_summary(),
             warnings: self.warnings.iter().map(AssetLoadWarningV1::from).collect(),
             progress_events: self

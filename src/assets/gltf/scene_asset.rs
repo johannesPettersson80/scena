@@ -27,6 +27,7 @@ pub struct SceneAssetGeometrySummary {
     pub mesh_count: usize,
     pub primitive_count: usize,
     pub bounds: Option<Aabb>,
+    pub provenance: AssetProvenance,
     pub source_units: Vec<SourceUnits>,
     pub source_coordinate_systems: Vec<SourceCoordinateSystem>,
 }
@@ -136,6 +137,7 @@ impl SceneAsset {
             mesh_count: self.mesh_count(),
             primitive_count: self.primitive_count(),
             bounds: self.bounds(),
+            provenance: self.provenance().clone(),
             source_units,
             source_coordinate_systems: Vec::new(),
         }

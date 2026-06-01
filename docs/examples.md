@@ -32,6 +32,7 @@ cargo check --examples
 | Layers and visibility | `layers_visibility.rs` |
 | Native window | `native_window.rs` |
 | Browser canvas | `browser_canvas.rs` |
+| Browser host contracts | `scene_host_contracts.rs`, `scene_host_browser_contracts.js` |
 | CAD-style anchors and connectors | `anchor_alignment.rs`, `connect_objects.rs`, `imported_anchor_connection.rs`, `industrial_connector_assembly.rs`, `coordinate_connector_repair.rs`, `coordinate_units.rs` |
 | Industrial/static scene | `industrial_static_scene.rs` |
 | Diagnostics | `beginner_diagnostics.rs`, `scene_inspection.rs` |
@@ -55,6 +56,7 @@ Use these when you need generated images or regression artifacts:
 - `glb_model_viewer.rs`
 - `industrial_static_scene.rs`
 - `labels_helpers.rs`
+- `scene_host_contracts.rs`
 
 ## Interaction-oriented examples
 
@@ -64,6 +66,20 @@ Use these when you are building model viewers, inspection tools, or editors:
 - `picking_selection_hover.rs`
 - `layers_visibility.rs`
 - `scene_inspection.rs`
+- `scene_host_browser_contracts.js`
+
+## Stable JSON contract examples
+
+Use `scene_host_contracts.rs` to print representative
+`scena.capability_report.v1`, `scena.scene_host_asset_import.v1`,
+`scena.scene_inspection.v1`, `scena.annotation_projection.v1`, and
+`scena.capture.v1` reports from the native `SceneHostCore` path. Use
+`scene_host_browser_contracts.js` as the TypeScript/JavaScript shape for a
+browser host that owns its own render cadence.
+
+Golden JSON fixtures for these contracts live in
+`tests/assets/stable-contracts/` and are checked by `tests/stable_contracts.rs`
+plus `xtask doctor --full`.
 
 ## CAD-style placement examples
 

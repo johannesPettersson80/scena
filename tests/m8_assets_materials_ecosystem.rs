@@ -1777,9 +1777,11 @@ fn m8_missing_external_image_records_load_warning() {
 #[test]
 fn m8_asset_load_report_schema_serializes_warnings_geometry_and_cache_contract() {
     let path = "memory://asset-report/missing-image-scene.gltf";
+    let scene_bytes = textured_triangle_gltf("missing.png").into_bytes();
+    let expected_sha = sha256_hex(&scene_bytes);
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from(path),
-        textured_triangle_gltf("missing.png").into_bytes(),
+        scene_bytes,
     )]));
 
     let first =
@@ -1792,6 +1794,12 @@ fn m8_asset_load_report_schema_serializes_warnings_geometry_and_cache_contract()
     assert_eq!(schema_json["geometry"]["node_count"], 1);
     assert_eq!(schema_json["geometry"]["mesh_count"], 1);
     assert_eq!(schema_json["geometry"]["primitive_count"], 1);
+    assert_eq!(schema_json["provenance"]["source_path"], path);
+    assert_eq!(schema_json["provenance"]["source_sha256"], expected_sha);
+    assert_eq!(
+        schema_json["geometry"]["provenance"],
+        schema_json["provenance"]
+    );
     assert_eq!(schema_json["warnings"][0]["kind"], "external_image_missing");
     assert_eq!(
         schema_json["warnings"][0]["path"],
@@ -1801,6 +1809,15 @@ fn m8_asset_load_report_schema_serializes_warnings_geometry_and_cache_contract()
     let decoded: AssetLoadReportV1 =
         serde_json::from_value(schema_json).expect("asset load report schema decodes");
     assert_eq!(decoded.schema, ASSET_LOAD_REPORT_SCHEMA_V1);
+    assert_eq!(decoded.provenance.source_path().as_str(), path);
+    assert_eq!(
+        decoded.provenance.source_sha256(),
+        Some(expected_sha.as_str())
+    );
+    assert_eq!(
+        decoded.geometry.provenance.source_sha256(),
+        Some(expected_sha.as_str())
+    );
     assert!(matches!(
         decoded.warnings.as_slice(),
         [AssetLoadWarningV1::ExternalImageMissing { path, reason }]

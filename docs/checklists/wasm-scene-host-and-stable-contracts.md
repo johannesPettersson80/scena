@@ -320,18 +320,18 @@ test-first.
 
 Make asset-load behavior inspectable and stable.
 
-- [ ] Add schema `scena.asset_load_report.v1`.
-- [ ] Derive or implement serde for `AssetLoadReport`, warnings, and progress
+- [x] Add schema `scena.asset_load_report.v1`.
+- [x] Derive or implement serde for `AssetLoadReport`, warnings, and progress
       events through a stable wire view.
-- [ ] Include asset geometry summary and external-resource summary:
+- [x] Include asset geometry summary and external-resource summary:
       fetched bytes, cache hit, external buffers, external images, missing
       buffers, missing images, strict/lenient policy, and source URL/path.
-- [ ] Add typed warning for unresolved external buffers, not only unresolved
+- [x] Add typed warning for unresolved external buffers, not only unresolved
       images.
-- [ ] Ensure cached reports preserve enough warning/provenance information for
+- [x] Ensure cached reports preserve enough warning/provenance information for
       browser proof, or document the cache-hit reporting contract explicitly.
-- [ ] Expose asset-load report JSON through native loaders and `SceneHost`.
-- [ ] Tests:
+- [x] Expose asset-load report JSON through native loaders and `SceneHost`.
+- [x] Tests:
       missing-buffer and missing-image fixtures both produce typed warnings;
       strict mode promotes the right warnings to errors; browser URL loading
       records externally fetched resources.
@@ -340,12 +340,12 @@ Make asset-load behavior inspectable and stable.
 
 Provenance must be generic asset metadata, not application metadata.
 
-- [ ] Add `AssetProvenance` with source hash, license, generator, source URI or
+- [x] Add `AssetProvenance` with source hash, license, generator, source URI or
       logical path, derivatives, and optional package/source metadata.
-- [ ] Attach provenance to loaded scene assets, textures, environments, and
+- [x] Attach provenance to loaded scene assets, textures, environments, and
       derived assets where the source is known.
-- [ ] Include provenance in asset-load report JSON and asset summaries.
-- [ ] Tests:
+- [x] Include provenance in asset-load report JSON and asset summaries.
+- [x] Tests:
       loaded glTF/GLB reports expected source SHA-256; derived texture or
       environment assets record their source/derivative relationship.
 
@@ -353,28 +353,28 @@ Provenance must be generic asset metadata, not application metadata.
 
 This phase closes the public contract. It is not optional for user-visible API.
 
-- [ ] Update `docs/api.md` with the new public APIs and schema names.
-- [ ] Update `docs/browser.md` with `SceneHost`, host-pushed render cadence,
+- [x] Update `docs/api.md` with the new public APIs and schema names.
+- [x] Update `docs/browser.md` with `SceneHost`, host-pushed render cadence,
       canvas attach, resize/DPR, CSS-pixel picking, and browser asset loading.
-- [ ] Update `docs/lifecycle.md` so `SceneHost` uses the existing
+- [x] Update `docs/lifecycle.md` so `SceneHost` uses the existing
       load/create -> mutate -> prepare -> render lifecycle instead of creating
       a parallel browser lifecycle.
-- [ ] Update `docs/errors.md` with host stale-handle, unsupported-backend,
+- [x] Update `docs/errors.md` with host stale-handle, unsupported-backend,
       invalid-handle, missing-external-resource, and schema/serialization error
       families.
-- [ ] Update `docs/capabilities.md` with versioned capability JSON and browser
+- [x] Update `docs/capabilities.md` with versioned capability JSON and browser
       backend proof expectations.
-- [ ] Update `docs/assets.md` with load reports, external buffer/image
+- [x] Update `docs/assets.md` with load reports, external buffer/image
       warnings, and provenance.
-- [ ] Update `docs/feature-flags.md` with host/schema feature combinations.
-- [ ] Add examples:
+- [x] Update `docs/feature-flags.md` with host/schema feature combinations.
+- [x] Add examples:
       native stable inspection JSON, browser `SceneHost` multi-part assembly,
       capture descriptor, asset-load report JSON, and provenance.
-- [ ] Add TypeScript/JavaScript snippets for browser host use.
-- [ ] Add golden JSON fixtures under tests or docs schema fixtures and wire
+- [x] Add TypeScript/JavaScript snippets for browser host use.
+- [x] Add golden JSON fixtures under tests or docs schema fixtures and wire
       them into doctor/source checks.
-- [ ] Add release notes and changelog entries for each shipped public phase.
-- [ ] Run remote gates for implementation phases:
+- [x] Add release notes and changelog entries for each shipped public phase.
+- [x] Run remote gates for implementation phases:
       `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`,
       `cargo test --all-features`, `cargo run -p xtask -- doctor --full`,
       `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`, and the

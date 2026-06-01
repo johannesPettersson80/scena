@@ -87,6 +87,12 @@ available as `CAPABILITY_REPORT_SCHEMA_V1`. Enum values in this contract use
 serde names such as `supported`, `degraded`, and `feature_disabled`, not Rust
 `Debug` formatting.
 
+Browser `SceneHost` proof must capture capability JSON beside inspection and
+capture JSON. A CPU builder can prove the schema and headless behavior, but it
+cannot approve browser-visible rendering claims. WebGPU/WebGL2 claims require a
+real browser/GPU run that records the active backend, DPR, rendered pixels, and
+capability report for the same scene state.
+
 ## Best practice
 
 At startup:

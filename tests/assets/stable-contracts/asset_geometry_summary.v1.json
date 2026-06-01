@@ -1,0 +1,19 @@
+{
+  "schema": "scena.asset_geometry_summary.v1",
+  "node_count": 3,
+  "mesh_count": 1,
+  "primitive_count": 1,
+  "bounds": {
+    "min": [-0.5, -0.5, -0.5],
+    "max": [0.5, 0.5, 0.5]
+  },
+  "provenance": {
+    "source_path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+    "source_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "license": null,
+    "generator": null,
+    "derivatives": []
+  },
+  "source_units": [],
+  "source_coordinate_systems": []
+}

@@ -1,0 +1,14 @@
+{
+  "schema": "scena.annotation_projection.v1",
+  "coordinate_space": "css_pixels",
+  "viewport_width": 120,
+  "viewport_height": 80,
+  "annotations": [
+    {
+      "id": "left-label",
+      "x": 42.5,
+      "y": 40.0,
+      "visible": true
+    }
+  ]
+}

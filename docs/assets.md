@@ -49,6 +49,24 @@ the scene and renderer.
 For browser use, make sure your application serves model, buffer, and texture
 files from paths that the browser can fetch.
 
+`Assets::load_scene_with_report()` returns a stable
+`scena.asset_load_report.v1` JSON view through
+`AssetLoadReport<SceneAsset>::to_schema_json()`. The report includes fetched
+bytes, cache-hit state, external buffer/image counts, geometry summary,
+progress events, and typed missing-resource warnings:
+`external_buffer_missing` and `external_image_missing`.
+
+Use `AssetLoadOptions::with_strict_external_resources(true)` when missing
+external buffers or images should fail loading instead of producing warnings.
+Cache-hit reports retain the original warning and external-resource evidence
+while reporting `fetched_bytes = 0` for the cache-hit call itself.
+
+Loaded scene assets, textures, and environments expose generic
+`AssetProvenance` metadata with source path, optional source SHA-256, optional
+license/generator metadata, and generated derivatives. `AssetProvenance` is a
+nested serde value contract; it is versioned through the containing asset-load
+or summary reports rather than carrying its own top-level schema string.
+
 ## Units, axes, and handedness
 
 Imported assets can carry unit and coordinate metadata. `scena` provides typed

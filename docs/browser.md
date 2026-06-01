@@ -52,6 +52,10 @@ Use `newWebgpu` for WebGPU. `attachCanvasWebgl2`,
 changes through the same renderer lifecycle documented in
 [Lifecycle](lifecycle.md).
 
+See `examples/scene_host_browser_contracts.js` for a small browser host that
+constructs a multi-part scene, pushes transforms, renders explicitly, and reads
+inspection, annotation projection, capture, and asset-load JSON contracts.
+
 Construction and lookup stay domain-neutral:
 
 - `addEmpty(parent, translation, rotation, scale, tag)`
@@ -127,6 +131,14 @@ pixel summary. If the embedder mutates scene state after `render()` and before
 stale proof metadata. CPU-headless captures are deterministic for the same
 scene state. Browser GPU captures bind pixels to revision counters and
 backend/capability metadata; they do not claim cross-machine byte identity.
+
+Real browser/GPU proof remains a separate gate from CPU builder validation.
+The required proof plan and output artifacts are tracked in
+[`scene-host-browser-gpu-proof.md`](checklists/scene-host-browser-gpu-proof.md).
+That proof must exercise `SceneHost.capture()`, `inspectJson()`,
+`annotationProjectionsJson()`, CSS-pixel picking at DPR values other than 1,
+and URL asset loading in a real browser before browser-visible render behavior
+is treated as release evidence.
 
 ## Output Color Space
 
