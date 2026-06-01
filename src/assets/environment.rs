@@ -1,10 +1,10 @@
-use super::AssetPath;
 use super::environment_hdr::{
     DecodedEquirectangular, decode_radiance_hdr, parse_equirectangular_hdr_dimensions,
 };
 use super::environment_sidecar::{
     EnvironmentPrefilterSidecar, EnvironmentSidecarProfile, sha256_hex,
 };
+use super::{AssetDerivative, AssetPath, AssetProvenance};
 use crate::diagnostics::AssetError;
 use crate::scene::Vec3;
 
@@ -328,13 +328,10 @@ pub struct EnvironmentDerivative {
 #[derive(Debug, Clone)]
 pub struct EnvironmentDesc {
     name: String,
-    source_path: AssetPath,
+    provenance: AssetProvenance,
     source_kind: EnvironmentSourceKind,
     source_dimensions: Option<(u32, u32)>,
-    source_sha256: Option<String>,
     preview_irradiance_rgb: Option<[f32; 3]>,
-    license: Option<String>,
-    generator: Option<String>,
     cubemap_resolution: u32,
     brdf_lut_size: u32,
     wasm_delivery: WasmEnvironmentDelivery,
@@ -352,13 +349,10 @@ pub struct EnvironmentDesc {
 impl PartialEq for EnvironmentDesc {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
-            && self.source_path == other.source_path
+            && self.provenance == other.provenance
             && self.source_kind == other.source_kind
             && self.source_dimensions == other.source_dimensions
-            && self.source_sha256 == other.source_sha256
             && self.preview_irradiance_rgb == other.preview_irradiance_rgb
-            && self.license == other.license
-            && self.generator == other.generator
             && self.cubemap_resolution == other.cubemap_resolution
             && self.brdf_lut_size == other.brdf_lut_size
             && self.wasm_delivery == other.wasm_delivery
@@ -368,28 +362,30 @@ impl PartialEq for EnvironmentDesc {
 
 impl EnvironmentDesc {
     pub fn neutral_studio() -> Self {
+        let derivatives = vec![
+            EnvironmentDerivative::new(
+                DEFAULT_ENVIRONMENT_CUBEMAP_PATH,
+                DEFAULT_ENVIRONMENT_CUBEMAP_SHA256,
+            ),
+            EnvironmentDerivative::new(
+                DEFAULT_ENVIRONMENT_BRDF_LUT_PATH,
+                DEFAULT_ENVIRONMENT_BRDF_LUT_SHA256,
+            ),
+        ];
         Self {
             name: DEFAULT_ENVIRONMENT_NAME.to_string(),
-            source_path: AssetPath::from(DEFAULT_ENVIRONMENT_SOURCE_PATH),
+            provenance: AssetProvenance::new(DEFAULT_ENVIRONMENT_SOURCE_PATH)
+                .with_source_sha256(DEFAULT_ENVIRONMENT_SOURCE_SHA256)
+                .with_license(DEFAULT_ENVIRONMENT_LICENSE)
+                .with_generator(DEFAULT_ENVIRONMENT_GENERATOR)
+                .with_derivatives(derivatives.iter().map(AssetDerivative::from)),
             source_kind: EnvironmentSourceKind::BundledPreviewFixture,
             source_dimensions: None,
-            source_sha256: Some(DEFAULT_ENVIRONMENT_SOURCE_SHA256.to_string()),
             preview_irradiance_rgb: None,
-            license: Some(DEFAULT_ENVIRONMENT_LICENSE.to_string()),
-            generator: Some(DEFAULT_ENVIRONMENT_GENERATOR.to_string()),
             cubemap_resolution: 256,
             brdf_lut_size: 256,
             wasm_delivery: WasmEnvironmentDelivery::Bundled,
-            derivatives: vec![
-                EnvironmentDerivative {
-                    path: AssetPath::from(DEFAULT_ENVIRONMENT_CUBEMAP_PATH),
-                    sha256: DEFAULT_ENVIRONMENT_CUBEMAP_SHA256.to_string(),
-                },
-                EnvironmentDerivative {
-                    path: AssetPath::from(DEFAULT_ENVIRONMENT_BRDF_LUT_PATH),
-                    sha256: DEFAULT_ENVIRONMENT_BRDF_LUT_SHA256.to_string(),
-                },
-            ],
+            derivatives,
             prefilter_sidecar: None,
             equirectangular_pixels: None,
         }
@@ -400,13 +396,10 @@ impl EnvironmentDesc {
         let source_dimensions = parse_equirectangular_hdr_dimensions(&path);
         Self {
             name: environment_name_from_path(&path).to_string(),
-            source_path: path,
+            provenance: AssetProvenance::new(path),
             source_kind: EnvironmentSourceKind::EquirectangularHdr,
             source_dimensions,
-            source_sha256: None,
             preview_irradiance_rgb: None,
-            license: None,
-            generator: None,
             cubemap_resolution: 0,
             brdf_lut_size: 0,
             wasm_delivery: WasmEnvironmentDelivery::SeparateFetch,
@@ -440,13 +433,10 @@ impl EnvironmentDesc {
         let cubemap_resolution = DEFAULT_ENVIRONMENT_CUBEMAP_FACE_RESOLUTION;
         Ok(Self {
             name: environment_name_from_path(&path).to_string(),
-            source_path: path,
+            provenance: AssetProvenance::from_source_bytes(path, source_bytes),
             source_kind: EnvironmentSourceKind::EquirectangularHdr,
             source_dimensions: Some(source_dimensions),
-            source_sha256: Some(sha256_hex(source_bytes)),
             preview_irradiance_rgb: Some(preview_irradiance_rgb),
-            license: None,
-            generator: None,
             cubemap_resolution,
             brdf_lut_size: DEFAULT_ENVIRONMENT_BRDF_LUT_SIZE,
             wasm_delivery: WasmEnvironmentDelivery::SeparateFetch,
@@ -472,13 +462,10 @@ impl EnvironmentDesc {
         let brdf_lut_size = sidecar.brdf_lut_size();
         Ok(Some(Self {
             name: environment_name_from_path(&path).to_string(),
-            source_path: path,
+            provenance: AssetProvenance::new(path).with_source_sha256(source_sha256),
             source_kind: EnvironmentSourceKind::EquirectangularHdr,
             source_dimensions,
-            source_sha256: Some(source_sha256),
             preview_irradiance_rgb: Some(preview_irradiance_rgb),
-            license: None,
-            generator: None,
             cubemap_resolution,
             brdf_lut_size,
             wasm_delivery: WasmEnvironmentDelivery::SeparateFetch,
@@ -493,7 +480,11 @@ impl EnvironmentDesc {
     }
 
     pub fn source_path(&self) -> &AssetPath {
-        &self.source_path
+        self.provenance.source_path()
+    }
+
+    pub fn provenance(&self) -> &AssetProvenance {
+        &self.provenance
     }
 
     pub const fn source_kind(&self) -> EnvironmentSourceKind {
@@ -509,7 +500,7 @@ impl EnvironmentDesc {
     }
 
     pub fn source_sha256(&self) -> Option<&str> {
-        self.source_sha256.as_deref()
+        self.provenance.source_sha256()
     }
 
     pub const fn preview_irradiance_rgb(&self) -> Option<[f32; 3]> {
@@ -517,11 +508,11 @@ impl EnvironmentDesc {
     }
 
     pub fn license(&self) -> Option<&str> {
-        self.license.as_deref()
+        self.provenance.license()
     }
 
     pub fn generator(&self) -> Option<&str> {
-        self.generator.as_deref()
+        self.provenance.generator()
     }
 
     pub const fn cubemap_resolution(&self) -> u32 {
@@ -583,12 +574,25 @@ const BUNDLED_NEUTRAL_STUDIO_CUBEMAP: &str =
     include_str!("../../tests/assets/environment/generated/neutral-studio-cubemap.fixture.toml");
 
 impl EnvironmentDerivative {
+    pub fn new(path: impl Into<AssetPath>, sha256: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            sha256: sha256.into(),
+        }
+    }
+
     pub fn path(&self) -> &AssetPath {
         &self.path
     }
 
     pub fn sha256(&self) -> &str {
         &self.sha256
+    }
+}
+
+impl From<&EnvironmentDerivative> for AssetDerivative {
+    fn from(value: &EnvironmentDerivative) -> Self {
+        AssetDerivative::new(value.path.clone(), value.sha256.clone())
     }
 }
 

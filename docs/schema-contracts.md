@@ -94,6 +94,43 @@ Each new contract needs:
   non-goal or denylist sections,
 - browser-visible contracts have WASM build/probe evidence.
 
+## Stable serde value contracts
+
+Some public values are embedded in Rust API results rather than emitted as a
+top-level JSON report. These do not carry a `schema` field by themselves, but
+their serde field names are still external contracts.
+
+### `AssetProvenance`
+
+Returned by `SceneAsset::provenance`, `TextureDesc::provenance`, and
+`EnvironmentDesc::provenance`.
+
+Required fields:
+
+- `source_path`
+- `source_sha256`
+- `license`
+- `generator`
+- `derivatives`
+
+`source_sha256`, `license`, and `generator` are nullable because not every
+asset source has bytes or declared licensing metadata available at load time.
+`derivatives` is an array of `{ "path", "sha256" }` entries for generated
+assets derived from the source, such as bundled environment cubemaps and BRDF
+LUT fixtures.
+
+Small example:
+
+```json
+{
+  "source_path": "models/cell.glb",
+  "source_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "license": null,
+  "generator": null,
+  "derivatives": []
+}
+```
+
 ## Shipped v1 contracts
 
 ### `scena.capability_report.v1`

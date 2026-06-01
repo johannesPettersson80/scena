@@ -572,7 +572,9 @@ fn public_showcase_uses_hdr_sidecar_without_parallel_render_cache() {
          renderer reaches the expensive runtime prefilter path"
     );
     assert!(
-        environment_rs.contains("source_sha256: Some(sha256_hex(source_bytes))")
+        environment_rs.contains("AssetProvenance::from_source_bytes(path, source_bytes)")
+            && environment_rs
+                .contains("AssetProvenance::new(path).with_source_sha256(source_sha256)")
             && environment_rs.contains("from_equirectangular_hdr_sidecar_bytes")
             && environment_rs.contains("prefilter_sidecar(")
             && environment_rs.contains("prefilter_sidecar_identity"),

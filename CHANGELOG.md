@@ -29,6 +29,10 @@ All notable user-facing changes are recorded here.
   including geometry summaries, progress events, cache-hit warning retention,
   typed missing image/buffer warnings, strict external-resource loading, and
   SceneHost URL instantiate-with-report JSON.
+- Added generic `AssetProvenance` metadata on loaded scene assets, textures,
+  and environments so asset consumers can inspect source paths, SHA-256 hashes,
+  license/generator metadata, and generated derivatives through one serde
+  contract.
 
 ### Fixed
 

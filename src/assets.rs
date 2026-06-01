@@ -29,6 +29,7 @@ mod load;
 mod material_presets;
 #[cfg(feature = "obj")]
 mod obj;
+mod provenance;
 mod scene_loading;
 mod texture;
 pub use environment::{
@@ -63,6 +64,7 @@ pub use load::{
 pub use material_presets::{
     MaterialPresetAssets, MaterialPresetProvenance, source_backed_material_preset_provenance,
 };
+pub use provenance::{AssetDerivative, AssetProvenance};
 #[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
 pub(crate) use texture::BROWSER_TEXTURE_MAX_DIMENSION_2D;
 pub use texture::{

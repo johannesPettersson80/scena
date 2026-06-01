@@ -36,18 +36,19 @@ pub use assets::BrowserAssetFetcher;
 #[cfg(not(target_arch = "wasm32"))]
 pub use assets::FileAssetFetcher;
 pub use assets::{
-    ASSET_GEOMETRY_SUMMARY_SCHEMA_V1, ASSET_LOAD_REPORT_SCHEMA_V1, AssetEvictionStats,
-    AssetFetcher, AssetLoadControl, AssetLoadOptions, AssetLoadProgress, AssetLoadProgressV1,
-    AssetLoadReport, AssetLoadReportV1, AssetLoadWarning, AssetLoadWarningV1, AssetPath,
-    AssetStoreId, Assets, DefaultAssetFetcher, EnvironmentDerivative, EnvironmentDesc,
-    EnvironmentHandle, EnvironmentPrefilterSidecar, EnvironmentPreset, EnvironmentPresetMetadata,
-    EnvironmentSidecarHeader, EnvironmentSidecarProfile, EnvironmentSourceKind, GeometryHandle,
-    GltfDecoderPolicy, GltfExtensionDiagnostic, GltfExtensionStatus, MaterialHandle,
-    MaterialPresetAssets, MaterialPresetProvenance, MaterialVariantBinding, ModelHandle,
-    RetainPolicy, SIDECAR_FILE_SUFFIX, SceneAsset, SceneAssetAnchor, SceneAssetClip,
-    SceneAssetGeometrySummary, SceneAssetLight, SceneAssetMesh, SceneAssetNode, TextureDesc,
-    TextureFilter, TextureHandle, TextureSamplerDesc, TextureSourceFormat, TextureWrap,
-    WasmEnvironmentDelivery, parse_sidecar_header, source_backed_material_preset_provenance,
+    ASSET_GEOMETRY_SUMMARY_SCHEMA_V1, ASSET_LOAD_REPORT_SCHEMA_V1, AssetDerivative,
+    AssetEvictionStats, AssetFetcher, AssetLoadControl, AssetLoadOptions, AssetLoadProgress,
+    AssetLoadProgressV1, AssetLoadReport, AssetLoadReportV1, AssetLoadWarning, AssetLoadWarningV1,
+    AssetPath, AssetProvenance, AssetStoreId, Assets, DefaultAssetFetcher, EnvironmentDerivative,
+    EnvironmentDesc, EnvironmentHandle, EnvironmentPrefilterSidecar, EnvironmentPreset,
+    EnvironmentPresetMetadata, EnvironmentSidecarHeader, EnvironmentSidecarProfile,
+    EnvironmentSourceKind, GeometryHandle, GltfDecoderPolicy, GltfExtensionDiagnostic,
+    GltfExtensionStatus, MaterialHandle, MaterialPresetAssets, MaterialPresetProvenance,
+    MaterialVariantBinding, ModelHandle, RetainPolicy, SIDECAR_FILE_SUFFIX, SceneAsset,
+    SceneAssetAnchor, SceneAssetClip, SceneAssetGeometrySummary, SceneAssetLight, SceneAssetMesh,
+    SceneAssetNode, TextureDesc, TextureFilter, TextureHandle, TextureSamplerDesc,
+    TextureSourceFormat, TextureWrap, WasmEnvironmentDelivery, parse_sidecar_header,
+    source_backed_material_preset_provenance,
 };
 #[cfg(all(feature = "hot-reload", not(target_arch = "wasm32")))]
 pub use assets::{AssetHotReloadError, AssetHotReloadWatcher};

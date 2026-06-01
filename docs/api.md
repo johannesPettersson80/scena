@@ -54,6 +54,10 @@ Additive public API changes in `[Unreleased]`:
 - `AssetLoadReport<SceneAsset>::to_schema_report`
 - `AssetLoadReport<SceneAsset>::to_schema_json`
 - `AssetLoadOptions::with_strict_external_resources`
+- `AssetProvenance` and `AssetDerivative`
+- `SceneAsset::provenance`
+- `TextureDesc::provenance`
+- `EnvironmentDesc::provenance`
 - `AnnotationAnchor`, `AnnotationAnchorTarget`,
   `AnnotationProjectionReportV1`, `AnnotationProjectionV1`,
   `SCENE_ANNOTATION_PROJECTION_SCHEMA_V1`,
@@ -108,6 +112,11 @@ Phase 5 adds stable asset-load reports. Native callers use
 `instantiateUrlWithReportJson` or `instantiateUrlUnderWithReportJson` to get
 the created import handle plus the same asset-load report. Cache-hit reports
 preserve typed warnings and external resource counts from the original load.
+Phase 6 adds generic `AssetProvenance` metadata. Loaded `SceneAsset`,
+`TextureDesc`, and `EnvironmentDesc` values expose `provenance()` with a
+serde-stable source path, optional source SHA-256, optional license/generator,
+and generated derivatives. Existing environment source accessors continue to
+delegate to the same provenance record.
 
 Additive public API changes in 1.2.0:
 

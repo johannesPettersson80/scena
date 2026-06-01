@@ -7,10 +7,10 @@ use base64::Engine;
 use scena::{
     ASSET_LOAD_REPORT_SCHEMA_V1, AlphaMode, Angle, AssetError, AssetFetcher, AssetLoadControl,
     AssetLoadOptions, AssetLoadProgress, AssetLoadReportV1, AssetLoadWarning, AssetLoadWarningV1,
-    AssetPath, Assets, Color, DiagnosticCode, DirectionalLight, GeometryDesc, GltfDecoderPolicy,
-    GltfExtensionStatus, MaterialDesc, MaterialKind, NodeKind, NotPreparedReason, PointLight,
-    RenderError, Renderer, RetainPolicy, Scene, SpotLight, TextureColorSpace, TextureFilter,
-    TextureSourceFormat, TextureWrap, Transform, Vec3,
+    AssetPath, Assets, Color, DiagnosticCode, DirectionalLight, EnvironmentSourceKind,
+    GeometryDesc, GltfDecoderPolicy, GltfExtensionStatus, MaterialDesc, MaterialKind, NodeKind,
+    NotPreparedReason, PointLight, RenderError, Renderer, RetainPolicy, Scene, SpotLight,
+    TextureColorSpace, TextureFilter, TextureSourceFormat, TextureWrap, Transform, Vec3,
 };
 
 fn unstable_headless_gpu_release_tests_enabled() -> bool {
@@ -1906,6 +1906,122 @@ fn m8_strict_scene_load_promotes_missing_external_image_to_error() {
                 if path == "memory://strict-missing-external-image/missing.png"
         ),
         "strict texture loading should preserve the missing external image path in the hard error, got {error:?}",
+    );
+}
+
+#[test]
+fn m8_scene_asset_provenance_records_source_hash_and_round_trips() {
+    let path = "memory://provenance/scene.gltf";
+    let scene_bytes = textured_triangle_gltf("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==").into_bytes();
+    let expected_sha = sha256_hex(&scene_bytes);
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from(path),
+        scene_bytes,
+    )]));
+
+    let scene_asset = pollster::block_on(assets.load_scene(path)).expect("scene loads");
+    let provenance = scene_asset.provenance();
+
+    assert_eq!(provenance.source_path().as_str(), path);
+    assert_eq!(provenance.source_sha256(), Some(expected_sha.as_str()));
+    assert_eq!(provenance.license(), None);
+    assert_eq!(provenance.generator(), None);
+    assert!(provenance.derivatives().is_empty());
+
+    let json = serde_json::to_value(provenance).expect("provenance serializes");
+    assert_eq!(json["source_path"], path);
+    assert_eq!(json["source_sha256"], expected_sha);
+    let decoded: scena::AssetProvenance =
+        serde_json::from_value(json).expect("provenance deserializes");
+    assert_eq!(decoded, provenance.clone());
+}
+
+#[test]
+fn m8_texture_provenance_records_direct_and_external_image_source_hashes() {
+    let direct_path = "memory://provenance/direct.png";
+    let direct_png = png_rgba8(1, 1, &[[255, 0, 0, 255]]);
+    let expected_direct_sha = sha256_hex(&direct_png);
+    let external_png = png_rgba8(1, 1, &[[0, 0, 255, 255]]);
+    let expected_external_sha = sha256_hex(&external_png);
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![
+        (AssetPath::from(direct_path), direct_png),
+        (
+            AssetPath::from("memory://provenance-texture/scene.gltf"),
+            textured_triangle_gltf("blue.png").into_bytes(),
+        ),
+        (
+            AssetPath::from("memory://provenance-texture/blue.png"),
+            external_png,
+        ),
+    ]));
+
+    let direct = pollster::block_on(assets.load_texture(direct_path, TextureColorSpace::Srgb))
+        .expect("direct texture loads");
+    let direct_texture = assets.texture(direct).expect("direct texture descriptor");
+    assert_eq!(
+        direct_texture.provenance().source_path().as_str(),
+        direct_path
+    );
+    assert_eq!(
+        direct_texture.provenance().source_sha256(),
+        Some(expected_direct_sha.as_str())
+    );
+
+    let scene_asset =
+        pollster::block_on(assets.load_scene("memory://provenance-texture/scene.gltf"))
+            .expect("scene with external image loads");
+    let mesh = scene_asset.nodes()[0].mesh().expect("mesh");
+    let material = assets.material(mesh.material()).expect("material");
+    let external_texture = material
+        .base_color_texture()
+        .expect("base color texture handle");
+    let external_texture = assets
+        .texture(external_texture)
+        .expect("external texture descriptor");
+    assert_eq!(
+        external_texture.provenance().source_path().as_str(),
+        "memory://provenance-texture/blue.png"
+    );
+    assert_eq!(
+        external_texture.provenance().source_sha256(),
+        Some(expected_external_sha.as_str())
+    );
+}
+
+#[test]
+fn m8_environment_provenance_uses_generic_asset_provenance_contract() {
+    let assets = Assets::new();
+    let environment = assets
+        .environment(assets.default_environment())
+        .expect("default environment exists");
+    let provenance = environment.provenance();
+
+    assert_eq!(
+        provenance.source_path().as_str(),
+        "tests/assets/environment/neutral-studio.fixture.txt"
+    );
+    assert_eq!(
+        provenance.source_sha256(),
+        environment.source_sha256(),
+        "legacy environment hash accessor should delegate to generic provenance"
+    );
+    assert_eq!(provenance.license(), Some("CC0-1.0"));
+    assert_eq!(
+        provenance.generator(),
+        Some(
+            "xtask generate-default-env-fixture --input tests/assets/environment/neutral-studio.fixture.txt"
+        )
+    );
+    assert_eq!(
+        environment.source_kind(),
+        EnvironmentSourceKind::BundledPreviewFixture
+    );
+    assert_eq!(provenance.derivatives().len(), 2);
+
+    let json = serde_json::to_value(provenance).expect("environment provenance serializes");
+    assert_eq!(
+        json["derivatives"][0]["path"],
+        "tests/assets/environment/generated/neutral-studio-cubemap.fixture.toml"
     );
 }
 
@@ -4864,6 +4980,12 @@ fn png_rgba8(width: u32, height: u32, pixels: &[[u8; 4]]) -> Vec<u8> {
         writer.write_image_data(&raw).expect("PNG payload writes");
     }
     bytes
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(bytes);
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn basisu_material_gltf() -> &'static [u8] {

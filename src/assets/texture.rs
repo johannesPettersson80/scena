@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::diagnostics::AssetError;
 use crate::material::{Color, TextureColorSpace};
 
-use super::AssetPath;
+use super::{AssetPath, AssetProvenance};
 
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 fn texture_now_ms() -> f64 {
@@ -52,6 +52,7 @@ use texture_source::resolve_texture_source_bytes;
 #[derive(Debug, Clone)]
 pub struct TextureDesc {
     path: AssetPath,
+    provenance: AssetProvenance,
     color_space: TextureColorSpace,
     sampler: TextureSamplerDesc,
     source_format: TextureSourceFormat,
@@ -128,6 +129,7 @@ impl TexturePixels {
 impl PartialEq for TextureDesc {
     fn eq(&self, other: &Self) -> bool {
         let base = self.path == other.path
+            && self.provenance == other.provenance
             && self.color_space == other.color_space
             && self.sampler == other.sampler
             && self.source_format == other.source_format
@@ -194,12 +196,20 @@ impl TextureDesc {
         source_format: TextureSourceFormat,
         source_bytes: Option<&[u8]>,
     ) -> Result<Self, AssetError> {
+        let provenance = if let Some(bytes) =
+            resolve_texture_source_bytes(&path, source_format, source_bytes)?
+        {
+            AssetProvenance::from_source_bytes(path.clone(), &bytes)
+        } else {
+            AssetProvenance::new(path.clone())
+        };
         #[cfg(target_arch = "wasm32")]
         if browser_native_decode_format(source_format) {
             let encoded_source_bytes =
                 resolve_texture_source_bytes(&path, source_format, source_bytes)?.map(Arc::from);
             return Ok(Self {
                 path,
+                provenance,
                 color_space,
                 sampler,
                 source_format,
@@ -212,6 +222,7 @@ impl TextureDesc {
             decode_texture_pixels(&path, color_space, source_format, source_bytes)?.map(Arc::new);
         Ok(Self {
             path,
+            provenance,
             color_space,
             sampler,
             source_format,
@@ -225,6 +236,10 @@ impl TextureDesc {
 
     pub fn path(&self) -> &AssetPath {
         &self.path
+    }
+
+    pub fn provenance(&self) -> &AssetProvenance {
+        &self.provenance
     }
 
     pub const fn color_space(&self) -> TextureColorSpace {
@@ -276,6 +291,9 @@ impl TextureDesc {
         &mut self,
         source_bytes: Option<&[u8]>,
     ) -> Result<(), AssetError> {
+        if let Some(bytes) = source_bytes {
+            self.provenance = AssetProvenance::from_source_bytes(self.path.clone(), bytes);
+        }
         #[cfg(target_arch = "wasm32")]
         if browser_native_decode_format(self.source_format) {
             if self.encoded_source_bytes.is_none() {

@@ -36,7 +36,7 @@ pub use self::skins::SceneAssetSkin;
 use self::skins::parse_skins;
 use self::textures::parse_textures;
 use self::transform::from_gltf_transform;
-use super::{AssetPath, AssetStorage};
+use super::{AssetPath, AssetProvenance, AssetStorage};
 
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 fn gltf_now_ms() -> f64 {
@@ -105,12 +105,14 @@ impl SceneAsset {
             step_start = log_gltf_step("open_gltf_with_massage", step_start);
         }
         let blob = gltf.blob.clone();
+        let provenance = AssetProvenance::from_source_bytes(path.clone(), bytes);
         let scene = Self::from_gltf_document(
             &path,
             &gltf,
             blob.as_deref(),
             external_buffers,
             external_images,
+            provenance,
             storage,
         )?;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
@@ -141,6 +143,7 @@ impl SceneAsset {
         binary_chunk: Option<&[u8]>,
         external_buffers: &BTreeMap<usize, Vec<u8>>,
         external_images: &BTreeMap<AssetPath, Vec<u8>>,
+        provenance: AssetProvenance,
         storage: &mut AssetStorage,
     ) -> Result<Self, AssetError> {
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
@@ -235,6 +238,7 @@ impl SceneAsset {
                 extensions_required,
                 extension_diagnostics,
                 material_variants,
+                provenance,
                 retained_source_bytes: None,
             }),
         })
