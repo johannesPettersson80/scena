@@ -245,6 +245,7 @@ impl Renderer {
             output_color_space,
             render_generation: 0,
             last_rendered_generation: None,
+            last_rendered_frame: None,
             debug_overlay: DebugOverlay::None,
             debug_revision: 0,
             surface_lost: None,

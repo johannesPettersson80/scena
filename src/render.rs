@@ -29,7 +29,7 @@ use crate::geometry::Primitive;
 use crate::material::Color;
 use crate::picking::InteractionStyle;
 use crate::platform::SurfaceKind;
-use crate::scene::{CameraKey, ClippingPlane, Scene};
+use crate::scene::{CameraKey, ClippingPlane, Scene, SceneDirtyState};
 
 pub use self::background::Background;
 pub use self::exposure::{
@@ -75,6 +75,7 @@ pub struct Renderer {
     output_color_space: OutputColorSpace,
     render_generation: u64,
     last_rendered_generation: Option<u64>,
+    last_rendered_frame: Option<RenderedFrameState>,
     debug_overlay: DebugOverlay,
     debug_revision: u64,
     surface_lost: Option<bool>,
@@ -114,6 +115,12 @@ struct PreparedSceneState {
     clipping_planes: Vec<ClippingPlane>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RenderedFrameState {
+    dirty_state: SceneDirtyState,
+    camera: CameraKey,
+}
+
 /// Row-major render target dimensions used for CPU frame and accumulator indexing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RasterTarget {
@@ -134,8 +141,12 @@ impl Renderer {
             return Err(RenderError::CameraNotFound(camera));
         }
 
+        let dirty_state = scene.dirty_state();
         if self.render_mode == RenderMode::OnChange
             && self.last_rendered_generation == Some(self.render_generation)
+            && self
+                .last_rendered_frame
+                .is_some_and(|state| state.matches(dirty_state, camera))
         {
             self.stats.skipped_frames = self.stats.skipped_frames.saturating_add(1);
             return Ok(RenderOutcome {
@@ -264,6 +275,10 @@ impl Renderer {
         self.stats.triangles = primitive_count;
         self.stats.primitives = primitive_count;
         self.last_rendered_generation = Some(self.render_generation);
+        self.last_rendered_frame = Some(RenderedFrameState {
+            dirty_state,
+            camera,
+        });
 
         Ok(RenderOutcome {
             width: self.target.width,
@@ -315,6 +330,15 @@ impl Renderer {
 
     pub fn capabilities(&self) -> &Capabilities {
         &self.capabilities
+    }
+
+    pub(crate) fn rendered_frame_state(&self) -> Option<RenderedFrameState> {
+        self.last_rendered_frame
+    }
+
+    pub(crate) fn clear_rendered_frame(&mut self) {
+        self.last_rendered_generation = None;
+        self.last_rendered_frame = None;
     }
 
     pub fn has_gpu_device(&self) -> bool {
@@ -432,6 +456,23 @@ impl Renderer {
         }
 
         Ok(prepared)
+    }
+}
+
+impl RenderedFrameState {
+    pub(crate) const fn dirty_state(self) -> SceneDirtyState {
+        self.dirty_state
+    }
+
+    pub(crate) const fn camera(self) -> CameraKey {
+        self.camera
+    }
+
+    fn matches(self, dirty_state: SceneDirtyState, camera: CameraKey) -> bool {
+        self.dirty_state.structure_revision == dirty_state.structure_revision
+            && self.dirty_state.transform_revision == dirty_state.transform_revision
+            && self.dirty_state.interaction_revision == dirty_state.interaction_revision
+            && self.camera == camera
     }
 }
 

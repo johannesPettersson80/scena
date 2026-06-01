@@ -20,25 +20,30 @@ impl Renderer {
             }
             SurfaceEvent::ScaleFactorChanged { .. } | SurfaceEvent::Occluded { .. } => {
                 self.target_revision = self.target_revision.saturating_add(1);
+                self.clear_rendered_frame();
             }
             SurfaceEvent::Hidden | SurfaceEvent::Shown => {}
             SurfaceEvent::Lost => {
                 self.surface_lost = Some(true);
                 self.target_revision = self.target_revision.saturating_add(1);
+                self.clear_rendered_frame();
             }
             SurfaceEvent::ContextLost { recoverable } => {
                 self.context_lost = Some(recoverable);
                 self.target_revision = self.target_revision.saturating_add(1);
+                self.clear_rendered_frame();
             }
             SurfaceEvent::ContextRestored => {
                 if self.context_lost == Some(true) {
                     self.context_lost = None;
                     self.target_revision = self.target_revision.saturating_add(1);
+                    self.clear_rendered_frame();
                 }
             }
             SurfaceEvent::DeviceLost { recoverable } => {
                 self.device_lost = Some(recoverable);
                 self.target_revision = self.target_revision.saturating_add(1);
+                self.clear_rendered_frame();
             }
         }
         Ok(())
@@ -111,7 +116,7 @@ impl Renderer {
         self.surface_lost = None;
         self.target_revision = self.target_revision.saturating_add(1);
         self.prepared = None;
-        self.last_rendered_generation = None;
+        self.clear_rendered_frame();
         Ok(())
     }
 
@@ -145,7 +150,7 @@ impl Renderer {
                 self.capabilities = Capabilities::for_attached_gpu_backend(backend)
                     .with_display_p3_output(display_p3_canvas_configured);
                 self.surface_lost = None;
-                self.last_rendered_generation = None;
+                self.clear_rendered_frame();
                 Ok(())
             }
             PlatformSurfaceAttachment::Descriptor => self.recover_surface(
@@ -166,7 +171,7 @@ impl Renderer {
         if let Some(gpu) = &mut self.gpu {
             gpu.release_surface();
         }
-        self.last_rendered_generation = None;
+        self.clear_rendered_frame();
     }
 
     pub fn recover_context<F>(
@@ -197,7 +202,7 @@ impl Renderer {
                 self.device_lost = None;
                 self.target_revision = self.target_revision.saturating_add(1);
                 self.prepared = None;
-                self.last_rendered_generation = None;
+                self.clear_rendered_frame();
                 Ok(())
             }
         }
@@ -234,6 +239,7 @@ impl Renderer {
         self.stats.target_width = width;
         self.stats.target_height = height;
         self.target_revision = self.target_revision.saturating_add(1);
+        self.clear_rendered_frame();
         Ok(())
     }
 

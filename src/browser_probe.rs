@@ -15,7 +15,8 @@ use workflows::{build_workflow_scene, scene_with_triangle};
 use crate::{
     AssetFetcher, Assets, Backend, CameraKey, EnvironmentHandle, FlyControls, FollowControls,
     OrbitControlAction, OrbitControls, OutputColorSpace, PerspectiveCamera, PixelReadback,
-    PlatformSurface, PointerEvent, Renderer, RendererOptions, Scene, Transform, Vec3,
+    PlatformSurface, PointerEvent, Renderer, RendererOptions, Scene, Transform, Vec3, fnv1a64_hex,
+    sample_rgba8,
 };
 
 #[wasm_bindgen(js_name = m6RenderWebgl2Probe)]
@@ -372,7 +373,7 @@ pub(super) fn renderer_readback_json(readback: &PixelReadback) -> serde_json::Va
         "source": "renderer-owned-gpu-copy",
         "width": readback.width(),
         "height": readback.height(),
-        "rgba8_fnv1a64": hash_pixel_readback(readback),
+        "rgba8_fnv1a64": fnv1a64_hex(readback.rgba8()),
         "pixel_statistics": summarize_pixel_readback(readback),
     })
 }
@@ -393,36 +394,14 @@ fn summarize_pixel_readback(readback: &PixelReadback) -> serde_json::Value {
         max[3] = max[3].max(pixel[3]);
     }
     json!({
-        "center": sample_pixel(rgba, width, height, width as f32 / 2.0, height as f32 / 2.0),
-        "left": sample_pixel(rgba, width, height, width as f32 * 0.25, height as f32 / 2.0),
-        "right": sample_pixel(rgba, width, height, width as f32 * 0.75, height as f32 / 2.0),
-        "flat": sample_pixel(rgba, width, height, width as f32 * 0.38, height as f32 / 2.0),
-        "inverted": sample_pixel(rgba, width, height, width as f32 * 0.62, height as f32 / 2.0),
+        "center": sample_rgba8(rgba, width, height, width as f32 / 2.0, height as f32 / 2.0),
+        "left": sample_rgba8(rgba, width, height, width as f32 * 0.25, height as f32 / 2.0),
+        "right": sample_rgba8(rgba, width, height, width as f32 * 0.75, height as f32 / 2.0),
+        "flat": sample_rgba8(rgba, width, height, width as f32 * 0.38, height as f32 / 2.0),
+        "inverted": sample_rgba8(rgba, width, height, width as f32 * 0.62, height as f32 / 2.0),
         "nonblack": nonblack,
         "max": max,
     })
-}
-
-fn hash_pixel_readback(readback: &PixelReadback) -> String {
-    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
-    const FNV_PRIME: u64 = 0x00000100000001b3;
-    let mut hash = FNV_OFFSET;
-    for byte in readback.rgba8() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(FNV_PRIME);
-    }
-    format!("{hash:016x}")
-}
-
-fn sample_pixel(rgba: &[u8], width: u32, height: u32, x: f32, y: f32) -> [u8; 4] {
-    let x = x.floor().clamp(0.0, width.saturating_sub(1) as f32) as u32;
-    let y = y.floor().clamp(0.0, height.saturating_sub(1) as f32) as u32;
-    let offset = ((y as usize) * (width as usize) + (x as usize)) * 4;
-    if let Some(pixel) = rgba.get(offset..offset + 4) {
-        [pixel[0], pixel[1], pixel[2], pixel[3]]
-    } else {
-        [0; 4]
-    }
 }
 
 fn parse_browser_backend(value: &str) -> Result<Backend, JsValue> {

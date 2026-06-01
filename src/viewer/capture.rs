@@ -6,6 +6,7 @@ use std::io::Cursor;
 use std::path::Path;
 
 use crate::render::Renderer;
+use crate::{CaptureError, CaptureOptions, CaptureRgba8, capture_rgba8};
 
 use super::{FirstRender, HeadlessGltfViewer, HeadlessGltfViewerBuilder, InteractiveGltfViewer};
 
@@ -82,6 +83,17 @@ impl HeadlessGltfViewerBuilder {
 }
 
 impl FirstRender {
+    /// Captures the rendered frame as RGBA8 plus a versioned descriptor that
+    /// binds the pixels to the renderer's last rendered scene revisions, camera
+    /// state, backend capabilities, and pixel statistics.
+    pub fn capture(&self) -> Result<CaptureRgba8, CaptureError> {
+        capture_rgba8(
+            &self.scene,
+            &self.renderer,
+            capture_options_for_import(&self.import, &self.scene),
+        )
+    }
+
     /// Encodes the rendered frame as RGBA8 PNG bytes.
     pub fn capture_png_bytes(&self) -> Result<Vec<u8>, ViewerCaptureError> {
         capture_png_bytes_from_renderer(&self.renderer)
@@ -95,6 +107,17 @@ impl FirstRender {
 }
 
 impl HeadlessGltfViewer {
+    /// Captures the latest rendered frame as RGBA8 plus a versioned descriptor
+    /// that binds the pixels to the renderer's last rendered scene revisions,
+    /// camera state, backend capabilities, and pixel statistics.
+    pub fn capture(&self) -> Result<CaptureRgba8, CaptureError> {
+        capture_rgba8(
+            &self.scene,
+            &self.renderer,
+            capture_options_for_import(&self.import, &self.scene),
+        )
+    }
+
     /// Encodes the latest rendered frame as RGBA8 PNG bytes.
     pub fn capture_png_bytes(&self) -> Result<Vec<u8>, ViewerCaptureError> {
         capture_png_bytes_from_renderer(&self.renderer)
@@ -108,6 +131,17 @@ impl HeadlessGltfViewer {
 }
 
 impl InteractiveGltfViewer {
+    /// Captures the latest rendered frame as RGBA8 plus a versioned descriptor
+    /// that binds the pixels to the renderer's last rendered scene revisions,
+    /// camera state, backend capabilities, and pixel statistics.
+    pub fn capture(&self) -> Result<CaptureRgba8, CaptureError> {
+        capture_rgba8(
+            &self.scene,
+            &self.renderer,
+            capture_options_for_import(&self.import, &self.scene),
+        )
+    }
+
     /// Encodes the latest rendered frame as RGBA8 PNG bytes.
     ///
     /// # Examples
@@ -139,6 +173,14 @@ impl InteractiveGltfViewer {
     pub fn capture_png(&self, path: impl AsRef<Path>) -> Result<(), ViewerCaptureError> {
         capture_png_from_renderer(&self.renderer, path)
     }
+}
+
+fn capture_options_for_import(import: &crate::SceneImport, scene: &crate::Scene) -> CaptureOptions {
+    import
+        .bounds_world(scene)
+        .map_or_else(CaptureOptions::default, |bounds| {
+            CaptureOptions::default().with_auto_frame_bounds(bounds)
+        })
 }
 
 fn capture_png_bytes_from_renderer(renderer: &Renderer) -> Result<Vec<u8>, ViewerCaptureError> {

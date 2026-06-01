@@ -157,7 +157,7 @@ impl Renderer {
                                         .saturating_add(1);
                                     self.render_generation =
                                         self.render_generation.saturating_add(1);
-                                    self.last_rendered_generation = None;
+                                    self.clear_rendered_frame();
                                     self.diagnostics = diagnostics;
                                     log_prepare_step("dynamic draw-uniform update", step_start);
                                     log_prepare_step("prepare_inner total", total_start);
@@ -242,7 +242,7 @@ impl Renderer {
             clipping_planes: scene.active_clipping_plane_values().collect(),
         });
         self.render_generation = self.render_generation.saturating_add(1);
-        self.last_rendered_generation = None;
+        self.clear_rendered_frame();
         self.diagnostics = diagnostics;
         log_prepare_step("prepare_inner tail", step_start);
         log_prepare_step("prepare_inner total", total_start);

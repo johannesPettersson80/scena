@@ -7,6 +7,7 @@ pub mod animation;
 pub mod assets;
 #[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
 pub mod browser_probe;
+pub mod capture;
 pub mod controls;
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 pub mod demo_page;
@@ -51,6 +52,13 @@ pub use assets::{
 pub use assets::{AssetHotReloadError, AssetHotReloadWatcher};
 #[cfg(feature = "khronos-samples")]
 pub use assets::{KhronosSample, KhronosSampleMetadata, KhronosSamples};
+pub use capture::{
+    CAPTURE_SCHEMA_V1, CaptureAutoFrame, CaptureAutoFrameViewport, CaptureCamera,
+    CaptureDescriptor, CaptureError, CaptureOptions, CapturePayload, CapturePayloadKind,
+    CapturePixelBounds, CapturePixelSummary, CapturePoint2, CaptureProjection, CaptureRevisions,
+    CaptureRgba8, CaptureScreenRect, CaptureViewport, auto_frame_metadata, capture_rgba8,
+    fnv1a64_hex, sample_rgba8, summarize_pixel_readback, summarize_rgba8,
+};
 pub use controls::{
     CameraOrbitUrlState, CameraOrbitUrlStateError, FlyControls, FollowControls, OrbitControlAction,
     OrbitControls, PointerButton, PointerEvent, PointerEventKind, TouchEvent, TouchEventKind,

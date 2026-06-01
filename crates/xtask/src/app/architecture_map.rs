@@ -54,6 +54,7 @@ pub(crate) const ARCHITECTURE_OWNER_MODULES: &[&str] = &[
     "geometry",
     "material",
     "render",
+    "capture",
     "animation",
     "controls",
     "picking",
@@ -161,6 +162,8 @@ pub(crate) fn architecture_owner_for_source_path(rel: &Path) -> &'static str {
         "material"
     } else if path.starts_with("src/reference_image") || path.starts_with("src/render") {
         "render"
+    } else if path.starts_with("src/capture") {
+        "capture"
     } else if path.starts_with("src/animation") {
         "animation"
     } else if path.starts_with("src/controls") {

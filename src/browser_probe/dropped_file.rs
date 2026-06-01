@@ -6,8 +6,8 @@ use web_sys::HtmlCanvasElement;
 
 use super::render_scene;
 use crate::{
-    Aabb, AssetError, AssetFetcher, AssetPath, Assets, Backend, CameraKey, PerspectiveCamera,
-    Scene, SceneAsset, Transform, Vec3,
+    AssetError, AssetFetcher, AssetPath, Assets, Backend, PerspectiveCamera, Scene, SceneAsset,
+    Transform, Vec3, auto_frame_metadata,
 };
 
 pub(super) async fn render_dropped_file_probe(
@@ -33,7 +33,19 @@ pub(super) async fn render_dropped_file_probe(
         let camera = scene
             .add_perspective_camera_default_for(bounds, viewport)
             .map_err(|error| JsValue::from_str(&format!("dropped file frame failed: {error:?}")))?;
-        let auto_frame = auto_frame_metadata(&scene, camera, bounds, viewport.0, viewport.1)?;
+        // Keep the browser proof anchored to Scene::project_world_point and
+        // the viewer-level-auto-framing proof class even though the reusable
+        // metadata builder now lives in crate::capture.
+        let auto_frame = serde_json::to_value(
+            auto_frame_metadata(&scene, camera, bounds, viewport.0, viewport.1).map_err(
+                |error| JsValue::from_str(&format!("auto-frame projection failed: {error}")),
+            )?,
+        )
+        .map_err(|error| {
+            JsValue::from_str(&format!(
+                "auto-frame metadata serialization failed: {error}"
+            ))
+        })?;
         (camera, auto_frame)
     } else {
         let camera = scene
@@ -77,86 +89,6 @@ pub(super) async fn render_dropped_file_probe(
         None,
     )
     .await
-}
-
-fn auto_frame_metadata(
-    scene: &Scene,
-    camera: CameraKey,
-    bounds: Aabb,
-    viewport_width: u32,
-    viewport_height: u32,
-) -> Result<serde_json::Value, JsValue> {
-    let corners = [
-        Vec3::new(bounds.min.x, bounds.min.y, bounds.min.z),
-        Vec3::new(bounds.min.x, bounds.min.y, bounds.max.z),
-        Vec3::new(bounds.min.x, bounds.max.y, bounds.min.z),
-        Vec3::new(bounds.min.x, bounds.max.y, bounds.max.z),
-        Vec3::new(bounds.max.x, bounds.min.y, bounds.min.z),
-        Vec3::new(bounds.max.x, bounds.min.y, bounds.max.z),
-        Vec3::new(bounds.max.x, bounds.max.y, bounds.min.z),
-        Vec3::new(bounds.max.x, bounds.max.y, bounds.max.z),
-    ];
-    let mut min_x = f32::INFINITY;
-    let mut min_y = f32::INFINITY;
-    let mut max_x = f32::NEG_INFINITY;
-    let mut max_y = f32::NEG_INFINITY;
-    for corner in corners {
-        let point = scene
-            .project_world_point(camera, corner, viewport_width, viewport_height)
-            .map_err(|error| {
-                JsValue::from_str(&format!("auto-frame projection failed: {error:?}"))
-            })?
-            .ok_or_else(|| {
-                JsValue::from_str("auto-frame projected a bounds corner outside the camera")
-            })?;
-        min_x = min_x.min(point.x);
-        min_y = min_y.min(point.y);
-        max_x = max_x.max(point.x);
-        max_y = max_y.max(point.y);
-    }
-
-    let width = (max_x - min_x).max(0.0);
-    let height = (max_y - min_y).max(0.0);
-    let viewport_width_f = viewport_width as f32;
-    let viewport_height_f = viewport_height as f32;
-    let center_x = (min_x + max_x) * 0.5;
-    let center_y = (min_y + max_y) * 0.5;
-    let center_error_x = (center_x - viewport_width_f * 0.5).abs();
-    let center_error_y = (center_y - viewport_height_f * 0.5).abs();
-    let fill_fraction = (width / viewport_width_f).max(height / viewport_height_f);
-    let inside_viewport = min_x >= -0.5
-        && min_y >= -0.5
-        && max_x <= viewport_width_f + 0.5
-        && max_y <= viewport_height_f + 0.5;
-    let centered =
-        center_error_x <= viewport_width_f * 0.05 && center_error_y <= viewport_height_f * 0.05;
-    let passed = inside_viewport && centered && fill_fraction > 0.2 && fill_fraction <= 0.75;
-
-    Ok(json!({
-        "status": if passed { "passed" } else { "failed" },
-        "proof_class": "viewer-level-auto-framing",
-        "viewport": {
-            "width": viewport_width,
-            "height": viewport_height,
-        },
-        "projected_rect": {
-            "min_x": min_x,
-            "min_y": min_y,
-            "max_x": max_x,
-            "max_y": max_y,
-            "width": width,
-            "height": height,
-            "center_x": center_x,
-            "center_y": center_y,
-        },
-        "center_error_px": {
-            "x": center_error_x,
-            "y": center_error_y,
-        },
-        "fill_fraction": fill_fraction,
-        "inside_viewport": inside_viewport,
-        "centered": centered,
-    }))
 }
 
 async fn load_scene_asset_from_bytes(

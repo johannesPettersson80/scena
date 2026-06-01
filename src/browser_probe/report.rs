@@ -1,42 +1,7 @@
 use serde_json::json;
 
 pub(super) fn capabilities_json(capabilities: crate::Capabilities) -> serde_json::Value {
-    json!({
-        "backend": format!("{:?}", capabilities.backend),
-        "color_target_format": capabilities.color_target_format,
-        "gpu_device": capabilities.gpu_device,
-        "surface_attached": capabilities.surface_attached,
-        "hardware_tier": format!("{:?}", capabilities.hardware_tier),
-        "output_stage": format!("{:?}", capabilities.output_stage),
-        "alpha_pipeline": format!("{:?}", capabilities.alpha_pipeline),
-        "forward_pbr": format!("{:?}", capabilities.forward_pbr),
-        "directional_shadows": format!("{:?}", capabilities.directional_shadows),
-        "point_shadows": format!("{:?}", capabilities.point_shadows),
-        "spot_shadows": format!("{:?}", capabilities.spot_shadows),
-        "directional_shadow_map_default_size": capabilities.directional_shadow_map_default_size,
-        "directional_shadow_map_max_size": capabilities.directional_shadow_map_max_size,
-        "directional_shadow_pcf_kernel": capabilities.directional_shadow_pcf_kernel,
-        "ibl_cubemap_default_size": capabilities.ibl_cubemap_default_size,
-        "ibl_brdf_lut_default_size": capabilities.ibl_brdf_lut_default_size,
-        "bloom": format!("{:?}", capabilities.bloom),
-        "screen_space_ambient_occlusion": format!("{:?}", capabilities.screen_space_ambient_occlusion),
-        "order_independent_transparency": format!("{:?}", capabilities.order_independent_transparency),
-        "physical_glass_transmission": format!("{:?}", capabilities.physical_glass_transmission),
-        "wide_gamut_output": format!("{:?}", capabilities.wide_gamut_output),
-        "texture_compression_basisu": format!("{:?}", capabilities.texture_compression_basisu),
-        "hardware_instancing": format!("{:?}", capabilities.hardware_instancing),
-        "fragment_high_precision": format!("{:?}", capabilities.fragment_high_precision),
-        "uniform_buffers": format!("{:?}", capabilities.uniform_buffers),
-        "uniform_buffer_max_bytes": capabilities.uniform_buffer_max_bytes,
-        "default_clipping_planes": capabilities.default_clipping_planes,
-        "max_clipping_planes": capabilities.max_clipping_planes,
-        "gpu_frustum_culling": format!("{:?}", capabilities.gpu_frustum_culling),
-        "per_instance_culling": format!("{:?}", capabilities.per_instance_culling),
-        "compute_shaders": format!("{:?}", capabilities.compute_shaders),
-        "storage_buffers": format!("{:?}", capabilities.storage_buffers),
-        "readback_headless_screenshots": format!("{:?}", capabilities.readback_headless_screenshots),
-        "reversed_z_depth": format!("{:?}", capabilities.reversed_z_depth),
-    })
+    crate::CapabilityReport::new(capabilities, None).to_schema_json()["capabilities"].clone()
 }
 
 pub(super) fn diagnostics_json(diagnostics: &[crate::Diagnostic]) -> serde_json::Value {
@@ -64,8 +29,8 @@ mod tests {
     fn capabilities_json_reports_supported_gpu_material_statuses() {
         let value = capabilities_json(Capabilities::for_attached_gpu_backend(Backend::WebGl2));
 
-        assert_eq!(value["forward_pbr"], "Supported");
-        assert_eq!(value["physical_glass_transmission"], "Supported");
+        assert_eq!(value["forward_pbr"], "supported");
+        assert_eq!(value["physical_glass_transmission"], "supported");
     }
 }
 

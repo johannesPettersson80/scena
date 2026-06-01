@@ -196,6 +196,7 @@ impl Renderer {
         if self.debug_overlay != overlay {
             self.debug_overlay = overlay;
             self.debug_revision = self.debug_revision.saturating_add(1);
+            self.clear_rendered_frame();
         }
     }
 
@@ -224,6 +225,7 @@ impl Renderer {
             self.environment = Some(environment);
             self.environment_lighting_cache.clear_active();
             self.environment_revision = self.environment_revision.saturating_add(1);
+            self.clear_rendered_frame();
         }
     }
 
@@ -232,6 +234,7 @@ impl Renderer {
             self.environment = None;
             self.environment_lighting_cache.clear_active();
             self.environment_revision = self.environment_revision.saturating_add(1);
+            self.clear_rendered_frame();
         }
     }
 
@@ -273,5 +276,6 @@ impl Renderer {
 
     pub(super) fn mark_output_changed(&mut self) {
         self.render_generation = self.render_generation.saturating_add(1);
+        self.clear_rendered_frame();
     }
 }
