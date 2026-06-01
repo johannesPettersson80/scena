@@ -2,6 +2,8 @@ use std::collections::BTreeSet;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
+use serde::{Deserialize, Serialize};
+
 use self::bounds::union_optional;
 use self::diagnostic_overlays::diagnostic_overlay;
 use self::handedness::reject_unproven_left_handed_mesh_import;
@@ -22,6 +24,7 @@ mod bounds;
 mod diagnostic_overlays;
 mod handedness;
 mod instancing;
+mod instantiate;
 mod load;
 mod lookups;
 mod options;
@@ -106,7 +109,8 @@ pub struct ImportOptions {
     source_coordinate_system: SourceCoordinateSystem,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SourceUnits {
     #[default]
     Meters,
@@ -116,7 +120,8 @@ pub enum SourceUnits {
     Feet,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SourceCoordinateSystem {
     #[default]
     GltfYUpRightHanded,
@@ -126,15 +131,9 @@ pub enum SourceCoordinateSystem {
 }
 
 impl Scene {
-    pub fn instantiate(
+    fn instantiate_with_parent(
         &mut self,
-        scene_asset: &SceneAsset,
-    ) -> Result<SceneImport, InstantiateError> {
-        self.instantiate_with(scene_asset, ImportOptions::gltf_default())
-    }
-
-    pub fn instantiate_with(
-        &mut self,
+        parent: NodeKey,
         scene_asset: &SceneAsset,
         options: ImportOptions,
     ) -> Result<SceneImport, InstantiateError> {
@@ -177,7 +176,7 @@ impl Scene {
             };
             let node = self.instantiate_scene_asset_node(
                 source_index,
-                self.root,
+                parent,
                 None,
                 None,
                 Transform::IDENTITY,

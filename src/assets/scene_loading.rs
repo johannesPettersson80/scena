@@ -26,6 +26,28 @@ fn log_asset_step(label: &str, start_ms: f64) -> f64 {
 }
 
 impl<F: AssetFetcher> Assets<F> {
+    pub async fn load_scene_from_bytes(
+        &self,
+        path: impl Into<AssetPath>,
+        bytes: &[u8],
+    ) -> Result<SceneAsset, AssetError> {
+        let path = path.into();
+        let scene = {
+            let mut storage = self.storage();
+            let mut scene = SceneAsset::from_gltf_bytes(path.clone(), bytes, &mut storage)?;
+            if self.retain_policy == RetainPolicy::Always {
+                scene = scene.with_retained_source_bytes(bytes);
+            }
+            storage.scene_lookup.insert(path, scene.clone());
+            scene
+        };
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.decode_browser_texture_images().await?;
+        }
+        Ok(scene)
+    }
+
     pub async fn load_scene(&self, path: impl Into<AssetPath>) -> Result<SceneAsset, AssetError> {
         Ok(self.load_scene_with_report(path).await?.into_asset())
     }

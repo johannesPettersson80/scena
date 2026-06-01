@@ -27,12 +27,22 @@ scena = { version = "1.4", features = ["controls", "controls-winit"] }
 | `viewer-element` | `<scena-viewer>` custom-element registration surface |
 | `hot-reload` | native debounced asset-file watching for explicit reload loops |
 | `inspection` | scene inspection metadata and diagnostic output |
+| `scene-host` | generic native-testable and browser/WASM `SceneHost` facade over `Scene`, `Assets`, and `Renderer`; enables `inspection` |
 | `icc` | ICC/color-management support through `lcms2` |
 | `khronos-samples` | checked Khronos glTF sample-asset catalog and loader helpers |
 | `ktx2` | KTX2/Basis texture descriptor and decode support for `KHR_texture_basisu` assets |
 | `meshopt` | meshopt-compressed glTF buffer decoding support |
 | `obj` | OBJ import path |
 | `production-assets` | compressed glTF asset profile; enables `ktx2` + `meshopt` without changing defaults |
+
+## Planned integration flags
+
+These flags are planned by the WASM scene-host and stable-contract work. They
+are not shipped until they appear in `Cargo.toml`.
+
+| Planned feature | Purpose |
+|---|---|
+| `stable-contracts` | stable JSON schema helpers for inspection, capabilities, capture, annotation projection, asset geometry, and asset-load reports |
 
 ## Recommended combinations
 
@@ -67,6 +77,12 @@ Diagnostic tooling:
 
 ```toml
 scena = { version = "1.4", features = ["inspection"] }
+```
+
+Browser host facade:
+
+```toml
+scena = { version = "1.4", features = ["scene-host"] }
 ```
 
 ## Default feature set

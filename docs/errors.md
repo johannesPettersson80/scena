@@ -14,9 +14,11 @@ useful messages.
 | `LookupError` | a named node, path, anchor, connector, or handle lookup failed |
 | `PrepareError` | renderer preparation failed |
 | `RenderError` | rendering failed, often because prepared state is stale |
+| `CaptureError` | capture descriptor/readback metadata failed, usually no rendered frame, stale rendered frame metadata, invalid RGBA length, invalid DPR, or auto-frame projection failure |
 | `AnimationError` | clip, mixer, channel, skin, or morph target operation failed |
 | `ConnectionError` | anchor or connector placement failed |
 | `ColorParseError` | color parsing failed |
+| `SceneHostError` | browser/native host facade operation failed; carries a stable `SceneHostErrorCode` |
 
 ## Pattern matching
 
@@ -45,7 +47,18 @@ as preparing again after stale renderer state.
 | Missing asset file | fix path or fetcher configuration |
 | Unsupported required glTF extension | enable the relevant feature or choose an asset variant without that required extension |
 | Missing named node or anchor | inspect imported names and paths |
+| Removing the scene root | remove child nodes instead; the root is the permanent scene anchor |
+| Stale host node handle | refresh the handle through import path, tag lookup, picking, or inspection |
+| Stale host import handle | instantiate or load the asset again, then resolve fresh roots and node handles |
 | Browser backend unavailable | choose another backend or show a capability message |
+| Capture invalid DPR | update the stored viewport/DPR before capture |
+| Capture before render | call `prepare()` and `render()` before `capture()` |
+| Capture stale render | render again after mutating the scene or active camera |
+| Capture auto-frame projection failure | frame the active camera to the bounds, use valid bounds, or capture without auto-frame metadata |
+
+`SceneHostErrorCode::Capture` wraps capture descriptor/readback failures from
+the browser/native host facade. The host still returns structured errors; it
+does not silently drop capture metadata.
 
 ## Diagnostics
 

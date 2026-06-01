@@ -30,6 +30,18 @@ impl Scene {
         Ok(())
     }
 
+    pub fn remove_tag(&mut self, node: NodeKey, tag: &str) -> Result<bool, LookupError> {
+        let node = self
+            .nodes
+            .get_mut(node)
+            .ok_or(LookupError::NodeNotFound(node))?;
+        let removed = node.tags.remove(tag);
+        if removed {
+            self.structure_revision = self.structure_revision.saturating_add(1);
+        }
+        Ok(removed)
+    }
+
     pub fn has_tag(&self, node: NodeKey, tag: &str) -> bool {
         self.nodes
             .get(node)

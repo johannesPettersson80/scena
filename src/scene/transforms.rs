@@ -19,6 +19,34 @@ impl Scene {
         Ok(())
     }
 
+    pub fn set_transforms(
+        &mut self,
+        transforms: &[(NodeKey, Transform)],
+    ) -> Result<(), LookupError> {
+        for (node, _) in transforms {
+            if !self.nodes.contains_key(*node) {
+                return Err(LookupError::NodeNotFound(*node));
+            }
+        }
+
+        let mut changed = false;
+        for (node, transform) in transforms {
+            let node = self
+                .nodes
+                .get_mut(*node)
+                .expect("batch transform preflight verified node existence");
+            if node.transform != *transform {
+                node.transform = *transform;
+                changed = true;
+            }
+        }
+
+        if changed {
+            self.transform_revision = self.transform_revision.saturating_add(1);
+        }
+        Ok(())
+    }
+
     pub fn world_transform(&self, node: NodeKey) -> Option<Transform> {
         let mut chain = Vec::new();
         let mut current = node;

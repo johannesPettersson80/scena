@@ -25,6 +25,100 @@ For controls in browser-hosted viewers, see:
 cargo run --example orbit_controls_browser_adapter
 ```
 
+## SceneHost
+
+The `scene-host` feature exposes a generic WASM `SceneHost` facade over the
+same `Scene`, `Assets`, and `Renderer` types used natively. It is for hosts that
+build scene trees in the browser, push per-frame pose updates from external
+data, and then request prepare/render/inspection explicitly.
+
+`SceneHost` is push-driven. It does not own a `requestAnimationFrame` loop:
+the embedding page creates or updates nodes, calls `setTransform` or
+`setTransforms`, then calls `prepare()` and `render()` at the cadence it owns.
+Camera controls may still update camera state when the host wires them, but
+scene state is not advanced by an internal loop.
+
+The browser constructor variants are:
+
+```js
+import init, { SceneHost } from "./pkg/scena.js";
+
+await init();
+const host = await SceneHost.newWebgl2(canvas, width, height, devicePixelRatio);
+```
+
+Use `newWebgpu` for WebGPU. `attachCanvasWebgl2`,
+`attachCanvasWebgpu`, and `resize(width, height, dpr)` forward surface and DPR
+changes through the same renderer lifecycle documented in
+[Lifecycle](lifecycle.md).
+
+Construction and lookup stay domain-neutral:
+
+- `addEmpty(parent, translation, rotation, scale, tag)`
+- `instantiateGlb(bytes)` and `instantiateGlbUnder(parent, bytes)`
+- `instantiateUrl(url)` and `instantiateUrlUnder(parent, url)`
+- `importRoots(importHandle)`
+- `nodeHandle(importHandle, path)`
+- `nodeHandleByName(importHandle, name)`
+- `setTag`, `clearTag`, and `findByTag`
+
+Frame operations use one host handle namespace:
+
+- `setTransform`
+- `setTransforms` with a JSON array of `{ node, translation, rotation, scale }`
+- `setNodeTint`
+- `clearNodeTint`
+- `setNodeAnnotation`
+- `setWorldAnnotation`
+- `clearAnnotation`
+- `removeNode`
+- `removeImport`
+- `frameNode`
+- `frameAll`
+- `worldDistance`
+- `nodeWorldBoundsJson`
+- `pick(x, y)`
+- `inspectJson`
+- `annotationProjectionsJson`
+- `capture()` and `captureJson()`
+
+`pick(x, y)` receives CSS pixels. `SceneHost` stores the current DPR and target
+size, applies DPR internally, and returns the same node handle namespace that
+`setTransform` and `inspectJson` use.
+
+`removeNode(handle)` recursively removes the node subtree and invalidates every
+host handle in that subtree. `removeImport(importHandle)` removes all import
+roots, marks the import handle stale, and invalidates the removed node handles.
+Subsequent calls with those handles return structured stale-handle errors.
+
+`setNodeTint(handle, r, g, b, a)` applies generic per-node highlight/tint
+state without cloning materials. `clearNodeTint(handle)` removes it. The same
+state appears in `inspectJson()` as `nodes[].tint` so hosts can prove that a
+highlighted node was highlighted in the submitted scene state.
+
+`setNodeAnnotation(id, handle, localOffset)` anchors an overlay point to a
+scene node; `setWorldAnnotation(id, position)` anchors one to a world-space
+point. `annotationProjectionsJson()` returns schema
+`scena.annotation_projection.v1` with `{ id, x, y, visible }` entries in CSS
+pixels, so the page can position HTML overlays without reimplementing camera
+projection. `clearAnnotation(id)` removes an overlay anchor.
+
+`worldDistance(a, b)` returns the world-space distance between two host node
+handles. `nodeWorldBoundsJson(handle)` serializes the node subtree's
+world-space bounds, resolving asset-backed mesh and instance geometry through
+the host asset store.
+
+`capture()` returns a JS object with `descriptorJson` and an `rgba8`
+`Uint8Array`. `captureJson()` returns only the descriptor JSON. The descriptor
+uses schema `scena.capture.v1` and records dimensions, payload length/hash,
+rendered scene revision counters, active camera transform/projection,
+viewport/DPR, backend capabilities, auto-frame metadata when available, and
+pixel summary. If the embedder mutates scene state after `render()` and before
+`capture()`, the host returns a structured capture error instead of serializing
+stale proof metadata. CPU-headless captures are deterministic for the same
+scene state. Browser GPU captures bind pixels to revision counters and
+backend/capability metadata; they do not claim cross-machine byte identity.
+
 ## Output Color Space
 
 Browser renderers default to sRGB output. To request wide-gamut presentation,

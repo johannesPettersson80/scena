@@ -20,6 +20,8 @@ pub mod platform;
 pub mod reference_image;
 pub mod render;
 pub mod scene;
+#[cfg(feature = "scene-host")]
+pub mod scene_host;
 pub mod viewer;
 pub mod viewer_element;
 
@@ -106,6 +108,8 @@ pub use scene::{
     SceneNodeInspection, SceneNodeInspectionV1, SceneNormalInspection, SceneNormalInspectionV1,
     SceneTextureInspection,
 };
+#[cfg(feature = "scene-host")]
+pub use scene_host::{SceneHostCore, SceneHostError, SceneHostErrorCode};
 pub use viewer::{
     FirstRender, HeadlessGltfViewer, HeadlessGltfViewerBuilder, InteractiveGltfViewer,
     InteractiveGltfViewerBuilder, ViewerCaptureError, ViewerPngError, first_render_gltf_headless,

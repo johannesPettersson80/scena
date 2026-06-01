@@ -31,8 +31,6 @@ pub(crate) fn check_m3a_import_runtime_contracts(root: &Path, findings: &mut Vec
             "pub struct ImportConnector",
             "pub struct ImportClip",
             "pub struct ImportPivot",
-            "pub fn instantiate(",
-            "pub fn instantiate_with(",
             "node_bounds",
             "source_node.meshes()",
             "scene_asset: &SceneAsset",
@@ -48,6 +46,18 @@ pub(crate) fn check_m3a_import_runtime_contracts(root: &Path, findings: &mut Vec
             "ImportDiagnosticOverlayKind::Anchor",
             "ImportDiagnosticOverlayKind::Connector",
             "ImportDiagnosticOverlayKind::Pivot",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/scene/import/instantiate.rs",
+        &[
+            "pub fn instantiate(",
+            "pub fn instantiate_with(",
+            "pub fn instantiate_under(",
+            "self.instantiate_with_parent(",
         ],
     );
     require_contains(

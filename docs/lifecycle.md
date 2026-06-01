@@ -56,6 +56,35 @@ The explicit lifecycle keeps frame rendering predictable:
 - stale state is reported as a structured error,
 - applications decide how to recover.
 
+## SceneHost
+
+`SceneHost` follows the same lifecycle through a browser/WASM facade:
+
+```text
+create or attach canvas -> load/instantiate assets -> update scene -> prepare -> render
+```
+
+The host page owns scheduling. A typical frame is:
+
+```text
+setTransforms -> prepare -> render -> inspectJson or readPixels when proof is needed
+```
+
+Asset fetches happen in `instantiateUrl` and `instantiateUrlUnder`, not inside
+`render`. GLB bytes are parsed in `instantiateGlb` and `instantiateGlbUnder`.
+Resize and DPR changes are forwarded before the next `prepare`.
+Removing a node or import is a structural scene mutation. The host invalidates
+the removed `u64` handles immediately, so callers must resolve new handles via
+import paths, tags, picking, or inspection after rebuilding that subtree.
+
+When proof needs pixels and metadata in one artifact, call `capture()` after
+`render()`. The renderer records the scene revision counters and camera that
+produced the current RGBA8 frame, and `capture()` writes those rendered values
+with viewport/DPR, backend capabilities, and pixel statistics into
+`scena.capture.v1`. If the scene or active camera changes after render and
+before capture, capture fails closed with `CaptureError::StaleRender` instead
+of binding new metadata to old pixels.
+
 ## Minimal pattern
 
 ```rust
