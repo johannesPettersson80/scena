@@ -55,11 +55,11 @@ pub use controls::{
 };
 pub use diagnostics::{
     AdapterLimitsReport, AlphaPipelineStatus, AnimationError, AssetError, Backend, BuildError,
-    Capabilities, CapabilityReport, CapabilityStatus, ChangeKind, DebugOverlay, DevicePoll,
-    Diagnostic, DiagnosticCode, DiagnosticSeverity, Error, GpuAdapterReport, HardwareTier,
-    ImportDiagnosticOverlay, ImportDiagnosticOverlayKind, ImportError, InstantiateError,
-    LookupError, NotPreparedReason, OutputColorSpace, OutputStageStatus, PrepareError, RenderError,
-    RenderOutcome, RendererStats,
+    CAPABILITY_REPORT_SCHEMA_V1, Capabilities, CapabilityReport, CapabilityReportV1,
+    CapabilityStatus, ChangeKind, DebugOverlay, DevicePoll, Diagnostic, DiagnosticCode,
+    DiagnosticSeverity, Error, GpuAdapterReport, HardwareTier, ImportDiagnosticOverlay,
+    ImportDiagnosticOverlayKind, ImportError, InstantiateError, LookupError, NotPreparedReason,
+    OutputColorSpace, OutputStageStatus, PrepareError, RenderError, RenderOutcome, RendererStats,
 };
 pub use geometry::{
     Aabb, GeometryDesc, GeometryError, GeometryMorphTarget, GeometrySkin, GeometryTopology,
@@ -100,8 +100,11 @@ pub use scene::{
 };
 #[cfg(feature = "inspection")]
 pub use scene::{
-    SceneCameraFrustumInspection, SceneDrawInspection, SceneInspectionReport,
-    SceneMaterialInspection, SceneNodeInspection, SceneNormalInspection, SceneTextureInspection,
+    SCENE_INSPECTION_SCHEMA_V1, SceneCameraFrustumInspection, SceneCameraFrustumInspectionV1,
+    SceneDrawInspection, SceneDrawInspectionV1, SceneInspectionCountsV1, SceneInspectionReport,
+    SceneInspectionReportV1, SceneInspectionRevisionsV1, SceneMaterialInspection,
+    SceneNodeInspection, SceneNodeInspectionV1, SceneNormalInspection, SceneNormalInspectionV1,
+    SceneTextureInspection,
 };
 pub use viewer::{
     FirstRender, HeadlessGltfViewer, HeadlessGltfViewerBuilder, InteractiveGltfViewer,

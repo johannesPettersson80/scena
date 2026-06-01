@@ -57,6 +57,36 @@ renderer.
 GPU adapter reports identify backend, adapter name, limits, and related
 metadata where available. Use this for diagnostics and bug reports.
 
+## Stable JSON
+
+`CapabilityReport::to_schema_report()` returns the typed report, and
+`CapabilityReport::to_schema_json()` returns the same data as versioned JSON:
+
+```json
+{
+  "schema": "scena.capability_report.v1",
+  "capabilities": {
+    "backend": "headless",
+    "color_target_format": "Rgba8UnormSrgb",
+    "forward_pbr": "degraded"
+  },
+  "adapter": null,
+  "diagnostics": [
+    {
+      "code": "forward_pbr_degraded",
+      "severity": "warning",
+      "message": "...",
+      "help": "..."
+    }
+  ]
+}
+```
+
+The typed schema struct is `CapabilityReportV1`, and the schema string is
+available as `CAPABILITY_REPORT_SCHEMA_V1`. Enum values in this contract use
+serde names such as `supported`, `degraded`, and `feature_disabled`, not Rust
+`Debug` formatting.
+
 ## Best practice
 
 At startup:

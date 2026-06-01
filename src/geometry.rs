@@ -2,6 +2,7 @@
 
 use crate::material::Color;
 use crate::scene::Vec3;
+use serde::{Deserialize, Serialize};
 
 mod bounds;
 mod helpers;
@@ -15,7 +16,8 @@ pub use morph::GeometryMorphTarget;
 pub use skinning::{GeometrySkin, SkinningMatrix};
 pub use static_batch::StaticBatchReport;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum GeometryTopology {
     Triangles,
     Lines,
@@ -74,7 +76,7 @@ pub struct GeometryVertex {
     pub normal: Vec3,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Aabb {
     pub min: Vec3,
     pub max: Vec3,

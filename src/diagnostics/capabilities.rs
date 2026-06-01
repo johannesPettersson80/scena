@@ -1,7 +1,11 @@
 use super::capability_status::*;
 use super::{Diagnostic, DiagnosticCode};
+use serde::{Deserialize, Deserializer, Serialize, de};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub const CAPABILITY_REPORT_SCHEMA_V1: &str = "scena.capability_report.v1";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Backend {
     Headless,
     HeadlessGpu,
@@ -11,7 +15,8 @@ pub enum Backend {
     WebGl2,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum OutputStageStatus {
     AcesSrgb,
@@ -20,7 +25,8 @@ pub enum OutputStageStatus {
     BackendPassthrough,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum OutputColorSpace {
     #[default]
@@ -28,14 +34,16 @@ pub enum OutputColorSpace {
     DisplayP3,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum AlphaPipelineStatus {
     LinearSourceOver,
     BackendPassthrough,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum CapabilityStatus {
     Supported,
@@ -44,7 +52,8 @@ pub enum CapabilityStatus {
     ErrorIfRequired,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum HardwareTier {
     Low,
@@ -52,7 +61,7 @@ pub enum HardwareTier {
     High,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AdapterLimitsReport {
     pub max_texture_dimension_2d: u32,
     pub max_bind_groups: u32,
@@ -60,7 +69,7 @@ pub struct AdapterLimitsReport {
     pub max_vertex_attributes: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GpuAdapterReport {
     pub name: String,
     pub backend: String,
@@ -73,14 +82,22 @@ pub struct GpuAdapterReport {
     pub limits: AdapterLimitsReport,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapabilityReport {
     capabilities: Capabilities,
     adapter: Option<GpuAdapterReport>,
     diagnostics: Vec<Diagnostic>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CapabilityReportV1 {
+    pub schema: String,
+    pub capabilities: Capabilities,
+    pub adapter: Option<GpuAdapterReport>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub struct Capabilities {
     pub backend: Backend,
@@ -129,6 +146,106 @@ pub struct Capabilities {
     pub storage_buffers: CapabilityStatus,
     pub readback_headless_screenshots: CapabilityStatus,
     pub reversed_z_depth: CapabilityStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+struct CapabilitiesDeserialize {
+    backend: Backend,
+    color_target_format: String,
+    gpu_device: bool,
+    surface_attached: bool,
+    hardware_tier: HardwareTier,
+    output_stage: OutputStageStatus,
+    alpha_pipeline: AlphaPipelineStatus,
+    forward_pbr: CapabilityStatus,
+    directional_shadows: CapabilityStatus,
+    point_shadows: CapabilityStatus,
+    spot_shadows: CapabilityStatus,
+    directional_shadow_map_default_size: u32,
+    directional_shadow_map_max_size: u32,
+    directional_shadow_pcf_kernel: u8,
+    ibl_cubemap_default_size: u32,
+    ibl_brdf_lut_default_size: u32,
+    bloom: CapabilityStatus,
+    screen_space_ambient_occlusion: CapabilityStatus,
+    order_independent_transparency: CapabilityStatus,
+    physical_glass_transmission: CapabilityStatus,
+    wide_gamut_output: CapabilityStatus,
+    texture_compression_basisu: CapabilityStatus,
+    hardware_instancing: CapabilityStatus,
+    texture_arrays: CapabilityStatus,
+    max_texture_array_layers: u32,
+    fragment_high_precision: CapabilityStatus,
+    uniform_buffers: CapabilityStatus,
+    uniform_buffer_max_bytes: u32,
+    default_clipping_planes: u8,
+    max_clipping_planes: u8,
+    gpu_frustum_culling: CapabilityStatus,
+    per_instance_culling: CapabilityStatus,
+    compute_shaders: CapabilityStatus,
+    storage_buffers: CapabilityStatus,
+    readback_headless_screenshots: CapabilityStatus,
+    reversed_z_depth: CapabilityStatus,
+}
+
+impl<'de> Deserialize<'de> for Capabilities {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = CapabilitiesDeserialize::deserialize(deserializer)?;
+        Ok(Self {
+            backend: value.backend,
+            color_target_format: static_color_target_format(&value.color_target_format)?,
+            gpu_device: value.gpu_device,
+            surface_attached: value.surface_attached,
+            hardware_tier: value.hardware_tier,
+            output_stage: value.output_stage,
+            alpha_pipeline: value.alpha_pipeline,
+            forward_pbr: value.forward_pbr,
+            directional_shadows: value.directional_shadows,
+            point_shadows: value.point_shadows,
+            spot_shadows: value.spot_shadows,
+            directional_shadow_map_default_size: value.directional_shadow_map_default_size,
+            directional_shadow_map_max_size: value.directional_shadow_map_max_size,
+            directional_shadow_pcf_kernel: value.directional_shadow_pcf_kernel,
+            ibl_cubemap_default_size: value.ibl_cubemap_default_size,
+            ibl_brdf_lut_default_size: value.ibl_brdf_lut_default_size,
+            bloom: value.bloom,
+            screen_space_ambient_occlusion: value.screen_space_ambient_occlusion,
+            order_independent_transparency: value.order_independent_transparency,
+            physical_glass_transmission: value.physical_glass_transmission,
+            wide_gamut_output: value.wide_gamut_output,
+            texture_compression_basisu: value.texture_compression_basisu,
+            hardware_instancing: value.hardware_instancing,
+            texture_arrays: value.texture_arrays,
+            max_texture_array_layers: value.max_texture_array_layers,
+            fragment_high_precision: value.fragment_high_precision,
+            uniform_buffers: value.uniform_buffers,
+            uniform_buffer_max_bytes: value.uniform_buffer_max_bytes,
+            default_clipping_planes: value.default_clipping_planes,
+            max_clipping_planes: value.max_clipping_planes,
+            gpu_frustum_culling: value.gpu_frustum_culling,
+            per_instance_culling: value.per_instance_culling,
+            compute_shaders: value.compute_shaders,
+            storage_buffers: value.storage_buffers,
+            readback_headless_screenshots: value.readback_headless_screenshots,
+            reversed_z_depth: value.reversed_z_depth,
+        })
+    }
+}
+
+const COLOR_TARGET_FORMATS: &[&str] = &["Rgba8UnormSrgb", "Rgba8UnormSrgb+DisplayP3Canvas"];
+
+fn static_color_target_format<E>(value: &str) -> Result<&'static str, E>
+where
+    E: de::Error,
+{
+    match value {
+        "Rgba8UnormSrgb" => Ok("Rgba8UnormSrgb"),
+        "Rgba8UnormSrgb+DisplayP3Canvas" => Ok("Rgba8UnormSrgb+DisplayP3Canvas"),
+        unknown => Err(de::Error::unknown_variant(unknown, COLOR_TARGET_FORMATS)),
+    }
 }
 
 impl Capabilities {
@@ -390,5 +507,19 @@ impl CapabilityReport {
 
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
+    }
+
+    pub fn to_schema_report(&self) -> CapabilityReportV1 {
+        CapabilityReportV1 {
+            schema: CAPABILITY_REPORT_SCHEMA_V1.to_owned(),
+            capabilities: self.capabilities,
+            adapter: self.adapter.clone(),
+            diagnostics: self.diagnostics.clone(),
+        }
+    }
+
+    pub fn to_schema_json(&self) -> serde_json::Value {
+        serde_json::to_value(self.to_schema_report())
+            .expect("capability report schema contains only serializable fields")
     }
 }

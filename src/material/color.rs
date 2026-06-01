@@ -2,6 +2,7 @@ use std::error;
 use std::fmt;
 
 use palette::Srgb;
+use serde::{Deserialize, Serialize};
 
 /// Linear RGBA color in scene space.
 ///
@@ -32,7 +33,7 @@ use palette::Srgb;
 /// # let _ = (background, accent, bulb, exact, designer);
 /// # Ok::<(), scena::ColorParseError>(())
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Color {
     pub r: f32,
     pub g: f32,

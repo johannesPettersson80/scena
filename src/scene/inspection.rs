@@ -1,12 +1,19 @@
 use crate::assets::{Assets, GeometryHandle, MaterialHandle};
 use crate::geometry::{Aabb, GeometryTopology};
+use crate::material::Color;
 
 use super::{CameraKey, InstanceId, LightKey, NodeKey, NodeKind, Scene, Transform, Vec3};
 
 mod builders;
 mod material;
+mod schema;
 mod texture;
 pub use material::SceneMaterialInspection;
+pub use schema::{
+    SCENE_INSPECTION_SCHEMA_V1, SceneCameraFrustumInspectionV1, SceneDrawInspectionV1,
+    SceneInspectionCountsV1, SceneInspectionReportV1, SceneInspectionRevisionsV1,
+    SceneNodeInspectionV1, SceneNormalInspectionV1,
+};
 pub use texture::SceneTextureInspection;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -46,6 +53,7 @@ pub struct SceneNodeInspection {
     layer_mask: u64,
     render_group: i16,
     helper_on_top: bool,
+    tint: Option<Color>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -114,6 +122,7 @@ impl Scene {
                     layer_mask: node.layer_mask,
                     render_group: node.render_group,
                     helper_on_top: node.helper_on_top,
+                    tint: node.tint,
                 })
                 .collect(),
             draw_list: self.inspect_draw_list(assets),
@@ -263,6 +272,10 @@ impl SceneNodeInspection {
 
     pub const fn helper_on_top(&self) -> bool {
         self.helper_on_top
+    }
+
+    pub const fn tint(&self) -> Option<Color> {
+        self.tint
     }
 }
 

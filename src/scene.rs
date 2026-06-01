@@ -11,6 +11,7 @@ use crate::animation::{AnimationMixer, AnimationMixerKey};
 use crate::assets::{GeometryHandle, MaterialHandle, ModelHandle};
 use crate::diagnostics::LookupError;
 use crate::geometry::{Aabb, Primitive};
+use crate::material::Color;
 use crate::picking::InteractionContext;
 
 mod anchors;
@@ -58,8 +59,11 @@ pub use import::{
 };
 #[cfg(feature = "inspection")]
 pub use inspection::{
-    SceneCameraFrustumInspection, SceneDrawInspection, SceneInspectionReport,
-    SceneMaterialInspection, SceneNodeInspection, SceneNormalInspection, SceneTextureInspection,
+    SCENE_INSPECTION_SCHEMA_V1, SceneCameraFrustumInspection, SceneCameraFrustumInspectionV1,
+    SceneDrawInspection, SceneDrawInspectionV1, SceneInspectionCountsV1, SceneInspectionReport,
+    SceneInspectionReportV1, SceneInspectionRevisionsV1, SceneMaterialInspection,
+    SceneNodeInspection, SceneNodeInspectionV1, SceneNormalInspection, SceneNormalInspectionV1,
+    SceneTextureInspection,
 };
 pub use instances::{Instance, InstanceCullingPolicy, InstanceId, InstanceSet};
 pub use labels::{LabelBillboard, LabelDesc, LabelRasterization};
@@ -118,6 +122,7 @@ pub struct Node {
     layer_mask: u64,
     render_group: i16,
     helper_on_top: bool,
+    tint: Option<Color>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -452,6 +457,7 @@ impl Scene {
             layer_mask: u64::MAX,
             render_group: 0,
             helper_on_top: false,
+            tint: None,
         });
         self.nodes[parent].children.push(node);
         self.structure_revision = self.structure_revision.saturating_add(1);
@@ -477,6 +483,7 @@ impl Node {
             layer_mask: u64::MAX,
             render_group: 0,
             helper_on_top: false,
+            tint: None,
         }
     }
 
@@ -514,6 +521,10 @@ impl Node {
 
     pub const fn helper_on_top(&self) -> bool {
         self.helper_on_top
+    }
+
+    pub const fn tint(&self) -> Option<Color> {
+        self.tint
     }
 }
 

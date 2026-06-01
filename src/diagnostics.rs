@@ -19,8 +19,9 @@ mod help;
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 pub(crate) use browser_timing::browser_timing_enabled;
 pub use capabilities::{
-    AdapterLimitsReport, AlphaPipelineStatus, Backend, Capabilities, CapabilityReport,
-    CapabilityStatus, GpuAdapterReport, HardwareTier, OutputColorSpace, OutputStageStatus,
+    AdapterLimitsReport, AlphaPipelineStatus, Backend, CAPABILITY_REPORT_SCHEMA_V1, Capabilities,
+    CapabilityReport, CapabilityReportV1, CapabilityStatus, GpuAdapterReport, HardwareTier,
+    OutputColorSpace, OutputStageStatus,
 };
 pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
 
