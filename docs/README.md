@@ -12,6 +12,8 @@ and deterministic headless rendering.
 - [Easy scene setup](guides/easy-scene-setup.md): frame models, add studio lighting,
   add a matte grid floor, enable auto exposure, and connect authored anchors.
 - [API overview](api.md): the main public types and how they fit together.
+- [Renderer charter](RFC-rust-3d-renderer.md): canonical scope, non-goals, and architecture vocabulary.
+- [Stable JSON contracts](schema-contracts.md): schema names, compatibility, handle, and fixture policy.
 - [v1.5.0 release notes](release-notes/v1.5.0.md): expanded material presets, WebGL2 texture clamping, and smooth-metal browser IBL improvements.
 - [v1.4.0 release notes](release-notes/v1.4.0.md): easy-use named primitives, bundled content, viewer ergonomics, `<scena-viewer>` element, and renderer-feature coverage.
 - [v1.3.0 release notes](release-notes/v1.3.0.md): easy scene setup API notes and required proof.
@@ -34,6 +36,8 @@ and deterministic headless rendering.
 
 - [ADR-0002: eliminate hand-written rendering paths](decisions/ADR-0002-eliminate-handmade-rendering.md)
 - [Eliminate hand-written rendering checklist](checklists/eliminate-handmade-rendering.md)
+- [WASM scene host and stable contract checklist](checklists/wasm-scene-host-and-stable-contracts.md)
+- [Browser renderer-fidelity dependency checklist](checklists/renderer-fidelity-dependencies.md)
 
 ## Guides
 

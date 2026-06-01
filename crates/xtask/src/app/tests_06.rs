@@ -354,6 +354,51 @@ pub(crate) fn doctor_rejects_source_file_with_out_of_scope_term_regression() {
 }
 
 #[test]
+pub(crate) fn doctor_rejects_public_contract_forbidden_vocab_regression() {
+    // Public schema/API contract docs must stay renderer-neutral. This fixture
+    // plants terms from the WASM scene-host denylist in the schema contract
+    // surface and expects doctor to fail closed.
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/public-contract-vocab");
+    let docs_dir = fixture_root.join("docs");
+    fs::create_dir_all(&docs_dir).expect("docs dir");
+    fs::write(
+        docs_dir.join("schema-contracts.md"),
+        "# Stable JSON contract policy\n\nDo not add joint or urdf fields here.\n",
+    )
+    .expect("schema contract fixture");
+    let scene_host_dir = fixture_root.join("src/scene_host");
+    fs::create_dir_all(&scene_host_dir).expect("scene host dir");
+    fs::write(
+        scene_host_dir.join("handles.rs"),
+        "pub fn urdf_joint_handle_name() -> &'static str { \"bad\" }\n",
+    )
+    .expect("scene host fixture");
+    let mut findings = Vec::new();
+
+    check_source_scope(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-PUBLIC-CONTRACT-VOCAB"
+                && finding.message.contains("docs/schema-contracts.md")
+                && (finding.message.contains("joint") || finding.message.contains("urdf"))
+        }),
+        "doctor must reject public contract docs containing domain-specific \
+         vocabulary such as 'joint' or 'urdf': {findings:?}",
+    );
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-PUBLIC-CONTRACT-VOCAB"
+                && finding.message.contains("src/scene_host/handles.rs")
+                && (finding.message.contains("joint") || finding.message.contains("urdf"))
+        }),
+        "doctor must reject new public contract submodules under \
+         src/scene_host/: {findings:?}",
+    );
+}
+
+#[test]
 pub(crate) fn doctor_rejects_required_module_layout_with_missing_files_regression() {
     // ARCH-REQUIRED: the architecture doctor must reject any workspace
     // checkout missing one of the canonical source modules listed in

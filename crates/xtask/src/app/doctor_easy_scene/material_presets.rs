@@ -427,8 +427,8 @@ fn check_round_e_material_fixture_contract(root: &Path, findings: &mut Vec<Findi
     }
 
     let entries = parse_round_e_fixture(&fixture);
-    for preset in ROUND_E_PRESETS {
-        let Some(entry) = entries.get(*preset) else {
+    for &preset in ROUND_E_PRESETS {
+        let Some(entry) = entries.get(preset) else {
             findings.push(Finding::new(
                 "HONEST-MATERIAL-PRESETS",
                 format!("{ROUND_E_FIXTURE} is missing preset {preset}"),
@@ -439,21 +439,21 @@ fn check_round_e_material_fixture_contract(root: &Path, findings: &mut Vec<Findi
             entry,
             "environment_hdr_path",
             "demo/samples/environment/white_studio_03_1k.hdr",
-            *preset,
+            preset,
             findings,
         );
         require_fixture_value(
             entry,
             "environment_hdr_sha256",
             "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b",
-            *preset,
+            preset,
             findings,
         );
         require_fixture_value(
             entry,
             "reference_renderer",
             "@google/model-viewer",
-            *preset,
+            preset,
             findings,
         );
         let reference_path = entry

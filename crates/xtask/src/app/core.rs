@@ -106,6 +106,8 @@ pub(crate) fn finding_reference(rule: &str) -> &'static str {
         "docs/platforms.md"
     } else if rule.contains("PREPARE") || rule.contains("LIFECYCLE") {
         "docs/lifecycle.md"
+    } else if rule == "ARCH-PUBLIC-CONTRACT-VOCAB" {
+        "docs/schema-contracts.md"
     } else if rule.starts_with("ARCH-CONTRACT")
         || rule.starts_with("ARCH-DEPENDENCY-DIRECTION")
         || rule.starts_with("ARCH-PUBLIC-API-OWNERSHIP")

@@ -269,4 +269,126 @@ pub(crate) fn check_source_scope(root: &Path, findings: &mut Vec<Finding>) {
             }
         }
     }
+
+    check_public_contract_vocabulary(root, findings);
+}
+
+const PUBLIC_CONTRACT_VOCABULARY_FILES: &[&str] = &[
+    "docs/README.md",
+    "docs/schema-contracts.md",
+    "docs/feature-flags.md",
+    "src/scene_host.rs",
+    "src/capture.rs",
+];
+
+const PUBLIC_CONTRACT_VOCABULARY_DIRS: &[&str] =
+    &["src/scene_host", "src/capture", "examples/scene_host"];
+
+const PUBLIC_CONTRACT_EXAMPLE_PREFIXES: &[&str] = &["scene_host", "wasm_scene_host"];
+
+const PUBLIC_CONTRACT_FORBIDDEN_TERMS: &[&str] = &[
+    "robot",
+    "joint",
+    "urdf",
+    "plc",
+    "gripper",
+    "workpiece",
+    "weld",
+    "motion",
+    "trajectory",
+    "twin",
+    "simulation",
+    "controller",
+];
+
+fn check_public_contract_vocabulary(root: &Path, findings: &mut Vec<Finding>) {
+    for rel in public_contract_vocabulary_files(root) {
+        let path = root.join(&rel);
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let lower = text.to_ascii_lowercase();
+        for term in PUBLIC_CONTRACT_FORBIDDEN_TERMS {
+            if contains_scope_term(&lower, term) {
+                findings.push(Finding::new(
+                    "ARCH-PUBLIC-CONTRACT-VOCAB",
+                    format!(
+                        "{} contains public-contract forbidden term '{term}'",
+                        rel.display()
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+fn public_contract_vocabulary_files(root: &Path) -> Vec<PathBuf> {
+    let mut files = BTreeSet::new();
+
+    for rel in PUBLIC_CONTRACT_VOCABULARY_FILES {
+        files.insert(PathBuf::from(rel));
+    }
+
+    for rel_dir in PUBLIC_CONTRACT_VOCABULARY_DIRS {
+        collect_public_contract_text_files(root, Path::new(rel_dir), &mut files);
+    }
+
+    collect_public_contract_example_files(root, &mut files);
+
+    files.into_iter().collect()
+}
+
+fn collect_public_contract_text_files(root: &Path, rel_dir: &Path, files: &mut BTreeSet<PathBuf>) {
+    let dir = root.join(rel_dir);
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let rel = rel_dir.join(entry.file_name());
+        let path = entry.path();
+        if path.is_dir() {
+            collect_public_contract_text_files(root, &rel, files);
+        } else if is_public_contract_text_file(&rel) {
+            files.insert(rel);
+        }
+    }
+}
+
+fn collect_public_contract_example_files(root: &Path, files: &mut BTreeSet<PathBuf>) {
+    let examples_dir = root.join("examples");
+    let Ok(entries) = fs::read_dir(examples_dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let rel = Path::new("examples").join(entry.file_name());
+        let path = entry.path();
+        if path.is_dir() {
+            if is_public_contract_example_path(&rel) {
+                collect_public_contract_text_files(root, &rel, files);
+            }
+        } else if is_public_contract_example_path(&rel) && is_public_contract_text_file(&rel) {
+            files.insert(rel);
+        }
+    }
+}
+
+fn is_public_contract_example_path(rel: &Path) -> bool {
+    rel.file_stem()
+        .and_then(|stem| stem.to_str())
+        .is_some_and(|stem| {
+            PUBLIC_CONTRACT_EXAMPLE_PREFIXES.iter().any(|prefix| {
+                stem == *prefix
+                    || stem
+                        .strip_prefix(prefix)
+                        .is_some_and(|suffix| suffix.starts_with('_'))
+            })
+        })
+}
+
+fn is_public_contract_text_file(rel: &Path) -> bool {
+    rel.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| matches!(ext, "rs" | "md" | "html" | "js" | "ts" | "toml" | "json"))
 }
