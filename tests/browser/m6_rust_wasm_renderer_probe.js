@@ -1276,10 +1276,10 @@ function assertDisplayP3OutputProof(backend, result) {
   if (result.requested_output_color_space !== "DisplayP3") {
     throw new Error(`${backend} Display P3 proof did not use the RendererOptions output-color-space path: ${JSON.stringify(result)}`);
   }
-  if (result.capabilities.wide_gamut_output !== "Supported") {
+  if (result.capabilities.wide_gamut_output !== "supported") {
     throw new Error(`${backend} Display P3 proof did not report supported wide gamut: ${JSON.stringify(result)}`);
   }
-  if (result.capabilities.output_stage !== "PbrNeutralDisplayP3") {
+  if (result.capabilities.output_stage !== "pbr_neutral_display_p3") {
     throw new Error(`${backend} Display P3 proof did not switch output stage: ${JSON.stringify(result)}`);
   }
   if (result.capabilities.color_target_format !== "Rgba8UnormSrgb+DisplayP3Canvas") {
