@@ -1,6 +1,6 @@
 [package]
 name = "scena"
-version = "1.5.1"
+version = "1.6.0"
 edition = "2024"
 rust-version = "1.93"
 license = "MIT OR Apache-2.0"
@@ -16,6 +16,7 @@ include = [
     "/tests/**",
     "!/tests/visual/references/round_e_failing_baseline_glossy_grid.png",
     "/examples/**",
+    "!/examples/furuta_render.rs",
     "/docs/**/*.md",
     "/docs/assets/**/*.png",
     "/docs/assets/**/*.jpg",

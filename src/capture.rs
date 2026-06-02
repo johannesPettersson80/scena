@@ -224,6 +224,21 @@ pub fn capture_rgba8(
     renderer: &Renderer,
     options: CaptureOptions,
 ) -> Result<CaptureRgba8, CaptureError> {
+    let readback = renderer.read_pixels();
+    let width = readback.width();
+    let height = readback.height();
+    let rgba8 = readback.into_rgba8();
+    capture_rgba8_from_pixels(scene, renderer, options, width, height, rgba8)
+}
+
+pub fn capture_rgba8_from_pixels(
+    scene: &Scene,
+    renderer: &Renderer,
+    options: CaptureOptions,
+    width: u32,
+    height: u32,
+    rgba8: Vec<u8>,
+) -> Result<CaptureRgba8, CaptureError> {
     let rendered = renderer
         .rendered_frame_state()
         .ok_or(CaptureError::NoRenderedFrame)?;
@@ -238,10 +253,6 @@ pub fn capture_rgba8(
     let camera = capture_camera(scene, rendered.camera());
     let capabilities = *renderer.capabilities();
     let backend = capabilities.backend;
-    let readback = renderer.read_pixels();
-    let width = readback.width();
-    let height = readback.height();
-    let rgba8 = readback.into_rgba8();
     pixels::validate_rgba8_len(width, height, rgba8.len())?;
     let pixels = summarize_rgba8(width, height, rgba8.as_slice())?;
     let auto_frame = capture_auto_frame(

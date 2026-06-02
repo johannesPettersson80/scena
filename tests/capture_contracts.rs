@@ -4,7 +4,7 @@ use scena::{
     Aabb, Assets, Backend, CAPTURE_SCHEMA_V1, CaptureDescriptor, CaptureError, CaptureOptions,
     CapturePayloadKind, CaptureRevisions, Color, FramingOptions, GeometryDesc, MaterialDesc,
     NodeKey, PerspectiveCamera, Renderer, Scene, Transform, Vec3, capture_rgba8,
-    headless_gltf_viewer,
+    capture_rgba8_from_pixels, headless_gltf_viewer,
 };
 #[cfg(feature = "scene-host")]
 use scena::{SceneHostCore, SceneInspectionReportV1};
@@ -148,6 +148,31 @@ fn cpu_headless_capture_is_deterministic_for_the_same_scene_state() {
     assert_eq!(first.rgba8, second.rgba8);
     assert_eq!(first.descriptor.pixels, second.descriptor.pixels);
     assert_eq!(first.descriptor.revisions, second.descriptor.revisions);
+}
+
+#[test]
+fn capture_from_supplied_rgba8_uses_supplied_pixels_and_rendered_state() {
+    let (_assets, scene, renderer) = rendered_box_scene(1, 1);
+    let rgba8 = vec![4, 5, 6, 255];
+
+    let capture = capture_rgba8_from_pixels(
+        &scene,
+        &renderer,
+        CaptureOptions::default(),
+        1,
+        1,
+        rgba8.clone(),
+    )
+    .expect("capture from supplied pixels succeeds");
+
+    assert_eq!(capture.rgba8, rgba8);
+    assert_eq!(capture.descriptor.payload.byte_length, 4);
+    assert_eq!(capture.descriptor.pixels.nonblack, 1);
+    assert_eq!(capture.descriptor.pixels.center, [4, 5, 6, 255]);
+    assert_eq!(
+        capture.descriptor.pixels.fnv1a64,
+        scena::fnv1a64_hex(capture.rgba8.as_slice())
+    );
 }
 
 #[test]

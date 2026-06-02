@@ -5,9 +5,9 @@ use super::handles::HandleTable;
 use super::reporting::{diagnostics_json, stats_json};
 use super::{SceneHostError, SceneHostErrorCode};
 use crate::{
-    Aabb, AssetFetcher, AssetPath, Assets, Backend, CaptureOptions, CaptureRgba8, CursorPosition,
-    DefaultAssetFetcher, HitTarget, ImportOptions, OrbitControls, RenderOutcome, Renderer, Scene,
-    SceneImport, SurfaceEvent, SurfaceViewport, Transform, Vec3, Viewport, capture_rgba8,
+    Aabb, AssetFetcher, AssetPath, Assets, Backend, CursorPosition, DefaultAssetFetcher, HitTarget,
+    ImportOptions, OrbitControls, RenderOutcome, Renderer, Scene, SceneImport, SurfaceEvent,
+    SurfaceViewport, Transform, Vec3, Viewport,
 };
 use crate::{AnnotationAnchor, Color};
 use crate::{CameraKey, NodeKey};
@@ -16,8 +16,8 @@ use crate::{CameraKey, NodeKey};
 pub struct SceneHostCore<F = DefaultAssetFetcher> {
     pub(super) assets: Assets<F>,
     pub(super) scene: Scene,
-    renderer: Renderer,
-    viewport: SurfaceViewport,
+    pub(super) renderer: Renderer,
+    pub(super) viewport: SurfaceViewport,
     pub(super) active_camera: CameraKey,
     pub(super) camera_controls: OrbitControls,
     node_handles: HandleTable<NodeKey>,
@@ -375,28 +375,6 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         Ok(self.renderer.render_active(&self.scene)?)
     }
 
-    pub fn read_pixels(&self) -> Vec<u8> {
-        self.renderer.read_pixels().into_rgba8()
-    }
-
-    pub fn capture(&self) -> Result<CaptureRgba8, SceneHostError> {
-        Ok(capture_rgba8(
-            &self.scene,
-            &self.renderer,
-            CaptureOptions::default().with_surface_viewport(self.viewport),
-        )?)
-    }
-
-    pub fn capture_json(&self) -> Result<String, SceneHostError> {
-        let capture = self.capture()?;
-        serde_json::to_string(&capture.descriptor).map_err(|error| {
-            SceneHostError::new(
-                SceneHostErrorCode::Capture,
-                format!("capture descriptor serialization failed: {error}"),
-            )
-        })
-    }
-
     pub fn pick(&mut self, x: f32, y: f32) -> Result<Option<u64>, SceneHostError> {
         let size = self.viewport.physical_size();
         let viewport = Viewport::new(size.width, size.height, self.viewport.device_pixel_ratio())
@@ -439,9 +417,12 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     pub fn annotation_projections_json(&self) -> Result<String, SceneHostError> {
         let width = self.viewport.logical_width().round().max(1.0) as u32;
         let height = self.viewport.logical_height().round().max(1.0) as u32;
-        let mut report =
-            self.scene
-                .annotation_projection_report(self.active_camera, width, height)?;
+        let mut report = self.scene.annotation_projection_report_with_node_handles(
+            self.active_camera,
+            width,
+            height,
+            &self.node_handle_map,
+        )?;
         report.coordinate_space = "css_pixels".to_owned();
         serde_json::to_string(&report).map_err(|error| {
             SceneHostError::new(

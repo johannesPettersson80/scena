@@ -1,14 +1,15 @@
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 
+use super::wasm_inputs::{transform_from_components, transform_from_slices, vec3_array_from_slice};
+use super::wasm_readback::browser_canvas_rgba8;
 use super::{SceneHostCore, SceneHostError};
-use crate::{
-    Assets, Color, PlatformSurface, RenderOutcome, Renderer, SurfaceViewport, Transform, Vec3,
-};
+use crate::{Assets, Color, PlatformSurface, RenderOutcome, Renderer, SurfaceViewport};
 
 #[wasm_bindgen]
 pub struct SceneHost {
     pub(super) core: SceneHostCore,
+    browser_canvas: Option<web_sys::HtmlCanvasElement>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -126,7 +127,7 @@ impl SceneHost {
         self.core
             .add_empty(
                 parent,
-                transform_from_slices(&translation, &rotation, &scale)?,
+                transform_from_slices(&translation, &rotation, &scale).map_err(js_error)?,
                 tag.as_deref(),
             )
             .map_err(js_error)
@@ -219,7 +220,7 @@ impl SceneHost {
         self.core
             .set_transform(
                 node,
-                transform_from_slices(&translation, &rotation, &scale)?,
+                transform_from_slices(&translation, &rotation, &scale).map_err(js_error)?,
             )
             .map_err(js_error)
     }
@@ -275,7 +276,7 @@ impl SceneHost {
             .set_node_annotation(
                 &id,
                 node,
-                vec3_array_from_slice("localOffset", &local_offset)?,
+                vec3_array_from_slice("localOffset", &local_offset).map_err(js_error)?,
             )
             .map_err(js_error)
     }
@@ -287,7 +288,10 @@ impl SceneHost {
         position: Box<[f32]>,
     ) -> Result<(), JsValue> {
         self.core
-            .set_world_annotation(&id, vec3_array_from_slice("position", &position)?)
+            .set_world_annotation(
+                &id,
+                vec3_array_from_slice("position", &position).map_err(js_error)?,
+            )
             .map_err(js_error)
     }
 
@@ -319,12 +323,29 @@ impl SceneHost {
 
     #[wasm_bindgen(js_name = readPixels)]
     pub fn read_pixels(&self) -> Vec<u8> {
-        self.core.read_pixels()
+        self.browser_canvas
+            .as_ref()
+            .and_then(|canvas| browser_canvas_rgba8(canvas).ok().flatten())
+            .map(|(_width, _height, rgba8)| rgba8)
+            .unwrap_or_else(|| self.core.read_pixels())
     }
 
     #[wasm_bindgen(js_name = capture)]
     pub fn capture(&self) -> Result<JsValue, JsValue> {
-        let capture = self.core.capture().map_err(js_error)?;
+        let capture = match self
+            .browser_canvas
+            .as_ref()
+            .map(browser_canvas_rgba8)
+            .transpose()
+            .map_err(js_error)?
+            .flatten()
+        {
+            Some((width, height, rgba8)) => self
+                .core
+                .capture_from_rgba8(width, height, rgba8)
+                .map_err(js_error)?,
+            None => self.core.capture().map_err(js_error)?,
+        };
         let descriptor_json = serde_json::to_string(&capture.descriptor).map_err(|error| {
             js_error(SceneHostError::new(
                 super::SceneHostErrorCode::Capture,
@@ -406,6 +427,7 @@ impl SceneHost {
         logical_height: f32,
         device_pixel_ratio: f32,
     ) -> Result<(), JsValue> {
+        let browser_canvas = canvas.clone();
         let (surface, viewport) = surface_from_canvas(
             backend,
             canvas,
@@ -420,7 +442,9 @@ impl SceneHost {
                 viewport.device_pixel_ratio(),
             )
             .map_err(js_error)?;
-        self.core.attach_surface(surface).await.map_err(js_error)
+        self.core.attach_surface(surface).await.map_err(js_error)?;
+        self.browser_canvas = Some(browser_canvas);
+        Ok(())
     }
 }
 
@@ -437,6 +461,7 @@ async fn build_from_canvas(
     logical_height: f32,
     device_pixel_ratio: f32,
 ) -> Result<SceneHost, JsValue> {
+    let browser_canvas = canvas.clone();
     let (surface, viewport) = surface_from_canvas(
         backend,
         canvas,
@@ -448,7 +473,10 @@ async fn build_from_canvas(
         .await
         .map_err(js_error)?;
     let core = SceneHostCore::from_renderer(Assets::new(), renderer, viewport).map_err(js_error)?;
-    Ok(SceneHost { core })
+    Ok(SceneHost {
+        core,
+        browser_canvas: Some(browser_canvas),
+    })
 }
 
 fn surface_from_canvas(
@@ -477,53 +505,6 @@ fn surface_from_canvas(
         }
     };
     Ok((surface, viewport))
-}
-
-fn transform_from_slices(
-    translation: &[f32],
-    rotation: &[f32],
-    scale: &[f32],
-) -> Result<Transform, JsValue> {
-    if translation.len() != 3 {
-        return Err(invalid_len("translation", 3, translation.len()));
-    }
-    if rotation.len() != 4 {
-        return Err(invalid_len("rotation", 4, rotation.len()));
-    }
-    if scale.len() != 3 {
-        return Err(invalid_len("scale", 3, scale.len()));
-    }
-    Ok(transform_from_components(
-        [translation[0], translation[1], translation[2]],
-        [rotation[0], rotation[1], rotation[2], rotation[3]],
-        [scale[0], scale[1], scale[2]],
-    ))
-}
-
-fn transform_from_components(
-    translation: [f32; 3],
-    rotation: [f32; 4],
-    scale: [f32; 3],
-) -> Transform {
-    Transform {
-        translation: Vec3::new(translation[0], translation[1], translation[2]),
-        rotation: crate::Quat::from_xyzw(rotation[0], rotation[1], rotation[2], rotation[3]),
-        scale: Vec3::new(scale[0], scale[1], scale[2]),
-    }
-}
-
-fn invalid_len(field: &str, expected: usize, actual: usize) -> JsValue {
-    js_error(SceneHostError::new(
-        super::SceneHostErrorCode::InvalidInput,
-        format!("{field} must contain {expected} values, got {actual}"),
-    ))
-}
-
-pub(super) fn vec3_array_from_slice(field: &str, values: &[f32]) -> Result<[f32; 3], JsValue> {
-    if values.len() != 3 {
-        return Err(invalid_len(field, 3, values.len()));
-    }
-    Ok([values[0], values[1], values[2]])
 }
 
 fn render_outcome_json(outcome: RenderOutcome) -> String {

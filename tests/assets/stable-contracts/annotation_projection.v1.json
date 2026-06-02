@@ -6,6 +6,7 @@
   "annotations": [
     {
       "id": "left-label",
+      "node_handle": null,
       "x": 42.5,
       "y": 40.0,
       "visible": true

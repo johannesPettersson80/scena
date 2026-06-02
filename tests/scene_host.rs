@@ -396,6 +396,8 @@ fn scene_host_annotations_bounds_and_distance_use_host_handles() {
         .iter()
         .find(|projection| projection.id == "origin-label")
         .expect("origin annotation appears");
+    assert_eq!(left_projection.node_handle, Some(left));
+    assert_eq!(origin_projection.node_handle, None);
     assert!(left_projection.visible);
     assert!(origin_projection.visible);
     assert!(

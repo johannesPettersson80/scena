@@ -93,7 +93,7 @@ fn m5_release_surface_files_and_examples_are_present() {
 fn m5_package_metadata_is_ready_for_dry_run() {
     let manifest = fs::read_to_string(root().join("Cargo.toml")).expect("Cargo.toml is readable");
     for needle in [
-        "version = \"1.5.1\"",
+        "version = \"1.6.0\"",
         "rust-version = ",
         "license = \"MIT OR Apache-2.0\"",
         "documentation = \"https://docs.rs/scena\"",

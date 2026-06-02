@@ -285,7 +285,7 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
         "docs/browser.md",
         &[
             "examples/scene_host_browser_contracts.js",
-            "Real browser/GPU proof remains a separate gate",
+            "Real browser/GPU proof is separate from CPU builder validation",
             "scene-host-browser-gpu-proof.md",
         ],
     );
@@ -295,7 +295,7 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
         "STABLE-CONTRACT-EVIDENCE",
         "docs/checklists/scene-host-browser-gpu-proof.md",
         &[
-            "Status: open",
+            "Status: passed for SceneHost contracts",
             "Real browser/GPU machine required",
             "scena.scene_host_browser_proof.v1",
             "SceneHost.capture()",

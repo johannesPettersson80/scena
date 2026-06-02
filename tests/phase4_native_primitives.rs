@@ -231,6 +231,7 @@ fn scene_annotation_projections_follow_node_anchors_and_cleanup_on_remove() {
         .iter()
         .find(|projection| projection.id == "marker-label")
         .expect("marker annotation appears");
+    assert_eq!(centered_marker.node_handle, None);
     assert!(centered_marker.visible);
     assert!((centered_marker.x - 50.0).abs() < 1.0);
     assert!((centered_marker.y - 50.0).abs() < 1.0);

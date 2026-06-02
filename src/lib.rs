@@ -59,7 +59,8 @@ pub use capture::{
     CaptureDescriptor, CaptureError, CaptureOptions, CapturePayload, CapturePayloadKind,
     CapturePixelBounds, CapturePixelSummary, CapturePoint2, CaptureProjection, CaptureRevisions,
     CaptureRgba8, CaptureScreenRect, CaptureViewport, auto_frame_metadata, capture_rgba8,
-    fnv1a64_hex, sample_rgba8, summarize_pixel_readback, summarize_rgba8,
+    capture_rgba8_from_pixels, fnv1a64_hex, sample_rgba8, summarize_pixel_readback,
+    summarize_rgba8,
 };
 pub use controls::{
     CameraOrbitUrlState, CameraOrbitUrlStateError, FlyControls, FollowControls, OrbitControlAction,

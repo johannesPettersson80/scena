@@ -232,12 +232,11 @@ updates, otherwise consumers are forced back to offline merge/bake workflows.
       fabricated out-of-range and generation-mismatched handles return
       structured `SceneHostErrorCode` values instead of panicking, silently
       aliasing, or falling back.
-- [ ] Browser proof:
-      wasm package/build check plus a minimal Playwright or browser-probe path
-      that constructs a multi-part scene in the browser without offline merge.
-      Phase 2 has a `wasm32-unknown-unknown --features scene-host` compile
-      check; rendered browser proof remains the explicit remaining Phase 2
-      approval gate and must run on a real browser/GPU machine.
+- [x] Browser proof:
+      `SCENA_BROWSER_BACKENDS=webgl2 npm run browser:scene-host-proof` builds
+      the `scene-host` wasm package and constructs a multi-part scene in
+      Chromium on Raspberry Pi V3D hardware without offline merge. Artifact:
+      `target/gate-artifacts/scene-host-browser-proof/scene-host-browser-proof.json`.
 
 ## Phase 3 - Capture descriptor and public `scena::capture`
 
@@ -269,10 +268,13 @@ Bind pixels to the exact scene state that produced them.
 - [x] Stale-render test:
       `render -> mutate scene -> capture` rejects the stale framebuffer instead
       of silently binding new revisions to old pixels.
-- [ ] Browser rendered-output proof for WASM paths:
-      run `SceneHost.capture()` in an actual browser/GPU path and verify the
-      descriptor JSON, RGBA8 payload, DPR metadata, and rendered pixels. The
-      CPU builder does not satisfy this visual/browser gate.
+- [x] Browser rendered-output proof for WASM paths:
+      `SCENA_BROWSER_BACKENDS=webgl2 npm run browser:scene-host-proof` runs on
+      Raspberry Pi V3D hardware and writes
+      `target/gate-artifacts/scene-host-browser-proof/scene-host-browser-proof.json`
+      plus `.png`. The proof verifies `SceneHost.capture()` descriptor JSON,
+      RGBA8 payload, DPR metadata, and rendered pixels. The CPU builder still
+      does not satisfy browser/GPU proof.
 
 ## Phase 4 - Native scene ergonomics and mutation primitives
 

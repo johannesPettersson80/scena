@@ -117,9 +117,11 @@ highlighted node was highlighted in the submitted scene state.
 `setNodeAnnotation(id, handle, localOffset)` anchors an overlay point to a
 scene node; `setWorldAnnotation(id, position)` anchors one to a world-space
 point. `annotationProjectionsJson()` returns schema
-`scena.annotation_projection.v1` with `{ id, x, y, visible }` entries in CSS
-pixels, so the page can position HTML overlays without reimplementing camera
-projection. `clearAnnotation(id)` removes an overlay anchor.
+`scena.annotation_projection.v1` with `{ id, node_handle, x, y, visible }`
+entries in CSS pixels. Node anchors carry the same host handle used by
+`setTransforms`, `inspectJson`, and `pick`; world anchors carry `null`. This
+lets the page position HTML overlays without reimplementing camera projection.
+`clearAnnotation(id)` removes an overlay anchor.
 
 `worldDistance(a, b)` returns the world-space distance between two host node
 handles. `nodeWorldBoundsJson(handle)` serializes the node subtree's
@@ -144,13 +146,16 @@ stale proof metadata. CPU-headless captures are deterministic for the same
 scene state. Browser GPU captures bind pixels to revision counters and
 backend/capability metadata; they do not claim cross-machine byte identity.
 
-Real browser/GPU proof remains a separate gate from CPU builder validation.
-The required proof plan and output artifacts are tracked in
+Real browser/GPU proof is separate from CPU builder validation. The required
+proof plan and output artifacts are tracked in
 [`scene-host-browser-gpu-proof.md`](checklists/scene-host-browser-gpu-proof.md).
-That proof must exercise `SceneHost.capture()`, `inspectJson()`,
-`annotationProjectionsJson()`, CSS-pixel picking at DPR values other than 1,
-and URL asset loading in a real browser before browser-visible render behavior
-is treated as release evidence.
+The Raspberry Pi V3D run uses
+`SCENA_BROWSER_BACKENDS=webgl2 npm run browser:scene-host-proof` and records
+`scena.scene_host_browser_proof.v1` under
+`target/gate-artifacts/scene-host-browser-proof/`. That proof exercises
+`SceneHost.capture()`, `inspectJson()`, `annotationProjectionsJson()`,
+CSS-pixel picking at DPR values other than 1, and URL asset loading in a real
+browser. Renderer-fidelity epics remain separate and require a non-Pi GPU lane.
 
 ## Output Color Space
 

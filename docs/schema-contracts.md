@@ -288,7 +288,10 @@ Required top-level fields:
 - `viewport_height`
 - `annotations`
 
-Each annotation entry contains `id`, `x`, `y`, and `visible`. Native scene
+Each annotation entry contains `id`, `node_handle`, `x`, `y`, and `visible`.
+`node_handle` is `null` for world anchors and standalone scene reports without a
+handle map. `SceneHost` fills it with the same stable host node handle used by
+`setTransforms`, `inspectJson`, `pick`, and draw-list inspection. Native scene
 reports use the viewport dimensions supplied by the caller. `SceneHost` reports
 `coordinate_space: "css_pixels"` and uses the host's logical viewport size, so
 browser pages can apply the coordinates directly to HTML overlay elements.
@@ -302,7 +305,13 @@ Small example:
   "viewport_width": 120,
   "viewport_height": 80,
   "annotations": [
-    { "id": "left-label", "x": 42.5, "y": 40.0, "visible": true }
+    {
+      "id": "left-label",
+      "node_handle": 12,
+      "x": 42.5,
+      "y": 40.0,
+      "visible": true
+    }
   ]
 }
 ```

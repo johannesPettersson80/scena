@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::diagnostics::LookupError;
@@ -30,6 +32,8 @@ pub struct AnnotationProjectionReportV1 {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AnnotationProjectionV1 {
     pub id: String,
+    #[serde(default)]
+    pub node_handle: Option<u64>,
     pub x: f32,
     pub y: f32,
     pub visible: bool,
@@ -135,6 +139,24 @@ impl Scene {
         })
     }
 
+    pub fn annotation_projection_report_with_node_handles(
+        &self,
+        camera: CameraKey,
+        viewport_width: u32,
+        viewport_height: u32,
+        node_handles: &BTreeMap<NodeKey, u64>,
+    ) -> Result<AnnotationProjectionReportV1, LookupError> {
+        let mut report =
+            self.annotation_projection_report(camera, viewport_width, viewport_height)?;
+        for projection in &mut report.annotations {
+            projection.node_handle = self
+                .annotation_anchor(&projection.id)
+                .and_then(|anchor| anchor.target_node())
+                .and_then(|node| node_handles.get(&node).copied());
+        }
+        Ok(report)
+    }
+
     fn project_annotation(
         &self,
         anchor: &AnnotationAnchor,
@@ -165,6 +187,7 @@ impl Scene {
 
         Ok(AnnotationProjectionV1 {
             id: anchor.id.clone(),
+            node_handle: None,
             x,
             y,
             visible,

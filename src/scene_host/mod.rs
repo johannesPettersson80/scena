@@ -2,6 +2,7 @@
 
 mod assets;
 mod camera;
+mod capture;
 mod core;
 mod error;
 mod handles;
@@ -13,6 +14,10 @@ mod wasm;
 mod wasm_assets;
 #[cfg(target_arch = "wasm32")]
 mod wasm_camera;
+#[cfg(target_arch = "wasm32")]
+mod wasm_inputs;
+#[cfg(target_arch = "wasm32")]
+mod wasm_readback;
 
 pub use camera::SceneHostCameraState;
 pub use core::SceneHostCore;

@@ -1,7 +1,8 @@
 use wasm_bindgen::prelude::*;
 
 use super::camera::orbit_action_name;
-use super::wasm::{SceneHost, js_error, vec3_array_from_slice};
+use super::wasm::{SceneHost, js_error};
+use super::wasm_inputs::vec3_array_from_slice;
 use super::{SceneHostError, SceneHostErrorCode};
 use crate::{PointerButton, SceneHostCameraState, Vec3};
 
@@ -20,7 +21,7 @@ impl SceneHost {
         pitch_radians: f32,
         distance: f32,
     ) -> Result<(), JsValue> {
-        let target = vec3_array_from_slice("target", &target)?;
+        let target = vec3_array_from_slice("target", &target).map_err(js_error)?;
         self.core
             .set_camera(SceneHostCameraState {
                 target: Vec3::new(target[0], target[1], target[2]),

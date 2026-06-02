@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-06-02
+
 ### Added
 
 - Added the renderer charter, stable JSON contract policy, WASM scene-host
@@ -45,12 +47,19 @@ All notable user-facing changes are recorded here.
   geometry-summary, and provenance contracts. The fixtures are also asserted
   against live serde serialization so contract drift requires a visible fixture
   update.
+- Added `browser:scene-host-proof`, a Raspberry Pi V3D WebGL2 browser/GPU
+  proof harness for `SceneHost` that builds the `scene-host` wasm package,
+  constructs a multi-part browser scene, and records
+  `scena.scene_host_browser_proof.v1` JSON plus a PNG artifact.
 
 ### Fixed
 
 - Hardened capture descriptors so `render -> mutate scene -> capture` fails
   closed with `CaptureError::StaleRender` instead of binding new scene
   revisions to an older framebuffer.
+- Fixed WASM `SceneHost.capture()` on browser WebGL2 surfaces so it binds
+  revision/camera metadata to canvas RGBA8 readback instead of the CPU-side
+  headless frame buffer.
 
 ## [1.5.1] - 2026-05-23
 

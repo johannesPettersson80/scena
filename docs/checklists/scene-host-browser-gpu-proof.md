@@ -1,7 +1,8 @@
 # SceneHost browser/GPU proof plan
 
-Status: open
-Date: 2026-06-01
+Status: passed for SceneHost contracts on Raspberry Pi V3D WebGL2; renderer
+fidelity dependencies remain open.
+Date: 2026-06-02
 Scope: real browser/GPU rendered-output proof for the generic `SceneHost`
 contracts.
 
@@ -61,9 +62,42 @@ renderer-fidelity dependencies remain open or untriaged against current `main`:
 See `renderer-fidelity-dependencies.md` for the current evidence and required
 follow-up work.
 
+## Run evidence
+
+Run on Raspberry Pi 5 hardware using system Chromium and ANGLE/GLES:
+
+```bash
+SCENA_BROWSER_BACKENDS=webgl2 npm run browser:scene-host-proof
+```
+
+The harness builds the SceneHost package with:
+
+```bash
+rustup run 1.95.0 wasm-pack build . --dev --target web --out-dir target/scene-host-browser-pkg --out-name scena --features scene-host
+```
+
+Artifacts:
+
+- `target/gate-artifacts/scene-host-browser-proof/scene-host-browser-proof.json`
+- `target/gate-artifacts/scene-host-browser-proof/scene-host-browser-proof.png`
+
+Recorded renderer:
+
+```text
+ANGLE (Broadcom, V3D 7.1.10.2, OpenGL ES 3.1 Mesa 25.0.7-2+rpt4)
+```
+
+The hardware guard asserts the renderer contains `V3D` and does not contain
+`SwiftShader` or `llvmpipe`. The run recorded `hardware_tier: "low"` and
+`forward_pbr: "supported"`; the harness also accepts low-tier
+`forward_pbr: "degraded"` as expected-on-tier for this proof. This gate proves
+SceneHost browser construction, render, inspection, annotation projection,
+CSS-pixel picking, and capture contracts. It does not close the dense PBR or
+source-material fidelity epics.
+
 ## Current status
 
 CPU/headless validation is covered by the Rust tests and doctor gates in this
-branch. The real browser/GPU proof above remains open and must be run on a
-machine with hardware-accelerated browser rendering before browser-visible
-SceneHost behavior is treated as release evidence.
+branch. The SceneHost browser/GPU proof above now has V3D hardware evidence.
+Final browser visual approval still waits on the renderer-fidelity dependencies
+listed above.

@@ -104,9 +104,11 @@ Native callers can store `AnnotationAnchor::node` / `AnnotationAnchor::world`
 anchors and call `Scene::annotation_projection_report` for schema
 `scena.annotation_projection.v1`. Browser hosts use `setNodeAnnotation`,
 `setWorldAnnotation`, `clearAnnotation`, and `annotationProjectionsJson()`,
-which returns CSS-pixel projection coordinates. `SceneAsset::geometry_summary`
-returns schema `scena.asset_geometry_summary.v1` with node/mesh/primitive
-counts, asset-local bounds, and source metadata where the asset stores it.
+which returns CSS-pixel projection coordinates and the same host `node_handle`
+for node anchors that `setTransforms`, `inspectJson`, and `pick` use. World
+anchors report `node_handle: null`. `SceneAsset::geometry_summary` returns
+schema `scena.asset_geometry_summary.v1` with node/mesh/primitive counts,
+asset-local bounds, and source metadata where the asset stores it.
 Phase 5 adds stable asset-load reports. Native callers use
 `AssetLoadReport<SceneAsset>::to_schema_json()` for
 `scena.asset_load_report.v1`; browser hosts can call
