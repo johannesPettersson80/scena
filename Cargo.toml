@@ -13,8 +13,10 @@ keywords = ["renderer", "scene-graph", "gltf", "webgpu", "wasm"]
 categories = ["graphics", "rendering", "wasm"]
 include = [
     "/src/**",
-    "/tests/**",
-    "!/tests/visual/references/round_e_failing_baseline_glossy_grid.png",
+    "/tests/*.rs",
+    "/tests/browser/**",
+    "/tests/assets/stable-contracts/**",
+    "/tests/assets/environment/generated/**",
     "/examples/**",
     "!/examples/furuta_render.rs",
     "/docs/**/*.md",
