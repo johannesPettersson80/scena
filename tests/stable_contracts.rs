@@ -124,6 +124,10 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
             "tests/assets/stable-contracts/scene_host_asset_import.v1.json",
             "scena.scene_host_asset_import.v1",
         ),
+        (
+            "tests/assets/stable-contracts/scene_host_subtree.v1.json",
+            "scena.subtree.v1",
+        ),
     ];
 
     for (rel, schema) in fixtures {
@@ -198,6 +202,14 @@ fn asset_load_report_golden_matches_live_schema_serialization() {
 fn scene_host_asset_import_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::SceneHostAssetImportReportV1>(
         "tests/assets/stable-contracts/scene_host_asset_import.v1.json",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_host_subtree_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::SceneHostSubtreeReportV1>(
+        "tests/assets/stable-contracts/scene_host_subtree.v1.json",
     );
 }
 

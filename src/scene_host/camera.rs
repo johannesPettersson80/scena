@@ -4,8 +4,9 @@ use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
 #[cfg(target_arch = "wasm32")]
 use crate::OrbitControlAction;
 use crate::{
-    AssetFetcher, CameraKey, LookupError, OrbitControlAction as HostOrbitControlAction,
-    OrbitControls, PointerButton, PointerEvent, PointerEventKind, Scene, Vec3,
+    AssetFetcher, CameraKey, FramingOptions, LookupError,
+    OrbitControlAction as HostOrbitControlAction, OrbitControls, PointerButton, PointerEvent,
+    PointerEventKind, Scene, Vec3,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -149,6 +150,45 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         self.scene.frame(self.active_camera, bounds)?;
         self.camera_controls =
             controls_from_scene_camera(&self.scene, self.active_camera, bounds.center())?;
+        Ok(())
+    }
+
+    pub fn frame_node_product_view(&mut self, node: u64) -> Result<(), SceneHostError> {
+        self.frame_node_with_preset(node, "product_viewer_default")
+    }
+
+    pub fn frame_node_with_preset(
+        &mut self,
+        node: u64,
+        preset: &str,
+    ) -> Result<(), SceneHostError> {
+        let node = self.resolve_node(node)?;
+        let bounds = self
+            .scene
+            .node_world_bounds(node, &self.assets)?
+            .ok_or(LookupError::ImportHasNoBounds)?;
+        let width = self.viewport.logical_width().round().max(1.0) as u32;
+        let height = self.viewport.logical_height().round().max(1.0) as u32;
+        let (options, fill) = match preset {
+            "cell_overview" => (FramingOptions::new().top(), 0.72),
+            "operator_review_default" => (
+                FramingOptions::new().orbit(35.0_f32.to_radians(), 14.0_f32.to_radians()),
+                0.78,
+            ),
+            "product_viewer_default" => (FramingOptions::new().three_quarter_front_right(), 0.72),
+            _ => {
+                return Err(SceneHostError::new(
+                    SceneHostErrorCode::InvalidInput,
+                    format!("unsupported SceneHost camera preset {preset}"),
+                ));
+            }
+        };
+        let framing = self.scene.frame_bounds(
+            self.active_camera,
+            bounds,
+            options.fill(fill).margin_px(48.0).viewport(width, height),
+        )?;
+        self.camera_controls = OrbitControls::from_framing(framing);
         Ok(())
     }
 

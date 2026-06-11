@@ -25,6 +25,13 @@ const REQUIRED_BINDINGS = [
   ["prototype", "instantiateUrlUnder"],
   ["prototype", "instantiateUrlUnderWithReportJson"],
   ["prototype", "setTransforms"],
+  ["prototype", "setTransformsTyped"],
+  ["prototype", "setVisible"],
+  ["prototype", "setNodeTint"],
+  ["prototype", "clearNodeTint"],
+  ["prototype", "subtreeNodesJson"],
+  ["prototype", "setSubtreeTint"],
+  ["prototype", "clearSubtreeTint"],
   ["prototype", "prepare"],
   ["prototype", "render"],
   ["prototype", "inspectJson"],
@@ -477,6 +484,40 @@ async function runPageProof(page) {
         },
       ];
       host.setTransforms(JSON.stringify(transformBatch));
+      const typedTransformNodes = new BigUint64Array([
+        handleBigInt(leftMeshHandle),
+        handleBigInt(rightMeshHandle),
+      ]);
+      const typedTransformComponents = new Float32Array([
+        -0.08, 0.06, 0.0, 0.0, 0.0, 0.0, 1.001, 1.0, 1.0, 1.0,
+        0.08, -0.06, 0.0, 0.0, 0.0, 0.0, 0.999, 1.0, 1.0, 1.0,
+      ]);
+      host.setTransformsTyped(typedTransformNodes, typedTransformComponents);
+      const afterTypedTransform = JSON.parse(host.inspectJson());
+      let invalidTypedRejected = false;
+      try {
+        host.setTransformsTyped(
+          new BigUint64Array([handleBigInt(leftMeshHandle)]),
+          new Float32Array([Number.NaN, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]),
+        );
+      } catch (error) {
+        invalidTypedRejected = error && error.code === "InvalidInput";
+      }
+      const afterInvalidTypedTransform = JSON.parse(host.inspectJson());
+      host.setVisible(rightFrameHandle, false);
+      const hiddenInspection = JSON.parse(host.inspectJson());
+      host.setVisible(rightFrameHandle, true);
+      const subtreeReport = JSON.parse(host.subtreeNodesJson(rootHandle));
+      host.setSubtreeTint(
+        rootHandle,
+        0.25,
+        0.5,
+        0.75,
+        1.0,
+        new BigUint64Array([handleBigInt(rightFrameHandle)]),
+      );
+      const subtreeTintInspection = JSON.parse(host.inspectJson());
+      host.clearSubtreeTint(rootHandle, new BigUint64Array([]));
       host.setNodeAnnotation("tracked-node", leftMeshHandle, [0.0, 0.0, 0.0]);
       host.setWorldAnnotation("origin", [0.0, 0.0, 0.0]);
       host.frameAll();
@@ -565,6 +606,16 @@ async function runPageProof(page) {
           tracked_node: trackedNode,
         },
         transform_batch: transformBatch,
+        typed_transform_batch: {
+          nodes: Array.from(typedTransformNodes, (value) => Number(value)),
+          components: Array.from(typedTransformComponents),
+          invalid_rejected: invalidTypedRejected,
+          after_typed_transform: afterTypedTransform,
+          after_invalid_typed_transform: afterInvalidTypedTransform,
+        },
+        visibility_probe: hiddenInspection,
+        subtree_report: subtreeReport,
+        subtree_tint_probe: subtreeTintInspection,
         camera: {
           framed: framedCamera,
           rendered: renderedCamera,
@@ -655,12 +706,41 @@ function assertProof(pageProof, screenshot) {
 
   const tracked = pageProof.handles.tracked_node;
   const transformed = pageProof.transform_batch.some((entry) => entry.node === tracked);
+  const typedTransformed = pageProof.typed_transform_batch.nodes.includes(tracked);
   const inspectedNode = pageProof.inspect_json.nodes.find((node) => node.handle === tracked);
   const draw = pageProof.inspect_json.draw_list.find((entry) => entry.node === tracked);
   const annotation = pageProof.annotation_projections_json.annotations.find(
     (entry) => entry.node_handle === tracked,
   );
   check("tracked_handle_appears_in_set_transforms", transformed, pageProof.transform_batch);
+  check(
+    "tracked_handle_appears_in_set_transforms_typed",
+    typedTransformed,
+    pageProof.typed_transform_batch,
+  );
+  check(
+    "invalid_typed_transform_rejected",
+    pageProof.typed_transform_batch.invalid_rejected === true,
+    pageProof.typed_transform_batch,
+  );
+  const afterTypedNode = pageProof.typed_transform_batch.after_typed_transform.nodes.find(
+    (node) => node.handle === tracked,
+  );
+  const afterInvalidTypedNode =
+    pageProof.typed_transform_batch.after_invalid_typed_transform.nodes.find(
+      (node) => node.handle === tracked,
+    );
+  check(
+    "invalid_typed_transform_does_not_mutate",
+    transformsApproximatelyEqual(
+      afterTypedNode && afterTypedNode.local_transform,
+      afterInvalidTypedNode && afterInvalidTypedNode.local_transform,
+    ),
+    {
+      after_typed: afterTypedNode && afterTypedNode.local_transform,
+      after_invalid: afterInvalidTypedNode && afterInvalidTypedNode.local_transform,
+    },
+  );
   check("tracked_handle_appears_in_inspection_nodes", Boolean(inspectedNode), tracked);
   check("tracked_handle_appears_in_draw_list", Boolean(draw), pageProof.inspect_json.draw_list);
   check(
@@ -671,6 +751,36 @@ function assertProof(pageProof, screenshot) {
   check("pick_returns_tracked_handle_from_css_pixels", pageProof.pick.result === tracked, {
     pick: pageProof.pick,
     dpr: pageProof.viewport.device_pixel_ratio,
+  });
+  const hiddenRightFrame = pageProof.visibility_probe.nodes.find(
+    (node) => node.handle === pageProof.handles.right_frame,
+  );
+  const hiddenRightDraw = pageProof.visibility_probe.draw_list.find(
+    (entry) => entry.node === pageProof.handles.right_mesh,
+  );
+  check("set_visible_hides_subtree_in_inspection", hiddenRightFrame && !hiddenRightFrame.visible, {
+    visibility_probe: pageProof.visibility_probe,
+  });
+  check("set_visible_hides_subtree_draws", !hiddenRightDraw, {
+    visibility_probe: pageProof.visibility_probe,
+  });
+  check("subtree_report_schema_is_versioned", pageProof.subtree_report.schema === "scena.subtree.v1", {
+    subtree_report: pageProof.subtree_report,
+  });
+  check(
+    "subtree_report_contains_tracked_handle",
+    pageProof.subtree_report.nodes.some((node) => node.handle === tracked),
+    pageProof.subtree_report,
+  );
+  const tintedLeft = pageProof.subtree_tint_probe.nodes.find((node) => node.handle === tracked);
+  const excludedRight = pageProof.subtree_tint_probe.nodes.find(
+    (node) => node.handle === pageProof.handles.right_mesh,
+  );
+  check("set_subtree_tint_applies_to_included_subtree", Boolean(tintedLeft && tintedLeft.tint), {
+    subtree_tint_probe: pageProof.subtree_tint_probe,
+  });
+  check("set_subtree_tint_skips_excluded_subtree", Boolean(excludedRight && !excludedRight.tint), {
+    subtree_tint_probe: pageProof.subtree_tint_probe,
   });
 
   check(
@@ -797,6 +907,10 @@ async function main() {
     wasm_bindings: pageProof.wasm_bindings,
     handles: pageProof.handles,
     transform_batch: pageProof.transform_batch,
+    typed_transform_batch: pageProof.typed_transform_batch,
+    visibility_probe: pageProof.visibility_probe,
+    subtree_report: pageProof.subtree_report,
+    subtree_tint_probe: pageProof.subtree_tint_probe,
     camera: pageProof.camera,
     render_outcome: pageProof.render_outcome,
     inspect_json: pageProof.inspect_json,

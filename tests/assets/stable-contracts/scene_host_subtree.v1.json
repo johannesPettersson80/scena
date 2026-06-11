@@ -1,0 +1,20 @@
+{
+  "schema": "scena.subtree.v1",
+  "nodes": [
+    {
+      "handle": 42,
+      "name": null,
+      "tags": [
+        "frame",
+        "product"
+      ]
+    },
+    {
+      "handle": 84,
+      "name": null,
+      "tags": [
+        "part"
+      ]
+    }
+  ]
+}

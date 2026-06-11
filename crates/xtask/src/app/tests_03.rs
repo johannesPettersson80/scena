@@ -227,6 +227,46 @@ pub(crate) fn doctor_rejects_m4_platform_missing_dirty_state_regression() {
 }
 
 #[test]
+pub(crate) fn doctor_rejects_scene_host_length_only_transform_input_regression() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/scene-host-length-only-inputs");
+    let scene_host_dir = fixture_root.join("src/scene_host");
+    fs::create_dir_all(&scene_host_dir).expect("scene_host fixture dir");
+    fs::write(
+        scene_host_dir.join("inputs.rs"),
+        "pub fn transform_from_slices(values: &[f32]) { assert_eq!(values.len(), 10); }\n",
+    )
+    .expect("inputs fixture");
+    fs::write(
+        scene_host_dir.join("transforms.rs"),
+        "pub fn set_transform_components() {}\n",
+    )
+    .expect("transforms fixture");
+    fs::write(
+        scene_host_dir.join("subtree.rs"),
+        "pub fn set_visible() {}\n",
+    )
+    .expect("subtree fixture");
+    fs::write(
+        scene_host_dir.join("wasm_transforms.rs"),
+        "pub fn set_transforms(batch_json: String) { let _ = batch_json; }\n",
+    )
+    .expect("wasm transforms fixture");
+    let mut findings = Vec::new();
+
+    check_m4_platform_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-SCENE-HOST-INPUTS"
+                && finding.message.contains("src/scene_host/inputs.rs")
+                && finding.message.contains("validate_finite_components")
+        }),
+        "doctor must reject length-only SceneHost transform input validation: {findings:?}",
+    );
+}
+
+#[test]
 pub(crate) fn doctor_rejects_display_p3_without_renderer_output_contract() {
     // ARCH-M4-PLATFORM: Display P3 is only shippable when RendererOptions,
     // capabilities, and browser proof all pin the renderer-owned canvas

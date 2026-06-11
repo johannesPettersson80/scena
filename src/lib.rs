@@ -122,8 +122,9 @@ pub use scene::{
 };
 #[cfg(feature = "scene-host")]
 pub use scene_host::{
-    SCENE_HOST_ASSET_IMPORT_SCHEMA_V1, SceneHostAssetImportReportV1, SceneHostCameraState,
-    SceneHostCore, SceneHostError, SceneHostErrorCode,
+    SCENE_HOST_ASSET_IMPORT_SCHEMA_V1, SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostAssetImportReportV1,
+    SceneHostCameraState, SceneHostCore, SceneHostError, SceneHostErrorCode,
+    SceneHostSubtreeNodeV1, SceneHostSubtreeReportV1,
 };
 pub use viewer::{
     FirstRender, HeadlessGltfViewer, HeadlessGltfViewerBuilder, InteractiveGltfViewer,

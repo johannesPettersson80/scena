@@ -4,6 +4,7 @@ use serde_json::json;
 use crate::{AssetLoadReportV1, Diagnostic, RendererStats};
 
 pub const SCENE_HOST_ASSET_IMPORT_SCHEMA_V1: &str = "scena.scene_host_asset_import.v1";
+pub const SCENE_HOST_SUBTREE_SCHEMA_V1: &str = "scena.subtree.v1";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SceneHostAssetImportReportV1 {
@@ -12,12 +13,34 @@ pub struct SceneHostAssetImportReportV1 {
     pub asset_load_report: AssetLoadReportV1,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneHostSubtreeReportV1 {
+    pub schema: String,
+    pub nodes: Vec<SceneHostSubtreeNodeV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneHostSubtreeNodeV1 {
+    pub handle: u64,
+    pub name: Option<String>,
+    pub tags: Vec<String>,
+}
+
 impl SceneHostAssetImportReportV1 {
     pub fn new(import: u64, asset_load_report: AssetLoadReportV1) -> Self {
         Self {
             schema: SCENE_HOST_ASSET_IMPORT_SCHEMA_V1.to_owned(),
             import,
             asset_load_report,
+        }
+    }
+}
+
+impl SceneHostSubtreeReportV1 {
+    pub fn new(nodes: Vec<SceneHostSubtreeNodeV1>) -> Self {
+        Self {
+            schema: SCENE_HOST_SUBTREE_SCHEMA_V1.to_owned(),
+            nodes,
         }
     }
 }

@@ -1,8 +1,8 @@
 use wasm_bindgen::prelude::*;
 
 use super::camera::orbit_action_name;
+use super::inputs::vec3_array_from_slice;
 use super::wasm::{SceneHost, js_error};
-use super::wasm_inputs::vec3_array_from_slice;
 use super::{SceneHostError, SceneHostErrorCode};
 use crate::{PointerButton, SceneHostCameraState, Vec3};
 

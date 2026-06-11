@@ -1,9 +1,12 @@
 #![cfg(all(feature = "scene-host", not(target_arch = "wasm32")))]
 
+use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, FRAC_PI_6};
+
 use scena::{
-    ASSET_LOAD_REPORT_SCHEMA_V1, AnnotationProjectionReportV1, AssetPath, Assets, Color,
-    GeometryDesc, ImportOptions, MaterialDesc, OrbitControlAction, PointerButton,
-    SCENE_HOST_ASSET_IMPORT_SCHEMA_V1, SceneHostCameraState, SceneHostCore, SceneHostErrorCode,
+    ASSET_LOAD_REPORT_SCHEMA_V1, AnnotationProjectionReportV1, AssetPath, Assets,
+    AutoExposureConfig, Color, GeometryDesc, ImportOptions, MaterialDesc, OrbitControlAction,
+    PointerButton, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1, SCENE_HOST_SUBTREE_SCHEMA_V1,
+    SceneHostCameraState, SceneHostCore, SceneHostErrorCode, SceneHostSubtreeReportV1,
     SceneInspectionReportV1, Transform, Vec3,
 };
 
@@ -78,6 +81,56 @@ fn scene_set_transforms_batches_changed_nodes_into_one_revision_bump() {
             .transform()
             .translation,
         Vec3::new(0.0, 2.0, 0.0)
+    );
+}
+
+#[test]
+fn scene_host_product_studio_visuals_apply_renderable_defaults() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+    assert_eq!(host.renderer().environment(), None);
+    let root = host.root_handle();
+
+    host.apply_product_studio_visuals("studio_neutral")
+        .expect("product studio visuals apply");
+    assert_eq!(
+        host.root_handle(),
+        root,
+        "applying the product studio preset must not replace the SceneHost root handle"
+    );
+    host.add_empty(
+        Some(root),
+        Transform::IDENTITY,
+        Some("after-studio-root-child"),
+    )
+    .expect("registered root handle remains usable after applying studio visuals");
+
+    assert!(host.renderer().environment().is_some());
+    assert_eq!(host.renderer().background_color(), Color::CHARCOAL);
+    assert_eq!(
+        host.renderer().auto_exposure(),
+        Some(AutoExposureConfig::product_studio())
+    );
+    let report = host.scene().inspect();
+    assert_eq!(
+        report.light_count(),
+        3,
+        "SceneHost product studio preset must insert the standard Scena three-point rig"
+    );
+}
+
+#[test]
+fn scene_host_product_studio_visuals_reject_unknown_background() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+
+    let error = host
+        .apply_product_studio_visuals("mystery_background")
+        .expect_err("unknown background names must fail closed");
+
+    assert_eq!(error.code(), SceneHostErrorCode::InvalidInput);
+    assert!(
+        error
+            .to_string()
+            .contains("unsupported SceneHost product studio background mystery_background")
     );
 }
 
@@ -171,7 +224,7 @@ fn scene_host_core_constructs_poses_inspects_picks_and_frames_with_one_handle_na
 
 #[test]
 fn scene_host_core_instantiates_glb_bytes_under_host_frame() {
-    let mut host = SceneHostCore::headless(64, 64).expect("host builds");
+    let mut host = SceneHostCore::headless(320, 240).expect("host builds");
     let frame = host
         .add_empty(
             None,
@@ -186,6 +239,18 @@ fn scene_host_core_instantiates_glb_bytes_under_host_frame() {
     let roots = host.import_roots(import).expect("import roots resolve");
 
     assert!(!roots.is_empty());
+    let grid_floor = host
+        .add_product_grid_floor_under_node(frame)
+        .expect("host adds Scena grid floor under imported subtree");
+    assert_eq!(grid_floor.len(), 2);
+    let floor_bounds = host
+        .node_world_bounds(grid_floor[0])
+        .expect("grid floor handle resolves")
+        .expect("grid floor has bounds");
+    assert!(
+        floor_bounds.max.x - floor_bounds.min.x > 0.0,
+        "grid floor must produce non-empty world bounds"
+    );
     for root in roots {
         let report: SceneInspectionReportV1 =
             serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
@@ -195,6 +260,278 @@ fn scene_host_core_instantiates_glb_bytes_under_host_frame() {
             Some(Some(parent)) if parent == frame
         ));
     }
+    host.frame_node_product_view(frame)
+        .expect("host frames GLB subtree with product-view preset");
+    let product_camera = host.get_camera();
+    assert!(
+        (product_camera.yaw_radians - FRAC_PI_4).abs() < 1.0e-6,
+        "product-view SceneHost framing must use Scena's three-quarter front-right yaw"
+    );
+    assert!(
+        (product_camera.pitch_radians - FRAC_PI_6).abs() < 1.0e-6,
+        "product-view SceneHost framing must use Scena's three-quarter front-right elevation"
+    );
+    host.frame_node_with_preset(frame, "operator_review_default")
+        .expect("host frames GLB subtree with operator-review preset");
+    let operator_camera = host.get_camera();
+    assert!(
+        (operator_camera.yaw_radians - 35.0_f32.to_radians()).abs() < 1.0e-6,
+        "operator-review SceneHost framing must use the standing-eye-level yaw"
+    );
+    assert!(
+        (operator_camera.pitch_radians - 14.0_f32.to_radians()).abs() < 1.0e-6,
+        "operator-review SceneHost framing must use the standing-eye-level pitch"
+    );
+    assert_ne!(
+        operator_camera, product_camera,
+        "operator_review_default must not alias product_viewer_default"
+    );
+    host.frame_node_with_preset(frame, "cell_overview")
+        .expect("host frames GLB subtree with named cell-overview preset");
+    let overview_camera = host.get_camera();
+    assert!(
+        overview_camera.pitch_radians > FRAC_PI_2 - 0.03,
+        "cell-overview SceneHost framing must use Scena's named top view, got pitch {}",
+        overview_camera.pitch_radians
+    );
+    assert_ne!(overview_camera, product_camera);
+    assert_ne!(overview_camera, operator_camera);
+    let error = host
+        .frame_node_with_preset(frame, "mystery_preset")
+        .expect_err("unknown camera preset must fail closed");
+    assert_eq!(error.code(), SceneHostErrorCode::InvalidInput);
+    assert!(
+        error
+            .to_string()
+            .contains("unsupported SceneHost camera preset mystery_preset")
+    );
+}
+
+#[test]
+fn scene_host_transform_components_validate_and_batch_atomically() {
+    let mut host = SceneHostCore::headless(64, 64).expect("host builds");
+    let root = host.root_handle();
+    let first = host
+        .add_empty(Some(root), Transform::IDENTITY, Some("first"))
+        .expect("first node inserts");
+    let second = host
+        .add_empty(
+            Some(root),
+            Transform::at(Vec3::new(0.0, 2.0, 0.0)),
+            Some("second"),
+        )
+        .expect("second node inserts");
+
+    host.set_transform_components(
+        first,
+        [1.0, 2.0, 3.0],
+        [0.0, 0.0, 0.0, 1.001],
+        [1.0, 0.0, -1.0],
+    )
+    .expect("near-unit quaternion is accepted and normalized");
+    let first_report: SceneInspectionReportV1 =
+        serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
+            .expect("inspection decodes");
+    let normalized = first_report
+        .node_by_handle(first)
+        .expect("first node appears")
+        .local_transform;
+    assert!((normalized.rotation.length() - 1.0).abs() < 1.0e-6);
+    assert_eq!(normalized.scale, Vec3::new(1.0, 0.0, -1.0));
+
+    let before_invalid_single = normalized;
+    let error = host
+        .set_transform_components(
+            first,
+            [f32::NAN, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0],
+        )
+        .expect_err("nonfinite translation is rejected");
+    assert_eq!(error.code(), SceneHostErrorCode::InvalidInput);
+    let report: SceneInspectionReportV1 =
+        serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
+            .expect("inspection decodes");
+    assert_eq!(
+        report
+            .node_by_handle(first)
+            .expect("first node appears")
+            .local_transform,
+        before_invalid_single,
+        "invalid single transform input must not mutate the node"
+    );
+
+    let before_batch = report.clone();
+    let error = host
+        .set_transforms_components(&[
+            (first, [5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]),
+            (
+                second,
+                [0.0, 6.0, 0.0, 0.0, f32::INFINITY, 0.0, 1.0, 1.0, 1.0, 1.0],
+            ),
+        ])
+        .expect_err("nonfinite rotation is rejected before batch mutation");
+    assert_eq!(error.code(), SceneHostErrorCode::InvalidInput);
+    let after_invalid_batch: SceneInspectionReportV1 =
+        serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
+            .expect("inspection decodes");
+    assert_eq!(
+        after_invalid_batch.nodes, before_batch.nodes,
+        "invalid batched typed transforms must not partially mutate the scene"
+    );
+
+    host.set_transforms_components(&[
+        (first, [5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]),
+        (second, [0.0, 6.0, 0.0, 0.0, 0.0, 0.0, 0.999, 1.0, 2.0, 1.0]),
+    ])
+    .expect("valid typed transform batch applies");
+    let report: SceneInspectionReportV1 =
+        serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
+            .expect("inspection decodes");
+    assert_eq!(
+        report
+            .node_by_handle(first)
+            .expect("first node appears")
+            .local_transform
+            .translation,
+        Vec3::new(5.0, 0.0, 0.0)
+    );
+    let second_rotation = report
+        .node_by_handle(second)
+        .expect("second node appears")
+        .local_transform
+        .rotation;
+    assert!((second_rotation.length() - 1.0).abs() < 1.0e-6);
+
+    let error = host
+        .set_transform_components(
+            first,
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.5],
+            [1.0, 1.0, 1.0],
+        )
+        .expect_err("non-unit quaternion is rejected");
+    assert_eq!(error.code(), SceneHostErrorCode::InvalidInput);
+}
+
+#[test]
+fn scene_host_visibility_hides_subtrees_from_rendering_picking_and_inspection() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+    let root = host.root_handle();
+    let frame = host
+        .add_empty(Some(root), Transform::IDENTITY, Some("visibility-frame"))
+        .expect("frame inserts");
+    let import = pollster::block_on(host.instantiate_url_under(
+        frame,
+        AssetPath::from("tests/assets/gltf/mesh_material_vertex_color_scene.gltf"),
+    ))
+    .expect("asset instantiates");
+    let mesh = host
+        .node_handle(import, "ColoredTriangle")
+        .expect("mesh resolves");
+
+    host.frame_node(mesh).expect("mesh frames");
+    host.prepare().expect("visible scene prepares");
+    host.render().expect("visible scene renders");
+    assert_eq!(
+        host.pick(64.0, 64.0).expect("visible pick runs"),
+        Some(mesh),
+        "visible mesh should be pickable before hiding its parent"
+    );
+
+    host.set_visible(frame, false).expect("frame hides");
+    host.prepare().expect("hidden scene prepares");
+    host.render().expect("hidden scene renders");
+    assert_eq!(
+        host.pick(64.0, 64.0).expect("hidden pick runs"),
+        None,
+        "hidden subtree must not be pickable"
+    );
+    let report: SceneInspectionReportV1 =
+        serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
+            .expect("inspection decodes");
+    assert_eq!(
+        report.node_by_handle(frame).expect("frame appears").visible,
+        false
+    );
+    assert!(
+        report.draw_list.iter().all(|draw| draw.node != mesh),
+        "hidden subtree must not appear in the draw list"
+    );
+}
+
+#[test]
+fn scene_host_subtree_query_is_stable_and_batch_tint_respects_exclusions() {
+    let mut host = SceneHostCore::headless(64, 64).expect("host builds");
+    let root = host.root_handle();
+    let parent = host
+        .add_empty(Some(root), Transform::IDENTITY, Some("parent"))
+        .expect("parent inserts");
+    let first = host
+        .add_empty(Some(parent), Transform::IDENTITY, Some("first"))
+        .expect("first child inserts");
+    host.set_tag(first, "shared").expect("shared tag sets");
+    let grandchild = host
+        .add_empty(Some(first), Transform::IDENTITY, Some("grandchild"))
+        .expect("grandchild inserts");
+    let excluded = host
+        .add_empty(Some(parent), Transform::IDENTITY, Some("excluded"))
+        .expect("excluded child inserts");
+    let excluded_child = host
+        .add_empty(Some(excluded), Transform::IDENTITY, Some("excluded-child"))
+        .expect("excluded grandchild inserts");
+
+    let subtree: SceneHostSubtreeReportV1 =
+        serde_json::from_str(&host.subtree_nodes_json(parent).expect("subtree serializes"))
+            .expect("subtree report decodes");
+    assert_eq!(subtree.schema, SCENE_HOST_SUBTREE_SCHEMA_V1);
+    assert_eq!(
+        subtree
+            .nodes
+            .iter()
+            .map(|node| node.handle)
+            .collect::<Vec<_>>(),
+        vec![parent, first, grandchild, excluded, excluded_child],
+        "subtree order must be deterministic pre-order"
+    );
+    assert_eq!(
+        subtree
+            .nodes
+            .iter()
+            .find(|node| node.handle == first)
+            .expect("first node appears")
+            .tags,
+        vec!["first".to_owned(), "shared".to_owned()]
+    );
+    assert!(subtree.nodes.iter().all(|node| node.name.is_none()));
+
+    let tint = Color::from_linear_rgba(0.1, 0.2, 0.3, 1.0);
+    host.set_subtree_tint(parent, Some(tint), &[excluded])
+        .expect("subtree tint applies");
+    let report: SceneInspectionReportV1 =
+        serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
+            .expect("inspection decodes");
+    for handle in [parent, first, grandchild] {
+        assert_eq!(
+            report.node_by_handle(handle).expect("node appears").tint,
+            Some(tint),
+            "included subtree node {handle} receives tint"
+        );
+    }
+    for handle in [excluded, excluded_child] {
+        assert_eq!(
+            report.node_by_handle(handle).expect("node appears").tint,
+            None,
+            "excluded node {handle} and its subtree keep existing tint"
+        );
+    }
+
+    host.set_subtree_tint(parent, None, &[excluded])
+        .expect("subtree tint clears");
+    let report: SceneInspectionReportV1 =
+        serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
+            .expect("inspection decodes");
+    assert!(report.nodes.iter().all(|node| node.tint.is_none()));
 }
 
 #[test]

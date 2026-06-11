@@ -1,23 +1,14 @@
-use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 
-use super::wasm_inputs::{transform_from_components, transform_from_slices, vec3_array_from_slice};
+use super::inputs::vec3_array_from_slice;
 use super::wasm_readback::browser_canvas_rgba8;
 use super::{SceneHostCore, SceneHostError};
-use crate::{Assets, Color, PlatformSurface, RenderOutcome, Renderer, SurfaceViewport};
+use crate::{Assets, PlatformSurface, RenderOutcome, Renderer, SurfaceViewport};
 
 #[wasm_bindgen]
 pub struct SceneHost {
     pub(super) core: SceneHostCore,
     browser_canvas: Option<web_sys::HtmlCanvasElement>,
-}
-
-#[derive(Debug, Deserialize)]
-struct WasmTransformUpdate {
-    node: u64,
-    translation: [f32; 3],
-    rotation: [f32; 4],
-    scale: [f32; 3],
 }
 
 #[wasm_bindgen]
@@ -115,24 +106,6 @@ impl SceneHost {
         .await
     }
 
-    #[wasm_bindgen(js_name = addEmpty)]
-    pub fn add_empty(
-        &mut self,
-        parent: Option<u64>,
-        translation: Box<[f32]>,
-        rotation: Box<[f32]>,
-        scale: Box<[f32]>,
-        tag: Option<String>,
-    ) -> Result<u64, JsValue> {
-        self.core
-            .add_empty(
-                parent,
-                transform_from_slices(&translation, &rotation, &scale).map_err(js_error)?,
-                tag.as_deref(),
-            )
-            .map_err(js_error)
-    }
-
     #[wasm_bindgen(js_name = setTag)]
     pub fn set_tag(&mut self, node: u64, tag: String) -> Result<(), JsValue> {
         self.core.set_tag(node, &tag).map_err(js_error)
@@ -207,62 +180,6 @@ impl SceneHost {
         self.core
             .node_handle_from_inspection(handle)
             .map_err(js_error)
-    }
-
-    #[wasm_bindgen(js_name = setTransform)]
-    pub fn set_transform(
-        &mut self,
-        node: u64,
-        translation: Box<[f32]>,
-        rotation: Box<[f32]>,
-        scale: Box<[f32]>,
-    ) -> Result<(), JsValue> {
-        self.core
-            .set_transform(
-                node,
-                transform_from_slices(&translation, &rotation, &scale).map_err(js_error)?,
-            )
-            .map_err(js_error)
-    }
-
-    #[wasm_bindgen(js_name = setTransforms)]
-    pub fn set_transforms(&mut self, batch_json: String) -> Result<(), JsValue> {
-        let updates: Vec<WasmTransformUpdate> =
-            serde_json::from_str(&batch_json).map_err(|error| {
-                js_error(SceneHostError::new(
-                    super::SceneHostErrorCode::InvalidInput,
-                    format!("invalid setTransforms JSON: {error}"),
-                ))
-            })?;
-        let updates = updates
-            .into_iter()
-            .map(|update| {
-                (
-                    update.node,
-                    transform_from_components(update.translation, update.rotation, update.scale),
-                )
-            })
-            .collect::<Vec<_>>();
-        self.core.set_transforms(&updates).map_err(js_error)
-    }
-
-    #[wasm_bindgen(js_name = setNodeTint)]
-    pub fn set_node_tint(
-        &mut self,
-        node: u64,
-        r: f32,
-        g: f32,
-        b: f32,
-        a: f32,
-    ) -> Result<(), JsValue> {
-        self.core
-            .set_node_tint(node, Some(Color::from_linear_rgba(r, g, b, a)))
-            .map_err(js_error)
-    }
-
-    #[wasm_bindgen(js_name = clearNodeTint)]
-    pub fn clear_node_tint(&mut self, node: u64) -> Result<(), JsValue> {
-        self.core.set_node_tint(node, None).map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = setNodeAnnotation)]
@@ -375,6 +292,18 @@ impl SceneHost {
     #[wasm_bindgen(js_name = frameNode)]
     pub fn frame_node(&mut self, node: u64) -> Result<(), JsValue> {
         self.core.frame_node(node).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = frameNodeProductView)]
+    pub fn frame_node_product_view(&mut self, node: u64) -> Result<(), JsValue> {
+        self.core.frame_node_product_view(node).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = frameNodeWithPreset)]
+    pub fn frame_node_with_preset(&mut self, node: u64, preset: String) -> Result<(), JsValue> {
+        self.core
+            .frame_node_with_preset(node, &preset)
+            .map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = frameAll)]

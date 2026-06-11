@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use super::camera::controls_from_scene_camera;
 use super::handles::HandleTable;
+use super::inputs::validate_transform;
 use super::reporting::{diagnostics_json, stats_json};
 use super::{SceneHostError, SceneHostErrorCode};
 use crate::{
@@ -143,6 +144,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         transform: Transform,
         tag: Option<&str>,
     ) -> Result<u64, SceneHostError> {
+        let transform = validate_transform(transform)?;
         let parent = self.resolve_parent(parent)?;
         let node = self.scene.add_empty(parent, transform)?;
         if let Some(tag) = tag {
@@ -251,37 +253,6 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     pub fn node_handle_from_inspection(&self, handle: u64) -> Result<u64, SceneHostError> {
         self.resolve_node(handle)?;
         Ok(handle)
-    }
-
-    pub fn set_transform(&mut self, node: u64, transform: Transform) -> Result<(), SceneHostError> {
-        let node = self.resolve_node(node)?;
-        self.scene.set_transform(node, transform)?;
-        Ok(())
-    }
-
-    pub fn set_transform_components(
-        &mut self,
-        node: u64,
-        translation: [f32; 3],
-        rotation: [f32; 4],
-        scale: [f32; 3],
-    ) -> Result<(), SceneHostError> {
-        self.set_transform(
-            node,
-            transform_from_components(translation, rotation, scale),
-        )
-    }
-
-    pub fn set_transforms(
-        &mut self,
-        transforms: &[(u64, Transform)],
-    ) -> Result<(), SceneHostError> {
-        let mut raw = Vec::with_capacity(transforms.len());
-        for (node, transform) in transforms {
-            raw.push((self.resolve_node(*node)?, *transform));
-        }
-        self.scene.set_transforms(&raw)?;
-        Ok(())
     }
 
     pub fn set_node_tint(&mut self, node: u64, tint: Option<Color>) -> Result<(), SceneHostError> {
@@ -473,7 +444,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         )
     }
 
-    fn register_node(&mut self, node: NodeKey) -> u64 {
+    pub(super) fn register_node(&mut self, node: NodeKey) -> u64 {
         if let Some(handle) = self.node_handle_map.get(&node).copied() {
             return handle;
         }
@@ -505,17 +476,5 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 SceneHostErrorCode::StaleNodeHandle,
             );
         }
-    }
-}
-
-fn transform_from_components(
-    translation: [f32; 3],
-    rotation: [f32; 4],
-    scale: [f32; 3],
-) -> Transform {
-    Transform {
-        translation: Vec3::new(translation[0], translation[1], translation[2]),
-        rotation: crate::Quat::from_xyzw(rotation[0], rotation[1], rotation[2], rotation[3]),
-        scale: Vec3::new(scale[0], scale[1], scale[2]),
     }
 }

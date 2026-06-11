@@ -1,5 +1,6 @@
 use crate::app::prelude::*;
 pub(crate) fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    check_scene_host_input_validation_contracts(root, findings);
     require_contains(
         root,
         findings,
@@ -266,6 +267,54 @@ pub(crate) fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Findin
             "m4-wasm-size.json",
             "brotli_q11_bytes",
             "ARCH-M4-PLATFORM",
+        ],
+    );
+}
+
+fn check_scene_host_input_validation_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-SCENE-HOST-INPUTS",
+        "src/scene_host/inputs.rs",
+        &[
+            "SceneHostErrorCode::InvalidInput",
+            "QUATERNION_NORM_TOLERANCE",
+            "validate_finite_components(\"translation\"",
+            "validate_finite_components(\"rotation\"",
+            "validate_finite_components(\"scale\"",
+            "normalize_scene_host_quaternion",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SCENE-HOST-INPUTS",
+        "src/scene_host/transforms.rs",
+        &[
+            "validate_transform(transform)?",
+            "set_transforms_components",
+            "transform_from_component_array",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SCENE-HOST-INPUTS",
+        "src/scene_host/subtree.rs",
+        &["set_visible", "set_subtree_tint"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SCENE-HOST-INPUTS",
+        "src/scene_host/wasm_transforms.rs",
+        &[
+            "setTransformsTyped",
+            "js_sys::BigUint64Array",
+            "js_sys::Float32Array",
+            "components.length()",
+            "set_transforms_components",
         ],
     );
 }
