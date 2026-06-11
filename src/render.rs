@@ -499,6 +499,8 @@ fn prepared_triangle_alias_count(prepared: &PreparedSceneState) -> u64 {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod phase4_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
+mod phase5_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod post_quality_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod post_tests;

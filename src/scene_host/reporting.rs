@@ -5,6 +5,7 @@ use crate::{AssetLoadReportV1, Diagnostic, RendererStats};
 
 pub const SCENE_HOST_ASSET_IMPORT_SCHEMA_V1: &str = "scena.scene_host_asset_import.v1";
 pub const SCENE_HOST_SUBTREE_SCHEMA_V1: &str = "scena.subtree.v1";
+pub const SCENE_HOST_ANIMATION_INVENTORY_SCHEMA_V1: &str = "scena.animation_inventory.v1";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SceneHostAssetImportReportV1 {
@@ -17,6 +18,20 @@ pub struct SceneHostAssetImportReportV1 {
 pub struct SceneHostSubtreeReportV1 {
     pub schema: String,
     pub nodes: Vec<SceneHostSubtreeNodeV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneHostAnimationInventoryV1 {
+    pub schema: String,
+    #[serde(default)]
+    pub clips: Vec<SceneHostAnimationClipV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneHostAnimationClipV1 {
+    pub name: String,
+    pub duration_seconds: f32,
+    pub channel_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,6 +56,15 @@ impl SceneHostSubtreeReportV1 {
         Self {
             schema: SCENE_HOST_SUBTREE_SCHEMA_V1.to_owned(),
             nodes,
+        }
+    }
+}
+
+impl SceneHostAnimationInventoryV1 {
+    pub fn new(clips: Vec<SceneHostAnimationClipV1>) -> Self {
+        Self {
+            schema: SCENE_HOST_ANIMATION_INVENTORY_SCHEMA_V1.to_owned(),
+            clips,
         }
     }
 }

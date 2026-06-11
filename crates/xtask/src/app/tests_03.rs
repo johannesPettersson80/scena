@@ -194,6 +194,36 @@ pub(crate) fn doctor_rejects_m3b_animation_missing_typed_keys_regression() {
 }
 
 #[test]
+pub(crate) fn doctor_rejects_animation_transform_tracks_bumping_structure_regression() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/m3b-animation-revision-stub");
+    let mixers_path = fixture_root.join("src/scene/mixers.rs");
+    fs::create_dir_all(mixers_path.parent().expect("mixers parent")).expect("fixture dir");
+    fs::write(
+        &mixers_path,
+        "impl Scene {\n\
+             fn apply_animation_clip(&mut self) {\n\
+                 self.structure_revision = self.structure_revision.saturating_add(1);\n\
+             }\n\
+         }\n",
+    )
+    .expect("mixers fixture");
+    let mut findings = Vec::new();
+
+    check_m3b_animation_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-M3B-ANIMATION"
+                && finding.message.contains(
+                    "apply_animation_clip must route transform-track changes through transform_revision"
+                )
+        }),
+        "doctor must reject animation transform tracks that still force structural prepares: {findings:?}",
+    );
+}
+
+#[test]
 pub(crate) fn doctor_rejects_m4_platform_missing_dirty_state_regression() {
     // ARCH-M4-PLATFORM: src/scene/dirty.rs must expose SceneDirtyState plus the
     // transform_revision counter so dirty propagation stays observable to render-

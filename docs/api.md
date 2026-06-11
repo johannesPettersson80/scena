@@ -68,6 +68,10 @@ Additive public API changes in `[Unreleased]`:
 - `SceneHostCameraState` (gated behind `scene-host`)
 - `SCENE_HOST_ASSET_IMPORT_SCHEMA_V1` and
   `SceneHostAssetImportReportV1` (gated behind `scene-host`)
+- `SCENE_HOST_ANIMATION_INVENTORY_SCHEMA_V1`,
+  `SceneHostAnimationInventoryV1`, `SceneHostAnimationClipV1`,
+  `SceneHostAnimationPlayOptions`, `SceneHostAnimationLoopMode`, and
+  `SceneHostEasing` (gated behind `scene-host`)
 - `CAPTURE_SCHEMA_V1`
 - `capture_rgba8`
 - `Renderer::capture_rgba8`

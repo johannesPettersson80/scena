@@ -11,6 +11,7 @@ const BACKEND = "webgl2";
 const VIEWPORT = { width: 640, height: 480, devicePixelRatio: 1.5 };
 const ASSET_URL = "/assets/gltf/mesh_material_vertex_color_scene.gltf";
 const PHASE4_ASSET_URL = "/assets/gltf/material_variants_scene.gltf";
+const PHASE5_ANIMATED_ASSET_URL = "/assets/gltf/animated_triangle_scene.glb";
 const ARTIFACT_DIR = path.join(
   process.cwd(),
   "target",
@@ -29,8 +30,20 @@ const REQUIRED_BINDINGS = [
   ["prototype", "instantiateUrlUnderWithReportJson"],
   ["prototype", "setTransforms"],
   ["prototype", "setTransformsTyped"],
+  ["prototype", "setTransformEased"],
+  ["prototype", "setTransformsEased"],
+  ["prototype", "setTransformsEasedTyped"],
   ["prototype", "setVisible"],
   ["prototype", "setNodeTint"],
+  ["prototype", "setNodeTintEased"],
+  ["prototype", "clearNodeTintEased"],
+  ["prototype", "animationInventoryJson"],
+  ["prototype", "playAnimation"],
+  ["prototype", "pauseAnimation"],
+  ["prototype", "stopAnimation"],
+  ["prototype", "seekAnimation"],
+  ["prototype", "setAnimationSpeed"],
+  ["prototype", "advance"],
   ["prototype", "setAntiAliasing"],
   ["prototype", "setBloom"],
   ["prototype", "setAmbientOcclusion"],
@@ -241,6 +254,12 @@ function transformsApproximatelyEqual(a, b) {
   );
 }
 
+function nodeByHandle(report, handle) {
+  return report && Array.isArray(report.nodes)
+    ? report.nodes.find((node) => node.handle === handle)
+    : null;
+}
+
 function fnv1a64(bytes) {
   let hash = 0xcbf29ce484222325n;
   const prime = 0x100000001b3n;
@@ -386,7 +405,8 @@ function decodePngRgba8(bytes) {
 
 async function runPageProof(page) {
   return page.evaluate(
-    async ({ assetUrl, phase4AssetUrl, backend, requiredBindings, viewport }) => {
+    async ({ assetUrl, phase4AssetUrl, phase5AnimatedAssetUrl, backend, requiredBindings, viewport }) => {
+      try {
       const mod = await import("/pkg/scena.js");
       await mod.default("/pkg/scena_bg.wasm");
       const { SceneHost } = mod;
@@ -405,6 +425,10 @@ async function runPageProof(page) {
         rgba8_byte_length: capture.rgba8.length,
         rgba8_fnv1a64: fnv1a64(capture.rgba8),
       });
+      const nodeByHandle = (report, handle) =>
+        report && Array.isArray(report.nodes)
+          ? report.nodes.find((node) => node.handle === handle)
+          : null;
       const luma = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
       const sampleProjectedPixel = (capture, cssX, cssY) => {
         const descriptor = JSON.parse(capture.descriptorJson);
@@ -842,6 +866,82 @@ async function runPageProof(page) {
         phase4InstanceHandles.includes(binding.root_handle),
       );
 
+      host.setAntiAliasing("none");
+      host.setBloom(null);
+      host.setAmbientOcclusion(null);
+      const phase5FrameHandle = host.addEmpty(
+        rootHandle,
+        [-0.25, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+        [1.0, 1.0, 1.0],
+        "phase5:animation-frame",
+      );
+      const phase5ImportHandle = await host.instantiateUrlUnder(
+        phase5FrameHandle,
+        phase5AnimatedAssetUrl,
+      );
+      const phase5ImportHandleBig = handleBigInt(phase5ImportHandle);
+      const phase5TriangleHandle = host.nodeHandleByName(
+        phase5ImportHandleBig,
+        "AnimatedTriangle",
+      );
+      const phase5Frame = handleNumber(phase5FrameHandle);
+      const phase5Import = handleNumber(phase5ImportHandle);
+      const phase5Triangle = handleNumber(phase5TriangleHandle);
+      host.setCamera([0.0, 0.0, 0.0], 0.0, 0.0, 1.7);
+      const phase5Inventory = JSON.parse(host.animationInventoryJson(phase5ImportHandleBig));
+      const phase5BeforeInspection = JSON.parse(host.inspectJson());
+      const phase5BeforePrepare = timedPrepare("phase5_animation_before_prepare");
+      const phase5BeforeRender = timedRender("phase5_animation_before_render");
+      const phase5BeforeCapture = captureSummary(host.capture());
+      const phase5MixerHandle = host.playAnimation(phase5ImportHandleBig, "MoveTriangle", {
+        loop_mode: "repeat",
+        speed: 1.0,
+      });
+      host.advance(0.5);
+      const phase5AfterAdvanceInspection = JSON.parse(host.inspectJson());
+      const phase5AfterAdvancePrepare = timedPrepare("phase5_animation_after_advance_prepare");
+      const phase5AfterAdvanceRender = timedRender("phase5_animation_after_advance_render");
+      const phase5AfterAdvanceCapture = captureSummary(host.capture());
+      host.pauseAnimation(phase5MixerHandle);
+      host.advance(0.25);
+      const phase5AfterPauseInspection = JSON.parse(host.inspectJson());
+      const phase5EasedStart =
+        nodeByHandle(phase5AfterPauseInspection, phase5Triangle).local_transform.translation;
+      const phase5EasedTarget = [0.0, 0.32, 0.0];
+      host.setTransformEased(
+        phase5TriangleHandle,
+        phase5EasedTarget,
+        [0.0, 0.0, 0.0, 1.0],
+        [1.0, 1.0, 1.0],
+        1.0,
+        "linear",
+      );
+      host.advance(0.5);
+      const phase5AfterEasedTransformInspection = JSON.parse(host.inspectJson());
+      const phase5AfterEasedTransformPrepare = timedPrepare("phase5_eased_transform_prepare");
+      const phase5AfterEasedTransformRender = timedRender("phase5_eased_transform_render");
+      const phase5AfterEasedTransformCapture = captureSummary(host.capture());
+      host.setTransformsEasedTyped(
+        new BigUint64Array([handleBigInt(phase5FrameHandle)]),
+        new Float32Array([
+          0.0, 0.0, 0.0,
+          0.0, 0.0, 0.0, 1.0,
+          1.0, 1.0, 1.0,
+        ]),
+        0.0,
+        "linear",
+      );
+      const phase5AfterTypedEasedInspection = JSON.parse(host.inspectJson());
+      host.setNodeTintEased(phase5TriangleHandle, 1.0, 0.05, 0.02, 1.0, 1.0, "linear");
+      host.advance(0.5);
+      const phase5AfterEasedTintInspection = JSON.parse(host.inspectJson());
+      const phase5AfterEasedTintPrepare = timedPrepare("phase5_eased_tint_prepare");
+      const phase5AfterEasedTintRender = timedRender("phase5_eased_tint_render");
+      const phase5AfterEasedTintCapture = captureSummary(host.capture());
+      host.clearNodeTintEased(phase5TriangleHandle, 0.0, "linear");
+      host.stopAnimation(phase5MixerHandle);
+
       return {
         backend,
         webgl,
@@ -863,6 +963,7 @@ async function runPageProof(page) {
           { url: assetUrl, role: "left", report: leftImportReport },
           { url: assetUrl, role: "right", report: rightImportReport },
           { url: phase4AssetUrl, role: "phase4-instanced" },
+          { url: phase5AnimatedAssetUrl, role: "phase5-animation" },
         ],
         handles: {
           root,
@@ -873,6 +974,9 @@ async function runPageProof(page) {
           tracked_node: trackedNode,
           phase3_grid_floor: phase3GridHandles,
           phase4_instances: phase4InstanceHandles,
+          phase5_frame: phase5Frame,
+          phase5_import: phase5Import,
+          phase5_triangle: phase5Triangle,
         },
         phase3_grid_inspection: afterGridInspection,
         transform_batch: transformBatch,
@@ -937,13 +1041,50 @@ async function runPageProof(page) {
           inspection: phase4Inspect,
           instance_set_roots: phase4InstanceSetRoots,
         },
+        phase5_animation_transitions: {
+          frame: phase5Frame,
+          import: phase5Import,
+          triangle: phase5Triangle,
+          inventory: phase5Inventory,
+          mixer_handle: handleNumber(phase5MixerHandle),
+          before_inspection: phase5BeforeInspection,
+          after_advance_inspection: phase5AfterAdvanceInspection,
+          after_pause_inspection: phase5AfterPauseInspection,
+          after_eased_transform_inspection: phase5AfterEasedTransformInspection,
+          after_typed_eased_inspection: phase5AfterTypedEasedInspection,
+          after_eased_tint_inspection: phase5AfterEasedTintInspection,
+          eased_start_translation: phase5EasedStart,
+          eased_target_translation: phase5EasedTarget,
+          before_prepare: phase5BeforePrepare,
+          before_render: phase5BeforeRender,
+          after_advance_prepare: phase5AfterAdvancePrepare,
+          after_advance_render: phase5AfterAdvanceRender,
+          after_eased_transform_prepare: phase5AfterEasedTransformPrepare,
+          after_eased_transform_render: phase5AfterEasedTransformRender,
+          after_eased_tint_prepare: phase5AfterEasedTintPrepare,
+          after_eased_tint_render: phase5AfterEasedTintRender,
+          before_capture: phase5BeforeCapture,
+          after_advance_capture: phase5AfterAdvanceCapture,
+          after_eased_transform_capture: phase5AfterEasedTransformCapture,
+          after_eased_tint_capture: phase5AfterEasedTintCapture,
+        },
         capture,
         pick,
       };
+      } catch (error) {
+        const diagnostic = {
+          name: error && error.name ? error.name : typeof error,
+          message: error && error.message ? error.message : String(error),
+          code: error && error.code ? error.code : null,
+          stack: error && error.stack ? error.stack : null,
+        };
+        throw new Error(`runPageProof browser evaluation failed: ${JSON.stringify(diagnostic)}`);
+      }
     },
     {
       assetUrl: ASSET_URL,
       phase4AssetUrl: PHASE4_ASSET_URL,
+      phase5AnimatedAssetUrl: PHASE5_ANIMATED_ASSET_URL,
       backend: BACKEND,
       requiredBindings: REQUIRED_BINDINGS,
       viewport: VIEWPORT,
@@ -1166,6 +1307,109 @@ function assertProof(pageProof, screenshot) {
       draw_sample: phase4.inspection.draw_list.slice(0, 4),
     },
   );
+  const phase5 = pageProof.phase5_animation_transitions;
+  const phase5Clip =
+    phase5.inventory && Array.isArray(phase5.inventory.clips)
+      ? phase5.inventory.clips.find((clip) => clip.name === "MoveTriangle")
+      : null;
+  const phase5BeforeNode = nodeByHandle(phase5.before_inspection, phase5.triangle);
+  const phase5AdvancedNode = nodeByHandle(phase5.after_advance_inspection, phase5.triangle);
+  const phase5PausedNode = nodeByHandle(phase5.after_pause_inspection, phase5.triangle);
+  const phase5EasedNode = nodeByHandle(phase5.after_eased_transform_inspection, phase5.triangle);
+  const phase5TypedFrame = nodeByHandle(phase5.after_typed_eased_inspection, phase5.frame);
+  const phase5TintedNode = nodeByHandle(phase5.after_eased_tint_inspection, phase5.triangle);
+  const phase5ExpectedEasedTranslation = phase5.eased_start_translation.map(
+    (value, index) => value + (phase5.eased_target_translation[index] - value) * 0.5,
+  );
+  check(
+    "phase5_animation_inventory_schema_and_clip_exposed",
+    phase5.inventory.schema === "scena.animation_inventory.v1" &&
+      phase5Clip &&
+      phase5Clip.duration_seconds === 1 &&
+      phase5Clip.channel_count === 1,
+    phase5.inventory,
+  );
+  check(
+    "phase5_animation_advance_moves_node_transform",
+    phase5BeforeNode &&
+      phase5AdvancedNode &&
+      Math.abs(
+        phase5AdvancedNode.local_transform.translation[0] -
+          phase5BeforeNode.local_transform.translation[0],
+      ) > 0.2,
+    {
+      before: phase5BeforeNode && phase5BeforeNode.local_transform,
+      after: phase5AdvancedNode && phase5AdvancedNode.local_transform,
+    },
+  );
+  check(
+    "phase5_animation_visible_capture_changes_after_advance",
+    phase5.before_capture.rgba8_fnv1a64 !== phase5.after_advance_capture.rgba8_fnv1a64 &&
+      phase5.after_advance_capture.descriptor.pixels.nonblack > 0,
+    {
+      before: phase5.before_capture.rgba8_fnv1a64,
+      after: phase5.after_advance_capture.rgba8_fnv1a64,
+      pixels: phase5.after_advance_capture.descriptor.pixels,
+    },
+  );
+  check(
+    "phase5_pause_freezes_animation_transform",
+    transformsApproximatelyEqual(
+      phase5AdvancedNode && phase5AdvancedNode.local_transform,
+      phase5PausedNode && phase5PausedNode.local_transform,
+    ),
+    {
+      after_advance: phase5AdvancedNode && phase5AdvancedNode.local_transform,
+      after_pause: phase5PausedNode && phase5PausedNode.local_transform,
+    },
+  );
+  check(
+    "phase5_eased_transform_hits_linear_midpoint",
+    phase5EasedNode &&
+      arraysApproximatelyEqual(
+        phase5EasedNode.local_transform.translation,
+        phase5ExpectedEasedTranslation,
+        0.0001,
+      ),
+    {
+      expected: phase5ExpectedEasedTranslation,
+      actual: phase5EasedNode && phase5EasedNode.local_transform.translation,
+    },
+  );
+  check(
+    "phase5_typed_eased_transform_batch_applies_zero_duration_update",
+    phase5TypedFrame &&
+      arraysApproximatelyEqual(phase5TypedFrame.local_transform.translation, [0, 0, 0], 0.0001),
+    phase5TypedFrame && phase5TypedFrame.local_transform,
+  );
+  check(
+    "phase5_eased_tint_sets_dynamic_tint_and_changes_pixels",
+    phase5TintedNode &&
+      phase5TintedNode.tint &&
+      phase5TintedNode.tint.r > 0.99 &&
+      phase5.after_eased_transform_capture.rgba8_fnv1a64 !==
+        phase5.after_eased_tint_capture.rgba8_fnv1a64,
+    {
+      tint: phase5TintedNode && phase5TintedNode.tint,
+      before: phase5.after_eased_transform_capture.rgba8_fnv1a64,
+      after: phase5.after_eased_tint_capture.rgba8_fnv1a64,
+    },
+  );
+  check(
+    "phase5_browser_renders_all_animation_transition_steps",
+    [
+      phase5.before_render,
+      phase5.after_advance_render,
+      phase5.after_eased_transform_render,
+      phase5.after_eased_tint_render,
+    ].every((entry) => entry && entry.outcome && entry.outcome.skipped === false),
+    {
+      before: phase5.before_render,
+      after_advance: phase5.after_advance_render,
+      after_eased_transform: phase5.after_eased_transform_render,
+      after_eased_tint: phase5.after_eased_tint_render,
+    },
+  );
   check(
     "phase2_post_performance_budget_within_25_percent",
     phase2.off_samples.length >= 5 &&
@@ -1347,14 +1591,29 @@ async function main() {
       await page.goto(url);
       pageProof = await runPageProof(page);
       pageProof.console_messages = consoleMessages.slice();
-      await page.evaluate(
-        () => {
-          window.__scenaSceneHostProofHost.render();
-          return new Promise((resolve) =>
-            requestAnimationFrame(() => requestAnimationFrame(resolve)),
-          );
+      const finalRender = await page.evaluate(
+        async () => {
+          try {
+            window.__scenaSceneHostProofHost.prepare();
+            window.__scenaSceneHostProofHost.render();
+            await new Promise((resolve) =>
+              requestAnimationFrame(() => requestAnimationFrame(resolve)),
+            );
+            return { ok: true };
+          } catch (error) {
+            return {
+              ok: false,
+              name: error && error.name ? error.name : typeof error,
+              message: error && error.message ? error.message : String(error),
+              code: error && error.code ? error.code : null,
+              stack: error && error.stack ? error.stack : null,
+            };
+          }
         },
       );
+      if (!finalRender.ok) {
+        throw new Error(`final browser render failed: ${JSON.stringify(finalRender)}`);
+      }
       screenshot = await captureCanvasScreenshot(page, "webgl_canvas");
     } finally {
       await page.close();
@@ -1406,6 +1665,7 @@ async function main() {
     phase3_world_strokes: pageProof.phase3_world_strokes,
     phase3_grid_inspection: pageProof.phase3_grid_inspection,
     phase4_gpu_instancing: pageProof.phase4_gpu_instancing,
+    phase5_animation_transitions: pageProof.phase5_animation_transitions,
     camera: pageProof.camera,
     render_outcome: pageProof.render_outcome,
     inspect_json: pageProof.inspect_json,

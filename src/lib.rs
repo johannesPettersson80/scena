@@ -124,8 +124,10 @@ pub use scene::{
 };
 #[cfg(feature = "scene-host")]
 pub use scene_host::{
-    SCENE_HOST_ASSET_IMPORT_SCHEMA_V1, SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostAssetImportReportV1,
-    SceneHostCameraState, SceneHostCore, SceneHostError, SceneHostErrorCode,
+    SCENE_HOST_ANIMATION_INVENTORY_SCHEMA_V1, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1,
+    SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostAnimationClipV1, SceneHostAnimationInventoryV1,
+    SceneHostAnimationLoopMode, SceneHostAnimationPlayOptions, SceneHostAssetImportReportV1,
+    SceneHostCameraState, SceneHostCore, SceneHostEasing, SceneHostError, SceneHostErrorCode,
     SceneHostSubtreeNodeV1, SceneHostSubtreeReportV1,
 };
 pub use viewer::{

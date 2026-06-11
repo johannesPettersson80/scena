@@ -1165,7 +1165,7 @@ fn assert_scene_changed(renderer: &mut Renderer, scene: &Scene, camera: scena::C
         renderer.render(scene, camera),
         Err(RenderError::NotPrepared {
             reason: NotPreparedReason::SceneChanged {
-                change: ChangeKind::SceneStructure,
+                change: ChangeKind::Transform,
                 ..
             },
         })

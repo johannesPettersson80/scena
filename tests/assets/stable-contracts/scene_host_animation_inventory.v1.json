@@ -1,0 +1,10 @@
+{
+  "schema": "scena.animation_inventory.v1",
+  "clips": [
+    {
+      "name": "MoveMount",
+      "duration_seconds": 1.0,
+      "channel_count": 1
+    }
+  ]
+}

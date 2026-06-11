@@ -207,6 +207,10 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
             "tests/assets/stable-contracts/scene_host_subtree.v1.json",
             "scena.subtree.v1",
         ),
+        (
+            "tests/assets/stable-contracts/scene_host_animation_inventory.v1.json",
+            "scena.animation_inventory.v1",
+        ),
     ];
     const REQUIRED_FILES: &[&str] = &[
         "examples/scene_host_contracts.rs",
@@ -268,6 +272,7 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
         &[
             "tests/assets/stable-contracts",
             "scena.scene_host_asset_import.v1",
+            "scena.animation_inventory.v1",
             "AssetProvenance",
         ],
     );

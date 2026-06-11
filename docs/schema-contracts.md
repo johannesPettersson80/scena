@@ -139,6 +139,58 @@ Small example:
 }
 ```
 
+### `scena.subtree.v1`
+
+Produced by `SceneHostCore::subtree_nodes_json` and the matching WASM
+`SceneHost.subtreeNodesJson()` method. Represented by
+`SceneHostSubtreeReportV1`.
+
+Required top-level fields:
+
+- `schema`
+- `nodes`
+
+Each node entry contains the stable host `handle`, optional `name`, and sorted
+`tags` for the requested subtree.
+
+Small example:
+
+```json
+{
+  "schema": "scena.subtree.v1",
+  "nodes": [
+    { "handle": 42, "name": null, "tags": ["frame", "product"] },
+    { "handle": 84, "name": null, "tags": ["part"] }
+  ]
+}
+```
+
+### `scena.animation_inventory.v1`
+
+Produced by `SceneHostCore::animation_inventory_json` and the matching WASM
+`SceneHost.animationInventoryJson()` method. Represented by
+`SceneHostAnimationInventoryV1`.
+
+Required top-level fields:
+
+- `schema`
+- `clips`
+
+Each clip entry contains the import-local `name`, `duration_seconds`, and
+`channel_count`. Use the returned name with `SceneHostCore::play_animation` or
+`SceneHost.playAnimation()`.
+
+Small example:
+
+```json
+{
+  "schema": "scena.animation_inventory.v1",
+  "clips": [
+    { "name": "MoveMount", "duration_seconds": 1.0, "channel_count": 1 }
+  ]
+}
+```
+
 ## Shipped v1 contracts
 
 ### `scena.capability_report.v1`

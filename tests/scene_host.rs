@@ -6,9 +6,10 @@ use scena::{
     ASSET_LOAD_REPORT_SCHEMA_V1, AnnotationProjectionReportV1, AntiAliasing, AssetPath, Assets,
     AutoExposureConfig, Color, GeometryDesc, ImportOptions, MaterialDesc, OrbitControlAction,
     PointerButton, PostBloomConfig, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1,
-    SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostCameraState, SceneHostCore, SceneHostErrorCode,
-    SceneHostSubtreeReportV1, SceneInspectionReportV1, ScreenSpaceAmbientOcclusionConfig,
-    Transform, Vec3,
+    SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostAnimationInventoryV1, SceneHostAnimationLoopMode,
+    SceneHostAnimationPlayOptions, SceneHostCameraState, SceneHostCore, SceneHostEasing,
+    SceneHostErrorCode, SceneHostSubtreeReportV1, SceneInspectionReportV1,
+    ScreenSpaceAmbientOcclusionConfig, Transform, Vec3,
 };
 
 #[test]
@@ -688,6 +689,38 @@ fn scene_host_subtree_query_is_stable_and_batch_tint_respects_exclusions() {
 }
 
 #[test]
+fn scene_host_subtree_tint_cancels_active_tint_transitions_for_touched_nodes() {
+    let mut host = SceneHostCore::headless(64, 64).expect("host builds");
+    let root = host.root_handle();
+    let parent = host
+        .add_empty(Some(root), Transform::IDENTITY, Some("parent"))
+        .expect("parent inserts");
+    let child = host
+        .add_empty(Some(parent), Transform::IDENTITY, Some("child"))
+        .expect("child inserts");
+
+    host.set_node_tint_eased(
+        child,
+        Some(Color::from_linear_rgba(0.0, 1.0, 0.0, 1.0)),
+        2.0,
+        SceneHostEasing::Linear,
+    )
+    .expect("tint transition starts");
+
+    let subtree_tint = Color::from_linear_rgba(0.8, 0.1, 0.2, 1.0);
+    host.set_subtree_tint(parent, Some(subtree_tint), &[])
+        .expect("subtree tint applies");
+    host.advance(1.0)
+        .expect("advance after subtree tint remains valid");
+
+    assert_eq!(
+        host_node_tint(&host, child),
+        Some(subtree_tint),
+        "subtree tint is a direct write and cancels active per-node fades"
+    );
+}
+
+#[test]
 fn scene_host_url_instantiation_returns_asset_load_report_json() {
     let mut host = SceneHostCore::headless(64, 64).expect("host builds");
 
@@ -710,6 +743,265 @@ fn scene_host_url_instantiation_returns_asset_load_report_json() {
             .import_roots(import)
             .expect("reported import handle resolves")
             .is_empty()
+    );
+}
+
+#[test]
+fn scene_host_animation_inventory_and_playback_controls_drive_imported_clip() {
+    let mut host = SceneHostCore::headless(64, 64).expect("host builds");
+    let import = pollster::block_on(host.instantiate_url(AssetPath::from(
+        "tests/assets/gltf/animated_triangle_scene.glb",
+    )))
+    .expect("animated asset instantiates");
+    let animated = host
+        .node_handle_by_name(import, "AnimatedTriangle")
+        .expect("animated node resolves");
+
+    let inventory: SceneHostAnimationInventoryV1 = serde_json::from_str(
+        &host
+            .animation_inventory_json(import)
+            .expect("inventory serializes"),
+    )
+    .expect("inventory decodes");
+    assert_eq!(
+        inventory.schema,
+        scena::SCENE_HOST_ANIMATION_INVENTORY_SCHEMA_V1
+    );
+    assert!(
+        inventory.clips.iter().any(|clip| {
+            clip.name == "MoveTriangle" && clip.duration_seconds == 1.0 && clip.channel_count == 1
+        }),
+        "inventory must expose named clip duration and channel count: {inventory:?}"
+    );
+
+    let initial = host_node_translation(&host, animated);
+    let mixer = host
+        .play_animation(
+            import,
+            "MoveTriangle",
+            SceneHostAnimationPlayOptions {
+                loop_mode: SceneHostAnimationLoopMode::Once,
+                speed: 1.0,
+            },
+        )
+        .expect("animation starts");
+    host.advance(0.5).expect("animation advances");
+    let halfway = host_node_translation(&host, animated);
+    assert!(
+        !halfway.abs_diff_eq(initial, 1.0e-5),
+        "advance must move the animated node"
+    );
+
+    host.pause_animation(mixer).expect("animation pauses");
+    host.advance(0.25)
+        .expect("paused animation advance is accepted");
+    assert_vec3_near(host_node_translation(&host, animated), halfway);
+
+    host.seek_animation(mixer, 1.0)
+        .expect("seek samples clip end");
+    let end = host_node_translation(&host, animated);
+    assert!(
+        !end.abs_diff_eq(halfway, 1.0e-5),
+        "seek to clip end must land on a distinct sampled pose"
+    );
+    host.stop_animation(mixer)
+        .expect("stop snaps to clip start");
+    let stopped = host_node_translation(&host, animated);
+    assert!(
+        !stopped.abs_diff_eq(end, 1.0e-5),
+        "stop must restore the clip start pose"
+    );
+
+    let repeat = host
+        .play_animation(
+            import,
+            "MoveTriangle",
+            SceneHostAnimationPlayOptions {
+                loop_mode: SceneHostAnimationLoopMode::Repeat,
+                speed: 2.0,
+            },
+        )
+        .expect("repeat animation starts");
+    host.advance(0.75)
+        .expect("repeat animation advances with speed");
+    let looped = host_node_translation(&host, animated);
+    host.seek_animation(repeat, 0.5)
+        .expect("seek to wrapped equivalent time succeeds");
+    assert_vec3_near(host_node_translation(&host, animated), looped);
+}
+
+#[test]
+fn scene_host_animation_boundary_rejects_invalid_public_inputs() {
+    let mut host = SceneHostCore::headless(64, 64).expect("host builds");
+    let import = pollster::block_on(host.instantiate_url(AssetPath::from(
+        "tests/assets/gltf/animated_triangle_scene.glb",
+    )))
+    .expect("animated asset instantiates");
+
+    let bad_speed = host
+        .play_animation(
+            import,
+            "MoveTriangle",
+            SceneHostAnimationPlayOptions {
+                loop_mode: SceneHostAnimationLoopMode::Once,
+                speed: 0.0,
+            },
+        )
+        .expect_err("zero speed is rejected at the host boundary");
+    assert_eq!(bad_speed.code(), SceneHostErrorCode::InvalidInput);
+
+    let unknown = host
+        .play_animation(
+            import,
+            "MissingClip",
+            SceneHostAnimationPlayOptions::default(),
+        )
+        .expect_err("unknown clip is a typed error");
+    assert_eq!(unknown.code(), SceneHostErrorCode::AnimationClipNotFound);
+
+    let mixer = host
+        .play_animation(
+            import,
+            "MoveTriangle",
+            SceneHostAnimationPlayOptions::default(),
+        )
+        .expect("valid animation starts");
+    for delta in [-0.1, f64::NAN] {
+        let error = host
+            .advance(delta)
+            .expect_err("invalid advance delta is rejected");
+        assert_eq!(error.code(), SceneHostErrorCode::InvalidInput);
+    }
+    for speed in [0.0, -1.0, f64::INFINITY] {
+        let error = host
+            .set_animation_speed(mixer, speed)
+            .expect_err("invalid speed is rejected");
+        assert_eq!(error.code(), SceneHostErrorCode::InvalidInput);
+    }
+    for seek in [-0.1, 1.1, f64::NAN] {
+        let error = host
+            .seek_animation(mixer, seek)
+            .expect_err("invalid seek is rejected");
+        assert_eq!(error.code(), SceneHostErrorCode::InvalidInput);
+    }
+
+    host.remove_import(import).expect("import removes");
+    let stale = host
+        .advance(0.1)
+        .expect_err("stale mixer handle is typed after import removal");
+    assert_eq!(stale.code(), SceneHostErrorCode::StaleAnimationHandle);
+}
+
+#[test]
+fn scene_host_eased_transform_matches_curve_retargets_and_direct_set_cancels() {
+    let mut host = SceneHostCore::headless(64, 64).expect("host builds");
+    let node = host
+        .add_empty(Some(host.root_handle()), Transform::IDENTITY, Some("eased"))
+        .expect("node inserts");
+
+    host.set_transform_eased(
+        node,
+        Transform::at(Vec3::new(8.0, 0.0, 0.0)),
+        2.0,
+        SceneHostEasing::EaseInOut,
+    )
+    .expect("eased transform starts");
+    host.advance(1.0).expect("transition advances halfway");
+    assert_vec3_near(host_node_translation(&host, node), Vec3::new(4.0, 0.0, 0.0));
+
+    let before_retarget = host_node_translation(&host, node);
+    host.set_transform_eased(
+        node,
+        Transform::at(Vec3::new(10.0, 0.0, 0.0)),
+        2.0,
+        SceneHostEasing::Linear,
+    )
+    .expect("retarget starts from current interpolated pose");
+    assert_vec3_near(host_node_translation(&host, node), before_retarget);
+    host.advance(0.1).expect("retarget advances one small step");
+    let after_retarget = host_node_translation(&host, node);
+    assert!(
+        (after_retarget.x - before_retarget.x).abs() < 0.31,
+        "retarget must not jump by more than the next linear transition step"
+    );
+
+    host.set_transform(node, Transform::IDENTITY)
+        .expect("direct transform cancels transition");
+    host.advance(1.0)
+        .expect("cancelled transition no longer applies");
+    assert_vec3_near(host_node_translation(&host, node), Vec3::ZERO);
+}
+
+#[test]
+fn scene_host_eased_tint_interpolates_and_rejects_translucent_targets() {
+    let mut host = SceneHostCore::headless(64, 64).expect("host builds");
+    let import = pollster::block_on(host.instantiate_url(AssetPath::from(
+        "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+    )))
+    .expect("asset instantiates");
+    let mesh = host
+        .node_handle(import, "ColoredTriangle")
+        .expect("mesh resolves");
+
+    host.set_node_tint_eased(
+        mesh,
+        Some(Color::from_linear_rgba(0.0, 1.0, 0.0, 1.0)),
+        2.0,
+        SceneHostEasing::Linear,
+    )
+    .expect("eased tint starts");
+    host.advance(1.0).expect("tint transition advances halfway");
+    let halfway = host_node_tint(&host, mesh).expect("halfway tint is explicit");
+    assert_color_near(halfway, Color::from_linear_rgba(0.5, 1.0, 0.5, 1.0));
+
+    let translucent = host
+        .set_node_tint_eased(
+            mesh,
+            Some(Color::from_linear_rgba(1.0, 0.0, 0.0, 0.5)),
+            0.5,
+            SceneHostEasing::Linear,
+        )
+        .expect_err("translucent tint transitions are rejected");
+    assert_eq!(translucent.code(), SceneHostErrorCode::InvalidInput);
+
+    host.set_node_tint_eased(mesh, None, 1.0, SceneHostEasing::Linear)
+        .expect("clear tint transition starts");
+    host.advance(1.0).expect("clear tint transition finishes");
+    assert_eq!(host_node_tint(&host, mesh), None);
+}
+
+#[test]
+fn scene_host_advance_applies_mixers_before_transitions_so_transition_wins() {
+    let mut host = SceneHostCore::headless(64, 64).expect("host builds");
+    let import = pollster::block_on(host.instantiate_url(AssetPath::from(
+        "tests/assets/gltf/animated_triangle_scene.glb",
+    )))
+    .expect("animated asset instantiates");
+    let animated = host
+        .node_handle_by_name(import, "AnimatedTriangle")
+        .expect("animated node resolves");
+    let start = host_node_translation(&host, animated);
+    let target = Vec3::new(start.x + 6.0, start.y, start.z);
+
+    host.play_animation(
+        import,
+        "MoveTriangle",
+        SceneHostAnimationPlayOptions::default(),
+    )
+    .expect("animation starts");
+    host.set_transform_eased(
+        animated,
+        Transform::at(target),
+        1.0,
+        SceneHostEasing::Linear,
+    )
+    .expect("transition starts on same node as mixer");
+    host.advance(0.5)
+        .expect("advance applies mixer then transition");
+
+    assert_vec3_near(
+        host_node_translation(&host, animated),
+        start.lerp(target, 0.5),
     );
 }
 
@@ -1032,4 +1324,42 @@ fn scene_host_camera_pointer_and_wheel_inputs_use_orbit_controls_without_renderi
         OrbitControlAction::Pan
     );
     assert_ne!(host.camera_state().target, target_before_pan);
+}
+
+fn host_node_translation(host: &SceneHostCore, handle: u64) -> Vec3 {
+    host_report(host)
+        .node_by_handle(handle)
+        .expect("node appears in host inspection")
+        .local_transform
+        .translation
+}
+
+fn host_node_tint(host: &SceneHostCore, handle: u64) -> Option<Color> {
+    host_report(host)
+        .node_by_handle(handle)
+        .expect("node appears in host inspection")
+        .tint
+}
+
+fn host_report(host: &SceneHostCore) -> SceneInspectionReportV1 {
+    serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
+        .expect("inspection decodes")
+}
+
+fn assert_vec3_near(actual: Vec3, expected: Vec3) {
+    assert!(
+        actual.abs_diff_eq(expected, 1.0e-5),
+        "expected {expected:?}, got {actual:?}"
+    );
+}
+
+fn assert_color_near(actual: Color, expected: Color) {
+    let close = |left: f32, right: f32| (left - right).abs() < 1.0e-5;
+    assert!(
+        close(actual.r, expected.r)
+            && close(actual.g, expected.g)
+            && close(actual.b, expected.b)
+            && close(actual.a, expected.a),
+        "expected {expected:?}, got {actual:?}"
+    );
 }

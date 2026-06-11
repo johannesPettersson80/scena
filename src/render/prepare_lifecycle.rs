@@ -315,7 +315,7 @@ impl Renderer {
         Ok(())
     }
 
-    fn dynamic_gpu_prepare_rejection_reason(
+    pub(super) fn dynamic_gpu_prepare_rejection_reason(
         &self,
         scene: &Scene,
         backend_material_handles: &[crate::assets::MaterialHandle],

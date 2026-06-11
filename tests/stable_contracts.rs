@@ -262,6 +262,14 @@ fn scene_host_subtree_golden_matches_live_schema_serialization() {
     );
 }
 
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_host_animation_inventory_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::SceneHostAnimationInventoryV1>(
+        "tests/assets/stable-contracts/scene_host_animation_inventory.v1.json",
+    );
+}
+
 #[test]
 fn asset_provenance_golden_matches_live_value_serialization() {
     assert_fixture_matches_live_serialization::<AssetProvenance>(

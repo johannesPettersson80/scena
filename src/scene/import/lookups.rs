@@ -132,6 +132,11 @@ impl SceneImport {
         self.clips_named(name).next()
     }
 
+    pub fn clips(&self) -> Result<&[ImportClip], LookupError> {
+        self.ensure_live()?;
+        Ok(&self.clips)
+    }
+
     pub fn replacement_clip(&self, previous: &ImportClip) -> Result<&ImportClip, LookupError> {
         let Some(name) = previous.name() else {
             return Err(LookupError::ClipNotFound {

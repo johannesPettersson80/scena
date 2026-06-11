@@ -135,6 +135,10 @@ impl<T> HandleTable<T> {
         slot.generation = slot.generation.saturating_add(1).max(1);
         Ok(value)
     }
+
+    pub(super) fn values(&self) -> impl Iterator<Item = &T> {
+        self.slots.iter().filter_map(|slot| slot.value.as_ref())
+    }
 }
 
 fn encode_handle(index: usize, generation: u32) -> u64 {

@@ -125,9 +125,24 @@ pub(crate) fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Find
             "AnimationTarget::Rotation",
             "AnimationTarget::Scale",
             "AnimationTarget::Weights",
+            "AppliedAnimationChange",
+            "self.transform_revision = self.transform_revision.saturating_add(1)",
+            "set_morph_weights_unchecked",
+            "transform_only_animation_updates_transform_revision_without_structure_dirtying",
+            "morph_weight_animation_keeps_structural_revision_semantics",
             "structure_revision",
         ],
     );
+    let mixers = root.join("src/scene/mixers.rs");
+    if let Ok(text) = fs::read_to_string(&mixers)
+        && let Some(body) = braced_body_after(&text, "fn apply_animation_clip")
+        && body.contains("self.structure_revision = self.structure_revision.saturating_add(1)")
+    {
+        findings.push(Finding::new(
+            "ARCH-M3B-ANIMATION",
+            "src/scene/mixers.rs apply_animation_clip must route transform-track changes through transform_revision, not structure_revision",
+        ));
+    }
     require_contains(
         root,
         findings,

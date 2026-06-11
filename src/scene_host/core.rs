@@ -5,14 +5,17 @@ use super::handles::HandleTable;
 use super::inputs::validate_transform;
 use super::instances::{HostInstanceBinding, INSTANCE_HANDLE_GENERATION_BASE};
 use super::reporting::{diagnostics_json, stats_json};
+use super::transitions::HostTransitions;
 use super::{SceneHostError, SceneHostErrorCode};
 use crate::{
     Aabb, AssetFetcher, AssetPath, Assets, Backend, CursorPosition, DefaultAssetFetcher, HitTarget,
     ImportOptions, OrbitControls, RenderOutcome, Renderer, Scene, SceneImport, SurfaceEvent,
     SurfaceViewport, Transform, Vec3, Viewport,
 };
+use crate::{AnimationMixerKey, CameraKey, InstanceId, NodeKey};
 use crate::{AnnotationAnchor, Color};
-use crate::{CameraKey, InstanceId, NodeKey};
+
+const ANIMATION_HANDLE_GENERATION_BASE: u32 = 6;
 
 #[derive(Debug)]
 pub struct SceneHostCore<F = DefaultAssetFetcher> {
@@ -25,6 +28,8 @@ pub struct SceneHostCore<F = DefaultAssetFetcher> {
     pub(super) node_handles: HandleTable<NodeKey>,
     import_handles: HandleTable<SceneImport>,
     pub(super) instance_handles: HandleTable<HostInstanceBinding>,
+    pub(super) animation_handles: HandleTable<AnimationMixerKey>,
+    pub(super) transitions: HostTransitions,
     pub(super) node_handle_map: BTreeMap<NodeKey, u64>,
     pub(super) instance_handle_map: BTreeMap<(NodeKey, InstanceId), u64>,
     next_byte_asset: u64,
@@ -73,6 +78,8 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             node_handles: HandleTable::new(),
             import_handles: HandleTable::new(),
             instance_handles: HandleTable::with_generation_base(INSTANCE_HANDLE_GENERATION_BASE),
+            animation_handles: HandleTable::with_generation_base(ANIMATION_HANDLE_GENERATION_BASE),
+            transitions: HostTransitions::default(),
             node_handle_map: BTreeMap::new(),
             instance_handle_map: BTreeMap::new(),
             next_byte_asset: 1,
@@ -281,10 +288,19 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     }
 
     pub fn set_node_tint(&mut self, node: u64, tint: Option<Color>) -> Result<(), SceneHostError> {
-        if self.is_instance_root_handle(node) {
-            return self.set_instance_root_tint(node, tint);
+        let handle = node;
+        if self.is_instance_root_handle(handle) {
+            if tint.is_some_and(|tint| tint.a < 1.0) {
+                return Err(SceneHostError::new(
+                    SceneHostErrorCode::InvalidInput,
+                    "instanced scene roots only accept opaque per-instance tint in this release",
+                ));
+            }
+            self.cancel_tint_transition(handle);
+            return self.set_instance_root_tint(handle, tint);
         }
-        let node = self.resolve_node(node)?;
+        let node = self.resolve_node(handle)?;
+        self.cancel_tint_transition(handle);
         self.scene.set_node_tint(node, tint)?;
         Ok(())
     }
@@ -475,7 +491,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             .copied()
     }
 
-    fn resolve_import(&self, handle: u64) -> Result<&SceneImport, SceneHostError> {
+    pub(super) fn resolve_import(&self, handle: u64) -> Result<&SceneImport, SceneHostError> {
         self.import_handles.get(
             handle,
             SceneHostErrorCode::ImportHandleNotFound,

@@ -30,6 +30,9 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         for node in nodes {
             if !excluded.contains(&node) {
                 self.scene.set_node_tint(node, tint)?;
+                if let Some(handle) = self.node_handle_map.get(&node).copied() {
+                    self.cancel_tint_transition(handle);
+                }
             }
         }
         Ok(())

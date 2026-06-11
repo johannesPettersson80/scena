@@ -6,6 +6,18 @@ use crate::diagnostics::AnimationError;
 
 use super::{Scene, SceneImport, Transform};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AppliedAnimationChange {
+    None,
+    Transform,
+}
+
+impl AppliedAnimationChange {
+    const fn transform_changed(self) -> bool {
+        matches!(self, Self::Transform)
+    }
+}
+
 impl Scene {
     /// Creates a paused mixer for a named imported animation clip.
     ///
@@ -165,51 +177,175 @@ impl Scene {
     }
 
     fn apply_animation_clip(&mut self, clip: &crate::animation::AnimationClip, time_seconds: f32) {
-        let mut changed = false;
+        let mut transform_changed = false;
         for channel in clip.channels() {
-            changed |= self.apply_animation_channel(channel, time_seconds);
+            transform_changed |= self
+                .apply_animation_channel(channel, time_seconds)
+                .transform_changed();
         }
-        if changed {
-            self.structure_revision = self.structure_revision.saturating_add(1);
+        if transform_changed {
+            self.transform_revision = self.transform_revision.saturating_add(1);
         }
     }
 
-    fn apply_animation_channel(&mut self, channel: &AnimationChannel, time_seconds: f32) -> bool {
+    fn apply_animation_channel(
+        &mut self,
+        channel: &AnimationChannel,
+        time_seconds: f32,
+    ) -> AppliedAnimationChange {
+        if channel.target() == AnimationTarget::Weights {
+            let Some(weights) = channel.sample_weights(time_seconds) else {
+                return AppliedAnimationChange::None;
+            };
+            self.set_morph_weights_unchecked(channel.target_node(), weights);
+            return AppliedAnimationChange::None;
+        }
+
         let Some(node) = self.nodes.get_mut(channel.target_node()) else {
-            return false;
+            return AppliedAnimationChange::None;
         };
         let before = node.transform;
         let mut transform = before;
         match channel.target() {
             AnimationTarget::Translation => {
                 let Some(value) = channel.sample_vec3(time_seconds) else {
-                    return false;
+                    return AppliedAnimationChange::None;
                 };
                 transform.translation = value;
             }
             AnimationTarget::Scale => {
                 let Some(value) = channel.sample_vec3(time_seconds) else {
-                    return false;
+                    return AppliedAnimationChange::None;
                 };
                 transform.scale = value;
             }
             AnimationTarget::Rotation => {
                 let Some(value) = channel.sample_quat(time_seconds) else {
-                    return false;
+                    return AppliedAnimationChange::None;
                 };
                 transform.rotation = value;
             }
-            AnimationTarget::Weights => {
-                let Some(weights) = channel.sample_weights(time_seconds) else {
-                    return false;
-                };
-                return self.set_morph_weights_unchecked(channel.target_node(), weights);
-            }
+            AnimationTarget::Weights => unreachable!("weights handled before mutable node borrow"),
         }
         if before == transform {
-            return false;
+            return AppliedAnimationChange::None;
         }
         node.transform = Transform { ..transform };
-        true
+        AppliedAnimationChange::Transform
+    }
+}
+
+#[cfg(test)]
+impl Scene {
+    pub(crate) fn insert_animation_mixer_for_test(
+        &mut self,
+        clip: crate::animation::AnimationClip,
+    ) -> AnimationMixerKey {
+        use std::sync::{Arc, atomic::AtomicBool};
+
+        self.animation_mixers
+            .insert(AnimationMixer::new(clip, Arc::new(AtomicBool::new(true))))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::animation::{
+        AnimationChannel, AnimationClip, AnimationClipKey, AnimationInterpolation, AnimationOutput,
+        AnimationTarget,
+    };
+    use crate::scene::{Scene, Transform, Vec3};
+
+    #[test]
+    fn transform_only_animation_updates_transform_revision_without_structure_dirtying() {
+        let mut scene = Scene::new();
+        let node = scene
+            .add_empty(scene.root(), Transform::IDENTITY)
+            .expect("animated node inserts");
+        let mixer = scene.insert_animation_mixer_for_test(translation_clip(node));
+        scene.play_animation(mixer).expect("mixer starts");
+        let before = scene.dirty_state();
+
+        for expected_transform_revision in 1..=3 {
+            let frame_before = scene.dirty_state();
+            scene
+                .update_animation(mixer, 0.25)
+                .expect("animation frame updates");
+            let frame_after = scene.dirty_state();
+            assert_eq!(
+                frame_after.structure_revision, frame_before.structure_revision,
+                "transform-only animation frames must not dirty scene structure"
+            );
+            assert_eq!(
+                frame_after.transform_revision,
+                frame_before.transform_revision + 1,
+                "changed transform animation frames must bump transform revision exactly once"
+            );
+            assert_eq!(
+                frame_after.transform_revision,
+                before.transform_revision + expected_transform_revision,
+            );
+        }
+
+        let after = scene.dirty_state();
+        assert_eq!(
+            after.structure_revision, before.structure_revision,
+            "transform-only animation playback must preserve structure revision across frames"
+        );
+    }
+
+    #[test]
+    fn morph_weight_animation_keeps_structural_revision_semantics() {
+        let mut scene = Scene::new();
+        let node = scene
+            .add_empty(scene.root(), Transform::IDENTITY)
+            .expect("morph node inserts");
+        scene.set_initial_morph_weights(node, &[0.0]);
+        let mixer = scene.insert_animation_mixer_for_test(weight_clip(node));
+        let before = scene.dirty_state();
+
+        scene
+            .seek_animation(mixer, 1.0)
+            .expect("morph weight seek applies");
+        let after = scene.dirty_state();
+
+        assert_eq!(
+            after.transform_revision, before.transform_revision,
+            "morph weight animation must not masquerade as a transform-only update"
+        );
+        assert!(
+            after.structure_revision > before.structure_revision,
+            "morph weight animation remains structural because vertex deformation changes"
+        );
+    }
+
+    fn translation_clip(node: crate::scene::NodeKey) -> AnimationClip {
+        AnimationClip::new(
+            AnimationClipKey::fresh(),
+            Some("MoveX".to_string()),
+            vec![AnimationChannel::new(
+                node,
+                AnimationTarget::Translation,
+                vec![0.0, 1.0],
+                AnimationOutput::Vec3(vec![Vec3::ZERO, Vec3::new(1.0, 0.0, 0.0)]),
+                AnimationInterpolation::Linear,
+            )],
+            1.0,
+        )
+    }
+
+    fn weight_clip(node: crate::scene::NodeKey) -> AnimationClip {
+        AnimationClip::new(
+            AnimationClipKey::fresh(),
+            Some("Morph".to_string()),
+            vec![AnimationChannel::new(
+                node,
+                AnimationTarget::Weights,
+                vec![0.0, 1.0],
+                AnimationOutput::Weights(vec![vec![0.0], vec![1.0]]),
+                AnimationInterpolation::Linear,
+            )],
+            1.0,
+        )
     }
 }
