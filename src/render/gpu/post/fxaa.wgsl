@@ -36,16 +36,12 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         return textureLoad(source_texture, coord, 0);
     }
 
-    let offsets = array<vec2<i32>, 9>(
-        vec2<i32>(-1, -1),
+    let offsets = array<vec2<i32>, 5>(
         vec2<i32>(0, -1),
-        vec2<i32>(1, -1),
         vec2<i32>(-1, 0),
         vec2<i32>(0, 0),
         vec2<i32>(1, 0),
-        vec2<i32>(-1, 1),
         vec2<i32>(0, 1),
-        vec2<i32>(1, 1),
     );
     let center = textureLoad(source_texture, coord, 0);
     let center_luma = luma(center.rgb);
@@ -54,7 +50,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     var bright_neighbors = 0u;
     var dark_neighbors = 0u;
     var sum = vec4<f32>(0.0);
-    for (var index = 0u; index < 9u; index = index + 1u) {
+    for (var index = 0u; index < 5u; index = index + 1u) {
         let sample = textureLoad(source_texture, coord + offsets[index], 0);
         let sample_luma = luma(sample.rgb);
         min_luma = min(min_luma, sample_luma);
@@ -76,7 +72,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     if !dark_edge && !light_edge {
         return center;
     }
-    return sum / 9.0;
+    return sum / 5.0;
 }
 
 fn luma(rgb: vec3<f32>) -> f32 {

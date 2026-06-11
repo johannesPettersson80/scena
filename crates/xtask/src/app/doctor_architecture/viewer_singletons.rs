@@ -70,7 +70,7 @@ pub(crate) fn check_render_singleton_contracts(root: &Path, findings: &mut Vec<F
                 || trimmed.contains("Mutex::new")
                 || trimmed.contains("RwLock::new")
                 || trimmed.contains("RefCell::new");
-            if singleton {
+            if singleton && !allowed_render_singleton_line(&rel, trimmed) {
                 findings.push(Finding::new(
                     "ARCH-RENDER-SINGLETON",
                     format!(
@@ -82,4 +82,12 @@ pub(crate) fn check_render_singleton_contracts(root: &Path, findings: &mut Vec<F
             }
         }
     }
+}
+
+fn allowed_render_singleton_line(rel: &Path, trimmed: &str) -> bool {
+    rel == Path::new("src/render/build.rs")
+        && (trimmed.contains("HEADLESS_GPU_TEST_SUPPORT_SLOT")
+            || trimmed.contains("HEADLESS_GPU_TEST_SUPPORT_DEPTH")
+            || trimmed.contains("AtomicBool::new(false)")
+            || trimmed.starts_with("thread_local!"))
 }

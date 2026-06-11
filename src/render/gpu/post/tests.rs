@@ -20,8 +20,8 @@ fn post_chain_uses_encoded_rgba8_and_depth_color_contract() {
         "SSAO must sample the packed depth-color target so the shared depth path compiles on WebGL2"
     );
     assert!(
-        bloom_shader.contains("array<vec2<i32>, 17>")
-            && ssao_shader.contains("array<vec2<i32>, 16>")
+        bloom_shader.contains("array<vec2<i32>, 9>")
+            && ssao_shader.contains("array<vec2<i32>, 8>")
             && !bloom_shader.contains("for (var dy = -12")
             && !ssao_shader.contains("for (var dy = -12"),
         "GPU post kernels must avoid max-radius work for subtle presets"

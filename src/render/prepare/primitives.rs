@@ -40,9 +40,11 @@ pub(super) fn append_geometry_primitives<F>(
             source.node,
             source.geometry,
             source.material,
-            source.tint,
-            params.target,
-            sinks.primitives,
+            strokes::StrokeBakeInputs {
+                tint: source.tint,
+                params,
+                sinks,
+            },
         ),
     }
 }
@@ -66,9 +68,11 @@ fn append_triangle_primitives<F>(
                 source.node,
                 source.geometry,
                 source.material,
-                source.tint,
-                params.target,
-                sinks.primitives,
+                strokes::StrokeBakeInputs {
+                    tint: source.tint,
+                    params,
+                    sinks,
+                },
             );
         }
         MaterialKind::Edge => {
@@ -76,9 +80,11 @@ fn append_triangle_primitives<F>(
                 source.node,
                 source.geometry,
                 source.material,
-                source.tint,
-                params.target,
-                sinks.primitives,
+                strokes::StrokeBakeInputs {
+                    tint: source.tint,
+                    params,
+                    sinks,
+                },
             );
         }
     }

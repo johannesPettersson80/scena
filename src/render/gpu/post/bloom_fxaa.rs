@@ -1,6 +1,6 @@
 use super::create_post_pipeline;
 
-const SHADER: &str = include_str!("blit.wgsl");
+const SHADER: &str = include_str!("bloom_fxaa.wgsl");
 
 pub(super) fn create_surface_pipeline(
     device: &wgpu::Device,
@@ -9,7 +9,7 @@ pub(super) fn create_surface_pipeline(
 ) -> wgpu::RenderPipeline {
     create_post_pipeline(
         device,
-        "scena.gpu_post.surface_blit_pipeline",
+        "scena.gpu_post.surface_bloom_fxaa_pipeline",
         SHADER,
         bind_group_layout,
         format,
@@ -32,7 +32,7 @@ pub(super) fn encode(
         },
     });
     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("scena.gpu_post.blit_pass"),
+        label: Some("scena.gpu_post.bloom_fxaa_surface_pass"),
         color_attachments: &[color_attachment],
         depth_stencil_attachment: None,
         timestamp_writes: None,

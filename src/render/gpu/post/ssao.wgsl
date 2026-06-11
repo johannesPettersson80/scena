@@ -58,28 +58,20 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     }
 
     let near_radius = max(1, radius / 2);
-    let offsets = array<vec2<i32>, 16>(
+    let offsets = array<vec2<i32>, 8>(
         vec2<i32>(-near_radius, 0),
         vec2<i32>(near_radius, 0),
         vec2<i32>(0, -near_radius),
         vec2<i32>(0, near_radius),
-        vec2<i32>(-near_radius, -near_radius),
-        vec2<i32>(near_radius, -near_radius),
-        vec2<i32>(-near_radius, near_radius),
-        vec2<i32>(near_radius, near_radius),
         vec2<i32>(-radius, 0),
         vec2<i32>(radius, 0),
         vec2<i32>(0, -radius),
         vec2<i32>(0, radius),
-        vec2<i32>(-radius, -radius),
-        vec2<i32>(radius, -radius),
-        vec2<i32>(-radius, radius),
-        vec2<i32>(radius, radius),
     );
 
     var finite_samples = 0.0;
     var occluders = 0.0;
-    for (var index = 0u; index < 16u; index = index + 1u) {
+    for (var index = 0u; index < 8u; index = index + 1u) {
         let sample_coord = coord + offsets[index];
         if sample_coord.x < 0 || sample_coord.y < 0 || sample_coord.x >= dims.x || sample_coord.y >= dims.y {
             continue;

@@ -28,6 +28,7 @@ mod prepare_resources;
 mod scene_color;
 mod shadow;
 mod stats;
+mod strokes;
 mod surface_config;
 mod transmission;
 mod vertices;
@@ -43,6 +44,7 @@ use self::material_bindings::MaterialTextureBindingMode;
 pub(super) use self::post::{GpuPostPassCounts, GpuPostSettings};
 use self::shadow::ShadowCasterResources;
 pub(super) use self::stats::GpuResourceStats;
+use self::strokes::StrokeResources;
 use self::vertices::{DrawUniformValue, PrimitiveDrawBatch};
 use super::RasterTarget;
 use super::prepare::PreparedGpuLightUniform;
@@ -125,6 +127,7 @@ struct GpuPreparedResources {
     brdf_lut_texture: wgpu::Texture,
     transmission: transmission::TransmissionResources,
     depth_prepass: Option<depth::DepthPrepassResources>,
+    strokes: Option<StrokeResources>,
     #[allow(dead_code)]
     vertex_count: u32,
     draw_batches: Vec<PrimitiveDrawBatch>,
@@ -177,6 +180,7 @@ struct GpuPreparedResources {
     brdf_lut_texture: wgpu::Texture,
     transmission: transmission::TransmissionResources,
     depth_prepass: Option<depth::DepthPrepassResources>,
+    strokes: Option<StrokeResources>,
     surface_pipeline: wgpu::RenderPipeline,
     readback: Option<BrowserReadbackResources>,
     #[allow(dead_code)]

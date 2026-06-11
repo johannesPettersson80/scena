@@ -77,6 +77,79 @@ fn transform_only_gpu_prepare_updates_draw_uniforms_without_recollecting_primiti
 }
 
 #[test]
+fn line_geometry_gpu_prepare_updates_draw_uniforms_without_recollecting_strokes() {
+    let Ok(mut renderer) = Renderer::headless_gpu(32, 32) else {
+        return;
+    };
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::grid(1.0, 4));
+    let material = assets.create_material(MaterialDesc::line(Color::WHITE, 1.0));
+    let mut scene = Scene::new();
+    scene.add_default_camera().expect("camera inserts");
+    let grid = scene
+        .mesh(geometry, material)
+        .transform(Transform::at(Vec3::new(0.0, -0.2, 0.0)))
+        .add()
+        .expect("grid mesh inserts");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("initial GPU prepare succeeds");
+    let first = renderer.prepare_telemetry_for_test();
+
+    scene
+        .set_transform(grid, Transform::at(Vec3::new(0.1, -0.2, 0.0)))
+        .expect("grid transform updates");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("transform-only line prepare succeeds");
+    let second = renderer.prepare_telemetry_for_test();
+
+    assert_eq!(
+        second.prepared_primitive_collections, first.prepared_primitive_collections,
+        "transform-only line prepares must reuse retained stroke segments"
+    );
+    assert_eq!(
+        second.static_gpu_resource_rebuilds, first.static_gpu_resource_rebuilds,
+        "transform-only line prepares must not re-upload stroke vertex buffers"
+    );
+    assert_eq!(
+        second.draw_uniform_only_updates,
+        first.draw_uniform_only_updates + 1,
+        "transform-only line prepares must update stroke draw uniforms"
+    );
+}
+
+#[test]
+fn headless_gpu_line_geometry_renders_retained_strokes() {
+    let Ok(mut renderer) = Renderer::headless_gpu(64, 64) else {
+        return;
+    };
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::line(
+        Vec3::new(-0.6, 0.0, 0.0),
+        Vec3::new(0.6, 0.0, 0.0),
+    ));
+    let material = assets.create_material(MaterialDesc::line(Color::WHITE, 3.0));
+    let mut scene = Scene::new();
+    let camera = scene.add_default_camera().expect("camera inserts");
+    scene.mesh(geometry, material).add().expect("line inserts");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("GPU line prepare succeeds");
+    renderer.render(&scene, camera).expect("GPU line renders");
+
+    assert!(
+        renderer
+            .frame_rgba8()
+            .chunks_exact(4)
+            .any(|pixel| pixel[0] > 16 || pixel[1] > 16 || pixel[2] > 16),
+        "retained GPU line path must draw visible stroke pixels"
+    );
+}
+
+#[test]
 fn opaque_tint_gpu_prepare_updates_draw_uniforms_without_recollecting_primitives() {
     let Ok(mut renderer) = Renderer::headless_gpu(32, 32) else {
         return;

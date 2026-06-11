@@ -19,11 +19,11 @@ pub enum MaterialKind {
     Unlit,
     /// Physically based metallic-roughness material for lit mesh surfaces.
     PbrMetallicRoughness,
-    /// Screen-space stroke material for line-topology geometry and polylines.
+    /// World-space stroke material for line-topology geometry and polylines.
     Line,
-    /// Screen-space stroke material that renders triangle mesh edges as a wire overlay.
+    /// World-space stroke material that renders triangle mesh edges as a wire overlay.
     Wireframe,
-    /// Screen-space stroke material for extracted triangle-pair boundaries above an angle threshold.
+    /// World-space stroke material for extracted triangle-pair boundaries above an angle threshold.
     Edge,
 }
 

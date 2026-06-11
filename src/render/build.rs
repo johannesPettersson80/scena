@@ -1,5 +1,7 @@
 use std::cell::Cell;
 use std::marker::PhantomData;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::diagnostics::{
     Backend, BuildError, Capabilities, DebugOverlay, HardwareTier, OutputColorSpace, RendererStats,
@@ -42,15 +44,18 @@ impl Renderer {
     pub fn headless_gpu(width: u32, height: u32) -> Result<Self, BuildError> {
         validate_target_size(width, height)
             .map_err(|()| BuildError::InvalidTargetSize { width, height })?;
+        let headless_gpu_test_guard = Some(HeadlessGpuTestSupportGuard::acquire());
         let gpu = pollster::block_on(gpu::request_headless_gpu(Backend::HeadlessGpu))?;
-        Self::from_raster_target(
+        let mut renderer = Self::from_raster_target(
             width,
             height,
             Backend::HeadlessGpu,
             Some(gpu),
             false,
             RendererOptions::default(),
-        )
+        )?;
+        renderer._headless_gpu_test_guard = headless_gpu_test_guard;
+        Ok(renderer)
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -261,8 +266,67 @@ impl Renderer {
             environment_revision: 0,
             target_revision: 0,
             prepare_telemetry: Default::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            _headless_gpu_test_guard: None,
             not_sync: PhantomData::<Cell<()>>,
         })
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+static HEADLESS_GPU_TEST_SUPPORT_SLOT: AtomicBool = AtomicBool::new(false);
+
+#[cfg(not(target_arch = "wasm32"))]
+thread_local! {
+    static HEADLESS_GPU_TEST_SUPPORT_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug)]
+pub(super) struct HeadlessGpuTestSupportGuard {
+    owns_slot: bool,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl HeadlessGpuTestSupportGuard {
+    fn acquire() -> Self {
+        if HEADLESS_GPU_TEST_SUPPORT_DEPTH.with(|depth| {
+            let current = depth.get();
+            if current > 0 {
+                depth.set(current + 1);
+                true
+            } else {
+                false
+            }
+        }) {
+            return Self { owns_slot: false };
+        }
+
+        loop {
+            if HEADLESS_GPU_TEST_SUPPORT_SLOT
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                HEADLESS_GPU_TEST_SUPPORT_DEPTH.with(|depth| depth.set(1));
+                return Self { owns_slot: true };
+            }
+            std::thread::yield_now();
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for HeadlessGpuTestSupportGuard {
+    fn drop(&mut self) {
+        HEADLESS_GPU_TEST_SUPPORT_DEPTH.with(|depth| {
+            let current = depth.get();
+            if current > 0 {
+                depth.set(current - 1);
+            }
+        });
+        if self.owns_slot {
+            HEADLESS_GPU_TEST_SUPPORT_SLOT.store(false, Ordering::Release);
+        }
     }
 }
 

@@ -31,6 +31,7 @@ const REQUIRED_BINDINGS = [
   ["prototype", "setAntiAliasing"],
   ["prototype", "setBloom"],
   ["prototype", "setAmbientOcclusion"],
+  ["prototype", "addProductGridFloorUnderNode"],
   ["prototype", "clearNodeTint"],
   ["prototype", "subtreeNodesJson"],
   ["prototype", "setSubtreeTint"],
@@ -401,6 +402,74 @@ async function runPageProof(page) {
         rgba8_byte_length: capture.rgba8.length,
         rgba8_fnv1a64: fnv1a64(capture.rgba8),
       });
+      const luma = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      const sampleProjectedPixel = (capture, cssX, cssY) => {
+        const descriptor = JSON.parse(capture.descriptorJson);
+        const width = descriptor.width;
+        const height = descriptor.height;
+        const dpr = window.devicePixelRatio || 1;
+        const centerX = Math.round(cssX * dpr);
+        const centerY = height - 1 - Math.round(cssY * dpr);
+        const radius = Math.max(2, Math.round(4 * dpr));
+        let maxLuma = 0;
+        let minLuma = 255;
+        let nonblack = 0;
+        for (let y = Math.max(0, centerY - radius); y <= Math.min(height - 1, centerY + radius); y += 1) {
+          for (let x = Math.max(0, centerX - radius); x <= Math.min(width - 1, centerX + radius); x += 1) {
+            const offset = (y * width + x) * 4;
+            const value = luma(capture.rgba8[offset], capture.rgba8[offset + 1], capture.rgba8[offset + 2]);
+            maxLuma = Math.max(maxLuma, value);
+            minLuma = Math.min(minLuma, value);
+            if (capture.rgba8[offset] > 0 || capture.rgba8[offset + 1] > 0 || capture.rgba8[offset + 2] > 0) {
+              nonblack += 1;
+            }
+          }
+        }
+        return {
+          css_x: cssX,
+          css_y: cssY,
+          physical_x: centerX,
+          physical_y: centerY,
+          radius,
+          max_luma: maxLuma,
+          min_luma: minLuma,
+          local_contrast: maxLuma - minLuma,
+          nonblack,
+        };
+      };
+      const worldBoundsFromDraw = (draw) => {
+        const min = draw.local_bounds.min;
+        const max = draw.local_bounds.max;
+        const translation = draw.world_transform.translation;
+        const scale = draw.world_transform.scale;
+        return {
+          min: [
+            translation[0] + Math.min(min[0] * scale[0], max[0] * scale[0]),
+            translation[1] + Math.min(min[1] * scale[1], max[1] * scale[1]),
+            translation[2] + Math.min(min[2] * scale[2], max[2] * scale[2]),
+          ],
+          max: [
+            translation[0] + Math.max(min[0] * scale[0], max[0] * scale[0]),
+            translation[1] + Math.max(min[1] * scale[1], max[1] * scale[1]),
+            translation[2] + Math.max(min[2] * scale[2], max[2] * scale[2]),
+          ],
+        };
+      };
+      const phase3GridLineFromBounds = (bounds) => {
+        const spacing = 0.08;
+        const centerX = (bounds.min[0] + bounds.max[0]) * 0.5;
+        const width = Math.max(bounds.max[0] - bounds.min[0], spacing);
+        const depth = Math.max(bounds.max[2] - bounds.min[2], spacing);
+        const zDivisions = Math.max(1, Math.min(256, Math.round(depth / spacing)));
+        const centerZ =
+          bounds.min[2] + (depth * Math.floor(zDivisions * 0.5)) / zDivisions;
+        const floorY = bounds.min[1];
+        return [
+          [centerX - width * 0.25, floorY, centerZ],
+          [centerX, floorY, centerZ],
+          [centerX + width * 0.25, floorY, centerZ],
+        ];
+      };
       const timedPrepare = (label) => {
         const started = performance.now();
         host.prepare();
@@ -603,11 +672,12 @@ async function runPageProof(page) {
       host.setAmbientOcclusion(null);
       host.setNodeTint(rightMeshHandle, 4.0, 4.0, 4.0, 1.0);
       const phase2OffWarmup = samplePrepareRender("phase2_post_off_warmup");
+      await waitForCanvasPresent();
       const phase2OffSamples = [];
       for (let index = 0; index < 5; index += 1) {
         phase2OffSamples.push(samplePrepareRender(`phase2_post_off_${index}`));
+        await waitForCanvasPresent();
       }
-      await waitForCanvasPresent();
       const phase2OffCapture = captureSummary(host.capture());
       const phase2OffStats = JSON.parse(host.statsJson());
 
@@ -617,11 +687,12 @@ async function runPageProof(page) {
         JSON.stringify({ radius_px: 3, intensity: 0.45, depth_threshold: 0.025 }),
       );
       const phase2OnWarmup = samplePrepareRender("phase2_post_on_warmup");
+      await waitForCanvasPresent();
       const phase2OnSamples = [];
       for (let index = 0; index < 5; index += 1) {
         phase2OnSamples.push(samplePrepareRender(`phase2_post_on_${index}`));
+        await waitForCanvasPresent();
       }
-      await waitForCanvasPresent();
       const phase2OnCapture = captureSummary(host.capture());
       const phase2OnStats = JSON.parse(host.statsJson());
       const phase2CapabilityReport = JSON.parse(host.capabilitiesJson());
@@ -655,6 +726,55 @@ async function runPageProof(page) {
         }
         return { result: null, expected: trackedNode, first_hit: firstHit };
       })();
+      const phase3GridHandles = Array.from(
+        host.addProductGridFloorUnderNode(handleBigInt(leftImportReport.import)),
+        handleNumber,
+      );
+      const afterGridInspection = JSON.parse(host.inspectJson());
+      const phase3GridDraw = afterGridInspection.draw_list.find(
+        (entry) => entry.node === phase3GridHandles[1],
+      );
+      if (!phase3GridDraw) {
+        throw new Error("phase3 grid draw entry missing");
+      }
+      const phase3GridWorldPoints = phase3GridLineFromBounds(worldBoundsFromDraw(phase3GridDraw));
+      phase3GridWorldPoints.forEach((point, index) => {
+        host.setWorldAnnotation(`phase3-grid-${index}`, point);
+      });
+      const phase3BaseCamera = renderedCamera;
+      const phase3GridViews = [0.0, 0.42, -0.42].map((yawOffset, index) => {
+        host.setCamera(
+          phase3BaseCamera.target,
+          phase3BaseCamera.yaw_radians + yawOffset,
+          phase3BaseCamera.pitch_radians,
+          phase3BaseCamera.distance,
+        );
+        const prepare = timedPrepare(`phase3_grid_${index}_prepare`);
+        const render = timedRender(`phase3_grid_${index}_render`);
+        const capture = host.capture();
+        const projections = JSON.parse(host.annotationProjectionsJson());
+        const samples = phase3GridWorldPoints.map((_point, pointIndex) => {
+          const projection = projections.annotations.find(
+            (annotation) => annotation.id === `phase3-grid-${pointIndex}`,
+          );
+          return {
+            id: `phase3-grid-${pointIndex}`,
+            projection,
+            sample:
+              projection && projection.visible
+                ? sampleProjectedPixel(capture, projection.x, projection.y)
+                : null,
+          };
+        });
+        return {
+          yaw_offset: yawOffset,
+          prepare,
+          render,
+          capture: captureSummary(capture),
+          projections,
+          samples,
+        };
+      });
 
       return {
         backend,
@@ -684,7 +804,9 @@ async function runPageProof(page) {
           left_mesh: leftMesh,
           right_mesh: rightMesh,
           tracked_node: trackedNode,
+          phase3_grid_floor: phase3GridHandles,
         },
+        phase3_grid_inspection: afterGridInspection,
         transform_batch: transformBatch,
         typed_transform_batch: {
           nodes: Array.from(typedTransformNodes, (value) => Number(value)),
@@ -728,6 +850,11 @@ async function runPageProof(page) {
           off_stats: phase2OffStats,
           on_stats: phase2OnStats,
           capability_report: phase2CapabilityReport,
+        },
+        phase3_world_strokes: {
+          grid_handles: phase3GridHandles,
+          world_points: phase3GridWorldPoints,
+          views: phase3GridViews,
         },
         capture,
         pick,
@@ -881,6 +1008,39 @@ function assertProof(pageProof, screenshot) {
       on_samples: phase2.on_samples.map((sample) => sample.total_ms),
     },
   );
+  const phase3 = pageProof.phase3_world_strokes;
+  check(
+    "phase3_grid_floor_handles_created",
+    Array.isArray(phase3.grid_handles) && phase3.grid_handles.length === 2,
+    phase3.grid_handles,
+  );
+  check(
+    "phase3_grid_floor_has_three_orbit_views",
+    Array.isArray(phase3.views) && phase3.views.length === 3,
+    phase3.views,
+  );
+  for (const [viewIndex, view] of phase3.views.entries()) {
+    check(
+      `phase3_grid_view_${viewIndex}_rendered`,
+      view.render && view.render.outcome && view.render.outcome.skipped === false,
+      view.render,
+    );
+    check(
+      `phase3_grid_view_${viewIndex}_annotations_visible`,
+      view.samples.every((entry) => entry.projection && entry.projection.visible === true),
+      view.samples,
+    );
+    check(
+      `phase3_grid_view_${viewIndex}_projected_pixels_show_grid_contrast`,
+      view.samples.every(
+        (entry) =>
+          entry.sample &&
+          entry.sample.nonblack > 0 &&
+          entry.sample.local_contrast >= 2.0,
+      ),
+      view.samples,
+    );
+  }
 
   const tracked = pageProof.handles.tracked_node;
   const transformed = pageProof.transform_batch.some((entry) => entry.node === tracked);
@@ -1091,6 +1251,8 @@ async function main() {
     subtree_tint_probe: pageProof.subtree_tint_probe,
     phase1_appearance_dirty_tracking: pageProof.phase1_appearance_dirty_tracking,
     phase2_post_processing: pageProof.phase2_post_processing,
+    phase3_world_strokes: pageProof.phase3_world_strokes,
+    phase3_grid_inspection: pageProof.phase3_grid_inspection,
     camera: pageProof.camera,
     render_outcome: pageProof.render_outcome,
     inspect_json: pageProof.inspect_json,

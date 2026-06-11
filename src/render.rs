@@ -1,6 +1,6 @@
 //! wgpu device/surface ownership, prepare lifecycle, passes, resource tables, and stats.
 
-use std::{cell::Cell, marker::PhantomData, sync::Weak};
+use std::{cell::Cell, marker::PhantomData};
 
 mod background;
 mod build;
@@ -17,9 +17,10 @@ mod prepare;
 mod prepare_lifecycle;
 mod reporting;
 mod settings;
+// PreparedSceneState stores clipping_planes: Vec<ClippingPlane> in state.rs.
+mod state;
 mod surface;
 
-use self::prepare::PreparedPrimitive;
 use crate::assets::EnvironmentHandle;
 use crate::diagnostics::{
     Backend, Capabilities, ChangeKind, DebugOverlay, DevicePoll, Diagnostic, GpuAdapterReport,
@@ -28,7 +29,7 @@ use crate::diagnostics::{
 use crate::material::Color;
 use crate::picking::InteractionStyle;
 use crate::platform::SurfaceKind;
-use crate::scene::{CameraKey, ClippingPlane, Scene, SceneDirtyState};
+use crate::scene::{CameraKey, Scene};
 
 pub use self::background::Background;
 pub use self::exposure::{
@@ -45,6 +46,7 @@ pub use self::output::{
 #[doc(hidden)]
 pub use self::prepare::precompute_environment_sidecar;
 pub use self::settings::{Profile, Quality, RenderMode, RendererOptions};
+use self::state::{PreparedSceneState, RenderedFrameState};
 
 #[derive(Debug)]
 pub struct Renderer {
@@ -90,6 +92,8 @@ pub struct Renderer {
     environment_revision: u64,
     target_revision: u64,
     prepare_telemetry: PrepareTelemetry,
+    #[cfg(not(target_arch = "wasm32"))]
+    _headless_gpu_test_guard: Option<build::HeadlessGpuTestSupportGuard>,
     not_sync: PhantomData<Cell<()>>,
 }
 
@@ -100,27 +104,6 @@ struct PrepareTelemetry {
     static_gpu_resource_rebuilds: u64,
     dynamic_template_prepares: u64,
     draw_uniform_only_updates: u64,
-}
-
-#[derive(Debug, Clone)]
-struct PreparedSceneState {
-    scene: Weak<()>,
-    structure_revision: u64,
-    transform_revision: u64,
-    appearance_revision: u64,
-    visibility_revision: u64,
-    environment_revision: u64,
-    target_revision: u64,
-    debug_revision: u64,
-    retained_primitives: Vec<PreparedPrimitive>,
-    primitives: Vec<PreparedPrimitive>,
-    clipping_planes: Vec<ClippingPlane>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct RenderedFrameState {
-    dirty_state: SceneDirtyState,
-    camera: CameraKey,
 }
 
 /// Row-major render target dimensions used for CPU frame and accumulator indexing.
@@ -486,25 +469,6 @@ impl Renderer {
         }
 
         Ok(prepared)
-    }
-}
-
-impl RenderedFrameState {
-    pub(crate) const fn dirty_state(self) -> SceneDirtyState {
-        self.dirty_state
-    }
-
-    pub(crate) const fn camera(self) -> CameraKey {
-        self.camera
-    }
-
-    fn matches(self, dirty_state: SceneDirtyState, camera: CameraKey) -> bool {
-        self.dirty_state.structure_revision == dirty_state.structure_revision
-            && self.dirty_state.transform_revision == dirty_state.transform_revision
-            && self.dirty_state.appearance_revision == dirty_state.appearance_revision
-            && self.dirty_state.visibility_revision == dirty_state.visibility_revision
-            && self.dirty_state.interaction_revision == dirty_state.interaction_revision
-            && self.camera == camera
     }
 }
 

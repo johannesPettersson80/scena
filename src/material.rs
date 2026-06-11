@@ -102,21 +102,31 @@ impl MaterialDesc {
         )
     }
 
-    /// Creates a screen-space stroke material for line-topology geometry and polylines.
+    /// Creates a world-space stroke material for line-topology geometry and polylines.
+    ///
+    /// The segment endpoints live in scene/model space; GPU backends expand them in the
+    /// vertex shader to a screen-constant physical-pixel width. Strokes are depth-tested
+    /// against scene geometry, clipped at the near plane, and are not pickable in v1.7.
     pub const fn line(base_color: Color, width_px: f32) -> Self {
         Self::technical(MaterialKind::Line, base_color, width_px, None)
     }
 
-    /// Creates a screen-space stroke material that renders triangle mesh edges.
+    /// Creates a world-space stroke material that renders triangle mesh edges.
+    ///
+    /// GPU backends retain model-space edge endpoints and expand them to
+    /// screen-constant width during rendering; strokes are depth-tested, near-plane
+    /// clipped, and ignored by picking in v1.7.
     pub const fn wireframe(base_color: Color, width_px: f32) -> Self {
         Self::technical(MaterialKind::Wireframe, base_color, width_px, None)
     }
 
-    /// Creates a screen-space stroke material for extracted mesh edges.
+    /// Creates a world-space stroke material for extracted mesh edges.
     ///
     /// The default edge threshold is 30 degrees. Use
     /// [`with_edge_angle_threshold_degrees`](Self::with_edge_angle_threshold_degrees) to
-    /// override it.
+    /// override it. GPU backends retain model-space edge endpoints and expand them to
+    /// screen-constant width during rendering; strokes are depth-tested, near-plane
+    /// clipped, and ignored by picking in v1.7.
     pub const fn edge(base_color: Color, width_px: f32) -> Self {
         Self::technical(
             MaterialKind::Edge,
@@ -286,7 +296,7 @@ impl MaterialDesc {
         self.double_sided
     }
 
-    /// Returns the screen-space stroke width in physical pixels for line, wireframe, and
+    /// Returns the screen-constant stroke width in physical pixels for line, wireframe, and
     /// edge materials. Returns `None` for non-stroke materials.
     pub const fn stroke_width_px(&self) -> Option<f32> {
         self.stroke_width_px
@@ -300,7 +310,7 @@ impl MaterialDesc {
         self.edge_angle_threshold_degrees
     }
 
-    /// Updates the screen-space stroke width for line, wireframe, and edge materials.
+    /// Updates the screen-constant stroke width for line, wireframe, and edge materials.
     ///
     /// Invalid values fall back to [`DEFAULT_STROKE_WIDTH_PX`]. This has no effect on
     /// non-stroke materials.

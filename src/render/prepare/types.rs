@@ -15,6 +15,7 @@ pub(super) struct TransparentPrimitive {
 
 pub(super) struct PrimitiveSinks<'out> {
     pub(super) primitives: &'out mut Vec<PreparedPrimitive>,
+    pub(super) strokes: &'out mut Vec<PreparedStrokeSegment>,
     pub(super) transparent_primitives: &'out mut Vec<TransparentPrimitive>,
 }
 
@@ -29,6 +30,7 @@ pub(super) struct GeometryPrimitiveSource<'a, F> {
 
 pub(in crate::render) struct PreparedScene {
     pub(in crate::render) primitives: Vec<PreparedPrimitive>,
+    pub(in crate::render) strokes: Vec<PreparedStrokeSegment>,
     pub(in crate::render) light_from_world: [f32; 16],
 }
 
@@ -38,6 +40,7 @@ pub(in crate::render) struct PreparedPrimitive {
     source_node: Option<NodeKey>,
     original_vertex_offset: u32,
     tint: Color,
+    gpu_triangle_path: bool,
 }
 
 impl PreparedPrimitive {
@@ -51,6 +54,7 @@ impl PreparedPrimitive {
             source_node,
             original_vertex_offset: 0,
             tint,
+            gpu_triangle_path: true,
         }
     }
 
@@ -64,6 +68,11 @@ impl PreparedPrimitive {
 
     pub(in crate::render) fn without_depth_prepass(mut self) -> Self {
         self.primitive = self.primitive.without_depth_prepass();
+        self
+    }
+
+    pub(in crate::render) const fn without_gpu_triangle_path(mut self) -> Self {
+        self.gpu_triangle_path = false;
         self
     }
 
@@ -99,12 +108,95 @@ impl PreparedPrimitive {
         self.primitive.depth_prepass_eligible()
     }
 
+    pub(in crate::render) const fn gpu_triangle_path(&self) -> bool {
+        self.gpu_triangle_path
+    }
+
     pub(in crate::render) fn world_from_model(&self) -> [f32; 16] {
         self.primitive.world_from_model()
     }
 
     pub(in crate::render) fn normal_from_model(&self) -> [f32; 16] {
         self.primitive.normal_from_model()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(in crate::render) struct PreparedStrokeSegment {
+    source_node: Option<NodeKey>,
+    start: Vec3,
+    end: Vec3,
+    color: Color,
+    width_px: f32,
+    world_from_model: [f32; 16],
+    tint: Color,
+    original_segment_index: u32,
+}
+
+impl PreparedStrokeSegment {
+    pub(in crate::render) const fn new(
+        source_node: Option<NodeKey>,
+        start: Vec3,
+        end: Vec3,
+        color: Color,
+        width_px: f32,
+        world_from_model: [f32; 16],
+        tint: Color,
+    ) -> Self {
+        Self {
+            source_node,
+            start,
+            end,
+            color,
+            width_px,
+            world_from_model,
+            tint,
+            original_segment_index: 0,
+        }
+    }
+
+    pub(in crate::render) const fn with_original_segment_index(
+        mut self,
+        original_segment_index: u32,
+    ) -> Self {
+        self.original_segment_index = original_segment_index;
+        self
+    }
+
+    pub(in crate::render) const fn source_node(&self) -> Option<NodeKey> {
+        self.source_node
+    }
+
+    pub(in crate::render) const fn start(&self) -> Vec3 {
+        self.start
+    }
+
+    pub(in crate::render) const fn end(&self) -> Vec3 {
+        self.end
+    }
+
+    pub(in crate::render) const fn color(&self) -> Color {
+        self.color
+    }
+
+    pub(in crate::render) const fn width_px(&self) -> f32 {
+        self.width_px
+    }
+
+    pub(in crate::render) const fn world_from_model(&self) -> [f32; 16] {
+        self.world_from_model
+    }
+
+    pub(in crate::render) const fn tint(&self) -> Color {
+        self.tint
+    }
+
+    pub(in crate::render) const fn original_segment_index(&self) -> u32 {
+        self.original_segment_index
+    }
+
+    pub(in crate::render) fn set_tint(&mut self, tint: Color) {
+        self.tint = tint;
     }
 }
 

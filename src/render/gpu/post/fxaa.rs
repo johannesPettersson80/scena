@@ -1,4 +1,4 @@
-use super::{create_post_pipeline, create_texture_bind_group};
+use super::create_post_pipeline;
 
 const SHADER: &str = include_str!("fxaa.wgsl");
 
@@ -31,20 +31,10 @@ pub(super) fn create_surface_pipeline(
 
 pub(super) fn encode(
     encoder: &mut wgpu::CommandEncoder,
-    device: &wgpu::Device,
-    bind_group_layout: &wgpu::BindGroupLayout,
-    uniform: &wgpu::Buffer,
     pipeline: &wgpu::RenderPipeline,
-    source_view: &wgpu::TextureView,
+    bind_group: &wgpu::BindGroup,
     target_view: &wgpu::TextureView,
 ) {
-    let bind_group = create_texture_bind_group(
-        device,
-        bind_group_layout,
-        source_view,
-        uniform,
-        "scena.gpu_post.fxaa_bind_group",
-    );
     let color_attachment = Some(wgpu::RenderPassColorAttachment {
         view: target_view,
         depth_slice: None,
@@ -63,6 +53,6 @@ pub(super) fn encode(
         multiview_mask: None,
     });
     pass.set_pipeline(pipeline);
-    pass.set_bind_group(0, &bind_group, &[]);
+    pass.set_bind_group(0, bind_group, &[]);
     pass.draw(0..3, 0..1);
 }

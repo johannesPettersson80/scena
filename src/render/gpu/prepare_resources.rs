@@ -24,7 +24,7 @@ use super::{
     GpuDeviceState, GpuPrepareOutcome, GpuPreparedResources, depth, environment,
     material_texture_binding_mode, output, transmission,
 };
-use crate::render::prepare::PreparedPrimitive;
+use crate::render::prepare::{PreparedPrimitive, PreparedStrokeSegment};
 
 impl GpuDeviceState {
     pub(in crate::render) fn update_dynamic_draw_state(
@@ -33,8 +33,11 @@ impl GpuDeviceState {
         light_uniform: PreparedGpuLightUniform,
         light_from_world: [f32; 16],
         draw_primitives: &[PreparedPrimitive],
+        draw_strokes: &[PreparedStrokeSegment],
     ) -> Result<(), &'static str> {
-        let (draw_batches, draw_uniforms) = super::vertices::encode_draw_batches(draw_primitives);
+        let (draw_batches, mut draw_uniforms) =
+            super::vertices::encode_draw_batches(draw_primitives);
+        let stroke_batches = super::strokes::create_draw_batches(draw_strokes, &mut draw_uniforms);
         let Some(resources) = self.resources.as_mut() else {
             return Err("no GPU resources");
         };
@@ -51,6 +54,9 @@ impl GpuDeviceState {
         );
         resources.draw_uniforms = draw_uniforms;
         resources.draw_batches = draw_batches;
+        if let Some(strokes) = resources.strokes.as_mut() {
+            strokes.batches = stroke_batches;
+        }
         resources.light_uniform = light_uniform;
         resources.light_from_world = light_from_world;
         Ok(())
@@ -63,6 +69,8 @@ impl GpuDeviceState {
         target: RasterTarget,
         retained_primitives: &[PreparedPrimitive],
         draw_primitives: &[PreparedPrimitive],
+        retained_strokes: &[PreparedStrokeSegment],
+        draw_strokes: &[PreparedStrokeSegment],
         lighting_stats: PreparedLightingStats,
         light_uniform: PreparedGpuLightUniform,
         light_from_world: [f32; 16],
@@ -72,12 +80,14 @@ impl GpuDeviceState {
     ) -> Result<GpuPrepareOutcome, crate::PrepareError> {
         self.configure_surface(target);
         self.release_prepared_resources();
-        if retained_primitives.is_empty() {
+        if retained_primitives.is_empty() && retained_strokes.is_empty() {
             return Ok(GpuPrepareOutcome::NoResources);
         }
 
         let vertex_bytes = encode_vertices(retained_primitives);
-        let (draw_batches, draw_uniforms) = super::vertices::encode_draw_batches(draw_primitives);
+        let (draw_batches, mut draw_uniforms) =
+            super::vertices::encode_draw_batches(draw_primitives);
+        let stroke_batches = super::strokes::create_draw_batches(draw_strokes, &mut draw_uniforms);
         let vertex_buffer_size = vertex_bytes.len().max(4) as u64;
         let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("scena.m0.scene_vertices"),
@@ -128,7 +138,11 @@ impl GpuDeviceState {
             texture_binding_mode,
         );
         let draw_bind_group_layout = output::create_draw_bind_group_layout(&self.device);
-        let draw_uniform_capacity = retained_primitives.len().max(draw_uniforms.len());
+        let draw_uniform_capacity = retained_primitives
+            .len()
+            .saturating_add(retained_strokes.len())
+            .max(draw_uniforms.len())
+            .max(1);
         let draw_uniform_buffer =
             output::create_draw_uniform_buffer(&self.device, draw_uniform_capacity as u64);
         self.queue.write_buffer(
@@ -204,6 +218,20 @@ impl GpuDeviceState {
                 depth_compare,
             )
         });
+        let strokes = (!retained_strokes.is_empty()).then(|| {
+            super::strokes::create_resources(
+                &self.device,
+                super::strokes::StrokeResourceDescriptor {
+                    target_format: GPU_COLOR_FORMAT,
+                    surface_format: self.surface.as_ref().map(|surface| surface.config.format),
+                    output_bind_group_layout: &output_bind_group_layout,
+                    draw_bind_group_layout: &draw_bind_group_layout,
+                    depth_compare,
+                    retained_strokes,
+                    batches: stroke_batches,
+                },
+            )
+        });
         let stats = estimate_prepared_resource_stats(PreparedResourceEstimateInput {
             target,
             vertex_count: vertex_bytes.len() / VERTEX_BYTE_LEN,
@@ -235,6 +263,7 @@ impl GpuDeviceState {
             brdf_lut_texture,
             transmission,
             depth_prepass,
+            strokes,
             vertex_count: (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32,
             draw_batches,
             draw_uniforms,
@@ -263,6 +292,8 @@ impl GpuDeviceState {
         target: RasterTarget,
         retained_primitives: &[PreparedPrimitive],
         draw_primitives: &[PreparedPrimitive],
+        retained_strokes: &[PreparedStrokeSegment],
+        draw_strokes: &[PreparedStrokeSegment],
         lighting_stats: PreparedLightingStats,
         light_uniform: PreparedGpuLightUniform,
         light_from_world: [f32; 16],
@@ -275,11 +306,13 @@ impl GpuDeviceState {
         let Some(surface) = self.surface.as_ref() else {
             return Ok(GpuPrepareOutcome::NoResources);
         };
-        if retained_primitives.is_empty() {
+        if retained_primitives.is_empty() && retained_strokes.is_empty() {
             return Ok(GpuPrepareOutcome::NoResources);
         }
         let vertex_bytes = encode_vertices(retained_primitives);
-        let (draw_batches, draw_uniforms) = super::vertices::encode_draw_batches(draw_primitives);
+        let (draw_batches, mut draw_uniforms) =
+            super::vertices::encode_draw_batches(draw_primitives);
+        let stroke_batches = super::strokes::create_draw_batches(draw_strokes, &mut draw_uniforms);
         let vertex_buffer_size = vertex_bytes.len().max(4) as u64;
         let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("scena.browser.scene_vertices"),
@@ -304,7 +337,11 @@ impl GpuDeviceState {
             texture_binding_mode,
         );
         let draw_bind_group_layout = output::create_draw_bind_group_layout(&self.device);
-        let draw_uniform_capacity = retained_primitives.len().max(draw_uniforms.len());
+        let draw_uniform_capacity = retained_primitives
+            .len()
+            .saturating_add(retained_strokes.len())
+            .max(draw_uniforms.len())
+            .max(1);
         let draw_uniform_buffer =
             output::create_draw_uniform_buffer(&self.device, draw_uniform_capacity as u64);
         self.queue.write_buffer(
@@ -371,6 +408,20 @@ impl GpuDeviceState {
             texture_binding_mode,
             depth_compare,
         );
+        let strokes = (!retained_strokes.is_empty()).then(|| {
+            super::strokes::create_resources(
+                &self.device,
+                super::strokes::StrokeResourceDescriptor {
+                    target_format: surface.config.format,
+                    surface_format: Some(surface.config.format),
+                    output_bind_group_layout: &output_bind_group_layout,
+                    draw_bind_group_layout: &draw_bind_group_layout,
+                    depth_compare,
+                    retained_strokes,
+                    batches: stroke_batches,
+                },
+            )
+        });
         let readback = (target.backend == Backend::WebGpu).then(|| {
             create_browser_readback_resources(
                 &self.device,
@@ -411,6 +462,7 @@ impl GpuDeviceState {
             brdf_lut_texture,
             transmission,
             depth_prepass,
+            strokes,
             surface_pipeline,
             readback,
             vertex_count,

@@ -308,6 +308,50 @@ pub(crate) fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Fin
     );
 }
 
+pub(crate) fn check_headless_gpu_test_guard_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-HEADLESS-GPU-TEST-GUARD",
+        "src/render/build.rs",
+        &[
+            "HEADLESS_GPU_TEST_SUPPORT_SLOT",
+            "HEADLESS_GPU_TEST_SUPPORT_DEPTH",
+            "HeadlessGpuTestSupportGuard::acquire()",
+            "compare_exchange",
+            "pollster::block_on(gpu::request_headless_gpu(Backend::HeadlessGpu))",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-HEADLESS-GPU-TEST-GUARD",
+        "src/render.rs",
+        &["_headless_gpu_test_guard: Option<build::HeadlessGpuTestSupportGuard>"],
+    );
+
+    let render_build = root.join("src/render/build.rs");
+    let Ok(text) = fs::read_to_string(&render_build) else {
+        return;
+    };
+    let Some(body) = braced_body_after(&text, "pub fn headless_gpu") else {
+        findings.push(Finding::new(
+            "ARCH-HEADLESS-GPU-TEST-GUARD",
+            "src/render/build.rs is missing native Renderer::headless_gpu",
+        ));
+        return;
+    };
+    let guard_index = body.find("HeadlessGpuTestSupportGuard::acquire()");
+    let request_index = body.find("gpu::request_headless_gpu");
+    match (guard_index, request_index) {
+        (Some(guard_index), Some(request_index)) if guard_index < request_index => {}
+        _ => findings.push(Finding::new(
+            "ARCH-HEADLESS-GPU-TEST-GUARD",
+            "Renderer::headless_gpu must acquire the shared headless GPU test-support guard before device creation",
+        )),
+    }
+}
+
 pub(crate) fn check_render_world_bake_contracts(root: &Path, findings: &mut Vec<Finding>) {
     // Per-draw model/normal uniforms: prepared primitives must carry world_from_model
     // metadata via prepared_primitive(...) instead of being orchestrated through the bare

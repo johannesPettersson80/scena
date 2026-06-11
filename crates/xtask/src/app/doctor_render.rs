@@ -8,7 +8,8 @@ pub(crate) use asset_alpha_output::{
     check_render_alpha_contracts,
 };
 pub(crate) use diagnostics_stats_world::{
-    check_diagnostics_contracts, check_render_world_bake_contracts, check_renderer_stats_contracts,
+    check_diagnostics_contracts, check_headless_gpu_test_guard_contracts,
+    check_render_world_bake_contracts, check_renderer_stats_contracts,
 };
 pub(crate) use render_truth::check_renderer_truth_contracts;
 pub(crate) use standard_math_prepare::{

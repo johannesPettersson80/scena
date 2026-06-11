@@ -55,7 +55,7 @@ mod tangents;
 mod tests;
 pub(super) mod transforms;
 mod types;
-pub(in crate::render) use types::PreparedPrimitive;
+pub(in crate::render) use types::{PreparedPrimitive, PreparedStrokeSegment};
 
 pub(super) fn collect_prepared_primitives<F>(
     target: RasterTarget,
@@ -101,6 +101,7 @@ pub(super) fn collect_prepared_primitives<F>(
         .collect();
     labels::append_label_primitives(scene, origin_shift, &mut primitives);
     let mut transparent_primitives = Vec::new();
+    let mut strokes = Vec::new();
 
     for (node, mesh, transform) in scene.mesh_nodes() {
         let Some(assets) = assets else {
@@ -145,6 +146,7 @@ pub(super) fn collect_prepared_primitives<F>(
             },
             PrimitiveSinks {
                 primitives: &mut primitives,
+                strokes: &mut strokes,
                 transparent_primitives: &mut transparent_primitives,
             },
         )?;
@@ -194,6 +196,7 @@ pub(super) fn collect_prepared_primitives<F>(
                 },
                 PrimitiveSinks {
                     primitives: &mut primitives,
+                    strokes: &mut strokes,
                     transparent_primitives: &mut transparent_primitives,
                 },
             )?;
@@ -230,6 +233,7 @@ pub(super) fn collect_prepared_primitives<F>(
 
     Ok(PreparedScene {
         primitives,
+        strokes,
         light_from_world,
     })
 }

@@ -4,108 +4,27 @@ use super::super::RasterTarget;
 use super::depth;
 use super::material_bindings::MaterialTextureBindingMode;
 use super::pipeline::create_unlit_pipeline;
-use crate::render::{AntiAliasing, PostBloomConfig, ScreenSpaceAmbientOcclusionConfig};
+use crate::render::{AntiAliasing, PostBloomConfig};
 
 mod blit;
 mod bloom;
+mod bloom_fxaa;
 mod copy;
 mod fxaa;
 mod ssao;
 #[cfg(test)]
 mod tests;
+mod types;
 
+pub(in crate::render::gpu) use types::PostResources;
+pub(in crate::render) use types::{GpuPostPassCounts, GpuPostSettings};
+use types::{PostChainOutput, PostTextureSlot};
+
+#[cfg(any(not(target_arch = "wasm32"), feature = "browser-probe"))]
 pub(super) use copy::copy_output_to_buffer;
 
 const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const POST_UNIFORM_BYTE_LEN: u64 = 32;
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(in crate::render) struct GpuPostPassCounts {
-    pub(in crate::render) ambient_occlusion: u64,
-    pub(in crate::render) bloom: u64,
-    pub(in crate::render) fxaa: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(in crate::render) struct GpuPostSettings {
-    anti_aliasing: AntiAliasing,
-    bloom: Option<PostBloomConfig>,
-    ambient_occlusion: Option<ScreenSpaceAmbientOcclusionConfig>,
-}
-
-#[derive(Debug)]
-pub(super) struct PostResources {
-    target: RasterTarget,
-    #[allow(dead_code)]
-    scene_texture: wgpu::Texture,
-    scene_view: wgpu::TextureView,
-    #[allow(dead_code)]
-    ping_texture: wgpu::Texture,
-    ping_view: wgpu::TextureView,
-    #[allow(dead_code)]
-    pong_texture: wgpu::Texture,
-    pong_view: wgpu::TextureView,
-    uniform: wgpu::Buffer,
-    texture_bind_group_layout: wgpu::BindGroupLayout,
-    ssao_bind_group_layout: wgpu::BindGroupLayout,
-    pub(super) scene_pipeline: wgpu::RenderPipeline,
-    surface_blit_pipeline: Option<wgpu::RenderPipeline>,
-    #[allow(dead_code)]
-    surface_fxaa_pipeline: Option<wgpu::RenderPipeline>,
-    fxaa_pipeline: wgpu::RenderPipeline,
-    bloom_pipeline: wgpu::RenderPipeline,
-    ssao_pipeline: wgpu::RenderPipeline,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct PostChainOutput {
-    slot: PostTextureSlot,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PostTextureSlot {
-    Scene,
-    Ping,
-    Pong,
-}
-
-impl GpuPostSettings {
-    pub(in crate::render) const fn new(
-        anti_aliasing: AntiAliasing,
-        bloom: Option<PostBloomConfig>,
-        ambient_occlusion: Option<ScreenSpaceAmbientOcclusionConfig>,
-    ) -> Self {
-        Self {
-            anti_aliasing,
-            bloom,
-            ambient_occlusion,
-        }
-    }
-
-    pub(super) const fn enabled(self) -> bool {
-        matches!(self.anti_aliasing, AntiAliasing::Fxaa)
-            || self.bloom.is_some()
-            || self.ambient_occlusion.is_some()
-    }
-
-    pub(super) const fn needs_depth_color(self) -> bool {
-        self.ambient_occlusion.is_some()
-    }
-
-    #[allow(dead_code)]
-    pub(super) const fn uses_fxaa(self) -> bool {
-        matches!(self.anti_aliasing, AntiAliasing::Fxaa)
-    }
-
-    #[allow(dead_code)]
-    pub(super) const fn without_fxaa(self) -> Self {
-        Self {
-            anti_aliasing: AntiAliasing::None,
-            bloom: self.bloom,
-            ambient_occlusion: self.ambient_occlusion,
-        }
-    }
-}
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn create_resources(
@@ -189,6 +108,29 @@ pub(super) fn create_resources(
                 },
             ],
         });
+    let texture_bind_groups = [
+        create_texture_bind_group(
+            device,
+            &texture_bind_group_layout,
+            &scene.1,
+            &uniform,
+            "scena.gpu_post.scene_bind_group",
+        ),
+        create_texture_bind_group(
+            device,
+            &texture_bind_group_layout,
+            &ping.1,
+            &uniform,
+            "scena.gpu_post.ping_bind_group",
+        ),
+        create_texture_bind_group(
+            device,
+            &texture_bind_group_layout,
+            &pong.1,
+            &uniform,
+            "scena.gpu_post.pong_bind_group",
+        ),
+    ];
     let scene_pipeline = create_unlit_pipeline(
         device,
         POST_COLOR_FORMAT,
@@ -202,6 +144,9 @@ pub(super) fn create_resources(
         .map(|format| blit::create_surface_pipeline(device, &texture_bind_group_layout, format));
     let surface_fxaa_pipeline = surface_format
         .map(|format| fxaa::create_surface_pipeline(device, &texture_bind_group_layout, format));
+    let surface_bloom_fxaa_pipeline = surface_format.map(|format| {
+        bloom_fxaa::create_surface_pipeline(device, &texture_bind_group_layout, format)
+    });
     let fxaa_pipeline = fxaa::create_pipeline(device, &texture_bind_group_layout);
     let bloom_pipeline = bloom::create_pipeline(device, &texture_bind_group_layout);
     let ssao_pipeline = ssao::create_pipeline(device, &ssao_bind_group_layout);
@@ -215,11 +160,12 @@ pub(super) fn create_resources(
         pong_texture: pong.0,
         pong_view: pong.1,
         uniform,
-        texture_bind_group_layout,
         ssao_bind_group_layout,
+        texture_bind_groups,
         scene_pipeline,
         surface_blit_pipeline,
         surface_fxaa_pipeline,
+        surface_bloom_fxaa_pipeline,
         fxaa_pipeline,
         bloom_pipeline,
         ssao_pipeline,
@@ -303,11 +249,8 @@ pub(super) fn encode_chain(
         );
         bloom::encode(
             encoder,
-            device,
-            &resources.texture_bind_group_layout,
-            &resources.uniform,
             &resources.bloom_pipeline,
-            view(resources, current),
+            bind_group(resources, current),
             view(resources, next),
         );
         current = next;
@@ -332,11 +275,8 @@ pub(super) fn encode_chain(
         );
         fxaa::encode(
             encoder,
-            device,
-            &resources.texture_bind_group_layout,
-            &resources.uniform,
             &resources.fxaa_pipeline,
-            view(resources, current),
+            bind_group(resources, current),
             view(resources, next),
         );
         current = next;
@@ -348,7 +288,6 @@ pub(super) fn encode_chain(
 
 pub(super) fn encode_blit_to_view(
     encoder: &mut wgpu::CommandEncoder,
-    device: &wgpu::Device,
     resources: &PostResources,
     output: PostChainOutput,
     target_view: &wgpu::TextureView,
@@ -356,11 +295,8 @@ pub(super) fn encode_blit_to_view(
 ) {
     blit::encode(
         encoder,
-        device,
-        &resources.texture_bind_group_layout,
-        &resources.uniform,
         pipeline,
-        view(resources, output.slot),
+        bind_group(resources, output.slot),
         target_view,
     );
 }
@@ -368,7 +304,6 @@ pub(super) fn encode_blit_to_view(
 #[allow(dead_code)]
 pub(super) fn encode_fxaa_to_view(
     encoder: &mut wgpu::CommandEncoder,
-    device: &wgpu::Device,
     queue: &wgpu::Queue,
     resources: &PostResources,
     output: PostChainOutput,
@@ -391,11 +326,40 @@ pub(super) fn encode_fxaa_to_view(
     );
     fxaa::encode(
         encoder,
-        device,
-        &resources.texture_bind_group_layout,
-        &resources.uniform,
         pipeline,
-        view(resources, output.slot),
+        bind_group(resources, output.slot),
+        target_view,
+    );
+}
+
+#[allow(dead_code)]
+pub(super) fn encode_bloom_fxaa_to_view(
+    encoder: &mut wgpu::CommandEncoder,
+    queue: &wgpu::Queue,
+    resources: &PostResources,
+    output: PostChainOutput,
+    target_view: &wgpu::TextureView,
+    pipeline: &wgpu::RenderPipeline,
+    config: PostBloomConfig,
+) {
+    write_uniform(
+        queue,
+        resources,
+        [
+            resources.target.width as f32,
+            resources.target.height as f32,
+            config.threshold_srgb() as f32 / 255.0,
+            config.intensity(),
+            config.radius_px() as f32,
+            0.0,
+            0.0,
+            0.0,
+        ],
+    );
+    bloom_fxaa::encode(
+        encoder,
+        pipeline,
+        bind_group(resources, output.slot),
         target_view,
     );
 }
@@ -407,6 +371,13 @@ pub(super) fn surface_blit_pipeline(resources: &PostResources) -> Option<&wgpu::
 #[allow(dead_code)]
 pub(super) fn surface_fxaa_pipeline(resources: &PostResources) -> Option<&wgpu::RenderPipeline> {
     resources.surface_fxaa_pipeline.as_ref()
+}
+
+#[allow(dead_code)]
+pub(super) fn surface_bloom_fxaa_pipeline(
+    resources: &PostResources,
+) -> Option<&wgpu::RenderPipeline> {
+    resources.surface_bloom_fxaa_pipeline.as_ref()
 }
 
 pub(super) fn create_post_pipeline(
@@ -512,20 +483,19 @@ fn view(resources: &PostResources, slot: PostTextureSlot) -> &wgpu::TextureView 
     }
 }
 
+fn bind_group(resources: &PostResources, slot: PostTextureSlot) -> &wgpu::BindGroup {
+    match slot {
+        PostTextureSlot::Scene => &resources.texture_bind_groups[0],
+        PostTextureSlot::Ping => &resources.texture_bind_groups[1],
+        PostTextureSlot::Pong => &resources.texture_bind_groups[2],
+    }
+}
+
 #[allow(dead_code)]
 fn texture(resources: &PostResources, slot: PostTextureSlot) -> &wgpu::Texture {
     match slot {
         PostTextureSlot::Scene => &resources.scene_texture,
         PostTextureSlot::Ping => &resources.ping_texture,
         PostTextureSlot::Pong => &resources.pong_texture,
-    }
-}
-
-impl PostTextureSlot {
-    const fn alternate(self) -> Self {
-        match self {
-            Self::Scene | Self::Pong => Self::Ping,
-            Self::Ping => Self::Pong,
-        }
     }
 }

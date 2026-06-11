@@ -92,6 +92,7 @@ pub(crate) fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) 
     check_render_alpha_contracts(root, findings);
     check_output_stage_contracts(root, findings);
     check_fxaa_output_contracts(root, findings);
+    check_headless_gpu_test_guard_contracts(root, findings);
     check_diagnostics_contracts(root, findings);
     check_renderer_stats_contracts(root, findings);
     check_renderer_truth_contracts(root, findings);

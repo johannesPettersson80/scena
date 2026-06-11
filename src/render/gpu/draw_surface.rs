@@ -17,7 +17,7 @@ use super::draw_common::{
 use super::output::{OutputUniformUpload, encode_output_uniform};
 use super::scene_color::{SceneColorPasses, encode_scene_color_passes};
 use super::shadow::encode_shadow_caster_pass;
-use super::{GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuRenderResult, post};
+use super::{GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuRenderResult, post, strokes};
 
 impl GpuDeviceState {
     pub(in crate::render) fn render_to_surface(
@@ -144,6 +144,23 @@ impl GpuDeviceState {
                         base_label: "scena.browser.proof_post_scene_pass",
                     },
                 );
+                if let Some(stroke_resources) = resources.strokes.as_ref() {
+                    strokes::encode_pass(
+                        &mut encoder,
+                        strokes::StrokePass {
+                            view: post::scene_view(post_resources),
+                            depth_view: resources
+                                .depth_prepass
+                                .as_ref()
+                                .map(|depth_prepass| &depth_prepass.view),
+                            output_bind_group: &resources.output_bind_group,
+                            draw_bind_group: &resources.draw_bind_group,
+                            resources: stroke_resources,
+                            pipeline: strokes::post_pipeline(stroke_resources),
+                            label: "scena.browser.proof_stroke_post_scene_pass",
+                        },
+                    );
+                }
                 let (output, counts) = post::encode_chain(
                     &mut encoder,
                     &self.device,
@@ -258,10 +275,39 @@ impl GpuDeviceState {
                 base_label,
             },
         );
+        if let Some(stroke_resources) = resources.strokes.as_ref() {
+            let stroke_pipeline = if post_enabled {
+                strokes::post_pipeline(stroke_resources)
+            } else {
+                strokes::pipeline(stroke_resources)
+            };
+            strokes::encode_pass(
+                &mut encoder,
+                strokes::StrokePass {
+                    view: final_view,
+                    depth_view: resources
+                        .depth_prepass
+                        .as_ref()
+                        .map(|depth_prepass| &depth_prepass.view),
+                    output_bind_group: &resources.output_bind_group,
+                    draw_bind_group: &resources.draw_bind_group,
+                    resources: stroke_resources,
+                    pipeline: stroke_pipeline,
+                    label: "scena.browser.stroke_scene_pass",
+                },
+            );
+        }
         let post_counts = if post_enabled {
             let post_resources = resources.post.as_ref().expect("post resources exist");
-            let render_fxaa_to_surface = post_settings.uses_fxaa();
-            let chain_settings = if render_fxaa_to_surface {
+            let bloom_fxaa_to_surface = post_settings
+                .uses_fxaa()
+                .then(|| post_settings.bloom())
+                .flatten();
+            let render_fxaa_to_surface =
+                post_settings.uses_fxaa() && bloom_fxaa_to_surface.is_none();
+            let chain_settings = if bloom_fxaa_to_surface.is_some() {
+                post_settings.without_bloom_and_fxaa()
+            } else if render_fxaa_to_surface {
                 post_settings.without_fxaa()
             } else {
                 post_settings
@@ -274,13 +320,26 @@ impl GpuDeviceState {
                 chain_settings,
                 resources.depth_prepass.as_ref(),
             )?;
-            self.queue.submit(Some(encoder.finish()));
-            let mut blit_encoder =
-                self.device
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("scena.browser.post_blit_encoder"),
+            if let Some(bloom_config) = bloom_fxaa_to_surface {
+                let Some(surface_bloom_fxaa_pipeline) =
+                    post::surface_bloom_fxaa_pipeline(post_resources)
+                else {
+                    return Err(RenderError::GpuResourcesNotPrepared {
+                        backend: target.backend,
                     });
-            if render_fxaa_to_surface {
+                };
+                post::encode_bloom_fxaa_to_view(
+                    &mut encoder,
+                    &self.queue,
+                    post_resources,
+                    output,
+                    &surface_view,
+                    surface_bloom_fxaa_pipeline,
+                    bloom_config,
+                );
+                counts.bloom = 1;
+                counts.fxaa = 1;
+            } else if render_fxaa_to_surface {
                 let Some(surface_fxaa_pipeline) = post::surface_fxaa_pipeline(post_resources)
                 else {
                     return Err(RenderError::GpuResourcesNotPrepared {
@@ -288,8 +347,7 @@ impl GpuDeviceState {
                     });
                 };
                 post::encode_fxaa_to_view(
-                    &mut blit_encoder,
-                    &self.device,
+                    &mut encoder,
                     &self.queue,
                     post_resources,
                     output,
@@ -305,15 +363,14 @@ impl GpuDeviceState {
                     });
                 };
                 post::encode_blit_to_view(
-                    &mut blit_encoder,
-                    &self.device,
+                    &mut encoder,
                     post_resources,
                     output,
                     &surface_view,
                     surface_blit_pipeline,
                 );
             }
-            self.queue.submit(Some(blit_encoder.finish()));
+            self.queue.submit(Some(encoder.finish()));
             surface_output.present();
             return Ok(GpuRenderResult {
                 submitted: true,
