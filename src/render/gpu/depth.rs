@@ -1,4 +1,5 @@
 use super::super::RasterTarget;
+use super::instancing::{INSTANCE_ATTRIBUTES, INSTANCE_BYTE_LEN, InstanceDrawBatch};
 use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
 use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 
@@ -6,6 +7,10 @@ const DEPTH_PREPASS_SHADER: &str = r#"
 struct VertexIn {
     @location(0) position: vec3<f32>,
     @location(1) color: vec4<f32>,
+    @location(6) instance_world_0: vec4<f32>,
+    @location(7) instance_world_1: vec4<f32>,
+    @location(8) instance_world_2: vec4<f32>,
+    @location(9) instance_world_3: vec4<f32>,
 };
 
 struct VertexOut {
@@ -38,7 +43,13 @@ fn vs_main(in: VertexIn) -> VertexOut {
     // here while the color pass computes `clip_from_view * view_from_world *
     // (world_from_model * pos)` makes most color-pass fragments fail the
     // LessEqual depth test by a single ULP, producing a mostly-black render.
-    let world_position = draw.world_from_model * vec4<f32>(in.position, 1.0);
+    let instance_world_from_model = mat4x4<f32>(
+        in.instance_world_0,
+        in.instance_world_1,
+        in.instance_world_2,
+        in.instance_world_3,
+    );
+    let world_position = draw.world_from_model * instance_world_from_model * vec4<f32>(in.position, 1.0);
     var out: VertexOut;
     out.position = camera.clip_from_world * world_position;
     return out;
@@ -151,7 +162,14 @@ pub(super) fn create_depth_prepass_resources(
             module: &shader,
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
-            buffers: &[vertex_buffer],
+            buffers: &[
+                vertex_buffer,
+                wgpu::VertexBufferLayout {
+                    array_stride: INSTANCE_BYTE_LEN as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &INSTANCE_ATTRIBUTES,
+                },
+            ],
         },
         primitive: wgpu::PrimitiveState::default(),
         depth_stencil: Some(wgpu::DepthStencilState {
@@ -209,10 +227,7 @@ impl DepthPrepassResources {
 pub(super) fn encode_depth_prepass(
     encoder: &mut wgpu::CommandEncoder,
     resources: &DepthPrepassResources,
-    vertex_buffer: &wgpu::Buffer,
-    camera_bind_group: &wgpu::BindGroup,
-    draw_bind_group: &wgpu::BindGroup,
-    draw_batches: &[PrimitiveDrawBatch],
+    inputs: DepthPrepassInputs<'_>,
 ) {
     let depth_attachment = Some(wgpu::RenderPassDepthStencilAttachment {
         view: &resources.view,
@@ -249,20 +264,51 @@ pub(super) fn encode_depth_prepass(
         multiview_mask: None,
     });
     pass.set_pipeline(&resources.pipeline);
-    pass.set_bind_group(0, camera_bind_group, &[]);
-    pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-    for batch in draw_batches {
+    pass.set_bind_group(0, inputs.camera_bind_group, &[]);
+    pass.set_vertex_buffer(0, inputs.vertex_buffer.slice(..));
+    let identity_instance_offset =
+        u64::from(inputs.identity_instance).saturating_mul(INSTANCE_BYTE_LEN as u64);
+    pass.set_vertex_buffer(1, inputs.instance_buffer.slice(identity_instance_offset..));
+    for batch in inputs.draw_batches {
         if !batch.depth_prepass_eligible {
             continue;
         }
         let draw_offset =
             (batch.draw_uniform_index as u64).saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE) as u32;
-        pass.set_bind_group(2, draw_bind_group, &[draw_offset]);
+        pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset]);
         pass.draw(
             batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
             0..1,
         );
+        *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
     }
+    for batch in inputs.instance_batches {
+        if !batch.depth_prepass_eligible {
+            continue;
+        }
+        let draw_offset =
+            (batch.draw_uniform_index as u64).saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE) as u32;
+        pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset]);
+        let instance_offset =
+            u64::from(batch.start_instance).saturating_mul(INSTANCE_BYTE_LEN as u64);
+        pass.set_vertex_buffer(1, inputs.instance_buffer.slice(instance_offset..));
+        pass.draw(
+            batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
+            0..batch.instance_count,
+        );
+        *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
+    }
+}
+
+pub(super) struct DepthPrepassInputs<'a> {
+    pub(super) vertex_buffer: &'a wgpu::Buffer,
+    pub(super) instance_buffer: &'a wgpu::Buffer,
+    pub(super) camera_bind_group: &'a wgpu::BindGroup,
+    pub(super) draw_bind_group: &'a wgpu::BindGroup,
+    pub(super) draw_batches: &'a [PrimitiveDrawBatch],
+    pub(super) instance_batches: &'a [InstanceDrawBatch],
+    pub(super) identity_instance: u32,
+    pub(super) draw_submissions: &'a mut u64,
 }
 
 fn depth_clear_color(clear_depth: f32) -> wgpu::Color {

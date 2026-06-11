@@ -4,6 +4,8 @@ use super::super::prepare::PreparedGpuLightUniform;
 /// a sibling `.wgsl` file so this Rust module stays under doctor's
 /// per-module significant-lines budget. The shader still compiles
 /// the same — `include_str!` produces a static `&'static str`.
+/// Instanced shader contract: `draw.world_from_model * instance_world_from_model * vec4<f32>(in.position, 1.0)`
+/// and `let normal_from_model = draw.normal_from_model * instance_normal_from_model`.
 pub(super) const GPU_TRIANGLE_SHADER: &str = include_str!("output_shader.wgsl");
 pub(super) const GPU_TRIANGLE_SHADER_TEXTURE_2D: &str =
     include_str!("output_shader_texture_2d.wgsl");

@@ -61,6 +61,8 @@ Construction and lookup stay domain-neutral:
 - `addEmpty(parent, translation, rotation, scale, tag)`
 - `instantiateGlb(bytes)` and `instantiateGlbUnder(parent, bytes)`
 - `instantiateUrl(url)` and `instantiateUrlUnder(parent, url)`
+- `instantiateUrlInstanced(url, count)` and
+  `instantiateUrlInstancedUnder(parent, url, count)`
 - `instantiateUrlWithReportJson(url)` and
   `instantiateUrlUnderWithReportJson(parent, url)`
 - `importRoots(importHandle)`
@@ -103,6 +105,15 @@ The browser page still owns cadence: after a non-`none` action, call
 `pick(x, y)` receives CSS pixels. `SceneHost` stores the current DPR and target
 size, applies DPR internally, and returns the same node handle namespace that
 `setTransform` and `inspectJson` use.
+
+`instantiateUrlInstanced()` and `instantiateUrlInstancedUnder()` return a
+`BigUint64Array` of host-owned instance-root handles. They share one retained
+GPU resource set for the loaded asset drawables and route `setTransform`,
+`setTransforms`, `setTransformsTyped`, `setVisible`, `setNodeTint`,
+`clearNodeTint`, `removeNode`, and `pick` through the binding table. Instance
+roots are not scene-graph nodes; APIs that require a real node, such as
+parenting, subtree tinting, bounds, and framing, reject them with structured
+host errors. Per-instance tint must be opaque in this release.
 
 `removeNode(handle)` recursively removes the node subtree and invalidates every
 host handle in that subtree. `removeImport(importHandle)` removes all import

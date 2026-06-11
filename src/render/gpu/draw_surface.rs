@@ -2,10 +2,6 @@
 
 use crate::diagnostics::RenderError;
 use crate::material::Color;
-#[cfg(feature = "browser-probe")]
-use wasm_bindgen::JsValue;
-#[cfg(feature = "browser-probe")]
-use wasm_bindgen_futures::JsFuture;
 
 use super::super::RasterTarget;
 use super::super::camera::CameraProjection;
@@ -16,7 +12,7 @@ use super::draw_common::{
 };
 use super::output::{OutputUniformUpload, encode_output_uniform};
 use super::scene_color::{SceneColorPasses, encode_scene_color_passes};
-use super::shadow::encode_shadow_caster_pass;
+use super::shadow::{self, encode_shadow_caster_pass};
 use super::{GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuRenderResult, post, strokes};
 
 impl GpuDeviceState {
@@ -104,21 +100,34 @@ impl GpuDeviceState {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("scena.browser.proof_encoder"),
                 });
+            let mut draw_submissions = 0;
             encode_shadow_caster_pass(
                 &mut encoder,
                 &resources.shadow_caster,
-                &resources.vertex_buffer,
-                &resources.draw_bind_group,
-                &resources.draw_batches,
+                shadow::ShadowCasterPassInputs {
+                    vertex_buffer: &resources.vertex_buffer,
+                    instance_buffer: &resources.instance_buffer,
+                    draw_bind_group: &resources.draw_bind_group,
+                    draw_batches: &resources.draw_batches,
+                    instance_batches: &resources.instance_batches,
+                    identity_instance: resources.identity_instance,
+                    draw_submissions: &mut draw_submissions,
+                },
             );
             if let Some(depth_prepass) = &resources.depth_prepass {
                 depth::encode_depth_prepass(
                     &mut encoder,
                     depth_prepass,
-                    &resources.vertex_buffer,
-                    &resources.output_bind_group,
-                    &resources.draw_bind_group,
-                    &resources.draw_batches,
+                    depth::DepthPrepassInputs {
+                        vertex_buffer: &resources.vertex_buffer,
+                        instance_buffer: &resources.instance_buffer,
+                        camera_bind_group: &resources.output_bind_group,
+                        draw_bind_group: &resources.draw_bind_group,
+                        draw_batches: &resources.draw_batches,
+                        instance_batches: &resources.instance_batches,
+                        identity_instance: resources.identity_instance,
+                        draw_submissions: &mut draw_submissions,
+                    },
                 );
             }
             let post_counts = if post_enabled {
@@ -133,15 +142,19 @@ impl GpuDeviceState {
                             .as_ref()
                             .map(|depth_prepass| &depth_prepass.view),
                         vertex_buffer: &resources.vertex_buffer,
+                        instance_buffer: &resources.instance_buffer,
                         output_bind_group: &resources.output_bind_group,
                         opaque_output_bind_group: &resources.opaque_output_bind_group,
                         draw_bind_group: &resources.draw_bind_group,
                         material_resources: &resources.material_resources,
                         draw_batches: &resources.draw_batches,
+                        instance_batches: &resources.instance_batches,
+                        identity_instance: resources.identity_instance,
                         transmission_view: &resources.transmission.view,
                         transmission_pipeline: &resources.transmission.pipeline,
                         clear_color: wgpu_clear_color(background_color),
                         base_label: "scena.browser.proof_post_scene_pass",
+                        draw_submissions: &mut draw_submissions,
                     },
                 );
                 if let Some(stroke_resources) = resources.strokes.as_ref() {
@@ -158,6 +171,7 @@ impl GpuDeviceState {
                             resources: stroke_resources,
                             pipeline: strokes::post_pipeline(stroke_resources),
                             label: "scena.browser.proof_stroke_post_scene_pass",
+                            draw_submissions: &mut draw_submissions,
                         },
                     );
                 }
@@ -168,6 +182,7 @@ impl GpuDeviceState {
                     post_resources,
                     post_settings,
                     resources.depth_prepass.as_ref(),
+                    &mut draw_submissions,
                 )?;
                 post::copy_output_to_buffer(
                     &mut encoder,
@@ -193,8 +208,12 @@ impl GpuDeviceState {
                         draw_bind_group: &resources.draw_bind_group,
                         material_resources: &resources.material_resources,
                         draw_batches: &resources.draw_batches,
+                        instance_buffer: &resources.instance_buffer,
+                        instance_batches: &resources.instance_batches,
+                        identity_instance: resources.identity_instance,
                         transmission: &resources.transmission,
                         clear_color: wgpu_clear_color(background_color),
+                        draw_submissions: &mut draw_submissions,
                     },
                 );
                 GpuPostPassCounts::default()
@@ -203,6 +222,7 @@ impl GpuDeviceState {
             return Ok(GpuRenderResult {
                 submitted: true,
                 post_counts,
+                draw_submissions,
             });
         }
         let surface_output = match surface.surface.get_current_texture() {
@@ -222,21 +242,34 @@ impl GpuDeviceState {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("scena.browser.encoder"),
             });
+        let mut draw_submissions = 0;
         encode_shadow_caster_pass(
             &mut encoder,
             &resources.shadow_caster,
-            &resources.vertex_buffer,
-            &resources.draw_bind_group,
-            &resources.draw_batches,
+            shadow::ShadowCasterPassInputs {
+                vertex_buffer: &resources.vertex_buffer,
+                instance_buffer: &resources.instance_buffer,
+                draw_bind_group: &resources.draw_bind_group,
+                draw_batches: &resources.draw_batches,
+                instance_batches: &resources.instance_batches,
+                identity_instance: resources.identity_instance,
+                draw_submissions: &mut draw_submissions,
+            },
         );
         if let Some(depth_prepass) = &resources.depth_prepass {
             depth::encode_depth_prepass(
                 &mut encoder,
                 depth_prepass,
-                &resources.vertex_buffer,
-                &resources.output_bind_group,
-                &resources.draw_bind_group,
-                &resources.draw_batches,
+                depth::DepthPrepassInputs {
+                    vertex_buffer: &resources.vertex_buffer,
+                    instance_buffer: &resources.instance_buffer,
+                    camera_bind_group: &resources.output_bind_group,
+                    draw_bind_group: &resources.draw_bind_group,
+                    draw_batches: &resources.draw_batches,
+                    instance_batches: &resources.instance_batches,
+                    identity_instance: resources.identity_instance,
+                    draw_submissions: &mut draw_submissions,
+                },
             );
         }
         let post_resources = resources.post.as_ref();
@@ -264,15 +297,19 @@ impl GpuDeviceState {
                     .as_ref()
                     .map(|depth_prepass| &depth_prepass.view),
                 vertex_buffer: &resources.vertex_buffer,
+                instance_buffer: &resources.instance_buffer,
                 output_bind_group: &resources.output_bind_group,
                 opaque_output_bind_group: &resources.opaque_output_bind_group,
                 draw_bind_group: &resources.draw_bind_group,
                 material_resources: &resources.material_resources,
                 draw_batches: &resources.draw_batches,
+                instance_batches: &resources.instance_batches,
+                identity_instance: resources.identity_instance,
                 transmission_view: &resources.transmission.view,
                 transmission_pipeline: &resources.transmission.pipeline,
                 clear_color: wgpu_clear_color(background_color),
                 base_label,
+                draw_submissions: &mut draw_submissions,
             },
         );
         if let Some(stroke_resources) = resources.strokes.as_ref() {
@@ -294,6 +331,7 @@ impl GpuDeviceState {
                     resources: stroke_resources,
                     pipeline: stroke_pipeline,
                     label: "scena.browser.stroke_scene_pass",
+                    draw_submissions: &mut draw_submissions,
                 },
             );
         }
@@ -319,6 +357,7 @@ impl GpuDeviceState {
                 post_resources,
                 chain_settings,
                 resources.depth_prepass.as_ref(),
+                &mut draw_submissions,
             )?;
             if let Some(bloom_config) = bloom_fxaa_to_surface {
                 let Some(surface_bloom_fxaa_pipeline) =
@@ -332,10 +371,13 @@ impl GpuDeviceState {
                     &mut encoder,
                     &self.queue,
                     post_resources,
-                    output,
-                    &surface_view,
-                    surface_bloom_fxaa_pipeline,
-                    bloom_config,
+                    post::BloomFxaaToViewInputs {
+                        output,
+                        target_view: &surface_view,
+                        pipeline: surface_bloom_fxaa_pipeline,
+                        config: bloom_config,
+                        draw_submissions: &mut draw_submissions,
+                    },
                 );
                 counts.bloom = 1;
                 counts.fxaa = 1;
@@ -353,6 +395,7 @@ impl GpuDeviceState {
                     output,
                     &surface_view,
                     surface_fxaa_pipeline,
+                    &mut draw_submissions,
                 );
                 counts.fxaa = 1;
             } else {
@@ -368,6 +411,7 @@ impl GpuDeviceState {
                     output,
                     &surface_view,
                     surface_blit_pipeline,
+                    &mut draw_submissions,
                 );
             }
             self.queue.submit(Some(encoder.finish()));
@@ -375,6 +419,7 @@ impl GpuDeviceState {
             return Ok(GpuRenderResult {
                 submitted: true,
                 post_counts: counts,
+                draw_submissions,
             });
         } else {
             GpuPostPassCounts::default()
@@ -387,13 +432,17 @@ impl GpuDeviceState {
                     readback,
                     depth_view: None,
                     vertex_buffer: &resources.vertex_buffer,
+                    instance_buffer: &resources.instance_buffer,
                     output_bind_group: &resources.output_bind_group,
                     opaque_output_bind_group: &resources.opaque_output_bind_group,
                     draw_bind_group: &resources.draw_bind_group,
                     material_resources: &resources.material_resources,
                     draw_batches: &resources.draw_batches,
+                    instance_batches: &resources.instance_batches,
+                    identity_instance: resources.identity_instance,
                     transmission: &resources.transmission,
                     clear_color: wgpu_clear_color(background_color),
+                    draw_submissions: &mut draw_submissions,
                 },
             );
         }
@@ -402,104 +451,7 @@ impl GpuDeviceState {
         Ok(GpuRenderResult {
             submitted: true,
             post_counts,
+            draw_submissions,
         })
-    }
-
-    fn render_empty_surface(
-        &mut self,
-        target: RasterTarget,
-        background_color: Color,
-    ) -> Result<GpuRenderResult, RenderError> {
-        let Some(surface) = self.surface.as_ref() else {
-            return Err(RenderError::GpuResourcesNotPrepared {
-                backend: target.backend,
-            });
-        };
-        let surface_output = match surface.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(output)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(output) => output,
-            wgpu::CurrentSurfaceTexture::Timeout
-            | wgpu::CurrentSurfaceTexture::Occluded
-            | wgpu::CurrentSurfaceTexture::Outdated
-            | wgpu::CurrentSurfaceTexture::Lost
-            | wgpu::CurrentSurfaceTexture::Validation => return Ok(GpuRenderResult::default()),
-        };
-        let surface_view = surface_output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("scena.browser.empty_surface_encoder"),
-            });
-        {
-            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("scena.browser.empty_surface_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &surface_view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu_clear_color(background_color)),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-        }
-        self.queue.submit(Some(encoder.finish()));
-        surface_output.present();
-        Ok(GpuRenderResult::default())
-    }
-
-    #[cfg(feature = "browser-probe")]
-    pub(in crate::render) async fn browser_probe_readback_rgba8(
-        &mut self,
-        target: RasterTarget,
-    ) -> Result<Option<Vec<u8>>, JsValue> {
-        let Some(resources) = self.resources.as_ref() else {
-            return Ok(None);
-        };
-        let Some(readback) = resources.readback.as_ref() else {
-            return Ok(None);
-        };
-        if resources.target != target {
-            return Err(JsValue::from_str(&format!(
-                "browser proof readback resources were prepared for {:?}, not {:?}",
-                resources.target, target
-            )));
-        }
-        let slice = readback.buffer.slice(..);
-        let promise = js_sys::Promise::new(&mut |resolve, reject| {
-            let resolve = resolve.clone();
-            let reject = reject.clone();
-            slice.map_async(wgpu::MapMode::Read, move |result| match result {
-                Ok(()) => {
-                    let _ = resolve.call0(&JsValue::UNDEFINED);
-                }
-                Err(error) => {
-                    let _ = reject.call1(
-                        &JsValue::UNDEFINED,
-                        &JsValue::from_str(&format!("browser proof readback failed: {error:?}")),
-                    );
-                }
-            });
-        });
-        JsFuture::from(promise).await?;
-        let mapped = slice.get_mapped_range();
-        let mut frame = vec![0; target.byte_len()];
-        for row in 0..target.height as usize {
-            let source_start = row * readback.padded_bytes_per_row as usize;
-            let source_end = source_start + readback.unpadded_bytes_per_row as usize;
-            let target_start = row * readback.unpadded_bytes_per_row as usize;
-            let target_end = target_start + readback.unpadded_bytes_per_row as usize;
-            frame[target_start..target_end].copy_from_slice(&mapped[source_start..source_end]);
-        }
-        drop(mapped);
-        readback.buffer.unmap();
-        Ok(Some(frame))
     }
 }

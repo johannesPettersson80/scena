@@ -4,6 +4,18 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Added explicit GPU instancing for `InstanceSet` renderables plus SceneHost
+  `instantiateUrlInstanced` / `instantiateUrlInstancedUnder` APIs. Returned
+  instance-root handles support transform, visibility, opaque tint, removal,
+  picking, and additive inspection metadata without duplicating shared asset
+  geometry.
+- Added honest renderer submission stats: `RendererStats::gpu_draw_submissions`
+  reports actual GPU draw submissions, `RendererStats::instances` reports
+  visible per-instance records, and legacy `draw_calls` / `primitives` remain
+  deprecated triangle-count aliases.
+
 ## [1.6.0] - 2026-06-02
 
 ### Added

@@ -19,12 +19,22 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
         "ARCH-RENDER-TRUTH",
         "src/render/gpu/prepare_resources.rs",
         &[
-            "let vertex_bytes = encode_vertices(retained_primitives)",
-            "encode_draw_batches(draw_primitives)",
+            "encode_retained_vertices(retained_primitives, retained_instances)",
+            "encode_draw_resources(draw_primitives, draw_instances, draw_strokes)",
             "create_output_bind_group_layout",
             "create_material_bind_group_layout",
             "create_unlit_pipeline",
             "self.release_prepared_resources();",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/render/gpu/resource_encoding.rs",
+        &[
+            "encode_vertices(&all_retained_primitives)",
+            "vertices::encode_draw_batches(draw_primitives)",
         ],
     );
     require_contains(
@@ -57,6 +67,19 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
         "src/render/gpu/scene_color.rs",
         &["encode_unlit_pass", "ColorLoad::Load", "TransparentOnly"],
     );
+    for path in [
+        "src/render/gpu/pipeline.rs",
+        "src/render/gpu/depth.rs",
+        "src/render/gpu/shadow.rs",
+    ] {
+        forbid_contains(
+            root,
+            findings,
+            "ARCH-RENDER-TRUTH",
+            path,
+            &["batch.start_instance..batch.start_instance.saturating_add(batch.instance_count)"],
+        );
+    }
     require_contains(
         root,
         findings,
@@ -93,7 +116,9 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
             "base.a < material.metallic_roughness_alpha.z",
             "discard;",
             "camera.clip_from_world * world_position",
-            "draw.normal_from_model * vec4<f32>(in.normal, 0.0)",
+            "instance_normal_0",
+            "@location(14) instance_tint",
+            "let normal_from_model = draw.normal_from_model * instance_normal_from_model",
         ],
     );
     require_contains(
@@ -108,6 +133,8 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
             "var occlusion_texture: texture_2d<f32>",
             "var emissive_texture: texture_2d<f32>",
             "textureSample(base_color_texture, base_color_sampler, transformed_uv)",
+            "instance_normal_0",
+            "@location(14) instance_tint",
         ],
     );
     require_contains(
@@ -179,4 +206,16 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
         "src/render/gpu/depth.rs",
         &["return vec4<f32>(in.position, 1.0);"],
     );
+    for path in [
+        "src/render/gpu/output_shader.wgsl",
+        "src/render/gpu/output_shader_texture_2d.wgsl",
+    ] {
+        forbid_contains(
+            root,
+            findings,
+            "ARCH-RENDER-TRUTH",
+            path,
+            &["transpose(inverse(instance_world_from_model))"],
+        );
+    }
 }

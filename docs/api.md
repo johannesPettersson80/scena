@@ -115,6 +115,14 @@ Phase 5 adds stable asset-load reports. Native callers use
 `instantiateUrlWithReportJson` or `instantiateUrlUnderWithReportJson` to get
 the created import handle plus the same asset-load report. Cache-hit reports
 preserve typed warnings and external resource counts from the original load.
+Release 1.7 adds explicit host-owned instanced imports. Native callers use
+`SceneHostCore::instantiate_url_instanced` or
+`SceneHostCore::instantiate_url_instanced_under`; browser hosts use
+`instantiateUrlInstanced` or `instantiateUrlInstancedUnder`. Each returned
+handle is an instance-root handle, not a scene node. The standard transform,
+visibility, tint, remove, and pick APIs accept these handles. Other node-tree
+APIs continue to reject them with structured host errors. Per-instance tint is
+opaque-only in this release.
 Phase 6 adds generic `AssetProvenance` metadata. Loaded `SceneAsset`,
 `TextureDesc`, and `EnvironmentDesc` values expose `provenance()` with a
 serde-stable source path, optional source SHA-256, optional license/generator,
@@ -566,6 +574,12 @@ UIs can show the same actionable remediation used by the asset doctor.
 
 Use capability reports when selecting optional effects or platform-specific
 paths. Use stats for testing, diagnostics, and performance visibility.
+`RendererStats::draw_calls` and `RendererStats::primitives` are deprecated
+aliases of `RendererStats::triangles` and retain their historical triangle-count
+meaning until the next schema version. Use `RendererStats::gpu_draw_submissions`
+for the actual number of GPU draw/draw-indexed/draw-instanced calls submitted
+last frame, and `RendererStats::instances` for the number of visible per-instance
+records drawn last frame.
 `Capabilities::wide_gamut_output` is intentionally capability-gated: headless
 and unattached reports stay disabled, attached browser reports stay degraded
 until the browser smoke probe records Display P3 canvas support for the active

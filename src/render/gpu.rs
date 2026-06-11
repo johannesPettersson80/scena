@@ -12,8 +12,12 @@ mod draw;
 mod draw_common;
 #[cfg(target_arch = "wasm32")]
 mod draw_surface;
+#[cfg(target_arch = "wasm32")]
+mod draw_surface_support;
 mod draw_uniform;
+mod dynamic_draw_state;
 mod environment;
+mod instancing;
 mod lifecycle;
 mod material_batched;
 mod material_bindings;
@@ -25,6 +29,7 @@ mod output;
 mod pipeline;
 mod post;
 mod prepare_resources;
+mod resource_encoding;
 mod scene_color;
 mod shadow;
 mod stats;
@@ -40,6 +45,7 @@ use crate::platform::SurfaceSize;
 
 #[cfg(target_arch = "wasm32")]
 use self::browser_readback::BrowserReadbackResources;
+use self::instancing::InstanceDrawBatch;
 use self::material_bindings::MaterialTextureBindingMode;
 pub(super) use self::post::{GpuPostPassCounts, GpuPostSettings};
 use self::shadow::ShadowCasterResources;
@@ -97,6 +103,7 @@ pub(super) enum GpuPrepareOutcome {
 pub(in crate::render) struct GpuRenderResult {
     pub(in crate::render) submitted: bool,
     pub(in crate::render) post_counts: GpuPostPassCounts,
+    pub(in crate::render) draw_submissions: u64,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -107,6 +114,8 @@ struct GpuPreparedResources {
     view: wgpu::TextureView,
     readback: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
+    instance_buffer: wgpu::Buffer,
+    instance_buffer_capacity: usize,
     output_uniform: wgpu::Buffer,
     output_bind_group: wgpu::BindGroup,
     opaque_output_bind_group: wgpu::BindGroup,
@@ -131,6 +140,9 @@ struct GpuPreparedResources {
     #[allow(dead_code)]
     vertex_count: u32,
     draw_batches: Vec<PrimitiveDrawBatch>,
+    instance_batches: Vec<InstanceDrawBatch>,
+    instance_count: usize,
+    identity_instance: u32,
     // Phase 1A.2: per-draw uniforms via draw_uniform_buffer + draw_bind_group
     // with dynamic offsets. Vertex stream carries model-space positions; the
     // shader applies draw.world_from_model. Closes wgpu-architect F2.
@@ -158,6 +170,8 @@ struct GpuPreparedResources {
 struct GpuPreparedResources {
     target: RasterTarget,
     vertex_buffer: wgpu::Buffer,
+    instance_buffer: wgpu::Buffer,
+    instance_buffer_capacity: usize,
     output_uniform: wgpu::Buffer,
     output_bind_group: wgpu::BindGroup,
     opaque_output_bind_group: wgpu::BindGroup,
@@ -186,6 +200,9 @@ struct GpuPreparedResources {
     #[allow(dead_code)]
     vertex_count: u32,
     draw_batches: Vec<PrimitiveDrawBatch>,
+    instance_batches: Vec<InstanceDrawBatch>,
+    instance_count: usize,
+    identity_instance: u32,
     // Phase 1A.2: per-draw uniforms uploaded through draw_uniform_buffer +
     // draw_bind_group with dynamic offsets, mirroring the native variant.
     #[allow(dead_code)]
@@ -249,5 +266,12 @@ impl GpuDeviceState {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    pub(in crate::render) fn vertex_buffer_bytes_for_test(&self) -> Option<u64> {
+        self.resources
+            .as_ref()
+            .map(|resources| u64::from(resources.vertex_count) * vertices::VERTEX_BYTE_LEN as u64)
     }
 }

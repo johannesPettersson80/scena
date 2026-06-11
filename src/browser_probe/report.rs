@@ -61,6 +61,8 @@ pub(super) fn stats_json(stats: crate::RendererStats) -> serde_json::Value {
         "frames_rendered": stats.frames_rendered,
         "draw_calls": stats.draw_calls,
         "triangles": stats.triangles,
+        "gpu_draw_submissions": stats.gpu_draw_submissions,
+        "instances": stats.instances,
         "culled_objects": stats.culled_objects,
         "gpu_culling_dispatches": stats.gpu_culling_dispatches,
         "skipped_frames": stats.skipped_frames,

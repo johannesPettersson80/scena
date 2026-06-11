@@ -51,7 +51,7 @@ pub(crate) fn check_material_texture_diagnostic_contracts(
         root,
         findings,
         "ASSETS-M8",
-        "src/diagnostics.rs",
+        "src/diagnostics/stats.rs",
         &["material_textures_missing_decoded_pixels"],
     );
 }

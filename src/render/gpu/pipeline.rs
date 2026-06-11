@@ -1,3 +1,4 @@
+use super::instancing::{INSTANCE_ATTRIBUTES, INSTANCE_BYTE_LEN, InstanceDrawBatch};
 use super::material_bindings::MaterialTextureBindingMode;
 use super::material_uniform::MATERIAL_UNIFORM_ENTRY_STRIDE;
 use super::materials::MaterialResources;
@@ -14,14 +15,18 @@ pub(super) struct UnlitPass<'a> {
     pub(super) view: &'a wgpu::TextureView,
     pub(super) depth_view: Option<&'a wgpu::TextureView>,
     pub(super) vertex_buffer: &'a wgpu::Buffer,
+    pub(super) instance_buffer: &'a wgpu::Buffer,
     pub(super) output_bind_group: &'a wgpu::BindGroup,
     pub(super) draw_bind_group: &'a wgpu::BindGroup,
     pub(super) material_resources: &'a MaterialResources,
     pub(super) draw_batches: &'a [PrimitiveDrawBatch],
+    pub(super) instance_batches: &'a [InstanceDrawBatch],
+    pub(super) identity_instance: u32,
     pub(super) pipeline: &'a wgpu::RenderPipeline,
     pub(super) color_load: ColorLoad,
     pub(super) draw_filter: DrawFilter,
     pub(super) label: &'static str,
+    pub(super) draw_submissions: &'a mut u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -72,6 +77,9 @@ pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: Unli
     pass.set_pipeline(inputs.pipeline);
     pass.set_bind_group(0, inputs.output_bind_group, &[]);
     pass.set_vertex_buffer(0, inputs.vertex_buffer.slice(..));
+    let identity_instance_offset =
+        u64::from(inputs.identity_instance).saturating_mul(INSTANCE_BYTE_LEN as u64);
+    pass.set_vertex_buffer(1, inputs.instance_buffer.slice(identity_instance_offset..));
     match inputs.material_resources {
         MaterialResources::PerMaterial(slots) => {
             let Some(fallback_material) = slots.first() else {
@@ -98,6 +106,29 @@ pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: Unli
                     batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
                     0..1,
                 );
+                *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
+            }
+            for batch in inputs
+                .instance_batches
+                .iter()
+                .filter(|batch| inputs.draw_filter.includes_instance(batch))
+            {
+                let material = slots
+                    .get(batch.material_slot as usize)
+                    .unwrap_or(fallback_material);
+                pass.set_bind_group(1, &material.bind_group, &[0]);
+                let draw_offset = (batch.draw_uniform_index as u64)
+                    .saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE)
+                    as u32;
+                pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset]);
+                let instance_offset =
+                    u64::from(batch.start_instance).saturating_mul(INSTANCE_BYTE_LEN as u64);
+                pass.set_vertex_buffer(1, inputs.instance_buffer.slice(instance_offset..));
+                pass.draw(
+                    batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
+                    0..batch.instance_count,
+                );
+                *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
             }
         }
         MaterialResources::Batched(batched) => {
@@ -123,6 +154,30 @@ pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: Unli
                     batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
                     0..1,
                 );
+                *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
+            }
+            for batch in inputs
+                .instance_batches
+                .iter()
+                .filter(|batch| inputs.draw_filter.includes_instance(batch))
+            {
+                let layer_index = (batch.material_slot as u64)
+                    .min(u64::from(batched.layer_count.saturating_sub(1)));
+                let material_offset =
+                    layer_index.saturating_mul(MATERIAL_UNIFORM_ENTRY_STRIDE) as u32;
+                pass.set_bind_group(1, &batched.bind_group, &[material_offset]);
+                let draw_offset = (batch.draw_uniform_index as u64)
+                    .saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE)
+                    as u32;
+                pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset]);
+                let instance_offset =
+                    u64::from(batch.start_instance).saturating_mul(INSTANCE_BYTE_LEN as u64);
+                pass.set_vertex_buffer(1, inputs.instance_buffer.slice(instance_offset..));
+                pass.draw(
+                    batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
+                    0..batch.instance_count,
+                );
+                *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
             }
         }
     }
@@ -130,6 +185,14 @@ pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: Unli
 
 impl DrawFilter {
     fn includes(self, batch: &PrimitiveDrawBatch) -> bool {
+        match self {
+            DrawFilter::All => true,
+            DrawFilter::OpaqueOnly => batch.depth_prepass_eligible,
+            DrawFilter::TransparentOnly => !batch.depth_prepass_eligible,
+        }
+    }
+
+    fn includes_instance(self, batch: &InstanceDrawBatch) -> bool {
         match self {
             DrawFilter::All => true,
             DrawFilter::OpaqueOnly => batch.depth_prepass_eligible,
@@ -170,6 +233,11 @@ pub(super) fn create_unlit_pipeline(
         step_mode: wgpu::VertexStepMode::Vertex,
         attributes: &VERTEX_ATTRIBUTES,
     };
+    let instance_buffer = wgpu::VertexBufferLayout {
+        array_stride: INSTANCE_BYTE_LEN as u64,
+        step_mode: wgpu::VertexStepMode::Instance,
+        attributes: &INSTANCE_ATTRIBUTES,
+    };
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("scena.m0.unlit_triangle_pipeline"),
         layout: Some(&pipeline_layout),
@@ -177,7 +245,7 @@ pub(super) fn create_unlit_pipeline(
             module: &shader,
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
-            buffers: &[vertex_buffer],
+            buffers: &[vertex_buffer, instance_buffer],
         },
         primitive: wgpu::PrimitiveState::default(),
         depth_stencil: depth_compare.map(|depth_compare| wgpu::DepthStencilState {

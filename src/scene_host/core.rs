@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use super::camera::controls_from_scene_camera;
 use super::handles::HandleTable;
 use super::inputs::validate_transform;
+use super::instances::{HostInstanceBinding, INSTANCE_HANDLE_GENERATION_BASE};
 use super::reporting::{diagnostics_json, stats_json};
 use super::{SceneHostError, SceneHostErrorCode};
 use crate::{
@@ -11,7 +12,7 @@ use crate::{
     SurfaceViewport, Transform, Vec3, Viewport,
 };
 use crate::{AnnotationAnchor, Color};
-use crate::{CameraKey, NodeKey};
+use crate::{CameraKey, InstanceId, NodeKey};
 
 #[derive(Debug)]
 pub struct SceneHostCore<F = DefaultAssetFetcher> {
@@ -21,9 +22,11 @@ pub struct SceneHostCore<F = DefaultAssetFetcher> {
     pub(super) viewport: SurfaceViewport,
     pub(super) active_camera: CameraKey,
     pub(super) camera_controls: OrbitControls,
-    node_handles: HandleTable<NodeKey>,
+    pub(super) node_handles: HandleTable<NodeKey>,
     import_handles: HandleTable<SceneImport>,
-    node_handle_map: BTreeMap<NodeKey, u64>,
+    pub(super) instance_handles: HandleTable<HostInstanceBinding>,
+    pub(super) node_handle_map: BTreeMap<NodeKey, u64>,
+    pub(super) instance_handle_map: BTreeMap<(NodeKey, InstanceId), u64>,
     next_byte_asset: u64,
 }
 
@@ -69,7 +72,9 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             camera_controls,
             node_handles: HandleTable::new(),
             import_handles: HandleTable::new(),
+            instance_handles: HandleTable::with_generation_base(INSTANCE_HANDLE_GENERATION_BASE),
             node_handle_map: BTreeMap::new(),
+            instance_handle_map: BTreeMap::new(),
             next_byte_asset: 1,
         };
         let root = host.scene.root();
@@ -179,6 +184,15 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         self.instantiate_url_under(self.root_handle(), path).await
     }
 
+    pub async fn instantiate_url_instanced(
+        &mut self,
+        path: impl Into<AssetPath>,
+        count: usize,
+    ) -> Result<Vec<u64>, SceneHostError> {
+        self.instantiate_url_instanced_under(self.root_handle(), path, count)
+            .await
+    }
+
     pub async fn instantiate_url_under(
         &mut self,
         parent: u64,
@@ -187,6 +201,17 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         let parent = self.resolve_node(parent)?;
         let scene_asset = self.assets.load_scene(path).await?;
         self.instantiate_scene_asset_under(parent, &scene_asset)
+    }
+
+    pub async fn instantiate_url_instanced_under(
+        &mut self,
+        parent: u64,
+        path: impl Into<AssetPath>,
+        count: usize,
+    ) -> Result<Vec<u64>, SceneHostError> {
+        let parent = self.resolve_node(parent)?;
+        let scene_asset = self.assets.load_scene(path).await?;
+        self.instantiate_scene_asset_instanced_under(parent, &scene_asset, count)
     }
 
     pub async fn instantiate_glb(&mut self, bytes: &[u8]) -> Result<u64, SceneHostError> {
@@ -256,6 +281,9 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     }
 
     pub fn set_node_tint(&mut self, node: u64, tint: Option<Color>) -> Result<(), SceneHostError> {
+        if self.is_instance_root_handle(node) {
+            return self.set_instance_root_tint(node, tint);
+        }
         let node = self.resolve_node(node)?;
         self.scene.set_node_tint(node, tint)?;
         Ok(())
@@ -293,9 +321,13 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     }
 
     pub fn remove_node(&mut self, node: u64) -> Result<(), SceneHostError> {
+        if self.is_instance_root_handle(node) {
+            return self.remove_instance_root(node);
+        }
         let node_key = self.resolve_node(node)?;
         let removed = self.scene.subtree_nodes(node_key)?;
         self.scene.remove_node(node_key)?;
+        self.invalidate_instance_bindings_for_nodes(&removed);
         self.invalidate_node_handles(&removed);
         Ok(())
     }
@@ -368,15 +400,22 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         )?;
         match hit.map(|hit| hit.target()) {
             Some(HitTarget::Node(node)) => Ok(Some(self.register_node(node))),
+            Some(HitTarget::Instance { node, instance }) => {
+                Ok(self.instance_handle_map.get(&(node, instance)).copied())
+            }
             None => Ok(None),
         }
     }
 
     pub fn inspect_json(&self) -> Result<String, SceneHostError> {
-        let report = self
+        let mut report = self
             .scene
             .inspect_with_assets(&self.assets)
             .to_schema_report_with_node_handles(&self.node_handle_map);
+        let instance_sets = self.instance_bindings_report();
+        if !instance_sets.is_empty() {
+            report.instance_sets = Some(instance_sets);
+        }
         serde_json::to_string(&report).map_err(|error| {
             SceneHostError::new(
                 SceneHostErrorCode::Inspect,
@@ -476,5 +515,9 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 SceneHostErrorCode::StaleNodeHandle,
             );
         }
+    }
+
+    pub(super) fn is_instance_root_handle(&self, handle: u64) -> bool {
+        handle / (1_u64 << 32) >= u64::from(INSTANCE_HANDLE_GENERATION_BASE)
     }
 }

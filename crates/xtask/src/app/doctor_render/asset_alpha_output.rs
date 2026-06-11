@@ -326,7 +326,7 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         root,
         findings,
         "ARCH-FXAA-OUTPUT",
-        "src/diagnostics.rs",
+        "src/diagnostics/stats.rs",
         &[
             "pub ambient_occlusion_passes: u64",
             "pub order_independent_transparency_passes: u64",

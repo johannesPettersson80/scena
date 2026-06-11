@@ -1,5 +1,6 @@
 use crate::assets::{GeometryHandle, MaterialHandle};
 use crate::diagnostics::LookupError;
+use crate::material::Color;
 
 use super::{InstanceSetKey, NodeKey, NodeKind, Scene, Transform};
 
@@ -15,6 +16,8 @@ pub enum InstanceCullingPolicy {
 pub struct Instance {
     id: InstanceId,
     transform: Transform,
+    visible: bool,
+    tint: Option<Color>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -34,15 +37,27 @@ impl Scene {
         material: MaterialHandle,
         transform: Transform,
     ) -> Result<InstanceSetKey, LookupError> {
+        self.add_instance_set_node(parent, geometry, material, transform)
+            .map(|(_, instance_set)| instance_set)
+    }
+
+    pub fn add_instance_set_node(
+        &mut self,
+        parent: NodeKey,
+        geometry: GeometryHandle,
+        material: MaterialHandle,
+        transform: Transform,
+    ) -> Result<(NodeKey, InstanceSetKey), LookupError> {
         let instance_set = self
             .instance_sets
             .insert(InstanceSet::new(geometry, material));
-        if let Err(error) = self.insert_node(parent, NodeKind::InstanceSet(instance_set), transform)
-        {
-            self.instance_sets.remove(instance_set);
-            return Err(error);
+        match self.insert_node(parent, NodeKind::InstanceSet(instance_set), transform) {
+            Ok(node) => Ok((node, instance_set)),
+            Err(error) => {
+                self.instance_sets.remove(instance_set);
+                Err(error)
+            }
         }
-        Ok(instance_set)
     }
 
     pub fn instance_set(&self, instance_set: InstanceSetKey) -> Option<&InstanceSet> {
@@ -66,6 +81,51 @@ impl Scene {
         let id = self.instance_set_mut(instance_set)?.push(transform);
         self.structure_revision = self.structure_revision.saturating_add(1);
         Ok(id)
+    }
+
+    pub fn set_instance_transform(
+        &mut self,
+        instance_set: InstanceSetKey,
+        instance: InstanceId,
+        transform: Transform,
+    ) -> Result<(), LookupError> {
+        if self
+            .instance_set_mut(instance_set)?
+            .set_transform(instance_set, instance, transform)?
+        {
+            self.transform_revision = self.transform_revision.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    pub fn set_instance_visible(
+        &mut self,
+        instance_set: InstanceSetKey,
+        instance: InstanceId,
+        visible: bool,
+    ) -> Result<(), LookupError> {
+        if self
+            .instance_set_mut(instance_set)?
+            .set_visible(instance_set, instance, visible)?
+        {
+            self.visibility_revision = self.visibility_revision.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    pub fn set_instance_tint(
+        &mut self,
+        instance_set: InstanceSetKey,
+        instance: InstanceId,
+        tint: Option<Color>,
+    ) -> Result<(), LookupError> {
+        if self
+            .instance_set_mut(instance_set)?
+            .set_tint(instance_set, instance, tint)?
+        {
+            self.appearance_revision = self.appearance_revision.saturating_add(1);
+        }
+        Ok(())
     }
 
     pub fn remove_instance(
@@ -111,6 +171,14 @@ impl Instance {
 
     pub const fn transform(self) -> Transform {
         self.transform
+    }
+
+    pub const fn visible(self) -> bool {
+        self.visible
+    }
+
+    pub const fn tint(self) -> Option<Color> {
+        self.tint
     }
 }
 
@@ -162,8 +230,55 @@ impl InstanceSet {
     fn push(&mut self, transform: Transform) -> InstanceId {
         let id = InstanceId(self.next_id);
         self.next_id = self.next_id.saturating_add(1);
-        self.instances.push(Instance { id, transform });
+        self.instances.push(Instance {
+            id,
+            transform,
+            visible: true,
+            tint: None,
+        });
         id
+    }
+
+    fn set_transform(
+        &mut self,
+        instance_set: InstanceSetKey,
+        instance: InstanceId,
+        transform: Transform,
+    ) -> Result<bool, LookupError> {
+        let instance = self.instance_mut(instance_set, instance)?;
+        let changed = instance.transform != transform;
+        if changed {
+            instance.transform = transform;
+        }
+        Ok(changed)
+    }
+
+    fn set_visible(
+        &mut self,
+        instance_set: InstanceSetKey,
+        instance: InstanceId,
+        visible: bool,
+    ) -> Result<bool, LookupError> {
+        let instance = self.instance_mut(instance_set, instance)?;
+        let changed = instance.visible != visible;
+        if changed {
+            instance.visible = visible;
+        }
+        Ok(changed)
+    }
+
+    fn set_tint(
+        &mut self,
+        instance_set: InstanceSetKey,
+        instance: InstanceId,
+        tint: Option<Color>,
+    ) -> Result<bool, LookupError> {
+        let instance = self.instance_mut(instance_set, instance)?;
+        let changed = instance.tint != tint;
+        if changed {
+            instance.tint = tint;
+        }
+        Ok(changed)
     }
 
     fn remove(&mut self, instance: InstanceId) -> Option<Instance> {
@@ -178,5 +293,19 @@ impl InstanceSet {
         let changed = !self.instances.is_empty();
         self.instances.clear();
         changed
+    }
+
+    fn instance_mut(
+        &mut self,
+        instance_set: InstanceSetKey,
+        instance: InstanceId,
+    ) -> Result<&mut Instance, LookupError> {
+        self.instances
+            .iter_mut()
+            .find(|candidate| candidate.id == instance)
+            .ok_or(LookupError::InstanceNotFound {
+                instance_set,
+                instance,
+            })
     }
 }

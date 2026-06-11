@@ -7,6 +7,15 @@ struct VertexIn {
     @location(3) tex_coord0: vec2<f32>,
     @location(4) tangent: vec4<f32>,
     @location(5) shadow_visibility: f32,
+    @location(6) instance_world_0: vec4<f32>,
+    @location(7) instance_world_1: vec4<f32>,
+    @location(8) instance_world_2: vec4<f32>,
+    @location(9) instance_world_3: vec4<f32>,
+    @location(10) instance_normal_0: vec4<f32>,
+    @location(11) instance_normal_1: vec4<f32>,
+    @location(12) instance_normal_2: vec4<f32>,
+    @location(13) instance_normal_3: vec4<f32>,
+    @location(14) instance_tint: vec4<f32>,
 };
 
 struct VertexOut {
@@ -17,6 +26,7 @@ struct VertexOut {
     @location(3) world_position: vec3<f32>,
     @location(4) tangent: vec4<f32>,
     @location(5) shadow_visibility: f32,
+    @location(6) instance_tint: vec4<f32>,
 };
 
 struct LightingUniform {
@@ -216,14 +226,28 @@ var iridescence_thickness_texture: texture_2d_array<f32>;
 @vertex
 fn vs_main(in: VertexIn) -> VertexOut {
     var out: VertexOut;
-    let world_position = draw.world_from_model * vec4<f32>(in.position, 1.0);
+    let instance_world_from_model = mat4x4<f32>(
+        in.instance_world_0,
+        in.instance_world_1,
+        in.instance_world_2,
+        in.instance_world_3,
+    );
+    let instance_normal_from_model = mat4x4<f32>(
+        in.instance_normal_0,
+        in.instance_normal_1,
+        in.instance_normal_2,
+        in.instance_normal_3,
+    );
+    let world_position = draw.world_from_model * instance_world_from_model * vec4<f32>(in.position, 1.0);
+    let normal_from_model = draw.normal_from_model * instance_normal_from_model;
     out.position = camera.clip_from_world * world_position;
     out.color = in.color;
-    out.normal = (draw.normal_from_model * vec4<f32>(in.normal, 0.0)).xyz;
+    out.normal = (normal_from_model * vec4<f32>(in.normal, 0.0)).xyz;
     out.tex_coord0 = in.tex_coord0;
     out.world_position = world_position.xyz;
-    out.tangent = vec4<f32>((draw.normal_from_model * vec4<f32>(in.tangent.xyz, 0.0)).xyz, in.tangent.w);
+    out.tangent = vec4<f32>((normal_from_model * vec4<f32>(in.tangent.xyz, 0.0)).xyz, in.tangent.w);
     out.shadow_visibility = clamp(in.shadow_visibility, 0.0, 1.0);
+    out.instance_tint = in.instance_tint;
     return out;
 }
 
@@ -289,7 +313,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     // at full intensity. glTF spec default = 1.0.
     let occlusion_strength = material.texture_strengths.y;
     let occlusion_applied = mix(1.0, occlusion_sample, occlusion_strength);
-    let base = in.color * material.base_color_factor * base_color_sample * draw.tint;
+    let base = in.color * material.base_color_factor * base_color_sample * draw.tint * in.instance_tint;
     if material.metallic_roughness_alpha.z > 0.0 && base.a < material.metallic_roughness_alpha.z {
         discard;
     }

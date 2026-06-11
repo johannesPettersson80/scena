@@ -6,6 +6,9 @@ use crate::{AssetFetcher, Color, LookupError};
 
 impl<F: AssetFetcher> SceneHostCore<F> {
     pub fn set_visible(&mut self, node: u64, visible: bool) -> Result<(), SceneHostError> {
+        if self.is_instance_root_handle(node) {
+            return self.set_instance_root_visible(node, visible);
+        }
         let node = self.resolve_node(node)?;
         self.scene.set_visible(node, visible)?;
         Ok(())

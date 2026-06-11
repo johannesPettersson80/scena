@@ -1,3 +1,4 @@
+use super::instancing::INSTANCE_BYTE_LEN;
 use super::output;
 #[cfg(not(target_arch = "wasm32"))]
 use super::pipeline::BYTES_PER_PIXEL;
@@ -27,6 +28,7 @@ pub(in crate::render) struct GpuResourceStats {
 pub(super) struct PreparedResourceEstimateInput {
     pub(super) target: RasterTarget,
     pub(super) vertex_count: usize,
+    pub(super) instance_capacity: usize,
     pub(super) has_surface_pipeline: bool,
     pub(super) shadow_maps: u64,
     pub(super) shadow_map_resolution: Option<u32>,
@@ -57,6 +59,7 @@ pub(super) fn estimate_prepared_resource_stats(
     let PreparedResourceEstimateInput {
         target,
         vertex_count,
+        instance_capacity,
         has_surface_pipeline,
         shadow_maps,
         shadow_map_resolution,
@@ -79,6 +82,7 @@ pub(super) fn estimate_prepared_resource_stats(
     #[cfg(not(target_arch = "wasm32"))]
     let readback_bytes = u64::from(padded_bytes_per_row) * u64::from(target.height);
     let vertex_bytes = (vertex_count * VERTEX_BYTE_LEN).max(4) as u64;
+    let instance_bytes = (instance_capacity * INSTANCE_BYTE_LEN).max(4) as u64;
     let uniform_bytes = output::OUTPUT_UNIFORM_BYTE_LEN;
     let transmission_textures = 2;
     let transmission_render_targets = 1;
@@ -111,9 +115,9 @@ pub(super) fn estimate_prepared_resource_stats(
 
     GpuResourceStats {
         #[cfg(not(target_arch = "wasm32"))]
-        buffers: 3,
+        buffers: 4,
         #[cfg(target_arch = "wasm32")]
-        buffers: 2,
+        buffers: 3,
         // textures: 1 + material_texture_count + shadow_maps + depth_prepass_passes + transmission_textures
         #[cfg(not(target_arch = "wasm32"))]
         textures: 1
@@ -140,6 +144,7 @@ pub(super) fn estimate_prepared_resource_stats(
         approximate_gpu_memory_bytes: texture_bytes
             + readback_bytes
             + vertex_bytes
+            + instance_bytes
             + uniform_bytes
             + material_texture_bytes
             + shadow_map_bytes
@@ -147,6 +152,7 @@ pub(super) fn estimate_prepared_resource_stats(
             + texture_bytes,
         #[cfg(target_arch = "wasm32")]
         approximate_gpu_memory_bytes: vertex_bytes
+            + instance_bytes
             + uniform_bytes
             + material_texture_bytes
             + shadow_map_bytes
@@ -174,13 +180,13 @@ mod tests {
 
         let stats = estimate_prepared_resource_stats(estimate_input(target, 3));
 
-        assert_eq!(stats.buffers, 3);
+        assert_eq!(stats.buffers, 4);
         assert_eq!(stats.textures, 4);
         assert_eq!(stats.render_targets, 2);
         assert_eq!(stats.pipelines, 2);
         assert_eq!(stats.bind_groups, 3);
         assert_eq!(stats.shader_modules, 2);
-        assert_eq!(stats.destruction_records(), 16);
+        assert_eq!(stats.destruction_records(), 17);
         assert!(stats.approximate_gpu_memory_bytes > 0);
     }
 
@@ -214,7 +220,7 @@ mod tests {
 
         assert_eq!(stats.textures, 5);
         assert_eq!(stats.render_targets, 3);
-        assert_eq!(stats.destruction_records(), 18);
+        assert_eq!(stats.destruction_records(), 19);
         assert!(stats.approximate_gpu_memory_bytes >= 2048 * 2048 * 4);
     }
 
@@ -235,7 +241,7 @@ mod tests {
         assert_eq!(stats.render_targets, 3);
         assert_eq!(stats.pipelines, 3);
         assert_eq!(stats.shader_modules, 3);
-        assert_eq!(stats.destruction_records(), 20);
+        assert_eq!(stats.destruction_records(), 21);
         assert!(stats.approximate_gpu_memory_bytes >= 4 * 4 * 4);
     }
 
@@ -243,6 +249,7 @@ mod tests {
         PreparedResourceEstimateInput {
             target,
             vertex_count,
+            instance_capacity: 1,
             has_surface_pipeline: false,
             shadow_maps: 0,
             shadow_map_resolution: None,

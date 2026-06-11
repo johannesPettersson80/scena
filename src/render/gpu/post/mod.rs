@@ -4,7 +4,9 @@ use super::super::RasterTarget;
 use super::depth;
 use super::material_bindings::MaterialTextureBindingMode;
 use super::pipeline::create_unlit_pipeline;
-use crate::render::{AntiAliasing, PostBloomConfig};
+use crate::render::AntiAliasing;
+#[cfg(target_arch = "wasm32")]
+use crate::render::PostBloomConfig;
 
 mod blit;
 mod bloom;
@@ -187,6 +189,7 @@ pub(super) fn encode_chain(
     resources: &PostResources,
     settings: GpuPostSettings,
     depth_prepass: Option<&depth::DepthPrepassResources>,
+    draw_submissions: &mut u64,
 ) -> Result<(PostChainOutput, GpuPostPassCounts), RenderError> {
     let mut current = PostTextureSlot::Scene;
     let mut next = PostTextureSlot::Ping;
@@ -226,6 +229,7 @@ pub(super) fn encode_chain(
             view(resources, current),
             depth_color_view,
             view(resources, next),
+            draw_submissions,
         );
         current = next;
         next = next.alternate();
@@ -252,6 +256,7 @@ pub(super) fn encode_chain(
             &resources.bloom_pipeline,
             bind_group(resources, current),
             view(resources, next),
+            draw_submissions,
         );
         current = next;
         next = next.alternate();
@@ -278,6 +283,7 @@ pub(super) fn encode_chain(
             &resources.fxaa_pipeline,
             bind_group(resources, current),
             view(resources, next),
+            draw_submissions,
         );
         current = next;
         counts.fxaa = 1;
@@ -292,12 +298,14 @@ pub(super) fn encode_blit_to_view(
     output: PostChainOutput,
     target_view: &wgpu::TextureView,
     pipeline: &wgpu::RenderPipeline,
+    draw_submissions: &mut u64,
 ) {
     blit::encode(
         encoder,
         pipeline,
         bind_group(resources, output.slot),
         target_view,
+        draw_submissions,
     );
 }
 
@@ -309,6 +317,7 @@ pub(super) fn encode_fxaa_to_view(
     output: PostChainOutput,
     target_view: &wgpu::TextureView,
     pipeline: &wgpu::RenderPipeline,
+    draw_submissions: &mut u64,
 ) {
     write_uniform(
         queue,
@@ -329,18 +338,16 @@ pub(super) fn encode_fxaa_to_view(
         pipeline,
         bind_group(resources, output.slot),
         target_view,
+        draw_submissions,
     );
 }
 
-#[allow(dead_code)]
+#[cfg(target_arch = "wasm32")]
 pub(super) fn encode_bloom_fxaa_to_view(
     encoder: &mut wgpu::CommandEncoder,
     queue: &wgpu::Queue,
     resources: &PostResources,
-    output: PostChainOutput,
-    target_view: &wgpu::TextureView,
-    pipeline: &wgpu::RenderPipeline,
-    config: PostBloomConfig,
+    inputs: BloomFxaaToViewInputs<'_>,
 ) {
     write_uniform(
         queue,
@@ -348,9 +355,9 @@ pub(super) fn encode_bloom_fxaa_to_view(
         [
             resources.target.width as f32,
             resources.target.height as f32,
-            config.threshold_srgb() as f32 / 255.0,
-            config.intensity(),
-            config.radius_px() as f32,
+            inputs.config.threshold_srgb() as f32 / 255.0,
+            inputs.config.intensity(),
+            inputs.config.radius_px() as f32,
             0.0,
             0.0,
             0.0,
@@ -358,10 +365,20 @@ pub(super) fn encode_bloom_fxaa_to_view(
     );
     bloom_fxaa::encode(
         encoder,
-        pipeline,
-        bind_group(resources, output.slot),
-        target_view,
+        inputs.pipeline,
+        bind_group(resources, inputs.output.slot),
+        inputs.target_view,
+        inputs.draw_submissions,
     );
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(super) struct BloomFxaaToViewInputs<'a> {
+    pub(super) output: PostChainOutput,
+    pub(super) target_view: &'a wgpu::TextureView,
+    pub(super) pipeline: &'a wgpu::RenderPipeline,
+    pub(super) config: PostBloomConfig,
+    pub(super) draw_submissions: &'a mut u64,
 }
 
 pub(super) fn surface_blit_pipeline(resources: &PostResources) -> Option<&wgpu::RenderPipeline> {

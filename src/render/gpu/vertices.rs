@@ -114,41 +114,8 @@ pub(super) fn encode_draw_batches(
         let start_vertex = primitive.original_vertex_offset();
         let material_slot = primitive.render_material_slot();
         let depth_prepass_eligible = primitive.depth_prepass_eligible();
-        // F8 fallback: when world_from_model is singular (zero scale on an
-        // axis), encode_vertices keeps the world-baked vertex unchanged. To
-        // avoid the GPU shader re-multiplying that already-world-space vertex
-        // against the singular forward matrix, upload identity in the draw
-        // uniform for that primitive. Result: shader applies identity ×
-        // world_baked = world_baked = correct (matches pre-1A.2 behavior for
-        // degenerate primitives).
-        let raw_world_from_model = primitive.world_from_model();
-        let raw_normal_from_model = primitive.normal_from_model();
-        let world_from_model = if invert_matrix4(&raw_world_from_model).is_some() {
-            raw_world_from_model
-        } else {
-            identity_matrix4()
-        };
-        let normal_from_model = if invert_matrix4(&raw_normal_from_model).is_some() {
-            raw_normal_from_model
-        } else {
-            identity_matrix4()
-        };
-        let tint = primitive.tint();
-        let draw_uniform_index = match draw_uniforms.iter().position(|value| {
-            value.world_from_model == world_from_model
-                && value.normal_from_model == normal_from_model
-                && value.tint == tint
-        }) {
-            Some(existing) => existing as u32,
-            None => {
-                draw_uniforms.push(DrawUniformValue {
-                    world_from_model,
-                    normal_from_model,
-                    tint,
-                });
-                (draw_uniforms.len() - 1) as u32
-            }
-        };
+        let draw_uniform_index =
+            draw_uniform_index_for(&mut draw_uniforms, draw_uniform_value_for(primitive));
         if let Some(last) = batches.last_mut()
             && last.material_slot == material_slot
             && last.draw_uniform_index == draw_uniform_index
@@ -174,6 +141,49 @@ pub(super) fn encode_draw_batches(
         });
     }
     (batches, draw_uniforms)
+}
+
+pub(super) fn draw_uniform_value_for(primitive: &PreparedPrimitive) -> DrawUniformValue {
+    // F8 fallback: when world_from_model is singular (zero scale on an
+    // axis), encode_vertices keeps the world-baked vertex unchanged. To
+    // avoid the GPU shader re-multiplying that already-world-space vertex
+    // against the singular forward matrix, upload identity in the draw
+    // uniform for that primitive. Result: shader applies identity ×
+    // world_baked = world_baked = correct (matches pre-1A.2 behavior for
+    // degenerate primitives).
+    let raw_world_from_model = primitive.world_from_model();
+    let raw_normal_from_model = primitive.normal_from_model();
+    let world_from_model = if invert_matrix4(&raw_world_from_model).is_some() {
+        raw_world_from_model
+    } else {
+        identity_matrix4()
+    };
+    let normal_from_model = if invert_matrix4(&raw_normal_from_model).is_some() {
+        raw_normal_from_model
+    } else {
+        identity_matrix4()
+    };
+    DrawUniformValue {
+        world_from_model,
+        normal_from_model,
+        tint: primitive.tint(),
+    }
+}
+
+pub(super) fn draw_uniform_index_for(
+    draw_uniforms: &mut Vec<DrawUniformValue>,
+    value: DrawUniformValue,
+) -> u32 {
+    match draw_uniforms
+        .iter()
+        .position(|candidate| *candidate == value)
+    {
+        Some(existing) => existing as u32,
+        None => {
+            draw_uniforms.push(value);
+            (draw_uniforms.len() - 1) as u32
+        }
+    }
 }
 
 const fn identity_matrix4() -> [f32; 16] {

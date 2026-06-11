@@ -5,6 +5,7 @@ const HANDLE_STRIDE: u64 = 1_u64 << 32;
 #[derive(Debug, Clone)]
 pub(super) struct HandleTable<T> {
     slots: Vec<HandleSlot<T>>,
+    generation_base: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -15,7 +16,17 @@ struct HandleSlot<T> {
 
 impl<T> HandleTable<T> {
     pub(super) const fn new() -> Self {
-        Self { slots: Vec::new() }
+        Self {
+            slots: Vec::new(),
+            generation_base: 1,
+        }
+    }
+
+    pub(super) const fn with_generation_base(generation_base: u32) -> Self {
+        Self {
+            slots: Vec::new(),
+            generation_base,
+        }
     }
 
     pub(super) fn insert(&mut self, value: T) -> u64 {
@@ -30,10 +41,10 @@ impl<T> HandleTable<T> {
         }
 
         self.slots.push(HandleSlot {
-            generation: 1,
+            generation: self.generation_base,
             value: Some(value),
         });
-        encode_handle(self.slots.len() - 1, 1)
+        encode_handle(self.slots.len() - 1, self.generation_base)
     }
 
     pub(super) fn get(
@@ -61,6 +72,35 @@ impl<T> HandleTable<T> {
             ));
         }
         slot.value.as_ref().ok_or_else(|| {
+            SceneHostError::new(stale_code, format!("host handle {handle} is stale"))
+        })
+    }
+
+    pub(super) fn get_mut(
+        &mut self,
+        handle: u64,
+        missing_code: SceneHostErrorCode,
+        stale_code: SceneHostErrorCode,
+    ) -> Result<&mut T, SceneHostError> {
+        let (index, generation) = decode_handle(handle).ok_or_else(|| {
+            SceneHostError::new(
+                missing_code,
+                format!("host handle {handle} is outside this handle table"),
+            )
+        })?;
+        let Some(slot) = self.slots.get_mut(index) else {
+            return Err(SceneHostError::new(
+                missing_code,
+                format!("host handle {handle} is outside this handle table"),
+            ));
+        };
+        if slot.generation != generation {
+            return Err(SceneHostError::new(
+                stale_code,
+                format!("host handle {handle} is stale"),
+            ));
+        }
+        slot.value.as_mut().ok_or_else(|| {
             SceneHostError::new(stale_code, format!("host handle {handle} is stale"))
         })
     }

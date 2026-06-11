@@ -356,6 +356,114 @@ fn scene_host_core_instantiates_glb_bytes_under_host_frame() {
 }
 
 #[test]
+fn scene_host_instanced_url_routes_root_handle_mutations_and_inspection() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+    let roots = pollster::block_on(host.instantiate_url_instanced(
+        AssetPath::from("tests/assets/gltf/mesh_material_vertex_color_scene.gltf"),
+        3,
+    ))
+    .expect("instanced asset creates host roots");
+
+    assert_eq!(roots.len(), 3);
+    assert!(roots.iter().all(|handle| *handle != host.root_handle()));
+
+    host.set_transforms(&[
+        (roots[0], Transform::at(Vec3::new(-0.4, 0.0, 0.0))),
+        (roots[1], Transform::at(Vec3::ZERO)),
+        (roots[2], Transform::at(Vec3::new(0.4, 0.0, 0.0))),
+    ])
+    .expect("instance root transform batch applies");
+    host.set_visible(roots[1], false)
+        .expect("middle instance root hides");
+    let translucent_error = host
+        .set_node_tint(roots[0], Some(Color::from_linear_rgba(1.0, 0.0, 0.0, 0.5)))
+        .expect_err("translucent per-instance tint is rejected");
+    assert_eq!(translucent_error.code(), SceneHostErrorCode::InvalidInput);
+    host.set_node_tint(roots[2], Some(Color::from_linear_rgba(0.0, 1.0, 0.0, 1.0)))
+        .expect("opaque instance tint applies");
+
+    let parent_error = host
+        .add_empty(Some(roots[0]), Transform::IDENTITY, Some("bad-parent"))
+        .expect_err("instance roots are not scene-graph parents");
+    assert!(matches!(
+        parent_error.code(),
+        SceneHostErrorCode::NodeHandleNotFound | SceneHostErrorCode::StaleNodeHandle
+    ));
+
+    let report: serde_json::Value =
+        serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
+            .expect("inspection decodes");
+    let instance_sets = report
+        .get("instance_sets")
+        .and_then(|value| value.as_array())
+        .expect("inspection exposes additive instance_sets field");
+    for root in &roots {
+        let binding = instance_sets
+            .iter()
+            .find(|binding| binding["root_handle"].as_u64() == Some(*root))
+            .expect("instance root appears in inspection");
+        assert!(
+            binding["entries"]
+                .as_array()
+                .expect("entries are an array")
+                .iter()
+                .all(|entry| entry["set_node"].as_u64().is_some()
+                    && entry["instance_id"].as_u64().is_some()),
+            "each instance entry must expose the set node handle and source instance id"
+        );
+    }
+    let hidden = instance_sets
+        .iter()
+        .find(|binding| binding["root_handle"].as_u64() == Some(roots[1]))
+        .expect("hidden middle root appears");
+    assert_eq!(hidden["visible"].as_bool(), Some(false));
+    assert!(
+        instance_sets
+            .iter()
+            .find(|binding| binding["root_handle"].as_u64() == Some(roots[2]))
+            .and_then(|binding| binding["tint"].as_object())
+            .is_some(),
+        "opaque instance tint must be visible in inspection"
+    );
+
+    host.remove_node(roots[1])
+        .expect("removing an instance root removes only its instance entries");
+    let report: serde_json::Value =
+        serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
+            .expect("inspection decodes");
+    let instance_sets = report
+        .get("instance_sets")
+        .and_then(|value| value.as_array())
+        .expect("inspection exposes additive instance_sets field");
+    assert!(
+        instance_sets
+            .iter()
+            .all(|binding| binding["root_handle"].as_u64() != Some(roots[1])),
+        "removed instance root handle must leave the host binding table"
+    );
+}
+
+#[test]
+fn scene_host_pick_resolves_instanced_drawable_to_instance_root_handle() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+    let roots = pollster::block_on(host.instantiate_url_instanced(
+        AssetPath::from("tests/assets/gltf/mesh_material_vertex_color_scene.gltf"),
+        1,
+    ))
+    .expect("instanced asset creates host roots");
+
+    host.frame_all().expect("instance scene frames");
+    host.prepare().expect("instance scene prepares");
+    host.render().expect("instance scene renders");
+
+    assert_eq!(
+        host.pick(64.0, 64.0).expect("instance pick runs"),
+        Some(roots[0]),
+        "picking an instanced drawable must return the SceneHost instance-root handle"
+    );
+}
+
+#[test]
 fn scene_host_transform_components_validate_and_batch_atomically() {
     let mut host = SceneHostCore::headless(64, 64).expect("host builds");
     let root = host.root_handle();
@@ -498,10 +606,7 @@ fn scene_host_visibility_hides_subtrees_from_rendering_picking_and_inspection() 
     let report: SceneInspectionReportV1 =
         serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
             .expect("inspection decodes");
-    assert_eq!(
-        report.node_by_handle(frame).expect("frame appears").visible,
-        false
-    );
+    assert!(!report.node_by_handle(frame).expect("frame appears").visible);
     assert!(
         report.draw_list.iter().all(|draw| draw.node != mesh),
         "hidden subtree must not appear in the draw list"

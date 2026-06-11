@@ -4,7 +4,7 @@ use crate::Assets;
 use crate::diagnostics::LookupError;
 use crate::geometry::{GeometryDesc, GeometryTopology, Primitive};
 use crate::material::{Color, MaterialKind};
-use crate::scene::{Camera, CameraKey, NodeKey, Scene, Transform, Vec3};
+use crate::scene::{Camera, CameraKey, InstanceId, NodeKey, Scene, Transform, Vec3};
 
 mod math;
 
@@ -36,6 +36,7 @@ pub struct Viewport {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HitTarget {
     Node(NodeKey),
+    Instance { node: NodeKey, instance: InstanceId },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -228,10 +229,18 @@ pub(crate) fn pick_scene_with_assets<F>(
         if is_stroke_material(material.kind()) {
             continue;
         }
-        for instance in instance_set.instances() {
-            if let Some(hit) =
-                hit_geometry_instance(node, &geometry, node_transform, instance.transform(), ray)
-            {
+        for instance in instance_set
+            .instances()
+            .filter(|instance| instance.visible())
+        {
+            if let Some(hit) = hit_geometry_instance(
+                node,
+                instance.id(),
+                &geometry,
+                node_transform,
+                instance.transform(),
+                ray,
+            ) {
                 best = nearest_hit(best, Some(hit));
             }
         }
@@ -356,7 +365,7 @@ fn hit_geometry(
             let b = geometry.vertices().get(indices[1] as usize)?;
             let c = geometry.vertices().get(indices[2] as usize)?;
             hit_triangle(
-                node,
+                HitTarget::Node(node),
                 transform_point(a.position, transform),
                 transform_point(b.position, transform),
                 transform_point(c.position, transform),
@@ -368,6 +377,7 @@ fn hit_geometry(
 
 fn hit_geometry_instance(
     node: NodeKey,
+    instance: InstanceId,
     geometry: &GeometryDesc,
     node_transform: Transform,
     instance_transform: Transform,
@@ -384,7 +394,7 @@ fn hit_geometry_instance(
             let b = geometry.vertices().get(indices[1] as usize)?;
             let c = geometry.vertices().get(indices[2] as usize)?;
             hit_triangle(
-                node,
+                HitTarget::Instance { node, instance },
                 transform_point(
                     transform_point(a.position, instance_transform),
                     node_transform,
@@ -403,14 +413,14 @@ fn hit_geometry_instance(
         .min_by(|left, right| left.distance.total_cmp(&right.distance))
 }
 
-fn hit_triangle(node: NodeKey, a: Vec3, b: Vec3, c: Vec3, ray: Ray) -> Option<Hit> {
+fn hit_triangle(target: HitTarget, a: Vec3, b: Vec3, c: Vec3, ray: Ray) -> Option<Hit> {
     let (min, max) = triangle_bounds(a, b, c);
     if !ray_hits_bounds(ray, min, max) {
         return None;
     }
     let (distance, _u, _v) = ray_triangle_intersection(ray, a, b, c)?;
     Some(Hit {
-        target: HitTarget::Node(node),
+        target,
         distance,
         world_position: add_vec3(ray.origin, scale_vec3(ray.direction, distance)),
         normal: normalize_optional(cross(subtract_vec3(b, a), subtract_vec3(c, a))),

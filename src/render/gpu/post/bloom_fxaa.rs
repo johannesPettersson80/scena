@@ -16,11 +16,13 @@ pub(super) fn create_surface_pipeline(
     )
 }
 
+#[cfg(target_arch = "wasm32")]
 pub(super) fn encode(
     encoder: &mut wgpu::CommandEncoder,
     pipeline: &wgpu::RenderPipeline,
     bind_group: &wgpu::BindGroup,
     target_view: &wgpu::TextureView,
+    draw_submissions: &mut u64,
 ) {
     let color_attachment = Some(wgpu::RenderPassColorAttachment {
         view: target_view,
@@ -42,4 +44,5 @@ pub(super) fn encode(
     pass.set_pipeline(pipeline);
     pass.set_bind_group(0, bind_group, &[]);
     pass.draw(0..3, 0..1);
+    *draw_submissions = draw_submissions.saturating_add(1);
 }

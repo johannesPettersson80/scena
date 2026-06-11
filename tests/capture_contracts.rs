@@ -28,6 +28,7 @@ fn capture_descriptor_schema_round_trips_and_binds_revisions_to_inspection() {
         CaptureRevisions {
             structure: inspection.revisions.structure,
             transform: inspection.revisions.transform,
+            appearance: inspection.revisions.appearance,
             interaction: inspection.revisions.interaction,
         }
     );
@@ -282,6 +283,7 @@ fn scene_host_capture_uses_rendered_state_revisions_and_pixels() {
         CaptureRevisions {
             structure: inspection.revisions.structure,
             transform: inspection.revisions.transform,
+            appearance: inspection.revisions.appearance,
             interaction: inspection.revisions.interaction,
         }
     );

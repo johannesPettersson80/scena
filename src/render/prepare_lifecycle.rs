@@ -1,10 +1,14 @@
-use std::collections::BTreeSet;
-
 use crate::assets::Assets;
 use crate::diagnostics::PrepareError;
-use crate::scene::{NodeKey, Scene};
+use crate::scene::Scene;
 
 use super::camera;
+use super::prepare_retained::{
+    assign_original_instance_vertex_offsets, assign_original_stroke_indices,
+    assign_original_vertex_offsets, filter_retained_instances_for_scene,
+    filter_retained_primitives_for_scene, filter_retained_strokes_for_scene,
+    next_gpu_vertex_offset, prepared_instance_count, retained_template_covers_visible_sources,
+};
 use super::{Renderer, culling, gpu, prepare, validate_target_size};
 
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
@@ -133,7 +137,7 @@ impl Renderer {
                 self.dynamic_gpu_prepare_rejection_reason(scene, &backend_material_handles)
             {
                 log_dynamic_reject(reason);
-            } else if let Some((dynamic_primitives, dynamic_strokes)) =
+            } else if let Some((dynamic_primitives, dynamic_strokes, dynamic_instances)) =
                 self.reencode_retained_draws(scene)
             {
                 match prepare::collect_dynamic_light_from_world(scene, assets) {
@@ -144,6 +148,7 @@ impl Renderer {
                                 gpu_light_uniform,
                                 light_from_world,
                                 &dynamic_primitives,
+                                &dynamic_instances,
                                 &dynamic_strokes,
                             ) {
                                 Ok(()) => {
@@ -153,7 +158,13 @@ impl Renderer {
                                         prepared.visibility_revision = scene.visibility_revision();
                                         prepared.primitives = dynamic_primitives;
                                         prepared.strokes = dynamic_strokes;
+                                        prepared.instances = dynamic_instances;
                                     }
+                                    self.stats.instances = self
+                                        .prepared
+                                        .as_ref()
+                                        .map(prepared_instance_count)
+                                        .unwrap_or(0);
                                     self.stats.textures = logical_stats.textures;
                                     self.prepare_telemetry.dynamic_template_prepares = self
                                         .prepare_telemetry
@@ -213,6 +224,12 @@ impl Renderer {
         let retained_strokes = assign_original_stroke_indices(prepared_scene.strokes);
         let strokes = filter_retained_strokes_for_scene(scene, &retained_strokes)
             .unwrap_or_else(|| retained_strokes.clone());
+        let retained_instances = assign_original_instance_vertex_offsets(
+            prepared_scene.instances,
+            next_gpu_vertex_offset(&retained_primitives),
+        );
+        let instances = filter_retained_instances_for_scene(scene, &retained_instances)
+            .unwrap_or_else(|| retained_instances.clone());
         let gpu_retained_primitives = retained_primitives
             .iter()
             .filter(|primitive| primitive.gpu_triangle_path())
@@ -223,7 +240,14 @@ impl Renderer {
             .filter(|primitive| primitive.gpu_triangle_path())
             .cloned()
             .collect::<Vec<_>>();
-        let depth_stats = prepare::collect_depth_prepass_stats(&primitives, self.target.backend);
+        let mut depth_primitives = primitives.clone();
+        depth_primitives.extend(
+            instances
+                .iter()
+                .flat_map(|set| set.primitives().iter().cloned()),
+        );
+        let depth_stats =
+            prepare::collect_depth_prepass_stats(&depth_primitives, self.target.backend);
         self.apply_prepare_stats(
             logical_stats,
             environment_prepare_stats,
@@ -238,6 +262,8 @@ impl Renderer {
                 self.target,
                 &gpu_retained_primitives,
                 &gpu_primitives,
+                &retained_instances,
+                &instances,
                 &retained_strokes,
                 &strokes,
                 lighting_stats,
@@ -272,8 +298,15 @@ impl Renderer {
             primitives,
             retained_strokes,
             strokes,
+            retained_instances,
+            instances,
             clipping_planes: scene.active_clipping_plane_values().collect(),
         });
+        self.stats.instances = self
+            .prepared
+            .as_ref()
+            .map(prepared_instance_count)
+            .unwrap_or(0);
         self.render_generation = self.render_generation.saturating_add(1);
         self.clear_rendered_frame();
         self.diagnostics = diagnostics;
@@ -311,9 +344,6 @@ impl Renderer {
         if scene.model_nodes().next().is_some() {
             return Some("model nodes present");
         }
-        if scene.instance_set_nodes().next().is_some() {
-            return Some("instance set nodes present");
-        }
         if scene.label_nodes().next().is_some() {
             return Some("label nodes present");
         }
@@ -339,12 +369,14 @@ impl Renderer {
     ) -> Option<(
         Vec<prepare::PreparedPrimitive>,
         Vec<prepare::PreparedStrokeSegment>,
+        Vec<prepare::PreparedInstanceSet>,
     )> {
         let prepared = self.prepared.as_ref()?;
         if !retained_template_covers_visible_sources(
             scene,
             &prepared.retained_primitives,
             &prepared.retained_strokes,
+            &prepared.retained_instances,
         ) {
             return None;
         }
@@ -354,7 +386,8 @@ impl Renderer {
                 .filter(prepare::PreparedPrimitive::gpu_triangle_path)
                 .collect();
         let strokes = filter_retained_strokes_for_scene(scene, &prepared.retained_strokes)?;
-        Some((primitives, strokes))
+        let instances = filter_retained_instances_for_scene(scene, &prepared.retained_instances)?;
+        Some((primitives, strokes, instances))
     }
 
     fn apply_prepare_stats(
@@ -405,93 +438,4 @@ impl Renderer {
         self.stats.approximate_gpu_memory_bytes =
             (stats.approximate_gpu_memory_bytes > 0).then_some(stats.approximate_gpu_memory_bytes);
     }
-}
-
-fn assign_original_vertex_offsets(
-    primitives: Vec<prepare::PreparedPrimitive>,
-) -> Vec<prepare::PreparedPrimitive> {
-    primitives
-        .into_iter()
-        .enumerate()
-        .map(|(index, primitive)| {
-            primitive.with_original_vertex_offset((index as u32).saturating_mul(3))
-        })
-        .collect()
-}
-
-fn assign_original_stroke_indices(
-    strokes: Vec<prepare::PreparedStrokeSegment>,
-) -> Vec<prepare::PreparedStrokeSegment> {
-    strokes
-        .into_iter()
-        .enumerate()
-        .map(|(index, stroke)| stroke.with_original_segment_index(index as u32))
-        .collect()
-}
-
-fn filter_retained_primitives_for_scene(
-    scene: &Scene,
-    retained: &[prepare::PreparedPrimitive],
-) -> Option<Vec<prepare::PreparedPrimitive>> {
-    let mut visible = Vec::with_capacity(retained.len());
-    for primitive in retained {
-        let mut primitive = primitive.clone();
-        if let Some(node) = primitive.source_node() {
-            scene.node(node)?;
-            if !scene.visible_for_active_camera(node) {
-                continue;
-            }
-            primitive.set_tint(prepare::draw_uniform_tint(scene.node_tint(node).ok()?));
-        }
-        visible.push(primitive);
-    }
-    Some(visible)
-}
-
-fn filter_retained_strokes_for_scene(
-    scene: &Scene,
-    retained: &[prepare::PreparedStrokeSegment],
-) -> Option<Vec<prepare::PreparedStrokeSegment>> {
-    let mut visible = Vec::with_capacity(retained.len());
-    for stroke in retained {
-        let mut stroke = stroke.clone();
-        if let Some(node) = stroke.source_node() {
-            scene.node(node)?;
-            if !scene.visible_for_active_camera(node) {
-                continue;
-            }
-            stroke.set_tint(prepare::draw_uniform_tint(scene.node_tint(node).ok()?));
-        }
-        visible.push(stroke);
-    }
-    Some(visible)
-}
-
-fn retained_template_covers_visible_sources(
-    scene: &Scene,
-    retained: &[prepare::PreparedPrimitive],
-    retained_strokes: &[prepare::PreparedStrokeSegment],
-) -> bool {
-    let mut retained_sources = retained
-        .iter()
-        .filter_map(prepare::PreparedPrimitive::source_node)
-        .collect::<BTreeSet<NodeKey>>();
-    retained_sources.extend(
-        retained_strokes
-            .iter()
-            .filter_map(prepare::PreparedStrokeSegment::source_node),
-    );
-
-    scene
-        .renderable_nodes()
-        .all(|(node, _, _)| retained_sources.contains(&node))
-        && scene
-            .mesh_nodes()
-            .all(|(node, _, _)| retained_sources.contains(&node))
-        && scene
-            .instance_set_nodes()
-            .all(|(node, _, _)| retained_sources.contains(&node))
-        && scene
-            .label_nodes()
-            .all(|(node, _, _, _)| retained_sources.contains(&node))
 }

@@ -7,6 +7,7 @@ mod core;
 mod error;
 mod handles;
 mod inputs;
+mod instances;
 mod post;
 mod product;
 mod reporting;

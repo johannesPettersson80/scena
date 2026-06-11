@@ -159,6 +159,9 @@ impl LookupError {
             Self::CameraNotFound(_) => "use a CameraKey created by this Scene",
             Self::ClippingPlaneNotFound(_) => "use a ClippingPlaneKey created by this Scene",
             Self::InstanceSetNotFound(_) => "use an InstanceSetKey created by this Scene",
+            Self::InstanceNotFound { .. } => {
+                "use an InstanceId that is still present in the requested InstanceSet"
+            }
             Self::LabelNotFound(_) => "use a LabelKey created by this Scene",
         }
     }

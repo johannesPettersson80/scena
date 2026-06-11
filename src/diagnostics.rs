@@ -17,6 +17,7 @@ mod diagnostic;
 mod display;
 mod help;
 mod post_processing;
+mod stats;
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 pub(crate) use browser_timing::browser_timing_enabled;
 pub use capabilities::{
@@ -28,6 +29,7 @@ pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
 pub use post_processing::{
     PostProcessingDepthSourceV1, PostProcessingPassV1, PostProcessingReportV1,
 };
+pub use stats::RendererStats;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Error {
@@ -344,6 +346,10 @@ pub enum LookupError {
     CameraNotFound(CameraKey),
     ClippingPlaneNotFound(ClippingPlaneKey),
     InstanceSetNotFound(InstanceSetKey),
+    InstanceNotFound {
+        instance_set: InstanceSetKey,
+        instance: crate::scene::InstanceId,
+    },
     LabelNotFound(LabelKey),
 }
 
@@ -373,68 +379,6 @@ pub enum ImportDiagnosticOverlayKind {
     Anchor,
     Connector,
     Pivot,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct RendererStats {
-    pub buffers: u64,
-    pub textures: u64,
-    pub materials: u64,
-    pub material_bindings: u64,
-    pub material_texture_bindings: u64,
-    pub material_sampler_bindings: u64,
-    pub material_textures_missing_decoded_pixels: u64,
-    /// Plan line 778 step 2: number of layers a `texture_2d_array` per
-    /// material role carries when the prepared materials share
-    /// `(sampler, format, dimensions)` for every populated role. Zero when
-    /// the materials are not array-compatible or the scene has no
-    /// materials. Commit 2 wires the GPU pipeline to consume the shared
-    /// `texture_2d_array<f32>` + dynamic-offset uniform; the layer count
-    /// reported here matches the layer count actually allocated when
-    /// `material_batch_layers >= 2`.
-    pub material_batch_layers: u32,
-    /// Plan line 778 step 2: actual material bind-group count consumed by
-    /// the GPU pipeline. Equals 1 when the renderer chose the batched
-    /// `texture_2d_array<f32>` path (one shared bind group services every
-    /// draw via dynamic-offset uniforms) and `material_count + 1` when
-    /// the per-material fall-back path is in use (one synthetic fallback +
-    /// one bind group per material slot). Drops to 0 only when the GPU
-    /// is absent (CPU rasterizer path). Closes the
-    /// `texture_array_batching_collapses_to_single_bind` proof.
-    pub material_bind_groups: u32,
-    pub render_targets: u64,
-    pub pipelines: u64,
-    pub bind_groups: u64,
-    pub shader_modules: u64,
-    pub environments: u64,
-    pub environment_cubemaps: u64,
-    pub environment_prefilter_passes: u64,
-    pub environment_brdf_luts: u64,
-    pub scene_imports: u64,
-    pub shadow_maps: u64,
-    pub depth_prepass_passes: u64,
-    pub depth_prepass_draws: u64,
-    pub ambient_occlusion_passes: u64,
-    pub order_independent_transparency_passes: u64,
-    pub bloom_passes: u64,
-    pub fxaa_passes: u64,
-    pub live_logical_handles: u64,
-    pub pending_destructions: u64,
-    pub frames_rendered: u64,
-    pub draw_calls: u64,
-    pub triangles: u64,
-    pub culled_objects: u64,
-    pub gpu_culling_dispatches: u64,
-    pub skipped_frames: u64,
-    pub gpu_submissions: u64,
-    pub approximate_gpu_memory_bytes: Option<u64>,
-    pub cpu_frame_ms: f32,
-    pub gpu_frame_ms: Option<f32>,
-    pub primitives: u64,
-    pub target_width: u32,
-    pub target_height: u32,
-    pub directional_shadow_map_resolution: Option<u32>,
-    pub directional_shadow_pcf_kernel: Option<u8>,
 }
 
 impl ImportDiagnosticOverlay {

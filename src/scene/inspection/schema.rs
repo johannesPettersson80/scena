@@ -17,9 +17,27 @@ pub struct SceneInspectionReportV1 {
     pub draw_list: Vec<SceneDrawInspectionV1>,
     pub camera_frustums: Vec<SceneCameraFrustumInspectionV1>,
     pub normal_overlays: Vec<SceneNormalInspectionV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_sets: Option<Vec<SceneHostInstanceSetInspectionV1>>,
     pub active_camera: Option<u64>,
     pub counts: SceneInspectionCountsV1,
     pub revisions: SceneInspectionRevisionsV1,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneHostInstanceSetInspectionV1 {
+    pub root_handle: u64,
+    pub visible: bool,
+    pub tint: Option<Color>,
+    pub root_transform: Transform,
+    pub entries: Vec<SceneHostInstanceEntryInspectionV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneHostInstanceEntryInspectionV1 {
+    pub set_node: Option<u64>,
+    pub instance_id: u64,
+    pub local_transform: Transform,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -168,6 +186,7 @@ impl SceneInspectionReport {
                     })
                 })
                 .collect(),
+            instance_sets: None,
             active_camera,
             counts: SceneInspectionCountsV1 {
                 visible_drawable: self.visible_drawable_count,

@@ -186,6 +186,13 @@ Each node entry includes `handle`, `parent`, `kind`, `tags`,
 because per-node highlight state is part of the render state a host may need
 to prove.
 
+Host-backed inspection may also include additive top-level `instance_sets`
+entries for explicit instanced URL imports. Each entry contains the
+instance-root `root_handle`, `visible`, optional opaque `tint`,
+`root_transform`, and per-drawable `entries` with the backing set-node handle,
+source `instance_id`, and baked drawable-local transform. This field is
+additive on `scena.scene_inspection.v1`; older consumers may ignore it.
+
 Topology helpers on `SceneInspectionReportV1`:
 
 - `node_by_handle(handle)`

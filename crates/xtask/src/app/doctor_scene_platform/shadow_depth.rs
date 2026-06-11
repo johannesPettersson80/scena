@@ -135,7 +135,7 @@ pub(crate) fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding
         root,
         findings,
         "ARCH-SHADOW-MAP",
-        "src/diagnostics.rs",
+        "src/diagnostics/stats.rs",
         &[
             "pub shadow_maps: u64",
             "pub directional_shadow_map_resolution: Option<u32>",
@@ -243,7 +243,7 @@ pub(crate) fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding
             "scena.m2.directional_shadow_map",
             // Phase 1B step 2: shadow caster pipeline + depth-only render pass.
             "pub(super) const SHADOW_CASTER_SHADER: &str",
-            "camera.light_from_world * draw.world_from_model * vec4<f32>(in.position, 1.0)",
+            "camera.light_from_world * draw.world_from_model * instance_world_from_model * vec4<f32>(in.position, 1.0)",
             "pub(super) fn create_shadow_caster_resources",
             "pub(super) fn encode_shadow_caster_pass",
             "wgpu::DepthBiasState",
@@ -316,7 +316,7 @@ pub(crate) fn check_depth_prepass_contracts(root: &Path, findings: &mut Vec<Find
         root,
         findings,
         "ARCH-DEPTH-PREPASS",
-        "src/diagnostics.rs",
+        "src/diagnostics/stats.rs",
         &[
             "pub depth_prepass_passes: u64",
             "pub depth_prepass_draws: u64",
@@ -359,7 +359,7 @@ pub(crate) fn check_depth_prepass_contracts(root: &Path, findings: &mut Vec<Find
         "ARCH-DEPTH-PREPASS",
         "src/render/prepare_lifecycle.rs",
         &[
-            "let depth_stats = prepare::collect_depth_prepass_stats(&primitives, self.target.backend)",
+            "let mut depth_primitives = primitives.clone();",
             "self.stats.depth_prepass_passes = depth_stats.passes",
             "self.stats.depth_prepass_draws = depth_stats.draws",
             "backend_material_slots",

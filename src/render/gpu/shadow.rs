@@ -1,3 +1,4 @@
+use super::instancing::{INSTANCE_ATTRIBUTES, INSTANCE_BYTE_LEN, InstanceDrawBatch};
 use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
 use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 
@@ -55,6 +56,10 @@ pub(super) const SHADOW_CASTER_SHADER: &str = r#"
 struct VertexIn {
     @location(0) position: vec3<f32>,
     @location(1) color: vec4<f32>,
+    @location(6) instance_world_0: vec4<f32>,
+    @location(7) instance_world_1: vec4<f32>,
+    @location(8) instance_world_2: vec4<f32>,
+    @location(9) instance_world_3: vec4<f32>,
 };
 
 struct CameraUniform {
@@ -90,7 +95,13 @@ var<uniform> draw: DrawUniform;
 
 @vertex
 fn vs_main(in: VertexIn) -> @builtin(position) vec4<f32> {
-    return camera.light_from_world * draw.world_from_model * vec4<f32>(in.position, 1.0);
+    let instance_world_from_model = mat4x4<f32>(
+        in.instance_world_0,
+        in.instance_world_1,
+        in.instance_world_2,
+        in.instance_world_3,
+    );
+    return camera.light_from_world * draw.world_from_model * instance_world_from_model * vec4<f32>(in.position, 1.0);
 }
 "#;
 
@@ -187,7 +198,14 @@ pub(super) fn create_shadow_caster_resources(
             module: &shader,
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
-            buffers: &[vertex_buffer],
+            buffers: &[
+                vertex_buffer,
+                wgpu::VertexBufferLayout {
+                    array_stride: INSTANCE_BYTE_LEN as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &INSTANCE_ATTRIBUTES,
+                },
+            ],
         },
         primitive: wgpu::PrimitiveState::default(),
         depth_stencil: Some(wgpu::DepthStencilState {
@@ -222,9 +240,7 @@ pub(super) fn create_shadow_caster_resources(
 pub(super) fn encode_shadow_caster_pass(
     encoder: &mut wgpu::CommandEncoder,
     resources: &ShadowCasterResources,
-    vertex_buffer: &wgpu::Buffer,
-    draw_bind_group: &wgpu::BindGroup,
-    draw_batches: &[PrimitiveDrawBatch],
+    inputs: ShadowCasterPassInputs<'_>,
 ) {
     if !resources.active {
         return;
@@ -254,14 +270,41 @@ pub(super) fn encode_shadow_caster_pass(
     // RESOURCE.
     pass.set_bind_group(0, &resources.camera_bind_group, &[]);
     pass.set_bind_group(1, &resources.dummy_material_group, &[]);
-    pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-    for batch in draw_batches {
+    pass.set_vertex_buffer(0, inputs.vertex_buffer.slice(..));
+    let identity_instance_offset =
+        u64::from(inputs.identity_instance).saturating_mul(INSTANCE_BYTE_LEN as u64);
+    pass.set_vertex_buffer(1, inputs.instance_buffer.slice(identity_instance_offset..));
+    for batch in inputs.draw_batches {
         let draw_offset =
             (batch.draw_uniform_index as u64).saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE) as u32;
-        pass.set_bind_group(2, draw_bind_group, &[draw_offset]);
+        pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset]);
         pass.draw(
             batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
             0..1,
         );
+        *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
     }
+    for batch in inputs.instance_batches {
+        let draw_offset =
+            (batch.draw_uniform_index as u64).saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE) as u32;
+        pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset]);
+        let instance_offset =
+            u64::from(batch.start_instance).saturating_mul(INSTANCE_BYTE_LEN as u64);
+        pass.set_vertex_buffer(1, inputs.instance_buffer.slice(instance_offset..));
+        pass.draw(
+            batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
+            0..batch.instance_count,
+        );
+        *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
+    }
+}
+
+pub(super) struct ShadowCasterPassInputs<'a> {
+    pub(super) vertex_buffer: &'a wgpu::Buffer,
+    pub(super) instance_buffer: &'a wgpu::Buffer,
+    pub(super) draw_bind_group: &'a wgpu::BindGroup,
+    pub(super) draw_batches: &'a [PrimitiveDrawBatch],
+    pub(super) instance_batches: &'a [InstanceDrawBatch],
+    pub(super) identity_instance: u32,
+    pub(super) draw_submissions: &'a mut u64,
 }

@@ -36,7 +36,7 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
             "pub enum DebugOverlay",
             "RendererChanged",
             "DebugOverlay",
-            "pub struct RendererStats",
+            "pub use stats::RendererStats",
             "pub enum BuildError",
             "pub enum AssetError",
             "pub enum ImportError",

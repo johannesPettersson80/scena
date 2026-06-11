@@ -12,7 +12,7 @@ use super::draw_common::{
 };
 use super::output::{OutputUniformUpload, encode_output_uniform};
 use super::scene_color::{SceneColorPasses, encode_scene_color_passes};
-use super::shadow::encode_shadow_caster_pass;
+use super::shadow::{self, encode_shadow_caster_pass};
 use super::{GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuRenderResult, post, strokes};
 
 impl GpuDeviceState {
@@ -116,24 +116,37 @@ impl GpuDeviceState {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("scena.headless_gpu.encoder"),
             });
+        let mut draw_submissions = 0;
         // Phase 1B step 2: shadow caster pass writes the directional shadow
         // map BEFORE the unlit pass so the fragment shader can sample it.
         // No-op if no shadow-casting directional light exists.
         encode_shadow_caster_pass(
             &mut encoder,
             &resources.shadow_caster,
-            &resources.vertex_buffer,
-            &resources.draw_bind_group,
-            &resources.draw_batches,
+            shadow::ShadowCasterPassInputs {
+                vertex_buffer: &resources.vertex_buffer,
+                instance_buffer: &resources.instance_buffer,
+                draw_bind_group: &resources.draw_bind_group,
+                draw_batches: &resources.draw_batches,
+                instance_batches: &resources.instance_batches,
+                identity_instance: resources.identity_instance,
+                draw_submissions: &mut draw_submissions,
+            },
         );
         if let Some(depth_prepass) = &resources.depth_prepass {
             depth::encode_depth_prepass(
                 &mut encoder,
                 depth_prepass,
-                &resources.vertex_buffer,
-                &resources.output_bind_group,
-                &resources.draw_bind_group,
-                &resources.draw_batches,
+                depth::DepthPrepassInputs {
+                    vertex_buffer: &resources.vertex_buffer,
+                    instance_buffer: &resources.instance_buffer,
+                    camera_bind_group: &resources.output_bind_group,
+                    draw_bind_group: &resources.draw_bind_group,
+                    draw_batches: &resources.draw_batches,
+                    instance_batches: &resources.instance_batches,
+                    identity_instance: resources.identity_instance,
+                    draw_submissions: &mut draw_submissions,
+                },
             );
         }
         let post_resources = resources.post.as_ref();
@@ -161,15 +174,19 @@ impl GpuDeviceState {
                     .as_ref()
                     .map(|depth_prepass| &depth_prepass.view),
                 vertex_buffer: &resources.vertex_buffer,
+                instance_buffer: &resources.instance_buffer,
                 output_bind_group: &resources.output_bind_group,
                 opaque_output_bind_group: &resources.opaque_output_bind_group,
                 draw_bind_group: &resources.draw_bind_group,
                 material_resources: &resources.material_resources,
                 draw_batches: &resources.draw_batches,
+                instance_batches: &resources.instance_batches,
+                identity_instance: resources.identity_instance,
                 transmission_view: &resources.transmission.view,
                 transmission_pipeline: &resources.transmission.pipeline,
                 clear_color: wgpu_clear_color(background_color),
                 base_label,
+                draw_submissions: &mut draw_submissions,
             },
         );
         if let Some(stroke_resources) = resources.strokes.as_ref() {
@@ -191,6 +208,7 @@ impl GpuDeviceState {
                     resources: stroke_resources,
                     pipeline: stroke_pipeline,
                     label: "scena.gpu_strokes.offscreen_pass",
+                    draw_submissions: &mut draw_submissions,
                 },
             );
         }
@@ -203,6 +221,7 @@ impl GpuDeviceState {
                 post_resources,
                 post_settings,
                 resources.depth_prepass.as_ref(),
+                &mut draw_submissions,
             )?;
             if let Some(surface_view) = surface_view.as_ref() {
                 let Some(surface_blit_pipeline) = post::surface_blit_pipeline(post_resources)
@@ -217,6 +236,7 @@ impl GpuDeviceState {
                     output,
                     surface_view,
                     surface_blit_pipeline,
+                    &mut draw_submissions,
                 );
             }
             post::copy_output_to_buffer(
@@ -244,15 +264,19 @@ impl GpuDeviceState {
                         .as_ref()
                         .map(|depth_prepass| &depth_prepass.view),
                     vertex_buffer: &resources.vertex_buffer,
+                    instance_buffer: &resources.instance_buffer,
                     output_bind_group: &resources.output_bind_group,
                     opaque_output_bind_group: &resources.opaque_output_bind_group,
                     draw_bind_group: &resources.draw_bind_group,
                     material_resources: &resources.material_resources,
                     draw_batches: &resources.draw_batches,
+                    instance_batches: &resources.instance_batches,
+                    identity_instance: resources.identity_instance,
                     transmission_view: &resources.transmission.view,
                     transmission_pipeline: &resources.transmission.pipeline,
                     clear_color: wgpu_clear_color(background_color),
                     base_label: "scena.surface.render_pass",
+                    draw_submissions: &mut draw_submissions,
                 },
             );
             if let Some(stroke_resources) = resources.strokes.as_ref() {
@@ -274,6 +298,7 @@ impl GpuDeviceState {
                         resources: stroke_resources,
                         pipeline: surface_pipeline,
                         label: "scena.gpu_strokes.surface_pass",
+                        draw_submissions: &mut draw_submissions,
                     },
                 );
             }
@@ -344,6 +369,7 @@ impl GpuDeviceState {
             post_counts: post_output
                 .map(|(_, counts)| counts)
                 .unwrap_or_else(GpuPostPassCounts::default),
+            draw_submissions,
         })
     }
 }

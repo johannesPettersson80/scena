@@ -55,7 +55,9 @@ mod tangents;
 mod tests;
 pub(super) mod transforms;
 mod types;
-pub(in crate::render) use types::{PreparedPrimitive, PreparedStrokeSegment};
+pub(in crate::render) use types::{
+    PreparedInstanceRecord, PreparedInstanceSet, PreparedPrimitive, PreparedStrokeSegment,
+};
 
 pub(super) fn collect_prepared_primitives<F>(
     target: RasterTarget,
@@ -102,6 +104,13 @@ pub(super) fn collect_prepared_primitives<F>(
     labels::append_label_primitives(scene, origin_shift, &mut primitives);
     let mut transparent_primitives = Vec::new();
     let mut strokes = Vec::new();
+    let mut instances = Vec::new();
+    let gpu_instance_path = matches!(
+        target.backend,
+        crate::diagnostics::Backend::HeadlessGpu
+            | crate::diagnostics::Backend::WebGpu
+            | crate::diagnostics::Backend::WebGl2
+    );
 
     for (node, mesh, transform) in scene.mesh_nodes() {
         let Some(assets) = assets else {
@@ -172,7 +181,17 @@ pub(super) fn collect_prepared_primitives<F>(
                 })?;
         validate_material_texture_handles(node, instance_set.material(), &material, assets)?;
 
-        for instance in instance_set.instances() {
+        let can_use_gpu_instance_path = gpu_instance_path
+            && !matches!(
+                material.kind(),
+                crate::material::MaterialKind::Line
+                    | crate::material::MaterialKind::Wireframe
+                    | crate::material::MaterialKind::Edge
+            );
+        if can_use_gpu_instance_path {
+            let mut retained = Vec::new();
+            let mut instance_strokes = Vec::new();
+            let mut transparent = Vec::new();
             append_geometry_primitives(
                 GeometryPrimitiveSource {
                     node,
@@ -180,12 +199,12 @@ pub(super) fn collect_prepared_primitives<F>(
                     geometry: &geometry,
                     material: &material,
                     assets,
-                    tint: scene.node_tint(node).unwrap_or(None),
+                    tint: None,
                 },
                 DeformationInputs::default(),
                 PrimitiveBakeParams {
                     target,
-                    transform: compose_transform(node_transform, instance.transform()),
+                    transform: node_transform,
                     origin_shift,
                     lights: &lights,
                     shadow_occluders: &shadow_occluders,
@@ -195,11 +214,61 @@ pub(super) fn collect_prepared_primitives<F>(
                     environment_lighting: environment_lighting.clone(),
                 },
                 PrimitiveSinks {
-                    primitives: &mut primitives,
-                    strokes: &mut strokes,
-                    transparent_primitives: &mut transparent_primitives,
+                    primitives: &mut retained,
+                    strokes: &mut instance_strokes,
+                    transparent_primitives: &mut transparent,
                 },
             )?;
+            retained.extend(
+                transparent
+                    .into_iter()
+                    .map(|transparent| transparent.primitive),
+            );
+            strokes.extend(instance_strokes);
+            if !retained.is_empty() {
+                let Some(source_set) = instance_set_key_for_node(scene, node) else {
+                    continue;
+                };
+                instances.push(PreparedInstanceSet::new(
+                    node,
+                    source_set,
+                    retained,
+                    collect_prepared_instance_records(scene, node, instance_set),
+                ));
+            }
+        } else {
+            for instance in instance_set
+                .instances()
+                .filter(|instance| instance.visible())
+            {
+                append_geometry_primitives(
+                    GeometryPrimitiveSource {
+                        node,
+                        material_handle: instance_set.material(),
+                        geometry: &geometry,
+                        material: &material,
+                        assets,
+                        tint: multiply_tint(scene.node_tint(node).unwrap_or(None), instance.tint()),
+                    },
+                    DeformationInputs::default(),
+                    PrimitiveBakeParams {
+                        target,
+                        transform: compose_transform(node_transform, instance.transform()),
+                        origin_shift,
+                        lights: &lights,
+                        shadow_occluders: &shadow_occluders,
+                        camera_projection,
+                        backend_sampled_base_color_textures,
+                        backend_material_slots,
+                        environment_lighting: environment_lighting.clone(),
+                    },
+                    PrimitiveSinks {
+                        primitives: &mut primitives,
+                        strokes: &mut strokes,
+                        transparent_primitives: &mut transparent_primitives,
+                    },
+                )?;
+            }
         }
     }
 
@@ -234,6 +303,52 @@ pub(super) fn collect_prepared_primitives<F>(
     Ok(PreparedScene {
         primitives,
         strokes,
+        instances,
         light_from_world,
     })
+}
+
+fn collect_prepared_instance_records(
+    scene: &Scene,
+    node: crate::scene::NodeKey,
+    instance_set: &crate::scene::InstanceSet,
+) -> Vec<PreparedInstanceRecord> {
+    let node_tint = scene.node_tint(node).unwrap_or(None);
+    instance_set
+        .instances()
+        .map(|instance| {
+            PreparedInstanceRecord::new(
+                instance.id(),
+                transforms::world_from_model_matrix(instance.transform(), Vec3::ZERO),
+                transforms::normal_from_model_matrix(instance.transform()),
+                draw_uniform_tint(multiply_tint(node_tint, instance.tint())),
+            )
+        })
+        .collect()
+}
+
+fn instance_set_key_for_node(
+    scene: &Scene,
+    node: crate::scene::NodeKey,
+) -> Option<crate::scene::InstanceSetKey> {
+    let crate::scene::NodeKind::InstanceSet(instance_set) = *scene.node(node)?.kind() else {
+        return None;
+    };
+    Some(instance_set)
+}
+
+fn multiply_tint(
+    node_tint: Option<crate::material::Color>,
+    instance_tint: Option<crate::material::Color>,
+) -> Option<crate::material::Color> {
+    match (node_tint, instance_tint) {
+        (Some(left), Some(right)) => Some(crate::material::Color::from_linear_rgba(
+            left.r * right.r,
+            left.g * right.g,
+            left.b * right.b,
+            left.a * right.a,
+        )),
+        (Some(tint), None) | (None, Some(tint)) => Some(tint),
+        (None, None) => None,
+    }
 }

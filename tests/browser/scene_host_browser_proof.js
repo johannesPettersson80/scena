@@ -10,6 +10,7 @@ const SCHEMA = "scena.scene_host_browser_proof.v1";
 const BACKEND = "webgl2";
 const VIEWPORT = { width: 640, height: 480, devicePixelRatio: 1.5 };
 const ASSET_URL = "/assets/gltf/mesh_material_vertex_color_scene.gltf";
+const PHASE4_ASSET_URL = "/assets/gltf/material_variants_scene.gltf";
 const ARTIFACT_DIR = path.join(
   process.cwd(),
   "target",
@@ -23,6 +24,8 @@ const REQUIRED_BINDINGS = [
   ["static", "newWebgl2"],
   ["prototype", "addEmpty"],
   ["prototype", "instantiateUrlUnder"],
+  ["prototype", "instantiateUrlInstanced"],
+  ["prototype", "instantiateUrlInstancedUnder"],
   ["prototype", "instantiateUrlUnderWithReportJson"],
   ["prototype", "setTransforms"],
   ["prototype", "setTransformsTyped"],
@@ -383,7 +386,7 @@ function decodePngRgba8(bytes) {
 
 async function runPageProof(page) {
   return page.evaluate(
-    async ({ assetUrl, backend, requiredBindings, viewport }) => {
+    async ({ assetUrl, phase4AssetUrl, backend, requiredBindings, viewport }) => {
       const mod = await import("/pkg/scena.js");
       await mod.default("/pkg/scena_bg.wasm");
       const { SceneHost } = mod;
@@ -550,6 +553,7 @@ async function runPageProof(page) {
         viewport.height,
         viewport.devicePixelRatio,
       );
+      window.__scenaSceneHostProofHost = host;
       const rootHandle = host.rootHandle();
       const leftFrameHandle = host.addEmpty(
         rootHandle,
@@ -671,10 +675,11 @@ async function runPageProof(page) {
       host.setBloom(null);
       host.setAmbientOcclusion(null);
       host.setNodeTint(rightMeshHandle, 4.0, 4.0, 4.0, 1.0);
+      const phase2PerfSampleCount = 9;
       const phase2OffWarmup = samplePrepareRender("phase2_post_off_warmup");
       await waitForCanvasPresent();
       const phase2OffSamples = [];
-      for (let index = 0; index < 5; index += 1) {
+      for (let index = 0; index < phase2PerfSampleCount; index += 1) {
         phase2OffSamples.push(samplePrepareRender(`phase2_post_off_${index}`));
         await waitForCanvasPresent();
       }
@@ -689,7 +694,7 @@ async function runPageProof(page) {
       const phase2OnWarmup = samplePrepareRender("phase2_post_on_warmup");
       await waitForCanvasPresent();
       const phase2OnSamples = [];
-      for (let index = 0; index < 5; index += 1) {
+      for (let index = 0; index < phase2PerfSampleCount; index += 1) {
         phase2OnSamples.push(samplePrepareRender(`phase2_post_on_${index}`));
         await waitForCanvasPresent();
       }
@@ -776,6 +781,67 @@ async function runPageProof(page) {
         };
       });
 
+      const phase4BeforeCapture = captureSummary(host.capture());
+      host.setAntiAliasing("none");
+      host.setBloom(null);
+      host.setAmbientOcclusion(null);
+      const phase4InstanceHandleBigInts = Array.from(
+        await host.instantiateUrlInstanced(phase4AssetUrl, 32),
+        handleBigInt,
+      );
+      const phase4InstanceHandles = phase4InstanceHandleBigInts.map(handleNumber);
+      const phase4Components = [];
+      const phase4Centers = [];
+      for (let index = 0; index < phase4InstanceHandles.length; index += 1) {
+        const column = index % 8;
+        const row = Math.floor(index / 8);
+        const x = (column - 3.5) * 0.16;
+        const y = (row - 1.5) * 0.14;
+        const z = -0.2;
+        phase4Centers.push([x, y, z]);
+        phase4Components.push(
+          x,
+          y,
+          z,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          0.32,
+          0.32,
+          0.32,
+        );
+      }
+      host.setTransformsTyped(
+        new BigUint64Array(phase4InstanceHandleBigInts),
+        new Float32Array(phase4Components),
+      );
+      host.setVisible(phase4InstanceHandleBigInts[15], false);
+      host.setNodeTint(phase4InstanceHandleBigInts[0], 1.0, 0.08, 0.02, 1.0);
+      host.setNodeTint(phase4InstanceHandleBigInts[31], 0.05, 0.9, 0.18, 1.0);
+      let phase4TranslucentTintRejected = false;
+      try {
+        host.setNodeTint(phase4InstanceHandleBigInts[1], 0.1, 0.4, 1.0, 0.5);
+      } catch (error) {
+        phase4TranslucentTintRejected = error && error.code === "InvalidInput";
+      }
+      host.frameAll();
+      host.setCamera([0.0, 0.0, -0.2], 0.0, 0.0, 2.2);
+      phase4Centers.slice(0, 4).forEach((center, index) => {
+        host.setWorldAnnotation(`phase4-center-${index}`, center);
+      });
+      const phase4Prepare = timedPrepare("phase4_instanced_prepare");
+      const phase4Render = timedRender("phase4_instanced_render");
+      const phase4Capture = captureSummary(host.capture());
+      const phase4Projections = JSON.parse(host.annotationProjectionsJson()).annotations.filter(
+        (entry) => entry.id && entry.id.startsWith("phase4-center-"),
+      );
+      const phase4Inspect = JSON.parse(host.inspectJson());
+      const phase4Stats = JSON.parse(host.statsJson());
+      const phase4InstanceSetRoots = (phase4Inspect.instance_sets || []).filter((binding) =>
+        phase4InstanceHandles.includes(binding.root_handle),
+      );
+
       return {
         backend,
         webgl,
@@ -796,6 +862,7 @@ async function runPageProof(page) {
         assets: [
           { url: assetUrl, role: "left", report: leftImportReport },
           { url: assetUrl, role: "right", report: rightImportReport },
+          { url: phase4AssetUrl, role: "phase4-instanced" },
         ],
         handles: {
           root,
@@ -805,6 +872,7 @@ async function runPageProof(page) {
           right_mesh: rightMesh,
           tracked_node: trackedNode,
           phase3_grid_floor: phase3GridHandles,
+          phase4_instances: phase4InstanceHandles,
         },
         phase3_grid_inspection: afterGridInspection,
         transform_batch: transformBatch,
@@ -856,12 +924,26 @@ async function runPageProof(page) {
           world_points: phase3GridWorldPoints,
           views: phase3GridViews,
         },
+        phase4_gpu_instancing: {
+          handles: phase4InstanceHandles,
+          hidden_middle_handle: phase4InstanceHandles[15],
+          translucent_tint_rejected: phase4TranslucentTintRejected,
+          prepare: phase4Prepare,
+          render: phase4Render,
+          before_capture: phase4BeforeCapture,
+          after_capture: phase4Capture,
+          projections: phase4Projections,
+          stats: phase4Stats,
+          inspection: phase4Inspect,
+          instance_set_roots: phase4InstanceSetRoots,
+        },
         capture,
         pick,
       };
     },
     {
       assetUrl: ASSET_URL,
+      phase4AssetUrl: PHASE4_ASSET_URL,
       backend: BACKEND,
       requiredBindings: REQUIRED_BINDINGS,
       viewport: VIEWPORT,
@@ -995,19 +1077,6 @@ function assertProof(pageProof, screenshot) {
       on: phase2.on_capture.rgba8_fnv1a64,
     },
   );
-  check(
-    "phase2_post_performance_budget_within_25_percent",
-    phase2.off_samples.length >= 5 &&
-      phase2.on_samples.length >= 5 &&
-      phase2.on_median_ms <= phase2.off_median_ms * 1.25,
-    {
-      off_median_ms: phase2.off_median_ms,
-      on_median_ms: phase2.on_median_ms,
-      ratio: phase2.off_median_ms > 0 ? phase2.on_median_ms / phase2.off_median_ms : null,
-      off_samples: phase2.off_samples.map((sample) => sample.total_ms),
-      on_samples: phase2.on_samples.map((sample) => sample.total_ms),
-    },
-  );
   const phase3 = pageProof.phase3_world_strokes;
   check(
     "phase3_grid_floor_handles_created",
@@ -1041,6 +1110,75 @@ function assertProof(pageProof, screenshot) {
       view.samples,
     );
   }
+  const phase4 = pageProof.phase4_gpu_instancing;
+  check(
+    "phase4_instanced_import_returns_32_handles",
+    Array.isArray(phase4.handles) &&
+      phase4.handles.length === 32 &&
+      new Set(phase4.handles).size === 32,
+    phase4.handles,
+  );
+  check(
+    "phase4_instance_roots_appear_in_inspection",
+    Array.isArray(phase4.instance_set_roots) && phase4.instance_set_roots.length === 32,
+    phase4.instance_set_roots,
+  );
+  const phase4Hidden = phase4.instance_set_roots.find(
+    (binding) => binding.root_handle === phase4.hidden_middle_handle,
+  );
+  check(
+    "phase4_hidden_middle_instance_is_not_visible",
+    phase4Hidden && phase4Hidden.visible === false,
+    { hidden: phase4Hidden, hidden_middle_handle: phase4.hidden_middle_handle },
+  );
+  check(
+    "phase4_translucent_instance_tint_rejected",
+    phase4.translucent_tint_rejected === true,
+    phase4,
+  );
+  check(
+    "phase4_stats_report_instances_and_submission_counter",
+    phase4.stats.instances === 31 &&
+      phase4.stats.gpu_draw_submissions > 0 &&
+      phase4.stats.gpu_draw_submissions < phase4.stats.triangles,
+    phase4.stats,
+  );
+  check(
+    "phase4_instanced_render_changes_pixels",
+    phase4.after_capture.descriptor.pixels.nonblack > 0 &&
+      phase4.before_capture.rgba8_fnv1a64 !== phase4.after_capture.rgba8_fnv1a64,
+    {
+      before: phase4.before_capture.rgba8_fnv1a64,
+      after: phase4.after_capture.rgba8_fnv1a64,
+      pixels: phase4.after_capture.descriptor.pixels,
+      capture_camera: phase4.after_capture.descriptor.camera,
+      render: phase4.render,
+      stats: phase4.stats,
+      active_camera: phase4.inspection.nodes.find(
+        (node) => node.handle === phase4.inspection.active_camera,
+      ),
+      instance_set_root_sample: phase4.instance_set_roots.slice(0, 4),
+      instance_draw_sample: phase4.inspection.draw_list
+        .filter((entry) => entry.instance !== null)
+        .slice(0, 4),
+      projections: phase4.projections,
+      console: pageProof.console_messages,
+      draw_sample: phase4.inspection.draw_list.slice(0, 4),
+    },
+  );
+  check(
+    "phase2_post_performance_budget_within_25_percent",
+    phase2.off_samples.length >= 5 &&
+      phase2.on_samples.length >= 5 &&
+      phase2.on_median_ms <= phase2.off_median_ms * 1.25,
+    {
+      off_median_ms: phase2.off_median_ms,
+      on_median_ms: phase2.on_median_ms,
+      ratio: phase2.off_median_ms > 0 ? phase2.on_median_ms / phase2.off_median_ms : null,
+      off_samples: phase2.off_samples.map((sample) => sample.total_ms),
+      on_samples: phase2.on_samples.map((sample) => sample.total_ms),
+    },
+  );
 
   const tracked = pageProof.handles.tracked_node;
   const transformed = pageProof.transform_batch.some((entry) => entry.node === tracked);
@@ -1176,6 +1314,21 @@ async function main() {
   });
   const browserVersion = browser.version();
 
+  const captureCanvasScreenshot = async (page, source) => {
+    await page.locator("#scene").screenshot({ path: SCREENSHOT_PATH });
+    const screenshotBytes = fs.readFileSync(SCREENSHOT_PATH);
+    const decoded = decodePngRgba8(screenshotBytes);
+    return {
+      path: path.relative(process.cwd(), SCREENSHOT_PATH),
+      source,
+      sha256: crypto.createHash("sha256").update(screenshotBytes).digest("hex"),
+      byte_length: screenshotBytes.length,
+      width: decoded.width,
+      height: decoded.height,
+      pixels: summarizeRgba8(decoded.width, decoded.height, decoded.rgba8),
+    };
+  };
+
   let pageProof;
   let screenshot;
   const consoleMessages = [];
@@ -1193,17 +1346,16 @@ async function main() {
     try {
       await page.goto(url);
       pageProof = await runPageProof(page);
-      await page.locator("#scene").screenshot({ path: SCREENSHOT_PATH });
-      const screenshotBytes = fs.readFileSync(SCREENSHOT_PATH);
-      const decoded = decodePngRgba8(screenshotBytes);
-      screenshot = {
-        path: path.relative(process.cwd(), SCREENSHOT_PATH),
-        sha256: crypto.createHash("sha256").update(screenshotBytes).digest("hex"),
-        byte_length: screenshotBytes.length,
-        width: decoded.width,
-        height: decoded.height,
-        pixels: summarizeRgba8(decoded.width, decoded.height, decoded.rgba8),
-      };
+      pageProof.console_messages = consoleMessages.slice();
+      await page.evaluate(
+        () => {
+          window.__scenaSceneHostProofHost.render();
+          return new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          );
+        },
+      );
+      screenshot = await captureCanvasScreenshot(page, "webgl_canvas");
     } finally {
       await page.close();
     }
@@ -1253,6 +1405,7 @@ async function main() {
     phase2_post_processing: pageProof.phase2_post_processing,
     phase3_world_strokes: pageProof.phase3_world_strokes,
     phase3_grid_inspection: pageProof.phase3_grid_inspection,
+    phase4_gpu_instancing: pageProof.phase4_gpu_instancing,
     camera: pageProof.camera,
     render_outcome: pageProof.render_outcome,
     inspect_json: pageProof.inspect_json,

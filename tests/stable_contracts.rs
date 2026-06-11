@@ -192,6 +192,10 @@ fn inspection_and_capture_v1_revisions_accept_old_shape_without_appearance() {
         inspection.revisions.appearance, 0,
         "additive appearance_revision defaults for old scene_inspection.v1 consumers"
     );
+    assert_eq!(
+        inspection.instance_sets, None,
+        "additive instance_sets defaults for old scene_inspection.v1 consumers"
+    );
 
     let mut capture = read_fixture_json("tests/assets/stable-contracts/capture.v1.json");
     capture["revisions"]

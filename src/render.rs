@@ -15,6 +15,7 @@ mod offscreen;
 mod output;
 mod prepare;
 mod prepare_lifecycle;
+mod prepare_retained;
 mod reporting;
 mod settings;
 // PreparedSceneState stores clipping_planes: Vec<ClippingPlane> in state.rs.
@@ -144,13 +145,15 @@ impl Renderer {
         }
 
         let camera_projection = camera::CameraProjection::from_scene(scene, camera, self.target)?;
-        let primitive_count = self.prepared_state(scene)?.primitives.len() as u64;
+        let primitive_count = prepared_triangle_alias_count(self.prepared_state(scene)?);
         let mut auto_exposure_attempted = false;
+        let mut gpu_draw_submissions = 0;
         loop {
             let gpu_post_counts = if self.gpu.is_some() {
-                let post_counts = self.draw_gpu(&camera_projection)?;
+                let gpu_result = self.draw_gpu(&camera_projection)?;
+                gpu_draw_submissions = gpu_result.draw_submissions;
                 self.stats.order_independent_transparency_passes = 0;
-                Some(post_counts)
+                Some(gpu_result.post_counts)
             } else {
                 let (primitives, clipping_planes) = {
                     let prepared = self.prepared_state(scene)?;
@@ -261,6 +264,17 @@ impl Renderer {
         self.stats.draw_calls = primitive_count;
         self.stats.triangles = primitive_count;
         self.stats.primitives = primitive_count;
+        self.stats.instances = self
+            .prepared_state(scene)
+            .map(|prepared| {
+                prepared
+                    .instances
+                    .iter()
+                    .map(|set| set.instances().len() as u64)
+                    .sum()
+            })
+            .unwrap_or(0);
+        self.stats.gpu_draw_submissions = gpu_draw_submissions;
         self.last_rendered_generation = Some(self.render_generation);
         self.last_rendered_frame = Some(RenderedFrameState {
             dirty_state,
@@ -331,7 +345,7 @@ impl Renderer {
     fn draw_gpu(
         &mut self,
         camera_projection: &camera::CameraProjection,
-    ) -> Result<gpu::GpuPostPassCounts, RenderError> {
+    ) -> Result<gpu::GpuRenderResult, RenderError> {
         let post_settings = gpu::GpuPostSettings::new(
             self.anti_aliasing,
             self.bloom,
@@ -359,7 +373,7 @@ impl Renderer {
             // kernel was deleted in commit a311fcd. The public counter is kept
             // for API stability and will be repurposed when a real culling
             // kernel lands in a future v1.x.
-            Ok(result.post_counts)
+            Ok(result)
         }
 
         #[cfg(target_arch = "wasm32")]
@@ -379,7 +393,7 @@ impl Renderer {
             if result.submitted {
                 self.stats.gpu_submissions = self.stats.gpu_submissions.saturating_add(1);
             }
-            Ok(result.post_counts)
+            Ok(result)
         }
     }
 
@@ -472,6 +486,18 @@ impl Renderer {
     }
 }
 
+fn prepared_triangle_alias_count(prepared: &PreparedSceneState) -> u64 {
+    let primitive_triangles = prepared.primitives.len() as u64;
+    let instance_triangles = prepared
+        .instances
+        .iter()
+        .map(|set| (set.primitives().len() as u64).saturating_mul(set.instances().len() as u64))
+        .sum::<u64>();
+    primitive_triangles.saturating_add(instance_triangles)
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod phase4_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod post_quality_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]

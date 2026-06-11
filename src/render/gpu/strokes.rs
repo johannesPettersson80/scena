@@ -64,6 +64,7 @@ pub(super) struct StrokePass<'a> {
     pub(super) resources: &'a StrokeResources,
     pub(super) pipeline: &'a wgpu::RenderPipeline,
     pub(super) label: &'static str,
+    pub(super) draw_submissions: &'a mut u64,
 }
 
 pub(super) struct StrokeResourceDescriptor<'a> {
@@ -213,6 +214,7 @@ pub(super) fn encode_pass(encoder: &mut wgpu::CommandEncoder, inputs: StrokePass
             0..4,
             batch.start_instance..batch.start_instance.saturating_add(batch.instance_count),
         );
+        *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
     }
 }
 

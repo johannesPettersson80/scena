@@ -85,10 +85,21 @@ pub(crate) fn check_module_boundaries(root: &Path, findings: &mut Vec<Finding>) 
         &[
             "self.configure_surface(target);",
             "self.release_prepared_resources();",
-            "let vertex_bytes = encode_vertices(retained_primitives);",
-            "encode_draw_batches(draw_primitives)",
+            "encode_retained_vertices(retained_primitives, retained_instances)",
+            "encode_draw_resources(draw_primitives, draw_instances, draw_strokes)",
             "create_material_resources",
             "material_slots",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-LIFECYCLE",
+        "src/render/gpu/resource_encoding.rs",
+        &[
+            "let all_retained_primitives = retained_primitives",
+            "encode_vertices(&all_retained_primitives)",
+            "vertices::encode_draw_batches(draw_primitives)",
         ],
     );
     require_contains(

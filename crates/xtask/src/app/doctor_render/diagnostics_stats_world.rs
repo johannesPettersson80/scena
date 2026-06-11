@@ -157,7 +157,7 @@ pub(crate) fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Fin
         root,
         findings,
         "ARCH-RENDER-STATS",
-        "src/diagnostics.rs",
+        "src/diagnostics/stats.rs",
         &[
             "pub struct RendererStats",
             "pub buffers: u64",
@@ -180,10 +180,21 @@ pub(crate) fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Fin
             "pub fxaa_passes: u64",
             "pub live_logical_handles: u64",
             "pub pending_destructions: u64",
+            "pub gpu_draw_submissions: u64",
+            "pub instances: u64",
             "pub approximate_gpu_memory_bytes: Option<u64>",
             "pub gpu_frame_ms: Option<f32>",
             "pub directional_shadow_map_resolution: Option<u32>",
             "pub directional_shadow_pcf_kernel: Option<u8>",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STATS",
+        "src/diagnostics.rs",
+        &[
+            "pub use stats::RendererStats",
             "pub struct DevicePoll",
             "pub destroyed_resources: u64",
         ],
@@ -263,6 +274,61 @@ pub(crate) fn check_renderer_stats_contracts(root: &Path, findings: &mut Vec<Fin
             "self.stats.depth_prepass_draws = depth_stats.draws",
             "self.stats.textures = logical_stats.textures",
             "self.stats.environment_cubemaps = environment_prepare_stats.cubemaps",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STATS",
+        "src/render.rs",
+        &[
+            "let mut gpu_draw_submissions = 0",
+            "gpu_draw_submissions = gpu_result.draw_submissions",
+            "self.stats.gpu_draw_submissions = gpu_draw_submissions",
+            "self.stats.instances = self",
+            ".map(|set| set.instances().len() as u64)",
+        ],
+    );
+    forbid_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STATS",
+        "src/render.rs",
+        &[
+            "gpu_draw_submissions = primitive_count",
+            "gpu_draw_submissions = self.stats.triangles",
+            "gpu_draw_submissions = self.stats.primitives",
+            "self.stats.gpu_draw_submissions = primitive_count",
+            "self.stats.gpu_draw_submissions = self.stats.triangles",
+            "self.stats.gpu_draw_submissions = self.stats.primitives",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STATS",
+        "src/render/gpu/draw.rs",
+        &[
+            "let mut draw_submissions = 0",
+            "GpuRenderResult {",
+            "draw_submissions,",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STATS",
+        "src/render/gpu/pipeline.rs",
+        &["*inputs.draw_submissions = inputs.draw_submissions.saturating_add(1)"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-STATS",
+        "src/render/phase4_tests.rs",
+        &[
+            "gpu_stats_report_submission_and_instance_counts_without_renaming_legacy_aliases",
+            "stats.gpu_draw_submissions > 0 && stats.gpu_draw_submissions < stats.triangles",
         ],
     );
     require_contains(

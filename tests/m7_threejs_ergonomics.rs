@@ -1866,10 +1866,10 @@ fn m7_pick_with_assets_hits_instance_set_without_manual_triangles() {
     let material =
         assets.create_material(MaterialDesc::unlit(Color::from_linear_rgb(0.9, 0.4, 0.1)));
     let mut scene = Scene::new();
-    let set = scene
-        .add_instance_set(scene.root(), geometry, material, Transform::IDENTITY)
+    let (node, set) = scene
+        .add_instance_set_node(scene.root(), geometry, material, Transform::IDENTITY)
         .expect("instance set inserts");
-    scene
+    let first = scene
         .push_instance(set, Transform::IDENTITY)
         .expect("instance inserts");
     scene
@@ -1888,7 +1888,13 @@ fn m7_pick_with_assets_hits_instance_set_without_manual_triangles() {
         .expect("asset-aware picking succeeds")
         .expect("center ray hits an instance");
 
-    assert!(matches!(hit.target(), scena::HitTarget::Node(_)));
+    assert!(matches!(
+        hit.target(),
+        scena::HitTarget::Instance {
+            node: hit_node,
+            instance
+        } if hit_node == node && instance == first
+    ));
 }
 
 #[test]
@@ -1951,7 +1957,12 @@ fn m7_pick_with_assets_hits_imported_gltf_mesh_without_manual_triangles() {
         .expect("asset-aware glTF picking succeeds")
         .expect("center ray hits imported mesh");
 
-    let scena::HitTarget::Node(node) = hit.target();
+    let scena::HitTarget::Node(node) = hit.target() else {
+        panic!(
+            "non-instanced fixture should pick a node, got {:?}",
+            hit.target()
+        );
+    };
     assert!(import.roots().contains(&node));
 }
 

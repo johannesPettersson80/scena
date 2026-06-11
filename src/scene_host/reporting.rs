@@ -138,6 +138,11 @@ pub(super) fn stats_json(stats: RendererStats) -> serde_json::Value {
     object.insert("frames_rendered".to_string(), json!(stats.frames_rendered));
     object.insert("draw_calls".to_string(), json!(stats.draw_calls));
     object.insert("triangles".to_string(), json!(stats.triangles));
+    object.insert(
+        "gpu_draw_submissions".to_string(),
+        json!(stats.gpu_draw_submissions),
+    );
+    object.insert("instances".to_string(), json!(stats.instances));
     object.insert("culled_objects".to_string(), json!(stats.culled_objects));
     object.insert(
         "gpu_culling_dispatches".to_string(),
