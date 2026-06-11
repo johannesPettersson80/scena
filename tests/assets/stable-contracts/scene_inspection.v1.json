@@ -42,6 +42,7 @@
   "revisions": {
     "structure": 1,
     "transform": 0,
+    "appearance": 0,
     "interaction": 0
   }
 }

@@ -19,8 +19,8 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
         "ARCH-RENDER-TRUTH",
         "src/render/gpu/prepare_resources.rs",
         &[
-            "let vertex_bytes = encode_vertices(primitives)",
-            "encode_draw_batches(primitives)",
+            "let vertex_bytes = encode_vertices(retained_primitives)",
+            "encode_draw_batches(draw_primitives)",
             "create_output_bind_group_layout",
             "create_material_bind_group_layout",
             "create_unlit_pipeline",

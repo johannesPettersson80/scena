@@ -115,6 +115,8 @@ pub struct Scene {
     interaction: InteractionContext,
     structure_revision: u64,
     transform_revision: u64,
+    appearance_revision: u64,
+    visibility_revision: u64,
     not_sync: PhantomData<Cell<()>>,
 }
 
@@ -207,6 +209,8 @@ impl Scene {
             interaction: InteractionContext::default(),
             structure_revision: 0,
             transform_revision: 0,
+            appearance_revision: 0,
+            visibility_revision: 0,
             not_sync: PhantomData,
         }
     }
@@ -323,6 +327,14 @@ impl Scene {
 
     pub(crate) const fn transform_revision(&self) -> u64 {
         self.transform_revision
+    }
+
+    pub(crate) const fn appearance_revision(&self) -> u64 {
+        self.appearance_revision
+    }
+
+    pub(crate) const fn visibility_revision(&self) -> u64 {
+        self.visibility_revision
     }
 
     pub(crate) fn mesh_nodes(&self) -> impl Iterator<Item = (NodeKey, MeshNode, Transform)> + '_ {

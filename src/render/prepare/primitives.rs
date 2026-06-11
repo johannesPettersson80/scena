@@ -22,7 +22,8 @@ use super::transforms::{
     normal_from_model_matrix, transform_normal, transform_position, world_from_model_matrix,
 };
 use super::types::{
-    DeformationInputs, GeometryPrimitiveSource, PrimitiveBakeParams, PrimitiveSinks,
+    DeformationInputs, GeometryPrimitiveSource, PreparedPrimitive, PrimitiveBakeParams,
+    PrimitiveSinks,
 };
 
 pub(super) fn append_geometry_primitives<F>(
@@ -39,6 +40,7 @@ pub(super) fn append_geometry_primitives<F>(
             source.node,
             source.geometry,
             source.material,
+            source.tint,
             params.target,
             sinks.primitives,
         ),
@@ -64,6 +66,7 @@ fn append_triangle_primitives<F>(
                 source.node,
                 source.geometry,
                 source.material,
+                source.tint,
                 params.target,
                 sinks.primitives,
             );
@@ -73,6 +76,7 @@ fn append_triangle_primitives<F>(
                 source.node,
                 source.geometry,
                 source.material,
+                source.tint,
                 params.target,
                 sinks.primitives,
             );
@@ -281,7 +285,10 @@ fn append_triangle_primitives<F>(
                 uv: uv_a,
                 tangent: tangent_a.tangent,
                 tangent_handedness: tangent_a.handedness,
-                vertex_color: tinted_vertex_color(vertex_colors[triangle[0] as usize], source.tint),
+                vertex_color: tinted_vertex_color(
+                    vertex_colors[triangle[0] as usize],
+                    structural_vertex_tint(source.tint),
+                ),
                 shadow_visibility: shadow_visibility_a,
             },
             CpuBakeCorner {
@@ -290,7 +297,10 @@ fn append_triangle_primitives<F>(
                 uv: uv_b,
                 tangent: tangent_b.tangent,
                 tangent_handedness: tangent_b.handedness,
-                vertex_color: tinted_vertex_color(vertex_colors[triangle[1] as usize], source.tint),
+                vertex_color: tinted_vertex_color(
+                    vertex_colors[triangle[1] as usize],
+                    structural_vertex_tint(source.tint),
+                ),
                 shadow_visibility: shadow_visibility_b,
             },
             CpuBakeCorner {
@@ -299,7 +309,10 @@ fn append_triangle_primitives<F>(
                 uv: uv_c,
                 tangent: tangent_c.tangent,
                 tangent_handedness: tangent_c.handedness,
-                vertex_color: tinted_vertex_color(vertex_colors[triangle[2] as usize], source.tint),
+                vertex_color: tinted_vertex_color(
+                    vertex_colors[triangle[2] as usize],
+                    structural_vertex_tint(source.tint),
+                ),
                 shadow_visibility: shadow_visibility_c,
             },
         ];
@@ -320,6 +333,11 @@ fn append_triangle_primitives<F>(
             )
             .with_render_material_slot(render_material_slot);
             let primitive = primitive.with_world_from_model(world_from_model, normal_from_model);
+            let primitive = PreparedPrimitive::new(
+                primitive,
+                Some(source.node),
+                draw_uniform_tint(source.tint),
+            );
             push_material_pass_primitive(
                 primitive,
                 material_pass,
@@ -330,6 +348,17 @@ fn append_triangle_primitives<F>(
     }
 
     Ok(())
+}
+
+fn structural_vertex_tint(tint: Option<crate::material::Color>) -> Option<crate::material::Color> {
+    tint.filter(|tint| tint.a < 1.0)
+}
+
+pub(in crate::render) fn draw_uniform_tint(
+    tint: Option<crate::material::Color>,
+) -> crate::material::Color {
+    tint.filter(|tint| tint.a >= 1.0)
+        .unwrap_or(crate::material::Color::WHITE)
 }
 
 fn tinted_vertex_color(

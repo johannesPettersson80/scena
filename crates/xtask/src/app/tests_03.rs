@@ -267,6 +267,64 @@ pub(crate) fn doctor_rejects_scene_host_length_only_transform_input_regression()
 }
 
 #[test]
+pub(crate) fn doctor_rejects_structure_bumped_appearance_mutation_regression() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/appearance-dirty-stub");
+    fs::create_dir_all(fixture_root.join("src/scene")).expect("scene fixture dir");
+    fs::create_dir_all(fixture_root.join("src/render/prepare")).expect("prepare fixture dir");
+    fs::create_dir_all(fixture_root.join("src/render/gpu")).expect("gpu fixture dir");
+    fs::write(
+        fixture_root.join("src/scene/dirty.rs"),
+        "pub struct SceneDirtyState { pub structure_revision: u64, pub transform_revision: u64 }\n\
+         impl Scene { pub fn dirty_state(&self) -> SceneDirtyState { todo!() } }\n",
+    )
+    .expect("dirty fixture");
+    fs::write(
+        fixture_root.join("src/scene/materials.rs"),
+        "impl Scene { pub fn set_node_tint(&mut self) { self.structure_revision = self.structure_revision.saturating_add(1); } }\n",
+    )
+    .expect("materials fixture");
+    fs::write(
+        fixture_root.join("src/scene/visibility.rs"),
+        "impl Scene { pub fn set_visible(&mut self) { self.structure_revision = self.structure_revision.saturating_add(1); } }\n",
+    )
+    .expect("visibility fixture");
+    fs::write(
+        fixture_root.join("src/render/prepare/types.rs"),
+        "pub struct PreparedScene { pub primitives: Vec<Primitive> }\n",
+    )
+    .expect("prepare types fixture");
+    fs::write(
+        fixture_root.join("src/render/gpu/draw_uniform.rs"),
+        "pub const DRAW_UNIFORM_ENTRY_SIZE: u64 = 128;\n",
+    )
+    .expect("draw uniform fixture");
+    fs::write(
+        fixture_root.join("src/render/gpu/output_shader.wgsl"),
+        "struct DrawUniform { world_from_model: mat4x4<f32>, normal_from_model: mat4x4<f32> }\n",
+    )
+    .expect("shader fixture");
+    fs::write(
+        fixture_root.join("src/render/prepare_lifecycle.rs"),
+        "pub fn dynamic_draw_uniform_pairs() {}\n",
+    )
+    .expect("prepare lifecycle fixture");
+    let mut findings = Vec::new();
+
+    check_m4_platform_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-APPEARANCE-DIRTY"
+                && finding
+                    .message
+                    .contains("set_node_tint must not unconditionally bump structure_revision")
+        }),
+        "doctor must reject appearance-only mutations that still force structural prepares: {findings:?}",
+    );
+}
+
+#[test]
 pub(crate) fn doctor_rejects_display_p3_without_renderer_output_contract() {
     // ARCH-M4-PLATFORM: Display P3 is only shippable when RendererOptions,
     // capabilities, and browser proof all pin the renderer-owned canvas

@@ -8,7 +8,8 @@ pub(crate) fn check_m7_visual_browser_contracts(root: &Path, findings: &mut Vec<
         "src/scene/render_nodes.rs",
         &[
             "self.world_transform(node_key)",
-            "map(|transform| (renderable, transform))",
+            "map(|(_node, renderable, transform)| (renderable, transform))",
+            "map(|transform| (node_key, renderable, transform))",
         ],
     );
     forbid_contains(

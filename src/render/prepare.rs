@@ -1,6 +1,5 @@
 use crate::assets::{Assets, TextureHandle};
 use crate::diagnostics::PrepareError;
-use crate::geometry::Primitive;
 use crate::scene::{Scene, Vec3};
 
 pub(super) use self::diagnostics::{
@@ -18,6 +17,7 @@ use self::lighting::PreparedLights;
 pub(super) use self::lighting::{PreparedGpuLightUniform, collect_gpu_light_uniform};
 use self::materials::validate_material_texture_handles;
 use self::primitives::append_geometry_primitives;
+pub(in crate::render) use self::primitives::draw_uniform_tint;
 pub(super) use self::resources::{
     PreparedLogicalResourceStats, PreparedMaterialSlot, collect_backend_material_slots,
     collect_logical_resource_stats, collect_material_texture_diagnostics,
@@ -55,6 +55,7 @@ mod tangents;
 mod tests;
 pub(super) mod transforms;
 mod types;
+pub(in crate::render) use types::PreparedPrimitive;
 
 pub(super) fn collect_prepared_primitives<F>(
     target: RasterTarget,
@@ -86,13 +87,16 @@ pub(super) fn collect_prepared_primitives<F>(
             origin_shift,
         )?)
     };
-    let mut primitives: Vec<Primitive> = scene
-        .renderables()
-        .flat_map(|(renderable, transform)| {
-            renderable
-                .primitives()
-                .iter()
-                .map(move |primitive| prepared_primitive(primitive, transform, origin_shift))
+    let mut primitives: Vec<PreparedPrimitive> = scene
+        .renderable_nodes()
+        .flat_map(|(node, renderable, transform)| {
+            renderable.primitives().iter().map(move |primitive| {
+                PreparedPrimitive::new(
+                    prepared_primitive(primitive, transform, origin_shift),
+                    Some(node),
+                    draw_uniform_tint(scene.node_tint(node).unwrap_or(None)),
+                )
+            })
         })
         .collect();
     labels::append_label_primitives(scene, origin_shift, &mut primitives);

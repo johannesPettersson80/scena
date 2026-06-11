@@ -1,22 +1,25 @@
 use crate::geometry::{Primitive, Vertex};
 use crate::material::Color;
-use crate::scene::{LabelBillboard, LabelDesc, Scene, Transform, Vec3};
+use crate::scene::{LabelBillboard, LabelDesc, NodeKey, Scene, Transform, Vec3};
+
+use super::types::PreparedPrimitive;
 
 pub(super) fn append_label_primitives(
     scene: &Scene,
     origin_shift: Vec3,
-    primitives: &mut Vec<Primitive>,
+    primitives: &mut Vec<PreparedPrimitive>,
 ) {
-    for (_node, _label, label, transform) in scene.label_nodes() {
-        append_label_billboard(label, transform, origin_shift, primitives);
+    for (node, _label, label, transform) in scene.label_nodes() {
+        append_label_billboard(node, label, transform, origin_shift, primitives);
     }
 }
 
 fn append_label_billboard(
+    node: NodeKey,
     label: &LabelDesc,
     transform: Transform,
     origin_shift: Vec3,
-    primitives: &mut Vec<Primitive>,
+    primitives: &mut Vec<PreparedPrimitive>,
 ) {
     match label.billboard() {
         LabelBillboard::ScreenAligned => {
@@ -31,12 +34,18 @@ fn append_label_billboard(
             let z = center.z;
             let min = Vec3::new(center.x - half_width, center.y - half_height, z);
             let max = Vec3::new(center.x + half_width, center.y + half_height, z);
-            push_quad(primitives, min, max, color);
+            push_quad(node, primitives, min, max, color);
         }
     }
 }
 
-fn push_quad(primitives: &mut Vec<Primitive>, min: Vec3, max: Vec3, color: Color) {
+fn push_quad(
+    node: NodeKey,
+    primitives: &mut Vec<PreparedPrimitive>,
+    min: Vec3,
+    max: Vec3,
+    color: Color,
+) {
     let bottom_left = Vertex {
         position: Vec3::new(min.x, min.y, min.z),
         color,
@@ -53,6 +62,14 @@ fn push_quad(primitives: &mut Vec<Primitive>, min: Vec3, max: Vec3, color: Color
         position: Vec3::new(min.x, max.y, min.z),
         color,
     };
-    primitives.push(Primitive::triangle([bottom_left, bottom_right, top_right]));
-    primitives.push(Primitive::triangle([bottom_left, top_right, top_left]));
+    primitives.push(PreparedPrimitive::new(
+        Primitive::triangle([bottom_left, bottom_right, top_right]),
+        Some(node),
+        Color::WHITE,
+    ));
+    primitives.push(PreparedPrimitive::new(
+        Primitive::triangle([bottom_left, top_right, top_left]),
+        Some(node),
+        Color::WHITE,
+    ));
 }

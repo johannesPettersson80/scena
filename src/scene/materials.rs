@@ -30,8 +30,14 @@ impl Scene {
             .get_mut(node)
             .ok_or(LookupError::NodeNotFound(node))?;
         if node.tint != tint {
+            let structural = tint_requires_structure_revision(node.tint)
+                || tint_requires_structure_revision(tint);
             node.tint = tint;
-            self.structure_revision = self.structure_revision.saturating_add(1);
+            if structural {
+                self.structure_revision = self.structure_revision.saturating_add(1);
+            } else {
+                self.appearance_revision = self.appearance_revision.saturating_add(1);
+            }
         }
         Ok(())
     }
@@ -42,4 +48,8 @@ impl Scene {
             .map(|node| node.tint)
             .ok_or(LookupError::NodeNotFound(node))
     }
+}
+
+fn tint_requires_structure_revision(tint: Option<Color>) -> bool {
+    tint.is_some_and(|tint| tint.a < 1.0)
 }

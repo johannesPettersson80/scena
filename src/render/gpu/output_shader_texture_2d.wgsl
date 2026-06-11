@@ -47,6 +47,7 @@ struct CameraUniform {
 struct DrawUniform {
     world_from_model: mat4x4<f32>,
     normal_from_model: mat4x4<f32>,
+    tint: vec4<f32>,
 };
 
 struct MaterialUniform {
@@ -286,7 +287,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     // at full intensity. glTF spec default = 1.0.
     let occlusion_strength = material.texture_strengths.y;
     let occlusion_applied = mix(1.0, occlusion_sample, occlusion_strength);
-    let base = in.color * material.base_color_factor * base_color_sample;
+    let base = in.color * material.base_color_factor * base_color_sample * draw.tint;
     if material.metallic_roughness_alpha.z > 0.0 && base.a < material.metallic_roughness_alpha.z {
         discard;
     }

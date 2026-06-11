@@ -32,6 +32,7 @@ pub struct SceneInspectionReport {
     clipping_plane_count: usize,
     structure_revision: u64,
     transform_revision: u64,
+    appearance_revision: u64,
     interaction_revision: u64,
 }
 
@@ -138,6 +139,9 @@ impl Scene {
             clipping_plane_count: self.clipping_planes.len(),
             structure_revision: dirty.structure_revision,
             transform_revision: dirty.transform_revision,
+            appearance_revision: dirty
+                .appearance_revision
+                .saturating_add(dirty.visibility_revision),
             interaction_revision: dirty.interaction_revision,
         }
     }
@@ -202,6 +206,10 @@ impl SceneInspectionReport {
 
     pub const fn transform_revision(&self) -> u64 {
         self.transform_revision
+    }
+
+    pub const fn appearance_revision(&self) -> u64 {
+        self.appearance_revision
     }
 
     pub const fn interaction_revision(&self) -> u64 {

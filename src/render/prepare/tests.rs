@@ -104,7 +104,7 @@ fn blended_material_primitives_skip_gpu_depth_prepass() {
 }
 
 #[test]
-fn node_tint_modulates_prepared_mesh_and_instance_set_vertex_colors() {
+fn opaque_node_tint_is_retained_per_primitive_not_baked_into_vertex_colors() {
     let assets = Assets::new();
     let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
     let material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
@@ -157,18 +157,22 @@ fn node_tint_modulates_prepared_mesh_and_instance_set_vertex_colors() {
 
     assert!(
         prepared.primitives.iter().any(|primitive| {
-            primitive.vertices().iter().all(|vertex| {
-                vertex.color.r > 0.9 && vertex.color.g <= 1.0e-6 && vertex.color.b <= 1.0e-6
-            })
+            primitive.tint() == Color::from_linear_rgba(1.0, 0.0, 0.0, 1.0)
+                && primitive
+                    .vertices()
+                    .iter()
+                    .all(|vertex| vertex.color == Color::WHITE)
         }),
-        "mesh tint should modulate baked vertex colors"
+        "mesh tint should be retained as draw tint without rewriting vertex colors"
     );
     assert!(
         prepared.primitives.iter().any(|primitive| {
-            primitive.vertices().iter().all(|vertex| {
-                vertex.color.r <= 1.0e-6 && vertex.color.g <= 1.0e-6 && vertex.color.b > 0.9
-            })
+            primitive.tint() == Color::from_linear_rgba(0.0, 0.0, 1.0, 1.0)
+                && primitive
+                    .vertices()
+                    .iter()
+                    .all(|vertex| vertex.color == Color::WHITE)
         }),
-        "instance-set tint should modulate baked vertex colors"
+        "instance-set tint should be retained as draw tint without rewriting vertex colors"
     );
 }

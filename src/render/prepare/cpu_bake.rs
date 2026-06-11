@@ -1,4 +1,3 @@
-use crate::geometry::Primitive;
 use crate::material::{Color, MaterialDesc};
 use crate::scene::Vec3;
 
@@ -6,7 +5,7 @@ use super::super::camera::CameraProjection;
 use super::lighting::PreparedLights;
 use super::materials::MaterialPass;
 use super::shadows::{ShadowOccluder, directional_shadow_factor};
-use super::types::{PrimitiveSinks, TransparentPrimitive};
+use super::types::{PreparedPrimitive, PrimitiveSinks, TransparentPrimitive};
 
 #[derive(Clone, Copy)]
 pub(super) struct CpuBakeCorner {
@@ -65,7 +64,7 @@ pub(super) fn subdivided_cpu_corners(
 }
 
 pub(super) fn push_material_pass_primitive(
-    primitive: Primitive,
+    primitive: PreparedPrimitive,
     material_pass: MaterialPass,
     sinks: &mut PrimitiveSinks<'_>,
     camera_projection: Option<&CameraProjection>,
@@ -186,7 +185,10 @@ fn normalize_vec3(vector: Vec3) -> Vec3 {
     }
 }
 
-fn average_sort_depth(primitive: &Primitive, camera_projection: Option<&CameraProjection>) -> f32 {
+fn average_sort_depth(
+    primitive: &PreparedPrimitive,
+    camera_projection: Option<&CameraProjection>,
+) -> f32 {
     if let Some(camera_projection) = camera_projection {
         let vertices = primitive.vertices();
         let mut depth_sum = 0.0;

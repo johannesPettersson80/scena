@@ -19,13 +19,13 @@ mod reporting;
 mod settings;
 mod surface;
 
+use self::prepare::PreparedPrimitive;
 use crate::assets::EnvironmentHandle;
 use crate::diagnostics::{
     Backend, Capabilities, CapabilityReport, ChangeKind, DebugOverlay, DevicePoll, Diagnostic,
     GpuAdapterReport, NotPreparedReason, OutputColorSpace, RenderError, RenderOutcome,
     RendererStats,
 };
-use crate::geometry::Primitive;
 use crate::material::Color;
 use crate::picking::InteractionStyle;
 use crate::platform::SurfaceKind;
@@ -108,10 +108,13 @@ struct PreparedSceneState {
     scene: Weak<()>,
     structure_revision: u64,
     transform_revision: u64,
+    appearance_revision: u64,
+    visibility_revision: u64,
     environment_revision: u64,
     target_revision: u64,
     debug_revision: u64,
-    primitives: Vec<Primitive>,
+    retained_primitives: Vec<PreparedPrimitive>,
+    primitives: Vec<PreparedPrimitive>,
     clipping_planes: Vec<ClippingPlane>,
 }
 
@@ -425,6 +428,28 @@ impl Renderer {
             });
         }
 
+        let current_revision = scene.appearance_revision();
+        if prepared.appearance_revision != current_revision {
+            return Err(RenderError::NotPrepared {
+                reason: NotPreparedReason::SceneChanged {
+                    prepared_revision: prepared.appearance_revision,
+                    current_revision,
+                    change: ChangeKind::Appearance,
+                },
+            });
+        }
+
+        let current_revision = scene.visibility_revision();
+        if prepared.visibility_revision != current_revision {
+            return Err(RenderError::NotPrepared {
+                reason: NotPreparedReason::SceneChanged {
+                    prepared_revision: prepared.visibility_revision,
+                    current_revision,
+                    change: ChangeKind::Visibility,
+                },
+            });
+        }
+
         if prepared.environment_revision != self.environment_revision {
             return Err(RenderError::NotPrepared {
                 reason: NotPreparedReason::EnvironmentChanged {
@@ -471,6 +496,8 @@ impl RenderedFrameState {
     fn matches(self, dirty_state: SceneDirtyState, camera: CameraKey) -> bool {
         self.dirty_state.structure_revision == dirty_state.structure_revision
             && self.dirty_state.transform_revision == dirty_state.transform_revision
+            && self.dirty_state.appearance_revision == dirty_state.appearance_revision
+            && self.dirty_state.visibility_revision == dirty_state.visibility_revision
             && self.dirty_state.interaction_revision == dirty_state.interaction_revision
             && self.camera == camera
     }
@@ -481,202 +508,7 @@ fn cpu_frame_postprocess_applies(backend: Backend) -> bool {
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
-impl Renderer {
-    fn prepare_telemetry_for_test(&self) -> PrepareTelemetry {
-        self.prepare_telemetry
-    }
-}
-
-#[cfg(all(test, not(target_arch = "wasm32")))]
-mod tests {
-    use crate::assets::Assets;
-    use crate::diagnostics::DebugOverlay;
-    use crate::geometry::GeometryDesc;
-    use crate::material::{Color, MaterialDesc};
-    use crate::platform::SurfaceEvent;
-    use crate::scene::{DirectionalLight, NodeKey, Scene, Transform, Vec3};
-
-    use super::Renderer;
-
-    #[test]
-    fn transform_only_gpu_prepare_updates_draw_uniforms_without_recollecting_primitives() {
-        let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
-            return;
-        };
-        let assets = Assets::new();
-        let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.4, 0.4, 0.4));
-        let material =
-            assets.create_material(MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.8));
-        let mut scene = Scene::new();
-        scene.add_default_camera().expect("camera inserts");
-        let moving = scene
-            .mesh(geometry, material)
-            .transform(Transform::at(Vec3::new(-0.4, 0.0, 0.0)))
-            .add()
-            .expect("first mesh inserts");
-        scene
-            .mesh(geometry, material)
-            .transform(Transform::at(Vec3::new(0.4, 0.0, 0.0)))
-            .add()
-            .expect("second mesh inserts");
-
-        renderer
-            .prepare_with_assets(&mut scene, &assets)
-            .expect("initial GPU prepare succeeds");
-        let first = renderer.prepare_telemetry_for_test();
-
-        scene
-            .set_transform(moving, Transform::at(Vec3::new(-0.15, 0.0, 0.0)))
-            .expect("mesh transform updates");
-        renderer
-            .prepare_with_assets(&mut scene, &assets)
-            .expect("transform-only GPU prepare succeeds");
-        let second = renderer.prepare_telemetry_for_test();
-
-        assert_eq!(
-            second.prepared_primitive_collections, first.prepared_primitive_collections,
-            "transform-only GPU prepares must skip canonical primitive collection"
-        );
-        assert_eq!(
-            second.static_gpu_resource_rebuilds, first.static_gpu_resource_rebuilds,
-            "transform-only GPU prepares must reuse static GPU draw resources"
-        );
-        assert_eq!(
-            second.dynamic_template_prepares,
-            first.dynamic_template_prepares + 1,
-            "transform-only GPU prepares must take the dynamic template path"
-        );
-        assert_eq!(
-            second.draw_uniform_only_updates,
-            first.draw_uniform_only_updates + 1,
-            "transform-only GPU prepares must update per-draw uniforms"
-        );
-    }
-
-    #[test]
-    fn target_change_rejects_transform_only_gpu_template_reuse() {
-        let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
-            return;
-        };
-        let (assets, mut scene, moving) = gpu_template_scene();
-
-        renderer
-            .prepare_with_assets(&mut scene, &assets)
-            .expect("initial GPU prepare succeeds");
-        let first = renderer.prepare_telemetry_for_test();
-
-        renderer
-            .handle_surface_event(SurfaceEvent::Resize {
-                width: 24,
-                height: 16,
-            })
-            .expect("target resizes");
-        scene
-            .set_transform(moving, Transform::at(Vec3::new(-0.15, 0.0, 0.0)))
-            .expect("mesh transform updates");
-        renderer
-            .prepare_with_assets(&mut scene, &assets)
-            .expect("target-changed prepare succeeds");
-        let second = renderer.prepare_telemetry_for_test();
-
-        assert!(
-            second.prepared_primitive_collections > first.prepared_primitive_collections,
-            "target changes must force a full prepare instead of a dynamic draw-template update"
-        );
-    }
-
-    #[test]
-    fn environment_and_debug_changes_reject_transform_only_gpu_template_reuse() {
-        let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
-            return;
-        };
-        let (assets, mut scene, moving) = gpu_template_scene();
-
-        renderer
-            .prepare_with_assets(&mut scene, &assets)
-            .expect("initial GPU prepare succeeds");
-        let first = renderer.prepare_telemetry_for_test();
-
-        renderer.set_environment(assets.default_environment());
-        scene
-            .set_transform(moving, Transform::at(Vec3::new(-0.15, 0.0, 0.0)))
-            .expect("mesh transform updates");
-        renderer
-            .prepare_with_assets(&mut scene, &assets)
-            .expect("environment-changed prepare succeeds");
-        let second = renderer.prepare_telemetry_for_test();
-
-        assert!(
-            second.prepared_primitive_collections > first.prepared_primitive_collections,
-            "environment changes must force a full prepare"
-        );
-        renderer.set_debug_overlay(DebugOverlay::Wireframe);
-        scene
-            .set_transform(moving, Transform::at(Vec3::new(0.0, 0.0, 0.0)))
-            .expect("mesh transform updates again");
-        renderer
-            .prepare_with_assets(&mut scene, &assets)
-            .expect("debug-changed prepare succeeds");
-        let third = renderer.prepare_telemetry_for_test();
-
-        assert!(
-            third.prepared_primitive_collections > second.prepared_primitive_collections,
-            "debug draw-shape changes must force a full prepare"
-        );
-    }
-
-    #[test]
-    fn shadow_state_change_rejects_transform_only_gpu_template_reuse() {
-        let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
-            return;
-        };
-        let (assets, mut scene, _moving) = gpu_template_scene();
-
-        renderer
-            .prepare_with_assets(&mut scene, &assets)
-            .expect("initial GPU prepare succeeds");
-        let first = renderer.prepare_telemetry_for_test();
-
-        scene
-            .directional_light(DirectionalLight::default().with_shadows(true))
-            .add()
-            .expect("shadowed light inserts");
-        renderer
-            .prepare_with_assets(&mut scene, &assets)
-            .expect("shadow-state-changed prepare succeeds");
-        let second = renderer.prepare_telemetry_for_test();
-
-        assert!(
-            second.prepared_primitive_collections > first.prepared_primitive_collections,
-            "shadow pass eligibility changes must force a full prepare"
-        );
-        assert_eq!(
-            renderer.stats().shadow_maps,
-            1,
-            "shadow pass must stay enabled after the fallback full prepare"
-        );
-    }
-
-    fn gpu_template_scene() -> (Assets, Scene, NodeKey) {
-        let assets = Assets::new();
-        let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.4, 0.4, 0.4));
-        let material =
-            assets.create_material(MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 0.8));
-        let mut scene = Scene::new();
-        scene.add_default_camera().expect("camera inserts");
-        let moving = scene
-            .mesh(geometry, material)
-            .transform(Transform::at(Vec3::new(-0.4, 0.0, 0.0)))
-            .add()
-            .expect("first mesh inserts");
-        scene
-            .mesh(geometry, material)
-            .transform(Transform::at(Vec3::new(0.4, 0.0, 0.0)))
-            .add()
-            .expect("second mesh inserts");
-        (assets, scene, moving)
-    }
-}
+mod tests;
 
 impl Drop for Renderer {
     fn drop(&mut self) {

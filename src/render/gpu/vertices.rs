@@ -1,4 +1,5 @@
-use crate::geometry::{Primitive, PrimitiveVertexAttributes, Vertex};
+use crate::geometry::{PrimitiveVertexAttributes, Vertex};
+use crate::render::prepare::PreparedPrimitive;
 use crate::render::prepare::transforms::{
     invert_matrix4, unbake_normal_to_model_space, unbake_position_to_model_space,
 };
@@ -50,6 +51,7 @@ pub(super) struct PrimitiveDrawBatch {
 pub(super) struct DrawUniformValue {
     pub(super) world_from_model: [f32; 16],
     pub(super) normal_from_model: [f32; 16],
+    pub(super) tint: crate::material::Color,
 }
 
 /// Writes the prepared primitives as MODEL-SPACE vertex bytes for GPU upload.
@@ -60,9 +62,10 @@ pub(super) struct DrawUniformValue {
 /// `world_from_model` from the dynamic-offset draw uniform, yielding the
 /// same world-space position as the CPU path. Phase 1A.2 closure for
 /// scena-wgpu-architect F2.
-pub(super) fn encode_vertices(primitives: &[Primitive]) -> Vec<u8> {
+pub(super) fn encode_vertices(primitives: &[PreparedPrimitive]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(primitives.len() * 3 * VERTEX_BYTE_LEN);
-    for primitive in primitives {
+    for prepared in primitives {
+        let primitive = prepared.primitive();
         let world_from_model = primitive.world_from_model();
         let normal_from_model = primitive.normal_from_model();
         let position_inverse = invert_matrix4(&world_from_model);
@@ -103,12 +106,12 @@ pub(super) fn encode_vertices(primitives: &[Primitive]) -> Vec<u8> {
 }
 
 pub(super) fn encode_draw_batches(
-    primitives: &[Primitive],
+    primitives: &[PreparedPrimitive],
 ) -> (Vec<PrimitiveDrawBatch>, Vec<DrawUniformValue>) {
     let mut batches: Vec<PrimitiveDrawBatch> = Vec::new();
     let mut draw_uniforms: Vec<DrawUniformValue> = Vec::new();
-    for (index, primitive) in primitives.iter().enumerate() {
-        let start_vertex = (index as u32).saturating_mul(3);
+    for primitive in primitives {
+        let start_vertex = primitive.original_vertex_offset();
         let material_slot = primitive.render_material_slot();
         let depth_prepass_eligible = primitive.depth_prepass_eligible();
         // F8 fallback: when world_from_model is singular (zero scale on an
@@ -130,15 +133,18 @@ pub(super) fn encode_draw_batches(
         } else {
             identity_matrix4()
         };
-        let draw_uniform_index = match draw_uniforms
-            .iter()
-            .position(|value| value.world_from_model == world_from_model)
-        {
+        let tint = primitive.tint();
+        let draw_uniform_index = match draw_uniforms.iter().position(|value| {
+            value.world_from_model == world_from_model
+                && value.normal_from_model == normal_from_model
+                && value.tint == tint
+        }) {
             Some(existing) => existing as u32,
             None => {
                 draw_uniforms.push(DrawUniformValue {
                     world_from_model,
                     normal_from_model,
+                    tint,
                 });
                 (draw_uniforms.len() - 1) as u32
             }
@@ -164,6 +170,7 @@ pub(super) fn encode_draw_batches(
         draw_uniforms.push(DrawUniformValue {
             world_from_model: identity_matrix4(),
             normal_from_model: identity_matrix4(),
+            tint: crate::material::Color::WHITE,
         });
     }
     (batches, draw_uniforms)
@@ -202,7 +209,7 @@ fn encode_vertex(bytes: &mut Vec<u8>, vertex: Vertex, attributes: PrimitiveVerte
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::{PrimitiveVertexAttributes, Vertex};
+    use crate::geometry::{Primitive, PrimitiveVertexAttributes, Vertex};
     use crate::material::Color;
     use crate::scene::Vec3;
 
@@ -266,7 +273,7 @@ mod tests {
             ],
         );
 
-        let bytes = encode_vertices(&[primitive]);
+        let bytes = encode_vertices(&[prepared(primitive, 0)]);
         let first_vertex = bytes[..VERTEX_BYTE_LEN]
             .chunks_exact(4)
             .map(|chunk| f32::from_ne_bytes(chunk.try_into().expect("f32 bytes")))
@@ -282,9 +289,9 @@ mod tests {
 
     #[test]
     fn gpu_draw_batches_preserve_prepared_material_slots() {
-        let first = Primitive::unlit_triangle().with_render_material_slot(1);
-        let second = Primitive::unlit_triangle().with_render_material_slot(1);
-        let third = Primitive::unlit_triangle().with_render_material_slot(2);
+        let first = prepared(Primitive::unlit_triangle().with_render_material_slot(1), 0);
+        let second = prepared(Primitive::unlit_triangle().with_render_material_slot(1), 3);
+        let third = prepared(Primitive::unlit_triangle().with_render_material_slot(2), 6);
 
         let (batches, draw_uniforms) = encode_draw_batches(&[first, second, third]);
 
@@ -318,17 +325,22 @@ mod tests {
 
     #[test]
     fn gpu_draw_batches_split_when_world_from_model_differs() {
-        let first = Primitive::unlit_triangle().with_render_material_slot(1);
-        let translated = Primitive::unlit_triangle()
-            .with_render_material_slot(1)
-            .with_world_from_model(
-                [
-                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 5.0, 0.0, 0.0, 1.0,
-                ],
-                [
-                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-                ],
-            );
+        let first = prepared(Primitive::unlit_triangle().with_render_material_slot(1), 0);
+        let translated = prepared(
+            Primitive::unlit_triangle()
+                .with_render_material_slot(1)
+                .with_world_from_model(
+                    [
+                        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 5.0, 0.0, 0.0,
+                        1.0,
+                    ],
+                    [
+                        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+                        1.0,
+                    ],
+                ),
+            3,
+        );
 
         let (batches, draw_uniforms) = encode_draw_batches(&[first, translated]);
 
@@ -358,11 +370,51 @@ mod tests {
     }
 
     #[test]
+    fn gpu_draw_batches_split_when_opaque_tint_differs() {
+        let first = PreparedPrimitive::new(
+            Primitive::unlit_triangle().with_render_material_slot(1),
+            None,
+            Color::from_linear_rgba(1.0, 0.0, 0.0, 1.0),
+        )
+        .with_original_vertex_offset(0);
+        let second = PreparedPrimitive::new(
+            Primitive::unlit_triangle().with_render_material_slot(1),
+            None,
+            Color::from_linear_rgba(0.0, 0.0, 1.0, 1.0),
+        )
+        .with_original_vertex_offset(3);
+
+        let (batches, draw_uniforms) = encode_draw_batches(&[first, second]);
+
+        assert_eq!(
+            batches.len(),
+            2,
+            "same-transform/same-material primitives with different opaque tints must not share a draw batch"
+        );
+        assert_eq!(
+            draw_uniforms.len(),
+            2,
+            "opaque tint is part of draw-uniform identity"
+        );
+        assert_eq!(
+            draw_uniforms[0].tint,
+            Color::from_linear_rgba(1.0, 0.0, 0.0, 1.0)
+        );
+        assert_eq!(
+            draw_uniforms[1].tint,
+            Color::from_linear_rgba(0.0, 0.0, 1.0, 1.0)
+        );
+    }
+
+    #[test]
     fn gpu_draw_batches_split_when_depth_prepass_eligibility_differs() {
-        let opaque = Primitive::unlit_triangle().with_render_material_slot(1);
-        let helper_stroke = Primitive::unlit_triangle()
-            .with_render_material_slot(1)
-            .without_depth_prepass();
+        let opaque = prepared(Primitive::unlit_triangle().with_render_material_slot(1), 0);
+        let helper_stroke = prepared(
+            Primitive::unlit_triangle()
+                .with_render_material_slot(1)
+                .without_depth_prepass(),
+            3,
+        );
 
         let (batches, draw_uniforms) = encode_draw_batches(&[opaque, helper_stroke]);
 
@@ -391,5 +443,10 @@ mod tests {
             1,
             "depth eligibility should not force another draw uniform when the transform is shared",
         );
+    }
+
+    fn prepared(primitive: Primitive, original_vertex_offset: u32) -> PreparedPrimitive {
+        PreparedPrimitive::new(primitive, None, Color::WHITE)
+            .with_original_vertex_offset(original_vertex_offset)
     }
 }

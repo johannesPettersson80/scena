@@ -212,6 +212,7 @@ function revisionsEqual(a, b) {
     b &&
     a.structure === b.structure &&
     a.transform === b.transform &&
+    a.appearance === b.appearance &&
     a.interaction === b.interaction
   );
 }
@@ -392,6 +393,22 @@ async function runPageProof(page) {
         }
         return hash.toString(16).padStart(16, "0");
       };
+      const captureSummary = (capture) => ({
+        descriptor: JSON.parse(capture.descriptorJson),
+        rgba8_byte_length: capture.rgba8.length,
+        rgba8_fnv1a64: fnv1a64(capture.rgba8),
+      });
+      const timedPrepare = (label) => {
+        const started = performance.now();
+        host.prepare();
+        const ended = performance.now();
+        return {
+          label,
+          duration_ms: ended - started,
+          started_ms: started,
+          ended_ms: ended,
+        };
+      };
       const handleNumber = (value) => {
         const number = typeof value === "bigint" ? Number(value) : value;
         if (!Number.isSafeInteger(number) || number <= 0) {
@@ -538,11 +555,15 @@ async function runPageProof(page) {
       host.setCameraJson(JSON.stringify(framedCamera));
       const renderedCamera = JSON.parse(host.getCameraJson());
 
-      host.prepare();
+      const phase1BeforeTintInspection = JSON.parse(host.inspectJson());
+      const phase1BeforeTintPrepare = timedPrepare("before_opaque_tint");
+      const phase1BeforeTintRenderOutcome = JSON.parse(host.render());
+      const phase1BeforeTintCapture = captureSummary(host.capture());
+      host.setNodeTint(leftMeshHandle, 1.0, 0.16, 0.08, 1.0);
+      const phase1AfterTintInspection = JSON.parse(host.inspectJson());
+      const phase1AfterTintPrepare = timedPrepare("after_opaque_tint");
       const renderOutcome = JSON.parse(host.render());
-      const capture = host.capture();
-      const captureDescriptor = JSON.parse(capture.descriptorJson);
-      const captureRgba8Length = capture.rgba8.length;
+      const capture = captureSummary(host.capture());
       const inspectJson = JSON.parse(host.inspectJson());
       const annotationProjectionsJson = JSON.parse(host.annotationProjectionsJson());
 
@@ -627,11 +648,16 @@ async function runPageProof(page) {
         stats: JSON.parse(host.statsJson()),
         inspect_json: inspectJson,
         annotation_projections_json: annotationProjectionsJson,
-        capture: {
-          descriptor: captureDescriptor,
-          rgba8_byte_length: captureRgba8Length,
-          rgba8_fnv1a64: fnv1a64(capture.rgba8),
+        phase1_appearance_dirty_tracking: {
+          before_tint_inspection: phase1BeforeTintInspection,
+          after_tint_inspection: phase1AfterTintInspection,
+          prepare_timings: [phase1BeforeTintPrepare, phase1AfterTintPrepare],
+          before_tint_render_outcome: phase1BeforeTintRenderOutcome,
+          after_tint_render_outcome: renderOutcome,
+          before_tint_capture: phase1BeforeTintCapture,
+          after_tint_capture: capture,
         },
+        capture,
         pick,
       };
     },
@@ -702,6 +728,39 @@ function assertProof(pageProof, screenshot) {
     "capture_rgba8_hash_matches_descriptor",
     pageProof.capture.rgba8_fnv1a64 === pageProof.capture.descriptor.pixels.fnv1a64,
     pageProof.capture,
+  );
+  const phase1 = pageProof.phase1_appearance_dirty_tracking;
+  const phase1BeforeRevisions = phase1.before_tint_inspection.revisions;
+  const phase1AfterRevisions = phase1.after_tint_inspection.revisions;
+  check(
+    "phase1_opaque_tint_preserves_structure_revision",
+    phase1AfterRevisions.structure === phase1BeforeRevisions.structure,
+    { before: phase1BeforeRevisions, after: phase1AfterRevisions },
+  );
+  check(
+    "phase1_opaque_tint_preserves_transform_revision",
+    phase1AfterRevisions.transform === phase1BeforeRevisions.transform,
+    { before: phase1BeforeRevisions, after: phase1AfterRevisions },
+  );
+  check(
+    "phase1_opaque_tint_bumps_appearance_revision",
+    phase1AfterRevisions.appearance > phase1BeforeRevisions.appearance,
+    { before: phase1BeforeRevisions, after: phase1AfterRevisions },
+  );
+  check(
+    "phase1_prepare_timings_recorded",
+    Array.isArray(phase1.prepare_timings) &&
+      phase1.prepare_timings.length === 2 &&
+      phase1.prepare_timings.every((entry) => entry.duration_ms >= 0),
+    phase1.prepare_timings,
+  );
+  check(
+    "phase1_opaque_tint_changes_rendered_pixels",
+    phase1.before_tint_capture.rgba8_fnv1a64 !== phase1.after_tint_capture.rgba8_fnv1a64,
+    {
+      before: phase1.before_tint_capture.rgba8_fnv1a64,
+      after: phase1.after_tint_capture.rgba8_fnv1a64,
+    },
   );
 
   const tracked = pageProof.handles.tracked_node;
@@ -911,6 +970,7 @@ async function main() {
     visibility_probe: pageProof.visibility_probe,
     subtree_report: pageProof.subtree_report,
     subtree_tint_probe: pageProof.subtree_tint_probe,
+    phase1_appearance_dirty_tracking: pageProof.phase1_appearance_dirty_tracking,
     camera: pageProof.camera,
     render_outcome: pageProof.render_outcome,
     inspect_json: pageProof.inspect_json,

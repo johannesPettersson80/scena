@@ -8,23 +8,37 @@ use crate::material::{
 use crate::scene::{NodeKey, Vec3};
 
 use super::super::RasterTarget;
+use super::primitives::draw_uniform_tint;
+use super::types::PreparedPrimitive;
+
+struct StrokeSegmentStyle {
+    color: Color,
+    tint: Option<Color>,
+    width_px: f32,
+}
 
 pub(super) fn append_wireframe_primitives(
     node: NodeKey,
     geometry: &GeometryDesc,
     material: &MaterialDesc,
+    tint: Option<Color>,
     target: RasterTarget,
-    primitives: &mut Vec<Primitive>,
+    primitives: &mut Vec<PreparedPrimitive>,
 ) -> Result<(), PrepareError> {
     let (color, width_px) = technical_stroke_material(node, material)?;
+    let style = StrokeSegmentStyle {
+        color,
+        tint,
+        width_px,
+    };
     let vertices = geometry.vertices();
     for triangle in geometry.indices().chunks_exact(3) {
         for (start, end) in triangle_edges(triangle) {
             append_line_segment(
+                node,
                 vertices[start as usize].position,
                 vertices[end as usize].position,
-                color,
-                width_px,
+                &style,
                 target,
                 primitives,
             );
@@ -37,10 +51,16 @@ pub(super) fn append_edge_primitives(
     node: NodeKey,
     geometry: &GeometryDesc,
     material: &MaterialDesc,
+    tint: Option<Color>,
     target: RasterTarget,
-    primitives: &mut Vec<Primitive>,
+    primitives: &mut Vec<PreparedPrimitive>,
 ) -> Result<(), PrepareError> {
     let (color, width_px) = technical_stroke_material(node, material)?;
+    let style = StrokeSegmentStyle {
+        color,
+        tint,
+        width_px,
+    };
     let threshold = material
         .edge_angle_threshold_degrees()
         .unwrap_or(DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES);
@@ -60,10 +80,10 @@ pub(super) fn append_edge_primitives(
     for edge in edges.values() {
         if edge.is_visible(threshold) {
             append_line_segment(
+                node,
                 vertices[edge.start as usize].position,
                 vertices[edge.end as usize].position,
-                color,
-                width_px,
+                &style,
                 target,
                 primitives,
             );
@@ -76,17 +96,23 @@ pub(super) fn append_line_primitives(
     node: NodeKey,
     geometry: &GeometryDesc,
     material: &MaterialDesc,
+    tint: Option<Color>,
     target: RasterTarget,
-    primitives: &mut Vec<Primitive>,
+    primitives: &mut Vec<PreparedPrimitive>,
 ) -> Result<(), PrepareError> {
     let (color, width_px) = line_material(node, material)?;
+    let style = StrokeSegmentStyle {
+        color,
+        tint,
+        width_px,
+    };
     let vertices = geometry.vertices();
     for segment in geometry.indices().chunks_exact(2) {
         append_line_segment(
+            node,
             vertices[segment[0] as usize].position,
             vertices[segment[1] as usize].position,
-            color,
-            width_px,
+            &style,
             target,
             primitives,
         );
@@ -142,12 +168,12 @@ fn line_material(node: NodeKey, material: &MaterialDesc) -> Result<(Color, f32),
 }
 
 fn append_line_segment(
+    node: NodeKey,
     start: Vec3,
     end: Vec3,
-    color: Color,
-    width_px: f32,
+    style: &StrokeSegmentStyle,
     target: RasterTarget,
-    primitives: &mut Vec<Primitive>,
+    primitives: &mut Vec<PreparedPrimitive>,
 ) {
     let start = ScreenPoint::from_vec3(start, target);
     let end = ScreenPoint::from_vec3(end, target);
@@ -158,7 +184,7 @@ fn append_line_segment(
         return;
     }
 
-    let half_width = width_px * 0.5;
+    let half_width = style.width_px * 0.5;
     let normal_x = -delta_y / length * half_width;
     let normal_y = delta_x / length * half_width;
     let a = start.offset(normal_x, normal_y).to_vec3(target);
@@ -166,22 +192,44 @@ fn append_line_segment(
     let c = end.offset(-normal_x, -normal_y).to_vec3(target);
     let d = start.offset(-normal_x, -normal_y).to_vec3(target);
 
-    primitives.push(
+    primitives.push(PreparedPrimitive::new(
         Primitive::triangle([
-            Vertex { position: a, color },
-            Vertex { position: b, color },
-            Vertex { position: c, color },
+            Vertex {
+                position: a,
+                color: style.color,
+            },
+            Vertex {
+                position: b,
+                color: style.color,
+            },
+            Vertex {
+                position: c,
+                color: style.color,
+            },
         ])
         .without_depth_prepass(),
-    );
-    primitives.push(
+        Some(node),
+        draw_uniform_tint(style.tint),
+    ));
+    primitives.push(PreparedPrimitive::new(
         Primitive::triangle([
-            Vertex { position: a, color },
-            Vertex { position: c, color },
-            Vertex { position: d, color },
+            Vertex {
+                position: a,
+                color: style.color,
+            },
+            Vertex {
+                position: c,
+                color: style.color,
+            },
+            Vertex {
+                position: d,
+                color: style.color,
+            },
         ])
         .without_depth_prepass(),
-    );
+        Some(node),
+        draw_uniform_tint(style.tint),
+    ));
 }
 
 fn triangle_edges(triangle: &[u32]) -> [(u32, u32); 3] {

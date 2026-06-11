@@ -1,5 +1,3 @@
-use crate::geometry::Primitive;
-
 #[cfg(target_arch = "wasm32")]
 use crate::diagnostics::Backend;
 
@@ -21,41 +19,38 @@ use super::pipeline::{BYTES_PER_PIXEL, GPU_COLOR_FORMAT};
 #[cfg(not(target_arch = "wasm32"))]
 use super::stats::align_to;
 use super::stats::{PreparedResourceEstimateInput, estimate_prepared_resource_stats};
-use super::vertices::{DrawUniformValue, VERTEX_BYTE_LEN, encode_vertices};
+use super::vertices::{VERTEX_BYTE_LEN, encode_vertices};
 use super::{
     GpuDeviceState, GpuPrepareOutcome, GpuPreparedResources, depth, environment,
     material_texture_binding_mode, output, transmission,
 };
+use crate::render::prepare::PreparedPrimitive;
 
 impl GpuDeviceState {
-    pub(in crate::render) fn update_dynamic_draw_uniforms(
+    pub(in crate::render) fn update_dynamic_draw_state(
         &mut self,
         target: RasterTarget,
         light_uniform: PreparedGpuLightUniform,
         light_from_world: [f32; 16],
-        draw_uniform_pairs: &[([f32; 16], [f32; 16])],
+        draw_primitives: &[PreparedPrimitive],
     ) -> Result<(), &'static str> {
+        let (draw_batches, draw_uniforms) = super::vertices::encode_draw_batches(draw_primitives);
         let Some(resources) = self.resources.as_mut() else {
             return Err("no GPU resources");
         };
         if resources.target != target {
             return Err("target changed");
         }
-        if resources.draw_uniforms.len() != draw_uniform_pairs.len() {
-            return Err("draw uniform shape changed");
+        if draw_uniforms.len() > resources.draw_uniform_capacity {
+            return Err("draw uniform capacity exceeded");
         }
         self.queue.write_buffer(
             &resources.draw_uniform_buffer,
             0,
-            &output::encode_draw_uniform_bytes(draw_uniform_pairs),
+            &output::encode_draw_uniform_bytes(&draw_uniforms),
         );
-        resources.draw_uniforms = draw_uniform_pairs
-            .iter()
-            .map(|(world_from_model, normal_from_model)| DrawUniformValue {
-                world_from_model: *world_from_model,
-                normal_from_model: *normal_from_model,
-            })
-            .collect();
+        resources.draw_uniforms = draw_uniforms;
+        resources.draw_batches = draw_batches;
         resources.light_uniform = light_uniform;
         resources.light_from_world = light_from_world;
         Ok(())
@@ -66,7 +61,8 @@ impl GpuDeviceState {
     pub(in crate::render) fn prepare(
         &mut self,
         target: RasterTarget,
-        primitives: &[Primitive],
+        retained_primitives: &[PreparedPrimitive],
+        draw_primitives: &[PreparedPrimitive],
         lighting_stats: PreparedLightingStats,
         light_uniform: PreparedGpuLightUniform,
         light_from_world: [f32; 16],
@@ -76,12 +72,12 @@ impl GpuDeviceState {
     ) -> Result<GpuPrepareOutcome, crate::PrepareError> {
         self.configure_surface(target);
         self.release_prepared_resources();
-        if primitives.is_empty() {
+        if retained_primitives.is_empty() {
             return Ok(GpuPrepareOutcome::NoResources);
         }
 
-        let vertex_bytes = encode_vertices(primitives);
-        let (draw_batches, draw_uniforms) = super::vertices::encode_draw_batches(primitives);
+        let vertex_bytes = encode_vertices(retained_primitives);
+        let (draw_batches, draw_uniforms) = super::vertices::encode_draw_batches(draw_primitives);
         let vertex_buffer_size = vertex_bytes.len().max(4) as u64;
         let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("scena.m0.scene_vertices"),
@@ -132,16 +128,13 @@ impl GpuDeviceState {
             texture_binding_mode,
         );
         let draw_bind_group_layout = output::create_draw_bind_group_layout(&self.device);
+        let draw_uniform_capacity = retained_primitives.len().max(draw_uniforms.len());
         let draw_uniform_buffer =
-            output::create_draw_uniform_buffer(&self.device, draw_uniforms.len() as u64);
-        let draw_uniform_pairs: Vec<([f32; 16], [f32; 16])> = draw_uniforms
-            .iter()
-            .map(|value| (value.world_from_model, value.normal_from_model))
-            .collect();
+            output::create_draw_uniform_buffer(&self.device, draw_uniform_capacity as u64);
         self.queue.write_buffer(
             &draw_uniform_buffer,
             0,
-            &output::encode_draw_uniform_bytes(&draw_uniform_pairs),
+            &output::encode_draw_uniform_bytes(&draw_uniforms),
         );
         let draw_bind_group = output::create_draw_bind_group(
             &self.device,
@@ -244,6 +237,7 @@ impl GpuDeviceState {
             vertex_count: (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32,
             draw_batches,
             draw_uniforms,
+            draw_uniform_capacity,
             draw_uniform_buffer,
             draw_bind_group,
             offscreen_pipeline,
@@ -260,7 +254,8 @@ impl GpuDeviceState {
     pub(in crate::render) fn prepare(
         &mut self,
         target: RasterTarget,
-        primitives: &[Primitive],
+        retained_primitives: &[PreparedPrimitive],
+        draw_primitives: &[PreparedPrimitive],
         lighting_stats: PreparedLightingStats,
         light_uniform: PreparedGpuLightUniform,
         light_from_world: [f32; 16],
@@ -273,11 +268,11 @@ impl GpuDeviceState {
         let Some(surface) = self.surface.as_ref() else {
             return Ok(GpuPrepareOutcome::NoResources);
         };
-        if primitives.is_empty() {
+        if retained_primitives.is_empty() {
             return Ok(GpuPrepareOutcome::NoResources);
         }
-        let vertex_bytes = encode_vertices(primitives);
-        let (draw_batches, draw_uniforms) = super::vertices::encode_draw_batches(primitives);
+        let vertex_bytes = encode_vertices(retained_primitives);
+        let (draw_batches, draw_uniforms) = super::vertices::encode_draw_batches(draw_primitives);
         let vertex_buffer_size = vertex_bytes.len().max(4) as u64;
         let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("scena.browser.scene_vertices"),
@@ -302,16 +297,13 @@ impl GpuDeviceState {
             texture_binding_mode,
         );
         let draw_bind_group_layout = output::create_draw_bind_group_layout(&self.device);
+        let draw_uniform_capacity = retained_primitives.len().max(draw_uniforms.len());
         let draw_uniform_buffer =
-            output::create_draw_uniform_buffer(&self.device, draw_uniforms.len() as u64);
-        let draw_uniform_pairs: Vec<([f32; 16], [f32; 16])> = draw_uniforms
-            .iter()
-            .map(|value| (value.world_from_model, value.normal_from_model))
-            .collect();
+            output::create_draw_uniform_buffer(&self.device, draw_uniform_capacity as u64);
         self.queue.write_buffer(
             &draw_uniform_buffer,
             0,
-            &output::encode_draw_uniform_bytes(&draw_uniform_pairs),
+            &output::encode_draw_uniform_bytes(&draw_uniforms),
         );
         let draw_bind_group = output::create_draw_bind_group(
             &self.device,
@@ -416,6 +408,7 @@ impl GpuDeviceState {
             vertex_count,
             draw_batches,
             draw_uniforms,
+            draw_uniform_capacity,
             draw_uniform_buffer,
             draw_bind_group,
             stats,

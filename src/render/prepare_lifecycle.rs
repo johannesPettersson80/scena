@@ -1,6 +1,8 @@
+use std::collections::BTreeSet;
+
 use crate::assets::Assets;
 use crate::diagnostics::PrepareError;
-use crate::scene::Scene;
+use crate::scene::{NodeKey, Scene};
 
 use super::camera;
 use super::{Renderer, culling, gpu, prepare, validate_target_size};
@@ -131,20 +133,22 @@ impl Renderer {
                 self.dynamic_gpu_prepare_rejection_reason(scene, &backend_material_handles)
             {
                 log_dynamic_reject(reason);
-            } else {
-                let draw_uniform_pairs = dynamic_draw_uniform_pairs(scene);
+            } else if let Some(dynamic_primitives) = self.reencode_retained_draws(scene) {
                 match prepare::collect_dynamic_light_from_world(scene, assets) {
                     Ok(light_from_world) => {
                         if let Some(gpu) = &mut self.gpu {
-                            match gpu.update_dynamic_draw_uniforms(
+                            match gpu.update_dynamic_draw_state(
                                 self.target,
                                 gpu_light_uniform,
                                 light_from_world,
-                                &draw_uniform_pairs,
+                                &dynamic_primitives,
                             ) {
                                 Ok(()) => {
                                     if let Some(prepared) = self.prepared.as_mut() {
                                         prepared.transform_revision = scene.transform_revision();
+                                        prepared.appearance_revision = scene.appearance_revision();
+                                        prepared.visibility_revision = scene.visibility_revision();
+                                        prepared.primitives = dynamic_primitives;
                                     }
                                     self.stats.textures = logical_stats.textures;
                                     self.prepare_telemetry.dynamic_template_prepares = self
@@ -169,6 +173,8 @@ impl Renderer {
                     }
                     Err(_error) => log_dynamic_reject("dynamic shadow projection failed"),
                 }
+            } else {
+                log_dynamic_reject("visible source missing from retained template");
             }
         }
         let backend_sampled_base_color_textures = backend_material_slots
@@ -197,7 +203,9 @@ impl Renderer {
             active_camera_projection.as_ref(),
             self.gpu.is_some(),
         );
-        let primitives = culled_primitives.visible;
+        let retained_primitives = assign_original_vertex_offsets(culled_primitives.visible);
+        let primitives = filter_retained_primitives_for_scene(scene, &retained_primitives)
+            .unwrap_or_else(|| retained_primitives.clone());
         let depth_stats = prepare::collect_depth_prepass_stats(&primitives, self.target.backend);
         self.apply_prepare_stats(
             logical_stats,
@@ -211,6 +219,7 @@ impl Renderer {
         if let Some(gpu) = &mut self.gpu {
             gpu.prepare(
                 self.target,
+                &retained_primitives,
                 &primitives,
                 lighting_stats,
                 gpu_light_uniform,
@@ -235,9 +244,12 @@ impl Renderer {
             scene: scene.identity(),
             structure_revision: scene.structure_revision(),
             transform_revision: scene.transform_revision(),
+            appearance_revision: scene.appearance_revision(),
+            visibility_revision: scene.visibility_revision(),
             environment_revision: self.environment_revision,
             target_revision: self.target_revision,
             debug_revision: self.debug_revision,
+            retained_primitives,
             primitives,
             clipping_planes: scene.active_clipping_plane_values().collect(),
         });
@@ -293,11 +305,19 @@ impl Renderer {
         if !prepared
             .primitives
             .iter()
-            .all(crate::geometry::Primitive::depth_prepass_eligible)
+            .all(prepare::PreparedPrimitive::depth_prepass_eligible)
         {
             return Some("non-opaque primitive present");
         }
         None
+    }
+
+    fn reencode_retained_draws(&self, scene: &Scene) -> Option<Vec<prepare::PreparedPrimitive>> {
+        let prepared = self.prepared.as_ref()?;
+        if !retained_template_covers_visible_sources(scene, &prepared.retained_primitives) {
+            return None;
+        }
+        filter_retained_primitives_for_scene(scene, &prepared.retained_primitives)
     }
 
     fn apply_prepare_stats(
@@ -350,51 +370,56 @@ impl Renderer {
     }
 }
 
-fn dynamic_draw_uniform_pairs(scene: &Scene) -> Vec<([f32; 16], [f32; 16])> {
-    let mut values = Vec::new();
-    let origin_shift = scene.origin_shift();
-    for (_renderable, transform) in scene.renderables() {
-        push_dynamic_draw_uniform(&mut values, transform, origin_shift);
-    }
-    for (_node, _mesh, transform) in scene.mesh_nodes() {
-        push_dynamic_draw_uniform(&mut values, transform, origin_shift);
-    }
-    if values.is_empty() {
-        values.push((identity_matrix4(), identity_matrix4()));
-    }
-    values
+fn assign_original_vertex_offsets(
+    primitives: Vec<prepare::PreparedPrimitive>,
+) -> Vec<prepare::PreparedPrimitive> {
+    primitives
+        .into_iter()
+        .enumerate()
+        .map(|(index, primitive)| {
+            primitive.with_original_vertex_offset((index as u32).saturating_mul(3))
+        })
+        .collect()
 }
 
-fn push_dynamic_draw_uniform(
-    values: &mut Vec<([f32; 16], [f32; 16])>,
-    transform: crate::scene::Transform,
-    origin_shift: crate::scene::Vec3,
-) {
-    let raw_world_from_model =
-        prepare::transforms::world_from_model_matrix(transform, origin_shift);
-    let raw_normal_from_model = prepare::transforms::normal_from_model_matrix(transform);
-    let world_from_model = if prepare::transforms::invert_matrix4(&raw_world_from_model).is_some() {
-        raw_world_from_model
-    } else {
-        identity_matrix4()
-    };
-    let normal_from_model = if prepare::transforms::invert_matrix4(&raw_normal_from_model).is_some()
-    {
-        raw_normal_from_model
-    } else {
-        identity_matrix4()
-    };
-    if values
+fn filter_retained_primitives_for_scene(
+    scene: &Scene,
+    retained: &[prepare::PreparedPrimitive],
+) -> Option<Vec<prepare::PreparedPrimitive>> {
+    let mut visible = Vec::with_capacity(retained.len());
+    for primitive in retained {
+        let mut primitive = primitive.clone();
+        if let Some(node) = primitive.source_node() {
+            scene.node(node)?;
+            if !scene.visible_for_active_camera(node) {
+                continue;
+            }
+            primitive.set_tint(prepare::draw_uniform_tint(scene.node_tint(node).ok()?));
+        }
+        visible.push(primitive);
+    }
+    Some(visible)
+}
+
+fn retained_template_covers_visible_sources(
+    scene: &Scene,
+    retained: &[prepare::PreparedPrimitive],
+) -> bool {
+    let retained_sources = retained
         .iter()
-        .any(|(existing_world, _)| *existing_world == world_from_model)
-    {
-        return;
-    }
-    values.push((world_from_model, normal_from_model));
-}
+        .filter_map(prepare::PreparedPrimitive::source_node)
+        .collect::<BTreeSet<NodeKey>>();
 
-const fn identity_matrix4() -> [f32; 16] {
-    [
-        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-    ]
+    scene
+        .renderable_nodes()
+        .all(|(node, _, _)| retained_sources.contains(&node))
+        && scene
+            .mesh_nodes()
+            .all(|(node, _, _)| retained_sources.contains(&node))
+        && scene
+            .instance_set_nodes()
+            .all(|(node, _, _)| retained_sources.contains(&node))
+        && scene
+            .label_nodes()
+            .all(|(node, _, _, _)| retained_sources.contains(&node))
 }

@@ -85,7 +85,8 @@ pub(crate) fn check_module_boundaries(root: &Path, findings: &mut Vec<Finding>) 
         &[
             "self.configure_surface(target);",
             "self.release_prepared_resources();",
-            "let vertex_bytes = encode_vertices(primitives);",
+            "let vertex_bytes = encode_vertices(retained_primitives);",
+            "encode_draw_batches(draw_primitives)",
             "create_material_resources",
             "material_slots",
         ],

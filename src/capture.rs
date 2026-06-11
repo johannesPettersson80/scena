@@ -53,6 +53,8 @@ pub enum CapturePayloadKind {
 pub struct CaptureRevisions {
     pub structure: u64,
     pub transform: u64,
+    #[serde(default)]
+    pub appearance: u64,
     pub interaction: u64,
 }
 
@@ -389,6 +391,9 @@ fn revisions_from_dirty(dirty: SceneDirtyState) -> CaptureRevisions {
     CaptureRevisions {
         structure: dirty.structure_revision,
         transform: dirty.transform_revision,
+        appearance: dirty
+            .appearance_revision
+            .saturating_add(dirty.visibility_revision),
         interaction: dirty.interaction_revision,
     }
 }
@@ -491,12 +496,14 @@ impl fmt::Display for CaptureError {
             Self::StaleRender { rendered, current } => {
                 write!(
                     formatter,
-                    "capture scene state changed after render (rendered structure/transform/interaction = {}/{}/{}, current = {}/{}/{})",
+                    "capture scene state changed after render (rendered structure/transform/appearance/interaction = {}/{}/{}/{}, current = {}/{}/{}/{})",
                     rendered.structure,
                     rendered.transform,
+                    rendered.appearance,
                     rendered.interaction,
                     current.structure,
                     current.transform,
+                    current.appearance,
                     current.interaction
                 )
             }

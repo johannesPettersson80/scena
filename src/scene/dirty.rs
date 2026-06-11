@@ -4,6 +4,8 @@ use super::Scene;
 pub struct SceneDirtyState {
     pub structure_revision: u64,
     pub transform_revision: u64,
+    pub appearance_revision: u64,
+    pub visibility_revision: u64,
     pub interaction_revision: u64,
 }
 
@@ -12,6 +14,8 @@ impl Scene {
         SceneDirtyState {
             structure_revision: self.structure_revision,
             transform_revision: self.transform_revision,
+            appearance_revision: self.appearance_revision,
+            visibility_revision: self.visibility_revision,
             interaction_revision: self.interaction.revision(),
         }
     }

@@ -1,10 +1,12 @@
-/// One DrawUniform entry packs world_from_model + normal_from_model = 32
-/// floats = 128 bytes. WebGPU requires dynamic-offset uniform binding offsets
+use super::vertices::DrawUniformValue;
+
+/// One DrawUniform entry packs world_from_model + normal_from_model + tint = 36
+/// floats = 144 bytes. WebGPU requires dynamic-offset uniform binding offsets
 /// to be aligned to `min_uniform_buffer_offset_alignment`, which is 256 on
 /// every wgpu adapter we target. We pad each entry up to 256 bytes so the
-/// runtime stride matches the alignment requirement; the trailing 128 bytes
+/// runtime stride matches the alignment requirement; the trailing 112 bytes
 /// per entry are zero-padding.
-pub(super) const DRAW_UNIFORM_ENTRY_SIZE: u64 = 128;
+pub(super) const DRAW_UNIFORM_ENTRY_SIZE: u64 = 144;
 pub(super) const DRAW_UNIFORM_ENTRY_STRIDE: u64 = 256;
 
 pub(super) fn create_draw_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
@@ -55,21 +57,26 @@ pub(super) fn create_draw_bind_group(
 /// Encodes a `Vec<DrawUniformValue>` into a packed byte buffer where each
 /// entry occupies `DRAW_UNIFORM_ENTRY_STRIDE` bytes. The first
 /// `DRAW_UNIFORM_ENTRY_SIZE` bytes of each entry hold the world_from_model +
-/// normal_from_model matrices; the trailing bytes are zero padding required
+/// normal_from_model matrices plus tint; the trailing bytes are zero padding required
 /// by `min_uniform_buffer_offset_alignment` for dynamic-offset binding.
-pub(super) fn encode_draw_uniform_bytes(
-    values: &[(/*world*/ [f32; 16], /*normal*/ [f32; 16])],
-) -> Vec<u8> {
+pub(super) fn encode_draw_uniform_bytes(values: &[DrawUniformValue]) -> Vec<u8> {
     let mut bytes = vec![0u8; values.len().max(1) * DRAW_UNIFORM_ENTRY_STRIDE as usize];
-    for (entry_index, (world_from_model, normal_from_model)) in values.iter().enumerate() {
+    for (entry_index, value) in values.iter().enumerate() {
         let entry_offset = entry_index * DRAW_UNIFORM_ENTRY_STRIDE as usize;
-        for (i, value) in world_from_model.iter().enumerate() {
+        for (i, matrix_value) in value.world_from_model.iter().enumerate() {
             let byte_offset = entry_offset + i * 4;
-            bytes[byte_offset..byte_offset + 4].copy_from_slice(&value.to_ne_bytes());
+            bytes[byte_offset..byte_offset + 4].copy_from_slice(&matrix_value.to_ne_bytes());
         }
-        for (i, value) in normal_from_model.iter().enumerate() {
+        for (i, matrix_value) in value.normal_from_model.iter().enumerate() {
             let byte_offset = entry_offset + 64 + i * 4;
-            bytes[byte_offset..byte_offset + 4].copy_from_slice(&value.to_ne_bytes());
+            bytes[byte_offset..byte_offset + 4].copy_from_slice(&matrix_value.to_ne_bytes());
+        }
+        for (i, tint_value) in [value.tint.r, value.tint.g, value.tint.b, value.tint.a]
+            .iter()
+            .enumerate()
+        {
+            let byte_offset = entry_offset + 128 + i * 4;
+            bytes[byte_offset..byte_offset + 4].copy_from_slice(&tint_value.to_ne_bytes());
         }
     }
     bytes

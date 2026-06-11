@@ -121,6 +121,7 @@ struct GpuPreparedResources {
     // shader applies draw.world_from_model. Closes wgpu-architect F2.
     #[allow(dead_code)]
     draw_uniforms: Vec<DrawUniformValue>,
+    draw_uniform_capacity: usize,
     #[allow(dead_code)]
     draw_uniform_buffer: wgpu::Buffer,
     draw_bind_group: wgpu::BindGroup,
@@ -167,6 +168,7 @@ struct GpuPreparedResources {
     // draw_bind_group with dynamic offsets, mirroring the native variant.
     #[allow(dead_code)]
     draw_uniforms: Vec<DrawUniformValue>,
+    draw_uniform_capacity: usize,
     #[allow(dead_code)]
     draw_uniform_buffer: wgpu::Buffer,
     draw_bind_group: wgpu::BindGroup,
@@ -197,5 +199,19 @@ impl GpuDeviceState {
             width: surface.config.width,
             height: surface.config.height,
         })
+    }
+
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    pub(in crate::render) fn draw_vertex_ranges_for_test(&self) -> Vec<(u32, u32)> {
+        self.resources
+            .as_ref()
+            .map(|resources| {
+                resources
+                    .draw_batches
+                    .iter()
+                    .map(|batch| (batch.start_vertex, batch.vertex_count))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 }

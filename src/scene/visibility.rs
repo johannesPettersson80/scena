@@ -10,7 +10,7 @@ impl Scene {
             .ok_or(LookupError::NodeNotFound(node))?;
         if node.visible != visible {
             node.visible = visible;
-            self.structure_revision = self.structure_revision.saturating_add(1);
+            self.visibility_revision = self.visibility_revision.saturating_add(1);
         }
         Ok(())
     }

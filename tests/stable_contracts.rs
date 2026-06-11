@@ -176,6 +176,35 @@ fn capture_golden_matches_live_schema_serialization() {
     );
 }
 
+#[cfg(feature = "inspection")]
+#[test]
+fn inspection_and_capture_v1_revisions_accept_old_shape_without_appearance() {
+    let mut inspection =
+        read_fixture_json("tests/assets/stable-contracts/scene_inspection.v1.json");
+    inspection["revisions"]
+        .as_object_mut()
+        .expect("inspection revisions object")
+        .remove("appearance");
+    let inspection: scena::SceneInspectionReportV1 =
+        serde_json::from_value(inspection).expect("old inspection fixture shape deserializes");
+    assert_eq!(
+        inspection.revisions.appearance, 0,
+        "additive appearance_revision defaults for old scene_inspection.v1 consumers"
+    );
+
+    let mut capture = read_fixture_json("tests/assets/stable-contracts/capture.v1.json");
+    capture["revisions"]
+        .as_object_mut()
+        .expect("capture revisions object")
+        .remove("appearance");
+    let capture: CaptureDescriptor =
+        serde_json::from_value(capture).expect("old capture fixture shape deserializes");
+    assert_eq!(
+        capture.revisions.appearance, 0,
+        "additive appearance_revision defaults for old capture.v1 consumers"
+    );
+}
+
 #[test]
 fn annotation_projection_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<AnnotationProjectionReportV1>(
@@ -326,6 +355,8 @@ fn scene_inspection_schema_uses_report_local_handles_and_topology_helpers() {
         json!({
             "structure": scene.dirty_state().structure_revision,
             "transform": scene.dirty_state().transform_revision,
+            "appearance": scene.dirty_state().appearance_revision
+                + scene.dirty_state().visibility_revision,
             "interaction": scene.dirty_state().interaction_revision,
         })
     );

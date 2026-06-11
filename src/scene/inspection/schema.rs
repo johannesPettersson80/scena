@@ -37,6 +37,8 @@ pub struct SceneInspectionCountsV1 {
 pub struct SceneInspectionRevisionsV1 {
     pub structure: u64,
     pub transform: u64,
+    #[serde(default)]
+    pub appearance: u64,
     pub interaction: u64,
 }
 
@@ -179,6 +181,7 @@ impl SceneInspectionReport {
             revisions: SceneInspectionRevisionsV1 {
                 structure: self.structure_revision,
                 transform: self.transform_revision,
+                appearance: self.appearance_revision,
                 interaction: self.interaction_revision,
             },
         }

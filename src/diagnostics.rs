@@ -242,6 +242,8 @@ pub enum NotPreparedReason {
 pub enum ChangeKind {
     SceneStructure,
     Transform,
+    Appearance,
+    Visibility,
     Environment,
     RenderTarget,
     DebugOverlay,

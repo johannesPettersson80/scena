@@ -1,6 +1,7 @@
 use crate::app::prelude::*;
 pub(crate) fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Finding>) {
     check_scene_host_input_validation_contracts(root, findings);
+    check_phase1_appearance_dirty_contracts(root, findings);
     require_contains(
         root,
         findings,
@@ -317,4 +318,76 @@ fn check_scene_host_input_validation_contracts(root: &Path, findings: &mut Vec<F
             "set_transforms_components",
         ],
     );
+}
+
+fn check_phase1_appearance_dirty_contracts(root: &Path, findings: &mut Vec<Finding>) {
+    require_contains(
+        root,
+        findings,
+        "ARCH-APPEARANCE-DIRTY",
+        "src/scene/dirty.rs",
+        &["appearance_revision", "visibility_revision"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-APPEARANCE-DIRTY",
+        "src/scene/materials.rs",
+        &[
+            "tint_requires_structure_revision",
+            "self.appearance_revision = self.appearance_revision.saturating_add(1)",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-APPEARANCE-DIRTY",
+        "src/scene/visibility.rs",
+        &["self.visibility_revision = self.visibility_revision.saturating_add(1)"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-APPEARANCE-DIRTY",
+        "src/render/prepare/types.rs",
+        &[
+            "PreparedPrimitive",
+            "source_node",
+            "original_vertex_offset",
+            "tint",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-APPEARANCE-DIRTY",
+        "src/render/gpu/draw_uniform.rs",
+        &["DRAW_UNIFORM_ENTRY_SIZE: u64 = 144", "value.tint"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-APPEARANCE-DIRTY",
+        "src/render/gpu/output_shader.wgsl",
+        &["tint: vec4<f32>", "draw.tint"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-APPEARANCE-DIRTY",
+        "src/render/prepare_lifecycle.rs",
+        &["appearance_revision", "reencode_retained_draws"],
+    );
+
+    let materials = root.join("src/scene/materials.rs");
+    if let Ok(text) = fs::read_to_string(&materials)
+        && let Some(body) = braced_body_after(&text, "pub fn set_node_tint")
+        && body.contains("self.structure_revision = self.structure_revision.saturating_add(1)")
+        && !body.contains("tint_requires_structure_revision")
+    {
+        findings.push(Finding::new(
+            "ARCH-APPEARANCE-DIRTY",
+            "src/scene/materials.rs set_node_tint must not unconditionally bump structure_revision",
+        ));
+    }
 }

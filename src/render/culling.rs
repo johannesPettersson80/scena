@@ -1,15 +1,14 @@
-use crate::geometry::Primitive;
-
 use super::camera::CameraProjection;
+use super::prepare::PreparedPrimitive;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct CulledPrimitives {
-    pub(super) visible: Vec<Primitive>,
+    pub(super) visible: Vec<PreparedPrimitive>,
     pub(super) culled: u64,
 }
 
 pub(super) fn cull_prepared_primitives(
-    primitives: Vec<Primitive>,
+    primitives: Vec<PreparedPrimitive>,
     camera: Option<&CameraProjection>,
     _gpu_active: bool,
 ) -> CulledPrimitives {
@@ -17,7 +16,7 @@ pub(super) fn cull_prepared_primitives(
 }
 
 pub(super) fn cull_cpu_frustum(
-    primitives: Vec<Primitive>,
+    primitives: Vec<PreparedPrimitive>,
     camera: Option<&CameraProjection>,
 ) -> CulledPrimitives {
     let mut visible = Vec::with_capacity(primitives.len());
@@ -32,7 +31,7 @@ pub(super) fn cull_cpu_frustum(
     CulledPrimitives { visible, culled }
 }
 
-fn outside_camera_clip_box(primitive: &Primitive, camera: &CameraProjection) -> bool {
+fn outside_camera_clip_box(primitive: &PreparedPrimitive, camera: &CameraProjection) -> bool {
     let vertices = primitive.vertices();
     let projected = vertices.map(|vertex| camera.project(vertex.position));
     if projected.iter().all(Option::is_none) {
@@ -55,18 +54,23 @@ fn all<T>(items: &[T; 3], predicate: impl Fn(&T) -> bool) -> bool {
 mod tests {
     use crate::geometry::{Primitive, Vertex};
     use crate::material::Color;
+    use crate::render::prepare::PreparedPrimitive;
     use crate::scene::Vec3;
 
     use super::cull_cpu_frustum;
 
     #[test]
     fn cpu_frustum_culling_without_camera_keeps_world_space_primitives() {
-        let visible = Primitive::unlit_triangle();
-        let culled = Primitive::triangle([
-            vertex(2.0, -0.5, 0.0),
-            vertex(3.0, -0.5, 0.0),
-            vertex(2.5, 0.5, 0.0),
-        ]);
+        let visible = PreparedPrimitive::new(Primitive::unlit_triangle(), None, Color::WHITE);
+        let culled = PreparedPrimitive::new(
+            Primitive::triangle([
+                vertex(2.0, -0.5, 0.0),
+                vertex(3.0, -0.5, 0.0),
+                vertex(2.5, 0.5, 0.0),
+            ]),
+            None,
+            Color::WHITE,
+        );
 
         let result = cull_cpu_frustum(vec![visible.clone(), culled.clone()], None);
 
@@ -76,12 +80,16 @@ mod tests {
 
     #[test]
     fn gpu_path_uses_canonical_prepared_primitive_culling() {
-        let visible = Primitive::unlit_triangle();
-        let culled = Primitive::triangle([
-            vertex(2.0, -0.5, 0.0),
-            vertex(3.0, -0.5, 0.0),
-            vertex(2.5, 0.5, 0.0),
-        ]);
+        let visible = PreparedPrimitive::new(Primitive::unlit_triangle(), None, Color::WHITE);
+        let culled = PreparedPrimitive::new(
+            Primitive::triangle([
+                vertex(2.0, -0.5, 0.0),
+                vertex(3.0, -0.5, 0.0),
+                vertex(2.5, 0.5, 0.0),
+            ]),
+            None,
+            Color::WHITE,
+        );
 
         let result =
             super::cull_prepared_primitives(vec![visible.clone(), culled.clone()], None, true);

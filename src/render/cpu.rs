@@ -1,10 +1,11 @@
-use crate::geometry::{Primitive, Vertex};
+use crate::geometry::Vertex;
 use crate::material::Color;
 use crate::scene::{ClippingPlane, Vec3};
 
 use super::RasterTarget;
 use super::camera::CameraProjection;
 use super::output::{OrderIndependentTransparencyConfig, OutputTransform};
+use super::prepare::PreparedPrimitive;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct OitAccumPixel {
@@ -71,7 +72,9 @@ pub(super) fn clear_order_independent_transparency(accum: &mut [OitAccumPixel]) 
     }
 }
 
-pub(super) fn primitive_needs_order_independent_transparency(primitive: &Primitive) -> bool {
+pub(super) fn primitive_needs_order_independent_transparency(
+    primitive: &PreparedPrimitive,
+) -> bool {
     primitive
         .vertices()
         .iter()
@@ -80,7 +83,7 @@ pub(super) fn primitive_needs_order_independent_transparency(primitive: &Primiti
 
 pub(super) fn draw_primitive_cpu(
     cpu_frame: &mut CpuFrame<'_>,
-    primitive: &Primitive,
+    primitive: &PreparedPrimitive,
     clipping_planes: &[ClippingPlane],
     camera: &CameraProjection,
 ) {
@@ -127,7 +130,7 @@ pub(super) fn draw_primitive_cpu(
             if is_clipped(position, clipping_planes) {
                 continue;
             }
-            let color = mix_color(a, b, c, w0, w1, w2);
+            let color = multiply_color(mix_color(a, b, c, w0, w1, w2), primitive.tint());
             let depth = mix_depth(a.depth, b.depth, c.depth, w0, w1, w2);
             write_pixel(cpu_frame, x, y, color, depth);
         }
@@ -136,7 +139,7 @@ pub(super) fn draw_primitive_cpu(
 
 pub(super) fn draw_order_independent_transparency_cpu(
     cpu_frame: &mut CpuFrame<'_>,
-    primitive: &Primitive,
+    primitive: &PreparedPrimitive,
     clipping_planes: &[ClippingPlane],
     camera: &CameraProjection,
     accum: &mut [OitAccumPixel],
@@ -195,7 +198,7 @@ pub(super) fn draw_order_independent_transparency_cpu(
             }
             accumulate_order_independent_transparency(
                 &mut accum[pixel_index],
-                mix_color(a, b, c, w0, w1, w2),
+                multiply_color(mix_color(a, b, c, w0, w1, w2), primitive.tint()),
                 config,
             );
         }
@@ -289,6 +292,15 @@ fn mix_color_affine(a: Color, b: Color, c: Color, w0: f32, w1: f32, w2: f32) -> 
         a.g * w0 + b.g * w1 + c.g * w2,
         a.b * w0 + b.b * w1 + c.b * w2,
         a.a * w0 + b.a * w1 + c.a * w2,
+    )
+}
+
+fn multiply_color(color: Color, tint: Color) -> Color {
+    Color::from_linear_rgba(
+        color.r * tint.r,
+        color.g * tint.g,
+        color.b * tint.b,
+        color.a * tint.a,
     )
 }
 
