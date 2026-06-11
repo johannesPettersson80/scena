@@ -28,6 +28,9 @@ const REQUIRED_BINDINGS = [
   ["prototype", "setTransformsTyped"],
   ["prototype", "setVisible"],
   ["prototype", "setNodeTint"],
+  ["prototype", "setAntiAliasing"],
+  ["prototype", "setBloom"],
+  ["prototype", "setAmbientOcclusion"],
   ["prototype", "clearNodeTint"],
   ["prototype", "subtreeNodesJson"],
   ["prototype", "setSubtreeTint"],
@@ -409,6 +412,34 @@ async function runPageProof(page) {
           ended_ms: ended,
         };
       };
+      const timedRender = (label) => {
+        const started = performance.now();
+        const outcome = JSON.parse(host.render());
+        const ended = performance.now();
+        return {
+          label,
+          duration_ms: ended - started,
+          started_ms: started,
+          ended_ms: ended,
+          outcome,
+        };
+      };
+      const median = (values) => {
+        const sorted = [...values].sort((left, right) => left - right);
+        return sorted[Math.floor(sorted.length / 2)];
+      };
+      const samplePrepareRender = (label) => {
+        const prepare = timedPrepare(`${label}_prepare`);
+        const render = timedRender(`${label}_render`);
+        return {
+          label,
+          prepare,
+          render,
+          total_ms: prepare.duration_ms + render.duration_ms,
+        };
+      };
+      const waitForCanvasPresent = () =>
+        new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const handleNumber = (value) => {
         const number = typeof value === "bigint" ? Number(value) : value;
         if (!Number.isSafeInteger(number) || number <= 0) {
@@ -567,6 +598,34 @@ async function runPageProof(page) {
       const inspectJson = JSON.parse(host.inspectJson());
       const annotationProjectionsJson = JSON.parse(host.annotationProjectionsJson());
 
+      host.setAntiAliasing("none");
+      host.setBloom(null);
+      host.setAmbientOcclusion(null);
+      host.setNodeTint(rightMeshHandle, 4.0, 4.0, 4.0, 1.0);
+      const phase2OffWarmup = samplePrepareRender("phase2_post_off_warmup");
+      const phase2OffSamples = [];
+      for (let index = 0; index < 5; index += 1) {
+        phase2OffSamples.push(samplePrepareRender(`phase2_post_off_${index}`));
+      }
+      await waitForCanvasPresent();
+      const phase2OffCapture = captureSummary(host.capture());
+      const phase2OffStats = JSON.parse(host.statsJson());
+
+      host.setAntiAliasing("fxaa");
+      host.setBloom(JSON.stringify({ threshold_srgb: 208, intensity: 0.28, radius_px: 3 }));
+      host.setAmbientOcclusion(
+        JSON.stringify({ radius_px: 3, intensity: 0.45, depth_threshold: 0.025 }),
+      );
+      const phase2OnWarmup = samplePrepareRender("phase2_post_on_warmup");
+      const phase2OnSamples = [];
+      for (let index = 0; index < 5; index += 1) {
+        phase2OnSamples.push(samplePrepareRender(`phase2_post_on_${index}`));
+      }
+      await waitForCanvasPresent();
+      const phase2OnCapture = captureSummary(host.capture());
+      const phase2OnStats = JSON.parse(host.statsJson());
+      const phase2CapabilityReport = JSON.parse(host.capabilitiesJson());
+
       const trackedAnnotation = annotationProjectionsJson.annotations.find(
         (annotation) => annotation.id === "tracked-node",
       );
@@ -656,6 +715,19 @@ async function runPageProof(page) {
           after_tint_render_outcome: renderOutcome,
           before_tint_capture: phase1BeforeTintCapture,
           after_tint_capture: capture,
+        },
+        phase2_post_processing: {
+          off_warmup: phase2OffWarmup,
+          off_samples: phase2OffSamples,
+          on_warmup: phase2OnWarmup,
+          on_samples: phase2OnSamples,
+          off_median_ms: median(phase2OffSamples.map((sample) => sample.total_ms)),
+          on_median_ms: median(phase2OnSamples.map((sample) => sample.total_ms)),
+          off_capture: phase2OffCapture,
+          on_capture: phase2OnCapture,
+          off_stats: phase2OffStats,
+          on_stats: phase2OnStats,
+          capability_report: phase2CapabilityReport,
         },
         capture,
         pick,
@@ -760,6 +832,53 @@ function assertProof(pageProof, screenshot) {
     {
       before: phase1.before_tint_capture.rgba8_fnv1a64,
       after: phase1.after_tint_capture.rgba8_fnv1a64,
+    },
+  );
+  const phase2 = pageProof.phase2_post_processing;
+  const phase2Post = phase2.capability_report.post_processing || {};
+  check(
+    "phase2_post_off_has_zero_gpu_post_passes",
+    phase2.off_stats.fxaa_passes === 0 &&
+      phase2.off_stats.bloom_passes === 0 &&
+      phase2.off_stats.ambient_occlusion_passes === 0,
+    phase2.off_stats,
+  );
+  check(
+    "phase2_post_on_runs_full_gpu_chain",
+    phase2.on_stats.ambient_occlusion_passes === 1 &&
+      phase2.on_stats.bloom_passes === 1 &&
+      phase2.on_stats.fxaa_passes === 1,
+    phase2.on_stats,
+  );
+  check(
+    "phase2_capability_report_lists_active_post_passes",
+    phase2Post.anti_aliasing === true &&
+      phase2Post.bloom === true &&
+      phase2Post.screen_space_ambient_occlusion === true &&
+      phase2Post.ssao_depth_source === "depth_color_target" &&
+      Array.isArray(phase2Post.active_passes) &&
+      phase2Post.active_passes.join(",") === "screen_space_ambient_occlusion,bloom,fxaa",
+    phase2Post,
+  );
+  check(
+    "phase2_full_post_chain_changes_rendered_pixels",
+    phase2.off_capture.rgba8_fnv1a64 !== phase2.on_capture.rgba8_fnv1a64,
+    {
+      off: phase2.off_capture.rgba8_fnv1a64,
+      on: phase2.on_capture.rgba8_fnv1a64,
+    },
+  );
+  check(
+    "phase2_post_performance_budget_within_25_percent",
+    phase2.off_samples.length >= 5 &&
+      phase2.on_samples.length >= 5 &&
+      phase2.on_median_ms <= phase2.off_median_ms * 1.25,
+    {
+      off_median_ms: phase2.off_median_ms,
+      on_median_ms: phase2.on_median_ms,
+      ratio: phase2.off_median_ms > 0 ? phase2.on_median_ms / phase2.off_median_ms : null,
+      off_samples: phase2.off_samples.map((sample) => sample.total_ms),
+      on_samples: phase2.on_samples.map((sample) => sample.total_ms),
     },
   );
 
@@ -971,6 +1090,7 @@ async function main() {
     subtree_report: pageProof.subtree_report,
     subtree_tint_probe: pageProof.subtree_tint_probe,
     phase1_appearance_dirty_tracking: pageProof.phase1_appearance_dirty_tracking,
+    phase2_post_processing: pageProof.phase2_post_processing,
     camera: pageProof.camera,
     render_outcome: pageProof.render_outcome,
     inspect_json: pageProof.inspect_json,

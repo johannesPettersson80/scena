@@ -340,9 +340,9 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         output_rgb,
     );
     if transmitted.a > 0.0 {
-        return transmitted;
+        return vec4<f32>(encode_post_target_rgb(transmitted.rgb), transmitted.a);
     }
-    return vec4<f32>(output_rgb, shaded.a);
+    return vec4<f32>(encode_post_target_rgb(output_rgb), shaded.a);
 }
 
 fn physical_transmission_color(
@@ -932,6 +932,25 @@ fn apply_tonemapper(color: vec3<f32>, color_management_mode: f32) -> vec3<f32> {
         return pbr_neutral_tonemap(color);
     }
     return aces_tonemap(color);
+}
+
+fn encode_post_target_rgb(color: vec3<f32>) -> vec3<f32> {
+    if camera.color_management.y <= 0.5 {
+        return color;
+    }
+    return vec3<f32>(
+        linear_to_srgb_channel(color.r),
+        linear_to_srgb_channel(color.g),
+        linear_to_srgb_channel(color.b),
+    );
+}
+
+fn linear_to_srgb_channel(channel: f32) -> f32 {
+    let value = clamp(channel, 0.0, 1.0);
+    if value <= 0.0031308 {
+        return value * 12.92;
+    }
+    return 1.055 * pow(value, 1.0 / 2.4) - 0.055;
 }
 
 fn pbr_neutral_tonemap(color_in: vec3<f32>) -> vec3<f32> {

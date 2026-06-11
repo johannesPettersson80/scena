@@ -1,5 +1,8 @@
 use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
-use crate::{AssetFetcher, AutoExposureConfig, Background, GridFloorOptions, LookupError};
+use crate::{
+    AntiAliasing, AssetFetcher, AutoExposureConfig, Background, GridFloorOptions, LookupError,
+    PostBloomConfig, ScreenSpaceAmbientOcclusionConfig,
+};
 
 impl<F: AssetFetcher> SceneHostCore<F> {
     pub fn apply_product_studio_visuals(&mut self, background: &str) -> Result<(), SceneHostError> {
@@ -9,6 +12,10 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         self.renderer.set_background(background);
         self.renderer
             .set_auto_exposure(AutoExposureConfig::product_studio());
+        self.renderer.set_anti_aliasing(AntiAliasing::Fxaa);
+        self.renderer.set_bloom(Some(PostBloomConfig::subtle()));
+        self.renderer
+            .set_screen_space_ambient_occlusion(Some(ScreenSpaceAmbientOcclusionConfig::subtle()));
         let lights = self.scene.add_studio_lighting()?;
         self.register_node(lights.key);
         self.register_node(lights.fill);

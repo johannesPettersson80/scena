@@ -7,7 +7,11 @@ mod build;
 #[cfg(target_arch = "wasm32")]
 mod debug;
 mod depth;
+#[cfg(not(target_arch = "wasm32"))]
 mod draw;
+mod draw_common;
+#[cfg(target_arch = "wasm32")]
+mod draw_surface;
 mod draw_uniform;
 mod environment;
 mod lifecycle;
@@ -19,6 +23,7 @@ mod material_upload;
 mod materials;
 mod output;
 mod pipeline;
+mod post;
 mod prepare_resources;
 mod scene_color;
 mod shadow;
@@ -35,6 +40,7 @@ use crate::platform::SurfaceSize;
 #[cfg(target_arch = "wasm32")]
 use self::browser_readback::BrowserReadbackResources;
 use self::material_bindings::MaterialTextureBindingMode;
+pub(super) use self::post::{GpuPostPassCounts, GpuPostSettings};
 use self::shadow::ShadowCasterResources;
 pub(super) use self::stats::GpuResourceStats;
 use self::vertices::{DrawUniformValue, PrimitiveDrawBatch};
@@ -85,6 +91,12 @@ pub(super) enum GpuPrepareOutcome {
     FullRebuild,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(in crate::render) struct GpuRenderResult {
+    pub(in crate::render) submitted: bool,
+    pub(in crate::render) post_counts: GpuPostPassCounts,
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug)]
 struct GpuPreparedResources {
@@ -125,6 +137,12 @@ struct GpuPreparedResources {
     #[allow(dead_code)]
     draw_uniform_buffer: wgpu::Buffer,
     draw_bind_group: wgpu::BindGroup,
+    output_bind_group_layout: wgpu::BindGroupLayout,
+    material_bind_group_layout: wgpu::BindGroupLayout,
+    draw_bind_group_layout: wgpu::BindGroupLayout,
+    texture_binding_mode: MaterialTextureBindingMode,
+    depth_compare: Option<wgpu::CompareFunction>,
+    post: Option<post::PostResources>,
     offscreen_pipeline: wgpu::RenderPipeline,
     surface_pipeline: Option<wgpu::RenderPipeline>,
     padded_bytes_per_row: u32,
@@ -172,6 +190,12 @@ struct GpuPreparedResources {
     #[allow(dead_code)]
     draw_uniform_buffer: wgpu::Buffer,
     draw_bind_group: wgpu::BindGroup,
+    output_bind_group_layout: wgpu::BindGroupLayout,
+    material_bind_group_layout: wgpu::BindGroupLayout,
+    draw_bind_group_layout: wgpu::BindGroupLayout,
+    texture_binding_mode: MaterialTextureBindingMode,
+    depth_compare: Option<wgpu::CompareFunction>,
+    post: Option<post::PostResources>,
     stats: GpuResourceStats,
 }
 
@@ -185,6 +209,14 @@ impl GpuDeviceState {
             .as_ref()
             .map(|resources| resources.stats)
             .unwrap_or_default()
+    }
+
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    pub(in crate::render) fn depth_prepass_has_color_target(&self) -> Option<bool> {
+        self.resources
+            .as_ref()
+            .and_then(|resources| resources.depth_prepass.as_ref())
+            .map(depth::DepthPrepassResources::depth_color_enabled)
     }
 
     pub(super) fn clamp_surface_size_to_device_limits(&self, size: SurfaceSize) -> SurfaceSize {

@@ -3,22 +3,21 @@ use std::sync::mpsc;
 
 use crate::diagnostics::RenderError;
 use crate::material::Color;
-#[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
-use wasm_bindgen::JsValue;
-#[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
-use wasm_bindgen_futures::JsFuture;
 
 use super::super::RasterTarget;
 use super::super::camera::CameraProjection;
-use super::GpuDeviceState;
-#[cfg(target_arch = "wasm32")]
-use super::browser_readback::{BrowserReadbackPass, encode_browser_readback_pass};
 use super::depth;
+use super::draw_common::{
+    camera_position_uniform, identity_matrix, post_color_management_uniform, wgpu_clear_color,
+};
 use super::output::{OutputUniformUpload, encode_output_uniform};
 use super::scene_color::{SceneColorPasses, encode_scene_color_passes};
 use super::shadow::encode_shadow_caster_pass;
+use super::{GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuRenderResult, post};
+
 impl GpuDeviceState {
     #[cfg(not(target_arch = "wasm32"))]
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::render) fn render_to_frame(
         &mut self,
         target: RasterTarget,
@@ -27,17 +26,37 @@ impl GpuDeviceState {
         background_color: Color,
         camera_projection: &CameraProjection,
         frame: &mut Vec<u8>,
-    ) -> Result<bool, RenderError> {
-        let Some(resources) = self.resources.as_ref() else {
+        post_settings: GpuPostSettings,
+    ) -> Result<GpuRenderResult, RenderError> {
+        let Some(resources) = self.resources.as_mut() else {
             frame.resize(target.byte_len(), 0);
             frame.fill(0);
-            return Ok(false);
+            return Ok(GpuRenderResult::default());
         };
         if resources.target != target {
             return Err(RenderError::GpuResourcesNotPrepared {
                 backend: target.backend,
             });
         }
+        let post_enabled = post_settings.enabled();
+        if post_enabled
+            && !resources
+                .post
+                .as_ref()
+                .is_some_and(|post| post::resources_match(post, target))
+        {
+            resources.post = Some(post::create_resources(
+                &self.device,
+                target,
+                &resources.output_bind_group_layout,
+                &resources.material_bind_group_layout,
+                &resources.draw_bind_group_layout,
+                resources.texture_binding_mode,
+                resources.depth_compare,
+                self.surface.as_ref().map(|surface| surface.config.format),
+            ));
+        }
+        let color_management = post_color_management_uniform(color_management, post_enabled);
         self.queue.write_buffer(
             &resources.output_uniform,
             0,
@@ -60,6 +79,20 @@ impl GpuDeviceState {
                 lighting: resources.light_uniform,
             }),
         );
+        let rebuild_depth_prepass = resources.depth_prepass.as_ref().and_then(|depth_prepass| {
+            (depth_prepass.depth_color_enabled() != post_settings.needs_depth_color())
+                .then(|| depth_prepass.reversed_z())
+        });
+        if let Some(reversed_z) = rebuild_depth_prepass {
+            resources.depth_prepass = Some(depth::create_depth_prepass_resources(
+                &self.device,
+                target,
+                reversed_z,
+                &resources.output_bind_group_layout,
+                &resources.draw_bind_group_layout,
+                post_settings.needs_depth_color(),
+            ));
+        }
         let surface_output =
             self.surface
                 .as_ref()
@@ -103,11 +136,26 @@ impl GpuDeviceState {
                 &resources.draw_batches,
             );
         }
+        let post_resources = resources.post.as_ref();
+        let (final_view, final_pipeline, base_label) = if post_enabled {
+            let post_resources = post_resources.expect("post resources were created above");
+            (
+                post::scene_view(post_resources),
+                &post_resources.scene_pipeline,
+                "scena.headless_gpu.post_scene_pass",
+            )
+        } else {
+            (
+                &resources.view,
+                &resources.offscreen_pipeline,
+                "scena.headless_gpu.render_pass",
+            )
+        };
         encode_scene_color_passes(
             &mut encoder,
             SceneColorPasses {
-                final_view: &resources.view,
-                final_pipeline: &resources.offscreen_pipeline,
+                final_view,
+                final_pipeline,
                 depth_view: resources
                     .depth_prepass
                     .as_ref()
@@ -121,11 +169,49 @@ impl GpuDeviceState {
                 transmission_view: &resources.transmission.view,
                 transmission_pipeline: &resources.transmission.pipeline,
                 clear_color: wgpu_clear_color(background_color),
-                base_label: "scena.headless_gpu.render_pass",
+                base_label,
             },
         );
-        if let (Some(surface_view), Some(surface_pipeline)) =
-            (surface_view.as_ref(), resources.surface_pipeline.as_ref())
+        let post_output = if post_enabled {
+            let post_resources = resources.post.as_ref().expect("post resources exist");
+            let (output, post_counts) = post::encode_chain(
+                &mut encoder,
+                &self.device,
+                &self.queue,
+                post_resources,
+                post_settings,
+                resources.depth_prepass.as_ref(),
+            )?;
+            if let Some(surface_view) = surface_view.as_ref() {
+                let Some(surface_blit_pipeline) = post::surface_blit_pipeline(post_resources)
+                else {
+                    return Err(RenderError::GpuResourcesNotPrepared {
+                        backend: target.backend,
+                    });
+                };
+                post::encode_blit_to_view(
+                    &mut encoder,
+                    &self.device,
+                    post_resources,
+                    output,
+                    surface_view,
+                    surface_blit_pipeline,
+                );
+            }
+            post::copy_output_to_buffer(
+                &mut encoder,
+                post_resources,
+                output,
+                &resources.readback,
+                resources.padded_bytes_per_row,
+            );
+            Some((output, post_counts))
+        } else {
+            None
+        };
+        if !post_enabled
+            && let (Some(surface_view), Some(surface_pipeline)) =
+                (surface_view.as_ref(), resources.surface_pipeline.as_ref())
         {
             encode_scene_color_passes(
                 &mut encoder,
@@ -149,27 +235,29 @@ impl GpuDeviceState {
                 },
             );
         }
-        encoder.copy_texture_to_buffer(
-            wgpu::TexelCopyTextureInfo {
-                texture: &resources.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::TexelCopyBufferInfo {
-                buffer: &resources.readback,
-                layout: wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(resources.padded_bytes_per_row),
-                    rows_per_image: None,
+        if !post_enabled {
+            encoder.copy_texture_to_buffer(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &resources.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
                 },
-            },
-            wgpu::Extent3d {
-                width: target.width,
-                height: target.height,
-                depth_or_array_layers: 1,
-            },
-        );
+                wgpu::TexelCopyBufferInfo {
+                    buffer: &resources.readback,
+                    layout: wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(resources.padded_bytes_per_row),
+                        rows_per_image: None,
+                    },
+                },
+                wgpu::Extent3d {
+                    width: target.width,
+                    height: target.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
         self.queue.submit(Some(encoder.finish()));
         if let Some(surface_output) = surface_output {
             surface_output.present();
@@ -208,301 +296,11 @@ impl GpuDeviceState {
         drop(mapped);
         resources.readback.unmap();
 
-        Ok(true)
+        Ok(GpuRenderResult {
+            submitted: true,
+            post_counts: post_output
+                .map(|(_, counts)| counts)
+                .unwrap_or_else(GpuPostPassCounts::default),
+        })
     }
-
-    #[cfg(target_arch = "wasm32")]
-    pub(in crate::render) fn render_to_surface(
-        &mut self,
-        target: RasterTarget,
-        exposure_ev: f32,
-        color_management: [f32; 4],
-        background_color: Color,
-        camera_projection: &CameraProjection,
-    ) -> Result<bool, RenderError> {
-        let Some(resources) = self.resources.as_ref() else {
-            return self.render_empty_surface(target, background_color);
-        };
-        if resources.target != target {
-            return Err(RenderError::GpuResourcesNotPrepared {
-                backend: target.backend,
-            });
-        }
-        let Some(surface) = self.surface.as_ref() else {
-            return Err(RenderError::GpuResourcesNotPrepared {
-                backend: target.backend,
-            });
-        };
-        self.queue.write_buffer(
-            &resources.output_uniform,
-            0,
-            &encode_output_uniform(OutputUniformUpload {
-                exposure_ev,
-                view_from_world: camera_projection
-                    .view_from_world_matrix()
-                    .unwrap_or_else(identity_matrix),
-                clip_from_view: camera_projection
-                    .clip_from_view_matrix()
-                    .unwrap_or_else(identity_matrix),
-                clip_from_world: camera_projection
-                    .clip_from_world_matrix()
-                    .unwrap_or_else(identity_matrix),
-                light_from_world: resources.light_from_world,
-                camera_position: camera_position_uniform(camera_projection),
-                viewport: [target.width as f32, target.height as f32],
-                near_far: camera_projection.near_far(),
-                color_management,
-                lighting: resources.light_uniform,
-            }),
-        );
-        #[cfg(feature = "browser-probe")]
-        if let Some(readback) = resources.readback.as_ref() {
-            let mut encoder = self
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("scena.browser.proof_encoder"),
-                });
-            encode_shadow_caster_pass(
-                &mut encoder,
-                &resources.shadow_caster,
-                &resources.vertex_buffer,
-                &resources.draw_bind_group,
-                &resources.draw_batches,
-            );
-            if let Some(depth_prepass) = &resources.depth_prepass {
-                depth::encode_depth_prepass(
-                    &mut encoder,
-                    depth_prepass,
-                    &resources.vertex_buffer,
-                    &resources.output_bind_group,
-                    &resources.draw_bind_group,
-                    &resources.draw_batches,
-                );
-            }
-            encode_browser_readback_pass(
-                &mut encoder,
-                BrowserReadbackPass {
-                    target,
-                    readback,
-                    depth_view: resources
-                        .depth_prepass
-                        .as_ref()
-                        .map(|depth_prepass| &depth_prepass.view),
-                    vertex_buffer: &resources.vertex_buffer,
-                    output_bind_group: &resources.output_bind_group,
-                    opaque_output_bind_group: &resources.opaque_output_bind_group,
-                    draw_bind_group: &resources.draw_bind_group,
-                    material_resources: &resources.material_resources,
-                    draw_batches: &resources.draw_batches,
-                    transmission: &resources.transmission,
-                    clear_color: wgpu_clear_color(background_color),
-                },
-            );
-            self.queue.submit(Some(encoder.finish()));
-            return Ok(true);
-        }
-        let surface_output = match surface.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(output)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(output) => output,
-            wgpu::CurrentSurfaceTexture::Timeout
-            | wgpu::CurrentSurfaceTexture::Occluded
-            | wgpu::CurrentSurfaceTexture::Outdated
-            | wgpu::CurrentSurfaceTexture::Lost
-            | wgpu::CurrentSurfaceTexture::Validation => return Ok(false),
-        };
-        let surface_view = surface_output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("scena.browser.encoder"),
-            });
-        // Phase 1B step 2 (wasm32 mirror of native): shadow caster pass writes
-        // the directional shadow map BEFORE the unlit pass so the fragment
-        // shader can sample it. No-op if no shadow-casting directional light
-        // exists.
-        encode_shadow_caster_pass(
-            &mut encoder,
-            &resources.shadow_caster,
-            &resources.vertex_buffer,
-            &resources.draw_bind_group,
-            &resources.draw_batches,
-        );
-        if let Some(depth_prepass) = &resources.depth_prepass {
-            depth::encode_depth_prepass(
-                &mut encoder,
-                depth_prepass,
-                &resources.vertex_buffer,
-                &resources.output_bind_group,
-                &resources.draw_bind_group,
-                &resources.draw_batches,
-            );
-        }
-        encode_scene_color_passes(
-            &mut encoder,
-            SceneColorPasses {
-                final_view: &surface_view,
-                final_pipeline: &resources.surface_pipeline,
-                depth_view: resources
-                    .depth_prepass
-                    .as_ref()
-                    .map(|depth_prepass| &depth_prepass.view),
-                vertex_buffer: &resources.vertex_buffer,
-                output_bind_group: &resources.output_bind_group,
-                opaque_output_bind_group: &resources.opaque_output_bind_group,
-                draw_bind_group: &resources.draw_bind_group,
-                material_resources: &resources.material_resources,
-                draw_batches: &resources.draw_batches,
-                transmission_view: &resources.transmission.view,
-                transmission_pipeline: &resources.transmission.pipeline,
-                clear_color: wgpu_clear_color(background_color),
-                base_label: "scena.browser.render_pass",
-            },
-        );
-        if let Some(readback) = resources.readback.as_ref() {
-            encode_browser_readback_pass(
-                &mut encoder,
-                BrowserReadbackPass {
-                    target,
-                    readback,
-                    depth_view: None,
-                    vertex_buffer: &resources.vertex_buffer,
-                    output_bind_group: &resources.output_bind_group,
-                    opaque_output_bind_group: &resources.opaque_output_bind_group,
-                    draw_bind_group: &resources.draw_bind_group,
-                    material_resources: &resources.material_resources,
-                    draw_batches: &resources.draw_batches,
-                    transmission: &resources.transmission,
-                    clear_color: wgpu_clear_color(background_color),
-                },
-            );
-        }
-        self.queue.submit(Some(encoder.finish()));
-        surface_output.present();
-        Ok(true)
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    fn render_empty_surface(
-        &mut self,
-        target: RasterTarget,
-        background_color: Color,
-    ) -> Result<bool, RenderError> {
-        let Some(surface) = self.surface.as_ref() else {
-            return Err(RenderError::GpuResourcesNotPrepared {
-                backend: target.backend,
-            });
-        };
-        let surface_output = match surface.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(output)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(output) => output,
-            wgpu::CurrentSurfaceTexture::Timeout
-            | wgpu::CurrentSurfaceTexture::Occluded
-            | wgpu::CurrentSurfaceTexture::Outdated
-            | wgpu::CurrentSurfaceTexture::Lost
-            | wgpu::CurrentSurfaceTexture::Validation => return Ok(false),
-        };
-        let surface_view = surface_output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("scena.browser.empty_surface_encoder"),
-            });
-        {
-            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("scena.browser.empty_surface_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &surface_view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu_clear_color(background_color)),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-        }
-        self.queue.submit(Some(encoder.finish()));
-        surface_output.present();
-        Ok(false)
-    }
-
-    #[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
-    pub(in crate::render) async fn browser_probe_readback_rgba8(
-        &mut self,
-        target: RasterTarget,
-    ) -> Result<Option<Vec<u8>>, JsValue> {
-        let Some(resources) = self.resources.as_ref() else {
-            return Ok(None);
-        };
-        let Some(readback) = resources.readback.as_ref() else {
-            return Ok(None);
-        };
-        if resources.target != target {
-            return Err(JsValue::from_str(&format!(
-                "browser proof readback resources were prepared for {:?}, not {:?}",
-                resources.target, target
-            )));
-        }
-        let slice = readback.buffer.slice(..);
-        let promise = js_sys::Promise::new(&mut |resolve, reject| {
-            let resolve = resolve.clone();
-            let reject = reject.clone();
-            slice.map_async(wgpu::MapMode::Read, move |result| match result {
-                Ok(()) => {
-                    let _ = resolve.call0(&JsValue::UNDEFINED);
-                }
-                Err(error) => {
-                    let _ = reject.call1(
-                        &JsValue::UNDEFINED,
-                        &JsValue::from_str(&format!("browser proof readback failed: {error:?}")),
-                    );
-                }
-            });
-        });
-        JsFuture::from(promise).await?;
-        let mapped = slice.get_mapped_range();
-        let mut frame = vec![0; target.byte_len()];
-        for row in 0..target.height as usize {
-            let source_start = row * readback.padded_bytes_per_row as usize;
-            let source_end = source_start + readback.unpadded_bytes_per_row as usize;
-            let target_start = row * readback.unpadded_bytes_per_row as usize;
-            let target_end = target_start + readback.unpadded_bytes_per_row as usize;
-            frame[target_start..target_end].copy_from_slice(&mapped[source_start..source_end]);
-        }
-        drop(mapped);
-        readback.buffer.unmap();
-        Ok(Some(frame))
-    }
-}
-
-fn wgpu_clear_color(color: Color) -> wgpu::Color {
-    wgpu::Color {
-        r: clear_channel_f64(color.r),
-        g: clear_channel_f64(color.g),
-        b: clear_channel_f64(color.b),
-        a: clear_channel_f64(color.a),
-    }
-}
-
-fn clear_channel_f64(channel: f32) -> f64 {
-    channel.clamp(0.0, 1.0) as f64
-}
-
-fn camera_position_uniform(camera_projection: &CameraProjection) -> [f32; 3] {
-    let position = camera_projection.camera_position();
-    [position.x, position.y, position.z]
-}
-
-fn identity_matrix() -> [f32; 16] {
-    [
-        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-    ]
 }

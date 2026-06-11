@@ -5,14 +5,15 @@ pub(crate) fn check_reversed_z_contracts(root: &Path, findings: &mut Vec<Finding
         root,
         findings,
         "ARCH-REVERSED-Z",
+        "src/diagnostics/capabilities/capability_types.rs",
+        &["pub enum CapabilityStatus", "Supported", "FeatureDisabled"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-REVERSED-Z",
         "src/diagnostics/capabilities.rs",
-        &[
-            "pub enum CapabilityStatus",
-            "Supported",
-            "FeatureDisabled",
-            "pub reversed_z_depth: CapabilityStatus",
-            "Backend::WebGl2",
-        ],
+        &["pub reversed_z_depth: CapabilityStatus"],
     );
     require_contains(
         root,

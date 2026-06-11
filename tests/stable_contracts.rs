@@ -91,6 +91,7 @@ fn capability_report_schema_is_versioned_and_round_trips() {
     assert_eq!(decoded.schema, CAPABILITY_REPORT_SCHEMA_V1);
     assert_eq!(decoded.capabilities.backend, Backend::Headless);
     assert_eq!(decoded.capabilities.color_target_format, "Rgba8UnormSrgb");
+    assert_eq!(decoded.post_processing, None);
 }
 
 #[test]
@@ -202,6 +203,21 @@ fn inspection_and_capture_v1_revisions_accept_old_shape_without_appearance() {
     assert_eq!(
         capture.revisions.appearance, 0,
         "additive appearance_revision defaults for old capture.v1 consumers"
+    );
+}
+
+#[test]
+fn capability_report_v1_accepts_old_shape_without_post_processing() {
+    let mut report = read_fixture_json("tests/assets/stable-contracts/capability_report.v1.json");
+    report
+        .as_object_mut()
+        .expect("capability report is an object")
+        .remove("post_processing");
+    let report: CapabilityReportV1 =
+        serde_json::from_value(report).expect("old capability_report.v1 shape deserializes");
+    assert_eq!(
+        report.post_processing, None,
+        "additive post_processing defaults for old capability_report.v1 consumers"
     );
 }
 

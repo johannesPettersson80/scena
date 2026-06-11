@@ -3,11 +3,12 @@
 use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, FRAC_PI_6};
 
 use scena::{
-    ASSET_LOAD_REPORT_SCHEMA_V1, AnnotationProjectionReportV1, AssetPath, Assets,
+    ASSET_LOAD_REPORT_SCHEMA_V1, AnnotationProjectionReportV1, AntiAliasing, AssetPath, Assets,
     AutoExposureConfig, Color, GeometryDesc, ImportOptions, MaterialDesc, OrbitControlAction,
-    PointerButton, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1, SCENE_HOST_SUBTREE_SCHEMA_V1,
-    SceneHostCameraState, SceneHostCore, SceneHostErrorCode, SceneHostSubtreeReportV1,
-    SceneInspectionReportV1, Transform, Vec3,
+    PointerButton, PostBloomConfig, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1,
+    SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostCameraState, SceneHostCore, SceneHostErrorCode,
+    SceneHostSubtreeReportV1, SceneInspectionReportV1, ScreenSpaceAmbientOcclusionConfig,
+    Transform, Vec3,
 };
 
 #[test]
@@ -110,12 +111,59 @@ fn scene_host_product_studio_visuals_apply_renderable_defaults() {
         host.renderer().auto_exposure(),
         Some(AutoExposureConfig::product_studio())
     );
+    assert_eq!(host.renderer().anti_aliasing(), AntiAliasing::Fxaa);
+    assert_eq!(host.renderer().bloom(), Some(PostBloomConfig::subtle()));
+    assert_eq!(
+        host.renderer().screen_space_ambient_occlusion(),
+        Some(ScreenSpaceAmbientOcclusionConfig::subtle())
+    );
     let report = host.scene().inspect();
     assert_eq!(
         report.light_count(),
         3,
         "SceneHost product studio preset must insert the standard Scena three-point rig"
     );
+}
+
+#[test]
+fn scene_host_post_processing_setters_update_capability_report() {
+    let mut host = SceneHostCore::headless(64, 64).expect("host builds");
+
+    host.set_anti_aliasing("none")
+        .expect("anti-aliasing mode sets");
+    host.set_bloom_json(Some(
+        r#"{"threshold_srgb":128,"intensity":0.4,"radius_px":2}"#,
+    ))
+    .expect("bloom JSON sets");
+    host.set_ambient_occlusion_json(Some(
+        r#"{"radius_px":2,"intensity":0.35,"depth_threshold":0.02}"#,
+    ))
+    .expect("ambient occlusion JSON sets");
+
+    assert_eq!(host.renderer().anti_aliasing(), AntiAliasing::None);
+    assert_eq!(
+        host.renderer().bloom(),
+        Some(PostBloomConfig::new(128, 0.4, 2))
+    );
+    assert_eq!(
+        host.renderer().screen_space_ambient_occlusion(),
+        Some(ScreenSpaceAmbientOcclusionConfig::new(2, 0.35, 0.02))
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(&host.capabilities_json().expect("capabilities serialize"))
+            .expect("capabilities JSON parses");
+    assert_eq!(report["post_processing"]["bloom"], true);
+    assert_eq!(
+        report["post_processing"]["screen_space_ambient_occlusion"],
+        true
+    );
+    assert_eq!(
+        report["post_processing"]["ssao_depth_source"],
+        "cpu_depth_frame"
+    );
+
+    host.set_bloom_json(None).expect("bloom clears");
+    assert_eq!(host.renderer().bloom(), None);
 }
 
 #[test]

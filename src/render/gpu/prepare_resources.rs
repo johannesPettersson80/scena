@@ -148,6 +148,7 @@ impl GpuDeviceState {
                 depth_stats.reversed_z,
                 &output_bind_group_layout,
                 &draw_bind_group_layout,
+                false,
             )
         });
         let depth_compare = depth_prepass
@@ -240,6 +241,12 @@ impl GpuDeviceState {
             draw_uniform_capacity,
             draw_uniform_buffer,
             draw_bind_group,
+            output_bind_group_layout,
+            material_bind_group_layout,
+            draw_bind_group_layout,
+            texture_binding_mode,
+            depth_compare,
+            post: None,
             offscreen_pipeline,
             surface_pipeline,
             padded_bytes_per_row,
@@ -319,6 +326,7 @@ impl GpuDeviceState {
                     depth_stats.reversed_z,
                     &output_bind_group_layout,
                     &draw_bind_group_layout,
+                    false,
                 )
             });
         let depth_compare = depth_prepass
@@ -411,6 +419,12 @@ impl GpuDeviceState {
             draw_uniform_capacity,
             draw_uniform_buffer,
             draw_bind_group,
+            output_bind_group_layout,
+            material_bind_group_layout,
+            draw_bind_group_layout,
+            texture_binding_mode,
+            depth_compare,
+            post: None,
             stats,
         });
         Ok(GpuPrepareOutcome::FullRebuild)

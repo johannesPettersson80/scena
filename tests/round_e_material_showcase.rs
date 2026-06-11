@@ -487,16 +487,15 @@ fn public_showcase_probe_checks_visible_canvas_pixels() {
 }
 
 #[test]
-fn browser_gpu_live_render_skips_cpu_frame_postprocess_hot_path() {
+fn browser_gpu_live_render_routes_postprocess_to_gpu_settings() {
     let render_rs = include_str!("../src/render.rs");
 
     assert!(
-        render_rs.contains("fn cpu_frame_postprocess_applies")
-            && render_rs.contains("Backend::WebGl2 | Backend::WebGpu")
-            && render_rs.contains("self.stats.fxaa_passes = 0"),
-        "browser live WebGL2/WebGPU rendering must not run CPU frame post-processing over \
-         renderer.frame_rgba8(); the visible canvas is rendered by the GPU surface and CPU FXAA \
-         only burns first-frame time"
+        render_rs.contains("GpuPostSettings::new")
+            && render_rs.contains("self.stats.fxaa_passes = post_counts.fxaa")
+            && !render_rs.contains("fn cpu_frame_postprocess_applies"),
+        "browser live WebGL2/WebGPU rendering must route post-processing through the GPU post \
+         settings instead of the removed CPU frame postprocess gate"
     );
 }
 

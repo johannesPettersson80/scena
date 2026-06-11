@@ -72,7 +72,8 @@ pub use diagnostics::{
     CapabilityStatus, ChangeKind, DebugOverlay, DevicePoll, Diagnostic, DiagnosticCode,
     DiagnosticSeverity, Error, GpuAdapterReport, HardwareTier, ImportDiagnosticOverlay,
     ImportDiagnosticOverlayKind, ImportError, InstantiateError, LookupError, NotPreparedReason,
-    OutputColorSpace, OutputStageStatus, PrepareError, RenderError, RenderOutcome, RendererStats,
+    OutputColorSpace, OutputStageStatus, PostProcessingDepthSourceV1, PostProcessingPassV1,
+    PostProcessingReportV1, PrepareError, RenderError, RenderOutcome, RendererStats,
 };
 pub use geometry::{
     Aabb, GeometryDesc, GeometryError, GeometryMorphTarget, GeometrySkin, GeometryTopology,

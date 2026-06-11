@@ -41,7 +41,7 @@ pub(crate) fn check_renderer_truth_webgl2_contracts(root: &Path, findings: &mut 
         root,
         findings,
         "ARCH-RENDER-TRUTH",
-        "src/render/gpu/draw.rs",
+        "src/render/gpu/draw_surface.rs",
         &[
             "pub(in crate::render) fn render_to_surface",
             "surface.surface.get_current_texture()",

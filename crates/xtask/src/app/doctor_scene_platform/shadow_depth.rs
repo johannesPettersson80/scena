@@ -297,7 +297,7 @@ pub(crate) fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding
             "DiagnosticCode::PointShadowsDisabled",
             "DiagnosticCode::SpotShadowsDisabled",
             "subtle output bloom is an explicit postprocess",
-            "DiagnosticCode::AmbientOcclusionDisabled",
+            "supported ambient occlusion must not emit the old disabled diagnostic",
             "DiagnosticCode::OrderIndependentTransparencyDisabled",
             "DiagnosticCode::PhysicalGlassTransmissionDegraded",
         ],

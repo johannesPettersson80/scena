@@ -22,9 +22,8 @@ mod surface;
 use self::prepare::PreparedPrimitive;
 use crate::assets::EnvironmentHandle;
 use crate::diagnostics::{
-    Backend, Capabilities, CapabilityReport, ChangeKind, DebugOverlay, DevicePoll, Diagnostic,
-    GpuAdapterReport, NotPreparedReason, OutputColorSpace, RenderError, RenderOutcome,
-    RendererStats,
+    Backend, Capabilities, ChangeKind, DebugOverlay, DevicePoll, Diagnostic, GpuAdapterReport,
+    NotPreparedReason, OutputColorSpace, RenderError, RenderOutcome, RendererStats,
 };
 use crate::material::Color;
 use crate::picking::InteractionStyle;
@@ -165,9 +164,10 @@ impl Renderer {
         let primitive_count = self.prepared_state(scene)?.primitives.len() as u64;
         let mut auto_exposure_attempted = false;
         loop {
-            if self.gpu.is_some() {
-                self.draw_gpu(&camera_projection)?;
+            let gpu_post_counts = if self.gpu.is_some() {
+                let post_counts = self.draw_gpu(&camera_projection)?;
                 self.stats.order_independent_transparency_passes = 0;
+                Some(post_counts)
             } else {
                 let (primitives, clipping_planes) = {
                     let prepared = self.prepared_state(scene)?;
@@ -229,8 +229,13 @@ impl Renderer {
                         }
                         0
                     };
-            }
-            if cpu_frame_postprocess_applies(self.target.backend) {
+                None
+            };
+            if let Some(post_counts) = gpu_post_counts {
+                self.stats.ambient_occlusion_passes = post_counts.ambient_occlusion;
+                self.stats.bloom_passes = post_counts.bloom;
+                self.stats.fxaa_passes = post_counts.fxaa;
+            } else {
                 self.stats.ambient_occlusion_passes = match (
                     self.screen_space_ambient_occlusion,
                     self.depth_frame.as_ref(),
@@ -261,10 +266,6 @@ impl Renderer {
                         &mut self.fxaa_scratch,
                     ),
                 };
-            } else {
-                self.stats.ambient_occlusion_passes = 0;
-                self.stats.bloom_passes = 0;
-                self.stats.fxaa_passes = 0;
             }
             if auto_exposure_attempted || !self.apply_managed_auto_exposure_after_render() {
                 break;
@@ -294,10 +295,6 @@ impl Renderer {
 
     pub fn gpu_adapter_report(&self) -> Option<GpuAdapterReport> {
         self.gpu.as_ref().map(GpuDeviceState::adapter_report)
-    }
-
-    pub fn capability_report(&self) -> CapabilityReport {
-        CapabilityReport::new(self.capabilities, self.gpu_adapter_report())
     }
 
     pub fn render_active(&mut self, scene: &Scene) -> Result<RenderOutcome, RenderError> {
@@ -351,29 +348,35 @@ impl Renderer {
     fn draw_gpu(
         &mut self,
         camera_projection: &camera::CameraProjection,
-    ) -> Result<(), RenderError> {
+    ) -> Result<gpu::GpuPostPassCounts, RenderError> {
+        let post_settings = gpu::GpuPostSettings::new(
+            self.anti_aliasing,
+            self.bloom,
+            self.screen_space_ambient_occlusion,
+        );
         #[cfg(not(target_arch = "wasm32"))]
         {
             let gpu = self
                 .gpu
                 .as_mut()
                 .expect("draw_gpu is called only when a GPU device exists");
-            let submitted = gpu.render_to_frame(
+            let result = gpu.render_to_frame(
                 self.target,
                 self.output.exposure_ev(),
                 self.output.color_management_uniform(),
                 self.background_color,
                 camera_projection,
                 &mut self.frame,
+                post_settings,
             )?;
-            if submitted {
+            if result.submitted {
                 self.stats.gpu_submissions = self.stats.gpu_submissions.saturating_add(1);
             }
             // self.stats.gpu_culling_dispatches stays at 0 — the empty culling
             // kernel was deleted in commit a311fcd. The public counter is kept
             // for API stability and will be repurposed when a real culling
             // kernel lands in a future v1.x.
-            Ok(())
+            Ok(result.post_counts)
         }
 
         #[cfg(target_arch = "wasm32")]
@@ -382,16 +385,18 @@ impl Renderer {
                 .gpu
                 .as_mut()
                 .expect("draw_gpu is called only when a GPU device exists");
-            if gpu.render_to_surface(
+            let result = gpu.render_to_surface(
                 self.target,
                 self.output.exposure_ev(),
                 self.output.color_management_uniform(),
                 self.background_color,
                 camera_projection,
-            )? {
+                post_settings,
+            )?;
+            if result.submitted {
                 self.stats.gpu_submissions = self.stats.gpu_submissions.saturating_add(1);
             }
-            Ok(())
+            Ok(result.post_counts)
         }
     }
 
@@ -503,10 +508,10 @@ impl RenderedFrameState {
     }
 }
 
-fn cpu_frame_postprocess_applies(backend: Backend) -> bool {
-    !matches!(backend, Backend::WebGl2 | Backend::WebGpu)
-}
-
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod post_quality_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod post_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
 

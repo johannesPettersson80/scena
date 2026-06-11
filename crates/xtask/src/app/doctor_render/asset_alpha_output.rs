@@ -161,13 +161,19 @@ pub(crate) fn check_render_alpha_contracts(root: &Path, findings: &mut Vec<Findi
         root,
         findings,
         "ARCH-RENDER-ALPHA",
-        "src/diagnostics/capabilities.rs",
+        "src/diagnostics/capabilities/capability_types.rs",
         &[
             "pub enum AlphaPipelineStatus",
             "LinearSourceOver",
             "BackendPassthrough",
-            "pub alpha_pipeline: AlphaPipelineStatus",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-ALPHA",
+        "src/diagnostics/capabilities.rs",
+        &["pub alpha_pipeline: AlphaPipelineStatus"],
     );
     require_contains(
         root,
@@ -296,11 +302,15 @@ pub(crate) fn check_output_stage_contracts(root: &Path, findings: &mut Vec<Findi
         root,
         findings,
         "ARCH-OUTPUT-STAGE",
+        "src/diagnostics/capabilities/capability_types.rs",
+        &["pub enum OutputStageStatus"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-OUTPUT-STAGE",
         "src/diagnostics/capabilities.rs",
-        &[
-            "pub enum OutputStageStatus",
-            "output_stage: OutputStageStatus::PbrNeutralSrgb",
-        ],
+        &["output_stage: OutputStageStatus::PbrNeutralSrgb"],
     );
     require_contains(
         root,

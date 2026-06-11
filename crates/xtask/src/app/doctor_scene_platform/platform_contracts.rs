@@ -17,9 +17,19 @@ pub(crate) fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Findin
         root,
         findings,
         "ARCH-M4-PLATFORM",
-        "src/diagnostics/capabilities.rs",
+        "src/diagnostics/capabilities/capability_types.rs",
         &[
             "pub enum HardwareTier",
+            "pub enum OutputColorSpace",
+            "PbrNeutralDisplayP3",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M4-PLATFORM",
+        "src/diagnostics/capabilities.rs",
+        &[
             "pub hardware_tier: HardwareTier",
             "pub gpu_frustum_culling: CapabilityStatus",
             "pub per_instance_culling: CapabilityStatus",
@@ -30,8 +40,6 @@ pub(crate) fn check_m4_platform_contracts(root: &Path, findings: &mut Vec<Findin
             "pub uniform_buffer_max_bytes: u32",
             "pub compute_shaders: CapabilityStatus",
             "pub storage_buffers: CapabilityStatus",
-            "pub enum OutputColorSpace",
-            "PbrNeutralDisplayP3",
             "with_display_p3_output",
             "Rgba8UnormSrgb+DisplayP3Canvas",
             "uniform_buffer_max_bytes",

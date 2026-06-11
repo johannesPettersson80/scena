@@ -191,7 +191,7 @@ pub(crate) fn check_m7_foundation_contracts(root: &Path, findings: &mut Vec<Find
         root,
         findings,
         "ERGONOMICS-M7",
-        "src/render.rs",
+        "src/render/reporting.rs",
         &["pub fn capability_report"],
     );
     require_contains(

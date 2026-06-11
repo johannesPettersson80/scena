@@ -95,11 +95,10 @@ pub(in crate::diagnostics) const fn bloom_status(_backend: Backend) -> Capabilit
     CapabilityStatus::Supported
 }
 
-pub(in crate::diagnostics) const fn ambient_occlusion_status(backend: Backend) -> CapabilityStatus {
-    match backend {
-        Backend::Headless | Backend::SurfaceDescriptor => CapabilityStatus::Supported,
-        _ => CapabilityStatus::FeatureDisabled,
-    }
+pub(in crate::diagnostics) const fn ambient_occlusion_status(
+    _backend: Backend,
+) -> CapabilityStatus {
+    CapabilityStatus::Supported
 }
 
 pub(in crate::diagnostics) const fn order_independent_transparency_status(

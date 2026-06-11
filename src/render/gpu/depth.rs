@@ -8,6 +8,10 @@ struct VertexIn {
     @location(1) color: vec4<f32>,
 };
 
+struct VertexOut {
+    @builtin(position) position: vec4<f32>,
+};
+
 struct CameraUniform {
     view_from_world: mat4x4<f32>,
     clip_from_view: mat4x4<f32>,
@@ -27,7 +31,7 @@ var<uniform> camera: CameraUniform;
 var<uniform> draw: DrawUniform;
 
 @vertex
-fn vs_main(in: VertexIn) -> @builtin(position) vec4<f32> {
+fn vs_main(in: VertexIn) -> VertexOut {
     // Use the same matrix multiplication path as the color pass so depth
     // values are bit-identical. On low-precision WebGL2 drivers (Pi 5 V3D),
     // computing `clip_from_view * view_from_world * world_from_model * pos`
@@ -35,16 +39,35 @@ fn vs_main(in: VertexIn) -> @builtin(position) vec4<f32> {
     // (world_from_model * pos)` makes most color-pass fragments fail the
     // LessEqual depth test by a single ULP, producing a mostly-black render.
     let world_position = draw.world_from_model * vec4<f32>(in.position, 1.0);
-    return camera.clip_from_world * world_position;
+    var out: VertexOut;
+    out.position = camera.clip_from_world * world_position;
+    return out;
+}
+
+fn pack_depth(depth: f32) -> vec4<f32> {
+    let scaled = clamp(depth, 0.0, 1.0) * 65535.0;
+    let high = floor(scaled / 256.0);
+    let low = scaled - high * 256.0;
+    return vec4<f32>(high / 255.0, low / 255.0, 0.0, 1.0);
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+    return pack_depth(in.position.z);
 }
 "#;
+
+const DEPTH_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
 #[derive(Debug)]
 pub(super) struct DepthPrepassResources {
     texture: wgpu::Texture,
     pub(super) view: wgpu::TextureView,
+    color_texture: Option<wgpu::Texture>,
+    color_view: Option<wgpu::TextureView>,
     pipeline: wgpu::RenderPipeline,
     clear_depth: f32,
+    reversed_z: bool,
     pub(super) color_compare: wgpu::CompareFunction,
 }
 
@@ -54,6 +77,7 @@ pub(super) fn create_depth_prepass_resources(
     reversed_z: bool,
     camera_bind_group_layout: &wgpu::BindGroupLayout,
     draw_bind_group_layout: &wgpu::BindGroupLayout,
+    depth_color_enabled: bool,
 ) -> DepthPrepassResources {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("scena.m2.depth_prepass"),
@@ -66,10 +90,30 @@ pub(super) fn create_depth_prepass_resources(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Depth32Float,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let (color_texture, color_view) = if depth_color_enabled {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("scena.m2.depth_prepass_color"),
+            size: wgpu::Extent3d {
+                width: target.width,
+                height: target.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_COLOR_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        (Some(texture), Some(view))
+    } else {
+        (None, None)
+    };
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("scena.m2.depth_prepass_shader"),
         source: wgpu::ShaderSource::Wgsl(DEPTH_PREPASS_SHADER.into()),
@@ -118,7 +162,16 @@ pub(super) fn create_depth_prepass_resources(
             bias: wgpu::DepthBiasState::default(),
         }),
         multisample: wgpu::MultisampleState::default(),
-        fragment: None,
+        fragment: depth_color_enabled.then_some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: DEPTH_COLOR_FORMAT,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
         multiview_mask: None,
         cache: None,
     });
@@ -126,9 +179,30 @@ pub(super) fn create_depth_prepass_resources(
     DepthPrepassResources {
         texture,
         view,
+        color_texture,
+        color_view,
         pipeline,
         clear_depth: if reversed_z { 0.0 } else { 1.0 },
+        reversed_z,
         color_compare,
+    }
+}
+
+impl DepthPrepassResources {
+    pub(super) const fn clear_depth(&self) -> f32 {
+        self.clear_depth
+    }
+
+    pub(super) const fn reversed_z(&self) -> bool {
+        self.reversed_z
+    }
+
+    pub(super) fn color_view(&self) -> Option<&wgpu::TextureView> {
+        self.color_view.as_ref()
+    }
+
+    pub(super) const fn depth_color_enabled(&self) -> bool {
+        self.color_view.is_some()
     }
 }
 
@@ -148,9 +222,27 @@ pub(super) fn encode_depth_prepass(
         }),
         stencil_ops: None,
     });
+    let color_attachment =
+        resources
+            .color_view
+            .as_ref()
+            .map(|view| wgpu::RenderPassColorAttachment {
+                view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(depth_clear_color(resources.clear_depth)),
+                    store: wgpu::StoreOp::Store,
+                },
+            });
+    let color_attachments = if color_attachment.is_some() {
+        std::slice::from_ref(&color_attachment)
+    } else {
+        &[]
+    };
     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("scena.m2.depth_prepass"),
-        color_attachments: &[],
+        color_attachments,
         depth_stencil_attachment: depth_attachment,
         timestamp_writes: None,
         occlusion_query_set: None,
@@ -173,8 +265,21 @@ pub(super) fn encode_depth_prepass(
     }
 }
 
+fn depth_clear_color(clear_depth: f32) -> wgpu::Color {
+    let scaled = clear_depth.clamp(0.0, 1.0) * 65_535.0;
+    let high = (scaled / 256.0).floor();
+    let low = scaled - high * 256.0;
+    wgpu::Color {
+        r: f64::from(high / 255.0),
+        g: f64::from(low / 255.0),
+        b: 0.0,
+        a: 1.0,
+    }
+}
+
 impl Drop for DepthPrepassResources {
     fn drop(&mut self) {
         let _ = &self.texture;
+        let _ = &self.color_texture;
     }
 }

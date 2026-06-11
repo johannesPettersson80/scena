@@ -61,7 +61,7 @@ pub(crate) fn check_module_boundaries(root: &Path, findings: &mut Vec<Finding>) 
         root,
         findings,
         "ARCH-RENDER-LIFECYCLE",
-        "src/render/gpu/draw.rs",
+        "src/render/gpu/draw_surface.rs",
         &[
             "pub(in crate::render) fn render_to_surface",
             "GpuResourcesNotPrepared",

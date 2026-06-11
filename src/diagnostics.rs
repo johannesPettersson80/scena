@@ -16,6 +16,7 @@ mod capability_status;
 mod diagnostic;
 mod display;
 mod help;
+mod post_processing;
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
 pub(crate) use browser_timing::browser_timing_enabled;
 pub use capabilities::{
@@ -24,6 +25,9 @@ pub use capabilities::{
     OutputColorSpace, OutputStageStatus,
 };
 pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
+pub use post_processing::{
+    PostProcessingDepthSourceV1, PostProcessingPassV1, PostProcessingReportV1,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Error {

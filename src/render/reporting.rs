@@ -1,10 +1,21 @@
 use crate::assets::Assets;
-use crate::diagnostics::{Diagnostic, DiagnosticCode, RendererStats};
+use crate::diagnostics::{
+    CapabilityReport, Diagnostic, DiagnosticCode, PostProcessingDepthSourceV1,
+    PostProcessingPassV1, PostProcessingReportV1, RendererStats,
+};
 use crate::scene::Scene;
 
 use super::{Renderer, prepare};
 
 impl Renderer {
+    pub fn capability_report(&self) -> CapabilityReport {
+        CapabilityReport::new_with_post_processing(
+            self.capabilities,
+            self.gpu_adapter_report(),
+            self.post_processing_report(),
+        )
+    }
+
     pub fn diagnose_scene(&self, scene: &Scene) -> Vec<Diagnostic> {
         let mut diagnostics = Vec::new();
         if scene.active_camera().is_none() {
@@ -60,5 +71,34 @@ impl Renderer {
 
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
+    }
+
+    fn post_processing_report(&self) -> PostProcessingReportV1 {
+        let anti_aliasing = matches!(self.anti_aliasing, super::AntiAliasing::Fxaa);
+        let bloom = self.bloom.is_some();
+        let screen_space_ambient_occlusion = self.screen_space_ambient_occlusion.is_some();
+        let mut active_passes = Vec::new();
+        if screen_space_ambient_occlusion {
+            active_passes.push(PostProcessingPassV1::ScreenSpaceAmbientOcclusion);
+        }
+        if bloom {
+            active_passes.push(PostProcessingPassV1::Bloom);
+        }
+        if anti_aliasing {
+            active_passes.push(PostProcessingPassV1::Fxaa);
+        }
+        PostProcessingReportV1 {
+            active_passes,
+            anti_aliasing,
+            bloom,
+            screen_space_ambient_occlusion,
+            ssao_depth_source: screen_space_ambient_occlusion.then(|| {
+                if self.gpu.is_some() {
+                    PostProcessingDepthSourceV1::DepthColorTarget
+                } else {
+                    PostProcessingDepthSourceV1::CpuDepthFrame
+                }
+            }),
+        }
     }
 }

@@ -1,65 +1,15 @@
 use super::capability_status::*;
+use super::post_processing::PostProcessingReportV1;
 use super::{Diagnostic, DiagnosticCode};
 use serde::{Deserialize, Deserializer, Serialize, de};
 
+mod capability_types;
+pub use capability_types::{
+    AlphaPipelineStatus, Backend, CapabilityStatus, HardwareTier, OutputColorSpace,
+    OutputStageStatus,
+};
+
 pub const CAPABILITY_REPORT_SCHEMA_V1: &str = "scena.capability_report.v1";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Backend {
-    Headless,
-    HeadlessGpu,
-    SurfaceDescriptor,
-    NativeSurface,
-    WebGpu,
-    WebGl2,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum OutputStageStatus {
-    AcesSrgb,
-    PbrNeutralSrgb,
-    PbrNeutralDisplayP3,
-    BackendPassthrough,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum OutputColorSpace {
-    #[default]
-    Srgb,
-    DisplayP3,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum AlphaPipelineStatus {
-    LinearSourceOver,
-    BackendPassthrough,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum CapabilityStatus {
-    Supported,
-    Degraded,
-    FeatureDisabled,
-    ErrorIfRequired,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum HardwareTier {
-    Low,
-    Medium,
-    High,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AdapterLimitsReport {
@@ -86,6 +36,7 @@ pub struct GpuAdapterReport {
 pub struct CapabilityReport {
     capabilities: Capabilities,
     adapter: Option<GpuAdapterReport>,
+    post_processing: Option<PostProcessingReportV1>,
     diagnostics: Vec<Diagnostic>,
 }
 
@@ -94,6 +45,8 @@ pub struct CapabilityReportV1 {
     pub schema: String,
     pub capabilities: Capabilities,
     pub adapter: Option<GpuAdapterReport>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_processing: Option<PostProcessingReportV1>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -489,6 +442,20 @@ impl CapabilityReport {
         Self {
             capabilities,
             adapter,
+            post_processing: None,
+            diagnostics: capabilities.diagnostics(),
+        }
+    }
+
+    pub fn new_with_post_processing(
+        capabilities: Capabilities,
+        adapter: Option<GpuAdapterReport>,
+        post_processing: PostProcessingReportV1,
+    ) -> Self {
+        Self {
+            capabilities,
+            adapter,
+            post_processing: Some(post_processing),
             diagnostics: capabilities.diagnostics(),
         }
     }
@@ -509,11 +476,16 @@ impl CapabilityReport {
         &self.diagnostics
     }
 
+    pub fn post_processing(&self) -> Option<&PostProcessingReportV1> {
+        self.post_processing.as_ref()
+    }
+
     pub fn to_schema_report(&self) -> CapabilityReportV1 {
         CapabilityReportV1 {
             schema: CAPABILITY_REPORT_SCHEMA_V1.to_owned(),
             capabilities: self.capabilities,
             adapter: self.adapter.clone(),
+            post_processing: self.post_processing.clone(),
             diagnostics: self.diagnostics.clone(),
         }
     }

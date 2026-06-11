@@ -7,6 +7,7 @@ mod core;
 mod error;
 mod handles;
 mod inputs;
+mod post;
 mod product;
 mod reporting;
 mod subtree;
@@ -18,6 +19,8 @@ mod wasm;
 mod wasm_assets;
 #[cfg(target_arch = "wasm32")]
 mod wasm_camera;
+#[cfg(target_arch = "wasm32")]
+mod wasm_post;
 #[cfg(target_arch = "wasm32")]
 mod wasm_product;
 #[cfg(target_arch = "wasm32")]

@@ -246,10 +246,12 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
             .all(|diagnostic| diagnostic.code != scena::DiagnosticCode::BloomDisabled),
         "supported bloom must not emit the old disabled diagnostic: {diagnostics:?}",
     );
-    assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == scena::DiagnosticCode::AmbientOcclusionDisabled
-            && diagnostic.message.contains("ambient occlusion")
-    }));
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != scena::DiagnosticCode::AmbientOcclusionDisabled),
+        "supported ambient occlusion must not emit the old disabled diagnostic: {diagnostics:?}",
+    );
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == scena::DiagnosticCode::OrderIndependentTransparencyDisabled
             && diagnostic
