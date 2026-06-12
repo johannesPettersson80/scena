@@ -13,6 +13,7 @@
 use scena::{Assets, Renderer, Scene, Transform};
 
 const WATERBOTTLE_PATH: &str = "tests/assets/gltf/khronos/WaterBottle/WaterBottle.gltf";
+const MANUAL_TRIANGLE_PATH: &str = "tests/assets/gltf/mesh_material_vertex_color_scene.gltf";
 const CRACKER_BOX_PATH: &str = "/home/johannes/projects/trust-platform/editors/vscode/media/trust-twin/components/ycb/meshes/003_cracker_box_textured.gltf";
 
 fn build_manual_scene_from_gltf() -> (Assets, Scene, scena::CameraKey) {
@@ -171,7 +172,7 @@ fn manually_built_scene_from_gltf_handles_renders_non_blank_on_headless_gpu() {
 fn manually_built_scene_from_gltf_handles_renders_non_blank() {
     let assets = Assets::new();
     let scene_asset =
-        pollster::block_on(assets.load_scene(WATERBOTTLE_PATH)).expect("WaterBottle loads");
+        pollster::block_on(assets.load_scene(MANUAL_TRIANGLE_PATH)).expect("triangle glTF loads");
 
     let mut scene = Scene::new();
     let root = scene.root();
@@ -202,14 +203,12 @@ fn manually_built_scene_from_gltf_handles_renders_non_blank() {
         .add_perspective_camera(
             scene.root(),
             scena::PerspectiveCamera::default(),
-            Transform::at(scena::Vec3::new(0.12, 0.05, 0.25))
-                .rotate_y_deg(25.0)
-                .rotate_x_deg(-10.0),
+            Transform::at(scena::Vec3::new(0.0, 0.0, 2.0)),
         )
         .expect("camera inserts");
     scene.set_active_camera(camera).expect("camera activates");
 
-    let mut renderer = Renderer::headless(256, 256).expect("headless renderer builds");
+    let mut renderer = Renderer::headless(64, 64).expect("headless renderer builds");
     renderer
         .prepare_with_assets(&mut scene, &assets)
         .expect("prepare succeeds against the manually built scene");

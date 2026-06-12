@@ -12,6 +12,9 @@ All notable user-facing changes are recorded here.
   `SCENA_RUN_EXPENSIVE_CPU_RELEASE_TESTS=1` release-lane flag. Default
   `cargo test` now records fail-closed metadata instead of letting GitHub
   hosted Linux jobs kill the native/headless gate during the software render.
+- Kept the trust-platform manual glTF-material CPU repro in the default suite
+  by switching it from the heavy WaterBottle asset to the small in-repo
+  textured-triangle fixture.
 
 ## [1.7.0] - 2026-06-12
 
