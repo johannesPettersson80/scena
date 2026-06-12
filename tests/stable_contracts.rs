@@ -129,6 +129,10 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
             "tests/assets/stable-contracts/scene_host_subtree.v1.json",
             "scena.subtree.v1",
         ),
+        (
+            "tests/assets/stable-contracts/scene_host_animation_inventory.v1.json",
+            "scena.animation_inventory.v1",
+        ),
     ];
 
     for (rel, schema) in fixtures {
@@ -186,11 +190,59 @@ fn inspection_and_capture_v1_revisions_accept_old_shape_without_appearance() {
         .as_object_mut()
         .expect("inspection revisions object")
         .remove("appearance");
+    for node in inspection["nodes"]
+        .as_array_mut()
+        .expect("inspection nodes array")
+    {
+        node.as_object_mut()
+            .expect("inspection node object")
+            .remove("tint");
+    }
+    inspection["draw_list"] = json!([
+        {
+            "node": 1,
+            "topology": "triangles",
+            "primitive_count": 1,
+            "vertex_count": 3,
+            "index_count": 3,
+            "local_bounds": {
+                "min": [-0.5, -0.5, 0.0],
+                "max": [0.5, 0.5, 0.0]
+            },
+            "world_transform": {
+                "translation": [0.0, 0.0, 0.0],
+                "rotation": [0.0, 0.0, 0.0, 1.0],
+                "scale": [1.0, 1.0, 1.0]
+            },
+            "visible": true
+        }
+    ]);
+    inspection["normal_overlays"] = json!([
+        {
+            "node": 1,
+            "length": 0.25,
+            "segments": [
+                [[0.0, 0.0, 0.0], [0.0, 0.25, 0.0]]
+            ]
+        }
+    ]);
     let inspection: scena::SceneInspectionReportV1 =
         serde_json::from_value(inspection).expect("old inspection fixture shape deserializes");
     assert_eq!(
         inspection.revisions.appearance, 0,
         "additive appearance_revision defaults for old scene_inspection.v1 consumers"
+    );
+    assert_eq!(
+        inspection.nodes[0].tint, None,
+        "additive node tint defaults for old scene_inspection.v1 consumers"
+    );
+    assert_eq!(
+        inspection.draw_list[0].instance, None,
+        "additive draw-list instance defaults for old scene_inspection.v1 consumers"
+    );
+    assert_eq!(
+        inspection.normal_overlays[0].instance, None,
+        "additive normal-overlay instance defaults for old scene_inspection.v1 consumers"
     );
     assert_eq!(
         inspection.instance_sets, None,

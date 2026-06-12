@@ -37,6 +37,7 @@ pub struct SceneHostAnimationClipV1 {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SceneHostSubtreeNodeV1 {
     pub handle: u64,
+    #[serde(default)]
     pub name: Option<String>,
     pub tags: Vec<String>,
 }

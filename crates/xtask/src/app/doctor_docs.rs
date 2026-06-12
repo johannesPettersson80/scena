@@ -262,6 +262,8 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
             "name = \"scene_host_contracts\"",
             "path = \"examples/scene_host_contracts.rs\"",
             "required-features = [\"scene-host\"]",
+            "name = \"scene_host_release_1_7\"",
+            "path = \"examples/scene_host_release_1_7.rs\"",
         ],
     );
     require_contains(
@@ -283,6 +285,7 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
         "docs/examples.md",
         &[
             "scene_host_contracts.rs",
+            "scene_host_release_1_7.rs",
             "scene_host_browser_contracts.js",
             "tests/assets/stable-contracts",
         ],

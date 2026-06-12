@@ -56,6 +56,63 @@ export async function renderPushedFrame(state, poseByNode) {
   };
 }
 
+export async function configureRelease17Scene(state, animatedUrl, instancedUrl) {
+  state.host.setAntiAliasing("fxaa");
+  state.host.setBloom(JSON.stringify({
+    threshold_srgb: 190,
+    intensity: 0.35,
+    radius_px: 4,
+  }));
+  state.host.setAmbientOcclusion(JSON.stringify({
+    radius_px: 5,
+    intensity: 0.45,
+    depth_threshold: 0.025,
+  }));
+
+  const instanceRoots = await state.host.instantiateUrlInstancedUnder(
+    state.leftFrame,
+    instancedUrl,
+    3,
+  );
+  state.host.setTransformsEasedTyped(
+    BigUint64Array.from(instanceRoots.map(BigInt)),
+    new Float32Array([
+      -0.45, -0.25, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0,
+       0.00, -0.25, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0,
+       0.45, -0.25, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0,
+    ]),
+    0.0,
+    "linear",
+  );
+  state.host.setVisible(instanceRoots[0], false);
+  state.host.setNodeTint(instanceRoots[1], 0.1, 0.8, 0.25, 1.0);
+
+  const animatedImport = await state.host.instantiateUrlUnder(state.rightFrame, animatedUrl);
+  const triangle = state.host.nodeHandleByName(animatedImport, "AnimatedTriangle");
+  const inventory = JSON.parse(state.host.animationInventoryJson(animatedImport));
+  const mixer = state.host.playAnimation(animatedImport, "MoveTriangle", {
+    loop_mode: "repeat",
+    speed: 1.0,
+  });
+  state.host.advance(0.5);
+  state.host.pauseAnimation(mixer);
+  state.host.setTransformEased(
+    triangle,
+    [0.0, 0.35, 0.0],
+    [0.0, 0.0, 0.0, 1.0],
+    [1.0, 1.0, 1.0],
+    0.5,
+    "ease_in_out",
+  );
+  state.host.setNodeTintEased(triangle, 1.0, 0.15, 0.05, 1.0, 0.5, "linear");
+  state.host.advance(0.25);
+  state.host.frameNodeWithPreset(triangle, "product_viewer_default");
+  state.host.prepare();
+  state.host.render();
+
+  return { inventory, instanceRoots, triangle };
+}
+
 export function pickCssPixel(state, event) {
   return state.host.pick(event.offsetX, event.offsetY);
 }

@@ -1,6 +1,6 @@
 [package]
 name = "scena"
-version = "1.6.0"
+version = "1.7.0"
 edition = "2024"
 rust-version = "1.93"
 license = "MIT OR Apache-2.0"
@@ -46,6 +46,11 @@ required-features = ["inspection"]
 [[example]]
 name = "scene_host_contracts"
 path = "examples/scene_host_contracts.rs"
+required-features = ["scene-host"]
+
+[[example]]
+name = "scene_host_release_1_7"
+path = "examples/scene_host_release_1_7.rs"
 required-features = ["scene-host"]
 
 [dependencies]

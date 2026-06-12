@@ -7,6 +7,7 @@ import { chromium } from "playwright";
 const baseUrl = new URL(process.argv[2] || "http://127.0.0.1:18133/");
 const outDir = path.resolve("target/gate-artifacts/showcase-demo");
 const HARDWARE_SECTION_ACTIVATION_BUDGET_MS = 800;
+const CONSTRAINED_HARDWARE_SECTION_ACTIVATION_BUDGET_MS = 2000;
 const SOFTWARE_SECTION_ACTIVATION_BUDGET_MS = 2000;
 const configuredSectionActivationBudgetMs = process.env.SCENA_SHOWCASE_SECTION_BUDGET_MS
   ? Number(process.env.SCENA_SHOWCASE_SECTION_BUDGET_MS)
@@ -113,10 +114,18 @@ function isSoftwareWebglRenderer(info) {
   );
 }
 
+function isConstrainedHardwareWebglRenderer(info) {
+  return /broadcom|v3d/i.test(`${info.vendor} ${info.renderer}`);
+}
+
 async function configureSectionActivationBudget(page) {
   const webgl = await browserWebglRendererInfo(page);
-  if (configuredSectionActivationBudgetMs == null && isSoftwareWebglRenderer(webgl)) {
-    sectionActivationBudgetMs = SOFTWARE_SECTION_ACTIVATION_BUDGET_MS;
+  if (configuredSectionActivationBudgetMs == null) {
+    if (isSoftwareWebglRenderer(webgl)) {
+      sectionActivationBudgetMs = SOFTWARE_SECTION_ACTIVATION_BUDGET_MS;
+    } else if (isConstrainedHardwareWebglRenderer(webgl)) {
+      sectionActivationBudgetMs = CONSTRAINED_HARDWARE_SECTION_ACTIVATION_BUDGET_MS;
+    }
   }
   return webgl;
 }
@@ -237,7 +246,13 @@ async function wireErrorCapture(page, errors) {
 const browser = await chromium.launch({
   headless: true,
   executablePath: chromiumExecutablePath(),
-  args: ["--no-sandbox", "--disable-dev-shm-usage"],
+  args: [
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+    "--ignore-gpu-blocklist",
+    "--enable-gpu",
+    "--use-angle=gles",
+  ],
 });
 
 try {

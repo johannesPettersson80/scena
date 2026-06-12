@@ -73,12 +73,14 @@ pub struct SceneNodeInspectionV1 {
     pub layer_mask: u64,
     pub render_group: i16,
     pub helper_on_top: bool,
+    #[serde(default)]
     pub tint: Option<Color>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct SceneDrawInspectionV1 {
     pub node: u64,
+    #[serde(default)]
     pub instance: Option<u64>,
     pub topology: GeometryTopology,
     pub primitive_count: usize,
@@ -100,6 +102,7 @@ pub struct SceneCameraFrustumInspectionV1 {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SceneNormalInspectionV1 {
     pub node: u64,
+    #[serde(default)]
     pub instance: Option<u64>,
     pub length: f32,
     pub segments: Vec<[Vec3; 2]>,

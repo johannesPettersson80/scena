@@ -10,7 +10,7 @@ The authoritative API reference is generated on docs.rs:
 
 Use this page as the conceptual map.
 
-Additive public API changes in `[Unreleased]`:
+Additive public API changes in 1.7.0:
 
 - `Transform`, `Aabb`, `Color`, `GeometryTopology`, capability enums, and
   capability report structs now serialize through stable serde shapes.
@@ -68,10 +68,16 @@ Additive public API changes in `[Unreleased]`:
 - `SceneHostCameraState` (gated behind `scene-host`)
 - `SCENE_HOST_ASSET_IMPORT_SCHEMA_V1` and
   `SceneHostAssetImportReportV1` (gated behind `scene-host`)
+- `SCENE_HOST_SUBTREE_SCHEMA_V1`, `SceneHostSubtreeReportV1`, and
+  `SceneHostSubtreeNodeV1` (gated behind `scene-host`)
 - `SCENE_HOST_ANIMATION_INVENTORY_SCHEMA_V1`,
   `SceneHostAnimationInventoryV1`, `SceneHostAnimationClipV1`,
   `SceneHostAnimationPlayOptions`, `SceneHostAnimationLoopMode`, and
   `SceneHostEasing` (gated behind `scene-host`)
+- `RendererStats::gpu_draw_submissions` and `RendererStats::instances`
+- `AntiAliasing`, `PostBloomConfig`,
+  `ScreenSpaceAmbientOcclusionConfig`, `Renderer::set_anti_aliasing`,
+  `Renderer::set_bloom`, and `Renderer::set_screen_space_ambient_occlusion`
 - `CAPTURE_SCHEMA_V1`
 - `capture_rgba8`
 - `Renderer::capture_rgba8`
@@ -127,24 +133,48 @@ handle is an instance-root handle, not a scene node. The standard transform,
 visibility, tint, remove, and pick APIs accept these handles. Other node-tree
 APIs continue to reject them with structured host errors. Per-instance tint is
 opaque-only in this release.
-Phase 6 adds generic `AssetProvenance` metadata. Loaded `SceneAsset`,
+Release 1.7 also adds post-processing controls, world-space stroke rendering,
+SceneHost animation playback, and presentation transitions. Browser and native
+hosts explicitly call `advance(delta_seconds)` once per frame to step active
+animation mixers and transition fades; `SceneHost` does not own the host
+application's render loop. Eased transforms and tints are renderer presentation
+smoothing for low-rate visual updates, not simulation, physics, robotics, or
+process-control behavior.
+Release 1.7 subtree reports use schema `scena.subtree.v1`; node `name` is
+reserved for future stable naming policy and is always `null` in 1.7. Use
+stable host handles and sorted `tags` for identification.
+The stable contract surface also includes generic `AssetProvenance` metadata.
+Loaded `SceneAsset`,
 `TextureDesc`, and `EnvironmentDesc` values expose `provenance()` with a
 serde-stable source path, optional source SHA-256, optional license/generator,
 and generated derivatives. `scena.asset_load_report.v1` and
 `scena.asset_geometry_summary.v1` include the same provenance value. Existing
 environment source accessors continue to delegate to the same provenance
 record.
-Phase 8 adds interactive `SceneHost` camera state without giving the host a
-render loop. Native code can call `SceneHostCore::set_camera`,
+SceneHost includes interactive camera state without giving the host a render
+loop. Native code can call `SceneHostCore::set_camera`,
 `SceneHostCore::get_camera`, `SceneHostCore::camera_json`,
 `camera_pointer_down`, `camera_pointer_move`, `camera_pointer_up`, and
 `camera_wheel`. The WASM facade exposes the corresponding `setCamera`,
 `setCameraJson`, `getCameraJson`, `cameraPointerDown`, `cameraPointerMove`,
 `cameraPointerUp`, and `cameraWheel` methods.
 
-See `examples/scene_host_contracts.rs` and
-`examples/scene_host_browser_contracts.js` for native and browser contract
-usage. Golden JSON fixtures for the shipped v1 reports live under
+Runnable SceneHost examples:
+
+```bash
+cargo run --example scene_host_contracts --features scene-host
+cargo run --example scene_host_release_1_7 --features scene-host
+```
+
+`examples/scene_host_release_1_7.rs` is the compact native 1.7 surface sample:
+post-processing setters, instanced import, visibility/tint, camera preset
+framing, animation inventory/play/pause/advance, and eased transform/tint
+updates. `examples/scene_host_browser_contracts.js` shows the matching WASM
+method names: `setAntiAliasing`, `setBloom`, `setAmbientOcclusion`,
+`instantiateUrlInstancedUnder`, `setVisible`, `setNodeTint`,
+`animationInventoryJson`, `playAnimation`, `pauseAnimation`, `advance`,
+`setTransformEased`, `setTransformsEasedTyped`, and `setNodeTintEased`.
+Golden JSON fixtures for the shipped v1 reports live under
 `tests/assets/stable-contracts/`.
 
 Additive public API changes in 1.2.0:

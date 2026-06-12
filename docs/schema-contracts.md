@@ -26,6 +26,8 @@ Rules:
   - `scena.asset_load_report.v1`
   - `scena.asset_geometry_summary.v1`
   - `scena.annotation_projection.v1`
+  - `scena.subtree.v1`
+  - `scena.animation_inventory.v1`
 
 ## Compatibility
 
@@ -153,6 +155,10 @@ Required top-level fields:
 Each node entry contains the stable host `handle`, optional `name`, and sorted
 `tags` for the requested subtree.
 
+In 1.7, subtree node `name` is reserved for a future stable naming policy and
+is always serialized as `null`. Use `tags` or host-owned handles for stable
+identification in this release.
+
 Small example:
 
 ```json
@@ -191,6 +197,21 @@ Small example:
 }
 ```
 
+## Renderer stats JSON
+
+`Renderer::stats()` returns the native `RendererStats` struct. `SceneHost`
+also exposes the same counters through `statsJson()`.
+
+Release 1.7 adds these counters:
+
+- `gpu_draw_submissions`: actual GPU draw submissions recorded at renderer
+  submission sites.
+- `instances`: visible per-instance records from explicit instanced imports.
+
+The legacy `draw_calls` and `primitives` fields remain as deprecated aliases of
+`triangles` for 1.x compatibility. They do not report GPU submission count and
+are planned for removal in 2.0.
+
 ## Shipped v1 contracts
 
 ### `scena.capability_report.v1`
@@ -204,6 +225,11 @@ Required top-level fields:
 - `capabilities`
 - `adapter`
 - `diagnostics`
+
+Additive optional fields:
+
+- `post_processing`: active/available post-processing pass metadata for the
+  current renderer configuration.
 
 Capability enum values use serde names such as `headless`, `supported`,
 `degraded`, and `feature_disabled`.
@@ -238,12 +264,21 @@ Each node entry includes `handle`, `parent`, `kind`, `tags`,
 because per-node highlight state is part of the render state a host may need
 to prove.
 
+Draw-list and normal-overlay entries may include an additive optional
+`instance` field. It is `null` or absent for ordinary node drawables and set
+for per-instance records.
+
 Host-backed inspection may also include additive top-level `instance_sets`
 entries for explicit instanced URL imports. Each entry contains the
 instance-root `root_handle`, `visible`, optional opaque `tint`,
 `root_transform`, and per-drawable `entries` with the backing set-node handle,
 source `instance_id`, and baked drawable-local transform. This field is
 additive on `scena.scene_inspection.v1`; older consumers may ignore it.
+
+`revisions` includes `structure`, `transform`, additive `appearance`, and
+`interaction`. Older `scena.scene_inspection.v1` payloads without
+`appearance`, `tint`, `instance`, or `instance_sets` still deserialize with
+defaults.
 
 Topology helpers on `SceneInspectionReportV1`:
 
@@ -294,7 +329,7 @@ Small example:
     "byte_length": 16384,
     "fnv1a64": "0123456789abcdef"
   },
-  "revisions": { "structure": 3, "transform": 2, "interaction": 0 },
+  "revisions": { "structure": 3, "transform": 2, "appearance": 1, "interaction": 0 },
   "camera": {
     "active": true,
     "world_transform": {

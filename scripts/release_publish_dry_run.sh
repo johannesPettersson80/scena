@@ -87,6 +87,14 @@ run_step "cargo clippy"               cargo clippy --all-targets -- -D warnings
 run_step "cargo test"                 cargo test
 run_step "cargo check --examples"     cargo check --examples
 RUSTDOCFLAGS="-D warnings" run_step "cargo doc"  cargo doc --no-deps --all-features
+if [ ! -x node_modules/.bin/wasm-opt ] && [ -x "${repo_root}/node_modules/.bin/wasm-opt" ]; then
+  ln -s "${repo_root}/node_modules" node_modules
+fi
+if [ ! -x node_modules/.bin/wasm-opt ]; then
+  run_step "npm ci"                   npm ci
+fi
+run_step "npm demo:build"             npm run demo:build
+run_step "npm proof:build"            npm run proof:build
 run_step "cargo doctor --full"        cargo run -p xtask -- doctor --full
 run_step "cargo claim-audit"          cargo run -p xtask -- claim-audit
 run_step "cargo release-readiness"    cargo run -p xtask -- release-readiness

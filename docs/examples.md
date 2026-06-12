@@ -32,7 +32,7 @@ cargo check --examples
 | Layers and visibility | `layers_visibility.rs` |
 | Native window | `native_window.rs` |
 | Browser canvas | `browser_canvas.rs` |
-| Browser host contracts | `scene_host_contracts.rs`, `scene_host_browser_contracts.js` |
+| Browser host contracts | `scene_host_contracts.rs`, `scene_host_release_1_7.rs`, `scene_host_browser_contracts.js` |
 | CAD-style anchors and connectors | `anchor_alignment.rs`, `connect_objects.rs`, `imported_anchor_connection.rs`, `industrial_connector_assembly.rs`, `coordinate_connector_repair.rs`, `coordinate_units.rs` |
 | Industrial/static scene | `industrial_static_scene.rs` |
 | Diagnostics | `beginner_diagnostics.rs`, `scene_inspection.rs` |
@@ -67,6 +67,7 @@ Use these when you are building model viewers, inspection tools, or editors:
 - `layers_visibility.rs`
 - `scene_inspection.rs`
 - `scene_host_browser_contracts.js`
+- `scene_host_release_1_7.rs`
 
 ## Stable JSON contract examples
 
@@ -76,6 +77,15 @@ Use `scene_host_contracts.rs` to print representative
 `scena.capture.v1` reports from the native `SceneHostCore` path. Use
 `scene_host_browser_contracts.js` as the TypeScript/JavaScript shape for a
 browser host that owns its own render cadence.
+
+Use `scene_host_release_1_7.rs` for the release 1.7 public surface:
+post-processing setters, instanced import, visibility/tint APIs, camera preset
+framing, animation inventory/play/pause/advance, and eased transform/tint
+updates.
+
+```bash
+cargo run --example scene_host_release_1_7 --features scene-host
+```
 
 Golden JSON fixtures for these contracts live in
 `tests/assets/stable-contracts/` and are checked by `tests/stable_contracts.rs`

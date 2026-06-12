@@ -4,17 +4,64 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-06-12
+
 ### Added
 
+- Added SceneHost typed transform/subtree controls for browser and native
+  hosts, including typed-array transform batches, visibility, subtree queries,
+  subtree tinting with exclusions, and explicit stale-handle errors.
+- Added GPU post-processing controls: FXAA, bloom, and screen-space ambient
+  occlusion, with SceneHost setters and browser proof artifacts on WebGL2.
+- Added world-space stroke rendering for technical overlays and grids, with a
+  dedicated retained GPU path.
 - Added explicit GPU instancing for `InstanceSet` renderables plus SceneHost
   `instantiateUrlInstanced` / `instantiateUrlInstancedUnder` APIs. Returned
   instance-root handles support transform, visibility, opaque tint, removal,
   picking, and additive inspection metadata without duplicating shared asset
   geometry.
+- Added SceneHost animation playback exposure:
+  `animation_inventory_json`, `play_animation`, `pause_animation`,
+  `stop_animation`, `seek_animation`, `set_animation_speed`, and `advance`,
+  plus matching WASM methods.
+- Added SceneHost presentation transitions for eased transforms and opaque tint
+  fades. These are renderer presentation smoothing helpers driven by the host
+  clock, not simulation or domain behavior.
 - Added honest renderer submission stats: `RendererStats::gpu_draw_submissions`
   reports actual GPU draw submissions, `RendererStats::instances` reports
   visible per-instance records, and legacy `draw_calls` / `primitives` remain
   deprecated triangle-count aliases.
+- Added stable contracts `scena.subtree.v1` and
+  `scena.animation_inventory.v1`, with golden fixtures under
+  `tests/assets/stable-contracts/`.
+- Added `examples/scene_host_release_1_7.rs`, a runnable native SceneHost
+  example for post-processing, instancing, visibility/tint, camera presets,
+  animation advance, and eased updates.
+
+### Changed
+
+- Deprecated `RendererStats::draw_calls` and `RendererStats::primitives` as
+  aliases of `triangles`; removal is planned for 2.0. Use
+  `gpu_draw_submissions` for renderer submissions and `instances` for
+  per-instance record counts.
+- Updated the stable v1 schema docs and fixtures for additive fields:
+  `capability_report.v1.post_processing`,
+  `scene_inspection.v1.nodes[].tint`,
+  `scene_inspection.v1.draw_list[].instance`,
+  `scene_inspection.v1.normal_overlays[].instance`,
+  `scene_inspection.v1.instance_sets`,
+  `scene_inspection.v1.revisions.appearance`, and
+  `capture.v1.revisions.appearance`.
+- Documented that `scena.subtree.v1.nodes[].name` is always `null` in 1.7;
+  stable identification should use host handles or tags.
+
+### Fixed
+
+- Animation mixer transform tracks now bump transform revisions instead of
+  structure revisions, avoiding full primitive re-collection for ordinary
+  animated playback.
+- Subtree tint writes now cancel active per-node tint fades for the touched
+  handles, matching the direct-set cancellation rule.
 
 ## [1.6.0] - 2026-06-02
 

@@ -48,6 +48,18 @@ engine, world, or application-specific abstractions.
   prepare/render lifecycle, resource lifetime, readback, and capture metadata.
 - Browser/WASM adapters that expose renderer primitives without owning the host
   application loop.
+- GPU post-processing as renderer-owned presentation quality controls,
+  including FXAA, bloom, and screen-space ambient occlusion where backend
+  capabilities allow them.
+- GPU instancing for repeated renderable imports without duplicating shared
+  geometry, while keeping host-owned instance handles for transforms,
+  visibility, tinting, picking, and inspection.
+- World-space technical stroke rendering for CAD/viewer overlays and grids.
+- SceneHost animation playback exposure for imported clips, driven by an
+  explicit host clock rather than a hidden render loop.
+- Presentation transitions for transforms and tint fades. These are renderer
+  smoothing for visual state pushed by the host application; they are not
+  simulation, robotics, PLC/process logic, physics, or gameplay behavior.
 - Structured diagnostics, capability reports, inspection reports, capture
   descriptors, asset-load reports, provenance, release gates, doctor rules, and
   deterministic proof artifacts.
