@@ -14,6 +14,7 @@ and deterministic headless rendering.
 - [API overview](api.md): the main public types and how they fit together.
 - [Renderer charter](RFC-rust-3d-renderer.md): canonical scope, non-goals, and architecture vocabulary.
 - [Stable JSON contracts](schema-contracts.md): schema names, compatibility, handle, and fixture policy.
+- [v1.7.1 release notes](release-notes/v1.7.1.md): CI-sized WaterBottle CPU release proof.
 - [v1.7.0 release notes](release-notes/v1.7.0.md): post-processing, instanced SceneHost imports, strokes, animation playback, and presentation transitions.
 - [v1.5.0 release notes](release-notes/v1.5.0.md): expanded material presets, WebGL2 texture clamping, and smooth-metal browser IBL improvements.
 - [v1.4.0 release notes](release-notes/v1.4.0.md): easy-use named primitives, bundled content, viewer ergonomics, `<scena-viewer>` element, and renderer-feature coverage.

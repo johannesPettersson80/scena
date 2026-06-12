@@ -4,6 +4,16 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-06-12
+
+### Fixed
+
+- Reduced the default WaterBottle CPU release proof to a CI-sized 512x512
+  software render while keeping its real-asset import, topology, material
+  sample, colour-family, and artifact checks. This prevents GitHub hosted
+  Linux jobs from being killed by a long no-output CPU render during
+  `cargo test`.
+
 ## [1.7.0] - 2026-06-12
 
 ### Added
