@@ -8,11 +8,10 @@ All notable user-facing changes are recorded here.
 
 ### Fixed
 
-- Reduced the default WaterBottle CPU release proof to a CI-sized 512x512
-  software render while keeping its real-asset import, topology, material
-  sample, colour-family, and artifact checks. This prevents GitHub hosted
-  Linux jobs from being killed by a long no-output CPU render during
-  `cargo test`.
+- Moved the long WaterBottle CPU release proof behind the explicit
+  `SCENA_RUN_EXPENSIVE_CPU_RELEASE_TESTS=1` release-lane flag. Default
+  `cargo test` now records fail-closed metadata instead of letting GitHub
+  hosted Linux jobs kill the native/headless gate during the software render.
 
 ## [1.7.0] - 2026-06-12
 
