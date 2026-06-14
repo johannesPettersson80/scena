@@ -18,7 +18,7 @@ pub struct AppearanceExpectationV1 {
     pub targets: Vec<AppearanceTargetExpectationV1>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppearanceTargetExpectationV1 {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -31,6 +31,8 @@ pub struct AppearanceTargetExpectationV1 {
     pub color_family: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub swatch_srgb8: Option<[u8; 3]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub swatch_tolerance: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alpha_mode: Option<String>,
     #[serde(default, skip_serializing_if = "is_false")]

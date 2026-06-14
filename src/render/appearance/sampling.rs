@@ -12,12 +12,35 @@ pub(super) struct ContentSample {
 }
 
 impl ContentSample {
+    pub(super) fn empty() -> Self {
+        Self {
+            sampled_pixels: 0,
+            bbox: None,
+            average_rgba8: [0, 0, 0, 0],
+            color_family: "transparent".to_owned(),
+            luminance_mean: 0.0,
+        }
+    }
+
     pub(super) fn from_rgba8(
         width: u32,
         height: u32,
         rgba8: &[u8],
         background: [u8; 4],
         tolerance: u8,
+    ) -> Self {
+        let Some(bounds) = full_bounds(width, height) else {
+            return Self::empty();
+        };
+        Self::from_rgba8_bounds(width, rgba8, background, tolerance, bounds)
+    }
+
+    pub(super) fn from_rgba8_bounds(
+        width: u32,
+        rgba8: &[u8],
+        background: [u8; 4],
+        tolerance: u8,
+        bounds: CapturePixelBounds,
     ) -> Self {
         let mut sampled_pixels = 0_u64;
         let mut rgb_sum = [0_u64; 3];
@@ -28,8 +51,8 @@ impl ContentSample {
         let mut max_x = 0_u32;
         let mut max_y = 0_u32;
 
-        for y in 0..height {
-            for x in 0..width {
+        for y in bounds.min_y..=bounds.max_y {
+            for x in bounds.min_x..=bounds.max_x {
                 let offset = ((y as usize) * (width as usize) + (x as usize)) * 4;
                 let Some(pixel) = rgba8.get(offset..offset + 4) else {
                     continue;
@@ -81,6 +104,20 @@ impl ContentSample {
             },
         }
     }
+}
+
+fn full_bounds(width: u32, height: u32) -> Option<CapturePixelBounds> {
+    if width == 0 || height == 0 {
+        return None;
+    }
+    Some(CapturePixelBounds {
+        min_x: 0,
+        min_y: 0,
+        max_x: width.saturating_sub(1),
+        max_y: height.saturating_sub(1),
+        width,
+        height,
+    })
 }
 
 impl From<CapturePixelBounds> for AppearanceRectV1 {

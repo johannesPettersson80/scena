@@ -365,7 +365,7 @@ fn scena_verify_appearance_cli_checks_variant_color_and_fails_closed() {
             .as_array()
             .expect("appearance reasons array")
             .iter()
-            .any(|reason| reason["code"] == "color_mismatch"),
+            .any(|reason| reason["code"] == "color_family_mismatch"),
         "appearance failure should explain color mismatch: {report:#}"
     );
 }

@@ -9,11 +9,12 @@ use super::types::{
     AppearanceTargetExpectationV1,
 };
 
-const SWATCH_DISTANCE_THRESHOLD: f32 = 0.42;
+const DEFAULT_SWATCH_DISTANCE_THRESHOLD: f32 = 0.2;
 
 pub(super) struct MatchedTarget<'a> {
     pub(super) node: u64,
     pub(super) material: &'a SceneMaterialInspectionV1,
+    pub(super) draw: Option<&'a SceneDrawInspectionV1>,
 }
 
 pub(super) fn material_for_target<'a>(
@@ -203,7 +204,7 @@ pub(super) fn evaluate_target(
     {
         push_reason(
             reasons,
-            "color_mismatch",
+            "color_family_mismatch",
             "error",
             &expected.id,
             affected.clone(),
@@ -220,10 +221,13 @@ pub(super) fn evaluate_target(
 
     if let Some(swatch) = expected.swatch_srgb8 {
         let distance = swatch_distance(sample.average_rgba8, swatch);
-        if distance > SWATCH_DISTANCE_THRESHOLD {
+        let tolerance = expected
+            .swatch_tolerance
+            .unwrap_or(DEFAULT_SWATCH_DISTANCE_THRESHOLD);
+        if distance > tolerance {
             push_reason(
                 reasons,
-                "color_mismatch",
+                "swatch_mismatch",
                 "error",
                 &expected.id,
                 affected,
@@ -303,6 +307,7 @@ fn draw_material(draw: &SceneDrawInspectionV1) -> Option<MatchedTarget<'_>> {
     Some(MatchedTarget {
         node: draw.node,
         material: draw.material.as_ref()?,
+        draw: Some(draw),
     })
 }
 
@@ -310,5 +315,6 @@ fn node_material(node: &SceneNodeInspectionV1) -> Option<MatchedTarget<'_>> {
     Some(MatchedTarget {
         node: node.handle,
         material: node.material.as_ref()?,
+        draw: None,
     })
 }

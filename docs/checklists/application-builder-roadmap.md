@@ -783,32 +783,34 @@ Required behavior:
 - [x] Assert first-time appearance correctness without requiring a golden image.
 - [x] Inputs declare intended appearance per stable node, tag/import-like
       selector, or variant: color family or target swatch, variant name, alpha
-      mode, texture presence, and fallback policy. Material-name matching
-      remains future work until stable material inspection exposes source
-      names.
+      mode, texture presence, fallback policy, and optional target-level
+      swatch tolerance. Material-name matching remains future work until stable
+      material inspection exposes source names.
 - [x] Report active source material, active variant, material factors,
       texture/fallback provenance, sampled region stats, dominant color family,
       alpha summary, and luminance summary.
 - [x] `ok=false` when an intended variant is missing, a generated fallback is
       used where source material was required, alpha hides the target, sampled
-      color family disagrees with the intended swatch, or texture provenance is
-      missing.
+      color family or numeric swatch distance disagrees with the expectation,
+      or texture provenance is missing.
 - [x] Reports include suggested fixes, such as apply variant, load missing
       texture, clear fallback override, set alpha mode, or inspect material
       assignment.
 - [x] Summary mode is small and includes capture-bound sampled frame content,
       swatch distance, alpha summary, material source, fallback provenance, and
-      luminance mean. The first slice samples the visible frame-content region;
-      per-node pixel coverage and glTF material-name checks remain future
-      additive fields because current stable material inspection exposes source
-      index/provenance but not material names or ID-buffer coverage.
+      luminance mean. Matched material-bearing draws use projected `node_bbox`
+      color samples; unmatched or node-without-draw targets fall back to
+      `frame_content`. Per-node fragment coverage and glTF material-name checks
+      remain future additive fields because current stable material inspection
+      exposes source index/provenance but not material names or ID-buffer
+      coverage.
 
 Acceptance:
 
 - [x] Fixtures and tests cover intended green, wrong color, generated fallback,
-      missing variant, and valid source-material variant. Intended blue,
-      missing texture, alpha zero, and source-material name checks remain
-      future hardening cases.
+      missing variant, valid source-material variant, per-target node-bbox color
+      sampling, and strict swatch tolerance. Missing texture, alpha zero, and
+      source-material name checks remain future hardening cases.
 - [x] Product-configurator proof asserts the requested variant rendered with
       the expected appearance, not merely that pixels changed.
 - [ ] Data-color proof asserts a known color ramp sample without a golden

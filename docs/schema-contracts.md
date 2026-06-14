@@ -729,10 +729,11 @@ inspection path. There is no separate agent render mode.
 `scena.appearance_expectation.v1` is a transient input, not a persisted scene
 document. Each target declares one or more first-time appearance assertions:
 stable report-local `node`, `tag`, intended `variant`, `color_family`,
-`swatch_srgb8`, `alpha_mode`, `require_source_material`, and
-`require_base_color_texture`. glTF material-name matching is intentionally not
-part of the first slice because the stable material inspection report currently
-exposes source material index and provenance, not source material names.
+`swatch_srgb8`, optional per-target `swatch_tolerance`, `alpha_mode`,
+`require_source_material`, and `require_base_color_texture`. glTF
+material-name matching is intentionally not part of the first slice because the
+stable material inspection report currently exposes source material index and
+provenance, not source material names.
 
 `scena.appearance_introspection.v1` contains:
 
@@ -749,16 +750,21 @@ exposes source material index and provenance, not source material names.
 The report combines capture-derived frame-content color sampling with
 `SceneMaterialInspectionV1` material provenance. It reports active source
 material/fallback provenance, alpha mode and base-color alpha, decoded texture
-presence, sampled frame-content region, dominant color family, swatch distance,
-and luminance mean. The first slice samples the visible frame-content region
-and is intended for single-target product/configurator proofs; per-node pixel
+presence, sampled region, dominant color family, swatch distance, and luminance
+mean. Matched material-bearing draw targets use a projected `node_bbox` sample
+region derived from the capture camera and draw bounds; unmatched or
+node-without-draw targets fall back to `frame_content`. Per-node fragment
 coverage remains a future additive field.
 
 `ok` is false only for error-severity reasons such as missing intended variant,
 variant not active, generated fallback where a source material was required,
 hidden alpha, alpha-mode mismatch, missing base-color texture provenance, or
-sampled color mismatch. Reports stay machine-readable on stdout; the CLI exits
-non-zero when `ok` is false.
+sampled color-family / swatch mismatch. The reason codes distinguish
+`color_family_mismatch` from `swatch_mismatch` so agents can branch on family
+versus numeric swatch failures. Multiple requested material variants produce a
+warning because material variants are applied asset-wide for the rendered
+frame. Reports stay machine-readable on stdout; the CLI exits non-zero when
+`ok` is false.
 
 The stable fixtures live at
 `tests/assets/stable-contracts/appearance_expectation.v1.json` and
