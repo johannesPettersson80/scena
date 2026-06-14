@@ -39,6 +39,14 @@ proof artifacts.
 - [ ] Add or extend `xtask doctor` when a new failure family can be detected
       mechanically from source, docs, manifests, fixtures, or gate artifacts.
 
+Feature-gated contract suites must be run explicitly so default `cargo test`
+cannot hide them as zero-test successes:
+
+- `cargo test --features inspection --test capture_contracts`
+- `cargo test --features inspection --test render_introspection_contracts`
+- `cargo test --features inspection --test visibility_diagnosis_contracts`
+- `cargo test --features inspection --test scena_cli_agent`
+
 ## Explicit non-goals
 
 - [ ] No CAD kernel, parametric sketcher, constraint solver, boolean modeling,
@@ -493,13 +501,13 @@ already expose the needed data in separate surfaces.
 
 Required commands:
 
-- [ ] `scena render <recipe-or-asset> --introspect --out <png>`: load, prepare,
+- [x] `scena render <asset> --introspect --out <png>`: load, prepare,
       render, capture, introspect, write artifacts, and emit
-      `scena.render_introspection.v1`.
-- [ ] `scena inspect <recipe-or-asset>`: emit summary `scena.scene_inspection.v1`
-      by default, with handle/subtree/detail filters.
-- [ ] `scena diagnose <recipe-or-asset> --visibility [--handle <u64>]`: emit
-      `scena.visibility_diagnosis.v1`.
+      `scena.render_introspection.v1`. Recipe input lands with A.5.
+- [x] `scena inspect <asset>`: emit `scena.scene_inspection.v1` for loaded
+      assets. Recipe input and handle/subtree/detail filters remain open.
+- [x] `scena diagnose <asset> --visibility [--handle <u64>]`: emit
+      `scena.visibility_diagnosis.v1`. Recipe input lands with A.5.
 - [ ] `scena validate-recipe <recipe.json>`: emit validation diagnostics for
       `scena.scene_recipe.v1`.
 - [ ] `scena place <recipe.json> --verb <verb> ...`: emit a transform or
@@ -520,23 +528,34 @@ Required commands:
 CLI behavior:
 
 - [x] JSON to stdout; progress and human text to stderr for the implemented
-      schema commands.
-- [x] `--json` is the default for the implemented schema commands.
-- [ ] `--detail` opts into larger reports.
+      schema, render, inspect, and diagnose commands.
+- [x] `--json` is the default for the implemented schema, render, inspect, and
+      diagnose commands.
+- [x] `--detail` opts into larger render-introspection and visibility-diagnosis
+      reports.
 - [ ] `--round-floats <digits>` defaults to stable, documented precision.
 - [x] Exit status `0` means the requested schema operation succeeded.
 - [ ] Exit status is non-zero for invalid recipes, missing assets, failed
       preparation, failed rendering, `ok=false` introspection, and invisible
-      diagnosis targets.
-- [ ] Artifact paths are explicit and relative to the requested output
-      directory when possible.
+      diagnosis targets. The first CLI slice covers report `ok=false`
+      propagation and invisible diagnosis targets; recipe and missing-asset
+      JSON errors remain open.
+- [x] Artifact paths are explicit for implemented render-introspection output.
 
 Acceptance:
 
 - [ ] Golden stdout fixtures for each command.
 - [x] Tests verify stderr/stdout separation for schema commands.
-- [ ] Tests verify non-zero exits for invalid recipe, missing asset, empty
-      frame, and invisible target.
+- [x] Tests verify `render --introspect` writes PNG plus capture descriptor
+      artifacts and emits `scena.render_introspection.v1`.
+- [x] Tests verify `inspect <asset>` emits `scena.scene_inspection.v1`.
+- [x] Tests verify `diagnose --visibility --handle <stale>` emits
+      `scena.visibility_diagnosis.v1` on stdout with a non-zero exit.
+- [x] Tests verify `render --introspect` emits
+      `scena.render_introspection.v1` on stdout with a non-zero exit for an
+      empty frame.
+- [ ] Tests verify non-zero exits for invalid recipe, missing asset, and
+      invisible target.
 - [ ] Doctor rule keeps CLI help, schema constants, and stable fixtures aligned.
 
 ### A.4 Schema discovery

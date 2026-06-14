@@ -45,8 +45,9 @@ Additive public API changes in Unreleased:
   `SchemaCatalogV1`, `SchemaCatalogEntryV1`, `SchemaEntryReportV1`,
   `schema_catalog_v1`, `schema_catalog_entry`, `schema_entry_report_v1`,
   and `nearest_schema_name`
-- The `scena` binary with `schema list` and `schema get <schema>` JSON
-  commands
+- The `scena` binary with `schema list`, `schema get <schema>`, and, when
+  built with `inspection`, asset-input `render --introspect`, `inspect`, and
+  `diagnose --visibility` JSON commands
 
 Additive public API changes in 1.7.0:
 

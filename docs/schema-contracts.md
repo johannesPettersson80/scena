@@ -468,6 +468,9 @@ Capability enum values use serde names such as `headless`, `supported`,
 
 Produced by `SceneInspectionReport::to_schema_json()` when the `inspection`
 feature is enabled and represented by `SceneInspectionReportV1`.
+The `scena` binary's first CLI transport is `scena inspect <asset>` when built
+with the `inspection` feature; it loads and prepares the asset through the
+normal headless viewer path, then emits this report on stdout.
 
 Required top-level fields:
 
@@ -618,9 +621,12 @@ rounds floating-point summaries to stable precision and keeps large artifacts
 outside JSON, referenced through explicit paths or the nested capture summary.
 
 The stable fixture lives at
-`tests/assets/stable-contracts/render_introspection.v1.json`. Browser and CLI
-render-introspection entrypoints are separate roadmap items; this schema is
-designed so those transports can emit the same JSON shape later.
+`tests/assets/stable-contracts/render_introspection.v1.json`. The `scena`
+binary's first CLI transport is `scena render <asset> --introspect --out
+<png>` when built with the `inspection` feature. It writes the PNG and capture
+descriptor artifacts, then emits this report on stdout; recipe input and browser
+entrypoints are separate roadmap items that must emit the same JSON shape when
+they land.
 
 ### `scena.visibility_diagnosis.v1`
 
@@ -653,9 +659,11 @@ Summary mode returns only reasons, fixes, and counts; detail mode may include
 supporting evidence rows.
 
 The stable fixture lives at
-`tests/assets/stable-contracts/visibility_diagnosis.v1.json`. CLI exit-status
-behavior is a separate roadmap item; this schema is transport-neutral and is
-designed for the CLI to emit later.
+`tests/assets/stable-contracts/visibility_diagnosis.v1.json`. The `scena`
+binary's first CLI transport is `scena diagnose <asset> --visibility [--handle
+<u64>]` when built with the `inspection` feature. It emits this report on
+stdout and exits non-zero when `ok` is false, so shell-driven callers can branch
+without parsing JSON first.
 
 ### `scena.schema_catalog.v1` and `scena.schema_entry.v1`
 

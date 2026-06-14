@@ -31,7 +31,11 @@ All notable user-facing changes are recorded here.
   inspection-visible drawable to be culled.
 - Added the `scena` schema-discovery CLI (`schema list` and `schema get`) plus
   `scena.schema_catalog.v1` / `scena.schema_entry.v1` contracts for
-  agent-readable contract discovery.
+  agent-readable contract discovery, and asset-input `render --introspect`,
+  `inspect`, and `diagnose --visibility` commands behind the `inspection`
+  feature.
+- Added doctor coverage that requires whole-file feature-gated contract suites
+  to publish their exact feature-enabled cargo commands in the roadmap.
 
 ## [1.7.1] - 2026-06-12
 

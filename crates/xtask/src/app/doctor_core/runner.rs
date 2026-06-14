@@ -102,6 +102,7 @@ pub(crate) fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) 
     check_unit_test_first_governance(root, findings);
     check_agent_validation(root, findings);
     check_tests_env_flags_documented(root, findings);
+    check_feature_gated_contract_tests_documented(root, findings);
     check_no_ignored_release_tests(root, findings);
     check_m8_real_asset_dual_lane(root, findings);
     check_cpu_ibl_gap_documented(root, findings);

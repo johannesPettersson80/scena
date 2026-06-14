@@ -36,9 +36,10 @@ pub(crate) use crate::app::doctor_core::{
     ALLOWED_CONTEXT_TYPES, CATCH_ALL_TYPE_NAMES, CATCH_ALL_TYPE_SUFFIXES,
     MAX_SIGNIFICANT_LINES_PER_SOURCE_MODULE, MAX_SIGNIFICANT_LINES_PER_XTASK_MODULE, REQUIRED_DOCS,
     REQUIRED_SOURCE_MODULES, SOURCE_SCOPE_TERMS, STALE_DOC_TERMS, check_cpu_ibl_gap_documented,
-    check_m8_real_asset_dual_lane, check_no_ignored_release_tests,
-    check_tests_env_flags_documented, check_waterbottle_third_party_reference, find_env_var_names,
-    repo_root, require_files, run_architecture_doctor, run_docs_doctor, run_doctor,
+    check_feature_gated_contract_tests_documented, check_m8_real_asset_dual_lane,
+    check_no_ignored_release_tests, check_tests_env_flags_documented,
+    check_waterbottle_third_party_reference, find_env_var_names, repo_root, require_files,
+    run_architecture_doctor, run_docs_doctor, run_doctor,
 };
 pub(crate) use crate::app::doctor_docs::{
     check_demo_build_heartbeat_contract, check_for_stale_doc_terms, check_markdown_links,
