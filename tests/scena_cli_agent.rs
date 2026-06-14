@@ -371,6 +371,121 @@ fn scena_verify_appearance_cli_checks_variant_color_and_fails_closed() {
 }
 
 #[test]
+fn scena_verify_animation_cli_checks_sampled_change_and_fails_closed() {
+    let animated = "tests/assets/gltf/animated_triangle_scene.glb";
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "verify",
+            "animation",
+            animated,
+            "--clip",
+            "MoveTriangle",
+            "--times",
+            "0,0.5,1.0",
+            "--expect-change",
+            "--width",
+            "96",
+            "--height",
+            "72",
+        ])
+        .output()
+        .expect("scena verify animation command runs");
+
+    assert!(output.status.success(), "stderr={}", stderr(&output));
+    assert!(
+        output.stderr.is_empty(),
+        "animation report stays machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("animation command emits JSON");
+    assert_eq!(report["schema"], "scena.animation_introspection.v1");
+    assert_eq!(report["ok"], true);
+    assert_eq!(report["clip"]["name"], "MoveTriangle");
+    assert_eq!(report["summary"]["sample_count"], 3);
+    assert_eq!(report["summary"]["visible_change"], true);
+    assert_eq!(report["samples"][0]["time_seconds"], 0.0);
+    assert_eq!(report["samples"][1]["time_seconds"], 0.5);
+    assert_eq!(report["samples"][2]["time_seconds"], 1.0);
+
+    let missing = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "verify",
+            "animation",
+            animated,
+            "--clip",
+            "MissingClip",
+            "--times",
+            "0,0.5",
+            "--expect-change",
+            "--width",
+            "96",
+            "--height",
+            "72",
+        ])
+        .output()
+        .expect("scena verify animation missing clip command runs");
+    assert!(!missing.status.success(), "missing clip must fail closed");
+    assert!(
+        missing.stderr.is_empty(),
+        "missing clip report stays machine-readable on stdout, stderr={}",
+        stderr(&missing)
+    );
+    let missing_report: serde_json::Value =
+        serde_json::from_slice(&missing.stdout).expect("missing clip emits JSON");
+    assert_eq!(missing_report["schema"], "scena.animation_introspection.v1");
+    assert_eq!(missing_report["ok"], false);
+    assert!(
+        missing_report["reasons"]
+            .as_array()
+            .expect("animation reasons array")
+            .iter()
+            .any(|reason| reason["code"] == "clip_missing"),
+        "missing clip should be machine-readable: {missing_report:#}"
+    );
+
+    let no_change = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "verify",
+            "animation",
+            animated,
+            "--clip",
+            "MoveTriangle",
+            "--times",
+            "0,0,0",
+            "--expect-change",
+            "--width",
+            "96",
+            "--height",
+            "72",
+        ])
+        .output()
+        .expect("scena verify animation no-change command runs");
+    assert!(!no_change.status.success(), "no change must fail closed");
+    assert!(
+        no_change.stderr.is_empty(),
+        "no-change report stays machine-readable on stdout, stderr={}",
+        stderr(&no_change)
+    );
+    let no_change_report: serde_json::Value =
+        serde_json::from_slice(&no_change.stdout).expect("no-change failure emits JSON");
+    assert_eq!(
+        no_change_report["schema"],
+        "scena.animation_introspection.v1"
+    );
+    assert_eq!(no_change_report["ok"], false);
+    assert!(
+        no_change_report["reasons"]
+            .as_array()
+            .expect("animation reasons array")
+            .iter()
+            .any(|reason| reason["code"] == "time_not_advanced"
+                || reason["code"] == "no_visible_change"),
+        "no-change report should explain temporal failure: {no_change_report:#}"
+    );
+}
+
+#[test]
 fn scena_inspect_cli_emits_scene_inspection_json_for_asset() {
     let output = Command::new(env!("CARGO_BIN_EXE_scena"))
         .args(["inspect", TEST_ASSET, "--width", "96", "--height", "72"])

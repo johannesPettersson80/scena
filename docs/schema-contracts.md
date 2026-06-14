@@ -32,6 +32,7 @@ Rules:
   - `scena.agent_loop_result.v1`
   - `scena.appearance_expectation.v1`
   - `scena.appearance_introspection.v1`
+  - `scena.animation_introspection.v1`
   - `scena.scene_recipe.v1`
   - `scena.scene_recipe_validation.v1`
   - `scena.placement_result.v1`
@@ -769,6 +770,41 @@ frame. Reports stay machine-readable on stdout; the CLI exits non-zero when
 The stable fixtures live at
 `tests/assets/stable-contracts/appearance_expectation.v1.json` and
 `tests/assets/stable-contracts/appearance_introspection.v1.json`.
+
+### `scena.animation_introspection.v1`
+
+Produced by `scena verify animation <asset-or-recipe> --clip <name> --times
+<seconds> [--expect-change]` when the `inspection` feature is enabled.
+Animation verification uses the normal recipe/asset load, viewer, explicit
+`seek_animation`, prepare, render, capture, and inspection path. There is no
+hidden playback loop or separate agent render mode.
+
+The v1 report contains:
+
+- `schema`
+- `ok`
+- optional `clip`
+- `summary`
+- `samples`
+- `reasons`
+- `fixes`
+- `artifacts`
+
+`clip` records the resolved clip name, duration in seconds, and channel count.
+`summary` records sample count, changed/unchanged/invalid channel counts,
+whether rendered capture payloads changed across the sampled times, and the
+number of capture changes from the first sample. Each `samples[]` entry records
+the requested time, scene transform and appearance revisions, capture payload
+hash, moving node count compared to the first sample, and invalid node count.
+
+When `--expect-change` is supplied, `ok` is false for error-severity reasons
+such as missing clip, non-advancing sampled times, frozen channels, invalid
+channel values, or unchanged rendered output. The CLI writes the report JSON to
+stdout and exits non-zero when `ok` is false. Missing clips also return a
+machine-readable report with available clip names in the reason message.
+
+The stable fixture lives at
+`tests/assets/stable-contracts/animation_introspection.v1.json`.
 
 ### `scena.scene_recipe.v1` and `scena.scene_recipe_validation.v1`
 

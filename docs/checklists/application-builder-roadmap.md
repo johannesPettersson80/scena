@@ -352,7 +352,7 @@ Minimum loops:
       assert the rendered node/material appearance against intended values, not
       only that pixels changed.
 - [ ] Temporal loop: for animation, transitions, or live-state playback, sample
-      requested times and assert channel values, visible motion, and no frozen
+      requested times and assert channel values, visible changes, and no frozen
       or NaN channel.
 - [ ] Interaction loop: inject synthetic pointer or keyboard input, then assert
       expected pick/hover/selection events and rendered feedback.
@@ -522,8 +522,8 @@ Required commands:
       plan or irreducible loop result with explicit risk classification.
 - [x] `scena verify appearance <recipe-or-asset> --expect <json>`: emit
       `scena.appearance_introspection.v1`.
-- [ ] `scena verify animation <recipe-or-asset> --expect <json>`: emit
-      `scena.animation_introspection.v1`.
+- [x] `scena verify animation <recipe-or-asset> --clip <name> --times <csv>
+      [--expect-change]`: emit `scena.animation_introspection.v1`.
 - [ ] `scena verify interaction <recipe-or-asset> --expect <json>`: emit
       `scena.interaction_verification.v1`.
 - [ ] `scena doctor <asset-or-recipe>`: expose asset-doctor-style findings
@@ -565,6 +565,10 @@ Acceptance:
       variant, emits `scena.appearance_introspection.v1`, and exits non-zero
       with JSON on stdout when the sampled rendered color does not match the
       expectation.
+- [x] Tests verify `verify animation --clip --times --expect-change` emits
+      `scena.animation_introspection.v1`, exits non-zero with JSON on stdout
+      for a missing clip, and exits non-zero when requested samples do not
+      advance in time.
 - [x] Tests verify non-zero exits for invalid recipe and invisible target.
 - [ ] Tests verify missing assets emit JSON instead of command-error text.
 - [ ] Doctor rule keeps CLI help, schema constants, and stable fixtures aligned.
@@ -594,8 +598,8 @@ Required behavior:
       placement result, repair plan, and agent loop result contracts.
 - [x] The schema list includes the landed appearance expectation and
       appearance introspection contracts.
-- [ ] The schema list includes animation introspection and interaction
-      verification contracts as they land.
+- [x] The schema list includes animation introspection as landed.
+- [ ] The schema list includes interaction verification when it lands.
 
 Acceptance:
 
@@ -815,7 +819,7 @@ Acceptance:
       the expected appearance, not merely that pixels changed.
 - [ ] Data-color proof asserts a known color ramp sample without a golden
       image.
-- [ ] Stable fixture:
+- [x] Stable fixture:
       `tests/assets/stable-contracts/appearance_expectation.v1.json` and
       `tests/assets/stable-contracts/appearance_introspection.v1.json`.
 - [x] CLI exits non-zero when appearance assertions fail.
@@ -835,31 +839,36 @@ Proposed contract:
 
 Required behavior:
 
-- [ ] Sample requested times for imported clips, presentation transitions, or
-      host-ticked visual state playback.
-- [ ] Report clip name, channel count, sampled times, changed channel counts,
-      unchanged channel counts, NaN/invalid channel counts, and visible-motion
+- [x] Sample requested times for imported clips through explicit
+      host-ticked `seek_animation` calls. Presentation transitions and
+      arbitrary host-ticked visual state playback remain future additive
+      inputs.
+- [x] Report clip name, channel count, sampled times, changed channel counts,
+      unchanged channel counts, invalid channel counts, and rendered-change
       summary.
 - [ ] Report selected transform/tint/camera/visibility values at each sample
       when expected values are supplied.
-- [ ] `ok=false` when a required clip is missing, time does not advance,
-      channels freeze unexpectedly, values become NaN, expected pose/state at
-      time does not match tolerance, or visible output stays unchanged when
-      motion was expected.
-- [ ] No hidden time loop. The report records the explicit sampled times and
+- [x] `ok=false` when a required clip is missing, time does not advance,
+      channels freeze unexpectedly, channel values become non-finite, or
+      visible output stays unchanged when change was expected. Expected
+      pose/state-at-time assertions remain future additive fields.
+- [x] No hidden time loop. The report records the explicit sampled times and
       host advancement calls used to produce it.
 
 Acceptance:
 
-- [ ] Fixtures cover valid motion, frozen channel, NaN transform, missing clip,
-      wrong pose at time, and no visible motion.
+- [x] Fixtures and CLI tests cover valid change, missing clip, and requested
+      samples that do not advance in time. Frozen channel, NaN transform, wrong
+      pose at time, and expected final-state fixtures remain future hardening
+      cases.
 - [ ] Live-state playback proof samples at least three times and verifies the
       expected visual state at each sample.
-- [ ] Animated viewer proof verifies motion happened between samples and the
-      final state matches expectation.
-- [ ] Stable fixture:
+- [x] Animated viewer proof verifies rendered changes happened between samples through
+      changed capture payloads and moving-node counts. Expected final-state
+      matching remains future hardening.
+- [x] Stable fixture:
       `tests/assets/stable-contracts/animation_introspection.v1.json`.
-- [ ] CLI exits non-zero for temporal assertion failures.
+- [x] CLI exits non-zero for temporal assertion failures.
 
 ### A.10 Synthetic interaction verification
 

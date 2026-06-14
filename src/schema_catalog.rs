@@ -180,6 +180,13 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/appearance_introspection.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.animation_introspection.v1",
+            owner_module: "render",
+            summary: "Host-ticked animation sampling, channel changes, and rendered-change verification report.",
+            feature_flag: Some("inspection"),
+            fixture_path: Some("tests/assets/stable-contracts/animation_introspection.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.scene_recipe.v1",
             owner_module: "scene",
             summary: "Declarative, transient scene snapshot consumed by agent and CLI workflows.",
@@ -310,6 +317,10 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
         (
             "scena.appearance_introspection.v1",
             include_str!("../tests/assets/stable-contracts/appearance_introspection.v1.json"),
+        ),
+        (
+            "scena.animation_introspection.v1",
+            include_str!("../tests/assets/stable-contracts/animation_introspection.v1.json"),
         ),
         (
             "scena.scene_recipe.v1",

@@ -3,6 +3,8 @@
 use std::{cell::Cell, marker::PhantomData};
 
 #[cfg(feature = "inspection")]
+pub mod animation_introspection;
+#[cfg(feature = "inspection")]
 pub mod appearance;
 mod background;
 mod build;
@@ -25,6 +27,7 @@ mod settings;
 // PreparedSceneState stores clipping_planes: Vec<ClippingPlane> in state.rs.
 mod state;
 mod surface;
+mod target;
 #[cfg(feature = "inspection")]
 pub mod visibility_diagnosis;
 #[cfg(feature = "inspection")]
@@ -32,12 +35,11 @@ pub mod visual_repair;
 
 use crate::assets::EnvironmentHandle;
 use crate::diagnostics::{
-    Backend, Capabilities, ChangeKind, DebugOverlay, DevicePoll, Diagnostic, GpuAdapterReport,
+    Capabilities, ChangeKind, DebugOverlay, DevicePoll, Diagnostic, GpuAdapterReport,
     NotPreparedReason, OutputColorSpace, RenderError, RenderOutcome, RendererStats,
 };
 use crate::material::Color;
 use crate::picking::InteractionStyle;
-use crate::platform::SurfaceKind;
 use crate::scene::{CameraKey, Scene};
 
 pub use self::background::Background;
@@ -56,6 +58,7 @@ pub use self::output::{
 pub use self::prepare::precompute_environment_sidecar;
 pub use self::settings::{Profile, Quality, RenderMode, RendererOptions};
 use self::state::{PreparedSceneState, RenderedFrameState};
+use self::target::{RasterTarget, backend_for_attached_surface, validate_target_size};
 
 #[derive(Debug)]
 pub struct Renderer {
@@ -113,14 +116,6 @@ struct PrepareTelemetry {
     static_gpu_resource_rebuilds: u64,
     dynamic_template_prepares: u64,
     draw_uniform_only_updates: u64,
-}
-
-/// Row-major render target dimensions used for CPU frame and accumulator indexing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct RasterTarget {
-    width: u32,
-    height: u32,
-    backend: Backend,
 }
 
 impl Renderer {
@@ -521,35 +516,5 @@ impl Drop for Renderer {
             gpu.release_prepared_resources();
             let _ = gpu.poll_device();
         }
-    }
-}
-
-impl RasterTarget {
-    fn pixel_len(self) -> usize {
-        (self.width as usize) * (self.height as usize)
-    }
-
-    fn byte_len(self) -> usize {
-        self.pixel_len() * 4
-    }
-
-    fn pixel_index(self, x: u32, y: u32) -> usize {
-        (y as usize) * (self.width as usize) + (x as usize)
-    }
-}
-
-pub(super) fn backend_for_attached_surface(kind: SurfaceKind) -> Backend {
-    match kind {
-        SurfaceKind::NativeWindow => Backend::NativeSurface,
-        SurfaceKind::BrowserWebGpuCanvas => Backend::WebGpu,
-        SurfaceKind::BrowserWebGl2Canvas => Backend::WebGl2,
-    }
-}
-
-pub(super) fn validate_target_size(width: u32, height: u32) -> Result<(), ()> {
-    if width == 0 || height == 0 {
-        Err(())
-    } else {
-        Ok(())
     }
 }
