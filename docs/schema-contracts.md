@@ -28,6 +28,8 @@ Rules:
   - `scena.capture_baseline.v1`
   - `scena.render_introspection.v1`
   - `scena.visibility_diagnosis.v1`
+  - `scena.visual_repair_plan.v1`
+  - `scena.agent_loop_result.v1`
   - `scena.scene_recipe.v1`
   - `scena.scene_recipe_validation.v1`
   - `scena.placement_result.v1`
@@ -665,6 +667,55 @@ binary's first CLI transport is `scena diagnose <asset-or-recipe> --visibility
 [--handle <u64>]` when built with the `inspection` feature. It emits this report
 on stdout and exits non-zero when `ok` is false, so shell-driven callers can
 branch without parsing JSON first.
+
+### `scena.visual_repair_plan.v1` and `scena.agent_loop_result.v1`
+
+Produced by `VisualRepairPlanV1::from_render_introspection`,
+`VisualRepairPlanV1::from_visibility_diagnosis`, and the `scena repair
+<asset-or-recipe> --from <report.json>` command when the `inspection` feature
+is enabled. Repair planning consumes existing render introspection or
+visibility diagnosis reports. It does not inspect images through a separate
+agent mode, mutate the scene, rewrite recipe files, or claim that the frame is
+fixed.
+
+`scena.visual_repair_plan.v1` contains:
+
+- `schema`
+- `status`
+- `auto_fixable`
+- `confidence`
+- `risk`
+- `root_cause`
+- optional `visual_patch`
+- `applied_actions`
+- `skipped_actions`
+- `remaining_reasons`
+- `requires_host_input`
+- `rerender_required`
+
+The first v1 repair slice plans non-destructive presentation repairs for
+framing-oriented action codes such as `frame_bounds`. It also emits a
+reversible content-risk `VisualPatch` for `node_hidden` / `set_visible`
+diagnoses, including before/after values and the root-cause reason. Content
+changes that cannot be proven reversible from the input report, such as a
+generic `set_transform` scale repair, are emitted under `skipped_actions` with
+`requires_host_input: true`. Alpha, material override, clipping, and recipe
+update repairs are reserved for later feature-owned slices.
+
+`visual_patch` is a proposed patch only. Callers must apply it explicitly,
+rerender, and re-run render introspection or visibility diagnosis. A repair
+plan's `status: "repairable"` means the plan is safe to try; it is not a visual
+success verdict.
+
+`scena.agent_loop_result.v1` is emitted for irreducible or non-converging
+repair loops. Its `status` is `"irreducible"`, `ok` is false, and it carries
+the iteration budget, remaining reasons, skipped actions, confidence, and
+whether host input is required. The `scena repair` command writes this JSON to
+stdout and exits non-zero when no safe automatic fix exists.
+
+The stable fixtures live at
+`tests/assets/stable-contracts/visual_repair_plan.v1.json` and
+`tests/assets/stable-contracts/agent_loop_result.v1.json`.
 
 ### `scena.scene_recipe.v1` and `scena.scene_recipe_validation.v1`
 

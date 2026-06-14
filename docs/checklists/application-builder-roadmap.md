@@ -45,6 +45,7 @@ cannot hide them as zero-test successes:
 - `cargo test --features inspection --test capture_contracts`
 - `cargo test --features inspection --test render_introspection_contracts`
 - `cargo test --features inspection --test visibility_diagnosis_contracts`
+- `cargo test --features inspection --test visual_repair_contracts`
 - `cargo test --features inspection --test scena_cli_agent`
 - `cargo test --features inspection --test scena_cli_recipe`
 
@@ -516,8 +517,8 @@ Required commands:
       `VisualPatch` preview, not a mutated document.
 - [x] `scena schema list` and `scena schema get <schema>`: emit schema and
       minimal examples for stable contracts.
-- [ ] `scena repair <recipe-or-patch> --from <diagnosis.json>`: emit a repair
-      plan or repaired recipe/patch with explicit risk classification.
+- [x] `scena repair <recipe-or-patch> --from <diagnosis.json>`: emit a repair
+      plan or irreducible loop result with explicit risk classification.
 - [ ] `scena verify appearance <recipe-or-asset> --expect <json>`: emit
       `scena.appearance_introspection.v1`.
 - [ ] `scena verify animation <recipe-or-asset> --expect <json>`: emit
@@ -530,7 +531,7 @@ Required commands:
 CLI behavior:
 
 - [x] JSON to stdout; progress and human text to stderr for the implemented
-      schema, render, inspect, and diagnose commands.
+      schema, render, inspect, diagnose, and repair commands.
 - [x] `--json` is the default for the implemented schema, render, inspect, and
       diagnose commands.
 - [x] `--detail` opts into larger render-introspection and visibility-diagnosis
@@ -556,6 +557,9 @@ Acceptance:
 - [x] Tests verify `render --introspect` emits
       `scena.render_introspection.v1` on stdout with a non-zero exit for an
       empty frame.
+- [x] Tests verify `repair --from` emits `scena.visual_repair_plan.v1` for a
+      reversible diagnosis and emits `scena.agent_loop_result.v1` with a
+      non-zero exit for an irreducible diagnosis.
 - [x] Tests verify non-zero exits for invalid recipe and invisible target.
 - [ ] Tests verify missing assets emit JSON instead of command-error text.
 - [ ] Doctor rule keeps CLI help, schema constants, and stable fixtures aligned.
@@ -581,9 +585,10 @@ Required behavior:
 - [x] The schema list includes all currently landed stable fixtures, including
       visual patch, host event, capture, inspection, render introspection, and
       visibility diagnosis.
+- [x] The schema list includes scene recipe, scene recipe validation,
+      placement result, repair plan, and agent loop result contracts.
 - [ ] The schema list includes appearance introspection, animation
-      introspection, interaction verification, scene recipe, repair plan, and
-      placement result contracts as they land.
+      introspection, and interaction verification contracts as they land.
 
 Acceptance:
 
@@ -722,32 +727,33 @@ Proposed contracts:
 
 Required behavior:
 
-- [ ] Repair planning consumes render introspection and visibility diagnosis
-      reports and emits a proposed `VisualPatch`, recipe update, or
-      irreducible result.
-- [ ] Presentation repairs are non-destructive and may be applied freely:
-      camera framing, capture size, view preset, and output artifact path.
-- [ ] Content repairs are risk-gated and never silent: scale, visibility,
-      alpha, material override, clipping, and transform edits require
-      confidence, root-cause reason, before/after values, and a reversible
-      patch.
-- [ ] Repairs include `auto_fixable`, `confidence`, `risk`, `root_cause`,
+- [x] Repair planning consumes render introspection and visibility diagnosis
+      reports and emits a proposed `VisualPatch` or irreducible result. Recipe
+      updates remain future feature-owned work.
+- [x] Presentation repairs are non-destructive and may be applied freely in the
+      first slice for framing/camera-oriented action codes such as
+      `frame_bounds`.
+- [x] Content repairs are risk-gated and never silent. The first slice emits a
+      reversible visibility patch for `node_hidden` and skips unsafe transform
+      or scale changes that require host input. Alpha, material override, and
+      clipping repair families remain future work.
+- [x] Repairs include `auto_fixable`, `confidence`, `risk`, `root_cause`,
       `applied_actions`, `skipped_actions`, `remaining_reasons`, and
       `requires_host_input`.
-- [ ] Repair never reports success by itself. The caller must rerender and
+- [x] Repair never reports success by itself. The caller must rerender and
       re-introspect after applying any repair.
-- [ ] Non-convergence within the iteration budget emits
+- [x] Non-convergence within the iteration budget emits
       `scena.agent_loop_result.v1` with `status: "irreducible"`.
 
 Acceptance:
 
-- [ ] Tests cover presentation repair, content repair, skipped unsafe repair,
+- [x] Tests cover presentation repair, content repair, skipped unsafe repair,
       and non-converging repair loop.
-- [ ] Content repair fixtures prove every change is reversible and
+- [x] Content repair fixtures prove every landed content change is reversible and
       root-cause-traced.
-- [ ] CLI exits non-zero for irreducible reports and includes the structured
+- [x] CLI exits non-zero for irreducible reports and includes the structured
       reason on stdout.
-- [ ] Stable fixtures:
+- [x] Stable fixtures:
       `tests/assets/stable-contracts/visual_repair_plan.v1.json` and
       `tests/assets/stable-contracts/agent_loop_result.v1.json`.
 

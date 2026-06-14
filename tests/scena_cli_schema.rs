@@ -24,6 +24,8 @@ fn scena_schema_cli_lists_and_gets_stable_contracts() {
     assert_schema(&catalog, "scena.scene_recipe.v1");
     assert_schema(&catalog, "scena.scene_recipe_validation.v1");
     assert_schema(&catalog, "scena.placement_result.v1");
+    assert_schema(&catalog, "scena.visual_repair_plan.v1");
+    assert_schema(&catalog, "scena.agent_loop_result.v1");
     assert_listed_fixtures_exist(&catalog);
 
     let output = Command::new(env!("CARGO_BIN_EXE_scena"))

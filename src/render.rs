@@ -25,6 +25,8 @@ mod state;
 mod surface;
 #[cfg(feature = "inspection")]
 pub mod visibility_diagnosis;
+#[cfg(feature = "inspection")]
+pub mod visual_repair;
 
 use crate::assets::EnvironmentHandle;
 use crate::diagnostics::{

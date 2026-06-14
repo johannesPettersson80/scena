@@ -53,6 +53,20 @@
       "fixture_path": "tests/assets/stable-contracts/visibility_diagnosis.v1.json"
     },
     {
+      "schema": "scena.visual_repair_plan.v1",
+      "owner_module": "render",
+      "summary": "Conservative repair plan over introspection and visibility diagnosis reports.",
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/visual_repair_plan.v1.json"
+    },
+    {
+      "schema": "scena.agent_loop_result.v1",
+      "owner_module": "render",
+      "summary": "Fail-closed agent repair-loop result for irreducible or non-converging cases.",
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/agent_loop_result.v1.json"
+    },
+    {
       "schema": "scena.scene_recipe.v1",
       "owner_module": "scene",
       "summary": "Declarative, transient scene snapshot consumed by agent and CLI workflows.",

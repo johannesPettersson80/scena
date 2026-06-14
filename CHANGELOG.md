@@ -43,6 +43,9 @@ All notable user-facing changes are recorded here.
 - Added `scena.placement_result.v1` and `scena place` transform previews for
   recipe imports using `center`, `ground`, `fit_to_size`, `look_at`,
   `align_to_anchor`, and `place_on`.
+- Added `scena.visual_repair_plan.v1`, `scena.agent_loop_result.v1`, and the
+  `scena repair --from <report.json>` CLI for conservative repair planning
+  over render introspection and visibility diagnosis reports.
 
 ## [1.7.1] - 2026-06-12
 

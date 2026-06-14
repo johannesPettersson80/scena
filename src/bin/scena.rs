@@ -12,7 +12,7 @@ mod scena_place;
 
 use scena_args::ValidateRecipeCommandArgs;
 #[cfg(feature = "inspection")]
-use scena_args::{DiagnoseCommandArgs, InspectCommandArgs, RenderCommandArgs};
+use scena_args::{DiagnoseCommandArgs, InspectCommandArgs, RenderCommandArgs, RepairCommandArgs};
 
 fn main() {
     match run(env::args().skip(1).collect()) {
@@ -58,13 +58,15 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
         [command, rest @ ..] if command == "render" => run_render_command(rest),
         [command, rest @ ..] if command == "inspect" => run_inspect_command(rest),
         [command, rest @ ..] if command == "diagnose" => run_diagnose_command(rest),
+        [command, rest @ ..] if command == "repair" => run_repair_command(rest),
         _ => Err(
             "unknown command; expected 'schema list', 'schema get <scena.*.vN>', \
              'validate-recipe <recipe.json>', \
              'place <recipe.json> --import <id> --verb <verb>', \
              'render <asset> --introspect --out <png>', or \
              'inspect <asset>', or \
-             'diagnose <asset> --visibility [--handle <u64>]'"
+             'diagnose <asset> --visibility [--handle <u64>]', or \
+             'repair <asset-or-recipe> --from <report.json>'"
                 .to_string(),
         ),
     }
@@ -215,6 +217,64 @@ fn run_diagnose_command(_args: &[String]) -> Result<CliOutcome, String> {
         "diagnose --visibility requires building the scena binary with the 'inspection' feature"
             .to_string(),
     )
+}
+
+#[cfg(feature = "inspection")]
+fn run_repair_command(args: &[String]) -> Result<CliOutcome, String> {
+    let args = RepairCommandArgs::parse(args)?;
+    let _input = args.input;
+    let text = fs::read_to_string(&args.from)
+        .map_err(|error| format!("failed to read report '{}': {error}", args.from.display()))?;
+    let value: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|error| format!("failed to parse report '{}': {error}", args.from.display()))?;
+    let schema = value
+        .get("schema")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "repair input report is missing a string schema field".to_string())?;
+    let plan = match schema {
+        scena::VISIBILITY_DIAGNOSIS_SCHEMA_V1 => {
+            let report: scena::VisibilityDiagnosisReportV1 = serde_json::from_value(value)
+                .map_err(|error| {
+                    format!(
+                        "failed to decode visibility diagnosis '{}': {error}",
+                        args.from.display()
+                    )
+                })?;
+            scena::VisualRepairPlanV1::from_visibility_diagnosis(&report)
+        }
+        scena::RENDER_INTROSPECTION_SCHEMA_V1 => {
+            let report: scena::RenderIntrospectionReportV1 = serde_json::from_value(value)
+                .map_err(|error| {
+                    format!(
+                        "failed to decode render introspection '{}': {error}",
+                        args.from.display()
+                    )
+                })?;
+            scena::VisualRepairPlanV1::from_render_introspection(&report)
+        }
+        other => {
+            return Err(format!(
+                "repair --from expected '{}' or '{}', got '{other}'",
+                scena::VISIBILITY_DIAGNOSIS_SCHEMA_V1,
+                scena::RENDER_INTROSPECTION_SCHEMA_V1
+            ));
+        }
+    };
+    if plan.status == "irreducible" || args.iteration_budget == 0 {
+        let loop_result = scena::AgentLoopResultV1::irreducible(
+            plan,
+            args.iteration_budget,
+            args.iteration_budget,
+        );
+        return json_outcome(&loop_result, 1, "failed to serialize agent loop result");
+    }
+    let exit_code = if plan.auto_fixable { 0 } else { 1 };
+    json_outcome(&plan, exit_code, "failed to serialize visual repair plan")
+}
+
+#[cfg(not(feature = "inspection"))]
+fn run_repair_command(_args: &[String]) -> Result<CliOutcome, String> {
+    Err("repair requires building the scena binary with the 'inspection' feature".to_string())
 }
 
 fn success(stdout: String) -> CliOutcome {
@@ -381,7 +441,8 @@ fn help_json() -> String {
             "place <recipe.json> --import <id> --verb <verb>",
             "render <asset-or-recipe> --introspect --out <png>",
             "inspect <asset-or-recipe>",
-            "diagnose <asset-or-recipe> --visibility [--handle <u64>]"
+            "diagnose <asset-or-recipe> --visibility [--handle <u64>]",
+            "repair <asset-or-recipe> --from <report.json>"
         ]
     })
     .to_string()

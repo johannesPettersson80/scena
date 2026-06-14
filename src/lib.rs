@@ -113,6 +113,12 @@ pub use render::visibility_diagnosis::{
     VisibilityDiagnosisOptions, VisibilityDiagnosisReasonV1, VisibilityDiagnosisReportV1,
     VisibilityDiagnosisSummaryV1, VisibilityDiagnosisTargetV1,
 };
+#[cfg(feature = "inspection")]
+pub use render::visual_repair::{
+    AGENT_LOOP_RESULT_SCHEMA_V1, AgentLoopResultV1, VISUAL_REPAIR_PLAN_SCHEMA_V1,
+    VisualRepairActionV1, VisualRepairPlanV1, VisualRepairRemainingReasonV1,
+    VisualRepairSkippedActionV1,
+};
 pub use render::{
     AntiAliasing, AutoExposureConfig, AutoExposureResult, Background, OffscreenTarget,
     OrderIndependentTransparencyConfig, PixelReadback, PostBloomConfig, Profile, Quality,

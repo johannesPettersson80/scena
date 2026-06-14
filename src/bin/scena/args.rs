@@ -22,6 +22,14 @@ pub(crate) struct DiagnoseCommandArgs {
 
 #[cfg(feature = "inspection")]
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RepairCommandArgs {
+    pub(crate) input: String,
+    pub(crate) from: PathBuf,
+    pub(crate) iteration_budget: u32,
+}
+
+#[cfg(feature = "inspection")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct InspectCommandArgs {
     pub(crate) input: String,
     pub(crate) width: Option<u32>,
@@ -353,6 +361,47 @@ impl DiagnoseCommandArgs {
 }
 
 #[cfg(feature = "inspection")]
+impl RepairCommandArgs {
+    pub(crate) fn parse(args: &[String]) -> Result<Self, String> {
+        let Some(input) = args.first() else {
+            return Err(repair_usage());
+        };
+        let mut from = None;
+        let mut iteration_budget = 3;
+
+        let mut index = 1;
+        while index < args.len() {
+            match args[index].as_str() {
+                "--from" => {
+                    from = Some(PathBuf::from(flag_value(args, index, "--from")?));
+                    index += 2;
+                }
+                "--iteration-budget" => {
+                    iteration_budget = parse_u32(
+                        "--iteration-budget",
+                        flag_value(args, index, "--iteration-budget")?,
+                    )?;
+                    index += 2;
+                }
+                "--json" => {
+                    index += 1;
+                }
+                flag => {
+                    return Err(format!("unknown repair flag '{flag}'; {}", repair_usage()));
+                }
+            }
+        }
+
+        Ok(Self {
+            input: input.clone(),
+            from: from
+                .ok_or_else(|| format!("missing --from <report.json>; {}", repair_usage()))?,
+            iteration_budget,
+        })
+    }
+}
+
+#[cfg(feature = "inspection")]
 fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, String> {
     flag_value_any(args, index, flag)
 }
@@ -393,12 +442,18 @@ fn parse_vec3(flag: &str, value: String) -> Result<scena::Vec3, String> {
 
 #[cfg(feature = "inspection")]
 fn parse_positive_u32(flag: &str, value: String) -> Result<u32, String> {
-    let parsed = value
-        .parse::<u32>()
-        .map_err(|_| format!("{flag} requires a positive integer, got '{value}'"))?;
+    let parsed = parse_u32(flag, value)?;
     if parsed == 0 {
         return Err(format!("{flag} requires a positive integer, got 0"));
     }
+    Ok(parsed)
+}
+
+#[cfg(feature = "inspection")]
+fn parse_u32(flag: &str, value: String) -> Result<u32, String> {
+    let parsed = value
+        .parse::<u32>()
+        .map_err(|_| format!("{flag} requires an unsigned integer, got '{value}'"))?;
     Ok(parsed)
 }
 
@@ -432,5 +487,11 @@ fn inspect_usage() -> String {
 #[cfg(feature = "inspection")]
 fn diagnose_usage() -> String {
     "usage: scena diagnose <asset-or-recipe> --visibility [--handle <u64>] [--width <px>] [--height <px>] [--detail]"
+        .to_string()
+}
+
+#[cfg(feature = "inspection")]
+fn repair_usage() -> String {
+    "usage: scena repair <asset-or-recipe> --from <diagnosis-or-introspection.json> [--iteration-budget <n>]"
         .to_string()
 }

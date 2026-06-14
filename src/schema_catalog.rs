@@ -152,6 +152,20 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/visibility_diagnosis.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.visual_repair_plan.v1",
+            owner_module: "render",
+            summary: "Conservative repair plan over introspection and visibility diagnosis reports.",
+            feature_flag: Some("inspection"),
+            fixture_path: Some("tests/assets/stable-contracts/visual_repair_plan.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: "scena.agent_loop_result.v1",
+            owner_module: "render",
+            summary: "Fail-closed agent repair-loop result for irreducible or non-converging cases.",
+            feature_flag: Some("inspection"),
+            fixture_path: Some("tests/assets/stable-contracts/agent_loop_result.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.scene_recipe.v1",
             owner_module: "scene",
             summary: "Declarative, transient scene snapshot consumed by agent and CLI workflows.",
@@ -266,6 +280,14 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
         (
             "scena.visibility_diagnosis.v1",
             include_str!("../tests/assets/stable-contracts/visibility_diagnosis.v1.json"),
+        ),
+        (
+            "scena.visual_repair_plan.v1",
+            include_str!("../tests/assets/stable-contracts/visual_repair_plan.v1.json"),
+        ),
+        (
+            "scena.agent_loop_result.v1",
+            include_str!("../tests/assets/stable-contracts/agent_loop_result.v1.json"),
         ),
         (
             "scena.scene_recipe.v1",

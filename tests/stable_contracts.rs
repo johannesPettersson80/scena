@@ -131,6 +131,14 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
             "scena.visibility_diagnosis.v1",
         ),
         (
+            "tests/assets/stable-contracts/visual_repair_plan.v1.json",
+            "scena.visual_repair_plan.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/agent_loop_result.v1.json",
+            "scena.agent_loop_result.v1",
+        ),
+        (
             "tests/assets/stable-contracts/scene_recipe.v1.json",
             "scena.scene_recipe.v1",
         ),
@@ -260,6 +268,22 @@ fn render_introspection_golden_matches_live_schema_serialization() {
 fn visibility_diagnosis_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::VisibilityDiagnosisReportV1>(
         "tests/assets/stable-contracts/visibility_diagnosis.v1.json",
+    );
+}
+
+#[cfg(feature = "inspection")]
+#[test]
+fn visual_repair_plan_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::VisualRepairPlanV1>(
+        "tests/assets/stable-contracts/visual_repair_plan.v1.json",
+    );
+}
+
+#[cfg(feature = "inspection")]
+#[test]
+fn agent_loop_result_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::AgentLoopResultV1>(
+        "tests/assets/stable-contracts/agent_loop_result.v1.json",
     );
 }
 

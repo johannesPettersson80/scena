@@ -41,6 +41,10 @@ Additive public API changes in Unreleased:
   `VisibilityDiagnosisFixV1`, `VisibilityDiagnosisSummaryV1`,
   `VisibilityDiagnosisTargetV1`, `VisibilityDiagnosisEvidenceV1`, and
   `Renderer::diagnose_visibility` (gated behind `inspection`)
+- `VISUAL_REPAIR_PLAN_SCHEMA_V1`, `AGENT_LOOP_RESULT_SCHEMA_V1`,
+  `VisualRepairPlanV1`, `VisualRepairActionV1`,
+  `VisualRepairSkippedActionV1`, `VisualRepairRemainingReasonV1`, and
+  `AgentLoopResultV1` (gated behind `inspection`)
 - `SCENE_RECIPE_SCHEMA_V1`, `SCENE_RECIPE_VALIDATION_SCHEMA_V1`,
   `SceneRecipeV1`, `SceneRecipeImportV1`, `SceneRecipeCaptureV1`,
   `SceneRecipeExpectedExtentV1`, `SceneRecipeValidationReportV1`,
@@ -59,7 +63,8 @@ Additive public API changes in Unreleased:
   `validate-recipe <recipe.json>`, `place <recipe.json> --import <id>
   --verb <center|ground|fit_to_size|look_at|align_to_anchor|place_on>`, and,
   when built with `inspection`, asset-or-recipe-input
-  `render --introspect`, `inspect`, and `diagnose --visibility` JSON commands
+  `render --introspect`, `inspect`, `diagnose --visibility`, and
+  `repair --from <report.json>` JSON commands
 
 Additive public API changes in 1.7.0:
 
