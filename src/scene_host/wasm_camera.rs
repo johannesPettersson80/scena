@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::*;
 use super::camera::orbit_action_name;
 use super::inputs::vec3_array_from_slice;
 use super::wasm::{SceneHost, js_error};
+use super::wasm_transitions::parse_easing;
 use super::{SceneHostError, SceneHostErrorCode};
 use crate::{PointerButton, SceneHostCameraState, Vec3};
 
@@ -35,6 +36,48 @@ impl SceneHost {
     #[wasm_bindgen(js_name = setCameraJson)]
     pub fn set_camera_json(&mut self, camera_json: String) -> Result<(), JsValue> {
         self.core.set_camera_json(&camera_json).map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = setCameraEased)]
+    pub fn set_camera_eased(
+        &mut self,
+        target: Box<[f32]>,
+        yaw_radians: f32,
+        pitch_radians: f32,
+        distance: f32,
+        duration_seconds: f64,
+        easing: String,
+    ) -> Result<(), JsValue> {
+        let target = vec3_array_from_slice("target", &target).map_err(js_error)?;
+        self.core
+            .apply_camera_eased_patch(
+                SceneHostCameraState {
+                    target: Vec3::new(target[0], target[1], target[2]),
+                    distance,
+                    yaw_radians,
+                    pitch_radians,
+                },
+                duration_seconds,
+                parse_easing(&easing).map_err(js_error)?,
+            )
+            .map(|_| ())
+            .map_err(js_error)
+    }
+
+    #[wasm_bindgen(js_name = setCameraBookmarkJson)]
+    pub fn set_camera_bookmark_json(
+        &mut self,
+        bookmark_json: String,
+        duration_seconds: f64,
+        easing: String,
+    ) -> Result<String, JsValue> {
+        self.core
+            .set_camera_bookmark_json(
+                &bookmark_json,
+                duration_seconds,
+                parse_easing(&easing).map_err(js_error)?,
+            )
+            .map_err(js_error)
     }
 
     #[wasm_bindgen(js_name = cameraPointerDown)]

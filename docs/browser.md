@@ -95,12 +95,20 @@ Frame operations use one host handle namespace:
 - `inspectJson`
 - `annotationProjectionsJson`
 - `capture()` and `captureJson()`
+- `setCameraEased(target, yawRadians, pitchRadians, distance,
+  durationSeconds, easing)`
+- `setCameraBookmarkJson(bookmarkJson, durationSeconds, easing)`
 
 Camera input calls route through Rust `OrbitControls`: primary pointer drag
 orbits, secondary pointer drag pans, and wheel input dollies. They update the
 scene camera and return an action string such as `orbit`, `pan`, or `zoom`.
 The browser page still owns cadence: after a non-`none` action, call
 `prepare()` and `render()` when the embedding application is ready.
+
+Camera easing and bookmark calls schedule the same host-ticked `camera_eased`
+visual patch channel used by native `SceneHostCore`. They do not start a hidden
+browser animation loop; advance them with `advance(deltaSeconds)`, then
+`prepare()` and `render()` on the host's cadence.
 
 `pick(x, y)` receives CSS pixels. `SceneHost` stores the current DPR and target
 size, applies DPR internally, and returns the same node handle namespace that

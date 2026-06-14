@@ -70,8 +70,9 @@ pub use capture::{
     summarize_rgba8,
 };
 pub use controls::{
-    CameraOrbitUrlState, CameraOrbitUrlStateError, FlyControls, FollowControls, OrbitControlAction,
-    OrbitControls, PointerButton, PointerEvent, PointerEventKind, TouchEvent, TouchEventKind,
+    CameraBookmark, CameraFlyTo, CameraOrbitUrlState, CameraOrbitUrlStateError, CameraState,
+    CameraTransitionError, FlyControls, FollowControls, OrbitControlAction, OrbitControls,
+    PointerButton, PointerEvent, PointerEventKind, TouchEvent, TouchEventKind, TransitionEasing,
 };
 pub use diagnostics::{
     AdapterLimitsReport, AlphaPipelineStatus, AnimationError, AssetError, Backend, BuildError,

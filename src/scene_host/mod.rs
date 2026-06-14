@@ -44,8 +44,9 @@ mod wasm_transitions;
 #[cfg(target_arch = "wasm32")]
 mod wasm_visual_patch;
 
+pub type SceneHostCameraState = crate::controls::CameraState;
+pub type SceneHostEasing = crate::controls::TransitionEasing;
 pub use animation::{SceneHostAnimationLoopMode, SceneHostAnimationPlayOptions};
-pub use camera::SceneHostCameraState;
 pub use core::SceneHostCore;
 pub use error::{SceneHostError, SceneHostErrorCode};
 pub use events::{
@@ -65,7 +66,6 @@ pub use reporting::{
     SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostAnimationClipV1, SceneHostAnimationInventoryV1,
     SceneHostAssetImportReportV1, SceneHostSubtreeNodeV1, SceneHostSubtreeReportV1,
 };
-pub use transitions::SceneHostEasing;
 pub use visual_patch::{
     VISUAL_PATCH_SCHEMA_V1, VisualPatchAnimationTimeModeV1, VisualPatchAnimationTimeV1,
     VisualPatchAppliedCountsV1, VisualPatchCameraEasedV1, VisualPatchEntryErrorV1,

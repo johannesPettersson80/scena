@@ -59,8 +59,10 @@ const REQUIRED_BINDINGS = [
   ["prototype", "capture"],
   ["prototype", "pick"],
   ["prototype", "setCamera"],
+  ["prototype", "setCameraEased"],
   ["prototype", "getCameraJson"],
   ["prototype", "setCameraJson"],
+  ["prototype", "setCameraBookmarkJson"],
   ["prototype", "cameraPointerDown"],
   ["prototype", "cameraPointerMove"],
   ["prototype", "cameraPointerUp"],
@@ -251,6 +253,17 @@ function transformsApproximatelyEqual(a, b) {
     arraysApproximatelyEqual(a.translation, b.translation) &&
     arraysApproximatelyEqual(a.rotation, b.rotation) &&
     arraysApproximatelyEqual(a.scale, b.scale)
+  );
+}
+
+function cameraStatesApproximatelyEqual(a, b, tolerance = 0.0001) {
+  return (
+    a &&
+    b &&
+    arraysApproximatelyEqual(a.target, b.target, tolerance) &&
+    Math.abs(a.distance - b.distance) <= tolerance &&
+    Math.abs(a.yaw_radians - b.yaw_radians) <= tolerance &&
+    Math.abs(a.pitch_radians - b.pitch_radians) <= tolerance
   );
 }
 
@@ -682,6 +695,48 @@ async function runPageProof(page) {
       };
       host.setCameraJson(JSON.stringify(framedCamera));
       const renderedCamera = JSON.parse(host.getCameraJson());
+      const flyTargetCamera = {
+        target: [framedCamera.target[0] + 0.04, framedCamera.target[1], framedCamera.target[2]],
+        distance: framedCamera.distance * 1.08,
+        yaw_radians: framedCamera.yaw_radians + 0.18,
+        pitch_radians: framedCamera.pitch_radians,
+      };
+      host.setCameraEased(
+        flyTargetCamera.target,
+        flyTargetCamera.yaw_radians,
+        flyTargetCamera.pitch_radians,
+        flyTargetCamera.distance,
+        0.5,
+        "linear",
+      );
+      host.advance(0.25);
+      const flyHalfPrepare = timedPrepare("camera_fly_to_halfway");
+      const flyHalfRender = JSON.parse(host.render());
+      await waitForCanvasPresent();
+      const flyHalfCamera = JSON.parse(host.getCameraJson());
+      const flyHalfCapture = captureSummary(host.capture());
+      host.advance(0.25);
+      const flyFinalPrepare = timedPrepare("camera_fly_to_final");
+      const flyFinalRender = JSON.parse(host.render());
+      await waitForCanvasPresent();
+      const flyFinalCamera = JSON.parse(host.getCameraJson());
+      const flyFinalCapture = captureSummary(host.capture());
+      const bookmarkResult = JSON.parse(
+        host.setCameraBookmarkJson(
+          JSON.stringify({
+            name: "browser-proof-framed",
+            state: framedCamera,
+            target_bounds: null,
+            description: "restore the framed proof view after camera fly-to",
+          }),
+          0.0,
+          "linear",
+        ),
+      );
+      timedPrepare("camera_bookmark_restore");
+      host.render();
+      await waitForCanvasPresent();
+      const restoredCamera = JSON.parse(host.getCameraJson());
 
       const phase1BeforeTintInspection = JSON.parse(host.inspectJson());
       const phase1BeforeTintPrepare = timedPrepare("before_opaque_tint");
@@ -994,6 +1049,17 @@ async function runPageProof(page) {
           framed: framedCamera,
           rendered: renderedCamera,
           actions: cameraActions,
+          fly_to: {
+            target: flyTargetCamera,
+            halfway_camera: flyHalfCamera,
+            final_camera: flyFinalCamera,
+            restored_camera: restoredCamera,
+            bookmark_result: bookmarkResult,
+            prepare_timings: [flyHalfPrepare, flyFinalPrepare],
+            render_outcomes: [flyHalfRender, flyFinalRender],
+            halfway_capture: flyHalfCapture,
+            final_capture: flyFinalCapture,
+          },
         },
         render_outcome: renderOutcome,
         capability_report: JSON.parse(host.capabilitiesJson()),
@@ -1150,6 +1216,34 @@ function assertProof(pageProof, screenshot) {
     "capture_rgba8_hash_matches_descriptor",
     pageProof.capture.rgba8_fnv1a64 === pageProof.capture.descriptor.pixels.fnv1a64,
     pageProof.capture,
+  );
+  const flyTo = pageProof.camera.fly_to;
+  check(
+    "camera_fly_to_halfway_capture_nonblank",
+    flyTo.halfway_capture.descriptor.pixels.nonblack > 0,
+    flyTo.halfway_capture.descriptor.pixels,
+  );
+  check(
+    "camera_fly_to_final_capture_nonblank",
+    flyTo.final_capture.descriptor.pixels.nonblack > 0,
+    flyTo.final_capture.descriptor.pixels,
+  );
+  check(
+    "camera_fly_to_final_reaches_target",
+    cameraStatesApproximatelyEqual(flyTo.final_camera, flyTo.target),
+    { final: flyTo.final_camera, target: flyTo.target },
+  );
+  check(
+    "camera_bookmark_restore_uses_visual_patch",
+    flyTo.bookmark_result.applied.camera_eased === 1 &&
+      Array.isArray(flyTo.bookmark_result.failed) &&
+      flyTo.bookmark_result.failed.length === 0,
+    flyTo.bookmark_result,
+  );
+  check(
+    "camera_bookmark_restore_returns_to_framed_view",
+    cameraStatesApproximatelyEqual(flyTo.restored_camera, pageProof.camera.framed),
+    { restored: flyTo.restored_camera, framed: pageProof.camera.framed },
   );
   const phase1 = pageProof.phase1_appearance_dirty_tracking;
   const phase1BeforeRevisions = phase1.before_tint_inspection.revisions;

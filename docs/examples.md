@@ -86,6 +86,13 @@ post-processing setters, instanced import, visibility/tint APIs, camera preset
 framing, animation inventory/play/pause/advance, and eased transform/tint
 updates.
 
+Camera bookmarks and fly-to transitions use the same host-ticked camera state:
+build a `CameraBookmark` from a `FramingOutcome`, pass its `state()` to
+`SceneHostCore::set_camera_eased`, or store bookmarks on the viewer builders
+with `with_camera_bookmark(s)`. Browser hosts can call `setCameraEased(...)` or
+`setCameraBookmarkJson(...)`; both still require the host to advance time and
+render explicitly.
+
 ```bash
 cargo run --example scene_host_release_1_7 --features scene-host
 ```

@@ -9,7 +9,9 @@ mod material_variants;
 pub use capture::{ViewerCaptureError, ViewerPngError};
 
 use crate::assets::{AssetLoadProgress, AssetPath, Assets};
-use crate::controls::{OrbitControlAction, OrbitControls, PointerEvent, TouchEvent};
+use crate::controls::{
+    CameraBookmark, OrbitControlAction, OrbitControls, PointerEvent, TouchEvent,
+};
 use crate::diagnostics::{Diagnostic, LookupError, RenderOutcome};
 use crate::picking::Hit;
 use crate::platform::{PlatformSurface, SurfaceEvent};
@@ -28,6 +30,7 @@ pub struct FirstRender {
     outcome: RenderOutcome,
     diagnostics: Vec<Diagnostic>,
     load_progress_events: Vec<AssetLoadProgress>,
+    camera_bookmarks: Vec<CameraBookmark>,
 }
 
 /// Prepared owned state for a headless glTF viewer loop.
@@ -38,6 +41,7 @@ pub struct HeadlessGltfViewer {
     renderer: Renderer,
     import: SceneImport,
     load_progress_events: Vec<AssetLoadProgress>,
+    camera_bookmarks: Vec<CameraBookmark>,
 }
 
 /// Builder for the first headless glTF render.
@@ -57,6 +61,7 @@ struct ViewerCommonOptions {
     environment_path: Option<AssetPath>,
     renderer_options: RendererOptions,
     import_transform: Option<Transform>,
+    camera_bookmarks: Vec<CameraBookmark>,
 }
 
 impl ViewerCommonOptions {
@@ -68,6 +73,7 @@ impl ViewerCommonOptions {
             environment_path: None,
             renderer_options: RendererOptions::default(),
             import_transform: None,
+            camera_bookmarks: Vec::new(),
         }
     }
 
@@ -111,6 +117,10 @@ impl FirstRender {
 
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
+    }
+
+    pub fn camera_bookmarks(&self) -> &[CameraBookmark] {
+        &self.camera_bookmarks
     }
 }
 
@@ -180,6 +190,19 @@ impl HeadlessGltfViewerBuilder {
         self
     }
 
+    pub fn with_camera_bookmark(mut self, bookmark: CameraBookmark) -> Self {
+        self.common.camera_bookmarks.push(bookmark);
+        self
+    }
+
+    pub fn with_camera_bookmarks(
+        mut self,
+        bookmarks: impl IntoIterator<Item = CameraBookmark>,
+    ) -> Self {
+        self.common.camera_bookmarks.extend(bookmarks);
+        self
+    }
+
     /// Loads, instantiates, optionally frames/lights, and prepares a reusable viewer loop.
     pub async fn build(self) -> crate::Result<HeadlessGltfViewer> {
         self.build_with_progress(|_| {}).await
@@ -241,6 +264,10 @@ impl HeadlessGltfViewer {
     pub fn capabilities(&self) -> &crate::Capabilities {
         self.renderer.capabilities()
     }
+
+    pub fn camera_bookmarks(&self) -> &[CameraBookmark] {
+        &self.camera_bookmarks
+    }
 }
 
 /// Owned interactive viewer state returned by [`InteractiveGltfViewerBuilder::build`].
@@ -259,6 +286,7 @@ pub struct InteractiveGltfViewer {
     import: SceneImport,
     camera: CameraKey,
     load_progress_events: Vec<AssetLoadProgress>,
+    camera_bookmarks: Vec<CameraBookmark>,
     /// Phase 5B step 2: optional orbit-camera controller. Populated when
     /// the builder was configured with `with_orbit_controls()`. Pointer +
     /// touch events route through `handle_pointer_event` /
@@ -279,6 +307,7 @@ impl std::fmt::Debug for InteractiveGltfViewer {
             .field("import", &self.import)
             .field("camera", &self.camera)
             .field("load_progress_events", &self.load_progress_events)
+            .field("camera_bookmarks", &self.camera_bookmarks)
             .field("orbit_controls", &self.orbit_controls)
             .field("click_callback_registered", &self.click_callback.is_some())
             .field("hover_callback_registered", &self.hover_callback.is_some())
@@ -378,6 +407,19 @@ impl InteractiveGltfViewerBuilder {
     /// Leaves the imported asset's camera framing unchanged.
     pub const fn without_framing(mut self) -> Self {
         self.common.frame_import = false;
+        self
+    }
+
+    pub fn with_camera_bookmark(mut self, bookmark: CameraBookmark) -> Self {
+        self.common.camera_bookmarks.push(bookmark);
+        self
+    }
+
+    pub fn with_camera_bookmarks(
+        mut self,
+        bookmarks: impl IntoIterator<Item = CameraBookmark>,
+    ) -> Self {
+        self.common.camera_bookmarks.extend(bookmarks);
         self
     }
 
@@ -496,6 +538,10 @@ impl InteractiveGltfViewer {
     /// `viewer.renderer().capabilities()`.
     pub fn capabilities(&self) -> &crate::Capabilities {
         self.renderer.capabilities()
+    }
+
+    pub fn camera_bookmarks(&self) -> &[CameraBookmark] {
+        &self.camera_bookmarks
     }
 
     /// Phase 5B step 2: routes a pointer event through the attached

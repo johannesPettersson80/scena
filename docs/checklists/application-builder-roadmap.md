@@ -987,23 +987,25 @@ host.set_camera_eased(bookmark.state(), 0.35, SceneHostEasing::EaseInOut)?;
 
 Required behavior:
 
-- [ ] `CameraBookmark { name, state, target_bounds, description }`.
-- [ ] `OrbitControls::fly_to(state, easing, duration)`.
-- [ ] `SceneHostCore::set_camera_eased`.
-- [ ] WASM `setCameraEased(...)` and `setCameraBookmarkJson(...)`.
-- [ ] Browser and native convenience APIs delegate to the 0.1B
+- [x] `CameraBookmark { name, state, target_bounds, description }`.
+- [x] `OrbitControls::fly_to(state, easing, duration)`.
+- [x] `SceneHostCore::set_camera_eased`.
+- [x] WASM `setCameraEased(...)` and `setCameraBookmarkJson(...)`.
+- [x] Browser and native convenience APIs delegate to the 0.1B
       `camera_eased` `VisualPatch` channel instead of defining a parallel
       camera transition wire model.
-- [ ] Optional bookmark list on viewer helpers.
-- [ ] Camera transitions are advanced only by explicit host time advancement.
+- [x] Optional bookmark list on viewer helpers.
+- [x] Camera transitions are advanced only by explicit host time advancement.
 
 Acceptance:
 
-- [ ] Camera interpolation keeps target, distance, yaw, and pitch finite.
-- [ ] Zero duration applies immediately.
-- [ ] Invalid camera states fail with structured errors.
+- [x] Camera interpolation keeps target, distance, yaw, and pitch finite.
+- [x] Zero duration applies immediately.
+- [x] Invalid camera states fail with structured errors.
 - [ ] Browser proof shows a framed object remains visible during and after
-      fly-to.
+      fly-to. The SceneHost browser proof binding list includes
+      `setCameraEased` and `setCameraBookmarkJson`; rendered browser evidence
+      still needs to run on a browser/GPU proof machine.
 
 ### 1.2 Transform gizmo and manipulator
 

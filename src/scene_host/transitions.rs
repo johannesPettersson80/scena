@@ -1,19 +1,10 @@
 use std::collections::BTreeMap;
-use std::f32::consts::{PI, TAU};
 
-use serde::{Deserialize, Serialize};
-
+use super::SceneHostEasing;
 use super::animation::{invalid_input, validate_time_seconds};
 use super::{SceneHostCameraState, SceneHostCore, SceneHostError, SceneHostErrorCode};
+use crate::controls::eased_amount;
 use crate::{AssetFetcher, Color, Transform};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum SceneHostEasing {
-    #[default]
-    Linear,
-    EaseInOut,
-}
 
 #[derive(Debug, Default)]
 pub(super) struct HostTransitions {
@@ -350,20 +341,8 @@ impl CameraTransition {
             self.elapsed_seconds / self.duration_seconds.max(f32::EPSILON),
             self.easing,
         );
-        let mix = |left: f32, right: f32| left + (right - left) * amount;
-        let yaw_delta = shortest_angle_delta(self.start.yaw_radians, self.target.yaw_radians);
-        SceneHostCameraState {
-            target: self.start.target.lerp(self.target.target, amount),
-            distance: mix(self.start.distance, self.target.distance),
-            yaw_radians: self.start.yaw_radians + yaw_delta * amount,
-            pitch_radians: mix(self.start.pitch_radians, self.target.pitch_radians),
-        }
+        self.start.interpolate_to(self.target, amount)
     }
-}
-
-fn shortest_angle_delta(start: f32, target: f32) -> f32 {
-    let delta = (target - start).rem_euclid(TAU);
-    if delta > PI { delta - TAU } else { delta }
 }
 
 fn validate_opaque_tint(tint: Option<Color>) -> Result<(), SceneHostError> {
@@ -380,20 +359,6 @@ fn validate_opaque_tint(tint: Option<Color>) -> Result<(), SceneHostError> {
         ));
     }
     Ok(())
-}
-
-fn eased_amount(amount: f32, easing: SceneHostEasing) -> f32 {
-    let amount = amount.clamp(0.0, 1.0);
-    match easing {
-        SceneHostEasing::Linear => amount,
-        SceneHostEasing::EaseInOut => {
-            if amount < 0.5 {
-                4.0 * amount * amount * amount
-            } else {
-                1.0 - (-2.0 * amount + 2.0).powi(3) / 2.0
-            }
-        }
-    }
 }
 
 fn lerp_color(start: Color, target: Color, amount: f32) -> Color {

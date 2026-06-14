@@ -159,7 +159,7 @@ impl SceneHost {
     }
 }
 
-fn parse_easing(value: &str) -> Result<SceneHostEasing, SceneHostError> {
+pub(super) fn parse_easing(value: &str) -> Result<SceneHostEasing, SceneHostError> {
     match value {
         "linear" => Ok(SceneHostEasing::Linear),
         "ease_in_out" | "easeInOut" => Ok(SceneHostEasing::EaseInOut),

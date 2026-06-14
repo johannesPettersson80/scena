@@ -51,6 +51,10 @@ All notable user-facing changes are recorded here.
   `scena verify appearance --expect <json>` for capture-bound first-time
   material, variant, fallback, alpha, texture, and swatch verification behind
   the `inspection` feature.
+- Added reusable `CameraState`, `CameraBookmark`, and `OrbitControls::fly_to`
+  APIs, viewer bookmark storage helpers, and SceneHost native/WASM bookmark
+  easing methods that delegate to the existing host-ticked `camera_eased`
+  visual patch channel.
 
 ## [1.7.1] - 2026-06-12
 

@@ -51,6 +51,7 @@ impl HeadlessGltfViewerBuilder {
             renderer,
             import,
             load_progress_events,
+            camera_bookmarks: self.common.camera_bookmarks,
         })
     }
 
@@ -68,6 +69,7 @@ impl HeadlessGltfViewerBuilder {
             renderer,
             import,
             load_progress_events,
+            camera_bookmarks,
         } = viewer;
 
         Ok(FirstRender {
@@ -78,6 +80,7 @@ impl HeadlessGltfViewerBuilder {
             outcome,
             diagnostics,
             load_progress_events,
+            camera_bookmarks,
         })
     }
 }
@@ -128,6 +131,7 @@ impl InteractiveGltfViewerBuilder {
             import,
             camera,
             load_progress_events,
+            camera_bookmarks: self.common.camera_bookmarks,
             orbit_controls,
             click_callback: None,
             hover_callback: None,
@@ -176,6 +180,7 @@ impl InteractiveGltfViewerBuilder {
             import,
             camera,
             load_progress_events,
+            camera_bookmarks: self.common.camera_bookmarks,
             orbit_controls,
             click_callback: None,
             hover_callback: None,

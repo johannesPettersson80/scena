@@ -65,6 +65,18 @@ Additive public API changes in Unreleased:
   `SchemaCatalogV1`, `SchemaCatalogEntryV1`, `SchemaEntryReportV1`,
   `schema_catalog_v1`, `schema_catalog_entry`, `schema_entry_report_v1`,
   and `nearest_schema_name`
+- `CameraState`, `CameraBookmark`, `CameraFlyTo`, `CameraTransitionError`,
+  `TransitionEasing`, `OrbitControls::camera_state`, and
+  `OrbitControls::fly_to`
+- `HeadlessGltfViewerBuilder::with_camera_bookmark`,
+  `HeadlessGltfViewerBuilder::with_camera_bookmarks`,
+  `HeadlessGltfViewer::camera_bookmarks`,
+  `FirstRender::camera_bookmarks`,
+  `InteractiveGltfViewerBuilder::with_camera_bookmark`,
+  `InteractiveGltfViewerBuilder::with_camera_bookmarks`, and
+  `InteractiveGltfViewer::camera_bookmarks`
+- `SceneHostCore::set_camera_bookmark` and
+  `SceneHostCore::set_camera_bookmark_json` (gated behind `scene-host`)
 - The `scena` binary with `schema list`, `schema get <schema>`,
   `validate-recipe <recipe.json>`, `place <recipe.json> --import <id>
   --verb <center|ground|fit_to_size|look_at|align_to_anchor|place_on>`, and,
