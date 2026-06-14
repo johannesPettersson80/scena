@@ -1,0 +1,53 @@
+{
+  "schema": "scena.interaction_verification.v1",
+  "ok": true,
+  "summary": {
+    "step_count": 1,
+    "failed_step_count": 0,
+    "hit_count": 1,
+    "miss_count": 0,
+    "event_count": 1,
+    "rendered_feedback_checked": false
+  },
+  "steps": [
+    {
+      "index": 0,
+      "action": "select",
+      "coordinates": {
+        "coordinate_space": "css",
+        "x_css_px": 64.0,
+        "y_css_px": 64.0,
+        "x_physical_px": 64.0,
+        "y_physical_px": 64.0
+      },
+      "expected": {
+        "expect_hit": true,
+        "expected_handle": 42,
+        "expect_hover": true,
+        "expect_selection": true,
+        "expected_events": [
+          "selection_changed"
+        ]
+      },
+      "observed": {
+        "hit": true,
+        "handle": 42,
+        "hover_handle": 42,
+        "selection_handle": 42,
+        "events": [
+          "selection_changed"
+        ]
+      }
+    }
+  ],
+  "reasons": [],
+  "fixes": [],
+  "artifacts": {
+    "host_event_schema": "scena.host_event.v1",
+    "width_css_px": 128.0,
+    "height_css_px": 128.0,
+    "width_physical_px": 128,
+    "height_physical_px": 128,
+    "device_pixel_ratio": 1.0
+  }
+}

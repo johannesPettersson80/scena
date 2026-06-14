@@ -180,6 +180,12 @@ pub use scene::{
 pub use scene_host::{
     HOST_EVENT_SCHEMA_V1, HostEventBatchV1, HostEventButtonV1, HostEventHitV1,
     HostEventHoverPhaseV1, HostEventModifiersV1, HostEventTargetKindV1, HostEventV1,
+    INTERACTION_EXPECTATION_SCHEMA_V1, INTERACTION_VERIFICATION_SCHEMA_V1,
+    InteractionCoordinateSpaceV1, InteractionCoordinatesV1, InteractionExpectationV1,
+    InteractionStepExpectationV1, InteractionStepExpectedV1, InteractionStepObservedV1,
+    InteractionStepReportV1, InteractionVerificationArtifactsV1, InteractionVerificationFixV1,
+    InteractionVerificationReasonV1, InteractionVerificationReportV1,
+    InteractionVerificationSummaryV1, InteractionViewportV1,
     SCENE_HOST_ANIMATION_INVENTORY_SCHEMA_V1, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1,
     SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostAnimationClipV1, SceneHostAnimationInventoryV1,
     SceneHostAnimationLoopMode, SceneHostAnimationPlayOptions, SceneHostAssetImportReportV1,
@@ -190,7 +196,7 @@ pub use scene_host::{
     VisualPatchLabelTargetV1, VisualPatchLabelV1, VisualPatchMaterialVariantV1,
     VisualPatchResultV1, VisualPatchRevisionDeltaV1, VisualPatchSelectionV1,
     VisualPatchTintEasedV1, VisualPatchTintV1, VisualPatchTransformEasedV1, VisualPatchTransformV1,
-    VisualPatchV1, VisualPatchVisibilityV1,
+    VisualPatchV1, VisualPatchVisibilityV1, host_event_kind_name, physical_px,
 };
 pub use schema_catalog::{
     SCHEMA_CATALOG_SCHEMA_V1, SCHEMA_ENTRY_SCHEMA_V1, SchemaCatalogEntryV1, SchemaCatalogV1,

@@ -15,6 +15,9 @@ mod scena_verify;
 #[cfg(feature = "inspection")]
 #[path = "scena/verify_animation.rs"]
 mod scena_verify_animation;
+#[cfg(feature = "scene-host")]
+#[path = "scena/verify_interaction.rs"]
+mod scena_verify_interaction;
 
 use scena_args::ValidateRecipeCommandArgs;
 #[cfg(feature = "inspection")]
@@ -71,6 +74,9 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
         [command, subcommand, rest @ ..] if command == "verify" && subcommand == "animation" => {
             run_verify_animation_command(rest)
         }
+        [command, subcommand, rest @ ..] if command == "verify" && subcommand == "interaction" => {
+            run_verify_interaction_command(rest)
+        }
         _ => Err(
             "unknown command; expected 'schema list', 'schema get <scena.*.vN>', \
              'validate-recipe <recipe.json>', \
@@ -80,7 +86,8 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
              'diagnose <asset> --visibility [--handle <u64>]', or \
              'repair <asset-or-recipe> --from <report.json>', or \
              'verify appearance <asset-or-recipe> --expect <json>', or \
-             'verify animation <asset-or-recipe> --clip <name> --times <seconds>'"
+             'verify animation <asset-or-recipe> --clip <name> --times <seconds>', or \
+             'verify interaction <asset-or-recipe> --expect <json>'"
                 .to_string(),
         ),
     }
@@ -317,6 +324,19 @@ fn run_verify_animation_command(_args: &[String]) -> Result<CliOutcome, String> 
     )
 }
 
+#[cfg(feature = "scene-host")]
+fn run_verify_interaction_command(args: &[String]) -> Result<CliOutcome, String> {
+    scena_verify_interaction::run_verify_interaction_command(args)
+}
+
+#[cfg(not(feature = "scene-host"))]
+fn run_verify_interaction_command(_args: &[String]) -> Result<CliOutcome, String> {
+    Err(
+        "verify interaction requires building the scena binary with the 'scene-host' feature"
+            .to_string(),
+    )
+}
+
 fn success(stdout: String) -> CliOutcome {
     CliOutcome {
         stdout,
@@ -493,7 +513,8 @@ fn help_json() -> String {
             "diagnose <asset-or-recipe> --visibility [--handle <u64>]",
             "repair <asset-or-recipe> --from <report.json>",
             "verify appearance <asset-or-recipe> --expect <appearance-expectation.json>",
-            "verify animation <asset-or-recipe> --clip <name> --times <seconds> [--expect-change]"
+            "verify animation <asset-or-recipe> --clip <name> --times <seconds> [--expect-change]",
+            "verify interaction <asset-or-recipe> --expect <interaction-expectation.json>"
         ]
     })
     .to_string()

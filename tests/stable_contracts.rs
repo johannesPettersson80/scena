@@ -151,6 +151,14 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
             "scena.animation_introspection.v1",
         ),
         (
+            "tests/assets/stable-contracts/interaction_expectation.v1.json",
+            "scena.interaction_expectation.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/interaction_verification.v1.json",
+            "scena.interaction_verification.v1",
+        ),
+        (
             "tests/assets/stable-contracts/scene_recipe.v1.json",
             "scena.scene_recipe.v1",
         ),
@@ -320,6 +328,22 @@ fn appearance_introspection_golden_matches_live_schema_serialization() {
 fn animation_introspection_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::AnimationIntrospectionReportV1>(
         "tests/assets/stable-contracts/animation_introspection.v1.json",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn interaction_expectation_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::InteractionExpectationV1>(
+        "tests/assets/stable-contracts/interaction_expectation.v1.json",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn interaction_verification_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::InteractionVerificationReportV1>(
+        "tests/assets/stable-contracts/interaction_verification.v1.json",
     );
 }
 

@@ -187,6 +187,20 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/animation_introspection.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.interaction_expectation.v1",
+            owner_module: "scene_host",
+            summary: "Transient synthetic interaction steps for host-driven verification.",
+            feature_flag: Some("scene-host"),
+            fixture_path: Some("tests/assets/stable-contracts/interaction_expectation.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: "scena.interaction_verification.v1",
+            owner_module: "scene_host",
+            summary: "Synthetic pick, hover, selection, and host-event verification report.",
+            feature_flag: Some("scene-host"),
+            fixture_path: Some("tests/assets/stable-contracts/interaction_verification.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.scene_recipe.v1",
             owner_module: "scene",
             summary: "Declarative, transient scene snapshot consumed by agent and CLI workflows.",
@@ -321,6 +335,14 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
         (
             "scena.animation_introspection.v1",
             include_str!("../tests/assets/stable-contracts/animation_introspection.v1.json"),
+        ),
+        (
+            "scena.interaction_expectation.v1",
+            include_str!("../tests/assets/stable-contracts/interaction_expectation.v1.json"),
+        ),
+        (
+            "scena.interaction_verification.v1",
+            include_str!("../tests/assets/stable-contracts/interaction_verification.v1.json"),
         ),
         (
             "scena.scene_recipe.v1",

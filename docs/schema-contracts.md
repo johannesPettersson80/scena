@@ -33,6 +33,8 @@ Rules:
   - `scena.appearance_expectation.v1`
   - `scena.appearance_introspection.v1`
   - `scena.animation_introspection.v1`
+  - `scena.interaction_expectation.v1`
+  - `scena.interaction_verification.v1`
   - `scena.scene_recipe.v1`
   - `scena.scene_recipe_validation.v1`
   - `scena.placement_result.v1`
@@ -434,6 +436,50 @@ their original generation in queued events and do not alias replacement nodes.
 
 Stable fixture:
 `tests/assets/stable-contracts/host_event.v1.json`.
+
+### `scena.interaction_expectation.v1` and `scena.interaction_verification.v1`
+
+The `scena verify interaction <asset-or-recipe> --expect <json>` CLI command
+loads the asset through `SceneHostCore`, frames and renders it once, injects the
+requested native SceneHost interaction steps, and emits
+`scena.interaction_verification.v1`.
+
+The expectation contract is transient input, not a persisted document model.
+It contains:
+
+- `schema`
+- `viewport`: `width_css_px`, `height_css_px`, and `device_pixel_ratio`
+- `steps`: ordered `pick`, `hover`, or `select` actions
+
+Step coordinates use CSS pixels by default. A step may set
+`coordinate_space: "physical"` to provide physical pixel coordinates; the
+report always echoes both CSS and physical coordinates. This first native slice
+does not synthesize browser DOM input, keyboard input, camera-control gestures,
+or rendered highlight/outline feedback.
+
+The verification report contains:
+
+- `schema`
+- `ok`
+- `summary`: step, failure, hit, miss, and event counts, plus
+  `rendered_feedback_checked`
+- `steps`: ordered expected/observed interaction results
+- `reasons`: stable failure codes such as `hit_mismatch`,
+  `handle_mismatch`, `hover_missing`, `selection_missing`, and
+  `event_sequence_mismatch`
+- `fixes`: stable suggested actions
+- `artifacts`: viewport and linked `scena.host_event.v1` schema metadata
+
+`ok=false` means at least one requested interaction assertion failed, and the
+CLI returns a non-zero exit status while keeping the report on stdout. A native
+`select` step validates SceneHost selection state and the emitted
+`selection_changed` event; a native `hover` step validates hover state and the
+emitted hover event; a native `pick` step validates the picked stable handle and
+emitted pick event.
+
+Stable fixtures:
+`tests/assets/stable-contracts/interaction_expectation.v1.json` and
+`tests/assets/stable-contracts/interaction_verification.v1.json`.
 
 ## Renderer stats JSON
 

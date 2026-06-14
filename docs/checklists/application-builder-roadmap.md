@@ -525,7 +525,9 @@ Required commands:
 - [x] `scena verify animation <recipe-or-asset> --clip <name> --times <csv>
       [--expect-change]`: emit `scena.animation_introspection.v1`.
 - [ ] `scena verify interaction <recipe-or-asset> --expect <json>`: emit
-      `scena.interaction_verification.v1`.
+      `scena.interaction_verification.v1`. The first native SceneHost slice is
+      complete; browser input and rendered feedback proof remain open under
+      A.10.
 - [ ] `scena doctor <asset-or-recipe>`: expose asset-doctor-style findings
       through the same terminal command family.
 
@@ -599,7 +601,8 @@ Required behavior:
 - [x] The schema list includes the landed appearance expectation and
       appearance introspection contracts.
 - [x] The schema list includes animation introspection as landed.
-- [ ] The schema list includes interaction verification when it lands.
+- [x] The schema list includes interaction expectation and interaction
+      verification as landed.
 
 Acceptance:
 
@@ -881,33 +884,39 @@ introduced earlier in the roadmap.
 
 Proposed contract:
 
+- `scena.interaction_expectation.v1`
 - `scena.interaction_verification.v1`
 
 Required behavior:
 
-- [ ] Inject synthetic pointer and keyboard input in native viewer tests and
-      browser proof harnesses.
-- [ ] Inputs use CSS pixels for browser targets and explicitly state physical
-      pixel fields when needed.
-- [ ] Assertions include expected pick handle, hover state, selection state,
-      event sequence, modifier/button metadata, camera-control result, and
-      rendered highlight or outline feedback where applicable.
-- [ ] `ok=false` when the expected handle is not picked, event order differs,
-      hover/selection state is missing, coordinates are interpreted in the
-      wrong pixel space, or rendered feedback is absent.
-- [ ] Reports include suggested fixes, such as use CSS pixels, frame target,
-      enable picking, exclude helper geometry, or update expected handle.
+- [x] Inject synthetic pointer-equivalent pick/hover/select input in native
+      SceneHost tests and CLI. Keyboard input, camera-control gestures, and the
+      browser proof harness remain open.
+- [x] Inputs use CSS pixels by default and explicitly state physical pixel
+      fields in reports. Browser target proof remains open.
+- [x] Assertions include expected pick handle, hover state, selection state,
+      and event sequence for the native SceneHost slice. Modifier/button
+      metadata, camera-control result, and rendered highlight or outline
+      feedback remain open.
+- [x] `ok=false` when the expected handle is not picked, event order differs,
+      or hover/selection state is missing. CSS-vs-physical mismatch fixtures
+      and rendered feedback assertions remain open.
+- [x] Reports include suggested fixes for the implemented failure families,
+      including frame target, CSS-pixel coordinates, event contract, and update
+      expected handle.
 
 Acceptance:
 
 - [ ] Fixtures cover successful pick, miss, wrong handle, hover enter/leave,
       selection highlight, helper-geometry pass-through, and CSS-vs-physical
-      pixel mismatch.
+      pixel mismatch. The first slice adds stable expectation/report fixtures
+      plus CLI wrong-handle coverage; the remaining fixtures are open.
 - [ ] Browser proof runs without manual mouse input.
-- [ ] Native viewer proof runs without manual input devices.
-- [ ] Stable fixture:
+- [x] Native SceneHost proof runs without manual input devices.
+- [x] Stable fixtures:
+      `tests/assets/stable-contracts/interaction_expectation.v1.json` and
       `tests/assets/stable-contracts/interaction_verification.v1.json`.
-- [ ] CLI exits non-zero when interaction assertions fail.
+- [x] CLI exits non-zero when interaction assertions fail.
 
 ### A.11 Agent smoke templates
 
