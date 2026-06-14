@@ -67,6 +67,13 @@
       "fixture_path": "tests/assets/stable-contracts/agent_loop_result.v1.json"
     },
     {
+      "schema": "scena.agent_smoke_template.v1",
+      "owner_module": "bin/scena",
+      "summary": "Agent smoke-template manifest with generated files, commands, and artifacts.",
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/agent_smoke_template.v1.json"
+    },
+    {
       "schema": "scena.appearance_expectation.v1",
       "owner_module": "render",
       "summary": "Transient expected appearance targets for first-time material verification.",

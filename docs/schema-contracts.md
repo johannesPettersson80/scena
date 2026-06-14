@@ -30,6 +30,7 @@ Rules:
   - `scena.visibility_diagnosis.v1`
   - `scena.visual_repair_plan.v1`
   - `scena.agent_loop_result.v1`
+  - `scena.agent_smoke_template.v1`
   - `scena.appearance_expectation.v1`
   - `scena.appearance_introspection.v1`
   - `scena.animation_introspection.v1`
@@ -480,6 +481,31 @@ emitted pick event.
 Stable fixtures:
 `tests/assets/stable-contracts/interaction_expectation.v1.json` and
 `tests/assets/stable-contracts/interaction_verification.v1.json`.
+
+### `scena.agent_smoke_template.v1`
+
+The `scena examples agent <template> [--out <dir>]` CLI command writes a small
+set of recipe, expectation, and artifact-path files for a named smoke template
+and emits a manifest with schema `scena.agent_smoke_template.v1`.
+
+The manifest contains:
+
+- `schema`
+- `name`
+- `status`: `ready` or `deferred`
+- `required_features`: crate features required to run the generated commands
+- `files`: generated file paths and their schema names
+- `commands`: argv arrays beginning with `scena`, expected output schema,
+  expected `ok` value, and artifact paths that should exist after the command
+- `notes`: explanatory text for deferred templates
+
+Ready templates are CLI-only acceptance examples over the normal
+prepare/render/capture/report path. Deferred templates, such as CAD inspection
+and documentation rendering, emit no runnable commands until their Phase 2
+measurement, section, exploded-view, callout, and annotation dependencies land.
+
+Stable fixture:
+`tests/assets/stable-contracts/agent_smoke_template.v1.json`.
 
 ## Renderer stats JSON
 

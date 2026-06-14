@@ -199,9 +199,10 @@ pub use scene_host::{
     VisualPatchV1, VisualPatchVisibilityV1, host_event_kind_name, physical_px,
 };
 pub use schema_catalog::{
-    SCHEMA_CATALOG_SCHEMA_V1, SCHEMA_ENTRY_SCHEMA_V1, SchemaCatalogEntryV1, SchemaCatalogV1,
-    SchemaEntryReportV1, nearest_schema_name, schema_catalog_entry, schema_catalog_v1,
-    schema_entry_report_v1,
+    AGENT_SMOKE_TEMPLATE_SCHEMA_V1, AgentSmokeTemplateCommandV1, AgentSmokeTemplateFileV1,
+    AgentSmokeTemplateV1, SCHEMA_CATALOG_SCHEMA_V1, SCHEMA_ENTRY_SCHEMA_V1, SchemaCatalogEntryV1,
+    SchemaCatalogV1, SchemaEntryReportV1, nearest_schema_name, schema_catalog_entry,
+    schema_catalog_v1, schema_entry_report_v1,
 };
 pub use viewer::{
     FirstRender, HeadlessGltfViewer, HeadlessGltfViewerBuilder, InteractiveGltfViewer,

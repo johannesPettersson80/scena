@@ -7,8 +7,13 @@ use std::process;
 
 #[path = "scena/args.rs"]
 mod scena_args;
+#[cfg(feature = "inspection")]
+#[path = "scena/examples_agent.rs"]
+mod scena_examples_agent;
 #[path = "scena/place.rs"]
 mod scena_place;
+#[path = "scena/schema.rs"]
+mod scena_schema;
 #[cfg(feature = "inspection")]
 #[path = "scena/verify.rs"]
 mod scena_verify;
@@ -49,21 +54,17 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
     }
 
     match args.as_slice() {
-        [command, subcommand] if command == "schema" && subcommand == "list" => json_success(
-            &scena::schema_catalog_v1(),
-            "failed to serialize schema catalog",
-        ),
+        [command, subcommand] if command == "schema" && subcommand == "list" => {
+            scena_schema::run_schema_list_command()
+        }
         [command, subcommand, schema] if command == "schema" && subcommand == "get" => {
-            let report = scena::schema_entry_report_v1(schema).ok_or_else(|| {
-                let suggestion = scena::nearest_schema_name(schema)
-                    .map(|name| format!("; did you mean '{name}'?"))
-                    .unwrap_or_default();
-                format!("unknown schema '{schema}'{suggestion}")
-            })?;
-            json_success(&report, "failed to serialize schema entry")
+            scena_schema::run_schema_get_command(schema)
         }
         [command, rest @ ..] if command == "validate-recipe" => run_validate_recipe_command(rest),
         [command, rest @ ..] if command == "place" => scena_place::run_place_command(rest),
+        [command, subcommand, rest @ ..] if command == "examples" && subcommand == "agent" => {
+            run_examples_agent_command(rest)
+        }
         [command, rest @ ..] if command == "render" => run_render_command(rest),
         [command, rest @ ..] if command == "inspect" => run_inspect_command(rest),
         [command, rest @ ..] if command == "diagnose" => run_diagnose_command(rest),
@@ -81,6 +82,7 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
             "unknown command; expected 'schema list', 'schema get <scena.*.vN>', \
              'validate-recipe <recipe.json>', \
              'place <recipe.json> --import <id> --verb <verb>', \
+             'examples agent <template> [--out <dir>]', \
              'render <asset> --introspect --out <png>', or \
              'inspect <asset>', or \
              'diagnose <asset> --visibility [--handle <u64>]', or \
@@ -103,6 +105,19 @@ fn run_validate_recipe_command(args: &[String]) -> Result<CliOutcome, String> {
         &report,
         exit_code,
         "failed to serialize scene recipe validation report",
+    )
+}
+
+#[cfg(feature = "inspection")]
+fn run_examples_agent_command(args: &[String]) -> Result<CliOutcome, String> {
+    scena_examples_agent::run_examples_agent_command(args)
+}
+
+#[cfg(not(feature = "inspection"))]
+fn run_examples_agent_command(_args: &[String]) -> Result<CliOutcome, String> {
+    Err(
+        "examples agent requires building the scena binary with the 'inspection' feature"
+            .to_string(),
     )
 }
 
@@ -508,6 +523,7 @@ fn help_json() -> String {
             "schema get <scena.*.vN>",
             "validate-recipe <recipe.json>",
             "place <recipe.json> --import <id> --verb <verb>",
+            "examples agent <template> [--out <dir>]",
             "render <asset-or-recipe> --introspect --out <png>",
             "inspect <asset-or-recipe>",
             "diagnose <asset-or-recipe> --visibility [--handle <u64>]",

@@ -530,6 +530,9 @@ Required commands:
       A.10.
 - [ ] `scena doctor <asset-or-recipe>`: expose asset-doctor-style findings
       through the same terminal command family.
+- [x] `scena examples agent <template> [--out <dir>]`: emit
+      `scena.agent_smoke_template.v1` for core ready templates and structured
+      deferred manifests for Phase-2-dependent templates.
 
 CLI behavior:
 
@@ -928,12 +931,12 @@ SceneHost host-loop examples exist.
 
 Required templates:
 
-- [ ] `scena examples agent product-configurator`.
-- [ ] `scena examples agent live-state-viewer`.
-- [ ] `scena examples agent web-viewer`.
-- [ ] `scena examples agent data-visualization`.
-- [ ] `scena examples agent animated-viewer`.
-- [ ] `scena examples agent interaction-proof`.
+- [x] `scena examples agent product-configurator`.
+- [x] `scena examples agent live-state-viewer`.
+- [x] `scena examples agent web-viewer`.
+- [x] `scena examples agent data-visualization`.
+- [x] `scena examples agent animated-viewer`.
+- [x] `scena examples agent interaction-proof`.
 - [ ] `scena examples agent cad-inspection`, landing incrementally with the
       Phase 2 inspection, measurement, section-box, exploded-view, and
       annotation features it exercises.
@@ -943,22 +946,24 @@ Required templates:
 
 Required behavior:
 
-- [ ] Each template emits a recipe, expected assertions, CLI commands, and
-      expected artifact paths.
-- [ ] Agent-track-only templates can be run through CLI-only steps and produce
+- [x] Each ready core template emits a recipe, expected assertions where the
+      workflow needs them, CLI commands, and expected artifact paths.
+- [x] Agent-track-only templates can be run through CLI-only steps and produce
       `ok=true` reports for their relevant construction, appearance, temporal,
       or interaction checks when A.11 lands.
-- [ ] Phase-2-dependent templates add CLI-only assertions as their owning
+- [x] Phase-2-dependent templates emit structured deferred manifests and add
+      CLI-only assertions as their owning
       recipe sections and visual helpers land; they must not be marked complete
       before those dependencies are implemented.
-- [ ] Templates are examples and acceptance apps, not a hidden application
+- [x] Templates are examples and acceptance apps, not a hidden application
       framework.
 
 Acceptance:
 
-- [ ] CI or doctor verifies every template command remains documented and
-      runnable or records a hardware-specific proof exception.
-- [ ] Template outputs include stable JSON reports and capture artifacts.
+- [x] CI or doctor verifies the six ready core template commands remain
+      runnable. The deferred Phase-2 templates record their dependency reason
+      instead of runnable commands.
+- [x] Template outputs include stable JSON reports and capture artifacts.
 - [ ] Failing fixture variants exist for each dynamic verification class.
 
 ## Phase 1 - Interactive viewer ergonomics

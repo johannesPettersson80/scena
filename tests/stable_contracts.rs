@@ -348,6 +348,13 @@ fn interaction_verification_golden_matches_live_schema_serialization() {
 }
 
 #[test]
+fn agent_smoke_template_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::AgentSmokeTemplateV1>(
+        "tests/assets/stable-contracts/agent_smoke_template.v1.json",
+    );
+}
+
+#[test]
 fn scene_recipe_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::SceneRecipeV1>(
         "tests/assets/stable-contracts/scene_recipe.v1.json",

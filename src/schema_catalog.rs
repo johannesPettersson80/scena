@@ -1,5 +1,12 @@
 use serde::{Deserialize, Serialize};
 
+mod agent_smoke;
+
+pub use agent_smoke::{
+    AGENT_SMOKE_TEMPLATE_SCHEMA_V1, AgentSmokeTemplateCommandV1, AgentSmokeTemplateFileV1,
+    AgentSmokeTemplateV1,
+};
+
 pub const SCHEMA_CATALOG_SCHEMA_V1: &str = "scena.schema_catalog.v1";
 pub const SCHEMA_ENTRY_SCHEMA_V1: &str = "scena.schema_entry.v1";
 
@@ -166,6 +173,13 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/agent_loop_result.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.agent_smoke_template.v1",
+            owner_module: "bin/scena",
+            summary: "Agent smoke-template manifest with generated files, commands, and artifacts.",
+            feature_flag: Some("inspection"),
+            fixture_path: Some("tests/assets/stable-contracts/agent_smoke_template.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.appearance_expectation.v1",
             owner_module: "render",
             summary: "Transient expected appearance targets for first-time material verification.",
@@ -323,6 +337,10 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
         (
             "scena.agent_loop_result.v1",
             include_str!("../tests/assets/stable-contracts/agent_loop_result.v1.json"),
+        ),
+        (
+            "scena.agent_smoke_template.v1",
+            include_str!("../tests/assets/stable-contracts/agent_smoke_template.v1.json"),
         ),
         (
             "scena.appearance_expectation.v1",

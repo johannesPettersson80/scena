@@ -102,6 +102,31 @@ Golden JSON fixtures for these contracts live in
 plus `xtask doctor --full`. Intentional contract-shape changes must update the
 matching fixture in the same reviewed change.
 
+## Agent smoke templates
+
+Use `scena examples agent <template> --out <dir>` to generate a small
+CLI-runnable smoke template. The command writes a `scena.scene_recipe.v1`
+recipe plus any expectation files needed by that workflow, then emits a
+`scena.agent_smoke_template.v1` manifest containing the exact `scena` commands
+to run and the artifacts they should create.
+
+Ready templates:
+
+- `product-configurator`
+- `live-state-viewer`
+- `web-viewer`
+- `data-visualization`
+- `animated-viewer`
+- `interaction-proof`
+
+Phase-2-dependent templates such as `cad-inspection` and
+`documentation-renderer` currently emit structured deferred manifests instead
+of runnable commands.
+
+```bash
+cargo run --features scene-host -- examples agent interaction-proof --out target/scena-agent/interaction-proof
+```
+
 ## CAD-style placement examples
 
 Use these when imported assets need stable placement by authored metadata:
