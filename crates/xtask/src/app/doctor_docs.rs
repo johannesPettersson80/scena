@@ -180,12 +180,32 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
             "scena.capability_report.v1",
         ),
         (
+            "tests/assets/stable-contracts/schema_catalog.v1.json",
+            "scena.schema_catalog.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/schema_entry.v1.json",
+            "scena.schema_entry.v1",
+        ),
+        (
             "tests/assets/stable-contracts/scene_inspection.v1.json",
             "scena.scene_inspection.v1",
         ),
         (
             "tests/assets/stable-contracts/capture.v1.json",
             "scena.capture.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/capture_baseline.v1.json",
+            "scena.capture_baseline.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/render_introspection.v1.json",
+            "scena.render_introspection.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/visibility_diagnosis.v1.json",
+            "scena.visibility_diagnosis.v1",
         ),
         (
             "tests/assets/stable-contracts/annotation_projection.v1.json",
@@ -210,6 +230,18 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
         (
             "tests/assets/stable-contracts/scene_host_animation_inventory.v1.json",
             "scena.animation_inventory.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/visual_patch.v1.json",
+            "scena.visual_patch.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/visual_patch_result.v1.json",
+            "scena.visual_patch.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/host_event.v1.json",
+            "scena.host_event.v1",
         ),
     ];
     const REQUIRED_FILES: &[&str] = &[
@@ -239,6 +271,7 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
             ));
         }
     }
+    check_schema_catalog_covers_stable_fixtures(root, findings, FIXTURES);
 
     require_contains(
         root,
@@ -275,6 +308,20 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
             "tests/assets/stable-contracts",
             "scena.scene_host_asset_import.v1",
             "scena.animation_inventory.v1",
+            "scena.visual_patch.v1",
+            "scena.host_event.v1",
+            "transforms_eased",
+            "tints_eased",
+            "camera_eased",
+            "animation_time",
+            "selection",
+            "hover",
+            "material_variants",
+            "labels",
+            "echo_metadata",
+            "visual_patch_result.v1.json",
+            "host_event.v1.json",
+            "drainEventsJson",
             "AssetProvenance",
         ],
     );
@@ -287,6 +334,9 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
             "scene_host_contracts.rs",
             "scene_host_release_1_7.rs",
             "scene_host_browser_contracts.js",
+            "scena.visual_patch.v1",
+            "scena.host_event.v1",
+            "drainEventsJson",
             "tests/assets/stable-contracts",
         ],
     );
@@ -317,6 +367,40 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
             "target/gate-artifacts/scene-host-browser-proof/scene-host-browser-proof.json",
         ],
     );
+}
+
+fn check_schema_catalog_covers_stable_fixtures(
+    root: &Path,
+    findings: &mut Vec<Finding>,
+    fixtures: &[(&str, &str)],
+) {
+    let rel = "tests/assets/stable-contracts/schema_catalog.v1.json";
+    let Ok(text) = fs::read_to_string(root.join(rel)) else {
+        return;
+    };
+    let Ok(json) = serde_json::from_str::<Value>(&text) else {
+        return;
+    };
+    let Some(entries) = json.get("entries").and_then(Value::as_array) else {
+        findings.push(Finding::new(
+            "STABLE-CONTRACT-EVIDENCE",
+            format!("{rel} must contain an entries array"),
+        ));
+        return;
+    };
+    let schemas = entries
+        .iter()
+        .filter_map(|entry| entry.get("schema").and_then(Value::as_str))
+        .collect::<BTreeSet<_>>();
+
+    for (_, expected_schema) in fixtures {
+        if !schemas.contains(expected_schema) {
+            findings.push(Finding::new(
+                "STABLE-CONTRACT-EVIDENCE",
+                format!("{rel} must list stable fixture schema {expected_schema}"),
+            ));
+        }
+    }
 }
 
 pub(crate) fn check_demo_build_heartbeat_contract(root: &Path, findings: &mut Vec<Finding>) {

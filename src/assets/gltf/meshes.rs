@@ -15,7 +15,7 @@ use crate::geometry::{
 use crate::material::{Color, MaterialDesc};
 use crate::scene::Vec3;
 
-use super::super::{AssetPath, AssetStorage, MaterialHandle};
+use super::super::{AssetMaterialSource, AssetPath, AssetStorage, MaterialHandle};
 use super::SceneAssetMesh;
 use super::buffers::ResolvedGltfBuffers;
 
@@ -164,7 +164,17 @@ fn parse_primitive(
         .index()
         .and_then(|index| materials.get(index))
         .copied()
-        .unwrap_or_else(|| storage.materials.insert(MaterialDesc::default()));
+        .unwrap_or_else(|| {
+            let handle = storage.materials.insert(MaterialDesc::default());
+            storage.material_sources.insert(
+                handle,
+                AssetMaterialSource::generated_default(
+                    path.clone(),
+                    "source primitive did not reference a material; using glTF default material",
+                ),
+            );
+            handle
+        });
     let material_variant_bindings =
         super::material_variants::parse_primitive_material_variant_bindings(primitive, materials);
     Ok(SceneAssetMesh {

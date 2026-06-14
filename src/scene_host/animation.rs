@@ -127,6 +127,18 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             .map_err(map_animation_error)
     }
 
+    pub(super) fn advance_animation(
+        &mut self,
+        handle: u64,
+        delta_seconds: f64,
+    ) -> Result<(), SceneHostError> {
+        let delta_seconds = validate_time_seconds("animation_time seconds", delta_seconds)?;
+        let mixer = self.resolve_animation_handle(handle)?;
+        self.scene
+            .update_animation(mixer, delta_seconds)
+            .map_err(map_animation_error)
+    }
+
     pub fn advance(&mut self, delta_seconds: f64) -> Result<(), SceneHostError> {
         let delta_seconds = validate_time_seconds("advance delta_seconds", delta_seconds)?;
         let mixers = self.animation_handles.values().copied().collect::<Vec<_>>();

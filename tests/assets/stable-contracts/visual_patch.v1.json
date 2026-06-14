@@ -1,0 +1,167 @@
+{
+  "schema": "scena.visual_patch.v1",
+  "transforms": [
+    {
+      "node": 42,
+      "transform": {
+        "translation": [
+          1.0,
+          2.0,
+          3.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    }
+  ],
+  "tints": [
+    {
+      "node": 42,
+      "tint": {
+        "r": 0.20000000298023224,
+        "g": 0.4000000059604645,
+        "b": 0.6000000238418579,
+        "a": 1.0
+      }
+    },
+    {
+      "node": 84,
+      "tint": null
+    }
+  ],
+  "visibility": [
+    {
+      "node": 42,
+      "visible": true
+    }
+  ],
+  "camera": {
+    "target": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "distance": 4.0,
+    "yaw_radians": 0.7853981852531433,
+    "pitch_radians": 0.5235987901687622
+  },
+  "transforms_eased": [
+    {
+      "node": 42,
+      "transform": {
+        "translation": [
+          2.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "duration_seconds": 0.5,
+      "easing": "ease_in_out"
+    }
+  ],
+  "tints_eased": [
+    {
+      "node": 42,
+      "tint": {
+        "r": 0.25,
+        "g": 0.75,
+        "b": 0.5,
+        "a": 1.0
+      },
+      "duration_seconds": 0.25,
+      "easing": "linear"
+    }
+  ],
+  "camera_eased": {
+    "camera": {
+      "target": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "distance": 5.0,
+      "yaw_radians": 1.0,
+      "pitch_radians": 0.25
+    },
+    "duration_seconds": 0.75,
+    "easing": "ease_in_out"
+  },
+  "animation_time": [
+    {
+      "mixer": 7,
+      "mode": "seek",
+      "seconds": 0.5
+    }
+  ],
+  "selection": {
+    "node": 42
+  },
+  "hover": {
+    "node": null
+  },
+  "material_variants": [
+    {
+      "import": 9,
+      "variant": "noon"
+    },
+    {
+      "import": 9,
+      "variant": null
+    }
+  ],
+  "labels": [
+    {
+      "id": "part-label",
+      "target": {
+        "kind": "node",
+        "node": 42,
+        "local_offset": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": "world-label",
+      "target": {
+        "kind": "world",
+        "position": [
+          1.0,
+          2.0,
+          3.0
+        ]
+      }
+    },
+    {
+      "id": "old-label",
+      "target": {
+        "kind": "clear"
+      }
+    }
+  ],
+  "metadata": {
+    "request_id": "fixture"
+  },
+  "echo_metadata": true
+}

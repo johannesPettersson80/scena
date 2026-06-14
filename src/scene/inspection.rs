@@ -12,7 +12,8 @@ pub use material::SceneMaterialInspection;
 pub use schema::{
     SCENE_INSPECTION_SCHEMA_V1, SceneCameraFrustumInspectionV1, SceneDrawInspectionV1,
     SceneHostInstanceEntryInspectionV1, SceneHostInstanceSetInspectionV1, SceneInspectionCountsV1,
-    SceneInspectionReportV1, SceneInspectionRevisionsV1, SceneNodeInspectionV1,
+    SceneInspectionReportV1, SceneInspectionRevisionsV1, SceneMaterialInspectionV1,
+    SceneMaterialSlotInspectionV1, SceneMaterialSourceInspectionV1, SceneNodeInspectionV1,
     SceneNormalInspectionV1,
 };
 pub use texture::SceneTextureInspection;
@@ -58,7 +59,7 @@ pub struct SceneNodeInspection {
     tint: Option<Color>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SceneDrawInspection {
     node: NodeKey,
     instance: Option<InstanceId>,
@@ -259,8 +260,8 @@ impl SceneNodeInspection {
         self.mesh_material
     }
 
-    pub const fn material_preview(&self) -> Option<SceneMaterialInspection> {
-        self.material_preview
+    pub const fn material_preview(&self) -> Option<&SceneMaterialInspection> {
+        self.material_preview.as_ref()
     }
 
     pub const fn camera(&self) -> Option<CameraKey> {
@@ -305,8 +306,8 @@ impl SceneDrawInspection {
         self.material
     }
 
-    pub const fn material_preview(&self) -> Option<SceneMaterialInspection> {
-        self.material_preview
+    pub const fn material_preview(&self) -> Option<&SceneMaterialInspection> {
+        self.material_preview.as_ref()
     }
 
     pub const fn topology(&self) -> GeometryTopology {

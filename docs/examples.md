@@ -74,9 +74,12 @@ Use these when you are building model viewers, inspection tools, or editors:
 Use `scene_host_contracts.rs` to print representative
 `scena.capability_report.v1`, `scena.scene_host_asset_import.v1`,
 `scena.scene_inspection.v1`, `scena.annotation_projection.v1`, and
-`scena.capture.v1` reports from the native `SceneHostCore` path. Use
+`scena.capture.v1` reports plus the `scena.visual_patch.v1` patch result and
+`scena.host_event.v1` event batch from the native `SceneHostCore` path,
+including visual patch selection, material variants, and label anchors. Use
 `scene_host_browser_contracts.js` as the TypeScript/JavaScript shape for a
-browser host that owns its own render cadence.
+browser host that owns its own render cadence, applies visual patches, and
+drains events with `drainEventsJson()`.
 
 Use `scene_host_release_1_7.rs` for the release 1.7 public surface:
 post-processing setters, instanced import, visibility/tint APIs, camera preset
@@ -85,6 +88,13 @@ updates.
 
 ```bash
 cargo run --example scene_host_release_1_7 --features scene-host
+```
+
+Use `headless_documentation_renderer.rs` when you need a CI/documentation
+snapshot with both pixels and the `scena.capture.v1` descriptor metadata:
+
+```bash
+cargo run --example headless_documentation_renderer -- target/docs-render
 ```
 
 Golden JSON fixtures for these contracts live in

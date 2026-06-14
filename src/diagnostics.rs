@@ -25,7 +25,7 @@ pub use capabilities::{
     CapabilityReport, CapabilityReportV1, CapabilityStatus, GpuAdapterReport, HardwareTier,
     OutputColorSpace, OutputStageStatus,
 };
-pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
+pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticContext, DiagnosticSeverity};
 pub use post_processing::{
     PostProcessingDepthSourceV1, PostProcessingPassV1, PostProcessingReportV1,
 };

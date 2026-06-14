@@ -1287,6 +1287,8 @@ fn prepare_emits_structured_depth_precision_warnings() {
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == DiagnosticCode::DepthPrecisionRisk
             && diagnostic.severity == DiagnosticSeverity::Warning
+            && diagnostic.node() == Some(scene.camera_node(camera).expect("camera has node"))
+            && !diagnostic.message().contains("NodeKey(")
             && diagnostic
                 .help
                 .as_deref()
@@ -1295,6 +1297,8 @@ fn prepare_emits_structured_depth_precision_warnings() {
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == DiagnosticCode::LargeScenePrecisionRisk
             && diagnostic.severity == DiagnosticSeverity::Warning
+            && diagnostic.node().is_some()
+            && !diagnostic.message().contains("NodeKey(")
             && diagnostic
                 .help
                 .as_deref()

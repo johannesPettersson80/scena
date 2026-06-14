@@ -1805,9 +1805,28 @@ fn m8_asset_load_report_schema_serializes_warnings_geometry_and_cache_contract()
         schema_json["warnings"][0]["path"],
         "memory://asset-report/missing.png"
     );
+    assert_eq!(
+        schema_json["external_resources"],
+        serde_json::json!([
+            {
+                "kind": "image",
+                "path": "memory://asset-report/missing.png",
+                "index": null,
+                "status": "missing",
+                "bytes": null,
+                "reason": "not found"
+            }
+        ]),
+        "asset reports must record missing external resources in a status table for browser proof"
+    );
+    assert_eq!(
+        schema_json["material_fallbacks"],
+        serde_json::json!([]),
+        "asset reports must expose material fallback provenance even when no fallbacks occurred"
+    );
 
     let decoded: AssetLoadReportV1 =
-        serde_json::from_value(schema_json).expect("asset load report schema decodes");
+        serde_json::from_value(schema_json.clone()).expect("asset load report schema decodes");
     assert_eq!(decoded.schema, ASSET_LOAD_REPORT_SCHEMA_V1);
     assert_eq!(decoded.provenance.source_path().as_str(), path);
     assert_eq!(
@@ -1843,6 +1862,101 @@ fn m8_asset_load_report_schema_serializes_warnings_geometry_and_cache_contract()
         [AssetLoadWarningV1::ExternalImageMissing { path, reason }]
             if path == "memory://asset-report/missing.png" && reason.contains("not found")
     ));
+    let cached_json =
+        serde_json::to_value(&cached_schema).expect("cached asset load report serializes");
+    assert_eq!(
+        cached_json["external_resources"], schema_json["external_resources"],
+        "cache-hit reports must preserve external-resource status evidence"
+    );
+}
+
+#[test]
+fn m8_asset_load_report_records_external_image_fetch_status() {
+    let red_png = png_rgba8(1, 1, &[[255, 0, 0, 255]]);
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![
+        (
+            AssetPath::from("memory://asset-report-image-fetch/scene.gltf"),
+            textured_triangle_gltf("red.png").into_bytes(),
+        ),
+        (
+            AssetPath::from("memory://asset-report-image-fetch/red.png"),
+            red_png.clone(),
+        ),
+    ]));
+
+    let report = pollster::block_on(
+        assets.load_scene_with_report("memory://asset-report-image-fetch/scene.gltf"),
+    )
+    .expect("external image scene loads");
+    let schema_json = report.to_schema_json();
+
+    assert_eq!(
+        schema_json["external_resources"],
+        serde_json::json!([
+            {
+                "kind": "image",
+                "path": "memory://asset-report-image-fetch/red.png",
+                "index": null,
+                "status": "fetched",
+                "bytes": red_png.len(),
+                "reason": null
+            }
+        ])
+    );
+    assert!(
+        report.progress_events().iter().any(|event| matches!(
+            event,
+            AssetLoadProgress::ExternalImageFetched { path, bytes }
+                if path.as_str() == "memory://asset-report-image-fetch/red.png"
+                    && *bytes == red_png.len()
+        )),
+        "external image fetches must be visible in progress events for browser proof"
+    );
+
+    let old_shape = serde_json::json!({
+        "schema": ASSET_LOAD_REPORT_SCHEMA_V1,
+        "path": "memory://old-report/scene.gltf",
+        "cache_hit": false,
+        "fetched_bytes": 0,
+        "external_buffers": 0,
+        "external_images": 0,
+        "provenance": {
+            "source_path": "memory://old-report/scene.gltf",
+            "source_sha256": null,
+            "license": null,
+            "generator": null,
+            "derivatives": []
+        },
+        "geometry": {
+            "schema": "scena.asset_geometry_summary.v1",
+            "node_count": 0,
+            "mesh_count": 0,
+            "primitive_count": 0,
+            "bounds": null,
+            "provenance": {
+                "source_path": "memory://old-report/scene.gltf",
+                "source_sha256": null,
+                "license": null,
+                "generator": null,
+                "derivatives": []
+            },
+            "source_units": [],
+            "source_coordinate_systems": []
+        },
+        "warnings": [],
+        "progress_events": []
+    });
+    let decoded: AssetLoadReportV1 =
+        serde_json::from_value(old_shape).expect("old additive report shape still decodes");
+    assert_eq!(decoded.schema, ASSET_LOAD_REPORT_SCHEMA_V1);
+    assert!(
+        serde_json::to_value(decoded)
+            .expect("decoded old report reserializes")["external_resources"]
+            .as_array()
+            .expect("external_resources is an array")
+            .is_empty(),
+        "new v1 report fields must default empty for old fixtures"
+    );
 }
 
 #[test]
@@ -3702,8 +3816,9 @@ fn m8_optional_basisu_texture_uses_png_fallback_without_ktx2_feature() {
         AssetPath::from("memory://basisu-fallback.gltf"),
         basisu_with_png_fallback_gltf().into_bytes(),
     )]));
-    let scene_asset = pollster::block_on(assets.load_scene("memory://basisu-fallback.gltf"))
+    let report = pollster::block_on(assets.load_scene_with_report("memory://basisu-fallback.gltf"))
         .expect("optional KHR_texture_basisu with PNG fallback loads without ktx2");
+    let scene_asset = report.asset();
     let mesh = scene_asset.nodes()[0].mesh().expect("mesh exists");
     let material = assets.material(mesh.material()).expect("material exists");
     let texture = assets
@@ -3711,6 +3826,131 @@ fn m8_optional_basisu_texture_uses_png_fallback_without_ktx2_feature() {
         .expect("fallback texture descriptor exists");
     assert_eq!(texture.source_format(), TextureSourceFormat::Png);
     assert_eq!(texture.decoded_dimensions(), Some((1, 1)));
+    let schema_json = report.to_schema_json();
+    let fallback = schema_json["material_fallbacks"]
+        .as_array()
+        .and_then(|fallbacks| fallbacks.first())
+        .expect("optional texture fallback is reported");
+    assert_eq!(fallback["kind"], "texture_basisu_fallback");
+    assert_eq!(fallback["material_slot"], "baseColorTexture");
+    assert_eq!(fallback["texture_index"], 0);
+    assert!(
+        fallback["source_path"]
+            .as_str()
+            .expect("source_path is a string")
+            .ends_with("missing-albedo.ktx2"),
+        "fallback source should name the skipped Basis source, got {fallback:?}"
+    );
+    assert!(
+        fallback["fallback_path"]
+            .as_str()
+            .expect("fallback_path is a string")
+            .starts_with("data:image/png;base64,"),
+        "fallback path should name the authored PNG fallback, got {fallback:?}"
+    );
+    assert_eq!(
+        fallback["reason"], "KHR_texture_basisu unavailable; using authored fallback texture",
+        "optional texture fallbacks must be explicit instead of silently looking source-authored"
+    );
+}
+
+#[cfg(feature = "inspection")]
+#[cfg(not(feature = "ktx2"))]
+#[test]
+fn m8_scene_inspection_reports_material_fallback_and_source_provenance() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://basisu-inspection.gltf"),
+        basisu_with_png_fallback_gltf().into_bytes(),
+    )]));
+    let report =
+        pollster::block_on(assets.load_scene_with_report("memory://basisu-inspection.gltf"))
+            .expect("optional KHR_texture_basisu with PNG fallback loads without ktx2");
+    let mut scene = Scene::new();
+    scene
+        .instantiate(report.asset())
+        .expect("fallback material scene instantiates");
+
+    let schema_json = scene.inspect_with_assets(&assets).to_schema_json();
+    let draw_material = &schema_json["draw_list"][0]["material"];
+
+    assert_eq!(draw_material["source"]["kind"], "source_material");
+    assert_eq!(
+        draw_material["source"]["asset_path"],
+        "memory://basisu-inspection.gltf"
+    );
+    assert_eq!(draw_material["source"]["material_index"], 0);
+    assert_eq!(draw_material["source"]["reason"], serde_json::Value::Null);
+    assert_eq!(draw_material["kind"], "pbr_metallic_roughness");
+
+    let texture = draw_material["textures"]
+        .as_array()
+        .and_then(|textures| {
+            textures
+                .iter()
+                .find(|entry| entry["slot"] == "baseColorTexture")
+        })
+        .expect("base-color texture evidence is exported");
+    assert_eq!(texture["source_format"], "png");
+    assert!(
+        texture["source_path"]
+            .as_str()
+            .expect("source_path is a string")
+            .starts_with("data:image/png;base64,"),
+        "texture source path should name the authored fallback PNG, got {texture:?}"
+    );
+    assert_eq!(texture["fallback"]["kind"], "texture_basisu_fallback");
+    assert_eq!(texture["fallback"]["material_index"], 0);
+    assert!(
+        texture["fallback"]["source_path"]
+            .as_str()
+            .expect("source_path is a string")
+            .ends_with("missing-albedo.ktx2"),
+        "fallback source should name the skipped Basis source, got {texture:?}"
+    );
+
+    let fallback = draw_material["fallbacks"]
+        .as_array()
+        .and_then(|fallbacks| fallbacks.first())
+        .expect("material fallback provenance is exported in inspection");
+    assert_eq!(fallback["kind"], "texture_basisu_fallback");
+    assert_eq!(fallback["material_index"], 0);
+    assert_eq!(fallback["material_slot"], "baseColorTexture");
+}
+
+#[cfg(feature = "inspection")]
+#[test]
+fn m8_scene_inspection_reports_generated_default_materials() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://generated-material.gltf"),
+        materialless_triangle_gltf().into_bytes(),
+    )]));
+    let scene_asset = pollster::block_on(assets.load_scene("memory://generated-material.gltf"))
+        .expect("materialless primitive loads with a generated default material");
+    let mut scene = Scene::new();
+    scene
+        .instantiate(&scene_asset)
+        .expect("materialless primitive instantiates");
+
+    let schema_json = scene.inspect_with_assets(&assets).to_schema_json();
+    let draw_material = &schema_json["draw_list"][0]["material"];
+
+    assert_eq!(draw_material["source"]["kind"], "generated_default");
+    assert_eq!(
+        draw_material["source"]["asset_path"],
+        "memory://generated-material.gltf"
+    );
+    assert_eq!(
+        draw_material["source"]["material_index"],
+        serde_json::Value::Null
+    );
+    assert!(
+        draw_material["source"]["reason"]
+            .as_str()
+            .expect("generated material reason is a string")
+            .contains("source primitive did not reference a material"),
+        "generated default material must explain why it exists: {draw_material:?}"
+    );
+    assert_eq!(draw_material["fallbacks"], serde_json::json!([]));
 }
 
 #[cfg(feature = "meshopt")]
@@ -5117,6 +5357,36 @@ fn basisu_with_png_fallback_gltf() -> String {
             }}]
         }}],
         "nodes": [{{ "name": "Root", "mesh": 0 }}],
+        "buffers": [{{ "byteLength": 42, "uri": "data:application/octet-stream;base64,{geometry}" }}],
+        "bufferViews": [
+            {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},
+            {{ "buffer": 0, "byteOffset": 36, "byteLength": 6 }}
+        ],
+        "accessors": [
+            {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [0,0,0], "max": [1,1,0] }},
+            {{ "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }}
+        ]
+    }}"#
+    )
+}
+
+#[cfg(feature = "inspection")]
+fn materialless_triangle_gltf() -> String {
+    let geometry =
+        base64::engine::general_purpose::STANDARD.encode(triangle_position_index_buffer(
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            [0, 1, 2],
+        ));
+    format!(
+        r#"{{
+        "asset": {{ "version": "2.0" }},
+        "meshes": [{{
+            "primitives": [{{
+                "attributes": {{ "POSITION": 0 }},
+                "indices": 1
+            }}]
+        }}],
+        "nodes": [{{ "name": "GeneratedMaterialRoot", "mesh": 0 }}],
         "buffers": [{{ "byteLength": 42, "uri": "data:application/octet-stream;base64,{geometry}" }}],
         "bufferViews": [
             {{ "buffer": 0, "byteOffset": 0, "byteLength": 36 }},

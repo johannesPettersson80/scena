@@ -63,6 +63,7 @@ mod external;
 mod instancing;
 mod lights;
 mod material_extensions;
+mod material_fallbacks;
 mod material_variants;
 mod materials;
 mod meshes;
@@ -197,7 +198,14 @@ impl SceneAsset {
         {
             step_start = log_gltf_step("parse_textures", step_start);
         }
-        let materials = parse_materials(path, &gltf.document, storage, &textures)?;
+        let mut material_fallbacks = Vec::new();
+        let materials = parse_materials(
+            path,
+            &gltf.document,
+            storage,
+            &textures,
+            &mut material_fallbacks,
+        )?;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
             step_start = log_gltf_step("parse_materials", step_start);
@@ -238,6 +246,7 @@ impl SceneAsset {
                 extensions_required,
                 extension_diagnostics,
                 material_variants,
+                material_fallbacks,
                 provenance,
                 retained_source_bytes: None,
             }),

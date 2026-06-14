@@ -1,0 +1,33 @@
+{
+  "schema": "scena.visual_patch.v1",
+  "applied": {
+    "transforms": 1,
+    "tints": 0,
+    "visibility": 0,
+    "camera": 0,
+    "transforms_eased": 0,
+    "tints_eased": 0,
+    "camera_eased": 0,
+    "animation_time": 0,
+    "selection": 0,
+    "hover": 0,
+    "material_variants": 0,
+    "labels": 0
+  },
+  "failed": [
+    {
+      "channel": "transforms",
+      "index": 1,
+      "handle": 18446744073709551615,
+      "code": "node_handle_not_found",
+      "message": "host handle 18446744073709551615 is outside this handle table"
+    }
+  ],
+  "revisions": {
+    "structure": 0,
+    "transform": 1,
+    "appearance": 0,
+    "visibility": 0,
+    "interaction": 0
+  }
+}

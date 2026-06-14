@@ -417,11 +417,61 @@ pub(super) fn check_viewer_capture_png(root: &Path, findings: &mut Vec<Finding>)
         "src/viewer/capture.rs",
         &[
             "pub enum ViewerCaptureError",
+            "Capture(CaptureError)",
             "pub fn capture_png_bytes(",
             "pub fn capture_png(",
+            "self.capture()?",
+            ".to_png_bytes()",
+            ".write_png(path)",
+        ],
+    );
+    forbid_contains(
+        root,
+        findings,
+        "VIEWER-CAPTURE-PNG",
+        "src/viewer/capture.rs",
+        &[
             "png::Encoder::new",
             "png::ColorType::Rgba",
             "png::BitDepth::Eight",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VIEWER-CAPTURE-PNG",
+        "src/capture/png.rs",
+        &[
+            "pub enum CapturePngError",
+            "pub(super) fn encode_png_rgba8",
+            "png::Encoder::new",
+            "png::ColorType::Rgba",
+            "png::BitDepth::Eight",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VIEWER-CAPTURE-PNG",
+        "src/capture/proof.rs",
+        &[
+            "pub const CAPTURE_BASELINE_SCHEMA_V1",
+            "pub struct CaptureContactSheet",
+            "pub struct CaptureBaselineReport",
+            "pub fn capture_contact_sheet_rgba8",
+            "pub fn compare_captures_with_tolerance",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VIEWER-CAPTURE-PNG",
+        "src/capture.rs",
+        &[
+            "pub fn to_png_bytes(&self)",
+            "pub fn write_png(&self",
+            "pub fn capture_png_bytes(",
+            "pub fn capture_png(",
         ],
     );
     require_contains(
@@ -439,7 +489,30 @@ pub(super) fn check_viewer_capture_png(root: &Path, findings: &mut Vec<Finding>)
         &[
             "viewer_capture_png_bytes_decode_to_current_frame",
             "viewer_capture_png_writes_reference_artifact",
+            "viewer_capture_png_uses_shared_capture_stale_frame_guard",
             "viewer-capture-png-reference.png",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VIEWER-CAPTURE-PNG",
+        "tests/capture_contracts.rs",
+        &[
+            "capture_rgba8_encodes_and_writes_png_with_descriptor_dimensions",
+            "renderer_capture_png_delegates_to_capture_descriptor_path",
+            "capture_contact_sheet_and_baseline_reports_record_capture_metadata",
+            "capture_png_bytes()",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VIEWER-CAPTURE-PNG",
+        "examples/headless_documentation_renderer.rs",
+        &[
+            "capture.write_png",
+            "serde_json::to_string_pretty(&capture.descriptor)",
         ],
     );
     require_contains(

@@ -1,16 +1,6 @@
 use crate::app::prelude::*;
 
 #[test]
-pub(crate) fn binary_render_asset_contracts_are_source_enforced() {
-    let root = repo_root().expect("test runs inside the scena workspace");
-    let mut findings = Vec::new();
-
-    check_binary_render_asset_contracts(&root, &mut findings);
-
-    assert_eq!(findings, Vec::new());
-}
-
-#[test]
 pub(crate) fn m7_ergonomics_contracts_are_source_enforced() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let mut findings = Vec::new();
@@ -102,9 +92,10 @@ pub(crate) fn easy_scene_setup_contracts_reject_open_diagnostics_and_public_fram
 
 pub(crate) fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs: &str) {
     let _ = fs::remove_dir_all(fixture_root);
-    for dir in "src/demo_page docs/guides docs/release-notes docs/checklists demo examples src/assets src/viewer src/controls src/scene src/scene/connectors src/material src/render src/geometry tests tests/assets/gltf".split_whitespace() {
+    for dir in "src/demo_page docs/guides docs/release-notes docs/checklists demo examples src/assets src/capture src/viewer src/controls src/scene src/scene/connectors src/material src/render src/geometry tests tests/assets/gltf".split_whitespace() {
         fs::create_dir_all(fixture_root.join(dir)).expect("fixture dir");
     }
+    crate::app::tests_17::write_shared_capture_fixture(fixture_root);
     fs::write(
         fixture_root.join("docs/guides/easy-scene-setup.md"),
         "frame_bounds add_perspective_camera_default_for add_studio_lighting add_grid_floor set_auto_exposure scene.mate project_world_point Camera views azimuth_elevation three_quarter_front_right AutoExposureConfig::product_studio() AutoExposureConfig::indoor() AutoExposureConfig::outdoor() AutoExposureConfig::mixed() play_animation_by_name(&import viewer.play_clip( zoom_limits_bounds_relative(0.5, 4.0) FollowControls::behind_and_above FlyControls::new move_local with_yaw_pitch_degrees viewer.on_click( viewer.on_hover( viewer.click_at( viewer.hover_at( InteractionStyle::outline renderer.set_hover_style renderer.set_selection_style viewer.capture_png(\"frame.png\")? viewer.capture_png_bytes()? render_png_bytes() CPU headless renderer without requesting a GPU adapter Reference-image regression ReferenceImage::from_rgba8 regress_with_tolerance ReferenceImageTolerance::new().with_max_abs_diff AssetLoadProgress build_with_progress load_progress_events Material variants viewer.material_variants() viewer.set_active_material_variant(Some(\"blue\"))? viewer.set_active_material_variant(None)? watch_scene_for_hot_reload drain_changed_scenes reload_scene(&scene_asset) replace_import(&import, &reloaded) controls.url_state().to_query_string() CameraOrbitUrlState::from_url_query controls.with_url_state(state) framing.url_state().to_query_string() EnvironmentPreset::Studio load_environment_preset EnvironmentPreset::ALL KTX2 cubemap presets are still future work khronos-samples assets.khronos().water_bottle().await? KhronosSample::ALL\n```rust\nlet mut scene = Scene::new();\nscene.add_studio_lighting()?;\nscene.add_grid_floor(&assets, GridFloorOptions::new())?;\nscene.add_perspective_camera_default_for(bounds, (width, height))?;\n```",
@@ -207,7 +198,7 @@ pub(crate) fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs
     .expect("viewer material variants fixture");
     fs::write(
         fixture_root.join("src/viewer/capture.rs"),
-        "pub enum ViewerCaptureError {} pub enum ViewerPngError {} CPU headless renderer does not request a GPU adapter pub fn capture_png_bytes() { png::Encoder::new(); png::ColorType::Rgba; png::BitDepth::Eight; } pub fn capture_png() {} pub async fn render_png_bytes() {} pub async fn render_png() {}",
+        "pub enum ViewerCaptureError { Capture(CaptureError) } pub enum ViewerPngError {} CPU headless renderer does not request a GPU adapter pub fn capture_png_bytes() { self.capture()? .to_png_bytes() } pub fn capture_png(path) { self.capture()? .write_png(path) } pub async fn render_png_bytes() {} pub async fn render_png() {}",
     )
     .expect("viewer capture fixture");
     fs::write(
@@ -362,7 +353,7 @@ pub(crate) fn write_minimal_easy_scene_fixture(fixture_root: &Path, demo_page_rs
         ),
         (
             "tests/round_d_viewer_capture_png.rs",
-            "viewer_capture_png_bytes_decode_to_current_frame viewer_capture_png_writes_reference_artifact headless_viewer_builder_renders_gltf_to_png_bytes_without_gpu_setup headless_viewer_builder_renders_gltf_to_png_file_without_gpu_setup .render_png_bytes() .render_png( visible CPU-rendered pixels viewer-capture-png-reference.png",
+            "viewer_capture_png_bytes_decode_to_current_frame viewer_capture_png_writes_reference_artifact viewer_capture_png_uses_shared_capture_stale_frame_guard headless_viewer_builder_renders_gltf_to_png_bytes_without_gpu_setup headless_viewer_builder_renders_gltf_to_png_file_without_gpu_setup .render_png_bytes() .render_png( visible CPU-rendered pixels viewer-capture-png-reference.png",
         ),
         (
             "tests/reference_image_regression_api.rs",

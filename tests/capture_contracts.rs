@@ -1,10 +1,14 @@
 #![cfg(feature = "inspection")]
 
+use std::io::Cursor;
+use std::path::PathBuf;
+
 use scena::{
     Aabb, Assets, Backend, CAPTURE_SCHEMA_V1, CaptureDescriptor, CaptureError, CaptureOptions,
     CapturePayloadKind, CaptureRevisions, Color, FramingOptions, GeometryDesc, MaterialDesc,
-    NodeKey, PerspectiveCamera, Renderer, Scene, Transform, Vec3, capture_rgba8,
-    capture_rgba8_from_pixels, headless_gltf_viewer,
+    NodeKey, PerspectiveCamera, ReferenceImageTolerance, Renderer, Scene, Transform, Vec3,
+    capture_contact_sheet_rgba8, capture_rgba8, capture_rgba8_from_pixels,
+    compare_captures_with_tolerance, headless_gltf_viewer,
 };
 #[cfg(feature = "scene-host")]
 use scena::{SceneHostCore, SceneInspectionReportV1};
@@ -177,6 +181,83 @@ fn capture_from_supplied_rgba8_uses_supplied_pixels_and_rendered_state() {
 }
 
 #[test]
+fn capture_rgba8_encodes_and_writes_png_with_descriptor_dimensions() {
+    let (_assets, scene, renderer) = rendered_box_scene(32, 24);
+    let capture =
+        capture_rgba8(&scene, &renderer, CaptureOptions::default()).expect("capture succeeds");
+
+    let png_bytes = capture.to_png_bytes().expect("capture encodes PNG");
+    let decoded = decode_png_rgba8(&png_bytes);
+
+    assert_eq!(decoded.width, capture.descriptor.width);
+    assert_eq!(decoded.height, capture.descriptor.height);
+    assert_eq!(decoded.rgba8, capture.rgba8);
+
+    let artifact = artifact_path("capture-rgba8-shared-api.png");
+    capture.write_png(&artifact).expect("capture writes PNG");
+    assert_eq!(
+        std::fs::read(&artifact).expect("PNG artifact reads"),
+        png_bytes
+    );
+}
+
+#[test]
+fn renderer_capture_png_delegates_to_capture_descriptor_path() {
+    let (_assets, scene, renderer) = rendered_box_scene(40, 28);
+
+    let capture = renderer
+        .capture_rgba8(&scene, CaptureOptions::default())
+        .expect("capture succeeds");
+    let png_bytes = renderer
+        .capture_png_bytes(&scene, CaptureOptions::default())
+        .expect("renderer encodes PNG from capture");
+
+    assert_eq!(
+        decode_png_rgba8(&png_bytes).rgba8,
+        capture.rgba8,
+        "renderer PNG bytes must be encoded from the same descriptor-bound capture"
+    );
+
+    let artifact = artifact_path("renderer-capture-shared-api.png");
+    renderer
+        .capture_png(&scene, CaptureOptions::default(), &artifact)
+        .expect("renderer writes PNG");
+    assert_eq!(
+        std::fs::read(&artifact).expect("renderer PNG artifact reads"),
+        png_bytes
+    );
+}
+
+#[test]
+fn capture_contact_sheet_and_baseline_reports_record_capture_metadata() {
+    let (_assets, scene, renderer) = rendered_box_scene(16, 12);
+    let first = capture_rgba8(&scene, &renderer, CaptureOptions::default()).expect("first capture");
+    let second =
+        capture_rgba8(&scene, &renderer, CaptureOptions::default()).expect("second capture");
+
+    let sheet = capture_contact_sheet_rgba8(&[first.clone(), second.clone()], 2)
+        .expect("contact sheet builds");
+    assert_eq!(sheet.width(), 32);
+    assert_eq!(sheet.height(), 12);
+    assert_eq!(sheet.tiles().len(), 2);
+    assert_eq!(sheet.tiles()[0].descriptor.schema, CAPTURE_SCHEMA_V1);
+    assert_eq!(
+        decode_png_rgba8(&sheet.to_png_bytes().expect("sheet PNG")).width,
+        32
+    );
+
+    let report = compare_captures_with_tolerance(&first, &second, ReferenceImageTolerance::exact())
+        .expect("identical captures match");
+    assert_eq!(report.schema, "scena.capture_baseline.v1");
+    assert_eq!(report.status, "passed");
+    assert_eq!(report.actual.schema, CAPTURE_SCHEMA_V1);
+    assert_eq!(report.expected.schema, CAPTURE_SCHEMA_V1);
+    assert_eq!(report.tolerance.max_abs_diff, 0);
+    assert_eq!(report.diff.mismatched_pixels, 0);
+    assert_eq!(report.actual.capabilities.backend, Backend::Headless);
+}
+
+#[test]
 fn capture_fails_closed_when_scene_mutates_after_render() {
     let (_assets, mut scene, renderer, mesh) = rendered_box_scene_with_mesh(48, 48);
     let rendered = capture_rgba8(&scene, &renderer, CaptureOptions::default())
@@ -294,6 +375,14 @@ fn scene_host_capture_uses_rendered_state_revisions_and_pixels() {
         capture.descriptor.pixels.fnv1a64,
         scena::fnv1a64_hex(capture.rgba8.as_slice())
     );
+
+    let png_bytes = host
+        .capture_png_bytes()
+        .expect("host capture encodes descriptor-bound PNG");
+    let decoded = decode_png_rgba8(&png_bytes);
+    assert_eq!(decoded.width, 64);
+    assert_eq!(decoded.height, 64);
+    assert_eq!(decoded.rgba8, capture.rgba8);
 }
 
 fn rendered_box_scene(width: u32, height: u32) -> (Assets, Scene, Renderer) {
@@ -327,4 +416,36 @@ fn box_scene_with_camera_and_mesh(width: u32, height: u32) -> (Assets, Scene, Re
         .expect("box mesh inserts");
     let renderer = Renderer::headless(width, height).expect("headless renderer builds");
     (assets, scene, renderer, mesh)
+}
+
+#[derive(Debug)]
+struct DecodedPng {
+    width: u32,
+    height: u32,
+    rgba8: Vec<u8>,
+}
+
+fn decode_png_rgba8(bytes: &[u8]) -> DecodedPng {
+    let decoder = png::Decoder::new(Cursor::new(bytes));
+    let mut reader = decoder.read_info().expect("PNG header reads");
+    let mut buffer = vec![
+        0;
+        reader
+            .output_buffer_size()
+            .expect("PNG output buffer size is known")
+    ];
+    let info = reader.next_frame(&mut buffer).expect("PNG payload reads");
+    assert_eq!(info.color_type, png::ColorType::Rgba);
+    assert_eq!(info.bit_depth, png::BitDepth::Eight);
+    DecodedPng {
+        width: info.width,
+        height: info.height,
+        rgba8: buffer[..info.buffer_size()].to_vec(),
+    }
+}
+
+fn artifact_path(name: &str) -> PathBuf {
+    let dir = PathBuf::from("target/gate-artifacts/capture-contracts");
+    std::fs::create_dir_all(&dir).expect("artifact dir");
+    dir.join(name)
 }

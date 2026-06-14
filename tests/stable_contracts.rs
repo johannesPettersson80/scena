@@ -6,7 +6,8 @@ use std::path::PathBuf;
 use scena::{
     Aabb, AnnotationProjectionReportV1, AssetLoadReportV1, AssetProvenance, Backend,
     CAPABILITY_REPORT_SCHEMA_V1, Capabilities, CapabilityReport, CapabilityReportV1,
-    CaptureDescriptor, Color, GeometryTopology, Quat, SceneAssetGeometrySummary, Transform, Vec3,
+    CaptureBaselineReport, CaptureDescriptor, Color, GeometryTopology, Quat,
+    SceneAssetGeometrySummary, Transform, Vec3,
 };
 
 #[test]
@@ -102,12 +103,32 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
             "scena.capability_report.v1",
         ),
         (
+            "tests/assets/stable-contracts/schema_catalog.v1.json",
+            "scena.schema_catalog.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/schema_entry.v1.json",
+            "scena.schema_entry.v1",
+        ),
+        (
             "tests/assets/stable-contracts/scene_inspection.v1.json",
             "scena.scene_inspection.v1",
         ),
         (
             "tests/assets/stable-contracts/capture.v1.json",
             "scena.capture.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/capture_baseline.v1.json",
+            "scena.capture_baseline.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/render_introspection.v1.json",
+            "scena.render_introspection.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/visibility_diagnosis.v1.json",
+            "scena.visibility_diagnosis.v1",
         ),
         (
             "tests/assets/stable-contracts/annotation_projection.v1.json",
@@ -132,6 +153,18 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
         (
             "tests/assets/stable-contracts/scene_host_animation_inventory.v1.json",
             "scena.animation_inventory.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/visual_patch.v1.json",
+            "scena.visual_patch.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/visual_patch_result.v1.json",
+            "scena.visual_patch.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/host_event.v1.json",
+            "scena.host_event.v1",
         ),
     ];
 
@@ -166,6 +199,20 @@ fn capability_report_golden_matches_live_schema_serialization() {
     );
 }
 
+#[test]
+fn schema_catalog_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::SchemaCatalogV1>(
+        "tests/assets/stable-contracts/schema_catalog.v1.json",
+    );
+}
+
+#[test]
+fn schema_entry_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::SchemaEntryReportV1>(
+        "tests/assets/stable-contracts/schema_entry.v1.json",
+    );
+}
+
 #[cfg(feature = "inspection")]
 #[test]
 fn scene_inspection_golden_matches_live_schema_serialization() {
@@ -178,6 +225,29 @@ fn scene_inspection_golden_matches_live_schema_serialization() {
 fn capture_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<CaptureDescriptor>(
         "tests/assets/stable-contracts/capture.v1.json",
+    );
+}
+
+#[test]
+fn capture_baseline_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<CaptureBaselineReport>(
+        "tests/assets/stable-contracts/capture_baseline.v1.json",
+    );
+}
+
+#[cfg(feature = "inspection")]
+#[test]
+fn render_introspection_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::RenderIntrospectionReportV1>(
+        "tests/assets/stable-contracts/render_introspection.v1.json",
+    );
+}
+
+#[cfg(feature = "inspection")]
+#[test]
+fn visibility_diagnosis_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::VisibilityDiagnosisReportV1>(
+        "tests/assets/stable-contracts/visibility_diagnosis.v1.json",
     );
 }
 
@@ -320,6 +390,112 @@ fn scene_host_animation_inventory_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::SceneHostAnimationInventoryV1>(
         "tests/assets/stable-contracts/scene_host_animation_inventory.v1.json",
     );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn visual_patch_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::VisualPatchV1>(
+        "tests/assets/stable-contracts/visual_patch.v1.json",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn visual_patch_result_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::VisualPatchResultV1>(
+        "tests/assets/stable-contracts/visual_patch_result.v1.json",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn host_event_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::HostEventBatchV1>(
+        "tests/assets/stable-contracts/host_event.v1.json",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn host_event_v1_accepts_old_diagnostic_shape_without_node_handle() {
+    let batch: scena::HostEventBatchV1 = serde_json::from_value(json!({
+        "schema": "scena.host_event.v1",
+        "events": [
+            {
+                "kind": "diagnostic",
+                "code": "large_scene_precision_risk",
+                "severity": "warning",
+                "message": "large scene diagnostic",
+                "help": "use a stable origin policy"
+            }
+        ]
+    }))
+    .expect("old host_event diagnostic shape deserializes");
+
+    let node = match &batch.events[0] {
+        scena::HostEventV1::Diagnostic { node, .. } => *node,
+        event => panic!("expected diagnostic event, got {event:?}"),
+    };
+    assert_eq!(node, None);
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn visual_patch_v1_accepts_minimal_shape_with_defaulted_optional_channels() {
+    let patch: scena::VisualPatchV1 = serde_json::from_value(json!({
+        "schema": "scena.visual_patch.v1"
+    }))
+    .expect("minimal visual_patch.v1 shape deserializes");
+
+    assert_eq!(patch.schema, scena::VISUAL_PATCH_SCHEMA_V1);
+    assert!(patch.transforms.is_empty());
+    assert!(patch.tints.is_empty());
+    assert!(patch.visibility.is_empty());
+    assert_eq!(patch.camera, None);
+    assert!(patch.transforms_eased.is_empty());
+    assert!(patch.tints_eased.is_empty());
+    assert_eq!(patch.camera_eased, None);
+    assert!(patch.animation_time.is_empty());
+    assert_eq!(patch.selection, None);
+    assert_eq!(patch.hover, None);
+    assert!(patch.material_variants.is_empty());
+    assert!(patch.labels.is_empty());
+    assert_eq!(patch.metadata, None);
+    assert!(!patch.echo_metadata);
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn visual_patch_result_v1_accepts_old_shape_without_additive_0_1b_counts() {
+    let result: scena::VisualPatchResultV1 = serde_json::from_value(json!({
+        "schema": "scena.visual_patch.v1",
+        "applied": {
+            "transforms": 0,
+            "tints": 0,
+            "visibility": 0,
+            "camera": 0
+        },
+        "failed": [],
+        "revisions": {
+            "structure": 0,
+            "transform": 0,
+            "appearance": 0,
+            "visibility": 0,
+            "interaction": 0
+        }
+    }))
+    .expect("old visual_patch_result.v1 shape deserializes");
+
+    assert_eq!(result.applied.transforms_eased, 0);
+    assert_eq!(result.applied.tints_eased, 0);
+    assert_eq!(result.applied.camera_eased, 0);
+    assert_eq!(result.applied.animation_time, 0);
+    assert_eq!(result.applied.selection, 0);
+    assert_eq!(result.applied.hover, 0);
+    assert_eq!(result.applied.material_variants, 0);
+    assert_eq!(result.applied.labels, 0);
+    assert_eq!(result.metadata, None);
 }
 
 #[test]

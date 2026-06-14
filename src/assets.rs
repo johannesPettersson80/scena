@@ -18,6 +18,7 @@ mod environment_preset;
 mod environment_projection;
 #[doc(hidden)]
 pub mod environment_sidecar;
+mod external_resources;
 mod fetch;
 mod gc;
 mod gltf;
@@ -27,6 +28,7 @@ mod hot_reload;
 mod khronos;
 mod load;
 mod material_presets;
+mod material_source;
 #[cfg(feature = "obj")]
 mod obj;
 mod provenance;
@@ -58,12 +60,15 @@ pub use hot_reload::{AssetHotReloadError, AssetHotReloadWatcher};
 #[cfg(feature = "khronos-samples")]
 pub use khronos::{KhronosSample, KhronosSampleMetadata, KhronosSamples};
 pub use load::{
-    ASSET_LOAD_REPORT_SCHEMA_V1, AssetLoadControl, AssetLoadOptions, AssetLoadProgress,
-    AssetLoadProgressV1, AssetLoadReport, AssetLoadReportV1, AssetLoadWarning, AssetLoadWarningV1,
+    ASSET_LOAD_REPORT_SCHEMA_V1, AssetExternalResource, AssetExternalResourceKind,
+    AssetExternalResourceStatus, AssetExternalResourceV1, AssetLoadControl, AssetLoadOptions,
+    AssetLoadProgress, AssetLoadProgressV1, AssetLoadReport, AssetLoadReportV1, AssetLoadWarning,
+    AssetLoadWarningV1, AssetMaterialFallback, AssetMaterialFallbackKind, AssetMaterialFallbackV1,
 };
 pub use material_presets::{
     MaterialPresetAssets, MaterialPresetProvenance, source_backed_material_preset_provenance,
 };
+pub use material_source::{AssetMaterialSource, AssetMaterialSourceKind};
 pub use provenance::{AssetDerivative, AssetProvenance};
 #[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
 pub(crate) use texture::BROWSER_TEXTURE_MAX_DIMENSION_2D;
@@ -145,6 +150,7 @@ pub struct Assets<F = DefaultAssetFetcher> {
 struct AssetStorage {
     geometries: SlotMap<GeometryHandle, GeometryDesc>,
     materials: SlotMap<MaterialHandle, MaterialDesc>,
+    material_sources: BTreeMap<MaterialHandle, AssetMaterialSource>,
     textures: SlotMap<TextureHandle, TextureDesc>,
     environments: SlotMap<EnvironmentHandle, EnvironmentDesc>,
     scene_lookup: BTreeMap<AssetPath, SceneAsset>,
@@ -181,6 +187,7 @@ impl<F> Assets<F> {
             storage: Arc::new(Mutex::new(AssetStorage {
                 geometries: SlotMap::with_key(),
                 materials: SlotMap::with_key(),
+                material_sources: BTreeMap::new(),
                 textures: SlotMap::with_key(),
                 environments: SlotMap::with_key(),
                 scene_lookup: BTreeMap::new(),
@@ -247,6 +254,9 @@ impl<F> Assets<F> {
     pub fn create_material(&self, material: impl Into<MaterialDesc>) -> MaterialHandle {
         let mut storage = self.storage();
         let handle = storage.materials.insert(material.into());
+        storage
+            .material_sources
+            .insert(handle, AssetMaterialSource::user_created());
         storage.user_created_materials.insert(handle);
         handle
     }
@@ -307,6 +317,10 @@ impl<F> Assets<F> {
     /// ```
     pub fn material(&self, handle: MaterialHandle) -> Option<MaterialDesc> {
         self.storage().materials.get(handle).cloned()
+    }
+
+    pub fn material_source(&self, handle: MaterialHandle) -> Option<AssetMaterialSource> {
+        self.storage().material_sources.get(&handle).cloned()
     }
 
     pub fn try_material(&self, handle: MaterialHandle) -> Result<MaterialDesc, AssetError> {

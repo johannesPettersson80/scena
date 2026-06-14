@@ -22,6 +22,45 @@ pub(crate) fn expanded_material_preset_guide() -> String {
     )
 }
 
+pub(crate) fn write_shared_capture_fixture(fixture_root: &Path) {
+    fs::create_dir_all(fixture_root.join("src/capture")).expect("capture fixture dir");
+    fs::write(
+        fixture_root.join("src/capture.rs"),
+        "mod png; mod proof; pub use png::CapturePngError; pub use proof::{CAPTURE_BASELINE_SCHEMA_V1, CaptureContactSheet, CaptureBaselineReport, capture_contact_sheet_rgba8, compare_captures_with_tolerance}; impl CaptureRgba8 { pub fn to_png_bytes(&self) {} pub fn write_png(&self, path: impl AsRef<std::path::Path>) {} } impl Renderer { pub fn capture_png_bytes(&self) {} pub fn capture_png(&self) {} }",
+    )
+    .expect("capture fixture");
+    fs::write(
+        fixture_root.join("src/capture/png.rs"),
+        "pub enum CapturePngError {} pub(super) fn encode_png_rgba8() { png::Encoder::new(); png::ColorType::Rgba; png::BitDepth::Eight; }",
+    )
+    .expect("capture PNG fixture");
+    fs::write(
+        fixture_root.join("src/capture/proof.rs"),
+        "pub const CAPTURE_BASELINE_SCHEMA_V1: &str = \"scena.capture_baseline.v1\"; pub struct CaptureContactSheet; pub struct CaptureBaselineReport; pub fn capture_contact_sheet_rgba8() {} pub fn compare_captures_with_tolerance() {}",
+    )
+    .expect("capture proof fixture");
+    fs::write(
+        fixture_root.join("tests/capture_contracts.rs"),
+        "capture_rgba8_encodes_and_writes_png_with_descriptor_dimensions renderer_capture_png_delegates_to_capture_descriptor_path capture_contact_sheet_and_baseline_reports_record_capture_metadata capture_png_bytes()",
+    )
+    .expect("capture contract fixture");
+    fs::write(
+        fixture_root.join("examples/headless_documentation_renderer.rs"),
+        "capture.write_png serde_json::to_string_pretty(&capture.descriptor)",
+    )
+    .expect("documentation renderer fixture");
+}
+
+#[test]
+pub(crate) fn binary_render_asset_contracts_are_source_enforced() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let mut findings = Vec::new();
+
+    check_binary_render_asset_contracts(&root, &mut findings);
+
+    assert_eq!(findings, Vec::new());
+}
+
 #[test]
 pub(crate) fn cloudflare_material_proof_rejects_values_outside_committed_thresholds() {
     let root = repo_root().expect("test runs inside the scena workspace");
@@ -156,13 +195,19 @@ pub(crate) fn write_expanded_material_preset_doctor_fixture(fixture_root: &Path)
         "src/diagnostics/diagnostic.rs",
         "src/diagnostics/capabilities.rs",
         "src/demo_page/material_presets.rs",
+        "src/assets/environment_loading.rs",
+        "src/render/prepare/environment.rs",
+        "crates/xtask/src/app/prerender_environment.rs",
         "tests/round_e_material_showcase.rs",
         "tests/geometry_generated_uvs.rs",
         "tests/round_e_source_backed_material_presets.rs",
         "scripts/probe_cloudflare_material_presets.mjs",
+        "scripts/build_demo_wasm.js",
         "demo/proof/index.html",
         "demo/internal-material-spheres.html",
         "demo/internal-material-spheres.js",
+        "demo/samples/environment/white_studio_03_1k.hdr",
+        "demo/samples/environment/white_studio_03_1k.hdr.prefilter.bin",
         "tests/visual/references/round_e_material_fixture.toml",
         "tests/visual/references/round_e_material_thresholds.toml",
         "tests/visual/references/round_e_failing_baseline.json",

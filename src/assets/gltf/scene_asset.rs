@@ -11,7 +11,9 @@ use super::{
     GltfExtensionDiagnostic, MaterialVariantBinding, SceneAssetAnchor, SceneAssetConnector,
     SceneAssetSkin,
 };
-use crate::assets::{AssetPath, AssetProvenance, GeometryHandle, MaterialHandle};
+use crate::assets::{
+    AssetMaterialFallback, AssetPath, AssetProvenance, GeometryHandle, MaterialHandle,
+};
 
 pub const ASSET_GEOMETRY_SUMMARY_SCHEMA_V1: &str = "scena.asset_geometry_summary.v1";
 
@@ -44,6 +46,7 @@ pub(in crate::assets::gltf) struct SceneAssetData {
     pub(in crate::assets::gltf) extensions_required: Vec<String>,
     pub(in crate::assets::gltf) extension_diagnostics: Vec<GltfExtensionDiagnostic>,
     pub(in crate::assets::gltf) material_variants: Vec<String>,
+    pub(in crate::assets::gltf) material_fallbacks: Vec<AssetMaterialFallback>,
     pub(in crate::assets::gltf) provenance: AssetProvenance,
     pub(in crate::assets::gltf) retained_source_bytes: Option<Arc<[u8]>>,
 }
@@ -95,6 +98,7 @@ impl SceneAsset {
                 extensions_required: Vec::new(),
                 extension_diagnostics: Vec::new(),
                 material_variants: Vec::new(),
+                material_fallbacks: Vec::new(),
                 provenance: AssetProvenance::new("memory:empty"),
                 retained_source_bytes: None,
             }),
@@ -171,6 +175,10 @@ impl SceneAsset {
     /// order; empty when the extension is absent (Phase 2B step 1).
     pub fn material_variants(&self) -> &[String] {
         &self.inner.material_variants
+    }
+
+    pub fn material_fallbacks(&self) -> &[AssetMaterialFallback] {
+        &self.inner.material_fallbacks
     }
 
     pub fn retained_source_bytes_len(&self) -> Option<usize> {

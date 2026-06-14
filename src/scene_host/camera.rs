@@ -80,6 +80,14 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     }
 
     pub fn set_camera(&mut self, state: SceneHostCameraState) -> Result<(), SceneHostError> {
+        self.cancel_camera_transition();
+        self.apply_camera_state(state)
+    }
+
+    pub(super) fn apply_camera_state(
+        &mut self,
+        state: SceneHostCameraState,
+    ) -> Result<(), SceneHostError> {
         state.validate().map_err(|message| {
             SceneHostError::new(SceneHostErrorCode::InvalidInput, message.to_owned())
         })?;
@@ -147,6 +155,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             .scene
             .node_world_bounds(node, &self.assets)?
             .ok_or(LookupError::ImportHasNoBounds)?;
+        self.cancel_camera_transition();
         self.scene.frame(self.active_camera, bounds)?;
         self.camera_controls =
             controls_from_scene_camera(&self.scene, self.active_camera, bounds.center())?;
@@ -188,6 +197,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             bounds,
             options.fill(fill).margin_px(48.0).viewport(width, height),
         )?;
+        self.cancel_camera_transition();
         self.camera_controls = OrbitControls::from_framing(framing);
         Ok(())
     }
@@ -197,6 +207,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             .scene
             .node_world_bounds(self.scene.root(), &self.assets)?
             .ok_or(LookupError::ImportHasNoBounds)?;
+        self.cancel_camera_transition();
         self.scene.frame(self.active_camera, bounds)?;
         self.camera_controls =
             controls_from_scene_camera(&self.scene, self.active_camera, bounds.center())?;
@@ -214,6 +225,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 | HostOrbitControlAction::Pan
                 | HostOrbitControlAction::Zoom
         ) {
+            self.cancel_camera_transition();
             self.camera_controls
                 .apply_to_scene(&mut self.scene, self.active_camera)?;
         }

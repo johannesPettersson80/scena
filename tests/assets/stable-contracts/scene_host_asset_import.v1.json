@@ -41,6 +41,8 @@
         "kind": "cached",
         "path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
       }
-    ]
+    ],
+    "external_resources": [],
+    "material_fallbacks": []
   }
 }

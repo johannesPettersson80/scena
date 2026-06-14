@@ -1,0 +1,201 @@
+{
+  "schema": "scena.capture_baseline.v1",
+  "status": "passed",
+  "actual": {
+    "schema": "scena.capture.v1",
+    "width": 64,
+    "height": 64,
+    "pixel_format": "rgba8",
+    "payload": {
+      "kind": "rgba8",
+      "byte_length": 16384,
+      "fnv1a64": "0123456789abcdef"
+    },
+    "revisions": {
+      "structure": 3,
+      "transform": 2,
+      "appearance": 0,
+      "interaction": 0
+    },
+    "camera": {
+      "active": true,
+      "world_transform": {
+        "translation": [0.0, 0.0, 2.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "projection": {
+        "kind": "perspective",
+        "vertical_fov_radians": 1.0471975803375244,
+        "aspect": 1.0,
+        "near": 0.009999999776482582,
+        "far": 1000.0
+      }
+    },
+    "viewport": {
+      "width": 64,
+      "height": 64,
+      "logical_width": 64.0,
+      "logical_height": 64.0,
+      "device_pixel_ratio": 1.0
+    },
+    "backend": "headless",
+    "capabilities": {
+      "alpha_pipeline": "linear_source_over",
+      "backend": "headless",
+      "bloom": "supported",
+      "color_target_format": "Rgba8UnormSrgb",
+      "compute_shaders": "feature_disabled",
+      "default_clipping_planes": 8,
+      "directional_shadow_map_default_size": 2048,
+      "directional_shadow_map_max_size": 4096,
+      "directional_shadow_pcf_kernel": 3,
+      "directional_shadows": "degraded",
+      "forward_pbr": "degraded",
+      "fragment_high_precision": "feature_disabled",
+      "gpu_device": false,
+      "gpu_frustum_culling": "feature_disabled",
+      "hardware_instancing": "feature_disabled",
+      "hardware_tier": "low",
+      "ibl_brdf_lut_default_size": 256,
+      "ibl_cubemap_default_size": 256,
+      "max_clipping_planes": 16,
+      "max_texture_array_layers": 0,
+      "order_independent_transparency": "supported",
+      "output_stage": "pbr_neutral_srgb",
+      "per_instance_culling": "degraded",
+      "physical_glass_transmission": "degraded",
+      "point_shadows": "feature_disabled",
+      "readback_headless_screenshots": "supported",
+      "reversed_z_depth": "feature_disabled",
+      "screen_space_ambient_occlusion": "supported",
+      "spot_shadows": "feature_disabled",
+      "storage_buffers": "feature_disabled",
+      "surface_attached": false,
+      "texture_arrays": "feature_disabled",
+      "texture_compression_basisu": "feature_disabled",
+      "uniform_buffer_max_bytes": 0,
+      "uniform_buffers": "feature_disabled",
+      "wide_gamut_output": "feature_disabled"
+    },
+    "auto_frame": null,
+    "pixels": {
+      "nonblack": 1024,
+      "bbox": {
+        "min_x": 16,
+        "min_y": 16,
+        "max_x": 47,
+        "max_y": 47,
+        "width": 32,
+        "height": 32
+      },
+      "center": [255, 255, 255, 255],
+      "fnv1a64": "0123456789abcdef"
+    }
+  },
+  "expected": {
+    "schema": "scena.capture.v1",
+    "width": 64,
+    "height": 64,
+    "pixel_format": "rgba8",
+    "payload": {
+      "kind": "rgba8",
+      "byte_length": 16384,
+      "fnv1a64": "0123456789abcdef"
+    },
+    "revisions": {
+      "structure": 3,
+      "transform": 2,
+      "appearance": 0,
+      "interaction": 0
+    },
+    "camera": {
+      "active": true,
+      "world_transform": {
+        "translation": [0.0, 0.0, 2.0],
+        "rotation": [0.0, 0.0, 0.0, 1.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "projection": {
+        "kind": "perspective",
+        "vertical_fov_radians": 1.0471975803375244,
+        "aspect": 1.0,
+        "near": 0.009999999776482582,
+        "far": 1000.0
+      }
+    },
+    "viewport": {
+      "width": 64,
+      "height": 64,
+      "logical_width": 64.0,
+      "logical_height": 64.0,
+      "device_pixel_ratio": 1.0
+    },
+    "backend": "headless",
+    "capabilities": {
+      "alpha_pipeline": "linear_source_over",
+      "backend": "headless",
+      "bloom": "supported",
+      "color_target_format": "Rgba8UnormSrgb",
+      "compute_shaders": "feature_disabled",
+      "default_clipping_planes": 8,
+      "directional_shadow_map_default_size": 2048,
+      "directional_shadow_map_max_size": 4096,
+      "directional_shadow_pcf_kernel": 3,
+      "directional_shadows": "degraded",
+      "forward_pbr": "degraded",
+      "fragment_high_precision": "feature_disabled",
+      "gpu_device": false,
+      "gpu_frustum_culling": "feature_disabled",
+      "hardware_instancing": "feature_disabled",
+      "hardware_tier": "low",
+      "ibl_brdf_lut_default_size": 256,
+      "ibl_cubemap_default_size": 256,
+      "max_clipping_planes": 16,
+      "max_texture_array_layers": 0,
+      "order_independent_transparency": "supported",
+      "output_stage": "pbr_neutral_srgb",
+      "per_instance_culling": "degraded",
+      "physical_glass_transmission": "degraded",
+      "point_shadows": "feature_disabled",
+      "readback_headless_screenshots": "supported",
+      "reversed_z_depth": "feature_disabled",
+      "screen_space_ambient_occlusion": "supported",
+      "spot_shadows": "feature_disabled",
+      "storage_buffers": "feature_disabled",
+      "surface_attached": false,
+      "texture_arrays": "feature_disabled",
+      "texture_compression_basisu": "feature_disabled",
+      "uniform_buffer_max_bytes": 0,
+      "uniform_buffers": "feature_disabled",
+      "wide_gamut_output": "feature_disabled"
+    },
+    "auto_frame": null,
+    "pixels": {
+      "nonblack": 1024,
+      "bbox": {
+        "min_x": 16,
+        "min_y": 16,
+        "max_x": 47,
+        "max_y": 47,
+        "width": 32,
+        "height": 32
+      },
+      "center": [255, 255, 255, 255],
+      "fnv1a64": "0123456789abcdef"
+    }
+  },
+  "tolerance": {
+    "max_abs_diff": 0,
+    "max_mismatched_pixels": 0
+  },
+  "diff": {
+    "width": 64,
+    "height": 64,
+    "total_pixels": 4096,
+    "mismatched_pixels": 0,
+    "max_abs_diff": 0,
+    "mean_abs_diff": 0.0,
+    "total_abs_diff": 0
+  }
+}

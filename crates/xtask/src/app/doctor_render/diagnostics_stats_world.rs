@@ -12,6 +12,11 @@ pub(crate) fn check_diagnostics_contracts(root: &Path, findings: &mut Vec<Findin
             "pub severity: DiagnosticSeverity",
             "pub message: String",
             "pub help: Option<String>",
+            "pub struct DiagnosticContext",
+            "#[serde(skip)]",
+            "pub fn node(&self) -> Option<NodeKey>",
+            "pub(crate) fn warning_for_node",
+            "pub(crate) fn error_for_node",
             "pub enum DiagnosticCode",
             "InvalidCameraProjection",
             "ObjectsBehindCamera",
@@ -28,7 +33,9 @@ pub(crate) fn check_diagnostics_contracts(root: &Path, findings: &mut Vec<Findin
         findings,
         "ARCH-DIAGNOSTICS",
         "src/diagnostics.rs",
-        &["pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity}"],
+        &[
+            "pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticContext, DiagnosticSeverity}",
+        ],
     );
     require_contains(
         root,
@@ -82,10 +89,19 @@ pub(crate) fn check_diagnostics_contracts(root: &Path, findings: &mut Vec<Findin
             "DiagnosticCode::InvalidCameraProjection",
             "DiagnosticCode::LargeScenePrecisionRisk",
             "DiagnosticCode::DepthPrecisionRisk",
+            "Diagnostic::warning_for_node",
+            "Diagnostic::error_for_node",
             "DiagnosticCode::WebGl2DepthCompatibility",
             "scene.mesh_bounds_nodes()",
             "mesh bounds",
         ],
+    );
+    forbid_contains(
+        root,
+        findings,
+        "ARCH-DIAGNOSTICS",
+        "src/render/prepare/diagnostics.rs",
+        &["node {node:?}", "camera node {node:?}"],
     );
     require_contains(
         root,
@@ -108,6 +124,8 @@ pub(crate) fn check_diagnostics_contracts(root: &Path, findings: &mut Vec<Findin
             "DiagnosticCode::DepthPrecisionRisk",
             "DiagnosticCode::LargeScenePrecisionRisk",
             "DiagnosticSeverity::Warning",
+            "diagnostic.node()",
+            "!diagnostic.message().contains(\"NodeKey(\")",
         ],
     );
     require_contains(

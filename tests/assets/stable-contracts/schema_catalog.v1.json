@@ -1,0 +1,109 @@
+{
+  "schema": "scena.schema_catalog.v1",
+  "entries": [
+    {
+      "schema": "scena.schema_catalog.v1",
+      "owner_module": "schema_catalog",
+      "summary": "Catalog of public stable scena JSON contracts.",
+      "fixture_path": "tests/assets/stable-contracts/schema_catalog.v1.json"
+    },
+    {
+      "schema": "scena.schema_entry.v1",
+      "owner_module": "schema_catalog",
+      "summary": "Single schema catalog entry with a representative example.",
+      "fixture_path": "tests/assets/stable-contracts/schema_entry.v1.json"
+    },
+    {
+      "schema": "scena.capability_report.v1",
+      "owner_module": "diagnostics",
+      "summary": "Renderer capability status and diagnostics.",
+      "fixture_path": "tests/assets/stable-contracts/capability_report.v1.json"
+    },
+    {
+      "schema": "scena.scene_inspection.v1",
+      "owner_module": "scene",
+      "summary": "Scene graph, draw-list, bounds, material, and revision inspection.",
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/scene_inspection.v1.json"
+    },
+    {
+      "schema": "scena.capture.v1",
+      "owner_module": "capture",
+      "summary": "Descriptor-bound RGBA8 capture metadata and payload hash.",
+      "fixture_path": "tests/assets/stable-contracts/capture.v1.json"
+    },
+    {
+      "schema": "scena.capture_baseline.v1",
+      "owner_module": "capture",
+      "summary": "Tolerance-bound capture comparison report.",
+      "fixture_path": "tests/assets/stable-contracts/capture_baseline.v1.json"
+    },
+    {
+      "schema": "scena.render_introspection.v1",
+      "owner_module": "render",
+      "summary": "Capture-bound frame visibility, luminance, framing, reason, and fix summary.",
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/render_introspection.v1.json"
+    },
+    {
+      "schema": "scena.visibility_diagnosis.v1",
+      "owner_module": "render",
+      "summary": "Inspection-backed visibility diagnosis with stable reasons and suggested fixes.",
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/visibility_diagnosis.v1.json"
+    },
+    {
+      "schema": "scena.annotation_projection.v1",
+      "owner_module": "scene",
+      "summary": "Projected annotation anchors and CSS-pixel screen positions.",
+      "fixture_path": "tests/assets/stable-contracts/annotation_projection.v1.json"
+    },
+    {
+      "schema": "scena.asset_geometry_summary.v1",
+      "owner_module": "assets",
+      "summary": "Imported geometry counts, bounds, and topology summary.",
+      "fixture_path": "tests/assets/stable-contracts/asset_geometry_summary.v1.json"
+    },
+    {
+      "schema": "scena.asset_load_report.v1",
+      "owner_module": "assets",
+      "summary": "Asset load warnings, external resources, and material fallback provenance.",
+      "fixture_path": "tests/assets/stable-contracts/asset_load_report.v1.json"
+    },
+    {
+      "schema": "scena.scene_host_asset_import.v1",
+      "owner_module": "scene_host",
+      "summary": "SceneHost import result with stable host handles and diagnostics.",
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/scene_host_asset_import.v1.json"
+    },
+    {
+      "schema": "scena.subtree.v1",
+      "owner_module": "scene_host",
+      "summary": "SceneHost subtree report with stable node handles.",
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/scene_host_subtree.v1.json"
+    },
+    {
+      "schema": "scena.animation_inventory.v1",
+      "owner_module": "scene_host",
+      "summary": "SceneHost animation clip inventory.",
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/scene_host_animation_inventory.v1.json"
+    },
+    {
+      "schema": "scena.visual_patch.v1",
+      "owner_module": "scene_host",
+      "summary": "Batched host-to-scena visual state patch and result contract.",
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/visual_patch.v1.json"
+    },
+    {
+      "schema": "scena.host_event.v1",
+      "owner_module": "scene_host",
+      "summary": "SceneHost event batch for pick, hover, load, diagnostic, capture, and surface events.",
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/host_event.v1.json"
+    }
+  ]
+}

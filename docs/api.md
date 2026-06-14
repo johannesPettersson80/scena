@@ -10,6 +10,44 @@ The authoritative API reference is generated on docs.rs:
 
 Use this page as the conceptual map.
 
+Additive public API changes in Unreleased:
+
+- `VISUAL_PATCH_SCHEMA_V1` (gated behind `scene-host`)
+- `VisualPatchV1`, `VisualPatchTransformV1`, `VisualPatchTintV1`,
+  `VisualPatchVisibilityV1`, `VisualPatchTransformEasedV1`,
+  `VisualPatchTintEasedV1`, `VisualPatchCameraEasedV1`,
+  `VisualPatchAnimationTimeV1`, `VisualPatchAnimationTimeModeV1`,
+  `VisualPatchResultV1`, `VisualPatchAppliedCountsV1`,
+  `VisualPatchEntryErrorV1`, and
+  `VisualPatchRevisionDeltaV1` (gated behind `scene-host`)
+- `SceneHostCore::apply_patch` and `SceneHostCore::apply_patch_json`
+  (gated behind `scene-host`)
+- `HOST_EVENT_SCHEMA_V1`, `HostEventBatchV1`, `HostEventV1`,
+  `HostEventHitV1`, `HostEventTargetKindV1`, `HostEventButtonV1`,
+  `HostEventModifiersV1`, and `HostEventHoverPhaseV1` (gated behind
+  `scene-host`)
+- `SceneHostCore::set_event_sink`, `SceneHostCore::clear_event_sink`,
+  `SceneHostCore::drain_events`, `SceneHostCore::drain_events_json`,
+  `SceneHostCore::hover`, and `SceneHostCore::select` (gated behind
+  `scene-host`)
+- `RENDER_INTROSPECTION_SCHEMA_V1`, `RenderIntrospectionReportV1`,
+  `RenderIntrospectionOptions`, `RenderIntrospectionReasonV1`,
+  `RenderIntrospectionFixV1`, `RenderIntrospectionFramingV1`,
+  `RenderIntrospectionNodesSummaryV1`, `RenderIntrospectionNodeDetailV1`,
+  `RenderIntrospectionArtifactsV1`, and
+  `Renderer::introspect_capture` (gated behind `inspection`)
+- `VISIBILITY_DIAGNOSIS_SCHEMA_V1`, `VisibilityDiagnosisReportV1`,
+  `VisibilityDiagnosisOptions`, `VisibilityDiagnosisReasonV1`,
+  `VisibilityDiagnosisFixV1`, `VisibilityDiagnosisSummaryV1`,
+  `VisibilityDiagnosisTargetV1`, `VisibilityDiagnosisEvidenceV1`, and
+  `Renderer::diagnose_visibility` (gated behind `inspection`)
+- `SCHEMA_CATALOG_SCHEMA_V1`, `SCHEMA_ENTRY_SCHEMA_V1`,
+  `SchemaCatalogV1`, `SchemaCatalogEntryV1`, `SchemaEntryReportV1`,
+  `schema_catalog_v1`, `schema_catalog_entry`, `schema_entry_report_v1`,
+  and `nearest_schema_name`
+- The `scena` binary with `schema list` and `schema get <schema>` JSON
+  commands
+
 Additive public API changes in 1.7.0:
 
 - `Transform`, `Aabb`, `Color`, `GeometryTopology`, capability enums, and
@@ -50,7 +88,9 @@ Additive public API changes in 1.7.0:
 - `SceneAsset::bounds`
 - `SceneAsset::geometry_summary`
 - `ASSET_LOAD_REPORT_SCHEMA_V1`
-- `AssetLoadReportV1`, `AssetLoadWarningV1`, and `AssetLoadProgressV1`
+- `AssetLoadReportV1`, `AssetLoadWarningV1`, `AssetLoadProgressV1`,
+  `AssetExternalResourceV1`, and `AssetMaterialFallbackV1`
+- `AssetMaterialSource` and `AssetMaterialSourceKind`
 - `AssetLoadReport<SceneAsset>::to_schema_report`
 - `AssetLoadReport<SceneAsset>::to_schema_json`
 - `AssetLoadOptions::with_strict_external_resources`
@@ -58,6 +98,8 @@ Additive public API changes in 1.7.0:
 - `SceneAsset::provenance`
 - `TextureDesc::provenance`
 - `EnvironmentDesc::provenance`
+- `SceneMaterialInspectionV1`, `SceneMaterialSourceInspectionV1`, and
+  `SceneMaterialSlotInspectionV1`
 - `AnnotationAnchor`, `AnnotationAnchorTarget`,
   `AnnotationProjectionReportV1`, `AnnotationProjectionV1`,
   `SCENE_ANNOTATION_PROJECTION_SCHEMA_V1`,
@@ -79,17 +121,28 @@ Additive public API changes in 1.7.0:
   `ScreenSpaceAmbientOcclusionConfig`, `Renderer::set_anti_aliasing`,
   `Renderer::set_bloom`, and `Renderer::set_screen_space_ambient_occlusion`
 - `CAPTURE_SCHEMA_V1`
+- `CAPTURE_BASELINE_SCHEMA_V1`
 - `capture_rgba8`
 - `Renderer::capture_rgba8`
+- `Renderer::capture_png_bytes`
+- `Renderer::capture_png`
 - `FirstRender::capture`
 - `HeadlessGltfViewer::capture`
 - `InteractiveGltfViewer::capture`
+- `CaptureRgba8::to_png_bytes`
+- `CaptureRgba8::write_png`
+- `capture_contact_sheet_rgba8`
+- `compare_captures_with_tolerance`
 - `CaptureDescriptor`, `CaptureRgba8`, `CaptureOptions`,
   `CaptureRevisions`, `CaptureCamera`, `CaptureProjection`,
   `CaptureViewport`, `CapturePayload`, `CapturePayloadKind`,
   `CaptureAutoFrame`, `CaptureAutoFrameViewport`, `CapturePoint2`,
   `CaptureScreenRect`, `CapturePixelSummary`, `CapturePixelBounds`, and
   `CaptureError`
+- `CapturePngError`, `CaptureContactSheet`, `CaptureContactSheetTile`,
+  `CaptureContactSheetError`, `CaptureBaselineReport`,
+  `CaptureBaselineDiff`, `CaptureBaselineTolerance`, and
+  `CaptureBaselineError`
 - `fnv1a64_hex`, `sample_rgba8`, `summarize_rgba8`,
   `summarize_pixel_readback`, and `auto_frame_metadata`
 
@@ -97,10 +150,12 @@ The `scene-host` feature also exports a WASM `SceneHost` wrapper on
 `wasm32`. Its node handles are opaque `u64` values owned by the host. The same
 handle values are used for construction, transform updates, picking, and
 `inspectJson()` output. Phase 3 also exports real `capture()` /
-`captureJson()` methods that return `scena.capture.v1` metadata for the latest
-rendered RGBA8 frame; these are not placeholders. Capture descriptors are
-bound to the renderer's last rendered scene/camera state and fail with
-`CaptureError::StaleRender` if the scene is mutated before capture.
+`captureJson()` and `capturePng()` methods that return `scena.capture.v1`
+metadata for the latest rendered RGBA8 frame; these are not placeholders.
+Capture descriptors are bound to the renderer's last rendered scene/camera
+state and fail with `CaptureError::StaleRender` if the scene is mutated before
+capture. PNG helpers delegate to `CaptureRgba8`, so viewer, renderer,
+SceneHost, and browser captures use the same descriptor-bound byte path.
 Phase 4 adds real `removeNode` and `removeImport` host methods. Removed node
 handles are invalidated in the host table, so later use returns
 `SceneHostErrorCode::StaleNodeHandle` rather than aliasing a recycled node.
@@ -151,6 +206,11 @@ and generated derivatives. `scena.asset_load_report.v1` and
 `scena.asset_geometry_summary.v1` include the same provenance value. Existing
 environment source accessors continue to delegate to the same provenance
 record.
+Asset-aware scene inspection also reports material evidence without exposing raw
+asset handles. `SceneMaterialInspectionV1` names the source kind
+(`source_material`, `generated_default`, `user_created`, or `unknown`), source
+asset path/material index when known, texture provenance rows, and material
+fallback rows such as optional Basis/KTX2 texture fallbacks.
 SceneHost includes interactive camera state without giving the host a render
 loop. Native code can call `SceneHostCore::set_camera`,
 `SceneHostCore::get_camera`, `SceneHostCore::camera_json`,
@@ -158,6 +218,21 @@ loop. Native code can call `SceneHostCore::set_camera`,
 `camera_wheel`. The WASM facade exposes the corresponding `setCamera`,
 `setCameraJson`, `getCameraJson`, `cameraPointerDown`, `cameraPointerMove`,
 `cameraPointerUp`, and `cameraWheel` methods.
+The visual patch contract accepts batched host-owned visual deltas through
+`SceneHostCore::apply_patch`, `SceneHostCore::apply_patch_json`, and WASM
+`applyPatch`. The `scena.visual_patch.v1` envelope supports immediate
+transforms, tints, visibility, camera state, eased transform/tint/camera
+targets, explicit animation mixer time changes, programmatic selection/hover,
+material variants, host-owned label anchors, and optional echoed metadata. It
+returns changed counts, per-entry failures, and revision deltas.
+The host event contract reports renderer-to-host observations through
+`SceneHostCore::set_event_sink`, `drain_events`, `drain_events_json`, and WASM
+`drainEventsJson`. `scena.host_event.v1` batches include pick, hover,
+selection, load, diagnostic, capture, surface, context, device, and capability
+events using the same stable `u64` handles as inspection and visual patches.
+Pick and hover coordinates are CSS pixels; physical dimensions are named
+explicitly. Native event sinks are push-only: while a sink is registered,
+events are delivered to it and are not queued for later drains.
 
 Runnable SceneHost examples:
 
@@ -173,7 +248,8 @@ updates. `examples/scene_host_browser_contracts.js` shows the matching WASM
 method names: `setAntiAliasing`, `setBloom`, `setAmbientOcclusion`,
 `instantiateUrlInstancedUnder`, `setVisible`, `setNodeTint`,
 `animationInventoryJson`, `playAnimation`, `pauseAnimation`, `advance`,
-`setTransformEased`, `setTransformsEasedTyped`, and `setNodeTintEased`.
+`setTransformEased`, `setTransformsEasedTyped`, `setNodeTintEased`, and
+`applyPatch`.
 Golden JSON fixtures for the shipped v1 reports live under
 `tests/assets/stable-contracts/`.
 
@@ -183,6 +259,7 @@ Additive public API changes in 1.2.0:
 - `Assets::load_scene_with_options`
 - `Assets::load_scene_with_report_options`
 - `DiagnosticCode::MaterialTextureMissingDecodedPixels`
+- `DiagnosticContext`
 - `RendererStats::material_textures_missing_decoded_pixels`
 
 Additive public API changes in 1.3.0:
@@ -587,6 +664,9 @@ Public failures use structured errors such as:
 - `ReferenceImageError`
 - `ViewerCaptureError`
 - `ViewerPngError`
+- `CapturePngError`
+- `CaptureContactSheet`
+- `CaptureBaselineReport`
 
 Most errors include a stable category plus contextual data. Use pattern matching
 for application behavior and `.help()` or diagnostics output for user-facing

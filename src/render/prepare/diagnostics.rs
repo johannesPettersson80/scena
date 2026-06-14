@@ -32,10 +32,11 @@ pub(in crate::render) fn collect_precision_diagnostics(
         if absolute_magnitude >= LARGE_SCENE_TRANSLATION_WARNING
             && magnitude >= LARGE_SCENE_TRANSLATION_WARNING
         {
-            diagnostics.push(Diagnostic::warning(
+            diagnostics.push(Diagnostic::warning_for_node(
                 DiagnosticCode::LargeScenePrecisionRisk,
+                node,
                 format!(
-                    "node {node:?} is {magnitude:.1} scene units from the origin; f32 transform precision may be visible"
+                    "node is {magnitude:.1} scene units from the origin; f32 transform precision may be visible"
                 ),
                 "use camera-relative rendering or an origin-shift policy for large-world scenes",
             ));
@@ -53,10 +54,11 @@ pub(in crate::render) fn collect_precision_diagnostics(
         if near > 0.0 && far.is_finite() && near.is_finite() {
             let ratio = far / near;
             if ratio > DEPTH_RANGE_RATIO_WARNING {
-                diagnostics.push(Diagnostic::warning(
+                diagnostics.push(Diagnostic::warning_for_node(
                     DiagnosticCode::DepthPrecisionRisk,
+                    node,
                     format!(
-                        "camera node {node:?} has far/near ratio {ratio:.0}; depth precision may cause z-fighting"
+                        "camera node has far/near ratio {ratio:.0}; depth precision may cause z-fighting"
                     ),
                     "use DepthRange::fit_sphere for focused views or tighten camera near/far planes",
                 ));
@@ -79,9 +81,10 @@ pub(in crate::render) fn collect_camera_projection_diagnostics(scene: &Scene) ->
     let mut diagnostics = Vec::new();
     for (node, _camera_key, camera) in scene.camera_nodes() {
         if !is_valid_depth_range(camera) {
-            diagnostics.push(Diagnostic::error(
+            diagnostics.push(Diagnostic::error_for_node(
                 DiagnosticCode::InvalidCameraProjection,
-                format!("camera node {node:?} has an invalid near/far depth range"),
+                node,
+                "camera node has an invalid near/far depth range",
                 "set finite camera near and far values with far greater than near; perspective near must be positive",
             ));
         }

@@ -143,19 +143,23 @@ the host asset store.
 return schema `scena.scene_host_asset_import.v1`: the new import handle plus
 the nested `scena.asset_load_report.v1` report. That report includes
 node/mesh/primitive counts, asset bounds, fetched byte counts, cache-hit state,
-external resource counts, progress events, and typed missing-resource warnings.
-Cache-hit reports preserve warnings from the original load.
+external resource counts, progress events, external buffer/image status rows,
+typed missing-resource warnings, and material fallback provenance. Cache-hit
+reports preserve warnings and resource-status rows from the original load.
 
 `capture()` returns a JS object with `descriptorJson` and an `rgba8`
-`Uint8Array`. `captureJson()` returns only the descriptor JSON. The descriptor
-uses schema `scena.capture.v1` and records dimensions, payload length/hash,
-rendered scene revision counters, active camera transform/projection,
-viewport/DPR, backend capabilities, auto-frame metadata when available, and
-pixel summary. If the embedder mutates scene state after `render()` and before
-`capture()`, the host returns a structured capture error instead of serializing
-stale proof metadata. CPU-headless captures are deterministic for the same
-scene state. Browser GPU captures bind pixels to revision counters and
-backend/capability metadata; they do not claim cross-machine byte identity.
+`Uint8Array`. `capturePng()` returns `descriptorJson` plus a PNG `Uint8Array`
+encoded from the same descriptor-bound capture, without relying on canvas
+`toDataURL` as the only path. `captureJson()` returns only the descriptor JSON.
+The descriptor uses schema `scena.capture.v1` and records dimensions, payload
+length/hash, rendered scene revision counters, active camera
+transform/projection, viewport/DPR, backend capabilities, auto-frame metadata
+when available, and pixel summary. If the embedder mutates scene state after
+`render()` and before `capture()`, the host returns a structured capture error
+instead of serializing stale proof metadata. CPU-headless captures are
+deterministic for the same scene state. Browser GPU captures bind pixels to
+revision counters and backend/capability metadata; they do not claim
+cross-machine byte identity.
 
 Real browser/GPU proof is separate from CPU builder validation. The required
 proof plan and output artifacts are tracked in

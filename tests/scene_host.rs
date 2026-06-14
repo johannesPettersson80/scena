@@ -1,15 +1,22 @@
 #![cfg(all(feature = "scene-host", not(target_arch = "wasm32")))]
 
-use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, FRAC_PI_6};
+use std::cell::RefCell;
+use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, FRAC_PI_6, PI};
+use std::rc::Rc;
 
 use scena::{
     ASSET_LOAD_REPORT_SCHEMA_V1, AnnotationProjectionReportV1, AntiAliasing, AssetPath, Assets,
-    AutoExposureConfig, Color, GeometryDesc, ImportOptions, MaterialDesc, OrbitControlAction,
+    AutoExposureConfig, Color, GeometryDesc, HOST_EVENT_SCHEMA_V1, HitTarget, HostEventBatchV1,
+    HostEventHoverPhaseV1, HostEventV1, ImportOptions, MaterialDesc, OrbitControlAction,
     PointerButton, PostBloomConfig, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1,
     SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostAnimationInventoryV1, SceneHostAnimationLoopMode,
     SceneHostAnimationPlayOptions, SceneHostCameraState, SceneHostCore, SceneHostEasing,
     SceneHostErrorCode, SceneHostSubtreeReportV1, SceneInspectionReportV1,
-    ScreenSpaceAmbientOcclusionConfig, Transform, Vec3,
+    ScreenSpaceAmbientOcclusionConfig, SurfaceEvent, Transform, VISUAL_PATCH_SCHEMA_V1, Vec3,
+    VisualPatchAnimationTimeModeV1, VisualPatchAnimationTimeV1, VisualPatchCameraEasedV1,
+    VisualPatchHoverV1, VisualPatchLabelTargetV1, VisualPatchLabelV1, VisualPatchMaterialVariantV1,
+    VisualPatchResultV1, VisualPatchSelectionV1, VisualPatchTintEasedV1,
+    VisualPatchTransformEasedV1, VisualPatchTransformV1, VisualPatchV1, VisualPatchVisibilityV1,
 };
 
 #[test]
@@ -272,6 +279,724 @@ fn scene_host_core_constructs_poses_inspects_picks_and_frames_with_one_handle_na
 }
 
 #[test]
+fn scene_host_visual_patch_0_1a_updates_stable_handles_and_reports_revision_deltas() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+    let root = host.root_handle();
+    let target = host
+        .add_empty(Some(root), Transform::IDENTITY, Some("visual-patch-target"))
+        .expect("target inserts");
+    let camera = SceneHostCameraState {
+        target: Vec3::new(0.0, 0.0, 0.0),
+        distance: 4.0,
+        yaw_radians: FRAC_PI_4,
+        pitch_radians: FRAC_PI_6,
+    };
+    let patch = VisualPatchV1 {
+        transforms: vec![VisualPatchTransformV1 {
+            node: target,
+            transform: Transform::at(Vec3::new(1.0, 2.0, 3.0)),
+        }],
+        tints: vec![scena::VisualPatchTintV1 {
+            node: target,
+            tint: Some(Color::from_linear_rgba(0.2, 0.4, 0.6, 1.0)),
+        }],
+        visibility: vec![VisualPatchVisibilityV1 {
+            node: target,
+            visible: false,
+        }],
+        camera: Some(camera),
+        ..VisualPatchV1::default()
+    };
+
+    let result = host.apply_patch(&patch).expect("visual patch applies");
+
+    assert_eq!(result.schema, VISUAL_PATCH_SCHEMA_V1);
+    assert_eq!(result.applied.transforms, 1);
+    assert_eq!(result.applied.tints, 1);
+    assert_eq!(result.applied.visibility, 1);
+    assert_eq!(result.applied.camera, 1);
+    assert!(result.failed.is_empty());
+    assert_eq!(result.revisions.structure, 0);
+    assert!(result.revisions.transform > 0);
+    assert!(result.revisions.appearance > 0);
+    assert!(result.revisions.visibility > 0);
+
+    let report: SceneInspectionReportV1 =
+        serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
+            .expect("inspection json decodes");
+    let node = report
+        .node_by_handle(target)
+        .expect("patched node remains inspectable");
+    assert_eq!(node.local_transform.translation, Vec3::new(1.0, 2.0, 3.0));
+    assert_eq!(node.tint, Some(Color::from_linear_rgba(0.2, 0.4, 0.6, 1.0)));
+    assert!(!node.visible);
+    assert_eq!(host.get_camera(), camera);
+
+    let no_change = host
+        .apply_patch(&patch)
+        .expect("unchanged visual patch is valid");
+    assert_eq!(no_change.applied.transforms, 0);
+    assert_eq!(no_change.applied.tints, 0);
+    assert_eq!(no_change.applied.visibility, 0);
+    assert_eq!(no_change.applied.camera, 0);
+    assert!(no_change.failed.is_empty());
+    assert_eq!(no_change.revisions.structure, 0);
+    assert_eq!(no_change.revisions.transform, 0);
+    assert_eq!(no_change.revisions.appearance, 0);
+    assert_eq!(no_change.revisions.visibility, 0);
+    assert_eq!(no_change.revisions.interaction, 0);
+}
+
+#[test]
+fn scene_host_visual_patch_reports_per_entry_failures_without_skipping_valid_entries() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+    let root = host.root_handle();
+    let target = host
+        .add_empty(Some(root), Transform::IDENTITY, Some("valid-target"))
+        .expect("target inserts");
+    let patch = VisualPatchV1 {
+        transforms: vec![
+            VisualPatchTransformV1 {
+                node: target,
+                transform: Transform::at(Vec3::new(2.0, 0.0, 0.0)),
+            },
+            VisualPatchTransformV1 {
+                node: u64::MAX,
+                transform: Transform::at(Vec3::new(9.0, 0.0, 0.0)),
+            },
+        ],
+        ..VisualPatchV1::default()
+    };
+
+    let result = host
+        .apply_patch(&patch)
+        .expect("patch returns per-entry result");
+
+    assert_eq!(result.applied.transforms, 1);
+    assert_eq!(result.failed.len(), 1);
+    assert_eq!(result.failed[0].channel, "transforms");
+    assert_eq!(result.failed[0].index, 1);
+    assert_eq!(result.failed[0].handle, Some(u64::MAX));
+    assert_eq!(
+        result.failed[0].code,
+        SceneHostErrorCode::NodeHandleNotFound
+    );
+    let report: SceneInspectionReportV1 =
+        serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
+            .expect("inspection json decodes");
+    assert_eq!(
+        report
+            .node_by_handle(target)
+            .expect("valid target remains inspectable")
+            .local_transform
+            .translation,
+        Vec3::new(2.0, 0.0, 0.0)
+    );
+}
+
+#[test]
+fn scene_host_visual_patch_json_round_trips_result_wire_shape() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+    let root = host.root_handle();
+    let target = host
+        .add_empty(Some(root), Transform::IDENTITY, Some("json-target"))
+        .expect("target inserts");
+    let patch = serde_json::json!({
+        "schema": VISUAL_PATCH_SCHEMA_V1,
+        "transforms": [
+            {
+                "node": target,
+                "transform": {
+                    "translation": [3.0, 0.0, 0.0],
+                    "rotation": [0.0, 0.0, 0.0, 1.0],
+                    "scale": [1.0, 1.0, 1.0]
+                }
+            },
+            {
+                "node": u64::MAX,
+                "transform": {
+                    "translation": [9.0, 0.0, 0.0],
+                    "rotation": [0.0, 0.0, 0.0, 1.0],
+                    "scale": [1.0, 1.0, 1.0]
+                }
+            }
+        ]
+    });
+
+    let result_json = host
+        .apply_patch_json(&patch.to_string())
+        .expect("visual patch JSON applies");
+    let result_value: serde_json::Value =
+        serde_json::from_str(&result_json).expect("visual patch result is JSON");
+    let result: VisualPatchResultV1 =
+        serde_json::from_value(result_value.clone()).expect("result matches stable Rust shape");
+
+    assert_eq!(result.schema, VISUAL_PATCH_SCHEMA_V1);
+    assert_eq!(result.applied.transforms, 1);
+    assert_eq!(result.failed.len(), 1);
+    assert_eq!(result.failed[0].channel, "transforms");
+    assert_eq!(result.failed[0].index, 1);
+    assert_eq!(result.failed[0].handle, Some(u64::MAX));
+    assert_eq!(
+        result.failed[0].code,
+        SceneHostErrorCode::NodeHandleNotFound
+    );
+    assert_eq!(result_value["failed"][0]["code"], "node_handle_not_found");
+    assert_eq!(
+        result_value["failed"][0]["message"],
+        format!("host handle {} is outside this handle table", u64::MAX)
+    );
+    assert_eq!(
+        host_node_translation(&host, target),
+        Vec3::new(3.0, 0.0, 0.0)
+    );
+}
+
+#[test]
+fn scene_host_visual_patch_json_rejects_malformed_and_wrong_schema_inputs() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+
+    let malformed = host
+        .apply_patch_json("{")
+        .expect_err("malformed JSON must fail closed");
+    assert_eq!(malformed.code(), SceneHostErrorCode::InvalidInput);
+    assert!(
+        malformed.message().contains("invalid visual patch JSON"),
+        "malformed JSON error should name the visual patch parser: {malformed}"
+    );
+
+    let wrong_schema = host
+        .apply_patch_json(r#"{"schema":"scena.visual_patch.v2"}"#)
+        .expect_err("wrong schema must fail closed");
+    assert_eq!(wrong_schema.code(), SceneHostErrorCode::InvalidInput);
+    assert!(
+        wrong_schema
+            .message()
+            .contains("unsupported visual patch schema scena.visual_patch.v2"),
+        "wrong-schema error should name the unsupported schema: {wrong_schema}"
+    );
+}
+
+#[test]
+fn scene_host_visual_patch_reports_invalid_tint_and_camera_failures() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+    let root = host.root_handle();
+    let target = host
+        .add_empty(
+            Some(root),
+            Transform::IDENTITY,
+            Some("invalid-entry-target"),
+        )
+        .expect("target inserts");
+    let camera_before = host.get_camera();
+    let patch = VisualPatchV1 {
+        tints: vec![scena::VisualPatchTintV1 {
+            node: target,
+            tint: Some(Color::from_linear_rgba(f32::INFINITY, 0.4, 0.6, 1.0)),
+        }],
+        camera: Some(SceneHostCameraState {
+            target: Vec3::ZERO,
+            distance: 0.0,
+            yaw_radians: 0.0,
+            pitch_radians: 0.0,
+        }),
+        ..VisualPatchV1::default()
+    };
+
+    let result = host
+        .apply_patch(&patch)
+        .expect("invalid entries are reported per entry");
+
+    assert_eq!(result.applied.tints, 0);
+    assert_eq!(result.applied.camera, 0);
+    assert_eq!(result.failed.len(), 2);
+    assert_eq!(result.failed[0].channel, "tints");
+    assert_eq!(result.failed[0].index, 0);
+    assert_eq!(result.failed[0].handle, Some(target));
+    assert_eq!(result.failed[0].code, SceneHostErrorCode::InvalidInput);
+    assert_eq!(
+        result.failed[0].message,
+        "tint must contain only finite values"
+    );
+    assert_eq!(result.failed[1].channel, "camera");
+    assert_eq!(result.failed[1].index, 0);
+    assert_eq!(result.failed[1].handle, None);
+    assert_eq!(result.failed[1].code, SceneHostErrorCode::InvalidInput);
+    assert!(
+        result.failed[1]
+            .message
+            .contains("camera distance must be finite and greater than zero")
+    );
+    assert_eq!(host_node_tint(&host, target), None);
+    assert_eq!(host.get_camera(), camera_before);
+}
+
+#[test]
+fn scene_host_visual_patch_0_1b_drives_eased_channels_and_animation_time() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+    let root = host.root_handle();
+    let visual = host
+        .add_empty(Some(root), Transform::IDENTITY, Some("patch-0-1b-visual"))
+        .expect("visual node inserts");
+    let import = pollster::block_on(host.instantiate_url(AssetPath::from(
+        "tests/assets/gltf/animated_triangle_scene.glb",
+    )))
+    .expect("animated asset instantiates");
+    let animated = host
+        .node_handle_by_name(import, "AnimatedTriangle")
+        .expect("animated node resolves");
+    let mixer = host
+        .play_animation(
+            import,
+            "MoveTriangle",
+            SceneHostAnimationPlayOptions::default(),
+        )
+        .expect("animation starts");
+    let animated_start = host_node_translation(&host, animated);
+    let camera_start = SceneHostCameraState {
+        target: Vec3::ZERO,
+        distance: 4.0,
+        yaw_radians: 0.0,
+        pitch_radians: 0.0,
+    };
+    host.set_camera(camera_start).expect("camera start sets");
+    let camera_target = SceneHostCameraState {
+        target: Vec3::new(2.0, 0.0, 0.0),
+        distance: 8.0,
+        yaw_radians: 2.0,
+        pitch_radians: 0.5,
+    };
+    let patch = VisualPatchV1 {
+        transforms_eased: vec![VisualPatchTransformEasedV1 {
+            node: visual,
+            transform: Transform::at(Vec3::new(4.0, 0.0, 0.0)),
+            duration_seconds: 2.0,
+            easing: SceneHostEasing::Linear,
+        }],
+        tints_eased: vec![VisualPatchTintEasedV1 {
+            node: visual,
+            tint: Some(Color::from_linear_rgba(0.0, 1.0, 0.0, 1.0)),
+            duration_seconds: 2.0,
+            easing: SceneHostEasing::Linear,
+        }],
+        camera_eased: Some(VisualPatchCameraEasedV1 {
+            camera: camera_target,
+            duration_seconds: 2.0,
+            easing: SceneHostEasing::Linear,
+        }),
+        animation_time: vec![VisualPatchAnimationTimeV1 {
+            mixer,
+            mode: VisualPatchAnimationTimeModeV1::Seek,
+            seconds: 0.5,
+        }],
+        ..VisualPatchV1::default()
+    };
+
+    let result = host.apply_patch(&patch).expect("0.1B patch applies");
+
+    assert_eq!(result.applied.transforms_eased, 1);
+    assert_eq!(result.applied.tints_eased, 1);
+    assert_eq!(result.applied.camera_eased, 1);
+    assert_eq!(result.applied.animation_time, 1);
+    assert!(result.failed.is_empty());
+    assert!(
+        !host_node_translation(&host, animated).abs_diff_eq(animated_start, 1.0e-5),
+        "animation_time seek should sample the requested mixer time immediately"
+    );
+    assert_vec3_near(host_node_translation(&host, visual), Vec3::ZERO);
+    assert_eq!(host_node_tint(&host, visual), None);
+    assert_eq!(host.get_camera(), camera_start);
+
+    host.advance(1.0).expect("transitions advance");
+    assert_vec3_near(
+        host_node_translation(&host, visual),
+        Vec3::new(2.0, 0.0, 0.0),
+    );
+    assert_color_near(
+        host_node_tint(&host, visual).expect("halfway tint exists"),
+        Color::from_linear_rgba(0.5, 1.0, 0.5, 1.0),
+    );
+    assert_camera_state_near(
+        host.get_camera(),
+        SceneHostCameraState {
+            target: Vec3::new(1.0, 0.0, 0.0),
+            distance: 6.0,
+            yaw_radians: 1.0,
+            pitch_radians: 0.25,
+        },
+    );
+}
+
+#[test]
+fn scene_host_visual_patch_0_1b_reports_additive_channel_failures() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+    let target = host
+        .add_empty(
+            Some(host.root_handle()),
+            Transform::IDENTITY,
+            Some("patch-0-1b-invalid"),
+        )
+        .expect("target node inserts");
+    let patch = VisualPatchV1 {
+        transforms_eased: vec![VisualPatchTransformEasedV1 {
+            node: u64::MAX,
+            transform: Transform::at(Vec3::new(1.0, 0.0, 0.0)),
+            duration_seconds: 1.0,
+            easing: SceneHostEasing::Linear,
+        }],
+        tints_eased: vec![VisualPatchTintEasedV1 {
+            node: target,
+            tint: Some(Color::from_linear_rgba(1.0, 0.0, 0.0, 0.5)),
+            duration_seconds: 1.0,
+            easing: SceneHostEasing::Linear,
+        }],
+        camera_eased: Some(VisualPatchCameraEasedV1 {
+            camera: SceneHostCameraState {
+                target: Vec3::ZERO,
+                distance: 0.0,
+                yaw_radians: 0.0,
+                pitch_radians: 0.0,
+            },
+            duration_seconds: 1.0,
+            easing: SceneHostEasing::Linear,
+        }),
+        animation_time: vec![VisualPatchAnimationTimeV1 {
+            mixer: u64::MAX,
+            mode: VisualPatchAnimationTimeModeV1::Advance,
+            seconds: 0.5,
+        }],
+        ..VisualPatchV1::default()
+    };
+
+    let result = host
+        .apply_patch(&patch)
+        .expect("additive invalid entries are reported per entry");
+
+    assert_eq!(result.applied.transforms_eased, 0);
+    assert_eq!(result.applied.tints_eased, 0);
+    assert_eq!(result.applied.camera_eased, 0);
+    assert_eq!(result.applied.animation_time, 0);
+    assert_eq!(result.failed.len(), 4);
+    assert_eq!(result.failed[0].channel, "transforms_eased");
+    assert_eq!(result.failed[0].index, 0);
+    assert_eq!(result.failed[0].handle, Some(u64::MAX));
+    assert_eq!(
+        result.failed[0].code,
+        SceneHostErrorCode::NodeHandleNotFound
+    );
+    assert_eq!(result.failed[1].channel, "tints_eased");
+    assert_eq!(result.failed[1].handle, Some(target));
+    assert_eq!(result.failed[1].code, SceneHostErrorCode::InvalidInput);
+    assert_eq!(result.failed[2].channel, "camera_eased");
+    assert_eq!(result.failed[2].handle, None);
+    assert_eq!(result.failed[2].code, SceneHostErrorCode::InvalidInput);
+    assert_eq!(result.failed[3].channel, "animation_time");
+    assert_eq!(result.failed[3].handle, Some(u64::MAX));
+    assert_eq!(
+        result.failed[3].code,
+        SceneHostErrorCode::AnimationHandleNotFound
+    );
+}
+
+#[test]
+fn scene_host_visual_patch_0_1c_drives_app_ui_channels_and_metadata() {
+    let mut host = SceneHostCore::headless(120, 80).expect("host builds");
+    let root = host.root_handle();
+    let label_node = host
+        .add_empty(
+            Some(root),
+            Transform::at(Vec3::new(-0.25, 0.0, 0.0)),
+            Some("patch-0-1c-label"),
+        )
+        .expect("label anchor node inserts");
+    let import = pollster::block_on(host.instantiate_url(AssetPath::from(
+        "tests/assets/gltf/material_variants_scene.gltf",
+    )))
+    .expect("variant asset instantiates");
+    let mesh = host
+        .node_handle(import, "VariantTriangle")
+        .expect("variant mesh resolves");
+    assert_eq!(
+        host.material_variants(import)
+            .expect("variant names are available"),
+        vec!["midnight".to_owned(), "noon".to_owned()]
+    );
+
+    let patch = VisualPatchV1 {
+        selection: Some(VisualPatchSelectionV1 { node: Some(mesh) }),
+        hover: Some(VisualPatchHoverV1 { node: Some(mesh) }),
+        material_variants: vec![VisualPatchMaterialVariantV1 {
+            import,
+            variant: Some("noon".to_owned()),
+        }],
+        labels: vec![
+            VisualPatchLabelV1 {
+                id: "part-label".to_owned(),
+                target: VisualPatchLabelTargetV1::Node {
+                    node: label_node,
+                    local_offset: [0.0, 0.0, 0.0],
+                },
+            },
+            VisualPatchLabelV1 {
+                id: "origin-label".to_owned(),
+                target: VisualPatchLabelTargetV1::World {
+                    position: [0.0, 0.0, 0.0],
+                },
+            },
+        ],
+        metadata: Some(serde_json::json!({
+            "request_id": "patch-0-1c",
+            "purpose": "agent-loop"
+        })),
+        echo_metadata: true,
+        ..VisualPatchV1::default()
+    };
+
+    let result = host.apply_patch(&patch).expect("0.1C patch applies");
+
+    assert_eq!(result.applied.selection, 1);
+    assert_eq!(result.applied.hover, 1);
+    assert_eq!(result.applied.material_variants, 1);
+    assert_eq!(result.applied.labels, 2);
+    assert!(result.failed.is_empty());
+    assert!(result.revisions.structure > 0);
+    assert!(result.revisions.interaction > 0);
+    assert_eq!(
+        result.metadata,
+        Some(serde_json::json!({
+            "request_id": "patch-0-1c",
+            "purpose": "agent-loop"
+        }))
+    );
+    assert!(matches!(
+        host.scene().interaction().primary_selection(),
+        Some(HitTarget::Node(_))
+    ));
+    assert!(matches!(
+        host.scene().interaction().hover(),
+        Some(HitTarget::Node(_))
+    ));
+    assert_eq!(
+        host.active_material_variant(import)
+            .expect("active variant resolves"),
+        Some("noon".to_owned())
+    );
+
+    let projections: AnnotationProjectionReportV1 = serde_json::from_str(
+        &host
+            .annotation_projections_json()
+            .expect("projections serialize"),
+    )
+    .expect("projection report decodes");
+    let part_projection = projections
+        .annotations
+        .iter()
+        .find(|projection| projection.id == "part-label")
+        .expect("node label anchor appears");
+    let origin_projection = projections
+        .annotations
+        .iter()
+        .find(|projection| projection.id == "origin-label")
+        .expect("world label anchor appears");
+    assert_eq!(part_projection.node_handle, Some(label_node));
+    assert_eq!(origin_projection.node_handle, None);
+
+    let no_change = host
+        .apply_patch(&patch)
+        .expect("unchanged 0.1C patch is valid");
+    assert_eq!(no_change.applied.selection, 0);
+    assert_eq!(no_change.applied.hover, 0);
+    assert_eq!(no_change.applied.material_variants, 0);
+    assert_eq!(no_change.applied.labels, 0);
+    assert!(no_change.failed.is_empty());
+    assert_eq!(no_change.revisions.structure, 0);
+    assert_eq!(no_change.revisions.interaction, 0);
+
+    let clear = VisualPatchV1 {
+        selection: Some(VisualPatchSelectionV1 { node: None }),
+        hover: Some(VisualPatchHoverV1 { node: None }),
+        material_variants: vec![VisualPatchMaterialVariantV1 {
+            import,
+            variant: None,
+        }],
+        labels: vec![VisualPatchLabelV1 {
+            id: "origin-label".to_owned(),
+            target: VisualPatchLabelTargetV1::Clear,
+        }],
+        ..VisualPatchV1::default()
+    };
+    let clear_result = host.apply_patch(&clear).expect("0.1C clear applies");
+    assert_eq!(clear_result.applied.selection, 1);
+    assert_eq!(clear_result.applied.hover, 1);
+    assert_eq!(clear_result.applied.material_variants, 1);
+    assert_eq!(clear_result.applied.labels, 1);
+    assert_eq!(host.scene().interaction().primary_selection(), None);
+    assert_eq!(host.scene().interaction().hover(), None);
+    assert_eq!(
+        host.active_material_variant(import)
+            .expect("active variant clears"),
+        None
+    );
+}
+
+#[test]
+fn scene_host_visual_patch_0_1c_reports_additive_channel_failures() {
+    let mut host = SceneHostCore::headless(120, 80).expect("host builds");
+    let root = host.root_handle();
+    let valid_node = host
+        .add_empty(Some(root), Transform::IDENTITY, Some("patch-0-1c-valid"))
+        .expect("valid node inserts");
+    let import = pollster::block_on(host.instantiate_url(AssetPath::from(
+        "tests/assets/gltf/material_variants_scene.gltf",
+    )))
+    .expect("variant asset instantiates");
+    let patch = VisualPatchV1 {
+        selection: Some(VisualPatchSelectionV1 {
+            node: Some(valid_node),
+        }),
+        hover: Some(VisualPatchHoverV1 {
+            node: Some(u64::MAX),
+        }),
+        material_variants: vec![
+            VisualPatchMaterialVariantV1 {
+                import: u64::MAX,
+                variant: Some("noon".to_owned()),
+            },
+            VisualPatchMaterialVariantV1 {
+                import,
+                variant: Some("missing".to_owned()),
+            },
+            VisualPatchMaterialVariantV1 {
+                import,
+                variant: Some("midnight".to_owned()),
+            },
+        ],
+        labels: vec![
+            VisualPatchLabelV1 {
+                id: String::new(),
+                target: VisualPatchLabelTargetV1::World {
+                    position: [0.0, 0.0, 0.0],
+                },
+            },
+            VisualPatchLabelV1 {
+                id: "bad-node-label".to_owned(),
+                target: VisualPatchLabelTargetV1::Node {
+                    node: u64::MAX,
+                    local_offset: [0.0, 0.0, 0.0],
+                },
+            },
+            VisualPatchLabelV1 {
+                id: "valid-world-label".to_owned(),
+                target: VisualPatchLabelTargetV1::World {
+                    position: [0.0, 0.0, 0.0],
+                },
+            },
+        ],
+        ..VisualPatchV1::default()
+    };
+
+    let result = host
+        .apply_patch(&patch)
+        .expect("0.1C invalid entries are reported per entry");
+
+    assert_eq!(result.applied.selection, 1);
+    assert_eq!(result.applied.hover, 0);
+    assert_eq!(result.applied.material_variants, 1);
+    assert_eq!(result.applied.labels, 1);
+    assert_eq!(result.failed.len(), 5);
+    assert_eq!(result.failed[0].channel, "hover");
+    assert_eq!(result.failed[0].handle, Some(u64::MAX));
+    assert_eq!(
+        result.failed[0].code,
+        SceneHostErrorCode::NodeHandleNotFound
+    );
+    assert_eq!(result.failed[1].channel, "material_variants");
+    assert_eq!(result.failed[1].index, 0);
+    assert_eq!(result.failed[1].handle, Some(u64::MAX));
+    assert_eq!(
+        result.failed[1].code,
+        SceneHostErrorCode::ImportHandleNotFound
+    );
+    assert_eq!(result.failed[2].channel, "material_variants");
+    assert_eq!(result.failed[2].index, 1);
+    assert_eq!(result.failed[2].handle, Some(import));
+    assert_eq!(result.failed[2].code, SceneHostErrorCode::Lookup);
+    assert!(result.failed[2].message.contains("missing"));
+    assert_eq!(result.failed[3].channel, "labels");
+    assert_eq!(result.failed[3].index, 0);
+    assert_eq!(result.failed[3].handle, None);
+    assert_eq!(result.failed[3].code, SceneHostErrorCode::InvalidInput);
+    assert_eq!(result.failed[4].channel, "labels");
+    assert_eq!(result.failed[4].index, 1);
+    assert_eq!(result.failed[4].handle, Some(u64::MAX));
+    assert_eq!(
+        result.failed[4].code,
+        SceneHostErrorCode::NodeHandleNotFound
+    );
+    assert!(matches!(
+        host.scene().interaction().primary_selection(),
+        Some(HitTarget::Node(_))
+    ));
+    assert_eq!(
+        host.active_material_variant(import)
+            .expect("valid variant still applied"),
+        Some("midnight".to_owned())
+    );
+    let projections: AnnotationProjectionReportV1 = serde_json::from_str(
+        &host
+            .annotation_projections_json()
+            .expect("projections serialize"),
+    )
+    .expect("projection report decodes");
+    assert!(
+        projections
+            .annotations
+            .iter()
+            .any(|projection| projection.id == "valid-world-label")
+    );
+}
+
+#[test]
+fn scene_host_visual_patch_json_round_trips_0_1c_channels() {
+    let mut host = SceneHostCore::headless(120, 80).expect("host builds");
+    let root = host.root_handle();
+    let target = host
+        .add_empty(Some(root), Transform::IDENTITY, Some("json-0-1c-target"))
+        .expect("target node inserts");
+    let patch = serde_json::json!({
+        "schema": VISUAL_PATCH_SCHEMA_V1,
+        "selection": { "node": target },
+        "labels": [
+            {
+                "id": "json-label",
+                "target": {
+                    "kind": "world",
+                    "position": [0.0, 0.0, 0.0]
+                }
+            }
+        ],
+        "metadata": { "request_id": "json-0-1c" },
+        "echo_metadata": true
+    });
+
+    let result_json = host
+        .apply_patch_json(&patch.to_string())
+        .expect("0.1C visual patch JSON applies");
+    let result_value: serde_json::Value =
+        serde_json::from_str(&result_json).expect("visual patch result is JSON");
+    let result: VisualPatchResultV1 =
+        serde_json::from_value(result_value.clone()).expect("result matches stable Rust shape");
+
+    assert_eq!(result.applied.selection, 1);
+    assert_eq!(result.applied.labels, 1);
+    assert_eq!(
+        result.metadata,
+        Some(serde_json::json!({"request_id": "json-0-1c"}))
+    );
+    assert_eq!(result_value["metadata"]["request_id"], "json-0-1c");
+}
+
+#[test]
 fn scene_host_core_instantiates_glb_bytes_under_host_frame() {
     let mut host = SceneHostCore::headless(320, 240).expect("host builds");
     let frame = host
@@ -461,6 +1186,307 @@ fn scene_host_pick_resolves_instanced_drawable_to_instance_root_handle() {
         host.pick(64.0, 64.0).expect("instance pick runs"),
         Some(roots[0]),
         "picking an instanced drawable must return the SceneHost instance-root handle"
+    );
+}
+
+#[test]
+fn scene_host_events_emit_interaction_capture_surface_asset_and_diagnostics() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+    let root = host.root_handle();
+    let diagnostic_node = host
+        .add_empty(
+            Some(root),
+            Transform::at(Vec3::new(20_000.0, 0.0, 0.0)),
+            Some("diagnostic-large-world"),
+        )
+        .expect("diagnostic fixture node inserts");
+    let import_json = pollster::block_on(host.instantiate_url_under_with_report_json(
+        root,
+        AssetPath::from("tests/assets/gltf/mesh_material_vertex_color_scene.gltf"),
+    ))
+    .expect("asset import report serializes");
+    let import_report: scena::SceneHostAssetImportReportV1 =
+        serde_json::from_str(&import_json).expect("asset import report decodes");
+    let mesh = host
+        .node_handle(import_report.import, "ColoredTriangle")
+        .expect("mesh handle resolves");
+
+    host.frame_node(mesh).expect("mesh frames");
+    host.prepare().expect("host prepares");
+    host.render().expect("host renders");
+    let capture = host.capture().expect("capture emits capture_ready");
+    assert_eq!(
+        host.pick(64.0, 64.0).expect("pick emits"),
+        Some(mesh),
+        "pick still returns the stable node handle"
+    );
+    assert_eq!(
+        host.hover(64.0, 64.0).expect("hover emits entered"),
+        Some(mesh)
+    );
+    assert_eq!(
+        host.select(64.0, 64.0).expect("select emits changed"),
+        Some(mesh)
+    );
+    assert_eq!(
+        host.hover(10_000.0, 10_000.0).expect("hover emits left"),
+        None
+    );
+    host.resize(120.0, 80.0, 2.0)
+        .expect("resize emits surface_resized");
+    host.handle_surface_event(SurfaceEvent::ContextLost { recoverable: true })
+        .expect("context lost event forwards");
+    host.handle_surface_event(SurfaceEvent::ContextRestored)
+        .expect("context restored event forwards");
+    host.handle_surface_event(SurfaceEvent::DeviceLost { recoverable: false })
+        .expect("device lost event forwards");
+
+    let events_json = host.drain_events_json().expect("events serialize");
+    let batch: HostEventBatchV1 = serde_json::from_str(&events_json).expect("events decode");
+    assert_eq!(batch.schema, HOST_EVENT_SCHEMA_V1);
+    assert!(
+        host.drain_events().is_empty(),
+        "drain_events_json must empty the queued batch"
+    );
+
+    let pick_event = batch
+        .events
+        .iter()
+        .find_map(|event| match event {
+            HostEventV1::Pick {
+                x_css_px,
+                y_css_px,
+                hit: Some(hit),
+                ..
+            } => Some((*x_css_px, *y_css_px, hit)),
+            _ => None,
+        })
+        .expect("pick event emitted");
+    assert_eq!((pick_event.0, pick_event.1), (64.0, 64.0));
+    assert_eq!(pick_event.2.handle, mesh);
+    assert!(pick_event.2.distance.is_finite());
+
+    assert!(batch.events.iter().any(|event| matches!(
+        event,
+        HostEventV1::Hover {
+            phase: HostEventHoverPhaseV1::Entered,
+            hit: Some(hit),
+            ..
+        } if hit.handle == mesh
+    )));
+    assert!(batch.events.iter().any(|event| matches!(
+        event,
+        HostEventV1::Hover {
+            phase: HostEventHoverPhaseV1::Left,
+            hit: None,
+            ..
+        }
+    )));
+    assert!(batch.events.iter().any(|event| matches!(
+        event,
+        HostEventV1::SelectionChanged {
+            previous: None,
+            current: Some(current),
+        } if *current == mesh
+    )));
+    assert!(batch.events.iter().any(|event| matches!(
+        event,
+        HostEventV1::LoadProgress { progress }
+            if serde_json::to_value(progress).expect("progress serializes")["kind"] == "load_started"
+    )));
+    assert!(batch.events.iter().any(|event| matches!(
+        event,
+        HostEventV1::AssetLoaded { import, asset_load_report }
+            if *import == import_report.import
+                && asset_load_report.schema == ASSET_LOAD_REPORT_SCHEMA_V1
+    )));
+    let diagnostic_event = batch
+        .events
+        .iter()
+        .find_map(|event| match event {
+            HostEventV1::Diagnostic {
+                code,
+                message,
+                node,
+                ..
+            } if *code == scena::DiagnosticCode::LargeScenePrecisionRisk => {
+                Some((message.as_str(), *node))
+            }
+            _ => None,
+        })
+        .expect("diagnostic event emitted");
+    assert_eq!(
+        diagnostic_event.1,
+        Some(diagnostic_node),
+        "node-referencing diagnostics must include a stable SceneHost handle"
+    );
+    assert!(
+        diagnostic_event.0.contains("node handle "),
+        "diagnostic message should be rewritten into host-handle vocabulary"
+    );
+    assert!(
+        !diagnostic_event.0.contains("NodeKey("),
+        "diagnostic event messages must not leak internal NodeKey debug identifiers"
+    );
+    assert!(batch.events.iter().any(|event| matches!(
+        event,
+        HostEventV1::CaptureReady {
+            width,
+            height,
+            payload_bytes,
+            payload_fnv1a64,
+            ..
+        } if *width == capture.descriptor.width
+            && *height == capture.descriptor.height
+            && *payload_bytes == capture.rgba8.len()
+            && payload_fnv1a64 == &capture.descriptor.payload.fnv1a64
+    )));
+    assert!(batch.events.iter().any(|event| matches!(
+        event,
+        HostEventV1::SurfaceResized {
+            width_css_px,
+            height_css_px,
+            width_physical_px,
+            height_physical_px,
+            device_pixel_ratio,
+        } if *width_css_px == 120.0
+            && *height_css_px == 80.0
+            && *width_physical_px == 240
+            && *height_physical_px == 160
+            && *device_pixel_ratio == 2.0
+    )));
+    assert!(
+        batch
+            .events
+            .iter()
+            .any(|event| matches!(event, HostEventV1::ContextLost { recoverable: true }))
+    );
+    assert!(
+        batch
+            .events
+            .iter()
+            .any(|event| matches!(event, HostEventV1::ContextRestored))
+    );
+    assert!(
+        batch
+            .events
+            .iter()
+            .any(|event| matches!(event, HostEventV1::DeviceLost { recoverable: false }))
+    );
+    assert!(batch.events.iter().any(|event| matches!(
+        event,
+        HostEventV1::CapabilityChanged { backend, .. } if *backend == host.backend()
+    )));
+}
+
+#[test]
+fn scene_host_event_sink_is_push_only_without_drain_backlog() {
+    let mut host = SceneHostCore::headless(64, 64).expect("host builds");
+    let sink_events = Rc::new(RefCell::new(Vec::new()));
+    let sink_events_for_callback = Rc::clone(&sink_events);
+    host.set_event_sink(move |event| {
+        sink_events_for_callback.borrow_mut().push(event);
+    });
+
+    host.resize(32.0, 24.0, 2.0)
+        .expect("resize emits into sink");
+
+    assert_eq!(
+        sink_events.borrow().len(),
+        1,
+        "registered sink receives emitted events"
+    );
+    assert!(
+        host.drain_events().is_empty(),
+        "sink-driven consumers must not accumulate an unbounded drain backlog"
+    );
+}
+
+#[test]
+fn scene_host_prepare_diagnostics_are_edge_triggered_and_stable_handle_addressable() {
+    let mut host = SceneHostCore::headless(64, 64).expect("host builds");
+    let root = host.root_handle();
+    let large = host
+        .add_empty(
+            Some(root),
+            Transform::at(Vec3::new(20_000.0, 0.0, 0.0)),
+            Some("large-world-diagnostic"),
+        )
+        .expect("large node inserts");
+
+    host.prepare().expect("first prepare emits diagnostics");
+    let first = host.drain_events();
+    let diagnostic = first
+        .iter()
+        .find_map(|event| match event {
+            HostEventV1::Diagnostic {
+                code,
+                node,
+                message,
+                ..
+            } if *code == scena::DiagnosticCode::LargeScenePrecisionRisk => {
+                Some((*node, message.as_str()))
+            }
+            _ => None,
+        })
+        .expect("large-scene diagnostic event emitted");
+    assert_eq!(
+        diagnostic.0,
+        Some(large),
+        "diagnostic events should include the stable handle for node-specific findings"
+    );
+    assert!(!diagnostic.1.contains("NodeKey("));
+
+    host.prepare()
+        .expect("unchanged second prepare does not re-emit diagnostics");
+    assert!(
+        host.drain_events()
+            .iter()
+            .all(|event| !matches!(event, HostEventV1::Diagnostic { .. })),
+        "unchanged diagnostics should not flood every prepare call"
+    );
+}
+
+#[test]
+fn scene_host_event_handles_do_not_alias_after_remove() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+    let import = pollster::block_on(host.instantiate_url(AssetPath::from(
+        "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+    )))
+    .expect("asset instantiates");
+    let mesh = host
+        .node_handle(import, "ColoredTriangle")
+        .expect("mesh resolves");
+    host.frame_node(mesh).expect("mesh frames");
+    host.prepare().expect("host prepares");
+    host.render().expect("host renders");
+
+    assert_eq!(host.pick(64.0, 64.0).expect("pick emits"), Some(mesh));
+    host.remove_import(import).expect("import removes");
+    let replacement = host
+        .add_empty(
+            Some(host.root_handle()),
+            Transform::IDENTITY,
+            Some("replacement-after-remove"),
+        )
+        .expect("replacement inserts");
+    assert_ne!(
+        replacement, mesh,
+        "recycled scene nodes must receive a new stable host handle generation"
+    );
+
+    let batch = host.drain_events();
+    let pick_hit = batch
+        .iter()
+        .find_map(|event| match event {
+            HostEventV1::Pick { hit: Some(hit), .. } => Some(hit),
+            _ => None,
+        })
+        .expect("queued pick event keeps the original handle");
+    assert_eq!(pick_hit.handle, mesh);
+    assert_ne!(
+        pick_hit.handle, replacement,
+        "event payloads must not alias a replacement node after removal"
     );
 }
 
@@ -737,13 +1763,36 @@ fn scene_host_url_instantiation_returns_asset_load_report_json() {
     );
     assert_eq!(value["asset_load_report"]["cache_hit"], false);
     assert_eq!(value["asset_load_report"]["geometry"]["primitive_count"], 1);
-    let import = value["import"].as_u64().expect("import handle is u64");
     assert!(
-        !host
-            .import_roots(import)
-            .expect("reported import handle resolves")
-            .is_empty()
+        value["asset_load_report"]["external_resources"].is_array(),
+        "SceneHost asset reports expose external-resource status rows"
     );
+    assert!(
+        value["asset_load_report"]["material_fallbacks"].is_array(),
+        "SceneHost asset reports expose material fallback provenance rows"
+    );
+    let import = value["import"].as_u64().expect("import handle is u64");
+    let roots = host
+        .import_roots(import)
+        .expect("reported import handle resolves");
+    assert!(!roots.is_empty());
+
+    let inspection = host_report(&host);
+    let draw = inspection
+        .draw_list
+        .iter()
+        .find(|draw| roots.contains(&draw.node))
+        .expect("imported draw appears in host inspection");
+    let material = draw
+        .material
+        .as_ref()
+        .expect("host inspection exposes material evidence");
+    assert_eq!(material.source.kind, "source_material");
+    assert_eq!(
+        material.source.asset_path.as_deref(),
+        Some("tests/assets/gltf/mesh_material_vertex_color_scene.gltf")
+    );
+    assert_eq!(material.source.material_index, Some(0));
 }
 
 #[test]
@@ -968,6 +2017,38 @@ fn scene_host_eased_tint_interpolates_and_rejects_translucent_targets() {
         .expect("clear tint transition starts");
     host.advance(1.0).expect("clear tint transition finishes");
     assert_eq!(host_node_tint(&host, mesh), None);
+}
+
+#[test]
+fn scene_host_camera_eased_uses_shortest_yaw_path_across_wrap() {
+    let mut host = SceneHostCore::headless(64, 64).expect("host builds");
+    let start = SceneHostCameraState {
+        target: Vec3::ZERO,
+        distance: 4.0,
+        yaw_radians: PI - 0.1,
+        pitch_radians: 0.0,
+    };
+    let target = SceneHostCameraState {
+        target: Vec3::ZERO,
+        distance: 4.0,
+        yaw_radians: -PI + 0.1,
+        pitch_radians: 0.0,
+    };
+    host.set_camera(start).expect("camera start sets");
+
+    host.set_camera_eased(target, 1.0, SceneHostEasing::Linear)
+        .expect("camera ease starts");
+    host.advance(0.5).expect("camera ease advances halfway");
+
+    let halfway = host.get_camera();
+    assert!(
+        (halfway.yaw_radians - PI).abs() < 1.0e-5,
+        "camera yaw should cross the +/-pi wrap on the shortest path, got {}",
+        halfway.yaw_radians
+    );
+
+    host.advance(0.5).expect("camera ease completes");
+    assert_camera_state_near(host.get_camera(), target);
 }
 
 #[test]
@@ -1360,6 +2441,17 @@ fn assert_color_near(actual: Color, expected: Color) {
             && close(actual.g, expected.g)
             && close(actual.b, expected.b)
             && close(actual.a, expected.a),
+        "expected {expected:?}, got {actual:?}"
+    );
+}
+
+fn assert_camera_state_near(actual: SceneHostCameraState, expected: SceneHostCameraState) {
+    assert_vec3_near(actual.target, expected.target);
+    let close = |left: f32, right: f32| (left - right).abs() < 1.0e-5;
+    assert!(
+        close(actual.distance, expected.distance)
+            && close(actual.yaw_radians, expected.yaw_radians)
+            && close(actual.pitch_radians, expected.pitch_radians),
         "expected {expected:?}, got {actual:?}"
     );
 }

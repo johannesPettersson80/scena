@@ -4,6 +4,35 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Added the `scena.visual_patch.v1` SceneHost patch contract for batched
+  transform, tint, visibility, camera, eased transition, animation-time,
+  selection/hover, material variant, label-anchor, and metadata updates, with
+  native and WASM entrypoints plus stable fixtures.
+- Added the `scena.host_event.v1` SceneHost event contract for pick, hover,
+  selection, load, diagnostic, capture, surface, context, device, and
+  capability events, with native drain/sink APIs, sink-only push delivery,
+  WASM `drainEventsJson()`, and a stable fixture.
+- Added shared descriptor-bound PNG capture helpers for `CaptureRgba8`,
+  `Renderer`, SceneHost, viewer helpers, and WASM `capturePng()`, plus capture
+  contact-sheet and baseline comparison helpers for proof artifacts.
+- Added additive `scena.asset_load_report.v1` fields for external-resource
+  status rows and material fallback provenance, plus external-image fetch
+  progress events for browser/agent diagnostics.
+- Added `scena.render_introspection.v1`, a capture-bound inspection report for
+  agent-readable frame visibility, luminance, framing, reason, and fix
+  summaries behind the `inspection` feature. Content detection is
+  background-relative, warning-only framing reasons keep `ok=true`, and
+  luminance reports shader-encoded RGBA8 byte-scale values.
+- Added `scena.visibility_diagnosis.v1`, an inspection-backed visibility
+  diagnoser with stable reason codes and explicit fix suggestions behind the
+  `inspection` feature. Whole-scene `all_culled` diagnosis requires every
+  inspection-visible drawable to be culled.
+- Added the `scena` schema-discovery CLI (`schema list` and `schema get`) plus
+  `scena.schema_catalog.v1` / `scena.schema_entry.v1` contracts for
+  agent-readable contract discovery.
+
 ## [1.7.1] - 2026-06-12
 
 ### Fixed
@@ -59,11 +88,17 @@ All notable user-facing changes are recorded here.
 - Updated the stable v1 schema docs and fixtures for additive fields:
   `capability_report.v1.post_processing`,
   `scene_inspection.v1.nodes[].tint`,
+  `scene_inspection.v1.nodes[].material`,
+  `scene_inspection.v1.draw_list[].material`,
   `scene_inspection.v1.draw_list[].instance`,
   `scene_inspection.v1.normal_overlays[].instance`,
   `scene_inspection.v1.instance_sets`,
   `scene_inspection.v1.revisions.appearance`, and
   `capture.v1.revisions.appearance`.
+- Added material source evidence to asset-aware scene inspection and
+  `material_index` to asset-load material fallback rows, so agents can
+  distinguish source-authored materials from generated defaults and optional
+  texture fallbacks.
 - Documented that `scena.subtree.v1.nodes[].name` is always `null` in 1.7;
   stable identification should use host handles or tags.
 

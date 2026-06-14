@@ -34,15 +34,28 @@ export async function buildSceneHost(canvas, leftUrl, rightUrl) {
 }
 
 export async function renderPushedFrame(state, poseByNode) {
-  state.host.setTransforms(JSON.stringify(
-    poseByNode.map(([node, transform]) => ({
+  state.host.applyPatch(JSON.stringify({
+    schema: "scena.visual_patch.v1",
+    transforms: poseByNode.map(([node, transform]) => ({
       node,
-      translation: transform.translation,
-      rotation: transform.rotation,
-      scale: transform.scale,
+      transform: {
+        translation: transform.translation,
+        rotation: transform.rotation,
+        scale: transform.scale,
+      },
     })),
-  ));
-  state.host.setNodeAnnotation("left-label", state.leftMesh, [0.0, 0.0, 0.0]);
+    selection: { node: state.leftMesh },
+    labels: [{
+      id: "left-label",
+      target: {
+        kind: "node",
+        node: state.leftMesh,
+        local_offset: [0.0, 0.0, 0.0],
+      },
+    }],
+    metadata: { frame: "renderPushedFrame" },
+    echo_metadata: false,
+  }));
   state.host.frameAll();
   state.host.prepare();
   state.host.render();
@@ -115,6 +128,10 @@ export async function configureRelease17Scene(state, animatedUrl, instancedUrl) 
 
 export function pickCssPixel(state, event) {
   return state.host.pick(event.offsetX, event.offsetY);
+}
+
+export function drainHostEvents(state) {
+  return JSON.parse(state.host.drainEventsJson());
 }
 
 export function wireSceneHostCamera(canvas, state, requestFrame) {

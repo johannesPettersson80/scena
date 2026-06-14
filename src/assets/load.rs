@@ -22,6 +22,7 @@ pub struct AssetLoadReport<T> {
     pub(super) fetched_bytes: usize,
     pub(super) external_buffers: usize,
     pub(super) external_images: usize,
+    pub(super) external_resources: Vec<AssetExternalResource>,
     pub(super) warnings: Vec<AssetLoadWarning>,
     pub(super) progress_events: Vec<AssetLoadProgress>,
 }
@@ -64,6 +65,10 @@ pub enum AssetLoadProgress {
         index: usize,
         bytes: usize,
     },
+    ExternalImageFetched {
+        path: AssetPath,
+        bytes: usize,
+    },
     Parsed {
         path: AssetPath,
         nodes: usize,
@@ -79,6 +84,7 @@ pub(super) struct AssetLoadTelemetry {
     pub(super) fetched_bytes: usize,
     pub(super) external_buffers: usize,
     pub(super) external_images: usize,
+    pub(super) external_resources: Vec<AssetExternalResource>,
     pub(super) warnings: Vec<AssetLoadWarning>,
 }
 
@@ -94,6 +100,10 @@ pub struct AssetLoadReportV1 {
     pub geometry: SceneAssetGeometrySummary,
     pub warnings: Vec<AssetLoadWarningV1>,
     pub progress_events: Vec<AssetLoadProgressV1>,
+    #[serde(default)]
+    pub external_resources: Vec<AssetExternalResourceV1>,
+    #[serde(default)]
+    pub material_fallbacks: Vec<AssetMaterialFallbackV1>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -128,6 +138,10 @@ pub enum AssetLoadProgressV1 {
         index: usize,
         bytes: usize,
     },
+    ExternalImageFetched {
+        path: String,
+        bytes: usize,
+    },
     Parsed {
         path: String,
         nodes: usize,
@@ -136,6 +150,73 @@ pub enum AssetLoadProgressV1 {
     Cached {
         path: String,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssetExternalResource {
+    pub kind: AssetExternalResourceKind,
+    pub path: AssetPath,
+    pub index: Option<usize>,
+    pub status: AssetExternalResourceStatus,
+    pub bytes: Option<usize>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AssetExternalResourceKind {
+    Buffer,
+    Image,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AssetExternalResourceStatus {
+    Fetched,
+    Missing,
+    SkippedUnsupportedFormat,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssetExternalResourceV1 {
+    pub kind: AssetExternalResourceKind,
+    pub path: String,
+    #[serde(default)]
+    pub index: Option<usize>,
+    pub status: AssetExternalResourceStatus,
+    #[serde(default)]
+    pub bytes: Option<usize>,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssetMaterialFallback {
+    pub kind: AssetMaterialFallbackKind,
+    pub material_index: Option<usize>,
+    pub material_slot: String,
+    pub texture_index: usize,
+    pub source_path: AssetPath,
+    pub fallback_path: AssetPath,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AssetMaterialFallbackKind {
+    TextureBasisuFallback,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssetMaterialFallbackV1 {
+    pub kind: AssetMaterialFallbackKind,
+    #[serde(default)]
+    pub material_index: Option<usize>,
+    pub material_slot: String,
+    pub texture_index: usize,
+    pub source_path: String,
+    pub fallback_path: String,
+    pub reason: String,
 }
 
 impl Default for AssetLoadControl {
@@ -195,6 +276,10 @@ impl<T> AssetLoadReport<T> {
         self.external_images
     }
 
+    pub fn external_resources(&self) -> &[AssetExternalResource] {
+        &self.external_resources
+    }
+
     pub fn warnings(&self) -> &[AssetLoadWarning] {
         &self.warnings
     }
@@ -248,6 +333,17 @@ impl AssetLoadReport<SceneAsset> {
                 .iter()
                 .map(AssetLoadProgressV1::from)
                 .collect(),
+            external_resources: self
+                .external_resources
+                .iter()
+                .map(AssetExternalResourceV1::from)
+                .collect(),
+            material_fallbacks: self
+                .asset
+                .material_fallbacks()
+                .iter()
+                .map(AssetMaterialFallbackV1::from)
+                .collect(),
         }
     }
 
@@ -297,6 +393,10 @@ impl From<&AssetLoadProgress> for AssetLoadProgressV1 {
                     bytes: *bytes,
                 }
             }
+            AssetLoadProgress::ExternalImageFetched { path, bytes } => Self::ExternalImageFetched {
+                path: path.as_str().to_owned(),
+                bytes: *bytes,
+            },
             AssetLoadProgress::Parsed {
                 path,
                 nodes,
@@ -309,6 +409,110 @@ impl From<&AssetLoadProgress> for AssetLoadProgressV1 {
             AssetLoadProgress::Cached { path } => Self::Cached {
                 path: path.as_str().to_owned(),
             },
+        }
+    }
+}
+
+impl AssetExternalResource {
+    pub fn fetched_buffer(path: AssetPath, index: usize, bytes: usize) -> Self {
+        Self {
+            kind: AssetExternalResourceKind::Buffer,
+            path,
+            index: Some(index),
+            status: AssetExternalResourceStatus::Fetched,
+            bytes: Some(bytes),
+            reason: None,
+        }
+    }
+
+    pub fn missing_buffer(path: AssetPath, index: usize, reason: impl Into<String>) -> Self {
+        Self {
+            kind: AssetExternalResourceKind::Buffer,
+            path,
+            index: Some(index),
+            status: AssetExternalResourceStatus::Missing,
+            bytes: None,
+            reason: Some(reason.into()),
+        }
+    }
+
+    pub fn fetched_image(path: AssetPath, bytes: usize) -> Self {
+        Self {
+            kind: AssetExternalResourceKind::Image,
+            path,
+            index: None,
+            status: AssetExternalResourceStatus::Fetched,
+            bytes: Some(bytes),
+            reason: None,
+        }
+    }
+
+    pub fn missing_image(path: AssetPath, reason: impl Into<String>) -> Self {
+        Self {
+            kind: AssetExternalResourceKind::Image,
+            path,
+            index: None,
+            status: AssetExternalResourceStatus::Missing,
+            bytes: None,
+            reason: Some(reason.into()),
+        }
+    }
+
+    pub fn skipped_unsupported_image(path: AssetPath, reason: impl Into<String>) -> Self {
+        Self {
+            kind: AssetExternalResourceKind::Image,
+            path,
+            index: None,
+            status: AssetExternalResourceStatus::SkippedUnsupportedFormat,
+            bytes: None,
+            reason: Some(reason.into()),
+        }
+    }
+}
+
+impl From<&AssetExternalResource> for AssetExternalResourceV1 {
+    fn from(resource: &AssetExternalResource) -> Self {
+        Self {
+            kind: resource.kind,
+            path: resource.path.as_str().to_owned(),
+            index: resource.index,
+            status: resource.status,
+            bytes: resource.bytes,
+            reason: resource.reason.clone(),
+        }
+    }
+}
+
+impl AssetMaterialFallback {
+    pub fn texture_basisu_fallback(
+        material_index: usize,
+        material_slot: impl Into<String>,
+        texture_index: usize,
+        source_path: AssetPath,
+        fallback_path: AssetPath,
+    ) -> Self {
+        Self {
+            kind: AssetMaterialFallbackKind::TextureBasisuFallback,
+            material_index: Some(material_index),
+            material_slot: material_slot.into(),
+            texture_index,
+            source_path,
+            fallback_path,
+            reason: "KHR_texture_basisu unavailable; using authored fallback texture".to_string(),
+        }
+    }
+}
+
+impl From<&AssetMaterialFallback> for AssetMaterialFallbackV1 {
+    fn from(fallback: &AssetMaterialFallback) -> Self {
+        Self {
+            kind: fallback.kind,
+            material_index: fallback.material_index,
+            material_slot: fallback.material_slot.clone(),
+            texture_index: fallback.texture_index,
+            source_path: fallback.source_path.as_str().to_owned(),
+            fallback_path: fallback.fallback_path.as_str().to_owned(),
+            reason: fallback.reason.clone(),
         }
     }
 }

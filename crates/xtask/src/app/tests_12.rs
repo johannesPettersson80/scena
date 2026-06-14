@@ -295,6 +295,7 @@ pub(crate) fn write_easy_scene_fixture(
         "docs/checklists",
         "src",
         "src/assets",
+        "src/capture",
         "src/viewer",
         "src/material",
         "src/render",
@@ -306,6 +307,7 @@ pub(crate) fn write_easy_scene_fixture(
     ] {
         fs::create_dir_all(fixture_root.join(dir)).expect("fixture dir");
     }
+    crate::app::tests_17::write_shared_capture_fixture(fixture_root);
     fs::write(fixture_root.join("docs/guides/easy-scene-setup.md"), guide).expect("guide fixture");
     fs::write(
         fixture_root.join("Cargo.toml"),
@@ -407,7 +409,7 @@ pub(crate) fn write_easy_scene_fixture(
     .expect("viewer material variants fixture");
     fs::write(
         fixture_root.join("src/viewer/capture.rs"),
-        "pub enum ViewerCaptureError {} pub enum ViewerPngError {} CPU headless renderer does not request a GPU adapter pub fn capture_png_bytes() { png::Encoder::new(); png::ColorType::Rgba; png::BitDepth::Eight; } pub fn capture_png() {} pub async fn render_png_bytes() {} pub async fn render_png() {}",
+        "pub enum ViewerCaptureError { Capture(CaptureError) } pub enum ViewerPngError {} CPU headless renderer does not request a GPU adapter pub fn capture_png_bytes() { self.capture()? .to_png_bytes() } pub fn capture_png(path) { self.capture()? .write_png(path) } pub async fn render_png_bytes() {} pub async fn render_png() {}",
     )
     .expect("viewer capture fixture");
     fs::write(
@@ -561,7 +563,7 @@ pub(crate) fn write_easy_scene_fixture(
     .expect("viewer pointer callback test fixture");
     fs::write(
         fixture_root.join("tests/round_d_viewer_capture_png.rs"),
-        "viewer_capture_png_bytes_decode_to_current_frame viewer_capture_png_writes_reference_artifact headless_viewer_builder_renders_gltf_to_png_bytes_without_gpu_setup headless_viewer_builder_renders_gltf_to_png_file_without_gpu_setup .render_png_bytes() .render_png( visible CPU-rendered pixels viewer-capture-png-reference.png",
+        "viewer_capture_png_bytes_decode_to_current_frame viewer_capture_png_writes_reference_artifact viewer_capture_png_uses_shared_capture_stale_frame_guard headless_viewer_builder_renders_gltf_to_png_bytes_without_gpu_setup headless_viewer_builder_renders_gltf_to_png_file_without_gpu_setup .render_png_bytes() .render_png( visible CPU-rendered pixels viewer-capture-png-reference.png",
     )
     .expect("viewer PNG capture test fixture");
     fs::write(

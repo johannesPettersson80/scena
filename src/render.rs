@@ -11,6 +11,8 @@ mod culling;
 mod environment_cache;
 mod exposure;
 mod gpu;
+#[cfg(feature = "inspection")]
+pub mod introspection;
 mod offscreen;
 mod output;
 mod prepare;
@@ -21,6 +23,8 @@ mod settings;
 // PreparedSceneState stores clipping_planes: Vec<ClippingPlane> in state.rs.
 mod state;
 mod surface;
+#[cfg(feature = "inspection")]
+pub mod visibility_diagnosis;
 
 use crate::assets::EnvironmentHandle;
 use crate::diagnostics::{

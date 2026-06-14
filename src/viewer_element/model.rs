@@ -437,6 +437,14 @@ impl ScenaViewerProgress {
                 progress.loaded_bytes = Some(*bytes);
                 progress
             }
+            AssetLoadProgress::ExternalImageFetched { path, bytes } => {
+                let mut progress = Self::for_path(
+                    ScenaViewerProgressPhase::Fetching,
+                    Some(path.as_str().to_string()),
+                );
+                progress.loaded_bytes = Some(*bytes);
+                progress
+            }
             AssetLoadProgress::Parsed {
                 path,
                 nodes,

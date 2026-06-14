@@ -1,11 +1,9 @@
-use std::collections::BTreeMap;
-
+use super::external_resources::{ExternalResourceFetchInputs, fetch_scene_external_resources};
 use super::fetch::AssetFetcher;
 use super::load::{
     self, AssetLoadControl, AssetLoadOptions, AssetLoadProgress, AssetLoadReport,
-    AssetLoadTelemetry, AssetLoadWarning, check_cancelled,
+    AssetLoadTelemetry, check_cancelled,
 };
-use super::texture::validate_texture_source_format;
 use super::{AssetPath, Assets, RetainPolicy, SceneAsset};
 use crate::diagnostics::AssetError;
 
@@ -198,6 +196,7 @@ impl<F: AssetFetcher> Assets<F> {
                 fetched_bytes: 0,
                 external_buffers: telemetry.external_buffers,
                 external_images: telemetry.external_images,
+                external_resources: telemetry.external_resources,
                 warnings: telemetry.warnings,
                 progress_events,
             });
@@ -241,6 +240,7 @@ impl<F: AssetFetcher> Assets<F> {
             fetched_bytes: telemetry.fetched_bytes,
             external_buffers: telemetry.external_buffers,
             external_images: telemetry.external_images,
+            external_resources: telemetry.external_resources,
             warnings: telemetry.warnings,
             progress_events,
         })
@@ -280,142 +280,39 @@ impl<F: AssetFetcher> Assets<F> {
         {
             step_start = log_asset_step("external URI discovery", step_start);
         }
-        let mut external_buffers = BTreeMap::new();
-        let mut external_images = BTreeMap::new();
-        let mut telemetry = AssetLoadTelemetry {
-            fetched_bytes: bytes.len(),
-            external_buffers: 0,
-            external_images: 0,
-            warnings: Vec::new(),
-        };
-        for (index, external_path, byte_length) in external_paths {
-            check_cancelled(&path, control)?;
-            let bytes = match self.fetcher.fetch(&external_path).await {
-                Ok(bytes) => bytes,
-                Err(error @ AssetError::NotFound { .. }) => {
-                    let reason = "not found".to_string();
-                    if options.strict_external_resources() {
-                        return Err(error);
-                    }
-                    warn_external_buffer_missing(&external_path, &reason);
-                    telemetry
-                        .warnings
-                        .push(AssetLoadWarning::ExternalBufferMissing {
-                            path: external_path.clone(),
-                            index,
-                            reason,
-                        });
-                    if byte_length == 0 {
-                        external_buffers.insert(index, Vec::new());
-                        continue;
-                    }
-                    return Err(error);
-                }
-                Err(error @ AssetError::Io { .. }) => {
-                    let reason = match &error {
-                        AssetError::Io { reason, .. } => reason.clone(),
-                        _ => unreachable!("matched Io error above"),
-                    };
-                    if options.strict_external_resources() {
-                        return Err(error);
-                    }
-                    warn_external_buffer_missing(&external_path, &reason);
-                    telemetry
-                        .warnings
-                        .push(AssetLoadWarning::ExternalBufferMissing {
-                            path: external_path.clone(),
-                            index,
-                            reason,
-                        });
-                    if byte_length == 0 {
-                        external_buffers.insert(index, Vec::new());
-                        continue;
-                    }
-                    return Err(error);
-                }
-                Err(error) => return Err(error),
-            };
-            load::emit_progress(
-                progress_events,
-                progress,
-                AssetLoadProgress::ExternalBufferFetched {
-                    path: external_path.clone(),
-                    index,
-                    bytes: bytes.len(),
-                },
-            );
-            telemetry.fetched_bytes = telemetry.fetched_bytes.saturating_add(bytes.len());
-            telemetry.external_buffers = telemetry.external_buffers.saturating_add(1);
-            external_buffers.insert(index, bytes);
-        }
+        let external_resources = fetch_scene_external_resources(
+            ExternalResourceFetchInputs {
+                fetcher: &self.fetcher,
+                scene_path: &path,
+                scene_bytes: bytes.len(),
+                external_paths,
+                external_image_paths,
+                control,
+                options,
+            },
+            progress_events,
+            progress,
+        )
+        .await?;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
-            step_start = log_asset_step("external buffer fetches", step_start);
-        }
-        for external_path in external_image_paths {
-            if external_images.contains_key(&external_path) {
-                continue;
-            }
-            if validate_texture_source_format(&external_path).is_err() {
-                continue;
-            }
-            check_cancelled(&path, control)?;
-            let bytes = match self.fetcher.fetch(&external_path).await {
-                Ok(bytes) => bytes,
-                Err(error @ AssetError::NotFound { .. }) => {
-                    if options.strict_textures() {
-                        return Err(error);
-                    }
-                    warn_external_image_missing(&external_path, "not found");
-                    telemetry
-                        .warnings
-                        .push(AssetLoadWarning::ExternalImageMissing {
-                            path: external_path,
-                            reason: "not found".to_string(),
-                        });
-                    continue;
-                }
-                Err(error @ AssetError::Io { .. }) => {
-                    let reason = match &error {
-                        AssetError::Io { reason, .. } => reason.clone(),
-                        _ => unreachable!("matched Io error above"),
-                    };
-                    if options.strict_textures() {
-                        return Err(error);
-                    }
-                    warn_external_image_missing(&external_path, &reason);
-                    telemetry
-                        .warnings
-                        .push(AssetLoadWarning::ExternalImageMissing {
-                            path: external_path,
-                            reason,
-                        });
-                    continue;
-                }
-                Err(error) => return Err(error),
-            };
-            telemetry.fetched_bytes = telemetry.fetched_bytes.saturating_add(bytes.len());
-            external_images.insert(external_path, bytes);
-            telemetry.external_images = telemetry.external_images.saturating_add(1);
-        }
-        #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
-        {
-            step_start = log_asset_step("external image fetches", step_start);
+            step_start = log_asset_step("external resource fetches", step_start);
         }
         check_cancelled(&path, control)?;
         let scene = {
             let mut storage = self.storage();
-            let mut scene = if external_buffers.is_empty() && external_images.is_empty() {
-                SceneAsset::from_gltf_bytes(path.clone(), &bytes, &mut storage)?
-            } else {
-                SceneAsset::from_gltf_bytes_with_external_resources(
-                    path.clone(),
-                    &bytes,
-                    &external_buffers,
-                    &external_images,
-                    &mut storage,
-                )?
-            };
+            let mut scene =
+                if external_resources.buffers.is_empty() && external_resources.images.is_empty() {
+                    SceneAsset::from_gltf_bytes(path.clone(), &bytes, &mut storage)?
+                } else {
+                    SceneAsset::from_gltf_bytes_with_external_resources(
+                        path.clone(),
+                        &bytes,
+                        &external_resources.buffers,
+                        &external_resources.images,
+                        &mut storage,
+                    )?
+                };
             if self.retain_policy == RetainPolicy::Always {
                 scene = scene.with_retained_source_bytes(&bytes);
             }
@@ -437,7 +334,7 @@ impl<F: AssetFetcher> Assets<F> {
         {
             log_asset_step("parse_scene_uncached total", total_start);
         }
-        Ok((scene, telemetry))
+        Ok((scene, external_resources.telemetry))
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -462,35 +359,5 @@ impl<F: AssetFetcher> Assets<F> {
             }
         }
         Ok(())
-    }
-}
-
-fn warn_external_image_missing(path: &AssetPath, reason: &str) {
-    #[cfg(target_arch = "wasm32")]
-    {
-        web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&format!(
-            "scena asset warning: external glTF image '{}' could not be fetched: {}",
-            path.as_str(),
-            reason
-        )));
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = (path, reason);
-    }
-}
-
-fn warn_external_buffer_missing(path: &AssetPath, reason: &str) {
-    #[cfg(target_arch = "wasm32")]
-    {
-        web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&format!(
-            "scena asset warning: external glTF buffer '{}' could not be fetched: {}",
-            path.as_str(),
-            reason
-        )));
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = (path, reason);
     }
 }

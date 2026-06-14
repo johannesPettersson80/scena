@@ -69,6 +69,7 @@ pub use inspection::{
     SceneDrawInspection, SceneDrawInspectionV1, SceneHostInstanceEntryInspectionV1,
     SceneHostInstanceSetInspectionV1, SceneInspectionCountsV1, SceneInspectionReport,
     SceneInspectionReportV1, SceneInspectionRevisionsV1, SceneMaterialInspection,
+    SceneMaterialInspectionV1, SceneMaterialSlotInspectionV1, SceneMaterialSourceInspectionV1,
     SceneNodeInspection, SceneNodeInspectionV1, SceneNormalInspection, SceneNormalInspectionV1,
     SceneTextureInspection,
 };

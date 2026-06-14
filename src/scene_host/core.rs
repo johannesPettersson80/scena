@@ -1,19 +1,20 @@
 use std::collections::BTreeMap;
 
 use super::camera::controls_from_scene_camera;
+use super::events::{HostEventQueue, HostEventV1};
 use super::handles::HandleTable;
 use super::inputs::validate_transform;
 use super::instances::{HostInstanceBinding, INSTANCE_HANDLE_GENERATION_BASE};
 use super::reporting::{diagnostics_json, stats_json};
 use super::transitions::HostTransitions;
 use super::{SceneHostError, SceneHostErrorCode};
+use crate::Color;
 use crate::{
-    Aabb, AssetFetcher, AssetPath, Assets, Backend, CursorPosition, DefaultAssetFetcher, HitTarget,
-    ImportOptions, OrbitControls, RenderOutcome, Renderer, Scene, SceneImport, SurfaceEvent,
-    SurfaceViewport, Transform, Vec3, Viewport,
+    Aabb, AssetFetcher, AssetPath, Assets, Backend, DefaultAssetFetcher, ImportOptions,
+    OrbitControls, RenderOutcome, Renderer, Scene, SceneImport, SurfaceEvent, SurfaceViewport,
+    Transform, Vec3,
 };
 use crate::{AnimationMixerKey, CameraKey, InstanceId, NodeKey};
-use crate::{AnnotationAnchor, Color};
 
 const ANIMATION_HANDLE_GENERATION_BASE: u32 = 6;
 
@@ -30,6 +31,8 @@ pub struct SceneHostCore<F = DefaultAssetFetcher> {
     pub(super) instance_handles: HandleTable<HostInstanceBinding>,
     pub(super) animation_handles: HandleTable<AnimationMixerKey>,
     pub(super) transitions: HostTransitions,
+    pub(super) events: HostEventQueue,
+    pub(super) last_diagnostic_events: Vec<HostEventV1>,
     pub(super) node_handle_map: BTreeMap<NodeKey, u64>,
     pub(super) instance_handle_map: BTreeMap<(NodeKey, InstanceId), u64>,
     next_byte_asset: u64,
@@ -80,6 +83,8 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             instance_handles: HandleTable::with_generation_base(INSTANCE_HANDLE_GENERATION_BASE),
             animation_handles: HandleTable::with_generation_base(ANIMATION_HANDLE_GENERATION_BASE),
             transitions: HostTransitions::default(),
+            events: HostEventQueue::default(),
+            last_diagnostic_events: Vec::new(),
             node_handle_map: BTreeMap::new(),
             instance_handle_map: BTreeMap::new(),
             next_byte_asset: 1,
@@ -130,6 +135,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         self.viewport = viewport;
         self.renderer
             .handle_surface_event(SurfaceEvent::ViewportChanged(viewport))?;
+        self.emit_surface_resized_event(viewport);
         Ok(())
     }
 
@@ -138,6 +144,34 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             self.viewport = viewport;
         }
         self.renderer.handle_surface_event(event)?;
+        match event {
+            SurfaceEvent::Resize { width, height } => {
+                let dpr = self.viewport.device_pixel_ratio();
+                self.emit_event(HostEventV1::SurfaceResized {
+                    width_css_px: width as f32 / dpr,
+                    height_css_px: height as f32 / dpr,
+                    width_physical_px: width,
+                    height_physical_px: height,
+                    device_pixel_ratio: dpr,
+                });
+            }
+            SurfaceEvent::ViewportChanged(viewport) => self.emit_surface_resized_event(viewport),
+            SurfaceEvent::ContextLost { recoverable } => {
+                self.emit_event(HostEventV1::ContextLost { recoverable });
+            }
+            SurfaceEvent::ContextRestored => {
+                self.emit_event(HostEventV1::ContextRestored);
+                self.emit_event(HostEventV1::capability_changed(self.backend()));
+            }
+            SurfaceEvent::DeviceLost { recoverable } => {
+                self.emit_event(HostEventV1::DeviceLost { recoverable });
+            }
+            SurfaceEvent::ScaleFactorChanged { .. }
+            | SurfaceEvent::Occluded { .. }
+            | SurfaceEvent::Hidden
+            | SurfaceEvent::Shown
+            | SurfaceEvent::Lost => {}
+        }
         Ok(())
     }
 
@@ -206,8 +240,11 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         path: impl Into<AssetPath>,
     ) -> Result<u64, SceneHostError> {
         let parent = self.resolve_node(parent)?;
-        let scene_asset = self.assets.load_scene(path).await?;
-        self.instantiate_scene_asset_under(parent, &scene_asset)
+        let report = self.assets.load_scene_with_report(path).await?;
+        let import = self.instantiate_scene_asset_under(parent, report.asset())?;
+        let asset_report = report.to_schema_report();
+        self.emit_asset_load_events(import, &asset_report);
+        Ok(import)
     }
 
     pub async fn instantiate_url_instanced_under(
@@ -217,8 +254,11 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         count: usize,
     ) -> Result<Vec<u64>, SceneHostError> {
         let parent = self.resolve_node(parent)?;
-        let scene_asset = self.assets.load_scene(path).await?;
-        self.instantiate_scene_asset_instanced_under(parent, &scene_asset, count)
+        let report = self.assets.load_scene_with_report(path).await?;
+        let roots = self.instantiate_scene_asset_instanced_under(parent, report.asset(), count)?;
+        let asset_report = report.to_schema_report();
+        self.emit_asset_progress_events(&asset_report);
+        Ok(roots)
     }
 
     pub async fn instantiate_glb(&mut self, bytes: &[u8]) -> Result<u64, SceneHostError> {
@@ -305,37 +345,6 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         Ok(())
     }
 
-    pub fn set_node_annotation(
-        &mut self,
-        id: &str,
-        node: u64,
-        local_offset: [f32; 3],
-    ) -> Result<(), SceneHostError> {
-        let node = self.resolve_node(node)?;
-        self.scene.set_annotation_anchor(AnnotationAnchor::node(
-            id,
-            node,
-            Vec3::new(local_offset[0], local_offset[1], local_offset[2]),
-        ))?;
-        Ok(())
-    }
-
-    pub fn set_world_annotation(
-        &mut self,
-        id: &str,
-        position: [f32; 3],
-    ) -> Result<(), SceneHostError> {
-        self.scene.set_annotation_anchor(AnnotationAnchor::world(
-            id,
-            Vec3::new(position[0], position[1], position[2]),
-        ))?;
-        Ok(())
-    }
-
-    pub fn clear_annotation(&mut self, id: &str) -> bool {
-        self.scene.clear_annotation_anchor(id)
-    }
-
     pub fn remove_node(&mut self, node: u64) -> Result<(), SceneHostError> {
         if self.is_instance_root_handle(node) {
             return self.remove_instance_root(node);
@@ -387,40 +396,12 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     pub fn prepare(&mut self) -> Result<(), SceneHostError> {
         self.renderer
             .prepare_with_assets(&mut self.scene, &self.assets)?;
+        self.emit_changed_diagnostics();
         Ok(())
     }
 
     pub fn render(&mut self) -> Result<RenderOutcome, SceneHostError> {
         Ok(self.renderer.render_active(&self.scene)?)
-    }
-
-    pub fn pick(&mut self, x: f32, y: f32) -> Result<Option<u64>, SceneHostError> {
-        let size = self.viewport.physical_size();
-        let viewport = Viewport::new(size.width, size.height, self.viewport.device_pixel_ratio())
-            .ok_or_else(|| {
-            SceneHostError::new(
-                SceneHostErrorCode::InvalidViewport,
-                format!(
-                    "invalid viewport {}x{} at DPR {}",
-                    size.width,
-                    size.height,
-                    self.viewport.device_pixel_ratio()
-                ),
-            )
-        })?;
-        let hit = self.scene.pick_with_assets(
-            self.active_camera,
-            CursorPosition::logical(x, y),
-            viewport,
-            &self.assets,
-        )?;
-        match hit.map(|hit| hit.target()) {
-            Some(HitTarget::Node(node)) => Ok(Some(self.register_node(node))),
-            Some(HitTarget::Instance { node, instance }) => {
-                Ok(self.instance_handle_map.get(&(node, instance)).copied())
-            }
-            None => Ok(None),
-        }
     }
 
     pub fn inspect_json(&self) -> Result<String, SceneHostError> {

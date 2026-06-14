@@ -1,0 +1,75 @@
+{
+  "schema": "scena.schema_entry.v1",
+  "entry": {
+    "schema": "scena.render_introspection.v1",
+    "owner_module": "render",
+    "summary": "Capture-bound frame visibility, luminance, framing, reason, and fix summary.",
+    "feature_flag": "inspection",
+    "fixture_path": "tests/assets/stable-contracts/render_introspection.v1.json"
+  },
+  "example": {
+    "schema": "scena.render_introspection.v1",
+    "ok": true,
+    "reasons": [],
+    "fixes": [],
+    "content_bbox_css_px": {
+      "min_x": 16.0,
+      "min_y": 16.0,
+      "max_x": 47.0,
+      "max_y": 47.0,
+      "width": 32.0,
+      "height": 32.0
+    },
+    "content_bbox_fraction": {
+      "min_x": 0.25,
+      "min_y": 0.25,
+      "max_x": 0.734000027179718,
+      "max_y": 0.734000027179718,
+      "width": 0.5,
+      "height": 0.5
+    },
+    "visible_pixel_fraction": 0.25,
+    "luminance": {
+      "min": 0.0,
+      "max": 255.0,
+      "mean": 63.75,
+      "p05": 0.0,
+      "p50": 0.0,
+      "p95": 255.0
+    },
+    "framing": {
+      "center_offset_fraction": [0.0, 0.0],
+      "fit_fraction": 0.5,
+      "cropped": false,
+      "tiny_in_frame": false,
+      "active_camera": 2
+    },
+    "nodes_summary": {
+      "visible": 2,
+      "hidden": 0,
+      "drawn": 1,
+      "culled": 0,
+      "clipped": 0,
+      "transparent": 0,
+      "failed_material": 0,
+      "unknown_coverage": 0
+    },
+    "nodes_detail": [],
+    "artifacts": {
+      "capture": {
+        "schema": "scena.capture.v1",
+        "width": 64,
+        "height": 64,
+        "payload_fnv1a64": "0123456789abcdef"
+      }
+    },
+    "capabilities": {
+      "backend": "headless",
+      "gpu_device": false,
+      "surface_attached": false,
+      "hardware_tier": "low",
+      "forward_pbr": "degraded",
+      "readback_headless_screenshots": "supported"
+    }
+  }
+}

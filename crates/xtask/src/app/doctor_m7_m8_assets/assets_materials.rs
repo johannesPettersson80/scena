@@ -91,6 +91,8 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "pub struct AssetLoadOptions",
             "pub struct AssetLoadReport",
             "pub enum AssetLoadProgress",
+            "pub struct AssetMaterialFallback",
+            "material_index",
             "strict_textures",
             "with_strict_textures",
             "progress_events",
@@ -108,7 +110,6 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "load_scene_with_options",
             "load_scene_with_report_options",
             "load_scene_controlled",
-            "warn_external_image_missing",
         ],
     );
     require_contains(
@@ -175,6 +176,8 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "m8_direct_load_texture_decodes_jpeg_for_cpu_preview_pixels",
             "m8_missing_external_image_records_load_warning",
             "m8_strict_scene_load_promotes_missing_external_image_to_error",
+            "m8_scene_inspection_reports_material_fallback_and_source_provenance",
+            "m8_scene_inspection_reports_generated_default_materials",
             "m8_prepare_reports_material_texture_handles_without_decoded_pixels",
             "m8_checked_asset_lookups_report_typed_missing_handles",
             "m8_prepare_rejects_material_texture_handles_from_wrong_assets",

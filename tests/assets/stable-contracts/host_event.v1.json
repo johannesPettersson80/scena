@@ -1,0 +1,142 @@
+{
+  "schema": "scena.host_event.v1",
+  "events": [
+    {
+      "kind": "pick",
+      "x_css_px": 64.0,
+      "y_css_px": 32.0,
+      "hit": {
+        "target": "node",
+        "handle": 4294967297,
+        "distance": 2.5,
+        "world_position": [0.0, 0.0, 0.0],
+        "normal": [0.0, 0.0, 1.0]
+      },
+      "button": "primary",
+      "modifiers": {
+        "alt": false,
+        "ctrl": false,
+        "meta": false,
+        "shift": true
+      }
+    },
+    {
+      "kind": "hover",
+      "x_css_px": 64.0,
+      "y_css_px": 32.0,
+      "phase": "entered",
+      "hit": {
+        "target": "node",
+        "handle": 4294967297,
+        "distance": 2.5,
+        "world_position": [0.0, 0.0, 0.0],
+        "normal": null
+      }
+    },
+    {
+      "kind": "selection_changed",
+      "previous": null,
+      "current": 4294967297
+    },
+    {
+      "kind": "load_progress",
+      "progress": {
+        "kind": "load_started",
+        "path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
+      }
+    },
+    {
+      "kind": "asset_loaded",
+      "import": 7,
+      "asset_load_report": {
+        "schema": "scena.asset_load_report.v1",
+        "path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+        "cache_hit": false,
+        "fetched_bytes": 4096,
+        "external_buffers": 1,
+        "external_images": 0,
+        "provenance": {
+          "source_path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+          "source_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "license": null,
+          "generator": null,
+          "derivatives": []
+        },
+        "geometry": {
+          "schema": "scena.asset_geometry_summary.v1",
+          "node_count": 3,
+          "mesh_count": 1,
+          "primitive_count": 1,
+          "bounds": null,
+          "provenance": {
+            "source_path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+            "source_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "license": null,
+            "generator": null,
+            "derivatives": []
+          },
+          "source_units": [],
+          "source_coordinate_systems": []
+        },
+        "warnings": [],
+        "progress_events": [
+          {
+            "kind": "load_started",
+            "path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
+          },
+          {
+            "kind": "cached",
+            "path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
+          }
+        ],
+        "external_resources": [],
+        "material_fallbacks": []
+      }
+    },
+    {
+      "kind": "diagnostic",
+      "code": "large_scene_precision_risk",
+      "severity": "warning",
+      "node": 4294967297,
+      "message": "node handle 4294967297 is 20000.0 scene units from the origin; f32 transform precision may be visible",
+      "help": "use camera-relative rendering or an origin-shift policy for large-world scenes"
+    },
+    {
+      "kind": "capture_ready",
+      "capture_schema": "scena.capture.v1",
+      "width": 64,
+      "height": 64,
+      "pixel_format": "rgba8",
+      "payload_kind": "rgba8",
+      "payload_bytes": 16384,
+      "payload_fnv1a64": "0123456789abcdef"
+    },
+    {
+      "kind": "surface_resized",
+      "width_css_px": 120.0,
+      "height_css_px": 80.0,
+      "width_physical_px": 240,
+      "height_physical_px": 160,
+      "device_pixel_ratio": 2.0
+    },
+    {
+      "kind": "context_lost",
+      "recoverable": true
+    },
+    {
+      "kind": "context_restored"
+    },
+    {
+      "kind": "device_lost",
+      "recoverable": false
+    },
+    {
+      "kind": "device_recovered"
+    },
+    {
+      "kind": "capability_changed",
+      "capability_schema": "scena.capability_report.v1",
+      "backend": "headless"
+    }
+  ]
+}

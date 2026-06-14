@@ -23,6 +23,7 @@ pub mod render;
 pub mod scene;
 #[cfg(feature = "scene-host")]
 pub mod scene_host;
+pub mod schema_catalog;
 pub mod viewer;
 pub mod viewer_element;
 
@@ -37,9 +38,12 @@ pub use assets::BrowserAssetFetcher;
 pub use assets::FileAssetFetcher;
 pub use assets::{
     ASSET_GEOMETRY_SUMMARY_SCHEMA_V1, ASSET_LOAD_REPORT_SCHEMA_V1, AssetDerivative,
-    AssetEvictionStats, AssetFetcher, AssetLoadControl, AssetLoadOptions, AssetLoadProgress,
-    AssetLoadProgressV1, AssetLoadReport, AssetLoadReportV1, AssetLoadWarning, AssetLoadWarningV1,
-    AssetPath, AssetProvenance, AssetStoreId, Assets, DefaultAssetFetcher, EnvironmentDerivative,
+    AssetEvictionStats, AssetExternalResource, AssetExternalResourceKind,
+    AssetExternalResourceStatus, AssetExternalResourceV1, AssetFetcher, AssetLoadControl,
+    AssetLoadOptions, AssetLoadProgress, AssetLoadProgressV1, AssetLoadReport, AssetLoadReportV1,
+    AssetLoadWarning, AssetLoadWarningV1, AssetMaterialFallback, AssetMaterialFallbackKind,
+    AssetMaterialFallbackV1, AssetMaterialSource, AssetMaterialSourceKind, AssetPath,
+    AssetProvenance, AssetStoreId, Assets, DefaultAssetFetcher, EnvironmentDerivative,
     EnvironmentDesc, EnvironmentHandle, EnvironmentPrefilterSidecar, EnvironmentPreset,
     EnvironmentPresetMetadata, EnvironmentSidecarHeader, EnvironmentSidecarProfile,
     EnvironmentSourceKind, GeometryHandle, GltfDecoderPolicy, GltfExtensionDiagnostic,
@@ -55,11 +59,14 @@ pub use assets::{AssetHotReloadError, AssetHotReloadWatcher};
 #[cfg(feature = "khronos-samples")]
 pub use assets::{KhronosSample, KhronosSampleMetadata, KhronosSamples};
 pub use capture::{
-    CAPTURE_SCHEMA_V1, CaptureAutoFrame, CaptureAutoFrameViewport, CaptureCamera,
+    CAPTURE_BASELINE_SCHEMA_V1, CAPTURE_SCHEMA_V1, CaptureAutoFrame, CaptureAutoFrameViewport,
+    CaptureBaselineDiff, CaptureBaselineError, CaptureBaselineReport, CaptureBaselineTolerance,
+    CaptureCamera, CaptureContactSheet, CaptureContactSheetError, CaptureContactSheetTile,
     CaptureDescriptor, CaptureError, CaptureOptions, CapturePayload, CapturePayloadKind,
-    CapturePixelBounds, CapturePixelSummary, CapturePoint2, CaptureProjection, CaptureRevisions,
-    CaptureRgba8, CaptureScreenRect, CaptureViewport, auto_frame_metadata, capture_rgba8,
-    capture_rgba8_from_pixels, fnv1a64_hex, sample_rgba8, summarize_pixel_readback,
+    CapturePixelBounds, CapturePixelSummary, CapturePngError, CapturePoint2, CaptureProjection,
+    CaptureRevisions, CaptureRgba8, CaptureScreenRect, CaptureViewport, auto_frame_metadata,
+    capture_contact_sheet_rgba8, capture_rgba8, capture_rgba8_from_pixels,
+    compare_captures_with_tolerance, fnv1a64_hex, sample_rgba8, summarize_pixel_readback,
     summarize_rgba8,
 };
 pub use controls::{
@@ -70,10 +77,11 @@ pub use diagnostics::{
     AdapterLimitsReport, AlphaPipelineStatus, AnimationError, AssetError, Backend, BuildError,
     CAPABILITY_REPORT_SCHEMA_V1, Capabilities, CapabilityReport, CapabilityReportV1,
     CapabilityStatus, ChangeKind, DebugOverlay, DevicePoll, Diagnostic, DiagnosticCode,
-    DiagnosticSeverity, Error, GpuAdapterReport, HardwareTier, ImportDiagnosticOverlay,
-    ImportDiagnosticOverlayKind, ImportError, InstantiateError, LookupError, NotPreparedReason,
-    OutputColorSpace, OutputStageStatus, PostProcessingDepthSourceV1, PostProcessingPassV1,
-    PostProcessingReportV1, PrepareError, RenderError, RenderOutcome, RendererStats,
+    DiagnosticContext, DiagnosticSeverity, Error, GpuAdapterReport, HardwareTier,
+    ImportDiagnosticOverlay, ImportDiagnosticOverlayKind, ImportError, InstantiateError,
+    LookupError, NotPreparedReason, OutputColorSpace, OutputStageStatus,
+    PostProcessingDepthSourceV1, PostProcessingPassV1, PostProcessingReportV1, PrepareError,
+    RenderError, RenderOutcome, RendererStats,
 };
 pub use geometry::{
     Aabb, GeometryDesc, GeometryError, GeometryMorphTarget, GeometrySkin, GeometryTopology,
@@ -90,6 +98,20 @@ pub use platform::{PlatformSurface, SurfaceEvent, SurfaceKind, SurfaceSize, Surf
 pub use reference_image::{
     ReferenceImage, ReferenceImageError, ReferenceImageReport, ReferenceImageTolerance, regress,
     regress_with_tolerance,
+};
+#[cfg(feature = "inspection")]
+pub use render::introspection::{
+    RENDER_INTROSPECTION_SCHEMA_V1, RenderIntrospectionArtifactsV1,
+    RenderIntrospectionCapabilitiesV1, RenderIntrospectionCaptureSummaryV1,
+    RenderIntrospectionFixV1, RenderIntrospectionFramingV1, RenderIntrospectionLuminanceV1,
+    RenderIntrospectionNodeDetailV1, RenderIntrospectionNodesSummaryV1, RenderIntrospectionOptions,
+    RenderIntrospectionReasonV1, RenderIntrospectionRectV1, RenderIntrospectionReportV1,
+};
+#[cfg(feature = "inspection")]
+pub use render::visibility_diagnosis::{
+    VISIBILITY_DIAGNOSIS_SCHEMA_V1, VisibilityDiagnosisEvidenceV1, VisibilityDiagnosisFixV1,
+    VisibilityDiagnosisOptions, VisibilityDiagnosisReasonV1, VisibilityDiagnosisReportV1,
+    VisibilityDiagnosisSummaryV1, VisibilityDiagnosisTargetV1,
 };
 pub use render::{
     AntiAliasing, AutoExposureConfig, AutoExposureResult, Background, OffscreenTarget,
@@ -119,16 +141,30 @@ pub use scene::{
     SceneDrawInspection, SceneDrawInspectionV1, SceneHostInstanceEntryInspectionV1,
     SceneHostInstanceSetInspectionV1, SceneInspectionCountsV1, SceneInspectionReport,
     SceneInspectionReportV1, SceneInspectionRevisionsV1, SceneMaterialInspection,
+    SceneMaterialInspectionV1, SceneMaterialSlotInspectionV1, SceneMaterialSourceInspectionV1,
     SceneNodeInspection, SceneNodeInspectionV1, SceneNormalInspection, SceneNormalInspectionV1,
     SceneTextureInspection,
 };
 #[cfg(feature = "scene-host")]
 pub use scene_host::{
+    HOST_EVENT_SCHEMA_V1, HostEventBatchV1, HostEventButtonV1, HostEventHitV1,
+    HostEventHoverPhaseV1, HostEventModifiersV1, HostEventTargetKindV1, HostEventV1,
     SCENE_HOST_ANIMATION_INVENTORY_SCHEMA_V1, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1,
     SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostAnimationClipV1, SceneHostAnimationInventoryV1,
     SceneHostAnimationLoopMode, SceneHostAnimationPlayOptions, SceneHostAssetImportReportV1,
     SceneHostCameraState, SceneHostCore, SceneHostEasing, SceneHostError, SceneHostErrorCode,
-    SceneHostSubtreeNodeV1, SceneHostSubtreeReportV1,
+    SceneHostSubtreeNodeV1, SceneHostSubtreeReportV1, VISUAL_PATCH_SCHEMA_V1,
+    VisualPatchAnimationTimeModeV1, VisualPatchAnimationTimeV1, VisualPatchAppliedCountsV1,
+    VisualPatchCameraEasedV1, VisualPatchEntryErrorV1, VisualPatchHoverV1,
+    VisualPatchLabelTargetV1, VisualPatchLabelV1, VisualPatchMaterialVariantV1,
+    VisualPatchResultV1, VisualPatchRevisionDeltaV1, VisualPatchSelectionV1,
+    VisualPatchTintEasedV1, VisualPatchTintV1, VisualPatchTransformEasedV1, VisualPatchTransformV1,
+    VisualPatchV1, VisualPatchVisibilityV1,
+};
+pub use schema_catalog::{
+    SCHEMA_CATALOG_SCHEMA_V1, SCHEMA_ENTRY_SCHEMA_V1, SchemaCatalogEntryV1, SchemaCatalogV1,
+    SchemaEntryReportV1, nearest_schema_name, schema_catalog_entry, schema_catalog_v1,
+    schema_entry_report_v1,
 };
 pub use viewer::{
     FirstRender, HeadlessGltfViewer, HeadlessGltfViewerBuilder, InteractiveGltfViewer,

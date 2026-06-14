@@ -1,11 +1,14 @@
-use crate::assets::{Assets, MaterialHandle, TextureHandle};
+use crate::assets::{
+    AssetMaterialFallback, AssetMaterialSource, Assets, MaterialHandle, TextureHandle,
+};
 use crate::material::{AlphaMode, Color, MaterialDesc, MaterialKind};
 
 use super::SceneTextureInspection;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SceneMaterialInspection {
     material: MaterialHandle,
+    source: Option<AssetMaterialSource>,
     kind: MaterialKind,
     base_color: Color,
     alpha_mode: AlphaMode,
@@ -28,8 +31,10 @@ pub struct SceneMaterialInspection {
 
 impl SceneMaterialInspection {
     pub(super) fn new<F>(material: MaterialHandle, desc: MaterialDesc, assets: &Assets<F>) -> Self {
+        let source = assets.material_source(material);
         Self {
             material,
+            source,
             kind: desc.kind(),
             base_color: desc.base_color(),
             alpha_mode: desc.alpha_mode(),
@@ -61,6 +66,17 @@ impl SceneMaterialInspection {
         self.material
     }
 
+    pub fn source(&self) -> Option<&AssetMaterialSource> {
+        self.source.as_ref()
+    }
+
+    pub fn fallbacks(&self) -> &[AssetMaterialFallback] {
+        self.source
+            .as_ref()
+            .map(AssetMaterialSource::fallbacks)
+            .unwrap_or(&[])
+    }
+
     pub const fn kind(&self) -> MaterialKind {
         self.kind
     }
@@ -77,120 +93,120 @@ impl SceneMaterialInspection {
         self.base_color_texture.is_some()
     }
 
-    pub const fn base_color_texture(&self) -> Option<SceneTextureInspection> {
-        self.base_color_texture
+    pub fn base_color_texture(&self) -> Option<SceneTextureInspection> {
+        self.base_color_texture.clone()
     }
 
     pub const fn has_normal_texture(&self) -> bool {
         self.normal_texture.is_some()
     }
 
-    pub const fn normal_texture(&self) -> Option<SceneTextureInspection> {
-        self.normal_texture
+    pub fn normal_texture(&self) -> Option<SceneTextureInspection> {
+        self.normal_texture.clone()
     }
 
     pub const fn has_metallic_roughness_texture(&self) -> bool {
         self.metallic_roughness_texture.is_some()
     }
 
-    pub const fn metallic_roughness_texture(&self) -> Option<SceneTextureInspection> {
-        self.metallic_roughness_texture
+    pub fn metallic_roughness_texture(&self) -> Option<SceneTextureInspection> {
+        self.metallic_roughness_texture.clone()
     }
 
     pub const fn has_occlusion_texture(&self) -> bool {
         self.occlusion_texture.is_some()
     }
 
-    pub const fn occlusion_texture(&self) -> Option<SceneTextureInspection> {
-        self.occlusion_texture
+    pub fn occlusion_texture(&self) -> Option<SceneTextureInspection> {
+        self.occlusion_texture.clone()
     }
 
     pub const fn has_emissive_texture(&self) -> bool {
         self.emissive_texture.is_some()
     }
 
-    pub const fn emissive_texture(&self) -> Option<SceneTextureInspection> {
-        self.emissive_texture
+    pub fn emissive_texture(&self) -> Option<SceneTextureInspection> {
+        self.emissive_texture.clone()
     }
 
     pub const fn has_clearcoat_texture(&self) -> bool {
         self.clearcoat_texture.is_some()
     }
 
-    pub const fn clearcoat_texture(&self) -> Option<SceneTextureInspection> {
-        self.clearcoat_texture
+    pub fn clearcoat_texture(&self) -> Option<SceneTextureInspection> {
+        self.clearcoat_texture.clone()
     }
 
     pub const fn has_clearcoat_roughness_texture(&self) -> bool {
         self.clearcoat_roughness_texture.is_some()
     }
 
-    pub const fn clearcoat_roughness_texture(&self) -> Option<SceneTextureInspection> {
-        self.clearcoat_roughness_texture
+    pub fn clearcoat_roughness_texture(&self) -> Option<SceneTextureInspection> {
+        self.clearcoat_roughness_texture.clone()
     }
 
     pub const fn has_clearcoat_normal_texture(&self) -> bool {
         self.clearcoat_normal_texture.is_some()
     }
 
-    pub const fn clearcoat_normal_texture(&self) -> Option<SceneTextureInspection> {
-        self.clearcoat_normal_texture
+    pub fn clearcoat_normal_texture(&self) -> Option<SceneTextureInspection> {
+        self.clearcoat_normal_texture.clone()
     }
 
     pub const fn has_sheen_color_texture(&self) -> bool {
         self.sheen_color_texture.is_some()
     }
 
-    pub const fn sheen_color_texture(&self) -> Option<SceneTextureInspection> {
-        self.sheen_color_texture
+    pub fn sheen_color_texture(&self) -> Option<SceneTextureInspection> {
+        self.sheen_color_texture.clone()
     }
 
     pub const fn has_sheen_roughness_texture(&self) -> bool {
         self.sheen_roughness_texture.is_some()
     }
 
-    pub const fn sheen_roughness_texture(&self) -> Option<SceneTextureInspection> {
-        self.sheen_roughness_texture
+    pub fn sheen_roughness_texture(&self) -> Option<SceneTextureInspection> {
+        self.sheen_roughness_texture.clone()
     }
 
     pub const fn has_anisotropy_texture(&self) -> bool {
         self.anisotropy_texture.is_some()
     }
 
-    pub const fn anisotropy_texture(&self) -> Option<SceneTextureInspection> {
-        self.anisotropy_texture
+    pub fn anisotropy_texture(&self) -> Option<SceneTextureInspection> {
+        self.anisotropy_texture.clone()
     }
 
     pub const fn has_iridescence_texture(&self) -> bool {
         self.iridescence_texture.is_some()
     }
 
-    pub const fn iridescence_texture(&self) -> Option<SceneTextureInspection> {
-        self.iridescence_texture
+    pub fn iridescence_texture(&self) -> Option<SceneTextureInspection> {
+        self.iridescence_texture.clone()
     }
 
     pub const fn has_iridescence_thickness_texture(&self) -> bool {
         self.iridescence_thickness_texture.is_some()
     }
 
-    pub const fn iridescence_thickness_texture(&self) -> Option<SceneTextureInspection> {
-        self.iridescence_thickness_texture
+    pub fn iridescence_thickness_texture(&self) -> Option<SceneTextureInspection> {
+        self.iridescence_thickness_texture.clone()
     }
 
     pub const fn has_transmission_texture(&self) -> bool {
         self.transmission_texture.is_some()
     }
 
-    pub const fn transmission_texture(&self) -> Option<SceneTextureInspection> {
-        self.transmission_texture
+    pub fn transmission_texture(&self) -> Option<SceneTextureInspection> {
+        self.transmission_texture.clone()
     }
 
     pub const fn has_thickness_texture(&self) -> bool {
         self.thickness_texture.is_some()
     }
 
-    pub const fn thickness_texture(&self) -> Option<SceneTextureInspection> {
-        self.thickness_texture
+    pub fn thickness_texture(&self) -> Option<SceneTextureInspection> {
+        self.thickness_texture.clone()
     }
 }
 

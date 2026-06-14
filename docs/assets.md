@@ -53,13 +53,19 @@ files from paths that the browser can fetch.
 `scena.asset_load_report.v1` JSON view through
 `AssetLoadReport<SceneAsset>::to_schema_json()`. The report includes fetched
 bytes, cache-hit state, external buffer/image counts, geometry summary,
-progress events, and typed missing-resource warnings:
-`external_buffer_missing` and `external_image_missing`.
+progress events, external buffer/image status rows, typed missing-resource
+warnings (`external_buffer_missing` and `external_image_missing`), and material
+fallback provenance such as optional compressed texture sources that used an
+authored fallback image.
 
 Use `AssetLoadOptions::with_strict_external_resources(true)` when missing
 external buffers or images should fail loading instead of producing warnings.
-Cache-hit reports retain the original warning and external-resource evidence
-while reporting `fetched_bytes = 0` for the cache-hit call itself.
+Cache-hit reports retain the original warning, external-resource status, and
+material-fallback evidence while reporting `fetched_bytes = 0` for the cache-hit
+call itself.
+Asset-aware `scena.scene_inspection.v1` reports reuse the same material source
+evidence for rendered nodes and draw rows, including source material index,
+generated-default reason, texture provenance, and matching fallback rows.
 
 Loaded scene assets, textures, and environments expose generic
 `AssetProvenance` metadata with source path, optional source SHA-256, optional

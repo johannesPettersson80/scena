@@ -419,6 +419,8 @@ pub(crate) fn doctor_rejects_missing_stable_contract_release_evidence_regression
          scena.asset_geometry_summary.v1\n\
          scena.asset_load_report.v1\n\
          scena.scene_host_asset_import.v1\n\
+         scena.visual_patch.v1\n\
+         visual_patch_result.v1.json\n\
          tests/assets/stable-contracts\n",
     )
     .expect("schema contract fixture");
@@ -441,6 +443,43 @@ pub(crate) fn doctor_rejects_missing_stable_contract_release_evidence_regression
                     .contains("tests/assets/stable-contracts/capture.v1.json")
         }),
         "doctor must reject missing golden JSON fixtures: {findings:?}",
+    );
+}
+
+#[test]
+pub(crate) fn doctor_rejects_schema_catalog_missing_stable_fixture_schema_regression() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root =
+        root.join("target/xtask-doctor-regressions/stable-contract-schema-catalog-missing");
+    let contracts_dir = fixture_root.join("tests/assets/stable-contracts");
+    fs::create_dir_all(&contracts_dir).expect("stable-contracts dir");
+    fs::write(
+        contracts_dir.join("schema_catalog.v1.json"),
+        r#"{
+  "schema": "scena.schema_catalog.v1",
+  "entries": [
+    {
+      "schema": "scena.schema_catalog.v1",
+      "owner_module": "schema_catalog",
+      "summary": "fixture",
+      "fixture_path": "tests/assets/stable-contracts/schema_catalog.v1.json"
+    }
+  ]
+}"#,
+    )
+    .expect("schema catalog fixture");
+    let mut findings = Vec::new();
+
+    check_stable_contract_release_evidence(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "STABLE-CONTRACT-EVIDENCE"
+                && finding
+                    .message
+                    .contains("must list stable fixture schema scena.render_introspection.v1")
+        }),
+        "doctor must reject stable fixtures missing from schema catalog: {findings:?}",
     );
 }
 

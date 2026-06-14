@@ -3,7 +3,9 @@
 use std::io::Cursor;
 use std::path::PathBuf;
 
-use scena::headless_gltf_viewer;
+use scena::{
+    CaptureError, PerspectiveCamera, Transform, Vec3, ViewerCaptureError, headless_gltf_viewer,
+};
 
 #[test]
 fn viewer_capture_png_bytes_decode_to_current_frame() {
@@ -46,6 +48,40 @@ fn viewer_capture_png_writes_reference_artifact() {
 
     assert_eq!(file_bytes, bytes);
     assert_eq!(decode_png_rgba8(&file_bytes).rgba8, viewer.snapshot_rgba8());
+}
+
+#[test]
+fn viewer_capture_png_uses_shared_capture_stale_frame_guard() {
+    let mut viewer = pollster::block_on(
+        headless_gltf_viewer("tests/assets/gltf/mesh_material_vertex_color_scene.gltf")
+            .size(48, 32)
+            .with_default_light()
+            .build(),
+    )
+    .expect("headless viewer builds");
+    viewer.render_next_frame().expect("viewer renders a frame");
+
+    let root = viewer.scene().root();
+    let second_camera = viewer
+        .scene_mut()
+        .add_perspective_camera(
+            root,
+            PerspectiveCamera::standard(),
+            Transform::at(Vec3::new(1.0, 1.0, 4.0)),
+        )
+        .expect("second camera inserts");
+    viewer
+        .scene_mut()
+        .set_active_camera(second_camera)
+        .expect("active camera changes after render");
+
+    let error = viewer
+        .capture_png_bytes()
+        .expect_err("viewer PNG must reject stale rendered frame state");
+    assert!(matches!(
+        error,
+        ViewerCaptureError::Capture(CaptureError::StaleRender { .. })
+    ));
 }
 
 #[test]

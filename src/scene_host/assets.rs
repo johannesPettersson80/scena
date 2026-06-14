@@ -19,7 +19,9 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         let parent = self.resolve_node(parent)?;
         let report = self.assets.load_scene_with_report(path).await?;
         let import = self.instantiate_scene_asset_under(parent, report.asset())?;
-        let host_report = SceneHostAssetImportReportV1::new(import, report.to_schema_report());
+        let asset_report = report.to_schema_report();
+        self.emit_asset_load_events(import, &asset_report);
+        let host_report = SceneHostAssetImportReportV1::new(import, asset_report);
         serde_json::to_string(&host_report).map_err(|error| {
             SceneHostError::new(
                 SceneHostErrorCode::Inspect,

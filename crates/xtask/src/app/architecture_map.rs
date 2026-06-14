@@ -181,7 +181,7 @@ pub(crate) fn architecture_owner_for_source_path(rel: &Path) -> &'static str {
         "viewer"
     } else if path.starts_with("src/browser_probe") {
         "browser_probe"
-    } else if path.starts_with("src/bin") {
+    } else if path.starts_with("src/bin") || path.starts_with("src/schema_catalog") {
         "tools"
     } else {
         "crate-root"

@@ -130,6 +130,7 @@ impl<F> Assets<F> {
                 && !storage.user_created_materials.contains(&handle)
             {
                 storage.materials.remove(handle);
+                storage.material_sources.remove(&handle);
                 storage.user_created_materials.remove(&handle);
                 stats.materials_evicted += 1;
             }
