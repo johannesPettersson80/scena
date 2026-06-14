@@ -2,6 +2,8 @@
 
 use std::{cell::Cell, marker::PhantomData};
 
+#[cfg(feature = "inspection")]
+pub mod appearance;
 mod background;
 mod build;
 mod camera;

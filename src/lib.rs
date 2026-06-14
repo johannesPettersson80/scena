@@ -100,6 +100,14 @@ pub use reference_image::{
     regress_with_tolerance,
 };
 #[cfg(feature = "inspection")]
+pub use render::appearance::{
+    APPEARANCE_EXPECTATION_SCHEMA_V1, APPEARANCE_INTROSPECTION_SCHEMA_V1, AppearanceAlphaSummaryV1,
+    AppearanceArtifactsV1, AppearanceCaptureSummaryV1, AppearanceExpectationV1, AppearanceFixV1,
+    AppearanceIntrospectionOptions, AppearanceIntrospectionReportV1, AppearanceReasonV1,
+    AppearanceRectV1, AppearanceSampleRegionV1, AppearanceSummaryV1, AppearanceTargetExpectationV1,
+    AppearanceTargetReportV1,
+};
+#[cfg(feature = "inspection")]
 pub use render::introspection::{
     RENDER_INTROSPECTION_SCHEMA_V1, RenderIntrospectionArtifactsV1,
     RenderIntrospectionCapabilitiesV1, RenderIntrospectionCaptureSummaryV1,

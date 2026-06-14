@@ -46,6 +46,7 @@ cannot hide them as zero-test successes:
 - `cargo test --features inspection --test render_introspection_contracts`
 - `cargo test --features inspection --test visibility_diagnosis_contracts`
 - `cargo test --features inspection --test visual_repair_contracts`
+- `cargo test --features inspection --test appearance_introspection_contracts`
 - `cargo test --features inspection --test scena_cli_agent`
 - `cargo test --features inspection --test scena_cli_recipe`
 
@@ -519,7 +520,7 @@ Required commands:
       minimal examples for stable contracts.
 - [x] `scena repair <recipe-or-patch> --from <diagnosis.json>`: emit a repair
       plan or irreducible loop result with explicit risk classification.
-- [ ] `scena verify appearance <recipe-or-asset> --expect <json>`: emit
+- [x] `scena verify appearance <recipe-or-asset> --expect <json>`: emit
       `scena.appearance_introspection.v1`.
 - [ ] `scena verify animation <recipe-or-asset> --expect <json>`: emit
       `scena.animation_introspection.v1`.
@@ -560,6 +561,10 @@ Acceptance:
 - [x] Tests verify `repair --from` emits `scena.visual_repair_plan.v1` for a
       reversible diagnosis and emits `scena.agent_loop_result.v1` with a
       non-zero exit for an irreducible diagnosis.
+- [x] Tests verify `verify appearance --expect` applies a declared material
+      variant, emits `scena.appearance_introspection.v1`, and exits non-zero
+      with JSON on stdout when the sampled rendered color does not match the
+      expectation.
 - [x] Tests verify non-zero exits for invalid recipe and invisible target.
 - [ ] Tests verify missing assets emit JSON instead of command-error text.
 - [ ] Doctor rule keeps CLI help, schema constants, and stable fixtures aligned.
@@ -587,8 +592,10 @@ Required behavior:
       visibility diagnosis.
 - [x] The schema list includes scene recipe, scene recipe validation,
       placement result, repair plan, and agent loop result contracts.
-- [ ] The schema list includes appearance introspection, animation
-      introspection, and interaction verification contracts as they land.
+- [x] The schema list includes the landed appearance expectation and
+      appearance introspection contracts.
+- [ ] The schema list includes animation introspection and interaction
+      verification contracts as they land.
 
 Acceptance:
 
@@ -768,38 +775,48 @@ luminance metrics, and visual proof helpers exist.
 
 Proposed contract:
 
+- `scena.appearance_expectation.v1`
 - `scena.appearance_introspection.v1`
 
 Required behavior:
 
-- [ ] Assert first-time appearance correctness without requiring a golden image.
-- [ ] Inputs declare intended appearance per stable node, material, import, or
-      variant: color family or target swatch, material name, variant name,
-      alpha mode, texture presence, and fallback policy.
-- [ ] Report active source material, active variant, material factors,
+- [x] Assert first-time appearance correctness without requiring a golden image.
+- [x] Inputs declare intended appearance per stable node, tag/import-like
+      selector, or variant: color family or target swatch, variant name, alpha
+      mode, texture presence, and fallback policy. Material-name matching
+      remains future work until stable material inspection exposes source
+      names.
+- [x] Report active source material, active variant, material factors,
       texture/fallback provenance, sampled region stats, dominant color family,
       alpha summary, and luminance summary.
-- [ ] `ok=false` when an intended variant is missing, a generated fallback is
+- [x] `ok=false` when an intended variant is missing, a generated fallback is
       used where source material was required, alpha hides the target, sampled
       color family disagrees with the intended swatch, or texture provenance is
       missing.
-- [ ] Reports include suggested fixes, such as apply variant, load missing
+- [x] Reports include suggested fixes, such as apply variant, load missing
       texture, clear fallback override, set alpha mode, or inspect material
       assignment.
-- [ ] Summary mode is small; detail mode may include per-node sampled regions
-      and swatch distances.
+- [x] Summary mode is small and includes capture-bound sampled frame content,
+      swatch distance, alpha summary, material source, fallback provenance, and
+      luminance mean. The first slice samples the visible frame-content region;
+      per-node pixel coverage and glTF material-name checks remain future
+      additive fields because current stable material inspection exposes source
+      index/provenance but not material names or ID-buffer coverage.
 
 Acceptance:
 
-- [ ] Fixtures cover intended blue, intended green, wrong color, generated
-      fallback, missing texture, alpha zero, and valid source-material variant.
-- [ ] Product-configurator proof asserts the requested variant rendered with
+- [x] Fixtures and tests cover intended green, wrong color, generated fallback,
+      missing variant, and valid source-material variant. Intended blue,
+      missing texture, alpha zero, and source-material name checks remain
+      future hardening cases.
+- [x] Product-configurator proof asserts the requested variant rendered with
       the expected appearance, not merely that pixels changed.
 - [ ] Data-color proof asserts a known color ramp sample without a golden
       image.
 - [ ] Stable fixture:
+      `tests/assets/stable-contracts/appearance_expectation.v1.json` and
       `tests/assets/stable-contracts/appearance_introspection.v1.json`.
-- [ ] CLI exits non-zero when appearance assertions fail.
+- [x] CLI exits non-zero when appearance assertions fail.
 
 ### A.9 Animation and temporal introspection
 

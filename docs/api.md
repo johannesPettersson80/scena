@@ -45,6 +45,12 @@ Additive public API changes in Unreleased:
   `VisualRepairPlanV1`, `VisualRepairActionV1`,
   `VisualRepairSkippedActionV1`, `VisualRepairRemainingReasonV1`, and
   `AgentLoopResultV1` (gated behind `inspection`)
+- `APPEARANCE_EXPECTATION_SCHEMA_V1`,
+  `APPEARANCE_INTROSPECTION_SCHEMA_V1`, `AppearanceExpectationV1`,
+  `AppearanceTargetExpectationV1`, `AppearanceIntrospectionReportV1`,
+  `AppearanceIntrospectionOptions`, `AppearanceTargetReportV1`,
+  `AppearanceReasonV1`, `AppearanceFixV1`, and
+  `Renderer::introspect_appearance` (gated behind `inspection`)
 - `SCENE_RECIPE_SCHEMA_V1`, `SCENE_RECIPE_VALIDATION_SCHEMA_V1`,
   `SceneRecipeV1`, `SceneRecipeImportV1`, `SceneRecipeCaptureV1`,
   `SceneRecipeExpectedExtentV1`, `SceneRecipeValidationReportV1`,
@@ -64,7 +70,8 @@ Additive public API changes in Unreleased:
   --verb <center|ground|fit_to_size|look_at|align_to_anchor|place_on>`, and,
   when built with `inspection`, asset-or-recipe-input
   `render --introspect`, `inspect`, `diagnose --visibility`, and
-  `repair --from <report.json>` JSON commands
+  `repair --from <report.json>`, and
+  `verify appearance --expect <appearance-expectation.json>` JSON commands
 
 Additive public API changes in 1.7.0:
 

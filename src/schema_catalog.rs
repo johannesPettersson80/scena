@@ -166,6 +166,20 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/agent_loop_result.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.appearance_expectation.v1",
+            owner_module: "render",
+            summary: "Transient expected appearance targets for first-time material verification.",
+            feature_flag: Some("inspection"),
+            fixture_path: Some("tests/assets/stable-contracts/appearance_expectation.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: "scena.appearance_introspection.v1",
+            owner_module: "render",
+            summary: "Capture-bound material, variant, fallback, alpha, and swatch verification report.",
+            feature_flag: Some("inspection"),
+            fixture_path: Some("tests/assets/stable-contracts/appearance_introspection.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.scene_recipe.v1",
             owner_module: "scene",
             summary: "Declarative, transient scene snapshot consumed by agent and CLI workflows.",
@@ -288,6 +302,14 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
         (
             "scena.agent_loop_result.v1",
             include_str!("../tests/assets/stable-contracts/agent_loop_result.v1.json"),
+        ),
+        (
+            "scena.appearance_expectation.v1",
+            include_str!("../tests/assets/stable-contracts/appearance_expectation.v1.json"),
+        ),
+        (
+            "scena.appearance_introspection.v1",
+            include_str!("../tests/assets/stable-contracts/appearance_introspection.v1.json"),
         ),
         (
             "scena.scene_recipe.v1",

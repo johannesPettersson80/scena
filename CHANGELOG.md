@@ -46,6 +46,11 @@ All notable user-facing changes are recorded here.
 - Added `scena.visual_repair_plan.v1`, `scena.agent_loop_result.v1`, and the
   `scena repair --from <report.json>` CLI for conservative repair planning
   over render introspection and visibility diagnosis reports.
+- Added `scena.appearance_expectation.v1`,
+  `scena.appearance_introspection.v1`, and
+  `scena verify appearance --expect <json>` for capture-bound first-time
+  material, variant, fallback, alpha, texture, and swatch verification behind
+  the `inspection` feature.
 
 ## [1.7.1] - 2026-06-12
 

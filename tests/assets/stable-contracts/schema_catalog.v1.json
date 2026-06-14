@@ -67,6 +67,20 @@
       "fixture_path": "tests/assets/stable-contracts/agent_loop_result.v1.json"
     },
     {
+      "schema": "scena.appearance_expectation.v1",
+      "owner_module": "render",
+      "summary": "Transient expected appearance targets for first-time material verification.",
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/appearance_expectation.v1.json"
+    },
+    {
+      "schema": "scena.appearance_introspection.v1",
+      "owner_module": "render",
+      "summary": "Capture-bound material, variant, fallback, alpha, and swatch verification report.",
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/appearance_introspection.v1.json"
+    },
+    {
       "schema": "scena.scene_recipe.v1",
       "owner_module": "scene",
       "summary": "Declarative, transient scene snapshot consumed by agent and CLI workflows.",

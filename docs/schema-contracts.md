@@ -30,6 +30,8 @@ Rules:
   - `scena.visibility_diagnosis.v1`
   - `scena.visual_repair_plan.v1`
   - `scena.agent_loop_result.v1`
+  - `scena.appearance_expectation.v1`
+  - `scena.appearance_introspection.v1`
   - `scena.scene_recipe.v1`
   - `scena.scene_recipe_validation.v1`
   - `scena.placement_result.v1`
@@ -716,6 +718,51 @@ stdout and exits non-zero when no safe automatic fix exists.
 The stable fixtures live at
 `tests/assets/stable-contracts/visual_repair_plan.v1.json` and
 `tests/assets/stable-contracts/agent_loop_result.v1.json`.
+
+### `scena.appearance_expectation.v1` and `scena.appearance_introspection.v1`
+
+Consumed and produced by `scena verify appearance <asset-or-recipe> --expect
+<appearance-expectation.json>` when the `inspection` feature is enabled.
+Appearance verification uses the normal load, prepare, render, capture, and
+inspection path. There is no separate agent render mode.
+
+`scena.appearance_expectation.v1` is a transient input, not a persisted scene
+document. Each target declares one or more first-time appearance assertions:
+stable report-local `node`, `tag`, intended `variant`, `color_family`,
+`swatch_srgb8`, `alpha_mode`, `require_source_material`, and
+`require_base_color_texture`. glTF material-name matching is intentionally not
+part of the first slice because the stable material inspection report currently
+exposes source material index and provenance, not source material names.
+
+`scena.appearance_introspection.v1` contains:
+
+- `schema`
+- `ok`
+- `active_variant`
+- `available_variants`
+- `summary`
+- `targets`
+- `reasons`
+- `fixes`
+- `artifacts`
+
+The report combines capture-derived frame-content color sampling with
+`SceneMaterialInspectionV1` material provenance. It reports active source
+material/fallback provenance, alpha mode and base-color alpha, decoded texture
+presence, sampled frame-content region, dominant color family, swatch distance,
+and luminance mean. The first slice samples the visible frame-content region
+and is intended for single-target product/configurator proofs; per-node pixel
+coverage remains a future additive field.
+
+`ok` is false only for error-severity reasons such as missing intended variant,
+variant not active, generated fallback where a source material was required,
+hidden alpha, alpha-mode mismatch, missing base-color texture provenance, or
+sampled color mismatch. Reports stay machine-readable on stdout; the CLI exits
+non-zero when `ok` is false.
+
+The stable fixtures live at
+`tests/assets/stable-contracts/appearance_expectation.v1.json` and
+`tests/assets/stable-contracts/appearance_introspection.v1.json`.
 
 ### `scena.scene_recipe.v1` and `scena.scene_recipe_validation.v1`
 

@@ -9,6 +9,9 @@ use std::process;
 mod scena_args;
 #[path = "scena/place.rs"]
 mod scena_place;
+#[cfg(feature = "inspection")]
+#[path = "scena/verify.rs"]
+mod scena_verify;
 
 use scena_args::ValidateRecipeCommandArgs;
 #[cfg(feature = "inspection")]
@@ -59,6 +62,9 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
         [command, rest @ ..] if command == "inspect" => run_inspect_command(rest),
         [command, rest @ ..] if command == "diagnose" => run_diagnose_command(rest),
         [command, rest @ ..] if command == "repair" => run_repair_command(rest),
+        [command, subcommand, rest @ ..] if command == "verify" && subcommand == "appearance" => {
+            run_verify_appearance_command(rest)
+        }
         _ => Err(
             "unknown command; expected 'schema list', 'schema get <scena.*.vN>', \
              'validate-recipe <recipe.json>', \
@@ -66,7 +72,8 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
              'render <asset> --introspect --out <png>', or \
              'inspect <asset>', or \
              'diagnose <asset> --visibility [--handle <u64>]', or \
-             'repair <asset-or-recipe> --from <report.json>'"
+             'repair <asset-or-recipe> --from <report.json>', or \
+             'verify appearance <asset-or-recipe> --expect <json>'"
                 .to_string(),
         ),
     }
@@ -277,6 +284,19 @@ fn run_repair_command(_args: &[String]) -> Result<CliOutcome, String> {
     Err("repair requires building the scena binary with the 'inspection' feature".to_string())
 }
 
+#[cfg(feature = "inspection")]
+fn run_verify_appearance_command(args: &[String]) -> Result<CliOutcome, String> {
+    scena_verify::run_verify_appearance_command(args)
+}
+
+#[cfg(not(feature = "inspection"))]
+fn run_verify_appearance_command(_args: &[String]) -> Result<CliOutcome, String> {
+    Err(
+        "verify appearance requires building the scena binary with the 'inspection' feature"
+            .to_string(),
+    )
+}
+
 fn success(stdout: String) -> CliOutcome {
     CliOutcome {
         stdout,
@@ -404,6 +424,15 @@ fn render_introspection_options(detail: bool) -> scena::RenderIntrospectionOptio
 }
 
 #[cfg(feature = "inspection")]
+fn appearance_introspection_options(detail: bool) -> scena::AppearanceIntrospectionOptions {
+    if detail {
+        scena::AppearanceIntrospectionOptions::detail()
+    } else {
+        scena::AppearanceIntrospectionOptions::summary()
+    }
+}
+
+#[cfg(feature = "inspection")]
 fn ensure_parent_dir(path: &Path) -> Result<(), String> {
     if let Some(parent) = path
         .parent()
@@ -442,7 +471,8 @@ fn help_json() -> String {
             "render <asset-or-recipe> --introspect --out <png>",
             "inspect <asset-or-recipe>",
             "diagnose <asset-or-recipe> --visibility [--handle <u64>]",
-            "repair <asset-or-recipe> --from <report.json>"
+            "repair <asset-or-recipe> --from <report.json>",
+            "verify appearance <asset-or-recipe> --expect <appearance-expectation.json>"
         ]
     })
     .to_string()

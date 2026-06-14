@@ -267,6 +267,110 @@ fn scena_repair_cli_exits_nonzero_for_irreducible_diagnosis() {
 }
 
 #[test]
+fn scena_verify_appearance_cli_checks_variant_color_and_fails_closed() {
+    let dir = artifact_dir("verify-appearance");
+    let expectation_path = dir.join("appearance-expectation.json");
+    fs::write(
+        &expectation_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.appearance_expectation.v1",
+            "targets": [{
+                "id": "expected-noon",
+                "variant": "noon",
+                "color_family": "green",
+                "swatch_srgb8": [0, 255, 0],
+                "require_source_material": true,
+                "alpha_mode": "opaque"
+            }]
+        }))
+        .expect("appearance expectation serializes"),
+    )
+    .expect("appearance expectation writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "verify",
+            "appearance",
+            "tests/assets/gltf/material_variants_scene.gltf",
+            "--expect",
+            path_str(&expectation_path),
+            "--width",
+            "96",
+            "--height",
+            "72",
+        ])
+        .output()
+        .expect("scena verify appearance command runs");
+
+    assert!(output.status.success(), "stderr={}", stderr(&output));
+    assert!(
+        output.stderr.is_empty(),
+        "appearance report stays machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("appearance command emits JSON");
+    assert_eq!(report["schema"], "scena.appearance_introspection.v1");
+    assert_eq!(report["ok"], true);
+    assert_eq!(report["active_variant"], "noon");
+    assert_eq!(report["targets"][0]["sampled_color_family"], "green");
+
+    let wrong_path = dir.join("wrong-appearance-expectation.json");
+    fs::write(
+        &wrong_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.appearance_expectation.v1",
+            "targets": [{
+                "id": "wrong-noon",
+                "variant": "noon",
+                "color_family": "blue",
+                "swatch_srgb8": [0, 0, 255],
+                "require_source_material": true
+            }]
+        }))
+        .expect("wrong appearance expectation serializes"),
+    )
+    .expect("wrong appearance expectation writes");
+
+    let wrong_output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "verify",
+            "appearance",
+            "tests/assets/gltf/material_variants_scene.gltf",
+            "--expect",
+            path_str(&wrong_path),
+            "--width",
+            "96",
+            "--height",
+            "72",
+        ])
+        .output()
+        .expect("scena verify appearance command runs");
+
+    assert!(
+        !wrong_output.status.success(),
+        "wrong appearance should fail closed"
+    );
+    assert!(
+        wrong_output.stderr.is_empty(),
+        "appearance failures stay machine-readable on stdout, stderr={}",
+        stderr(&wrong_output)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&wrong_output.stdout).expect("appearance failure emits JSON");
+    assert_eq!(report["schema"], "scena.appearance_introspection.v1");
+    assert_eq!(report["ok"], false);
+    assert!(
+        report["reasons"]
+            .as_array()
+            .expect("appearance reasons array")
+            .iter()
+            .any(|reason| reason["code"] == "color_mismatch"),
+        "appearance failure should explain color mismatch: {report:#}"
+    );
+}
+
+#[test]
 fn scena_inspect_cli_emits_scene_inspection_json_for_asset() {
     let output = Command::new(env!("CARGO_BIN_EXE_scena"))
         .args(["inspect", TEST_ASSET, "--width", "96", "--height", "72"])
