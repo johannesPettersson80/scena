@@ -53,6 +53,18 @@
       "fixture_path": "tests/assets/stable-contracts/visibility_diagnosis.v1.json"
     },
     {
+      "schema": "scena.scene_recipe.v1",
+      "owner_module": "scene",
+      "summary": "Declarative, transient scene snapshot consumed by agent and CLI workflows.",
+      "fixture_path": "tests/assets/stable-contracts/scene_recipe.v1.json"
+    },
+    {
+      "schema": "scena.scene_recipe_validation.v1",
+      "owner_module": "scene",
+      "summary": "Fail-closed scene recipe validation diagnostics with deterministic suggestions.",
+      "fixture_path": "tests/assets/stable-contracts/scene_recipe_validation.v1.json"
+    },
+    {
       "schema": "scena.annotation_projection.v1",
       "owner_module": "scene",
       "summary": "Projected annotation anchors and CSS-pixel screen positions.",

@@ -41,12 +41,18 @@ Additive public API changes in Unreleased:
   `VisibilityDiagnosisFixV1`, `VisibilityDiagnosisSummaryV1`,
   `VisibilityDiagnosisTargetV1`, `VisibilityDiagnosisEvidenceV1`, and
   `Renderer::diagnose_visibility` (gated behind `inspection`)
+- `SCENE_RECIPE_SCHEMA_V1`, `SCENE_RECIPE_VALIDATION_SCHEMA_V1`,
+  `SceneRecipeV1`, `SceneRecipeImportV1`, `SceneRecipeCaptureV1`,
+  `SceneRecipeExpectedExtentV1`, `SceneRecipeValidationReportV1`,
+  `SceneRecipeDiagnosticV1`, `validate_scene_recipe_json`,
+  `validate_scene_recipe_value`, and `parse_valid_scene_recipe_json`
 - `SCHEMA_CATALOG_SCHEMA_V1`, `SCHEMA_ENTRY_SCHEMA_V1`,
   `SchemaCatalogV1`, `SchemaCatalogEntryV1`, `SchemaEntryReportV1`,
   `schema_catalog_v1`, `schema_catalog_entry`, `schema_entry_report_v1`,
   and `nearest_schema_name`
-- The `scena` binary with `schema list`, `schema get <schema>`, and, when
-  built with `inspection`, asset-input `render --introspect`, `inspect`, and
+- The `scena` binary with `schema list`, `schema get <schema>`,
+  `validate-recipe <recipe.json>`, and, when built with `inspection`,
+  asset-or-recipe-input `render --introspect`, `inspect`, and
   `diagnose --visibility` JSON commands
 
 Additive public API changes in 1.7.0:

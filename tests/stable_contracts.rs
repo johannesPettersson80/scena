@@ -131,6 +131,14 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
             "scena.visibility_diagnosis.v1",
         ),
         (
+            "tests/assets/stable-contracts/scene_recipe.v1.json",
+            "scena.scene_recipe.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/scene_recipe_validation.v1.json",
+            "scena.scene_recipe_validation.v1",
+        ),
+        (
             "tests/assets/stable-contracts/annotation_projection.v1.json",
             "scena.annotation_projection.v1",
         ),
@@ -248,6 +256,20 @@ fn render_introspection_golden_matches_live_schema_serialization() {
 fn visibility_diagnosis_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::VisibilityDiagnosisReportV1>(
         "tests/assets/stable-contracts/visibility_diagnosis.v1.json",
+    );
+}
+
+#[test]
+fn scene_recipe_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::SceneRecipeV1>(
+        "tests/assets/stable-contracts/scene_recipe.v1.json",
+    );
+}
+
+#[test]
+fn scene_recipe_validation_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::SceneRecipeValidationReportV1>(
+        "tests/assets/stable-contracts/scene_recipe_validation.v1.json",
     );
 }
 

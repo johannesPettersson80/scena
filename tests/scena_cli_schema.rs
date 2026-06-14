@@ -21,6 +21,8 @@ fn scena_schema_cli_lists_and_gets_stable_contracts() {
     assert_eq!(catalog["schema"], "scena.schema_catalog.v1");
     assert_schema(&catalog, "scena.render_introspection.v1");
     assert_schema(&catalog, "scena.visibility_diagnosis.v1");
+    assert_schema(&catalog, "scena.scene_recipe.v1");
+    assert_schema(&catalog, "scena.scene_recipe_validation.v1");
     assert_listed_fixtures_exist(&catalog);
 
     let output = Command::new(env!("CARGO_BIN_EXE_scena"))
@@ -33,6 +35,17 @@ fn scena_schema_cli_lists_and_gets_stable_contracts() {
     assert_eq!(entry["schema"], "scena.schema_entry.v1");
     assert_eq!(entry["entry"]["schema"], "scena.render_introspection.v1");
     assert_eq!(entry["example"]["schema"], "scena.render_introspection.v1");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["schema", "get", "scena.scene_recipe.v1"])
+        .output()
+        .expect("scena schema get recipe runs");
+    assert!(output.status.success(), "stderr={}", stderr(&output));
+    let entry: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("schema get recipe emits JSON");
+    assert_eq!(entry["schema"], "scena.schema_entry.v1");
+    assert_eq!(entry["entry"]["schema"], "scena.scene_recipe.v1");
+    assert_eq!(entry["example"]["schema"], "scena.scene_recipe.v1");
 
     let output = Command::new(env!("CARGO_BIN_EXE_scena"))
         .args(["schema", "get", "scena.render_introspect.v1"])

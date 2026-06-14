@@ -28,6 +28,8 @@ Rules:
   - `scena.capture_baseline.v1`
   - `scena.render_introspection.v1`
   - `scena.visibility_diagnosis.v1`
+  - `scena.scene_recipe.v1`
+  - `scena.scene_recipe_validation.v1`
   - `scena.asset_load_report.v1`
   - `scena.asset_geometry_summary.v1`
   - `scena.annotation_projection.v1`
@@ -622,11 +624,9 @@ outside JSON, referenced through explicit paths or the nested capture summary.
 
 The stable fixture lives at
 `tests/assets/stable-contracts/render_introspection.v1.json`. The `scena`
-binary's first CLI transport is `scena render <asset> --introspect --out
-<png>` when built with the `inspection` feature. It writes the PNG and capture
-descriptor artifacts, then emits this report on stdout; recipe input and browser
-entrypoints are separate roadmap items that must emit the same JSON shape when
-they land.
+binary's first CLI transport is `scena render <asset-or-recipe> --introspect
+--out <png>` when built with the `inspection` feature. It writes the PNG and
+capture descriptor artifacts, then emits this report on stdout.
 
 ### `scena.visibility_diagnosis.v1`
 
@@ -660,10 +660,47 @@ supporting evidence rows.
 
 The stable fixture lives at
 `tests/assets/stable-contracts/visibility_diagnosis.v1.json`. The `scena`
-binary's first CLI transport is `scena diagnose <asset> --visibility [--handle
-<u64>]` when built with the `inspection` feature. It emits this report on
-stdout and exits non-zero when `ok` is false, so shell-driven callers can branch
-without parsing JSON first.
+binary's first CLI transport is `scena diagnose <asset-or-recipe> --visibility
+[--handle <u64>]` when built with the `inspection` feature. It emits this report
+on stdout and exits non-zero when `ok` is false, so shell-driven callers can
+branch without parsing JSON first.
+
+### `scena.scene_recipe.v1` and `scena.scene_recipe_validation.v1`
+
+Produced and consumed by `validate_scene_recipe_json`,
+`validate_scene_recipe_value`, `parse_valid_scene_recipe_json`, and the `scena
+validate-recipe <recipe.json>` command. A recipe is a transient declarative
+snapshot input for Scena, not a project file, workflow script, host document
+model, or persisted application state.
+
+The first v1 slice supports:
+
+- `schema: "scena.scene_recipe.v1"`
+- `imports[]` entries with stable caller `id`, glTF/GLB `uri`, optional
+  `transform`, and optional `expected_extent`
+- one optional `capture` directive with `width` and `height`
+- opaque caller `metadata`
+
+Unknown fields fail closed. Known future feature sections such as `materials`,
+`cameras`, `labels`, `section_box`, and `measurements` emit
+`unsupported_feature` until the feature slice that owns them implements the
+section. Workflow fields such as `steps`, `sequence`, `loop`, `branch`,
+`timeline`, and `script` emit `unsupported_workflow`; recipes must stay
+snapshots and the host owns cadence and sequencing.
+
+`scena.scene_recipe_validation.v1` contains `ok` plus deterministic diagnostics
+with `code`, `severity`, JSON `path`, `message`, `help`, optional
+`suggestion`, and `auto_fixable`. Unknown-field suggestions use bounded string
+distance, for example `importe` suggests `imports`.
+
+The stable fixtures live at
+`tests/assets/stable-contracts/scene_recipe.v1.json` and
+`tests/assets/stable-contracts/scene_recipe_validation.v1.json`. `scena
+validate-recipe <recipe.json>` emits validation JSON on stdout and exits
+non-zero when `ok` is false. When built with `inspection`, `scena render`,
+`scena inspect`, and `scena diagnose --visibility` accept either a direct asset
+path or a recipe file and use the first recipe import through the same
+load/prepare/render/capture path as direct assets.
 
 ### `scena.schema_catalog.v1` and `scena.schema_entry.v1`
 

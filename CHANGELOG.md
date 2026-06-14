@@ -36,6 +36,10 @@ All notable user-facing changes are recorded here.
   feature.
 - Added doctor coverage that requires whole-file feature-gated contract suites
   to publish their exact feature-enabled cargo commands in the roadmap.
+- Added `scena.scene_recipe.v1` plus `scena.scene_recipe_validation.v1` for
+  fail-closed declarative recipe validation, the `scena validate-recipe`
+  command, and recipe input for `render --introspect`, `inspect`, and
+  `diagnose --visibility`.
 
 ## [1.7.1] - 2026-06-12
 

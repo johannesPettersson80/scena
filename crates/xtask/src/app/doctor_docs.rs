@@ -208,6 +208,14 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
             "scena.visibility_diagnosis.v1",
         ),
         (
+            "tests/assets/stable-contracts/scene_recipe.v1.json",
+            "scena.scene_recipe.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/scene_recipe_validation.v1.json",
+            "scena.scene_recipe_validation.v1",
+        ),
+        (
             "tests/assets/stable-contracts/annotation_projection.v1.json",
             "scena.annotation_projection.v1",
         ),

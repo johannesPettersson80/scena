@@ -1,0 +1,21 @@
+{
+  "schema": "scena.scene_recipe.v1",
+  "imports": [
+    {
+      "id": "part",
+      "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+      "expected_extent": {
+        "min": 0.1,
+        "max": 10.0,
+        "unit": "m"
+      }
+    }
+  ],
+  "capture": {
+    "width": 96,
+    "height": 72
+  },
+  "metadata": {
+    "purpose": "stable recipe fixture"
+  }
+}

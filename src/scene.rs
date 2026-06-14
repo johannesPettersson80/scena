@@ -35,6 +35,7 @@ mod mixers;
 mod morphs;
 mod origin;
 mod picking;
+pub mod recipe;
 mod removal;
 mod render_nodes;
 mod skinning;

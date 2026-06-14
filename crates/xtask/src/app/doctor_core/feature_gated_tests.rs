@@ -61,7 +61,9 @@ pub(crate) fn check_feature_gated_contract_tests_documented(
 
 fn is_feature_gated_contract_suite(rel: &str, text: &str) -> bool {
     file_level_feature_gate(text).is_some()
-        && (rel.contains("contract") || rel.ends_with("tests/scena_cli_agent.rs"))
+        && (rel.contains("contract")
+            || rel.ends_with("tests/scena_cli_agent.rs")
+            || rel.ends_with("tests/scena_cli_recipe.rs"))
 }
 
 fn file_level_feature_gate(text: &str) -> Option<String> {

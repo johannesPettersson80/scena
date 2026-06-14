@@ -119,6 +119,12 @@ pub use render::{
     RenderMode, Renderer, RendererOptions, ScreenSpaceAmbientOcclusionConfig, Tonemapper,
     estimate_auto_exposure_from_linear_colors, estimate_auto_exposure_from_srgb8,
 };
+pub use scene::recipe::{
+    SCENE_RECIPE_SCHEMA_V1, SCENE_RECIPE_VALIDATION_SCHEMA_V1, SceneRecipeCaptureV1,
+    SceneRecipeDiagnosticV1, SceneRecipeExpectedExtentV1, SceneRecipeImportV1, SceneRecipeV1,
+    SceneRecipeValidationReportV1, parse_valid_scene_recipe_json, validate_scene_recipe_json,
+    validate_scene_recipe_value,
+};
 pub use scene::{
     AnchorFrame, AnchorKey, Angle, AnnotationAnchor, AnnotationAnchorTarget,
     AnnotationProjectionReportV1, AnnotationProjectionV1, Camera, CameraKey, ClippingPlane,

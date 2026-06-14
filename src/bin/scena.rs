@@ -1,9 +1,15 @@
 use std::env;
-#[cfg(feature = "inspection")]
 use std::fs;
 #[cfg(feature = "inspection")]
 use std::path::{Path, PathBuf};
 use std::process;
+
+#[path = "scena/args.rs"]
+mod scena_args;
+
+use scena_args::ValidateRecipeCommandArgs;
+#[cfg(feature = "inspection")]
+use scena_args::{DiagnoseCommandArgs, InspectCommandArgs, RenderCommandArgs};
 
 fn main() {
     match run(env::args().skip(1).collect()) {
@@ -44,11 +50,13 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
             })?;
             json_success(&report, "failed to serialize schema entry")
         }
+        [command, rest @ ..] if command == "validate-recipe" => run_validate_recipe_command(rest),
         [command, rest @ ..] if command == "render" => run_render_command(rest),
         [command, rest @ ..] if command == "inspect" => run_inspect_command(rest),
         [command, rest @ ..] if command == "diagnose" => run_diagnose_command(rest),
         _ => Err(
             "unknown command; expected 'schema list', 'schema get <scena.*.vN>', \
+             'validate-recipe <recipe.json>', \
              'render <asset> --introspect --out <png>', or \
              'inspect <asset>', or \
              'diagnose <asset> --visibility [--handle <u64>]'"
@@ -57,19 +65,38 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
     }
 }
 
+fn run_validate_recipe_command(args: &[String]) -> Result<CliOutcome, String> {
+    let recipe_path = ValidateRecipeCommandArgs::parse(args)?.recipe;
+    let text = fs::read_to_string(&recipe_path)
+        .map_err(|error| format!("failed to read recipe '{}': {error}", recipe_path.display()))?;
+    let report = scena::validate_scene_recipe_json(&text);
+    let exit_code = if report.ok { 0 } else { 1 };
+    json_outcome(
+        &report,
+        exit_code,
+        "failed to serialize scene recipe validation report",
+    )
+}
+
 #[cfg(feature = "inspection")]
 fn run_render_command(args: &[String]) -> Result<CliOutcome, String> {
     let args = RenderCommandArgs::parse(args)?;
+    let input = match resolve_scene_input(&args.input) {
+        Ok(input) => input,
+        Err(outcome) => return Ok(outcome),
+    };
+    let width = args.width.or(input.width).unwrap_or(800);
+    let height = args.height.or(input.height).unwrap_or(600);
     let first = pollster::block_on(
-        scena::headless_gltf_viewer(args.asset.as_str())
-            .size(args.width, args.height)
+        scena::headless_gltf_viewer(input.asset.as_str())
+            .size(width, height)
             .with_default_light()
             .render(),
     )
-    .map_err(|error| format!("failed to render '{}': {error}", args.asset))?;
+    .map_err(|error| format!("failed to render '{}': {error}", input.asset))?;
     let capture = first
         .capture()
-        .map_err(|error| format!("failed to capture '{}': {error}", args.asset))?;
+        .map_err(|error| format!("failed to capture '{}': {error}", input.asset))?;
 
     ensure_parent_dir(&args.out)?;
     capture
@@ -119,13 +146,19 @@ fn run_render_command(_args: &[String]) -> Result<CliOutcome, String> {
 #[cfg(feature = "inspection")]
 fn run_inspect_command(args: &[String]) -> Result<CliOutcome, String> {
     let args = InspectCommandArgs::parse(args)?;
+    let input = match resolve_scene_input(&args.input) {
+        Ok(input) => input,
+        Err(outcome) => return Ok(outcome),
+    };
+    let width = args.width.or(input.width).unwrap_or(800);
+    let height = args.height.or(input.height).unwrap_or(600);
     let viewer = pollster::block_on(
-        scena::headless_gltf_viewer(args.asset.as_str())
-            .size(args.width, args.height)
+        scena::headless_gltf_viewer(input.asset.as_str())
+            .size(width, height)
             .with_default_light()
             .build(),
     )
-    .map_err(|error| format!("failed to inspect '{}': {error}", args.asset))?;
+    .map_err(|error| format!("failed to inspect '{}': {error}", input.asset))?;
     let report = viewer
         .scene()
         .inspect_with_assets(viewer.assets())
@@ -141,13 +174,19 @@ fn run_inspect_command(_args: &[String]) -> Result<CliOutcome, String> {
 #[cfg(feature = "inspection")]
 fn run_diagnose_command(args: &[String]) -> Result<CliOutcome, String> {
     let args = DiagnoseCommandArgs::parse(args)?;
+    let input = match resolve_scene_input(&args.input) {
+        Ok(input) => input,
+        Err(outcome) => return Ok(outcome),
+    };
+    let width = args.width.or(input.width).unwrap_or(800);
+    let height = args.height.or(input.height).unwrap_or(600);
     let first = pollster::block_on(
-        scena::headless_gltf_viewer(args.asset.as_str())
-            .size(args.width, args.height)
+        scena::headless_gltf_viewer(input.asset.as_str())
+            .size(width, height)
             .with_default_light()
             .render(),
     )
-    .map_err(|error| format!("failed to render '{}': {error}", args.asset))?;
+    .map_err(|error| format!("failed to render '{}': {error}", input.asset))?;
     let inspection = first
         .scene()
         .inspect_with_assets(first.assets())
@@ -176,193 +215,6 @@ fn run_diagnose_command(_args: &[String]) -> Result<CliOutcome, String> {
     )
 }
 
-#[cfg(feature = "inspection")]
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct RenderCommandArgs {
-    asset: String,
-    out: PathBuf,
-    width: u32,
-    height: u32,
-    detail: bool,
-}
-
-#[cfg(feature = "inspection")]
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct DiagnoseCommandArgs {
-    asset: String,
-    handle: Option<u64>,
-    width: u32,
-    height: u32,
-    detail: bool,
-}
-
-#[cfg(feature = "inspection")]
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct InspectCommandArgs {
-    asset: String,
-    width: u32,
-    height: u32,
-}
-
-#[cfg(feature = "inspection")]
-impl RenderCommandArgs {
-    fn parse(args: &[String]) -> Result<Self, String> {
-        let Some(asset) = args.first() else {
-            return Err(render_usage());
-        };
-        let mut introspect = false;
-        let mut out = None;
-        let mut width = 800;
-        let mut height = 600;
-        let mut detail = false;
-
-        let mut index = 1;
-        while index < args.len() {
-            match args[index].as_str() {
-                "--introspect" => {
-                    introspect = true;
-                    index += 1;
-                }
-                "--out" => {
-                    let value = flag_value(args, index, "--out")?;
-                    out = Some(PathBuf::from(value));
-                    index += 2;
-                }
-                "--width" => {
-                    width = parse_positive_u32("--width", flag_value(args, index, "--width")?)?;
-                    index += 2;
-                }
-                "--height" => {
-                    height = parse_positive_u32("--height", flag_value(args, index, "--height")?)?;
-                    index += 2;
-                }
-                "--detail" => {
-                    detail = true;
-                    index += 1;
-                }
-                "--json" => {
-                    index += 1;
-                }
-                flag => return Err(format!("unknown render flag '{flag}'; {}", render_usage())),
-            }
-        }
-
-        if !introspect {
-            return Err(format!("missing --introspect; {}", render_usage()));
-        }
-        let out = out.ok_or_else(|| format!("missing --out <png>; {}", render_usage()))?;
-
-        Ok(Self {
-            asset: asset.clone(),
-            out,
-            width,
-            height,
-            detail,
-        })
-    }
-}
-
-#[cfg(feature = "inspection")]
-impl InspectCommandArgs {
-    fn parse(args: &[String]) -> Result<Self, String> {
-        let Some(asset) = args.first() else {
-            return Err(inspect_usage());
-        };
-        let mut width = 800;
-        let mut height = 600;
-
-        let mut index = 1;
-        while index < args.len() {
-            match args[index].as_str() {
-                "--width" => {
-                    width = parse_positive_u32("--width", flag_value(args, index, "--width")?)?;
-                    index += 2;
-                }
-                "--height" => {
-                    height = parse_positive_u32("--height", flag_value(args, index, "--height")?)?;
-                    index += 2;
-                }
-                "--json" => {
-                    index += 1;
-                }
-                flag => {
-                    return Err(format!(
-                        "unknown inspect flag '{flag}'; {}",
-                        inspect_usage()
-                    ));
-                }
-            }
-        }
-
-        Ok(Self {
-            asset: asset.clone(),
-            width,
-            height,
-        })
-    }
-}
-
-#[cfg(feature = "inspection")]
-impl DiagnoseCommandArgs {
-    fn parse(args: &[String]) -> Result<Self, String> {
-        let Some(asset) = args.first() else {
-            return Err(diagnose_usage());
-        };
-        let mut visibility = false;
-        let mut handle = None;
-        let mut width = 800;
-        let mut height = 600;
-        let mut detail = false;
-
-        let mut index = 1;
-        while index < args.len() {
-            match args[index].as_str() {
-                "--visibility" => {
-                    visibility = true;
-                    index += 1;
-                }
-                "--handle" => {
-                    handle = Some(parse_u64("--handle", flag_value(args, index, "--handle")?)?);
-                    index += 2;
-                }
-                "--width" => {
-                    width = parse_positive_u32("--width", flag_value(args, index, "--width")?)?;
-                    index += 2;
-                }
-                "--height" => {
-                    height = parse_positive_u32("--height", flag_value(args, index, "--height")?)?;
-                    index += 2;
-                }
-                "--detail" => {
-                    detail = true;
-                    index += 1;
-                }
-                "--json" => {
-                    index += 1;
-                }
-                flag => {
-                    return Err(format!(
-                        "unknown diagnose flag '{flag}'; {}",
-                        diagnose_usage()
-                    ));
-                }
-            }
-        }
-
-        if !visibility {
-            return Err(format!("missing --visibility; {}", diagnose_usage()));
-        }
-
-        Ok(Self {
-            asset: asset.clone(),
-            handle,
-            width,
-            height,
-            detail,
-        })
-    }
-}
-
 fn success(stdout: String) -> CliOutcome {
     CliOutcome {
         stdout,
@@ -387,37 +239,89 @@ fn json_outcome<T: serde::Serialize>(
 }
 
 #[cfg(feature = "inspection")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResolvedSceneInput {
+    asset: String,
+    width: Option<u32>,
+    height: Option<u32>,
+}
+
+#[cfg(feature = "inspection")]
+fn resolve_scene_input(input: &str) -> Result<ResolvedSceneInput, CliOutcome> {
+    match try_load_recipe(input)? {
+        Some(recipe) => {
+            let import = recipe
+                .imports
+                .first()
+                .expect("validated scene recipe contains an import");
+            let asset = resolve_recipe_asset_uri(input, &import.uri);
+            Ok(ResolvedSceneInput {
+                asset,
+                width: recipe.capture.as_ref().map(|capture| capture.width),
+                height: recipe.capture.as_ref().map(|capture| capture.height),
+            })
+        }
+        None => Ok(ResolvedSceneInput {
+            asset: input.to_owned(),
+            width: None,
+            height: None,
+        }),
+    }
+}
+
+#[cfg(feature = "inspection")]
+fn try_load_recipe(input: &str) -> Result<Option<scena::SceneRecipeV1>, CliOutcome> {
+    let path = Path::new(input);
+    let Ok(text) = fs::read_to_string(path) else {
+        return Ok(None);
+    };
+    let is_recipe_path = input.ends_with(".recipe.json");
+    let parsed = serde_json::from_str::<serde_json::Value>(&text);
+    let is_recipe_schema = parsed
+        .as_ref()
+        .ok()
+        .and_then(|value| value.get("schema"))
+        .and_then(serde_json::Value::as_str)
+        == Some(scena::SCENE_RECIPE_SCHEMA_V1);
+    if !is_recipe_path && !is_recipe_schema {
+        return Ok(None);
+    }
+    match scena::parse_valid_scene_recipe_json(&text) {
+        Ok(recipe) => Ok(Some(recipe)),
+        Err(report) => {
+            let outcome = json_outcome(
+                &report,
+                1,
+                "failed to serialize scene recipe validation report",
+            )
+            .expect("scene recipe validation report serializes");
+            Err(outcome)
+        }
+    }
+}
+
+#[cfg(feature = "inspection")]
+fn resolve_recipe_asset_uri(recipe_path: &str, uri: &str) -> String {
+    let uri_path = Path::new(uri);
+    if uri_path.is_absolute() || uri.contains("://") || uri.starts_with("data:") {
+        return uri.to_owned();
+    }
+    let relative_to_recipe = Path::new(recipe_path)
+        .parent()
+        .map(|parent| parent.join(uri));
+    if let Some(path) = relative_to_recipe.filter(|path| path.exists()) {
+        return path.display().to_string();
+    }
+    uri.to_owned()
+}
+
+#[cfg(feature = "inspection")]
 fn render_introspection_options(detail: bool) -> scena::RenderIntrospectionOptions {
     if detail {
         scena::RenderIntrospectionOptions::detail()
     } else {
         scena::RenderIntrospectionOptions::summary()
     }
-}
-
-#[cfg(feature = "inspection")]
-fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, String> {
-    args.get(index + 1)
-        .cloned()
-        .ok_or_else(|| format!("{flag} requires a value"))
-}
-
-#[cfg(feature = "inspection")]
-fn parse_positive_u32(flag: &str, value: String) -> Result<u32, String> {
-    let parsed = value
-        .parse::<u32>()
-        .map_err(|_| format!("{flag} requires a positive integer, got '{value}'"))?;
-    if parsed == 0 {
-        return Err(format!("{flag} requires a positive integer, got 0"));
-    }
-    Ok(parsed)
-}
-
-#[cfg(feature = "inspection")]
-fn parse_u64(flag: &str, value: String) -> Result<u64, String> {
-    value
-        .parse::<u64>()
-        .map_err(|_| format!("{flag} requires an unsigned integer, got '{value}'"))
 }
 
 #[cfg(feature = "inspection")]
@@ -448,32 +352,16 @@ fn path_for_json(path: &Path) -> String {
     path.display().to_string()
 }
 
-#[cfg(feature = "inspection")]
-fn render_usage() -> String {
-    "usage: scena render <asset> --introspect --out <png> [--width <px>] [--height <px>] [--detail]"
-        .to_string()
-}
-
-#[cfg(feature = "inspection")]
-fn inspect_usage() -> String {
-    "usage: scena inspect <asset> [--width <px>] [--height <px>]".to_string()
-}
-
-#[cfg(feature = "inspection")]
-fn diagnose_usage() -> String {
-    "usage: scena diagnose <asset> --visibility [--handle <u64>] [--width <px>] [--height <px>] [--detail]"
-        .to_string()
-}
-
 fn help_json() -> String {
     serde_json::json!({
         "schema": "scena.cli_help.v1",
         "commands": [
             "schema list",
             "schema get <scena.*.vN>",
-            "render <asset> --introspect --out <png>",
-            "inspect <asset>",
-            "diagnose <asset> --visibility [--handle <u64>]"
+            "validate-recipe <recipe.json>",
+            "render <asset-or-recipe> --introspect --out <png>",
+            "inspect <asset-or-recipe>",
+            "diagnose <asset-or-recipe> --visibility [--handle <u64>]"
         ]
     })
     .to_string()

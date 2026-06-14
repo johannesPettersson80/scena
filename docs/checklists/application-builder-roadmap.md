@@ -46,6 +46,7 @@ cannot hide them as zero-test successes:
 - `cargo test --features inspection --test render_introspection_contracts`
 - `cargo test --features inspection --test visibility_diagnosis_contracts`
 - `cargo test --features inspection --test scena_cli_agent`
+- `cargo test --features inspection --test scena_cli_recipe`
 
 ## Explicit non-goals
 
@@ -501,14 +502,15 @@ already expose the needed data in separate surfaces.
 
 Required commands:
 
-- [x] `scena render <asset> --introspect --out <png>`: load, prepare,
-      render, capture, introspect, write artifacts, and emit
-      `scena.render_introspection.v1`. Recipe input lands with A.5.
-- [x] `scena inspect <asset>`: emit `scena.scene_inspection.v1` for loaded
-      assets. Recipe input and handle/subtree/detail filters remain open.
-- [x] `scena diagnose <asset> --visibility [--handle <u64>]`: emit
-      `scena.visibility_diagnosis.v1`. Recipe input lands with A.5.
-- [ ] `scena validate-recipe <recipe.json>`: emit validation diagnostics for
+- [x] `scena render <asset-or-recipe> --introspect --out <png>`: load,
+      prepare, render, capture, introspect, write artifacts, and emit
+      `scena.render_introspection.v1`.
+- [x] `scena inspect <asset-or-recipe>`: emit `scena.scene_inspection.v1`
+      for loaded assets or the first recipe import. Handle/subtree/detail
+      filters remain open.
+- [x] `scena diagnose <asset-or-recipe> --visibility [--handle <u64>]`: emit
+      `scena.visibility_diagnosis.v1`.
+- [x] `scena validate-recipe <recipe.json>`: emit validation diagnostics for
       `scena.scene_recipe.v1`.
 - [ ] `scena place <recipe.json> --verb <verb> ...`: emit a transform or
       `VisualPatch` preview, not a mutated document.
@@ -535,11 +537,11 @@ CLI behavior:
       reports.
 - [ ] `--round-floats <digits>` defaults to stable, documented precision.
 - [x] Exit status `0` means the requested schema operation succeeded.
-- [ ] Exit status is non-zero for invalid recipes, missing assets, failed
+- [x] Exit status is non-zero for invalid recipes, missing assets, failed
       preparation, failed rendering, `ok=false` introspection, and invisible
-      diagnosis targets. The first CLI slice covers report `ok=false`
-      propagation and invisible diagnosis targets; recipe and missing-asset
-      JSON errors remain open.
+      diagnosis targets. Missing assets currently use the command-error path;
+      recipe validation, report `ok=false`, and invisible diagnosis targets
+      emit machine-readable JSON.
 - [x] Artifact paths are explicit for implemented render-introspection output.
 
 Acceptance:
@@ -554,8 +556,8 @@ Acceptance:
 - [x] Tests verify `render --introspect` emits
       `scena.render_introspection.v1` on stdout with a non-zero exit for an
       empty frame.
-- [ ] Tests verify non-zero exits for invalid recipe, missing asset, and
-      invisible target.
+- [x] Tests verify non-zero exits for invalid recipe and invisible target.
+- [ ] Tests verify missing assets emit JSON instead of command-error text.
 - [ ] Doctor rule keeps CLI help, schema constants, and stable fixtures aligned.
 
 ### A.4 Schema discovery
@@ -608,46 +610,55 @@ Proposed contract:
 
 Scope:
 
-- [ ] A recipe is a declarative scene snapshot consumed by Scena.
-- [ ] A recipe may include imports, primitive nodes, transforms, materials,
-      cameras, lights, labels, viewer profile references, environment
-      references, and at most one optional capture directive.
+- [x] A recipe is a declarative scene snapshot consumed by Scena.
+- [x] The first recipe slice supports imports, per-import transforms and
+      expected extents, caller metadata, and at most one optional capture
+      directive.
+- [ ] Future recipe sections may include primitive nodes, materials, cameras,
+      lights, labels, viewer profile references, environment references, and
+      feature-owned inspection/annotation helpers as those owner features land.
 - [ ] A recipe may reference authored anchors, connectors, bounds, or authored
       planes for placement.
 - [ ] Recipe sections are extensible with their owning features. Section boxes,
       measurement overlays, callouts/leader lines, exploded-view directives,
       and named-state references become recipe-expressible as the Phase 2
       features that own them land.
-- [ ] A recipe is not a project file, document model, workflow script, or
+- [x] A recipe is not a project file, document model, workflow script, or
       persisted application state.
 
 Required validation:
 
-- [ ] Unknown fields fail closed unless explicitly declared as caller metadata.
+- [x] Unknown fields fail closed unless explicitly declared as caller metadata.
+- [x] Unknown fields and duplicate caller IDs produce structured diagnostics
+      with `help`.
+- [x] Near-miss suggestions use a bounded string-distance check for supported
+      field names, for example `importe` suggesting `imports`.
 - [ ] Unknown verbs, enum variants, handles, materials, assets, or profiles
-      produce structured diagnostics with `help`.
-- [ ] Near-miss suggestions use a bounded string-distance check for verbs and
-      enum variants, for example `addBox` suggesting `add_box`.
+      produce structured diagnostics as those sections land.
 - [ ] Units and scale sanity warnings detect extreme asset extents against an
       expected range when the recipe supplies one.
-- [ ] Recipe sections whose owning feature is not implemented fail with a
+- [x] Recipe sections whose owning feature is not implemented fail with a
       structured `unsupported_feature` diagnostic instead of being silently
       ignored.
-- [ ] Validation can run without rendering.
-- [ ] Rendering a recipe uses the same load, prepare, render, and capture path
+- [x] Validation can run without rendering.
+- [x] Rendering a recipe uses the same load, prepare, render, and capture path
       as native examples.
 
 Acceptance:
 
-- [ ] Stable fixture:
+- [x] Stable fixture:
       `tests/assets/stable-contracts/scene_recipe.v1.json`.
+- [x] Stable validation fixture:
+      `tests/assets/stable-contracts/scene_recipe_validation.v1.json`.
+- [x] Validation tests cover unknown field, duplicate caller ID, and rejected
+      workflow fields.
 - [ ] Invalid-recipe fixtures cover unknown verb, unknown enum, stale handle,
-      missing asset, duplicate caller ID, invalid transform, and oversized
-      asset.
-- [ ] Validation diagnostics include deterministic "did you mean" suggestions.
-- [ ] A valid recipe renders through `scena render --introspect` and produces
+      missing asset, invalid transform, and oversized asset as those sections
+      land.
+- [x] Validation diagnostics include deterministic "did you mean" suggestions.
+- [x] A valid recipe renders through `scena render --introspect` and produces
       `ok=true`.
-- [ ] No sequence, loop, branch, timer, or hidden render-loop field is accepted.
+- [x] No sequence, loop, branch, timer, or hidden render-loop field is accepted.
 
 ### A.6 Semantic placement verbs
 

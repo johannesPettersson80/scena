@@ -152,6 +152,20 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/visibility_diagnosis.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.scene_recipe.v1",
+            owner_module: "scene",
+            summary: "Declarative, transient scene snapshot consumed by agent and CLI workflows.",
+            feature_flag: None,
+            fixture_path: Some("tests/assets/stable-contracts/scene_recipe.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: "scena.scene_recipe_validation.v1",
+            owner_module: "scene",
+            summary: "Fail-closed scene recipe validation diagnostics with deterministic suggestions.",
+            feature_flag: None,
+            fixture_path: Some("tests/assets/stable-contracts/scene_recipe_validation.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.annotation_projection.v1",
             owner_module: "scene",
             summary: "Projected annotation anchors and CSS-pixel screen positions.",
@@ -245,6 +259,14 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
         (
             "scena.visibility_diagnosis.v1",
             include_str!("../tests/assets/stable-contracts/visibility_diagnosis.v1.json"),
+        ),
+        (
+            "scena.scene_recipe.v1",
+            include_str!("../tests/assets/stable-contracts/scene_recipe.v1.json"),
+        ),
+        (
+            "scena.scene_recipe_validation.v1",
+            include_str!("../tests/assets/stable-contracts/scene_recipe_validation.v1.json"),
         ),
         (
             "scena.annotation_projection.v1",
