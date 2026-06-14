@@ -84,7 +84,9 @@ pub use lights::{
 pub use math::{Angle, Quat, Transform, Vec3};
 pub use placement::{
     SCENE_PLACEMENT_RESULT_SCHEMA_V1, ScenePlacementDiagnosticV1, ScenePlacementResultV1,
-    placement_center_transform, placement_fit_to_size_transform, placement_ground_transform,
+    placement_align_to_feature_transform, placement_center_transform,
+    placement_fit_to_size_transform, placement_ground_transform, placement_look_at_transform,
+    placement_place_on_feature_transform,
 };
 pub use skinning::SceneSkinBinding;
 

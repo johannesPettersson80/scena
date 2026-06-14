@@ -7,6 +7,8 @@ use std::process::Command;
 use serde_json::json;
 
 const TEST_ASSET: &str = "tests/assets/gltf/mesh_material_vertex_color_scene.gltf";
+const ANCHOR_ASSET: &str = "tests/assets/gltf/anchor_debug_scene.gltf";
+const CONNECTOR_ASSET: &str = "tests/assets/gltf/connector_basis_scene.gltf";
 
 #[test]
 fn scena_render_cli_accepts_scene_recipe_input() {
@@ -205,6 +207,106 @@ fn scena_place_cli_exits_nonzero_for_unknown_import() {
     );
 }
 
+#[test]
+fn scena_place_cli_supports_authored_feature_verbs() {
+    let dir = artifact_dir("place-authored-features");
+    let anchor_recipe = write_two_import_recipe(&dir, "anchors.recipe.json", ANCHOR_ASSET);
+    let connector_recipe = write_two_import_recipe(&dir, "connectors.recipe.json", CONNECTOR_ASSET);
+
+    let look_at = run_place_for_import(
+        &anchor_recipe,
+        "source",
+        &["--verb", "look_at", "--target", "0,0,-2"],
+    );
+    assert!(look_at.status.success(), "stderr={}", stderr(&look_at));
+    let transform: scena::Transform =
+        serde_json::from_value(json_transform(&look_at)).expect("look_at transform deserializes");
+    assert_vec3_value(
+        transform.rotation * scena::Vec3::new(0.0, 0.0, -1.0),
+        [0.0, 0.0, -1.0],
+    );
+
+    let aligned = run_place_for_import(
+        &connector_recipe,
+        "source",
+        &[
+            "--verb",
+            "align_to_anchor",
+            "--source-connector",
+            "basis-connector",
+            "--target-import",
+            "target",
+            "--target-connector",
+            "basis-connector",
+        ],
+    );
+    assert!(aligned.status.success(), "stderr={}", stderr(&aligned));
+    let aligned: serde_json::Value =
+        serde_json::from_slice(&aligned.stdout).expect("align placement emits JSON");
+    assert_eq!(aligned["verb"], "align_to_anchor");
+    assert_vec3(&aligned["transform"]["translation"], [2.0, 0.0, 0.0]);
+
+    let placed = run_place_for_import(
+        &anchor_recipe,
+        "source",
+        &[
+            "--verb",
+            "place_on",
+            "--source-anchor",
+            "inspection",
+            "--target-import",
+            "target",
+            "--target-anchor",
+            "pivot",
+        ],
+    );
+    assert!(placed.status.success(), "stderr={}", stderr(&placed));
+    let placed: serde_json::Value =
+        serde_json::from_slice(&placed.stdout).expect("place_on emits JSON");
+    assert_eq!(placed["verb"], "place_on");
+    assert_vec3(&placed["transform"]["translation"], [2.1, -0.1, 0.0]);
+}
+
+#[test]
+fn scena_place_cli_exits_nonzero_for_unknown_authored_feature() {
+    let dir = artifact_dir("place-missing-feature");
+    let recipe_path = write_two_import_recipe(&dir, "anchors.recipe.json", ANCHOR_ASSET);
+
+    let output = run_place_for_import(
+        &recipe_path,
+        "source",
+        &[
+            "--verb",
+            "align_to_anchor",
+            "--source-anchor",
+            "missing",
+            "--target-import",
+            "target",
+            "--target-anchor",
+            "mount",
+        ],
+    );
+
+    assert!(!output.status.success());
+    assert!(
+        output.stderr.is_empty(),
+        "authored feature diagnostics stay machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("place failure emits JSON");
+    assert_eq!(report["schema"], "scena.placement_result.v1");
+    assert_eq!(report["ok"], false);
+    assert!(
+        report["diagnostics"]
+            .as_array()
+            .expect("diagnostics array")
+            .iter()
+            .any(|diagnostic| diagnostic["code"] == "authored_feature_not_found"),
+        "unknown authored feature should be structured: {report:#}"
+    );
+}
+
 fn write_valid_recipe(dir: &Path) -> PathBuf {
     let recipe_path = dir.join("scene.recipe.json");
     fs::write(
@@ -225,17 +327,62 @@ fn write_valid_recipe(dir: &Path) -> PathBuf {
     recipe_path
 }
 
+fn write_two_import_recipe(dir: &Path, name: &str, asset: &str) -> PathBuf {
+    let recipe_path = dir.join(name);
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                { "id": "source", "uri": asset },
+                {
+                    "id": "target",
+                    "uri": asset,
+                    "transform": {
+                        "translation": [2.0, 0.0, 0.0],
+                        "rotation": [0.0, 0.0, 0.0, 1.0],
+                        "scale": [1.0, 1.0, 1.0]
+                    }
+                }
+            ],
+            "capture": {
+                "width": 96,
+                "height": 72
+            }
+        }))
+        .expect("recipe serializes"),
+    )
+    .expect("recipe writes");
+    recipe_path
+}
+
 fn run_place(recipe_path: &Path, args: &[&str]) -> std::process::Output {
+    run_place_for_import(recipe_path, "part", args)
+}
+
+fn run_place_for_import(
+    recipe_path: &Path,
+    import_id: &str,
+    args: &[&str],
+) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
     command
         .arg("place")
         .arg(path_str(recipe_path))
         .arg("--import")
-        .arg("part");
+        .arg(import_id);
     for arg in args {
         command.arg(arg);
     }
     command.output().expect("scena place command runs")
+}
+
+fn json_transform(output: &std::process::Output) -> serde_json::Value {
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("placement output emits JSON");
+    assert_eq!(report["schema"], "scena.placement_result.v1");
+    assert_eq!(report["ok"], true);
+    report["transform"].clone()
 }
 
 fn assert_vec3(value: &serde_json::Value, expected: [f64; 3]) {
@@ -247,6 +394,13 @@ fn assert_vec3(value: &serde_json::Value, expected: [f64; 3]) {
             "component {index}: expected {expected}, got {actual}"
         );
     }
+}
+
+fn assert_vec3_value(actual: scena::Vec3, expected: [f32; 3]) {
+    assert!(
+        actual.abs_diff_eq(scena::Vec3::from_array(expected), 1.0e-5),
+        "expected {expected:?}, got {actual:?}"
+    );
 }
 
 fn artifact_dir(name: &str) -> PathBuf {

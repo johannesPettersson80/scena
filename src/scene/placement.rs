@@ -98,6 +98,78 @@ pub fn placement_ground_transform(bounds: Aabb, current: Transform, ground_y: f3
         .with_translation(current.translation + Vec3::new(0.0, ground_y - world_bounds.min.y, 0.0))
 }
 
+pub fn placement_look_at_transform(
+    current: Transform,
+    target: Vec3,
+    up: Vec3,
+) -> Result<Transform, Box<ScenePlacementDiagnosticV1>> {
+    if !vec3_is_finite(current.translation) || !vec3_is_finite(target) || !vec3_is_finite(up) {
+        return Err(Box::new(ScenePlacementDiagnosticV1::new(
+            "invalid_transform",
+            "$.verb.look_at",
+            "look_at requires finite source translation, target, and up vectors",
+            "pass finite --target and --up vectors",
+        )));
+    }
+    if (target - current.translation).length_squared() <= f32::EPSILON {
+        return Err(Box::new(ScenePlacementDiagnosticV1::new(
+            "degenerate_look_at",
+            "$.verb.look_at",
+            "look_at target must differ from the source translation",
+            "choose a target point or target import away from the source",
+        )));
+    }
+    Ok(current.looking_at(target, up))
+}
+
+pub fn placement_align_to_feature_transform(
+    current: Transform,
+    source_feature: Transform,
+    target_feature: Transform,
+) -> Result<Transform, Box<ScenePlacementDiagnosticV1>> {
+    validate_feature_transform(source_feature, "$.source")?;
+    validate_feature_transform(target_feature, "$.target")?;
+    if !vec3_is_finite(current.scale) || current.scale.abs().min_element() <= f32::EPSILON {
+        return Err(Box::new(ScenePlacementDiagnosticV1::new(
+            "non_invertible_transform",
+            "$.imports[].transform",
+            "source import transform must have finite non-zero scale",
+            "use a source transform with non-zero finite scale",
+        )));
+    }
+
+    let source_rotation = normalized_quat(source_feature.rotation, "$.source.rotation")?;
+    let target_rotation = normalized_quat(target_feature.rotation, "$.target.rotation")?;
+    let rotation = (target_rotation * source_rotation.inverse()).normalize();
+    let translation =
+        target_feature.translation - rotation * (source_feature.translation * current.scale);
+    Ok(Transform {
+        translation,
+        rotation,
+        scale: current.scale,
+    })
+}
+
+pub fn placement_place_on_feature_transform(
+    current: Transform,
+    source_feature: Transform,
+    target_feature: Transform,
+) -> Result<Transform, Box<ScenePlacementDiagnosticV1>> {
+    validate_feature_transform(source_feature, "$.source")?;
+    validate_feature_transform(target_feature, "$.target")?;
+    if !vec3_is_finite(current.translation) || !vec3_is_finite(current.scale) {
+        return Err(Box::new(ScenePlacementDiagnosticV1::new(
+            "invalid_transform",
+            "$.imports[].transform",
+            "source import transform must have finite translation and scale",
+            "use a finite source transform",
+        )));
+    }
+    let source_world = current.translation
+        + current.rotation.normalize() * (source_feature.translation * current.scale);
+    Ok(current.with_translation(current.translation + (target_feature.translation - source_world)))
+}
+
 pub fn placement_fit_to_size_transform(
     bounds: Aabb,
     current: Transform,
@@ -151,4 +223,54 @@ pub fn placement_fit_to_size_transform(
         scale: current.scale * scale_factor,
         ..current
     })
+}
+
+fn validate_feature_transform(
+    transform: Transform,
+    path: &str,
+) -> Result<(), Box<ScenePlacementDiagnosticV1>> {
+    if !vec3_is_finite(transform.translation)
+        || !vec3_is_finite(transform.scale)
+        || !quat_is_finite(transform.rotation)
+    {
+        return Err(Box::new(ScenePlacementDiagnosticV1::new(
+            "invalid_feature",
+            path,
+            "authored feature transform must be finite",
+            "fix the authored anchor or connector transform",
+        )));
+    }
+    if transform.scale.abs().min_element() <= f32::EPSILON {
+        return Err(Box::new(ScenePlacementDiagnosticV1::new(
+            "non_invertible_feature",
+            path,
+            "authored feature transform must have non-zero scale",
+            "fix the authored anchor or connector scale",
+        )));
+    }
+    Ok(())
+}
+
+fn normalized_quat(
+    rotation: glam::Quat,
+    path: &str,
+) -> Result<glam::Quat, Box<ScenePlacementDiagnosticV1>> {
+    let length_squared = rotation.length_squared();
+    if !length_squared.is_finite() || length_squared <= f32::EPSILON {
+        return Err(Box::new(ScenePlacementDiagnosticV1::new(
+            "invalid_feature",
+            path,
+            "authored feature rotation must be finite and non-zero",
+            "fix the authored anchor or connector rotation",
+        )));
+    }
+    Ok(rotation.normalize())
+}
+
+fn vec3_is_finite(value: Vec3) -> bool {
+    value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
+}
+
+fn quat_is_finite(value: glam::Quat) -> bool {
+    value.x.is_finite() && value.y.is_finite() && value.z.is_finite() && value.w.is_finite()
 }

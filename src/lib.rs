@@ -141,7 +141,9 @@ pub use scene::{
     SCENE_PLACEMENT_RESULT_SCHEMA_V1, Scene, SceneDirtyState, SceneImport,
     ScenePlacementDiagnosticV1, ScenePlacementResultV1, SceneSkinBinding, ScreenRect,
     SourceCoordinateSystem, SourceUnits, SpotLight, StudioLightingHandles, Transform, Vec3,
-    placement_center_transform, placement_fit_to_size_transform, placement_ground_transform,
+    placement_align_to_feature_transform, placement_center_transform,
+    placement_fit_to_size_transform, placement_ground_transform, placement_look_at_transform,
+    placement_place_on_feature_transform,
 };
 #[cfg(feature = "inspection")]
 pub use scene::{

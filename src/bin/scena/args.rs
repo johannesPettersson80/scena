@@ -39,9 +39,15 @@ pub(crate) struct PlaceCommandArgs {
     pub(crate) import_id: String,
     pub(crate) verb: String,
     pub(crate) target: Option<scena::Vec3>,
+    pub(crate) up: Option<scena::Vec3>,
     pub(crate) ground_y: Option<f32>,
     pub(crate) min_size: Option<f32>,
     pub(crate) max_size: Option<f32>,
+    pub(crate) target_import_id: Option<String>,
+    pub(crate) source_anchor: Option<String>,
+    pub(crate) target_anchor: Option<String>,
+    pub(crate) source_connector: Option<String>,
+    pub(crate) target_connector: Option<String>,
 }
 
 impl ValidateRecipeCommandArgs {
@@ -70,9 +76,15 @@ impl PlaceCommandArgs {
         let mut import_id = None;
         let mut verb = None;
         let mut target = None;
+        let mut up = None;
         let mut ground_y = None;
         let mut min_size = None;
         let mut max_size = None;
+        let mut target_import_id = None;
+        let mut source_anchor = None;
+        let mut target_anchor = None;
+        let mut source_connector = None;
+        let mut target_connector = None;
 
         let mut index = 1;
         while index < args.len() {
@@ -90,6 +102,10 @@ impl PlaceCommandArgs {
                         "--target",
                         flag_value_any(args, index, "--target")?,
                     )?);
+                    index += 2;
+                }
+                "--up" => {
+                    up = Some(parse_vec3("--up", flag_value_any(args, index, "--up")?)?);
                     index += 2;
                 }
                 "--ground-y" => {
@@ -113,6 +129,26 @@ impl PlaceCommandArgs {
                     )?);
                     index += 2;
                 }
+                "--target-import" => {
+                    target_import_id = Some(flag_value_any(args, index, "--target-import")?);
+                    index += 2;
+                }
+                "--source-anchor" => {
+                    source_anchor = Some(flag_value_any(args, index, "--source-anchor")?);
+                    index += 2;
+                }
+                "--target-anchor" => {
+                    target_anchor = Some(flag_value_any(args, index, "--target-anchor")?);
+                    index += 2;
+                }
+                "--source-connector" => {
+                    source_connector = Some(flag_value_any(args, index, "--source-connector")?);
+                    index += 2;
+                }
+                "--target-connector" => {
+                    target_connector = Some(flag_value_any(args, index, "--target-connector")?);
+                    index += 2;
+                }
                 "--json" => {
                     index += 1;
                 }
@@ -126,9 +162,15 @@ impl PlaceCommandArgs {
                 .ok_or_else(|| format!("missing --import <id>; {}", place_usage()))?,
             verb: verb.ok_or_else(|| format!("missing --verb <verb>; {}", place_usage()))?,
             target,
+            up,
             ground_y,
             min_size,
             max_size,
+            target_import_id,
+            source_anchor,
+            target_anchor,
+            source_connector,
+            target_connector,
         })
     }
 }
@@ -372,7 +414,7 @@ fn validate_recipe_usage() -> String {
 }
 
 fn place_usage() -> String {
-    "usage: scena place <recipe.json> --import <id> --verb <center|ground|fit_to_size> [--target x,y,z] [--ground-y y] [--min-size n] [--max-size n]"
+    "usage: scena place <recipe.json> --import <id> --verb <center|ground|fit_to_size|look_at|align_to_anchor|place_on> [--target x,y,z] [--up x,y,z] [--ground-y y] [--min-size n] [--max-size n] [--target-import id] [--source-anchor name|--source-connector name] [--target-anchor name|--target-connector name]"
         .to_string()
 }
 

@@ -674,34 +674,34 @@ Required verbs:
 - [x] `ground`: place a node/import on a ground plane or authored support
       plane using bounds.
 - [x] `fit_to_size`: scale uniformly into a requested size range.
-- [ ] `look_at`: orient a camera or node toward a point or bounds center.
-- [ ] `align_to_anchor`: align authored anchors/connectors and emit the
+- [x] `look_at`: orient a camera or node toward a point or bounds center.
+- [x] `align_to_anchor`: align authored anchors/connectors and emit the
       resulting transform.
-- [ ] `place_on`: place one authored anchor, connector, bounds face, or
+- [x] `place_on`: place one authored anchor, connector, bounds face, or
       authored plane onto another authored target.
 
 Scope guards:
 
-- [ ] No inferred mesh-face detection. A "face" must be an authored plane,
+- [x] No inferred mesh-face detection. A "face" must be an authored plane,
       bounds face, anchor, or connector.
-- [ ] No continuous constraints, snapping loop, clearance computation,
+- [x] No continuous constraints, snapping loop, clearance computation,
       collision solving, or domain-specific placement policy.
 - [x] Bounds-only recipe import verbs emit a transform preview. They do not
       mutate a host document or rewrite the recipe.
-- [ ] Anchor/connector verbs emit a transform or `VisualPatch` preview. They do not mutate a
+- [x] Anchor/connector verbs emit a transform preview. They do not mutate a
       host document directly.
 
 Acceptance:
 
 - [x] Unit tests for bounds-only recipe import `center`, `ground`, and
       `fit_to_size` with stable numeric tolerances.
-- [ ] Unit tests for `look_at`, `align_to_anchor`, and `place_on` with stable
+- [x] Unit tests for `look_at`, `align_to_anchor`, and `place_on` with stable
       numeric tolerances.
-- [ ] Tests prove invalid authored-feature references fail with structured
+- [x] Tests prove invalid authored-feature references fail with structured
       diagnostics and suggested alternatives where available.
 - [x] CLI `scena place` emits deterministic JSON and non-zero exits for invalid
       import references.
-- [ ] CLI `scena place` emits deterministic JSON and non-zero exits for invalid
+- [x] CLI `scena place` emits deterministic JSON and non-zero exits for invalid
       authored anchor/connector/plane references.
 - [ ] Visual proof shows `center`, `ground`, and `align_to_anchor` produce a
       visible, framed result when passed through render introspection.

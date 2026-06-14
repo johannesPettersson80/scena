@@ -710,19 +710,26 @@ command and represented by `ScenePlacementResultV1`. A placement result is a
 preview: it proposes a `Transform` for the requested recipe import and does not
 mutate a host document or rewrite the recipe file.
 
-The first v1 slice supports bounds-authored recipe import placement:
+The v1 placement result supports bounds-authored recipe import placement:
 
 - `center`: translate the import so its transformed bounds center reaches
   `--target x,y,z`, defaulting to the world origin.
 - `ground`: translate the import so its transformed bounds minimum Y reaches
   `--ground-y`, defaulting to `0`.
 - `fit_to_size`: uniformly scale the import into `--min-size` / `--max-size`.
+- `look_at`: orient the import so local `-Z` points at `--target x,y,z` or at
+  the bounds center of `--target-import`.
+- `align_to_anchor`: align a source authored anchor/connector frame to a target
+  authored anchor/connector frame and emit the resulting import transform.
+- `place_on`: translate a source authored anchor/connector point onto a target
+  authored anchor/connector point while preserving source orientation.
 
 `ok=false` reports include deterministic diagnostics with `code`, `severity`,
 JSON `path`, `message`, `help`, optional `suggestion`, and `auto_fixable`.
 Unknown imports, unsupported verbs, missing bounds, invalid size ranges, and
 asset load failures return placement JSON on stdout with a non-zero exit.
-Authored-anchor and connector placement verbs land in later A.6 slices.
+Missing or ambiguous authored anchors/connectors also fail closed with
+placement JSON on stdout and a non-zero exit.
 
 The stable fixture lives at
 `tests/assets/stable-contracts/placement_result.v1.json`.

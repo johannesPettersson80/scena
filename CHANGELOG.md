@@ -40,8 +40,9 @@ All notable user-facing changes are recorded here.
   fail-closed declarative recipe validation, the `scena validate-recipe`
   command, and recipe input for `render --introspect`, `inspect`, and
   `diagnose --visibility`.
-- Added `scena.placement_result.v1` and `scena place` bounds-based transform
-  previews for recipe imports using `center`, `ground`, and `fit_to_size`.
+- Added `scena.placement_result.v1` and `scena place` transform previews for
+  recipe imports using `center`, `ground`, `fit_to_size`, `look_at`,
+  `align_to_anchor`, and `place_on`.
 
 ## [1.7.1] - 2026-06-12
 
