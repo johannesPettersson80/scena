@@ -1,15 +1,16 @@
 use std::env;
 use std::fs;
+use std::path::Path;
 #[cfg(feature = "inspection")]
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process;
 
 #[path = "scena/args.rs"]
 mod scena_args;
 
-use scena_args::ValidateRecipeCommandArgs;
 #[cfg(feature = "inspection")]
 use scena_args::{DiagnoseCommandArgs, InspectCommandArgs, RenderCommandArgs};
+use scena_args::{PlaceCommandArgs, ValidateRecipeCommandArgs};
 
 fn main() {
     match run(env::args().skip(1).collect()) {
@@ -51,18 +52,137 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
             json_success(&report, "failed to serialize schema entry")
         }
         [command, rest @ ..] if command == "validate-recipe" => run_validate_recipe_command(rest),
+        [command, rest @ ..] if command == "place" => run_place_command(rest),
         [command, rest @ ..] if command == "render" => run_render_command(rest),
         [command, rest @ ..] if command == "inspect" => run_inspect_command(rest),
         [command, rest @ ..] if command == "diagnose" => run_diagnose_command(rest),
         _ => Err(
             "unknown command; expected 'schema list', 'schema get <scena.*.vN>', \
              'validate-recipe <recipe.json>', \
+             'place <recipe.json> --import <id> --verb <verb>', \
              'render <asset> --introspect --out <png>', or \
              'inspect <asset>', or \
              'diagnose <asset> --visibility [--handle <u64>]'"
                 .to_string(),
         ),
     }
+}
+
+fn run_place_command(args: &[String]) -> Result<CliOutcome, String> {
+    let args = PlaceCommandArgs::parse(args)?;
+    let text = fs::read_to_string(&args.recipe)
+        .map_err(|error| format!("failed to read recipe '{}': {error}", args.recipe.display()))?;
+    let recipe = match scena::parse_valid_scene_recipe_json(&text) {
+        Ok(recipe) => recipe,
+        Err(report) => {
+            return json_outcome(
+                &report,
+                1,
+                "failed to serialize scene recipe validation report",
+            );
+        }
+    };
+    let recipe_path = args
+        .recipe
+        .to_str()
+        .ok_or_else(|| format!("recipe path '{}' is not valid UTF-8", args.recipe.display()))?;
+    let Some((import_index, import)) = recipe
+        .imports
+        .iter()
+        .enumerate()
+        .find(|(_, import)| import.id == args.import_id)
+    else {
+        let mut diagnostic = scena::ScenePlacementDiagnosticV1::new(
+            "unknown_import",
+            "$.imports",
+            format!("recipe import '{}' was not found", args.import_id),
+            "pass --import with one of the recipe import ids",
+        );
+        if let Some(first) = recipe.imports.first() {
+            diagnostic = diagnostic.with_suggestion(first.id.clone());
+        }
+        let report = scena::ScenePlacementResultV1::failure(
+            args.import_id,
+            normalize_place_verb(&args.verb),
+            diagnostic,
+        );
+        return json_outcome(&report, 1, "failed to serialize placement result");
+    };
+
+    let asset_uri = resolve_recipe_asset_uri(recipe_path, &import.uri);
+    let assets = scena::Assets::new();
+    let scene_asset = match pollster::block_on(assets.load_scene(asset_uri.as_str())) {
+        Ok(asset) => asset,
+        Err(error) => {
+            let report = scena::ScenePlacementResultV1::failure(
+                import.id.clone(),
+                normalize_place_verb(&args.verb),
+                scena::ScenePlacementDiagnosticV1::new(
+                    "asset_load_failed",
+                    format!("$.imports[{import_index}].uri"),
+                    format!("failed to load placement asset '{}': {error}", import.uri),
+                    "fix the recipe uri or run validate-recipe before placement",
+                ),
+            );
+            return json_outcome(&report, 1, "failed to serialize placement result");
+        }
+    };
+    let Some(bounds) = scene_asset.bounds() else {
+        let report = scena::ScenePlacementResultV1::failure(
+            import.id.clone(),
+            normalize_place_verb(&args.verb),
+            scena::ScenePlacementDiagnosticV1::new(
+                "missing_bounds",
+                format!("$.imports[{import_index}].uri"),
+                "placement requires an asset with renderable bounds",
+                "use an asset containing mesh, primitive, or instance bounds",
+            ),
+        );
+        return json_outcome(&report, 1, "failed to serialize placement result");
+    };
+
+    let current = import.transform.unwrap_or(scena::Transform::IDENTITY);
+    let verb = normalize_place_verb(&args.verb);
+    let result = match verb.as_str() {
+        "center" => scena::ScenePlacementResultV1::success(
+            import.id.clone(),
+            verb,
+            scena::placement_center_transform(
+                bounds,
+                current,
+                args.target.unwrap_or(scena::Vec3::ZERO),
+            ),
+        ),
+        "ground" => scena::ScenePlacementResultV1::success(
+            import.id.clone(),
+            verb,
+            scena::placement_ground_transform(bounds, current, args.ground_y.unwrap_or(0.0)),
+        ),
+        "fit_to_size" => match scena::placement_fit_to_size_transform(
+            bounds,
+            current,
+            args.min_size,
+            args.max_size,
+        ) {
+            Ok(transform) => {
+                scena::ScenePlacementResultV1::success(import.id.clone(), verb, transform)
+            }
+            Err(error) => scena::ScenePlacementResultV1::failure(import.id.clone(), verb, *error),
+        },
+        _ => scena::ScenePlacementResultV1::failure(
+            import.id.clone(),
+            verb,
+            scena::ScenePlacementDiagnosticV1::new(
+                "unknown_verb",
+                "$.verb",
+                format!("placement verb '{}' is not supported", args.verb),
+                "use center, ground, or fit_to_size",
+            )
+            .with_suggestion("center"),
+        ),
+    };
+    let exit_code = if result.ok { 0 } else { 1 };
+    json_outcome(&result, exit_code, "failed to serialize placement result")
 }
 
 fn run_validate_recipe_command(args: &[String]) -> Result<CliOutcome, String> {
@@ -88,8 +208,7 @@ fn run_render_command(args: &[String]) -> Result<CliOutcome, String> {
     let width = args.width.or(input.width).unwrap_or(800);
     let height = args.height.or(input.height).unwrap_or(600);
     let first = pollster::block_on(
-        scena::headless_gltf_viewer(input.asset.as_str())
-            .size(width, height)
+        viewer_builder(input.asset.as_str(), width, height, input.transform)
             .with_default_light()
             .render(),
     )
@@ -153,8 +272,7 @@ fn run_inspect_command(args: &[String]) -> Result<CliOutcome, String> {
     let width = args.width.or(input.width).unwrap_or(800);
     let height = args.height.or(input.height).unwrap_or(600);
     let viewer = pollster::block_on(
-        scena::headless_gltf_viewer(input.asset.as_str())
-            .size(width, height)
+        viewer_builder(input.asset.as_str(), width, height, input.transform)
             .with_default_light()
             .build(),
     )
@@ -181,8 +299,7 @@ fn run_diagnose_command(args: &[String]) -> Result<CliOutcome, String> {
     let width = args.width.or(input.width).unwrap_or(800);
     let height = args.height.or(input.height).unwrap_or(600);
     let first = pollster::block_on(
-        scena::headless_gltf_viewer(input.asset.as_str())
-            .size(width, height)
+        viewer_builder(input.asset.as_str(), width, height, input.transform)
             .with_default_light()
             .render(),
     )
@@ -239,9 +356,10 @@ fn json_outcome<T: serde::Serialize>(
 }
 
 #[cfg(feature = "inspection")]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct ResolvedSceneInput {
     asset: String,
+    transform: Option<scena::Transform>,
     width: Option<u32>,
     height: Option<u32>,
 }
@@ -257,15 +375,32 @@ fn resolve_scene_input(input: &str) -> Result<ResolvedSceneInput, CliOutcome> {
             let asset = resolve_recipe_asset_uri(input, &import.uri);
             Ok(ResolvedSceneInput {
                 asset,
+                transform: import.transform,
                 width: recipe.capture.as_ref().map(|capture| capture.width),
                 height: recipe.capture.as_ref().map(|capture| capture.height),
             })
         }
         None => Ok(ResolvedSceneInput {
             asset: input.to_owned(),
+            transform: None,
             width: None,
             height: None,
         }),
+    }
+}
+
+#[cfg(feature = "inspection")]
+fn viewer_builder(
+    asset: &str,
+    width: u32,
+    height: u32,
+    transform: Option<scena::Transform>,
+) -> scena::HeadlessGltfViewerBuilder {
+    let builder = scena::headless_gltf_viewer(asset).size(width, height);
+    if let Some(transform) = transform {
+        builder.with_import_transform(transform)
+    } else {
+        builder
     }
 }
 
@@ -300,7 +435,13 @@ fn try_load_recipe(input: &str) -> Result<Option<scena::SceneRecipeV1>, CliOutco
     }
 }
 
-#[cfg(feature = "inspection")]
+fn normalize_place_verb(verb: &str) -> String {
+    match verb {
+        "fit-to-size" => "fit_to_size".to_owned(),
+        other => other.to_owned(),
+    }
+}
+
 fn resolve_recipe_asset_uri(recipe_path: &str, uri: &str) -> String {
     let uri_path = Path::new(uri);
     if uri_path.is_absolute() || uri.contains("://") || uri.starts_with("data:") {

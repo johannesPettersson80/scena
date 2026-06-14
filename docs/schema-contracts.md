@@ -30,6 +30,7 @@ Rules:
   - `scena.visibility_diagnosis.v1`
   - `scena.scene_recipe.v1`
   - `scena.scene_recipe_validation.v1`
+  - `scena.placement_result.v1`
   - `scena.asset_load_report.v1`
   - `scena.asset_geometry_summary.v1`
   - `scena.annotation_projection.v1`
@@ -701,6 +702,30 @@ non-zero when `ok` is false. When built with `inspection`, `scena render`,
 `scena inspect`, and `scena diagnose --visibility` accept either a direct asset
 path or a recipe file and use the first recipe import through the same
 load/prepare/render/capture path as direct assets.
+
+### `scena.placement_result.v1`
+
+Produced by the `scena place <recipe.json> --import <id> --verb <verb>` CLI
+command and represented by `ScenePlacementResultV1`. A placement result is a
+preview: it proposes a `Transform` for the requested recipe import and does not
+mutate a host document or rewrite the recipe file.
+
+The first v1 slice supports bounds-authored recipe import placement:
+
+- `center`: translate the import so its transformed bounds center reaches
+  `--target x,y,z`, defaulting to the world origin.
+- `ground`: translate the import so its transformed bounds minimum Y reaches
+  `--ground-y`, defaulting to `0`.
+- `fit_to_size`: uniformly scale the import into `--min-size` / `--max-size`.
+
+`ok=false` reports include deterministic diagnostics with `code`, `severity`,
+JSON `path`, `message`, `help`, optional `suggestion`, and `auto_fixable`.
+Unknown imports, unsupported verbs, missing bounds, invalid size ranges, and
+asset load failures return placement JSON on stdout with a non-zero exit.
+Authored-anchor and connector placement verbs land in later A.6 slices.
+
+The stable fixture lives at
+`tests/assets/stable-contracts/placement_result.v1.json`.
 
 ### `scena.schema_catalog.v1` and `scena.schema_entry.v1`
 

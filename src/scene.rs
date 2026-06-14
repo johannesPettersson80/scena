@@ -35,6 +35,7 @@ mod mixers;
 mod morphs;
 mod origin;
 mod picking;
+mod placement;
 pub mod recipe;
 mod removal;
 mod render_nodes;
@@ -48,6 +49,7 @@ pub use annotations::{
     AnnotationAnchor, AnnotationAnchorTarget, AnnotationProjectionReportV1, AnnotationProjectionV1,
     SCENE_ANNOTATION_PROJECTION_SCHEMA_V1,
 };
+pub use builders::{MeshBuilder, ModelBuilder};
 pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
 pub use clipping::{ClippingPlane, ClippingPlaneSet};
 pub use connectors::{
@@ -80,6 +82,10 @@ pub use lights::{
     DirectionalLight, Light, LightBuilder, PointLight, SpotLight, StudioLightingHandles,
 };
 pub use math::{Angle, Quat, Transform, Vec3};
+pub use placement::{
+    SCENE_PLACEMENT_RESULT_SCHEMA_V1, ScenePlacementDiagnosticV1, ScenePlacementResultV1,
+    placement_center_transform, placement_fit_to_size_transform, placement_ground_transform,
+};
 pub use skinning::SceneSkinBinding;
 
 new_key_type! {
@@ -162,25 +168,6 @@ pub struct MeshNode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ModelNode {
-    model: ModelHandle,
-}
-
-/// Builder returned by [`Scene::mesh`].
-#[must_use = "mesh builders do nothing until add() is called"]
-pub struct MeshBuilder<'scene> {
-    scene: &'scene mut Scene,
-    parent: NodeKey,
-    transform: Transform,
-    geometry: GeometryHandle,
-    material: MaterialHandle,
-}
-
-/// Builder returned by [`Scene::model`].
-#[must_use = "model builders do nothing until add() is called"]
-pub struct ModelBuilder<'scene> {
-    scene: &'scene mut Scene,
-    parent: NodeKey,
-    transform: Transform,
     model: ModelHandle,
 }
 
@@ -278,13 +265,7 @@ impl Scene {
     /// ```
     pub fn mesh(&mut self, geometry: GeometryHandle, material: MaterialHandle) -> MeshBuilder<'_> {
         let parent = self.root;
-        MeshBuilder {
-            scene: self,
-            parent,
-            transform: Transform::default(),
-            geometry,
-            material,
-        }
+        MeshBuilder::new(self, parent, geometry, material)
     }
 
     /// Starts a model-node builder under the scene root.
@@ -293,12 +274,7 @@ impl Scene {
     /// root parent and identity transform, then call [`ModelBuilder::add`] to insert the node.
     pub fn model(&mut self, model: ModelHandle) -> ModelBuilder<'_> {
         let parent = self.root;
-        ModelBuilder {
-            scene: self,
-            parent,
-            transform: Transform::default(),
-            model,
-        }
+        ModelBuilder::new(self, parent, model)
     }
 
     pub fn add_perspective_camera(

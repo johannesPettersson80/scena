@@ -1,0 +1,25 @@
+{
+  "schema": "scena.placement_result.v1",
+  "ok": true,
+  "verb": "center",
+  "import_id": "part",
+  "transform": {
+    "translation": [
+      1.0,
+      2.0,
+      3.0
+    ],
+    "rotation": [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ],
+    "scale": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "diagnostics": []
+}

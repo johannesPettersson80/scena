@@ -46,14 +46,17 @@ Additive public API changes in Unreleased:
   `SceneRecipeExpectedExtentV1`, `SceneRecipeValidationReportV1`,
   `SceneRecipeDiagnosticV1`, `validate_scene_recipe_json`,
   `validate_scene_recipe_value`, and `parse_valid_scene_recipe_json`
+- `SCENE_PLACEMENT_RESULT_SCHEMA_V1`, `ScenePlacementResultV1`,
+  `ScenePlacementDiagnosticV1`, `placement_center_transform`,
+  `placement_ground_transform`, and `placement_fit_to_size_transform`
 - `SCHEMA_CATALOG_SCHEMA_V1`, `SCHEMA_ENTRY_SCHEMA_V1`,
   `SchemaCatalogV1`, `SchemaCatalogEntryV1`, `SchemaEntryReportV1`,
   `schema_catalog_v1`, `schema_catalog_entry`, `schema_entry_report_v1`,
   and `nearest_schema_name`
 - The `scena` binary with `schema list`, `schema get <schema>`,
-  `validate-recipe <recipe.json>`, and, when built with `inspection`,
-  asset-or-recipe-input `render --introspect`, `inspect`, and
-  `diagnose --visibility` JSON commands
+  `validate-recipe <recipe.json>`, `place <recipe.json> --import <id>
+  --verb <verb>`, and, when built with `inspection`, asset-or-recipe-input
+  `render --introspect`, `inspect`, and `diagnose --visibility` JSON commands
 
 Additive public API changes in 1.7.0:
 

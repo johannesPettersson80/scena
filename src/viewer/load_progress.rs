@@ -1,6 +1,6 @@
 use crate::assets::{AssetLoadProgress, Assets};
 use crate::render::Renderer;
-use crate::scene::{DirectionalLight, Scene};
+use crate::scene::{DirectionalLight, Scene, SceneImport, Transform};
 
 use super::{
     FirstRender, HeadlessGltfViewer, HeadlessGltfViewerBuilder, InteractiveGltfViewer,
@@ -26,6 +26,7 @@ impl HeadlessGltfViewerBuilder {
         let scene_asset = scene_report.into_asset();
         let mut scene = Scene::new();
         let import = scene.instantiate(&scene_asset)?;
+        apply_import_transform(&mut scene, &import, self.common.import_transform)?;
         let camera = scene.add_default_camera()?;
         if self.common.frame_import {
             scene.frame_import(camera, &import)?;
@@ -102,6 +103,7 @@ impl InteractiveGltfViewerBuilder {
         let scene_asset = scene_report.into_asset();
         let mut scene = Scene::new();
         let import = scene.instantiate(&scene_asset)?;
+        apply_import_transform(&mut scene, &import, self.common.import_transform)?;
         let camera = scene.add_default_camera()?;
         if self.common.frame_import {
             scene.frame_import(camera, &import)?;
@@ -148,6 +150,7 @@ impl InteractiveGltfViewerBuilder {
         let scene_asset = scene_report.into_asset();
         let mut scene = Scene::new();
         let import = scene.instantiate(&scene_asset)?;
+        apply_import_transform(&mut scene, &import, self.common.import_transform)?;
         let camera = scene.add_default_camera()?;
         if self.common.frame_import {
             scene.frame_import(camera, &import)?;
@@ -178,6 +181,20 @@ impl InteractiveGltfViewerBuilder {
             hover_callback: None,
         })
     }
+}
+
+fn apply_import_transform(
+    scene: &mut Scene,
+    import: &SceneImport,
+    transform: Option<Transform>,
+) -> crate::Result<()> {
+    let Some(transform) = transform else {
+        return Ok(());
+    };
+    for root in import.roots() {
+        scene.set_transform(*root, transform)?;
+    }
+    Ok(())
 }
 
 impl InteractiveGltfViewer {

@@ -90,6 +90,121 @@ fn scena_inspect_and_diagnose_cli_accept_scene_recipe_input() {
     );
 }
 
+#[test]
+fn scena_recipe_cli_applies_import_transform_before_inspection() {
+    let dir = artifact_dir("transform");
+    let recipe_path = dir.join("translated.recipe.json");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                {
+                    "id": "part",
+                    "uri": TEST_ASSET,
+                    "transform": {
+                        "translation": [7.0, 0.0, 0.0],
+                        "rotation": [0.0, 0.0, 0.0, 1.0],
+                        "scale": [1.0, 1.0, 1.0]
+                    }
+                }
+            ]
+        }))
+        .expect("recipe serializes"),
+    )
+    .expect("recipe writes");
+
+    let inspect = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["inspect", path_str(&recipe_path)])
+        .output()
+        .expect("scena inspect translated recipe command runs");
+    assert!(inspect.status.success(), "stderr={}", stderr(&inspect));
+    let inspection: serde_json::Value =
+        serde_json::from_slice(&inspect.stdout).expect("inspect recipe emits JSON");
+
+    assert!(
+        inspection["nodes"]
+            .as_array()
+            .expect("nodes array")
+            .iter()
+            .any(|node| {
+                let translation = &node["world_transform"]["translation"];
+                translation[0]
+                    .as_f64()
+                    .is_some_and(|x| (x - 7.0).abs() < 1.0e-5)
+            }),
+        "recipe import transform should be applied before inspection: {inspection:#}"
+    );
+}
+
+#[test]
+fn scena_place_cli_emits_bounds_based_transform_previews_for_recipe_import() {
+    let dir = artifact_dir("place");
+    let recipe_path = write_valid_recipe(&dir);
+
+    let centered = run_place(&recipe_path, &["--verb", "center", "--target", "1,2,3"]);
+    assert!(centered.status.success(), "stderr={}", stderr(&centered));
+    let centered: serde_json::Value =
+        serde_json::from_slice(&centered.stdout).expect("center placement emits JSON");
+    assert_eq!(centered["schema"], "scena.placement_result.v1");
+    assert_eq!(centered["ok"], true);
+    assert_vec3(&centered["transform"]["translation"], [1.0, 2.0, 3.0]);
+
+    let grounded = run_place(&recipe_path, &["--verb", "ground", "--ground-y", "0"]);
+    assert!(grounded.status.success(), "stderr={}", stderr(&grounded));
+    let grounded: serde_json::Value =
+        serde_json::from_slice(&grounded.stdout).expect("ground placement emits JSON");
+    assert_eq!(grounded["verb"], "ground");
+    assert_vec3(&grounded["transform"]["translation"], [0.0, 0.5, 0.0]);
+
+    let fit = run_place(
+        &recipe_path,
+        &["--verb", "fit_to_size", "--max-size", "0.5"],
+    );
+    assert!(fit.status.success(), "stderr={}", stderr(&fit));
+    let fit: serde_json::Value =
+        serde_json::from_slice(&fit.stdout).expect("fit placement emits JSON");
+    assert_eq!(fit["verb"], "fit_to_size");
+    assert_vec3(&fit["transform"]["scale"], [0.5, 0.5, 0.5]);
+}
+
+#[test]
+fn scena_place_cli_exits_nonzero_for_unknown_import() {
+    let dir = artifact_dir("place-invalid");
+    let recipe_path = write_valid_recipe(&dir);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "place",
+            path_str(&recipe_path),
+            "--import",
+            "missing",
+            "--verb",
+            "center",
+        ])
+        .output()
+        .expect("scena place invalid import command runs");
+
+    assert!(!output.status.success());
+    assert!(
+        output.stderr.is_empty(),
+        "placement diagnostics stay machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("place failure emits JSON");
+    assert_eq!(report["schema"], "scena.placement_result.v1");
+    assert_eq!(report["ok"], false);
+    assert!(
+        report["diagnostics"]
+            .as_array()
+            .expect("diagnostics array")
+            .iter()
+            .any(|diagnostic| diagnostic["code"] == "unknown_import"),
+        "unknown import should be structured: {report:#}"
+    );
+}
+
 fn write_valid_recipe(dir: &Path) -> PathBuf {
     let recipe_path = dir.join("scene.recipe.json");
     fs::write(
@@ -108,6 +223,30 @@ fn write_valid_recipe(dir: &Path) -> PathBuf {
     )
     .expect("recipe writes");
     recipe_path
+}
+
+fn run_place(recipe_path: &Path, args: &[&str]) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+    command
+        .arg("place")
+        .arg(path_str(recipe_path))
+        .arg("--import")
+        .arg("part");
+    for arg in args {
+        command.arg(arg);
+    }
+    command.output().expect("scena place command runs")
+}
+
+fn assert_vec3(value: &serde_json::Value, expected: [f64; 3]) {
+    let actual = value.as_array().expect("vec3 serializes as an array");
+    for (index, expected) in expected.into_iter().enumerate() {
+        let actual = actual[index].as_f64().expect("vec3 component is numeric");
+        assert!(
+            (actual - expected).abs() < 1.0e-5,
+            "component {index}: expected {expected}, got {actual}"
+        );
+    }
 }
 
 fn artifact_dir(name: &str) -> PathBuf {

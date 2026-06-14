@@ -216,6 +216,10 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
             "scena.scene_recipe_validation.v1",
         ),
         (
+            "tests/assets/stable-contracts/placement_result.v1.json",
+            "scena.placement_result.v1",
+        ),
+        (
             "tests/assets/stable-contracts/annotation_projection.v1.json",
             "scena.annotation_projection.v1",
         ),

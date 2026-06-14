@@ -166,6 +166,13 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/scene_recipe_validation.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.placement_result.v1",
+            owner_module: "scene",
+            summary: "Semantic placement transform preview for declarative recipe imports.",
+            feature_flag: None,
+            fixture_path: Some("tests/assets/stable-contracts/placement_result.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.annotation_projection.v1",
             owner_module: "scene",
             summary: "Projected annotation anchors and CSS-pixel screen positions.",
@@ -267,6 +274,10 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
         (
             "scena.scene_recipe_validation.v1",
             include_str!("../tests/assets/stable-contracts/scene_recipe_validation.v1.json"),
+        ),
+        (
+            "scena.placement_result.v1",
+            include_str!("../tests/assets/stable-contracts/placement_result.v1.json"),
         ),
         (
             "scena.annotation_projection.v1",

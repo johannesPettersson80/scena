@@ -14,7 +14,7 @@ use crate::diagnostics::{Diagnostic, LookupError, RenderOutcome};
 use crate::picking::Hit;
 use crate::platform::{PlatformSurface, SurfaceEvent};
 use crate::render::{Profile, Quality, RenderMode, Renderer, RendererOptions};
-use crate::scene::{CameraKey, Scene, SceneImport, Vec3};
+use crate::scene::{CameraKey, Scene, SceneImport, Transform, Vec3};
 
 type ViewerPickCallback = Box<dyn FnMut(std::result::Result<Option<Hit>, LookupError>) + 'static>;
 
@@ -56,6 +56,7 @@ struct ViewerCommonOptions {
     default_environment: bool,
     environment_path: Option<AssetPath>,
     renderer_options: RendererOptions,
+    import_transform: Option<Transform>,
 }
 
 impl ViewerCommonOptions {
@@ -66,6 +67,7 @@ impl ViewerCommonOptions {
             default_environment: false,
             environment_path: None,
             renderer_options: RendererOptions::default(),
+            import_transform: None,
         }
     }
 
@@ -157,6 +159,13 @@ impl HeadlessGltfViewerBuilder {
     /// Uses an explicit render mode when the headless renderer is created.
     pub const fn with_render_mode(mut self, render_mode: RenderMode) -> Self {
         self.common.renderer_options = self.common.renderer_options.with_render_mode(render_mode);
+        self
+    }
+
+    /// Applies a transform to the imported glTF roots immediately after
+    /// instantiation and before optional framing, lighting, prepare, or render.
+    pub const fn with_import_transform(mut self, transform: Transform) -> Self {
+        self.common.import_transform = Some(transform);
         self
     }
 
@@ -351,6 +360,13 @@ impl InteractiveGltfViewerBuilder {
     /// Uses an explicit render mode when the renderer is created.
     pub const fn with_render_mode(mut self, render_mode: RenderMode) -> Self {
         self.common.renderer_options = self.common.renderer_options.with_render_mode(render_mode);
+        self
+    }
+
+    /// Applies a transform to the imported glTF roots immediately after
+    /// instantiation and before optional framing, lighting, prepare, or render.
+    pub const fn with_import_transform(mut self, transform: Transform) -> Self {
+        self.common.import_transform = Some(transform);
         self
     }
 

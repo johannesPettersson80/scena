@@ -139,6 +139,10 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
             "scena.scene_recipe_validation.v1",
         ),
         (
+            "tests/assets/stable-contracts/placement_result.v1.json",
+            "scena.placement_result.v1",
+        ),
+        (
             "tests/assets/stable-contracts/annotation_projection.v1.json",
             "scena.annotation_projection.v1",
         ),
@@ -270,6 +274,13 @@ fn scene_recipe_golden_matches_live_schema_serialization() {
 fn scene_recipe_validation_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::SceneRecipeValidationReportV1>(
         "tests/assets/stable-contracts/scene_recipe_validation.v1.json",
+    );
+}
+
+#[test]
+fn placement_result_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::ScenePlacementResultV1>(
+        "tests/assets/stable-contracts/placement_result.v1.json",
     );
 }
 

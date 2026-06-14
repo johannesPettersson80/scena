@@ -138,8 +138,10 @@ pub use scene::{
     LabelBillboard, LabelDesc, LabelKey, LabelRasterization, Light, LightBuilder, LightKey,
     MeshBuilder, MeshNode, ModelBuilder, ModelNode, Node, NodeKey, NodeKind, OrthographicCamera,
     PerspectiveCamera, PointLight, ProjectedPoint, Quat, SCENE_ANNOTATION_PROJECTION_SCHEMA_V1,
-    Scene, SceneDirtyState, SceneImport, SceneSkinBinding, ScreenRect, SourceCoordinateSystem,
-    SourceUnits, SpotLight, StudioLightingHandles, Transform, Vec3,
+    SCENE_PLACEMENT_RESULT_SCHEMA_V1, Scene, SceneDirtyState, SceneImport,
+    ScenePlacementDiagnosticV1, ScenePlacementResultV1, SceneSkinBinding, ScreenRect,
+    SourceCoordinateSystem, SourceUnits, SpotLight, StudioLightingHandles, Transform, Vec3,
+    placement_center_transform, placement_fit_to_size_transform, placement_ground_transform,
 };
 #[cfg(feature = "inspection")]
 pub use scene::{
