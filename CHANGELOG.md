@@ -64,6 +64,10 @@ All notable user-facing changes are recorded here.
 - Added `scena.connector_browser.v1` SceneHost reports for import, subtree,
   and selection connector browsing with metadata compatibility, snap preview
   distance/tolerance, ghost-transform cues, and stable host handles.
+- Added SceneHost material-variant helper reporting: asset-import and
+  host-backed inspection JSON now include declared variant names plus the
+  active variant, and duplicate source variant names fail closed instead of
+  selecting by declaration order.
 - Added deterministic generated catalog previews with
   `render_asset_catalog_preview_png()`, `AssetCatalogPreviewPng`,
   `AssetCatalogPreviewError`, viewer-builder background color support, and the

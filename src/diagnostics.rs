@@ -307,6 +307,14 @@ pub enum LookupError {
     VariantNotFound {
         name: String,
     },
+    /// A material variant name appears more than once in the source
+    /// `KHR_materials_variants` declaration. Returned instead of
+    /// picking one by enumeration position so hosts can repair the
+    /// asset metadata rather than applying a surprising material.
+    AmbiguousVariantName {
+        name: String,
+        matches: Vec<u32>,
+    },
     PathNotFound {
         path: String,
     },

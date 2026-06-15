@@ -69,6 +69,7 @@ fn connector_lookup_error(error: LookupError, requested_name: &str) -> Connectio
         | LookupError::ClipNotFound { .. }
         | LookupError::AmbiguousClipName { .. }
         | LookupError::VariantNotFound { .. }
+        | LookupError::AmbiguousVariantName { .. }
         | LookupError::PathNotFound { .. }
         | LookupError::InvalidViewport { .. }
         | LookupError::InvalidBounds { .. }

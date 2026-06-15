@@ -404,6 +404,11 @@ impl fmt::Display for LookupError {
                 formatter,
                 "imported scene has no KHR_materials_variants variant named '{name}'"
             ),
+            Self::AmbiguousVariantName { name, matches } => write!(
+                formatter,
+                "imported scene KHR_materials_variants name '{name}' is ambiguous across {} variants",
+                matches.len()
+            ),
             Self::AmbiguousClipName { name, matches } => write!(
                 formatter,
                 "imported scene animation clip name '{name}' is ambiguous across {} clips",

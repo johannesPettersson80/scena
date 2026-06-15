@@ -15,7 +15,7 @@ use crate::{
     OrbitControls, RenderOutcome, Renderer, Scene, SceneImport, SurfaceEvent, SurfaceViewport,
     Transform, Vec3,
 };
-use crate::{AnimationMixerKey, CameraKey, InstanceId, NodeKey};
+use crate::{AnimationMixerKey, CameraKey, InstanceId, NodeKey, SceneImportInspectionV1};
 
 const ANIMATION_HANDLE_GENERATION_BASE: u32 = 6;
 
@@ -418,6 +418,10 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         if !instance_sets.is_empty() {
             report.instance_sets = Some(instance_sets);
         }
+        let imports = self.import_inspection_report();
+        if !imports.is_empty() {
+            report.imports = Some(imports);
+        }
         serde_json::to_string(&report).map_err(|error| {
             SceneHostError::new(
                 SceneHostErrorCode::Inspect,
@@ -521,5 +525,16 @@ impl<F: AssetFetcher> SceneHostCore<F> {
 
     pub(super) fn is_instance_root_handle(&self, handle: u64) -> bool {
         handle / (1_u64 << 32) >= u64::from(INSTANCE_HANDLE_GENERATION_BASE)
+    }
+
+    fn import_inspection_report(&self) -> Vec<SceneImportInspectionV1> {
+        self.import_handles
+            .entries()
+            .map(|(handle, import)| SceneImportInspectionV1 {
+                handle,
+                material_variants: import.material_variants().to_vec(),
+                active_variant: import.active_variant(),
+            })
+            .collect()
     }
 }

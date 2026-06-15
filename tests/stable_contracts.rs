@@ -460,6 +460,10 @@ fn inspection_and_capture_v1_revisions_accept_old_shape_without_appearance() {
             ]
         }
     ]);
+    inspection
+        .as_object_mut()
+        .expect("inspection report object")
+        .remove("imports");
     let inspection: scena::SceneInspectionReportV1 =
         serde_json::from_value(inspection).expect("old inspection fixture shape deserializes");
     assert_eq!(
@@ -481,6 +485,10 @@ fn inspection_and_capture_v1_revisions_accept_old_shape_without_appearance() {
     assert_eq!(
         inspection.instance_sets, None,
         "additive instance_sets defaults for old scene_inspection.v1 consumers"
+    );
+    assert_eq!(
+        inspection.imports, None,
+        "additive imports defaults for old scene_inspection.v1 consumers"
     );
 
     let mut capture = read_fixture_json("tests/assets/stable-contracts/capture.v1.json");
@@ -559,6 +567,25 @@ fn scene_host_asset_import_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::SceneHostAssetImportReportV1>(
         "tests/assets/stable-contracts/scene_host_asset_import.v1.json",
     );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_host_asset_import_v1_accepts_old_shape_without_variant_fields() {
+    let mut import_report =
+        read_fixture_json("tests/assets/stable-contracts/scene_host_asset_import.v1.json");
+    import_report
+        .as_object_mut()
+        .expect("scene host asset import report object")
+        .remove("material_variants");
+    import_report
+        .as_object_mut()
+        .expect("scene host asset import report object")
+        .remove("active_variant");
+    let report: scena::SceneHostAssetImportReportV1 = serde_json::from_value(import_report)
+        .expect("old scene_host_asset_import.v1 shape deserializes");
+    assert!(report.material_variants.is_empty());
+    assert_eq!(report.active_variant, None);
 }
 
 #[cfg(feature = "scene-host")]

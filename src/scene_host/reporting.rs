@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::{AssetLoadReportV1, Diagnostic, RendererStats};
+use crate::{AssetLoadReportV1, Diagnostic, RendererStats, SceneImport};
 
 pub const SCENE_HOST_ASSET_IMPORT_SCHEMA_V1: &str = "scena.scene_host_asset_import.v1";
 pub const SCENE_HOST_SUBTREE_SCHEMA_V1: &str = "scena.subtree.v1";
@@ -11,6 +11,10 @@ pub const SCENE_HOST_ANIMATION_INVENTORY_SCHEMA_V1: &str = "scena.animation_inve
 pub struct SceneHostAssetImportReportV1 {
     pub schema: String,
     pub import: u64,
+    #[serde(default)]
+    pub material_variants: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_variant: Option<String>,
     pub asset_load_report: AssetLoadReportV1,
 }
 
@@ -51,6 +55,22 @@ impl SceneHostAssetImportReportV1 {
         Self {
             schema: SCENE_HOST_ASSET_IMPORT_SCHEMA_V1.to_owned(),
             import,
+            material_variants: Vec::new(),
+            active_variant: None,
+            asset_load_report,
+        }
+    }
+
+    pub fn from_import(
+        import: u64,
+        scene_import: &SceneImport,
+        asset_load_report: AssetLoadReportV1,
+    ) -> Self {
+        Self {
+            schema: SCENE_HOST_ASSET_IMPORT_SCHEMA_V1.to_owned(),
+            import,
+            material_variants: scene_import.material_variants().to_vec(),
+            active_variant: scene_import.active_variant(),
             asset_load_report,
         }
     }

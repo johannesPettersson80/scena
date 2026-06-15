@@ -130,6 +130,9 @@ impl LookupError {
             Self::VariantNotFound { .. } => {
                 "call SceneImport::material_variants to inspect declared KHR_materials_variants names"
             }
+            Self::AmbiguousVariantName { .. } => {
+                "rename duplicate KHR_materials_variants entries or address the asset authoring issue before selecting a variant"
+            }
             Self::PathNotFound { .. } => {
                 "use SceneImport::path_segments when names contain slashes"
             }

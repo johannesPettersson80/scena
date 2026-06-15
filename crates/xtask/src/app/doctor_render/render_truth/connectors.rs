@@ -186,6 +186,51 @@ pub(crate) fn check_renderer_truth_connector_contracts(root: &Path, findings: &m
         root,
         findings,
         "ARCH-RENDER-TRUTH",
+        "src/scene/import/variants.rs",
+        &["variant_index_for", "AmbiguousVariantName", "matches"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/scene_host/reporting.rs",
+        &["from_import", "material_variants", "active_variant"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/scene/inspection/schema.rs",
+        &["SceneImportInspectionV1", "imports", "active_variant"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "tests/material_variant_helpers.rs",
+        &[
+            "scene_host_material_variant_reports_include_available_and_active_state",
+            "scene_host_material_variant_patch_fails_for_stale_and_ambiguous_imports",
+            "material_variants_ambiguous_scene.gltf",
+            "VisualPatchMaterialVariantV1",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "docs/checklists/application-builder-roadmap.md",
+        &[
+            "Material variant helpers",
+            "scena.scene_host_asset_import.v1",
+            "cargo test --features scene-host --test material_variant_helpers",
+            "scena-viewer-material-variant-render",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
         "src/assets/gltf/transform.rs",
         &["basis_rotation", "forward", "up", "Quat::from_mat3"],
     );

@@ -181,11 +181,11 @@ pub use scene::{
 pub use scene::{
     SCENE_INSPECTION_SCHEMA_V1, SceneCameraFrustumInspection, SceneCameraFrustumInspectionV1,
     SceneDrawInspection, SceneDrawInspectionV1, SceneHostInstanceEntryInspectionV1,
-    SceneHostInstanceSetInspectionV1, SceneInspectionCountsV1, SceneInspectionReport,
-    SceneInspectionReportV1, SceneInspectionRevisionsV1, SceneMaterialInspection,
-    SceneMaterialInspectionV1, SceneMaterialSlotInspectionV1, SceneMaterialSourceInspectionV1,
-    SceneNodeInspection, SceneNodeInspectionV1, SceneNormalInspection, SceneNormalInspectionV1,
-    SceneTextureInspection,
+    SceneHostInstanceSetInspectionV1, SceneImportInspectionV1, SceneInspectionCountsV1,
+    SceneInspectionReport, SceneInspectionReportV1, SceneInspectionRevisionsV1,
+    SceneMaterialInspection, SceneMaterialInspectionV1, SceneMaterialSlotInspectionV1,
+    SceneMaterialSourceInspectionV1, SceneNodeInspection, SceneNodeInspectionV1,
+    SceneNormalInspection, SceneNormalInspectionV1, SceneTextureInspection,
 };
 #[cfg(feature = "scene-host")]
 pub use scene_host::{

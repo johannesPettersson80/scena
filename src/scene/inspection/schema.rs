@@ -23,6 +23,8 @@ pub struct SceneInspectionReportV1 {
     pub normal_overlays: Vec<SceneNormalInspectionV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance_sets: Option<Vec<SceneHostInstanceSetInspectionV1>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imports: Option<Vec<SceneImportInspectionV1>>,
     pub active_camera: Option<u64>,
     pub counts: SceneInspectionCountsV1,
     pub revisions: SceneInspectionRevisionsV1,
@@ -42,6 +44,15 @@ pub struct SceneHostInstanceEntryInspectionV1 {
     pub set_node: Option<u64>,
     pub instance_id: u64,
     pub local_transform: Transform,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneImportInspectionV1 {
+    pub handle: u64,
+    #[serde(default)]
+    pub material_variants: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_variant: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -242,6 +253,7 @@ impl SceneInspectionReport {
                 })
                 .collect(),
             instance_sets: None,
+            imports: None,
             active_camera,
             counts: SceneInspectionCountsV1 {
                 visible_drawable: self.visible_drawable_count,

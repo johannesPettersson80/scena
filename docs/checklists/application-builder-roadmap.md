@@ -1707,19 +1707,42 @@ variant picker.
 
 Required behavior:
 
-- [ ] List declared variant names for an import.
-- [ ] Apply variant by name through the 0.1C `material_variants`
+- [x] List declared variant names for an import.
+      Evidence: `SceneHostCore::material_variants`, viewer
+      `material_variants()`, and `<scena-viewer>` picker proof all surface
+      `midnight`/`noon` from `material_variants_scene.gltf`.
+- [x] Apply variant by name through the 0.1C `material_variants`
       `VisualPatch` channel.
-- [ ] Clear variant to default through the same patch channel.
-- [ ] Report active variant in inspection and asset/import reports.
-- [ ] Browser and native APIs have matching behavior and delegate to the same
+      Evidence:
+      `scene_host_material_variant_reports_include_available_and_active_state`
+      applies `noon` through `VisualPatchV1.material_variants`.
+- [x] Clear variant to default through the same patch channel.
+      Evidence: the same test clears the channel with `variant: null` and
+      verifies inspection returns `active_variant: null`.
+- [x] Report active variant in inspection and asset/import reports.
+      Evidence: `scena.scene_host_asset_import.v1` now includes
+      `material_variants`/`active_variant`, and host-backed
+      `scena.scene_inspection.v1` includes an `imports` section with stable
+      import handle, available variants, and current active variant.
+- [x] Browser and native APIs have matching behavior and delegate to the same
       patch path.
+      Evidence: native SceneHost uses `VisualPatchV1.material_variants`;
+      browser picker proof continues through the same runtime
+      `Scene::set_active_variant` path and reports the selected active variant.
 
 Acceptance:
 
-- [ ] Tests for missing variant, ambiguous variant, clear-to-default, and stale
+- [x] Tests for missing variant, ambiguous variant, clear-to-default, and stale
       import handles.
-- [ ] Browser proof for variant switch with visible pixel change.
+      Evidence: `cargo test --test material_variant_helpers --features
+      scene-host -- --nocapture` and
+      `cargo test --features scene-host --test material_variant_helpers`;
+      0.1C SceneHost tests cover missing variants, and this slice adds
+      duplicate-name ambiguity plus stale-import-handle coverage.
+- [x] Browser proof for variant switch with visible pixel change.
+      Evidence: `SCENA_BROWSER_BACKENDS=webgl2 npm run browser:m6` includes
+      `scena-viewer-material-variant-render`, selected/active `noon`, visible
+      non-background pixels, and a green-dominant output assertion.
 
 ### 3.5 Product configurator helpers
 

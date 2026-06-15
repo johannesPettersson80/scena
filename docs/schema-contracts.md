@@ -278,7 +278,8 @@ and fails closed if submitted as a `selection` or `hover` node handle.
 
 `material_variants` entries reference a stable import handle and a source
 `KHR_materials_variants` name, or `null` to restore default materials. Unknown
-variant names fail closed as per-entry errors.
+variant names and duplicate source variant names fail closed as per-entry
+errors; Scena does not choose one duplicate by declaration order.
 
 `labels` entries are host-owned overlay label/annotation anchors. Scena stores
 and projects the anchor; the host owns visible text and DOM/native overlay
@@ -662,9 +663,15 @@ instance-root `root_handle`, `visible`, optional opaque `tint`,
 source `instance_id`, and baked drawable-local transform. This field is
 additive on `scena.scene_inspection.v1`; older consumers may ignore it.
 
+Host-backed inspection may also include additive top-level `imports` entries.
+Each entry contains the stable SceneHost import `handle`, declared
+`material_variants`, and the current `active_variant`. This is the current
+state report for the same import handles accepted by the 0.1C
+`material_variants` visual-patch channel.
+
 `revisions` includes `structure`, `transform`, additive `appearance`, and
 `interaction`. Older `scena.scene_inspection.v1` payloads without
-`appearance`, `tint`, `material`, `instance`, or `instance_sets` still
+`appearance`, `tint`, `material`, `instance`, `instance_sets`, or `imports` still
 deserialize with defaults.
 
 Topology helpers on `SceneInspectionReportV1`:
@@ -1377,12 +1384,20 @@ nested `scena.asset_load_report.v1` report for the asset load that produced the
 import. The same host owns the import handle, node handle namespace, and
 inspection handle namespace.
 
+Additive fields `material_variants` and `active_variant` report the declared
+source `KHR_materials_variants` names and current active variant for that
+import. Initial import reports normally use `null`/absent `active_variant`;
+host-backed `scena.scene_inspection.v1.imports[]` is the current-state report
+after visual patches apply or clear variants.
+
 Small example:
 
 ```json
 {
   "schema": "scena.scene_host_asset_import.v1",
   "import": 7,
+  "material_variants": ["midnight", "noon"],
+  "active_variant": null,
   "asset_load_report": {
     "schema": "scena.asset_load_report.v1",
     "path": "models/part.glb",

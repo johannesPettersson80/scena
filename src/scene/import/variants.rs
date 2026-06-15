@@ -30,11 +30,23 @@ impl SceneImport {
         self.material_variants.get(index as usize).cloned()
     }
 
-    pub(crate) fn variant_index_for(&self, name: &str) -> Option<u32> {
-        self.material_variants
+    pub(crate) fn variant_index_for(&self, name: &str) -> Result<u32, LookupError> {
+        let matches = self
+            .material_variants
             .iter()
-            .position(|candidate| candidate == name)
-            .map(|index| index as u32)
+            .enumerate()
+            .filter_map(|(index, candidate)| (candidate == name).then_some(index as u32))
+            .collect::<Vec<_>>();
+        match matches.as_slice() {
+            [] => Err(LookupError::VariantNotFound {
+                name: name.to_string(),
+            }),
+            [index] => Ok(*index),
+            _ => Err(LookupError::AmbiguousVariantName {
+                name: name.to_string(),
+                matches,
+            }),
+        }
     }
 
     pub(crate) fn write_active_variant(&self, index: Option<u32>) {
@@ -65,11 +77,7 @@ impl Scene {
         name: Option<&str>,
     ) -> Result<(), LookupError> {
         let new_index = match name {
-            Some(name) => Some(import.variant_index_for(name).ok_or_else(|| {
-                LookupError::VariantNotFound {
-                    name: name.to_string(),
-                }
-            })?),
+            Some(name) => Some(import.variant_index_for(name)?),
             None => None,
         };
         import.write_active_variant(new_index);

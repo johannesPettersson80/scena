@@ -11,10 +11,10 @@ mod texture;
 pub use material::SceneMaterialInspection;
 pub use schema::{
     SCENE_INSPECTION_SCHEMA_V1, SceneCameraFrustumInspectionV1, SceneDrawInspectionV1,
-    SceneHostInstanceEntryInspectionV1, SceneHostInstanceSetInspectionV1, SceneInspectionCountsV1,
-    SceneInspectionReportV1, SceneInspectionRevisionsV1, SceneMaterialInspectionV1,
-    SceneMaterialSlotInspectionV1, SceneMaterialSourceInspectionV1, SceneNodeInspectionV1,
-    SceneNormalInspectionV1,
+    SceneHostInstanceEntryInspectionV1, SceneHostInstanceSetInspectionV1, SceneImportInspectionV1,
+    SceneInspectionCountsV1, SceneInspectionReportV1, SceneInspectionRevisionsV1,
+    SceneMaterialInspectionV1, SceneMaterialSlotInspectionV1, SceneMaterialSourceInspectionV1,
+    SceneNodeInspectionV1, SceneNormalInspectionV1,
 };
 pub use texture::SceneTextureInspection;
 

@@ -1,0 +1,79 @@
+{
+  "asset": { "version": "2.0" },
+  "extensionsUsed": ["KHR_materials_variants", "KHR_materials_unlit"],
+  "extensionsRequired": ["KHR_materials_variants"],
+  "extensions": {
+    "KHR_materials_variants": {
+      "variants": [
+        { "name": "same" },
+        { "name": "same" }
+      ]
+    }
+  },
+  "materials": [
+    {
+      "pbrMetallicRoughness": { "baseColorFactor": [1.0, 0.0, 0.0, 1.0] },
+      "extensions": { "KHR_materials_unlit": {} }
+    },
+    {
+      "pbrMetallicRoughness": { "baseColorFactor": [0.0, 0.0, 1.0, 1.0] },
+      "extensions": { "KHR_materials_unlit": {} }
+    },
+    {
+      "pbrMetallicRoughness": { "baseColorFactor": [0.0, 1.0, 0.0, 1.0] },
+      "extensions": { "KHR_materials_unlit": {} }
+    }
+  ],
+  "meshes": [
+    {
+      "primitives": [
+        {
+          "attributes": { "POSITION": 0 },
+          "indices": 1,
+          "material": 0,
+          "extensions": {
+            "KHR_materials_variants": {
+              "mappings": [
+                { "material": 1, "variants": [0] },
+                { "material": 2, "variants": [1] }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    { "name": "VariantTriangle", "mesh": 0 }
+  ],
+  "scenes": [
+    { "nodes": [0] }
+  ],
+  "scene": 0,
+  "buffers": [
+    {
+      "byteLength": 42,
+      "uri": "data:application/octet-stream;base64,mpkZv5qZGb8AAAAAmpkZP5qZGb8AAAAAAAAAAJqZGT8AAAAAAAABAAIA"
+    }
+  ],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+    { "buffer": 0, "byteOffset": 36, "byteLength": 6 }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC3",
+      "min": [-0.6, -0.6, 0.0],
+      "max": [0.6, 0.6, 0.0]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5123,
+      "count": 3,
+      "type": "SCALAR"
+    }
+  ]
+}

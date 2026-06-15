@@ -327,6 +327,10 @@ reserved for future stable naming policy and is always `null` in 1.7. Use
 stable host handles and sorted `tags` for identification. The same report also
 includes `parent` and direct `children` handle fields so hosts can build a
 part-tree UI without reparsing the full scene inspection report.
+SceneHost asset-import reports and host-backed scene inspection reports expose
+declared material variant names plus the current active variant, using the same
+stable import handles accepted by the 0.1C `material_variants` visual-patch
+channel.
 The stable contract surface also includes generic `AssetProvenance` metadata.
 Loaded `SceneAsset`,
 `TextureDesc`, and `EnvironmentDesc` values expose `provenance()` with a
@@ -768,6 +772,9 @@ Common viewer helpers:
 - `AssetLoadProgress`
 - `HeadlessGltfViewer::set_active_material_variant`
 - `InteractiveGltfViewer::set_active_material_variant`
+- `SceneHostCore::material_variants`
+- `SceneHostCore::active_material_variant`
+- `SceneHostCore::set_active_material_variant`
 - `Renderer::headless_default()`
 - `Renderer::set_auto_exposure`
 

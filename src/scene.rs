@@ -77,11 +77,11 @@ pub use import::{
 pub use inspection::{
     SCENE_INSPECTION_SCHEMA_V1, SceneCameraFrustumInspection, SceneCameraFrustumInspectionV1,
     SceneDrawInspection, SceneDrawInspectionV1, SceneHostInstanceEntryInspectionV1,
-    SceneHostInstanceSetInspectionV1, SceneInspectionCountsV1, SceneInspectionReport,
-    SceneInspectionReportV1, SceneInspectionRevisionsV1, SceneMaterialInspection,
-    SceneMaterialInspectionV1, SceneMaterialSlotInspectionV1, SceneMaterialSourceInspectionV1,
-    SceneNodeInspection, SceneNodeInspectionV1, SceneNormalInspection, SceneNormalInspectionV1,
-    SceneTextureInspection,
+    SceneHostInstanceSetInspectionV1, SceneImportInspectionV1, SceneInspectionCountsV1,
+    SceneInspectionReport, SceneInspectionReportV1, SceneInspectionRevisionsV1,
+    SceneMaterialInspection, SceneMaterialInspectionV1, SceneMaterialSlotInspectionV1,
+    SceneMaterialSourceInspectionV1, SceneNodeInspection, SceneNodeInspectionV1,
+    SceneNormalInspection, SceneNormalInspectionV1, SceneTextureInspection,
 };
 use inspection_tools::InspectionToolkitState;
 pub use inspection_tools::{
