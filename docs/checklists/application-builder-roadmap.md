@@ -841,8 +841,14 @@ Acceptance:
       source-material name checks remain future hardening cases.
 - [x] Product-configurator proof asserts the requested variant rendered with
       the expected appearance, not merely that pixels changed.
-- [ ] Data-color proof asserts a known color ramp sample without a golden
+- [x] Data-color proof asserts a known color ramp sample without a golden
       image.
+      Evidence: `cargo test --features inspection --test
+      appearance_introspection_contracts
+      appearance_introspection_verifies_data_color_ramp_without_golden_image
+      -- --nocapture` passed on `scena-builder`; the proof samples three
+      generated ramp nodes by projected `node_bbox`, checks swatch distance,
+      and asserts channel dominance for low/mid/high colors.
 - [x] Stable fixture:
       `tests/assets/stable-contracts/appearance_expectation.v1.json` and
       `tests/assets/stable-contracts/appearance_introspection.v1.json`.

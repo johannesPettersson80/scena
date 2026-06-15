@@ -232,6 +232,67 @@ fn appearance_introspection_honors_target_swatch_tolerance() {
 }
 
 #[test]
+fn appearance_introspection_verifies_data_color_ramp_without_golden_image() {
+    let (assets, scene, renderer) = color_ramp_scene();
+    let capture = renderer
+        .capture_rgba8(&scene, Default::default())
+        .expect("data-color ramp frame captures");
+    let inspection = scene.inspect_with_assets(&assets).to_schema_report();
+    let ramp_nodes = sorted_ramp_nodes(&inspection);
+    let expectation: AppearanceExpectationV1 = serde_json::from_value(json!({
+        "schema": APPEARANCE_EXPECTATION_SCHEMA_V1,
+        "targets": [
+            {
+                "id": "ramp-low-blue",
+                "node": ramp_nodes[0],
+                "color_family": "blue",
+                "swatch_srgb8": [40, 80, 236],
+                "swatch_tolerance": 0.12
+            },
+            {
+                "id": "ramp-mid-green",
+                "node": ramp_nodes[1],
+                "color_family": "green",
+                "swatch_srgb8": [40, 220, 96],
+                "swatch_tolerance": 0.12
+            },
+            {
+                "id": "ramp-high-red",
+                "node": ramp_nodes[2],
+                "color_family": "red",
+                "swatch_srgb8": [236, 80, 40],
+                "swatch_tolerance": 0.12
+            }
+        ]
+    }))
+    .expect("data-color appearance expectation decodes");
+
+    let report = renderer.introspect_appearance(
+        &capture,
+        &inspection,
+        &expectation,
+        AppearanceIntrospectionOptions::summary(),
+    );
+
+    assert!(report.ok, "{report:#?}");
+    let low = target(&report, "ramp-low-blue");
+    let mid = target(&report, "ramp-mid-green");
+    let high = target(&report, "ramp-high-red");
+    for target in [low, mid, high] {
+        assert_eq!(target.sampled_region.kind, "node_bbox", "{report:#?}");
+        assert!(
+            target
+                .swatch_distance
+                .is_some_and(|distance| distance < 0.12),
+            "data-color sample should match declared swatch: {target:#?}"
+        );
+    }
+    assert!(low.sampled_color_srgb8[2] > low.sampled_color_srgb8[0]);
+    assert!(mid.sampled_color_srgb8[1] > mid.sampled_color_srgb8[0]);
+    assert!(high.sampled_color_srgb8[0] > high.sampled_color_srgb8[2]);
+}
+
+#[test]
 fn appearance_introspection_golden_fixtures_match_live_schema() {
     let expectation: AppearanceExpectationV1 = serde_json::from_str(include_str!(
         "assets/stable-contracts/appearance_expectation.v1.json"
@@ -290,6 +351,40 @@ fn two_color_scene() -> (Assets, Scene, Renderer) {
     (assets, scene, renderer)
 }
 
+fn color_ramp_scene() -> (Assets, Scene, Renderer) {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.34, 0.46, 0.18));
+    let colors = [
+        ("ramp-low-blue", Color::from_srgb_u8(40, 80, 236), -0.52),
+        ("ramp-mid-green", Color::from_srgb_u8(40, 220, 96), 0.0),
+        ("ramp-high-red", Color::from_srgb_u8(236, 80, 40), 0.52),
+    ];
+    let mut scene = Scene::new();
+    for (tag, color, x) in colors {
+        let material = assets.create_material(MaterialDesc::unlit(color));
+        let node = scene
+            .mesh(geometry, material)
+            .transform(Transform::at(Vec3::new(x, 0.0, 0.0)))
+            .add()
+            .expect("ramp mesh inserts");
+        scene.add_tag(node, tag).expect("ramp tag inserts");
+    }
+    let camera = scene.add_default_camera().expect("camera inserts");
+    scene
+        .frame_all_with_assets(camera, &assets)
+        .expect("data-color ramp frames");
+
+    let mut renderer = Renderer::headless(192, 96).expect("headless renderer builds");
+    renderer.set_background_color(Color::from_srgb_u8(10, 10, 10));
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("data-color ramp prepares");
+    renderer
+        .render_active(&scene)
+        .expect("data-color ramp renders");
+    (assets, scene, renderer)
+}
+
 fn sorted_material_nodes(inspection: &scena::SceneInspectionReportV1) -> [u64; 2] {
     let mut draws = inspection
         .draw_list
@@ -304,6 +399,22 @@ fn sorted_material_nodes(inspection: &scena::SceneInspectionReportV1) -> [u64; 2
     });
     assert_eq!(draws.len(), 2, "{draws:#?}");
     [draws[0].node, draws[1].node]
+}
+
+fn sorted_ramp_nodes(inspection: &scena::SceneInspectionReportV1) -> [u64; 3] {
+    let mut draws = inspection
+        .draw_list
+        .iter()
+        .filter(|draw| draw.visible && draw.material.is_some())
+        .collect::<Vec<_>>();
+    draws.sort_by(|left, right| {
+        left.world_transform
+            .translation
+            .x
+            .total_cmp(&right.world_transform.translation.x)
+    });
+    assert_eq!(draws.len(), 3, "{draws:#?}");
+    [draws[0].node, draws[1].node, draws[2].node]
 }
 
 fn target<'a>(
