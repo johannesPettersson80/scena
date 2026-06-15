@@ -85,6 +85,41 @@ fn scena_examples_agent_templates_generate_and_run_cli_smoke_commands() {
 }
 
 #[test]
+fn scena_examples_agent_cli_stdout_matches_golden_fixture() {
+    let root = PathBuf::from("target")
+        .join("gate-artifacts")
+        .join("scena-cli-agent-template-golden");
+    let output_dir = root.join("product-configurator");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("golden template root creates");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "examples",
+            "agent",
+            "product-configurator",
+            "--out",
+            path_str(&output_dir),
+        ])
+        .output()
+        .expect("scena examples agent golden command runs");
+
+    assert!(output.status.success(), "stderr={}", stderr(&output));
+    assert!(
+        output.stderr.is_empty(),
+        "examples agent golden command keeps stderr empty, stderr={}",
+        stderr(&output)
+    );
+    let actual: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("examples agent emits JSON");
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "assets/cli-golden/examples_agent_product_configurator_stdout.json"
+    ))
+    .expect("golden examples agent fixture parses");
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn scena_examples_agent_phase2_templates_are_structured_deferred_manifests() {
     let root = artifact_dir("agent-templates-deferred");
 

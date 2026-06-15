@@ -79,6 +79,18 @@ fn scena_schema_cli_lists_and_gets_stable_contracts() {
 #[test]
 fn scena_schema_cli_stdout_matches_golden_fixture() {
     let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["schema", "list"])
+        .output()
+        .expect("scena schema list runs");
+    assert!(output.status.success(), "stderr={}", stderr(&output));
+    let actual: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("schema list emits JSON");
+    let expected: serde_json::Value =
+        serde_json::from_str(include_str!("assets/cli-golden/schema_list_stdout.json"))
+            .expect("golden schema list fixture parses");
+    assert_eq!(actual, expected);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
         .args(["schema", "get", "scena.scene_recipe.v1"])
         .output()
         .expect("scena schema get recipe runs");

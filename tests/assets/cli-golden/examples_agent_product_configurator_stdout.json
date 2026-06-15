@@ -1,0 +1,69 @@
+{
+  "schema": "scena.agent_smoke_template.v1",
+  "name": "product-configurator",
+  "status": "ready",
+  "required_features": [
+    "inspection"
+  ],
+  "files": [
+    {
+      "kind": "recipe",
+      "path": "target/gate-artifacts/scena-cli-agent-template-golden/product-configurator/recipe.json",
+      "schema": "scena.scene_recipe.v1"
+    },
+    {
+      "kind": "appearance_expectation",
+      "path": "target/gate-artifacts/scena-cli-agent-template-golden/product-configurator/appearance-expectation.json",
+      "schema": "scena.appearance_expectation.v1"
+    }
+  ],
+  "commands": [
+    {
+      "name": "validate_recipe",
+      "argv": [
+        "scena",
+        "validate-recipe",
+        "target/gate-artifacts/scena-cli-agent-template-golden/product-configurator/recipe.json"
+      ],
+      "expected_schema": "scena.scene_recipe_validation.v1",
+      "expected_ok": true,
+      "artifacts": []
+    },
+    {
+      "name": "render_introspect",
+      "argv": [
+        "scena",
+        "render",
+        "target/gate-artifacts/scena-cli-agent-template-golden/product-configurator/recipe.json",
+        "--introspect",
+        "--out",
+        "target/gate-artifacts/scena-cli-agent-template-golden/product-configurator/frame.png"
+      ],
+      "expected_schema": "scena.render_introspection.v1",
+      "expected_ok": true,
+      "artifacts": [
+        "target/gate-artifacts/scena-cli-agent-template-golden/product-configurator/frame.png",
+        "target/gate-artifacts/scena-cli-agent-template-golden/product-configurator/frame.capture.json"
+      ]
+    },
+    {
+      "name": "verify_appearance",
+      "argv": [
+        "scena",
+        "verify",
+        "appearance",
+        "target/gate-artifacts/scena-cli-agent-template-golden/product-configurator/recipe.json",
+        "--expect",
+        "target/gate-artifacts/scena-cli-agent-template-golden/product-configurator/appearance-expectation.json",
+        "--out",
+        "target/gate-artifacts/scena-cli-agent-template-golden/product-configurator/appearance.png"
+      ],
+      "expected_schema": "scena.appearance_introspection.v1",
+      "expected_ok": true,
+      "artifacts": [
+        "target/gate-artifacts/scena-cli-agent-template-golden/product-configurator/appearance.png"
+      ]
+    }
+  ],
+  "notes": []
+}

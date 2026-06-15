@@ -1,0 +1,427 @@
+{
+  "active_camera": 3,
+  "camera_frustums": [
+    {
+      "corners": [
+        [
+          -0.344,
+          -0.344,
+          0.813
+        ],
+        [
+          0.344,
+          -0.344,
+          0.813
+        ],
+        [
+          0.344,
+          0.344,
+          0.813
+        ],
+        [
+          -0.344,
+          0.344,
+          0.813
+        ],
+        [
+          -1.283,
+          -1.283,
+          -0.813
+        ],
+        [
+          1.283,
+          -1.283,
+          -0.813
+        ],
+        [
+          1.283,
+          1.283,
+          -0.813
+        ],
+        [
+          -1.283,
+          1.283,
+          -0.813
+        ]
+      ],
+      "far": 2.222,
+      "near": 0.595,
+      "node": 3
+    }
+  ],
+  "counts": {
+    "anchors": 0,
+    "bounded_nodes": 1,
+    "cameras": 1,
+    "clipping_planes": 0,
+    "connectors": 0,
+    "lights": 1,
+    "visible_drawable": 1
+  },
+  "draw_list": [
+    {
+      "index_count": 3,
+      "instance": null,
+      "local_bounds": {
+        "max": [
+          0.5,
+          0.5,
+          0.0
+        ],
+        "min": [
+          -0.5,
+          -0.5,
+          0.0
+        ]
+      },
+      "material": {
+        "alpha_mode": "opaque",
+        "base_color": {
+          "a": 1.0,
+          "b": 0.75,
+          "g": 0.5,
+          "r": 0.25
+        },
+        "fallbacks": [],
+        "kind": "unlit",
+        "source": {
+          "asset_path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+          "kind": "source_material",
+          "material_index": 0,
+          "reason": null
+        },
+        "textures": [
+          {
+            "color_space": "srgb",
+            "decoded_dimensions": null,
+            "has_decoded_pixels": false,
+            "provenance": {
+              "derivatives": [],
+              "generator": null,
+              "license": null,
+              "source_path": "tests/assets/gltf/textures/albedo.png",
+              "source_sha256": null
+            },
+            "slot": "baseColorTexture",
+            "source_format": "png",
+            "source_path": "tests/assets/gltf/textures/albedo.png"
+          }
+        ]
+      },
+      "node": 2,
+      "primitive_count": 1,
+      "topology": "triangles",
+      "vertex_count": 3,
+      "visible": true,
+      "world_transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "bounds": null,
+      "handle": 1,
+      "helper_on_top": false,
+      "kind": "Empty",
+      "layer_mask": 18446744073709551615,
+      "local_transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "parent": null,
+      "render_group": 0,
+      "tags": [],
+      "tint": null,
+      "visible": true,
+      "world_transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "bounds": {
+        "max": [
+          0.5,
+          0.5,
+          0.0
+        ],
+        "min": [
+          -0.5,
+          -0.5,
+          0.0
+        ]
+      },
+      "handle": 2,
+      "helper_on_top": false,
+      "kind": "Mesh",
+      "layer_mask": 18446744073709551615,
+      "local_transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "material": {
+        "alpha_mode": "opaque",
+        "base_color": {
+          "a": 1.0,
+          "b": 0.75,
+          "g": 0.5,
+          "r": 0.25
+        },
+        "fallbacks": [],
+        "kind": "unlit",
+        "source": {
+          "asset_path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+          "kind": "source_material",
+          "material_index": 0,
+          "reason": null
+        },
+        "textures": [
+          {
+            "color_space": "srgb",
+            "decoded_dimensions": null,
+            "has_decoded_pixels": false,
+            "provenance": {
+              "derivatives": [],
+              "generator": null,
+              "license": null,
+              "source_path": "tests/assets/gltf/textures/albedo.png",
+              "source_sha256": null
+            },
+            "slot": "baseColorTexture",
+            "source_format": "png",
+            "source_path": "tests/assets/gltf/textures/albedo.png"
+          }
+        ]
+      },
+      "parent": 1,
+      "render_group": 0,
+      "tags": [],
+      "tint": null,
+      "visible": true,
+      "world_transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "bounds": null,
+      "handle": 3,
+      "helper_on_top": false,
+      "kind": "Camera",
+      "layer_mask": 18446744073709551615,
+      "local_transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.0,
+          1.408
+        ]
+      },
+      "parent": 1,
+      "render_group": 0,
+      "tags": [],
+      "tint": null,
+      "visible": true,
+      "world_transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.0,
+          1.408
+        ]
+      }
+    },
+    {
+      "bounds": null,
+      "handle": 4,
+      "helper_on_top": false,
+      "kind": "Light",
+      "layer_mask": 18446744073709551615,
+      "local_transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "parent": 1,
+      "render_group": 0,
+      "tags": [],
+      "tint": null,
+      "visible": true,
+      "world_transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    }
+  ],
+  "normal_overlays": [
+    {
+      "instance": null,
+      "length": 0.1,
+      "node": 2,
+      "segments": [
+        [
+          [
+            -0.5,
+            -0.5,
+            0.0
+          ],
+          [
+            -0.5,
+            -0.5,
+            0.1
+          ]
+        ],
+        [
+          [
+            0.5,
+            -0.5,
+            0.0
+          ],
+          [
+            0.5,
+            -0.5,
+            0.1
+          ]
+        ],
+        [
+          [
+            0.0,
+            0.5,
+            0.0
+          ],
+          [
+            0.0,
+            0.5,
+            0.1
+          ]
+        ]
+      ]
+    }
+  ],
+  "revisions": {
+    "appearance": 0,
+    "interaction": 0,
+    "structure": 3,
+    "transform": 1
+  },
+  "schema": "scena.scene_inspection.v1"
+}

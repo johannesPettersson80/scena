@@ -237,6 +237,41 @@ fn scena_place_cli_emits_bounds_based_transform_previews_for_recipe_import() {
 }
 
 #[test]
+fn scena_place_cli_stdout_matches_golden_fixture() {
+    let dir = artifact_dir("place-golden");
+    let recipe_path = write_valid_recipe(&dir);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "place",
+            path_str(&recipe_path),
+            "--import",
+            "part",
+            "--verb",
+            "center",
+            "--target",
+            "1,2,3",
+            "--round-floats",
+            "3",
+        ])
+        .output()
+        .expect("scena place golden command runs");
+
+    assert!(output.status.success(), "stderr={}", stderr(&output));
+    assert!(
+        output.stderr.is_empty(),
+        "place golden command keeps stderr empty, stderr={}",
+        stderr(&output)
+    );
+    let actual: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("place emits JSON");
+    let expected: serde_json::Value =
+        serde_json::from_str(include_str!("assets/cli-golden/place_center_stdout.json"))
+            .expect("golden place fixture parses");
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn scena_place_cli_exits_nonzero_for_unknown_import() {
     let dir = artifact_dir("place-invalid");
     let recipe_path = write_valid_recipe(&dir);

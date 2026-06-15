@@ -1,0 +1,53 @@
+{
+  "artifacts": {
+    "host_tick": "seek_animation",
+    "sampled_times": [
+      0.0,
+      0.5,
+      1.0
+    ]
+  },
+  "clip": {
+    "channel_count": 1,
+    "duration_seconds": 1.0,
+    "name": "MoveTriangle"
+  },
+  "fixes": [],
+  "ok": true,
+  "reasons": [],
+  "samples": [
+    {
+      "appearance_revision": 0,
+      "invalid_node_count": 0,
+      "moving_node_count": 0,
+      "payload_fnv1a64": "53cad132a6f23e65",
+      "time_seconds": 0.0,
+      "transform_revision": 1
+    },
+    {
+      "appearance_revision": 0,
+      "invalid_node_count": 0,
+      "moving_node_count": 1,
+      "payload_fnv1a64": "ba85ddb1688ef2fd",
+      "time_seconds": 0.5,
+      "transform_revision": 2
+    },
+    {
+      "appearance_revision": 0,
+      "invalid_node_count": 0,
+      "moving_node_count": 1,
+      "payload_fnv1a64": "f170700b0bf142bd",
+      "time_seconds": 1.0,
+      "transform_revision": 3
+    }
+  ],
+  "schema": "scena.animation_introspection.v1",
+  "summary": {
+    "capture_changes": 2,
+    "changed_channel_count": 1,
+    "invalid_channel_count": 0,
+    "sample_count": 3,
+    "unchanged_channel_count": 0,
+    "visible_change": true
+  }
+}

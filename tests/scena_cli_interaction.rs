@@ -131,6 +131,71 @@ fn scena_verify_interaction_cli_runs_synthetic_select_and_fails_wrong_handle() {
 }
 
 #[test]
+fn scena_verify_interaction_cli_stdout_matches_golden_fixture() {
+    let dir = artifact_dir("verify-interaction-golden");
+    let expectation_path = dir.join("interaction-expectation.json");
+    fs::write(
+        &expectation_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.interaction_expectation.v1",
+            "viewport": {
+                "width_css_px": 128.0,
+                "height_css_px": 128.0,
+                "device_pixel_ratio": 1.0
+            },
+            "steps": [
+                {
+                    "action": "hover",
+                    "x_css_px": 64.0,
+                    "y_css_px": 64.0,
+                    "expect_hit": true,
+                    "expect_hover": true,
+                    "expected_events": ["hover"]
+                },
+                {
+                    "action": "select",
+                    "x_css_px": 64.0,
+                    "y_css_px": 64.0,
+                    "expect_hit": true,
+                    "expect_hover": true,
+                    "expect_selection": true,
+                    "expected_events": ["selection_changed"]
+                }
+            ]
+        }))
+        .expect("interaction expectation serializes"),
+    )
+    .expect("interaction expectation writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "verify",
+            "interaction",
+            "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+            "--expect",
+            path_str(&expectation_path),
+            "--round-floats",
+            "3",
+        ])
+        .output()
+        .expect("scena verify interaction golden command runs");
+
+    assert!(output.status.success(), "stderr={}", stderr(&output));
+    assert!(
+        output.stderr.is_empty(),
+        "interaction golden command keeps stderr empty, stderr={}",
+        stderr(&output)
+    );
+    let actual: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("interaction emits JSON");
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "assets/cli-golden/verify_interaction_stdout.json"
+    ))
+    .expect("golden interaction fixture parses");
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn scena_verify_interaction_cli_fails_unexpected_hover_and_selection_state() {
     let dir = artifact_dir("verify-interaction-negative-state");
     let expectation_path = dir.join("interaction-negative-state.json");

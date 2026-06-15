@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use serde_json::json;
+use serde_json::{Value, json};
 
 const TEST_ASSET: &str = "tests/assets/gltf/mesh_material_vertex_color_scene.gltf";
 
@@ -366,6 +366,139 @@ fn scena_doctor_cli_stdout_matches_golden_fixture() {
     ))
     .expect("golden doctor fixture parses");
     assert_eq!(actual, expected);
+}
+
+#[test]
+fn scena_agent_cli_stdout_matches_golden_fixtures() {
+    let dir = fixed_artifact_dir("scena-cli-agent-golden");
+
+    let render_png = dir.join("render-frame.png");
+    let render = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "render",
+            TEST_ASSET,
+            "--introspect",
+            "--out",
+            path_str(&render_png),
+            "--width",
+            "64",
+            "--height",
+            "48",
+            "--round-floats",
+            "3",
+        ])
+        .output()
+        .expect("scena render golden command runs");
+    assert_success_stdout_matches(&render, "render_introspection_stdout.json");
+
+    let inspect = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "inspect",
+            TEST_ASSET,
+            "--width",
+            "64",
+            "--height",
+            "48",
+            "--round-floats",
+            "3",
+        ])
+        .output()
+        .expect("scena inspect golden command runs");
+    assert_success_stdout_matches(&inspect, "inspect_asset_stdout.json");
+
+    let diagnose = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "diagnose",
+            TEST_ASSET,
+            "--visibility",
+            "--handle",
+            "999999",
+            "--width",
+            "64",
+            "--height",
+            "48",
+            "--round-floats",
+            "3",
+        ])
+        .output()
+        .expect("scena diagnose golden command runs");
+    assert_failure_stdout_matches(&diagnose, "diagnose_stale_handle_stdout.json");
+
+    let diagnosis_path = dir.join("hidden-node-diagnosis.json");
+    fs::write(
+        &diagnosis_path,
+        serde_json::to_string_pretty(&hidden_node_diagnosis_json())
+            .expect("diagnosis fixture serializes"),
+    )
+    .expect("diagnosis fixture writes");
+    let repair = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "repair",
+            TEST_ASSET,
+            "--from",
+            path_str(&diagnosis_path),
+            "--round-floats",
+            "3",
+        ])
+        .output()
+        .expect("scena repair golden command runs");
+    assert_success_stdout_matches(&repair, "repair_plan_stdout.json");
+
+    let expectation_path = dir.join("appearance-expectation.json");
+    fs::write(
+        &expectation_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.appearance_expectation.v1",
+            "targets": [{
+                "id": "expected-noon",
+                "variant": "noon",
+                "color_family": "green",
+                "swatch_srgb8": [0, 255, 0],
+                "require_source_material": true,
+                "alpha_mode": "opaque"
+            }]
+        }))
+        .expect("appearance expectation serializes"),
+    )
+    .expect("appearance expectation writes");
+    let appearance = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "verify",
+            "appearance",
+            "tests/assets/gltf/material_variants_scene.gltf",
+            "--expect",
+            path_str(&expectation_path),
+            "--width",
+            "64",
+            "--height",
+            "48",
+            "--round-floats",
+            "3",
+        ])
+        .output()
+        .expect("scena verify appearance golden command runs");
+    assert_success_stdout_matches(&appearance, "verify_appearance_stdout.json");
+
+    let animation = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "verify",
+            "animation",
+            "tests/assets/gltf/animated_triangle_scene.glb",
+            "--clip",
+            "MoveTriangle",
+            "--times",
+            "0,0.5,1.0",
+            "--expect-change",
+            "--width",
+            "64",
+            "--height",
+            "48",
+            "--round-floats",
+            "3",
+        ])
+        .output()
+        .expect("scena verify animation golden command runs");
+    assert_success_stdout_matches(&animation, "verify_animation_stdout.json");
 }
 
 #[test]
@@ -828,6 +961,13 @@ fn artifact_dir(name: &str) -> PathBuf {
     dir
 }
 
+fn fixed_artifact_dir(name: &str) -> PathBuf {
+    let dir = PathBuf::from("target").join("gate-artifacts").join(name);
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("artifact directory creates");
+    dir
+}
+
 fn path_str(path: &Path) -> &str {
     path.to_str().expect("test path is valid UTF-8")
 }
@@ -860,4 +1000,36 @@ fn assert_json_numbers_rounded(value: &serde_json::Value, digits: u32) {
         }
         _ => {}
     }
+}
+
+fn assert_success_stdout_matches(output: &std::process::Output, fixture: &str) {
+    assert!(output.status.success(), "stderr={}", stderr(output));
+    assert_stdout_matches(output, fixture);
+}
+
+fn assert_failure_stdout_matches(output: &std::process::Output, fixture: &str) {
+    assert!(!output.status.success(), "command should fail closed");
+    assert_stdout_matches(output, fixture);
+}
+
+fn assert_stdout_matches(output: &std::process::Output, fixture: &str) {
+    assert!(
+        output.stderr.is_empty(),
+        "golden stdout command must keep stderr empty, stderr={}",
+        stderr(output)
+    );
+    let actual: Value = serde_json::from_slice(&output.stdout).expect("stdout emits JSON");
+    let expected: Value = serde_json::from_str(
+        &fs::read_to_string(cli_golden_path(fixture))
+            .unwrap_or_else(|error| panic!("failed to read CLI golden fixture {fixture}: {error}")),
+    )
+    .expect("CLI golden fixture parses");
+    assert_eq!(actual, expected, "CLI stdout fixture drifted: {fixture}");
+}
+
+fn cli_golden_path(name: &str) -> PathBuf {
+    PathBuf::from("tests")
+        .join("assets")
+        .join("cli-golden")
+        .join(name)
 }

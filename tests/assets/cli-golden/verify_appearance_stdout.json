@@ -1,0 +1,89 @@
+{
+  "active_variant": "noon",
+  "artifacts": {
+    "capture": {
+      "height": 48,
+      "payload_fnv1a64": "e643268ff967a53f",
+      "schema": "scena.capture.v1",
+      "width": 64
+    }
+  },
+  "available_variants": [
+    "midnight",
+    "noon"
+  ],
+  "fixes": [],
+  "ok": true,
+  "reasons": [],
+  "schema": "scena.appearance_introspection.v1",
+  "summary": {
+    "errors": 0,
+    "luminance_mean": 0.591,
+    "matched": 1,
+    "sampled_pixels": 506,
+    "targets": 1,
+    "warnings": 0
+  },
+  "targets": [
+    {
+      "alpha": {
+        "base_color_alpha": 1.0,
+        "hidden": false,
+        "mode": "opaque"
+      },
+      "expected": {
+        "alpha_mode": "opaque",
+        "color_family": "green",
+        "id": "expected-noon",
+        "require_source_material": true,
+        "swatch_srgb8": [
+          0,
+          255,
+          0
+        ],
+        "variant": "noon"
+      },
+      "id": "expected-noon",
+      "matched": true,
+      "material": {
+        "alpha_mode": "opaque",
+        "base_color": {
+          "a": 1.0,
+          "b": 0.0,
+          "g": 1.0,
+          "r": 0.0
+        },
+        "fallbacks": [],
+        "kind": "unlit",
+        "source": {
+          "asset_path": "tests/assets/gltf/material_variants_scene.gltf",
+          "kind": "source_material",
+          "material_index": 2,
+          "reason": null
+        },
+        "textures": []
+      },
+      "node": 2,
+      "sampled_color_family": "green",
+      "sampled_color_srgb8": [
+        27,
+        200,
+        27,
+        255
+      ],
+      "sampled_region": {
+        "bbox_css_px": {
+          "height": 31.0,
+          "max_x": 47.0,
+          "max_y": 39.0,
+          "min_x": 17.0,
+          "min_y": 9.0,
+          "width": 31.0
+        },
+        "kind": "node_bbox",
+        "sampled_pixels": 506
+      },
+      "swatch_distance": 0.152
+    }
+  ]
+}

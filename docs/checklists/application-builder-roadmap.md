@@ -570,9 +570,11 @@ CLI behavior:
 
 Acceptance:
 
-- [ ] Golden stdout fixtures for each command. Current proof pins
+- [x] Golden stdout fixtures for each command. Current proof pins
       `schema get`, invalid `validate-recipe`, and broken-asset `doctor`;
-      remaining dynamic commands still need normalized goldens.
+      normalized goldens now cover `schema list`, render, inspect, diagnose,
+      place, repair, appearance verification, animation verification,
+      interaction verification, and `examples agent`.
 - [x] Tests verify stderr/stdout separation for schema commands.
 - [x] Tests verify `render --introspect` writes PNG plus capture descriptor
       artifacts and emits `scena.render_introspection.v1`.
