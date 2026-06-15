@@ -1,6 +1,6 @@
+use scena::{ASSET_DOCTOR_REPORT_SCHEMA_V1, AssetDoctorSeverityV1, Assets};
 #[cfg(feature = "scene-host")]
-use scena::SceneHostCore;
-use scena::{ASSET_DOCTOR_REPORT_SCHEMA_V1, AssetDoctorReportV1, AssetDoctorSeverityV1, Assets};
+use scena::{AssetDoctorReportV1, SceneHostCore};
 
 const VALID_ASSET: &str = "tests/assets/gltf/material_variants_scene.gltf";
 const BROKEN_ASSET: &str = "tests/assets/gltf/unsupported_required_extension.gltf";

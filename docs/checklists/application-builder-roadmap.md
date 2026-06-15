@@ -1897,17 +1897,33 @@ capability status.
 
 Required behavior:
 
-- [ ] Render shadow casters into a shadow map.
-- [ ] Sample shadows into receiver pixels.
-- [ ] Validate one shadowed directional light limit or expand it deliberately.
-- [ ] Capability status moves from degraded to supported only after visible
+- [x] Render shadow casters into a shadow map.
+- [x] Sample shadows into receiver pixels.
+- [x] Validate one shadowed directional light limit or expand it deliberately.
+- [x] Capability status moves from degraded to supported only after visible
       receiver proof.
 
 Acceptance:
 
-- [ ] Unit tests for shadow preparation and single-shadowed-light errors.
-- [ ] Rendered proof shows receiver darkening and stable non-shadow regions.
-- [ ] Capability report and diagnostics reflect actual backend support.
+- [x] Unit tests for shadow preparation and single-shadowed-light errors.
+- [x] Rendered proof shows receiver darkening and stable non-shadow regions.
+- [x] Capability report and diagnostics reflect actual backend support.
+
+Evidence: test-first proof
+`cargo test --test m2_lighting_depth_clipping directional_shadow_capability_matches_proven_receiver_sampling_backends -- --nocapture`
+failed on `scena-builder` because the `HeadlessGpu` GPU-device row still
+reported `Degraded` before implementation. `Capabilities::for_gpu_backend()`
+and attached GPU rows now report `directional_shadows: supported` for
+`HeadlessGpu`, `NativeSurface`, `WebGpu`, and `WebGl2`, while CPU/reference and
+unattached factory rows remain `degraded` with a lane-specific diagnostic.
+Existing preparation and visual gates cover the rest of the contract:
+`shadowed_directional_light_is_opt_in_and_single_owner`,
+`single_shadow_map_records_pcf3x3_prepare_stats`,
+`directional_shadow_receiver_pixels_are_darkened_by_caster`,
+`headless_gpu_directional_shadow_visibility_darkens_receiver_when_available`,
+and the browser `pbr-shadow-visibility` assertion from
+`wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe`
+plus `SCENA_BROWSER_BACKENDS=webgl2 npm run browser:m6`.
 
 ### 4.3 Physical glass and transmission
 

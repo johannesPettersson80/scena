@@ -176,6 +176,9 @@ pub(crate) fn check_shadow_map_contracts(root: &Path, findings: &mut Vec<Finding
         "src/diagnostics/capability_status.rs",
         &[
             "const fn directional_shadow_status",
+            "gpu_device: bool",
+            "Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu | Backend::WebGl2",
+            "false,\n        )\n        | (Backend::Headless | Backend::SurfaceDescriptor, true) => CapabilityStatus::Degraded",
             "const fn punctual_shadow_status",
             "const fn bloom_status",
             "const fn order_independent_transparency_status",

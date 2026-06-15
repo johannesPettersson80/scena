@@ -35,7 +35,9 @@ This lets applications present clear UI instead of failing silently.
 - WebGPU versus WebGL2.
 - Native GPU versus headless software rendering.
 - Texture arrays and texture limits.
-- Shadow support.
+- Shadow support. Directional shadows are supported only on GPU-device backends
+  with visible receiver-darkening proof; CPU/reference and unattached factory
+  capability rows report degraded.
 - Environment lighting support.
 - Material feature support such as clearcoat, sheen, anisotropy, iridescence,
   and dispersion factor handling or texture sampling in CPU/reference and GPU

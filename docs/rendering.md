@@ -134,6 +134,10 @@ bounds, keeps grid lines on the floor plane, and avoids reflective defaults.
 
 Shadow behavior is capability-aware. Applications should query capabilities and
 diagnostics when selecting optional shadow-heavy scenes or quality settings.
+Directional shadows are supported on GPU-device WebGPU/WebGL2/native lanes
+where the renderer renders a shadow map and samples it into visible receiver
+pixels. CPU/reference and unattached factory capability rows report `degraded`
+instead of claiming the GPU receiver path.
 
 ## Output
 

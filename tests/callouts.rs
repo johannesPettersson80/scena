@@ -1,6 +1,9 @@
 use scena::{
-    AnchorFrame, AnnotationProjectionReportV1, Assets, Callout, Color, ConnectorFrame, LabelKey,
-    NodeKind, Scene, SceneHostCore, Transform, VISUAL_PATCH_SCHEMA_V1, Vec3, VisualPatchResultV1,
+    AnchorFrame, Assets, Callout, Color, ConnectorFrame, LabelKey, NodeKind, Scene, Transform, Vec3,
+};
+#[cfg(feature = "scene-host")]
+use scena::{
+    AnnotationProjectionReportV1, SceneHostCore, VISUAL_PATCH_SCHEMA_V1, VisualPatchResultV1,
 };
 
 #[test]
@@ -84,6 +87,7 @@ fn callouts_attach_to_node_world_anchor_and_connector_and_clean_up() {
 }
 
 #[test]
+#[cfg(feature = "scene-host")]
 fn scene_host_callout_uses_stable_handles_and_label_patch_anchor_id() {
     let mut host = SceneHostCore::headless(160, 120).expect("host builds");
     let target = host
@@ -165,6 +169,7 @@ fn assert_label_text(scene: &Scene, label: LabelKey, expected: &str) {
     assert_eq!(scene.label(label).expect("label exists").text(), expected);
 }
 
+#[cfg(feature = "scene-host")]
 fn projection_for(host: &SceneHostCore, id: &str) -> scena::AnnotationProjectionV1 {
     let report: AnnotationProjectionReportV1 =
         serde_json::from_str(&host.annotation_projections_json().expect("projection JSON"))
@@ -176,6 +181,7 @@ fn projection_for(host: &SceneHostCore, id: &str) -> scena::AnnotationProjection
         .expect("callout projection appears")
 }
 
+#[cfg(feature = "scene-host")]
 fn projection_ids(host: &SceneHostCore) -> Vec<String> {
     let report: AnnotationProjectionReportV1 =
         serde_json::from_str(&host.annotation_projections_json().expect("projection JSON"))

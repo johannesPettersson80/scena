@@ -80,6 +80,9 @@ All notable user-facing changes are recorded here.
   helpers that compose studio visuals, a floor receiver, SSAO-backed contact
   darkening, and explicit directional-shadow fallback reporting without
   claiming physical shadow correctness before proof closure.
+- Promoted directional-shadow capability reporting on GPU-device WebGPU/WebGL2
+  and native lanes after visible receiver-darkening proof; CPU/reference and
+  unattached factory rows remain degraded with an explicit diagnostic.
 - Added deterministic generated catalog previews with
   `render_asset_catalog_preview_png()`, `AssetCatalogPreviewPng`,
   `AssetCatalogPreviewError`, viewer-builder background color support, and the

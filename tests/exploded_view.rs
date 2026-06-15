@@ -3,9 +3,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "scene-host")]
+use scena::{AssetPath, SceneHostCore, VisualPatchV1};
 use scena::{
-    AssetPath, Assets, Color, ExplodedView, GeometryDesc, MaterialDesc, Renderer, Scene,
-    SceneHostCore, Transform, Vec3, VisualPatchV1,
+    Assets, Color, ExplodedView, GeometryDesc, MaterialDesc, Renderer, Scene, Transform, Vec3,
 };
 
 #[test]
@@ -140,6 +141,7 @@ fn exploded_view_supports_axis_and_hierarchy_depth_modes() {
 }
 
 #[test]
+#[cfg(feature = "scene-host")]
 fn scene_host_exploded_view_emits_visual_patch_transform_channels() {
     let mut host = SceneHostCore::headless(128, 96).expect("host builds");
     let import = pollster::block_on(host.instantiate_url(AssetPath::from(

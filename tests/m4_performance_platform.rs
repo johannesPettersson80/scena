@@ -96,6 +96,11 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
         "CPU headless SSAO has depth-aware visual proof; GPU/browser lanes remain separate"
     );
     assert_eq!(
+        headless.directional_shadows,
+        CapabilityStatus::Degraded,
+        "CPU/reference lanes do not claim the GPU shadow-map receiver path"
+    );
+    assert_eq!(
         headless.order_independent_transparency,
         CapabilityStatus::Supported,
         "CPU headless OIT has overlap order-invariance proof; GPU/browser lanes remain separate"
@@ -167,6 +172,11 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
         "factory WebGL2 capabilities without an attached GPU device must stay degraded"
     );
     assert_eq!(
+        webgl2.directional_shadows,
+        CapabilityStatus::Degraded,
+        "factory WebGL2 capabilities without an attached GPU device must not claim shadow receiver proof"
+    );
+    assert_eq!(
         webgl2.physical_glass_transmission,
         CapabilityStatus::Degraded,
         "factory WebGL2 capabilities without an attached GPU device must not claim physical glass"
@@ -176,6 +186,11 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
         attached_webgl2.forward_pbr,
         CapabilityStatus::Supported,
         "attached WebGL2 now owns the shared GPU PBR path and must not keep the stale degraded claim"
+    );
+    assert_eq!(
+        attached_webgl2.directional_shadows,
+        CapabilityStatus::Supported,
+        "attached WebGL2 has browser receiver-darkening proof for directional shadows"
     );
     assert_eq!(
         attached_webgl2.physical_glass_transmission,
@@ -191,6 +206,7 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
     let webgpu = scena::Capabilities::for_attached_gpu_backend(Backend::WebGpu);
     assert_eq!(webgpu.hardware_tier, HardwareTier::Medium);
     assert_eq!(webgpu.forward_pbr, CapabilityStatus::Supported);
+    assert_eq!(webgpu.directional_shadows, CapabilityStatus::Supported);
     assert_eq!(
         webgpu.gpu_frustum_culling,
         CapabilityStatus::FeatureDisabled
@@ -228,10 +244,12 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
             .all(|diagnostic| diagnostic.code != scena::DiagnosticCode::MaterialPresetFallback),
         "supported GPU PBR lanes must not tell users material presets are fallback-only: {diagnostics:?}",
     );
-    assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == scena::DiagnosticCode::DirectionalShadowsDegraded
-            && diagnostic.message.contains("Directional shadows")
-    }));
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != scena::DiagnosticCode::DirectionalShadowsDegraded),
+        "supported GPU directional-shadow lanes must not emit the stale degraded diagnostic: {diagnostics:?}",
+    );
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == scena::DiagnosticCode::PointShadowsDisabled
             && diagnostic.message.contains("Point shadows")

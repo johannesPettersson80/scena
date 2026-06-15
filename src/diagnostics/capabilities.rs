@@ -216,7 +216,7 @@ impl Capabilities {
             output_stage: OutputStageStatus::PbrNeutralSrgb,
             alpha_pipeline: AlphaPipelineStatus::LinearSourceOver,
             forward_pbr: forward_pbr_status(backend, false),
-            directional_shadows: directional_shadow_status(backend),
+            directional_shadows: directional_shadow_status(backend, false),
             point_shadows: punctual_shadow_status(backend),
             spot_shadows: punctual_shadow_status(backend),
             directional_shadow_map_default_size: directional_shadow_map_default_size(backend),
@@ -257,7 +257,7 @@ impl Capabilities {
             output_stage: OutputStageStatus::PbrNeutralSrgb,
             alpha_pipeline: AlphaPipelineStatus::LinearSourceOver,
             forward_pbr: forward_pbr_status(backend, true),
-            directional_shadows: directional_shadow_status(backend),
+            directional_shadows: directional_shadow_status(backend, true),
             point_shadows: punctual_shadow_status(backend),
             spot_shadows: punctual_shadow_status(backend),
             directional_shadow_map_default_size: directional_shadow_map_default_size(backend),
@@ -298,7 +298,7 @@ impl Capabilities {
             output_stage: OutputStageStatus::PbrNeutralSrgb,
             alpha_pipeline: AlphaPipelineStatus::LinearSourceOver,
             forward_pbr: forward_pbr_status(backend, true),
-            directional_shadows: directional_shadow_status(backend),
+            directional_shadows: directional_shadow_status(backend, true),
             point_shadows: punctual_shadow_status(backend),
             spot_shadows: punctual_shadow_status(backend),
             directional_shadow_map_default_size: directional_shadow_map_default_size(backend),
@@ -364,8 +364,8 @@ impl Capabilities {
         if self.directional_shadows == CapabilityStatus::Degraded {
             diagnostics.push(Diagnostic::warning(
                 DiagnosticCode::DirectionalShadowsDegraded,
-                "Directional shadows are degraded until shadow maps are rendered and sampled into visible receiver pixels",
-                "treat shadow-map counters as allocation metadata until the shadow visual gate closes",
+                "Directional shadows are degraded on CPU/reference lanes without GPU shadow-map receiver proof",
+                "query the active backend before enabling shadow-dependent presentation; GPU-device WebGPU/WebGL2/native lanes carry receiver-darkening proof",
             ));
         }
         if self.point_shadows == CapabilityStatus::FeatureDisabled {

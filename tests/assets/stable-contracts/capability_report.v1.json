@@ -53,8 +53,8 @@
     },
     {
       "code": "directional_shadows_degraded",
-      "help": "treat shadow-map counters as allocation metadata until the shadow visual gate closes",
-      "message": "Directional shadows are degraded until shadow maps are rendered and sampled into visible receiver pixels",
+      "help": "query the active backend before enabling shadow-dependent presentation; GPU-device WebGPU/WebGL2/native lanes carry receiver-darkening proof",
+      "message": "Directional shadows are degraded on CPU/reference lanes without GPU shadow-map receiver proof",
       "severity": "warning"
     },
     {

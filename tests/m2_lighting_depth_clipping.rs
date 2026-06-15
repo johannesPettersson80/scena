@@ -609,6 +609,39 @@ fn single_shadow_map_records_pcf3x3_prepare_stats() {
 }
 
 #[test]
+fn directional_shadow_capability_matches_proven_receiver_sampling_backends() {
+    use scena::diagnostics::{Backend, Capabilities, CapabilityStatus};
+
+    for backend in [
+        Backend::HeadlessGpu,
+        Backend::NativeSurface,
+        Backend::WebGpu,
+        Backend::WebGl2,
+    ] {
+        assert_eq!(
+            Capabilities::for_gpu_backend(backend).directional_shadows,
+            CapabilityStatus::Supported,
+            "{backend:?} with a GPU device has shadow-map rendering plus visible receiver sampling proof",
+        );
+    }
+
+    for backend in [
+        Backend::Headless,
+        Backend::HeadlessGpu,
+        Backend::SurfaceDescriptor,
+        Backend::NativeSurface,
+        Backend::WebGpu,
+        Backend::WebGl2,
+    ] {
+        assert_eq!(
+            Capabilities::for_backend(backend).directional_shadows,
+            CapabilityStatus::Degraded,
+            "{backend:?} without a GPU device keeps CPU/reference fallback semantics rather than claiming a proven GPU shadow lane",
+        );
+    }
+}
+
+#[test]
 fn directional_shadow_receiver_pixels_are_darkened_by_caster() {
     fn render_shadow_fixture(with_caster: bool) -> [u8; 4] {
         let assets = Assets::new();
