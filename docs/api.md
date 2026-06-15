@@ -120,6 +120,12 @@ Additive public API changes in Unreleased:
   presets (gated behind `scene-host`)
 - `SceneHostCore::set_camera_bookmark` and
   `SceneHostCore::set_camera_bookmark_json` (gated behind `scene-host`)
+- `ScenaViewerAnnotationLayoutOptions`,
+  `ScenaViewerAnnotationLayoutInput`,
+  `ScenaViewerAnnotationLayoutReport`,
+  `ScenaViewerAnnotationLayoutEntry`, and
+  `layout_scena_viewer_annotations` for deterministic custom-element
+  annotation clamping and decluttering reports
 - The `scena` binary with `schema list`, `schema get <schema>`,
   `validate-recipe <recipe.json>`, `place <recipe.json> --import <id>
   --verb <center|ground|fit_to_size|look_at|align_to_anchor|place_on>`, and,
@@ -263,6 +269,16 @@ SceneHost/WASM callers use `add_node_callout` / `add_world_callout` or
 The returned `anchor_id` is the annotation ID reported by
 `annotation_projections_json()` and remains compatible with the 0.1C `labels`
 visual-patch channel; there is no parallel host text-update model.
+Browser custom-element annotations use the same screen-projection data but
+perform HTML layout in CSS-pixel space. Native/browser hosts can call
+`layout_scena_viewer_annotations()` with
+`ScenaViewerAnnotationLayoutOptions` and
+`ScenaViewerAnnotationLayoutInput` to get a deterministic report with each
+annotation's original position, clamped position, visibility, and
+`hidden_reason` (`hidden`, `behind_camera`, `occluded`, or `overlap`). The
+`<scena-viewer>` element exposes the same report as
+`scena-viewer-annotations-rendered.detail.layout_report` after
+`setAnnotationProjections(...)`.
 `SceneAsset::geometry_summary` returns
 schema `scena.asset_geometry_summary.v1` with node/mesh/primitive counts,
 asset-local bounds, and source metadata where the asset stores it.

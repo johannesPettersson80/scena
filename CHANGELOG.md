@@ -93,6 +93,10 @@ All notable user-facing changes are recorded here.
 - Added callout and leader-line helpers for node, world, anchor, and connector
   targets, with SceneHost/WASM node and world callout entrypoints that share
   annotation anchor IDs with the `labels` visual-patch channel.
+- Added `<scena-viewer>` annotation layout helpers for viewport clamping,
+  behind-camera and optional occlusion hiding, deterministic priority-based
+  overlap avoidance, and layout reports that list original and adjusted
+  screen-space positions.
 
 ## [1.7.1] - 2026-06-12
 

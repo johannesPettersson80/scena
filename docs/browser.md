@@ -288,13 +288,17 @@ overlay, and captures it in
 `target/gate-artifacts/scena-viewer-element-browser-proof.png`.
 
 The annotation overlay uses slotted HTML with `slot="annotation"` and
-`data-position`, optional `data-normal`, and optional `data-surface`
-attributes. The element emits `scena-viewer-annotations-request` with parsed
-anchors and accepts `setAnnotationProjections([{ id, x, y, visible }])`,
-then emits `scena-viewer-annotations-rendered` after applying the screen-space
-positions. The browser proof records an `annotation_tracking_sequence` by
-applying two projection updates to the same slotted label and asserting that
-the CSS transform changes while the annotation remains visible.
+`data-position`, optional `data-normal`, optional `data-surface`, and optional
+`data-priority` attributes. The element emits
+`scena-viewer-annotations-request` with parsed anchors and accepts
+`setAnnotationProjections([{ id, x, y, visible, behind_camera, occluded }])`.
+It clamps visible annotations into the viewport, hides behind-camera or
+occluded annotations, resolves overlaps deterministically by priority and ID,
+and emits `scena-viewer-annotations-rendered` with a `layout_report` containing
+the original and adjusted CSS-pixel positions plus each annotation's
+visibility and `hidden_reason`. The browser proof records crowded labels,
+including a clamped label and a lower-priority overlapped label, then applies a
+second projection update to prove the surviving annotation continues tracking.
 
 The same M6 browser probe also records camera-control-kit proof for the shared
 Rust control APIs. `scena.m6.camera_control_kit_browser_proof.v1` runs browser

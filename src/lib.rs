@@ -230,11 +230,12 @@ pub use viewer::{
 pub use viewer_element::define_scena_viewer;
 pub use viewer_element::{
     SCENA_VIEWER_TAG, ScenaViewerAccessibilityDefaults, ScenaViewerAnnotationAnchor,
-    ScenaViewerAnnotationError, ScenaViewerAttributes, ScenaViewerDropDecision,
-    ScenaViewerDropKind, ScenaViewerDroppedFile, ScenaViewerGestureAction,
+    ScenaViewerAnnotationError, ScenaViewerAnnotationLayoutEntry, ScenaViewerAnnotationLayoutInput,
+    ScenaViewerAnnotationLayoutOptions, ScenaViewerAnnotationLayoutReport, ScenaViewerAttributes,
+    ScenaViewerDropDecision, ScenaViewerDropKind, ScenaViewerDroppedFile, ScenaViewerGestureAction,
     ScenaViewerInspectorDiagnostic, ScenaViewerInspectorSnapshot, ScenaViewerKeyboardAction,
     ScenaViewerProgress, ScenaViewerProgressPhase, ScenaViewerVariantOption,
-    ScenaViewerVariantSelection,
+    ScenaViewerVariantSelection, layout_scena_viewer_annotations,
 };
 
 /// Crate-level result type for APIs that can return any structured `scena` error.

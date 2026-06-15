@@ -327,9 +327,32 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
   annotation.dataset.position = "0 1 0";
   annotation.dataset.normal = "0 0 1";
   annotation.dataset.surface = "bearing";
+  annotation.dataset.priority = "10";
+  annotation.dataset.width = "72";
+  annotation.dataset.height = "24";
   annotation.textContent = "Bearing";
   annotation.style.cssText = "padding:4px 7px;background:#f8fafc;color:#0f172a;font:12px system-ui,sans-serif;border-radius:4px";
   viewer.append(annotation);
+  const clampAnnotation = document.createElement("span");
+  clampAnnotation.slot = "annotation";
+  clampAnnotation.id = "clamped-label";
+  clampAnnotation.dataset.position = "1 0 0";
+  clampAnnotation.dataset.priority = "5";
+  clampAnnotation.dataset.width = "72";
+  clampAnnotation.dataset.height = "24";
+  clampAnnotation.textContent = "Clamp";
+  clampAnnotation.style.cssText = annotation.style.cssText;
+  viewer.append(clampAnnotation);
+  const overlapAnnotation = document.createElement("span");
+  overlapAnnotation.slot = "annotation";
+  overlapAnnotation.id = "overlap-label";
+  overlapAnnotation.dataset.position = "1 0 0";
+  overlapAnnotation.dataset.priority = "1";
+  overlapAnnotation.dataset.width = "72";
+  overlapAnnotation.dataset.height = "24";
+  overlapAnnotation.textContent = "Overlap";
+  overlapAnnotation.style.cssText = annotation.style.cssText;
+  viewer.append(overlapAnnotation);
 
   const ready = once(viewer, "scena-viewer-ready");
   document.body.append(viewer);
@@ -377,11 +400,21 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
   viewer.requestAnnotationProjections();
   const annotationRequestDetail = await annotationRequest;
   const annotationsRendered = once(viewer, "scena-viewer-annotations-rendered");
-  viewer.setAnnotationProjections([{ id: "bearing-label", x: 144, y: 72, visible: true }]);
+  viewer.setAnnotationProjections([
+    { id: "bearing-label", x: 144, y: 72, visible: true },
+    { id: "clamped-label", x: -24, y: 260, visible: true },
+    { id: "overlap-label", x: 146, y: 74, visible: true },
+  ]);
   const annotationsRenderedDetail = await annotationsRendered;
   const firstAnnotationTransform = getComputedStyle(annotation).transform;
+  const clampedEntry = annotationsRenderedDetail.layout_report.entries.find((entry) => entry.id === "clamped-label");
+  const overlapEntry = annotationsRenderedDetail.layout_report.entries.find((entry) => entry.id === "overlap-label");
   const annotationsUpdated = once(viewer, "scena-viewer-annotations-rendered");
-  viewer.setAnnotationProjections([{ id: "bearing-label", x: 188, y: 96, visible: true }]);
+  viewer.setAnnotationProjections([
+    { id: "bearing-label", x: 188, y: 96, visible: true },
+    { id: "clamped-label", x: -24, y: 260, visible: true },
+    { id: "overlap-label", x: 190, y: 98, visible: true },
+  ]);
   const annotationsUpdatedDetail = await annotationsUpdated;
   const secondAnnotationTransform = getComputedStyle(annotation).transform;
 
@@ -421,6 +454,9 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     annotation_count: annotationRequestDetail.anchors.length,
     annotation_visible: annotationsRenderedDetail.visible,
     annotation_update_visible: annotationsUpdatedDetail.visible,
+    annotation_layout_entries: annotationsRenderedDetail.layout_report.entries.length,
+    annotation_clamped_visible: Boolean(clampedEntry && clampedEntry.visible && clampedEntry.x === 0 && clampedEntry.y < clampedEntry.original_y),
+    annotation_overlap_hidden: Boolean(overlapEntry && overlapEntry.visible === false && overlapEntry.hidden_reason === "overlap"),
     annotation_tracking_sequence: [firstAnnotationTransform, secondAnnotationTransform],
     annotation_transform: secondAnnotationTransform,
     inspector_overlay: inspectorDetail.overlay,
@@ -472,9 +508,12 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     checks.variant_render_active === "noon" &&
     checks.variant_render_green_dominant === true &&
     checks.variant_render_pixels_nonblack > 0 &&
-    checks.annotation_count === 1 &&
-    checks.annotation_visible === 1 &&
-    checks.annotation_update_visible === 1 &&
+    checks.annotation_count === 3 &&
+    checks.annotation_visible === 2 &&
+    checks.annotation_update_visible === 2 &&
+    checks.annotation_layout_entries === 3 &&
+    checks.annotation_clamped_visible === true &&
+    checks.annotation_overlap_hidden === true &&
     Array.isArray(checks.annotation_tracking_sequence) &&
     checks.annotation_tracking_sequence.length === 2 &&
     checks.annotation_tracking_sequence[0] !== checks.annotation_tracking_sequence[1] &&

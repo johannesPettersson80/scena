@@ -1479,16 +1479,42 @@ projected screen coordinates.
 
 Required behavior:
 
-- [ ] Viewport clamping.
-- [ ] Behind-camera hiding.
-- [ ] Optional occlusion-aware hiding when depth/readback is available.
-- [ ] Overlap avoidance with deterministic priority.
-- [ ] Layout report listing original and adjusted positions.
+- [x] Viewport clamping.
+- [x] Behind-camera hiding.
+- [x] Optional occlusion-aware hiding when depth/readback is available.
+- [x] Overlap avoidance with deterministic priority.
+- [x] Layout report listing original and adjusted positions.
 
 Acceptance:
 
-- [ ] Deterministic layout tests for overlapping annotations.
-- [ ] Browser proof with crowded labels before/after declutter.
+- [x] Deterministic layout tests for overlapping annotations.
+- [x] Browser proof with crowded labels before/after declutter.
+
+Proof:
+
+- [x] Red test first:
+      `cargo test --test scena_viewer_element scena_viewer_annotation_layout_clamps_hides_and_declutters_deterministically -- --nocapture`
+      failed on `scena-builder` with unresolved imports for
+      `ScenaViewerAnnotationLayoutInput`,
+      `ScenaViewerAnnotationLayoutOptions`, and
+      `layout_scena_viewer_annotations`.
+- [x] Focused native proof:
+      `cargo test --test scena_viewer_element -- --nocapture` passed locally
+      and on `scena-builder` after sync, including the deterministic clamp,
+      behind-camera, occlusion, and priority-overlap test.
+- [x] Browser proof:
+      `wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe`
+      and `SCENA_BROWSER_BACKENDS=webgl2 npm run browser:m6` passed locally.
+      The `scena.scena_viewer_element_browser_proof.v1` result asserts three
+      annotation layout entries, two visible labels after declutter,
+      `annotation_clamped_visible=true`, `annotation_overlap_hidden=true`, and
+      a changed tracking transform after the second projection update.
+- [x] Remote gate proof: after syncing to `scena-builder`
+      `~/projects/scena-visual-patch-impl`, `cargo fmt --check`,
+      `cargo clippy --all-targets --features scene-host -- -D warnings`,
+      `cargo test --features scene-host`,
+      `cargo run -p xtask -- doctor --full`, and
+      `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features` passed.
 
 ## Phase 3 - Asset and assembly workflows
 

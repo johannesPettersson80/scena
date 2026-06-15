@@ -1,10 +1,11 @@
 use scena::{
     AssetLoadProgress, AssetPath, DebugOverlay, Diagnostic, DiagnosticCode, DiagnosticSeverity,
     RendererStats, SCENA_VIEWER_TAG, ScenaViewerAccessibilityDefaults, ScenaViewerAnnotationAnchor,
-    ScenaViewerAnnotationError, ScenaViewerAttributes, ScenaViewerDropDecision,
+    ScenaViewerAnnotationError, ScenaViewerAnnotationLayoutInput,
+    ScenaViewerAnnotationLayoutOptions, ScenaViewerAttributes, ScenaViewerDropDecision,
     ScenaViewerDropKind, ScenaViewerGestureAction, ScenaViewerInspectorSnapshot,
     ScenaViewerKeyboardAction, ScenaViewerProgress, ScenaViewerProgressPhase,
-    ScenaViewerVariantSelection, Tonemapper,
+    ScenaViewerVariantSelection, Tonemapper, layout_scena_viewer_annotations,
 };
 
 #[test]
@@ -250,5 +251,61 @@ fn scena_viewer_annotation_anchor_parses_dataset_position_normal_and_surface() {
             field: "data-position",
             value: "1 2 nope".to_string(),
         }
+    );
+}
+
+#[test]
+fn scena_viewer_annotation_layout_clamps_hides_and_declutters_deterministically() {
+    let options = ScenaViewerAnnotationLayoutOptions::new(100.0, 60.0)
+        .with_viewport_clamping(true)
+        .with_overlap_avoidance(true)
+        .with_occlusion_hiding(true);
+    let report = layout_scena_viewer_annotations(
+        [
+            ScenaViewerAnnotationLayoutInput::new("primary", 10.0, 10.0, 30.0, 12.0)
+                .with_priority(10),
+            ScenaViewerAnnotationLayoutInput::new("overlap", 14.0, 12.0, 30.0, 12.0)
+                .with_priority(1),
+            ScenaViewerAnnotationLayoutInput::new("offscreen", -8.0, 70.0, 20.0, 12.0),
+            ScenaViewerAnnotationLayoutInput::new("behind", 50.0, 20.0, 18.0, 10.0)
+                .behind_camera(true),
+            ScenaViewerAnnotationLayoutInput::new("occluded", 78.0, 20.0, 18.0, 10.0)
+                .occluded(true),
+        ],
+        options,
+    );
+
+    assert_eq!(report.coordinate_space(), "css_pixels");
+    assert_eq!(report.viewport_width(), 100.0);
+    assert_eq!(report.viewport_height(), 60.0);
+    let primary = report.entry("primary").expect("primary entry exists");
+    assert!(primary.visible());
+    assert_eq!(primary.x(), 10.0);
+    assert_eq!(primary.y(), 10.0);
+
+    let overlap = report.entry("overlap").expect("overlap entry exists");
+    assert!(!overlap.visible());
+    assert_eq!(overlap.hidden_reason(), Some("overlap"));
+
+    let offscreen = report.entry("offscreen").expect("offscreen entry exists");
+    assert!(offscreen.visible());
+    assert_eq!(offscreen.original_x(), -8.0);
+    assert_eq!(offscreen.original_y(), 70.0);
+    assert_eq!(offscreen.x(), 0.0);
+    assert_eq!(offscreen.y(), 48.0);
+
+    assert_eq!(
+        report
+            .entry("behind")
+            .expect("behind entry exists")
+            .hidden_reason(),
+        Some("behind_camera")
+    );
+    assert_eq!(
+        report
+            .entry("occluded")
+            .expect("occluded entry exists")
+            .hidden_reason(),
+        Some("occluded")
     );
 }
