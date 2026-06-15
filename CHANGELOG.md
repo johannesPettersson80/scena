@@ -64,7 +64,8 @@ All notable user-facing changes are recorded here.
 - Added deterministic generated catalog previews with
   `render_asset_catalog_preview_png()`, `AssetCatalogPreviewPng`,
   `AssetCatalogPreviewError`, viewer-builder background color support, and the
-  `asset_catalog_picker` SceneHost example.
+  `asset_catalog_picker` SceneHost example, plus WebGL2 browser proof for a
+  catalog asset preview workflow.
 - Added measurement overlay primitives for CAD/documentation views:
   distance, angle, bounds-dimension reports, host-supplied `UnitFormat`
   formatting, and line plus optional label rendering through

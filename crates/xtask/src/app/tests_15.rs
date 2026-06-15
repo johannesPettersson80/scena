@@ -3,7 +3,9 @@ use crate::app::tests_12::{VALID_GUIDE, write_easy_scene_fixture};
 
 pub(crate) fn write_asset_validation_easy_scene_fixture(fixture_root: &Path) {
     fs::create_dir_all(fixture_root.join("crates/xtask/src/app")).expect("xtask fixture dir");
+    fs::create_dir_all(fixture_root.join("src/browser_probe")).expect("browser probe fixture dir");
     fs::create_dir_all(fixture_root.join("src/assets/gltf")).expect("gltf fixture dir");
+    fs::create_dir_all(fixture_root.join("tests/browser")).expect("browser fixture dir");
     fs::write(
         fixture_root.join("docs/assets.md"),
         "cargo run -p xtask -- asset-doctor official Khronos glTF Validator SCENA_GLTF_VALIDATOR scena.asset_doctor.v1 fix",
@@ -29,6 +31,21 @@ pub(crate) fn write_asset_validation_easy_scene_fixture(fixture_root: &Path) {
         "GltfExtensionDiagnostic suggested_fix decoder_policy",
     )
     .expect("gltf extension diagnostic fixture");
+    fs::write(
+        fixture_root.join("src/browser_probe/workflows.rs"),
+        r#"asset-catalog-preview AssetCatalogV1 readiness_catalog.v1.json variant-triangle set_active_variant proof_class": "asset-catalog-preview"#,
+    )
+    .expect("asset catalog browser workflow fixture");
+    fs::write(
+        fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe.js"),
+        r#"asset-catalog-preview assertAssetCatalogPreviewProof scena.asset_catalog.v1 Variant Triangle tests/assets/gltf/material_variants_scene.gltf metadata.active_variant !== "midnight""#,
+    )
+    .expect("asset catalog browser proof fixture");
+    fs::write(
+        fixture_root.join("docs/checklists/application-builder-roadmap.md"),
+        "Browser preview proof for a catalog asset. asset-catalog-preview SCENA_BROWSER_BACKENDS=webgl2 npm run browser:m6",
+    )
+    .expect("application builder roadmap fixture");
     let checklist_path =
         fixture_root.join("docs/checklists/next-release-easy-use-and-state-of-the-art.md");
     let mut checklist =
@@ -98,5 +115,33 @@ pub(crate) fn easy_scene_setup_contracts_reject_missing_asset_validation_doctor(
             .iter()
             .any(|finding| finding.rule == "ASSET-VALIDATION-DOCTOR"),
         "doctor must reject the asset-validation roadmap claim without the official validator wrapper and scena guidance: {findings:?}",
+    );
+}
+
+#[test]
+pub(crate) fn easy_scene_setup_contracts_reject_missing_asset_catalog_browser_preview_proof() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root =
+        root.join("target/xtask-doctor-regressions/missing-asset-catalog-browser-preview");
+    write_easy_scene_fixture(
+        &fixture_root,
+        VALID_GUIDE,
+        "frame_bounds(()) bounds_for_transforms add_grid_floor",
+        r#"<details id="diagnostics" class="diagnostics"><strong id="metric-frame">0</strong></details>"#,
+    );
+    fs::write(
+        fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe.js"),
+        "asset-catalog-preview",
+    )
+    .expect("browser proof fixture without assertion");
+    let mut findings = Vec::new();
+
+    check_easy_scene_setup_contracts(&fixture_root, &mut findings);
+
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "ASSET-CATALOG-BROWSER-PREVIEW"),
+        "doctor must reject catalog browser-preview claims without the M6 workflow assertion: {findings:?}",
     );
 }

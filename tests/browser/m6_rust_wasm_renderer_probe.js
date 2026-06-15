@@ -5,6 +5,7 @@ const path = require("path");
 const zlib = require("zlib");
 
 const MODEL_VIEWER_FIXTURE = "/fixtures/gltf/non_ndc_camera_scene.gltf";
+const ASSET_CATALOG_PREVIEW_FIXTURE = "/fixtures/gltf/material_variants_scene.gltf";
 const MODEL_VIEWER_BUNDLE = "model-viewer.min.js";
 const OVERSIZED_TEXTURE_DIMENSION = 2049;
 
@@ -478,6 +479,35 @@ function assertModelViewerProof(backend, result) {
   if (!result.pixels || result.pixels.nonblack <= 0 || !result.screenshot_metadata.pixel_statistics) {
     throw new Error(
       `${backend} model-viewer proof did not include nonblack pixel statistics: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
+function assertAssetCatalogPreviewProof(backend, result) {
+  const metadata = result.metadata || {};
+  if (
+    metadata.proof_class !== "asset-catalog-preview" ||
+    metadata.catalog_schema !== "scena.asset_catalog.v1" ||
+    metadata.asset_id !== "variant-triangle" ||
+    metadata.display_name !== "Variant Triangle" ||
+    metadata.source !== ASSET_CATALOG_PREVIEW_FIXTURE ||
+    metadata.catalog_source !== "tests/assets/gltf/material_variants_scene.gltf" ||
+    metadata.preview_kind !== "generated" ||
+    metadata.preview_width !== 256 ||
+    metadata.preview_height !== 256 ||
+    !Array.isArray(metadata.required_variants) ||
+    !metadata.required_variants.includes("midnight") ||
+    metadata.selected_variant !== "midnight" ||
+    metadata.active_variant !== "midnight" ||
+    metadata.framed !== true
+  ) {
+    throw new Error(
+      `${backend} asset-catalog-preview proof did not record catalog preview metadata: ${JSON.stringify(result)}`,
+    );
+  }
+  if (!result.pixels || result.pixels.nonblack <= 0) {
+    throw new Error(
+      `${backend} asset-catalog-preview proof did not render visible catalog asset pixels: ${JSON.stringify(result)}`,
     );
   }
 }
@@ -1380,6 +1410,7 @@ async function main() {
     "beginner-diagnostics",
     "material-textures",
     "source-gltf-materials",
+    "asset-catalog-preview",
     "textured-connector-viewer",
     "asset-cache-reload",
   ];
@@ -1495,6 +1526,7 @@ async function main() {
         assertMaterialTextureProof(backend, workflowResults.get("material-textures"));
         assertLabelTextBrowserProof(backend, workflowResults.get("labels-helpers"));
         assertSourceGltfMaterialProof(backend, workflowResults.get("source-gltf-materials"));
+        assertAssetCatalogPreviewProof(backend, workflowResults.get("asset-catalog-preview"));
         if (oversizedTextureProofEnabled()) {
           const oversizedTexture = workflowResults.get("oversized-browser-texture");
           assertOversizedBrowserTextureProof(backend, oversizedTexture);

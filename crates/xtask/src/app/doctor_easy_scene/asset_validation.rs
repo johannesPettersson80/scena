@@ -67,4 +67,43 @@ pub(super) fn check_asset_validation_doctor(root: &Path, findings: &mut Vec<Find
             "asset-doctor",
         ],
     );
+    require_contains(
+        root,
+        findings,
+        "ASSET-CATALOG-BROWSER-PREVIEW",
+        "src/browser_probe/workflows.rs",
+        &[
+            "asset-catalog-preview",
+            "AssetCatalogV1",
+            "readiness_catalog.v1.json",
+            "variant-triangle",
+            "set_active_variant",
+            "proof_class\": \"asset-catalog-preview",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSET-CATALOG-BROWSER-PREVIEW",
+        "tests/browser/m6_rust_wasm_renderer_probe.js",
+        &[
+            "asset-catalog-preview",
+            "assertAssetCatalogPreviewProof",
+            "scena.asset_catalog.v1",
+            "Variant Triangle",
+            "tests/assets/gltf/material_variants_scene.gltf",
+            "metadata.active_variant !== \"midnight\"",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSET-CATALOG-BROWSER-PREVIEW",
+        "docs/checklists/application-builder-roadmap.md",
+        &[
+            "Browser preview proof for a catalog asset.",
+            "asset-catalog-preview",
+            "SCENA_BROWSER_BACKENDS=webgl2 npm run browser:m6",
+        ],
+    );
 }

@@ -1567,7 +1567,7 @@ Acceptance:
 
 - [x] Fixture catalog with one valid and several invalid assets.
 - [x] Readiness report stable fixture.
-- [ ] Browser preview proof for a catalog asset.
+- [x] Browser preview proof for a catalog asset.
 - [x] Example: asset picker feeding a SceneHost scene.
 
 Evidence:
@@ -1588,6 +1588,17 @@ Evidence:
 - [x] Example compile/run proof: `cargo run --example asset_catalog_picker
       --features scene-host -- target/gate-artifacts/asset-catalog-picker`
       produces deterministic preview and SceneHost PNG artifact paths.
+- [x] Browser preview test-first proof:
+      `SCENA_BROWSER_BACKENDS=webgl2 npm run browser:m6` failed after adding
+      the required assertion with `unknown M6 browser workflow probe:
+      asset-catalog-preview`.
+- [x] Browser preview proof:
+      `wasm-pack build --dev --target web --out-dir target/m6-browser-pkg .
+      --features browser-probe && SCENA_BROWSER_BACKENDS=webgl2 npm run
+      browser:m6` passes. The `asset-catalog-preview` result records
+      `scena.asset_catalog.v1`, `variant-triangle`, generated 256x256 preview
+      metadata, active `midnight` variant, one root, `framed=true`, and 838
+      nonblack WebGL2 pixels.
 
 ### 3.2 Asset doctor integration API
 
