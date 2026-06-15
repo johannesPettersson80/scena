@@ -84,6 +84,9 @@ Additive public API changes in Unreleased:
   `AssetCatalogPreviewError`,
   `HeadlessGltfViewerBuilder::with_background_color`, and
   `InteractiveGltfViewerBuilder::with_background_color`
+- `MeasurementOverlay`, `MeasurementKind`, `MeasurementAxis`,
+  `MeasurementReport`, `MeasurementOverlayReport`, `UnitFormat`, and
+  `Scene::add_measurement_overlay`
 - `SceneHostCore::set_camera_bookmark` and
   `SceneHostCore::set_camera_bookmark_json` (gated behind `scene-host`)
 - The `scena` binary with `schema list`, `schema get <schema>`,

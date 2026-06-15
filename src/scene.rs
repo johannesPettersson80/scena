@@ -31,6 +31,7 @@ mod labels;
 mod lights;
 mod materials;
 mod math;
+mod measurements;
 mod mixers;
 mod morphs;
 mod origin;
@@ -82,6 +83,10 @@ pub use lights::{
     DirectionalLight, Light, LightBuilder, PointLight, SpotLight, StudioLightingHandles,
 };
 pub use math::{Angle, Quat, Transform, Vec3};
+pub use measurements::{
+    MeasurementAxis, MeasurementKind, MeasurementOverlay, MeasurementOverlayReport,
+    MeasurementReport, UnitFormat,
+};
 pub use placement::{
     SCENE_PLACEMENT_RESULT_SCHEMA_V1, ScenePlacementDiagnosticV1, ScenePlacementResultV1,
     placement_align_to_feature_transform, placement_center_transform,

@@ -162,14 +162,15 @@ pub use scene::{
     ImportAnchor, ImportAnchorDebugMetadata, ImportClip, ImportConnector, ImportOptions,
     ImportPivot, Instance, InstanceCullingPolicy, InstanceId, InstanceSet, InstanceSetKey,
     LabelBillboard, LabelDesc, LabelKey, LabelRasterization, Light, LightBuilder, LightKey,
-    MeshBuilder, MeshNode, ModelBuilder, ModelNode, Node, NodeKey, NodeKind, OrthographicCamera,
-    PerspectiveCamera, PointLight, ProjectedPoint, Quat, SCENE_ANNOTATION_PROJECTION_SCHEMA_V1,
-    SCENE_PLACEMENT_RESULT_SCHEMA_V1, Scene, SceneDirtyState, SceneImport,
-    ScenePlacementDiagnosticV1, ScenePlacementResultV1, SceneSkinBinding, ScreenRect,
-    SourceCoordinateSystem, SourceUnits, SpotLight, StudioLightingHandles, Transform, Vec3,
-    placement_align_to_feature_transform, placement_center_transform,
-    placement_fit_to_size_transform, placement_ground_transform, placement_look_at_transform,
-    placement_place_on_feature_transform,
+    MeasurementAxis, MeasurementKind, MeasurementOverlay, MeasurementOverlayReport,
+    MeasurementReport, MeshBuilder, MeshNode, ModelBuilder, ModelNode, Node, NodeKey, NodeKind,
+    OrthographicCamera, PerspectiveCamera, PointLight, ProjectedPoint, Quat,
+    SCENE_ANNOTATION_PROJECTION_SCHEMA_V1, SCENE_PLACEMENT_RESULT_SCHEMA_V1, Scene,
+    SceneDirtyState, SceneImport, ScenePlacementDiagnosticV1, ScenePlacementResultV1,
+    SceneSkinBinding, ScreenRect, SourceCoordinateSystem, SourceUnits, SpotLight,
+    StudioLightingHandles, Transform, UnitFormat, Vec3, placement_align_to_feature_transform,
+    placement_center_transform, placement_fit_to_size_transform, placement_ground_transform,
+    placement_look_at_transform, placement_place_on_feature_transform,
 };
 #[cfg(feature = "inspection")]
 pub use scene::{

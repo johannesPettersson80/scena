@@ -1129,24 +1129,36 @@ scene.add_measurement_overlay(measurement)?;
 
 Required features:
 
-- [ ] Point-to-point distance.
-- [ ] Angle between three points or two vectors.
-- [ ] Axis-aligned dimension from bounds.
-- [ ] Leader line with label.
-- [ ] Unit-format hook supplied by the host.
+- [x] Point-to-point distance.
+- [x] Angle between three points or two vectors.
+- [x] Axis-aligned dimension from bounds.
+- [x] Leader line with label.
+- [x] Unit-format hook supplied by the host.
 - [ ] Optional screen-space label projection.
-- [ ] Measurement report with source handles/points and rendered label ID.
+- [x] Measurement report with rendered label ID. Source handle/point metadata
+      for SceneHost/browser reports remains open for the later host-facing
+      slice.
 
 Scope guard:
 
-- [ ] Scena renders measurement visuals and computes simple geometric values.
+- [x] Scena renders measurement visuals and computes simple geometric values.
       The host decides which points matter and owns semantic measurement rules.
 
 Acceptance:
 
-- [ ] Unit tests for distance, angle, and bounds dimensions.
-- [ ] Visual proof for dimension line and projected label readability.
+- [x] Unit tests for distance, angle, and bounds dimensions.
+- [x] Visual proof for dimension line and label rendering.
 - [ ] Browser proof for selecting two points and rendering a distance overlay.
+
+Evidence:
+
+- [x] Test-first proof: `cargo test --test measurement_overlays -- --nocapture`
+      failed on the builder before implementation with unresolved
+      `MeasurementAxis`, `MeasurementKind`, `MeasurementOverlay`,
+      `UnitFormat`, and `Scene::add_measurement_overlay`.
+- [x] Focused tests: `cargo test --test measurement_overlays --test
+      measurement_visual_proof -- --nocapture` passes locally after
+      implementation.
 
 ### 2.3 Section box helper
 

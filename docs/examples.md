@@ -30,6 +30,7 @@ cargo check --examples
 | Static batching | `static_batching.rs` |
 | Labels and helpers | `labels_helpers.rs` |
 | Layers and visibility | `layers_visibility.rs` |
+| Measurement overlays | `MeasurementOverlay` in `Scene::add_measurement_overlay()`; rendered proof in `tests/measurement_visual_proof.rs` |
 | Native window | `native_window.rs` |
 | Browser canvas | `browser_canvas.rs` |
 | Browser host contracts | `scene_host_contracts.rs`, `scene_host_release_1_7.rs`, `scene_host_browser_contracts.js` |

@@ -65,6 +65,10 @@ All notable user-facing changes are recorded here.
   `render_asset_catalog_preview_png()`, `AssetCatalogPreviewPng`,
   `AssetCatalogPreviewError`, viewer-builder background color support, and the
   `asset_catalog_picker` SceneHost example.
+- Added measurement overlay primitives for CAD/documentation views:
+  distance, angle, bounds-dimension reports, host-supplied `UnitFormat`
+  formatting, and line plus optional label rendering through
+  `Scene::add_measurement_overlay()`.
 
 ## [1.7.1] - 2026-06-12
 
