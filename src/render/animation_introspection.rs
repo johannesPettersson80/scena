@@ -46,6 +46,20 @@ pub struct AnimationSampleV1 {
     pub payload_fnv1a64: String,
     pub moving_node_count: usize,
     pub invalid_node_count: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub observed_values: Vec<AnimationObservedValueV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AnimationObservedValueV1 {
+    pub id: String,
+    pub node: u64,
+    pub kind: String,
+    pub transform: Transform,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_translation: Option<Vec3>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub within_tolerance: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -140,6 +154,24 @@ impl AnimationIntrospectionReportV1 {
                 &mut fixes,
                 "render_changed_samples",
                 "verify the animated node is visible, framed, and rendered after each explicit seek",
+            );
+        }
+        if samples.iter().any(|sample| {
+            sample
+                .observed_values
+                .iter()
+                .any(|value| value.within_tolerance == Some(false))
+        }) {
+            push_reason(
+                &mut reasons,
+                "expected_value_mismatch",
+                "error",
+                "one or more sampled transform values differed from expected values",
+            );
+            push_fix(
+                &mut fixes,
+                "inspect_expected_animation_state",
+                "check the expected sample times, transform values, and animated target selection",
             );
         }
 

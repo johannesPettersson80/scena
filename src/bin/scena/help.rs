@@ -13,7 +13,7 @@ pub(crate) fn help_json() -> String {
             "doctor <asset-or-recipe>",
             "repair <asset-or-recipe> --from <report.json>",
             "verify appearance <asset-or-recipe> --expect <appearance-expectation.json>",
-            "verify animation <asset-or-recipe> --clip <name> --times <seconds> [--expect-change]",
+            "verify animation <asset-or-recipe> --clip <name> --times <seconds> [--expect-change] [--expect-translations 'x,y,z;...']",
             "verify interaction <asset-or-recipe> --expect <interaction-expectation.json>"
         ],
         "global_options": [

@@ -532,7 +532,8 @@ Required commands:
 - [x] `scena verify appearance <recipe-or-asset> --expect <json>`: emit
       `scena.appearance_introspection.v1`.
 - [x] `scena verify animation <recipe-or-asset> --clip <name> --times <csv>
-      [--expect-change]`: emit `scena.animation_introspection.v1`.
+      [--expect-change] [--expect-translations 'x,y,z;...']`: emit
+      `scena.animation_introspection.v1`.
 - [ ] `scena verify interaction <recipe-or-asset> --expect <json>`: emit
       `scena.interaction_verification.v1`. The first native SceneHost slice is
       complete; browser input and rendered feedback proof remain open under
@@ -555,9 +556,8 @@ CLI behavior:
 - [x] Exit status `0` means the requested schema operation succeeded.
 - [x] Exit status is non-zero for invalid recipes, missing assets, failed
       preparation, failed rendering, `ok=false` introspection, and invisible
-      diagnosis targets. Missing assets currently use the command-error path;
-      recipe validation, report `ok=false`, and invisible diagnosis targets
-      emit machine-readable JSON.
+      diagnosis targets. Missing assets, recipe validation, report `ok=false`,
+      and invisible diagnosis targets emit machine-readable JSON.
 - [x] Artifact paths are explicit for implemented render-introspection output.
 
 Acceptance:
@@ -585,6 +585,9 @@ Acceptance:
       `scena.animation_introspection.v1`, exits non-zero with JSON on stdout
       for a missing clip, and exits non-zero when requested samples do not
       advance in time.
+- [x] Tests verify `verify animation --expect-translations` records
+      `samples[].observed_values`, exits zero when sampled translations match,
+      and exits non-zero with `expected_value_mismatch` when they do not.
 - [x] Tests verify non-zero exits for invalid recipe and invisible target.
 - [x] Tests verify missing assets emit JSON instead of command-error text.
 - [x] Doctor rule keeps CLI help, schema constants, docs schema references, and
@@ -876,8 +879,10 @@ Required behavior:
 - [x] Report clip name, channel count, sampled times, changed channel counts,
       unchanged channel counts, invalid channel counts, and rendered-change
       summary.
-- [ ] Report selected transform/tint/camera/visibility values at each sample
-      when expected values are supplied.
+- [x] Report selected transform values at each sample when expected
+      translations are supplied. Tint/camera/visibility expected-value inputs
+      remain future additive fields because the current A.9 surface samples
+      imported animation clips, not arbitrary visual patch playback.
 - [x] `ok=false` when a required clip is missing, time does not advance,
       channels freeze unexpectedly, channel values become non-finite, or
       visible output stays unchanged when change was expected. Expected
@@ -891,8 +896,14 @@ Acceptance:
       samples that do not advance in time. Frozen channel, NaN transform, wrong
       pose at time, and expected final-state fixtures remain future hardening
       cases.
-- [ ] Live-state playback proof samples at least three times and verifies the
+- [x] Live-state playback proof samples at least three times and verifies the
       expected visual state at each sample.
+      Evidence: `cargo test --features inspection --test scena_cli_agent
+      scena_verify_animation_cli_checks_expected_sampled_translations --
+      --nocapture` passed on `scena-builder`; it samples `MoveTriangle` at
+      `0,0.5,1.0`, verifies observed translations
+      `0,0,0;0.25,0,0;0.5,0,0`, and proves a wrong middle sample fails with
+      `expected_value_mismatch`.
 - [x] Animated viewer proof verifies rendered changes happened between samples through
       changed capture payloads and moving-node counts. Expected final-state
       matching remains future hardening.

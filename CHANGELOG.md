@@ -65,6 +65,10 @@ All notable user-facing changes are recorded here.
   `scena verify appearance --expect <json>` for capture-bound first-time
   material, variant, fallback, alpha, texture, and swatch verification behind
   the `inspection` feature.
+- Added `scena.animation_introspection.v1` observed transform values for
+  `scena verify animation --expect-translations`, including sampled transforms,
+  expected translations, tolerance results, and fail-closed
+  `expected_value_mismatch` diagnostics.
 - Added reusable `CameraState`, `CameraBookmark`, and `OrbitControls::fly_to`
   APIs, viewer bookmark storage helpers, and SceneHost native/WASM bookmark
   easing methods that delegate to the existing host-ticked `camera_eased`

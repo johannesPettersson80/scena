@@ -641,6 +641,96 @@ fn scena_verify_animation_cli_checks_sampled_change_and_fails_closed() {
 }
 
 #[test]
+fn scena_verify_animation_cli_checks_expected_sampled_translations() {
+    let animated = "tests/assets/gltf/animated_triangle_scene.glb";
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "verify",
+            "animation",
+            animated,
+            "--clip",
+            "MoveTriangle",
+            "--times",
+            "0,0.5,1.0",
+            "--expect-change",
+            "--expect-translations",
+            "0,0,0;0.25,0,0;0.5,0,0",
+            "--width",
+            "96",
+            "--height",
+            "72",
+        ])
+        .output()
+        .expect("scena verify animation expected translations command runs");
+
+    assert!(output.status.success(), "stderr={}", stderr(&output));
+    assert!(
+        output.stderr.is_empty(),
+        "animation expected-value report stays machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("animation command emits JSON");
+    assert_eq!(report["schema"], "scena.animation_introspection.v1");
+    assert_eq!(report["ok"], true);
+    let samples = report["samples"].as_array().expect("samples array");
+    assert_eq!(samples.len(), 3);
+    for sample in samples {
+        let values = sample["observed_values"]
+            .as_array()
+            .expect("observed values array");
+        assert_eq!(values.len(), 1, "{report:#}");
+        assert_eq!(values[0]["kind"], "transform");
+        assert_eq!(values[0]["within_tolerance"], true);
+    }
+    assert_eq!(
+        samples[2]["observed_values"][0]["transform"]["translation"],
+        json!([0.5, 0.0, 0.0])
+    );
+
+    let wrong = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "verify",
+            "animation",
+            animated,
+            "--clip",
+            "MoveTriangle",
+            "--times",
+            "0,0.5,1.0",
+            "--expect-change",
+            "--expect-translations",
+            "0,0,0;0.4,0,0;0.5,0,0",
+            "--width",
+            "96",
+            "--height",
+            "72",
+        ])
+        .output()
+        .expect("scena verify animation wrong expected translations command runs");
+    assert!(
+        !wrong.status.success(),
+        "wrong expected translation should fail closed"
+    );
+    assert!(
+        wrong.stderr.is_empty(),
+        "wrong expected-value report stays machine-readable on stdout, stderr={}",
+        stderr(&wrong)
+    );
+    let wrong_report: serde_json::Value =
+        serde_json::from_slice(&wrong.stdout).expect("wrong animation command emits JSON");
+    assert_eq!(wrong_report["schema"], "scena.animation_introspection.v1");
+    assert_eq!(wrong_report["ok"], false);
+    assert!(
+        wrong_report["reasons"]
+            .as_array()
+            .expect("animation expected-value reasons array")
+            .iter()
+            .any(|reason| reason["code"] == "expected_value_mismatch"),
+        "wrong expected value should be machine-readable: {wrong_report:#}"
+    );
+}
+
+#[test]
 fn scena_inspect_cli_emits_scene_inspection_json_for_asset() {
     let output = Command::new(env!("CARGO_BIN_EXE_scena"))
         .args(["inspect", TEST_ASSET, "--width", "96", "--height", "72"])

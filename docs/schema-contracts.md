@@ -930,7 +930,8 @@ The stable fixtures live at
 ### `scena.animation_introspection.v1`
 
 Produced by `scena verify animation <asset-or-recipe> --clip <name> --times
-<seconds> [--expect-change]` when the `inspection` feature is enabled.
+<seconds> [--expect-change] [--expect-translations 'x,y,z;...']` when the
+`inspection` feature is enabled.
 Animation verification uses the normal recipe/asset load, viewer, explicit
 `seek_animation`, prepare, render, capture, and inspection path. There is no
 hidden playback loop or separate agent render mode.
@@ -952,12 +953,17 @@ whether rendered capture payloads changed across the sampled times, and the
 number of capture changes from the first sample. Each `samples[]` entry records
 the requested time, scene transform and appearance revisions, capture payload
 hash, moving node count compared to the first sample, and invalid node count.
+When expected translations are supplied, each sample also includes
+`observed_values[]` entries for the selected moving transform: stable node
+handle, full observed transform, expected translation, and
+`within_tolerance`.
 
 When `--expect-change` is supplied, `ok` is false for error-severity reasons
 such as missing clip, non-advancing sampled times, frozen channels, invalid
 channel values, or unchanged rendered output. The CLI writes the report JSON to
 stdout and exits non-zero when `ok` is false. Missing clips also return a
 machine-readable report with available clip names in the reason message.
+Expected sampled translation mismatches emit `expected_value_mismatch`.
 
 The stable fixture lives at
 `tests/assets/stable-contracts/animation_introspection.v1.json`.

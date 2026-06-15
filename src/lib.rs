@@ -111,8 +111,8 @@ pub use reference_image::{
 pub use render::animation_introspection::{
     ANIMATION_INTROSPECTION_SCHEMA_V1, AnimationChannelChangeCounts, AnimationClipIntrospectionV1,
     AnimationIntrospectionArtifactsV1, AnimationIntrospectionFixV1, AnimationIntrospectionReasonV1,
-    AnimationIntrospectionReportV1, AnimationIntrospectionSummaryV1, AnimationSampleV1,
-    animation_channel_change_counts, transform_differs, transform_is_finite,
+    AnimationIntrospectionReportV1, AnimationIntrospectionSummaryV1, AnimationObservedValueV1,
+    AnimationSampleV1, animation_channel_change_counts, transform_differs, transform_is_finite,
 };
 #[cfg(feature = "inspection")]
 pub use render::appearance::{

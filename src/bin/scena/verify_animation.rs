@@ -8,6 +8,8 @@ pub(crate) struct VerifyAnimationCommandArgs {
     clip: String,
     times: Vec<f32>,
     expect_change: bool,
+    expected_translations: Option<Vec<scena::Vec3>>,
+    expected_tolerance: f32,
     width: Option<u32>,
     height: Option<u32>,
 }
@@ -91,7 +93,17 @@ pub(crate) fn run_verify_animation_command(args: &[String]) -> Result<CliOutcome
         });
     }
 
-    let samples = samples_from_observations(&observations, 0.0001);
+    let selected_node = args
+        .expected_translations
+        .as_ref()
+        .and_then(|_| selected_observed_node(&observations, 0.0001));
+    let samples = samples_from_observations(
+        &observations,
+        0.0001,
+        args.expected_translations.as_deref(),
+        selected_node,
+        args.expected_tolerance,
+    );
     let report = scena::AnimationIntrospectionReportV1::from_samples(
         clip_summary,
         channel_counts,
@@ -114,6 +126,8 @@ impl VerifyAnimationCommandArgs {
         let mut clip = None;
         let mut times = None;
         let mut expect_change = false;
+        let mut expected_translations = None;
+        let mut expected_tolerance = 0.001;
         let mut width = None;
         let mut height = None;
 
@@ -131,6 +145,21 @@ impl VerifyAnimationCommandArgs {
                 "--expect-change" => {
                     expect_change = true;
                     index += 1;
+                }
+                "--expect-translations" => {
+                    expected_translations = Some(parse_expected_translations(flag_value(
+                        args,
+                        index,
+                        "--expect-translations",
+                    )?)?);
+                    index += 2;
+                }
+                "--expect-tolerance" => {
+                    expected_tolerance = parse_positive_f32(
+                        "--expect-tolerance",
+                        flag_value(args, index, "--expect-tolerance")?,
+                    )?;
+                    index += 2;
                 }
                 "--width" => {
                     width = Some(parse_positive_u32(
@@ -158,14 +187,26 @@ impl VerifyAnimationCommandArgs {
             }
         }
 
+        let times = times
+            .ok_or_else(|| format!("missing --times <seconds>; {}", verify_animation_usage()))?;
+        if let Some(expected) = &expected_translations
+            && expected.len() != times.len()
+        {
+            return Err(format!(
+                "--expect-translations requires one x,y,z triple per sample time (got {} expected values for {} times)",
+                expected.len(),
+                times.len()
+            ));
+        }
+
         Ok(Self {
             input: input.clone(),
             clip: clip
                 .ok_or_else(|| format!("missing --clip <name>; {}", verify_animation_usage()))?,
-            times: times.ok_or_else(|| {
-                format!("missing --times <seconds>; {}", verify_animation_usage())
-            })?,
+            times,
             expect_change,
+            expected_translations,
+            expected_tolerance,
             width,
             height,
         })
@@ -175,6 +216,9 @@ impl VerifyAnimationCommandArgs {
 fn samples_from_observations(
     observations: &[AnimationObservation],
     tolerance: f32,
+    expected_translations: Option<&[scena::Vec3]>,
+    selected_node: Option<u64>,
+    expected_tolerance: f32,
 ) -> Vec<scena::AnimationSampleV1> {
     let baseline = observations.first().map(|observation| {
         observation
@@ -185,7 +229,8 @@ fn samples_from_observations(
     });
     observations
         .iter()
-        .map(|observation| {
+        .enumerate()
+        .map(|(index, observation)| {
             let invalid_node_count = observation
                 .node_transforms
                 .iter()
@@ -212,9 +257,64 @@ fn samples_from_observations(
                 payload_fnv1a64: observation.payload_fnv1a64.clone(),
                 moving_node_count,
                 invalid_node_count,
+                observed_values: observed_values_for_sample(
+                    observation,
+                    selected_node,
+                    expected_translations.and_then(|expected| expected.get(index).copied()),
+                    expected_tolerance,
+                ),
             }
         })
         .collect()
+}
+
+fn selected_observed_node(observations: &[AnimationObservation], tolerance: f32) -> Option<u64> {
+    let baseline = observations.first()?;
+    for (handle, baseline_transform) in &baseline.node_transforms {
+        if observations.iter().skip(1).any(|observation| {
+            observation
+                .node_transforms
+                .iter()
+                .find(|(candidate, _)| candidate == handle)
+                .is_some_and(|(_, transform)| {
+                    scena::transform_differs(*baseline_transform, *transform, tolerance)
+                })
+        }) {
+            return Some(*handle);
+        }
+    }
+    baseline.node_transforms.first().map(|(handle, _)| *handle)
+}
+
+fn observed_values_for_sample(
+    observation: &AnimationObservation,
+    selected_node: Option<u64>,
+    expected_translation: Option<scena::Vec3>,
+    expected_tolerance: f32,
+) -> Vec<scena::AnimationObservedValueV1> {
+    let Some(node) = selected_node else {
+        return Vec::new();
+    };
+    let Some((_, transform)) = observation
+        .node_transforms
+        .iter()
+        .find(|(candidate, _)| *candidate == node)
+    else {
+        return Vec::new();
+    };
+    let within_tolerance = expected_translation.map(|expected| {
+        (transform.translation.x - expected.x).abs() <= expected_tolerance
+            && (transform.translation.y - expected.y).abs() <= expected_tolerance
+            && (transform.translation.z - expected.z).abs() <= expected_tolerance
+    });
+    vec![scena::AnimationObservedValueV1 {
+        id: "selected-transform".to_owned(),
+        node,
+        kind: "transform".to_owned(),
+        transform: *transform,
+        expected_translation,
+        within_tolerance,
+    }]
 }
 
 fn available_clip_names(import: &scena::SceneImport) -> Vec<String> {
@@ -255,12 +355,61 @@ fn parse_times(value: String) -> Result<Vec<f32>, String> {
     Ok(times)
 }
 
+fn parse_expected_translations(value: String) -> Result<Vec<scena::Vec3>, String> {
+    let translations = value
+        .split(';')
+        .filter(|part| !part.trim().is_empty())
+        .map(parse_vec3)
+        .collect::<Result<Vec<_>, _>>()?;
+    if translations.is_empty() {
+        return Err("--expect-translations requires at least one x,y,z triple".to_string());
+    }
+    Ok(translations)
+}
+
+fn parse_vec3(value: &str) -> Result<scena::Vec3, String> {
+    let components = value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            part.parse::<f32>().map_err(|_| {
+                format!("--expect-translations contains non-numeric component '{part}'")
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let [x, y, z]: [f32; 3] = components.try_into().map_err(|components: Vec<f32>| {
+        format!(
+            "--expect-translations entries must have exactly three components, got {} in '{value}'",
+            components.len()
+        )
+    })?;
+    if !x.is_finite() || !y.is_finite() || !z.is_finite() {
+        return Err(format!(
+            "--expect-translations requires finite values, got '{value}'"
+        ));
+    }
+    Ok(scena::Vec3::new(x, y, z))
+}
+
 fn parse_positive_u32(flag: &str, value: String) -> Result<u32, String> {
     let parsed = value
         .parse::<u32>()
         .map_err(|_| format!("{flag} requires an unsigned integer, got '{value}'"))?;
     if parsed == 0 {
         return Err(format!("{flag} requires a positive integer, got 0"));
+    }
+    Ok(parsed)
+}
+
+fn parse_positive_f32(flag: &str, value: String) -> Result<f32, String> {
+    let parsed = value
+        .parse::<f32>()
+        .map_err(|_| format!("{flag} requires a number, got '{value}'"))?;
+    if !parsed.is_finite() || parsed <= 0.0 {
+        return Err(format!(
+            "{flag} requires a finite positive number, got {value}"
+        ));
     }
     Ok(parsed)
 }
@@ -274,6 +423,6 @@ fn round3(value: f32) -> f32 {
 }
 
 fn verify_animation_usage() -> String {
-    "usage: scena verify animation <asset-or-recipe> --clip <name> --times <seconds[,seconds...]> [--expect-change] [--width <px>] [--height <px>]"
+    "usage: scena verify animation <asset-or-recipe> --clip <name> --times <seconds[,seconds...]> [--expect-change] [--expect-translations 'x,y,z;...'] [--expect-tolerance n] [--width <px>] [--height <px>]"
         .to_string()
 }
