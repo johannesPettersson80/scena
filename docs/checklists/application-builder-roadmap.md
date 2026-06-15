@@ -17,27 +17,33 @@ proof artifacts.
 
 ## Non-negotiable design rules
 
-- [ ] Keep the public vocabulary aligned with `Scene`, `Assets`, `Renderer`,
+- [x] Keep the public vocabulary aligned with `Scene`, `Assets`, `Renderer`,
       `SceneImport`, `prepare()`, and `render()`.
-- [ ] Do not add catch-all `Engine`, `World`, `Manager`, or application-domain
+- [x] Do not add catch-all `Engine`, `World`, `Manager`, or application-domain
       owner types.
-- [ ] Do not hide asset fetch, shader compilation, GPU upload, or backend
+- [x] Do not hide asset fetch, shader compilation, GPU upload, or backend
       capability decisions inside `render()`.
-- [ ] Keep browser and native host APIs semantically equivalent. Browser APIs
+- [x] Keep browser and native host APIs semantically equivalent. Browser APIs
       may use JSON and CSS pixels, but they must not invent a separate product
       model.
-- [ ] Use stable host `u64` handles in public wire contracts. Never serialize
+- [x] Use stable host `u64` handles in public wire contracts. Never serialize
       raw `NodeKey`, `CameraKey`, `MaterialHandle`, `GeometryHandle`, or other
       internal slotmap keys in external JSON.
-- [ ] Every public JSON report or command contract uses
+- [x] Every public JSON report or command contract uses
       `scena.<contract>.vN`. Additive v1 fields must use `serde(default)` or
       `Option` as appropriate and keep old-fixture deserialization green.
-- [ ] Browser-visible rendering changes require rendered-output proof. Unit
+- [x] Browser-visible rendering changes require rendered-output proof. Unit
       tests alone cannot close visual work.
-- [ ] Every implementation item below needs a focused red test or a documented
+- [x] Every implementation item below needs a focused red test or a documented
       deterministic-proof exception before production code changes.
-- [ ] Add or extend `xtask doctor` when a new failure family can be detected
+- [x] Add or extend `xtask doctor` when a new failure family can be detected
       mechanically from source, docs, manifests, fixtures, or gate artifacts.
+
+Evidence: final checklist audit compared this roadmap with
+`docs/RFC-rust-3d-renderer.md`; implementation slices below name their owner
+modules, stable `scena.*.vN` contracts, focused red/focused-green proof, and
+browser/rendered-output proof where applicable. The final docs-only closure
+reruns `cargo run -p xtask -- doctor --full` on `scena-builder` before commit.
 
 Feature-gated contract suites must be run explicitly so default `cargo test`
 cannot hide them as zero-test successes:
@@ -52,17 +58,22 @@ cannot hide them as zero-test successes:
 
 ## Explicit non-goals
 
-- [ ] No CAD kernel, parametric sketcher, constraint solver, boolean modeling,
+- [x] No CAD kernel, parametric sketcher, constraint solver, boolean modeling,
       STEP/IGES implementation, or geometry document format.
-- [ ] No physics, rigid-body collision, mesh-clearance solver, machine planning,
+- [x] No physics, rigid-body collision, mesh-clearance solver, machine planning,
       industrial process runtime, closed-loop semantics, or dynamic runtime
       loop.
-- [ ] No gameplay ECS, networking, audio system, asset-management database, or
+- [x] No gameplay ECS, networking, audio system, asset-management database, or
       application business rules.
-- [ ] No undo/redo stack or host document model. Scena may emit reversible
+- [x] No undo/redo stack or host document model. Scena may emit reversible
       visual deltas, but the host owns document history.
-- [ ] No hidden requestAnimationFrame loop for scene state. The host owns
+- [x] No hidden requestAnimationFrame loop for scene state. The host owns
       cadence and calls mutation, time advancement, `prepare()`, and `render()`.
+
+Evidence: the implemented helpers remain visual, diagnostic, interaction, asset,
+and proof surfaces. Recipes are transient snapshots; visual patches and repair
+reports are deltas for the host to apply; animation and presentation timeline
+proofs are host-ticked and do not add a hidden loop or domain runtime.
 
 ## Phase 0 - Host contract foundation
 
@@ -323,47 +334,62 @@ image review.
 
 Governing rules:
 
-- [ ] JSON contracts are the keystone. CLI commands serve those contracts; they
+- [x] JSON contracts are the keystone. CLI commands serve those contracts; they
       do not define a second schema family.
-- [ ] CLI output is stable `scena.*.vN` JSON to stdout plus artifact paths.
+- [x] CLI output is stable `scena.*.vN` JSON to stdout plus artifact paths.
       Human text, if any, goes to stderr.
-- [ ] There is no MCP server in this roadmap. The terminal surface is the CLI
+- [x] There is no MCP server in this roadmap. The terminal surface is the CLI
       plus stable JSON.
-- [ ] No agent-specific render mode. Introspection uses the same
+- [x] No agent-specific render mode. Introspection uses the same
       `prepare()`/`render()`/capture path as human-facing examples and
       applications.
-- [ ] Reports are deterministic and token-small by default: stable field order,
+- [x] Reports are deterministic and token-small by default: stable field order,
       stable item ordering, rounded floats, summary-first shape, and opt-in
       detail for per-node or per-pixel-heavy data.
-- [ ] Contract JSON is byte-stable for the same scene, backend class, options,
+- [x] Contract JSON is byte-stable for the same scene, backend class, options,
       and artifact inputs. Any nondeterministic field must be excluded from the
       stable report or isolated under explicit metadata.
-- [ ] Shell failure is fail-closed. Commands that render but produce an
+- [x] Shell failure is fail-closed. Commands that render but produce an
       unacceptable frame return structured JSON and a non-zero exit status.
-- [ ] Repair loops have an iteration budget. Non-converging cases return a
+- [x] Repair loops have an iteration budget. Non-converging cases return a
       structured irreducible result with confidence, reason, and
       `auto_fixable: false` rather than forcing a visual success.
-- [ ] Recipes are transient scene snapshots, not persisted documents or
+- [x] Recipes are transient scene snapshots, not persisted documents or
       workflow scripts. No sequences, loops, branching, or hidden time
       ownership.
-- [ ] Placement verbs compute one-shot transforms from authored features such
+- [x] Placement verbs compute one-shot transforms from authored features such
       as anchors, connectors, bounds, or authored planes. They do not infer mesh
       features, solve constraints, compute clearance, or introduce physics.
 
+Evidence: A.1 through A.11 landed as stable `scena.*.vN` JSON contracts served
+by `scena render`, `inspect`, `diagnose`, `validate-recipe`, `place`, `repair`,
+`verify appearance`, `verify animation`, `verify interaction`, `schema`, and
+`examples agent`; stdout golden fixtures pin the shell surface. The CLI tests
+assert JSON to stdout, empty stderr on machine-readable success/failure, exit
+code `1` for failed visual/diagnostic assertions, and exit code `2` for usage
+or validation errors.
+
 Minimum loops:
 
-- [ ] Construction loop: emit `scene_recipe.v1` or `visual_patch.v1`, validate,
+- [x] Construction loop: emit `scene_recipe.v1` or `visual_patch.v1`, validate,
       render with introspection, diagnose visibility on failure, apply a
       reported fix within budget, rerender, and stop only on `ok=true` or an
       irreducible result.
-- [ ] Appearance loop: for material, variant, status-color, or data-color work,
+- [x] Appearance loop: for material, variant, status-color, or data-color work,
       assert the rendered node/material appearance against intended values, not
       only that pixels changed.
-- [ ] Temporal loop: for animation, transitions, or live-state playback, sample
+- [x] Temporal loop: for animation, transitions, or live-state playback, sample
       requested times and assert channel values, visible changes, and no frozen
       or NaN channel.
-- [ ] Interaction loop: inject synthetic pointer or keyboard input, then assert
+- [x] Interaction loop: inject synthetic pointer or keyboard input, then assert
       expected pick/hover/selection events and rendered feedback.
+
+Evidence: `tests/scena_cli_agent_templates.rs` runs the ready agent smoke
+templates end-to-end through their CLI commands; `tests/scena_cli_agent.rs`
+covers render/diagnose/repair/appearance/animation JSON success and
+fail-closed paths; `tests/scena_cli_interaction.rs` and
+`tests/browser/scene_host_browser_proof.js` cover synthetic interaction on
+native and browser SceneHost surfaces.
 
 ### A.1 Render introspection contract
 
@@ -2310,30 +2336,85 @@ Evidence:
 These examples are not optional demos. Each phase above should add or update at
 least one example that proves the APIs compose into an application workflow.
 
-- [ ] CAD inspection viewer: part tree, picking, fit selection, section box,
+- [x] CAD inspection viewer: part tree, picking, fit selection, section box,
       measurements, annotations, isolate/ghost.
-- [ ] Industrial dashboard viewer: visual patch stream, event stream,
+      Evidence: `examples/cad_inspection_viewer.rs` covers show-only,
+      isolate/ghost, selected-node framing, helper overlays, and measurement
+      overlays; Phase 2 section-box, callout, annotation-layout, and browser
+      inspection proof are recorded in the Phase 2 evidence above.
+- [x] Industrial dashboard viewer: visual patch stream, event stream,
       diagnostics, labels, stable capture.
-- [ ] Product configurator: variants, option groups, camera bookmarks, PNG
+      Evidence: `examples/industrial_static_scene.rs` proves the industrial
+      profile and labels visually, while `examples/scene_host_contracts.rs`
+      exercises the dashboard host loop: visual patch application, labels,
+      diagnostics/capabilities/inspection reports, host events, render, and
+      stable capture JSON.
+- [x] Product configurator: variants, option groups, camera bookmarks, PNG
       export, appearance assertions, glass/grounding when available.
-- [ ] Live-state playback viewer: host-ticked visual patches,
+      Evidence: `examples/product_configurator.rs` stores
+      `scena.product_options.v1` and applies variants, tints, visibility, and
+      camera through `VisualPatchV1`; `scena examples agent
+      product-configurator` runs render introspection plus
+      `verify appearance`; product grounding and transmission evidence are
+      recorded under Phase 4.
+- [x] Live-state playback viewer: host-ticked visual patches,
       animation time, temporal assertions, stable proof captures, no domain
       logic in Scena.
-- [ ] Headless documentation renderer: deterministic views, callouts,
+      Evidence: `scena examples agent live-state-viewer` validates and renders
+      a host-authored recipe through the CLI; SceneHost visual patches,
+      animation time, and host-ticked timeline/animation assertions are covered
+      by A.9 and Phase 3.6 without adding domain runtime logic.
+- [x] Headless documentation renderer: deterministic views, callouts,
       contact sheets, baseline comparison.
-- [ ] Agent render loop template: recipe, render introspection, visibility
+      Evidence: `examples/headless_documentation_renderer.rs` writes a
+      deterministic PNG plus `scena.capture.v1` descriptor with callouts and
+      leader lines; capture proof/baseline utilities and contact-sheet style
+      artifacts are covered by Phase 0.3 and the rendered proof harness.
+- [x] Agent render loop template: recipe, render introspection, visibility
       diagnosis, suggested fix, and rerender from CLI JSON.
-- [ ] Data visualization viewer: color-ramp assertions, labels, camera
+      Evidence: `scena examples agent product-configurator`,
+      `live-state-viewer`, `web-viewer`, `data-visualization`,
+      `animated-viewer`, and `interaction-proof` generate CLI-only recipes,
+      expectations, command manifests, artifacts, and `ok=true` reports; A.2
+      and A.7 provide the diagnosis/repair reports and non-converging
+      fail-closed shape.
+- [x] Data visualization viewer: color-ramp assertions, labels, camera
       bookmarks, and capture proof.
-- [ ] Animated viewer: clip inventory, temporal introspection, sampled captures,
+      Evidence: `scena examples agent data-visualization` provides the
+      CLI-rendered smoke recipe; A.8 proves generated data-color ramp swatches
+      by target `node_bbox` without a golden image; labels, camera bookmarks,
+      and capture proof are covered by Phase 2.7 and Phase 1.1/0.3.
+- [x] Animated viewer: clip inventory, temporal introspection, sampled captures,
       and final-state proof.
-- [ ] Interaction proof viewer: synthetic pick, hover, selection, and rendered
+      Evidence: `scena examples agent animated-viewer` emits an animated glTF
+      recipe and `verify animation` command over sampled times; A.9 records
+      clip inventory, sampled transform assertions, captured frames, frozen
+      channel detection, and fail-closed wrong-translation fixtures.
+- [x] Interaction proof viewer: synthetic pick, hover, selection, and rendered
       feedback assertions.
-- [ ] `<scena-viewer>` browser app: picking, annotations, variants, capture,
+      Evidence: `scena examples agent interaction-proof` runs synthetic hover
+      and selection assertions from CLI JSON; `examples/picking_selection_hover.rs`
+      plus `tests/examples_visual_proof.rs` render the hover/selection feedback
+      path to a proof artifact; the browser SceneHost proof asserts matching
+      stable handles in browser events.
+- [x] `<scena-viewer>` browser app: picking, annotations, variants, capture,
       drag/drop, diagnostics.
-- [ ] Guided tour: bookmarks, callouts, exploded view, presentation timeline.
-- [ ] SceneHost host-loop template: native and browser versions showing
+      Evidence: Phase 4.5 records the `<scena-viewer>` browser proof for
+      host-event dispatch, picking, hover, selection, capture/download,
+      material variants, annotations, drag/drop render-after-drop, diagnostics,
+      model-viewer parity, and mobile/a11y proof.
+- [x] Guided tour: bookmarks, callouts, exploded view, presentation timeline.
+      Evidence: `examples/guided_exploded_view.rs` writes assembled, exploded,
+      and restored frames; Phase 1.1 records camera bookmark/fly-to proof;
+      Phase 2.7 records callout/leader-line proof; Phase 3.6 records
+      host-ticked presentation timeline seek/advance and browser proof.
+- [x] SceneHost host-loop template: native and browser versions showing
       mutation, prepare, render, event drain, and capture.
+      Evidence: `examples/scene_host_contracts.rs` covers the native
+      SceneHost loop and JSON contracts; `examples/scene_host_browser_contracts.js`
+      and `tests/browser/scene_host_browser_proof.js` cover the browser loop,
+      including visual patches, prepare/render, synthetic interaction, event
+      drain, and capture-ready events.
 
 ## Phase ordering
 
@@ -2382,15 +2463,27 @@ and annotation contracts from earlier phases.
 
 ## Definition of done for each item
 
-- [ ] Scope guard reviewed against `docs/RFC-rust-3d-renderer.md`.
-- [ ] Owner module named.
-- [ ] Public API or schema sketched before implementation.
-- [ ] Test-first proof or deterministic-proof exception recorded.
-- [ ] Native Rust tests pass.
-- [ ] WASM build proof exists for browser-exposed APIs.
-- [ ] Browser rendered-output proof exists for browser-visible visuals.
-- [ ] Stable fixture exists for public JSON contracts.
-- [ ] Docs and examples updated.
-- [ ] Doctor rule added when source/docs/artifact drift is mechanically
+- [x] Scope guard reviewed against `docs/RFC-rust-3d-renderer.md`.
+- [x] Owner module named.
+- [x] Public API or schema sketched before implementation.
+- [x] Test-first proof or deterministic-proof exception recorded.
+- [x] Native Rust tests pass.
+- [x] WASM build proof exists for browser-exposed APIs.
+- [x] Browser rendered-output proof exists for browser-visible visuals.
+- [x] Stable fixture exists for public JSON contracts.
+- [x] Docs and examples updated.
+- [x] Doctor rule added when source/docs/artifact drift is mechanically
       detectable.
-- [ ] Release notes/changelog updated only when the implementation lands.
+- [x] Release notes/changelog updated only when the implementation lands.
+
+Evidence: each implementation section names its owner modules, proposed
+contracts, and focused proof. Public JSON contracts have stable fixtures under
+`tests/assets/stable-contracts/` or CLI golden fixtures under
+`tests/assets/cli-golden/`; schema catalog drift is enforced by doctor.
+Browser-exposed APIs cite wasm/browser proof artifacts in their sections, while
+non-browser or docs-only entries record deterministic-proof exceptions. The
+final closure gate reruns `cargo run -p xtask -- doctor --full` on
+`scena-builder`; code-bearing slices above record their focused and broad
+native Rust gates. `CHANGELOG.md`, `docs/schema-contracts.md`,
+`docs/api.md`, `docs/examples.md`, and this checklist carry the public surface
+updates without adding release-note entries for docs-only evidence changes.
