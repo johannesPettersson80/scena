@@ -23,6 +23,7 @@ const ARTIFACT_PATH = path.join(ARTIFACT_DIR, "scene-host-browser-proof.json");
 const PKG_DIR = path.join(process.cwd(), "target", "scene-host-browser-pkg");
 const REQUIRED_BINDINGS = [
   ["static", "newWebgl2"],
+  ["prototype", "resize"],
   ["prototype", "addEmpty"],
   ["prototype", "setTransform"],
   ["prototype", "removeNode"],
@@ -74,7 +75,11 @@ const REQUIRED_BINDINGS = [
   ["prototype", "inspectJson"],
   ["prototype", "annotationProjectionsJson"],
   ["prototype", "capture"],
+  ["prototype", "capturePng"],
   ["prototype", "pick"],
+  ["prototype", "hover"],
+  ["prototype", "select"],
+  ["prototype", "drainEventsJson"],
   ["prototype", "setCamera"],
   ["prototype", "frameNodeProductView"],
   ["prototype", "setCameraEased"],
@@ -619,6 +624,7 @@ async function runPageProof(page) {
         viewport.devicePixelRatio,
       );
       window.__scenaSceneHostProofHost = host;
+      host.resize(viewport.width, viewport.height, viewport.devicePixelRatio);
       const rootHandle = host.rootHandle();
       const leftFrameHandle = host.addEmpty(
         rootHandle,
@@ -781,6 +787,102 @@ async function runPageProof(page) {
       host.frameAll();
 
       const framedCamera = JSON.parse(host.getCameraJson());
+      const phase0BeforeInspection = JSON.parse(host.inspectJson());
+      const phase0BeforeLeftMesh = nodeByHandle(phase0BeforeInspection, leftMesh);
+      const phase0BeforeRightFrame = nodeByHandle(phase0BeforeInspection, rightFrame);
+      const phase0BeforePrepare = timedPrepare("phase0_visual_patch_baseline");
+      const phase0BeforeRender = JSON.parse(host.render());
+      await waitForCanvasPresent();
+      const phase0BeforeCapture = captureSummary(host.capture());
+      const phase0TargetTransform = {
+        translation: [
+          phase0BeforeLeftMesh.local_transform.translation[0] - 0.12,
+          phase0BeforeLeftMesh.local_transform.translation[1] + 0.08,
+          phase0BeforeLeftMesh.local_transform.translation[2],
+        ],
+        rotation: phase0BeforeLeftMesh.local_transform.rotation,
+        scale: [
+          phase0BeforeLeftMesh.local_transform.scale[0] * 1.08,
+          phase0BeforeLeftMesh.local_transform.scale[1],
+          phase0BeforeLeftMesh.local_transform.scale[2],
+        ],
+      };
+      const phase0TargetTint = { r: 0.15, g: 0.85, b: 0.25, a: 1.0 };
+      const phase0TargetCamera = {
+        target: [framedCamera.target[0] + 0.03, framedCamera.target[1], framedCamera.target[2]],
+        distance: framedCamera.distance * 1.04,
+        yaw_radians: framedCamera.yaw_radians + 0.12,
+        pitch_radians: framedCamera.pitch_radians,
+      };
+      const phase0PatchResult = JSON.parse(
+        host.applyPatch(
+          JSON.stringify({
+            schema: "scena.visual_patch.v1",
+            transforms: [
+              {
+                node: leftMesh,
+                transform: phase0TargetTransform,
+              },
+            ],
+            tints: [
+              {
+                node: leftMesh,
+                tint: phase0TargetTint,
+              },
+            ],
+            visibility: [
+              {
+                node: rightFrame,
+                visible: false,
+              },
+            ],
+            camera: phase0TargetCamera,
+          }),
+        ),
+      );
+      const phase0AfterInspection = JSON.parse(host.inspectJson());
+      const phase0AfterCamera = JSON.parse(host.getCameraJson());
+      const phase0AfterPrepare = timedPrepare("phase0_visual_patch_after");
+      const phase0AfterRender = JSON.parse(host.render());
+      await waitForCanvasPresent();
+      const phase0AfterCapture = captureSummary(host.capture());
+      const phase0CapturePng = host.capturePng();
+      const phase0CapturePngDescriptor = JSON.parse(phase0CapturePng.descriptorJson);
+      const phase0CapturePngBytes = phase0CapturePng.png;
+      const phase0CapturePngHeader = Array.from(phase0CapturePngBytes.slice(0, 8));
+      const phase0RestoreResult = JSON.parse(
+        host.applyPatch(
+          JSON.stringify({
+            schema: "scena.visual_patch.v1",
+            transforms: [
+              {
+                node: leftMesh,
+                transform: phase0BeforeLeftMesh.local_transform,
+              },
+            ],
+            tints: [
+              {
+                node: leftMesh,
+                tint: phase0BeforeLeftMesh.tint || null,
+              },
+            ],
+            visibility: [
+              {
+                node: rightFrame,
+                visible: phase0BeforeRightFrame.visible,
+              },
+            ],
+            camera: framedCamera,
+          }),
+        ),
+      );
+      const phase0RestorePrepare = timedPrepare("phase0_visual_patch_restore");
+      const phase0RestoreRender = JSON.parse(host.render());
+      await waitForCanvasPresent();
+      const phase0RestoreInspection = JSON.parse(host.inspectJson());
+      const phase0RestoreCamera = JSON.parse(host.getCameraJson());
+      const phase0InfrastructureEvents = JSON.parse(host.drainEventsJson());
+
       const measurementPrepare = timedPrepare("measurement_distance_overlay");
       const measurementRender = JSON.parse(host.render());
       await waitForCanvasPresent();
@@ -926,6 +1028,25 @@ async function runPageProof(page) {
       const trackedAnnotation = annotationProjectionsJson.annotations.find(
         (annotation) => annotation.id === "tracked-node",
       );
+      let phase0EventPick = null;
+      let phase0EventHover = null;
+      let phase0EventSelect = null;
+      if (trackedAnnotation && trackedAnnotation.visible) {
+        host.applyPatch(
+          JSON.stringify({
+            schema: "scena.visual_patch.v1",
+            selection: { node: null },
+          }),
+        );
+        phase0EventPick = optionalHandleNumber(host.pick(trackedAnnotation.x, trackedAnnotation.y));
+        phase0EventHover = optionalHandleNumber(
+          host.hover(trackedAnnotation.x, trackedAnnotation.y),
+        );
+        phase0EventSelect = optionalHandleNumber(
+          host.select(trackedAnnotation.x, trackedAnnotation.y),
+        );
+      }
+      const phase0InteractionEvents = JSON.parse(host.drainEventsJson());
       const pick = (() => {
         const candidates = [];
         if (trackedAnnotation && trackedAnnotation.visible) {
@@ -1256,6 +1377,39 @@ async function runPageProof(page) {
           phase5_import: phase5Import,
           phase5_triangle: phase5Triangle,
         },
+        phase0_visual_patch: {
+          before_inspection: phase0BeforeInspection,
+          after_inspection: phase0AfterInspection,
+          restore_inspection: phase0RestoreInspection,
+          before_camera: framedCamera,
+          target_transform: phase0TargetTransform,
+          target_tint: phase0TargetTint,
+          target_camera: phase0TargetCamera,
+          after_camera: phase0AfterCamera,
+          restore_camera: phase0RestoreCamera,
+          result: phase0PatchResult,
+          restore_result: phase0RestoreResult,
+          before_prepare: phase0BeforePrepare,
+          after_prepare: phase0AfterPrepare,
+          restore_prepare: phase0RestorePrepare,
+          before_render: phase0BeforeRender,
+          after_render: phase0AfterRender,
+          restore_render: phase0RestoreRender,
+          before_capture: phase0BeforeCapture,
+          after_capture: phase0AfterCapture,
+        },
+        phase0_events: {
+          infrastructure: phase0InfrastructureEvents,
+          interaction: phase0InteractionEvents,
+          pick_result: phase0EventPick,
+          hover_result: phase0EventHover,
+          select_result: phase0EventSelect,
+        },
+        capture_png: {
+          descriptor: phase0CapturePngDescriptor,
+          png_byte_length: phase0CapturePngBytes.length,
+          png_header: phase0CapturePngHeader,
+        },
         phase3_grid_inspection: afterGridInspection,
         transform_batch: transformBatch,
         typed_transform_batch: {
@@ -1513,6 +1667,148 @@ function assertProof(pageProof, screenshot) {
     pageProof.capture.rgba8_fnv1a64 === pageProof.capture.descriptor.pixels.fnv1a64,
     pageProof.capture,
   );
+  const phase0 = pageProof.phase0_visual_patch;
+  const phase0AfterLeft = nodeByHandle(phase0.after_inspection, pageProof.handles.left_mesh);
+  const phase0AfterRightFrame = nodeByHandle(
+    phase0.after_inspection,
+    pageProof.handles.right_frame,
+  );
+  const phase0BeforeLeft = nodeByHandle(phase0.before_inspection, pageProof.handles.left_mesh);
+  const phase0BeforeRightFrame = nodeByHandle(
+    phase0.before_inspection,
+    pageProof.handles.right_frame,
+  );
+  const phase0RestoreLeft = nodeByHandle(
+    phase0.restore_inspection,
+    pageProof.handles.left_mesh,
+  );
+  const phase0RestoreRightFrame = nodeByHandle(
+    phase0.restore_inspection,
+    pageProof.handles.right_frame,
+  );
+  check(
+    "phase0_visual_patch_applies_all_0_1a_channels",
+    phase0.result.applied.transforms === 1 &&
+      phase0.result.applied.tints === 1 &&
+      phase0.result.applied.visibility === 1 &&
+      phase0.result.applied.camera === 1 &&
+      Array.isArray(phase0.result.failed) &&
+      phase0.result.failed.length === 0,
+    phase0.result,
+  );
+  check(
+    "phase0_visual_patch_transform_is_inspectable",
+    phase0AfterLeft &&
+      transformsApproximatelyEqual(phase0AfterLeft.local_transform, phase0.target_transform),
+    {
+      after: phase0AfterLeft && phase0AfterLeft.local_transform,
+      target: phase0.target_transform,
+    },
+  );
+  check(
+    "phase0_visual_patch_tint_is_inspectable",
+    phase0AfterLeft &&
+      phase0AfterLeft.tint &&
+      arraysApproximatelyEqual(
+        [
+          phase0AfterLeft.tint.r,
+          phase0AfterLeft.tint.g,
+          phase0AfterLeft.tint.b,
+          phase0AfterLeft.tint.a,
+        ],
+        [
+          phase0.target_tint.r,
+          phase0.target_tint.g,
+          phase0.target_tint.b,
+          phase0.target_tint.a,
+        ],
+      ),
+    {
+      after: phase0AfterLeft && phase0AfterLeft.tint,
+      target: phase0.target_tint,
+    },
+  );
+  check(
+    "phase0_visual_patch_visibility_is_inspectable",
+    phase0AfterRightFrame && phase0AfterRightFrame.visible === false,
+    phase0AfterRightFrame,
+  );
+  check(
+    "phase0_visual_patch_camera_is_inspectable",
+    cameraStatesApproximatelyEqual(phase0.after_camera, phase0.target_camera),
+    { after: phase0.after_camera, target: phase0.target_camera },
+  );
+  check(
+    "phase0_visual_patch_changes_browser_pixels",
+    phase0.after_capture.descriptor.pixels.nonblack > 0 &&
+      phase0.before_capture.rgba8_fnv1a64 !== phase0.after_capture.rgba8_fnv1a64,
+    {
+      before: phase0.before_capture.rgba8_fnv1a64,
+      after: phase0.after_capture.rgba8_fnv1a64,
+      pixels: phase0.after_capture.descriptor.pixels,
+    },
+  );
+  check(
+    "phase0_visual_patch_restore_returns_to_inspectable_state",
+    phase0.restore_result.applied.transforms === 1 &&
+      phase0.restore_result.applied.tints === 1 &&
+      phase0.restore_result.applied.visibility === 1 &&
+      phase0.restore_result.applied.camera === 1 &&
+      phase0BeforeLeft &&
+      phase0RestoreLeft &&
+      transformsApproximatelyEqual(
+        phase0RestoreLeft.local_transform,
+        phase0BeforeLeft.local_transform,
+      ) &&
+      phase0BeforeRightFrame &&
+      phase0RestoreRightFrame &&
+      phase0RestoreRightFrame.visible === phase0BeforeRightFrame.visible &&
+      cameraStatesApproximatelyEqual(phase0.restore_camera, phase0.before_camera),
+    {
+      restore_result: phase0.restore_result,
+      before_left: phase0BeforeLeft,
+      restore_left: phase0RestoreLeft,
+      before_right_frame: phase0BeforeRightFrame,
+      restore_right_frame: phase0RestoreRightFrame,
+      restore_camera: phase0.restore_camera,
+      before_camera: phase0.before_camera,
+    },
+  );
+  const capturePng = pageProof.capture_png;
+  check(
+    "capture_png_browser_bytes_and_descriptor_are_not_canvas_data_url",
+    capturePng.descriptor.schema === "scena.capture.v1" &&
+      capturePng.png_byte_length > 8 &&
+      JSON.stringify(capturePng.png_header) ===
+        JSON.stringify([137, 80, 78, 71, 13, 10, 26, 10]) &&
+      capturePng.descriptor.width === phase0.after_capture.descriptor.width &&
+      capturePng.descriptor.height === phase0.after_capture.descriptor.height,
+    { capture_png: capturePng, paired_capture: phase0.after_capture },
+  );
+  const phase0EventKinds = [
+    ...pageProof.phase0_events.infrastructure.events.map((event) => event.kind),
+    ...pageProof.phase0_events.interaction.events.map((event) => event.kind),
+  ];
+  for (const kind of [
+    "surface_resized",
+    "load_progress",
+    "asset_loaded",
+    "diagnostic",
+    "capture_ready",
+    "pick",
+    "hover",
+    "selection_changed",
+  ]) {
+    check(
+      `phase0_browser_event_${kind}_shape`,
+      phase0EventKinds.includes(kind),
+      {
+        kind,
+        infrastructure: pageProof.phase0_events.infrastructure.events,
+        interaction: pageProof.phase0_events.interaction.events,
+      },
+    );
+  }
   const flyTo = pageProof.camera.fly_to;
   check(
     "camera_fly_to_halfway_capture_nonblank",
@@ -2276,6 +2572,9 @@ async function main() {
     assets: pageProof.assets,
     wasm_bindings: pageProof.wasm_bindings,
     handles: pageProof.handles,
+    phase0_visual_patch: pageProof.phase0_visual_patch,
+    phase0_events: pageProof.phase0_events,
+    capture_png: pageProof.capture_png,
     transform_batch: pageProof.transform_batch,
     typed_transform_batch: pageProof.typed_transform_batch,
     visibility_probe: pageProof.visibility_probe,

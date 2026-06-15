@@ -169,7 +169,7 @@ Acceptance:
       fixtures and reports structured per-entry errors when present with
       invalid handles or values.
 - [x] WASM build test: `applyPatch` compiles with `scene-host`.
-- [ ] Browser proof: patch-driven transform/tint/visibility/camera changes are
+- [x] Browser proof: patch-driven transform/tint/visibility/camera changes are
       visible and inspectable for `0.1A`; additive-channel browser proof lands
       with the slice that introduces each channel.
 - [x] Stable fixture:
@@ -240,8 +240,10 @@ Acceptance:
 - [x] Event batches are drainable without requiring a hidden render loop.
 - [x] Stable fixture:
       `tests/assets/stable-contracts/host_event.v1.json`.
-- [ ] Browser proof asserts pick, hover, load progress, diagnostic, and context
-      event shapes.
+- [x] Browser proof asserts pick, hover, selection, load progress, asset-loaded,
+      diagnostic, capture-ready, and surface-resized event shapes.
+- [ ] Browser proof asserts context-lost/restored event shapes from a real
+      browser signal.
 
 ### 0.3 Capture and proof kit
 
@@ -271,7 +273,7 @@ Acceptance:
       `CaptureDescriptor`.
 - [x] Existing viewer PNG APIs delegate to the shared implementation.
 - [x] `scena.capture.v1` remains the metadata source of truth.
-- [ ] Browser proof captures PNG and descriptor metadata without relying on
+- [x] Browser proof captures PNG and descriptor metadata without relying on
       canvas `toDataURL` as the only path.
 - [x] Example: headless documentation renderer writes PNG plus metadata.
 
