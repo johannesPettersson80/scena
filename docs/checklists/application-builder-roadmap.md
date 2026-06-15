@@ -1752,20 +1752,37 @@ Foothold: material variants, visibility, tint, camera bookmarks, visual patch.
 
 Required behavior:
 
-- [ ] Option group model over visual changes only.
-- [ ] Apply option as `VisualPatch`.
-- [ ] Report active visual options.
-- [ ] Example config can combine variant, tint, visibility, and camera state.
+- [x] Option group model over visual changes only.
+      Evidence: `ProductOptionsV1`, `ProductOptionGroupV1`, and
+      `ProductOptionV1` store host-authored groups whose options contain
+      `VisualPatchV1` and opaque metadata only.
+- [x] Apply option as `VisualPatch`.
+      Evidence: `SceneHostCore::apply_product_option` delegates to
+      `apply_patch`; the active option updates only when
+      `VisualPatchResultV1.failed` is empty.
+- [x] Report active visual options.
+      Evidence: `SceneHostCore::product_options_json()` returns
+      `scena.product_options.v1` with per-group `active` option ids.
+- [x] Example config can combine variant, tint, visibility, and camera state.
+      Evidence: `examples/product_configurator.rs` applies a material variant,
+      tint, camera state, and visibility option through stored product options.
 
 Scope guard:
 
-- [ ] No pricing, compatibility business rules, inventory, persistence, or
+- [x] No pricing, compatibility business rules, inventory, persistence, or
       domain-specific configuration logic.
+      Evidence: product options store only ids, labels, opaque metadata, and
+      `VisualPatchV1`; Scena never interprets host business rules.
 
 Acceptance:
 
-- [ ] Example: product configurator with material and visibility options.
-- [ ] Stable JSON example for option groups if public.
+- [x] Example: product configurator with material and visibility options.
+      Evidence: `cargo run --example product_configurator --features
+      scene-host`.
+- [x] Stable JSON example for option groups if public.
+      Evidence: `tests/assets/stable-contracts/product_options.v1.json` and
+      `cargo test --test product_configurator_helpers --features scene-host
+      -- --nocapture`.
 
 ### 3.6 Presentation timeline
 

@@ -163,6 +163,10 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
             "scena.connector_browser.v1",
         ),
         (
+            "tests/assets/stable-contracts/product_options.v1.json",
+            "scena.product_options.v1",
+        ),
+        (
             "tests/assets/stable-contracts/scene_recipe.v1.json",
             "scena.scene_recipe.v1",
         ),
@@ -384,6 +388,14 @@ fn interaction_verification_golden_matches_live_schema_serialization() {
 fn connector_browser_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::ConnectorBrowserReportV1>(
         "tests/assets/stable-contracts/connector_browser.v1.json",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn product_options_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::ProductOptionsV1>(
+        "tests/assets/stable-contracts/product_options.v1.json",
     );
 }
 

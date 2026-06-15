@@ -207,6 +207,13 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/connector_browser.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.product_options.v1",
+            owner_module: "scene_host",
+            summary: "Host-owned visual product option groups that apply VisualPatch entries.",
+            feature_flag: Some("scene-host"),
+            fixture_path: Some("tests/assets/stable-contracts/product_options.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.scene_recipe.v1",
             owner_module: "scene",
             summary: "Declarative, transient scene snapshot consumed by agent and CLI workflows.",

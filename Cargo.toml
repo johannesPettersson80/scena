@@ -58,6 +58,11 @@ name = "asset_catalog_picker"
 path = "examples/asset_catalog_picker.rs"
 required-features = ["scene-host"]
 
+[[example]]
+name = "product_configurator"
+path = "examples/product_configurator.rs"
+required-features = ["scene-host"]
+
 [dependencies]
 base64 = "0.22"
 bytemuck = { version = "1", features = ["derive"] }

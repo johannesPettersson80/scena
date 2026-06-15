@@ -5,6 +5,7 @@ use super::events::{HostEventQueue, HostEventV1};
 use super::handles::HandleTable;
 use super::inputs::validate_transform;
 use super::instances::{HostInstanceBinding, INSTANCE_HANDLE_GENERATION_BASE};
+use super::product_options::ProductOptionsV1;
 use super::reporting::{diagnostics_json, stats_json};
 use super::transitions::HostTransitions;
 use super::visual_states::SceneHostVisualStateV1;
@@ -38,6 +39,7 @@ pub struct SceneHostCore<F = DefaultAssetFetcher> {
     pub(super) instance_handle_map: BTreeMap<(NodeKey, InstanceId), u64>,
     pub(super) section_box_helper: Option<u64>,
     pub(super) visual_states: BTreeMap<String, SceneHostVisualStateV1>,
+    pub(super) product_options: ProductOptionsV1,
     next_byte_asset: u64,
 }
 
@@ -92,6 +94,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             instance_handle_map: BTreeMap::new(),
             section_box_helper: None,
             visual_states: BTreeMap::new(),
+            product_options: ProductOptionsV1::empty(),
             next_byte_asset: 1,
         };
         let root = host.scene.root();

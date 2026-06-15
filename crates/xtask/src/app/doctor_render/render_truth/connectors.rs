@@ -231,6 +231,56 @@ pub(crate) fn check_renderer_truth_connector_contracts(root: &Path, findings: &m
         root,
         findings,
         "ARCH-RENDER-TRUTH",
+        "src/scene_host/product_options.rs",
+        &[
+            "PRODUCT_OPTIONS_SCHEMA_V1",
+            "ProductOptionsV1",
+            "store_product_options",
+            "apply_product_option",
+            "self.apply_patch(&patch)",
+            "result.failed.is_empty()",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "tests/product_configurator_helpers.rs",
+        &[
+            "product_options_apply_visual_patches_and_report_active_choices",
+            "product_options_fail_closed_for_unknown_groups_options_and_bad_patches",
+            "product_options_golden_fixture_matches_live_schema_serialization",
+            "tests/assets/stable-contracts/product_options.v1.json",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "examples/product_configurator.rs",
+        &[
+            "store_product_options",
+            "apply_product_option_json",
+            "product_options_json",
+            "VisualPatchV1",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "docs/checklists/application-builder-roadmap.md",
+        &[
+            "Product configurator helpers",
+            "scena.product_options.v1",
+            "cargo run --example product_configurator --features",
+            "cargo test --test product_configurator_helpers --features scene-host",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
         "src/assets/gltf/transform.rs",
         &["basis_rotation", "forward", "up", "Quat::from_mat3"],
     );

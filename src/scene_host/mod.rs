@@ -20,6 +20,7 @@ mod material_variants;
 mod measurements;
 mod post;
 mod product;
+mod product_options;
 mod reporting;
 mod section_box;
 mod subtree;
@@ -82,6 +83,9 @@ pub use interaction_verification::{
 pub use measurements::{
     SCENE_HOST_MEASUREMENT_OVERLAY_SCHEMA_V1, SceneHostMeasurementLabelProjectionV1,
     SceneHostMeasurementOverlayReportV1,
+};
+pub use product_options::{
+    PRODUCT_OPTIONS_SCHEMA_V1, ProductOptionGroupV1, ProductOptionV1, ProductOptionsV1,
 };
 pub use reporting::{
     SCENE_HOST_ANIMATION_INVENTORY_SCHEMA_V1, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1,

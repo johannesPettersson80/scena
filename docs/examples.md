@@ -135,6 +135,15 @@ connection:
 cargo run --example assembly_connector_browser --features scene-host
 ```
 
+Use `product_configurator.rs` when a host wants visual-only option groups over
+material variants, tints, visibility, and camera state. The example stores
+`scena.product_options.v1`, applies options through `VisualPatchV1`, and prints
+active option JSON:
+
+```bash
+cargo run --example product_configurator --features scene-host
+```
+
 Golden JSON fixtures for these contracts live in
 `tests/assets/stable-contracts/` and are checked by `tests/stable_contracts.rs`
 plus `xtask doctor --full`. Intentional contract-shape changes must update the

@@ -68,6 +68,10 @@ All notable user-facing changes are recorded here.
   host-backed inspection JSON now include declared variant names plus the
   active variant, and duplicate source variant names fail closed instead of
   selecting by declaration order.
+- Added `scena.product_options.v1` SceneHost product option groups for
+  visual-only configurator choices that apply `VisualPatchV1` entries and
+  report active options without pricing, compatibility, inventory, or document
+  ownership semantics.
 - Added deterministic generated catalog previews with
   `render_asset_catalog_preview_png()`, `AssetCatalogPreviewPng`,
   `AssetCatalogPreviewError`, viewer-builder background color support, and the

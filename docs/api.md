@@ -89,6 +89,13 @@ Additive public API changes in Unreleased:
   `SceneHostCore::connector_browser_json`,
   `SceneHostCore::connector_browser_subtree_json`, and
   `SceneHostCore::connector_browser_selection_json`
+- `PRODUCT_OPTIONS_SCHEMA_V1`, `ProductOptionsV1`,
+  `ProductOptionGroupV1`, `ProductOptionV1`,
+  `SceneHostCore::store_product_options`,
+  `SceneHostCore::store_product_options_json`,
+  `SceneHostCore::product_options`, `SceneHostCore::product_options_json`,
+  `SceneHostCore::apply_product_option`, and
+  `SceneHostCore::apply_product_option_json` (gated behind `scene-host`)
 - `render_asset_catalog_preview_png`, `AssetCatalogPreviewPng`,
   `AssetCatalogPreviewError`,
   `HeadlessGltfViewerBuilder::with_background_color`, and

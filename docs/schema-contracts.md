@@ -1074,6 +1074,31 @@ metadata or solver rejection increments `invalid_count`.
 The stable fixture lives at
 `tests/assets/stable-contracts/connector_browser.v1.json`.
 
+### `scena.product_options.v1`
+
+Produced and consumed by `SceneHostCore::store_product_options`,
+`SceneHostCore::store_product_options_json`, `SceneHostCore::product_options`,
+`SceneHostCore::product_options_json`, `SceneHostCore::apply_product_option`,
+and `SceneHostCore::apply_product_option_json`. The contract is a
+host-authored option-group model over visual changes only: every option owns a
+`VisualPatchV1`, and applying an option delegates to the normal visual patch
+path.
+
+Each group has a stable `id`, display `label`, optional `active` option id, and
+ordered `options`. Each option has a stable `id`, display `label`,
+`patch`, and optional opaque `metadata`. Group and option ids must be
+non-empty, contain no control characters, and be unique within their scope.
+Stored active ids must reference an option in the same group.
+
+Applying an option returns `VisualPatchResultV1`. The group becomes active only
+when that result has an empty `failed[]` array; per-entry visual patch failures
+are reported without updating the active option. Scena does not interpret
+pricing, compatibility, inventory, persistence, or host document semantics in
+this contract.
+
+The stable fixture lives at
+`tests/assets/stable-contracts/product_options.v1.json`.
+
 `scena.capture.v1` small example:
 
 ```json
