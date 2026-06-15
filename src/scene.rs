@@ -17,10 +17,12 @@ use crate::picking::InteractionContext;
 mod anchors;
 mod annotations;
 mod builders;
+mod callouts;
 mod camera;
 mod camera_controls;
 mod clipping;
 mod connectors;
+mod default;
 mod dirty;
 mod exploded;
 mod framing;
@@ -53,6 +55,7 @@ pub use annotations::{
     SCENE_ANNOTATION_PROJECTION_SCHEMA_V1,
 };
 pub use builders::{MeshBuilder, ModelBuilder};
+pub use callouts::{Callout, CalloutAnchor, CalloutAnchorKind, CalloutReport};
 pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
 pub use clipping::{ClippingPlane, ClippingPlaneSet, SectionBox};
 pub use connectors::{
@@ -125,6 +128,7 @@ pub struct Scene {
     labels: SlotMap<LabelKey, LabelDesc>,
     anchors: SlotMap<AnchorKey, AnchorFrame>,
     annotations: BTreeMap<String, AnnotationAnchor>,
+    callouts: BTreeMap<String, callouts::SceneCalloutState>,
     connectors: SlotMap<ConnectorKey, ConnectorFrame>,
     connection_locked_nodes: BTreeSet<NodeKey>,
     node_bounds: BTreeMap<NodeKey, Aabb>,
@@ -202,6 +206,7 @@ impl Scene {
             labels: SlotMap::with_key(),
             anchors: SlotMap::with_key(),
             annotations: BTreeMap::new(),
+            callouts: BTreeMap::new(),
             connectors: SlotMap::with_key(),
             connection_locked_nodes: BTreeSet::new(),
             node_bounds: BTreeMap::new(),
@@ -480,12 +485,6 @@ impl Scene {
         self.nodes[parent].children.push(node);
         self.structure_revision = self.structure_revision.saturating_add(1);
         Ok(node)
-    }
-}
-
-impl Default for Scene {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

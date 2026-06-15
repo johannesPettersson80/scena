@@ -24,6 +24,7 @@ const PKG_DIR = path.join(process.cwd(), "target", "scene-host-browser-pkg");
 const REQUIRED_BINDINGS = [
   ["static", "newWebgl2"],
   ["prototype", "addEmpty"],
+  ["prototype", "setTransform"],
   ["prototype", "removeNode"],
   ["prototype", "instantiateUrlUnder"],
   ["prototype", "instantiateUrlInstanced"],
@@ -58,6 +59,9 @@ const REQUIRED_BINDINGS = [
   ["prototype", "setSubtreeTint"],
   ["prototype", "clearSubtreeTint"],
   ["prototype", "applyPatch"],
+  ["prototype", "addNodeCallout"],
+  ["prototype", "addWorldCallout"],
+  ["prototype", "clearCallout"],
   ["prototype", "worldDistance"],
   ["prototype", "nodeWorldBoundsJson"],
   ["prototype", "addDistanceMeasurement"],
@@ -721,6 +725,35 @@ async function runPageProof(page) {
       host.setCameraJson(JSON.stringify(beforeFitSelectionCamera));
       host.setNodeAnnotation("tracked-node", leftMeshHandle, [0.0, 0.0, 0.0]);
       host.setWorldAnnotation("origin", [0.0, 0.0, 0.0]);
+      const calloutTargetHandle = host.addEmpty(
+        rootHandle,
+        [0.0, 0.22, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+        [1.0, 1.0, 1.0],
+        "callout:browser-proof",
+      );
+      const calloutTarget = handleNumber(calloutTargetHandle);
+      const calloutReport = JSON.parse(
+        host.addNodeCallout(
+          "browser-callout",
+          calloutTargetHandle,
+          [0.0, 0.0, 0.0],
+          [0.32, 0.18, 0.0],
+          "Callout",
+        ),
+      );
+      const calloutProjectionBeforeMove = JSON.parse(host.annotationProjectionsJson()).annotations.find(
+        (annotation) => annotation.id === "browser-callout",
+      );
+      host.setTransform(
+        calloutTargetHandle,
+        [0.28, 0.22, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+        [1.0, 1.0, 1.0],
+      );
+      const calloutProjectionAfterMove = JSON.parse(host.annotationProjectionsJson()).annotations.find(
+        (annotation) => annotation.id === "browser-callout",
+      );
       const measurementSelectedPoints = {
         left: boundsCenter(JSON.parse(host.nodeWorldBoundsJson(leftMeshHandle))),
         right: boundsCenter(JSON.parse(host.nodeWorldBoundsJson(rightMeshHandle))),
@@ -1131,6 +1164,7 @@ async function runPageProof(page) {
           left_mesh: leftMesh,
           right_mesh: rightMesh,
           tracked_node: trackedNode,
+          callout_target: calloutTarget,
           phase3_grid_floor: phase3GridHandles,
           phase4_instances: phase4InstanceHandles,
           phase5_frame: phase5Frame,
@@ -1221,6 +1255,11 @@ async function runPageProof(page) {
         stats: JSON.parse(host.statsJson()),
         inspect_json: inspectJson,
         annotation_projections_json: annotationProjectionsJson,
+        callout: {
+          report: calloutReport,
+          projection_before_move: calloutProjectionBeforeMove,
+          projection_after_move: calloutProjectionAfterMove,
+        },
         phase1_appearance_dirty_tracking: {
           before_tint_inspection: phase1BeforeTintInspection,
           after_tint_inspection: phase1AfterTintInspection,
@@ -1715,6 +1754,26 @@ function assertProof(pageProof, screenshot) {
     "tracked_handle_appears_in_annotation_projection",
     Boolean(annotation),
     pageProof.annotation_projections_json,
+  );
+  const callout = pageProof.callout || {};
+  check(
+    "callout_report_uses_annotation_anchor_id",
+    callout.report &&
+      callout.report.id === "browser-callout" &&
+      callout.report.anchor_id === "browser-callout" &&
+      callout.projection_before_move &&
+      callout.projection_before_move.id === callout.report.anchor_id,
+    callout,
+  );
+  check(
+    "callout_projection_tracks_moving_node",
+    callout.projection_before_move &&
+      callout.projection_after_move &&
+      callout.projection_before_move.node_handle === pageProof.handles.callout_target &&
+      callout.projection_after_move.node_handle === pageProof.handles.callout_target &&
+      callout.projection_after_move.visible === true &&
+      callout.projection_after_move.x > callout.projection_before_move.x,
+    callout,
   );
   check("pick_returns_tracked_handle_from_css_pixels", pageProof.pick.result === tracked, {
     pick: pageProof.pick,

@@ -158,6 +158,8 @@ Additive public API changes in 1.7.0:
 - `Scene::set_annotation_anchor`
 - `Scene::clear_annotation_anchor`
 - `Scene::annotation_projection_report`
+- `Scene::add_callout`
+- `Scene::clear_callout`
 - `Scene::world_distance`
 - `Scene::node_world_bounds`
 - `Node::tint`
@@ -185,6 +187,7 @@ Additive public API changes in 1.7.0:
   `SCENE_ANNOTATION_PROJECTION_SCHEMA_V1`,
   `SceneAssetGeometrySummary`, and
   `ASSET_GEOMETRY_SUMMARY_SCHEMA_V1`
+- `Callout`, `CalloutAnchor`, `CalloutAnchorKind`, and `CalloutReport`
 - `SceneHostCore` (gated behind `scene-host`)
 - `SceneHostError` and `SceneHostErrorCode` (gated behind `scene-host`)
 - `SceneHostCameraState` (gated behind `scene-host`)
@@ -252,6 +255,15 @@ anchors and call `Scene::annotation_projection_report` for schema
 which returns CSS-pixel projection coordinates and the same host `node_handle`
 for node anchors that `setTransforms`, `inspectJson`, and `pick` use. World
 anchors report `node_handle: null`. `SceneAsset::geometry_summary` returns
+Callouts compose those same annotation anchors with leader-line geometry and a
+screen-aligned label. Native callers use `Callout::node`, `Callout::world`,
+`Callout::anchor`, or `Callout::connector` with `Scene::add_callout()`;
+SceneHost/WASM callers use `add_node_callout` / `add_world_callout` or
+`addNodeCallout()` / `addWorldCallout()` for stable-handle node/world helpers.
+The returned `anchor_id` is the annotation ID reported by
+`annotation_projections_json()` and remains compatible with the 0.1C `labels`
+visual-patch channel; there is no parallel host text-update model.
+`SceneAsset::geometry_summary` returns
 schema `scena.asset_geometry_summary.v1` with node/mesh/primitive counts,
 asset-local bounds, and source metadata where the asset stores it.
 Phase 5 adds stable asset-load reports. Native callers use

@@ -90,6 +90,9 @@ All notable user-facing changes are recorded here.
   billboards, optional background/halo styling, native visual proof, a
   many-label benchmark artifact, and WebGL2 browser proof for a dense label
   helper scene.
+- Added callout and leader-line helpers for node, world, anchor, and connector
+  targets, with SceneHost/WASM node and world callout entrypoints that share
+  annotation anchor IDs with the `labels` visual-patch channel.
 
 ## [1.7.1] - 2026-06-12
 

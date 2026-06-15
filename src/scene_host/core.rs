@@ -506,7 +506,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         }
     }
 
-    fn invalidate_node_handles(&mut self, nodes: &[NodeKey]) {
+    pub(super) fn invalidate_node_handles(&mut self, nodes: &[NodeKey]) {
         for node in nodes {
             let Some(handle) = self.node_handle_map.remove(node) else {
                 continue;

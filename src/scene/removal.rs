@@ -131,6 +131,8 @@ impl Scene {
                 .target_node()
                 .is_some_and(|node| removed.contains(&node))
         });
+        self.callouts_mut()
+            .retain(|_, callout| !callout.touches_removed_node(removed));
 
         let connectors = self
             .connectors

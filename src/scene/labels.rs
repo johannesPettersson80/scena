@@ -40,12 +40,23 @@ impl Scene {
         label: LabelDesc,
         transform: Transform,
     ) -> Result<LabelKey, LookupError> {
+        Ok(self.add_label_node(parent, label, transform)?.0)
+    }
+
+    pub(crate) fn add_label_node(
+        &mut self,
+        parent: NodeKey,
+        label: LabelDesc,
+        transform: Transform,
+    ) -> Result<(LabelKey, NodeKey), LookupError> {
         let label_key = self.labels.insert(label);
-        if let Err(error) = self.insert_node(parent, NodeKind::Label(label_key), transform) {
-            self.labels.remove(label_key);
-            return Err(error);
+        match self.insert_node(parent, NodeKind::Label(label_key), transform) {
+            Ok(node) => Ok((label_key, node)),
+            Err(error) => {
+                self.labels.remove(label_key);
+                Err(error)
+            }
         }
-        Ok(label_key)
     }
 
     pub fn label(&self, label: LabelKey) -> Option<&LabelDesc> {

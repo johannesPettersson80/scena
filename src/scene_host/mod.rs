@@ -3,6 +3,7 @@
 mod animation;
 mod annotations;
 mod assets;
+mod callouts;
 mod camera;
 mod capture;
 mod core;
@@ -56,6 +57,7 @@ mod wasm_visual_patch;
 pub type SceneHostCameraState = crate::controls::CameraState;
 pub type SceneHostEasing = crate::controls::TransitionEasing;
 pub use animation::{SceneHostAnimationLoopMode, SceneHostAnimationPlayOptions};
+pub use callouts::SceneHostCalloutReportV1;
 pub use core::SceneHostCore;
 pub use error::{SceneHostError, SceneHostErrorCode};
 pub use events::{

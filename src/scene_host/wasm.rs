@@ -2,7 +2,7 @@ use wasm_bindgen::prelude::*;
 
 use super::inputs::vec3_array_from_slice;
 use super::wasm_readback::browser_canvas_rgba8;
-use super::{SceneHostCore, SceneHostError};
+use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
 use crate::{Assets, CaptureRgba8, PlatformSurface, RenderOutcome, Renderer, SurfaceViewport};
 
 #[wasm_bindgen]
@@ -215,6 +215,63 @@ impl SceneHost {
     #[wasm_bindgen(js_name = clearAnnotation)]
     pub fn clear_annotation(&mut self, id: String) -> bool {
         self.core.clear_annotation(&id)
+    }
+
+    #[wasm_bindgen(js_name = addNodeCallout)]
+    pub fn add_node_callout(
+        &mut self,
+        id: String,
+        node: u64,
+        local_offset: Box<[f32]>,
+        label_offset: Box<[f32]>,
+        text: String,
+    ) -> Result<String, JsValue> {
+        let report = self
+            .core
+            .add_node_callout(
+                &id,
+                node,
+                vec3_array_from_slice("localOffset", &local_offset).map_err(js_error)?,
+                vec3_array_from_slice("labelOffset", &label_offset).map_err(js_error)?,
+                &text,
+            )
+            .map_err(js_error)?;
+        serde_json::to_string(&report).map_err(|error| {
+            js_error(SceneHostError::new(
+                SceneHostErrorCode::InvalidInput,
+                format!("callout report serialization failed: {error}"),
+            ))
+        })
+    }
+
+    #[wasm_bindgen(js_name = addWorldCallout)]
+    pub fn add_world_callout(
+        &mut self,
+        id: String,
+        position: Box<[f32]>,
+        label_offset: Box<[f32]>,
+        text: String,
+    ) -> Result<String, JsValue> {
+        let report = self
+            .core
+            .add_world_callout(
+                &id,
+                vec3_array_from_slice("position", &position).map_err(js_error)?,
+                vec3_array_from_slice("labelOffset", &label_offset).map_err(js_error)?,
+                &text,
+            )
+            .map_err(js_error)?;
+        serde_json::to_string(&report).map_err(|error| {
+            js_error(SceneHostError::new(
+                SceneHostErrorCode::InvalidInput,
+                format!("callout report serialization failed: {error}"),
+            ))
+        })
+    }
+
+    #[wasm_bindgen(js_name = clearCallout)]
+    pub fn clear_callout(&mut self, id: String) -> bool {
+        self.core.clear_callout(&id)
     }
 
     #[wasm_bindgen(js_name = removeNode)]

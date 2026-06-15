@@ -1428,18 +1428,47 @@ technical strokes.
 
 Required behavior:
 
-- [ ] Attach callout to stable node handle, world point, anchor, or connector.
-- [ ] Leader line from projected anchor to label.
-- [ ] Label stays connected during camera orbit and animation updates.
-- [ ] Native and browser report the same projected anchor IDs.
-- [ ] Host-facing callout text updates route through the 0.1C `labels`
+- [x] Attach callout to stable node handle, world point, anchor, or connector.
+- [x] Leader line from projected anchor to label.
+- [x] Label stays connected during camera orbit and animation updates.
+- [x] Native and browser report the same projected anchor IDs.
+- [x] Host-facing callout text updates route through the 0.1C `labels`
       `VisualPatch` channel instead of a parallel annotation text model.
 
 Acceptance:
 
-- [ ] Tests for node/world callout cleanup on node removal.
-- [ ] Browser proof with moving annotated node.
-- [ ] Example: documentation renderer callouts.
+- [x] Tests for node/world callout cleanup on node removal.
+- [x] Browser proof with moving annotated node.
+- [x] Example: documentation renderer callouts.
+
+Proof:
+
+- [x] Test-first proof: before production code,
+      `cargo test --test callouts -- --nocapture` failed on
+      `scena-builder` because `Callout`, `Scene::add_callout`,
+      `Scene::clear_callout`, `Scene::callout`, and the SceneHost callout
+      entrypoints did not exist.
+- [x] Focused native proof:
+      `cargo test --features scene-host --test callouts -- --nocapture` passed
+      locally, covering node, world, anchor, and connector targets; generated
+      leader-line and label visuals; cleanup; stable SceneHost handles; and
+      retargeting through the 0.1C `labels` visual-patch channel.
+- [x] Example proof:
+      `cargo run --example headless_documentation_renderer --
+      target/gate-artifacts/headless-documentation-renderer-callouts` passed
+      locally and wrote `documentation-render.png` plus the
+      `scena.capture.v1` descriptor.
+- [x] Browser proof:
+      `SCENA_BROWSER_BACKENDS=webgl2 npm run browser:scene-host-proof` passed
+      locally on V3D WebGL2 and asserted `addNodeCallout`, a shared
+      `browser-callout` annotation anchor ID, and before/after projection
+      movement for the callout target node.
+- [x] Remote gate proof: after syncing to `scena-builder`
+      `~/projects/scena-visual-patch-impl`, `cargo fmt --check`,
+      `cargo clippy --all-targets --features scene-host -- -D warnings`,
+      `cargo test --features scene-host`,
+      `cargo run -p xtask -- doctor --full`, and
+      `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features` passed.
 
 ### 2.8 Annotation layout helpers
 

@@ -111,7 +111,8 @@ cargo run --example scene_host_release_1_7 --features scene-host
 ```
 
 Use `headless_documentation_renderer.rs` when you need a CI/documentation
-snapshot with both pixels and the `scena.capture.v1` descriptor metadata:
+snapshot with callouts, leader lines, pixels, and the `scena.capture.v1`
+descriptor metadata:
 
 ```bash
 cargo run --example headless_documentation_renderer -- target/docs-render
