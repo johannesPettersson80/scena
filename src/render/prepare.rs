@@ -101,7 +101,13 @@ pub(super) fn collect_prepared_primitives<F>(
             })
         })
         .collect();
-    labels::append_label_primitives(scene, origin_shift, &mut primitives);
+    labels::append_label_primitives(
+        target,
+        scene,
+        camera_projection,
+        origin_shift,
+        &mut primitives,
+    );
     let mut transparent_primitives = Vec::new();
     let mut strokes = Vec::new();
     let mut instances = Vec::new();

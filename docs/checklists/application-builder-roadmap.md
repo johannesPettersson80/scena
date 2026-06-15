@@ -1375,19 +1375,49 @@ crisp text is proven.
 
 Required behavior:
 
-- [ ] Font atlas or embedded default font strategy.
-- [ ] SDF/MSDF glyph generation or bundled atlas path.
-- [ ] Stable text metrics for layout.
-- [ ] Screen-aligned billboards with consistent apparent size.
-- [ ] Text color, background/halo option, and DPI-aware scale.
-- [ ] Labels remain readable across zoom/orbit.
+- [x] Font atlas or embedded default font strategy.
+- [x] SDF/MSDF glyph generation or bundled atlas path.
+- [x] Stable text metrics for layout.
+- [x] Screen-aligned billboards with consistent apparent size.
+- [x] Text color, background/halo option, and DPI-aware scale.
+- [x] Labels remain readable across zoom/orbit.
 
 Acceptance:
 
-- [ ] Unit tests for layout metrics.
-- [ ] Headless visual proof for crisp text at multiple sizes.
-- [ ] Browser proof for annotation-heavy scene.
-- [ ] Performance benchmark for many labels.
+- [x] Unit tests for layout metrics.
+- [x] Headless visual proof for crisp text at multiple sizes.
+- [x] Browser proof for annotation-heavy scene.
+- [x] Performance benchmark for many labels.
+
+Proof:
+
+- [x] Test-first proof: before production code,
+      `cargo test --test label_text -- --nocapture` failed on
+      `scena-builder` because `LabelDesc::with_background()` and
+      `LabelDesc::with_halo()` did not exist.
+- [x] Focused native proof: `cargo test --test label_text -- --nocapture`
+      passed locally, including stable metrics, screen-pixel billboard sizing,
+      multi-size rendered text, orbit-view readability, and the many-label
+      benchmark artifact.
+- [x] Regression proof: `cargo test --test m3a_app_features
+      labels_use_sdf_msdf_descriptors_and_billboard_render_path --
+      --nocapture`, `cargo test --test measurement_visual_proof
+      measurement_overlay_renders_line_and_label_pixels -- --nocapture`, and
+      `cargo test --test examples_visual_proof
+      examples_visual_labels_helpers_renders_axes_bounds_anchor_label_to_ppm --
+      --nocapture` passed locally.
+- [x] Browser proof: after rebuilding `target/m6-browser-pkg` with
+      `wasm-pack build --dev --target web --out-dir target/m6-browser-pkg .
+      --features browser-probe`, `SCENA_BROWSER_BACKENDS=webgl2 npm run
+      browser:m6` passed and asserted the `labels-helpers` workflow as
+      `browser-sdf-msdf-labels` with 12 labels, 1200 glyph primitives, and
+      visible canvas pixels.
+- [x] Remote gate proof: after syncing to `scena-builder`
+      `~/projects/scena-visual-patch-impl`, `cargo fmt --check`,
+      `cargo clippy --all-targets --features scene-host -- -D warnings`,
+      `cargo test --features scene-host`,
+      `cargo run -p xtask -- doctor --full`, and
+      `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features` passed.
 
 ### 2.7 Callouts and leader lines
 

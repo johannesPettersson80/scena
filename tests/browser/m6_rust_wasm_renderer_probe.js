@@ -521,6 +521,38 @@ function assertMaterialTextureProof(backend, result) {
   }
 }
 
+function assertLabelTextBrowserProof(backend, result) {
+  const metadata = result.metadata || {};
+  const readback = result.renderer_readback || {};
+  const pixelStats = readback.pixel_statistics || result.pixels || {};
+  if (
+    metadata.proof_class !== "browser-sdf-msdf-labels" ||
+    metadata.labels < 12 ||
+    !Array.isArray(metadata.rasterization) ||
+    !metadata.rasterization.includes("sdf") ||
+    !metadata.rasterization.includes("msdf")
+  ) {
+    throw new Error(
+      `${backend} labels-helpers proof did not record the dense SDF/MSDF label metadata: ${JSON.stringify(result)}`,
+    );
+  }
+  if (!result.stats || result.stats.triangles < 200 || result.primitives < 200) {
+    throw new Error(
+      `${backend} labels-helpers proof did not prepare glyph-shaped label geometry: ${JSON.stringify(result)}`,
+    );
+  }
+  if (
+    !pixelStats.nonblack ||
+    pixelStats.nonblack <= 0 ||
+    (!/^[0-9a-f]{16}$/.test(readback.rgba8_fnv1a64 || "") &&
+      typeof result.canvas_data_url !== "string")
+  ) {
+    throw new Error(
+      `${backend} labels-helpers proof did not capture visible label pixels: ${JSON.stringify(result)}`,
+    );
+  }
+}
+
 function assertSourceGltfMaterialProof(backend, result) {
   const metadata = result.metadata || {};
   const pixels = result.pixels || {};
@@ -1458,6 +1490,7 @@ async function main() {
         assertMaterialExtensionProof(backend, workflowResults.get("pbr-material-extensions"));
         assertMaterialPresetProof(backend, workflowResults.get("pbr-material-presets"));
         assertMaterialTextureProof(backend, workflowResults.get("material-textures"));
+        assertLabelTextBrowserProof(backend, workflowResults.get("labels-helpers"));
         assertSourceGltfMaterialProof(backend, workflowResults.get("source-gltf-materials"));
         if (oversizedTextureProofEnabled()) {
           const oversizedTexture = workflowResults.get("oversized-browser-texture");

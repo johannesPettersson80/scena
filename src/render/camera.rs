@@ -91,6 +91,33 @@ impl CameraProjection {
         self.world_from_camera.translation
     }
 
+    pub(super) fn billboard_axes(&self) -> (Vec3, Vec3) {
+        let rotation = self.world_from_camera.rotation;
+        let rotation =
+            if rotation.length_squared().is_finite() && rotation.length_squared() > f32::EPSILON {
+                rotation.normalize()
+            } else {
+                Quat::IDENTITY
+            };
+        (rotation * Vec3::X, rotation * Vec3::Y)
+    }
+
+    pub(super) fn world_units_per_pixel_at(&self, world_position: Vec3) -> Option<f32> {
+        let target_height = self.target.height.max(1) as f32;
+        match self.camera {
+            Camera::Perspective(camera) => {
+                let depth = self.camera_depth(world_position)?;
+                let half_fov = camera.vertical_fov.radians() * 0.5;
+                let world_height = 2.0 * depth * half_fov.tan();
+                finite_positive(world_height / target_height)
+            }
+            Camera::Orthographic(camera) => {
+                let world_height = camera.top - camera.bottom;
+                finite_positive(world_height.abs() / target_height)
+            }
+        }
+    }
+
     pub(super) const fn near_far(&self) -> [f32; 2] {
         match self.camera {
             Camera::Perspective(camera) => [camera.near, camera.far],
@@ -373,6 +400,14 @@ fn positive_or(value: f32, fallback: f32) -> f32 {
         value
     } else {
         fallback
+    }
+}
+
+fn finite_positive(value: f32) -> Option<f32> {
+    if value.is_finite() && value > 0.0 {
+        Some(value)
+    } else {
+        None
     }
 }
 

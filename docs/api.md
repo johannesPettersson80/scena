@@ -87,6 +87,12 @@ Additive public API changes in Unreleased:
 - `MeasurementOverlay`, `MeasurementKind`, `MeasurementAxis`,
   `MeasurementReport`, `MeasurementOverlayReport`, `UnitFormat`, and
   `Scene::add_measurement_overlay`
+- `LabelMetrics`, `LabelDesc::metrics`, `LabelDesc::background`,
+  `LabelDesc::halo`, `LabelDesc::with_background`,
+  `LabelDesc::without_background`, `LabelDesc::with_halo`, and
+  `LabelDesc::without_halo`; `LabelDesc::sdf()` and `LabelDesc::msdf()` now
+  render through the embedded glyph-atlas billboard path instead of placeholder
+  quads
 - `Scene::isolate`, `Scene::show_only`, `Scene::hide`, `Scene::show`,
   `Scene::toggle_visibility`, `Scene::ghost`, `Scene::restore_visibility`,
   `Scene::restore_tints`, `Scene::fit_selection_with_assets`,

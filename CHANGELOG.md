@@ -85,6 +85,11 @@ All notable user-facing changes are recorded here.
   `scena.scene_host_visual_state.v1` and
   `scena.scene_host_visual_states.v1`, storing host-named `VisualPatchV1`
   presets with opaque metadata and deterministic inventory/application APIs.
+- Added real embedded-atlas label text rendering for `LabelDesc::sdf()` and
+  `LabelDesc::msdf()`: stable text metrics, screen-sized camera-facing glyph
+  billboards, optional background/halo styling, native visual proof, a
+  many-label benchmark artifact, and WebGL2 browser proof for a dense label
+  helper scene.
 
 ## [1.7.1] - 2026-06-12
 

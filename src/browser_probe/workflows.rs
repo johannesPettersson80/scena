@@ -196,24 +196,39 @@ fn labels_helpers_scene() -> Result<WorkflowScene, JsValue> {
         .mesh(axes, material)
         .add()
         .map_err(|error| JsValue::from_str(&format!("axes helper insert failed: {error:?}")))?;
-    scene
-        .add_label(
-            scene.root(),
-            LabelDesc::msdf("origin")
-                .with_color(Color::WHITE)
-                .with_size(14.0),
-            Transform {
-                translation: Vec3::new(0.0, 0.15, 0.0),
-                ..Transform::default()
-            },
-        )
-        .map_err(|error| JsValue::from_str(&format!("label insert failed: {error:?}")))?;
+    for index in 0..12 {
+        let col = index % 4;
+        let row = index / 4;
+        let label = if index % 2 == 0 {
+            LabelDesc::sdf(format!("S{index:02}"))
+        } else {
+            LabelDesc::msdf(format!("M{index:02}"))
+        }
+        .with_color(Color::from_srgb_u8(245, 250, 255))
+        .with_size(13.0)
+        .with_background(Color::from_srgb_u8(5, 12, 22));
+        scene
+            .add_label(
+                scene.root(),
+                label,
+                Transform {
+                    translation: Vec3::new(-0.45 + col as f32 * 0.3, 0.35 - row as f32 * 0.25, 0.0),
+                    ..Transform::default()
+                },
+            )
+            .map_err(|error| JsValue::from_str(&format!("label insert failed: {error:?}")))?;
+    }
     let camera = add_default_camera(&mut scene)?;
     Ok(WorkflowScene {
         assets,
         scene,
         camera,
-        metadata: json!({ "helpers": ["axes"], "labels": 1 }),
+        metadata: json!({
+            "helpers": ["axes"],
+            "labels": 12,
+            "proof_class": "browser-sdf-msdf-labels",
+            "rasterization": ["sdf", "msdf"],
+        }),
     })
 }
 
