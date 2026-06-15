@@ -94,6 +94,15 @@ with `with_camera_bookmark(s)`. Browser hosts can call `setCameraEased(...)` or
 `setCameraBookmarkJson(...)`; both still require the host to advance time and
 render explicitly.
 
+Viewer profiles are builder presets for common app shapes. Use
+`ViewerProfile::cad_inspection()`, `product()`, `industrial()`,
+`model_viewer()`, or `documentation()` with
+`headless_gltf_viewer(...).with_viewer_profile(profile)` or
+`interactive_gltf_viewer(...).with_viewer_profile(profile)` when you want the
+existing lighting, environment, background, grid, picking, and orbit-control
+helpers wired consistently without creating a separate viewer engine.
+The `viewer_profiles.rs` example renders all five presets to PNG artifacts.
+
 Asset catalog readiness uses stable JSON contracts: deserialize a
 `scena.asset_catalog.v1` manifest into `AssetCatalogV1`, call
 `Assets::validate_asset_catalog(&catalog).await`, and consume the

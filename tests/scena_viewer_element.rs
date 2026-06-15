@@ -5,7 +5,7 @@ use scena::{
     ScenaViewerAnnotationLayoutOptions, ScenaViewerAttributes, ScenaViewerDropDecision,
     ScenaViewerDropKind, ScenaViewerGestureAction, ScenaViewerInspectorSnapshot,
     ScenaViewerKeyboardAction, ScenaViewerProgress, ScenaViewerProgressPhase,
-    ScenaViewerVariantSelection, Tonemapper, layout_scena_viewer_annotations,
+    ScenaViewerVariantSelection, Tonemapper, ViewerProfile, layout_scena_viewer_annotations,
 };
 
 #[test]
@@ -13,6 +13,7 @@ fn scena_viewer_attributes_parse_model_viewer_style_surface() {
     let attrs = ScenaViewerAttributes::from_pairs([
         ("src", "machine.glb"),
         ("environment", "studio"),
+        ("profile", "product"),
         ("tone-mapping", "neutral"),
         ("camera-controls", ""),
         ("auto-rotate", "true"),
@@ -20,12 +21,25 @@ fn scena_viewer_attributes_parse_model_viewer_style_surface() {
     ]);
 
     assert_eq!(SCENA_VIEWER_TAG, "scena-viewer");
+    assert!(ViewerProfile::names().contains(&"product"));
     assert_eq!(attrs.src(), Some("machine.glb"));
     assert_eq!(attrs.environment(), Some("studio"));
+    assert_eq!(attrs.profile(), Some("product"));
     assert_eq!(attrs.tonemapper(), Tonemapper::PbrNeutral);
     assert!(attrs.camera_controls());
     assert!(attrs.auto_rotate());
     assert!(!attrs.ar());
+}
+
+#[test]
+fn scena_viewer_profile_attribute_uses_native_viewer_profile_names() {
+    for name in ViewerProfile::names() {
+        let attrs = ScenaViewerAttributes::from_pairs([("profile", *name)]);
+        assert_eq!(attrs.profile(), Some(*name));
+    }
+
+    let invalid = ScenaViewerAttributes::from_pairs([("profile", "viewer_only_browser_name")]);
+    assert_eq!(invalid.profile(), None);
 }
 
 #[test]

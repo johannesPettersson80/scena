@@ -1,10 +1,10 @@
 use crate::assets::{AssetLoadProgress, Assets};
-use crate::render::Renderer;
-use crate::scene::{DirectionalLight, Scene, SceneImport, Transform};
+use crate::render::{Background, Renderer};
+use crate::scene::{DirectionalLight, GridFloorOptions, Scene, SceneImport, Transform};
 
 use super::{
     FirstRender, HeadlessGltfViewer, HeadlessGltfViewerBuilder, InteractiveGltfViewer,
-    InteractiveGltfViewerBuilder, build_orbit_controls,
+    InteractiveGltfViewerBuilder, ViewerProfileLighting, build_orbit_controls,
 };
 
 impl FirstRender {
@@ -31,15 +31,17 @@ impl HeadlessGltfViewerBuilder {
         if self.common.frame_import {
             scene.frame_import(camera, &import)?;
         }
-        if self.common.default_light {
-            scene.directional_light(DirectionalLight::default()).add()?;
-        }
+        apply_viewer_grid(&mut scene, &assets, &import, self.common.grid_floor)?;
+        apply_viewer_lighting(&mut scene, self.common.lighting)?;
 
         let mut renderer =
             Renderer::headless_with_options(self.width, self.height, self.common.renderer_options)?;
-        if let Some(background_color) = self.common.background_color {
-            renderer.set_background_color(background_color);
-        }
+        apply_viewer_renderer_settings(
+            &mut renderer,
+            self.common.background,
+            self.common.hover_style,
+            self.common.selection_style,
+        );
         if let Some(environment_path) = self.common.environment_path {
             let environment = assets.load_environment(environment_path).await?;
             renderer.set_environment(environment);
@@ -114,14 +116,16 @@ impl InteractiveGltfViewerBuilder {
         if self.common.frame_import {
             scene.frame_import(camera, &import)?;
         }
-        if self.common.default_light {
-            scene.directional_light(DirectionalLight::default()).add()?;
-        }
+        apply_viewer_grid(&mut scene, &assets, &import, self.common.grid_floor)?;
+        apply_viewer_lighting(&mut scene, self.common.lighting)?;
         let mut renderer =
             Renderer::from_surface_with_options(self.surface, self.common.renderer_options)?;
-        if let Some(background_color) = self.common.background_color {
-            renderer.set_background_color(background_color);
-        }
+        apply_viewer_renderer_settings(
+            &mut renderer,
+            self.common.background,
+            self.common.hover_style,
+            self.common.selection_style,
+        );
         if let Some(environment_path) = self.common.environment_path {
             let environment = pollster::block_on(assets.load_environment(environment_path))?;
             renderer.set_environment(environment);
@@ -165,15 +169,17 @@ impl InteractiveGltfViewerBuilder {
         if self.common.frame_import {
             scene.frame_import(camera, &import)?;
         }
-        if self.common.default_light {
-            scene.directional_light(DirectionalLight::default()).add()?;
-        }
+        apply_viewer_grid(&mut scene, &assets, &import, self.common.grid_floor)?;
+        apply_viewer_lighting(&mut scene, self.common.lighting)?;
         let mut renderer =
             Renderer::from_surface_async_with_options(self.surface, self.common.renderer_options)
                 .await?;
-        if let Some(background_color) = self.common.background_color {
-            renderer.set_background_color(background_color);
-        }
+        apply_viewer_renderer_settings(
+            &mut renderer,
+            self.common.background,
+            self.common.hover_style,
+            self.common.selection_style,
+        );
         if let Some(environment_path) = self.common.environment_path {
             let environment = assets.load_environment(environment_path).await?;
             renderer.set_environment(environment);
@@ -209,6 +215,52 @@ fn apply_import_transform(
         scene.set_transform(*root, transform)?;
     }
     Ok(())
+}
+
+fn apply_viewer_lighting(scene: &mut Scene, lighting: ViewerProfileLighting) -> crate::Result<()> {
+    match lighting {
+        ViewerProfileLighting::None => {}
+        ViewerProfileLighting::Directional => {
+            scene.directional_light(DirectionalLight::default()).add()?;
+        }
+        ViewerProfileLighting::Studio => {
+            scene.add_studio_lighting()?;
+        }
+    }
+    Ok(())
+}
+
+fn apply_viewer_grid<F>(
+    scene: &mut Scene,
+    assets: &crate::assets::Assets<F>,
+    import: &SceneImport,
+    enabled: bool,
+) -> crate::Result<()> {
+    if !enabled {
+        return Ok(());
+    }
+    let bounds = import
+        .bounds_world(scene)
+        .ok_or(crate::LookupError::ImportHasNoBounds)?;
+    scene.add_grid_floor(assets, GridFloorOptions::new().under_bounds(bounds))?;
+    Ok(())
+}
+
+fn apply_viewer_renderer_settings(
+    renderer: &mut Renderer,
+    background: Option<Background>,
+    hover_style: Option<crate::InteractionStyle>,
+    selection_style: Option<crate::InteractionStyle>,
+) {
+    if let Some(background) = background {
+        renderer.set_background(background);
+    }
+    if let Some(style) = hover_style {
+        renderer.set_hover_style(style);
+    }
+    if let Some(style) = selection_style {
+        renderer.set_selection_style(style);
+    }
 }
 
 impl InteractiveGltfViewer {

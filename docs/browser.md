@@ -207,6 +207,7 @@ drop-in element surface:
 <scena-viewer
   src="machine.glb"
   environment="studio"
+  profile="product"
   tone-mapping="neutral"
   camera-controls
   auto-rotate>
@@ -231,6 +232,11 @@ The parity proof uses the dev-only `@google/model-viewer` package locally and
 captures a three-asset side-by-side screenshot of `<model-viewer>` reference
 panes next to renderer-backed `<scena-viewer>` panes for the same glTF / GLB
 assets.
+
+The optional `profile` attribute accepts the same names as native
+`ViewerProfile`: `model_viewer`, `cad_inspection`, `product`, `industrial`,
+and `documentation`. Unknown profile names are ignored by the attribute parser
+instead of creating a separate browser-only profile vocabulary.
 
 The element also owns a shadow DOM progressbar. Hosts can
 dispatch a `scena-viewer-progress` event or call `setLoadProgress(detail)` with

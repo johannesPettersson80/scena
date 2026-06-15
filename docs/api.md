@@ -781,6 +781,7 @@ Common viewer helpers:
 - `FramingOutcome`
 - `GridFloorOptions`
 - `GridFloorHandles`
+- `ViewerProfile`
 - `InteractiveGltfViewer`
 - `InteractiveGltfViewerBuilder`
 - `interactive_gltf_viewer(path, surface)`
@@ -796,6 +797,15 @@ Common viewer helpers:
 - `SceneHostCore::set_active_material_variant`
 - `Renderer::headless_default()`
 - `Renderer::set_auto_exposure`
+
+Viewer profiles are named builder presets for common application shapes:
+`ViewerProfile::model_viewer()`, `cad_inspection()`, `product()`,
+`industrial()`, and `documentation()`. Apply them with
+`with_viewer_profile(profile)` on headless or interactive glTF viewer
+builders. A profile configures existing renderer profile/render mode,
+background, environment, lighting, grid, picking styles, and optional orbit
+controls; it does not create a separate viewer engine or own the host event
+loop.
 
 Common visual-regression helpers:
 

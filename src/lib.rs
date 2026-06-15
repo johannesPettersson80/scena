@@ -230,8 +230,9 @@ pub use schema_catalog::{
 pub use viewer::{
     AssetCatalogPreviewError, AssetCatalogPreviewPng, FirstRender, HeadlessGltfViewer,
     HeadlessGltfViewerBuilder, InteractiveGltfViewer, InteractiveGltfViewerBuilder,
-    ViewerCaptureError, ViewerPngError, first_render_gltf_headless, headless_gltf_viewer,
-    interactive_gltf_viewer, render_asset_catalog_preview_png,
+    VIEWER_PROFILE_NAMES, ViewerCaptureError, ViewerPngError, ViewerProfile, ViewerProfileLighting,
+    first_render_gltf_headless, headless_gltf_viewer, interactive_gltf_viewer,
+    render_asset_catalog_preview_png,
 };
 #[cfg(all(target_arch = "wasm32", feature = "viewer-element"))]
 pub use viewer_element::define_scena_viewer;

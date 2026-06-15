@@ -45,6 +45,24 @@ lights/floor/camera, prepare, render. `add_perspective_camera_default_for()`
 uses `frame_bounds()` internally to mutate camera state and mark the scene
 dirty, but it does not fetch assets, prepare GPU resources, or render.
 
+For common viewer applications, `ViewerProfile` applies those same primitives
+as a builder preset without adding an application model:
+
+```rust
+use scena::{ViewerProfile, headless_gltf_viewer};
+
+let mut viewer = headless_gltf_viewer("machine.glb")
+    .with_viewer_profile(ViewerProfile::cad_inspection())
+    .build()
+    .await?;
+
+viewer.render_next_frame()?;
+```
+
+Profiles are composable defaults. Callers can still override background,
+environment, renderer profile, import transform, bookmarks, or render cadence
+with the existing builder methods.
+
 ## Good defaults
 
 Use `Scene::add_studio_lighting()` when the asset does not author lights. It is

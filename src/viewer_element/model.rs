@@ -1,10 +1,12 @@
 use crate::Tonemapper;
 use crate::assets::AssetLoadProgress;
+use crate::viewer::ViewerProfile;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScenaViewerAttributes {
     src: Option<String>,
     environment: Option<String>,
+    profile: Option<String>,
     tonemapper: Tonemapper,
     camera_controls: bool,
     auto_rotate: bool,
@@ -95,6 +97,7 @@ impl Default for ScenaViewerAttributes {
         Self {
             src: None,
             environment: None,
+            profile: None,
             tonemapper: Tonemapper::PbrNeutral,
             camera_controls: false,
             auto_rotate: false,
@@ -121,6 +124,11 @@ impl ScenaViewerAttributes {
         match name {
             "src" => self.src = non_empty_string(value),
             "environment" => self.environment = non_empty_string(value),
+            "profile" | "viewer-profile" | "viewer_profile" => {
+                self.profile = non_empty_string(value).and_then(|name| {
+                    ViewerProfile::named(&name).map(|profile| profile.name().to_string())
+                });
+            }
             "tone-mapping" | "tone_mapping" => self.tonemapper = parse_tonemapper(value),
             "camera-controls" | "camera_controls" => {
                 self.camera_controls = parse_boolean_attribute(name, value);
@@ -139,6 +147,10 @@ impl ScenaViewerAttributes {
 
     pub fn environment(&self) -> Option<&str> {
         self.environment.as_deref()
+    }
+
+    pub fn profile(&self) -> Option<&str> {
+        self.profile.as_deref()
     }
 
     pub const fn tonemapper(&self) -> Tonemapper {

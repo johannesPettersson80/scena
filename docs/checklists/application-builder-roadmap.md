@@ -1067,18 +1067,39 @@ let profile = ViewerProfile::cad_inspection()
 
 Profiles:
 
-- [ ] `ViewerProfile::model_viewer()`.
-- [ ] `ViewerProfile::cad_inspection()`.
-- [ ] `ViewerProfile::product()`.
-- [ ] `ViewerProfile::industrial()`.
-- [ ] `ViewerProfile::documentation()`.
+- [x] `ViewerProfile::model_viewer()`.
+- [x] `ViewerProfile::cad_inspection()`.
+- [x] `ViewerProfile::product()`.
+- [x] `ViewerProfile::industrial()`.
+- [x] `ViewerProfile::documentation()`.
 
 Acceptance:
 
-- [ ] Profiles are composable builder presets, not separate viewer engines.
-- [ ] Applying a profile does not call `prepare()` or `render()` implicitly.
-- [ ] Each profile has a minimal example and a snapshot/proof artifact.
-- [ ] Browser and native profile names match.
+- [x] Profiles are composable builder presets, not separate viewer engines.
+- [x] Applying a profile does not call `prepare()` or `render()` implicitly.
+- [x] Each profile has a minimal example and a snapshot/proof artifact.
+- [x] Browser and native profile names match.
+
+Evidence:
+
+- [x] Test-first proof: before production code, `cargo test --test
+      m7_interactive_viewer
+      viewer_profiles_apply_named_presets_without_parallel_viewer_types
+      -- --nocapture` failed on `scena-builder` with unresolved
+      `ViewerProfile` and `with_viewer_profile`.
+- [x] Focused proof: `cargo test --test m7_interactive_viewer viewer_profile
+      -- --nocapture` passes on `scena-builder`, proving the named presets,
+      headless builder application, interactive orbit-controls handoff, and
+      renderable grid/helper effect.
+- [x] Browser/native profile-name proof: `cargo test --test
+      scena_viewer_element scena_viewer_profile_attribute_uses_native_viewer_profile_names
+      -- --nocapture` passes on `scena-builder`, proving
+      `<scena-viewer profile="...">` accepts the same names as
+      `ViewerProfile::names()` and rejects browser-only vocabulary.
+- [x] Example proof: `cargo run --example viewer_profiles --
+      target/gate-artifacts/viewer-profiles` writes one PNG per profile:
+      `model_viewer`, `cad_inspection`, `product`, `industrial`, and
+      `documentation`.
 
 ## Phase 2 - Inspection, CAD view, and annotation
 
