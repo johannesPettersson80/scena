@@ -22,6 +22,7 @@ mod camera_controls;
 mod clipping;
 mod connectors;
 mod dirty;
+mod exploded;
 mod framing;
 mod import;
 #[cfg(feature = "inspection")]
@@ -61,6 +62,7 @@ pub use connectors::{
     ConnectorPolarity, ConnectorRollPolicy,
 };
 pub use dirty::SceneDirtyState;
+pub use exploded::{ExplodedTransformUpdate, ExplodedView, ExplodedViewPlan};
 pub use framing::{
     FramingOptions, FramingOutcome, GridFloorHandles, GridFloorOptions, ProjectedPoint, ScreenRect,
 };

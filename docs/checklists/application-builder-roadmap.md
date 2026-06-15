@@ -1289,17 +1289,36 @@ host.apply_patch(&patch)?;
 
 Required behavior:
 
-- [ ] Offset direct children from assembly center.
-- [ ] Offset by hierarchy depth or selected axis.
-- [ ] Support factor from `0.0` assembled to `1.0` exploded.
-- [ ] Produce reversible transforms.
-- [ ] Optional easing through `VisualPatch`.
+- [x] Offset direct children from assembly center.
+- [x] Offset by hierarchy depth or selected axis.
+- [x] Support factor from `0.0` assembled to `1.0` exploded.
+- [x] Produce reversible transforms.
+- [x] Optional easing through `VisualPatch`.
 
 Acceptance:
 
-- [ ] Tests prove factor `0.0` is identity and factor `1.0` separates parts.
-- [ ] Visual proof on a multi-part imported assembly.
-- [ ] Example: guided assembly/exploded documentation view.
+- [x] Tests prove factor `0.0` is identity and factor `1.0` separates parts.
+- [x] Visual proof on a multi-part imported assembly.
+- [x] Example: guided assembly/exploded documentation view.
+
+Implementation evidence:
+
+- [x] Red test first: `cargo test --features scene-host --test exploded_view
+      -- --nocapture` failed on `scena-builder` with missing
+      `ExplodedView`, `ExplodedViewPlan`, and
+      `SceneHostCore::exploded_view_patch_json`.
+- [x] Focused proof: `cargo test --features scene-host --test exploded_view
+      -- --nocapture` passes on `scena-builder` with direct-child identity/separation,
+      selected-axis, hierarchy-depth, SceneHost visual-patch, and imported
+      assembly rendered-pixel assertions.
+- [x] Full remote gate: `cargo fmt --check`, `cargo clippy --all-targets
+      --features scene-host -- -D warnings`, `cargo test --features
+      scene-host`, `cargo run -p xtask -- doctor --full`, and
+      `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features` passed
+      on `scena-builder`.
+- [x] Example proof: `examples/guided_exploded_view.rs` writes assembled,
+      exploded, and restored documentation frames using the same reversible
+      `ExplodedViewPlan` updates.
 
 ### 2.5 Named visual states
 

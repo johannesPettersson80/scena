@@ -77,6 +77,10 @@ All notable user-facing changes are recorded here.
 - Added additive `parent` and `children` fields to `scena.subtree.v1` so
   SceneHost subtree reports can directly drive CAD-style part trees from
   stable host handles.
+- Added `ExplodedView` and `ExplodedViewPlan` for reversible presentation-only
+  assembly exploded views, plus `SceneHostCore::exploded_view_patch_json()` for
+  emitting existing `scena.visual_patch.v1` transform or eased-transform
+  channels.
 
 ## [1.7.1] - 2026-06-12
 

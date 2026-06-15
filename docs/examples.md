@@ -34,7 +34,7 @@ cargo check --examples
 | Native window | `native_window.rs` |
 | Browser canvas | `browser_canvas.rs` |
 | Browser host contracts | `scene_host_contracts.rs`, `scene_host_release_1_7.rs`, `scene_host_browser_contracts.js` |
-| CAD-style inspection, anchors, and connectors | `cad_inspection_viewer.rs` uses show-only, ghosting, selected-node framing, bounding-box/axes helpers, and measurement overlays; `anchor_alignment.rs`, `connect_objects.rs`, `imported_anchor_connection.rs`, `industrial_connector_assembly.rs`, `coordinate_connector_repair.rs`, `coordinate_units.rs` |
+| CAD-style inspection, anchors, and connectors | `cad_inspection_viewer.rs` uses show-only, ghosting, selected-node framing, bounding-box/axes helpers, and measurement overlays; `guided_exploded_view.rs` writes assembled, exploded, and restored documentation frames; `anchor_alignment.rs`, `connect_objects.rs`, `imported_anchor_connection.rs`, `industrial_connector_assembly.rs`, `coordinate_connector_repair.rs`, `coordinate_units.rs` |
 | Industrial/static scene | `industrial_static_scene.rs` |
 | Diagnostics and asset readiness | `beginner_diagnostics.rs`, `scene_inspection.rs`, `asset_catalog_picker.rs`; `Assets::validate_asset_catalog()` for `scena.asset_catalog.v1` manifests |
 
@@ -115,6 +115,15 @@ snapshot with both pixels and the `scena.capture.v1` descriptor metadata:
 
 ```bash
 cargo run --example headless_documentation_renderer -- target/docs-render
+```
+
+Use `guided_exploded_view.rs` when an assembly/documentation workflow needs a
+reversible presentation-only exploded view. The example imports a small
+assembly, renders the assembled state, applies `ExplodedView` transform
+updates, renders the exploded state, then restores the original transforms:
+
+```bash
+cargo run --example guided_exploded_view -- target/guided-exploded-view
 ```
 
 Golden JSON fixtures for these contracts live in

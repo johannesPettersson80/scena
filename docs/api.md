@@ -94,6 +94,14 @@ Additive public API changes in Unreleased:
   `Scene::add_local_axes_triad`, `Scene::inspection_toolkit_report`,
   `SceneVisibilitySnapshot`, `SceneTintSnapshot`, `InspectionHelperKind`,
   `InspectionHelperReport`, and `InspectionToolkitReport`
+- `ExplodedView`, `ExplodedViewPlan`, `ExplodedTransformUpdate`, and
+  `ExplodedView::from_node(...).transforms(...)` for reversible
+  presentation-only assembly exploded views
+- `SceneHostCore::exploded_view_patch`,
+  `SceneHostCore::exploded_view_patch_json`,
+  `SceneHostExplodedViewOptionsV1`, and `SceneHostExplodedViewModeV1` for
+  emitting existing visual-patch transform channels from stable host handles
+  (gated behind `scene-host`)
 - `SceneHostCore::set_camera_bookmark` and
   `SceneHostCore::set_camera_bookmark_json` (gated behind `scene-host`)
 - The `scena` binary with `schema list`, `schema get <schema>`,

@@ -8,6 +8,7 @@ mod capture;
 mod core;
 mod error;
 mod events;
+mod exploded_view;
 mod handles;
 mod inputs;
 mod inspection_tools;
@@ -60,6 +61,7 @@ pub use events::{
     HOST_EVENT_SCHEMA_V1, HostEventBatchV1, HostEventButtonV1, HostEventHitV1,
     HostEventHoverPhaseV1, HostEventModifiersV1, HostEventTargetKindV1, HostEventV1,
 };
+pub use exploded_view::{SceneHostExplodedViewModeV1, SceneHostExplodedViewOptionsV1};
 pub use interaction_verification::{
     INTERACTION_EXPECTATION_SCHEMA_V1, INTERACTION_VERIFICATION_SCHEMA_V1,
     InteractionCoordinateSpaceV1, InteractionCoordinatesV1, InteractionExpectationV1,
