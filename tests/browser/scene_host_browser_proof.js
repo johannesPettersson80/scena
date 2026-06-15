@@ -1610,6 +1610,7 @@ async function runPageProof(page) {
 
 function assertProof(pageProof, screenshot) {
   const assertions = {};
+  const tracked = pageProof.handles.tracked_node;
   const check = (name, passed, detail = null) => {
     assertions[name] = { passed: Boolean(passed), detail };
     if (!passed) {
@@ -1809,6 +1810,39 @@ function assertProof(pageProof, screenshot) {
       },
     );
   }
+  const browserPickEvent = pageProof.phase0_events.interaction.events.find(
+    (event) => event.kind === "pick",
+  );
+  const browserHoverEvent = pageProof.phase0_events.interaction.events.find(
+    (event) => event.kind === "hover",
+  );
+  const browserSelectionEvent = pageProof.phase0_events.interaction.events.find(
+    (event) => event.kind === "selection_changed",
+  );
+  check(
+    "phase0_browser_synthetic_interactions_target_tracked_handle",
+    pageProof.phase0_events.pick_result === tracked &&
+      pageProof.phase0_events.hover_result === tracked &&
+      pageProof.phase0_events.select_result === tracked,
+    pageProof.phase0_events,
+  );
+  check(
+    "phase0_browser_synthetic_interaction_events_carry_stable_handles",
+    browserPickEvent &&
+      browserPickEvent.hit &&
+      browserPickEvent.hit.handle === tracked &&
+      browserHoverEvent &&
+      browserHoverEvent.hit &&
+      browserHoverEvent.hit.handle === tracked &&
+      browserSelectionEvent &&
+      browserSelectionEvent.current === tracked,
+    {
+      pick: browserPickEvent,
+      hover: browserHoverEvent,
+      selection: browserSelectionEvent,
+      expected: tracked,
+    },
+  );
   const flyTo = pageProof.camera.fly_to;
   check(
     "camera_fly_to_halfway_capture_nonblank",
@@ -2185,7 +2219,6 @@ function assertProof(pageProof, screenshot) {
     },
   );
 
-  const tracked = pageProof.handles.tracked_node;
   const transformed = pageProof.transform_batch.some((entry) => entry.node === tracked);
   const typedTransformed = pageProof.typed_transform_batch.nodes.includes(tracked);
   const inspectedNode = pageProof.inspect_json.nodes.find((node) => node.handle === tracked);

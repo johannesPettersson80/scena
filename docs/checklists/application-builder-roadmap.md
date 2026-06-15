@@ -534,10 +534,10 @@ Required commands:
 - [x] `scena verify animation <recipe-or-asset> --clip <name> --times <csv>
       [--expect-change] [--expect-translations 'x,y,z;...']`: emit
       `scena.animation_introspection.v1`.
-- [ ] `scena verify interaction <recipe-or-asset> --expect <json>`: emit
-      `scena.interaction_verification.v1`. The first native SceneHost slice is
-      complete; browser input and rendered feedback proof remain open under
-      A.10.
+- [x] `scena verify interaction <recipe-or-asset> --expect <json>`: emit
+      `scena.interaction_verification.v1`. Native CLI verification and
+      browser synthetic pick/hover/select proof are complete; rendered
+      interaction feedback assertions remain future hardening.
 - [ ] `scena doctor <asset-or-recipe>`: expose asset-doctor-style findings
       through the same terminal command family.
 - [x] `scena examples agent <template> [--out <dir>]`: emit
@@ -955,7 +955,14 @@ Acceptance:
       `src/picking/tests.rs::asset_picking_skips_stroke_overlay_and_returns_underlying_mesh`.
       Rendered selection/hover highlight proof remains open under the browser
       proof gate.
-- [ ] Browser proof runs without manual mouse input.
+- [x] Browser proof runs without manual mouse input. Evidence:
+      `SCENA_BROWSER_BACKENDS=webgl2 npm run browser:scene-host-proof` passed
+      locally with V3D WebGL2 and wrote
+      `target/gate-artifacts/scene-host-browser-proof/scene-host-browser-proof.json`;
+      `tests/browser/scene_host_browser_proof.js` asserts synthetic
+      `host.pick`, `host.hover`, and `host.select` return the tracked handle
+      and that emitted `pick`, `hover`, and `selection_changed` events carry
+      the same stable handle.
 - [x] Native SceneHost proof runs without manual input devices.
 - [x] Stable fixtures:
       `tests/assets/stable-contracts/interaction_expectation.v1.json` and
