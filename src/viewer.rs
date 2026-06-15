@@ -1,11 +1,15 @@
 //! High-level viewer helpers built from `Scene`, `Assets`, and `Renderer`.
 
 mod animation;
+mod asset_catalog_preview;
 mod capture;
 mod interaction;
 mod load_progress;
 mod material_variants;
 
+pub use asset_catalog_preview::{
+    AssetCatalogPreviewError, AssetCatalogPreviewPng, render_asset_catalog_preview_png,
+};
 pub use capture::{ViewerCaptureError, ViewerPngError};
 
 use crate::assets::{AssetLoadProgress, AssetPath, Assets};
@@ -13,6 +17,7 @@ use crate::controls::{
     CameraBookmark, OrbitControlAction, OrbitControls, PointerEvent, TouchEvent,
 };
 use crate::diagnostics::{Diagnostic, LookupError, RenderOutcome};
+use crate::material::Color;
 use crate::picking::Hit;
 use crate::platform::{PlatformSurface, SurfaceEvent};
 use crate::render::{Profile, Quality, RenderMode, Renderer, RendererOptions};
@@ -61,6 +66,7 @@ struct ViewerCommonOptions {
     environment_path: Option<AssetPath>,
     renderer_options: RendererOptions,
     import_transform: Option<Transform>,
+    background_color: Option<Color>,
     camera_bookmarks: Vec<CameraBookmark>,
 }
 
@@ -73,6 +79,7 @@ impl ViewerCommonOptions {
             environment_path: None,
             renderer_options: RendererOptions::default(),
             import_transform: None,
+            background_color: None,
             camera_bookmarks: Vec::new(),
         }
     }
@@ -176,6 +183,12 @@ impl HeadlessGltfViewerBuilder {
     /// instantiation and before optional framing, lighting, prepare, or render.
     pub const fn with_import_transform(mut self, transform: Transform) -> Self {
         self.common.import_transform = Some(transform);
+        self
+    }
+
+    /// Sets the renderer clear color before the first prepare/render.
+    pub const fn with_background_color(mut self, color: Color) -> Self {
+        self.common.background_color = Some(color);
         self
     }
 
@@ -396,6 +409,12 @@ impl InteractiveGltfViewerBuilder {
     /// instantiation and before optional framing, lighting, prepare, or render.
     pub const fn with_import_transform(mut self, transform: Transform) -> Self {
         self.common.import_transform = Some(transform);
+        self
+    }
+
+    /// Sets the renderer clear color before the first prepare/render.
+    pub const fn with_background_color(mut self, color: Color) -> Self {
+        self.common.background_color = Some(color);
         self
     }
 

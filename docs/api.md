@@ -75,6 +75,15 @@ Additive public API changes in Unreleased:
   `InteractiveGltfViewerBuilder::with_camera_bookmark`,
   `InteractiveGltfViewerBuilder::with_camera_bookmarks`, and
   `InteractiveGltfViewer::camera_bookmarks`
+- `ASSET_CATALOG_SCHEMA_V1`, `ASSET_READINESS_REPORT_SCHEMA_V1`,
+  `AssetCatalogV1`, `AssetCatalogAssetV1`, and related catalog field types
+- `AssetReadinessReportV1`, `AssetReadinessAssetReportV1`,
+  `AssetReadinessFindingV1`, `AssetReadinessSeverityV1`, and
+  `Assets::validate_asset_catalog`
+- `render_asset_catalog_preview_png`, `AssetCatalogPreviewPng`,
+  `AssetCatalogPreviewError`,
+  `HeadlessGltfViewerBuilder::with_background_color`, and
+  `InteractiveGltfViewerBuilder::with_background_color`
 - `SceneHostCore::set_camera_bookmark` and
   `SceneHostCore::set_camera_bookmark_json` (gated behind `scene-host`)
 - The `scena` binary with `schema list`, `schema get <schema>`,
@@ -130,11 +139,6 @@ Additive public API changes in 1.7.0:
 - `AssetMaterialSource` and `AssetMaterialSourceKind`
 - `AssetLoadReport<SceneAsset>::to_schema_report`
 - `AssetLoadReport<SceneAsset>::to_schema_json`
-- `ASSET_CATALOG_SCHEMA_V1`, `ASSET_READINESS_REPORT_SCHEMA_V1`
-- `AssetCatalogV1`, `AssetCatalogAssetV1`, and related catalog field types
-- `AssetReadinessReportV1`, `AssetReadinessAssetReportV1`,
-  `AssetReadinessFindingV1`, and `AssetReadinessSeverityV1`
-- `Assets::validate_asset_catalog`
 - `AssetLoadOptions::with_strict_external_resources`
 - `AssetProvenance` and `AssetDerivative`
 - `SceneAsset::provenance`

@@ -37,6 +37,9 @@ impl HeadlessGltfViewerBuilder {
 
         let mut renderer =
             Renderer::headless_with_options(self.width, self.height, self.common.renderer_options)?;
+        if let Some(background_color) = self.common.background_color {
+            renderer.set_background_color(background_color);
+        }
         if let Some(environment_path) = self.common.environment_path {
             let environment = assets.load_environment(environment_path).await?;
             renderer.set_environment(environment);
@@ -116,6 +119,9 @@ impl InteractiveGltfViewerBuilder {
         }
         let mut renderer =
             Renderer::from_surface_with_options(self.surface, self.common.renderer_options)?;
+        if let Some(background_color) = self.common.background_color {
+            renderer.set_background_color(background_color);
+        }
         if let Some(environment_path) = self.common.environment_path {
             let environment = pollster::block_on(assets.load_environment(environment_path))?;
             renderer.set_environment(environment);
@@ -165,6 +171,9 @@ impl InteractiveGltfViewerBuilder {
         let mut renderer =
             Renderer::from_surface_async_with_options(self.surface, self.common.renderer_options)
                 .await?;
+        if let Some(background_color) = self.common.background_color {
+            renderer.set_background_color(background_color);
+        }
         if let Some(environment_path) = self.common.environment_path {
             let environment = assets.load_environment(environment_path).await?;
             renderer.set_environment(environment);

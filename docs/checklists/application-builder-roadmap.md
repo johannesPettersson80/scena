@@ -1332,9 +1332,8 @@ Validation checks:
 - [x] Required anchors/connectors exist and are well-formed.
 - [x] Required material variants exist.
 - [x] Missing textures and material fallbacks are reported.
-- [ ] Preview render can be generated deterministically.
-      Current slice validates preview image/generated-preview metadata; actual
-      rendered preview generation and proof remain pending.
+- [x] Preview render can be generated deterministically for `generated`
+      preview entries through `render_asset_catalog_preview_png()`.
 
 Scope guard:
 
@@ -1346,7 +1345,7 @@ Acceptance:
 - [x] Fixture catalog with one valid and several invalid assets.
 - [x] Readiness report stable fixture.
 - [ ] Browser preview proof for a catalog asset.
-- [ ] Example: asset picker feeding a SceneHost scene.
+- [x] Example: asset picker feeding a SceneHost scene.
 
 Evidence:
 
@@ -1357,6 +1356,15 @@ Evidence:
       `Assets::validate_asset_catalog`.
 - [x] Focused tests: `asset_catalog_contracts`, `stable_contracts`, and
       `scena_cli_schema` pass locally after implementation.
+- [x] Preview test-first proof:
+      `cargo test --test asset_catalog_preview -- --nocapture` failed on the
+      builder before implementation with unresolved
+      `AssetCatalogPreviewError` and `render_asset_catalog_preview_png`.
+- [x] Focused preview proof: `cargo test --test asset_catalog_preview -- --nocapture`
+      passes locally after implementation.
+- [x] Example compile/run proof: `cargo run --example asset_catalog_picker
+      --features scene-host -- target/gate-artifacts/asset-catalog-picker`
+      produces deterministic preview and SceneHost PNG artifact paths.
 
 ### 3.2 Asset doctor integration API
 

@@ -53,6 +53,11 @@ name = "scene_host_release_1_7"
 path = "examples/scene_host_release_1_7.rs"
 required-features = ["scene-host"]
 
+[[example]]
+name = "asset_catalog_picker"
+path = "examples/asset_catalog_picker.rs"
+required-features = ["scene-host"]
+
 [dependencies]
 base64 = "0.22"
 bytemuck = { version = "1", features = ["derive"] }

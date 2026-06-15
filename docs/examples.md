@@ -35,7 +35,7 @@ cargo check --examples
 | Browser host contracts | `scene_host_contracts.rs`, `scene_host_release_1_7.rs`, `scene_host_browser_contracts.js` |
 | CAD-style anchors and connectors | `anchor_alignment.rs`, `connect_objects.rs`, `imported_anchor_connection.rs`, `industrial_connector_assembly.rs`, `coordinate_connector_repair.rs`, `coordinate_units.rs` |
 | Industrial/static scene | `industrial_static_scene.rs` |
-| Diagnostics and asset readiness | `beginner_diagnostics.rs`, `scene_inspection.rs`; `Assets::validate_asset_catalog()` for `scena.asset_catalog.v1` manifests |
+| Diagnostics and asset readiness | `beginner_diagnostics.rs`, `scene_inspection.rs`, `asset_catalog_picker.rs`; `Assets::validate_asset_catalog()` for `scena.asset_catalog.v1` manifests |
 
 ## Recommended learning order
 
@@ -93,13 +93,19 @@ with `with_camera_bookmark(s)`. Browser hosts can call `setCameraEased(...)` or
 `setCameraBookmarkJson(...)`; both still require the host to advance time and
 render explicitly.
 
-Asset catalog readiness uses stable JSON contracts rather than a separate
-example binary: deserialize a `scena.asset_catalog.v1` manifest into
-`AssetCatalogV1`, call `Assets::validate_asset_catalog(&catalog).await`, and
-consume the `scena.asset_readiness_report.v1` result. The host still owns
-catalog search, versioning, storage, approval workflow, and business rules.
+Asset catalog readiness uses stable JSON contracts: deserialize a
+`scena.asset_catalog.v1` manifest into `AssetCatalogV1`, call
+`Assets::validate_asset_catalog(&catalog).await`, and consume the
+`scena.asset_readiness_report.v1` result. For a ready generated-preview entry,
+`render_asset_catalog_preview_png(&asset).await` returns deterministic PNG
+bytes plus a stable FNV hash. The `asset_catalog_picker.rs` example selects the
+first ready catalog entry, writes its generated preview, instantiates the same
+asset into `SceneHostCore`, frames, renders, and writes the SceneHost PNG. The
+host still owns catalog search, versioning, storage, approval workflow, and
+business rules.
 
 ```bash
+cargo run --example asset_catalog_picker --features scene-host -- target/catalog-picker
 cargo run --example scene_host_release_1_7 --features scene-host
 ```
 
