@@ -1031,7 +1031,9 @@ Acceptance:
       runnable. The deferred Phase-2 templates record their dependency reason
       instead of runnable commands.
 - [x] Template outputs include stable JSON reports and capture artifacts.
-- [ ] Failing fixture variants exist for each dynamic verification class.
+- [x] Failing fixture variants exist for each dynamic verification class:
+      appearance wrong color, animation wrong sampled translation, and
+      interaction wrong handle.
 
 ## Phase 1 - Interactive viewer ergonomics
 

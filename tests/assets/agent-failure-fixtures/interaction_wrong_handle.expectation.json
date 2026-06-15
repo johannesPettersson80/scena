@@ -1,0 +1,20 @@
+{
+  "schema": "scena.interaction_expectation.v1",
+  "viewport": {
+    "width_css_px": 128.0,
+    "height_css_px": 128.0,
+    "device_pixel_ratio": 1.0
+  },
+  "steps": [
+    {
+      "action": "pick",
+      "x_css_px": 64.0,
+      "y_css_px": 64.0,
+      "expect_hit": true,
+      "expected_handle": 999999,
+      "expected_events": [
+        "pick"
+      ]
+    }
+  ]
+}

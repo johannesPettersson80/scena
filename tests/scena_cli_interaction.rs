@@ -196,6 +196,32 @@ fn scena_verify_interaction_cli_stdout_matches_golden_fixture() {
 }
 
 #[test]
+fn scena_verify_interaction_failing_fixture_emits_expected_reason() {
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "verify",
+            "interaction",
+            "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+            "--expect",
+            "tests/assets/agent-failure-fixtures/interaction_wrong_handle.expectation.json",
+        ])
+        .output()
+        .expect("scena verify interaction failure fixture command runs");
+
+    assert!(!output.status.success());
+    assert!(
+        output.stderr.is_empty(),
+        "interaction failure fixture must keep stderr empty, stderr={}",
+        stderr(&output)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("interaction failure emits JSON");
+    assert_eq!(report["schema"], "scena.interaction_verification.v1");
+    assert_eq!(report["ok"], false);
+    assert_reason(&report, "handle_mismatch");
+}
+
+#[test]
 fn scena_verify_interaction_cli_fails_unexpected_hover_and_selection_state() {
     let dir = artifact_dir("verify-interaction-negative-state");
     let expectation_path = dir.join("interaction-negative-state.json");

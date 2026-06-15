@@ -889,6 +889,83 @@ fn scena_verify_animation_cli_checks_expected_sampled_translations() {
 }
 
 #[test]
+fn scena_dynamic_verification_failing_fixtures_emit_expected_reasons() {
+    let appearance = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "verify",
+            "appearance",
+            "tests/assets/gltf/material_variants_scene.gltf",
+            "--expect",
+            "tests/assets/agent-failure-fixtures/appearance_wrong_color.expectation.json",
+            "--width",
+            "96",
+            "--height",
+            "72",
+        ])
+        .output()
+        .expect("scena verify appearance failure fixture command runs");
+    assert!(!appearance.status.success());
+    assert!(
+        appearance.stderr.is_empty(),
+        "appearance failure fixture must keep stderr empty, stderr={}",
+        stderr(&appearance)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&appearance.stdout).expect("appearance failure emits JSON");
+    assert_eq!(report["schema"], "scena.appearance_introspection.v1");
+    assert_eq!(report["ok"], false);
+    assert_report_reason(&report, "color_family_mismatch");
+
+    let animation_case: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(
+            "tests/assets/agent-failure-fixtures/animation_wrong_translation.case.json",
+        )
+        .expect("animation failure fixture reads"),
+    )
+    .expect("animation failure fixture parses");
+    let asset = animation_case["asset"].as_str().expect("asset string");
+    let clip = animation_case["clip"].as_str().expect("clip string");
+    let times = animation_case["times"].as_str().expect("times string");
+    let expected_translations = animation_case["expect_translations"]
+        .as_str()
+        .expect("expect_translations string");
+    let expected_reason = animation_case["expected_reason"]
+        .as_str()
+        .expect("expected_reason string");
+
+    let animation = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "verify",
+            "animation",
+            asset,
+            "--clip",
+            clip,
+            "--times",
+            times,
+            "--expect-change",
+            "--expect-translations",
+            expected_translations,
+            "--width",
+            "96",
+            "--height",
+            "72",
+        ])
+        .output()
+        .expect("scena verify animation failure fixture command runs");
+    assert!(!animation.status.success());
+    assert!(
+        animation.stderr.is_empty(),
+        "animation failure fixture must keep stderr empty, stderr={}",
+        stderr(&animation)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&animation.stdout).expect("animation failure emits JSON");
+    assert_eq!(report["schema"], "scena.animation_introspection.v1");
+    assert_eq!(report["ok"], false);
+    assert_report_reason(&report, expected_reason);
+}
+
+#[test]
 fn scena_inspect_cli_emits_scene_inspection_json_for_asset() {
     let output = Command::new(env!("CARGO_BIN_EXE_scena"))
         .args(["inspect", TEST_ASSET, "--width", "96", "--height", "72"])
@@ -1000,6 +1077,17 @@ fn assert_json_numbers_rounded(value: &serde_json::Value, digits: u32) {
         }
         _ => {}
     }
+}
+
+fn assert_report_reason(report: &serde_json::Value, code: &str) {
+    assert!(
+        report["reasons"]
+            .as_array()
+            .expect("report reasons array")
+            .iter()
+            .any(|reason| reason["code"] == code),
+        "expected report reason '{code}': {report:#}"
+    );
 }
 
 fn assert_success_stdout_matches(output: &std::process::Output, fixture: &str) {
