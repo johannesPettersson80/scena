@@ -12,6 +12,7 @@ const VIEWPORT = { width: 640, height: 480, devicePixelRatio: 1.5 };
 const ASSET_URL = "/assets/gltf/mesh_material_vertex_color_scene.gltf";
 const PHASE4_ASSET_URL = "/assets/gltf/material_variants_scene.gltf";
 const PHASE5_ANIMATED_ASSET_URL = "/assets/gltf/animated_triangle_scene.glb";
+const EXTERNAL_RESOURCE_ASSET_URL = "/assets/gltf/khronos/WaterBottle/WaterBottle.gltf";
 const ARTIFACT_DIR = path.join(
   process.cwd(),
   "target",
@@ -465,7 +466,15 @@ function decodePngRgba8(bytes) {
 
 async function runPageProof(page) {
   return page.evaluate(
-    async ({ assetUrl, phase4AssetUrl, phase5AnimatedAssetUrl, backend, requiredBindings, viewport }) => {
+    async ({
+      assetUrl,
+      phase4AssetUrl,
+      phase5AnimatedAssetUrl,
+      externalResourceAssetUrl,
+      backend,
+      requiredBindings,
+      viewport,
+    }) => {
       try {
       const mod = await import("/pkg/scena.js");
       await mod.default("/pkg/scena_bg.wasm");
@@ -1433,6 +1442,20 @@ async function runPageProof(page) {
       await waitForCanvasPresent();
       const contactGroundingCapture = captureSummary(host.capture());
       const contactGroundingStats = JSON.parse(host.statsJson());
+      const externalResourceFrameHandle = host.addEmpty(
+        rootHandle,
+        [1.4, -1.4, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+        [1.0, 1.0, 1.0],
+        "asset:external-resources",
+      );
+      const externalResourceImportReport = JSON.parse(
+        await host.instantiateUrlUnderWithReportJson(
+          externalResourceFrameHandle,
+          externalResourceAssetUrl,
+        ),
+      );
+      host.setVisible(externalResourceFrameHandle, false);
 
       return {
         backend,
@@ -1456,6 +1479,11 @@ async function runPageProof(page) {
           { url: assetUrl, role: "right", report: rightImportReport },
           { url: phase4AssetUrl, role: "phase4-instanced" },
           { url: phase5AnimatedAssetUrl, role: "phase5-animation" },
+          {
+            url: externalResourceAssetUrl,
+            role: "external-resources",
+            report: externalResourceImportReport,
+          },
         ],
         handles: {
           root,
@@ -1470,6 +1498,8 @@ async function runPageProof(page) {
           phase5_frame: phase5Frame,
           phase5_import: phase5Import,
           phase5_triangle: phase5Triangle,
+          external_resource_frame: handleNumber(externalResourceFrameHandle),
+          external_resource_import: handleNumber(externalResourceImportReport.import),
         },
         phase0_visual_patch: {
           before_inspection: phase0BeforeInspection,
@@ -1708,6 +1738,7 @@ async function runPageProof(page) {
       assetUrl: ASSET_URL,
       phase4AssetUrl: PHASE4_ASSET_URL,
       phase5AnimatedAssetUrl: PHASE5_ANIMATED_ASSET_URL,
+      externalResourceAssetUrl: EXTERNAL_RESOURCE_ASSET_URL,
       backend: BACKEND,
       requiredBindings: REQUIRED_BINDINGS,
       viewport: VIEWPORT,
@@ -1892,6 +1923,55 @@ function assertProof(pageProof, screenshot) {
       capturePng.descriptor.width === phase0.after_capture.descriptor.width &&
       capturePng.descriptor.height === phase0.after_capture.descriptor.height,
     { capture_png: capturePng, paired_capture: phase0.after_capture },
+  );
+  const externalResourceAsset = pageProof.assets.find(
+    (asset) => asset.role === "external-resources",
+  );
+  const externalResourceReport =
+    externalResourceAsset && externalResourceAsset.report.asset_load_report;
+  const externalResources =
+    externalResourceReport && Array.isArray(externalResourceReport.external_resources)
+      ? externalResourceReport.external_resources
+      : [];
+  const externalBuffer = externalResources.find(
+    (resource) =>
+      resource.kind === "buffer" &&
+      resource.status === "fetched" &&
+      resource.index === 0 &&
+      resource.path.endsWith("/WaterBottle.bin") &&
+      resource.bytes > 0,
+  );
+  const externalImages = externalResources.filter(
+    (resource) =>
+      resource.kind === "image" &&
+      resource.status === "fetched" &&
+      resource.path.includes("/WaterBottle_") &&
+      resource.path.endsWith(".png") &&
+      resource.bytes > 0,
+  );
+  const externalImageNames = new Set(
+    externalImages.map((resource) => resource.path.split("/").pop()),
+  );
+  check(
+    "browser_asset_report_records_external_bin_and_texture_files",
+    externalResourceReport &&
+      externalResourceReport.schema === "scena.asset_load_report.v1" &&
+      externalResourceReport.external_buffers === 1 &&
+      externalResourceReport.external_images === 4 &&
+      Boolean(externalBuffer) &&
+      externalImages.length === 4 &&
+      [
+        "WaterBottle_baseColor.png",
+        "WaterBottle_occlusionRoughnessMetallic.png",
+        "WaterBottle_normal.png",
+        "WaterBottle_emissive.png",
+      ].every((name) => externalImageNames.has(name)),
+    {
+      asset: externalResourceAsset,
+      resources: externalResources,
+      external_buffer: externalBuffer,
+      external_images: externalImages,
+    },
   );
   const phase0EventKinds = [
     ...pageProof.phase0_events.infrastructure.events.map((event) => event.kind),

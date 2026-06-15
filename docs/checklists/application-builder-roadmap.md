@@ -301,8 +301,12 @@ Acceptance:
 
 - [x] Native tests cover missing buffer, missing image, missing decoded pixels,
       and cache-hit warning retention.
-- [ ] Browser proof records all external resources for a `.gltf` with `.bin`
-      and texture files.
+- [x] Browser proof records all external resources for a `.gltf` with `.bin`
+      and texture files. Evidence: `SCENA_BROWSER_BACKENDS=webgl2 npm run
+      browser:scene-host-proof` loads the Khronos WaterBottle `.gltf` in the
+      browser proof and asserts `scena.asset_load_report.v1` reports one
+      fetched `WaterBottle.bin` buffer plus all four fetched WaterBottle PNG
+      texture files.
 - [x] Stable `scena.asset_load_report.v1` additions are optional/defaulted.
 - [x] Asset doctor and SceneHost reports expose the same diagnostic family.
       Evidence:
