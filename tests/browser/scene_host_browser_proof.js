@@ -1855,6 +1855,21 @@ function assertProof(pageProof, screenshot) {
     flyTo.final_capture.descriptor.pixels,
   );
   check(
+    "camera_fly_to_keeps_framed_object_visible_during_and_after",
+    flyTo.halfway_capture.descriptor.pixels.nonblack > 0 &&
+      flyTo.final_capture.descriptor.pixels.nonblack > 0 &&
+      flyTo.halfway_capture.descriptor.pixels.bbox &&
+      flyTo.halfway_capture.descriptor.pixels.bbox.width > 0 &&
+      flyTo.halfway_capture.descriptor.pixels.bbox.height > 0 &&
+      flyTo.final_capture.descriptor.pixels.bbox &&
+      flyTo.final_capture.descriptor.pixels.bbox.width > 0 &&
+      flyTo.final_capture.descriptor.pixels.bbox.height > 0,
+    {
+      halfway: flyTo.halfway_capture.descriptor.pixels,
+      final: flyTo.final_capture.descriptor.pixels,
+    },
+  );
+  check(
     "camera_fly_to_final_reaches_target",
     cameraStatesApproximatelyEqual(flyTo.final_camera, flyTo.target),
     { final: flyTo.final_camera, target: flyTo.target },

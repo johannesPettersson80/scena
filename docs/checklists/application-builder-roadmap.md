@@ -1054,10 +1054,12 @@ Acceptance:
 - [x] Camera interpolation keeps target, distance, yaw, and pitch finite.
 - [x] Zero duration applies immediately.
 - [x] Invalid camera states fail with structured errors.
-- [ ] Browser proof shows a framed object remains visible during and after
-      fly-to. The SceneHost browser proof binding list includes
-      `setCameraEased` and `setCameraBookmarkJson`; rendered browser evidence
-      still needs to run on a browser/GPU proof machine.
+- [x] Browser proof shows a framed object remains visible during and after
+      fly-to. Evidence: `SCENA_BROWSER_BACKENDS=webgl2 npm run
+      browser:scene-host-proof` passed locally with V3D WebGL2; the
+      SceneHost browser proof asserts `setCameraEased` halfway and final
+      captures both have nonzero visible pixels and a nonempty content bbox,
+      and that the final camera reaches the requested target state.
 
 ### 1.2 Transform gizmo and manipulator
 
