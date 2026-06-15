@@ -1841,6 +1841,50 @@ fn scene_host_inspection_tools_drive_part_tree_selection_isolate_ghost_and_fit()
 }
 
 #[test]
+fn scene_host_distance_measurement_overlay_reports_stable_line_handle() {
+    let mut host = SceneHostCore::headless(128, 96).expect("host builds");
+
+    let json = host
+        .add_distance_measurement_json(
+            "browser-gap",
+            Vec3::ZERO,
+            Vec3::new(1.0, 0.0, 0.0),
+            Some("gap"),
+            "mm",
+            0,
+        )
+        .expect("measurement overlay inserts");
+    let report: serde_json::Value = serde_json::from_str(&json).expect("report decodes");
+
+    assert_eq!(report["schema"], "scena.scene_host_measurement_overlay.v1");
+    assert_eq!(report["id"], "browser-gap");
+    assert_eq!(report["kind"], "distance");
+    assert_eq!(report["formatted_value"], "1000 mm");
+    let line_node = report["line_node"].as_u64().expect("line node is a handle");
+    assert!(line_node > 0);
+
+    let inspection: SceneInspectionReportV1 =
+        serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
+            .expect("inspection decodes");
+    assert!(
+        inspection
+            .nodes
+            .iter()
+            .any(|node| node.handle == line_node && node.visible),
+        "measurement line node is stable and visible in inspection"
+    );
+    let draw = inspection
+        .draw_list
+        .iter()
+        .find(|draw| draw.node == line_node)
+        .expect("measurement line is drawable");
+    assert_eq!(
+        draw.material.as_ref().expect("line material reported").kind,
+        "line"
+    );
+}
+
+#[test]
 fn scene_host_subtree_tint_cancels_active_tint_transitions_for_touched_nodes() {
     let mut host = SceneHostCore::headless(64, 64).expect("host builds");
     let root = host.root_handle();

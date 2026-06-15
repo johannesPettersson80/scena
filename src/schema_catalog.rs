@@ -285,6 +285,15 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/scene_host_subtree.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.scene_host_measurement_overlay.v1",
+            owner_module: "scene_host",
+            summary: "SceneHost measurement overlay result with stable generated node handles.",
+            feature_flag: Some("scene-host"),
+            fixture_path: Some(
+                "tests/assets/stable-contracts/scene_host_measurement_overlay.v1.json",
+            ),
+        },
+        SchemaEntryRow {
             schema: "scena.animation_inventory.v1",
             owner_module: "scene_host",
             summary: "SceneHost animation clip inventory.",
@@ -415,6 +424,10 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
         (
             "scena.subtree.v1",
             include_str!("../tests/assets/stable-contracts/scene_host_subtree.v1.json"),
+        ),
+        (
+            "scena.scene_host_measurement_overlay.v1",
+            include_str!("../tests/assets/stable-contracts/scene_host_measurement_overlay.v1.json"),
         ),
         (
             "scena.animation_inventory.v1",

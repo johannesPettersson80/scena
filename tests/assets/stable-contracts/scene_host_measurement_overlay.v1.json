@@ -1,0 +1,9 @@
+{
+  "schema": "scena.scene_host_measurement_overlay.v1",
+  "id": "browser-gap",
+  "kind": "distance",
+  "value": 1.0,
+  "formatted_value": "1000 mm",
+  "line_node": 42,
+  "label_text": "gap: 1000 mm"
+}

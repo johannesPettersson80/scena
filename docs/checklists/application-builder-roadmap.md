@@ -1191,7 +1191,7 @@ Acceptance:
 
 - [x] Unit tests for distance, angle, and bounds dimensions.
 - [x] Visual proof for dimension line and label rendering.
-- [ ] Browser proof for selecting two points and rendering a distance overlay.
+- [x] Browser proof for selecting two points and rendering a distance overlay.
 
 Evidence:
 
@@ -1202,6 +1202,22 @@ Evidence:
 - [x] Focused tests: `cargo test --test measurement_overlays --test
       measurement_visual_proof -- --nocapture` passes locally after
       implementation.
+- [x] Test-first proof: `cargo test --features scene-host --test scene_host
+      scene_host_distance_measurement_overlay_reports_stable_line_handle
+      -- --nocapture` failed on the builder before implementation with missing
+      `SceneHostCore::add_distance_measurement_json`.
+- [x] Focused tests: `cargo test --features scene-host --test scene_host
+      scene_host_distance_measurement_overlay_reports_stable_line_handle
+      -- --nocapture`, `cargo test --features scene-host --test
+      stable_contracts
+      scene_host_measurement_overlay_golden_matches_live_schema_serialization
+      -- --nocapture`, and `cargo test --features scene-host --test
+      scena_cli_schema -- --nocapture` pass locally.
+- [x] Browser proof: `SCENA_BROWSER_BACKENDS=webgl2 npm run
+      browser:scene-host-proof` passed on V3D WebGL2 with selected point
+      centers, `scena.scene_host_measurement_overlay.v1` line-node report,
+      draw-list line material, and rendered pixel evidence in
+      `target/gate-artifacts/scene-host-browser-proof/scene-host-browser-proof.json`.
 
 ### 2.3 Section box helper
 

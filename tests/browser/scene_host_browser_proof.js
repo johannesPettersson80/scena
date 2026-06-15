@@ -24,6 +24,7 @@ const PKG_DIR = path.join(process.cwd(), "target", "scene-host-browser-pkg");
 const REQUIRED_BINDINGS = [
   ["static", "newWebgl2"],
   ["prototype", "addEmpty"],
+  ["prototype", "removeNode"],
   ["prototype", "instantiateUrlUnder"],
   ["prototype", "instantiateUrlInstanced"],
   ["prototype", "instantiateUrlInstancedUnder"],
@@ -57,6 +58,9 @@ const REQUIRED_BINDINGS = [
   ["prototype", "setSubtreeTint"],
   ["prototype", "clearSubtreeTint"],
   ["prototype", "applyPatch"],
+  ["prototype", "worldDistance"],
+  ["prototype", "nodeWorldBoundsJson"],
+  ["prototype", "addDistanceMeasurement"],
   ["prototype", "prepare"],
   ["prototype", "render"],
   ["prototype", "inspectJson"],
@@ -564,6 +568,13 @@ async function runPageProof(page) {
       const handleBigInt = (value) => (typeof value === "bigint" ? value : BigInt(value));
       const optionalHandleNumber = (value) =>
         value === null || value === undefined ? null : handleNumber(value);
+      const boundsCenter = (bounds) => [
+        (bounds.min[0] + bounds.max[0]) / 2,
+        (bounds.min[1] + bounds.max[1]) / 2,
+        (bounds.min[2] + bounds.max[2]) / 2,
+      ];
+      const distance3 = (a, b) =>
+        Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
       const bindingStatus = requiredBindings.map(([kind, name]) => {
         const owner = kind === "static" ? SceneHost : SceneHost.prototype;
         return { kind, name, present: typeof owner[name] === "function" };
@@ -707,9 +718,33 @@ async function runPageProof(page) {
       host.setCameraJson(JSON.stringify(beforeFitSelectionCamera));
       host.setNodeAnnotation("tracked-node", leftMeshHandle, [0.0, 0.0, 0.0]);
       host.setWorldAnnotation("origin", [0.0, 0.0, 0.0]);
+      const measurementSelectedPoints = {
+        left: boundsCenter(JSON.parse(host.nodeWorldBoundsJson(leftMeshHandle))),
+        right: boundsCenter(JSON.parse(host.nodeWorldBoundsJson(rightMeshHandle))),
+      };
+      const expectedMeasurementDistance = distance3(
+        measurementSelectedPoints.left,
+        measurementSelectedPoints.right,
+      );
+      const measurementReport = JSON.parse(
+        host.addDistanceMeasurement(
+          "browser-gap",
+          measurementSelectedPoints.left,
+          measurementSelectedPoints.right,
+          null,
+          "mm",
+          0,
+        ),
+      );
+      const measurementInspection = JSON.parse(host.inspectJson());
       host.frameAll();
 
       const framedCamera = JSON.parse(host.getCameraJson());
+      const measurementPrepare = timedPrepare("measurement_distance_overlay");
+      const measurementRender = JSON.parse(host.render());
+      await waitForCanvasPresent();
+      const measurementCapture = captureSummary(host.capture());
+      host.removeNode(handleBigInt(measurementReport.line_node));
       host.setCamera(
         framedCamera.target,
         framedCamera.yaw_radians,
@@ -1083,6 +1118,15 @@ async function runPageProof(page) {
             before_camera: beforeFitSelectionCamera,
             after_camera: afterFitSelectionCamera,
           },
+        },
+        measurement_probe: {
+          selected_points: measurementSelectedPoints,
+          expected_distance: expectedMeasurementDistance,
+          report: measurementReport,
+          inspection: measurementInspection,
+          prepare: measurementPrepare,
+          render: measurementRender,
+          capture: measurementCapture,
         },
         camera: {
           framed: framedCamera,
@@ -1694,6 +1738,34 @@ function assertProof(pageProof, screenshot) {
       pageProof.inspection_tools_probe.fit_selection.after_camera.distance > 0,
     pageProof.inspection_tools_probe.fit_selection,
   );
+  const measurementDraw = pageProof.measurement_probe.inspection.draw_list.find(
+    (entry) => entry.node === pageProof.measurement_probe.report.line_node,
+  );
+  check(
+    "distance_measurement_report_uses_selected_points",
+    pageProof.measurement_probe.report.schema === "scena.scene_host_measurement_overlay.v1" &&
+      pageProof.measurement_probe.report.kind === "distance" &&
+      Math.abs(
+        pageProof.measurement_probe.report.value - pageProof.measurement_probe.expected_distance,
+      ) <= 0.0001 &&
+      pageProof.measurement_probe.report.formatted_value.endsWith("mm") &&
+      pageProof.measurement_probe.report.label_text === undefined,
+    pageProof.measurement_probe,
+  );
+  check(
+    "distance_measurement_line_is_in_browser_draw_list",
+    measurementDraw && measurementDraw.material && measurementDraw.material.kind === "line",
+    {
+      report: pageProof.measurement_probe.report,
+      draw: measurementDraw,
+      draw_list: pageProof.measurement_probe.inspection.draw_list,
+    },
+  );
+  check(
+    "distance_measurement_overlay_renders_pixels",
+    pageProof.measurement_probe.capture.descriptor.pixels.nonblack > 40,
+    pageProof.measurement_probe.capture.descriptor.pixels,
+  );
 
   check(
     "capture_revisions_match_inspection",
@@ -1853,6 +1925,7 @@ async function main() {
     subtree_report: pageProof.subtree_report,
     subtree_tint_probe: pageProof.subtree_tint_probe,
     inspection_tools_probe: pageProof.inspection_tools_probe,
+    measurement_probe: pageProof.measurement_probe,
     phase1_appearance_dirty_tracking: pageProof.phase1_appearance_dirty_tracking,
     phase2_post_processing: pageProof.phase2_post_processing,
     phase3_world_strokes: pageProof.phase3_world_strokes,

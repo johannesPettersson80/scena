@@ -14,6 +14,7 @@ mod inspection_tools;
 mod instances;
 mod interaction_verification;
 mod material_variants;
+mod measurements;
 mod post;
 mod product;
 mod reporting;
@@ -30,6 +31,8 @@ mod wasm_animation;
 mod wasm_assets;
 #[cfg(target_arch = "wasm32")]
 mod wasm_camera;
+#[cfg(target_arch = "wasm32")]
+mod wasm_measurements;
 #[cfg(target_arch = "wasm32")]
 mod wasm_post;
 #[cfg(target_arch = "wasm32")]
@@ -61,6 +64,9 @@ pub use interaction_verification::{
     InteractionStepReportV1, InteractionVerificationArtifactsV1, InteractionVerificationFixV1,
     InteractionVerificationReasonV1, InteractionVerificationReportV1,
     InteractionVerificationSummaryV1, InteractionViewportV1, host_event_kind_name, physical_px,
+};
+pub use measurements::{
+    SCENE_HOST_MEASUREMENT_OVERLAY_SCHEMA_V1, SceneHostMeasurementOverlayReportV1,
 };
 pub use reporting::{
     SCENE_HOST_ANIMATION_INVENTORY_SCHEMA_V1, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1,
