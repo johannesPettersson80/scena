@@ -34,6 +34,10 @@ const REQUIRED_BINDINGS = [
   ["prototype", "setTransformsEased"],
   ["prototype", "setTransformsEasedTyped"],
   ["prototype", "setVisible"],
+  ["prototype", "showOnly"],
+  ["prototype", "isolate"],
+  ["prototype", "ghost"],
+  ["prototype", "fitSelection"],
   ["prototype", "setNodeTint"],
   ["prototype", "setNodeTintEased"],
   ["prototype", "clearNodeTintEased"],
@@ -52,6 +56,7 @@ const REQUIRED_BINDINGS = [
   ["prototype", "subtreeNodesJson"],
   ["prototype", "setSubtreeTint"],
   ["prototype", "clearSubtreeTint"],
+  ["prototype", "applyPatch"],
   ["prototype", "prepare"],
   ["prototype", "render"],
   ["prototype", "inspectJson"],
@@ -676,6 +681,30 @@ async function runPageProof(page) {
       );
       const subtreeTintInspection = JSON.parse(host.inspectJson());
       host.clearSubtreeTint(rootHandle, new BigUint64Array([]));
+      const partTreeSelectionPatch = JSON.parse(
+        host.applyPatch(
+          JSON.stringify({
+            schema: "scena.visual_patch.v1",
+            selection: { node: leftMesh },
+          }),
+        ),
+      );
+      const inspectionToolsBefore = JSON.parse(host.inspectJson());
+      const visibleBeforeIsolate = inspectionToolsBefore.nodes
+        .filter((node) => node.visible)
+        .map((node) => handleBigInt(node.handle));
+      host.isolate(new BigUint64Array([handleBigInt(leftFrameHandle)]));
+      const isolateInspection = JSON.parse(host.inspectJson());
+      for (const handle of visibleBeforeIsolate) {
+        host.setVisible(handle, true);
+      }
+      host.ghost(leftFrameHandle, 0.35);
+      const ghostInspection = JSON.parse(host.inspectJson());
+      host.clearSubtreeTint(leftFrameHandle, new BigUint64Array([]));
+      const beforeFitSelectionCamera = JSON.parse(host.getCameraJson());
+      host.fitSelection(new BigUint64Array([handleBigInt(leftMeshHandle)]));
+      const afterFitSelectionCamera = JSON.parse(host.getCameraJson());
+      host.setCameraJson(JSON.stringify(beforeFitSelectionCamera));
       host.setNodeAnnotation("tracked-node", leftMeshHandle, [0.0, 0.0, 0.0]);
       host.setWorldAnnotation("origin", [0.0, 0.0, 0.0]);
       host.frameAll();
@@ -1045,6 +1074,16 @@ async function runPageProof(page) {
         visibility_probe: hiddenInspection,
         subtree_report: subtreeReport,
         subtree_tint_probe: subtreeTintInspection,
+        inspection_tools_probe: {
+          selection_patch: partTreeSelectionPatch,
+          before_isolate: inspectionToolsBefore,
+          isolate: isolateInspection,
+          ghost: ghostInspection,
+          fit_selection: {
+            before_camera: beforeFitSelectionCamera,
+            after_camera: afterFitSelectionCamera,
+          },
+        },
         camera: {
           framed: framedCamera,
           rendered: renderedCamera,
@@ -1586,6 +1625,24 @@ function assertProof(pageProof, screenshot) {
     pageProof.subtree_report.nodes.some((node) => node.handle === tracked),
     pageProof.subtree_report,
   );
+  const rootTreeNode = pageProof.subtree_report.nodes.find(
+    (node) => node.handle === pageProof.handles.root,
+  );
+  const leftFrameTreeNode = pageProof.subtree_report.nodes.find(
+    (node) => node.handle === pageProof.handles.left_frame,
+  );
+  check(
+    "subtree_report_exposes_part_tree_edges",
+    rootTreeNode &&
+      rootTreeNode.children.includes(pageProof.handles.left_frame) &&
+      leftFrameTreeNode &&
+      leftFrameTreeNode.parent === pageProof.handles.root &&
+      leftFrameTreeNode.children.includes(tracked),
+    {
+      root: rootTreeNode,
+      left_frame: leftFrameTreeNode,
+    },
+  );
   const tintedLeft = pageProof.subtree_tint_probe.nodes.find((node) => node.handle === tracked);
   const excludedRight = pageProof.subtree_tint_probe.nodes.find(
     (node) => node.handle === pageProof.handles.right_mesh,
@@ -1596,6 +1653,47 @@ function assertProof(pageProof, screenshot) {
   check("set_subtree_tint_skips_excluded_subtree", Boolean(excludedRight && !excludedRight.tint), {
     subtree_tint_probe: pageProof.subtree_tint_probe,
   });
+  check(
+    "part_tree_selection_patch_applies",
+    pageProof.inspection_tools_probe.selection_patch.applied.selection === 1 &&
+      pageProof.inspection_tools_probe.selection_patch.failed.length === 0,
+    pageProof.inspection_tools_probe.selection_patch,
+  );
+  const isolatedLeftFrame = pageProof.inspection_tools_probe.isolate.nodes.find(
+    (node) => node.handle === pageProof.handles.left_frame,
+  );
+  const isolatedRightFrame = pageProof.inspection_tools_probe.isolate.nodes.find(
+    (node) => node.handle === pageProof.handles.right_frame,
+  );
+  const isolatedRightDraw = pageProof.inspection_tools_probe.isolate.draw_list.find(
+    (entry) => entry.node === pageProof.handles.right_mesh,
+  );
+  check(
+    "isolate_keeps_selected_part_tree_node_visible",
+    isolatedLeftFrame && isolatedLeftFrame.visible,
+    pageProof.inspection_tools_probe.isolate,
+  );
+  check(
+    "isolate_hides_unrelated_part_tree_node",
+    isolatedRightFrame && !isolatedRightFrame.visible && !isolatedRightDraw,
+    pageProof.inspection_tools_probe.isolate,
+  );
+  const ghostedLeft = pageProof.inspection_tools_probe.ghost.nodes.find(
+    (node) => node.handle === tracked,
+  );
+  check(
+    "ghost_applies_alpha_tint_to_selected_subtree",
+    ghostedLeft && ghostedLeft.tint && Math.abs(ghostedLeft.tint.a - 0.35) <= 0.0001,
+    ghostedLeft,
+  );
+  check(
+    "fit_selection_frames_selected_part_tree_node",
+    pageProof.inspection_tools_probe.fit_selection.after_camera.target[0] <
+      pageProof.inspection_tools_probe.fit_selection.before_camera.target[0] - 0.1 &&
+      Number.isFinite(pageProof.inspection_tools_probe.fit_selection.after_camera.distance) &&
+      pageProof.inspection_tools_probe.fit_selection.after_camera.distance > 0,
+    pageProof.inspection_tools_probe.fit_selection,
+  );
 
   check(
     "capture_revisions_match_inspection",
@@ -1754,6 +1852,7 @@ async function main() {
     visibility_probe: pageProof.visibility_probe,
     subtree_report: pageProof.subtree_report,
     subtree_tint_probe: pageProof.subtree_tint_probe,
+    inspection_tools_probe: pageProof.inspection_tools_probe,
     phase1_appearance_dirty_tracking: pageProof.phase1_appearance_dirty_tracking,
     phase2_post_processing: pageProof.phase2_post_processing,
     phase3_world_strokes: pageProof.phase3_world_strokes,

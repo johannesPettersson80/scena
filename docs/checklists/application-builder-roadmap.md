@@ -1111,7 +1111,7 @@ Acceptance:
 - [x] Tests for ghost not mutating source material descriptors.
 - [x] Tests for fit-selection, bounding-box overlays, axes triads, and toolkit
       state reporting.
-- [ ] Browser proof for part-tree selection, isolate, ghost, and fit selection.
+- [x] Browser proof for part-tree selection, isolate, ghost, and fit selection.
 - [x] Example: CAD inspection viewer.
 
 Evidence:
@@ -1141,6 +1141,18 @@ Evidence:
 - [x] Focused tests: `cargo test --features scene-host --test scene_host
       scene_host_subtree_query_is_stable_and_batch_tint_respects_exclusions
       -- --nocapture` covers stable host handles plus parent/child tree edges.
+- [x] Test-first proof: `cargo test --features scene-host --test scene_host
+      scene_host_inspection_tools_drive_part_tree_selection_isolate_ghost_and_fit
+      -- --nocapture` failed on the builder before implementation with missing
+      `SceneHostCore::show_only`, `ghost`, and `fit_selection`.
+- [x] Focused tests: `cargo test --features scene-host --test scene_host
+      scene_host_inspection_tools_drive_part_tree_selection_isolate_ghost_and_fit
+      -- --nocapture` passes locally.
+- [x] Browser proof: `SCENA_BROWSER_BACKENDS=webgl2 npm run
+      browser:scene-host-proof` passed on V3D WebGL2 with artifact
+      `target/gate-artifacts/scene-host-browser-proof/scene-host-browser-proof.json`
+      and screenshot
+      `target/gate-artifacts/scene-host-browser-proof/scene-host-browser-proof.png`.
 
 ### 2.2 Measurement primitives
 

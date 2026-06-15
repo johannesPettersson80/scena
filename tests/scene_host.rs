@@ -1740,6 +1740,107 @@ fn scene_host_subtree_query_is_stable_and_batch_tint_respects_exclusions() {
 }
 
 #[test]
+fn scene_host_inspection_tools_drive_part_tree_selection_isolate_ghost_and_fit() {
+    let mut host = SceneHostCore::headless(160, 120).expect("host builds");
+    let root = host.root_handle();
+    let left_frame = host
+        .add_empty(
+            Some(root),
+            Transform::at(Vec3::new(-4.0, 0.0, 0.0)),
+            Some("left-frame"),
+        )
+        .expect("left frame inserts");
+    let right_frame = host
+        .add_empty(
+            Some(root),
+            Transform::at(Vec3::new(4.0, 0.0, 0.0)),
+            Some("right-frame"),
+        )
+        .expect("right frame inserts");
+    let left_import = pollster::block_on(host.instantiate_url_under(
+        left_frame,
+        AssetPath::from("tests/assets/gltf/mesh_material_vertex_color_scene.gltf"),
+    ))
+    .expect("left asset instantiates");
+    let right_import = pollster::block_on(host.instantiate_url_under(
+        right_frame,
+        AssetPath::from("tests/assets/gltf/mesh_material_vertex_color_scene.gltf"),
+    ))
+    .expect("right asset instantiates");
+    let left_mesh = host
+        .node_handle_by_name(left_import, "ColoredTriangle")
+        .expect("left mesh resolves");
+    let right_mesh = host
+        .node_handle_by_name(right_import, "ColoredTriangle")
+        .expect("right mesh resolves");
+
+    let subtree: SceneHostSubtreeReportV1 =
+        serde_json::from_str(&host.subtree_nodes_json(root).expect("subtree serializes"))
+            .expect("subtree report decodes");
+    assert!(
+        subtree.nodes.iter().any(|node| node.handle == left_mesh),
+        "part tree exposes imported mesh handles for host-side selection"
+    );
+    let selection = host
+        .apply_patch(&VisualPatchV1 {
+            selection: Some(VisualPatchSelectionV1 {
+                node: Some(left_mesh),
+            }),
+            ..VisualPatchV1::default()
+        })
+        .expect("part-tree selection patch applies");
+    assert_eq!(selection.applied.selection, 1);
+
+    host.show_only(&[left_frame])
+        .expect("show-only isolates selected frame");
+    let report: SceneInspectionReportV1 =
+        serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
+            .expect("inspection decodes");
+    assert!(
+        report
+            .node_by_handle(left_frame)
+            .expect("left frame appears")
+            .visible,
+        "selected frame remains visible after isolate"
+    );
+    assert!(
+        !report
+            .node_by_handle(right_frame)
+            .expect("right frame appears")
+            .visible,
+        "unrelated frame hides after isolate"
+    );
+    assert!(
+        report.draw_list.iter().all(|draw| draw.node != right_mesh),
+        "isolated-away mesh leaves the draw list"
+    );
+
+    host.ghost(left_frame, 0.35)
+        .expect("ghost tints selected subtree");
+    let report: SceneInspectionReportV1 =
+        serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
+            .expect("inspection decodes");
+    assert_eq!(
+        report
+            .node_by_handle(left_mesh)
+            .expect("left mesh appears")
+            .tint,
+        Some(Color::from_linear_rgba(1.0, 1.0, 1.0, 0.35)),
+        "ghost applies alpha tint through the selected subtree"
+    );
+
+    host.fit_selection(&[left_mesh])
+        .expect("fit selection frames selected mesh");
+    let camera = host.get_camera();
+    assert!(
+        camera.target.x < -2.5,
+        "fit-selection target should move to the selected left-side part, got {:?}",
+        camera.target
+    );
+    assert!(camera.distance.is_finite() && camera.distance > 0.0);
+}
+
+#[test]
 fn scene_host_subtree_tint_cancels_active_tint_transitions_for_touched_nodes() {
     let mut host = SceneHostCore::headless(64, 64).expect("host builds");
     let root = host.root_handle();

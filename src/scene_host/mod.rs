@@ -10,6 +10,7 @@ mod error;
 mod events;
 mod handles;
 mod inputs;
+mod inspection_tools;
 mod instances;
 mod interaction_verification;
 mod material_variants;
