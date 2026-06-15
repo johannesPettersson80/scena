@@ -1935,18 +1935,46 @@ resources, capability gate.
 
 Required behavior:
 
-- [ ] Scene-color transmission.
-- [ ] IOR/thickness refraction approximation.
-- [ ] Rough-transmission blur.
-- [ ] Transparency ordering strategy documented and proven per backend.
-- [ ] Required glTF transmission/volume assets fail or degrade explicitly when
+- [x] Scene-color transmission.
+- [x] IOR/thickness refraction approximation.
+- [x] Rough-transmission blur.
+- [x] Transparency ordering strategy documented and proven per backend.
+- [x] Required glTF transmission/volume assets fail or degrade explicitly when
       backend proof is unavailable.
 
 Acceptance:
 
-- [ ] Material tests for parsed factors and textures.
-- [ ] GPU/browser proof for clear and frosted glass.
-- [ ] Capability report does not overclaim unsupported lanes.
+- [x] Material tests for parsed factors and textures.
+- [x] GPU/browser proof for clear and frosted glass.
+- [x] Capability report does not overclaim unsupported lanes.
+
+Evidence: test-first stale-policy proof
+`cargo test -p xtask asset_doctor_native_guidance_reports_required_transmission_with_capability_fix -- --nocapture`
+failed on `scena-builder` because `asset-doctor` still said GPU/browser proof
+was "not release-proven"; `cargo test --test m8_assets_materials_ecosystem m8_optional_real_world_gltf_extensions_report_degradation_metadata -- --nocapture`
+failed for the same stale import diagnostic. The guidance now points required
+transmission/IOR/volume assets at `physical_glass_transmission=supported`
+capability rows and fallback materials for unsupported lanes. Existing shader
+and render-path tests prove the physical path:
+`transmission_scene_color_does_not_reuse_final_depth_prepass`,
+`triangle_shader_applies_scene_color_transmission_in_native_and_webgl2_variants`,
+`unlit_pipeline_can_split_opaque_and_transparent_draws_for_transmission`, and
+`round_e_glass_ordering_uses_non_overlapping_opaque_target_alternative`.
+Material parsing and texture proof are covered by
+`m8_transmission_ior_volume_material_factors_are_parsed_from_gltf`,
+`m8_transmission_volume_textures_affect_cpu_preview_pixels`, and
+`m8_headless_gpu_transmission_volume_ibl_capability_when_available`. Reference
+visual proof asserts clear-glass refraction offset and frosted-glass edge
+contrast in `round_e_material_reference_docs_image_metrics`; browser
+proof is the `pbr-material-presets` WebGL2 workflow from
+`wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe`
+plus `SCENA_BROWSER_BACKENDS=webgl2 npm run browser:m6`, which records
+`glass_contract = scene-color-ior-thickness-rough-blur-sorted-transparency`.
+Capability proof is pinned by
+`capability_matrix_reports_hardware_tier_and_backend_feature_states`: attached
+GPU-device `HeadlessGpu`, `NativeSurface`, `WebGpu`, and `WebGl2` rows can
+report `physical_glass_transmission: supported`; CPU/reference and unattached
+factory rows remain `degraded`.
 
 ### 4.4 Dense WebGL2 source-material proof
 

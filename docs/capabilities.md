@@ -42,6 +42,10 @@ This lets applications present clear UI instead of failing silently.
 - Material feature support such as clearcoat, sheen, anisotropy, iridescence,
   and dispersion factor handling or texture sampling in CPU/reference and GPU
   shader paths versus backend-gated release proof.
+- Physical glass transmission. Attached GPU-device native/WebGPU/WebGL2 rows
+  can report `supported` after scene-color transmission, IOR/thickness
+  refraction, roughness-blur, and transparency-ordering proof; CPU/reference
+  and unattached factory rows report `degraded`.
 - Postprocessing support such as subtle bloom, headless CPU SSAO, and
   headless CPU weighted blended OIT.
 - Wide-gamut output, which is only claimed when a browser canvas color-space

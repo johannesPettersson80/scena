@@ -1072,6 +1072,27 @@ fn m8_optional_real_world_gltf_extensions_report_degradation_metadata() {
         "clearcoat degradation should tell users what to export instead: {:?}",
         clearcoat.suggested_fix()
     );
+    let transmission = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.extension() == "KHR_materials_transmission")
+        .expect("transmission diagnostic exists");
+    assert!(
+        transmission.help().contains("physical_glass_transmission")
+            && transmission.help().contains("attached GPU"),
+        "transmission degradation should point to the backend capability proof: {:?}",
+        transmission.help()
+    );
+    assert!(
+        !transmission.help().contains("not release-proven"),
+        "transmission degradation must not keep stale pre-proof wording: {:?}",
+        transmission.help()
+    );
+    assert!(
+        transmission.suggested_fix().contains("capability report")
+            && transmission.suggested_fix().contains("fallback material"),
+        "transmission fix should name both the capability-check and fallback paths: {:?}",
+        transmission.suggested_fix()
+    );
     let draco = diagnostics
         .iter()
         .find(|diagnostic| diagnostic.extension() == "KHR_draco_mesh_compression")

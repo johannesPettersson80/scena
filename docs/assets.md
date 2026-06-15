@@ -209,3 +209,11 @@ Optional `KHR_materials_dispersion` factors are preserved and sampled through a
 CPU/reference plus GPU shader/material channel-spread path; a required
 dispersion asset keeps the same release-proof guard until approved backend
 evidence and full transmission/volume glass behavior exist.
+Optional `KHR_materials_transmission`, `KHR_materials_ior`, and
+`KHR_materials_volume` values are parsed and sampled through CPU/reference
+transmission-volume shading, and attached GPU backends can claim physical
+glass when the target capability report has
+`physical_glass_transmission=supported`. Required assets that depend on those
+extensions should stay optional, ship a fallback material, or be deployed only
+to lanes whose capability report carries that supported state; CPU/reference
+and unattached factory lanes remain degraded.

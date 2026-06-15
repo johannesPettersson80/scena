@@ -126,6 +126,15 @@ All notable user-facing changes are recorded here.
   overlap avoidance, and layout reports that list original and adjusted
   screen-space positions.
 
+### Changed
+
+- Updated transmission/IOR/volume asset guidance and glass preset docs to
+  reflect the proven physical-glass lane: attached GPU-device native, WebGPU,
+  and WebGL2 capability rows can report
+  `physical_glass_transmission=supported`, while CPU/reference and unattached
+  factory lanes remain degraded and should use optional extensions or fallback
+  materials for required assets.
+
 ## [1.7.1] - 2026-06-12
 
 ### Fixed

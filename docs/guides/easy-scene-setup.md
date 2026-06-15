@@ -121,9 +121,12 @@ let rubber_foot = assets.create_material(MaterialDesc::rubber());
 
 The first-path presets now cover matte, plastic, polished and rough metal,
 chrome, brushed steel, clearcoat plastic, satin, smooth leather-like sheen,
-transparent/frosted glass previews, and rubber. `clear_glass` and
-`frosted_glass` are blend-mode transmission/IOR/volume presets for browser
-preview; they do not claim full physical refraction or caustics.
+transparent/frosted glass, and rubber. On attached GPU backends whose
+capability report has `physical_glass_transmission=supported`, `clear_glass`
+and `frosted_glass` use scene-color transmission with IOR/thickness
+refraction and roughness-driven blur. CPU/reference and unattached factory
+capability rows remain degraded for physical glass, and the presets do not
+claim caustics.
 
 For colours, name the constant the design calls for instead of writing
 RGB literals — `Color::CHARCOAL`, `Color::WARM_WHITE`, `Color::ORANGE`,

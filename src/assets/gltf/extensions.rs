@@ -120,7 +120,7 @@ fn optional_extension_help(extension: &str) -> &'static str {
             "dispersion material extension factor is parsed, and CPU/reference plus GPU shader paths apply a channel-spread specular approximation; structured degradation remains for required usage until approved backend screenshot or readback proof covers the target lane"
         }
         "KHR_materials_transmission" | "KHR_materials_ior" | "KHR_materials_volume" => {
-            "transmission, IOR, and volume material extension factors and texture slots are parsed, and CPU/reference shading uses transmission, thickness, and attenuation; structured degradation remains for required usage until approved backend screenshot or readback proof covers the target lane"
+            "transmission, IOR, and volume material extension factors and texture slots are parsed, CPU/reference shading uses transmission, thickness, and attenuation, and attached GPU lanes may claim physical glass only when the target capability report has physical_glass_transmission=supported; structured degradation remains for required usage on CPU/reference and unattached factory lanes"
         }
         "KHR_materials_specular" => {
             "specular material extension is optional in this glTF and currently uses structured degradation; required usage fails during asset load"
@@ -195,7 +195,7 @@ fn optional_extension_suggested_fix(extension: &str) -> &'static str {
             "Keep KHR_materials_dispersion optional unless CPU/reference dispersion is enough, or export a fallback material without dispersion for required assets that depend on unproven backend parity."
         }
         "KHR_materials_transmission" | "KHR_materials_ior" | "KHR_materials_volume" => {
-            "Keep the extension optional unless CPU/reference transmission and volume shading is enough, or export a fallback material for required assets that depend on unproven backend parity."
+            "Keep the extension optional unless CPU/reference transmission and volume shading is enough, gate required assets on a target capability report with physical_glass_transmission=supported, or export a fallback material for unsupported lanes."
         }
         "KHR_materials_specular" => {
             "Export a fallback material without the extension, or keep the extension optional until the matching renderer feature is supported."

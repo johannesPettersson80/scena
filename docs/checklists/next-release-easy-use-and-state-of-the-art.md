@@ -485,9 +485,10 @@ Preset contract:
   anisotropy where appropriate, and the raised WebGL2 environment
   prefilter sample floor. They do not claim SSR floor reflections.
 - `clear_glass(Color)` and `frosted_glass(Color)` are transparent
-  transmission/IOR/volume presets with blend-mode browser previews. They
-  do not claim full refractive caustics or physical WebGPU/WebGL2 glass
-  parity.
+  transmission/IOR/volume presets. Attached GPU-device WebGPU/WebGL2/native
+  lanes may claim scene-color transmission, IOR/thickness refraction, and
+  roughness-driven blur only when their capability report has
+  `physical_glass_transmission=supported`; the presets do not claim caustics.
 - `leather(Color)` is a smooth leather-like sheen preset, not a
   procedural grain or normal-map material.
 

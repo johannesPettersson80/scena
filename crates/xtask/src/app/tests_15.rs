@@ -147,6 +147,48 @@ pub(crate) fn asset_doctor_native_guidance_reports_required_clearcoat_with_fix()
 }
 
 #[test]
+pub(crate) fn asset_doctor_native_guidance_reports_required_transmission_with_capability_fix() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_dir = root.join("target/xtask-asset-guidance");
+    fs::create_dir_all(&fixture_dir).expect("asset guidance fixture dir");
+    let path = fixture_dir.join("required-transmission.gltf");
+    fs::write(
+        &path,
+        r#"{
+            "asset": { "version": "2.0" },
+            "extensionsUsed": ["KHR_materials_transmission"],
+            "extensionsRequired": ["KHR_materials_transmission"],
+            "nodes": [{ "name": "Root" }]
+        }"#,
+    )
+    .expect("required transmission fixture writes");
+
+    let guidance = scena_native_asset_guidance(&path).expect("fixture guidance builds");
+    let transmission = guidance
+        .iter()
+        .find(|finding| finding.extension == "KHR_materials_transmission")
+        .expect("transmission guidance is present");
+
+    assert!(transmission.required);
+    assert_eq!(transmission.severity, AssetGuidanceSeverity::Error);
+    assert_eq!(transmission.status, "degraded");
+    assert!(
+        transmission.message.contains("physical_glass_transmission")
+            && transmission.message.contains("attached GPU"),
+        "transmission guidance must point required assets at the backend capability proof: {transmission:?}",
+    );
+    assert!(
+        !transmission.message.contains("not release-proven"),
+        "transmission guidance must not carry the stale pre-proof wording: {transmission:?}",
+    );
+    assert!(
+        transmission.fix.contains("capability report")
+            && transmission.fix.contains("fallback material"),
+        "transmission guidance must give agents a capability-check path and a fallback path: {transmission:?}",
+    );
+}
+
+#[test]
 pub(crate) fn asset_doctor_official_validator_uses_khronos_stdout_mode() {
     let args = official_gltf_validator_args(Path::new("model.glb"));
 

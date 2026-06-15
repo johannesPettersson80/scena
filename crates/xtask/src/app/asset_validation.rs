@@ -321,10 +321,10 @@ fn extension_guidance(extension: &str, required: bool) -> Option<AssetGuidanceFi
             },
             status: "degraded",
             message: format!(
-                "{extension} factors and texture slots are CPU/reference-supported for transmission and volume shading, but required usage can still depend on approved GPU/browser rendered-output proof that is not release-proven."
+                "{extension} factors and texture slots are CPU/reference-supported for transmission and volume shading; attached GPU backends can claim physical glass only when their capability report has physical_glass_transmission=supported, while CPU/reference and unattached factory lanes remain degraded."
             ),
             fix: format!(
-                "If the look depends on backend parity for {extension}, export a fallback material without {extension} or keep the extension optional until approved backend screenshots or readback proof cover the target lane."
+                "For required {extension} assets, gate deployment on a target capability report with physical_glass_transmission=supported, or export a fallback material without {extension} for lanes where that proof is unavailable."
             ),
         }),
         "KHR_materials_specular" => Some(AssetGuidanceFinding {
