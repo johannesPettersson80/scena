@@ -502,28 +502,29 @@ fn place_usage() -> String {
 
 #[cfg(feature = "inspection")]
 fn render_usage() -> String {
-    "usage: scena render <asset-or-recipe> --introspect --out <png> [--width <px>] [--height <px>] [--detail]"
+    "usage: scena render <asset-or-recipe> --introspect --out <png> [--width <px>] [--height <px>] [--detail] [--round-floats <0..6>]"
         .to_string()
 }
 
 #[cfg(feature = "inspection")]
 fn inspect_usage() -> String {
-    "usage: scena inspect <asset-or-recipe> [--width <px>] [--height <px>]".to_string()
+    "usage: scena inspect <asset-or-recipe> [--width <px>] [--height <px>] [--round-floats <0..6>]"
+        .to_string()
 }
 
 #[cfg(feature = "inspection")]
 fn diagnose_usage() -> String {
-    "usage: scena diagnose <asset-or-recipe> --visibility [--handle <u64>] [--width <px>] [--height <px>] [--detail]"
+    "usage: scena diagnose <asset-or-recipe> --visibility [--handle <u64>] [--width <px>] [--height <px>] [--detail] [--round-floats <0..6>]"
         .to_string()
 }
 
 #[cfg(feature = "inspection")]
 fn doctor_usage() -> String {
-    "usage: scena doctor <asset-or-recipe> [--json]".to_string()
+    "usage: scena doctor <asset-or-recipe> [--json] [--round-floats <0..6>]".to_string()
 }
 
 #[cfg(feature = "inspection")]
 fn repair_usage() -> String {
-    "usage: scena repair <asset-or-recipe> --from <diagnosis-or-introspection.json> [--iteration-budget <n>]"
+    "usage: scena repair <asset-or-recipe> --from <diagnosis-or-introspection.json> [--iteration-budget <n>] [--round-floats <0..6>]"
         .to_string()
 }

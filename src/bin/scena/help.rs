@@ -15,6 +15,9 @@ pub(crate) fn help_json() -> String {
             "verify appearance <asset-or-recipe> --expect <appearance-expectation.json>",
             "verify animation <asset-or-recipe> --clip <name> --times <seconds> [--expect-change]",
             "verify interaction <asset-or-recipe> --expect <interaction-expectation.json>"
+        ],
+        "global_options": [
+            "--round-floats <0..6>"
         ]
     })
     .to_string()

@@ -158,6 +158,126 @@ fn scena_render_cli_exits_nonzero_and_emits_json_for_empty_frame() {
 }
 
 #[test]
+fn scena_render_cli_accepts_round_floats_for_stable_json() {
+    let dir = artifact_dir("render-round-floats");
+    let png_path = dir.join("frame.png");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "render",
+            TEST_ASSET,
+            "--introspect",
+            "--out",
+            path_str(&png_path),
+            "--width",
+            "96",
+            "--height",
+            "72",
+            "--round-floats",
+            "2",
+        ])
+        .output()
+        .expect("scena render command runs");
+
+    assert!(output.status.success(), "stderr={}", stderr(&output));
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("render command emits JSON");
+    assert_eq!(report["schema"], "scena.render_introspection.v1");
+    assert_eq!(report["ok"], true);
+    assert_json_numbers_rounded(&report, 2);
+}
+
+#[test]
+fn scena_cli_missing_assets_emit_json_not_command_errors() {
+    let dir = artifact_dir("missing-assets");
+    let missing = dir.join("does-not-exist.gltf");
+    let render_png = dir.join("missing.png");
+    let commands = [
+        vec![
+            "render".to_owned(),
+            path_str(&missing).to_owned(),
+            "--introspect".to_owned(),
+            "--out".to_owned(),
+            path_str(&render_png).to_owned(),
+        ],
+        vec!["inspect".to_owned(), path_str(&missing).to_owned()],
+        vec![
+            "diagnose".to_owned(),
+            path_str(&missing).to_owned(),
+            "--visibility".to_owned(),
+        ],
+        vec!["doctor".to_owned(), path_str(&missing).to_owned()],
+    ];
+
+    for args in commands {
+        let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+            .args(args.iter().map(String::as_str))
+            .output()
+            .expect("scena command runs");
+        assert!(
+            !output.status.success(),
+            "missing asset command should fail closed"
+        );
+        assert!(
+            output.stderr.is_empty(),
+            "missing asset diagnostics must stay on stdout JSON, stderr={}",
+            stderr(&output)
+        );
+        let report: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("missing asset emits JSON");
+        assert_eq!(report["schema"], "scena.asset_doctor.v1");
+        assert_eq!(report["ok"], false);
+        assert_eq!(report["asset"], path_str(&missing));
+        assert!(
+            report["findings"]
+                .as_array()
+                .expect("asset doctor findings is an array")
+                .iter()
+                .any(
+                    |finding| finding["code"] == "asset_io" || finding["code"] == "asset_not_found"
+                ),
+            "missing asset should have a machine-readable finding: {report:#}"
+        );
+    }
+}
+
+#[test]
+fn scena_validate_recipe_stdout_matches_golden_fixture() {
+    let dir = artifact_dir("validate-golden");
+    let recipe_path = dir.join("invalid.recipe.json");
+    fs::write(
+        &recipe_path,
+        r#"{
+  "schema": "scena.scene_recipe.v1",
+  "importe": [{
+    "id": "part",
+    "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
+  }]
+}"#,
+    )
+    .expect("invalid recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["validate-recipe", path_str(&recipe_path)])
+        .output()
+        .expect("scena validate-recipe command runs");
+
+    assert!(!output.status.success(), "invalid recipe must fail closed");
+    assert!(
+        output.stderr.is_empty(),
+        "validation diagnostics stay machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let actual: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("validate-recipe emits JSON");
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "assets/cli-golden/validate_recipe_invalid_stdout.json"
+    ))
+    .expect("golden validate-recipe fixture parses");
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn scena_diagnose_cli_emits_json_and_nonzero_for_invisible_target() {
     let output = Command::new(env!("CARGO_BIN_EXE_scena"))
         .args(["diagnose", TEST_ASSET, "--visibility", "--handle", "999999"])
@@ -599,4 +719,30 @@ fn path_str(path: &Path) -> &str {
 
 fn stderr(output: &std::process::Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+fn assert_json_numbers_rounded(value: &serde_json::Value, digits: u32) {
+    match value {
+        serde_json::Value::Number(number) => {
+            if let Some(float) = number.as_f64() {
+                let scale = 10_f64.powi(digits as i32);
+                let rounded = (float * scale).round() / scale;
+                assert!(
+                    (float - rounded).abs() <= 1.0e-9,
+                    "number {float} is not rounded to {digits} decimal places"
+                );
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                assert_json_numbers_rounded(value, digits);
+            }
+        }
+        serde_json::Value::Object(values) => {
+            for value in values.values() {
+                assert_json_numbers_rounded(value, digits);
+            }
+        }
+        _ => {}
+    }
 }

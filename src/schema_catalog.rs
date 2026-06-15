@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 mod agent_smoke;
 mod fixtures;
@@ -60,8 +61,21 @@ pub fn schema_entry_report_v1(schema: &str) -> Option<SchemaEntryReportV1> {
         schema: SCHEMA_ENTRY_SCHEMA_V1.to_owned(),
         entry,
         example,
-        invalid_example: None,
+        invalid_example: invalid_example_for_schema(schema),
     })
+}
+
+fn invalid_example_for_schema(schema: &str) -> Option<serde_json::Value> {
+    match schema {
+        "scena.scene_recipe.v1" => Some(json!({
+            "schema": "scena.scene_recipe.v1",
+            "importe": [{
+                "id": "part",
+                "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
+            }]
+        })),
+        _ => None,
+    }
 }
 
 fn schema_catalog_entries() -> Vec<SchemaCatalogEntryV1> {

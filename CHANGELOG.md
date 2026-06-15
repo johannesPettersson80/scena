@@ -37,9 +37,14 @@ All notable user-facing changes are recorded here.
   capability degradation.
 - Added the `scena` schema-discovery CLI (`schema list` and `schema get`) plus
   `scena.schema_catalog.v1` / `scena.schema_entry.v1` contracts for
-  agent-readable contract discovery, and asset-input `render --introspect`,
-  `inspect`, and `diagnose --visibility` commands behind the `inspection`
-  feature.
+  agent-readable contract discovery. Schema entries can now include canonical
+  invalid examples.
+- Added asset-input `render --introspect`, `inspect`, and
+  `diagnose --visibility` commands behind the `inspection` feature.
+  Agent-facing asset-load failures now emit `scena.asset_doctor.v1` JSON
+  instead of prose-only command errors, and the global `--round-floats <0..6>`
+  option lets callers reduce floating-point JSON precision without changing
+  integer handles or counts.
 - Added doctor coverage that requires whole-file feature-gated contract suites
   to publish their exact feature-enabled cargo commands in the roadmap.
 - Added `scena.scene_recipe.v1` plus `scena.scene_recipe_validation.v1` for

@@ -1040,13 +1040,22 @@ and stable fixture path when one exists.
 
 `scena schema list` writes `scena.schema_catalog.v1` JSON to stdout. `scena
 schema get <schema>` writes `scena.schema_entry.v1` JSON containing one catalog
-entry and a representative example parsed from that contract's fixture.
-Unknown schema names fail closed with a non-zero exit code and a near-miss
-suggestion when one is available.
+entry, a representative valid example parsed from that contract's fixture, and
+`invalid_example` when the contract has a small canonical failing case. Unknown
+schema names fail closed with a non-zero exit code and a near-miss suggestion
+when one is available.
 
 The stable fixtures live at
 `tests/assets/stable-contracts/schema_catalog.v1.json` and
 `tests/assets/stable-contracts/schema_entry.v1.json`.
+
+All `scena` CLI commands write stable JSON to stdout. Human-readable command
+errors use stderr only when no contract report can be produced. Asset-loading
+failures for agent-facing asset commands emit `scena.asset_doctor.v1` on
+stdout with a non-zero exit instead of prose-only command errors. The global
+`--round-floats <0..6>` option rounds floating-point JSON numbers after report
+generation while preserving integer handles and counts; commands default to
+their built-in stable precision when the option is omitted.
 
 ### `scena.asset_doctor.v1`
 

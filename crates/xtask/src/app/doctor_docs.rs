@@ -1,5 +1,7 @@
 use crate::app::prelude::*;
 
+pub(crate) mod schema_references;
+
 pub(crate) fn check_markdown_links(root: &Path, findings: &mut Vec<Finding>) {
     for rel in markdown_files(root) {
         let path = root.join(&rel);
@@ -291,7 +293,8 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
             ));
         }
     }
-    check_schema_catalog_covers_stable_fixtures(root, findings, FIXTURES);
+    schema_references::check_schema_catalog_covers_stable_fixtures(root, findings, FIXTURES);
+    schema_references::check_schema_doc_references_listed_in_catalog(root, findings);
 
     require_contains(
         root,
@@ -387,40 +390,6 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
             "target/gate-artifacts/scene-host-browser-proof/scene-host-browser-proof.json",
         ],
     );
-}
-
-fn check_schema_catalog_covers_stable_fixtures(
-    root: &Path,
-    findings: &mut Vec<Finding>,
-    fixtures: &[(&str, &str)],
-) {
-    let rel = "tests/assets/stable-contracts/schema_catalog.v1.json";
-    let Ok(text) = fs::read_to_string(root.join(rel)) else {
-        return;
-    };
-    let Ok(json) = serde_json::from_str::<Value>(&text) else {
-        return;
-    };
-    let Some(entries) = json.get("entries").and_then(Value::as_array) else {
-        findings.push(Finding::new(
-            "STABLE-CONTRACT-EVIDENCE",
-            format!("{rel} must contain an entries array"),
-        ));
-        return;
-    };
-    let schemas = entries
-        .iter()
-        .filter_map(|entry| entry.get("schema").and_then(Value::as_str))
-        .collect::<BTreeSet<_>>();
-
-    for (_, expected_schema) in fixtures {
-        if !schemas.contains(expected_schema) {
-            findings.push(Finding::new(
-                "STABLE-CONTRACT-EVIDENCE",
-                format!("{rel} must list stable fixture schema {expected_schema}"),
-            ));
-        }
-    }
 }
 
 pub(crate) fn check_demo_build_heartbeat_contract(root: &Path, findings: &mut Vec<Finding>) {

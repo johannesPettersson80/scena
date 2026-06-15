@@ -61,6 +61,8 @@ fn scena_schema_cli_lists_and_gets_stable_contracts() {
     assert_eq!(entry["schema"], "scena.schema_entry.v1");
     assert_eq!(entry["entry"]["schema"], "scena.scene_recipe.v1");
     assert_eq!(entry["example"]["schema"], "scena.scene_recipe.v1");
+    assert_eq!(entry["invalid_example"]["schema"], "scena.scene_recipe.v1");
+    assert_eq!(entry["invalid_example"]["importe"][0]["id"], "part");
 
     let output = Command::new(env!("CARGO_BIN_EXE_scena"))
         .args(["schema", "get", "scena.render_introspect.v1"])
@@ -72,6 +74,22 @@ fn scena_schema_cli_lists_and_gets_stable_contracts() {
         "unknown schema should suggest a near miss, stderr={}",
         stderr(&output)
     );
+}
+
+#[test]
+fn scena_schema_cli_stdout_matches_golden_fixture() {
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["schema", "get", "scena.scene_recipe.v1"])
+        .output()
+        .expect("scena schema get recipe runs");
+    assert!(output.status.success(), "stderr={}", stderr(&output));
+    let actual: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("schema get emits JSON");
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "assets/cli-golden/schema_get_scene_recipe_stdout.json"
+    ))
+    .expect("golden schema get fixture parses");
+    assert_eq!(actual, expected);
 }
 
 #[test]

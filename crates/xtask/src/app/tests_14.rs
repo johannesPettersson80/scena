@@ -1,6 +1,8 @@
 use crate::app::prelude::*;
 use crate::app::tests_10::write_minimal_easy_scene_fixture;
 use crate::app::tests_12::{VALID_GUIDE, write_easy_scene_fixture};
+use crate::app::tests_15::write_asset_validation_easy_scene_fixture;
+use crate::app::tests_16::write_scena_viewer_element_easy_scene_fixture;
 use crate::app::tests_17::{
     expanded_material_preset_guide, write_expanded_material_preset_doctor_fixture,
 };
@@ -57,6 +59,8 @@ pub(crate) fn easy_scene_setup_contracts_allow_azimuth_elevation_camera_view() {
         "frame_bounds(()) bounds_for_transforms add_grid_floor FramingOptions::new().azimuth_elevation(-27.5, 17.8)",
     );
     fs::write(fixture_root.join("docs/guides/easy-scene-setup.md"), guide).expect("guide fixture");
+    write_asset_validation_easy_scene_fixture(&fixture_root);
+    write_scena_viewer_element_easy_scene_fixture(&fixture_root);
     write_expanded_material_preset_doctor_fixture(&fixture_root);
     let mut findings = Vec::new();
 

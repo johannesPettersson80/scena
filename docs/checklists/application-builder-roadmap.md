@@ -551,7 +551,7 @@ CLI behavior:
       diagnose commands.
 - [x] `--detail` opts into larger render-introspection and visibility-diagnosis
       reports.
-- [ ] `--round-floats <digits>` defaults to stable, documented precision.
+- [x] `--round-floats <digits>` defaults to stable, documented precision.
 - [x] Exit status `0` means the requested schema operation succeeded.
 - [x] Exit status is non-zero for invalid recipes, missing assets, failed
       preparation, failed rendering, `ok=false` introspection, and invisible
@@ -562,7 +562,9 @@ CLI behavior:
 
 Acceptance:
 
-- [ ] Golden stdout fixtures for each command.
+- [ ] Golden stdout fixtures for each command. The first CLI hardening slice
+      pins `schema get` and invalid `validate-recipe`; remaining dynamic
+      commands still need normalized goldens.
 - [x] Tests verify stderr/stdout separation for schema commands.
 - [x] Tests verify `render --introspect` writes PNG plus capture descriptor
       artifacts and emits `scena.render_introspection.v1`.
@@ -584,8 +586,9 @@ Acceptance:
       for a missing clip, and exits non-zero when requested samples do not
       advance in time.
 - [x] Tests verify non-zero exits for invalid recipe and invisible target.
-- [ ] Tests verify missing assets emit JSON instead of command-error text.
-- [ ] Doctor rule keeps CLI help, schema constants, and stable fixtures aligned.
+- [x] Tests verify missing assets emit JSON instead of command-error text.
+- [x] Doctor rule keeps CLI help, schema constants, docs schema references, and
+      stable fixtures aligned.
 
 ### A.4 Schema discovery
 
@@ -601,7 +604,7 @@ Required behavior:
       module, summary, feature flag if any, and fixture path.
 - [x] `scena schema get <schema>` emits the machine-readable schema plus one
       minimal valid example from the stable fixture.
-- [ ] `scena schema get <schema>` emits one representative invalid example
+- [x] `scena schema get <schema>` emits one representative invalid example
       when available.
 - [x] Schema output is deterministic and small by default.
 - [x] Unknown schema names return diagnostics with near-miss suggestions.
@@ -623,7 +626,7 @@ Acceptance:
 - [x] Tests prove every listed schema has a fixture or documented exception.
 - [x] CLI `schema get` examples deserialize against their contract for the
       tested render-introspection schema.
-- [ ] Doctor rule rejects schema names referenced in docs but missing from the
+- [x] Doctor rule rejects schema names referenced in docs but missing from the
       schema catalog.
 
 ### A.5 Declarative scene recipe

@@ -1,6 +1,14 @@
 use crate::app::prelude::*;
 use crate::app::tests_12::{VALID_GUIDE, write_easy_scene_fixture};
 
+fn write_or_extend_fixture(path: &Path, text: &str) {
+    let contents = match fs::read_to_string(path) {
+        Ok(existing) if !existing.trim().is_empty() => format!("{existing} {text}"),
+        _ => text.to_owned(),
+    };
+    fs::write(path, contents).expect("viewer element fixture");
+}
+
 pub(crate) fn write_scena_viewer_element_easy_scene_fixture(fixture_root: &Path) {
     fs::write(
         fixture_root.join("Cargo.toml"),
@@ -57,16 +65,14 @@ pub(crate) fn write_scena_viewer_element_easy_scene_fixture(fixture_root: &Path)
     .expect("viewer element test fixture");
     fs::create_dir_all(fixture_root.join("tests/browser")).expect("viewer browser fixture dir");
     fs::create_dir_all(fixture_root.join("tests/assets/viewer")).expect("viewer fixture asset dir");
-    fs::write(
-        fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe.js"),
+    write_or_extend_fixture(
+        &fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe.js"),
         "assertScenaViewerElementProof runScenaViewerElementProof scena-viewer-element-browser-proof.png assertScenaViewerParityProof runScenaViewerParityProof scena-viewer-model-viewer-parity-browser-proof.png assertScenaViewerMobileA11yProof runScenaViewerMobileA11yProof scena-viewer-mobile-a11y-browser-proof.png assertCameraControlKitProof runCameraControlKitProof camera-control-kit-browser-proof.png @google/model-viewer model-viewer.min.js SCENA_BROWSER_VIEWER_ELEMENT_ONLY scena.scena_viewer_element_browser_proof.v1 scena.scena_viewer_model_viewer_parity_proof.v1 scena.scena_viewer_mobile_a11y_browser_proof.v1 scena.m6.camera_control_kit_browser_proof.v1 three_asset_side_by_side side-by-side-screenshot progress_sequence drop_render_status drop_render_auto_frame_status viewer-level-auto-framing scena-viewer-drop-render variant_render_status scena-viewer-material-variant-render annotation_tracking_sequence annotation_update_visible inspector_fixture_schema scena.scena_viewer_inspector_snapshot.v1",
-    )
-    .expect("viewer element browser runner fixture");
-    fs::write(
-        fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe_page.js"),
+    );
+    write_or_extend_fixture(
+        &fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe_page.js"),
         "defineScenaViewer m6CameraControlKitProbe m6RenderDroppedFileProbe m6RenderMaterialVariantProbe scenaViewerElementProbe scenaViewerModelViewerParityProbe scenaViewerMobileA11yProbe scenaCameraControlKitProbe SCENA_VIEWER_PARITY_ASSETS scena.scena_viewer_element_browser_proof.v1 scena.scena_viewer_model_viewer_parity_proof.v1 scena.scena_viewer_mobile_a11y_browser_proof.v1 scena.m6.camera_control_kit_browser_proof.v1 /model-viewer/model-viewer.min.js model-viewer source-gltf-materials AnimatedMorphCube.gltf WaterBottle.gltf three_asset_side_by_side side-by-side-screenshot model_viewer_loaded scena_pixels_nonblack loadInspectorSnapshot /fixtures/viewer/inspector_snapshot.json scena.scena_viewer_inspector_snapshot.v1 scena-viewer-progress-rendered progress_sequence scena-viewer-file-drop scena-viewer-drop-error renderDroppedFileIntoViewer drop_render_pixels_nonblack drop_render_auto_frame_status viewer-level-auto-framing renderSelectedVariantIntoViewer variant_render_green_dominant scena-viewer-material-variant-render scena-viewer-variant-change scena-viewer-annotations-rendered annotation_tracking_sequence annotation_update_visible scena-viewer-inspector-rendered scena-viewer-key-control scena-viewer-gesture-control pinch-zoom",
-    )
-    .expect("viewer element browser page fixture");
+    );
     fs::write(
         fixture_root.join("tests/assets/viewer/inspector_snapshot.json"),
         r#"{"schema":"scena.scena_viewer_inspector_snapshot.v1","source":"scena-viewer-inspector-fixture","overlay": "Diagnostics","diagnostics":[{"code":"FrameBounds"}],"stats":{"drawCalls":2}}"#,
