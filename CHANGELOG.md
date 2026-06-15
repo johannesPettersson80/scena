@@ -71,8 +71,9 @@ All notable user-facing changes are recorded here.
   `Scene::add_measurement_overlay()`.
 - Added CAD-style inspection helpers for scene visibility and context:
   `Scene::isolate`, `show_only`, `hide`, `show`, `toggle_visibility`,
-  `ghost`, and restoreable visibility/tint snapshots, plus a
-  `cad_inspection_viewer` example.
+  `ghost`, restoreable visibility/tint snapshots, selected-node framing,
+  bounding-box helper overlays, local/world axes triads, and an inspection
+  toolkit report, plus a `cad_inspection_viewer` example.
 
 ## [1.7.1] - 2026-06-12
 

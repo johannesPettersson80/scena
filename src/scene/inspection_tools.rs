@@ -1,9 +1,14 @@
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
+use crate::assets::Assets;
 use crate::diagnostics::LookupError;
-use crate::material::Color;
+use crate::geometry::{Aabb, GeometryDesc};
+use crate::material::{Color, MaterialDesc};
 
-use super::{NodeKey, Scene};
+use super::{CameraKey, NodeKey, Scene, Transform};
+
+pub const INSPECTION_HELPER_TAG: &str = "scena:inspection:helper";
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SceneVisibilitySnapshot {
@@ -25,6 +30,51 @@ pub struct SceneTintSnapshot {
 pub struct SceneTintSnapshotEntry {
     pub node: NodeKey,
     pub tint: Option<Color>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InspectionHelperKind {
+    BoundingBox,
+    WorldAxesTriad,
+    LocalAxesTriad,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct InspectionHelperReport {
+    pub kind: InspectionHelperKind,
+    pub node: NodeKey,
+    pub target: Option<NodeKey>,
+    pub bounds: Option<Aabb>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct InspectionToolkitReport {
+    pub isolated_nodes: Vec<NodeKey>,
+    pub hidden_by_isolate_count: usize,
+    pub ghosted_nodes: Vec<NodeKey>,
+    pub helper_nodes: Vec<InspectionHelperReport>,
+}
+
+#[derive(Debug, Default)]
+pub(super) struct InspectionToolkitState {
+    isolated_nodes: Vec<NodeKey>,
+    hidden_by_isolate: BTreeSet<NodeKey>,
+    helpers: BTreeMap<NodeKey, InspectionHelperRecord>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct InspectionHelperRecord {
+    kind: InspectionHelperKind,
+    target: Option<NodeKey>,
+    bounds: Option<Aabb>,
+}
+
+struct InspectionHelperSpec {
+    geometry: GeometryDesc,
+    transform: Transform,
+    parent: NodeKey,
+    record: InspectionHelperRecord,
+    color: Color,
 }
 
 impl SceneVisibilitySnapshot {
@@ -75,11 +125,19 @@ impl Scene {
         &mut self,
         nodes: impl IntoIterator<Item = NodeKey>,
     ) -> Result<SceneVisibilitySnapshot, LookupError> {
+        let selected_nodes = nodes.into_iter().collect::<Vec<_>>();
         let mut keep = BTreeSet::from([self.root()]);
-        for node in nodes {
+        for node in selected_nodes.iter().copied() {
             self.collect_isolate_keep_set(node, &mut keep)?;
         }
-        self.apply_visibility_keep_set(&keep)
+        let snapshot = self.apply_visibility_keep_set(&keep)?;
+        self.inspection_toolkit.isolated_nodes = selected_nodes;
+        self.inspection_toolkit.hidden_by_isolate = snapshot
+            .entries
+            .iter()
+            .filter_map(|entry| entry.visible.then_some(entry.node))
+            .collect();
+        Ok(snapshot)
     }
 
     pub fn isolate(
@@ -96,6 +154,8 @@ impl Scene {
         for entry in &snapshot.entries {
             self.set_visible(entry.node, entry.visible)?;
         }
+        self.inspection_toolkit.isolated_nodes.clear();
+        self.inspection_toolkit.hidden_by_isolate.clear();
         Ok(())
     }
 
@@ -141,6 +201,187 @@ impl Scene {
             self.set_node_tint(entry.node, entry.tint)?;
         }
         Ok(())
+    }
+
+    pub fn fit_selection_with_assets<F>(
+        &mut self,
+        camera: CameraKey,
+        nodes: impl IntoIterator<Item = NodeKey>,
+        assets: &Assets<F>,
+    ) -> Result<Aabb, LookupError> {
+        let bounds = self.selected_bounds_with_assets(nodes, assets)?;
+        self.frame(camera, bounds)?;
+        Ok(bounds)
+    }
+
+    pub fn add_bounding_box_overlay<F>(
+        &mut self,
+        assets: &Assets<F>,
+        node: NodeKey,
+    ) -> Result<InspectionHelperReport, LookupError> {
+        let bounds = self
+            .node_world_bounds(node, assets)?
+            .ok_or(LookupError::ImportHasNoBounds)?;
+        let helper = self.add_inspection_helper(
+            assets,
+            InspectionHelperSpec {
+                geometry: GeometryDesc::bounding_box(bounds),
+                transform: Transform::IDENTITY,
+                parent: self.root(),
+                record: InspectionHelperRecord {
+                    kind: InspectionHelperKind::BoundingBox,
+                    target: Some(node),
+                    bounds: Some(bounds),
+                },
+                color: Color::YELLOW,
+            },
+        )?;
+        Ok(helper)
+    }
+
+    pub fn add_world_axes_triad<F>(
+        &mut self,
+        assets: &Assets<F>,
+        length: f32,
+    ) -> Result<InspectionHelperReport, LookupError> {
+        validate_helper_length(length)?;
+        self.add_inspection_helper(
+            assets,
+            InspectionHelperSpec {
+                geometry: GeometryDesc::axes(length),
+                transform: Transform::IDENTITY,
+                parent: self.root(),
+                record: InspectionHelperRecord {
+                    kind: InspectionHelperKind::WorldAxesTriad,
+                    target: None,
+                    bounds: None,
+                },
+                color: Color::WHITE,
+            },
+        )
+    }
+
+    pub fn add_local_axes_triad<F>(
+        &mut self,
+        assets: &Assets<F>,
+        node: NodeKey,
+        length: f32,
+    ) -> Result<InspectionHelperReport, LookupError> {
+        if !self.nodes.contains_key(node) {
+            return Err(LookupError::NodeNotFound(node));
+        }
+        validate_helper_length(length)?;
+        self.add_inspection_helper(
+            assets,
+            InspectionHelperSpec {
+                geometry: GeometryDesc::axes(length),
+                transform: Transform::IDENTITY,
+                parent: node,
+                record: InspectionHelperRecord {
+                    kind: InspectionHelperKind::LocalAxesTriad,
+                    target: Some(node),
+                    bounds: None,
+                },
+                color: Color::CYAN,
+            },
+        )
+    }
+
+    pub fn inspection_toolkit_report(&self) -> InspectionToolkitReport {
+        let isolated_nodes = self
+            .inspection_toolkit
+            .isolated_nodes
+            .iter()
+            .copied()
+            .filter(|node| self.nodes.contains_key(*node))
+            .collect::<Vec<_>>();
+        let hidden_by_isolate_count = self
+            .inspection_toolkit
+            .hidden_by_isolate
+            .iter()
+            .filter(|node| {
+                self.nodes
+                    .get(**node)
+                    .is_some_and(|node_ref| !node_ref.visible)
+            })
+            .count();
+        let ghosted_nodes = self
+            .nodes
+            .iter()
+            .filter_map(|(node, node_ref)| {
+                node_ref
+                    .tint
+                    .is_some_and(|tint| tint.a.is_finite() && tint.a < 1.0)
+                    .then_some(node)
+            })
+            .collect::<Vec<_>>();
+        let helper_nodes = self
+            .inspection_toolkit
+            .helpers
+            .iter()
+            .filter_map(|(node, record)| {
+                self.nodes
+                    .contains_key(*node)
+                    .then_some(InspectionHelperReport {
+                        kind: record.kind,
+                        node: *node,
+                        target: record.target,
+                        bounds: record.bounds,
+                    })
+            })
+            .collect();
+        InspectionToolkitReport {
+            isolated_nodes,
+            hidden_by_isolate_count,
+            ghosted_nodes,
+            helper_nodes,
+        }
+    }
+
+    fn selected_bounds_with_assets<F>(
+        &self,
+        nodes: impl IntoIterator<Item = NodeKey>,
+        assets: &Assets<F>,
+    ) -> Result<Aabb, LookupError> {
+        let mut bounds: Option<Aabb> = None;
+        let mut any_node = false;
+        for node in nodes {
+            any_node = true;
+            if let Some(node_bounds) = self.node_world_bounds(node, assets)? {
+                bounds = Some(match bounds {
+                    Some(bounds) => bounds.union(node_bounds),
+                    None => node_bounds,
+                });
+            }
+        }
+        if any_node {
+            bounds.ok_or(LookupError::ImportHasNoBounds)
+        } else {
+            Err(LookupError::ImportHasNoBounds)
+        }
+    }
+
+    fn add_inspection_helper<F>(
+        &mut self,
+        assets: &Assets<F>,
+        spec: InspectionHelperSpec,
+    ) -> Result<InspectionHelperReport, LookupError> {
+        let geometry = assets.create_geometry(spec.geometry);
+        let material = assets.create_material(MaterialDesc::line(spec.color, 1.0));
+        let node = self
+            .mesh(geometry, material)
+            .parent(spec.parent)
+            .transform(spec.transform)
+            .add()?;
+        self.set_helper_on_top(node, true)?;
+        self.add_tag(node, INSPECTION_HELPER_TAG)?;
+        self.inspection_toolkit.helpers.insert(node, spec.record);
+        Ok(InspectionHelperReport {
+            kind: spec.record.kind,
+            node,
+            target: spec.record.target,
+            bounds: spec.record.bounds,
+        })
     }
 
     fn collect_isolate_keep_set(
@@ -214,4 +455,15 @@ impl Scene {
 
 fn color_is_finite(color: Color) -> bool {
     color.r.is_finite() && color.g.is_finite() && color.b.is_finite() && color.a.is_finite()
+}
+
+fn validate_helper_length(length: f32) -> Result<(), LookupError> {
+    if length.is_finite() && length > 0.0 {
+        Ok(())
+    } else {
+        Err(LookupError::InvalidFramingOption {
+            field: "length",
+            reason: "inspection helper length must be finite and positive",
+        })
+    }
 }

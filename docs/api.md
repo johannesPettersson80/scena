@@ -89,8 +89,11 @@ Additive public API changes in Unreleased:
   `Scene::add_measurement_overlay`
 - `Scene::isolate`, `Scene::show_only`, `Scene::hide`, `Scene::show`,
   `Scene::toggle_visibility`, `Scene::ghost`, `Scene::restore_visibility`,
-  `Scene::restore_tints`, `SceneVisibilitySnapshot`, and
-  `SceneTintSnapshot`
+  `Scene::restore_tints`, `Scene::fit_selection_with_assets`,
+  `Scene::add_bounding_box_overlay`, `Scene::add_world_axes_triad`,
+  `Scene::add_local_axes_triad`, `Scene::inspection_toolkit_report`,
+  `SceneVisibilitySnapshot`, `SceneTintSnapshot`, `InspectionHelperKind`,
+  `InspectionHelperReport`, and `InspectionToolkitReport`
 - `SceneHostCore::set_camera_bookmark` and
   `SceneHostCore::set_camera_bookmark_json` (gated behind `scene-host`)
 - The `scena` binary with `schema list`, `schema get <schema>`,

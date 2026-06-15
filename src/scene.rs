@@ -78,9 +78,10 @@ pub use inspection::{
     SceneNodeInspection, SceneNodeInspectionV1, SceneNormalInspection, SceneNormalInspectionV1,
     SceneTextureInspection,
 };
+use inspection_tools::InspectionToolkitState;
 pub use inspection_tools::{
-    SceneTintSnapshot, SceneTintSnapshotEntry, SceneVisibilitySnapshot,
-    SceneVisibilitySnapshotEntry,
+    InspectionHelperKind, InspectionHelperReport, InspectionToolkitReport, SceneTintSnapshot,
+    SceneTintSnapshotEntry, SceneVisibilitySnapshot, SceneVisibilitySnapshotEntry,
 };
 pub use instances::{Instance, InstanceCullingPolicy, InstanceId, InstanceSet};
 pub use labels::{LabelBillboard, LabelDesc, LabelRasterization};
@@ -134,6 +135,7 @@ pub struct Scene {
     active_camera: Option<CameraKey>,
     camera_layer_masks: BTreeMap<CameraKey, u64>,
     interaction: InteractionContext,
+    inspection_toolkit: InspectionToolkitState,
     structure_revision: u64,
     transform_revision: u64,
     appearance_revision: u64,
@@ -209,6 +211,7 @@ impl Scene {
             active_camera: None,
             camera_layer_masks: BTreeMap::new(),
             interaction: InteractionContext::default(),
+            inspection_toolkit: InspectionToolkitState::default(),
             structure_revision: 0,
             transform_revision: 0,
             appearance_revision: 0,

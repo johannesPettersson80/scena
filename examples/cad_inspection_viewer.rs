@@ -39,6 +39,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     scene.show_only([selected, context])?;
     scene.ghost(context, 0.35)?;
     assert!(!scene.visible(cover).expect("cover exists"));
+    scene.add_bounding_box_overlay(&assets, selected)?;
+    scene.add_local_axes_triad(&assets, selected, 0.45)?;
+    scene.add_world_axes_triad(&assets, 0.65)?;
 
     scene.add_measurement_overlay(
         &assets,
@@ -52,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let camera = scene.add_default_camera()?;
-    scene.frame_all_with_assets(camera, &assets)?;
+    scene.fit_selection_with_assets(camera, [selected, context], &assets)?;
     let mut renderer = Renderer::headless(320, 220)?;
     renderer.prepare_with_assets(&mut scene, &assets)?;
     renderer.render_active(&scene)?;

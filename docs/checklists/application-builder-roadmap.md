@@ -1098,17 +1098,19 @@ Required features:
 - [x] `isolate(selection)`: hide all unrelated visible nodes.
 - [x] `ghost(node/subtree, alpha)`: tint/alpha helper for context parts.
 - [x] `show_only`, `hide`, `show`, `toggle`.
-- [ ] Fit selected node/subtree.
-- [ ] Bounding-box helper overlays.
-- [ ] Local/world axes triad widget.
+- [x] Fit selected node/subtree.
+- [x] Bounding-box helper overlays.
+- [x] Local/world axes triad widget.
 - [x] Selection set helpers by handle list. Tag/import path/import name helper
       consolidation remains open for the host-facing slice.
-- [ ] Inspection report records active isolate/ghost/helper state where useful.
+- [x] Inspection report records active isolate/ghost/helper state where useful.
 
 Acceptance:
 
 - [x] Tests for isolate and restore preserving prior visibility.
 - [x] Tests for ghost not mutating source material descriptors.
+- [x] Tests for fit-selection, bounding-box overlays, axes triads, and toolkit
+      state reporting.
 - [ ] Browser proof for part-tree selection, isolate, ghost, and fit selection.
 - [x] Example: CAD inspection viewer.
 
@@ -1123,7 +1125,15 @@ Evidence:
       passes locally after implementation.
 - [x] Example proof: `cargo run --example cad_inspection_viewer --
       target/gate-artifacts/cad-inspection-viewer` renders a CAD inspection
-      artifact using show-only, ghost, framing, and measurement overlays.
+      artifact using show-only, ghost, selected-node framing, bounding-box
+      overlays, axes triads, and measurement overlays.
+- [x] Test-first proof: `cargo test --test inspection_tools -- --nocapture`
+      failed on the builder before the native helper implementation with
+      unresolved `InspectionHelperKind`, `fit_selection_with_assets`,
+      `add_bounding_box_overlay`, `add_world_axes_triad`,
+      `add_local_axes_triad`, and `inspection_toolkit_report`.
+- [x] Focused tests: `cargo test --test inspection_tools -- --nocapture`
+      passes locally with seven inspection-tool tests after implementation.
 
 ### 2.2 Measurement primitives
 
