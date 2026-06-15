@@ -615,6 +615,13 @@ the `pbr-material-extensions` workflow and
 `browser-pbr-material-extension-composite` proof class), which is
 recorded against real-GPU CI runners.
 
+The same browser proof includes a dense source-material lane under
+`source-gltf-materials`: it loads the Khronos WaterBottle with strict texture
+loading, records base-color, normal, metallic-roughness, occlusion, and
+emissive source texture roles, frames the imported geometry with
+`Scene::frame`, lights it with a real `DirectionalLight`, and renders
+generated-unlit, source-glTF-material, and generated-PBR comparison lanes.
+
 ## Browser viewer surfaces
 
 The browser side ships through `<scena-viewer>`, a custom element with

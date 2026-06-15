@@ -1985,18 +1985,43 @@ loading, renderer-fidelity checklist.
 
 Required behavior:
 
-- [ ] Dense imported glTF/GLB fixture with source materials, external textures,
+- [x] Dense imported glTF/GLB fixture with source materials, external textures,
       normals, metallic/roughness, camera framing, and lighting.
-- [ ] Browser WebGL2 render path preserves source materials.
-- [ ] Proof distinguishes source material, generated unlit fallback, and PBR
+- [x] Browser WebGL2 render path preserves source materials.
+- [x] Proof distinguishes source material, generated unlit fallback, and PBR
       override paths.
 
 Acceptance:
 
-- [ ] Browser output has non-background pixels and material-specific predicates.
-- [ ] Proof records backend, capabilities, resource warnings, stats, and
+- [x] Browser output has non-background pixels and material-specific predicates.
+- [x] Proof records backend, capabilities, resource warnings, stats, and
       screenshot metadata.
-- [ ] Capability promotion cites the exact artifact.
+- [x] Capability promotion cites the exact artifact.
+
+Evidence: test-first browser proof hardening
+`SCENA_BROWSER_BACKENDS=webgl2 npm run browser:m6` failed after
+`assertSourceGltfMaterialProof` was tightened to require explicit source
+texture roles plus camera-framing and lighting metadata; the old
+`source-gltf-materials` artifact only recorded `source_texture_bindings = 5`.
+The workflow now emits `source_texture_roles = [base_color, normal,
+metallic_roughness, occlusion, emissive]`, `camera_framing = Scene::frame`,
+and `lighting = DirectionalLight` from the real WaterBottle
+`SceneAsset::nodes mesh.geometry mesh.material` construction. Green browser
+proof: `wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe`
+plus `SCENA_BROWSER_BACKENDS=webgl2 npm run browser:m6`; the artifact
+`target/gate-artifacts/m6-rust-wasm-renderer-probe.json` has
+`workflow = source-gltf-materials`, `proof_class =
+browser-source-gltf-material-comparison`, `source =
+/fixtures/gltf/khronos/WaterBottle/WaterBottle.gltf`, `load_warnings = 0`,
+`material_texture_bindings = 5`, `material_textures_missing_decoded_pixels =
+0`, `triangles = 13530`, `screenshot_metadata.backend = webgl2`,
+`fixture_sha256 =
+0596f4e61dc781439d254fdfb5e3462daf1762c18715e3e3ac13001aa8f3f547`, and
+nonblack left/center/right pixels for the `generated-unlit`,
+`source-gltf-material`, and `generated-pbr` comparison lanes. Capability
+promotion is the existing attached WebGL2 row in the same artifact with
+`forward_pbr = supported`; CPU/reference and unattached factory rows remain
+capability-gated elsewhere.
 
 ### 4.5 `<scena-viewer>` parity
 

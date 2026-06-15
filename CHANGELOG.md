@@ -134,6 +134,10 @@ All notable user-facing changes are recorded here.
   `physical_glass_transmission=supported`, while CPU/reference and unattached
   factory lanes remain degraded and should use optional extensions or fallback
   materials for required assets.
+- Strengthened the WebGL2 dense source-material proof so the
+  `source-gltf-materials` browser artifact records WaterBottle source texture
+  roles, camera framing, lighting, comparison lanes, stats, capabilities, and
+  screenshot metadata instead of only a texture-binding count.
 
 ## [1.7.1] - 2026-06-12
 

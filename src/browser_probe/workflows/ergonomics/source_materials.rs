@@ -36,19 +36,23 @@ pub(super) async fn source_gltf_materials_scene() -> Result<WorkflowScene, JsVal
         .base_color_texture()
         .and_then(|texture| assets.texture(texture))
         .is_some_and(|texture| texture.has_decoded_pixels());
-    let source_texture_bindings = [
-        material.base_color_texture(),
-        material.normal_texture(),
-        material.metallic_roughness_texture(),
-        material.occlusion_texture(),
-        material.emissive_texture(),
-        material.clearcoat_texture(),
-        material.clearcoat_roughness_texture(),
-        material.clearcoat_normal_texture(),
+    let source_texture_roles = [
+        ("base_color", material.base_color_texture()),
+        ("normal", material.normal_texture()),
+        ("metallic_roughness", material.metallic_roughness_texture()),
+        ("occlusion", material.occlusion_texture()),
+        ("emissive", material.emissive_texture()),
+        ("clearcoat", material.clearcoat_texture()),
+        (
+            "clearcoat_roughness",
+            material.clearcoat_roughness_texture(),
+        ),
+        ("clearcoat_normal", material.clearcoat_normal_texture()),
     ]
     .into_iter()
-    .flatten()
-    .count();
+    .filter_map(|(role, texture)| texture.map(|_| role))
+    .collect::<Vec<_>>();
+    let source_texture_bindings = source_texture_roles.len();
 
     let unlit_material = assets.create_material(
         MaterialDesc::unlit(Color::from_srgb_u8(80, 185, 255)).with_double_sided(true),
@@ -97,6 +101,9 @@ pub(super) async fn source_gltf_materials_scene() -> Result<WorkflowScene, JsVal
             "source_material_kind": format!("{:?}", material.kind()),
             "source_base_color_decoded": source_base_color_decoded,
             "source_texture_bindings": source_texture_bindings,
+            "source_texture_roles": source_texture_roles,
+            "camera_framing": "Scene::frame",
+            "lighting": "DirectionalLight",
             "load_warnings": report.warnings().len(),
             "comparison_lanes": ["generated-unlit", "source-gltf-material", "generated-pbr"],
         }),

@@ -593,10 +593,18 @@ function assertSourceGltfMaterialProof(backend, result) {
     metadata.construction !== "SceneAsset::nodes mesh.geometry mesh.material" ||
     metadata.source_base_color_decoded !== true ||
     metadata.source_texture_bindings < 1 ||
+    !Array.isArray(metadata.source_texture_roles) ||
+    !metadata.source_texture_roles.includes("base_color") ||
+    !metadata.source_texture_roles.includes("normal") ||
+    !metadata.source_texture_roles.includes("metallic_roughness") ||
+    !metadata.source_texture_roles.includes("occlusion") ||
+    !metadata.source_texture_roles.includes("emissive") ||
+    metadata.camera_framing !== "Scene::frame" ||
+    metadata.lighting !== "DirectionalLight" ||
     metadata.load_warnings !== 0
   ) {
     throw new Error(
-      `${backend} source-gltf-materials proof did not load decoded source material handles cleanly: ${JSON.stringify(result)}`,
+      `${backend} source-gltf-materials proof did not load decoded source material handles, texture roles, camera framing, and lighting cleanly: ${JSON.stringify(result)}`,
     );
   }
   if (
