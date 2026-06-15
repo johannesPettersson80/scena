@@ -1,0 +1,29 @@
+{
+  "schema": "scena.scene_host_grounding.v1",
+  "target": 4294967298,
+  "floor_handles": [
+    4294967299,
+    4294967300
+  ],
+  "floor_receiver": true,
+  "ssao_enabled": true,
+  "active_paths": [
+    "floor_receiver",
+    "screen_space_ambient_occlusion"
+  ],
+  "fallbacks": [
+    {
+      "code": "directional_shadow_receiver_degraded",
+      "severity": "warning",
+      "message": "directional shadow receiver darkening is not claimed as physical in this preset",
+      "help": "treat floor and SSAO as grounding aids until directional shadow proof is promoted"
+    },
+    {
+      "code": "ssao_is_ambient_occlusion",
+      "severity": "info",
+      "message": "SSAO darkens depth contact edges but is not a drop-shadow substitute",
+      "help": "use the report active_paths to distinguish floor receiver, SSAO, and shadow receiver claims"
+    }
+  ],
+  "physical_shadow_claimed": false
+}

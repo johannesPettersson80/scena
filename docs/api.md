@@ -103,6 +103,11 @@ Additive public API changes in Unreleased:
   `SceneHostCore::seek_timeline`, `SceneHostCore::seek_timeline_json`,
   `SceneHostCore::advance_timeline`, and
   `SceneHostCore::advance_timeline_json` (gated behind `scene-host`)
+- `SCENE_HOST_GROUNDING_SCHEMA_V1`, `SceneHostGroundingReportV1`,
+  `SceneHostGroundingPathV1`, `SceneHostGroundingFallbackV1`,
+  `SceneHostCore::apply_product_grounding_preset`, and
+  `SceneHostCore::apply_product_grounding_preset_json` (gated behind
+  `scene-host`)
 - `render_asset_catalog_preview_png`, `AssetCatalogPreviewPng`,
   `AssetCatalogPreviewError`,
   `HeadlessGltfViewerBuilder::with_background_color`, and

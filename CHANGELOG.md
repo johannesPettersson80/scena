@@ -76,6 +76,10 @@ All notable user-facing changes are recorded here.
   guided tours that flatten visual states, camera bookmarks, labels, tints,
   transforms, and animation mixer sampling into deterministic `VisualPatchV1`
   seeks.
+- Added `scena.scene_host_grounding.v1` and SceneHost product grounding
+  helpers that compose studio visuals, a floor receiver, SSAO-backed contact
+  darkening, and explicit directional-shadow fallback reporting without
+  claiming physical shadow correctness before proof closure.
 - Added deterministic generated catalog previews with
   `render_asset_catalog_preview_png()`, `AssetCatalogPreviewPng`,
   `AssetCatalogPreviewError`, viewer-builder background color support, and the

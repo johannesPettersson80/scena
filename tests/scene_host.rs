@@ -9,15 +9,16 @@ use scena::{
     Assets, AutoExposureConfig, Color, GeometryDesc, HOST_EVENT_SCHEMA_V1, HitTarget,
     HostEventBatchV1, HostEventHoverPhaseV1, HostEventV1, ImportOptions, MaterialDesc,
     OrbitControlAction, PointerButton, PostBloomConfig, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1,
-    SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostAnimationInventoryV1, SceneHostAnimationLoopMode,
-    SceneHostAnimationPlayOptions, SceneHostCameraState, SceneHostCore, SceneHostEasing,
-    SceneHostErrorCode, SceneHostSectionBoxReportV1, SceneHostSubtreeReportV1,
-    SceneHostVisualStateV1, SceneHostVisualStatesReportV1, SceneInspectionReportV1,
-    ScreenSpaceAmbientOcclusionConfig, SurfaceEvent, Transform, VISUAL_PATCH_SCHEMA_V1, Vec3,
-    VisualPatchAnimationTimeModeV1, VisualPatchAnimationTimeV1, VisualPatchCameraEasedV1,
-    VisualPatchHoverV1, VisualPatchLabelTargetV1, VisualPatchLabelV1, VisualPatchMaterialVariantV1,
-    VisualPatchResultV1, VisualPatchSectionBoxV1, VisualPatchSelectionV1, VisualPatchTintEasedV1,
-    VisualPatchTransformEasedV1, VisualPatchTransformV1, VisualPatchV1, VisualPatchVisibilityV1,
+    SCENE_HOST_GROUNDING_SCHEMA_V1, SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostAnimationInventoryV1,
+    SceneHostAnimationLoopMode, SceneHostAnimationPlayOptions, SceneHostCameraState, SceneHostCore,
+    SceneHostEasing, SceneHostErrorCode, SceneHostGroundingPathV1, SceneHostSectionBoxReportV1,
+    SceneHostSubtreeReportV1, SceneHostVisualStateV1, SceneHostVisualStatesReportV1,
+    SceneInspectionReportV1, ScreenSpaceAmbientOcclusionConfig, SurfaceEvent, Transform,
+    VISUAL_PATCH_SCHEMA_V1, Vec3, VisualPatchAnimationTimeModeV1, VisualPatchAnimationTimeV1,
+    VisualPatchCameraEasedV1, VisualPatchHoverV1, VisualPatchLabelTargetV1, VisualPatchLabelV1,
+    VisualPatchMaterialVariantV1, VisualPatchResultV1, VisualPatchSectionBoxV1,
+    VisualPatchSelectionV1, VisualPatchTintEasedV1, VisualPatchTransformEasedV1,
+    VisualPatchTransformV1, VisualPatchV1, VisualPatchVisibilityV1,
 };
 use serde_json::json;
 
@@ -190,6 +191,65 @@ fn scene_host_product_studio_visuals_reject_unknown_background() {
             .to_string()
             .contains("unsupported SceneHost product studio background mystery_background")
     );
+}
+
+#[test]
+fn scene_host_product_grounding_preset_reports_floor_ssao_and_shadow_fallback() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+    let target = host
+        .add_empty(
+            None,
+            Transform::at(Vec3::new(0.0, 0.3, 0.0)),
+            Some("grounded-product"),
+        )
+        .expect("target frame inserts");
+    let bytes = std::fs::read("tests/assets/gltf/load_unit.glb").expect("fixture bytes load");
+    pollster::block_on(host.instantiate_glb_under(target, bytes.as_slice()))
+        .expect("target asset instantiates");
+
+    let report = host
+        .apply_product_grounding_preset(target, "studio_neutral")
+        .expect("grounding preset applies");
+
+    assert_eq!(report.schema, SCENE_HOST_GROUNDING_SCHEMA_V1);
+    assert_eq!(report.target, target);
+    assert_eq!(report.floor_handles.len(), 2);
+    assert!(report.floor_receiver);
+    assert!(report.ssao_enabled);
+    assert!(!report.physical_shadow_claimed);
+    assert_eq!(
+        report.active_paths,
+        vec![
+            SceneHostGroundingPathV1::FloorReceiver,
+            SceneHostGroundingPathV1::ScreenSpaceAmbientOcclusion,
+        ]
+    );
+    assert!(report.fallbacks.iter().any(|fallback| {
+        fallback.code == "directional_shadow_receiver_degraded"
+            && fallback.message.contains("not claimed as physical")
+    }));
+    for handle in &report.floor_handles {
+        assert!(
+            host.node_world_bounds(*handle)
+                .expect("floor handle resolves")
+                .is_some(),
+            "grounding floor handles must stay in the stable SceneHost node namespace"
+        );
+    }
+    assert_eq!(
+        host.renderer().screen_space_ambient_occlusion(),
+        Some(ScreenSpaceAmbientOcclusionConfig::subtle())
+    );
+
+    let json_report: serde_json::Value = serde_json::from_str(
+        &host
+            .apply_product_grounding_preset_json(target, "studio_neutral")
+            .expect("grounding report serializes"),
+    )
+    .expect("grounding report JSON parses");
+    assert_eq!(json_report["schema"], SCENE_HOST_GROUNDING_SCHEMA_V1);
+    assert_eq!(json_report["target"], target);
+    assert_eq!(json_report["physical_shadow_claimed"], false);
 }
 
 #[test]

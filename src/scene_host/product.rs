@@ -1,8 +1,40 @@
+use serde::{Deserialize, Serialize};
+
 use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
 use crate::{
     AntiAliasing, AssetFetcher, AutoExposureConfig, Background, GridFloorOptions, LookupError,
     PostBloomConfig, ScreenSpaceAmbientOcclusionConfig,
 };
+
+pub const SCENE_HOST_GROUNDING_SCHEMA_V1: &str = "scena.scene_host_grounding.v1";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneHostGroundingReportV1 {
+    pub schema: String,
+    pub target: u64,
+    pub floor_handles: Vec<u64>,
+    pub floor_receiver: bool,
+    pub ssao_enabled: bool,
+    pub active_paths: Vec<SceneHostGroundingPathV1>,
+    pub fallbacks: Vec<SceneHostGroundingFallbackV1>,
+    pub physical_shadow_claimed: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneHostGroundingPathV1 {
+    FloorReceiver,
+    ScreenSpaceAmbientOcclusion,
+    DirectionalShadowReceiver,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneHostGroundingFallbackV1 {
+    pub code: String,
+    pub severity: String,
+    pub message: String,
+    pub help: String,
+}
 
 impl<F: AssetFetcher> SceneHostCore<F> {
     pub fn apply_product_studio_visuals(&mut self, background: &str) -> Result<(), SceneHostError> {
@@ -21,6 +53,45 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         self.register_node(lights.fill);
         self.register_node(lights.rim);
         Ok(())
+    }
+
+    pub fn apply_product_grounding_preset(
+        &mut self,
+        target: u64,
+        background: &str,
+    ) -> Result<SceneHostGroundingReportV1, SceneHostError> {
+        self.resolve_node(target)?;
+        self.apply_product_studio_visuals(background)?;
+        let floor_handles = self.add_product_grid_floor_under_node(target)?;
+        let ssao_enabled = self.renderer.screen_space_ambient_occlusion().is_some();
+        let mut active_paths = vec![SceneHostGroundingPathV1::FloorReceiver];
+        if ssao_enabled {
+            active_paths.push(SceneHostGroundingPathV1::ScreenSpaceAmbientOcclusion);
+        }
+        Ok(SceneHostGroundingReportV1 {
+            schema: SCENE_HOST_GROUNDING_SCHEMA_V1.to_owned(),
+            target,
+            floor_handles,
+            floor_receiver: true,
+            ssao_enabled,
+            active_paths,
+            fallbacks: grounding_fallbacks(ssao_enabled),
+            physical_shadow_claimed: false,
+        })
+    }
+
+    pub fn apply_product_grounding_preset_json(
+        &mut self,
+        target: u64,
+        background: &str,
+    ) -> Result<String, SceneHostError> {
+        let report = self.apply_product_grounding_preset(target, background)?;
+        serde_json::to_string(&report).map_err(|error| {
+            SceneHostError::new(
+                SceneHostErrorCode::Inspect,
+                format!("grounding report serialization failed: {error}"),
+            )
+        })
     }
 
     pub fn add_product_grid_floor_under_node(
@@ -44,6 +115,39 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             self.register_node(floor.grid),
         ])
     }
+}
+
+fn grounding_fallbacks(ssao_enabled: bool) -> Vec<SceneHostGroundingFallbackV1> {
+    let mut fallbacks = Vec::new();
+    fallbacks.push(SceneHostGroundingFallbackV1 {
+        code: "directional_shadow_receiver_degraded".to_owned(),
+        severity: "warning".to_owned(),
+        message: "directional shadow receiver darkening is not claimed as physical in this preset"
+            .to_owned(),
+        help: "treat floor and SSAO as grounding aids until directional shadow proof is promoted"
+            .to_owned(),
+    });
+    if ssao_enabled {
+        fallbacks.push(SceneHostGroundingFallbackV1 {
+            code: "ssao_is_ambient_occlusion".to_owned(),
+            severity: "info".to_owned(),
+            message: "SSAO darkens depth contact edges but is not a drop-shadow substitute"
+                .to_owned(),
+            help: "use the report active_paths to distinguish floor receiver, SSAO, and shadow receiver claims"
+                .to_owned(),
+        });
+    } else {
+        fallbacks.push(SceneHostGroundingFallbackV1 {
+            code: "ssao_unavailable".to_owned(),
+            severity: "warning".to_owned(),
+            message: "screen-space ambient occlusion is not active for this grounding preset"
+                .to_owned(),
+            help:
+                "check backend capabilities or enable SSAO before relying on contact-edge darkening"
+                    .to_owned(),
+        });
+    }
+    fallbacks
 }
 
 fn scene_host_background(background: &str) -> Result<Background, SceneHostError> {

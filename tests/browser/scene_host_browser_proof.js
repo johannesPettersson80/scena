@@ -54,6 +54,7 @@ const REQUIRED_BINDINGS = [
   ["prototype", "setBloom"],
   ["prototype", "setAmbientOcclusion"],
   ["prototype", "addProductGridFloorUnderNode"],
+  ["prototype", "applyProductGroundingPresetJson"],
   ["prototype", "clearNodeTint"],
   ["prototype", "subtreeNodesJson"],
   ["prototype", "setSubtreeTint"],
@@ -75,6 +76,7 @@ const REQUIRED_BINDINGS = [
   ["prototype", "capture"],
   ["prototype", "pick"],
   ["prototype", "setCamera"],
+  ["prototype", "frameNodeProductView"],
   ["prototype", "setCameraEased"],
   ["prototype", "getCameraJson"],
   ["prototype", "setCameraJson"],
@@ -1193,6 +1195,29 @@ async function runPageProof(page) {
       const guidedTimelineRender = timedRender("guided_tour_timeline_render");
       await waitForCanvasPresent();
       const guidedTimelineCapture = captureSummary(host.capture());
+      const contactGroundingReport = JSON.parse(
+        host.applyProductGroundingPresetJson(
+          leftFrameHandle,
+          "studio_neutral",
+        ),
+      );
+      const contactGroundingCamera = {
+        target: [-0.35, 0.0, 0.0],
+        yaw_radians: 0.28,
+        pitch_radians: 0.12,
+        distance: 0.9,
+      };
+      host.setCamera(
+        contactGroundingCamera.target,
+        contactGroundingCamera.yaw_radians,
+        contactGroundingCamera.pitch_radians,
+        contactGroundingCamera.distance,
+      );
+      const contactGroundingPrepare = timedPrepare("contact_grounding_prepare");
+      const contactGroundingRender = timedRender("contact_grounding_render");
+      await waitForCanvasPresent();
+      const contactGroundingCapture = captureSummary(host.capture());
+      const contactGroundingStats = JSON.parse(host.statsJson());
 
       return {
         backend,
@@ -1396,6 +1421,14 @@ async function runPageProof(page) {
           prepare: guidedTimelinePrepare,
           render: guidedTimelineRender,
           capture: guidedTimelineCapture,
+        },
+        contact_grounding: {
+          report: contactGroundingReport,
+          camera: contactGroundingCamera,
+          prepare: contactGroundingPrepare,
+          render: contactGroundingRender,
+          capture: contactGroundingCapture,
+          stats: contactGroundingStats,
         },
         capture,
         pick,
@@ -1810,6 +1843,37 @@ function assertProof(pageProof, screenshot) {
       render: guidedTimeline.render,
       pixels: guidedTimeline.capture.descriptor.pixels,
     },
+  );
+  const contactGrounding = pageProof.contact_grounding;
+  check(
+    "contact_grounding_report_lists_floor_ssao_and_shadow_fallback",
+    contactGrounding.report.schema === "scena.scene_host_grounding.v1" &&
+      contactGrounding.report.floor_receiver === true &&
+      contactGrounding.report.ssao_enabled === true &&
+      Array.isArray(contactGrounding.report.floor_handles) &&
+      contactGrounding.report.floor_handles.length === 2 &&
+      contactGrounding.report.active_paths.includes("floor_receiver") &&
+      contactGrounding.report.active_paths.includes("screen_space_ambient_occlusion") &&
+      !contactGrounding.report.active_paths.includes("directional_shadow_receiver") &&
+      contactGrounding.report.physical_shadow_claimed === false &&
+      contactGrounding.report.fallbacks.some(
+        (fallback) => fallback.code === "directional_shadow_receiver_degraded",
+      ),
+    contactGrounding.report,
+  );
+  check(
+    "contact_grounding_browser_render_nonblank",
+    contactGrounding.render.outcome.skipped === false &&
+      contactGrounding.capture.descriptor.pixels.nonblack > 0,
+    {
+      render: contactGrounding.render,
+      pixels: contactGrounding.capture.descriptor.pixels,
+    },
+  );
+  check(
+    "contact_grounding_browser_runs_ssao_pass",
+    contactGrounding.stats.ambient_occlusion_passes >= 1,
+    contactGrounding.stats,
   );
   check(
     "phase2_post_performance_budget_within_25_percent",

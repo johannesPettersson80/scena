@@ -1126,6 +1126,27 @@ the clock.
 The stable fixture lives at
 `tests/assets/stable-contracts/presentation_timeline.v1.json`.
 
+### `scena.scene_host_grounding.v1`
+
+Produced by `SceneHostCore::apply_product_grounding_preset()` and
+`SceneHostCore::apply_product_grounding_preset_json()`, with the matching
+browser `SceneHost.applyProductGroundingPresetJson()` method. The preset
+composes existing product-viewer primitives: studio visuals, a floor receiver
+under a target node, SSAO when the backend supports it, and lighting defaults.
+
+The report contains the stable target handle, generated `floor_handles`, the
+active grounding paths, and explicit fallbacks. `active_paths` may include
+`floor_receiver` and `screen_space_ambient_occlusion`. It does not include
+`directional_shadow_receiver` until the directional-shadow proof gate promotes
+that path. `physical_shadow_claimed` is therefore `false` in 4.1.
+
+SSAO is reported as ambient occlusion only. It may darken depth-contact edges,
+but it is not a drop-shadow or physical-shadow substitute. Consumers should
+read `fallbacks[]` before making visual-quality claims.
+
+The stable fixture lives at
+`tests/assets/stable-contracts/scene_host_grounding.v1.json`.
+
 `scena.capture.v1` small example:
 
 ```json

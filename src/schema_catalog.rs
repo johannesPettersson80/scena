@@ -221,6 +221,13 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/presentation_timeline.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.scene_host_grounding.v1",
+            owner_module: "scene_host",
+            summary: "Product-viewer grounding preset report with floor, SSAO, and explicit shadow fallbacks.",
+            feature_flag: Some("scene-host"),
+            fixture_path: Some("tests/assets/stable-contracts/scene_host_grounding.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.scene_recipe.v1",
             owner_module: "scene",
             summary: "Declarative, transient scene snapshot consumed by agent and CLI workflows.",

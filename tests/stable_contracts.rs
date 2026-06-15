@@ -411,6 +411,14 @@ fn presentation_timeline_golden_matches_live_schema_serialization() {
     );
 }
 
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_host_grounding_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::SceneHostGroundingReportV1>(
+        "tests/assets/stable-contracts/scene_host_grounding.v1.json",
+    );
+}
+
 #[test]
 fn agent_smoke_template_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::AgentSmokeTemplateV1>(

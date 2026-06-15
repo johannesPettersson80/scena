@@ -1857,19 +1857,36 @@ directional shadow capability tracking.
 
 Required behavior:
 
-- [ ] A product-viewer grounding preset that combines floor/receiver setup,
+- [x] A product-viewer grounding preset that combines floor/receiver setup,
       SSAO where available, a proven shadow receiver path where supported, and
       lighting defaults where capabilities allow.
-- [ ] SSAO alone is ambient occlusion and cannot by itself close
+- [x] SSAO alone is ambient occlusion and cannot by itself close
       contact/drop-shadow grounding.
-- [ ] Capability report states which grounding path is active.
-- [ ] Fallback is explicit when backend capability is unavailable.
+- [x] Grounding report states which grounding path is active.
+- [x] Fallback is explicit when backend capability is unavailable.
 
 Acceptance:
 
-- [ ] Headless and browser visual proof that a product asset is visibly
+- [x] Headless and browser visual proof that a product asset is visibly
       grounded.
-- [ ] No claim of physical shadow correctness without proof.
+- [x] No claim of physical shadow correctness without proof.
+
+Evidence: test-first proof failed on `scena-builder` with unresolved
+`SCENE_HOST_GROUNDING_SCHEMA_V1`, `SceneHostGroundingPathV1`,
+`apply_product_grounding_preset`, and `apply_product_grounding_preset_json`
+before implementation. `SceneHostCore::apply_product_grounding_preset()` and
+the browser `applyProductGroundingPresetJson()` now return
+`scena.scene_host_grounding.v1` with `active_paths` containing
+`floor_receiver` and `screen_space_ambient_occlusion`, a
+`directional_shadow_receiver_degraded` fallback, and
+`physical_shadow_claimed: false`; the stable fixture is
+`tests/assets/stable-contracts/scene_host_grounding.v1.json`. Headless proof:
+`cargo test --test contact_grounding --features scene-host,inspection -- --nocapture`
+writes
+`target/gate-artifacts/contact-grounding/headless-product-grounding.png` and
+asserts non-background grounded receiver content plus an SSAO pass. Browser
+proof: `tests/browser/scene_host_browser_proof.js` asserts the same report
+shape, a nonblank WebGL2 render, and `ambient_occlusion_passes >= 1`.
 
 ### 4.2 Directional shadow proof closure
 

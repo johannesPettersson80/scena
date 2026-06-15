@@ -17,4 +17,15 @@ impl SceneHost {
             .add_product_grid_floor_under_node(node)
             .map_err(js_error)
     }
+
+    #[wasm_bindgen(js_name = applyProductGroundingPresetJson)]
+    pub fn apply_product_grounding_preset_json(
+        &mut self,
+        node: u64,
+        background: String,
+    ) -> Result<String, JsValue> {
+        self.core
+            .apply_product_grounding_preset_json(node, &background)
+            .map_err(js_error)
+    }
 }

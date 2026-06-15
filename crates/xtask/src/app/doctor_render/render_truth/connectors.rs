@@ -332,6 +332,56 @@ pub(crate) fn check_renderer_truth_connector_contracts(root: &Path, findings: &m
         root,
         findings,
         "ARCH-RENDER-TRUTH",
+        "src/scene_host/product.rs",
+        &[
+            "SCENE_HOST_GROUNDING_SCHEMA_V1",
+            "SceneHostGroundingReportV1",
+            "apply_product_grounding_preset",
+            "SceneHostGroundingPathV1::FloorReceiver",
+            "directional_shadow_receiver_degraded",
+            "physical_shadow_claimed: false",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "tests/contact_grounding.rs",
+        &[
+            "product_grounding_preset_renders_visible_receiver_and_reports_non_physical_shadow_scope",
+            "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+            "target/gate-artifacts/contact-grounding/headless-product-grounding.png",
+            "ambient_occlusion_passes > 0",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "tests/browser/scene_host_browser_proof.js",
+        &[
+            "applyProductGroundingPresetJson",
+            "contact_grounding_report_lists_floor_ssao_and_shadow_fallback",
+            "contact_grounding_browser_render_nonblank",
+            "contact_grounding_browser_runs_ssao_pass",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "docs/checklists/application-builder-roadmap.md",
+        &[
+            "Contact grounding preset",
+            "scena.scene_host_grounding.v1",
+            "cargo test --test contact_grounding --features scene-host,inspection",
+            "physical_shadow_claimed: false",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
         "src/assets/gltf/transform.rs",
         &["basis_rotation", "forward", "up", "Quat::from_mat3"],
     );

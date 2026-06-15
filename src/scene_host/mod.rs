@@ -91,6 +91,10 @@ pub use presentation_timeline::{
     PRESENTATION_TIMELINE_SCHEMA_V1, PresentationTimelineActionKindV1,
     PresentationTimelineActionV1, PresentationTimelineCameraBookmarkV1, PresentationTimelineV1,
 };
+pub use product::{
+    SCENE_HOST_GROUNDING_SCHEMA_V1, SceneHostGroundingFallbackV1, SceneHostGroundingPathV1,
+    SceneHostGroundingReportV1,
+};
 pub use product_options::{
     PRODUCT_OPTIONS_SCHEMA_V1, ProductOptionGroupV1, ProductOptionV1, ProductOptionsV1,
 };

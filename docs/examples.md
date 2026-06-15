@@ -149,6 +149,12 @@ needs host-ticked seek/advance over visual states, camera bookmarks, labels,
 tints, transforms, and animation mixer sampling. Timeline seek emits and
 applies a normal `VisualPatchV1`; the host remains responsible for ticking.
 
+Use `SceneHostCore::apply_product_grounding_preset_json()` when a product or
+viewer scene needs one call to compose studio visuals, a floor receiver, and
+SSAO-backed contact darkening. The returned `scena.scene_host_grounding.v1`
+report states the active paths and keeps directional shadow receiver support as
+an explicit fallback until that proof gate is closed.
+
 Golden JSON fixtures for these contracts live in
 `tests/assets/stable-contracts/` and are checked by `tests/stable_contracts.rs`
 plus `xtask doctor --full`. Intentional contract-shape changes must update the
