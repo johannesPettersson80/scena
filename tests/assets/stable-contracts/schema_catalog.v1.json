@@ -123,6 +123,13 @@
       "fixture_path": "tests/assets/stable-contracts/product_options.v1.json"
     },
     {
+      "schema": "scena.presentation_timeline.v1",
+      "owner_module": "scene_host",
+      "summary": "Host-ticked presentation timeline that emits VisualPatch for seek and advance.",
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/presentation_timeline.v1.json"
+    },
+    {
       "schema": "scena.scene_recipe.v1",
       "owner_module": "scene",
       "summary": "Declarative, transient scene snapshot consumed by agent and CLI workflows.",

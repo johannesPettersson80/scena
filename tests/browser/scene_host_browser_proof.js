@@ -79,6 +79,9 @@ const REQUIRED_BINDINGS = [
   ["prototype", "getCameraJson"],
   ["prototype", "setCameraJson"],
   ["prototype", "setCameraBookmarkJson"],
+  ["prototype", "timelinePatchJson"],
+  ["prototype", "seekTimelineJson"],
+  ["prototype", "advanceTimelineJson"],
   ["prototype", "cameraPointerDown"],
   ["prototype", "cameraPointerMove"],
   ["prototype", "cameraPointerUp"],
@@ -1133,6 +1136,63 @@ async function runPageProof(page) {
       const phase5AfterEasedTintCapture = captureSummary(host.capture());
       host.clearNodeTintEased(phase5TriangleHandle, 0.0, "linear");
       host.stopAnimation(phase5MixerHandle);
+      const guidedTimelineBeforeInspection = JSON.parse(host.inspectJson());
+      const guidedTimelineCamera = {
+        target: [0.0, 0.0, 0.0],
+        distance: 1.8,
+        yaw_radians: 0.18,
+        pitch_radians: 0.12,
+      };
+      const guidedTimeline = {
+        schema: "scena.presentation_timeline.v1",
+        camera_bookmarks: [{ name: "hero", camera: guidedTimelineCamera }],
+        actions: [
+          {
+            at_seconds: 0.0,
+            kind: "apply_patch",
+            patch: {
+              schema: "scena.visual_patch.v1",
+              tints: [
+                {
+                  node: phase5Triangle,
+                  tint: { r: 0.2, g: 0.8, b: 0.4, a: 1.0 },
+                },
+              ],
+              labels: [
+                {
+                  id: "guided-tour-phase5",
+                  target: {
+                    kind: "node",
+                    node: phase5Triangle,
+                    local_offset: [0.0, 0.0, 0.0],
+                  },
+                },
+              ],
+            },
+          },
+          {
+            at_seconds: 0.0,
+            kind: "animation_clip",
+            mixer: handleNumber(phase5MixerHandle),
+            start_seconds: 0.0,
+            speed: 1.0,
+            end_seconds: 1.0,
+          },
+          {
+            at_seconds: 0.5,
+            kind: "camera_bookmark",
+            name: "hero",
+          },
+        ],
+      };
+      const guidedTimelineJson = JSON.stringify(guidedTimeline);
+      const guidedTimelinePatch = JSON.parse(host.timelinePatchJson(guidedTimelineJson, 0.5));
+      const guidedTimelineResult = JSON.parse(host.seekTimelineJson(guidedTimelineJson, 0.5));
+      const guidedTimelineInspection = JSON.parse(host.inspectJson());
+      const guidedTimelinePrepare = timedPrepare("guided_tour_timeline_prepare");
+      const guidedTimelineRender = timedRender("guided_tour_timeline_render");
+      await waitForCanvasPresent();
+      const guidedTimelineCapture = captureSummary(host.capture());
 
       return {
         backend,
@@ -1326,6 +1386,16 @@ async function runPageProof(page) {
           after_advance_capture: phase5AfterAdvanceCapture,
           after_eased_transform_capture: phase5AfterEasedTransformCapture,
           after_eased_tint_capture: phase5AfterEasedTintCapture,
+        },
+        guided_tour_timeline: {
+          timeline: guidedTimeline,
+          before_inspection: guidedTimelineBeforeInspection,
+          patch: guidedTimelinePatch,
+          result: guidedTimelineResult,
+          inspection: guidedTimelineInspection,
+          prepare: guidedTimelinePrepare,
+          render: guidedTimelineRender,
+          capture: guidedTimelineCapture,
         },
         capture,
         pick,
@@ -1695,6 +1765,50 @@ function assertProof(pageProof, screenshot) {
       after_advance: phase5.after_advance_render,
       after_eased_transform: phase5.after_eased_transform_render,
       after_eased_tint: phase5.after_eased_tint_render,
+    },
+  );
+  const guidedTimeline = pageProof.guided_tour_timeline;
+  const guidedBeforeNode = nodeByHandle(guidedTimeline.before_inspection, phase5.triangle);
+  const guidedAfterNode = nodeByHandle(guidedTimeline.inspection, phase5.triangle);
+  check(
+    "guided_tour_timeline_emits_visual_patch_channels",
+    guidedTimeline.patch.schema === "scena.visual_patch.v1" &&
+      guidedTimeline.patch.tints.length === 1 &&
+      guidedTimeline.patch.labels.length === 1 &&
+      guidedTimeline.patch.animation_time.length === 1 &&
+      guidedTimeline.patch.camera !== null,
+    guidedTimeline.patch,
+  );
+  check(
+    "guided_tour_timeline_seek_applies_patch_channels",
+    guidedTimeline.result.applied.tints === 1 &&
+      guidedTimeline.result.applied.labels === 1 &&
+      guidedTimeline.result.applied.animation_time === 1 &&
+      guidedTimeline.result.applied.camera === 1 &&
+      Array.isArray(guidedTimeline.result.failed) &&
+      guidedTimeline.result.failed.length === 0,
+    guidedTimeline.result,
+  );
+  check(
+    "guided_tour_timeline_animation_sampling_moves_node",
+    guidedBeforeNode &&
+      guidedAfterNode &&
+      Math.abs(
+        guidedAfterNode.local_transform.translation[0] -
+          guidedBeforeNode.local_transform.translation[0],
+      ) > 0.2,
+    {
+      before: guidedBeforeNode && guidedBeforeNode.local_transform,
+      after: guidedAfterNode && guidedAfterNode.local_transform,
+    },
+  );
+  check(
+    "guided_tour_timeline_browser_render_nonblank",
+    guidedTimeline.render.outcome.skipped === false &&
+      guidedTimeline.capture.descriptor.pixels.nonblack > 0,
+    {
+      render: guidedTimeline.render,
+      pixels: guidedTimeline.capture.descriptor.pixels,
     },
   );
   check(

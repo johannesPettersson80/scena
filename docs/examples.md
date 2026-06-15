@@ -144,6 +144,11 @@ active option JSON:
 cargo run --example product_configurator --features scene-host
 ```
 
+Use `scena.presentation_timeline.v1` from `SceneHostCore` when a guided tour
+needs host-ticked seek/advance over visual states, camera bookmarks, labels,
+tints, transforms, and animation mixer sampling. Timeline seek emits and
+applies a normal `VisualPatchV1`; the host remains responsible for ticking.
+
 Golden JSON fixtures for these contracts live in
 `tests/assets/stable-contracts/` and are checked by `tests/stable_contracts.rs`
 plus `xtask doctor --full`. Intentional contract-shape changes must update the

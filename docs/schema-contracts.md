@@ -1099,6 +1099,33 @@ this contract.
 The stable fixture lives at
 `tests/assets/stable-contracts/product_options.v1.json`.
 
+### `scena.presentation_timeline.v1`
+
+Consumed by `SceneHostCore::timeline_patch`,
+`SceneHostCore::timeline_patch_json`, `SceneHostCore::seek_timeline`,
+`SceneHostCore::seek_timeline_json`, `SceneHostCore::advance_timeline`, and
+`SceneHostCore::advance_timeline_json`. The timeline is a host-ticked
+presentation helper that emits a normal `VisualPatchV1` for the requested
+time; it does not define a separate mutation model or an autonomous render
+loop.
+
+Each timeline has optional named `camera_bookmarks` and ordered `actions`.
+Actions can apply a direct `VisualPatchV1`, apply a stored
+`SceneHostVisualStateV1` by name, apply a named camera bookmark, or sample an
+existing host animation mixer as an animation clip. Animation actions use
+`VisualPatchV1.animation_time` with `mode: "seek"`; hosts create and own the
+mixer before the timeline references it.
+
+`timeline_patch` includes actions whose `at_seconds` is less than or equal to
+the requested time and flattens them into one deterministic last-wins patch.
+Repeated seeks to the same final state are therefore no-ops when the underlying
+scene state is already current. `advance_timeline` is a convenience wrapper
+around `seek_timeline(current_seconds + delta_seconds)`; the host still owns
+the clock.
+
+The stable fixture lives at
+`tests/assets/stable-contracts/presentation_timeline.v1.json`.
+
 `scena.capture.v1` small example:
 
 ```json

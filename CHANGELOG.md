@@ -72,6 +72,10 @@ All notable user-facing changes are recorded here.
   visual-only configurator choices that apply `VisualPatchV1` entries and
   report active options without pricing, compatibility, inventory, or document
   ownership semantics.
+- Added `scena.presentation_timeline.v1` SceneHost timelines for host-ticked
+  guided tours that flatten visual states, camera bookmarks, labels, tints,
+  transforms, and animation mixer sampling into deterministic `VisualPatchV1`
+  seeks.
 - Added deterministic generated catalog previews with
   `render_asset_catalog_preview_png()`, `AssetCatalogPreviewPng`,
   `AssetCatalogPreviewError`, viewer-builder background color support, and the

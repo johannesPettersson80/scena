@@ -214,6 +214,13 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/product_options.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.presentation_timeline.v1",
+            owner_module: "scene_host",
+            summary: "Host-ticked presentation timeline that emits VisualPatch for seek and advance.",
+            feature_flag: Some("scene-host"),
+            fixture_path: Some("tests/assets/stable-contracts/presentation_timeline.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.scene_recipe.v1",
             owner_module: "scene",
             summary: "Declarative, transient scene snapshot consumed by agent and CLI workflows.",

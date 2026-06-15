@@ -19,6 +19,7 @@ mod interaction_verification;
 mod material_variants;
 mod measurements;
 mod post;
+mod presentation_timeline;
 mod product;
 mod product_options;
 mod reporting;
@@ -41,6 +42,8 @@ mod wasm_camera;
 mod wasm_measurements;
 #[cfg(target_arch = "wasm32")]
 mod wasm_post;
+#[cfg(target_arch = "wasm32")]
+mod wasm_presentation_timeline;
 #[cfg(target_arch = "wasm32")]
 mod wasm_product;
 #[cfg(target_arch = "wasm32")]
@@ -83,6 +86,10 @@ pub use interaction_verification::{
 pub use measurements::{
     SCENE_HOST_MEASUREMENT_OVERLAY_SCHEMA_V1, SceneHostMeasurementLabelProjectionV1,
     SceneHostMeasurementOverlayReportV1,
+};
+pub use presentation_timeline::{
+    PRESENTATION_TIMELINE_SCHEMA_V1, PresentationTimelineActionKindV1,
+    PresentationTimelineActionV1, PresentationTimelineCameraBookmarkV1, PresentationTimelineV1,
 };
 pub use product_options::{
     PRODUCT_OPTIONS_SCHEMA_V1, ProductOptionGroupV1, ProductOptionV1, ProductOptionsV1,

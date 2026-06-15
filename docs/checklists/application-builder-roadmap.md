@@ -1803,20 +1803,45 @@ host.seek_timeline(&timeline, 1.5)?;
 
 Required behavior:
 
-- [ ] Host-ticked `seek(t)` and `advance(dt)`.
-- [ ] Actions compose camera bookmarks, visual states, animation clips,
+- [x] Host-ticked `seek(t)` and `advance(dt)`.
+      Evidence: `SceneHostCore::seek_timeline` and
+      `SceneHostCore::advance_timeline` consume
+      `scena.presentation_timeline.v1`; `advance_timeline` is a wrapper over
+      `seek_timeline(current_seconds + delta_seconds)` and stores no hidden
+      player state.
+- [x] Actions compose camera bookmarks, visual states, animation clips,
       transforms, tints, labels, and annotations.
-- [ ] Timeline emits `VisualPatch` for the requested time and does not define a
+      Evidence: `PresentationTimelineActionKindV1` supports direct
+      `VisualPatchV1`, stored visual states, named camera bookmarks, and
+      animation mixer sampling; labels/annotation anchors travel through the
+      existing `VisualPatchV1.labels` channel.
+- [x] Timeline emits `VisualPatch` for the requested time and does not define a
       parallel mutation model.
+      Evidence: `SceneHostCore::timeline_patch` flattens due actions into a
+      deterministic last-wins `VisualPatchV1`; `seek_timeline` applies that
+      patch through `apply_patch`.
 
 Scope guard:
 
-- [ ] No autonomous loop. No application workflow engine.
+- [x] No autonomous loop. No application workflow engine.
+      Evidence: the API takes explicit target seconds or
+      current/delta seconds from the host and never owns a render loop,
+      business workflow, or persistent timeline player.
 
 Acceptance:
 
-- [ ] Deterministic seek tests.
-- [ ] Browser proof for guided tour.
+- [x] Deterministic seek tests.
+      Evidence: `cargo test --test presentation_timeline --features
+      scene-host -- --nocapture` covers flattened last-wins seek, idempotent
+      replay, and host-ticked animation sampling.
+- [x] Browser proof for guided tour.
+      Evidence: `rustup run 1.95.0 wasm-pack build . --dev --target web
+      --out-dir target/scene-host-browser-pkg --out-name scena --features
+      scene-host` and `SCENA_BROWSER_BACKENDS=webgl2 npm run
+      browser:scene-host-proof` passed on V3D WebGL2. The proof asserts
+      `timelinePatchJson` / `seekTimelineJson` emit and apply a guided-tour
+      patch with camera, tint, label, and animation sampling, then render
+      nonblank pixels.
 
 ## Phase 4 - Fidelity and browser reach
 

@@ -281,6 +281,57 @@ pub(crate) fn check_renderer_truth_connector_contracts(root: &Path, findings: &m
         root,
         findings,
         "ARCH-RENDER-TRUTH",
+        "src/scene_host/presentation_timeline.rs",
+        &[
+            "PRESENTATION_TIMELINE_SCHEMA_V1",
+            "PresentationTimelineV1",
+            "timeline_patch",
+            "seek_timeline",
+            "advance_timeline",
+            "self.apply_patch(&patch)",
+            "TimelinePatchBuilder",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "tests/presentation_timeline.rs",
+        &[
+            "presentation_timeline_seeks_flattened_visual_patch_deterministically",
+            "presentation_timeline_advance_samples_animation_clip_from_host_tick",
+            "presentation_timeline_golden_fixture_matches_live_schema_serialization",
+            "tests/assets/stable-contracts/presentation_timeline.v1.json",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "tests/browser/scene_host_browser_proof.js",
+        &[
+            "timelinePatchJson",
+            "seekTimelineJson",
+            "guided_tour_timeline_emits_visual_patch_channels",
+            "guided_tour_timeline_browser_render_nonblank",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "docs/checklists/application-builder-roadmap.md",
+        &[
+            "Presentation timeline",
+            "scena.presentation_timeline.v1",
+            "cargo test --test presentation_timeline --features",
+            "timelinePatchJson",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
         "src/assets/gltf/transform.rs",
         &["basis_rotation", "forward", "up", "Quat::from_mat3"],
     );
