@@ -669,7 +669,7 @@ Required validation:
       field names, for example `importe` suggesting `imports`.
 - [ ] Unknown verbs, enum variants, handles, materials, assets, or profiles
       produce structured diagnostics as those sections land.
-- [ ] Units and scale sanity warnings detect extreme asset extents against an
+- [x] Units and scale sanity warnings detect extreme asset extents against an
       expected range when the recipe supplies one.
 - [x] Recipe sections whose owning feature is not implemented fail with a
       structured `unsupported_feature` diagnostic instead of being silently
@@ -688,7 +688,8 @@ Acceptance:
       workflow fields.
 - [ ] Invalid-recipe fixtures cover unknown verb, unknown enum, stale handle,
       missing asset, invalid transform, and oversized asset as those sections
-      land.
+      land. Current proof covers missing asset, invalid transform, and
+      warning-level oversized asset validation in `scena_cli_recipe`.
 - [x] Validation diagnostics include deterministic "did you mean" suggestions.
 - [x] A valid recipe renders through `scena render --introspect` and produces
       `ok=true`.
@@ -737,8 +738,13 @@ Acceptance:
       import references.
 - [x] CLI `scena place` emits deterministic JSON and non-zero exits for invalid
       authored anchor/connector/plane references.
-- [ ] Visual proof shows `center`, `ground`, and `align_to_anchor` produce a
+- [x] Visual proof shows `center`, `ground`, and `align_to_anchor` produce a
       visible, framed result when passed through render introspection.
+      Evidence: `cargo test --features inspection --test scena_cli_recipe
+      scena_place_cli_previews_render_as_visible_framed_recipes -- --nocapture`
+      passed on `scena-builder`; the proof feeds each placement transform back
+      into `scena render --introspect` and asserts `ok=true`, visible pixels,
+      content bbox, and PNG output.
 
 ### A.7 Safe visual repair
 

@@ -7,6 +7,7 @@ use std::process::Command;
 use serde_json::json;
 
 const TEST_ASSET: &str = "tests/assets/gltf/mesh_material_vertex_color_scene.gltf";
+const ANCHORED_ASSET: &str = "tests/assets/gltf/anchored_triangle_scene.gltf";
 const ANCHOR_ASSET: &str = "tests/assets/gltf/anchor_debug_scene.gltf";
 const CONNECTOR_ASSET: &str = "tests/assets/gltf/connector_basis_scene.gltf";
 
@@ -137,6 +138,71 @@ fn scena_recipe_cli_applies_import_transform_before_inspection() {
             }),
         "recipe import transform should be applied before inspection: {inspection:#}"
     );
+}
+
+#[test]
+fn scena_validate_recipe_cli_checks_asset_presence_and_expected_extents() {
+    let dir = artifact_dir("validate-assets");
+    let missing_path = dir.join("missing-asset.recipe.json");
+    fs::write(
+        &missing_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                { "id": "missing", "uri": "missing-file.gltf" }
+            ]
+        }))
+        .expect("missing asset recipe serializes"),
+    )
+    .expect("missing asset recipe writes");
+
+    let missing = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["validate-recipe", path_str(&missing_path)])
+        .output()
+        .expect("scena validate-recipe missing asset command runs");
+    assert!(!missing.status.success());
+    assert!(
+        missing.stderr.is_empty(),
+        "asset validation diagnostics stay machine-readable on stdout, stderr={}",
+        stderr(&missing)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&missing.stdout).expect("missing asset validation emits JSON");
+    assert_eq!(report["schema"], "scena.scene_recipe_validation.v1");
+    assert_eq!(report["ok"], false);
+    assert_diagnostic(&report, "asset_load_failed", "error");
+
+    let oversized_path = dir.join("oversized.recipe.json");
+    fs::write(
+        &oversized_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                {
+                    "id": "part",
+                    "uri": TEST_ASSET,
+                    "expected_extent": {
+                        "min": 0.01,
+                        "max": 0.25,
+                        "unit": "m"
+                    }
+                }
+            ]
+        }))
+        .expect("oversized recipe serializes"),
+    )
+    .expect("oversized recipe writes");
+
+    let oversized = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["validate-recipe", path_str(&oversized_path)])
+        .output()
+        .expect("scena validate-recipe oversized asset command runs");
+    assert!(oversized.status.success(), "stderr={}", stderr(&oversized));
+    let report: serde_json::Value =
+        serde_json::from_slice(&oversized.stdout).expect("oversized validation emits JSON");
+    assert_eq!(report["schema"], "scena.scene_recipe_validation.v1");
+    assert_eq!(report["ok"], true);
+    assert_diagnostic(&report, "extent_out_of_range", "warning");
 }
 
 #[test]
@@ -307,6 +373,43 @@ fn scena_place_cli_exits_nonzero_for_unknown_authored_feature() {
     );
 }
 
+#[test]
+fn scena_place_cli_previews_render_as_visible_framed_recipes() {
+    let dir = artifact_dir("place-render-proof");
+    let base_recipe = write_valid_recipe(&dir);
+
+    let center = run_place(&base_recipe, &["--verb", "center", "--target", "1,2,3"]);
+    assert!(center.status.success(), "stderr={}", stderr(&center));
+    assert_placed_recipe_renders_visible(&dir, "center", TEST_ASSET, json_transform(&center));
+
+    let ground = run_place(&base_recipe, &["--verb", "ground", "--ground-y", "0"]);
+    assert!(ground.status.success(), "stderr={}", stderr(&ground));
+    assert_placed_recipe_renders_visible(&dir, "ground", TEST_ASSET, json_transform(&ground));
+
+    let anchored_recipe = write_two_import_recipe(&dir, "anchored.recipe.json", ANCHORED_ASSET);
+    let aligned = run_place_for_import(
+        &anchored_recipe,
+        "source",
+        &[
+            "--verb",
+            "align_to_anchor",
+            "--source-anchor",
+            "mount",
+            "--target-import",
+            "target",
+            "--target-anchor",
+            "mount",
+        ],
+    );
+    assert!(aligned.status.success(), "stderr={}", stderr(&aligned));
+    assert_placed_recipe_renders_visible(
+        &dir,
+        "align-to-anchor",
+        ANCHORED_ASSET,
+        json_transform(&aligned),
+    );
+}
+
 fn write_valid_recipe(dir: &Path) -> PathBuf {
     let recipe_path = dir.join("scene.recipe.json");
     fs::write(
@@ -356,6 +459,71 @@ fn write_two_import_recipe(dir: &Path, name: &str, asset: &str) -> PathBuf {
     recipe_path
 }
 
+fn assert_placed_recipe_renders_visible(
+    dir: &Path,
+    name: &str,
+    asset: &str,
+    transform: serde_json::Value,
+) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                {
+                    "id": "placed",
+                    "uri": asset,
+                    "transform": transform
+                }
+            ],
+            "capture": {
+                "width": 112,
+                "height": 84
+            }
+        }))
+        .expect("placed proof recipe serializes"),
+    )
+    .expect("placed proof recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena render placed recipe command runs");
+    assert!(
+        output.status.success(),
+        "{name} placed recipe should render successfully, stderr={}",
+        stderr(&output)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "rendered proof keeps stdout JSON clean, stderr={}",
+        stderr(&output)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("placed render emits JSON");
+    assert_eq!(report["schema"], "scena.render_introspection.v1");
+    assert_eq!(report["ok"], true, "{name} render report: {report:#}");
+    assert!(
+        report["visible_pixel_fraction"]
+            .as_f64()
+            .is_some_and(|fraction| fraction > 0.001),
+        "{name} placement render should contain visible pixels: {report:#}"
+    );
+    assert!(
+        report["content_bbox_css_px"].is_object(),
+        "{name} placement render should have a content bbox: {report:#}"
+    );
+    assert!(fs::metadata(&png_path).expect("PNG artifact exists").len() > 0);
+}
+
 fn run_place(recipe_path: &Path, args: &[&str]) -> std::process::Output {
     run_place_for_import(recipe_path, "part", args)
 }
@@ -400,6 +568,17 @@ fn assert_vec3_value(actual: scena::Vec3, expected: [f32; 3]) {
     assert!(
         actual.abs_diff_eq(scena::Vec3::from_array(expected), 1.0e-5),
         "expected {expected:?}, got {actual:?}"
+    );
+}
+
+fn assert_diagnostic(report: &serde_json::Value, code: &str, severity: &str) {
+    assert!(
+        report["diagnostics"]
+            .as_array()
+            .expect("diagnostics array")
+            .iter()
+            .any(|diagnostic| diagnostic["code"] == code && diagnostic["severity"] == severity),
+        "missing diagnostic {code}/{severity}: {report:#}"
     );
 }
 

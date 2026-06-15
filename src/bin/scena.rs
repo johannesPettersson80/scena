@@ -1,4 +1,5 @@
 use std::env;
+#[cfg(feature = "inspection")]
 use std::fs;
 use std::process;
 
@@ -19,6 +20,8 @@ mod scena_output;
 mod scena_place;
 #[path = "scena/schema.rs"]
 mod scena_schema;
+#[path = "scena/validate_recipe.rs"]
+mod scena_validate_recipe;
 #[cfg(feature = "inspection")]
 #[path = "scena/verify.rs"]
 mod scena_verify;
@@ -29,7 +32,6 @@ mod scena_verify_animation;
 #[path = "scena/verify_interaction.rs"]
 mod scena_verify_interaction;
 
-use scena_args::ValidateRecipeCommandArgs;
 #[cfg(feature = "inspection")]
 use scena_args::{DiagnoseCommandArgs, InspectCommandArgs, RenderCommandArgs, RepairCommandArgs};
 use scena_input::resolve_recipe_asset_uri;
@@ -71,7 +73,9 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
         [command, subcommand, schema] if command == "schema" && subcommand == "get" => {
             scena_schema::run_schema_get_command(schema)
         }
-        [command, rest @ ..] if command == "validate-recipe" => run_validate_recipe_command(rest),
+        [command, rest @ ..] if command == "validate-recipe" => {
+            scena_validate_recipe::run_validate_recipe_command(rest)
+        }
         [command, rest @ ..] if command == "place" => scena_place::run_place_command(rest),
         [command, subcommand, rest @ ..] if command == "examples" && subcommand == "agent" => {
             run_examples_agent_command(rest)
@@ -108,19 +112,6 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
     }?;
     apply_output_format(&mut outcome, output_format)?;
     Ok(outcome)
-}
-
-fn run_validate_recipe_command(args: &[String]) -> Result<CliOutcome, String> {
-    let recipe_path = ValidateRecipeCommandArgs::parse(args)?.recipe;
-    let text = fs::read_to_string(&recipe_path)
-        .map_err(|error| format!("failed to read recipe '{}': {error}", recipe_path.display()))?;
-    let report = scena::validate_scene_recipe_json(&text);
-    let exit_code = if report.ok { 0 } else { 1 };
-    json_outcome(
-        &report,
-        exit_code,
-        "failed to serialize scene recipe validation report",
-    )
 }
 
 #[cfg(feature = "inspection")]

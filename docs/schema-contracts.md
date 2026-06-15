@@ -990,6 +990,14 @@ with `code`, `severity`, JSON `path`, `message`, `help`, optional
 `suggestion`, and `auto_fixable`. Unknown-field suggestions use bounded string
 distance, for example `importe` suggests `imports`.
 
+`scena validate-recipe <recipe.json>` first runs shape validation without
+rendering, then loads declared assets far enough to validate asset presence and
+optional `expected_extent` scale sanity. Missing or unloadable assets emit an
+`asset_load_failed` error diagnostic and make `ok=false`. Assets whose maximum
+extent falls outside an import's expected range emit warning-level
+`extent_out_of_range`; warnings remain visible in JSON but do not make
+`ok=false`.
+
 The stable fixtures live at
 `tests/assets/stable-contracts/scene_recipe.v1.json` and
 `tests/assets/stable-contracts/scene_recipe_validation.v1.json`. `scena

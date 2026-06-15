@@ -50,10 +50,13 @@ All notable user-facing changes are recorded here.
 - Added `scena.scene_recipe.v1` plus `scena.scene_recipe_validation.v1` for
   fail-closed declarative recipe validation, the `scena validate-recipe`
   command, and recipe input for `render --introspect`, `inspect`, and
-  `diagnose --visibility`.
+  `diagnose --visibility`. Recipe validation now reports missing assets as
+  structured JSON errors and expected-extent scale mismatches as warning-level
+  diagnostics.
 - Added `scena.placement_result.v1` and `scena place` transform previews for
   recipe imports using `center`, `ground`, `fit_to_size`, `look_at`,
-  `align_to_anchor`, and `place_on`.
+  `align_to_anchor`, and `place_on`, with render-introspection proof that
+  center, ground, and align-to-anchor previews produce visible framed output.
 - Added `scena.visual_repair_plan.v1`, `scena.agent_loop_result.v1`, and the
   `scena repair --from <report.json>` CLI for conservative repair planning
   over render introspection and visibility diagnosis reports.
