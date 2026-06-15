@@ -170,8 +170,10 @@ Required top-level fields:
 - `schema`
 - `nodes`
 
-Each node entry contains the stable host `handle`, optional `name`, and sorted
-`tags` for the requested subtree.
+Each node entry contains the stable host `handle`, report-local `parent`,
+direct `children`, optional `name`, and sorted `tags` for the requested
+subtree. The requested subtree root has `parent: null`; child order follows
+the scene hierarchy.
 
 In 1.7, subtree node `name` is reserved for a future stable naming policy and
 is always serialized as `null`. Use `tags` or host-owned handles for stable
@@ -183,8 +185,8 @@ Small example:
 {
   "schema": "scena.subtree.v1",
   "nodes": [
-    { "handle": 42, "name": null, "tags": ["frame", "product"] },
-    { "handle": 84, "name": null, "tags": ["part"] }
+    { "handle": 42, "parent": null, "children": [84], "name": null, "tags": ["frame", "product"] },
+    { "handle": 84, "parent": 42, "children": [], "name": null, "tags": ["part"] }
   ]
 }
 ```

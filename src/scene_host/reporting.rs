@@ -38,6 +38,10 @@ pub struct SceneHostAnimationClipV1 {
 pub struct SceneHostSubtreeNodeV1 {
     pub handle: u64,
     #[serde(default)]
+    pub parent: Option<u64>,
+    #[serde(default)]
+    pub children: Vec<u64>,
+    #[serde(default)]
     pub name: Option<String>,
     pub tags: Vec<String>,
 }

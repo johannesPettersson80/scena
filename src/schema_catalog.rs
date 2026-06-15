@@ -280,7 +280,7 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
         SchemaEntryRow {
             schema: "scena.subtree.v1",
             owner_module: "scene_host",
-            summary: "SceneHost subtree report with stable node handles.",
+            summary: "SceneHost subtree report with stable node handles and tree edges.",
             feature_flag: Some("scene-host"),
             fixture_path: Some("tests/assets/stable-contracts/scene_host_subtree.v1.json"),
         },

@@ -3,6 +3,10 @@
   "nodes": [
     {
       "handle": 42,
+      "parent": null,
+      "children": [
+        84
+      ],
       "name": null,
       "tags": [
         "frame",
@@ -11,6 +15,8 @@
     },
     {
       "handle": 84,
+      "parent": 42,
+      "children": [],
       "name": null,
       "tags": [
         "part"

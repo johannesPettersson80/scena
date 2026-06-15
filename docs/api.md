@@ -263,7 +263,9 @@ smoothing for low-rate visual updates, not simulation, physics, robotics, or
 process-control behavior.
 Release 1.7 subtree reports use schema `scena.subtree.v1`; node `name` is
 reserved for future stable naming policy and is always `null` in 1.7. Use
-stable host handles and sorted `tags` for identification.
+stable host handles and sorted `tags` for identification. The same report also
+includes `parent` and direct `children` handle fields so hosts can build a
+part-tree UI without reparsing the full scene inspection report.
 The stable contract surface also includes generic `AssetProvenance` metadata.
 Loaded `SceneAsset`,
 `TextureDesc`, and `EnvironmentDesc` values expose `provenance()` with a

@@ -1683,6 +1683,31 @@ fn scene_host_subtree_query_is_stable_and_batch_tint_respects_exclusions() {
             .tags,
         vec!["first".to_owned(), "shared".to_owned()]
     );
+    let parent_node = subtree
+        .nodes
+        .iter()
+        .find(|node| node.handle == parent)
+        .expect("parent appears");
+    assert_eq!(parent_node.parent, None);
+    assert_eq!(
+        parent_node.children,
+        vec![first, excluded],
+        "part tree reports direct child handles for UI tree construction"
+    );
+    let first_node = subtree
+        .nodes
+        .iter()
+        .find(|node| node.handle == first)
+        .expect("first appears");
+    assert_eq!(first_node.parent, Some(parent));
+    assert_eq!(first_node.children, vec![grandchild]);
+    let excluded_child_node = subtree
+        .nodes
+        .iter()
+        .find(|node| node.handle == excluded_child)
+        .expect("excluded child appears");
+    assert_eq!(excluded_child_node.parent, Some(excluded));
+    assert!(excluded_child_node.children.is_empty());
     assert!(subtree.nodes.iter().all(|node| node.name.is_none()));
 
     let tint = Color::from_linear_rgba(0.1, 0.2, 0.3, 1.0);

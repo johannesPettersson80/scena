@@ -74,6 +74,9 @@ All notable user-facing changes are recorded here.
   `ghost`, restoreable visibility/tint snapshots, selected-node framing,
   bounding-box helper overlays, local/world axes triads, and an inspection
   toolkit report, plus a `cad_inspection_viewer` example.
+- Added additive `parent` and `children` fields to `scena.subtree.v1` so
+  SceneHost subtree reports can directly drive CAD-style part trees from
+  stable host handles.
 
 ## [1.7.1] - 2026-06-12
 

@@ -1094,7 +1094,7 @@ tags, picking, hover/selection, and helper geometry.
 
 Required features:
 
-- [ ] Part tree from imported hierarchy and host handles.
+- [x] Part tree from imported hierarchy and host handles.
 - [x] `isolate(selection)`: hide all unrelated visible nodes.
 - [x] `ghost(node/subtree, alpha)`: tint/alpha helper for context parts.
 - [x] `show_only`, `hide`, `show`, `toggle`.
@@ -1134,6 +1134,13 @@ Evidence:
       `add_local_axes_triad`, and `inspection_toolkit_report`.
 - [x] Focused tests: `cargo test --test inspection_tools -- --nocapture`
       passes locally with seven inspection-tool tests after implementation.
+- [x] Test-first proof: `cargo test --features scene-host --test scene_host
+      scene_host_subtree_query_is_stable_and_batch_tint_respects_exclusions
+      -- --nocapture` failed on the builder before implementation with missing
+      `SceneHostSubtreeNodeV1::parent` and `children` fields.
+- [x] Focused tests: `cargo test --features scene-host --test scene_host
+      scene_host_subtree_query_is_stable_and_batch_tint_respects_exclusions
+      -- --nocapture` covers stable host handles plus parent/child tree edges.
 
 ### 2.2 Measurement primitives
 

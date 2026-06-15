@@ -532,6 +532,25 @@ fn scene_host_subtree_golden_matches_live_schema_serialization() {
 
 #[cfg(feature = "scene-host")]
 #[test]
+fn scene_host_subtree_v1_accepts_old_shape_without_tree_edges() {
+    let old_shape = json!({
+        "schema": "scena.subtree.v1",
+        "nodes": [
+            {
+                "handle": 42,
+                "name": null,
+                "tags": ["frame"]
+            }
+        ]
+    });
+    let decoded: scena::SceneHostSubtreeReportV1 =
+        serde_json::from_value(old_shape).expect("old subtree shape deserializes");
+    assert_eq!(decoded.nodes[0].parent, None);
+    assert!(decoded.nodes[0].children.is_empty());
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
 fn scene_host_animation_inventory_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::SceneHostAnimationInventoryV1>(
         "tests/assets/stable-contracts/scene_host_animation_inventory.v1.json",
