@@ -207,6 +207,14 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
             "scena.scene_host_section_box.v1",
         ),
         (
+            "tests/assets/stable-contracts/scene_host_visual_state.v1.json",
+            "scena.scene_host_visual_state.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/scene_host_visual_states.v1.json",
+            "scena.scene_host_visual_states.v1",
+        ),
+        (
             "tests/assets/stable-contracts/scene_host_animation_inventory.v1.json",
             "scena.animation_inventory.v1",
         ),
@@ -595,6 +603,36 @@ fn scene_host_section_box_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::SceneHostSectionBoxReportV1>(
         "tests/assets/stable-contracts/scene_host_section_box.v1.json",
     );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_host_visual_state_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::SceneHostVisualStateV1>(
+        "tests/assets/stable-contracts/scene_host_visual_state.v1.json",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_host_visual_states_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::SceneHostVisualStatesReportV1>(
+        "tests/assets/stable-contracts/scene_host_visual_states.v1.json",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_host_visual_state_v1_accepts_minimal_defaulted_patch_shape() {
+    let decoded: scena::SceneHostVisualStateV1 = serde_json::from_value(json!({
+        "schema": "scena.scene_host_visual_state.v1",
+        "name": "assembled",
+        "patch": { "schema": "scena.visual_patch.v1" }
+    }))
+    .expect("minimal visual state shape deserializes");
+    assert!(decoded.patch.transforms.is_empty());
+    assert_eq!(decoded.patch.section_box, None);
+    assert_eq!(decoded.metadata, None);
 }
 
 #[cfg(feature = "scene-host")]

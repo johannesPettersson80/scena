@@ -102,6 +102,16 @@ Additive public API changes in Unreleased:
   `SceneHostExplodedViewOptionsV1`, and `SceneHostExplodedViewModeV1` for
   emitting existing visual-patch transform channels from stable host handles
   (gated behind `scene-host`)
+- `SCENE_HOST_VISUAL_STATE_SCHEMA_V1`,
+  `SCENE_HOST_VISUAL_STATES_SCHEMA_V1`, `SceneHostVisualStateV1`,
+  `SceneHostVisualStateSummaryV1`, `SceneHostVisualStatesReportV1`,
+  `SceneHostCore::store_visual_state`,
+  `SceneHostCore::store_visual_state_json`,
+  `SceneHostCore::visual_state`, `SceneHostCore::visual_state_json`,
+  `SceneHostCore::visual_states`, `SceneHostCore::visual_states_json`,
+  `SceneHostCore::apply_visual_state`, and
+  `SceneHostCore::apply_visual_state_json` for host-named visual patch
+  presets (gated behind `scene-host`)
 - `SceneHostCore::set_camera_bookmark` and
   `SceneHostCore::set_camera_bookmark_json` (gated behind `scene-host`)
 - The `scena` binary with `schema list`, `schema get <schema>`,

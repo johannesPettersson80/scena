@@ -7,6 +7,7 @@ use super::inputs::validate_transform;
 use super::instances::{HostInstanceBinding, INSTANCE_HANDLE_GENERATION_BASE};
 use super::reporting::{diagnostics_json, stats_json};
 use super::transitions::HostTransitions;
+use super::visual_states::SceneHostVisualStateV1;
 use super::{SceneHostError, SceneHostErrorCode};
 use crate::Color;
 use crate::{
@@ -36,6 +37,7 @@ pub struct SceneHostCore<F = DefaultAssetFetcher> {
     pub(super) node_handle_map: BTreeMap<NodeKey, u64>,
     pub(super) instance_handle_map: BTreeMap<(NodeKey, InstanceId), u64>,
     pub(super) section_box_helper: Option<u64>,
+    pub(super) visual_states: BTreeMap<String, SceneHostVisualStateV1>,
     next_byte_asset: u64,
 }
 
@@ -89,6 +91,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             node_handle_map: BTreeMap::new(),
             instance_handle_map: BTreeMap::new(),
             section_box_helper: None,
+            visual_states: BTreeMap::new(),
             next_byte_asset: 1,
         };
         let root = host.scene.root();

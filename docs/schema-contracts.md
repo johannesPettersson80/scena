@@ -43,6 +43,8 @@ Rules:
   - `scena.asset_geometry_summary.v1`
   - `scena.annotation_projection.v1`
   - `scena.subtree.v1`
+  - `scena.scene_host_visual_state.v1`
+  - `scena.scene_host_visual_states.v1`
   - `scena.animation_inventory.v1`
   - `scena.visual_patch.v1`
   - `scena.host_event.v1`
@@ -414,6 +416,32 @@ Small input example:
 Stable fixtures live at
 `tests/assets/stable-contracts/visual_patch.v1.json` and
 `tests/assets/stable-contracts/visual_patch_result.v1.json`.
+
+### `scena.scene_host_visual_state.v1` and `scena.scene_host_visual_states.v1`
+
+Returned by `SceneHostCore::store_visual_state_json()`,
+`SceneHostCore::visual_state_json()`, and
+`SceneHostCore::visual_states_json()`. A visual state stores a named
+`VisualPatchV1` plus optional opaque metadata for host-owned presentation
+presets. It is not a document model, undo stack, workflow engine, or time
+owner.
+
+Host-defined names are allowed. The recommended workflow names are
+`assembled`, `exploded`, `service_view`, and `covers_hidden`.
+
+Applying a visual state clones the stored patch and delegates to
+`SceneHostCore::apply_patch()`, so normal `scena.visual_patch.v1` defaults,
+result counts, metadata echo, stale-handle failures, and no-op semantics apply.
+The stored patch remains additive: omitted `VisualPatchV1` fields default
+exactly as they do when applying a patch directly.
+
+`scena.scene_host_visual_states.v1` lists stored state names and metadata in
+deterministic name order. The list is inspectable state inventory only; it does
+not imply history, undo, or ownership of application data.
+
+Stable fixtures live at
+`tests/assets/stable-contracts/scene_host_visual_state.v1.json` and
+`tests/assets/stable-contracts/scene_host_visual_states.v1.json`.
 
 ### `scena.scene_host_section_box.v1`
 

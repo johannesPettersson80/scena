@@ -1329,19 +1329,41 @@ camera state.
 
 Required states:
 
-- [ ] `assembled`.
-- [ ] `exploded`.
-- [ ] `service_view`.
-- [ ] `covers_hidden`.
-- [ ] Host-defined names.
+- [x] `assembled`.
+- [x] `exploded`.
+- [x] `service_view`.
+- [x] `covers_hidden`.
+- [x] Host-defined names.
 
 Acceptance:
 
-- [ ] A state serializes as a stored `VisualPatch` plus metadata.
-- [ ] Stored states preserve omitted additive patch fields by default, following
+- [x] A state serializes as a stored `VisualPatch` plus metadata.
+- [x] Stored states preserve omitted additive patch fields by default, following
       the optional/defaulted v1 rule from 0.1.
-- [ ] Applying a state is deterministic and inspectable.
-- [ ] No document model or undo stack is introduced.
+- [x] Applying a state is deterministic and inspectable.
+- [x] No document model or undo stack is introduced.
+
+Proof:
+
+- [x] Test-first proof: before production code,
+      `cargo test --features scene-host --test scene_host
+      scene_host_named_visual_states_store_serialize_and_apply_visual_patches
+      -- --nocapture` failed on `scena-builder` because
+      `SceneHostVisualStateV1`, `SceneHostVisualStatesReportV1`,
+      `store_visual_state(_json)`, `visual_states_json`, and
+      `apply_visual_state_json` did not exist.
+- [x] Focused proof: the same test passed locally after adding
+      `SceneHostCore` named visual-state storage and application.
+- [x] Stable contract proof:
+      `tests/assets/stable-contracts/scene_host_visual_state.v1.json` and
+      `tests/assets/stable-contracts/scene_host_visual_states.v1.json` pin the
+      stored-state and deterministic inventory wire shapes.
+- [x] Remote gate proof: after syncing to `scena-builder`
+      `~/projects/scena-visual-patch-impl`, `cargo fmt --check`,
+      `cargo clippy --all-targets --features scene-host -- -D warnings`,
+      `cargo test --features scene-host`,
+      `cargo run -p xtask -- doctor --full`, and
+      `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features` passed.
 
 ### 2.6 Real SDF/MSDF text
 

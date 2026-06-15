@@ -24,6 +24,7 @@ mod subtree;
 mod transforms;
 mod transitions;
 mod visual_patch;
+mod visual_states;
 
 #[cfg(target_arch = "wasm32")]
 mod wasm;
@@ -89,6 +90,10 @@ pub use visual_patch::{
     VisualPatchResultV1, VisualPatchRevisionDeltaV1, VisualPatchSectionBoxV1,
     VisualPatchSelectionV1, VisualPatchTintEasedV1, VisualPatchTintV1, VisualPatchTransformEasedV1,
     VisualPatchTransformV1, VisualPatchV1, VisualPatchVisibilityV1,
+};
+pub use visual_states::{
+    SCENE_HOST_VISUAL_STATE_SCHEMA_V1, SCENE_HOST_VISUAL_STATES_SCHEMA_V1,
+    SceneHostVisualStateSummaryV1, SceneHostVisualStateV1, SceneHostVisualStatesReportV1,
 };
 
 #[cfg(target_arch = "wasm32")]

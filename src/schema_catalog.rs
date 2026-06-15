@@ -301,6 +301,20 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/scene_host_section_box.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.scene_host_visual_state.v1",
+            owner_module: "scene_host",
+            summary: "SceneHost named visual state storing a visual patch plus metadata.",
+            feature_flag: Some("scene-host"),
+            fixture_path: Some("tests/assets/stable-contracts/scene_host_visual_state.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: "scena.scene_host_visual_states.v1",
+            owner_module: "scene_host",
+            summary: "SceneHost deterministic list of stored named visual states.",
+            feature_flag: Some("scene-host"),
+            fixture_path: Some("tests/assets/stable-contracts/scene_host_visual_states.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.animation_inventory.v1",
             owner_module: "scene_host",
             summary: "SceneHost animation clip inventory.",
@@ -439,6 +453,14 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
         (
             "scena.scene_host_section_box.v1",
             include_str!("../tests/assets/stable-contracts/scene_host_section_box.v1.json"),
+        ),
+        (
+            "scena.scene_host_visual_state.v1",
+            include_str!("../tests/assets/stable-contracts/scene_host_visual_state.v1.json"),
+        ),
+        (
+            "scena.scene_host_visual_states.v1",
+            include_str!("../tests/assets/stable-contracts/scene_host_visual_states.v1.json"),
         ),
         (
             "scena.animation_inventory.v1",

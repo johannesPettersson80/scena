@@ -12,13 +12,14 @@ use scena::{
     SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostAnimationInventoryV1, SceneHostAnimationLoopMode,
     SceneHostAnimationPlayOptions, SceneHostCameraState, SceneHostCore, SceneHostEasing,
     SceneHostErrorCode, SceneHostSectionBoxReportV1, SceneHostSubtreeReportV1,
-    SceneInspectionReportV1, ScreenSpaceAmbientOcclusionConfig, SurfaceEvent, Transform,
-    VISUAL_PATCH_SCHEMA_V1, Vec3, VisualPatchAnimationTimeModeV1, VisualPatchAnimationTimeV1,
-    VisualPatchCameraEasedV1, VisualPatchHoverV1, VisualPatchLabelTargetV1, VisualPatchLabelV1,
-    VisualPatchMaterialVariantV1, VisualPatchResultV1, VisualPatchSectionBoxV1,
-    VisualPatchSelectionV1, VisualPatchTintEasedV1, VisualPatchTransformEasedV1,
-    VisualPatchTransformV1, VisualPatchV1, VisualPatchVisibilityV1,
+    SceneHostVisualStateV1, SceneHostVisualStatesReportV1, SceneInspectionReportV1,
+    ScreenSpaceAmbientOcclusionConfig, SurfaceEvent, Transform, VISUAL_PATCH_SCHEMA_V1, Vec3,
+    VisualPatchAnimationTimeModeV1, VisualPatchAnimationTimeV1, VisualPatchCameraEasedV1,
+    VisualPatchHoverV1, VisualPatchLabelTargetV1, VisualPatchLabelV1, VisualPatchMaterialVariantV1,
+    VisualPatchResultV1, VisualPatchSectionBoxV1, VisualPatchSelectionV1, VisualPatchTintEasedV1,
+    VisualPatchTransformEasedV1, VisualPatchTransformV1, VisualPatchV1, VisualPatchVisibilityV1,
 };
+use serde_json::json;
 
 #[test]
 fn scene_instantiate_under_parents_import_roots_under_requested_node() {
@@ -2007,6 +2008,95 @@ fn scene_host_section_box_helper_drives_report_and_visual_patch_channel() {
     assert!(result.failed.is_empty());
     assert!(host.scene().section_box().is_none());
     assert!(host.scene().section_box_planes().is_none());
+}
+
+#[test]
+fn scene_host_named_visual_states_store_serialize_and_apply_visual_patches() {
+    let mut host = SceneHostCore::headless(160, 120).expect("host builds");
+    let root = host.root_handle();
+    let cover = host
+        .add_empty(Some(root), Transform::IDENTITY, Some("cover"))
+        .expect("cover inserts");
+
+    let mut service_patch = VisualPatchV1::default();
+    service_patch.visibility.push(VisualPatchVisibilityV1 {
+        node: cover,
+        visible: false,
+    });
+    service_patch.metadata = Some(json!({"preset":"service_view"}));
+    service_patch.echo_metadata = true;
+
+    let service_state = SceneHostVisualStateV1::new("service_view", service_patch.clone())
+        .with_metadata(json!({"label":"Service view"}));
+    let stored: SceneHostVisualStateV1 = serde_json::from_str(
+        &host
+            .store_visual_state_json(
+                &serde_json::to_string(&service_state).expect("state serializes"),
+            )
+            .expect("state stores"),
+    )
+    .expect("stored state decodes");
+    assert_eq!(stored.schema, "scena.scene_host_visual_state.v1");
+    assert_eq!(stored.name, "service_view");
+    assert_eq!(
+        stored.patch.transforms_eased.len(),
+        0,
+        "defaulted additive visual-patch fields must survive omitted JSON"
+    );
+    assert_eq!(stored.metadata, Some(json!({"label":"Service view"})));
+
+    for name in ["assembled", "exploded", "covers_hidden", "custom-review"] {
+        host.store_visual_state(SceneHostVisualStateV1::new(name, VisualPatchV1::default()))
+            .expect("required visual state stores");
+    }
+
+    let states: SceneHostVisualStatesReportV1 =
+        serde_json::from_str(&host.visual_states_json().expect("states serialize"))
+            .expect("states report decodes");
+    assert_eq!(states.schema, "scena.scene_host_visual_states.v1");
+    let names = states
+        .states
+        .iter()
+        .map(|state| state.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        vec![
+            "assembled",
+            "covers_hidden",
+            "custom-review",
+            "exploded",
+            "service_view"
+        ],
+        "states are inspectable in deterministic name order"
+    );
+
+    let result: VisualPatchResultV1 = serde_json::from_str(
+        &host
+            .apply_visual_state_json("service_view")
+            .expect("state applies"),
+    )
+    .expect("patch result decodes");
+    assert_eq!(result.applied.visibility, 1);
+    assert_eq!(result.metadata, Some(json!({"preset":"service_view"})));
+    assert!(
+        !host_report(&host)
+            .node_by_handle(cover)
+            .expect("cover appears")
+            .visible,
+        "applied visual state should be inspectable through scene inspection"
+    );
+
+    let replay: VisualPatchResultV1 = serde_json::from_str(
+        &host
+            .apply_visual_state_json("service_view")
+            .expect("state replays"),
+    )
+    .expect("patch result decodes");
+    assert_eq!(
+        replay.applied.visibility, 0,
+        "replay is deterministic no-op"
+    );
 }
 
 #[test]

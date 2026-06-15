@@ -81,6 +81,10 @@ All notable user-facing changes are recorded here.
   assembly exploded views, plus `SceneHostCore::exploded_view_patch_json()` for
   emitting existing `scena.visual_patch.v1` transform or eased-transform
   channels.
+- Added SceneHost named visual states via
+  `scena.scene_host_visual_state.v1` and
+  `scena.scene_host_visual_states.v1`, storing host-named `VisualPatchV1`
+  presets with opaque metadata and deterministic inventory/application APIs.
 
 ## [1.7.1] - 2026-06-12
 
