@@ -17,6 +17,7 @@ mod inputs;
 mod inspection_tools;
 mod instances;
 mod interaction_verification;
+mod introspection;
 mod material_variants;
 mod measurements;
 mod post;
@@ -41,6 +42,8 @@ mod wasm_assets;
 mod wasm_camera;
 #[cfg(target_arch = "wasm32")]
 mod wasm_gizmo;
+#[cfg(target_arch = "wasm32")]
+mod wasm_introspection;
 #[cfg(target_arch = "wasm32")]
 mod wasm_measurements;
 #[cfg(target_arch = "wasm32")]

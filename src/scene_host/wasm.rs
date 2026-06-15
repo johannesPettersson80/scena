@@ -416,7 +416,7 @@ impl SceneHost {
 }
 
 impl SceneHost {
-    fn capture_rgba8_for_wasm(&self) -> Result<CaptureRgba8, SceneHostError> {
+    pub(super) fn capture_rgba8_for_wasm(&self) -> Result<CaptureRgba8, SceneHostError> {
         match self
             .browser_canvas
             .as_ref()

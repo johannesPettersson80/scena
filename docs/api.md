@@ -36,6 +36,8 @@ Additive public API changes in Unreleased:
   `RenderIntrospectionNodesSummaryV1`, `RenderIntrospectionNodeDetailV1`,
   `RenderIntrospectionArtifactsV1`, and
   `Renderer::introspect_capture` (gated behind `inspection`)
+- `SceneHostCore::render_introspection` and
+  `SceneHostCore::render_introspection_json` (gated behind `scene-host`)
 - `VISIBILITY_DIAGNOSIS_SCHEMA_V1`, `VisibilityDiagnosisReportV1`,
   `VisibilityDiagnosisOptions`, `VisibilityDiagnosisReasonV1`,
   `VisibilityDiagnosisFixV1`, `VisibilityDiagnosisSummaryV1`,
@@ -280,6 +282,10 @@ Capture descriptors are bound to the renderer's last rendered scene/camera
 state and fail with `CaptureError::StaleRender` if the scene is mutated before
 capture. PNG helpers delegate to `CaptureRgba8`, so viewer, renderer,
 SceneHost, and browser captures use the same descriptor-bound byte path.
+`renderIntrospectionJson(detail)` returns `scena.render_introspection.v1` over
+the same browser canvas readback path, so agent/browser hosts can fail closed
+on empty, offscreen, or culled frames without inventing a JavaScript-only
+visibility report.
 Phase 4 adds real `removeNode` and `removeImport` host methods. Removed node
 handles are invalidated in the host table, so later use returns
 `SceneHostErrorCode::StaleNodeHandle` rather than aliasing a recycled node.

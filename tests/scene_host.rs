@@ -8,10 +8,11 @@ use scena::{
     ASSET_LOAD_REPORT_SCHEMA_V1, Aabb, AnnotationProjectionReportV1, AntiAliasing, AssetPath,
     Assets, AutoExposureConfig, Color, GeometryDesc, HOST_EVENT_SCHEMA_V1, HitTarget,
     HostEventBatchV1, HostEventHoverPhaseV1, HostEventV1, ImportOptions, MaterialDesc,
-    OrbitControlAction, PointerButton, PostBloomConfig, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1,
-    SCENE_HOST_GROUNDING_SCHEMA_V1, SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostAnimationInventoryV1,
-    SceneHostAnimationLoopMode, SceneHostAnimationPlayOptions, SceneHostCameraState, SceneHostCore,
-    SceneHostEasing, SceneHostErrorCode, SceneHostGroundingPathV1, SceneHostSectionBoxReportV1,
+    OrbitControlAction, PointerButton, PostBloomConfig, RENDER_INTROSPECTION_SCHEMA_V1,
+    RenderIntrospectionReportV1, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1, SCENE_HOST_GROUNDING_SCHEMA_V1,
+    SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostAnimationInventoryV1, SceneHostAnimationLoopMode,
+    SceneHostAnimationPlayOptions, SceneHostCameraState, SceneHostCore, SceneHostEasing,
+    SceneHostErrorCode, SceneHostGroundingPathV1, SceneHostSectionBoxReportV1,
     SceneHostSubtreeReportV1, SceneHostVisualStateV1, SceneHostVisualStatesReportV1,
     SceneInspectionReportV1, ScreenSpaceAmbientOcclusionConfig, SurfaceEvent, Transform,
     VISUAL_PATCH_SCHEMA_V1, Vec3, VisualPatchAnimationTimeModeV1, VisualPatchAnimationTimeV1,
@@ -338,6 +339,37 @@ fn scene_host_core_constructs_poses_inspects_picks_and_frames_with_one_handle_na
         Some(left_mesh)
     );
     host.frame_all().expect("host frames all nodes");
+}
+
+#[test]
+fn scene_host_render_introspection_json_uses_rendered_capture_and_inspection_contract() {
+    let mut host = SceneHostCore::headless(128, 128).expect("host builds");
+    let import = pollster::block_on(host.instantiate_url(AssetPath::from(
+        "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+    )))
+    .expect("asset instantiates");
+    let mesh = host
+        .node_handle(import, "ColoredTriangle")
+        .expect("mesh resolves");
+    host.frame_node(mesh).expect("mesh frames");
+    host.prepare().expect("host prepares");
+    host.render().expect("host renders");
+
+    let report: RenderIntrospectionReportV1 = serde_json::from_str(
+        &host
+            .render_introspection_json(false)
+            .expect("report serializes"),
+    )
+    .expect("render introspection JSON decodes");
+
+    assert_eq!(report.schema, RENDER_INTROSPECTION_SCHEMA_V1);
+    assert!(report.ok, "{report:#?}");
+    assert!(report.visible_pixel_fraction > 0.0);
+    assert!(report.content_bbox_css_px.is_some());
+    assert_eq!(
+        report.capabilities.backend,
+        host.renderer().capabilities().backend
+    );
 }
 
 #[test]

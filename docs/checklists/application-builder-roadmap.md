@@ -437,7 +437,7 @@ Acceptance:
 - [x] Headless tests prove `ok=false` for the implemented failure frames and
       `ok=true` for the valid frame.
 - [x] Headless tests prove warning-only framing reports keep `ok=true`.
-- [ ] Browser proof covers at least empty, offscreen, and valid centered
+- [x] Browser proof covers at least empty, offscreen, and valid centered
       content.
 - [x] Report JSON is deterministic across two consecutive runs.
 - [x] Doctor/stable-contract checks keep the schema string and stable fixture

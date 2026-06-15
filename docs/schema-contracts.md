@@ -765,7 +765,10 @@ a replacement capture schema.
 Produced by `Renderer::introspect_capture`,
 `RenderIntrospectionReportV1::from_capture`, and
 `RenderIntrospectionReportV1::from_capture_with_diagnostics` when the
-`inspection` feature is enabled. The report binds a `scena.capture.v1`
+`inspection` feature is enabled. SceneHost also exposes it through native
+`SceneHostCore::render_introspection_json(detail)` and browser
+`SceneHost.renderIntrospectionJson(detail)` when `scene-host` is enabled. The
+report binds a `scena.capture.v1`
 descriptor, a `scena.scene_inspection.v1` report, renderer stats, and optional
 renderer diagnostics into a small, deterministically ordered agent-readable
 summary.

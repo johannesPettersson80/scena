@@ -96,6 +96,7 @@ Frame operations use one host handle namespace:
 - `nodeWorldBoundsJson`
 - `pick(x, y)`
 - `inspectJson`
+- `renderIntrospectionJson(detail)`
 - `annotationProjectionsJson`
 - `capture()` and `captureJson()`
 - `setCameraEased(target, yawRadians, pitchRadians, distance,
@@ -171,6 +172,13 @@ instead of serializing stale proof metadata. CPU-headless captures are
 deterministic for the same scene state. Browser GPU captures bind pixels to
 revision counters and backend/capability metadata; they do not claim
 cross-machine byte identity.
+
+`renderIntrospectionJson(detail)` captures the current browser canvas pixels
+and returns `scena.render_introspection.v1` JSON through the same
+capture-bound renderer report used natively. Pass `false` for summary mode or
+`true` for node detail. The report fails closed for empty, offscreen, culled,
+and other error-severity visibility failures while warning-only framing
+reasons remain advisory.
 
 Real browser/GPU proof is separate from CPU builder validation. The required
 proof plan and output artifacts are tracked in

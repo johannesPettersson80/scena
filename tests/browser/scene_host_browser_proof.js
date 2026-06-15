@@ -75,6 +75,7 @@ const REQUIRED_BINDINGS = [
   ["prototype", "prepare"],
   ["prototype", "render"],
   ["prototype", "inspectJson"],
+  ["prototype", "renderIntrospectionJson"],
   ["prototype", "annotationProjectionsJson"],
   ["prototype", "capture"],
   ["prototype", "capturePng"],
@@ -605,6 +606,31 @@ async function runPageProof(page) {
       };
       const waitForCanvasPresent = () =>
         new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const createProofCanvas = (id, width = 180, height = 140, dpr = 1) => {
+        const proofCanvas = document.createElement("canvas");
+        proofCanvas.id = id;
+        proofCanvas.width = Math.round(width * dpr);
+        proofCanvas.height = Math.round(height * dpr);
+        proofCanvas.style.position = "absolute";
+        proofCanvas.style.left = "-10000px";
+        proofCanvas.style.top = "0";
+        proofCanvas.style.width = `${width}px`;
+        proofCanvas.style.height = `${height}px`;
+        document.body.appendChild(proofCanvas);
+        return proofCanvas;
+      };
+      const renderIntrospectionProbe = async (probeHost, label) => {
+        const prepare = (() => {
+          const started = performance.now();
+          probeHost.prepare();
+          const ended = performance.now();
+          return { label: `${label}_prepare`, duration_ms: ended - started };
+        })();
+        const render = JSON.parse(probeHost.render());
+        await waitForCanvasPresent();
+        const report = JSON.parse(probeHost.renderIntrospectionJson(false));
+        return { label, prepare, render, report };
+      };
       const handleNumber = (value) => {
         const number = typeof value === "bigint" ? Number(value) : value;
         if (!Number.isSafeInteger(number) || number <= 0) {
@@ -655,6 +681,34 @@ async function runPageProof(page) {
       );
       window.__scenaSceneHostProofHost = host;
       host.resize(viewport.width, viewport.height, viewport.devicePixelRatio);
+
+      const introspectionCanvas = createProofCanvas("scene-introspection-proof");
+      const introspectionHost = await SceneHost.newWebgl2(introspectionCanvas, 180, 140, 1);
+      const introspectionEmpty = await renderIntrospectionProbe(
+        introspectionHost,
+        "render_introspection_empty",
+      );
+      const introspectionImport = await introspectionHost.instantiateUrl(assetUrl);
+      const introspectionMesh = introspectionHost.nodeHandleByName(
+        handleBigInt(introspectionImport),
+        "ColoredTriangle",
+      );
+      introspectionHost.frameNode(introspectionMesh);
+      const introspectionValidCentered = await renderIntrospectionProbe(
+        introspectionHost,
+        "render_introspection_valid_centered",
+      );
+      introspectionHost.setTransform(
+        introspectionMesh,
+        [100.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+        [1.0, 1.0, 1.0],
+      );
+      const introspectionOffscreen = await renderIntrospectionProbe(
+        introspectionHost,
+        "render_introspection_offscreen",
+      );
+
       const rootHandle = host.rootHandle();
       const leftFrameHandle = host.addEmpty(
         rootHandle,
@@ -1501,6 +1555,13 @@ async function runPageProof(page) {
           external_resource_frame: handleNumber(externalResourceFrameHandle),
           external_resource_import: handleNumber(externalResourceImportReport.import),
         },
+        agent_render_introspection: {
+          empty: introspectionEmpty,
+          valid_centered: introspectionValidCentered,
+          offscreen: introspectionOffscreen,
+          import: handleNumber(introspectionImport),
+          mesh: handleNumber(introspectionMesh),
+        },
         phase0_visual_patch: {
           before_inspection: phase0BeforeInspection,
           after_inspection: phase0AfterInspection,
@@ -1805,6 +1866,40 @@ function assertProof(pageProof, screenshot) {
     "capture_rgba8_hash_matches_descriptor",
     pageProof.capture.rgba8_fnv1a64 === pageProof.capture.descriptor.pixels.fnv1a64,
     pageProof.capture,
+  );
+  const introspection = pageProof.agent_render_introspection;
+  const reasonCodes = (report) =>
+    report && Array.isArray(report.reasons)
+      ? report.reasons.map((reason) => reason.code)
+      : [];
+  const emptyReasonCodes = reasonCodes(introspection.empty.report);
+  const offscreenReasonCodes = reasonCodes(introspection.offscreen.report);
+  check(
+    "render_introspection_browser_empty_fails_closed",
+    introspection.empty.report.schema === "scena.render_introspection.v1" &&
+      introspection.empty.report.ok === false &&
+      introspection.empty.report.visible_pixel_fraction === 0 &&
+      emptyReasonCodes.includes("empty_frame") &&
+      emptyReasonCodes.includes("no_visible_drawables"),
+    introspection.empty.report,
+  );
+  check(
+    "render_introspection_browser_valid_centered_content",
+    introspection.valid_centered.report.schema === "scena.render_introspection.v1" &&
+      introspection.valid_centered.report.ok === true &&
+      introspection.valid_centered.report.visible_pixel_fraction > 0 &&
+      introspection.valid_centered.report.content_bbox_css_px &&
+      Math.abs(introspection.valid_centered.report.framing.center_offset_fraction[0]) < 0.35 &&
+      Math.abs(introspection.valid_centered.report.framing.center_offset_fraction[1]) < 0.35,
+    introspection.valid_centered.report,
+  );
+  check(
+    "render_introspection_browser_offscreen_fails_closed",
+    introspection.offscreen.report.schema === "scena.render_introspection.v1" &&
+      introspection.offscreen.report.ok === false &&
+      introspection.offscreen.report.visible_pixel_fraction === 0 &&
+      offscreenReasonCodes.includes("outside_frustum"),
+    introspection.offscreen.report,
   );
   const phase0 = pageProof.phase0_visual_patch;
   const phase0AfterLeft = nodeByHandle(phase0.after_inspection, pageProof.handles.left_mesh);

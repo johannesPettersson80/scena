@@ -27,6 +27,9 @@ All notable user-facing changes are recorded here.
   luminance reports shader-encoded RGBA8 byte-scale values. The report now
   fails closed for camera-frustum failures, alpha-zero drawables, non-finite
   transforms, and active clipping planes that remove all visible content.
+  SceneHost native and WASM hosts can now request the same report through
+  `render_introspection_json` / `renderIntrospectionJson()`, with browser proof
+  covering empty, offscreen, and valid centered frames.
 - Added `scena.visibility_diagnosis.v1`, an inspection-backed visibility
   diagnoser with stable reason codes and explicit fix suggestions behind the
   `inspection` feature. Whole-scene `all_culled` diagnosis requires every
