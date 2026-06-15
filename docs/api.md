@@ -87,6 +87,10 @@ Additive public API changes in Unreleased:
 - `MeasurementOverlay`, `MeasurementKind`, `MeasurementAxis`,
   `MeasurementReport`, `MeasurementOverlayReport`, `UnitFormat`, and
   `Scene::add_measurement_overlay`
+- `Scene::isolate`, `Scene::show_only`, `Scene::hide`, `Scene::show`,
+  `Scene::toggle_visibility`, `Scene::ghost`, `Scene::restore_visibility`,
+  `Scene::restore_tints`, `SceneVisibilitySnapshot`, and
+  `SceneTintSnapshot`
 - `SceneHostCore::set_camera_bookmark` and
   `SceneHostCore::set_camera_bookmark_json` (gated behind `scene-host`)
 - The `scena` binary with `schema list`, `schema get <schema>`,

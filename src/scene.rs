@@ -26,6 +26,7 @@ mod framing;
 mod import;
 #[cfg(feature = "inspection")]
 mod inspection;
+mod inspection_tools;
 mod instances;
 mod labels;
 mod lights;
@@ -76,6 +77,10 @@ pub use inspection::{
     SceneMaterialInspectionV1, SceneMaterialSlotInspectionV1, SceneMaterialSourceInspectionV1,
     SceneNodeInspection, SceneNodeInspectionV1, SceneNormalInspection, SceneNormalInspectionV1,
     SceneTextureInspection,
+};
+pub use inspection_tools::{
+    SceneTintSnapshot, SceneTintSnapshotEntry, SceneVisibilitySnapshot,
+    SceneVisibilitySnapshotEntry,
 };
 pub use instances::{Instance, InstanceCullingPolicy, InstanceId, InstanceSet};
 pub use labels::{LabelBillboard, LabelDesc, LabelRasterization};

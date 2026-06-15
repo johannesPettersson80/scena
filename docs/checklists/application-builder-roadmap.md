@@ -1095,21 +1095,35 @@ tags, picking, hover/selection, and helper geometry.
 Required features:
 
 - [ ] Part tree from imported hierarchy and host handles.
-- [ ] `isolate(selection)`: hide all unrelated visible nodes.
-- [ ] `ghost(node/subtree, alpha)`: tint/alpha helper for context parts.
-- [ ] `show_only`, `hide`, `show`, `toggle`.
+- [x] `isolate(selection)`: hide all unrelated visible nodes.
+- [x] `ghost(node/subtree, alpha)`: tint/alpha helper for context parts.
+- [x] `show_only`, `hide`, `show`, `toggle`.
 - [ ] Fit selected node/subtree.
 - [ ] Bounding-box helper overlays.
 - [ ] Local/world axes triad widget.
-- [ ] Selection set helpers by tag, import path, import name, or handle list.
+- [x] Selection set helpers by handle list. Tag/import path/import name helper
+      consolidation remains open for the host-facing slice.
 - [ ] Inspection report records active isolate/ghost/helper state where useful.
 
 Acceptance:
 
-- [ ] Tests for isolate and restore preserving prior visibility.
-- [ ] Tests for ghost not mutating source material descriptors.
+- [x] Tests for isolate and restore preserving prior visibility.
+- [x] Tests for ghost not mutating source material descriptors.
 - [ ] Browser proof for part-tree selection, isolate, ghost, and fit selection.
-- [ ] Example: CAD inspection viewer.
+- [x] Example: CAD inspection viewer.
+
+Evidence:
+
+- [x] Test-first proof: `cargo test --test inspection_tools -- --nocapture`
+      failed on the builder before implementation with unresolved
+      `SceneVisibilitySnapshot`, `Scene::isolate`, `restore_visibility`,
+      `hide`, `toggle_visibility`, `show`, `show_only`, `ghost`, and
+      `restore_tints`.
+- [x] Focused tests: `cargo test --test inspection_tools -- --nocapture`
+      passes locally after implementation.
+- [x] Example proof: `cargo run --example cad_inspection_viewer --
+      target/gate-artifacts/cad-inspection-viewer` renders a CAD inspection
+      artifact using show-only, ghost, framing, and measurement overlays.
 
 ### 2.2 Measurement primitives
 

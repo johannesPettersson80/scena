@@ -69,6 +69,10 @@ All notable user-facing changes are recorded here.
   distance, angle, bounds-dimension reports, host-supplied `UnitFormat`
   formatting, and line plus optional label rendering through
   `Scene::add_measurement_overlay()`.
+- Added CAD-style inspection helpers for scene visibility and context:
+  `Scene::isolate`, `show_only`, `hide`, `show`, `toggle_visibility`,
+  `ghost`, and restoreable visibility/tint snapshots, plus a
+  `cad_inspection_viewer` example.
 
 ## [1.7.1] - 2026-06-12
 
