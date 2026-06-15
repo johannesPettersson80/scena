@@ -160,6 +160,22 @@
       }
     }
   ],
+  "section_box": {
+    "mode": "set",
+    "min": [
+      -0.25,
+      -0.5,
+      -0.5
+    ],
+    "max": [
+      0.25,
+      0.5,
+      0.5
+    ],
+    "margin": 0.05000000074505806,
+    "inverted": false,
+    "helper_wireframe": true
+  },
   "metadata": {
     "request_id": "fixture"
   },

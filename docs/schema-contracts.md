@@ -248,6 +248,7 @@ The 0.1C app/UI fields are additive and default when omitted:
 - `hover`
 - `material_variants`
 - `labels`
+- `section_box`
 - `metadata`
 - `echo_metadata`
 
@@ -281,6 +282,15 @@ and projects the anchor; the host owns visible text and DOM/native overlay
 content. A label target can be `node`, `world`, or `clear`; IDs must be
 non-empty strings and node targets use stable host node handles.
 
+`section_box` is the additive section/cutaway channel. It accepts
+`{ "mode": "set", "min": [x,y,z], "max": [x,y,z], "margin": n,
+"inverted": false, "helper_wireframe": true }`, `{ "mode": "invert",
+"inverted": true }`, or `{ "mode": "disable" }`. Bounds are world-space AABBs
+with finite `min < max` on every axis. Non-inverted boxes keep the interior and
+clip the outside; inverted boxes clip the interior and keep the outside. The
+optional helper wireframe is a generated SceneHost node and is removed when a
+later section-box update disables the helper or the section box.
+
 `metadata` is caller-owned JSON. It is returned in `VisualPatchResultV1` only
 when `echo_metadata` is `true`, so agents can correlate responses without
 forcing every result to echo arbitrary host data.
@@ -289,7 +299,8 @@ The result includes:
 
 - `applied`: changed-entry counts for `transforms`, `tints`, `visibility`,
   `camera`, `transforms_eased`, `tints_eased`, `camera_eased`,
-  `animation_time`, `selection`, `hover`, `material_variants`, and `labels`;
+  `animation_time`, `selection`, `hover`, `material_variants`, `labels`, and
+  `section_box`;
 - `failed`: per-entry errors with `channel`, `index`, optional `handle`, typed
   `code`, and human-readable `message`;
 - `revisions`: scene revision deltas for `structure`, `transform`,
@@ -387,6 +398,14 @@ Small input example:
       }
     }
   ],
+  "section_box": {
+    "mode": "set",
+    "min": [-0.25, -0.5, -0.5],
+    "max": [0.25, 0.5, 0.5],
+    "margin": 0.05,
+    "inverted": false,
+    "helper_wireframe": true
+  },
   "metadata": { "request_id": "agent-step-42" },
   "echo_metadata": true
 }
@@ -395,6 +414,19 @@ Small input example:
 Stable fixtures live at
 `tests/assets/stable-contracts/visual_patch.v1.json` and
 `tests/assets/stable-contracts/visual_patch_result.v1.json`.
+
+### `scena.scene_host_section_box.v1`
+
+Returned by `SceneHostCore::set_section_box_json()` and the matching browser
+`SceneHost.setSectionBox()` helper. It reports whether the section box is
+enabled, the world-space bounds and margin, the exact six generated clipping
+planes, and the optional stable helper-node handle when a wireframe helper was
+requested. Plane values are reported as data, not as public clipping-plane
+handles; hosts mutate the section box through `VisualPatch.section_box` or the
+SceneHost section-box helpers.
+
+Stable fixture:
+`tests/assets/stable-contracts/scene_host_section_box.v1.json`.
 
 ## SceneHost event batch
 

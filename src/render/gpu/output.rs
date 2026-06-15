@@ -1,4 +1,5 @@
 use super::super::prepare::PreparedGpuLightUniform;
+use crate::scene::{ClippingPlane, SectionBox};
 
 /// Phase 5.4 follow-up: the WGSL fragment shader source moved into
 /// a sibling `.wgsl` file so this Rust module stays under doctor's
@@ -10,7 +11,8 @@ pub(super) const GPU_TRIANGLE_SHADER: &str = include_str!("output_shader.wgsl");
 pub(super) const GPU_TRIANGLE_SHADER_TEXTURE_2D: &str =
     include_str!("output_shader_texture_2d.wgsl");
 
-pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 480;
+pub(super) const MAX_OUTPUT_CLIPPING_PLANES: usize = 6;
+pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 592;
 
 pub(super) use super::draw_uniform::{
     DRAW_UNIFORM_ENTRY_STRIDE, create_draw_bind_group, create_draw_bind_group_layout,
@@ -159,6 +161,47 @@ pub(super) struct OutputUniformUpload {
     pub(super) near_far: [f32; 2],
     pub(super) color_management: [f32; 4],
     pub(super) lighting: PreparedGpuLightUniform,
+    pub(super) clipping_planes: [[f32; 4]; MAX_OUTPUT_CLIPPING_PLANES],
+    pub(super) clipping_control: [f32; 4],
+}
+
+pub(super) fn encode_clipping_uniform(
+    clipping_planes: &[ClippingPlane],
+    section_box: Option<SectionBox>,
+) -> ([[f32; 4]; MAX_OUTPUT_CLIPPING_PLANES], [f32; 4]) {
+    let mut encoded = [[0.0; 4]; MAX_OUTPUT_CLIPPING_PLANES];
+    if let Some(section_box) = section_box {
+        for (index, plane) in section_box.planes().into_iter().enumerate() {
+            encoded[index] = plane_uniform(plane);
+        }
+        return (
+            encoded,
+            [
+                MAX_OUTPUT_CLIPPING_PLANES as f32,
+                1.0,
+                if section_box.inverted() { 1.0 } else { 0.0 },
+                0.0,
+            ],
+        );
+    }
+
+    for (index, plane) in clipping_planes
+        .iter()
+        .take(MAX_OUTPUT_CLIPPING_PLANES)
+        .copied()
+        .enumerate()
+    {
+        encoded[index] = plane_uniform(plane);
+    }
+    (
+        encoded,
+        [
+            clipping_planes.len().min(MAX_OUTPUT_CLIPPING_PLANES) as f32,
+            0.0,
+            0.0,
+            0.0,
+        ],
+    )
 }
 
 pub(super) fn encode_output_uniform(
@@ -169,7 +212,7 @@ pub(super) fn encode_output_uniform(
     } else {
         0.0
     };
-    let mut values = [0.0; 120];
+    let mut values = [0.0; 148];
     values[0..16].copy_from_slice(&upload.view_from_world);
     values[16..32].copy_from_slice(&upload.clip_from_view);
     values[32..48].copy_from_slice(&upload.clip_from_world);
@@ -194,11 +237,25 @@ pub(super) fn encode_output_uniform(
     values[108..112].copy_from_slice(&upload.lighting.spot_light_color_range);
     values[112..116].copy_from_slice(&upload.lighting.environment_diffuse_intensity);
     values[116..120].copy_from_slice(&upload.lighting.environment_specular_intensity);
+    for (index, plane) in upload.clipping_planes.into_iter().enumerate() {
+        let offset = 120 + index * 4;
+        values[offset..offset + 4].copy_from_slice(&plane);
+    }
+    values[144..148].copy_from_slice(&upload.clipping_control);
     let mut bytes = [0; OUTPUT_UNIFORM_BYTE_LEN as usize];
     for (index, value) in values.into_iter().enumerate() {
         bytes[index * 4..index * 4 + 4].copy_from_slice(&value.to_ne_bytes());
     }
     bytes
+}
+
+fn plane_uniform(plane: ClippingPlane) -> [f32; 4] {
+    [
+        plane.normal().x,
+        plane.normal().y,
+        plane.normal().z,
+        plane.distance(),
+    ]
 }
 
 #[cfg(test)]
@@ -208,12 +265,13 @@ mod tests {
     #[test]
     fn output_uniform_buffer_matches_wgsl_uniform_layout() {
         assert_eq!(
-            OUTPUT_UNIFORM_BYTE_LEN, 480,
+            OUTPUT_UNIFORM_BYTE_LEN, 592,
             "CameraUniform stores view, projection, and view-projection matrices plus \
              camera/exposure, viewport/depth, color-management, punctual-light, \
-             directional-shadow-control, and environment uniforms — per-draw model + normal matrices live on the new \
+             directional-shadow-control, environment, and six clipping-plane uniforms — per-draw model + normal matrices live on the new \
              DrawUniform bind group at @group(2)"
         );
+        let (clipping_planes, clipping_control) = encode_clipping_uniform(&[], None);
         assert_eq!(
             encode_output_uniform(OutputUniformUpload {
                 exposure_ev: 0.0,
@@ -226,6 +284,8 @@ mod tests {
                 near_far: [0.1, 1000.0],
                 color_management: [1.0, 0.0, 0.0, 0.0],
                 lighting: PreparedGpuLightUniform::default(),
+                clipping_planes,
+                clipping_control,
             })
             .len(),
             OUTPUT_UNIFORM_BYTE_LEN as usize

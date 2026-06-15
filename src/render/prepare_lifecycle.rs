@@ -301,6 +301,7 @@ impl Renderer {
             retained_instances,
             instances,
             clipping_planes: scene.active_clipping_plane_values().collect(),
+            section_box: scene.section_box(),
         });
         self.stats.instances = self
             .prepared

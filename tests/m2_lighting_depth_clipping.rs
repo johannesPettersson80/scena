@@ -1359,6 +1359,69 @@ fn clipping_plane_set_clips_rendered_output_half_space() {
 }
 
 #[test]
+fn section_box_clips_rendered_output_and_inverts_inside_region() {
+    let mut scene = fullscreen_white_scene();
+    let section = scena::SectionBox::from_bounds(scena::Aabb::new(
+        Vec3::new(0.0, -2.0, -1.0),
+        Vec3::new(2.0, 2.0, 1.0),
+    ));
+    scene
+        .set_section_box(section)
+        .expect("section box activates");
+    assert_eq!(
+        scene
+            .section_box_planes()
+            .expect("section box exposes its generated planes")
+            .len(),
+        6
+    );
+    let mut renderer = Renderer::headless(16, 16).expect("renderer builds");
+
+    renderer.prepare(&mut scene).expect("scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("sectioned scene renders");
+
+    assert_eq!(pixel_at(renderer.frame_rgba8(), 16, 3, 8), [0, 0, 0, 255]);
+    assert_eq!(
+        pixel_at(renderer.frame_rgba8(), 16, 12, 8),
+        [240, 240, 240, 255]
+    );
+
+    scene
+        .invert_section_box(true)
+        .expect("section box invert toggles");
+    renderer
+        .prepare(&mut scene)
+        .expect("inverted scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("inverted section renders");
+
+    assert_eq!(
+        pixel_at(renderer.frame_rgba8(), 16, 3, 8),
+        [240, 240, 240, 255]
+    );
+    assert_eq!(pixel_at(renderer.frame_rgba8(), 16, 12, 8), [0, 0, 0, 255]);
+
+    assert!(scene.clear_section_box());
+    renderer
+        .prepare(&mut scene)
+        .expect("cleared scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("cleared section renders");
+    assert_eq!(
+        pixel_at(renderer.frame_rgba8(), 16, 3, 8),
+        [240, 240, 240, 255]
+    );
+    assert_eq!(
+        pixel_at(renderer.frame_rgba8(), 16, 12, 8),
+        [240, 240, 240, 255]
+    );
+}
+
+#[test]
 fn origin_shift_keeps_large_offset_renderable_visible_without_precision_warning() {
     let mut scene = Scene::new();
     scene.set_origin_shift(Vec3::new(10_000.0, 0.0, 0.0));

@@ -12,7 +12,8 @@
     "selection": 0,
     "hover": 0,
     "material_variants": 0,
-    "labels": 0
+    "labels": 0,
+    "section_box": 0
   },
   "failed": [
     {

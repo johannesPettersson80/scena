@@ -1238,16 +1238,38 @@ scene.set_section_box(section)?;
 
 Required behavior:
 
-- [ ] Six clipping planes from an `Aabb`.
-- [ ] Enable, disable, invert, and update section box.
-- [ ] Optional helper wireframe box.
-- [ ] Serialization through `VisualPatch` metadata or a later additive patch
-      channel; no browser-only or dedicated parallel state model.
+- [x] Six clipping planes from an `Aabb`.
+- [x] Enable, disable, invert, and update section box.
+- [x] Optional helper wireframe box.
+- [x] Serialization through the additive `VisualPatch.section_box` channel;
+      no browser-only or dedicated parallel state model.
 
 Acceptance:
 
-- [ ] Tests verify six planes and stable clipping behavior.
-- [ ] Browser proof shows cutaway on an imported asset.
+- [x] Tests verify six planes and stable clipping behavior.
+- [x] Browser proof shows cutaway on an imported asset.
+
+Evidence:
+
+- [x] Test-first proof: `cargo test --features scene-host --test scene_host
+      scene_host_section_box_helper_drives_report_and_visual_patch_channel
+      -- --nocapture` failed on the builder before implementation with missing
+      `SectionBox`, SceneHost section-box report, and `VisualPatch.section_box`
+      symbols.
+- [x] Focused local proof: `cargo test --features scene-host --test
+      scene_host scene_host_section_box_helper_drives_report_and_visual_patch_channel
+      -- --nocapture`, `cargo test --test m2_lighting_depth_clipping
+      section_box_clips_rendered_output_and_inverts_inside_region --
+      --nocapture`, `cargo test --features scene-host --test
+      stable_contracts -- --nocapture`, and `cargo test --lib --
+      --nocapture` pass.
+- [x] Browser proof: `SCENA_BROWSER_BACKENDS=webgl2 npm run
+      browser:scene-host-proof` passed on V3D WebGL2 with
+      `section_box_report_exposes_six_planes_and_helper`,
+      `section_box_cutaway_changes_imported_asset_pixels`,
+      `section_box_invert_changes_cutaway_pixels`, and
+      `section_box_clear_disables_cutaway` assertions in
+      `target/gate-artifacts/scene-host-browser-proof/scene-host-browser-proof.json`.
 
 ### 2.4 Exploded view helper
 

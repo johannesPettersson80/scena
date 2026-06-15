@@ -203,6 +203,10 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
             "scena.scene_host_measurement_overlay.v1",
         ),
         (
+            "tests/assets/stable-contracts/scene_host_section_box.v1.json",
+            "scena.scene_host_section_box.v1",
+        ),
+        (
             "tests/assets/stable-contracts/scene_host_animation_inventory.v1.json",
             "scena.animation_inventory.v1",
         ),
@@ -587,6 +591,14 @@ fn visual_patch_result_golden_matches_live_schema_serialization() {
 
 #[cfg(feature = "scene-host")]
 #[test]
+fn scene_host_section_box_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::SceneHostSectionBoxReportV1>(
+        "tests/assets/stable-contracts/scene_host_section_box.v1.json",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
 fn host_event_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::HostEventBatchV1>(
         "tests/assets/stable-contracts/host_event.v1.json",
@@ -638,6 +650,7 @@ fn visual_patch_v1_accepts_minimal_shape_with_defaulted_optional_channels() {
     assert_eq!(patch.hover, None);
     assert!(patch.material_variants.is_empty());
     assert!(patch.labels.is_empty());
+    assert_eq!(patch.section_box, None);
     assert_eq!(patch.metadata, None);
     assert!(!patch.echo_metadata);
 }
@@ -672,6 +685,7 @@ fn visual_patch_result_v1_accepts_old_shape_without_additive_0_1b_counts() {
     assert_eq!(result.applied.hover, 0);
     assert_eq!(result.applied.material_variants, 0);
     assert_eq!(result.applied.labels, 0);
+    assert_eq!(result.applied.section_box, 0);
     assert_eq!(result.metadata, None);
 }
 

@@ -35,6 +35,7 @@ pub struct SceneHostCore<F = DefaultAssetFetcher> {
     pub(super) last_diagnostic_events: Vec<HostEventV1>,
     pub(super) node_handle_map: BTreeMap<NodeKey, u64>,
     pub(super) instance_handle_map: BTreeMap<(NodeKey, InstanceId), u64>,
+    pub(super) section_box_helper: Option<u64>,
     next_byte_asset: u64,
 }
 
@@ -87,6 +88,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             last_diagnostic_events: Vec::new(),
             node_handle_map: BTreeMap::new(),
             instance_handle_map: BTreeMap::new(),
+            section_box_helper: None,
             next_byte_asset: 1,
         };
         let root = host.scene.root();

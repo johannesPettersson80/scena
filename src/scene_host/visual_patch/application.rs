@@ -1,9 +1,11 @@
+use super::super::section_box::aabb_from_arrays;
 use super::super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
 use super::types::{
     VISUAL_PATCH_SCHEMA_V1, VisualPatchAnimationTimeModeV1, VisualPatchEntryErrorV1,
     VisualPatchLabelTargetV1, VisualPatchLabelV1, VisualPatchResultV1, VisualPatchRevisionDeltaV1,
-    VisualPatchV1,
+    VisualPatchSectionBoxV1, VisualPatchV1,
 };
+use crate::SectionBox;
 use crate::{AnnotationAnchor, AssetFetcher, Color, HitTarget, SceneDirtyState, Vec3};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -337,6 +339,42 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                     "labels",
                     index,
                     entry.target.handle(),
+                    error,
+                )),
+            }
+        }
+
+        if let Some(entry) = patch.section_box {
+            let entry_before = RevisionSnapshot::from_dirty(self.scene.dirty_state());
+            let operation = match entry {
+                VisualPatchSectionBoxV1::Set {
+                    min,
+                    max,
+                    margin,
+                    inverted,
+                    helper_wireframe,
+                } => self.set_section_box_state(
+                    SectionBox::from_bounds(aabb_from_arrays(min, max))
+                        .with_margin(margin)
+                        .with_inverted(inverted),
+                    helper_wireframe,
+                ),
+                VisualPatchSectionBoxV1::Invert { inverted } => {
+                    self.invert_section_box_state(inverted)
+                }
+                VisualPatchSectionBoxV1::Disable => self.clear_section_box_state(),
+            };
+            match operation {
+                Ok(changed) => {
+                    let entry_after = RevisionSnapshot::from_dirty(self.scene.dirty_state());
+                    if changed || entry_after.structure != entry_before.structure {
+                        result.applied.section_box = 1;
+                    }
+                }
+                Err(error) => result.failed.push(VisualPatchEntryErrorV1::from_error(
+                    "section_box",
+                    0,
+                    None,
                     error,
                 )),
             }

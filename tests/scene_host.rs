@@ -5,18 +5,19 @@ use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, FRAC_PI_6, PI};
 use std::rc::Rc;
 
 use scena::{
-    ASSET_LOAD_REPORT_SCHEMA_V1, AnnotationProjectionReportV1, AntiAliasing, AssetPath, Assets,
-    AutoExposureConfig, Color, GeometryDesc, HOST_EVENT_SCHEMA_V1, HitTarget, HostEventBatchV1,
-    HostEventHoverPhaseV1, HostEventV1, ImportOptions, MaterialDesc, OrbitControlAction,
-    PointerButton, PostBloomConfig, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1,
+    ASSET_LOAD_REPORT_SCHEMA_V1, Aabb, AnnotationProjectionReportV1, AntiAliasing, AssetPath,
+    Assets, AutoExposureConfig, Color, GeometryDesc, HOST_EVENT_SCHEMA_V1, HitTarget,
+    HostEventBatchV1, HostEventHoverPhaseV1, HostEventV1, ImportOptions, MaterialDesc,
+    OrbitControlAction, PointerButton, PostBloomConfig, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1,
     SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostAnimationInventoryV1, SceneHostAnimationLoopMode,
     SceneHostAnimationPlayOptions, SceneHostCameraState, SceneHostCore, SceneHostEasing,
-    SceneHostErrorCode, SceneHostSubtreeReportV1, SceneInspectionReportV1,
-    ScreenSpaceAmbientOcclusionConfig, SurfaceEvent, Transform, VISUAL_PATCH_SCHEMA_V1, Vec3,
-    VisualPatchAnimationTimeModeV1, VisualPatchAnimationTimeV1, VisualPatchCameraEasedV1,
-    VisualPatchHoverV1, VisualPatchLabelTargetV1, VisualPatchLabelV1, VisualPatchMaterialVariantV1,
-    VisualPatchResultV1, VisualPatchSelectionV1, VisualPatchTintEasedV1,
-    VisualPatchTransformEasedV1, VisualPatchTransformV1, VisualPatchV1, VisualPatchVisibilityV1,
+    SceneHostErrorCode, SceneHostSectionBoxReportV1, SceneHostSubtreeReportV1,
+    SceneInspectionReportV1, ScreenSpaceAmbientOcclusionConfig, SurfaceEvent, Transform,
+    VISUAL_PATCH_SCHEMA_V1, Vec3, VisualPatchAnimationTimeModeV1, VisualPatchAnimationTimeV1,
+    VisualPatchCameraEasedV1, VisualPatchHoverV1, VisualPatchLabelTargetV1, VisualPatchLabelV1,
+    VisualPatchMaterialVariantV1, VisualPatchResultV1, VisualPatchSectionBoxV1,
+    VisualPatchSelectionV1, VisualPatchTintEasedV1, VisualPatchTransformEasedV1,
+    VisualPatchTransformV1, VisualPatchV1, VisualPatchVisibilityV1,
 };
 
 #[test]
@@ -1895,6 +1896,117 @@ fn scene_host_distance_measurement_overlay_reports_stable_line_handle() {
         draw.material.as_ref().expect("line material reported").kind,
         "line"
     );
+}
+
+#[test]
+fn scene_host_section_box_helper_drives_report_and_visual_patch_channel() {
+    let mut host = SceneHostCore::headless(128, 96).expect("host builds");
+    let bounds = Aabb::new(Vec3::new(-0.25, -0.5, -0.5), Vec3::new(0.25, 0.5, 0.5));
+
+    let json = host
+        .set_section_box_json(bounds, 0.05, false, true)
+        .expect("section box report serializes");
+    let report: SceneHostSectionBoxReportV1 =
+        serde_json::from_str(&json).expect("section box report decodes");
+
+    assert_eq!(report.schema, "scena.scene_host_section_box.v1");
+    assert!(report.enabled);
+    assert!(!report.inverted);
+    assert_eq!(report.min, [-0.25, -0.5, -0.5]);
+    assert_eq!(report.max, [0.25, 0.5, 0.5]);
+    assert_eq!(report.margin, 0.05);
+    assert_eq!(report.planes.len(), 6);
+    assert_eq!(report.planes[0].normal, [1.0, 0.0, 0.0]);
+    assert_eq!(report.planes[1].normal, [-1.0, 0.0, 0.0]);
+    assert!(
+        report.helper_node.is_some(),
+        "helper wireframe should produce a stable SceneHost node handle"
+    );
+    assert!(
+        !host
+            .scene()
+            .section_box()
+            .expect("section box is active")
+            .clips(Vec3::ZERO),
+        "ordinary section box keeps the interior"
+    );
+    assert!(
+        host.scene()
+            .section_box()
+            .expect("section box is active")
+            .clips(Vec3::new(0.4, 0.0, 0.0)),
+        "ordinary section box clips outside the generated planes"
+    );
+    let helper = report.helper_node.expect("helper handle exists");
+    let inspection: SceneInspectionReportV1 =
+        serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
+            .expect("inspection decodes");
+    assert!(
+        inspection
+            .nodes
+            .iter()
+            .any(|node| node.handle == helper && node.visible),
+        "helper wireframe node is inspectable"
+    );
+
+    let updated_bounds = Aabb::new(Vec3::new(-0.1, -0.5, -0.5), Vec3::new(0.1, 0.5, 0.5));
+    let updated: SceneHostSectionBoxReportV1 = serde_json::from_str(
+        &host
+            .set_section_box_json(updated_bounds, 0.0, false, false)
+            .expect("section box update serializes"),
+    )
+    .expect("updated section box report decodes");
+    assert_eq!(updated.planes.len(), 6);
+    assert_eq!(updated.helper_node, None);
+    let after_update: SceneInspectionReportV1 =
+        serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
+            .expect("inspection decodes");
+    assert!(
+        after_update.nodes.iter().all(|node| node.handle != helper),
+        "disabling the wireframe removes the previous helper node"
+    );
+
+    let invert = VisualPatchV1 {
+        section_box: Some(VisualPatchSectionBoxV1::Invert { inverted: true }),
+        ..VisualPatchV1::default()
+    };
+    let result = host
+        .apply_patch(&invert)
+        .expect("section box invert patch applies");
+    assert_eq!(result.applied.section_box, 1);
+    assert!(result.failed.is_empty());
+    assert!(
+        host.scene()
+            .section_box()
+            .expect("section box remains active")
+            .clips(Vec3::ZERO),
+        "inverted section box clips the interior"
+    );
+    assert!(
+        !host
+            .scene()
+            .section_box()
+            .expect("section box remains active")
+            .clips(Vec3::new(0.4, 0.0, 0.0)),
+        "inverted section box keeps the outside"
+    );
+    let no_change = host
+        .apply_patch(&invert)
+        .expect("unchanged section box patch is valid");
+    assert_eq!(no_change.applied.section_box, 0);
+    assert!(no_change.failed.is_empty());
+
+    let disable = VisualPatchV1 {
+        section_box: Some(VisualPatchSectionBoxV1::Disable),
+        ..VisualPatchV1::default()
+    };
+    let result = host
+        .apply_patch(&disable)
+        .expect("section box disable patch applies");
+    assert_eq!(result.applied.section_box, 1);
+    assert!(result.failed.is_empty());
+    assert!(host.scene().section_box().is_none());
+    assert!(host.scene().section_box_planes().is_none());
 }
 
 #[test]

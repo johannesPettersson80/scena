@@ -1,7 +1,7 @@
 use std::sync::Weak;
 
 use super::prepare;
-use crate::scene::{CameraKey, ClippingPlane, SceneDirtyState};
+use crate::scene::{CameraKey, ClippingPlane, SceneDirtyState, SectionBox};
 
 #[derive(Debug, Clone)]
 pub(super) struct PreparedSceneState {
@@ -20,6 +20,7 @@ pub(super) struct PreparedSceneState {
     pub(super) retained_instances: Vec<prepare::PreparedInstanceSet>,
     pub(super) instances: Vec<prepare::PreparedInstanceSet>,
     pub(super) clipping_planes: Vec<ClippingPlane>,
+    pub(super) section_box: Option<SectionBox>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

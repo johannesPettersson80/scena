@@ -53,7 +53,7 @@ pub use annotations::{
 };
 pub use builders::{MeshBuilder, ModelBuilder};
 pub use camera::{Camera, DepthRange, OrthographicCamera, PerspectiveCamera};
-pub use clipping::{ClippingPlane, ClippingPlaneSet};
+pub use clipping::{ClippingPlane, ClippingPlaneSet, SectionBox};
 pub use connectors::{
     ConnectOptions, ConnectionAlignment, ConnectionError, ConnectionLineOverlay,
     ConnectionMagnetPreview, ConnectionMagnetVisualCue, ConnectionParenting, ConnectionPreview,
@@ -126,6 +126,7 @@ pub struct Scene {
     connectors: SlotMap<ConnectorKey, ConnectorFrame>,
     connection_locked_nodes: BTreeSet<NodeKey>,
     node_bounds: BTreeMap<NodeKey, Aabb>,
+    section_box: Option<clipping::SceneSectionBoxState>,
     morph_weights: BTreeMap<NodeKey, Vec<f32>>,
     skin_bindings: BTreeMap<NodeKey, SceneSkinBinding>,
     clipping_planes: SlotMap<ClippingPlaneKey, ClippingPlane>,
@@ -202,6 +203,7 @@ impl Scene {
             connectors: SlotMap::with_key(),
             connection_locked_nodes: BTreeSet::new(),
             node_bounds: BTreeMap::new(),
+            section_box: None,
             morph_weights: BTreeMap::new(),
             skin_bindings: BTreeMap::new(),
             clipping_planes: SlotMap::with_key(),

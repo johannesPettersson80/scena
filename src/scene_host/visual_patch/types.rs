@@ -34,6 +34,8 @@ pub struct VisualPatchV1 {
     #[serde(default)]
     pub labels: Vec<VisualPatchLabelV1>,
     #[serde(default)]
+    pub section_box: Option<VisualPatchSectionBoxV1>,
+    #[serde(default)]
     pub metadata: Option<Value>,
     #[serde(default)]
     pub echo_metadata: bool,
@@ -117,6 +119,25 @@ pub enum VisualPatchLabelTargetV1 {
     Clear,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum VisualPatchSectionBoxV1 {
+    Set {
+        min: [f32; 3],
+        max: [f32; 3],
+        #[serde(default)]
+        margin: f32,
+        #[serde(default)]
+        inverted: bool,
+        #[serde(default)]
+        helper_wireframe: bool,
+    },
+    Invert {
+        inverted: bool,
+    },
+    Disable,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VisualPatchAnimationTimeModeV1 {
@@ -156,6 +177,8 @@ pub struct VisualPatchAppliedCountsV1 {
     pub material_variants: u64,
     #[serde(default)]
     pub labels: u64,
+    #[serde(default)]
+    pub section_box: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -193,6 +216,7 @@ impl Default for VisualPatchV1 {
             hover: None,
             material_variants: Vec::new(),
             labels: Vec::new(),
+            section_box: None,
             metadata: None,
             echo_metadata: false,
         }

@@ -1,6 +1,6 @@
 use crate::geometry::Vertex;
 use crate::material::Color;
-use crate::scene::{ClippingPlane, Vec3};
+use crate::scene::{ClippingPlane, SectionBox, Vec3};
 
 use super::RasterTarget;
 use super::camera::CameraProjection;
@@ -85,6 +85,7 @@ pub(super) fn draw_primitive_cpu(
     cpu_frame: &mut CpuFrame<'_>,
     primitive: &PreparedPrimitive,
     clipping_planes: &[ClippingPlane],
+    section_box: Option<SectionBox>,
     camera: &CameraProjection,
 ) {
     let [a, b, c] = primitive.vertices();
@@ -127,7 +128,7 @@ pub(super) fn draw_primitive_cpu(
                 continue;
             }
             let position = mix_position(a.position, b.position, c.position, w0, w1, w2);
-            if is_clipped(position, clipping_planes) {
+            if is_clipped(position, clipping_planes, section_box) {
                 continue;
             }
             let color = multiply_color(mix_color(a, b, c, w0, w1, w2), primitive.tint());
@@ -141,6 +142,7 @@ pub(super) fn draw_order_independent_transparency_cpu(
     cpu_frame: &mut CpuFrame<'_>,
     primitive: &PreparedPrimitive,
     clipping_planes: &[ClippingPlane],
+    section_box: Option<SectionBox>,
     camera: &CameraProjection,
     accum: &mut [OitAccumPixel],
     config: OrderIndependentTransparencyConfig,
@@ -185,7 +187,7 @@ pub(super) fn draw_order_independent_transparency_cpu(
                 continue;
             }
             let position = mix_position(a.position, b.position, c.position, w0, w1, w2);
-            if is_clipped(position, clipping_planes) {
+            if is_clipped(position, clipping_planes, section_box) {
                 continue;
             }
             let depth = mix_depth(a.depth, b.depth, c.depth, w0, w1, w2);
@@ -316,10 +318,15 @@ fn mix_depth(a: f32, b: f32, c: f32, w0: f32, w1: f32, w2: f32) -> f32 {
     a * w0 + b * w1 + c * w2
 }
 
-fn is_clipped(position: Vec3, clipping_planes: &[ClippingPlane]) -> bool {
+fn is_clipped(
+    position: Vec3,
+    clipping_planes: &[ClippingPlane],
+    section_box: Option<SectionBox>,
+) -> bool {
     clipping_planes
         .iter()
         .any(|plane| !plane.contains(position))
+        || section_box.is_some_and(|section| section.clips(position))
 }
 
 fn write_pixel(cpu_frame: &mut CpuFrame<'_>, x: u32, y: u32, color: Color, depth: f32) {

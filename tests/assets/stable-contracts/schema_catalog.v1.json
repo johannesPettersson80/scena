@@ -178,6 +178,13 @@
       "fixture_path": "tests/assets/stable-contracts/scene_host_measurement_overlay.v1.json"
     },
     {
+      "schema": "scena.scene_host_section_box.v1",
+      "owner_module": "scene_host",
+      "summary": "SceneHost section box report with generated clipping planes and helper node.",
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/scene_host_section_box.v1.json"
+    },
+    {
       "schema": "scena.animation_inventory.v1",
       "owner_module": "scene_host",
       "summary": "SceneHost animation clip inventory.",

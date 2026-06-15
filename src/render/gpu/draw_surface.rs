@@ -2,6 +2,7 @@
 
 use crate::diagnostics::RenderError;
 use crate::material::Color;
+use crate::scene::{ClippingPlane, SectionBox};
 
 use super::super::RasterTarget;
 use super::super::camera::CameraProjection;
@@ -10,7 +11,7 @@ use super::depth;
 use super::draw_common::{
     camera_position_uniform, identity_matrix, post_color_management_uniform, wgpu_clear_color,
 };
-use super::output::{OutputUniformUpload, encode_output_uniform};
+use super::output::{OutputUniformUpload, encode_clipping_uniform, encode_output_uniform};
 use super::scene_color::{SceneColorPasses, encode_scene_color_passes};
 use super::shadow::{self, encode_shadow_caster_pass};
 use super::{GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuRenderResult, post, strokes};
@@ -23,6 +24,8 @@ impl GpuDeviceState {
         color_management: [f32; 4],
         background_color: Color,
         camera_projection: &CameraProjection,
+        clipping_planes: &[ClippingPlane],
+        section_box: Option<SectionBox>,
         post_settings: GpuPostSettings,
     ) -> Result<GpuRenderResult, RenderError> {
         let Some(resources) = self.resources.as_mut() else {
@@ -57,6 +60,8 @@ impl GpuDeviceState {
             ));
         }
         let color_management = post_color_management_uniform(color_management, post_enabled);
+        let (clipping_planes, clipping_control) =
+            encode_clipping_uniform(clipping_planes, section_box);
         self.queue.write_buffer(
             &resources.output_uniform,
             0,
@@ -77,6 +82,8 @@ impl GpuDeviceState {
                 near_far: camera_projection.near_far(),
                 color_management,
                 lighting: resources.light_uniform,
+                clipping_planes,
+                clipping_control,
             }),
         );
         let rebuild_depth_prepass = resources.depth_prepass.as_ref().and_then(|depth_prepass| {

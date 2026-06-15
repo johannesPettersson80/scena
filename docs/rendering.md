@@ -148,6 +148,13 @@ GPU backends share the same wgpu/naga renderer path. Browser WebGL2 keeps a
 small material texture binding shim for wgpu 29's GL backend, but it does not
 use a separate raw WebGL renderer.
 
+The GPU output uniform layout is pinned by
+`OUTPUT_UNIFORM_BYTE_LEN: u64 = 592`. That buffer contains view, projection,
+view-projection, light-space projection, camera/exposure, viewport/depth,
+color-management, punctual/environment/shadow lighting, and six
+scene-clipping plane uniforms plus clipping control. Per-draw model and normal
+matrices live in the draw-uniform bind group instead.
+
 Output color is sRGB unless capability evidence says otherwise.
 `Capabilities::wide_gamut_output` and the browser M4 smoke artifact record
 Display P3 canvas probe results; scena does not blanket-claim wide-gamut output

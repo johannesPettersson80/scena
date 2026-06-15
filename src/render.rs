@@ -40,7 +40,7 @@ use crate::diagnostics::{
 };
 use crate::material::Color;
 use crate::picking::InteractionStyle;
-use crate::scene::{CameraKey, Scene};
+use crate::scene::{CameraKey, ClippingPlane, Scene, SectionBox};
 
 pub use self::background::Background;
 pub use self::exposure::{
@@ -153,16 +153,22 @@ impl Renderer {
         let mut gpu_draw_submissions = 0;
         loop {
             let gpu_post_counts = if self.gpu.is_some() {
-                let gpu_result = self.draw_gpu(&camera_projection)?;
+                let (clipping_planes, section_box) = {
+                    let prepared = self.prepared_state(scene)?;
+                    (prepared.clipping_planes.clone(), prepared.section_box)
+                };
+                let gpu_result =
+                    self.draw_gpu(&camera_projection, &clipping_planes, section_box)?;
                 gpu_draw_submissions = gpu_result.draw_submissions;
                 self.stats.order_independent_transparency_passes = 0;
                 Some(gpu_result.post_counts)
             } else {
-                let (primitives, clipping_planes) = {
+                let (primitives, clipping_planes, section_box) = {
                     let prepared = self.prepared_state(scene)?;
                     (
                         prepared.primitives.clone(),
                         prepared.clipping_planes.clone(),
+                        prepared.section_box,
                     )
                 };
                 let linear_frame = self
@@ -190,6 +196,7 @@ impl Renderer {
                                     &mut cpu_frame,
                                     primitive,
                                     &clipping_planes,
+                                    section_box,
                                     &camera_projection,
                                     &mut self.oit_scratch,
                                     config,
@@ -199,6 +206,7 @@ impl Renderer {
                                     &mut cpu_frame,
                                     primitive,
                                     &clipping_planes,
+                                    section_box,
                                     &camera_projection,
                                 );
                             }
@@ -213,6 +221,7 @@ impl Renderer {
                                 &mut cpu_frame,
                                 primitive,
                                 &clipping_planes,
+                                section_box,
                                 &camera_projection,
                             );
                         }
@@ -348,6 +357,8 @@ impl Renderer {
     fn draw_gpu(
         &mut self,
         camera_projection: &camera::CameraProjection,
+        clipping_planes: &[ClippingPlane],
+        section_box: Option<SectionBox>,
     ) -> Result<gpu::GpuRenderResult, RenderError> {
         let post_settings = gpu::GpuPostSettings::new(
             self.anti_aliasing,
@@ -366,6 +377,8 @@ impl Renderer {
                 self.output.color_management_uniform(),
                 self.background_color,
                 camera_projection,
+                clipping_planes,
+                section_box,
                 &mut self.frame,
                 post_settings,
             )?;
@@ -391,6 +404,8 @@ impl Renderer {
                 self.output.color_management_uniform(),
                 self.background_color,
                 camera_projection,
+                clipping_planes,
+                section_box,
                 post_settings,
             )?;
             if result.submitted {

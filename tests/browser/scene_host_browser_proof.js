@@ -61,6 +61,9 @@ const REQUIRED_BINDINGS = [
   ["prototype", "worldDistance"],
   ["prototype", "nodeWorldBoundsJson"],
   ["prototype", "addDistanceMeasurement"],
+  ["prototype", "setSectionBox"],
+  ["prototype", "invertSectionBox"],
+  ["prototype", "clearSectionBox"],
   ["prototype", "prepare"],
   ["prototype", "render"],
   ["prototype", "inspectJson"],
@@ -745,6 +748,43 @@ async function runPageProof(page) {
       await waitForCanvasPresent();
       const measurementCapture = captureSummary(host.capture());
       host.removeNode(handleBigInt(measurementReport.line_node));
+
+      host.frameAll();
+      const sectionBaselinePrepare = timedPrepare("section_box_baseline_prepare");
+      const sectionBaselineRender = timedRender("section_box_baseline_render");
+      await waitForCanvasPresent();
+      const sectionBaselineCapture = captureSummary(host.capture());
+      const leftBoundsForSection = JSON.parse(host.nodeWorldBoundsJson(leftMeshHandle));
+      const sectionMidX =
+        (leftBoundsForSection.min[0] + leftBoundsForSection.max[0]) * 0.5;
+      const sectionMin = [
+        leftBoundsForSection.min[0],
+        leftBoundsForSection.min[1] - 0.05,
+        leftBoundsForSection.min[2] - 0.05,
+      ];
+      const sectionMax = [
+        sectionMidX,
+        leftBoundsForSection.max[1] + 0.05,
+        leftBoundsForSection.max[2] + 0.05,
+      ];
+      const sectionReport = JSON.parse(
+        host.setSectionBox(sectionMin, sectionMax, 0.0, false, true),
+      );
+      const sectionInspection = JSON.parse(host.inspectJson());
+      const sectionPrepare = timedPrepare("section_box_cutaway_prepare");
+      const sectionRender = timedRender("section_box_cutaway_render");
+      await waitForCanvasPresent();
+      const sectionCapture = captureSummary(host.capture());
+      const invertedSectionReport = JSON.parse(host.invertSectionBox(true));
+      const invertedSectionPrepare = timedPrepare("section_box_inverted_prepare");
+      const invertedSectionRender = timedRender("section_box_inverted_render");
+      await waitForCanvasPresent();
+      const invertedSectionCapture = captureSummary(host.capture());
+      const clearedSectionReport = JSON.parse(host.clearSectionBox());
+      const clearedSectionPrepare = timedPrepare("section_box_cleared_prepare");
+      const clearedSectionRender = timedRender("section_box_cleared_render");
+      await waitForCanvasPresent();
+      const clearedSectionCapture = captureSummary(host.capture());
       host.setCamera(
         framedCamera.target,
         framedCamera.yaw_radians,
@@ -1127,6 +1167,37 @@ async function runPageProof(page) {
           prepare: measurementPrepare,
           render: measurementRender,
           capture: measurementCapture,
+        },
+        section_box_probe: {
+          bounds: {
+            source: leftBoundsForSection,
+            min: sectionMin,
+            max: sectionMax,
+          },
+          baseline: {
+            prepare: sectionBaselinePrepare,
+            render: sectionBaselineRender,
+            capture: sectionBaselineCapture,
+          },
+          report: sectionReport,
+          inspection: sectionInspection,
+          cutaway: {
+            prepare: sectionPrepare,
+            render: sectionRender,
+            capture: sectionCapture,
+          },
+          inverted: {
+            report: invertedSectionReport,
+            prepare: invertedSectionPrepare,
+            render: invertedSectionRender,
+            capture: invertedSectionCapture,
+          },
+          cleared: {
+            report: clearedSectionReport,
+            prepare: clearedSectionPrepare,
+            render: clearedSectionRender,
+            capture: clearedSectionCapture,
+          },
         },
         camera: {
           framed: framedCamera,
@@ -1766,6 +1837,55 @@ function assertProof(pageProof, screenshot) {
     pageProof.measurement_probe.capture.descriptor.pixels.nonblack > 40,
     pageProof.measurement_probe.capture.descriptor.pixels,
   );
+  const sectionBox = pageProof.section_box_probe;
+  const helperNode = sectionBox.inspection.nodes.find(
+    (node) => node.handle === sectionBox.report.helper_node,
+  );
+  check(
+    "section_box_report_exposes_six_planes_and_helper",
+    sectionBox.report.schema === "scena.scene_host_section_box.v1" &&
+      sectionBox.report.enabled === true &&
+      sectionBox.report.inverted === false &&
+      Array.isArray(sectionBox.report.planes) &&
+      sectionBox.report.planes.length === 6 &&
+      Boolean(helperNode && helperNode.visible),
+    {
+      report: sectionBox.report,
+      helper_node: helperNode,
+    },
+  );
+  check(
+    "section_box_cutaway_changes_imported_asset_pixels",
+    sectionBox.baseline.capture.descriptor.pixels.nonblack > 0 &&
+      sectionBox.cutaway.capture.descriptor.pixels.nonblack > 0 &&
+      sectionBox.baseline.capture.rgba8_fnv1a64 !== sectionBox.cutaway.capture.rgba8_fnv1a64,
+    {
+      baseline: sectionBox.baseline.capture,
+      cutaway: sectionBox.cutaway.capture,
+      render: sectionBox.cutaway.render,
+    },
+  );
+  check(
+    "section_box_invert_changes_cutaway_pixels",
+    sectionBox.inverted.report.enabled === true &&
+      sectionBox.inverted.report.inverted === true &&
+      sectionBox.inverted.capture.descriptor.pixels.nonblack > 0 &&
+      sectionBox.inverted.capture.rgba8_fnv1a64 !== sectionBox.cutaway.capture.rgba8_fnv1a64,
+    {
+      cutaway: sectionBox.cutaway.capture,
+      inverted: sectionBox.inverted,
+    },
+  );
+  check(
+    "section_box_clear_disables_cutaway",
+    sectionBox.cleared.report.enabled === false &&
+      sectionBox.cleared.capture.descriptor.pixels.nonblack > 0 &&
+      sectionBox.cleared.capture.rgba8_fnv1a64 !== sectionBox.cutaway.capture.rgba8_fnv1a64,
+    {
+      cutaway: sectionBox.cutaway.capture,
+      cleared: sectionBox.cleared,
+    },
+  );
 
   check(
     "capture_revisions_match_inspection",
@@ -1926,6 +2046,7 @@ async function main() {
     subtree_tint_probe: pageProof.subtree_tint_probe,
     inspection_tools_probe: pageProof.inspection_tools_probe,
     measurement_probe: pageProof.measurement_probe,
+    section_box_probe: pageProof.section_box_probe,
     phase1_appearance_dirty_tracking: pageProof.phase1_appearance_dirty_tracking,
     phase2_post_processing: pageProof.phase2_post_processing,
     phase3_world_strokes: pageProof.phase3_world_strokes,

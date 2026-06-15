@@ -52,6 +52,8 @@ struct CameraUniform {
     viewport_near_far: vec4<f32>,
     color_management: vec4<f32>,
     lighting: LightingUniform,
+    clipping_planes: array<vec4<f32>, 6>,
+    clipping_control: vec4<f32>,
 };
 
 struct DrawUniform {
@@ -141,6 +143,28 @@ var transmission_color_sampler: sampler;
 
 @group(2) @binding(0)
 var<uniform> draw: DrawUniform;
+
+fn clipped_by_scene(world_position: vec3<f32>) -> bool {
+    let plane_count = i32(clamp(camera.clipping_control.x, 0.0, 6.0));
+    if plane_count <= 0 {
+        return false;
+    }
+    var rejected = false;
+    var inside_all = true;
+    for (var index = 0; index < 6; index = index + 1) {
+        if index < plane_count {
+            let plane = camera.clipping_planes[index];
+            let inside = dot(plane.xyz, world_position) + plane.w >= 0.0;
+            rejected = rejected || !inside;
+            inside_all = inside_all && inside;
+        }
+    }
+    let inverted_section = camera.clipping_control.y > 0.5 && camera.clipping_control.z > 0.5;
+    if inverted_section {
+        return inside_all;
+    }
+    return rejected;
+}
 
 @group(1) @binding(0)
 var base_color_sampler: sampler;
@@ -253,6 +277,9 @@ fn vs_main(in: VertexIn) -> VertexOut {
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+    if clipped_by_scene(in.world_position) {
+        discard;
+    }
     let scaled_uv = in.tex_coord0 * material.base_color_uv_offset_scale.zw;
     let transformed_uv = vec2<f32>(
         scaled_uv.x * material.base_color_uv_rotation.y - scaled_uv.y * material.base_color_uv_rotation.x,

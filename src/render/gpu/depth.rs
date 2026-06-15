@@ -15,13 +15,34 @@ struct VertexIn {
 
 struct VertexOut {
     @builtin(position) position: vec4<f32>,
+    @location(0) world_position: vec3<f32>,
+};
+
+struct LightingUniform {
+    directional_light_direction_intensity: vec4<f32>,
+    directional_light_color_count: vec4<f32>,
+    directional_shadow_control: vec4<f32>,
+    point_light_position_intensity: vec4<f32>,
+    point_light_color_range: vec4<f32>,
+    spot_light_position_intensity: vec4<f32>,
+    spot_light_direction_cones: vec4<f32>,
+    spot_light_cone_range: vec4<f32>,
+    spot_light_color_range: vec4<f32>,
+    environment_diffuse_intensity: vec4<f32>,
+    environment_specular_intensity: vec4<f32>,
 };
 
 struct CameraUniform {
     view_from_world: mat4x4<f32>,
     clip_from_view: mat4x4<f32>,
     clip_from_world: mat4x4<f32>,
-    exposure_padding: vec4<f32>,
+    light_from_world: mat4x4<f32>,
+    camera_position_exposure: vec4<f32>,
+    viewport_near_far: vec4<f32>,
+    color_management: vec4<f32>,
+    lighting: LightingUniform,
+    clipping_planes: array<vec4<f32>, 6>,
+    clipping_control: vec4<f32>,
 };
 
 struct DrawUniform {
@@ -34,6 +55,28 @@ var<uniform> camera: CameraUniform;
 
 @group(2) @binding(0)
 var<uniform> draw: DrawUniform;
+
+fn clipped_by_scene(world_position: vec3<f32>) -> bool {
+    let plane_count = i32(clamp(camera.clipping_control.x, 0.0, 6.0));
+    if plane_count <= 0 {
+        return false;
+    }
+    var rejected = false;
+    var inside_all = true;
+    for (var index = 0; index < 6; index = index + 1) {
+        if index < plane_count {
+            let plane = camera.clipping_planes[index];
+            let inside = dot(plane.xyz, world_position) + plane.w >= 0.0;
+            rejected = rejected || !inside;
+            inside_all = inside_all && inside;
+        }
+    }
+    let inverted_section = camera.clipping_control.y > 0.5 && camera.clipping_control.z > 0.5;
+    if inverted_section {
+        return inside_all;
+    }
+    return rejected;
+}
 
 @vertex
 fn vs_main(in: VertexIn) -> VertexOut {
@@ -52,6 +95,7 @@ fn vs_main(in: VertexIn) -> VertexOut {
     let world_position = draw.world_from_model * instance_world_from_model * vec4<f32>(in.position, 1.0);
     var out: VertexOut;
     out.position = camera.clip_from_world * world_position;
+    out.world_position = world_position.xyz;
     return out;
 }
 
@@ -64,6 +108,9 @@ fn pack_depth(depth: f32) -> vec4<f32> {
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+    if clipped_by_scene(in.world_position) {
+        discard;
+    }
     return pack_depth(in.position.z);
 }
 "#;

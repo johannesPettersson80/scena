@@ -18,6 +18,7 @@ mod measurements;
 mod post;
 mod product;
 mod reporting;
+mod section_box;
 mod subtree;
 mod transforms;
 mod transitions;
@@ -39,6 +40,8 @@ mod wasm_post;
 mod wasm_product;
 #[cfg(target_arch = "wasm32")]
 mod wasm_readback;
+#[cfg(target_arch = "wasm32")]
+mod wasm_section_box;
 #[cfg(target_arch = "wasm32")]
 mod wasm_subtree;
 #[cfg(target_arch = "wasm32")]
@@ -74,13 +77,16 @@ pub use reporting::{
     SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostAnimationClipV1, SceneHostAnimationInventoryV1,
     SceneHostAssetImportReportV1, SceneHostSubtreeNodeV1, SceneHostSubtreeReportV1,
 };
+pub use section_box::{
+    SCENE_HOST_SECTION_BOX_SCHEMA_V1, SceneHostClippingPlaneV1, SceneHostSectionBoxReportV1,
+};
 pub use visual_patch::{
     VISUAL_PATCH_SCHEMA_V1, VisualPatchAnimationTimeModeV1, VisualPatchAnimationTimeV1,
     VisualPatchAppliedCountsV1, VisualPatchCameraEasedV1, VisualPatchEntryErrorV1,
     VisualPatchHoverV1, VisualPatchLabelTargetV1, VisualPatchLabelV1, VisualPatchMaterialVariantV1,
-    VisualPatchResultV1, VisualPatchRevisionDeltaV1, VisualPatchSelectionV1,
-    VisualPatchTintEasedV1, VisualPatchTintV1, VisualPatchTransformEasedV1, VisualPatchTransformV1,
-    VisualPatchV1, VisualPatchVisibilityV1,
+    VisualPatchResultV1, VisualPatchRevisionDeltaV1, VisualPatchSectionBoxV1,
+    VisualPatchSelectionV1, VisualPatchTintEasedV1, VisualPatchTintV1, VisualPatchTransformEasedV1,
+    VisualPatchTransformV1, VisualPatchV1, VisualPatchVisibilityV1,
 };
 
 #[cfg(target_arch = "wasm32")]
