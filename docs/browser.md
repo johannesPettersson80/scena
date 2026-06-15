@@ -99,6 +99,8 @@ Frame operations use one host handle namespace:
 - `renderIntrospectionJson(detail)`
 - `annotationProjectionsJson`
 - `capture()` and `captureJson()`
+- `handleSurfaceContextLost(recoverable)` and
+  `handleSurfaceContextRestored()`
 - `setCameraEased(target, yawRadians, pitchRadians, distance,
   durationSeconds, easing)`
 - `setCameraBookmarkJson(bookmarkJson, durationSeconds, easing)`
@@ -180,6 +182,14 @@ capture-bound renderer report used natively. Pass `false` for summary mode or
 and other error-severity visibility failures while warning-only framing
 reasons remain advisory.
 
+When the embedding page receives browser context lifecycle signals, forward
+recoverable WebGL/WebGPU context loss and restoration through
+`handleSurfaceContextLost(recoverable)` and
+`handleSurfaceContextRestored()`. These methods emit the same
+`scena.host_event.v1` `context_lost`, `context_restored`, and
+`capability_changed` events as native `SurfaceEvent` handling; they do not
+start a hidden recovery loop.
+
 Real browser/GPU proof is separate from CPU builder validation. The required
 proof plan and output artifacts are tracked in
 [`scene-host-browser-gpu-proof.md`](checklists/scene-host-browser-gpu-proof.md).
@@ -188,7 +198,8 @@ The Raspberry Pi V3D run uses
 `scena.scene_host_browser_proof.v1` under
 `target/gate-artifacts/scene-host-browser-proof/`. That proof exercises
 `SceneHost.capture()`, `inspectJson()`, `annotationProjectionsJson()`,
-CSS-pixel picking at DPR values other than 1, and URL asset loading in a real
+CSS-pixel picking at DPR values other than 1, URL asset loading, and
+`WEBGL_lose_context`-driven context lost/restored host events in a real
 browser. Renderer-fidelity epics remain separate and require a non-Pi GPU lane.
 
 ## Output Color Space

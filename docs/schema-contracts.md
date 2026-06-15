@@ -519,7 +519,10 @@ Event kinds in v1:
 - `capture_ready`: capture schema, dimensions, pixel format, payload byte
   length, and payload hash for an out-of-band RGBA8 payload.
 - `surface_resized`: CSS pixels, physical pixels, and device pixel ratio.
-- `context_lost`, `context_restored`, and `device_lost`.
+- `context_lost`, `context_restored`, and `device_lost`. On browser
+  SceneHost, pages forward real browser context lifecycle signals through
+  `handleSurfaceContextLost(recoverable)` and
+  `handleSurfaceContextRestored()`.
 - `device_recovered`: reserved in the schema and fixture for platform recovery
   signals; no current `SurfaceEvent` emits it.
 - `capability_changed`: capability schema and backend after context recovery.

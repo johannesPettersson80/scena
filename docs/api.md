@@ -286,6 +286,10 @@ SceneHost, and browser captures use the same descriptor-bound byte path.
 the same browser canvas readback path, so agent/browser hosts can fail closed
 on empty, offscreen, or culled frames without inventing a JavaScript-only
 visibility report.
+Browser hosts can also call `handleSurfaceContextLost(recoverable)` and
+`handleSurfaceContextRestored()` from real browser context lifecycle signals to
+emit the same `scena.host_event.v1` context events as native `SurfaceEvent`
+handling.
 Phase 4 adds real `removeNode` and `removeImport` host methods. Removed node
 handles are invalidated in the host table, so later use returns
 `SceneHostErrorCode::StaleNodeHandle` rather than aliasing a recycled node.

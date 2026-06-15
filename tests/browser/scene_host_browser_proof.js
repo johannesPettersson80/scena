@@ -83,6 +83,8 @@ const REQUIRED_BINDINGS = [
   ["prototype", "hover"],
   ["prototype", "select"],
   ["prototype", "drainEventsJson"],
+  ["prototype", "handleSurfaceContextLost"],
+  ["prototype", "handleSurfaceContextRestored"],
   ["prototype", "setCamera"],
   ["prototype", "frameNodeProductView"],
   ["prototype", "setCameraEased"],
@@ -619,6 +621,28 @@ async function runPageProof(page) {
         document.body.appendChild(proofCanvas);
         return proofCanvas;
       };
+      const waitForContextSignal = (canvas, type, trigger) =>
+        new Promise((resolve, reject) => {
+          const timeout = window.setTimeout(
+            () => reject(new Error(`${type} did not fire`)),
+            3000,
+          );
+          canvas.addEventListener(
+            type,
+            (event) => {
+              window.clearTimeout(timeout);
+              if (type === "webglcontextlost") {
+                event.preventDefault();
+              }
+              resolve({
+                type: event.type,
+                status_message: event.statusMessage || "",
+              });
+            },
+            { once: true },
+          );
+          trigger();
+        });
       const renderIntrospectionProbe = async (probeHost, label) => {
         const prepare = (() => {
           const started = performance.now();
@@ -630,6 +654,77 @@ async function runPageProof(page) {
         await waitForCanvasPresent();
         const report = JSON.parse(probeHost.renderIntrospectionJson(false));
         return { label, prepare, render, report };
+      };
+      const runRenderIntrospectionProof = async () => {
+        const introspectionCanvas = createProofCanvas("scene-introspection-proof");
+        const introspectionHost = await SceneHost.newWebgl2(introspectionCanvas, 180, 140, 1);
+        const empty = await renderIntrospectionProbe(
+          introspectionHost,
+          "render_introspection_empty",
+        );
+        const importHandle = await introspectionHost.instantiateUrl(assetUrl);
+        const meshHandle = introspectionHost.nodeHandleByName(
+          handleBigInt(importHandle),
+          "ColoredTriangle",
+        );
+        introspectionHost.frameNode(meshHandle);
+        const validCentered = await renderIntrospectionProbe(
+          introspectionHost,
+          "render_introspection_valid_centered",
+        );
+        introspectionHost.setTransform(
+          meshHandle,
+          [100.0, 0.0, 0.0],
+          [0.0, 0.0, 0.0, 1.0],
+          [1.0, 1.0, 1.0],
+        );
+        const offscreen = await renderIntrospectionProbe(
+          introspectionHost,
+          "render_introspection_offscreen",
+        );
+        return {
+          empty,
+          valid_centered: validCentered,
+          offscreen,
+          import: handleNumber(importHandle),
+          mesh: handleNumber(meshHandle),
+        };
+      };
+      const runContextEventProof = async () => {
+        const contextSignalCanvas = createProofCanvas("scene-context-event-signal", 96, 64, 1);
+        const contextEventCanvas = createProofCanvas("scene-context-event-host", 96, 64, 1);
+        const contextEventHost = await SceneHost.newWebgl2(contextEventCanvas, 96, 64, 1);
+        const contextGl = contextSignalCanvas.getContext("webgl2");
+        if (!contextGl) {
+          throw new Error("context event proof WebGL2 context did not initialize");
+        }
+        const loseContext = contextGl.getExtension("WEBGL_lose_context");
+        if (!loseContext) {
+          throw new Error("WEBGL_lose_context is unavailable for context event proof");
+        }
+        const lostBrowserSignal = await waitForContextSignal(
+          contextSignalCanvas,
+          "webglcontextlost",
+          () => loseContext.loseContext(),
+        );
+        contextEventHost.handleSurfaceContextLost(true);
+        const lostHostEvents = JSON.parse(contextEventHost.drainEventsJson());
+        await waitForCanvasPresent();
+        const restoredBrowserSignal = await waitForContextSignal(
+          contextSignalCanvas,
+          "webglcontextrestored",
+          () => loseContext.restoreContext(),
+        );
+        contextEventHost.handleSurfaceContextRestored();
+        const restoredHostEvents = JSON.parse(contextEventHost.drainEventsJson());
+        return {
+          browser_signals: {
+            lost: lostBrowserSignal,
+            restored: restoredBrowserSignal,
+          },
+          lost_batch: lostHostEvents,
+          restored_batch: restoredHostEvents,
+        };
       };
       const handleNumber = (value) => {
         const number = typeof value === "bigint" ? Number(value) : value;
@@ -681,33 +776,6 @@ async function runPageProof(page) {
       );
       window.__scenaSceneHostProofHost = host;
       host.resize(viewport.width, viewport.height, viewport.devicePixelRatio);
-
-      const introspectionCanvas = createProofCanvas("scene-introspection-proof");
-      const introspectionHost = await SceneHost.newWebgl2(introspectionCanvas, 180, 140, 1);
-      const introspectionEmpty = await renderIntrospectionProbe(
-        introspectionHost,
-        "render_introspection_empty",
-      );
-      const introspectionImport = await introspectionHost.instantiateUrl(assetUrl);
-      const introspectionMesh = introspectionHost.nodeHandleByName(
-        handleBigInt(introspectionImport),
-        "ColoredTriangle",
-      );
-      introspectionHost.frameNode(introspectionMesh);
-      const introspectionValidCentered = await renderIntrospectionProbe(
-        introspectionHost,
-        "render_introspection_valid_centered",
-      );
-      introspectionHost.setTransform(
-        introspectionMesh,
-        [100.0, 0.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-        [1.0, 1.0, 1.0],
-      );
-      const introspectionOffscreen = await renderIntrospectionProbe(
-        introspectionHost,
-        "render_introspection_offscreen",
-      );
 
       const rootHandle = host.rootHandle();
       const leftFrameHandle = host.addEmpty(
@@ -1510,6 +1578,8 @@ async function runPageProof(page) {
         ),
       );
       host.setVisible(externalResourceFrameHandle, false);
+      const renderIntrospectionProof = await runRenderIntrospectionProof();
+      const contextEventProof = await runContextEventProof();
 
       return {
         backend,
@@ -1555,13 +1625,8 @@ async function runPageProof(page) {
           external_resource_frame: handleNumber(externalResourceFrameHandle),
           external_resource_import: handleNumber(externalResourceImportReport.import),
         },
-        agent_render_introspection: {
-          empty: introspectionEmpty,
-          valid_centered: introspectionValidCentered,
-          offscreen: introspectionOffscreen,
-          import: handleNumber(introspectionImport),
-          mesh: handleNumber(introspectionMesh),
-        },
+        agent_render_introspection: renderIntrospectionProof,
+        phase0_context_events: contextEventProof,
         phase0_visual_patch: {
           before_inspection: phase0BeforeInspection,
           after_inspection: phase0AfterInspection,
@@ -1900,6 +1965,33 @@ function assertProof(pageProof, screenshot) {
       introspection.offscreen.report.visible_pixel_fraction === 0 &&
       offscreenReasonCodes.includes("outside_frustum"),
     introspection.offscreen.report,
+  );
+  const contextEvents = pageProof.phase0_context_events;
+  const contextLostEvent = contextEvents.lost_batch.events.find(
+    (event) => event.kind === "context_lost",
+  );
+  const contextRestoredEvent = contextEvents.restored_batch.events.find(
+    (event) => event.kind === "context_restored",
+  );
+  const capabilityChangedAfterRestore = contextEvents.restored_batch.events.find(
+    (event) => event.kind === "capability_changed",
+  );
+  check(
+    "host_event_context_lost_from_real_browser_signal",
+    contextEvents.lost_batch.schema === "scena.host_event.v1" &&
+      contextEvents.browser_signals.lost.type === "webglcontextlost" &&
+      contextLostEvent &&
+      contextLostEvent.recoverable === true,
+    contextEvents,
+  );
+  check(
+    "host_event_context_restored_from_real_browser_signal",
+    contextEvents.restored_batch.schema === "scena.host_event.v1" &&
+      contextEvents.browser_signals.restored.type === "webglcontextrestored" &&
+      contextRestoredEvent &&
+      capabilityChangedAfterRestore &&
+      capabilityChangedAfterRestore.capability_schema === "scena.capability_report.v1",
+    contextEvents,
   );
   const phase0 = pageProof.phase0_visual_patch;
   const phase0AfterLeft = nodeByHandle(phase0.after_inspection, pageProof.handles.left_mesh);

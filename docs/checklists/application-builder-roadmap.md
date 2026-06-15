@@ -242,7 +242,7 @@ Acceptance:
       `tests/assets/stable-contracts/host_event.v1.json`.
 - [x] Browser proof asserts pick, hover, selection, load progress, asset-loaded,
       diagnostic, capture-ready, and surface-resized event shapes.
-- [ ] Browser proof asserts context-lost/restored event shapes from a real
+- [x] Browser proof asserts context-lost/restored event shapes from a real
       browser signal.
 
 ### 0.3 Capture and proof kit

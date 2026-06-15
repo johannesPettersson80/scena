@@ -59,6 +59,8 @@ mod wasm_section_box;
 #[cfg(target_arch = "wasm32")]
 mod wasm_subtree;
 #[cfg(target_arch = "wasm32")]
+mod wasm_surface_events;
+#[cfg(target_arch = "wasm32")]
 mod wasm_transforms;
 #[cfg(target_arch = "wasm32")]
 mod wasm_transitions;

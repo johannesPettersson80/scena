@@ -13,7 +13,8 @@ All notable user-facing changes are recorded here.
 - Added the `scena.host_event.v1` SceneHost event contract for pick, hover,
   selection, load, diagnostic, capture, surface, context, device, and
   capability events, with native drain/sink APIs, sink-only push delivery,
-  WASM `drainEventsJson()`, and a stable fixture.
+  WASM `drainEventsJson()`, browser context-loss forwarding helpers, and a
+  stable fixture.
 - Added shared descriptor-bound PNG capture helpers for `CaptureRgba8`,
   `Renderer`, SceneHost, viewer helpers, and WASM `capturePng()`, plus capture
   contact-sheet and baseline comparison helpers for proof artifacts.
