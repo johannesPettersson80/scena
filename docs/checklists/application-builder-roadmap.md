@@ -1004,12 +1004,14 @@ Required templates:
 - [x] `scena examples agent data-visualization`.
 - [x] `scena examples agent animated-viewer`.
 - [x] `scena examples agent interaction-proof`.
-- [ ] `scena examples agent cad-inspection`, landing incrementally with the
-      Phase 2 inspection, measurement, section-box, exploded-view, and
-      annotation features it exercises.
-- [ ] `scena examples agent documentation-renderer`, landing incrementally
-      with the Phase 2 measurement, callout/leader-line, annotation-layout,
-      section-box, and exploded-view features it exercises.
+- [x] `scena examples agent cad-inspection`, implemented as a structured
+      deferred manifest until the Phase 2 inspection, measurement,
+      section-box, exploded-view, and annotation recipe sections it exercises
+      are CLI-authorable.
+- [x] `scena examples agent documentation-renderer`, implemented as a
+      structured deferred manifest until the Phase 2 measurement,
+      callout/leader-line, annotation-layout, section-box, and exploded-view
+      recipe sections it exercises are CLI-authorable.
 
 Required behavior:
 
