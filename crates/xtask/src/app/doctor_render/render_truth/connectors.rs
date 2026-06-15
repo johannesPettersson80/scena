@@ -131,6 +131,61 @@ pub(crate) fn check_renderer_truth_connector_contracts(root: &Path, findings: &m
         root,
         findings,
         "ARCH-RENDER-TRUTH",
+        "src/scene_host/connectors.rs",
+        &[
+            "CONNECTOR_BROWSER_SCHEMA_V1",
+            "ConnectorBrowserReportV1",
+            "connector_browser_json",
+            "connector_browser_subtree_json",
+            "connector_browser_selection_json",
+            "metadata_invalid_reasons",
+            "polarity_mismatch",
+            "tag_mismatch",
+            "preview_connector_magnet",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "tests/connector_browser_contracts.rs",
+        &[
+            "connector_browser_reports_import_connectors_and_metadata_candidates",
+            "connector_browser_reports_subtree_and_selection_scopes",
+            "connector_browser_golden_fixture_matches_live_schema_serialization",
+            "connector_browser_targets.gltf",
+            "CONNECTOR_BROWSER_SCHEMA_V1",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "examples/assembly_connector_browser.rs",
+        &[
+            "connector_browser_json",
+            "connector_debug_scene.gltf",
+            "connector_browser_targets.gltf",
+            "CONNECTOR_BROWSER_SCHEMA_V1",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "docs/checklists/application-builder-roadmap.md",
+        &[
+            "Connector browser and snap preview",
+            "SceneHostCore::connector_browser_json",
+            "examples/assembly_connector_browser.rs",
+            "connector-magnet-preview",
+            "scena.connector_browser.v1",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
         "src/assets/gltf/transform.rs",
         &["basis_rotation", "forward", "up", "Quat::from_mat3"],
     );

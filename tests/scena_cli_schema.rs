@@ -33,6 +33,7 @@ fn scena_schema_cli_lists_and_gets_stable_contracts() {
     assert_schema(&catalog, "scena.animation_introspection.v1");
     assert_schema(&catalog, "scena.interaction_expectation.v1");
     assert_schema(&catalog, "scena.interaction_verification.v1");
+    assert_schema(&catalog, "scena.connector_browser.v1");
     assert_schema(&catalog, "scena.scene_host_measurement_overlay.v1");
     assert_listed_fixtures_exist(&catalog);
 

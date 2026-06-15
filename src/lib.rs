@@ -189,13 +189,15 @@ pub use scene::{
 };
 #[cfg(feature = "scene-host")]
 pub use scene_host::{
-    HOST_EVENT_SCHEMA_V1, HostEventBatchV1, HostEventButtonV1, HostEventHitV1,
-    HostEventHoverPhaseV1, HostEventModifiersV1, HostEventTargetKindV1, HostEventV1,
-    INTERACTION_EXPECTATION_SCHEMA_V1, INTERACTION_VERIFICATION_SCHEMA_V1,
-    InteractionCoordinateSpaceV1, InteractionCoordinatesV1, InteractionExpectationV1,
-    InteractionStepExpectationV1, InteractionStepExpectedV1, InteractionStepObservedV1,
-    InteractionStepReportV1, InteractionVerificationArtifactsV1, InteractionVerificationFixV1,
-    InteractionVerificationReasonV1, InteractionVerificationReportV1,
+    CONNECTOR_BROWSER_SCHEMA_V1, ConnectorBrowserCandidateV1, ConnectorBrowserConnectorV1,
+    ConnectorBrowserReportV1, ConnectorBrowserScopeV1, ConnectorBrowserSummaryV1,
+    ConnectorBrowserVisualCueV1, ConnectorLineV1, ConnectorTransformV1, HOST_EVENT_SCHEMA_V1,
+    HostEventBatchV1, HostEventButtonV1, HostEventHitV1, HostEventHoverPhaseV1,
+    HostEventModifiersV1, HostEventTargetKindV1, HostEventV1, INTERACTION_EXPECTATION_SCHEMA_V1,
+    INTERACTION_VERIFICATION_SCHEMA_V1, InteractionCoordinateSpaceV1, InteractionCoordinatesV1,
+    InteractionExpectationV1, InteractionStepExpectationV1, InteractionStepExpectedV1,
+    InteractionStepObservedV1, InteractionStepReportV1, InteractionVerificationArtifactsV1,
+    InteractionVerificationFixV1, InteractionVerificationReasonV1, InteractionVerificationReportV1,
     InteractionVerificationSummaryV1, InteractionViewportV1,
     SCENE_HOST_ANIMATION_INVENTORY_SCHEMA_V1, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1,
     SCENE_HOST_MEASUREMENT_OVERLAY_SCHEMA_V1, SCENE_HOST_SECTION_BOX_SCHEMA_V1,

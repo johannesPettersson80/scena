@@ -34,7 +34,7 @@ cargo check --examples
 | Native window | `native_window.rs` |
 | Browser canvas | `browser_canvas.rs` |
 | Browser host contracts | `scene_host_contracts.rs`, `scene_host_release_1_7.rs`, `scene_host_browser_contracts.js` |
-| CAD-style inspection, anchors, and connectors | `cad_inspection_viewer.rs` uses show-only, ghosting, selected-node framing, bounding-box/axes helpers, and measurement overlays; `guided_exploded_view.rs` writes assembled, exploded, and restored documentation frames; `anchor_alignment.rs`, `connect_objects.rs`, `imported_anchor_connection.rs`, `industrial_connector_assembly.rs`, `coordinate_connector_repair.rs`, `coordinate_units.rs` |
+| CAD-style inspection, anchors, and connectors | `cad_inspection_viewer.rs` uses show-only, ghosting, selected-node framing, bounding-box/axes helpers, and measurement overlays; `guided_exploded_view.rs` writes assembled, exploded, and restored documentation frames; `assembly_connector_browser.rs` emits `scena.connector_browser.v1` for compatible/incompatible connector targets; `anchor_alignment.rs`, `connect_objects.rs`, `imported_anchor_connection.rs`, `industrial_connector_assembly.rs`, `coordinate_connector_repair.rs`, `coordinate_units.rs` |
 | Industrial/static scene | `industrial_static_scene.rs` |
 | Diagnostics and asset readiness | `beginner_diagnostics.rs`, `scene_inspection.rs`, `asset_catalog_picker.rs`; `Assets::validate_asset_catalog()` for `scena.asset_catalog.v1` manifests |
 
@@ -127,6 +127,14 @@ updates, renders the exploded state, then restores the original transforms:
 cargo run --example guided_exploded_view -- target/guided-exploded-view
 ```
 
+Use `assembly_connector_browser.rs` when an assembly UI needs to list authored
+connectors and preview compatible or rejected mates before committing a
+connection:
+
+```bash
+cargo run --example assembly_connector_browser --features scene-host
+```
+
 Golden JSON fixtures for these contracts live in
 `tests/assets/stable-contracts/` and are checked by `tests/stable_contracts.rs`
 plus `xtask doctor --full`. Intentional contract-shape changes must update the
@@ -162,6 +170,7 @@ cargo run --features scene-host -- examples agent interaction-proof --out target
 Use these when imported assets need stable placement by authored metadata:
 
 - `anchor_alignment.rs`
+- `assembly_connector_browser.rs`
 - `connect_objects.rs`
 - `imported_anchor_connection.rs`
 - `industrial_connector_assembly.rs`

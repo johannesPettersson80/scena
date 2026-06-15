@@ -109,6 +109,13 @@
       "fixture_path": "tests/assets/stable-contracts/interaction_verification.v1.json"
     },
     {
+      "schema": "scena.connector_browser.v1",
+      "owner_module": "scene_host",
+      "summary": "Connector listing, metadata compatibility, and snap-preview report.",
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/connector_browser.v1.json"
+    },
+    {
       "schema": "scena.scene_recipe.v1",
       "owner_module": "scene",
       "summary": "Declarative, transient scene snapshot consumed by agent and CLI workflows.",

@@ -84,6 +84,11 @@ Additive public API changes in Unreleased:
   `AssetDoctorFindingV1`, `AssetDoctorSeverityV1`,
   `Assets::doctor_asset_path`, `Assets::doctor_loaded_asset`, and
   `SceneHostCore::asset_doctor_json`
+- `CONNECTOR_BROWSER_SCHEMA_V1`, `ConnectorBrowserReportV1`,
+  `ConnectorBrowserConnectorV1`, `ConnectorBrowserCandidateV1`,
+  `SceneHostCore::connector_browser_json`,
+  `SceneHostCore::connector_browser_subtree_json`, and
+  `SceneHostCore::connector_browser_selection_json`
 - `render_asset_catalog_preview_png`, `AssetCatalogPreviewPng`,
   `AssetCatalogPreviewError`,
   `HeadlessGltfViewerBuilder::with_background_color`, and
@@ -745,6 +750,7 @@ Common import and connector contracts:
 - `ConnectionMagnetVisualCue`
 - `ConnectorRollPolicy`
 - `ConnectorPolarity`
+- `ConnectorBrowserReportV1`
 
 Common viewer helpers:
 

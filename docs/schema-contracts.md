@@ -36,6 +36,7 @@ Rules:
   - `scena.animation_introspection.v1`
   - `scena.interaction_expectation.v1`
   - `scena.interaction_verification.v1`
+  - `scena.connector_browser.v1`
   - `scena.scene_recipe.v1`
   - `scena.scene_recipe_validation.v1`
   - `scena.placement_result.v1`
@@ -1043,6 +1044,28 @@ stdout and exits non-zero when `ok=false`.
 
 The stable fixture lives at
 `tests/assets/stable-contracts/asset_doctor.v1.json`.
+
+### `scena.connector_browser.v1`
+
+Produced by `SceneHostCore::connector_browser_json`,
+`SceneHostCore::connector_browser_subtree_json`, and
+`SceneHostCore::connector_browser_selection_json`. The report lists imported
+connectors with stable host node handles, metadata, and optional target-import
+candidate previews. Compatibility is metadata-driven: kind/allowed mates,
+tags, polarity, units, coordinate system, and the existing connector solver
+decide whether a mate is compatible. Scena reports invalid mate reasons and a
+snap preview, but it does not compute mesh clearance, collision, or physical
+feasibility.
+
+Each report includes a `scope`, `summary`, source `connectors`,
+`target_connectors`, pairwise `candidates`, and optional `visual_cues` for
+ghost transforms and connection lines. Candidate distances, tolerances, line
+points, and ghost transforms are rounded for deterministic JSON. Compatible
+out-of-range candidates stay `compatible: true` with `snap_ready: false`; only
+metadata or solver rejection increments `invalid_count`.
+
+The stable fixture lives at
+`tests/assets/stable-contracts/connector_browser.v1.json`.
 
 `scena.capture.v1` small example:
 

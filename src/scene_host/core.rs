@@ -28,7 +28,7 @@ pub struct SceneHostCore<F = DefaultAssetFetcher> {
     pub(super) active_camera: CameraKey,
     pub(super) camera_controls: OrbitControls,
     pub(super) node_handles: HandleTable<NodeKey>,
-    import_handles: HandleTable<SceneImport>,
+    pub(super) import_handles: HandleTable<SceneImport>,
     pub(super) instance_handles: HandleTable<HostInstanceBinding>,
     pub(super) animation_handles: HandleTable<AnimationMixerKey>,
     pub(super) transitions: HostTransitions,

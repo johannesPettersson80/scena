@@ -61,6 +61,9 @@ All notable user-facing changes are recorded here.
   for missing sources/files, explicit units/coordinate systems, bounds limits,
   authored anchors/connectors/tags, material variants, base-color texture
   requirements, external resources, and material fallbacks.
+- Added `scena.connector_browser.v1` SceneHost reports for import, subtree,
+  and selection connector browsing with metadata compatibility, snap preview
+  distance/tolerance, ghost-transform cues, and stable host handles.
 - Added deterministic generated catalog previews with
   `render_asset_catalog_preview_png()`, `AssetCatalogPreviewPng`,
   `AssetCatalogPreviewError`, viewer-builder background color support, and the

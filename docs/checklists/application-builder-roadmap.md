@@ -1649,24 +1649,53 @@ snap preview, ghost transforms.
 
 Required behavior:
 
-- [ ] List connectors for an import, subtree, or selection.
-- [ ] Filter compatible connectors by kind, allowed mates, tags, polarity, and
+- [x] List connectors for an import, subtree, or selection.
+      Evidence: `SceneHostCore::connector_browser_json()`,
+      `connector_browser_subtree_json()`, and
+      `connector_browser_selection_json()` emit
+      `scena.connector_browser.v1` with stable host handles.
+- [x] Filter compatible connectors by kind, allowed mates, tags, polarity, and
       roll policy from connector metadata.
-- [ ] Preview connection with ghost transform.
-- [ ] Report snap distance and tolerance.
-- [ ] Report invalid mate reasons.
-- [ ] Render optional ghost/outline/line cue.
+      Evidence: `ConnectorBrowserCandidateV1` records compatible and invalid
+      candidates, including `incompatible_kind`, `polarity_mismatch`, and
+      `tag_mismatch`; roll policy is reported for each connector.
+- [x] Preview connection with ghost transform.
+      Evidence: compatible candidates include rounded `ghost_transform` and
+      `connection_line` fields from the existing connector solver.
+- [x] Report snap distance and tolerance.
+      Evidence: `distance`, `tolerance`, `snap_ready`, and `visual_cue` are
+      pinned in `tests/assets/stable-contracts/connector_browser.v1.json`.
+- [x] Report invalid mate reasons.
+      Evidence: `tests/connector_browser_contracts.rs` covers compatible and
+      incompatible metadata candidates.
+- [x] Render optional ghost/outline/line cue.
+      Evidence: existing M6 browser proof workflow `connector-magnet-preview`
+      renders both out-of-range and snap-ready ghost/line cues with visible
+      pixels.
 
 Scope guard:
 
-- [ ] Compatibility is metadata-driven. Scena does not compute mesh clearance,
+- [x] Compatibility is metadata-driven. Scena does not compute mesh clearance,
       collision, or physical feasibility.
+      Evidence: `scena.connector_browser.v1` reports authored metadata,
+      snap-distance preview, and invalid mate reasons only; no mesh clearance
+      or physics fields exist in the contract.
 
 Acceptance:
 
-- [ ] Tests for compatible/incompatible connector metadata.
-- [ ] Browser proof for snap-ready and snap-invalid states.
-- [ ] Example: assembly connector browser.
+- [x] Tests for compatible/incompatible connector metadata.
+      Evidence: `cargo test --test connector_browser_contracts --features
+      scene-host -- --nocapture` and
+      `cargo test --features scene-host --test connector_browser_contracts`.
+- [x] Browser proof for snap-ready and snap-invalid states.
+      Evidence: `SCENA_BROWSER_BACKENDS=webgl2 npm run browser:m6` includes
+      `connector-magnet-preview`, asserting `scena-magnet-ready`,
+      `scena-magnet-out-of-range`, and visible browser pixels.
+- [x] Example: assembly connector browser.
+      Evidence: `examples/assembly_connector_browser.rs` emits
+      `scena.connector_browser.v1` for compatible and incompatible authored
+      connector targets; the public guide keeps the UI-facing
+      `preview_connector_magnet` example.
 
 ### 3.4 Material variant helpers
 

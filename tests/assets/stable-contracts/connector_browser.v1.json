@@ -1,0 +1,171 @@
+{
+  "schema": "scena.connector_browser.v1",
+  "scope": {
+    "kind": "import",
+    "import": 4294967297,
+    "root": null,
+    "selection": [],
+    "target_imports": [
+      4294967298
+    ]
+  },
+  "summary": {
+    "connector_count": 1,
+    "target_connector_count": 2,
+    "candidate_count": 2,
+    "compatible_count": 1,
+    "snap_ready_count": 1,
+    "invalid_count": 1
+  },
+  "connectors": [
+    {
+      "id": "import:4294967297:connector:mount:node:4294967300",
+      "name": "mount",
+      "node": 4294967300,
+      "placement_node": 4294967300,
+      "import": 4294967297,
+      "kind": "mount",
+      "allowed_mates": [
+        "socket"
+      ],
+      "tags": [
+        "assembly",
+        "front"
+      ],
+      "snap_tolerance": 0.025,
+      "clearance_hint": 0.01,
+      "roll_policy": "choose_nearest",
+      "polarity": "plug",
+      "source_units": "meters",
+      "source_coordinate_system": "gltf_y_up_right_handed",
+      "metadata": {
+        "author": "fixture",
+        "revision": 3
+      }
+    }
+  ],
+  "target_connectors": [
+    {
+      "id": "import:4294967298:connector:cable:node:4294967304",
+      "name": "cable",
+      "node": 4294967304,
+      "placement_node": 4294967303,
+      "import": 4294967298,
+      "kind": "cable",
+      "allowed_mates": [
+        "wire"
+      ],
+      "tags": [
+        "service"
+      ],
+      "snap_tolerance": 0.02,
+      "clearance_hint": null,
+      "roll_policy": "preserve",
+      "polarity": "plug",
+      "source_units": "meters",
+      "source_coordinate_system": "gltf_y_up_right_handed",
+      "metadata": null
+    },
+    {
+      "id": "import:4294967298:connector:socket:node:4294967303",
+      "name": "socket",
+      "node": 4294967303,
+      "placement_node": 4294967303,
+      "import": 4294967298,
+      "kind": "socket",
+      "allowed_mates": [
+        "mount"
+      ],
+      "tags": [
+        "assembly",
+        "front"
+      ],
+      "snap_tolerance": 0.05,
+      "clearance_hint": 0.01,
+      "roll_policy": "choose_nearest",
+      "polarity": "socket",
+      "source_units": "meters",
+      "source_coordinate_system": "gltf_y_up_right_handed",
+      "metadata": {
+        "author": "fixture",
+        "side": "front"
+      }
+    }
+  ],
+  "candidates": [
+    {
+      "source_id": "import:4294967297:connector:mount:node:4294967300",
+      "source_name": "mount",
+      "target_id": "import:4294967298:connector:cable:node:4294967304",
+      "target_name": "cable",
+      "compatible": false,
+      "snap_ready": false,
+      "distance": null,
+      "tolerance": null,
+      "visual_cue": null,
+      "ghost_transform": null,
+      "connection_line": null,
+      "invalid_reasons": [
+        "incompatible_kind",
+        "polarity_mismatch",
+        "tag_mismatch"
+      ],
+      "message": "connector kinds are incompatible: source=mount, target=cable"
+    },
+    {
+      "source_id": "import:4294967297:connector:mount:node:4294967300",
+      "source_name": "mount",
+      "target_id": "import:4294967298:connector:socket:node:4294967303",
+      "target_name": "socket",
+      "compatible": true,
+      "snap_ready": true,
+      "distance": 0.0,
+      "tolerance": 0.05,
+      "visual_cue": "scena-magnet-ready",
+      "ghost_transform": {
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "connection_line": {
+        "start": [
+          0.0,
+          0.1,
+          0.0
+        ],
+        "end": [
+          0.0,
+          0.1,
+          0.0
+        ]
+      },
+      "invalid_reasons": [],
+      "message": "snap ready"
+    }
+  ],
+  "visual_cues": [
+    {
+      "candidate": "import:4294967297:connector:mount:node:4294967300->import:4294967298:connector:socket:node:4294967303",
+      "kind": "ghost_transform",
+      "style": "scena-magnet-ready"
+    },
+    {
+      "candidate": "import:4294967297:connector:mount:node:4294967300->import:4294967298:connector:socket:node:4294967303",
+      "kind": "connection_line",
+      "style": "scena-magnet-ready"
+    }
+  ]
+}
