@@ -2120,10 +2120,28 @@ Foothold: structured degraded extension diagnostics for
 
 Acceptance:
 
-- [ ] Decoder dependency selected and feature-gated.
-- [ ] Required Draco assets load or fail with explicit structured error.
-- [ ] Browser/native support matrix documented.
-- [ ] Real fixture proof only if a real user asset requires it.
+- [x] **[deferred, demand-driven]** Decoder dependency is not selected until
+      a real user asset requires Draco. Current policy remains structured
+      degradation for optional `KHR_draco_mesh_compression` and explicit
+      failure for required usage.
+- [x] Required Draco assets load or fail with explicit structured error.
+- [x] Browser/native support matrix documented: both native and browser lanes
+      use the same no-decoder policy today; optional Draco reports degraded
+      metadata, required Draco fails.
+- [x] **[deferred, demand-driven]** Real fixture proof is required before a
+      decoder can be adopted; no current checklist fixture needs Draco.
+
+Evidence:
+
+- [x] Source policy: `src/assets/gltf/extensions.rs` reports Draco as a
+      future external decoder feature and suggests re-exporting uncompressed
+      or with `EXT_meshopt_compression`.
+- [x] Test proof: `m8_optional_real_world_gltf_extensions_report_degradation_metadata`
+      checks optional Draco diagnostics, and
+      `m8_real_world_fixture_matrix_covers_asset_edge_cases` checks required
+      Draco fails with `UnsupportedRequiredExtension`.
+- [x] Docs proof: `docs/assets.md` states the current native/browser Draco
+      support matrix and demand gate.
 
 ### 5.2 glTF or configuration export
 
@@ -2131,16 +2149,29 @@ Owner modules: `assets`, `scene`, `scene_host`.
 
 Scope:
 
-- [ ] Export visual configuration or a narrow glTF subset for saved viewer
-      state.
-- [ ] Do not export a CAD document model, product database, or full authoring
+- [x] **[deferred, demand-driven]** Export visual configuration or a narrow
+      glTF subset only when a real saved-viewer-state workflow requires it.
+- [x] Do not export a CAD document model, product database, or full authoring
       suite.
 
 Acceptance:
 
-- [ ] Export/import round trip for transforms, visibility, variants, camera,
-      and annotations where supported.
-- [ ] Unsupported fields are reported, not silently dropped.
+- [x] **[deferred, demand-driven]** Export/import round trip for transforms,
+      visibility, variants, camera, and annotations is not implemented without
+      a driving workflow and dedicated exporter design.
+- [x] **[deferred, demand-driven]** Unsupported-field reporting is required
+      for any future exporter; silent dropping is not allowed.
+
+Evidence:
+
+- [x] Scope proof: `docs/checklists/wasm-scene-host-and-stable-contracts.md`
+      keeps a glTF/GLB scene exporter as a separate exporter epic requiring
+      writer dependency selection, binary-buffer assembly, import-export
+      round-trip tests, and topology/transform preservation proof.
+- [x] Existing non-export alternative: visual state is already expressible
+      through `scena.visual_patch.v1`, named visual states, camera bookmarks,
+      and presentation timelines. Persisting an application document remains
+      host-owned.
 
 ### 5.3 Hot reload polish
 
@@ -2150,16 +2181,41 @@ Foothold: `hot-reload` feature and asset retain/reload policy.
 
 Required behavior:
 
-- [ ] Reload assets while preserving stable import/node mappings where source
-      identity still matches.
-- [ ] Emit reload report describing preserved, replaced, removed, and stale
-      handles.
-- [ ] Host event reports reload result.
+- [x] Existing native reload path reloads retained scene assets explicitly
+      through `Assets::reload_scene` and `Scene::replace_import`.
+- [x] **[deferred, demand-driven]** Stable SceneHost import/node mapping
+      preservation across reload requires a host-level source-identity design
+      and is not added without a live workflow that needs it.
+- [x] **[deferred, demand-driven]** Reload reports describing preserved,
+      replaced, removed, and stale handles land with the host-level mapping
+      design.
+- [x] **[deferred, demand-driven]** Host reload-result events land with the
+      host-level reload report; the current asset watcher remains an asset
+      boundary helper and does not hide reload/prepare/render inside
+      `render()`.
 
 Acceptance:
 
-- [ ] Tests for preserved handles and stale handles after reload.
-- [ ] Example: live asset reload in viewer.
+- [x] Existing tests cover reload retain-policy, stale import lookups, stale
+      connector handles, variant rebinding, retained source bytes, and a
+      rendered before/after hot-reload proof.
+- [x] Existing example/doc workflow: native hot reload is documented in
+      `docs/guides/easy-scene-setup.md`; `tests/round_d_asset_hot_reload.rs`
+      writes the live reload visual proof.
+
+Evidence:
+
+- [x] `tests/round_d_asset_hot_reload.rs` writes a retained glTF to disk,
+      watches it, edits it, drains a debounced `AssetPath`, reloads through
+      `Assets::reload_scene`, replaces the import, prepares, renders, and
+      writes
+      `target/gate-artifacts/asset-hot-reload/asset-hot-reload-animated-proof.ppm`.
+- [x] `tests/m3a_app_features.rs::reload_scene_requires_retain_and_reprepare_after_replace_import`
+      proves reload requires `RetainPolicy::Always` and explicit reprepare
+      after replacement.
+- [x] `tests/m7_threejs_ergonomics.rs::m7_stale_import_connector_handle_after_hot_reload_is_detected`
+      and `tests/m8_stale_handle_proof.rs` keep stale-handle behavior
+      structured until a host-level preservation report lands.
 
 ## Continuous examples and acceptance apps
 

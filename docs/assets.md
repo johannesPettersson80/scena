@@ -138,6 +138,14 @@ See:
 KTX2/Basis and meshopt support are available through feature flags. See
 [Feature flags](feature-flags.md).
 
+Draco mesh compression is intentionally not decoder-backed yet. On native and
+browser targets, optional `KHR_draco_mesh_compression` reports structured
+degradation metadata and required Draco usage fails with
+`AssetError::UnsupportedRequiredExtension`. Re-export Draco assets uncompressed
+or with `EXT_meshopt_compression` until a real user asset requires selecting a
+maintained Draco decoder and carrying it through feature, license, browser,
+and native proof.
+
 ## Unsupported or unavailable features
 
 Unsupported required glTF extensions fail explicitly with structured asset
