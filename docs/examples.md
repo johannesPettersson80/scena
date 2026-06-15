@@ -103,6 +103,12 @@ existing lighting, environment, background, grid, picking, and orbit-control
 helpers wired consistently without creating a separate viewer engine.
 The `viewer_profiles.rs` example renders all five presets to PNG artifacts.
 
+Transform gizmo usage is shown in `simple_scene_editor_gizmo.rs`: the example
+creates a selected mesh, computes a constrained translate drag from two
+`GizmoRay` values, applies the returned `Transform`, attaches helper stroke
+geometry, frames the result, and renders once. The example is intentionally a
+renderer-side interaction adapter, not an undo/redo or CAD-document model.
+
 Asset catalog readiness uses stable JSON contracts: deserialize a
 `scena.asset_catalog.v1` manifest into `AssetCatalogV1`, call
 `Assets::validate_asset_catalog(&catalog).await`, and consume the

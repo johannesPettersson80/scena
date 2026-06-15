@@ -76,8 +76,10 @@ pub use capture::{
 };
 pub use controls::{
     CameraBookmark, CameraFlyTo, CameraOrbitUrlState, CameraOrbitUrlStateError, CameraState,
-    CameraTransitionError, FlyControls, FollowControls, OrbitControlAction, OrbitControls,
-    PointerButton, PointerEvent, PointerEventKind, TouchEvent, TouchEventKind, TransitionEasing,
+    CameraTransitionError, FlyControls, FollowControls, GizmoAxis, GizmoConstraint, GizmoMode,
+    GizmoRay, GizmoSpace, OrbitControlAction, OrbitControls, PointerButton, PointerEvent,
+    PointerEventKind, TouchEvent, TouchEventKind, TransformGizmo, TransformGizmoHelpers,
+    TransitionEasing,
 };
 pub use diagnostics::{
     AdapterLimitsReport, AlphaPipelineStatus, AnimationError, AssetError, Backend, BuildError,

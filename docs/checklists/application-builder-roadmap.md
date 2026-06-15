@@ -1019,35 +1019,44 @@ Feature flag: `gizmo` or under `controls` if dependency-free.
 API sketch:
 
 ```rust
-let mut gizmo = TransformGizmo::new(GizmoMode::Translate);
-if let Some(delta) = gizmo.pointer_drag(&scene, camera, pointer, &assets)? {
-    host.apply_patch(&delta.to_visual_patch(target_handle))?;
+let gizmo = TransformGizmo::new(GizmoMode::Translate)
+    .with_constraint(GizmoConstraint::Axis(GizmoAxis::X));
+if let Some(transform) = gizmo.drag_transform(start_transform, start_ray, current_ray) {
+    host.apply_patch(&gizmo.to_visual_patch(target_handle, transform))?;
 }
 ```
 
 Required behavior:
 
-- [ ] Modes: translate, rotate, scale.
-- [ ] Coordinate spaces: world, local, view-aligned where implementable.
-- [ ] Axis constraints and plane constraints.
-- [ ] Hit testing uses existing picking/ray contracts.
-- [ ] Gizmo emits transform deltas or `VisualPatch`; it does not mutate a host
+- [x] Modes: translate, rotate, scale.
+- [x] Coordinate spaces: world, local, view-aligned where implementable.
+- [x] Axis constraints and plane constraints.
+- [x] Hit testing uses existing picking/ray contracts through `Hit` target
+      extraction and caller-supplied `GizmoRay` values derived from the active
+      camera/pointer pick path.
+- [x] Gizmo emits transform deltas or `VisualPatch`; it does not mutate a host
       document directly.
-- [ ] Gizmo visuals are helper geometry/strokes and can be hidden from normal
+- [x] Gizmo visuals are helper geometry/strokes and can be hidden from normal
       scene picking except when active.
 
 Scope guards:
 
-- [ ] No undo/redo stack.
-- [ ] No collision, constraints solver, snapping-to-mesh, or CAD kernel.
-- [ ] No application selection model beyond emitting stable handles/events.
+- [x] No undo/redo stack.
+- [x] No collision, constraints solver, snapping-to-mesh, or CAD kernel.
+- [x] No application selection model beyond emitting stable handles/events.
 
 Acceptance:
 
-- [ ] Unit tests for ray-to-axis and ray-to-plane math.
-- [ ] Interaction tests for stale target handles.
+- [x] Unit tests for ray-to-axis and ray-to-plane math. Red proof:
+      `CARGO_INCREMENTAL=0 cargo test --test transform_gizmo -- --nocapture`
+      failed on the builder with unresolved `Gizmo*` / `TransformGizmo`
+      imports before implementation.
+- [x] Interaction tests for stale target handles through
+      `TransformGizmo::to_visual_patch(...)` + `SceneHostCore::apply_patch`;
+      stale handles fail closed as `NodeHandleNotFound`.
 - [ ] Browser proof for translate drag and rotation drag.
-- [ ] Example: simple scene editor moves a selected part with the gizmo.
+- [x] Example: `simple_scene_editor_gizmo.rs` moves a selected part with the
+      gizmo, attaches helper strokes, frames the scene, and renders once.
 
 ### 1.3 Viewer profiles
 

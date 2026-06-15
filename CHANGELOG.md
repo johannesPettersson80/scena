@@ -55,6 +55,10 @@ All notable user-facing changes are recorded here.
   APIs, viewer bookmark storage helpers, and SceneHost native/WASM bookmark
   easing methods that delegate to the existing host-ticked `camera_eased`
   visual patch channel.
+- Added platform-neutral `TransformGizmo` controls for translate/rotate/scale
+  manipulation from caller-supplied pointer rays, with world/local/view-aligned
+  spaces, axis/plane constraints, SceneHost `VisualPatchV1` emission, helper
+  stroke geometry, and a `simple_scene_editor_gizmo.rs` example.
 - Added `ViewerProfile` presets for `model_viewer`, `cad_inspection`,
   `product`, `industrial`, and `documentation` viewer setup. The presets
   compose existing renderer profile, render mode, lighting, environment,

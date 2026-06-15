@@ -4,12 +4,17 @@ use std::f32::consts::TAU;
 
 mod camera_kit;
 mod camera_transition;
+mod gizmo;
 mod url_state;
 pub use camera_kit::{FlyControls, FollowControls};
 #[cfg(feature = "scene-host")]
 pub(crate) use camera_transition::eased_amount;
 pub use camera_transition::{
     CameraBookmark, CameraFlyTo, CameraState, CameraTransitionError, TransitionEasing,
+};
+pub use gizmo::{
+    GizmoAxis, GizmoConstraint, GizmoMode, GizmoRay, GizmoSpace, TransformGizmo,
+    TransformGizmoHelpers,
 };
 pub use url_state::{CameraOrbitUrlState, CameraOrbitUrlStateError};
 

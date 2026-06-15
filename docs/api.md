@@ -781,6 +781,12 @@ Common viewer helpers:
 - `FramingOutcome`
 - `GridFloorOptions`
 - `GridFloorHandles`
+- `TransformGizmo`
+- `GizmoMode`
+- `GizmoAxis`
+- `GizmoConstraint`
+- `GizmoSpace`
+- `GizmoRay`
 - `ViewerProfile`
 - `InteractiveGltfViewer`
 - `InteractiveGltfViewerBuilder`
@@ -806,6 +812,14 @@ builders. A profile configures existing renderer profile/render mode,
 background, environment, lighting, grid, picking styles, and optional orbit
 controls; it does not create a separate viewer engine or own the host event
 loop.
+
+Transform gizmos are platform-neutral manipulation helpers. Build a
+`TransformGizmo` with a `GizmoMode`, optional `GizmoConstraint`, and
+`GizmoSpace`; pass caller-derived `GizmoRay` values to `drag_transform(...)`;
+then apply the returned `Transform` directly to a `Scene` or emit a
+`VisualPatchV1` with `to_visual_patch(...)` when using SceneHost. Gizmo helper
+visuals are ordinary line-stroke scene nodes, so they stay renderer-owned and
+do not add undo/redo, snapping, collision, or document-model behavior.
 
 Common visual-regression helpers:
 
