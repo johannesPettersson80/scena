@@ -232,6 +232,10 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
             "scena.asset_load_report.v1",
         ),
         (
+            "tests/assets/stable-contracts/asset_doctor.v1.json",
+            "scena.asset_doctor.v1",
+        ),
+        (
             "tests/assets/stable-contracts/scene_host_asset_import.v1.json",
             "scena.scene_host_asset_import.v1",
         ),

@@ -80,6 +80,10 @@ Additive public API changes in Unreleased:
 - `AssetReadinessReportV1`, `AssetReadinessAssetReportV1`,
   `AssetReadinessFindingV1`, `AssetReadinessSeverityV1`, and
   `Assets::validate_asset_catalog`
+- `ASSET_DOCTOR_REPORT_SCHEMA_V1`, `AssetDoctorReportV1`,
+  `AssetDoctorFindingV1`, `AssetDoctorSeverityV1`,
+  `Assets::doctor_asset_path`, `Assets::doctor_loaded_asset`, and
+  `SceneHostCore::asset_doctor_json`
 - `render_asset_catalog_preview_png`, `AssetCatalogPreviewPng`,
   `AssetCatalogPreviewError`,
   `HeadlessGltfViewerBuilder::with_background_color`, and

@@ -66,6 +66,11 @@ All notable user-facing changes are recorded here.
   `AssetCatalogPreviewError`, viewer-builder background color support, and the
   `asset_catalog_picker` SceneHost example, plus WebGL2 browser proof for a
   catalog asset preview workflow.
+- Added `scena.asset_doctor.v1` runtime asset doctor reports through
+  `Assets::doctor_asset_path()`, `Assets::doctor_loaded_asset()`,
+  SceneHost native/WASM JSON methods, and the `scena doctor` CLI, with stable
+  finding codes, help text, suggested fixes, and browser proof for a broken
+  asset diagnosis.
 - Added measurement overlay primitives for CAD/documentation views:
   distance, angle, bounds-dimension reports, host-supplied `UnitFormat`
   formatting, and line plus optional label rendering through

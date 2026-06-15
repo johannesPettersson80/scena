@@ -3,6 +3,19 @@ use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
 use crate::{AssetFetcher, AssetPath};
 
 impl<F: AssetFetcher> SceneHostCore<F> {
+    pub async fn asset_doctor_json(
+        &self,
+        path: impl Into<AssetPath>,
+    ) -> Result<String, SceneHostError> {
+        let report = self.assets.doctor_asset_path(path).await;
+        serde_json::to_string(&report).map_err(|error| {
+            SceneHostError::new(
+                SceneHostErrorCode::Inspect,
+                format!("asset doctor report serialization failed: {error}"),
+            )
+        })
+    }
+
     pub async fn instantiate_url_with_report_json(
         &mut self,
         path: impl Into<AssetPath>,

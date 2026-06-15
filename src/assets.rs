@@ -12,6 +12,7 @@ use crate::material::{Color, MaterialDesc, TextureColorSpace};
 use crate::scene::Transform;
 
 mod catalog;
+mod doctor;
 mod environment;
 mod environment_hdr;
 mod environment_loading;
@@ -41,6 +42,10 @@ pub use catalog::{
     AssetCatalogMaterialRequirementsV1, AssetCatalogPreviewV1, AssetCatalogV1,
     AssetReadinessAssetReportV1, AssetReadinessFindingV1, AssetReadinessPreviewV1,
     AssetReadinessReportV1, AssetReadinessSeverityV1, AssetReadinessSummaryV1,
+};
+pub use doctor::{
+    ASSET_DOCTOR_REPORT_SCHEMA_V1, AssetDoctorFindingV1, AssetDoctorReportV1,
+    AssetDoctorSeverityV1, AssetDoctorSummaryV1,
 };
 pub use environment::{
     DEFAULT_ENVIRONMENT_CUBEMAP_FACE_RESOLUTION, ENVIRONMENT_CUBEMAP_FACE_NORMALS,

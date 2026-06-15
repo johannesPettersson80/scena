@@ -1026,6 +1026,24 @@ The stable fixtures live at
 `tests/assets/stable-contracts/schema_catalog.v1.json` and
 `tests/assets/stable-contracts/schema_entry.v1.json`.
 
+### `scena.asset_doctor.v1`
+
+Produced by `Assets::doctor_asset_path`, `Assets::doctor_loaded_asset`,
+`SceneHostCore::asset_doctor_json`, the browser `SceneHost.assetDoctorJson()`
+method, and the `scena doctor <asset-or-recipe>` CLI. The report is a
+renderer-owned asset readiness diagnosis for agents and host tools that need
+actionable load/material/extension findings without compiling Rust in the
+loop.
+
+The report has `ok`, `status`, `asset`, `summary`, optional
+`asset_load_report`, and `findings`. Each finding has a stable `severity`,
+`code`, optional `path`/`field`/`extension`, `message`, `help`,
+`suggested_fix`, and `source`. The `scena doctor` CLI writes the report to
+stdout and exits non-zero when `ok=false`.
+
+The stable fixture lives at
+`tests/assets/stable-contracts/asset_doctor.v1.json`.
+
 `scena.capture.v1` small example:
 
 ```json

@@ -189,6 +189,41 @@ fn scena_diagnose_cli_emits_json_and_nonzero_for_invisible_target() {
 }
 
 #[test]
+fn scena_doctor_cli_emits_json_and_nonzero_for_broken_asset() {
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "doctor",
+            "tests/assets/gltf/unsupported_required_extension.gltf",
+        ])
+        .output()
+        .expect("scena doctor command runs");
+
+    assert!(!output.status.success(), "broken asset must fail closed");
+    assert!(
+        output.stderr.is_empty(),
+        "doctor report failures stay machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("doctor command emits JSON");
+    assert_eq!(report["schema"], "scena.asset_doctor.v1");
+    assert_eq!(report["ok"], false);
+    assert!(
+        report["findings"]
+            .as_array()
+            .expect("doctor findings is an array")
+            .iter()
+            .any(
+                |finding| finding["code"] == "unsupported_required_extension"
+                    && finding["suggested_fix"]
+                        .as_str()
+                        .is_some_and(|fix| fix.contains("fallback"))
+            ),
+        "doctor should explain the unsupported extension with a fix: {report:#}"
+    );
+}
+
+#[test]
 fn scena_repair_cli_plans_visual_patch_from_diagnosis_json() {
     let dir = artifact_dir("repair");
     let diagnosis_path = dir.join("diagnosis.json");

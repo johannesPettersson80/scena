@@ -160,19 +160,34 @@ third-party glTF/GLB is ready for scena:
 
 ```bash
 cargo run -p xtask -- asset-doctor path/to/model.glb
+scena doctor path/to/model.glb
 ```
 
-The command first runs the official Khronos glTF Validator CLI in stdout mode
+The xtask command first runs the official Khronos glTF Validator CLI in stdout mode
 (`gltf_validator -o <asset>`). Set `SCENA_GLTF_VALIDATOR` when the executable
 has a different path. The official validator owns glTF specification
 compliance; scena does not reimplement that subset.
 
-After the official validator runs, the command emits scena-specific renderer
-guidance as `scena.asset_doctor.v1` JSON. Each guidance entry includes a
-severity, status, message, and `fix` string for issues such as required
-clearcoat, sheen, anisotropy, iridescence, or dispersion materials, Draco
-compression, feature-gated KTX2/meshopt assets, or deferred WebP texture-source
-rebinding.
+The runtime API emits the same renderer-owned finding shape without depending
+on the external validator: `Assets::doctor_asset_path()` diagnoses a path,
+`Assets::doctor_loaded_asset()` diagnoses an already loaded `SceneAsset`,
+`SceneHostCore::asset_doctor_json()` returns the same JSON for native hosts,
+and browser hosts can call `SceneHost.assetDoctorJson(url)`. The `scena doctor`
+CLI prints the runtime `scena.asset_doctor.v1` report to stdout and exits
+non-zero when any error finding is present.
+
+Every finding includes `severity`, stable `code`, `path`, `message`, `help`,
+and `suggested_fix`. CLI and library diagnostics share codes where checks
+overlap, including `unsupported_required_extension`, `extension_supported`,
+`extension_degraded`, `external_buffer_missing`, `external_image_missing`, and
+`material_fallback_used`.
+
+After the official validator runs, the xtask command also emits
+scena-specific renderer guidance as `scena.asset_doctor.v1` JSON. Each guidance
+entry includes the normalized fields above plus the historical `fix` string for
+issues such as required clearcoat, sheen, anisotropy, iridescence, or
+dispersion materials, Draco compression, feature-gated KTX2/meshopt assets, or
+deferred WebP texture-source rebinding.
 
 For example, optional `KHR_materials_clearcoat` factors and texture slots are
 preserved and the CPU/reference plus GPU shader/material paths sample

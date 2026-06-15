@@ -19,6 +19,58 @@ pub(super) fn check_asset_validation_doctor(root: &Path, findings: &mut Vec<Find
         root,
         findings,
         "ASSET-VALIDATION-DOCTOR",
+        "src/assets/doctor.rs",
+        &[
+            "ASSET_DOCTOR_REPORT_SCHEMA_V1",
+            "AssetDoctorReportV1",
+            "AssetDoctorFindingV1",
+            "doctor_asset_path",
+            "doctor_loaded_asset",
+            "unsupported_required_extension",
+            "suggested_fix",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSET-VALIDATION-DOCTOR",
+        "src/bin/scena/doctor.rs",
+        &[
+            "run_doctor_command",
+            "doctor_asset_path",
+            "failed to serialize asset doctor report",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSET-VALIDATION-DOCTOR",
+        "src/scene_host/assets.rs",
+        &["asset_doctor_json", "doctor_asset_path"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSET-VALIDATION-DOCTOR",
+        "src/scene_host/wasm_assets.rs",
+        &["assetDoctorJson", "asset_doctor_json"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSET-VALIDATION-DOCTOR",
+        "tests/asset_doctor_contracts.rs",
+        &[
+            "doctor_asset_path",
+            "doctor_loaded_asset",
+            "asset_doctor_json",
+            "unsupported_required_extension",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSET-VALIDATION-DOCTOR",
         "crates/xtask/src/app/asset_validation.rs",
         &[
             "SCENA_GLTF_VALIDATOR",
@@ -52,7 +104,47 @@ pub(super) fn check_asset_validation_doctor(root: &Path, findings: &mut Vec<Find
             "official Khronos glTF Validator",
             "SCENA_GLTF_VALIDATOR",
             "scena.asset_doctor.v1",
+            "scena doctor",
+            "Assets::doctor_asset_path",
+            "SceneHost.assetDoctorJson",
+            "suggested_fix",
             "fix",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSET-VALIDATION-DOCTOR",
+        "tests/browser/m6_rust_wasm_renderer_probe_page.js",
+        &[
+            "scenaAssetDoctorBrowserProbe",
+            "m6AssetDoctorBrowserProbe",
+            "asset-doctor-browser",
+            "unsupported_required_extension",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSET-VALIDATION-DOCTOR",
+        "tests/browser/m6_rust_wasm_renderer_probe.js",
+        &[
+            "assertAssetDoctorBrowserProof",
+            "runAssetDoctorBrowserProof",
+            "asset-doctor-browser-proof.png",
+            "scena.asset_doctor.v1",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSET-VALIDATION-DOCTOR",
+        "docs/checklists/application-builder-roadmap.md",
+        &[
+            "Asset doctor integration API",
+            "Assets::doctor_asset_path",
+            "SceneHost.assetDoctorJson",
+            "asset-doctor-browser-proof.png",
         ],
     );
     require_contains(

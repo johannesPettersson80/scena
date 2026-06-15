@@ -10,6 +10,7 @@ import init, {
   m6RenderMaterialVariantProbe,
   m6RenderStateLifecycleProbe,
   m6RenderWorkflowProbe,
+  m6AssetDoctorBrowserProbe,
 } from "/pkg/scena.js";
 
 let initialized = false;
@@ -853,6 +854,41 @@ window.scenaM6RustWasmWorkflowProbe = async function scenaM6RustWasmWorkflowProb
   return runProbe(backend, workflow, (canvas) =>
     m6RenderWorkflowProbe(canvas, backend, workflow),
   );
+};
+
+window.scenaAssetDoctorBrowserProbe = async function scenaAssetDoctorBrowserProbe() {
+  await ensureInit();
+  const raw = await m6AssetDoctorBrowserProbe(
+    "/fixtures/gltf/unsupported_required_extension.gltf",
+  );
+  const result = JSON.parse(raw);
+  const finding =
+    result.doctor &&
+    Array.isArray(result.doctor.findings) &&
+    result.doctor.findings.find((entry) => entry.code === "unsupported_required_extension");
+  const section = document.createElement("section");
+  section.dataset.proof = "asset-doctor-browser";
+  section.style.cssText =
+    "box-sizing:border-box;width:560px;padding:16px;background:#101820;color:#f3f4f6;font:13px system-ui,sans-serif";
+  const title = document.createElement("strong");
+  title.textContent = "Asset doctor";
+  const code = document.createElement("p");
+  code.dataset.field = "code";
+  code.textContent = finding ? finding.code : "missing-finding";
+  const message = document.createElement("p");
+  message.dataset.field = "message";
+  message.textContent = finding ? finding.message : "no message";
+  const fix = document.createElement("p");
+  fix.dataset.field = "fix";
+  fix.textContent = finding ? finding.suggested_fix : "no fix";
+  section.append(title, code, message, fix);
+  document.body.append(section);
+  return {
+    ...result,
+    displayed_code: code.textContent === "unsupported_required_extension",
+    displayed_fix: fix.textContent,
+    screenshot_selector: "section[data-proof=\"asset-doctor-browser\"]",
+  };
 };
 
 window.scenaM6DisplayP3OutputProbe = async function scenaM6DisplayP3OutputProbe(backend) {

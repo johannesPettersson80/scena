@@ -1609,15 +1609,36 @@ reports.
 
 Required behavior:
 
-- [ ] Rust API returns doctor-style findings for a loaded asset or asset path.
-- [ ] WASM API returns JSON findings for browser-hosted assets.
-- [ ] CLI and library diagnostics share codes where checks overlap.
-- [ ] Findings include severity, code, path, message, help, and suggested fix.
+- [x] Rust API returns doctor-style findings for a loaded asset or asset path.
+      Evidence: `Assets::doctor_asset_path()` and
+      `Assets::doctor_loaded_asset()` both return `scena.asset_doctor.v1`.
+- [x] WASM API returns JSON findings for browser-hosted assets.
+      Evidence: browser `SceneHost.assetDoctorJson(url)` delegates to
+      `SceneHostCore::asset_doctor_json()`.
+- [x] CLI and library diagnostics share codes where checks overlap.
+      Evidence: runtime and xtask guidance use shared codes such as
+      `unsupported_required_extension`, `extension_supported`, and
+      `extension_degraded`.
+- [x] Findings include severity, code, path, message, help, and suggested fix.
+      Evidence: `AssetDoctorFindingV1` pins those fields and
+      `tests/assets/stable-contracts/asset_doctor.v1.json` locks the wire
+      shape.
 
 Acceptance:
 
-- [ ] CLI/library parity tests for representative fixtures.
-- [ ] Browser proof displays doctor findings for a broken asset.
+- [x] CLI/library parity tests for representative fixtures.
+      Evidence: `cargo test --test asset_doctor_contracts --features
+      scene-host -- --nocapture`, `cargo test --test scena_cli_agent
+      --features inspection -- scena_doctor_cli_emits_json_and_nonzero_for_broken_asset
+      --nocapture`, and `cargo test --test stable_contracts
+      asset_doctor_golden_matches_live_schema_serialization -- --nocapture`
+      pass locally.
+- [x] Browser proof displays doctor findings for a broken asset.
+      Evidence: `wasm-pack build --dev --target web --out-dir
+      target/m6-browser-pkg . --features browser-probe &&
+      SCENA_BROWSER_BACKENDS=webgl2 npm run browser:m6` includes
+      `scena.m6.asset_doctor_browser_proof.v1` and writes
+      `target/gate-artifacts/asset-doctor-browser-proof.png`.
 
 ### 3.3 Connector browser and snap preview
 

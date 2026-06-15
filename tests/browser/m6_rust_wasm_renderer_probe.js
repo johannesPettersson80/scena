@@ -1240,6 +1240,32 @@ function assertScenaViewerMobileA11yProof(result) {
   }
 }
 
+function assertAssetDoctorBrowserProof(result) {
+  const finding =
+    result &&
+    result.doctor &&
+    Array.isArray(result.doctor.findings) &&
+    result.doctor.findings.find((entry) => entry.code === "unsupported_required_extension");
+  if (
+    !result ||
+    result.schema !== "scena.m6.asset_doctor_browser_proof.v1" ||
+    result.status !== "passed" ||
+    result.proof_class !== "asset-doctor-browser" ||
+    result.source !== "/fixtures/gltf/unsupported_required_extension.gltf" ||
+    !result.doctor ||
+    result.doctor.schema !== "scena.asset_doctor.v1" ||
+    result.doctor.ok !== false ||
+    !finding ||
+    !String(finding.suggested_fix || "").includes("fallback") ||
+    result.displayed_code !== true ||
+    !String(result.displayed_fix || "").includes("fallback") ||
+    !result.screenshot_metadata ||
+    !/^[0-9a-f]{64}$/.test(result.screenshot_metadata.sha256 || "")
+  ) {
+    throw new Error(`asset doctor browser proof did not pass: ${JSON.stringify(result)}`);
+  }
+}
+
 async function runCameraControlKitProof(page, artifactDir) {
   const result = await page.evaluate(() => window.scenaCameraControlKitProbe());
   const screenshotPath = path.join(artifactDir, "camera-control-kit-browser-proof.png");
@@ -1271,6 +1297,23 @@ async function runScenaViewerMobileA11yProof(page, artifactDir) {
     bytes: screenshot.length,
   };
   assertScenaViewerMobileA11yProof(result);
+  return result;
+}
+
+async function runAssetDoctorBrowserProof(page, artifactDir) {
+  const result = await page.evaluate(() => window.scenaAssetDoctorBrowserProbe());
+  const screenshotPath = path.join(artifactDir, "asset-doctor-browser-proof.png");
+  await page
+    .locator(result.screenshot_selector || "section[data-proof=\"asset-doctor-browser\"]")
+    .screenshot({ path: screenshotPath });
+  const screenshot = fs.readFileSync(screenshotPath);
+  result.screenshot_metadata = {
+    path: path.relative(process.cwd(), screenshotPath),
+    mime: "image/png",
+    sha256: crypto.createHash("sha256").update(screenshot).digest("hex"),
+    bytes: screenshot.length,
+  };
+  assertAssetDoctorBrowserProof(result);
   return result;
 }
 
@@ -1427,6 +1470,7 @@ async function main() {
       await viewerElementPage.goto(url);
       results.push(await runScenaViewerElementProof(viewerElementPage, artifactDir));
       results.push(await runCameraControlKitProof(viewerElementPage, artifactDir));
+      results.push(await runAssetDoctorBrowserProof(viewerElementPage, artifactDir));
     } finally {
       await viewerElementPage.close();
     }

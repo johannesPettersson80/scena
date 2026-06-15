@@ -7,9 +7,13 @@ use std::process;
 
 #[path = "scena/args.rs"]
 mod scena_args;
+#[path = "scena/doctor.rs"]
+mod scena_doctor;
 #[cfg(feature = "inspection")]
 #[path = "scena/examples_agent.rs"]
 mod scena_examples_agent;
+#[path = "scena/help.rs"]
+mod scena_help;
 #[path = "scena/place.rs"]
 mod scena_place;
 #[path = "scena/schema.rs"]
@@ -50,7 +54,7 @@ struct CliOutcome {
 
 fn run(args: Vec<String>) -> Result<CliOutcome, String> {
     if args.is_empty() || args == ["--help"] || args == ["-h"] {
-        return Ok(success(help_json()));
+        return Ok(success(scena_help::help_json()));
     }
 
     match args.as_slice() {
@@ -68,6 +72,7 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
         [command, rest @ ..] if command == "render" => run_render_command(rest),
         [command, rest @ ..] if command == "inspect" => run_inspect_command(rest),
         [command, rest @ ..] if command == "diagnose" => run_diagnose_command(rest),
+        [command, rest @ ..] if command == "doctor" => scena_doctor::run_doctor_command(rest),
         [command, rest @ ..] if command == "repair" => run_repair_command(rest),
         [command, subcommand, rest @ ..] if command == "verify" && subcommand == "appearance" => {
             run_verify_appearance_command(rest)
@@ -86,6 +91,7 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
              'render <asset> --introspect --out <png>', or \
              'inspect <asset>', or \
              'diagnose <asset> --visibility [--handle <u64>]', or \
+             'doctor <asset-or-recipe>', or \
              'repair <asset-or-recipe> --from <report.json>', or \
              'verify appearance <asset-or-recipe> --expect <json>', or \
              'verify animation <asset-or-recipe> --clip <name> --times <seconds>', or \
@@ -513,25 +519,4 @@ fn capture_descriptor_path(png_path: &Path) -> PathBuf {
 #[cfg(feature = "inspection")]
 fn path_for_json(path: &Path) -> String {
     path.display().to_string()
-}
-
-fn help_json() -> String {
-    serde_json::json!({
-        "schema": "scena.cli_help.v1",
-        "commands": [
-            "schema list",
-            "schema get <scena.*.vN>",
-            "validate-recipe <recipe.json>",
-            "place <recipe.json> --import <id> --verb <verb>",
-            "examples agent <template> [--out <dir>]",
-            "render <asset-or-recipe> --introspect --out <png>",
-            "inspect <asset-or-recipe>",
-            "diagnose <asset-or-recipe> --visibility [--handle <u64>]",
-            "repair <asset-or-recipe> --from <report.json>",
-            "verify appearance <asset-or-recipe> --expect <appearance-expectation.json>",
-            "verify animation <asset-or-recipe> --clip <name> --times <seconds> [--expect-change]",
-            "verify interaction <asset-or-recipe> --expect <interaction-expectation.json>"
-        ]
-    })
-    .to_string()
 }

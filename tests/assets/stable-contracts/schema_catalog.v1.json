@@ -145,6 +145,12 @@
       "fixture_path": "tests/assets/stable-contracts/asset_load_report.v1.json"
     },
     {
+      "schema": "scena.asset_doctor.v1",
+      "owner_module": "assets",
+      "summary": "Runtime asset doctor findings with severity, code, help, and suggested fixes.",
+      "fixture_path": "tests/assets/stable-contracts/asset_doctor.v1.json"
+    },
+    {
       "schema": "scena.asset_catalog.v1",
       "owner_module": "assets",
       "summary": "Host-owned asset catalog manifest consumed by Scena readiness validation.",

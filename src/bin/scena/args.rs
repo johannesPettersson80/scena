@@ -2,6 +2,12 @@ use std::path::PathBuf;
 
 #[cfg(feature = "inspection")]
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DoctorCommandArgs {
+    pub(crate) input: String,
+}
+
+#[cfg(feature = "inspection")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RenderCommandArgs {
     pub(crate) input: String,
     pub(crate) out: PathBuf,
@@ -179,6 +185,27 @@ impl PlaceCommandArgs {
             target_anchor,
             source_connector,
             target_connector,
+        })
+    }
+}
+
+#[cfg(feature = "inspection")]
+impl DoctorCommandArgs {
+    pub(crate) fn parse(args: &[String]) -> Result<Self, String> {
+        let Some(input) = args.first() else {
+            return Err(doctor_usage());
+        };
+        let mut index = 1;
+        while index < args.len() {
+            match args[index].as_str() {
+                "--json" => {
+                    index += 1;
+                }
+                flag => return Err(format!("unknown doctor flag '{flag}'; {}", doctor_usage())),
+            }
+        }
+        Ok(Self {
+            input: input.clone(),
         })
     }
 }
@@ -488,6 +515,11 @@ fn inspect_usage() -> String {
 fn diagnose_usage() -> String {
     "usage: scena diagnose <asset-or-recipe> --visibility [--handle <u64>] [--width <px>] [--height <px>] [--detail]"
         .to_string()
+}
+
+#[cfg(feature = "inspection")]
+fn doctor_usage() -> String {
+    "usage: scena doctor <asset-or-recipe> [--json]".to_string()
 }
 
 #[cfg(feature = "inspection")]

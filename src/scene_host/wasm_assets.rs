@@ -4,6 +4,11 @@ use super::wasm::{SceneHost, js_error};
 
 #[wasm_bindgen]
 impl SceneHost {
+    #[wasm_bindgen(js_name = assetDoctorJson)]
+    pub async fn asset_doctor_json(&mut self, url: String) -> Result<String, JsValue> {
+        self.core.asset_doctor_json(url).await.map_err(js_error)
+    }
+
     #[wasm_bindgen(js_name = instantiateUrlInstanced)]
     pub async fn instantiate_url_instanced(
         &mut self,

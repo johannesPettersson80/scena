@@ -257,6 +257,13 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/asset_load_report.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.asset_doctor.v1",
+            owner_module: "assets",
+            summary: "Runtime asset doctor findings with severity, code, help, and suggested fixes.",
+            feature_flag: None,
+            fixture_path: Some("tests/assets/stable-contracts/asset_doctor.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.asset_catalog.v1",
             owner_module: "assets",
             summary: "Host-owned asset catalog manifest consumed by Scena readiness validation.",
@@ -429,6 +436,10 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
         (
             "scena.asset_load_report.v1",
             include_str!("../tests/assets/stable-contracts/asset_load_report.v1.json"),
+        ),
+        (
+            "scena.asset_doctor.v1",
+            include_str!("../tests/assets/stable-contracts/asset_doctor.v1.json"),
         ),
         (
             "scena.asset_catalog.v1",
