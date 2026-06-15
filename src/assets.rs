@@ -11,6 +11,7 @@ use crate::geometry::{GeometryDesc, StaticBatchReport};
 use crate::material::{Color, MaterialDesc, TextureColorSpace};
 use crate::scene::Transform;
 
+mod catalog;
 mod environment;
 mod environment_hdr;
 mod environment_loading;
@@ -34,6 +35,13 @@ mod obj;
 mod provenance;
 mod scene_loading;
 mod texture;
+pub use catalog::{
+    ASSET_CATALOG_SCHEMA_V1, ASSET_READINESS_REPORT_SCHEMA_V1, AssetCatalogAssetV1,
+    AssetCatalogExpectedBoundsV1, AssetCatalogFeatureRequirementV1,
+    AssetCatalogMaterialRequirementsV1, AssetCatalogPreviewV1, AssetCatalogV1,
+    AssetReadinessAssetReportV1, AssetReadinessFindingV1, AssetReadinessPreviewV1,
+    AssetReadinessReportV1, AssetReadinessSeverityV1, AssetReadinessSummaryV1,
+};
 pub use environment::{
     DEFAULT_ENVIRONMENT_CUBEMAP_FACE_RESOLUTION, ENVIRONMENT_CUBEMAP_FACE_NORMALS,
     EnvironmentCubemapFaces, EnvironmentDerivative, EnvironmentDesc, EnvironmentSourceKind,

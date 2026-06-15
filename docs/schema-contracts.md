@@ -1201,6 +1201,62 @@ Small example:
 }
 ```
 
+### `scena.asset_catalog.v1`
+
+Consumed by `Assets::validate_asset_catalog()` and represented by
+`AssetCatalogV1`. This is a transient host-owned manifest for renderer-relevant
+asset readiness. It is not a package database, approval workflow, search index,
+versioning system, or persisted document model.
+
+Required top-level fields:
+
+- `schema`
+- `assets`
+
+Each asset entry requires `id`, `display_name`, and `source`. Additive v1
+fields include `required_files`, `preview`, `declared_units`,
+`source_coordinate_system`, `expected_bounds`, `required_anchors`,
+`required_connectors`, `required_tags`, `material_requirements`, `license`,
+`provenance`, `categories`, and `tags`. `declared_units` and
+`source_coordinate_system` are strings so invalid or misspelled values can
+round-trip into a readiness finding instead of failing JSON parsing.
+
+`preview.kind` is `image` or `generated`. The current validator checks that an
+image preview has a path or that generated preview metadata has positive
+dimensions; rendered browser preview proof is a separate checklist item.
+
+### `scena.asset_readiness_report.v1`
+
+Produced by `Assets::validate_asset_catalog()` and represented by
+`AssetReadinessReportV1`.
+
+Required top-level fields:
+
+- `schema`
+- `ok`
+- `summary`
+- `assets`
+
+`ok` is false when any asset has an `error` finding. Asset reports include the
+host-owned ID/name/source, declared units and coordinate system, preview status,
+the loaded `scena.asset_geometry_summary.v1` and nested
+`scena.asset_load_report.v1` when loading succeeds, material fallback rows, and
+deterministically ordered findings.
+
+Current finding codes include `load_failed`, `required_file_missing`,
+`source_units_unknown`, `invalid_source_units`,
+`source_coordinate_system_unknown`, `invalid_source_coordinate_system`,
+`bounds_missing`, `bounds_not_finite`, `bounds_out_of_range`,
+`extent_out_of_range`, `invalid_anchor`, `invalid_connector`,
+`required_anchor_missing`, `required_connector_missing`,
+`required_tag_missing`, `required_material_variant_missing`,
+`base_color_texture_missing`, `material_fallback_used`,
+`external_resource_missing`, and `preview_missing`.
+
+Each finding carries `severity`, `code`, `message`, `help`, nullable `path`,
+and nullable `field`. `path` is a fetcher path when available; `field` names
+the manifest field the host should inspect or repair.
+
 ### `scena.scene_host_asset_import.v1`
 
 Produced by `SceneHostCore::instantiate_url_with_report_json`,

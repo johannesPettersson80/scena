@@ -4,9 +4,9 @@ use serde_json::json;
 use std::path::PathBuf;
 
 use scena::{
-    Aabb, AnnotationProjectionReportV1, AssetLoadReportV1, AssetProvenance, Backend,
-    CAPABILITY_REPORT_SCHEMA_V1, Capabilities, CapabilityReport, CapabilityReportV1,
-    CaptureBaselineReport, CaptureDescriptor, Color, GeometryTopology, Quat,
+    Aabb, AnnotationProjectionReportV1, AssetCatalogV1, AssetLoadReportV1, AssetProvenance,
+    AssetReadinessReportV1, Backend, CAPABILITY_REPORT_SCHEMA_V1, Capabilities, CapabilityReport,
+    CapabilityReportV1, CaptureBaselineReport, CaptureDescriptor, Color, GeometryTopology, Quat,
     SceneAssetGeometrySummary, Transform, Vec3,
 };
 
@@ -181,6 +181,14 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
         (
             "tests/assets/stable-contracts/asset_load_report.v1.json",
             "scena.asset_load_report.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/asset_catalog.v1.json",
+            "scena.asset_catalog.v1",
+        ),
+        (
+            "tests/assets/stable-contracts/asset_readiness_report.v1.json",
+            "scena.asset_readiness_report.v1",
         ),
         (
             "tests/assets/stable-contracts/scene_host_asset_import.v1.json",
@@ -489,6 +497,20 @@ fn asset_geometry_summary_golden_matches_live_schema_serialization() {
 fn asset_load_report_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<AssetLoadReportV1>(
         "tests/assets/stable-contracts/asset_load_report.v1.json",
+    );
+}
+
+#[test]
+fn asset_catalog_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<AssetCatalogV1>(
+        "tests/assets/stable-contracts/asset_catalog.v1.json",
+    );
+}
+
+#[test]
+fn asset_readiness_report_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<AssetReadinessReportV1>(
+        "tests/assets/stable-contracts/asset_readiness_report.v1.json",
     );
 }
 

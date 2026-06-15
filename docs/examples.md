@@ -35,7 +35,7 @@ cargo check --examples
 | Browser host contracts | `scene_host_contracts.rs`, `scene_host_release_1_7.rs`, `scene_host_browser_contracts.js` |
 | CAD-style anchors and connectors | `anchor_alignment.rs`, `connect_objects.rs`, `imported_anchor_connection.rs`, `industrial_connector_assembly.rs`, `coordinate_connector_repair.rs`, `coordinate_units.rs` |
 | Industrial/static scene | `industrial_static_scene.rs` |
-| Diagnostics | `beginner_diagnostics.rs`, `scene_inspection.rs` |
+| Diagnostics and asset readiness | `beginner_diagnostics.rs`, `scene_inspection.rs`; `Assets::validate_asset_catalog()` for `scena.asset_catalog.v1` manifests |
 
 ## Recommended learning order
 
@@ -92,6 +92,12 @@ build a `CameraBookmark` from a `FramingOutcome`, pass its `state()` to
 with `with_camera_bookmark(s)`. Browser hosts can call `setCameraEased(...)` or
 `setCameraBookmarkJson(...)`; both still require the host to advance time and
 render explicitly.
+
+Asset catalog readiness uses stable JSON contracts rather than a separate
+example binary: deserialize a `scena.asset_catalog.v1` manifest into
+`AssetCatalogV1`, call `Assets::validate_asset_catalog(&catalog).await`, and
+consume the `scena.asset_readiness_report.v1` result. The host still owns
+catalog search, versioning, storage, approval workflow, and business rules.
 
 ```bash
 cargo run --example scene_host_release_1_7 --features scene-host

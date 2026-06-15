@@ -130,6 +130,11 @@ Additive public API changes in 1.7.0:
 - `AssetMaterialSource` and `AssetMaterialSourceKind`
 - `AssetLoadReport<SceneAsset>::to_schema_report`
 - `AssetLoadReport<SceneAsset>::to_schema_json`
+- `ASSET_CATALOG_SCHEMA_V1`, `ASSET_READINESS_REPORT_SCHEMA_V1`
+- `AssetCatalogV1`, `AssetCatalogAssetV1`, and related catalog field types
+- `AssetReadinessReportV1`, `AssetReadinessAssetReportV1`,
+  `AssetReadinessFindingV1`, and `AssetReadinessSeverityV1`
+- `Assets::validate_asset_catalog`
 - `AssetLoadOptions::with_strict_external_resources`
 - `AssetProvenance` and `AssetDerivative`
 - `SceneAsset::provenance`
@@ -217,6 +222,16 @@ Phase 5 adds stable asset-load reports. Native callers use
 `instantiateUrlWithReportJson` or `instantiateUrlUnderWithReportJson` to get
 the created import handle plus the same asset-load report. Cache-hit reports
 preserve typed warnings and external resource counts from the original load.
+For asset-picker and component-library workflows, the host can build a
+`scena.asset_catalog.v1` manifest and pass it to
+`Assets::validate_asset_catalog()`. The returned
+`scena.asset_readiness_report.v1` keeps catalog/search ownership in the host
+while Scena validates renderer-relevant readiness: fetchable sources and
+required files, explicit units and source coordinate systems, finite bounds and
+scale limits, authored anchors/connectors/tags, declared material variants,
+base-color texture requirements, external-resource warnings, and material
+fallback provenance. Findings include stable severity, code, message, help,
+path, and field values so agents can act on the report without parsing prose.
 Release 1.7 adds explicit host-owned instanced imports. Native callers use
 `SceneHostCore::instantiate_url_instanced` or
 `SceneHostCore::instantiate_url_instanced_under`; browser hosts use

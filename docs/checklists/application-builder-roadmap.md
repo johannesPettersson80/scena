@@ -1312,39 +1312,51 @@ Proposed contracts:
 
 Manifest fields:
 
-- [ ] Asset ID and display name.
-- [ ] Source path or URL.
-- [ ] Required files.
-- [ ] Preview image path or generated preview metadata.
-- [ ] Declared units and source coordinate system.
-- [ ] Expected bounds or scale constraints.
-- [ ] Required anchors/connectors and tags.
-- [ ] Material/texture requirements.
-- [ ] License/provenance metadata.
-- [ ] Optional categories/tags supplied by the host.
+- [x] Asset ID and display name.
+- [x] Source path or URL.
+- [x] Required files.
+- [x] Preview image path or generated preview metadata.
+- [x] Declared units and source coordinate system.
+- [x] Expected bounds or scale constraints.
+- [x] Required anchors/connectors and tags.
+- [x] Material/texture requirements.
+- [x] License/provenance metadata.
+- [x] Optional categories/tags supplied by the host.
 
 Validation checks:
 
-- [ ] Load succeeds or fails with structured errors.
-- [ ] Required external files are present.
-- [ ] Bounds are finite and within declared limits.
-- [ ] Units and coordinate system are known or explicitly repaired.
-- [ ] Required anchors/connectors exist and are well-formed.
-- [ ] Required material variants exist.
-- [ ] Missing textures and material fallbacks are reported.
+- [x] Load succeeds or fails with structured errors.
+- [x] Required external files are present.
+- [x] Bounds are finite and within declared limits.
+- [x] Units and coordinate system are known or explicitly repaired.
+- [x] Required anchors/connectors exist and are well-formed.
+- [x] Required material variants exist.
+- [x] Missing textures and material fallbacks are reported.
 - [ ] Preview render can be generated deterministically.
+      Current slice validates preview image/generated-preview metadata; actual
+      rendered preview generation and proof remain pending.
 
 Scope guard:
 
-- [ ] Scena validates and reports. The host owns search, versioning, package
+- [x] Scena validates and reports. The host owns search, versioning, package
       distribution, database records, approval workflows, and business rules.
 
 Acceptance:
 
-- [ ] Fixture catalog with one valid and several invalid assets.
-- [ ] Readiness report stable fixture.
+- [x] Fixture catalog with one valid and several invalid assets.
+- [x] Readiness report stable fixture.
 - [ ] Browser preview proof for a catalog asset.
 - [ ] Example: asset picker feeding a SceneHost scene.
+
+Evidence:
+
+- [x] Test-first proof: `cargo test --test asset_catalog_contracts -- --nocapture`
+      failed on the builder before implementation with unresolved
+      `ASSET_CATALOG_SCHEMA_V1`, `ASSET_READINESS_REPORT_SCHEMA_V1`,
+      `AssetCatalogV1`, `AssetReadinessAssetReportV1`, and
+      `Assets::validate_asset_catalog`.
+- [x] Focused tests: `asset_catalog_contracts`, `stable_contracts`, and
+      `scena_cli_schema` pass locally after implementation.
 
 ### 3.2 Asset doctor integration API
 

@@ -55,6 +55,12 @@ All notable user-facing changes are recorded here.
   APIs, viewer bookmark storage helpers, and SceneHost native/WASM bookmark
   easing methods that delegate to the existing host-ticked `camera_eased`
   visual patch channel.
+- Added `scena.asset_catalog.v1`, `scena.asset_readiness_report.v1`, and
+  `Assets::validate_asset_catalog()` for host-owned asset catalog manifests.
+  Readiness validation uses real asset loads and reports structured findings
+  for missing sources/files, explicit units/coordinate systems, bounds limits,
+  authored anchors/connectors/tags, material variants, base-color texture
+  requirements, external resources, and material fallbacks.
 
 ## [1.7.1] - 2026-06-12
 

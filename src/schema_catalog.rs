@@ -257,6 +257,20 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/asset_load_report.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.asset_catalog.v1",
+            owner_module: "assets",
+            summary: "Host-owned asset catalog manifest consumed by Scena readiness validation.",
+            feature_flag: None,
+            fixture_path: Some("tests/assets/stable-contracts/asset_catalog.v1.json"),
+        },
+        SchemaEntryRow {
+            schema: "scena.asset_readiness_report.v1",
+            owner_module: "assets",
+            summary: "Asset catalog readiness findings derived from real asset loads and authored features.",
+            feature_flag: None,
+            fixture_path: Some("tests/assets/stable-contracts/asset_readiness_report.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.scene_host_asset_import.v1",
             owner_module: "scene_host",
             summary: "SceneHost import result with stable host handles and diagnostics.",
@@ -385,6 +399,14 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
         (
             "scena.asset_load_report.v1",
             include_str!("../tests/assets/stable-contracts/asset_load_report.v1.json"),
+        ),
+        (
+            "scena.asset_catalog.v1",
+            include_str!("../tests/assets/stable-contracts/asset_catalog.v1.json"),
+        ),
+        (
+            "scena.asset_readiness_report.v1",
+            include_str!("../tests/assets/stable-contracts/asset_readiness_report.v1.json"),
         ),
         (
             "scena.scene_host_asset_import.v1",

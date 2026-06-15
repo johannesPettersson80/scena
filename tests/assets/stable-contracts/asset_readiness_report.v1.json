@@ -1,0 +1,35 @@
+{
+  "schema": "scena.asset_readiness_report.v1",
+  "ok": false,
+  "summary": {
+    "total_assets": 1,
+    "ready_assets": 0,
+    "failed_assets": 1,
+    "error_count": 1,
+    "warning_count": 0
+  },
+  "assets": [
+    {
+      "id": "missing-source",
+      "display_name": "Missing Source",
+      "source": "tests/assets/gltf/does-not-exist.gltf",
+      "ok": false,
+      "declared_units": "meters",
+      "source_coordinate_system": "gltf_y_up_right_handed",
+      "preview": null,
+      "geometry": null,
+      "asset_load_report": null,
+      "material_fallbacks": [],
+      "findings": [
+        {
+          "severity": "error",
+          "code": "load_failed",
+          "message": "asset 'missing-source' did not load: asset not found: tests/assets/gltf/does-not-exist.gltf",
+          "help": "fix the source path or the underlying asset error before catalog approval",
+          "path": "tests/assets/gltf/does-not-exist.gltf",
+          "field": "source"
+        }
+      ]
+    }
+  ]
+}
