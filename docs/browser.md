@@ -241,6 +241,24 @@ records a `progress_sequence` by dispatching `loading` and `fetching` phases
 and asserting that the ARIA value and progressbar transform update between
 events.
 
+The element can be bound to a browser `SceneHost` without creating a separate
+JavaScript scene model. Call `viewer.bindHost(host)` with an object exposing the
+documented `SceneHost` method names. `viewer.applyPatch(patch)` and
+`viewer.applyVisualPatch(patch)` pass `scena.visual_patch.v1` JSON through
+`host.applyPatch()`, then drain `host.drainEventsJson()` and dispatch each
+`scena.host_event.v1` entry as `scena-viewer-host-event` plus a specific DOM
+event such as `scena-viewer-pick`, `scena-viewer-hover`,
+`scena-viewer-selection-changed`, or `scena-viewer-capture-ready`. The
+element-level helpers `pickAt(x, y)`, `hoverAt(x, y)`, `selectAt(x, y)`,
+`frameAll()`, `frameNode(handle, preset)`, `setCamera(cameraState)`,
+`applyLightingPreset("studio", { background })`, `capturePng()`, and
+`downloadPng(filename)` are thin delegates over the same host methods:
+`pick`, `hover`, `select`, `frameAll`, `frameNode` /
+`frameNodeWithPreset`, `setCameraJson`, `applyProductStudioVisuals`, and
+`capturePng`. This keeps lighting, framing, capture, picking, hover,
+selection, and visual state on the Rust-owned `SceneHost` side while the custom
+element owns only browser DOM adaptation.
+
 The element handles browser drag-and-drop ingestion for `.glb` and `.gltf`
 files. Valid drops emit `scena-viewer-file-drop` with the accepted `File`
 objects and names. Invalid or mixed drops emit `scena-viewer-drop-error` with

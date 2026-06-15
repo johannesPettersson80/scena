@@ -631,6 +631,12 @@ inspector overlay, mobile gestures). The Playwright lane in
 artifacts on every release run, and the host-wirable event surface is
 documented under [`docs/browser.md`](../browser.md).
 
+For applications that already own a browser `SceneHost`, the element can bind
+to that host instead of creating a separate JavaScript scene model: visual
+patches go through `host.applyPatch()`, host events are re-emitted as DOM
+events, and capture/download, picking, hover, selection, framing, camera, and
+studio-lighting helpers delegate to the same Rust/WASM host methods.
+
 ![scena-viewer vs model-viewer three-asset parity — left column model-viewer reference, right column scena-viewer output for the same assets](../assets/easy-scene-showcase/browser/scena-viewer-model-viewer-parity-browser-proof.jpg)
 
 The side-by-side above is honest evidence: scena's WebGL2 rendering of

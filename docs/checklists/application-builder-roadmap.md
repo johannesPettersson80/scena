@@ -2033,29 +2033,57 @@ drag/drop, variant picker, browser proof.
 
 Required attributes/APIs:
 
-- [ ] `src`.
-- [ ] `environment`.
-- [ ] Lighting preset or direct light JSON, mapped to real `Scene` light APIs.
-- [ ] Camera/framing attributes and methods.
-- [ ] Capture/download methods.
-- [ ] Picking, hover, and selection events through `HostEvent`.
-- [ ] Material variants.
-- [ ] Annotation slots and projection.
-- [ ] Drag/drop with load diagnostics.
-- [ ] Inspector and diagnostics surfaces.
-- [ ] Visual patch application.
+- [x] `src`.
+- [x] `environment`.
+- [x] Lighting preset or direct light JSON, mapped to real `Scene` light APIs.
+- [x] Camera/framing attributes and methods.
+- [x] Capture/download methods.
+- [x] Picking, hover, and selection events through `HostEvent`.
+- [x] Material variants.
+- [x] Annotation slots and projection.
+- [x] Drag/drop with load diagnostics.
+- [x] Inspector and diagnostics surfaces.
+- [x] Visual patch application.
 
 Scope guard:
 
-- [ ] The custom element consumes `VisualPatch` and `HostEvent`. It must not
+- [x] The custom element consumes `VisualPatch` and `HostEvent`. It must not
       create a parallel JS-only scene model.
 
 Acceptance:
 
-- [ ] Browser proof for lighting/environment/camera/capture/variant/picking and
+- [x] Browser proof for lighting/environment/camera/capture/variant/picking and
       annotation parity.
-- [ ] Side-by-side model-viewer style proof for representative assets.
-- [ ] Mobile/a11y proof remains green.
+- [x] Side-by-side model-viewer style proof for representative assets.
+- [x] Mobile/a11y proof remains green.
+
+Evidence: test-first browser proof hardening
+`SCENA_BROWSER_BACKENDS=webgl2 npm run browser:m6` failed after
+`assertScenaViewerElementProof` was tightened to require a host-bound custom
+element with `VisualPatch` application, `HostEvent` DOM dispatch,
+capture/download, studio lighting, framing, and camera delegates; the old
+artifact lacked `host_adapter_bound`. The element now keeps the browser layer
+thin: `bindHost()` stores a `SceneHost`-shaped object, `applyPatch()` /
+`applyVisualPatch()` forward `scena.visual_patch.v1` to `host.applyPatch()`,
+`drainHostEvents()` dispatches drained `scena.host_event.v1` entries as
+`scena-viewer-host-event` plus specific events, and the capture, picking,
+hover, selection, framing, camera, and studio-lighting helpers all delegate to
+the existing `SceneHost` method names instead of maintaining JS scene state.
+Green proof: `wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe`
+plus `SCENA_BROWSER_BACKENDS=webgl2 npm run browser:m6`. The artifact
+`target/gate-artifacts/m6-rust-wasm-renderer-probe.json` records
+`scena.scena_viewer_element_browser_proof.v1` with
+`host_adapter_bound = true`, `visual_patch_applied_visibility = 1`,
+`host_event_schema = scena.host_event.v1`, host event kinds
+`selection_changed`, `pick`, `hover`, and `capture_ready`, DOM events
+`scena-viewer-host-event`, `scena-viewer-pick`, `scena-viewer-hover`,
+`scena-viewer-selection-changed`, and `scena-viewer-capture-ready`,
+`capture_png_bytes = 8`, `download_file_name = scena-viewer-proof.png`,
+`lighting_preset_background = studio`, `frame_method = frameAll`, and
+`camera_method = setCameraJson`. The same gate also preserves variant render,
+annotation layout, drag/drop render-after-drop, side-by-side
+`scena.scena_viewer_model_viewer_parity_proof.v1`, and
+`scena.scena_viewer_mobile_a11y_browser_proof.v1`.
 
 ## Phase 5 - Demand-driven IO completeness
 

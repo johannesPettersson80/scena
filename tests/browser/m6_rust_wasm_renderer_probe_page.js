@@ -93,6 +93,109 @@ async function dispatchDrop(viewer) {
   };
 }
 
+function createScenaViewerHostAdapterProofHost() {
+  const queuedEvents = [];
+  const calls = [];
+  let lastDrainedSchema = null;
+  const enqueue = (event) => queuedEvents.push(event);
+  const drain = () => {
+    const batch = {
+      schema: "scena.host_event.v1",
+      events: queuedEvents.splice(0, queuedEvents.length),
+    };
+    lastDrainedSchema = batch.schema;
+    return JSON.stringify(batch);
+  };
+  const nodeHit = (x, y) => ({
+    target: "node",
+    handle: 7,
+    distance: 0.5,
+    world_position: [0, 0, 0],
+    normal: null,
+    x_css_px: x,
+    y_css_px: y,
+  });
+  return {
+    calls,
+    get lastDrainedSchema() {
+      return lastDrainedSchema;
+    },
+    applyPatch(patchJson) {
+      const patch = JSON.parse(patchJson);
+      calls.push({ method: "applyPatch", patch });
+      enqueue({ kind: "selection_changed", previous: null, current: 7 });
+      return JSON.stringify({
+        schema: "scena.visual_patch_result.v1",
+        applied: { visibility: Array.isArray(patch.visibility) ? patch.visibility.length : 0 },
+        failed: [],
+      });
+    },
+    drainEventsJson() {
+      return drain();
+    },
+    capturePng() {
+      calls.push({ method: "capturePng" });
+      enqueue({
+        kind: "capture_ready",
+        capture_schema: "scena.capture.v1",
+        width: 1,
+        height: 1,
+        pixel_format: "rgba8",
+        payload_kind: "png",
+        payload_bytes: 8,
+        payload_fnv1a64: "proof",
+      });
+      return {
+        descriptorJson: JSON.stringify({
+          schema: "scena.capture.v1",
+          width: 1,
+          height: 1,
+          payload: { byte_length: 8 },
+        }),
+        png: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+      };
+    },
+    pick(x, y) {
+      calls.push({ method: "pick", x, y });
+      const hit = nodeHit(x, y);
+      enqueue({
+        kind: "pick",
+        x_css_px: x,
+        y_css_px: y,
+        hit,
+        button: "primary",
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      });
+      return 7;
+    },
+    hover(x, y) {
+      calls.push({ method: "hover", x, y });
+      enqueue({
+        kind: "hover",
+        x_css_px: x,
+        y_css_px: y,
+        phase: "entered",
+        hit: nodeHit(x, y),
+      });
+      return 7;
+    },
+    select(x, y) {
+      calls.push({ method: "select", x, y });
+      enqueue({ kind: "selection_changed", previous: null, current: 7 });
+      return 7;
+    },
+    frameAll() {
+      calls.push({ method: "frameAll" });
+    },
+    setCameraJson(cameraJson) {
+      calls.push({ method: "setCameraJson", camera: JSON.parse(cameraJson) });
+    },
+    applyProductStudioVisuals(background) {
+      calls.push({ method: "applyProductStudioVisuals", background });
+    },
+  };
+}
+
 async function renderDroppedFileIntoViewer(viewer, backend, dropDetail) {
   const droppedFile = dropDetail.accepted.files[0];
   const bytes = new Uint8Array(await droppedFile.arrayBuffer());
@@ -431,6 +534,56 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
   const dropRender = await renderDroppedFileIntoViewer(viewer, "webgl2", dropDetail);
   await nextFrame();
 
+  const hostDomEvents = [];
+  const hostEventKinds = [];
+  const hostSpecificDetails = {};
+  const recordHostDomEvent = (name, detail) => {
+    hostDomEvents.push(name);
+    if (detail?.kind) {
+      hostEventKinds.push(detail.kind);
+    }
+    hostSpecificDetails[name] = detail;
+  };
+  for (const eventName of [
+    "scena-viewer-host-event",
+    "scena-viewer-pick",
+    "scena-viewer-hover",
+    "scena-viewer-selection-changed",
+    "scena-viewer-capture-ready",
+  ]) {
+    viewer.addEventListener(eventName, (event) => recordHostDomEvent(eventName, event.detail));
+  }
+  const host = createScenaViewerHostAdapterProofHost();
+  const hostBound = once(viewer, "scena-viewer-host-bound");
+  viewer.bindHost(host);
+  const hostBoundDetail = await hostBound;
+  const patchApplied = once(viewer, "scena-viewer-patch-applied");
+  const patchResult = viewer.applyPatch({
+    schema: "scena.visual_patch.v1",
+    visibility: [{ node: 7, visible: true }],
+  });
+  await patchApplied;
+  viewer.frameAll();
+  const lightingApplied = once(viewer, "scena-viewer-lighting-applied");
+  viewer.applyLightingPreset("studio", { background: "studio" });
+  const lightingDetail = await lightingApplied;
+  viewer.setCamera({
+    target: [0, 0, 0],
+    yaw_radians: 0,
+    pitch_radians: 0,
+    distance: 4,
+  });
+  const pickResult = viewer.pickAt(18, 24);
+  const hoverResult = viewer.hoverAt(18, 24);
+  viewer.selectAt(18, 24);
+  const capture = viewer.capturePng();
+  const downloadEvent = once(viewer, "scena-viewer-capture-download");
+  const download = viewer.downloadPng("scena-viewer-proof.png", { click: false });
+  const downloadDetail = await downloadEvent;
+  const frameCall = host.calls.find((call) => call.method === "frameAll");
+  const cameraCall = host.calls.find((call) => call.method === "setCameraJson");
+  const lightingCall = host.calls.find((call) => call.method === "applyProductStudioVisuals");
+
   const checks = {
     defined,
     host_role: viewer.getAttribute("role"),
@@ -478,6 +631,22 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     drop_render_auto_frame_inside_viewport: dropRender.metadata.auto_frame.inside_viewport,
     drop_render_auto_frame_centered: dropRender.metadata.auto_frame.centered,
     drop_render_auto_frame_fill_fraction: dropRender.metadata.auto_frame.fill_fraction,
+    host_adapter_bound: hostBoundDetail.bound,
+    visual_patch_applied_visibility: patchResult.applied.visibility,
+    host_event_schema: host.lastDrainedSchema,
+    host_event_kinds: [...new Set(hostEventKinds)],
+    host_dom_events: [...new Set(hostDomEvents)],
+    host_event_pick_detail_handle: hostSpecificDetails["scena-viewer-pick"]?.hit?.handle,
+    host_event_hover_detail_handle: hostSpecificDetails["scena-viewer-hover"]?.hit?.handle,
+    host_event_selection_current: hostSpecificDetails["scena-viewer-selection-changed"]?.current,
+    capture_png_bytes: capture.png.length,
+    download_file_name: downloadDetail.filename || download.filename,
+    download_bytes: downloadDetail.bytes || download.bytes,
+    lighting_preset_background: lightingDetail.background || lightingCall?.background,
+    frame_method: frameCall?.method,
+    camera_method: cameraCall?.method,
+    pick_result_handle: pickResult.handle,
+    hover_result_handle: hoverResult.handle,
   };
 
   const passed =

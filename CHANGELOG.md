@@ -138,6 +138,11 @@ All notable user-facing changes are recorded here.
   `source-gltf-materials` browser artifact records WaterBottle source texture
   roles, camera framing, lighting, comparison lanes, stats, capabilities, and
   screenshot metadata instead of only a texture-binding count.
+- Extended `<scena-viewer>` into a thin SceneHost adapter for browser hosts:
+  the element now binds to a host, forwards `VisualPatch` JSON, re-emits
+  drained `HostEvent` entries as DOM events, and delegates capture/download,
+  picking, hover, selection, framing, camera, and studio-lighting helpers to
+  the existing Rust/WASM host methods.
 
 ## [1.7.1] - 2026-06-12
 

@@ -8,7 +8,7 @@ export function defineScenaViewerElement(tagName) {
 
   class ScenaViewerElement extends HTMLElement {
     static get observedAttributes() {
-      return ["src", "environment", "tone-mapping", "camera-controls", "auto-rotate", "ar"];
+      return ["src", "environment", "lighting", "background", "tone-mapping", "camera-controls", "auto-rotate", "ar"];
     }
 
     constructor() {
@@ -59,6 +59,7 @@ export function defineScenaViewerElement(tagName) {
       this._inspector = inspector;
       this._inspectorStatus = inspectorStatus;
       this._inspectorList = inspectorList;
+      this._host = null;
       this._activePointers = new Map();
       this._lastPinchDistance = null;
       variantPicker.addEventListener("change", () => {
@@ -112,6 +113,155 @@ export function defineScenaViewerElement(tagName) {
 
     get canvas() {
       return this._canvas;
+    }
+
+    bindHost(host) {
+      this._host = host || null;
+      this.dispatchEvent(new CustomEvent("scena-viewer-host-bound", {
+        bubbles: true,
+        detail: { bound: this._host !== null }
+      }));
+      return this;
+    }
+
+    clearHost() {
+      this._host = null;
+      this.dispatchEvent(new CustomEvent("scena-viewer-host-bound", {
+        bubbles: true,
+        detail: { bound: false }
+      }));
+    }
+
+    get host() {
+      return this._host;
+    }
+
+    applyPatch(patch) {
+      const host = this._requireHost("applyPatch");
+      const patchJson = typeof patch === "string" ? patch : JSON.stringify(patch || {});
+      const result = this._parseMaybeJson(host.applyPatch(patchJson));
+      this._dispatchHostEvents();
+      this.dispatchEvent(new CustomEvent("scena-viewer-patch-applied", {
+        bubbles: true,
+        detail: result
+      }));
+      return result;
+    }
+
+    applyVisualPatch(patch) {
+      return this.applyPatch(patch);
+    }
+
+    capturePng() {
+      const host = this._requireHost("capturePng");
+      const capture = host.capturePng();
+      const descriptor = this._parseMaybeJson(capture?.descriptorJson || "{}");
+      const pngBytes = this._byteLength(capture?.png);
+      this._dispatchHostEvents();
+      this.dispatchEvent(new CustomEvent("scena-viewer-capture-ready", {
+        bubbles: true,
+        detail: {
+          descriptor,
+          descriptorJson: capture?.descriptorJson || null,
+          bytes: pngBytes,
+          png: capture?.png || null
+        }
+      }));
+      return capture;
+    }
+
+    capturePNG() {
+      return this.capturePng();
+    }
+
+    downloadPng(filename = "scena-viewer.png", options = {}) {
+      const capture = this.capturePng();
+      const bytes = this._byteLength(capture?.png);
+      const detail = {
+        filename: String(filename || "scena-viewer.png"),
+        bytes,
+        descriptorJson: capture?.descriptorJson || null
+      };
+      if (options?.click !== false) {
+        const blob = new Blob([capture?.png || new Uint8Array()], { type: "image/png" });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = detail.filename;
+        anchor.style.display = "none";
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+      }
+      this.dispatchEvent(new CustomEvent("scena-viewer-capture-download", {
+        bubbles: true,
+        detail
+      }));
+      return detail;
+    }
+
+    pickAt(x, y) {
+      const host = this._requireHost("pick");
+      const handle = this._optionalHandle(host.pick(Number(x), Number(y)));
+      const batch = this._dispatchHostEvents();
+      return { handle, events: batch.events };
+    }
+
+    hoverAt(x, y) {
+      const host = this._requireHost("hover");
+      const handle = this._optionalHandle(host.hover(Number(x), Number(y)));
+      const batch = this._dispatchHostEvents();
+      return { handle, events: batch.events };
+    }
+
+    selectAt(x, y) {
+      const host = this._requireHost("select");
+      const handle = this._optionalHandle(host.select(Number(x), Number(y)));
+      const batch = this._dispatchHostEvents();
+      return { handle, events: batch.events };
+    }
+
+    drainHostEvents() {
+      return this._dispatchHostEvents();
+    }
+
+    frameAll() {
+      const host = this._requireHost("frameAll");
+      const result = host.frameAll();
+      this._dispatchHostEvents();
+      return result;
+    }
+
+    frameNode(node, preset = null) {
+      const host = this._requireHost(preset ? "frameNodeWithPreset" : "frameNode");
+      const result = preset ? host.frameNodeWithPreset(Number(node), String(preset)) : host.frameNode(Number(node));
+      this._dispatchHostEvents();
+      return result;
+    }
+
+    setCamera(camera) {
+      const host = this._requireHost("setCameraJson");
+      const cameraJson = typeof camera === "string" ? camera : JSON.stringify(camera || {});
+      const result = host.setCameraJson(cameraJson);
+      this._dispatchHostEvents();
+      return result;
+    }
+
+    applyLightingPreset(preset = null, options = {}) {
+      const normalized = String(preset || this.getAttribute("lighting") || "studio").replace(/_/g, "-");
+      if (normalized !== "studio" && normalized !== "product-studio") {
+        throw new Error(`Unsupported scena-viewer lighting preset ${normalized}`);
+      }
+      const host = this._requireHost("applyProductStudioVisuals");
+      const background = String(options.background || this.getAttribute("background") || this.getAttribute("environment") || "studio");
+      const result = host.applyProductStudioVisuals(background);
+      this._dispatchHostEvents();
+      this.dispatchEvent(new CustomEvent("scena-viewer-lighting-applied", {
+        bubbles: true,
+        detail: { preset: normalized, background }
+      }));
+      return result;
     }
 
     setLoadProgress(detail) {
@@ -529,6 +679,8 @@ export function defineScenaViewerElement(tagName) {
       return {
         src: this.getAttribute("src") || "",
         environment: this.getAttribute("environment") || "",
+        lighting: this.getAttribute("lighting") || "",
+        background: this.getAttribute("background") || "",
         toneMapping: this.getAttribute("tone-mapping") || "neutral",
         cameraControls: this._booleanAttribute("camera-controls"),
         autoRotate: this._booleanAttribute("auto-rotate"),
@@ -541,6 +693,53 @@ export function defineScenaViewerElement(tagName) {
         bubbles: true,
         detail: this._detail()
       }));
+    }
+
+    _requireHost(methodName) {
+      if (!this._host || typeof this._host[methodName] !== "function") {
+        throw new Error(`scena-viewer requires a bound SceneHost with ${methodName}()`);
+      }
+      return this._host;
+    }
+
+    _dispatchHostEvents() {
+      if (!this._host || typeof this._host.drainEventsJson !== "function") {
+        return { schema: "scena.host_event.v1", events: [] };
+      }
+      const batch = this._parseMaybeJson(this._host.drainEventsJson()) || { schema: "scena.host_event.v1", events: [] };
+      const events = Array.isArray(batch.events) ? batch.events : [];
+      for (const event of events) {
+        this.dispatchEvent(new CustomEvent("scena-viewer-host-event", {
+          bubbles: true,
+          detail: event
+        }));
+        const kind = String(event?.kind || "").replace(/_/g, "-");
+        if (kind.length > 0) {
+          this.dispatchEvent(new CustomEvent(`scena-viewer-${kind}`, {
+            bubbles: true,
+            detail: event
+          }));
+        }
+      }
+      return { schema: batch.schema || "scena.host_event.v1", events };
+    }
+
+    _parseMaybeJson(value) {
+      if (typeof value !== "string") {
+        return value;
+      }
+      return JSON.parse(value);
+    }
+
+    _optionalHandle(value) {
+      return value === undefined ? null : value;
+    }
+
+    _byteLength(value) {
+      if (!value) {
+        return 0;
+      }
+      return Number(value.byteLength ?? value.length ?? 0);
     }
   }
 

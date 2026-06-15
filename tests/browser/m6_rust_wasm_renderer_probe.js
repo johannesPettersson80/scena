@@ -1088,9 +1088,37 @@ function assertScenaViewerElementProof(result) {
     ["inspector_fixture_schema", "scena.scena_viewer_inspector_snapshot.v1"],
     ["inspector_fixture_source", "scena-viewer-inspector-fixture"],
     ["keyboard_action", "orbit-left"],
+    ["host_adapter_bound", true],
+    ["visual_patch_applied_visibility", 1],
+    ["host_event_schema", "scena.host_event.v1"],
+    ["host_event_pick_detail_handle", 7],
+    ["host_event_hover_detail_handle", 7],
+    ["host_event_selection_current", 7],
+    ["capture_png_bytes", 8],
+    ["download_file_name", "scena-viewer-proof.png"],
+    ["download_bytes", 8],
+    ["lighting_preset_background", "studio"],
+    ["frame_method", "frameAll"],
+    ["camera_method", "setCameraJson"],
   ]) {
     if (checks[key] !== value) {
       throw new Error(`<scena-viewer> proof expected ${key}=${value}: ${JSON.stringify(result)}`);
+    }
+  }
+  for (const kind of ["selection_changed", "pick", "hover", "capture_ready"]) {
+    if (!Array.isArray(checks.host_event_kinds) || !checks.host_event_kinds.includes(kind)) {
+      throw new Error(`<scena-viewer> proof did not dispatch host event kind ${kind}: ${JSON.stringify(result)}`);
+    }
+  }
+  for (const eventName of [
+    "scena-viewer-host-event",
+    "scena-viewer-pick",
+    "scena-viewer-hover",
+    "scena-viewer-selection-changed",
+    "scena-viewer-capture-ready",
+  ]) {
+    if (!Array.isArray(checks.host_dom_events) || !checks.host_dom_events.includes(eventName)) {
+      throw new Error(`<scena-viewer> proof did not dispatch DOM event ${eventName}: ${JSON.stringify(result)}`);
     }
   }
   if (
