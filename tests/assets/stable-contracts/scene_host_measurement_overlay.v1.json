@@ -5,5 +5,10 @@
   "value": 1.0,
   "formatted_value": "1000 mm",
   "line_node": 42,
-  "label_text": "gap: 1000 mm"
+  "label_text": "gap: 1000 mm",
+  "label_projection": {
+    "x_css_px": 64.0,
+    "y_css_px": 48.0,
+    "visible": true
+  }
 }

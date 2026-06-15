@@ -1177,7 +1177,7 @@ Required features:
 - [x] Axis-aligned dimension from bounds.
 - [x] Leader line with label.
 - [x] Unit-format hook supplied by the host.
-- [ ] Optional screen-space label projection.
+- [x] Optional screen-space label projection.
 - [x] Measurement report with rendered label ID. Source handle/point metadata
       for SceneHost/browser reports remains open for the later host-facing
       slice.
@@ -1213,6 +1213,10 @@ Evidence:
       scene_host_measurement_overlay_golden_matches_live_schema_serialization
       -- --nocapture`, and `cargo test --features scene-host --test
       scena_cli_schema -- --nocapture` pass locally.
+- [x] Test-first proof: the same focused SceneHost measurement test failed on
+      the builder with `label_projection` absent before the optional
+      screen-space label projection was added; the focused SceneHost and stable
+      contract tests pass locally after implementation.
 - [x] Browser proof: `SCENA_BROWSER_BACKENDS=webgl2 npm run
       browser:scene-host-proof` passed on V3D WebGL2 with selected point
       centers, `scena.scene_host_measurement_overlay.v1` line-node report,

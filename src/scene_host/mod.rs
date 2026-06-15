@@ -66,7 +66,8 @@ pub use interaction_verification::{
     InteractionVerificationSummaryV1, InteractionViewportV1, host_event_kind_name, physical_px,
 };
 pub use measurements::{
-    SCENE_HOST_MEASUREMENT_OVERLAY_SCHEMA_V1, SceneHostMeasurementOverlayReportV1,
+    SCENE_HOST_MEASUREMENT_OVERLAY_SCHEMA_V1, SceneHostMeasurementLabelProjectionV1,
+    SceneHostMeasurementOverlayReportV1,
 };
 pub use reporting::{
     SCENE_HOST_ANIMATION_INVENTORY_SCHEMA_V1, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1,

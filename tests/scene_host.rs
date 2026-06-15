@@ -1860,6 +1860,19 @@ fn scene_host_distance_measurement_overlay_reports_stable_line_handle() {
     assert_eq!(report["id"], "browser-gap");
     assert_eq!(report["kind"], "distance");
     assert_eq!(report["formatted_value"], "1000 mm");
+    assert_eq!(report["label_projection"]["visible"], true);
+    assert!(
+        report["label_projection"]["x_css_px"]
+            .as_f64()
+            .is_some_and(f64::is_finite),
+        "label projection x should be finite: {report:#}"
+    );
+    assert!(
+        report["label_projection"]["y_css_px"]
+            .as_f64()
+            .is_some_and(f64::is_finite),
+        "label projection y should be finite: {report:#}"
+    );
     let line_node = report["line_node"].as_u64().expect("line node is a handle");
     assert!(line_node > 0);
 

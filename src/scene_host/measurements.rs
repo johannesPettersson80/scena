@@ -16,6 +16,15 @@ pub struct SceneHostMeasurementOverlayReportV1 {
     pub line_node: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_projection: Option<SceneHostMeasurementLabelProjectionV1>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct SceneHostMeasurementLabelProjectionV1 {
+    pub x_css_px: f32,
+    pub y_css_px: f32,
+    pub visible: bool,
 }
 
 impl<F: AssetFetcher> SceneHostCore<F> {
@@ -36,6 +45,9 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         let report = self.scene.add_measurement_overlay(&self.assets, overlay)?;
         let line_node = self.register_node(report.line_node);
         let label_text = label.map(|label| format!("{label}: {}", report.formatted_value));
+        let label_projection = label
+            .map(|_| self.project_measurement_label((start + end) * 0.5))
+            .transpose()?;
         let report = SceneHostMeasurementOverlayReportV1 {
             schema: SCENE_HOST_MEASUREMENT_OVERLAY_SCHEMA_V1.to_owned(),
             id: report.id,
@@ -44,12 +56,36 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             formatted_value: report.formatted_value,
             line_node,
             label_text,
+            label_projection,
         };
         serde_json::to_string(&report).map_err(|error| {
             SceneHostError::new(
                 SceneHostErrorCode::Inspect,
                 format!("measurement overlay serialization failed: {error}"),
             )
+        })
+    }
+
+    fn project_measurement_label(
+        &self,
+        world_position: Vec3,
+    ) -> Result<SceneHostMeasurementLabelProjectionV1, SceneHostError> {
+        let width = self.viewport.logical_width().round().max(1.0) as u32;
+        let height = self.viewport.logical_height().round().max(1.0) as u32;
+        let projected =
+            self.scene
+                .project_world_point(self.active_camera, world_position, width, height)?;
+        let Some(projected) = projected else {
+            return Ok(SceneHostMeasurementLabelProjectionV1 {
+                x_css_px: 0.0,
+                y_css_px: 0.0,
+                visible: false,
+            });
+        };
+        Ok(SceneHostMeasurementLabelProjectionV1 {
+            x_css_px: projected.x,
+            y_css_px: projected.y,
+            visible: projected.ndc_x.abs() <= 1.0 && projected.ndc_y.abs() <= 1.0,
         })
     }
 }
