@@ -349,31 +349,71 @@ fn collect_step_reasons(
             "inspect the scene and use the stable handle reported for the picked target",
         );
     }
-    if step.expected.expect_hover == Some(true) && step.observed.hover_handle.is_none() {
-        push_reason(
-            reasons,
-            "hover_missing",
-            step.index,
-            "expected hover state to be set after the interaction".to_string(),
-        );
-        push_fix(
-            fixes,
-            "use_hover_action",
-            "run a hover or select action at a coordinate that hits the target",
-        );
+    if let Some(expect_hover) = step.expected.expect_hover {
+        let observed_hover = step.observed.hover_handle.is_some();
+        if observed_hover != expect_hover {
+            if expect_hover {
+                push_reason(
+                    reasons,
+                    "hover_missing",
+                    step.index,
+                    "expected hover state to be set after the interaction".to_string(),
+                );
+                push_fix(
+                    fixes,
+                    "use_hover_action",
+                    "run a hover or select action at a coordinate that hits the target",
+                );
+            } else {
+                push_reason(
+                    reasons,
+                    "hover_unexpected",
+                    step.index,
+                    format!(
+                        "expected hover state to be clear, observed {:?}",
+                        step.observed.hover_handle
+                    ),
+                );
+                push_fix(
+                    fixes,
+                    "clear_hover",
+                    "run a hover action at a coordinate that misses the scene or update the expectation",
+                );
+            }
+        }
     }
-    if step.expected.expect_selection == Some(true) && step.observed.selection_handle.is_none() {
-        push_reason(
-            reasons,
-            "selection_missing",
-            step.index,
-            "expected primary selection to be set after the interaction".to_string(),
-        );
-        push_fix(
-            fixes,
-            "use_select_action",
-            "run a select action at a coordinate that hits the target",
-        );
+    if let Some(expect_selection) = step.expected.expect_selection {
+        let observed_selection = step.observed.selection_handle.is_some();
+        if observed_selection != expect_selection {
+            if expect_selection {
+                push_reason(
+                    reasons,
+                    "selection_missing",
+                    step.index,
+                    "expected primary selection to be set after the interaction".to_string(),
+                );
+                push_fix(
+                    fixes,
+                    "use_select_action",
+                    "run a select action at a coordinate that hits the target",
+                );
+            } else {
+                push_reason(
+                    reasons,
+                    "selection_unexpected",
+                    step.index,
+                    format!(
+                        "expected primary selection to be clear, observed {:?}",
+                        step.observed.selection_handle
+                    ),
+                );
+                push_fix(
+                    fixes,
+                    "clear_selection",
+                    "run a select action at a coordinate that misses the scene or update the expectation",
+                );
+            }
+        }
     }
     if !step.expected.expected_events.is_empty()
         && step.observed.events != step.expected.expected_events

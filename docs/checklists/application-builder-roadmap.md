@@ -937,18 +937,24 @@ Required behavior:
       metadata, camera-control result, and rendered highlight or outline
       feedback remain open.
 - [x] `ok=false` when the expected handle is not picked, event order differs,
-      or hover/selection state is missing. CSS-vs-physical mismatch fixtures
-      and rendered feedback assertions remain open.
+      hover/selection state is missing, hover/selection state is unexpectedly
+      present, or CSS-vs-physical coordinate handling misses the expected
+      target. Rendered feedback assertions remain open.
 - [x] Reports include suggested fixes for the implemented failure families,
       including frame target, CSS-pixel coordinates, event contract, and update
       expected handle.
 
 Acceptance:
 
-- [ ] Fixtures cover successful pick, miss, wrong handle, hover enter/leave,
-      selection highlight, helper-geometry pass-through, and CSS-vs-physical
-      pixel mismatch. The first slice adds stable expectation/report fixtures
-      plus CLI wrong-handle coverage; the remaining fixtures are open.
+- [x] Native fixtures/tests cover successful pick, miss, wrong handle, hover
+      enter/leave, selection state set/clear, helper-geometry pass-through, and
+      CSS-vs-physical pixel mismatch. Evidence:
+      `tests/assets/stable-contracts/interaction_expectation.v1.json`,
+      `tests/assets/stable-contracts/interaction_verification.v1.json`,
+      `tests/scena_cli_interaction.rs`, and
+      `src/picking/tests.rs::asset_picking_skips_stroke_overlay_and_returns_underlying_mesh`.
+      Rendered selection/hover highlight proof remains open under the browser
+      proof gate.
 - [ ] Browser proof runs without manual mouse input.
 - [x] Native SceneHost proof runs without manual input devices.
 - [x] Stable fixtures:

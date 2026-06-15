@@ -3,9 +3,53 @@
   "viewport": {
     "width_css_px": 128.0,
     "height_css_px": 128.0,
-    "device_pixel_ratio": 1.0
+    "device_pixel_ratio": 2.0
   },
   "steps": [
+    {
+      "action": "pick",
+      "x_css_px": 64.0,
+      "y_css_px": 64.0,
+      "coordinate_space": "css",
+      "expect_hit": true,
+      "expected_handle": 42,
+      "expected_events": [
+        "pick"
+      ]
+    },
+    {
+      "action": "pick",
+      "x_css_px": 1.0,
+      "y_css_px": 1.0,
+      "coordinate_space": "css",
+      "expect_hit": false,
+      "expected_events": [
+        "pick"
+      ]
+    },
+    {
+      "action": "hover",
+      "x_css_px": 64.0,
+      "y_css_px": 64.0,
+      "coordinate_space": "css",
+      "expect_hit": true,
+      "expected_handle": 42,
+      "expect_hover": true,
+      "expected_events": [
+        "hover"
+      ]
+    },
+    {
+      "action": "hover",
+      "x_css_px": 1.0,
+      "y_css_px": 1.0,
+      "coordinate_space": "css",
+      "expect_hit": false,
+      "expect_hover": false,
+      "expected_events": [
+        "hover"
+      ]
+    },
     {
       "action": "select",
       "x_css_px": 64.0,
@@ -17,6 +61,39 @@
       "expect_selection": true,
       "expected_events": [
         "selection_changed"
+      ]
+    },
+    {
+      "action": "select",
+      "x_css_px": 1.0,
+      "y_css_px": 1.0,
+      "coordinate_space": "css",
+      "expect_hit": false,
+      "expect_hover": false,
+      "expect_selection": false,
+      "expected_events": [
+        "selection_changed"
+      ]
+    },
+    {
+      "action": "pick",
+      "x_css_px": 16.0,
+      "y_css_px": 16.0,
+      "coordinate_space": "physical",
+      "expect_hit": true,
+      "expected_events": [
+        "pick"
+      ]
+    },
+    {
+      "action": "pick",
+      "x_css_px": 64.0,
+      "y_css_px": 64.0,
+      "coordinate_space": "css",
+      "expect_hit": true,
+      "expected_handle": 999999,
+      "expected_events": [
+        "pick"
       ]
     }
   ]

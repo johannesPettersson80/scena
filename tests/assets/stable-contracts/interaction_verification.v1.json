@@ -1,24 +1,123 @@
 {
   "schema": "scena.interaction_verification.v1",
-  "ok": true,
+  "ok": false,
   "summary": {
-    "step_count": 1,
-    "failed_step_count": 0,
-    "hit_count": 1,
-    "miss_count": 0,
-    "event_count": 1,
+    "step_count": 8,
+    "failed_step_count": 2,
+    "hit_count": 4,
+    "miss_count": 4,
+    "event_count": 8,
     "rendered_feedback_checked": false
   },
   "steps": [
     {
       "index": 0,
+      "action": "pick",
+      "coordinates": {
+        "coordinate_space": "css",
+        "x_css_px": 64.0,
+        "y_css_px": 64.0,
+        "x_physical_px": 128.0,
+        "y_physical_px": 128.0
+      },
+      "expected": {
+        "expect_hit": true,
+        "expected_handle": 42,
+        "expected_events": [
+          "pick"
+        ]
+      },
+      "observed": {
+        "hit": true,
+        "handle": 42,
+        "events": [
+          "pick"
+        ]
+      }
+    },
+    {
+      "index": 1,
+      "action": "pick",
+      "coordinates": {
+        "coordinate_space": "css",
+        "x_css_px": 1.0,
+        "y_css_px": 1.0,
+        "x_physical_px": 2.0,
+        "y_physical_px": 2.0
+      },
+      "expected": {
+        "expect_hit": false,
+        "expected_events": [
+          "pick"
+        ]
+      },
+      "observed": {
+        "hit": false,
+        "events": [
+          "pick"
+        ]
+      }
+    },
+    {
+      "index": 2,
+      "action": "hover",
+      "coordinates": {
+        "coordinate_space": "css",
+        "x_css_px": 64.0,
+        "y_css_px": 64.0,
+        "x_physical_px": 128.0,
+        "y_physical_px": 128.0
+      },
+      "expected": {
+        "expect_hit": true,
+        "expected_handle": 42,
+        "expect_hover": true,
+        "expected_events": [
+          "hover"
+        ]
+      },
+      "observed": {
+        "hit": true,
+        "handle": 42,
+        "hover_handle": 42,
+        "events": [
+          "hover"
+        ]
+      }
+    },
+    {
+      "index": 3,
+      "action": "hover",
+      "coordinates": {
+        "coordinate_space": "css",
+        "x_css_px": 1.0,
+        "y_css_px": 1.0,
+        "x_physical_px": 2.0,
+        "y_physical_px": 2.0
+      },
+      "expected": {
+        "expect_hit": false,
+        "expect_hover": false,
+        "expected_events": [
+          "hover"
+        ]
+      },
+      "observed": {
+        "hit": false,
+        "events": [
+          "hover"
+        ]
+      }
+    },
+    {
+      "index": 4,
       "action": "select",
       "coordinates": {
         "coordinate_space": "css",
         "x_css_px": 64.0,
         "y_css_px": 64.0,
-        "x_physical_px": 64.0,
-        "y_physical_px": 64.0
+        "x_physical_px": 128.0,
+        "y_physical_px": 128.0
       },
       "expected": {
         "expect_hit": true,
@@ -38,16 +137,111 @@
           "selection_changed"
         ]
       }
+    },
+    {
+      "index": 5,
+      "action": "select",
+      "coordinates": {
+        "coordinate_space": "css",
+        "x_css_px": 1.0,
+        "y_css_px": 1.0,
+        "x_physical_px": 2.0,
+        "y_physical_px": 2.0
+      },
+      "expected": {
+        "expect_hit": false,
+        "expect_hover": false,
+        "expect_selection": false,
+        "expected_events": [
+          "selection_changed"
+        ]
+      },
+      "observed": {
+        "hit": false,
+        "events": [
+          "selection_changed"
+        ]
+      }
+    },
+    {
+      "index": 6,
+      "action": "pick",
+      "coordinates": {
+        "coordinate_space": "physical",
+        "x_css_px": 8.0,
+        "y_css_px": 8.0,
+        "x_physical_px": 16.0,
+        "y_physical_px": 16.0
+      },
+      "expected": {
+        "expect_hit": true,
+        "expected_events": [
+          "pick"
+        ]
+      },
+      "observed": {
+        "hit": false,
+        "events": [
+          "pick"
+        ]
+      }
+    },
+    {
+      "index": 7,
+      "action": "pick",
+      "coordinates": {
+        "coordinate_space": "css",
+        "x_css_px": 64.0,
+        "y_css_px": 64.0,
+        "x_physical_px": 128.0,
+        "y_physical_px": 128.0
+      },
+      "expected": {
+        "expect_hit": true,
+        "expected_handle": 999999,
+        "expected_events": [
+          "pick"
+        ]
+      },
+      "observed": {
+        "hit": true,
+        "handle": 42,
+        "events": [
+          "pick"
+        ]
+      }
     }
   ],
-  "reasons": [],
-  "fixes": [],
+  "reasons": [
+    {
+      "code": "hit_mismatch",
+      "severity": "error",
+      "step_index": 6,
+      "message": "expected hit=true, observed hit=false"
+    },
+    {
+      "code": "handle_mismatch",
+      "severity": "error",
+      "step_index": 7,
+      "message": "expected handle 999999, observed Some(42)"
+    }
+  ],
+  "fixes": [
+    {
+      "action": "frame_target",
+      "help": "frame the target and verify the pointer coordinates are in CSS pixels"
+    },
+    {
+      "action": "update_expected_handle",
+      "help": "inspect the scene and use the stable handle reported for the picked target"
+    }
+  ],
   "artifacts": {
     "host_event_schema": "scena.host_event.v1",
     "width_css_px": 128.0,
     "height_css_px": 128.0,
-    "width_physical_px": 128,
-    "height_physical_px": 128,
-    "device_pixel_ratio": 1.0
+    "width_physical_px": 256,
+    "height_physical_px": 256,
+    "device_pixel_ratio": 2.0
   }
 }

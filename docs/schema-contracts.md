@@ -522,6 +522,11 @@ report always echoes both CSS and physical coordinates. This first native slice
 does not synthesize browser DOM input, keyboard input, camera-control gestures,
 or rendered highlight/outline feedback.
 
+`expect_hit`, `expect_hover`, and `expect_selection` are real boolean
+assertions: `true` requires the state to be present, and `false` requires it to
+be clear after the step. Omit the field when the step should not assert that
+state.
+
 The verification report contains:
 
 - `schema`
@@ -530,8 +535,8 @@ The verification report contains:
   `rendered_feedback_checked`
 - `steps`: ordered expected/observed interaction results
 - `reasons`: stable failure codes such as `hit_mismatch`,
-  `handle_mismatch`, `hover_missing`, `selection_missing`, and
-  `event_sequence_mismatch`
+  `handle_mismatch`, `hover_missing`, `hover_unexpected`,
+  `selection_missing`, `selection_unexpected`, and `event_sequence_mismatch`
 - `fixes`: stable suggested actions
 - `artifacts`: viewport and linked `scena.host_event.v1` schema metadata
 

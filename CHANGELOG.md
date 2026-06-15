@@ -69,6 +69,10 @@ All notable user-facing changes are recorded here.
   `scena verify animation --expect-translations`, including sampled transforms,
   expected translations, tolerance results, and fail-closed
   `expected_value_mismatch` diagnostics.
+- Added stricter `scena verify interaction` assertions for cleared hover and
+  selection state, with native CLI coverage for pick hits, misses, wrong
+  handles, hover enter/leave, selection set/clear, and CSS-vs-physical pixel
+  mismatch reports.
 - Added reusable `CameraState`, `CameraBookmark`, and `OrbitControls::fly_to`
   APIs, viewer bookmark storage helpers, and SceneHost native/WASM bookmark
   easing methods that delegate to the existing host-ticked `camera_eased`
