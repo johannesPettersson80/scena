@@ -535,6 +535,11 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             .entries()
             .map(|(handle, import)| SceneImportInspectionV1 {
                 handle,
+                root_handles: import
+                    .roots()
+                    .iter()
+                    .filter_map(|root| self.node_handle_map.get(root).copied())
+                    .collect(),
                 material_variants: import.material_variants().to_vec(),
                 active_variant: import.active_variant(),
             })

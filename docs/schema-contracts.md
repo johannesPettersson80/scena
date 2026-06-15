@@ -664,15 +664,17 @@ source `instance_id`, and baked drawable-local transform. This field is
 additive on `scena.scene_inspection.v1`; older consumers may ignore it.
 
 Host-backed inspection may also include additive top-level `imports` entries.
-Each entry contains the stable SceneHost import `handle`, declared
-`material_variants`, and the current `active_variant`. This is the current
-state report for the same import handles accepted by the 0.1C
-`material_variants` visual-patch channel.
+Each entry contains the stable SceneHost import `handle`, additive
+`root_handles`, declared `material_variants`, and the current `active_variant`.
+`root_handles` lets agent-facing diagnosis walk import targets through the same
+stable node handles reported in `nodes`. This is the current state report for
+the same import handles accepted by the 0.1C `material_variants` visual-patch
+channel.
 
 `revisions` includes `structure`, `transform`, additive `appearance`, and
 `interaction`. Older `scena.scene_inspection.v1` payloads without
-`appearance`, `tint`, `material`, `instance`, `instance_sets`, or `imports` still
-deserialize with defaults.
+`appearance`, `tint`, `material`, `instance`, `instance_sets`, `imports`, or
+`imports[].root_handles` still deserialize with defaults.
 
 Topology helpers on `SceneInspectionReportV1`:
 
@@ -794,17 +796,20 @@ Required top-level fields:
 - `summary`
 - `evidence`
 
-The first v1 slice covers `not_prepared`, `missing_camera`,
-`no_visible_drawables`, `all_culled`, `stale_handle`, `node_hidden`, and
-`zero_scale`. `all_culled` is emitted only when renderer stats show that every
-inspection-visible drawable was culled; partial frustum culling of a healthy
-scene is not a failure. Each reason includes severity, confidence, whether it is
-auto-fixable, affected stable handles when known, and a short message. Fixes
-use stable Scena action codes such as `prepare`, `set_camera`,
-`frame_bounds`, `set_visible`, and `set_transform`. Content-risk fixes are
-reported as data and must be applied explicitly by the host or CLI caller.
-Summary mode returns only reasons, fixes, and counts; detail mode may include
-supporting evidence rows.
+The v1 contract covers `not_prepared`, `missing_camera`,
+`no_visible_drawables`, `all_culled`, `stale_handle`, `node_hidden`,
+`parent_hidden`, `zero_scale`, `nan_transform`, `layer_masked`, `alpha_zero`,
+`transparent_material`, `missing_material_upload`, `missing_geometry`, and
+SceneHost import-root diagnosis. `all_culled` is emitted only when renderer
+stats show that every inspection-visible drawable was culled; partial frustum
+culling of a healthy scene is not a failure. Each reason includes severity,
+confidence, whether it is auto-fixable, affected stable handles when known, and
+a short message. Fixes use stable Scena action codes such as `prepare`,
+`set_camera`, `frame_bounds`, `set_visible`, `set_transform`,
+`set_layer_mask`, `set_material_alpha`, and `inspect_assets`. Content-risk
+fixes are reported as data and must be applied explicitly by the host or CLI
+caller. Summary mode returns only reasons, fixes, and counts; detail mode may
+include supporting evidence rows.
 
 The stable fixture lives at
 `tests/assets/stable-contracts/visibility_diagnosis.v1.json`. The `scena`

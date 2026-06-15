@@ -28,7 +28,9 @@ All notable user-facing changes are recorded here.
 - Added `scena.visibility_diagnosis.v1`, an inspection-backed visibility
   diagnoser with stable reason codes and explicit fix suggestions behind the
   `inspection` feature. Whole-scene `all_culled` diagnosis requires every
-  inspection-visible drawable to be culled.
+  inspection-visible drawable to be culled; targeted diagnosis covers subtree
+  and SceneHost import roots, hidden ancestors, non-finite transforms, layer
+  masks, alpha/material transparency, and missing geometry/material evidence.
 - Added the `scena` schema-discovery CLI (`schema list` and `schema get`) plus
   `scena.schema_catalog.v1` / `scena.schema_entry.v1` contracts for
   agent-readable contract discovery, and asset-input `render --introspect`,

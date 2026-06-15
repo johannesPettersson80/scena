@@ -80,6 +80,14 @@ pub(crate) fn check_m7_inspection_contracts(root: &Path, findings: &mut Vec<Find
             "pub struct SceneMaterialInspectionV1",
             "pub struct SceneMaterialSourceInspectionV1",
             "pub struct SceneMaterialSlotInspectionV1",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ERGONOMICS-M7",
+        "src/scene/inspection/schema/material.rs",
+        &[
             "source_material",
             "generated_default",
             "texture_source_format_name",

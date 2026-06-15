@@ -461,13 +461,16 @@ scena diagnose scene.recipe.json --handle 42 --visibility
 Required behavior:
 
 - [x] Diagnose a node or whole scene from stable inspection handles.
-- [ ] Diagnose subtree and import targets.
+- [x] Diagnose subtree and import targets. Subtree-root handles walk descendant
+      inspection rows; SceneHost import rows expose additive `root_handles` so
+      import handles diagnose their roots.
 - [x] Ranked reasons include not prepared, stale handle, missing camera,
       no visible drawables, node hidden, zero scale, and all culled.
-- [ ] Ranked reasons include parent hidden, NaN transform, behind camera,
-      outside frustum, clipped by active clipping planes, layer masked, alpha
-      zero, transparent material, missing material upload, missing geometry,
-      and backend capability degradation.
+- [x] Ranked reasons include parent hidden, NaN/non-finite transform, layer
+      masked, alpha zero, transparent material, missing material upload, and
+      missing geometry.
+- [ ] Ranked reasons include behind camera, outside frustum, clipped by active
+      clipping planes, and backend capability degradation.
 - [x] Each implemented actionable reason includes at least one suggested action
       in Scena vocabulary.
 - [x] Suggestions are data, not prose-only: action code, target handle when
@@ -480,9 +483,11 @@ Required behavior:
 Acceptance:
 
 - [x] Unit tests for the implemented ranked reason families.
-- [ ] Unit tests for parent hidden, NaN transform, behind camera,
-      outside-frustum, clipping, layer mask, alpha zero, transparent material,
-      missing material upload, missing geometry, and backend degradation.
+- [x] Unit tests for subtree targets, import targets, parent hidden,
+      NaN/non-finite transform, layer mask, alpha zero, transparent material,
+      missing material upload, and missing geometry.
+- [ ] Unit tests for behind-camera, outside-frustum, clipping, and backend
+      degradation.
 - [x] Tests prove implemented fix suggestions are stable and use public Scena
       vocabulary.
 - [ ] Whole-scene diagnosis agrees with render introspection for empty,
@@ -490,8 +495,9 @@ Acceptance:
       and proves partial culling is not reported as all-culled.
 - [x] Stable fixture:
       `tests/assets/stable-contracts/visibility_diagnosis.v1.json`.
-- [ ] CLI exits non-zero when diagnosis classifies the requested visibility
-      target as not visible.
+- [x] CLI exits non-zero when diagnosis classifies the requested visibility
+      target as not visible
+      (`scena_diagnose_cli_emits_json_and_nonzero_for_invisible_target`).
 
 ### A.3 Agent-friendly CLI verbs
 

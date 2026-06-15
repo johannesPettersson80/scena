@@ -32,6 +32,7 @@
   "imports": [
     {
       "handle": 7,
+      "root_handles": [1],
       "material_variants": [
         "midnight",
         "noon"
