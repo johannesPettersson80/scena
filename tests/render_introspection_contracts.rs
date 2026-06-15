@@ -1,10 +1,10 @@
 #![cfg(feature = "inspection")]
 
 use scena::{
-    Aabb, Assets, Backend, CAPTURE_SCHEMA_V1, Color, GeometryDesc, MaterialDesc,
-    RENDER_INTROSPECTION_SCHEMA_V1, RenderIntrospectionOptions, RenderIntrospectionReportV1,
-    Renderer, RendererStats, Scene, SceneInspectionReportV1, Transform, Vec3,
-    capture_rgba8_from_pixels,
+    Aabb, Assets, Backend, CAPTURE_SCHEMA_V1, ClippingPlane, ClippingPlaneSet, Color, GeometryDesc,
+    MaterialDesc, RENDER_INTROSPECTION_SCHEMA_V1, RenderIntrospectionOptions,
+    RenderIntrospectionReportV1, Renderer, RendererStats, Scene, SceneInspectionReportV1,
+    Transform, Vec3, capture_rgba8_from_pixels,
 };
 
 #[test]
@@ -63,6 +63,46 @@ fn render_introspection_classifies_agent_failure_frames() {
         "warning-only framing reports must not fail the agent loop: {cropped:#?}"
     );
     assert_reason(&cropped, "cropped");
+}
+
+#[test]
+fn render_introspection_classifies_camera_transform_material_and_clipping_failures() {
+    let behind = rendered_box_scene_at(64, 64, Vec3::new(0.0, 0.0, 4.0), Color::WHITE, false);
+    let behind_report = introspect_rendered_scene(&behind);
+    assert!(!behind_report.ok, "{behind_report:#?}");
+    assert_reason(&behind_report, "behind_camera");
+    assert_fix(&behind_report, "frame_bounds");
+
+    let outside = rendered_box_scene_at(64, 64, Vec3::new(100.0, 0.0, 0.0), Color::WHITE, false);
+    let outside_report = introspect_rendered_scene(&outside);
+    assert!(!outside_report.ok, "{outside_report:#?}");
+    assert_reason(&outside_report, "outside_frustum");
+    assert_fix(&outside_report, "frame_bounds");
+
+    let alpha_zero = rendered_box_scene_at(64, 64, Vec3::ZERO, Color::TRANSPARENT, false);
+    let alpha_zero_report = introspect_rendered_scene(&alpha_zero);
+    assert!(!alpha_zero_report.ok, "{alpha_zero_report:#?}");
+    assert_reason(&alpha_zero_report, "alpha_zero");
+    assert_fix(&alpha_zero_report, "set_material_alpha");
+
+    let nan_transform =
+        rendered_box_scene_at(64, 64, Vec3::new(f32::NAN, 0.0, 0.0), Color::WHITE, false);
+    let nan_transform_report = introspect_rendered_scene(&nan_transform);
+    assert!(!nan_transform_report.ok, "{nan_transform_report:#?}");
+    assert_reason(&nan_transform_report, "nan_transform");
+    assert_fix(&nan_transform_report, "set_transform");
+
+    let clipped = rendered_box_scene_at(64, 64, Vec3::ZERO, Color::WHITE, true);
+    let clipped_report = introspect_supplied_pixels(
+        &clipped.1,
+        &clipped.2,
+        &clipped.1.inspect_with_assets(&clipped.0).to_schema_report(),
+        vec![0; 64 * 64 * 4],
+        RendererStats::default(),
+    );
+    assert!(!clipped_report.ok, "{clipped_report:#?}");
+    assert_reason(&clipped_report, "clipped_by_active_clipping_plane");
+    assert_fix(&clipped_report, "clear_clipping_planes");
 }
 
 #[test]
@@ -180,6 +220,47 @@ fn rendered_box_scene_with_background(
         .expect("scene prepares");
     renderer.render_active(&scene).expect("scene renders");
     (assets, scene, renderer)
+}
+
+fn rendered_box_scene_at(
+    width: u32,
+    height: u32,
+    translation: Vec3,
+    color: Color,
+    clipping_plane: bool,
+) -> (Assets, Scene, Renderer) {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
+    let material = assets.create_material(MaterialDesc::unlit(color));
+    let mut scene = Scene::new();
+    scene.add_default_camera().expect("default camera inserts");
+    scene
+        .mesh(geometry, material)
+        .transform(Transform::at(translation))
+        .add()
+        .expect("box mesh inserts");
+    if clipping_plane {
+        let plane = scene.add_clipping_plane(ClippingPlane::new(Vec3::X, -10.0));
+        scene
+            .set_clipping_planes(ClippingPlaneSet::new().with_plane(plane))
+            .expect("clipping plane activates");
+    }
+    let mut renderer = Renderer::headless(width, height).expect("headless renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("scene prepares");
+    let _ = renderer.render_active(&scene);
+    (assets, scene, renderer)
+}
+
+fn introspect_rendered_scene(
+    (assets, scene, renderer): &(Assets, Scene, Renderer),
+) -> RenderIntrospectionReportV1 {
+    let inspection = scene.inspect_with_assets(assets).to_schema_report();
+    let capture = renderer
+        .capture_rgba8(scene, Default::default())
+        .expect("rendered scene captures");
+    renderer.introspect_capture(&capture, &inspection, RenderIntrospectionOptions::default())
 }
 
 fn solid_frame(width: usize, height: usize, rgba8: [u8; 4]) -> Vec<u8> {

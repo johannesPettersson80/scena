@@ -1,10 +1,11 @@
 use crate::capture::{CaptureRgba8, CaptureScreenRect};
-use crate::diagnostics::RendererStats;
+use crate::diagnostics::{Diagnostic, RendererStats};
 use crate::scene::SceneInspectionReportV1;
 
 use super::Renderer;
 use super::color_contract::linear_rgba_to_srgb8;
 
+mod failure_reasons;
 mod types;
 pub use types::{
     RenderIntrospectionArtifactsV1, RenderIntrospectionCapabilitiesV1,
@@ -22,6 +23,16 @@ impl RenderIntrospectionReportV1 {
         inspection: &SceneInspectionReportV1,
         stats: RendererStats,
         options: RenderIntrospectionOptions,
+    ) -> Self {
+        Self::from_capture_with_diagnostics(capture, inspection, stats, options, &[])
+    }
+
+    pub fn from_capture_with_diagnostics(
+        capture: &CaptureRgba8,
+        inspection: &SceneInspectionReportV1,
+        stats: RendererStats,
+        options: RenderIntrospectionOptions,
+        diagnostics: &[Diagnostic],
     ) -> Self {
         let width = capture.descriptor.width;
         let height = capture.descriptor.height;
@@ -52,6 +63,13 @@ impl RenderIntrospectionReportV1 {
         let mut reasons = Vec::new();
         let mut fixes = Vec::new();
 
+        failure_reasons::push_failure_reasons(
+            &mut reasons,
+            &mut fixes,
+            inspection,
+            visible_pixels,
+            diagnostics,
+        );
         if visible_pixels == 0 {
             push_reason(
                 &mut reasons,
@@ -188,7 +206,13 @@ impl Renderer {
         options: RenderIntrospectionOptions,
     ) -> RenderIntrospectionReportV1 {
         let options = options.with_background_rgba8(linear_rgba_to_srgb8(self.background_color()));
-        RenderIntrospectionReportV1::from_capture(capture, inspection, self.stats(), options)
+        RenderIntrospectionReportV1::from_capture_with_diagnostics(
+            capture,
+            inspection,
+            self.stats(),
+            options,
+            self.diagnostics(),
+        )
     }
 }
 

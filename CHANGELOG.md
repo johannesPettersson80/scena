@@ -24,13 +24,17 @@ All notable user-facing changes are recorded here.
   agent-readable frame visibility, luminance, framing, reason, and fix
   summaries behind the `inspection` feature. Content detection is
   background-relative, warning-only framing reasons keep `ok=true`, and
-  luminance reports shader-encoded RGBA8 byte-scale values.
+  luminance reports shader-encoded RGBA8 byte-scale values. The report now
+  fails closed for camera-frustum failures, alpha-zero drawables, non-finite
+  transforms, and active clipping planes that remove all visible content.
 - Added `scena.visibility_diagnosis.v1`, an inspection-backed visibility
   diagnoser with stable reason codes and explicit fix suggestions behind the
   `inspection` feature. Whole-scene `all_culled` diagnosis requires every
   inspection-visible drawable to be culled; targeted diagnosis covers subtree
   and SceneHost import roots, hidden ancestors, non-finite transforms, layer
-  masks, alpha/material transparency, and missing geometry/material evidence.
+  masks, alpha/material transparency, missing geometry/material evidence,
+  camera-frustum diagnostics, active clipping-plane hints, and backend
+  capability degradation.
 - Added the `scena` schema-discovery CLI (`schema list` and `schema get`) plus
   `scena.schema_catalog.v1` / `scena.schema_entry.v1` contracts for
   agent-readable contract discovery, and asset-input `render --introspect`,

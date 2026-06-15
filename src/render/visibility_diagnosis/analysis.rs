@@ -1,7 +1,7 @@
 mod node;
 mod reason;
 
-use crate::diagnostics::RendererStats;
+use crate::diagnostics::{Diagnostic, DiagnosticCode, RendererStats};
 use crate::scene::{SceneImportInspectionV1, SceneInspectionReportV1, SceneNodeInspectionV1};
 
 use super::{
@@ -17,6 +17,7 @@ pub(super) fn from_inspection(
     target_handle: Option<u64>,
     options: VisibilityDiagnosisOptions,
     prepared: bool,
+    diagnostics: &[Diagnostic],
 ) -> VisibilityDiagnosisReportV1 {
     let mut target = VisibilityDiagnosisTargetV1 {
         kind: target_handle.map_or("scene", |_| "node").to_owned(),
@@ -34,6 +35,9 @@ pub(super) fn from_inspection(
     let mut reasons = Vec::new();
     let mut fixes = Vec::new();
     let mut evidence = Vec::new();
+
+    diagnose_renderer_diagnostics(diagnostics, target_handle, &mut reasons, &mut fixes);
+    diagnose_active_clipping_planes(inspection, target_handle, &mut reasons, &mut fixes);
 
     if !prepared {
         push_reason(
@@ -173,6 +177,129 @@ pub(super) fn from_inspection(
         summary,
         evidence,
     }
+}
+
+fn diagnose_renderer_diagnostics(
+    diagnostics: &[Diagnostic],
+    target_handle: Option<u64>,
+    reasons: &mut Vec<VisibilityDiagnosisReasonV1>,
+    fixes: &mut Vec<VisibilityDiagnosisFixV1>,
+) {
+    for diagnostic in diagnostics {
+        match diagnostic.code() {
+            DiagnosticCode::ObjectsBehindCamera => {
+                push_reason(
+                    reasons,
+                    ReasonSpec {
+                        code: "behind_camera",
+                        severity: "error",
+                        confidence: "high",
+                        auto_fixable: true,
+                        affected_handles: target_handle.into_iter().collect(),
+                        message: "renderer diagnostics report visible bounds behind the camera",
+                    },
+                );
+                push_fix(
+                    fixes,
+                    "frame_bounds",
+                    target_handle,
+                    None,
+                    "presentation",
+                    "move or frame the camera so visible content is in front of it",
+                );
+            }
+            DiagnosticCode::SceneOutsideCameraFrustum => {
+                push_reason(
+                    reasons,
+                    ReasonSpec {
+                        code: "outside_frustum",
+                        severity: "error",
+                        confidence: "high",
+                        auto_fixable: true,
+                        affected_handles: target_handle.into_iter().collect(),
+                        message: "renderer diagnostics report visible bounds outside the camera frustum",
+                    },
+                );
+                push_fix(
+                    fixes,
+                    "frame_bounds",
+                    target_handle,
+                    None,
+                    "presentation",
+                    "frame the scene or target bounds before rendering again",
+                );
+            }
+            code if backend_degradation_code(code) => {
+                push_reason(
+                    reasons,
+                    ReasonSpec {
+                        code: "backend_capability_degraded",
+                        severity: "warning",
+                        confidence: "medium",
+                        auto_fixable: false,
+                        affected_handles: target_handle.into_iter().collect(),
+                        message: "renderer diagnostics report a degraded or disabled backend capability",
+                    },
+                );
+                push_fix(
+                    fixes,
+                    "inspect_capabilities",
+                    None,
+                    None,
+                    "presentation",
+                    "inspect the capability report before relying on this visual result",
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+fn diagnose_active_clipping_planes(
+    inspection: &SceneInspectionReportV1,
+    target_handle: Option<u64>,
+    reasons: &mut Vec<VisibilityDiagnosisReasonV1>,
+    fixes: &mut Vec<VisibilityDiagnosisFixV1>,
+) {
+    if inspection.counts.clipping_planes == 0 {
+        return;
+    }
+    push_reason(
+        reasons,
+        ReasonSpec {
+            code: "clipped_by_active_clipping_plane",
+            severity: "warning",
+            confidence: "medium",
+            auto_fixable: true,
+            affected_handles: target_handle.into_iter().collect(),
+            message: "active clipping planes may be hiding the target",
+        },
+    );
+    push_fix(
+        fixes,
+        "clear_clipping_planes",
+        target_handle,
+        None,
+        "presentation",
+        "clear active clipping planes or widen the section box, then render again",
+    );
+}
+
+fn backend_degradation_code(code: DiagnosticCode) -> bool {
+    matches!(
+        code,
+        DiagnosticCode::WebGl2DepthCompatibility
+            | DiagnosticCode::ForwardPbrDegraded
+            | DiagnosticCode::DirectionalShadowsDegraded
+            | DiagnosticCode::PointShadowsDisabled
+            | DiagnosticCode::SpotShadowsDisabled
+            | DiagnosticCode::BloomDisabled
+            | DiagnosticCode::AmbientOcclusionDisabled
+            | DiagnosticCode::OrderIndependentTransparencyDisabled
+            | DiagnosticCode::PhysicalGlassTransmissionDegraded
+            | DiagnosticCode::WideGamutOutputUnavailable
+            | DiagnosticCode::GpuCullingDisabled
+    )
 }
 
 enum VisibilityTarget<'a> {

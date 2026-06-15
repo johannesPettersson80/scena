@@ -386,9 +386,9 @@ Required fields and behavior:
       no-visible-drawable, and all-culled frames. Warning-only framing reasons
       such as tiny-in-frame and cropped are reported without failing the agent
       loop.
-- [ ] `ok`: false for behind-camera, outside-frustum, alpha-zero, NaN-specific,
-      and other visually unacceptable render states. These remain for
-      A.2/A.5/A.7 follow-up diagnostics.
+- [x] `ok`: false for landed behind-camera, outside-frustum, alpha-zero,
+      NaN-specific, and active-clipping-plane failure states. Additional
+      visually unacceptable states remain future additive reason families.
 - [x] `reasons[]`: stable codes, severity, affected handles where known, and
       short messages.
 - [x] `fixes[]`: ranked suggested actions in Scena vocabulary, such as
@@ -426,7 +426,8 @@ Acceptance:
       `tests/assets/stable-contracts/render_introspection.v1.json`.
 - [x] Fixture/test frames cover empty background, all-culled, tiny-in-frame,
       cropped, and valid centered content.
-- [ ] Fixture/test frames cover behind-camera, NaN transform, and alpha zero.
+- [x] Fixture/test frames cover behind-camera, outside-frustum, NaN transform,
+      alpha zero, and active clipping planes.
 - [x] Headless tests prove `ok=false` for the implemented failure frames and
       `ok=true` for the valid frame.
 - [x] Headless tests prove warning-only framing reports keep `ok=true`.
@@ -471,7 +472,7 @@ Required behavior:
 - [x] Ranked reasons include parent hidden, NaN/non-finite transform, layer
       masked, alpha zero, transparent material, missing material upload, and
       missing geometry.
-- [ ] Ranked reasons include behind camera, outside frustum, clipped by active
+- [x] Ranked reasons include behind camera, outside frustum, clipped by active
       clipping planes, and backend capability degradation.
 - [x] Each implemented actionable reason includes at least one suggested action
       in Scena vocabulary.
@@ -488,13 +489,13 @@ Acceptance:
 - [x] Unit tests for subtree targets, import targets, parent hidden,
       NaN/non-finite transform, layer mask, alpha zero, transparent material,
       missing material upload, and missing geometry.
-- [ ] Unit tests for behind-camera, outside-frustum, clipping, and backend
+- [x] Unit tests for behind-camera, outside-frustum, clipping, and backend
       degradation.
 - [x] Tests prove implemented fix suggestions are stable and use public Scena
       vocabulary.
-- [ ] Whole-scene diagnosis agrees with render introspection for empty,
-      all-culled, and behind-camera frames. The first slice covers all-culled
-      and proves partial culling is not reported as all-culled.
+- [x] Whole-scene diagnosis agrees with render introspection for empty,
+      all-culled, and behind-camera frames, and partial culling is not reported
+      as all-culled.
 - [x] Stable fixture:
       `tests/assets/stable-contracts/visibility_diagnosis.v1.json`.
 - [x] CLI exits non-zero when diagnosis classifies the requested visibility

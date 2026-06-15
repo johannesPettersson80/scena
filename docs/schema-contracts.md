@@ -727,11 +727,13 @@ a replacement capture schema.
 
 ### `scena.render_introspection.v1`
 
-Produced by `Renderer::introspect_capture` and
-`RenderIntrospectionReportV1::from_capture` when the `inspection` feature is
-enabled. The report binds a `scena.capture.v1` descriptor, a
-`scena.scene_inspection.v1` report, and `RendererStats` into a small,
-deterministically ordered agent-readable summary.
+Produced by `Renderer::introspect_capture`,
+`RenderIntrospectionReportV1::from_capture`, and
+`RenderIntrospectionReportV1::from_capture_with_diagnostics` when the
+`inspection` feature is enabled. The report binds a `scena.capture.v1`
+descriptor, a `scena.scene_inspection.v1` report, renderer stats, and optional
+renderer diagnostics into a small, deterministically ordered agent-readable
+summary.
 
 Required top-level fields:
 
@@ -749,10 +751,13 @@ Required top-level fields:
 - `artifacts`
 - `capabilities`
 
-The first v1 slice classifies capture-derived visibility failures:
-`empty_frame`, `no_visible_drawables`, `all_culled`, `tiny_in_frame`, and
-`cropped`. `ok` is false only when an `error`-severity reason is present;
-warning-only framing reasons are still returned but do not fail the agent loop.
+The v1 report classifies capture-derived and diagnostic-derived visibility
+failures: `empty_frame`, `no_visible_drawables`, `all_culled`,
+`behind_camera`, `outside_frustum`, `alpha_zero`, `nan_transform`,
+`clipped_by_active_clipping_plane`, `tiny_in_frame`, `cropped`, and
+`backend_capability_degraded`. `ok` is false only when an `error`-severity
+reason is present; warning-only framing and backend capability reasons are
+still returned but do not fail the agent loop.
 `visible_pixel_fraction`, `content_bbox_css_px`, and
 `content_bbox_fraction` are computed from pixels that differ from the
 configured shader-encoded background by more than the implementation's byte
@@ -781,10 +786,12 @@ capture descriptor artifacts, then emits this report on stdout.
 ### `scena.visibility_diagnosis.v1`
 
 Produced by `Renderer::diagnose_visibility` and
-`VisibilityDiagnosisReportV1::from_inspection` when the `inspection` feature is
-enabled. The report consumes a `scena.scene_inspection.v1` report, renderer
-stats, and an optional stable node handle. It returns ranked reasons and data
-fix suggestions without mutating scene state.
+`VisibilityDiagnosisReportV1::from_inspection` /
+`VisibilityDiagnosisReportV1::from_inspection_with_diagnostics` when the
+`inspection` feature is enabled. The report consumes a
+`scena.scene_inspection.v1` report, renderer stats, optional renderer
+diagnostics, and an optional stable node handle. It returns ranked reasons and
+data fix suggestions without mutating scene state.
 
 Required top-level fields:
 
@@ -799,17 +806,19 @@ Required top-level fields:
 The v1 contract covers `not_prepared`, `missing_camera`,
 `no_visible_drawables`, `all_culled`, `stale_handle`, `node_hidden`,
 `parent_hidden`, `zero_scale`, `nan_transform`, `layer_masked`, `alpha_zero`,
-`transparent_material`, `missing_material_upload`, `missing_geometry`, and
-SceneHost import-root diagnosis. `all_culled` is emitted only when renderer
-stats show that every inspection-visible drawable was culled; partial frustum
-culling of a healthy scene is not a failure. Each reason includes severity,
-confidence, whether it is auto-fixable, affected stable handles when known, and
-a short message. Fixes use stable Scena action codes such as `prepare`,
-`set_camera`, `frame_bounds`, `set_visible`, `set_transform`,
-`set_layer_mask`, `set_material_alpha`, and `inspect_assets`. Content-risk
-fixes are reported as data and must be applied explicitly by the host or CLI
-caller. Summary mode returns only reasons, fixes, and counts; detail mode may
-include supporting evidence rows.
+`transparent_material`, `missing_material_upload`, `missing_geometry`,
+`behind_camera`, `outside_frustum`, `clipped_by_active_clipping_plane`,
+`backend_capability_degraded`, and SceneHost import-root diagnosis.
+`all_culled` is emitted only when renderer stats show that every
+inspection-visible drawable was culled; partial frustum culling of a healthy
+scene is not a failure. Each reason includes severity, confidence, whether it
+is auto-fixable, affected stable handles when known, and a short message. Fixes
+use stable Scena action codes such as `prepare`, `set_camera`, `frame_bounds`,
+`set_visible`, `set_transform`, `set_layer_mask`, `set_material_alpha`,
+`clear_clipping_planes`, `inspect_capabilities`, and `inspect_assets`.
+Content-risk fixes are reported as data and must be applied explicitly by the
+host or CLI caller. Summary mode returns only reasons, fixes, and counts;
+detail mode may include supporting evidence rows.
 
 The stable fixture lives at
 `tests/assets/stable-contracts/visibility_diagnosis.v1.json`. The `scena`

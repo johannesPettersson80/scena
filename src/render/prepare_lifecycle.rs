@@ -93,6 +93,11 @@ impl Renderer {
             self.target,
         ));
         if let Some(assets) = assets {
+            diagnostics.extend(prepare::collect_asset_camera_visibility_diagnostics(
+                scene,
+                self.target,
+                assets,
+            ));
             diagnostics.extend(prepare::collect_material_texture_diagnostics(scene, assets));
         }
         step_start = log_prepare_step("diagnostics", step_start);

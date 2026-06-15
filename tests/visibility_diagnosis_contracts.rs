@@ -1,8 +1,10 @@
 #![cfg(feature = "inspection")]
 
 use scena::{
-    AlphaMode, Assets, Color, GeometryDesc, MaterialDesc, Renderer, RendererStats, Scene,
+    AlphaMode, Assets, ClippingPlane, ClippingPlaneSet, Color, Diagnostic, DiagnosticCode,
+    GeometryDesc, MaterialDesc, RenderIntrospectionOptions, Renderer, RendererStats, Scene,
     VISIBILITY_DIAGNOSIS_SCHEMA_V1, Vec3, VisibilityDiagnosisOptions, VisibilityDiagnosisReportV1,
+    capture_rgba8_from_pixels,
 };
 
 #[test]
@@ -311,6 +313,154 @@ fn visibility_diagnosis_classifies_material_and_asset_visibility_failures() {
     assert_reason(&missing_geometry, "missing_geometry");
 }
 
+#[test]
+fn visibility_diagnosis_maps_camera_clipping_and_backend_diagnostics() {
+    let (assets, mut scene, _, _) = diagnostic_scene(true);
+    let plane = scene.add_clipping_plane(ClippingPlane::new(Vec3::X, -10.0));
+    scene
+        .set_clipping_planes(ClippingPlaneSet::new().with_plane(plane))
+        .expect("clipping plane activates");
+    let inspection = scene.inspect_with_assets(&assets).to_schema_report();
+    let handle = mesh_handle(&inspection);
+    let diagnostics = vec![
+        Diagnostic::warning(
+            DiagnosticCode::ObjectsBehindCamera,
+            "all mesh bounds are behind the active camera",
+            "move or frame the camera",
+        ),
+        Diagnostic::warning(
+            DiagnosticCode::SceneOutsideCameraFrustum,
+            "mesh bounds are outside the active camera frustum",
+            "frame the scene",
+        ),
+        Diagnostic::warning(
+            DiagnosticCode::ForwardPbrDegraded,
+            "forward PBR is degraded on this backend",
+            "inspect capabilities",
+        ),
+    ];
+
+    let report = VisibilityDiagnosisReportV1::from_inspection_with_diagnostics(
+        &inspection,
+        RendererStats::default(),
+        Some(handle),
+        VisibilityDiagnosisOptions::detail(),
+        true,
+        &diagnostics,
+    );
+
+    assert!(!report.ok);
+    assert_reason(&report, "behind_camera");
+    assert_reason(&report, "outside_frustum");
+    assert_reason(&report, "clipped_by_active_clipping_plane");
+    assert_reason(&report, "backend_capability_degraded");
+    assert_fix(&report, "frame_bounds");
+    assert_fix(&report, "clear_clipping_planes");
+    assert_fix(&report, "inspect_capabilities");
+}
+
+#[test]
+fn visibility_diagnosis_agrees_with_render_introspection_for_scene_level_failures() {
+    let empty_assets = Assets::new();
+    let mut empty_scene = Scene::new();
+    empty_scene.add_default_camera().expect("camera inserts");
+    let mut empty_renderer = Renderer::headless(64, 64).expect("renderer builds");
+    empty_renderer
+        .prepare_with_assets(&mut empty_scene, &empty_assets)
+        .expect("empty scene prepares");
+    empty_renderer
+        .render_active(&empty_scene)
+        .expect("empty scene renders");
+    let empty_inspection = empty_scene
+        .inspect_with_assets(&empty_assets)
+        .to_schema_report();
+    let empty_capture = capture_rgba8_from_pixels(
+        &empty_scene,
+        &empty_renderer,
+        Default::default(),
+        64,
+        64,
+        vec![0; 64 * 64 * 4],
+    )
+    .expect("empty frame captures");
+    let empty_introspection = empty_renderer.introspect_capture(
+        &empty_capture,
+        &empty_inspection,
+        RenderIntrospectionOptions::default(),
+    );
+    let empty_diagnosis = empty_renderer.diagnose_visibility(
+        &empty_inspection,
+        None,
+        VisibilityDiagnosisOptions::default(),
+    );
+    assert_reason_code(&empty_introspection.reasons, "no_visible_drawables");
+    assert_reason(&empty_diagnosis, "no_visible_drawables");
+
+    let (culled_assets, culled_scene, mut culled_renderer, _) =
+        diagnostic_scene_with_drawables(true, 1);
+    culled_renderer
+        .render_active(&culled_scene)
+        .expect("culled baseline renders");
+    let culled_inspection = culled_scene
+        .inspect_with_assets(&culled_assets)
+        .to_schema_report();
+    let culled_stats = RendererStats {
+        culled_objects: 1,
+        ..Default::default()
+    };
+    let culled_capture = capture_rgba8_from_pixels(
+        &culled_scene,
+        &culled_renderer,
+        Default::default(),
+        64,
+        64,
+        vec![0; 64 * 64 * 4],
+    )
+    .expect("culled frame captures");
+    let culled_introspection = scena::RenderIntrospectionReportV1::from_capture(
+        &culled_capture,
+        &culled_inspection,
+        culled_stats,
+        RenderIntrospectionOptions::default(),
+    );
+    let culled_diagnosis = VisibilityDiagnosisReportV1::from_inspection(
+        &culled_inspection,
+        culled_stats,
+        None,
+        VisibilityDiagnosisOptions::default(),
+        true,
+    );
+    assert_reason_code(&culled_introspection.reasons, "all_culled");
+    assert_reason(&culled_diagnosis, "all_culled");
+
+    let (behind_assets, mut behind_scene, mut behind_renderer, _) =
+        diagnostic_scene_at(Vec3::new(0.0, 0.0, 4.0));
+    behind_renderer
+        .prepare_with_assets(&mut behind_scene, &behind_assets)
+        .expect("behind-camera scene prepares");
+    behind_renderer
+        .render_active(&behind_scene)
+        .expect("behind-camera scene renders");
+    let behind_inspection = behind_scene
+        .inspect_with_assets(&behind_assets)
+        .to_schema_report();
+    let behind_capture = behind_renderer
+        .capture_rgba8(&behind_scene, Default::default())
+        .expect("behind-camera scene captures");
+    let behind_introspection = behind_renderer.introspect_capture(
+        &behind_capture,
+        &behind_inspection,
+        RenderIntrospectionOptions::default(),
+    );
+    let behind_diagnosis = behind_renderer.diagnose_visibility(
+        &behind_inspection,
+        None,
+        VisibilityDiagnosisOptions::default(),
+    );
+    assert_reason_code(&behind_introspection.reasons, "behind_camera");
+    assert_reason(&behind_diagnosis, "behind_camera");
+}
+
 #[cfg(feature = "scene-host")]
 #[test]
 fn visibility_diagnosis_accepts_scene_host_import_targets() {
@@ -389,6 +539,21 @@ fn diagnostic_scene_with_drawables(
     )
 }
 
+fn diagnostic_scene_at(translation: Vec3) -> (Assets, Scene, Renderer, scena::NodeKey) {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
+    let material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+    let mut scene = Scene::new();
+    scene.add_default_camera().expect("camera inserts");
+    let node = scene
+        .mesh(geometry, material)
+        .transform(scena::Transform::at(translation))
+        .add()
+        .expect("mesh node inserts");
+    let renderer = Renderer::headless(64, 64).expect("renderer builds");
+    (assets, scene, renderer, node)
+}
+
 fn mesh_handle(report: &scena::SceneInspectionReportV1) -> u64 {
     report
         .draw_list
@@ -453,6 +618,13 @@ fn assert_fix(report: &VisibilityDiagnosisReportV1, action: &str) {
         report.fixes.iter().any(|fix| fix.action == action),
         "expected fix {action} in {:#?}",
         report.fixes
+    );
+}
+
+fn assert_reason_code(reasons: &[scena::RenderIntrospectionReasonV1], code: &str) {
+    assert!(
+        reasons.iter().any(|reason| reason.code == code),
+        "expected reason {code} in {reasons:#?}"
     );
 }
 

@@ -2,7 +2,7 @@ mod analysis;
 
 use serde::{Deserialize, Serialize};
 
-use crate::diagnostics::RendererStats;
+use crate::diagnostics::{Diagnostic, RendererStats};
 use crate::scene::SceneInspectionReportV1;
 
 use super::Renderer;
@@ -102,7 +102,32 @@ impl VisibilityDiagnosisReportV1 {
         options: VisibilityDiagnosisOptions,
         prepared: bool,
     ) -> Self {
-        analysis::from_inspection(inspection, stats, target_handle, options, prepared)
+        Self::from_inspection_with_diagnostics(
+            inspection,
+            stats,
+            target_handle,
+            options,
+            prepared,
+            &[],
+        )
+    }
+
+    pub fn from_inspection_with_diagnostics(
+        inspection: &SceneInspectionReportV1,
+        stats: RendererStats,
+        target_handle: Option<u64>,
+        options: VisibilityDiagnosisOptions,
+        prepared: bool,
+        diagnostics: &[Diagnostic],
+    ) -> Self {
+        analysis::from_inspection(
+            inspection,
+            stats,
+            target_handle,
+            options,
+            prepared,
+            diagnostics,
+        )
     }
 
     pub fn to_schema_json(&self) -> serde_json::Value {
@@ -117,12 +142,30 @@ impl Renderer {
         target_handle: Option<u64>,
         options: VisibilityDiagnosisOptions,
     ) -> VisibilityDiagnosisReportV1 {
-        VisibilityDiagnosisReportV1::from_inspection(
+        VisibilityDiagnosisReportV1::from_inspection_with_diagnostics(
             inspection,
             self.stats(),
             target_handle,
             options,
             self.prepared.is_some(),
+            self.diagnostics(),
+        )
+    }
+
+    pub fn diagnose_visibility_with_diagnostics(
+        &self,
+        inspection: &SceneInspectionReportV1,
+        target_handle: Option<u64>,
+        options: VisibilityDiagnosisOptions,
+        diagnostics: &[Diagnostic],
+    ) -> VisibilityDiagnosisReportV1 {
+        VisibilityDiagnosisReportV1::from_inspection_with_diagnostics(
+            inspection,
+            self.stats(),
+            target_handle,
+            options,
+            self.prepared.is_some(),
+            diagnostics,
         )
     }
 }
