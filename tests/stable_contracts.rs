@@ -159,6 +159,10 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
             "scena.interaction_verification.v1",
         ),
         (
+            "tests/assets/stable-contracts/scene_host_gizmo_drag.v1.json",
+            "scena.scene_host_gizmo_drag.v1",
+        ),
+        (
             "tests/assets/stable-contracts/connector_browser.v1.json",
             "scena.connector_browser.v1",
         ),
@@ -384,6 +388,14 @@ fn interaction_expectation_golden_matches_live_schema_serialization() {
 fn interaction_verification_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::InteractionVerificationReportV1>(
         "tests/assets/stable-contracts/interaction_verification.v1.json",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_host_gizmo_drag_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::SceneHostGizmoDragV1>(
+        "tests/assets/stable-contracts/scene_host_gizmo_drag.v1.json",
     );
 }
 

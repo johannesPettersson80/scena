@@ -214,6 +214,13 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/interaction_verification.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.scene_host_gizmo_drag.v1",
+            owner_module: "scene_host",
+            summary: "SceneHost transform gizmo drag request that applies through VisualPatch.",
+            feature_flag: Some("scene-host"),
+            fixture_path: Some("tests/assets/stable-contracts/scene_host_gizmo_drag.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.connector_browser.v1",
             owner_module: "scene_host",
             summary: "Connector listing, metadata compatibility, and snap-preview report.",

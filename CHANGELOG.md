@@ -80,7 +80,9 @@ All notable user-facing changes are recorded here.
 - Added platform-neutral `TransformGizmo` controls for translate/rotate/scale
   manipulation from caller-supplied pointer rays, with world/local/view-aligned
   spaces, axis/plane constraints, SceneHost `VisualPatchV1` emission, helper
-  stroke geometry, and a `simple_scene_editor_gizmo.rs` example.
+  stroke geometry, a stable `scena.scene_host_gizmo_drag.v1` SceneHost request
+  contract plus WASM `applyGizmoDragJson()`, and a
+  `simple_scene_editor_gizmo.rs` example.
 - Added `ViewerProfile` presets for `model_viewer`, `cad_inspection`,
   `product`, `industrial`, and `documentation` viewer setup. The presets
   compose existing renderer profile, render mode, lighting, environment,

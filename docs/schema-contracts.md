@@ -419,6 +419,36 @@ Stable fixtures live at
 `tests/assets/stable-contracts/visual_patch.v1.json` and
 `tests/assets/stable-contracts/visual_patch_result.v1.json`.
 
+### `scena.scene_host_gizmo_drag.v1`
+
+Consumed by `SceneHostCore::apply_gizmo_drag_json()` and WASM
+`SceneHost.applyGizmoDragJson()`. This is a transient interaction request for
+the platform-neutral `TransformGizmo`: the host supplies a target stable node
+handle separately, plus the starting transform and caller-derived start/current
+pointer rays. Scena computes one translate/rotate/scale transform and applies
+it through the existing `scena.visual_patch.v1` transform channel. The result
+JSON is therefore the normal `VisualPatchResultV1` shape, including no-op,
+revision, and stale-handle semantics.
+
+The request supports:
+
+- `mode`: `translate`, `rotate`, or `scale`;
+- `space`: `world`, `local`, or `view_aligned` (`world` by default);
+- optional `constraint`: `{ "kind": "axis", "axis": "x|y|z" }`,
+  `{ "kind": "plane", "axis": "x|y|z" }`, or `{ "kind": "view_plane" }`;
+- `start_transform`, using the stable `Transform` JSON shape;
+- `start_ray` and `current_ray`, each with finite `origin` and non-zero
+  finite `direction`.
+
+Invalid JSON, unsupported schemas, non-finite transforms, invalid rays, and
+unresolvable ray/constraint combinations fail closed as `InvalidInput`. Missing
+or stale target handles are reported by the returned visual-patch result for
+the `transforms` channel; valid requests never create an undo stack, snapping
+system, constraint solver, collision check, or document model.
+
+Stable fixture:
+`tests/assets/stable-contracts/scene_host_gizmo_drag.v1.json`.
+
 ### `scena.scene_host_visual_state.v1` and `scena.scene_host_visual_states.v1`
 
 Returned by `SceneHostCore::store_visual_state_json()`,

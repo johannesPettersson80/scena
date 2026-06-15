@@ -74,6 +74,9 @@ Frame operations use one host handle namespace:
 
 - `setTransform`
 - `setTransforms` with a JSON array of `{ node, translation, rotation, scale }`
+- `applyGizmoDragJson(node, requestJson)` with
+  `scena.scene_host_gizmo_drag.v1`, returning `scena.visual_patch.v1` result
+  JSON
 - `setCamera(target, yawRadians, pitchRadians, distance)`
 - `setCameraJson(json)` and `getCameraJson()`
 - `cameraPointerDown(x, y, "primary" | "secondary" | "auxiliary")`

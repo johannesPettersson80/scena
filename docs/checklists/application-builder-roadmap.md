@@ -1108,7 +1108,13 @@ Acceptance:
 - [x] Interaction tests for stale target handles through
       `TransformGizmo::to_visual_patch(...)` + `SceneHostCore::apply_patch`;
       stale handles fail closed as `NodeHandleNotFound`.
-- [ ] Browser proof for translate drag and rotation drag.
+- [x] Browser proof for translate drag and rotation drag. Evidence:
+      `SCENA_BROWSER_BACKENDS=webgl2 npm run browser:scene-host-proof`
+      asserts WASM `applyGizmoDragJson()` is exported, a
+      `scena.scene_host_gizmo_drag.v1` translate drag applies one
+      visual-patch transform and moves the tracked mesh along X, a rotate drag
+      applies one visual-patch transform and rotates local X to world Y, and
+      the rendered/captured frame remains nonblank.
 - [x] Example: `simple_scene_editor_gizmo.rs` moves a selected part with the
       gizmo, attaches helper strokes, frames the scene, and renders once.
 

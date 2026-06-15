@@ -148,6 +148,13 @@ Additive public API changes in Unreleased:
   presets (gated behind `scene-host`)
 - `SceneHostCore::set_camera_bookmark` and
   `SceneHostCore::set_camera_bookmark_json` (gated behind `scene-host`)
+- `SCENE_HOST_GIZMO_DRAG_SCHEMA_V1`, `SceneHostGizmoDragV1`,
+  `SceneHostGizmoModeV1`, `SceneHostGizmoAxisV1`,
+  `SceneHostGizmoSpaceV1`, `SceneHostGizmoConstraintV1`,
+  `SceneHostGizmoRayV1`, `SceneHostCore::apply_gizmo_drag`, and
+  `SceneHostCore::apply_gizmo_drag_json` for applying caller-supplied gizmo
+  rays through the existing visual-patch transform channel (gated behind
+  `scene-host`)
 - `ScenaViewerAnnotationLayoutOptions`,
   `ScenaViewerAnnotationLayoutInput`,
   `ScenaViewerAnnotationLayoutReport`,
@@ -820,6 +827,10 @@ then apply the returned `Transform` directly to a `Scene` or emit a
 `VisualPatchV1` with `to_visual_patch(...)` when using SceneHost. Gizmo helper
 visuals are ordinary line-stroke scene nodes, so they stay renderer-owned and
 do not add undo/redo, snapping, collision, or document-model behavior.
+SceneHost browser/native hosts can also call `apply_gizmo_drag_json(...)` /
+`applyGizmoDragJson(...)` with `scena.scene_host_gizmo_drag.v1`; the helper
+computes one drag transform from caller-supplied rays and returns the normal
+`scena.visual_patch.v1` result JSON.
 
 Common visual-regression helpers:
 

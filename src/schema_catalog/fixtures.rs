@@ -84,6 +84,10 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
             include_str!("../../tests/assets/stable-contracts/interaction_verification.v1.json"),
         ),
         (
+            "scena.scene_host_gizmo_drag.v1",
+            include_str!("../../tests/assets/stable-contracts/scene_host_gizmo_drag.v1.json"),
+        ),
+        (
             "scena.connector_browser.v1",
             include_str!("../../tests/assets/stable-contracts/connector_browser.v1.json"),
         ),

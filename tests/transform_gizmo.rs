@@ -173,6 +173,116 @@ fn transform_gizmo_visual_patch_reports_stale_target_handles() {
     assert_eq!(decoded.failed[0].handle, Some(999_999));
 }
 
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_host_gizmo_drag_json_applies_translate_and_rotate_visual_patches() {
+    use scena::{
+        SCENE_HOST_GIZMO_DRAG_SCHEMA_V1, SceneHostCore, SceneHostErrorCode,
+        SceneInspectionReportV1, VisualPatchResultV1,
+    };
+    use serde_json::json;
+
+    let mut host = SceneHostCore::headless(64, 64).expect("host builds");
+    let target = host
+        .add_empty(
+            Some(host.root_handle()),
+            Transform::IDENTITY,
+            Some("editable"),
+        )
+        .expect("target inserts");
+
+    let translate = json!({
+        "schema": SCENE_HOST_GIZMO_DRAG_SCHEMA_V1,
+        "mode": "translate",
+        "space": "world",
+        "constraint": { "kind": "axis", "axis": "x" },
+        "start_transform": {
+            "translation": [0.0, 0.0, 0.0],
+            "rotation": [0.0, 0.0, 0.0, 1.0],
+            "scale": [1.0, 1.0, 1.0]
+        },
+        "start_ray": {
+            "origin": [1.0, 0.0, 5.0],
+            "direction": [0.0, 0.0, -1.0]
+        },
+        "current_ray": {
+            "origin": [3.0, 0.0, 5.0],
+            "direction": [0.0, 0.0, -1.0]
+        }
+    });
+    let translate_result: VisualPatchResultV1 = serde_json::from_str(
+        &host
+            .apply_gizmo_drag_json(target, &translate.to_string())
+            .unwrap(),
+    )
+    .expect("translate result decodes");
+    assert_eq!(translate_result.applied.transforms, 1);
+    assert!(translate_result.failed.is_empty());
+
+    let translated = inspected_node(&host, target).local_transform;
+    assert_vec3_close(translated.translation, Vec3::new(2.0, 0.0, 0.0));
+
+    let rotate = json!({
+        "schema": SCENE_HOST_GIZMO_DRAG_SCHEMA_V1,
+        "mode": "rotate",
+        "space": "world",
+        "constraint": { "kind": "axis", "axis": "z" },
+        "start_transform": translated,
+        "start_ray": {
+            "origin": [3.0, 0.0, 5.0],
+            "direction": [0.0, 0.0, -1.0]
+        },
+        "current_ray": {
+            "origin": [2.0, 1.0, 5.0],
+            "direction": [0.0, 0.0, -1.0]
+        }
+    });
+    let rotate_result: VisualPatchResultV1 = serde_json::from_str(
+        &host
+            .apply_gizmo_drag_json(target, &rotate.to_string())
+            .unwrap(),
+    )
+    .expect("rotate result decodes");
+    assert_eq!(rotate_result.applied.transforms, 1);
+    assert!(rotate_result.failed.is_empty());
+
+    let rotated = inspected_node(&host, target).local_transform;
+    assert_vec3_close(rotated.translation, Vec3::new(2.0, 0.0, 0.0));
+    assert_vec3_close(rotated.rotation * Vec3::X, Vec3::Y);
+
+    let stale_result: VisualPatchResultV1 = serde_json::from_str(
+        &host
+            .apply_gizmo_drag_json(999_999, &translate.to_string())
+            .unwrap(),
+    )
+    .expect("stale-target result decodes");
+    assert_eq!(stale_result.applied.transforms, 0);
+    assert_eq!(stale_result.failed.len(), 1);
+    assert_eq!(stale_result.failed[0].channel, "transforms");
+    assert_eq!(stale_result.failed[0].handle, Some(999_999));
+    assert_eq!(
+        stale_result.failed[0].code,
+        SceneHostErrorCode::NodeHandleNotFound
+    );
+
+    let mut invalid_ray = translate;
+    invalid_ray["current_ray"]["direction"] = json!([0.0, 0.0, 0.0]);
+    let error = host
+        .apply_gizmo_drag_json(target, &invalid_ray.to_string())
+        .expect_err("zero-length ray should fail closed");
+    assert_eq!(error.code(), SceneHostErrorCode::InvalidInput);
+
+    fn inspected_node(host: &SceneHostCore, handle: u64) -> scena::SceneNodeInspectionV1 {
+        let report: SceneInspectionReportV1 =
+            serde_json::from_str(&host.inspect_json().expect("inspection serializes"))
+                .expect("inspection decodes");
+        report
+            .node_by_handle(handle)
+            .expect("target remains inspectable")
+            .clone()
+    }
+}
+
 #[test]
 fn transform_gizmo_rotation_keeps_finite_quaternion() {
     let gizmo =

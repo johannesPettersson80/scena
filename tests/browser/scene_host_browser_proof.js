@@ -61,6 +61,7 @@ const REQUIRED_BINDINGS = [
   ["prototype", "setSubtreeTint"],
   ["prototype", "clearSubtreeTint"],
   ["prototype", "applyPatch"],
+  ["prototype", "applyGizmoDragJson"],
   ["prototype", "addNodeCallout"],
   ["prototype", "addWorldCallout"],
   ["prototype", "clearCallout"],
@@ -280,6 +281,26 @@ function transformsApproximatelyEqual(a, b) {
     arraysApproximatelyEqual(a.rotation, b.rotation) &&
     arraysApproximatelyEqual(a.scale, b.scale)
   );
+}
+
+function rotateVectorByQuat(rotation, vector) {
+  const [x, y, z, w] = rotation;
+  const [vx, vy, vz] = vector;
+  const uv = [
+    y * vz - z * vy,
+    z * vx - x * vz,
+    x * vy - y * vx,
+  ];
+  const uuv = [
+    y * uv[2] - z * uv[1],
+    z * uv[0] - x * uv[2],
+    x * uv[1] - y * uv[0],
+  ];
+  return [
+    vx + 2 * (w * uv[0] + uuv[0]),
+    vy + 2 * (w * uv[1] + uuv[1]),
+    vz + 2 * (w * uv[2] + uuv[2]),
+  ];
 }
 
 function cameraStatesApproximatelyEqual(a, b, tolerance = 0.0001) {
@@ -882,6 +903,79 @@ async function runPageProof(page) {
       const phase0RestoreInspection = JSON.parse(host.inspectJson());
       const phase0RestoreCamera = JSON.parse(host.getCameraJson());
       const phase0InfrastructureEvents = JSON.parse(host.drainEventsJson());
+      const gizmoBeforeNode = nodeByHandle(phase0RestoreInspection, leftMesh);
+      const gizmoTranslateRequest = {
+        schema: "scena.scene_host_gizmo_drag.v1",
+        mode: "translate",
+        space: "world",
+        constraint: { kind: "axis", axis: "x" },
+        start_transform: gizmoBeforeNode.local_transform,
+        start_ray: {
+          origin: [
+            gizmoBeforeNode.local_transform.translation[0] + 1.0,
+            gizmoBeforeNode.local_transform.translation[1],
+            5.0,
+          ],
+          direction: [0.0, 0.0, -1.0],
+        },
+        current_ray: {
+          origin: [
+            gizmoBeforeNode.local_transform.translation[0] + 1.16,
+            gizmoBeforeNode.local_transform.translation[1],
+            5.0,
+          ],
+          direction: [0.0, 0.0, -1.0],
+        },
+      };
+      const gizmoTranslateResult = JSON.parse(
+        host.applyGizmoDragJson(leftMeshHandle, JSON.stringify(gizmoTranslateRequest)),
+      );
+      const gizmoAfterTranslateInspection = JSON.parse(host.inspectJson());
+      const gizmoAfterTranslateNode = nodeByHandle(gizmoAfterTranslateInspection, leftMesh);
+      const gizmoRotateRequest = {
+        schema: "scena.scene_host_gizmo_drag.v1",
+        mode: "rotate",
+        space: "world",
+        constraint: { kind: "axis", axis: "z" },
+        start_transform: gizmoAfterTranslateNode.local_transform,
+        start_ray: {
+          origin: [
+            gizmoAfterTranslateNode.local_transform.translation[0] + 1.0,
+            gizmoAfterTranslateNode.local_transform.translation[1],
+            5.0,
+          ],
+          direction: [0.0, 0.0, -1.0],
+        },
+        current_ray: {
+          origin: [
+            gizmoAfterTranslateNode.local_transform.translation[0],
+            gizmoAfterTranslateNode.local_transform.translation[1] + 1.0,
+            5.0,
+          ],
+          direction: [0.0, 0.0, -1.0],
+        },
+      };
+      const gizmoRotateResult = JSON.parse(
+        host.applyGizmoDragJson(leftMeshHandle, JSON.stringify(gizmoRotateRequest)),
+      );
+      const gizmoAfterRotateInspection = JSON.parse(host.inspectJson());
+      const gizmoPrepare = timedPrepare("transform_gizmo_browser_drag");
+      const gizmoRender = timedRender("transform_gizmo_browser_drag");
+      await waitForCanvasPresent();
+      const gizmoCapture = captureSummary(host.capture());
+      const gizmoRestoreResult = JSON.parse(
+        host.applyPatch(
+          JSON.stringify({
+            schema: "scena.visual_patch.v1",
+            transforms: [
+              {
+                node: leftMesh,
+                transform: phase0BeforeLeftMesh.local_transform,
+              },
+            ],
+          }),
+        ),
+      );
 
       const measurementPrepare = timedPrepare("measurement_distance_overlay");
       const measurementRender = JSON.parse(host.render());
@@ -1410,6 +1504,19 @@ async function runPageProof(page) {
           png_byte_length: phase0CapturePngBytes.length,
           png_header: phase0CapturePngHeader,
         },
+        transform_gizmo: {
+          before_inspection: phase0RestoreInspection,
+          translate_request: gizmoTranslateRequest,
+          translate_result: gizmoTranslateResult,
+          after_translate_inspection: gizmoAfterTranslateInspection,
+          rotate_request: gizmoRotateRequest,
+          rotate_result: gizmoRotateResult,
+          after_rotate_inspection: gizmoAfterRotateInspection,
+          restore_result: gizmoRestoreResult,
+          prepare: gizmoPrepare,
+          render: gizmoRender,
+          capture: gizmoCapture,
+        },
         phase3_grid_inspection: afterGridInspection,
         transform_batch: transformBatch,
         typed_transform_batch: {
@@ -1885,6 +1992,61 @@ function assertProof(pageProof, screenshot) {
     "camera_bookmark_restore_returns_to_framed_view",
     cameraStatesApproximatelyEqual(flyTo.restored_camera, pageProof.camera.framed),
     { restored: flyTo.restored_camera, framed: pageProof.camera.framed },
+  );
+  const gizmo = pageProof.transform_gizmo;
+  const gizmoBeforeNode = nodeByHandle(gizmo.before_inspection, tracked);
+  const gizmoAfterTranslateNode = nodeByHandle(gizmo.after_translate_inspection, tracked);
+  const gizmoAfterRotateNode = nodeByHandle(gizmo.after_rotate_inspection, tracked);
+  const gizmoRotatedX =
+    gizmoAfterRotateNode &&
+    rotateVectorByQuat(gizmoAfterRotateNode.local_transform.rotation, [1.0, 0.0, 0.0]);
+  check(
+    "transform_gizmo_browser_translate_drag_applies_visual_patch",
+    gizmo.translate_result.applied.transforms === 1 &&
+      gizmo.translate_result.failed.length === 0 &&
+      gizmoBeforeNode &&
+      gizmoAfterTranslateNode &&
+      gizmoAfterTranslateNode.local_transform.translation[0] >
+        gizmoBeforeNode.local_transform.translation[0] + 0.15 &&
+      Math.abs(
+        gizmoAfterTranslateNode.local_transform.translation[1] -
+          gizmoBeforeNode.local_transform.translation[1],
+      ) <= 0.0001 &&
+      Math.abs(
+        gizmoAfterTranslateNode.local_transform.translation[2] -
+          gizmoBeforeNode.local_transform.translation[2],
+      ) <= 0.0001,
+    {
+      result: gizmo.translate_result,
+      before: gizmoBeforeNode && gizmoBeforeNode.local_transform,
+      after: gizmoAfterTranslateNode && gizmoAfterTranslateNode.local_transform,
+    },
+  );
+  check(
+    "transform_gizmo_browser_rotate_drag_applies_visual_patch",
+    gizmo.rotate_result.applied.transforms === 1 &&
+      gizmo.rotate_result.failed.length === 0 &&
+      gizmoAfterRotateNode &&
+      arraysApproximatelyEqual(
+        gizmoAfterRotateNode.local_transform.translation,
+        gizmoAfterTranslateNode.local_transform.translation,
+      ) &&
+      arraysApproximatelyEqual(gizmoRotatedX, [0.0, 1.0, 0.0], 0.01),
+    {
+      result: gizmo.rotate_result,
+      after_translate: gizmoAfterTranslateNode && gizmoAfterTranslateNode.local_transform,
+      after_rotate: gizmoAfterRotateNode && gizmoAfterRotateNode.local_transform,
+      rotated_x: gizmoRotatedX,
+    },
+  );
+  check(
+    "transform_gizmo_browser_drag_render_nonblank",
+    gizmo.render.outcome.skipped === false &&
+      gizmo.capture.descriptor.pixels.nonblack > 0,
+    {
+      render: gizmo.render,
+      pixels: gizmo.capture.descriptor.pixels,
+    },
   );
   const phase1 = pageProof.phase1_appearance_dirty_tracking;
   const phase1BeforeRevisions = phase1.before_tint_inspection.revisions;
@@ -2623,6 +2785,7 @@ async function main() {
     phase0_visual_patch: pageProof.phase0_visual_patch,
     phase0_events: pageProof.phase0_events,
     capture_png: pageProof.capture_png,
+    transform_gizmo: pageProof.transform_gizmo,
     transform_batch: pageProof.transform_batch,
     typed_transform_batch: pageProof.typed_transform_batch,
     visibility_probe: pageProof.visibility_probe,

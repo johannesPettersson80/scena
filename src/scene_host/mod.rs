@@ -11,6 +11,7 @@ mod core;
 mod error;
 mod events;
 mod exploded_view;
+mod gizmo;
 mod handles;
 mod inputs;
 mod inspection_tools;
@@ -38,6 +39,8 @@ mod wasm_animation;
 mod wasm_assets;
 #[cfg(target_arch = "wasm32")]
 mod wasm_camera;
+#[cfg(target_arch = "wasm32")]
+mod wasm_gizmo;
 #[cfg(target_arch = "wasm32")]
 mod wasm_measurements;
 #[cfg(target_arch = "wasm32")]
@@ -75,6 +78,10 @@ pub use events::{
     HostEventHoverPhaseV1, HostEventModifiersV1, HostEventTargetKindV1, HostEventV1,
 };
 pub use exploded_view::{SceneHostExplodedViewModeV1, SceneHostExplodedViewOptionsV1};
+pub use gizmo::{
+    SCENE_HOST_GIZMO_DRAG_SCHEMA_V1, SceneHostGizmoAxisV1, SceneHostGizmoConstraintV1,
+    SceneHostGizmoDragV1, SceneHostGizmoModeV1, SceneHostGizmoRayV1, SceneHostGizmoSpaceV1,
+};
 pub use interaction_verification::{
     INTERACTION_EXPECTATION_SCHEMA_V1, INTERACTION_VERIFICATION_SCHEMA_V1,
     InteractionCoordinateSpaceV1, InteractionCoordinatesV1, InteractionExpectationV1,
