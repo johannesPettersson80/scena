@@ -1026,11 +1026,12 @@ The first v1 slice supports:
 - opaque caller `metadata`
 
 Unknown fields fail closed. Known future feature sections such as `materials`,
-`cameras`, `labels`, `section_box`, and `measurements` emit
-`unsupported_feature` until the feature slice that owns them implements the
-section. Workflow fields such as `steps`, `sequence`, `loop`, `branch`,
-`timeline`, and `script` emit `unsupported_workflow`; recipes must stay
-snapshots and the host owns cadence and sequencing.
+`cameras`, `labels`, `section_box`, `measurements`, `anchors`, `connectors`,
+`bounds`, and `authored_planes` emit `unsupported_feature` until the feature
+slice that owns them implements the section. Workflow fields such as `steps`,
+`sequence`, `loop`, `branch`, `timeline`, and `script` emit
+`unsupported_workflow`; recipes must stay snapshots and the host owns cadence
+and sequencing.
 
 `scena.scene_recipe_validation.v1` contains `ok` plus deterministic diagnostics
 with `code`, `severity`, JSON `path`, `message`, `help`, optional
@@ -1053,6 +1054,12 @@ non-zero when `ok` is false. When built with `inspection`, `scena render`,
 `scena inspect`, and `scena diagnose --visibility` accept either a direct asset
 path or a recipe file and use the first recipe import through the same
 load/prepare/render/capture path as direct assets.
+Invalid recipe and recipe-adjacent command fixtures live under
+`tests/assets/recipe-invalid/`; they pin missing assets, invalid transforms,
+oversized assets, unknown placement verbs, and stale handle diagnosis for the
+currently landed recipe surface. Future recipe sections must add matching
+invalid fixtures for their own enum, material, handle, profile, or verb
+diagnostics when they land.
 
 ### `scena.placement_result.v1`
 

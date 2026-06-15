@@ -51,6 +51,42 @@ fn scene_recipe_validation_reports_unknown_fields_duplicate_ids_and_suggestions(
 }
 
 #[test]
+fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
+    for section in [
+        "primitives",
+        "materials",
+        "cameras",
+        "lights",
+        "labels",
+        "viewer_profile",
+        "environment",
+        "placements",
+        "section_box",
+        "measurements",
+        "callouts",
+        "exploded_view",
+        "named_states",
+        "anchors",
+        "connectors",
+        "bounds",
+        "authored_planes",
+    ] {
+        let mut recipe = json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                { "id": "part", "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf" }
+            ]
+        });
+        recipe
+            .as_object_mut()
+            .expect("recipe is an object")
+            .insert(section.to_owned(), json!({}));
+        let report = scena::validate_scene_recipe_value(recipe);
+        assert_reason(&report, "unsupported_feature", None);
+    }
+}
+
+#[test]
 fn scene_recipe_validation_rejects_nested_shapes_before_parse() {
     let bad_transform = scena::validate_scene_recipe_value(json!({
         "schema": "scena.scene_recipe.v1",

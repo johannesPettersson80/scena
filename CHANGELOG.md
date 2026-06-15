@@ -56,7 +56,9 @@ All notable user-facing changes are recorded here.
   command, and recipe input for `render --introspect`, `inspect`, and
   `diagnose --visibility`. Recipe validation now reports missing assets as
   structured JSON errors and expected-extent scale mismatches as warning-level
-  diagnostics.
+  diagnostics. Known future recipe sections, including authored-feature
+  sections such as anchors, connectors, bounds, and authored planes, fail as
+  `unsupported_feature` until their owner features land.
 - Added `scena.placement_result.v1` and `scena place` transform previews for
   recipe imports using `center`, `ground`, `fit_to_size`, `look_at`,
   `align_to_anchor`, and `place_on`, with render-introspection proof that

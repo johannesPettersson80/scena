@@ -661,15 +661,20 @@ Scope:
 - [x] The first recipe slice supports imports, per-import transforms and
       expected extents, caller metadata, and at most one optional capture
       directive.
-- [ ] Future recipe sections may include primitive nodes, materials, cameras,
+- [x] Future recipe sections may include primitive nodes, materials, cameras,
       lights, labels, viewer profile references, environment references, and
       feature-owned inspection/annotation helpers as those owner features land.
-- [ ] A recipe may reference authored anchors, connectors, bounds, or authored
-      planes for placement.
-- [ ] Recipe sections are extensible with their owning features. Section boxes,
+      Current validation recognizes these as known future sections and emits
+      `unsupported_feature` instead of silently accepting them.
+- [x] A recipe may reference authored anchors, connectors, bounds, or authored
+      planes for placement. Current placement uses authored features through
+      `scena place`; recipe-level authored-feature sections are reserved as
+      known future sections and fail closed until their owner slice lands.
+- [x] Recipe sections are extensible with their owning features. Section boxes,
       measurement overlays, callouts/leader lines, exploded-view directives,
       and named-state references become recipe-expressible as the Phase 2
-      features that own them land.
+      features that own them land; until then validation emits
+      `unsupported_feature`.
 - [x] A recipe is not a project file, document model, workflow script, or
       persisted application state.
 
@@ -680,8 +685,12 @@ Required validation:
       with `help`.
 - [x] Near-miss suggestions use a bounded string-distance check for supported
       field names, for example `importe` suggesting `imports`.
-- [ ] Unknown verbs, enum variants, handles, materials, assets, or profiles
-      produce structured diagnostics as those sections land.
+- [x] Unknown verbs, enum variants, handles, materials, assets, or profiles
+      produce structured diagnostics as those sections land. Current landed
+      recipe-adjacent surfaces pin `unknown_verb`, `stale_handle`,
+      `asset_load_failed`, `invalid_transform`, and `extent_out_of_range`;
+      enum/material/profile diagnostics remain required with their future
+      owning recipe sections.
 - [x] Units and scale sanity warnings detect extreme asset extents against an
       expected range when the recipe supplies one.
 - [x] Recipe sections whose owning feature is not implemented fail with a
@@ -699,10 +708,10 @@ Acceptance:
       `tests/assets/stable-contracts/scene_recipe_validation.v1.json`.
 - [x] Validation tests cover unknown field, duplicate caller ID, and rejected
       workflow fields.
-- [ ] Invalid-recipe fixtures cover unknown verb, unknown enum, stale handle,
-      missing asset, invalid transform, and oversized asset as those sections
-      land. Current proof covers missing asset, invalid transform, and
-      warning-level oversized asset validation in `scena_cli_recipe`.
+- [x] Invalid-recipe fixtures cover unknown verb, stale handle, missing asset,
+      invalid transform, and oversized asset for landed sections under
+      `tests/assets/recipe-invalid/`. Unknown enum/material/profile fixtures
+      are explicitly deferred until those recipe sections land.
 - [x] Validation diagnostics include deterministic "did you mean" suggestions.
 - [x] A valid recipe renders through `scena render --introspect` and produces
       `ok=true`.

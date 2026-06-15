@@ -272,6 +272,69 @@ fn scena_place_cli_stdout_matches_golden_fixture() {
 }
 
 #[test]
+fn scena_recipe_invalid_fixtures_cover_landed_failure_families() {
+    let missing = run_validate_recipe_fixture("missing_asset.recipe.json");
+    assert!(!missing.status.success());
+    let report = json_report(&missing);
+    assert_eq!(report["schema"], "scena.scene_recipe_validation.v1");
+    assert_eq!(report["ok"], false);
+    assert_diagnostic(&report, "asset_load_failed", "error");
+
+    let invalid_transform = run_validate_recipe_fixture("invalid_transform.recipe.json");
+    assert!(!invalid_transform.status.success());
+    let report = json_report(&invalid_transform);
+    assert_eq!(report["ok"], false);
+    assert_diagnostic(&report, "invalid_transform", "error");
+
+    let oversized = run_validate_recipe_fixture("oversized_asset.recipe.json");
+    assert!(oversized.status.success(), "stderr={}", stderr(&oversized));
+    let report = json_report(&oversized);
+    assert_eq!(report["ok"], true);
+    assert_diagnostic(&report, "extent_out_of_range", "warning");
+
+    let valid_recipe = recipe_invalid_fixture_path("valid_for_commands.recipe.json");
+    let unknown_verb = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "place",
+            path_str(&valid_recipe),
+            "--import",
+            "part",
+            "--verb",
+            "spin",
+        ])
+        .output()
+        .expect("scena place unknown verb command runs");
+    assert!(!unknown_verb.status.success());
+    let report = json_report(&unknown_verb);
+    assert_eq!(report["schema"], "scena.placement_result.v1");
+    assert_eq!(report["ok"], false);
+    assert_diagnostic(&report, "unknown_verb", "error");
+
+    let stale_handle = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "diagnose",
+            path_str(&valid_recipe),
+            "--visibility",
+            "--handle",
+            "999999",
+        ])
+        .output()
+        .expect("scena diagnose stale handle recipe command runs");
+    assert!(!stale_handle.status.success());
+    let report = json_report(&stale_handle);
+    assert_eq!(report["schema"], "scena.visibility_diagnosis.v1");
+    assert_eq!(report["ok"], false);
+    assert!(
+        report["reasons"]
+            .as_array()
+            .expect("diagnosis reasons array")
+            .iter()
+            .any(|reason| reason["code"] == "stale_handle"),
+        "stale handle fixture should produce stale_handle: {report:#}"
+    );
+}
+
+#[test]
 fn scena_place_cli_exits_nonzero_for_unknown_import() {
     let dir = artifact_dir("place-invalid");
     let recipe_path = write_valid_recipe(&dir);
@@ -615,6 +678,30 @@ fn assert_diagnostic(report: &serde_json::Value, code: &str, severity: &str) {
             .any(|diagnostic| diagnostic["code"] == code && diagnostic["severity"] == severity),
         "missing diagnostic {code}/{severity}: {report:#}"
     );
+}
+
+fn run_validate_recipe_fixture(name: &str) -> std::process::Output {
+    let path = recipe_invalid_fixture_path(name);
+    Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["validate-recipe", path_str(&path)])
+        .output()
+        .unwrap_or_else(|error| panic!("scena validate-recipe {name} runs: {error}"))
+}
+
+fn recipe_invalid_fixture_path(name: &str) -> PathBuf {
+    PathBuf::from("tests")
+        .join("assets")
+        .join("recipe-invalid")
+        .join(name)
+}
+
+fn json_report(output: &std::process::Output) -> serde_json::Value {
+    assert!(
+        output.stderr.is_empty(),
+        "command should keep diagnostics on stdout, stderr={}",
+        stderr(output)
+    );
+    serde_json::from_slice(&output.stdout).expect("command emits JSON")
 }
 
 fn artifact_dir(name: &str) -> PathBuf {

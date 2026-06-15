@@ -1,0 +1,13 @@
+{
+  "schema": "scena.scene_recipe.v1",
+  "imports": [
+    {
+      "id": "part",
+      "uri": "../gltf/mesh_material_vertex_color_scene.gltf"
+    }
+  ],
+  "capture": {
+    "width": 96,
+    "height": 72
+  }
+}
