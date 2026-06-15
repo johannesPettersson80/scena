@@ -304,9 +304,11 @@ Acceptance:
 - [ ] Browser proof records all external resources for a `.gltf` with `.bin`
       and texture files.
 - [x] Stable `scena.asset_load_report.v1` additions are optional/defaulted.
-- [ ] Asset doctor and SceneHost reports expose the same diagnostic family.
-      SceneHost report parity is covered for asset reports and inspection
-      material evidence; the asset-doctor runtime surface remains open.
+- [x] Asset doctor and SceneHost reports expose the same diagnostic family.
+      Evidence:
+      `tests/asset_doctor_contracts.rs::scene_host_asset_doctor_json_uses_same_report_shape`
+      verifies `SceneHostCore::asset_doctor_json` emits the same
+      `scena.asset_doctor.v1` shape and reason family as `Assets::doctor_asset_path`.
 
 ## Agent-facing surface track
 
@@ -538,8 +540,10 @@ Required commands:
       `scena.interaction_verification.v1`. Native CLI verification and
       browser synthetic pick/hover/select proof are complete; rendered
       interaction feedback assertions remain future hardening.
-- [ ] `scena doctor <asset-or-recipe>`: expose asset-doctor-style findings
-      through the same terminal command family.
+- [x] `scena doctor <asset-or-recipe>`: expose asset-doctor-style findings
+      through the same terminal command family. Evidence:
+      `tests/scena_cli_agent.rs::scena_doctor_cli_emits_json_and_nonzero_for_broken_asset`
+      and `tests/assets/cli-golden/doctor_broken_asset_stdout.json`.
 - [x] `scena examples agent <template> [--out <dir>]`: emit
       `scena.agent_smoke_template.v1` for core ready templates and structured
       deferred manifests for Phase-2-dependent templates.
@@ -562,9 +566,9 @@ CLI behavior:
 
 Acceptance:
 
-- [ ] Golden stdout fixtures for each command. The first CLI hardening slice
-      pins `schema get` and invalid `validate-recipe`; remaining dynamic
-      commands still need normalized goldens.
+- [ ] Golden stdout fixtures for each command. Current proof pins
+      `schema get`, invalid `validate-recipe`, and broken-asset `doctor`;
+      remaining dynamic commands still need normalized goldens.
 - [x] Tests verify stderr/stdout separation for schema commands.
 - [x] Tests verify `render --introspect` writes PNG plus capture descriptor
       artifacts and emits `scena.render_introspection.v1`.

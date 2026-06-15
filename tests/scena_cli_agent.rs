@@ -344,6 +344,31 @@ fn scena_doctor_cli_emits_json_and_nonzero_for_broken_asset() {
 }
 
 #[test]
+fn scena_doctor_cli_stdout_matches_golden_fixture() {
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "doctor",
+            "tests/assets/gltf/unsupported_required_extension.gltf",
+        ])
+        .output()
+        .expect("scena doctor command runs");
+
+    assert!(!output.status.success(), "broken asset must fail closed");
+    assert!(
+        output.stderr.is_empty(),
+        "doctor report failures stay machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let actual: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("doctor command emits JSON");
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "assets/cli-golden/doctor_broken_asset_stdout.json"
+    ))
+    .expect("golden doctor fixture parses");
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn scena_repair_cli_plans_visual_patch_from_diagnosis_json() {
     let dir = artifact_dir("repair");
     let diagnosis_path = dir.join("diagnosis.json");
