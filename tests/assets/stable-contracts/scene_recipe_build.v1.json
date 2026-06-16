@@ -5,22 +5,50 @@
     {
       "id": "part",
       "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
-      "import_handle": 1,
+      "import_handle": 4294967297,
       "root_handles": [
-        3
+        4294967299
       ],
-      "primary_root": 3,
+      "primary_root": 4294967299,
       "nodes_by_path": {
-        "part:/": 3,
-        "part:/ColoredTriangle": 3
+        "part:/": 4294967299,
+        "part:/ColoredTriangle": 4294967299
       }
     }
   ],
-  "nodes": [],
-  "cameras": [],
+  "nodes": [
+    {
+      "id": "plate",
+      "handle": 4294967300,
+      "kind": "node",
+      "parent": 4294967297,
+      "name": "CAD plate"
+    }
+  ],
+  "cameras": [
+    {
+      "id": "main",
+      "handle": 4294967301,
+      "kind": "camera",
+      "parent": 4294967297,
+      "active": true
+    }
+  ],
   "lights": [],
-  "geometries": [],
-  "materials": [],
+  "geometries": [
+    {
+      "id": "plate_geo",
+      "kind": "box",
+      "vertex_count": 24,
+      "index_count": 36
+    }
+  ],
+  "materials": [
+    {
+      "id": "plate_mat",
+      "kind": "unlit"
+    }
+  ],
   "diagnostics": [],
   "skipped": []
 }

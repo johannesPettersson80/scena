@@ -24,14 +24,14 @@ pub(crate) struct ResolvedSceneInput {
 pub(crate) fn resolve_scene_input(input: &str) -> Result<ResolvedSceneInput, CliOutcome> {
     match try_load_recipe(input)? {
         Some(recipe) => {
-            let import = recipe
+            let asset = recipe
                 .imports
                 .first()
-                .expect("validated scene recipe contains an import");
-            let asset = resolve_recipe_asset_uri(input, &import.uri);
+                .map(|import| resolve_recipe_asset_uri(input, &import.uri))
+                .unwrap_or_else(|| input.to_owned());
             Ok(ResolvedSceneInput {
                 asset,
-                transform: import.transform,
+                transform: recipe.imports.first().and_then(|import| import.transform),
                 width: recipe.capture.as_ref().map(|capture| capture.width),
                 height: recipe.capture.as_ref().map(|capture| capture.height),
                 recipe_path: Some(input.to_owned()),
@@ -60,7 +60,12 @@ impl ResolvedSceneInput {
 
 #[cfg(feature = "inspection")]
 pub(crate) fn scene_recipe_has_scene_host_directives(recipe: &scena::SceneRecipeV1) -> bool {
-    recipe.section_box.is_some()
+    !recipe.colors.is_empty()
+        || !recipe.geometries.is_empty()
+        || !recipe.materials.is_empty()
+        || !recipe.nodes.is_empty()
+        || !recipe.cameras.is_empty()
+        || recipe.section_box.is_some()
         || !recipe.measurements.is_empty()
         || !recipe.callouts.is_empty()
         || recipe.exploded_view.is_some()
@@ -77,41 +82,39 @@ pub(crate) async fn scene_host_from_resolved_recipe(
         .as_ref()
         .ok_or_else(|| "scene-host recipe rendering requires a scene recipe input".to_string())?;
     let recipe_path = input.recipe_path.as_deref().unwrap_or(&input.asset);
-    let mut host = scena::SceneHostCore::headless(width, height)
-        .map_err(|error| format!("failed to create SceneHost renderer: {error}"))?;
+    let recipe_text = serde_json::to_string(recipe)
+        .map_err(|error| format!("failed to serialize scene recipe for build: {error}"))?;
+    let build = scena::SceneHostCore::build_recipe_json(
+        recipe_path,
+        &recipe_text,
+        scena::RecipeBuildPolicy::testing(),
+    )
+    .await
+    .map_err(|manifest| {
+        serde_json::to_string_pretty(&manifest)
+            .unwrap_or_else(|error| format!("failed to serialize build failure manifest: {error}"))
+    })?;
+    let mut host = build.host;
+    host.resize(width as f32, height as f32, 1.0)
+        .map_err(|error| format!("failed to size recipe SceneHost renderer: {error}"))?;
     let mut imports = BTreeMap::new();
-
-    for import in &recipe.imports {
-        let asset = resolve_recipe_asset_uri(recipe_path, &import.uri);
-        let import_handle = host
-            .instantiate_url(scena::AssetPath::from(asset.as_str()))
-            .await
-            .map_err(|error| format!("failed to load recipe import '{}': {error}", import.id))?;
-        let roots = host.import_roots(import_handle).map_err(|error| {
-            format!(
-                "failed to inspect recipe import roots '{}': {error}",
-                import.id
-            )
-        })?;
-        if let Some(transform) = import.transform {
-            for root in &roots {
-                host.set_transform(*root, transform).map_err(|error| {
-                    format!(
-                        "failed to apply transform for recipe import '{}': {error}",
-                        import.id
-                    )
-                })?;
-            }
-        }
-        imports.insert(import.id.clone(), RecipeImportHandles { roots });
+    for import in &build.manifest.imports {
+        imports.insert(
+            import.id.clone(),
+            RecipeImportHandles {
+                roots: import.root_handles.clone(),
+            },
+        );
     }
 
     apply_recipe_section_box(&mut host, recipe, &imports)?;
     apply_recipe_measurements(&mut host, recipe)?;
     apply_recipe_callouts(&mut host, recipe, &imports)?;
     apply_recipe_exploded_view(&mut host, recipe, &imports)?;
-    host.frame_all_with_overlays()
-        .map_err(|error| format!("failed to frame recipe scene including overlays: {error}"))?;
+    if !recipe.cameras.iter().any(|camera| camera.active) {
+        host.frame_all_with_overlays()
+            .map_err(|error| format!("failed to frame recipe scene including overlays: {error}"))?;
+    }
     Ok(host)
 }
 

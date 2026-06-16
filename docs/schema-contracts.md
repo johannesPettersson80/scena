@@ -1048,6 +1048,18 @@ The first v1 slice supports:
 - `imports[]` entries with stable caller `id`, glTF/GLB `uri`, optional
   `optional` skip policy, optional `transform`, and optional
   `expected_extent`
+- `colors` map entries with stable caller ids and `#RRGGBB` sRGB hex values
+- `geometries[]` authored resources with stable caller `id`; Slice 1 supports
+  `primitive:{kind:"box",size:[x,y,z]}` and rejects other primitive kinds as
+  `unsupported_feature`
+- `materials[]` authored resources with stable caller `id`; Slice 1 supports
+  `unlit` and `pbr_metallic_roughness` materials with fail-closed color and
+  normalized scalar validation before any lower-level setters can clamp
+- `nodes[]` authored renderables with stable caller `id`, geometry/material
+  references, optional manifest `name`, and optional `raw`/`trs` transform
+- `cameras[]` authored perspective cameras with stable caller `id`; at most one
+  camera may be `active`, and camera `look_at` transforms may target authored
+  nodes or explicit world positions
 - optional `section_box` directives over an import's bounds
 - `measurements[]` distance overlays with units and labels
 - `callouts[]` anchored to an import root or world point with label offsets
@@ -1055,11 +1067,12 @@ The first v1 slice supports:
 - one optional `capture` directive with `width` and `height`
 - opaque caller `metadata`
 
-Unknown fields fail closed. Known future feature sections such as `materials`,
-`cameras`, `labels`, `anchors`, `connectors`, `bounds`, `authored_planes`, and
-`named_states` emit `unsupported_feature` until the feature slice that owns
-them implements the section. Workflow fields such as `steps`, `sequence`,
-`loop`, `branch`, `timeline`, and `script` emit
+Unknown fields fail closed. Known future feature sections such as `primitives`,
+`lights`, `scene`, `render`, `expect`, `animations`, `fonts`,
+`skins`, `morphs`, `particles`, `labels`, `anchors`, `connectors`, `bounds`,
+`authored_planes`, and `named_states` emit `unsupported_feature` until the
+feature slice that owns them implements the section. Workflow fields such as
+`steps`, `sequence`, `loop`, `branch`, `timeline`, and `script` emit
 `unsupported_workflow`; recipes must stay snapshots and the host owns cadence
 and sequencing.
 
@@ -1075,8 +1088,11 @@ the caller `id`, resolved `uri`, stable `import_handle`, `root_handles`,
 `primary_root`, and `nodes_by_path`. Path keys use the shared namespace
 `<import_id>:/<path>`; `<import_id>:/` names the primary import root and named
 glTF children are included when their authored path is unambiguous. `nodes`,
-`cameras`, and `lights` are targetable manifest entries with stable handles;
-`geometries` and `materials` are non-targetable resources without handles.
+`cameras`, and `lights` are targetable manifest entries with stable handles.
+Authored `nodes` and `cameras` include their recipe ids and stable handles in
+the same targetable lists as imported node handles. `geometries` and
+`materials` are non-targetable resources without handles; authored geometries
+report real vertex and index counts.
 `RecipeBuildPolicy` is operator-owned configuration, not part of the authored
 recipe schema, and fail-closed policy or required-load failures appear as
 deterministic build diagnostics.

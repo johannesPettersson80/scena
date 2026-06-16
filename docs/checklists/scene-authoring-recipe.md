@@ -267,14 +267,14 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
       inputs; manifest round-trips byte-stable.
 
 ### Slice 1 — Thin authored slice (proves the loop)
-- [ ] **Allow authored-only recipes.** Relax validation so `imports` may be
+- [x] **Allow authored-only recipes.** Relax validation so `imports` may be
       empty when `nodes` contains authored renderables. Today
       `src/scene/recipe/validation.rs:187` errors on empty `imports`, so an
       authored-only Slice 1 recipe would fail by design.
-- [ ] `colors` + one geometry primitive + one material + one node + a camera
+- [x] `colors` + one geometry primitive + one material + one node + a camera
       (per the sketch above).
-- [ ] `scena render --introspect` over a built-from-scratch recipe.
-- [ ] Proof: end-to-end test — author → build → manifest `handle`s → render
+- [x] `scena render --introspect` over a built-from-scratch recipe.
+- [x] Proof: end-to-end test — author → build → manifest `handle`s → render
       introspection `ok`; golden build-manifest fixture.
 
 ### Slice 2 — Widen the authoring vocabulary

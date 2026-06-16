@@ -500,6 +500,11 @@ fn agent_render_loop(root: &Path) -> Result<ApplicationFinding, Box<dyn Error>> 
                 unit: Some("scene units".to_owned()),
             }),
         }],
+        colors: BTreeMap::new(),
+        geometries: Vec::new(),
+        materials: Vec::new(),
+        nodes: Vec::new(),
+        cameras: Vec::new(),
         capture: Some(SceneRecipeCaptureV1 {
             width: 160,
             height: 120,

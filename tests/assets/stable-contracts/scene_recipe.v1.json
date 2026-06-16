@@ -11,6 +11,54 @@
       }
     }
   ],
+  "colors": {
+    "plate_blue": "#3A7BD5"
+  },
+  "geometries": [
+    {
+      "id": "plate_geo",
+      "primitive": {
+        "kind": "box",
+        "size": [
+          0.12,
+          0.06,
+          0.004
+        ]
+      }
+    }
+  ],
+  "materials": [
+    {
+      "id": "plate_mat",
+      "kind": "unlit",
+      "base_color": "plate_blue"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "plate",
+      "geometry": "plate_geo",
+      "material": "plate_mat",
+      "name": "CAD plate"
+    }
+  ],
+  "cameras": [
+    {
+      "id": "main",
+      "kind": "perspective",
+      "fov_degrees": 40.0,
+      "active": true,
+      "transform": {
+        "kind": "look_at",
+        "eye": [
+          0.2,
+          0.15,
+          0.2
+        ],
+        "target": "plate"
+      }
+    }
+  ],
   "section_box": {
     "import": "part",
     "margin": 0.125,

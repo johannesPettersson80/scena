@@ -43,6 +43,11 @@ fn edit_distance(left: &str, right: &str) -> usize {
 pub(super) const ROOT_FIELDS: &[&str] = &[
     "schema",
     "imports",
+    "colors",
+    "geometries",
+    "materials",
+    "nodes",
+    "cameras",
     "section_box",
     "measurements",
     "callouts",
@@ -66,12 +71,7 @@ pub(super) const UNSUPPORTED_WORKFLOW_FIELDS: &[&str] = &[
     "script",
 ];
 pub(super) const UNSUPPORTED_SECTION_FIELDS: &[&str] = &[
-    "colors",
-    "geometries",
     "primitives",
-    "materials",
-    "nodes",
-    "cameras",
     "lights",
     "scene",
     "render",

@@ -14,6 +14,16 @@ pub struct SceneRecipeV1 {
     pub schema: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imports: Vec<SceneRecipeImportV1>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub colors: BTreeMap<String, SceneRecipeColorV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub geometries: Vec<SceneRecipeGeometryV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub materials: Vec<SceneRecipeMaterialV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nodes: Vec<SceneRecipeNodeV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cameras: Vec<SceneRecipeCameraV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub section_box: Option<SceneRecipeSectionBoxV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -26,6 +36,106 @@ pub struct SceneRecipeV1 {
     pub capture: Option<SceneRecipeCaptureV1>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub metadata: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SceneRecipeColorV1 {
+    Hex(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeGeometryV1 {
+    pub id: String,
+    pub primitive: SceneRecipePrimitiveV1,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipePrimitiveV1 {
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<[f64; 3]>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeMaterialV1 {
+    pub id: String,
+    pub kind: String,
+    pub base_color: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metallic: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roughness: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeNodeV1 {
+    pub id: String,
+    pub geometry: String,
+    pub material: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform: Option<SceneRecipeTransformV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeCameraV1 {
+    pub id: String,
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fov_degrees: Option<f64>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub active: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform: Option<SceneRecipeTransformV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SceneRecipeTransformV1 {
+    Raw {
+        #[serde(default, skip_serializing_if = "is_zero_vec3")]
+        translation: [f64; 3],
+        rotation: [f64; 4],
+        #[serde(
+            default = "default_transform_scale",
+            skip_serializing_if = "is_default_scale"
+        )]
+        scale: [f64; 3],
+    },
+    Trs {
+        #[serde(default, skip_serializing_if = "is_zero_vec3")]
+        translation: [f64; 3],
+        #[serde(default, skip_serializing_if = "is_zero_vec3")]
+        rotation_degrees: [f64; 3],
+        #[serde(
+            default = "default_transform_scale",
+            skip_serializing_if = "is_default_scale"
+        )]
+        scale: [f64; 3],
+    },
+    LookAt {
+        eye: [f64; 3],
+        target: SceneRecipeLookAtTargetV1,
+        #[serde(
+            default = "default_transform_up",
+            skip_serializing_if = "is_default_up"
+        )]
+        up: [f64; 3],
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SceneRecipeLookAtTargetV1 {
+    Node(String),
+    Position([f64; 3]),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -164,12 +274,22 @@ pub struct SceneRecipeBuildTargetV1 {
     pub id: String,
     pub handle: u64,
     pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SceneRecipeBuildResourceV1 {
     pub id: String,
     pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vertex_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -199,6 +319,26 @@ fn default_exploded_factor() -> f32 {
 
 fn default_exploded_distance() -> f32 {
     1.0
+}
+
+fn default_transform_scale() -> [f64; 3] {
+    [1.0, 1.0, 1.0]
+}
+
+fn default_transform_up() -> [f64; 3] {
+    [0.0, 1.0, 0.0]
+}
+
+fn is_zero_vec3(value: &[f64; 3]) -> bool {
+    *value == [0.0, 0.0, 0.0]
+}
+
+fn is_default_scale(value: &[f64; 3]) -> bool {
+    *value == default_transform_scale()
+}
+
+fn is_default_up(value: &[f64; 3]) -> bool {
+    *value == default_transform_up()
 }
 
 fn is_false(value: &bool) -> bool {

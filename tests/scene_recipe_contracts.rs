@@ -53,12 +53,7 @@ fn scene_recipe_validation_reports_unknown_fields_duplicate_ids_and_suggestions(
 #[test]
 fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
     for section in [
-        "colors",
-        "geometries",
         "primitives",
-        "materials",
-        "nodes",
-        "cameras",
         "lights",
         "scene",
         "render",
@@ -124,6 +119,29 @@ fn scene_recipe_builds_import_manifest_with_stable_handles() {
     assert!(
         import.nodes_by_path.contains_key("part:/"),
         "root path should be addressable through the shared node id namespace: {import:#?}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_build_manifest_golden_matches_executor_for_stable_recipe() {
+    let recipe = fs::read_to_string("tests/assets/stable-contracts/scene_recipe.v1.json")
+        .expect("scene recipe fixture reads");
+    let expected: scena::SceneRecipeBuildV1 = serde_json::from_str(include_str!(
+        "assets/stable-contracts/scene_recipe_build.v1.json"
+    ))
+    .expect("scene recipe build fixture parses");
+
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "scene_recipe.v1.json",
+        &recipe,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("stable scene recipe build succeeds");
+
+    assert_eq!(
+        build.manifest, expected,
+        "stable build manifest fixture must be produced by the real executor"
     );
 }
 
@@ -217,6 +235,181 @@ fn scene_recipe_build_skips_only_explicit_optional_imports() {
     assert_eq!(build.manifest.skipped.len(), 1);
     assert_eq!(build.manifest.skipped[0].id, "missing");
     assert_build_reason(&build.manifest, "optional_import_skipped", "$.imports[0]");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_authored_only_builds_manifest_and_renders_through_cli() {
+    let recipe = json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "plate_blue": "#3A7BD5"
+        },
+        "geometries": [
+            {
+                "id": "plate_geo",
+                "primitive": {
+                    "kind": "box",
+                    "size": [0.12, 0.06, 0.004]
+                }
+            }
+        ],
+        "materials": [
+            {
+                "id": "plate_mat",
+                "kind": "unlit",
+                "base_color": "plate_blue"
+            }
+        ],
+        "nodes": [
+            {
+                "id": "plate",
+                "geometry": "plate_geo",
+                "material": "plate_mat",
+                "name": "CAD plate"
+            }
+        ],
+        "cameras": [
+            {
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 40.0,
+                "active": true,
+                "transform": {
+                    "kind": "look_at",
+                    "eye": [0.2, 0.15, 0.2],
+                    "target": "plate"
+                }
+            }
+        ],
+        "capture": { "width": 320, "height": 220 }
+    });
+    let text = serde_json::to_string_pretty(&recipe).expect("recipe serializes");
+
+    let validation = scena::validate_scene_recipe_json(&text);
+    assert!(
+        validation.ok,
+        "authored-only recipe should validate: {validation:#?}"
+    );
+
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "target/gate-artifacts/authored-only.recipe.json",
+        &text,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("authored-only recipe build succeeds");
+
+    assert!(build.manifest.ok, "{:#?}", build.manifest);
+    assert!(build.manifest.imports.is_empty());
+    assert_eq!(build.manifest.geometries.len(), 1);
+    assert_eq!(build.manifest.materials.len(), 1);
+    assert_eq!(build.manifest.nodes.len(), 1);
+    assert_eq!(build.manifest.nodes[0].id, "plate");
+    assert_eq!(build.manifest.cameras.len(), 1);
+    assert_eq!(build.manifest.cameras[0].id, "main");
+
+    let mut host = build.host;
+    host.prepare().expect("authored scene prepares");
+    host.render().expect("authored scene renders");
+    let capture = host.capture().expect("authored scene captures");
+    let inspection_json = host.inspect_json().expect("authored scene inspects");
+    let inspection: scena::SceneInspectionReportV1 =
+        serde_json::from_str(&inspection_json).expect("inspection decodes");
+    let report = host.renderer().introspect_capture(
+        &capture,
+        &inspection,
+        scena::RenderIntrospectionOptions::summary(),
+    );
+    assert!(report.ok, "authored render should be visible: {report:#?}");
+    assert!(
+        !report.framing.tiny_in_frame,
+        "authored render should frame the target at useful scale: {report:#?}"
+    );
+
+    let dir = artifact_dir("authored-only-render");
+    let recipe_path = dir.join("authored-only.recipe.json");
+    let png_path = dir.join("authored-only.png");
+    fs::write(&recipe_path, text).expect("recipe writes");
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena render command runs");
+
+    assert!(
+        output.status.success(),
+        "authored recipe render should exit 0, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let cli_report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("render emits JSON");
+    assert_eq!(cli_report["schema"], "scena.render_introspection.v1");
+    assert_eq!(cli_report["ok"], true);
+    assert!(png_path.exists(), "render writes the authored-scene PNG");
+}
+
+#[test]
+fn scene_recipe_authoring_refs_and_future_variants_fail_before_build() {
+    let unknown_ref = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "geometries": [{
+            "id": "plate_geo",
+            "primitive": { "kind": "box", "size": [0.12, 0.06, 0.004] }
+        }],
+        "materials": [{
+            "id": "plate_mat",
+            "kind": "unlit",
+            "base_color": "missing_color"
+        }],
+        "nodes": [{
+            "id": "plate",
+            "geometry": "missing_geo",
+            "material": "plate_mat"
+        }],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "active": true,
+            "transform": {
+                "kind": "look_at",
+                "eye": [0.2, 0.15, 0.2],
+                "target": "missing_node"
+            }
+        }]
+    }));
+    assert!(!unknown_ref.ok);
+    assert_reason(&unknown_ref, "unknown_color_ref", None);
+    assert_reason(&unknown_ref, "unknown_geometry_ref", None);
+    assert_reason(&unknown_ref, "unknown_node_ref", None);
+
+    let unsupported_variant = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "blue": "#3A7BD5" },
+        "geometries": [{
+            "id": "plate_geo",
+            "primitive": { "kind": "torus", "major_radius": 1.0 }
+        }],
+        "materials": [{
+            "id": "plate_mat",
+            "kind": "unlit",
+            "base_color": "blue",
+            "roughness": 0.5
+        }],
+        "nodes": [{
+            "id": "plate",
+            "geometry": "plate_geo",
+            "material": "plate_mat",
+            "transform": { "kind": "center" }
+        }]
+    }));
+    assert!(!unsupported_variant.ok);
+    assert_reason(&unsupported_variant, "unsupported_feature", None);
 }
 
 #[test]
