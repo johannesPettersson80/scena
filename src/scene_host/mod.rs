@@ -25,6 +25,7 @@ mod post;
 mod presentation_timeline;
 mod product;
 mod product_options;
+mod recipe;
 mod reporting;
 mod section_box;
 mod subtree;
@@ -113,6 +114,7 @@ pub use product::{
 pub use product_options::{
     PRODUCT_OPTIONS_SCHEMA_V1, ProductOptionGroupV1, ProductOptionV1, ProductOptionsV1,
 };
+pub use recipe::SceneHostRecipeBuild;
 pub use reporting::{
     SCENE_HOST_ANIMATION_INVENTORY_SCHEMA_V1, SCENE_HOST_ASSET_IMPORT_SCHEMA_V1,
     SCENE_HOST_SUBTREE_SCHEMA_V1, SceneHostAnimationClipV1, SceneHostAnimationInventoryV1,

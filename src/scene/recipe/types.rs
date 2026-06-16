@@ -7,6 +7,7 @@ use crate::scene::Transform;
 
 pub const SCENE_RECIPE_SCHEMA_V1: &str = "scena.scene_recipe.v1";
 pub const SCENE_RECIPE_VALIDATION_SCHEMA_V1: &str = "scena.scene_recipe_validation.v1";
+pub const SCENE_RECIPE_BUILD_SCHEMA_V1: &str = "scena.scene_recipe_build.v1";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SceneRecipeV1 {
@@ -31,6 +32,8 @@ pub struct SceneRecipeV1 {
 pub struct SceneRecipeImportV1 {
     pub id: String,
     pub uri: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub optional: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transform: Option<Transform>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -132,6 +135,52 @@ pub struct SceneRecipeValidationReportV1 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneRecipeBuildV1 {
+    pub schema: String,
+    pub ok: bool,
+    pub imports: Vec<SceneRecipeBuildImportV1>,
+    pub nodes: Vec<SceneRecipeBuildTargetV1>,
+    pub cameras: Vec<SceneRecipeBuildTargetV1>,
+    pub lights: Vec<SceneRecipeBuildTargetV1>,
+    pub geometries: Vec<SceneRecipeBuildResourceV1>,
+    pub materials: Vec<SceneRecipeBuildResourceV1>,
+    pub diagnostics: Vec<SceneRecipeDiagnosticV1>,
+    pub skipped: Vec<SceneRecipeBuildSkippedV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneRecipeBuildImportV1 {
+    pub id: String,
+    pub uri: String,
+    pub import_handle: u64,
+    pub root_handles: Vec<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary_root: Option<u64>,
+    pub nodes_by_path: BTreeMap<String, u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneRecipeBuildTargetV1 {
+    pub id: String,
+    pub handle: u64,
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneRecipeBuildResourceV1 {
+    pub id: String,
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneRecipeBuildSkippedV1 {
+    pub path: String,
+    pub id: String,
+    pub kind: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SceneRecipeDiagnosticV1 {
     pub code: String,
     pub severity: String,
@@ -150,4 +199,8 @@ fn default_exploded_factor() -> f32 {
 
 fn default_exploded_distance() -> f32 {
     1.0
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }

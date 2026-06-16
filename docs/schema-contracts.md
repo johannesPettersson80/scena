@@ -39,6 +39,7 @@ Rules:
   - `scena.connector_browser.v1`
   - `scena.scene_recipe.v1`
   - `scena.scene_recipe_validation.v1`
+  - `scena.scene_recipe_build.v1`
   - `scena.placement_result.v1`
   - `scena.asset_load_report.v1`
   - `scena.asset_geometry_summary.v1`
@@ -1045,7 +1046,8 @@ The first v1 slice supports:
 
 - `schema: "scena.scene_recipe.v1"`
 - `imports[]` entries with stable caller `id`, glTF/GLB `uri`, optional
-  `transform`, and optional `expected_extent`
+  `optional` skip policy, optional `transform`, and optional
+  `expected_extent`
 - optional `section_box` directives over an import's bounds
 - `measurements[]` distance overlays with units and labels
 - `callouts[]` anchored to an import root or world point with label offsets
@@ -1066,6 +1068,19 @@ with `code`, `severity`, JSON `path`, `message`, `help`, optional
 `suggestion`, and `auto_fixable`. Unknown-field suggestions use bounded string
 distance, for example `importe` suggests `imports`.
 
+`scena.scene_recipe_build.v1` is emitted by `SceneHostCore::build_recipe_json`.
+It maps caller-authored recipe ids to the stable SceneHost handles that later
+patch, overlay, verification, and interaction calls use. Import entries contain
+the caller `id`, resolved `uri`, stable `import_handle`, `root_handles`,
+`primary_root`, and `nodes_by_path`. Path keys use the shared namespace
+`<import_id>:/<path>`; `<import_id>:/` names the primary import root and named
+glTF children are included when their authored path is unambiguous. `nodes`,
+`cameras`, and `lights` are targetable manifest entries with stable handles;
+`geometries` and `materials` are non-targetable resources without handles.
+`RecipeBuildPolicy` is operator-owned configuration, not part of the authored
+recipe schema, and fail-closed policy or required-load failures appear as
+deterministic build diagnostics.
+
 `scena validate-recipe <recipe.json>` first runs shape validation without
 rendering, then loads declared assets far enough to validate asset presence and
 optional `expected_extent` scale sanity. Missing or unloadable assets emit an
@@ -1076,7 +1091,9 @@ extent falls outside an import's expected range emit warning-level
 
 The stable fixtures live at
 `tests/assets/stable-contracts/scene_recipe.v1.json` and
-`tests/assets/stable-contracts/scene_recipe_validation.v1.json`. `scena
+`tests/assets/stable-contracts/scene_recipe_validation.v1.json`; the build
+manifest fixture lives at
+`tests/assets/stable-contracts/scene_recipe_build.v1.json`. `scena
 validate-recipe <recipe.json>` emits validation JSON on stdout and exits
 non-zero when `ok` is false. When built with `inspection`, `scena render`,
 `scena inspect`, and `scena diagnose --visibility` accept either a direct asset

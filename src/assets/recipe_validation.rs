@@ -63,6 +63,18 @@ async fn add_asset_validation_diagnostics<F: AssetFetcher>(
                     }
                 }
             }
+            Err(error) if import.optional => report.diagnostics.push(diagnostic(
+                "optional_import_skipped",
+                "warning",
+                format!("$.imports[{index}].uri"),
+                format!(
+                    "optional recipe asset '{}' could not be loaded: {error}",
+                    import.uri
+                ),
+                "the import is marked optional, so callers must tolerate it being absent",
+                None,
+                false,
+            )),
             Err(error) => report.diagnostics.push(diagnostic(
                 "asset_load_failed",
                 "error",

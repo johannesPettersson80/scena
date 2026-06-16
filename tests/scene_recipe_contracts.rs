@@ -53,10 +53,21 @@ fn scene_recipe_validation_reports_unknown_fields_duplicate_ids_and_suggestions(
 #[test]
 fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
     for section in [
+        "colors",
+        "geometries",
         "primitives",
         "materials",
+        "nodes",
         "cameras",
         "lights",
+        "scene",
+        "render",
+        "expect",
+        "animations",
+        "fonts",
+        "skins",
+        "morphs",
+        "particles",
         "labels",
         "viewer_profile",
         "environment",
@@ -80,6 +91,132 @@ fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
         let report = scena::validate_scene_recipe_value(recipe);
         assert_reason(&report, "unsupported_feature", None);
     }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_builds_import_manifest_with_stable_handles() {
+    let recipe = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "part", "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf" }
+        ],
+        "capture": { "width": 160, "height": 120 }
+    }))
+    .expect("recipe serializes");
+    let policy = scena::RecipeBuildPolicy::testing();
+
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/recipe-import-manifest.recipe.json",
+        &recipe,
+        policy,
+    ))
+    .expect("recipe build succeeds");
+
+    assert!(build.manifest.ok, "{:#?}", build.manifest);
+    assert_eq!(build.manifest.schema, scena::SCENE_RECIPE_BUILD_SCHEMA_V1);
+    assert_eq!(build.manifest.imports.len(), 1);
+    let import = &build.manifest.imports[0];
+    assert_eq!(import.id, "part");
+    assert!(import.import_handle > 0);
+    assert!(!import.root_handles.is_empty());
+    assert_eq!(import.primary_root, import.root_handles.first().copied());
+    assert!(
+        import.nodes_by_path.contains_key("part:/"),
+        "root path should be addressable through the shared node id namespace: {import:#?}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_build_policy_rejects_unsafe_or_oversized_inputs() {
+    let base_recipe = |uri: &str| {
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                { "id": "part", "uri": uri }
+            ],
+            "capture": { "width": 160, "height": 120 }
+        }))
+        .expect("recipe serializes")
+    };
+
+    let oversized_capture = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "part", "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf" }
+        ],
+        "capture": { "width": 160, "height": 120 }
+    }))
+    .expect("recipe serializes");
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &oversized_capture,
+        scena::RecipeBuildPolicy::testing().with_max_output_pixels(1),
+    ))
+    .expect_err("oversized capture fails closed");
+    assert_build_reason(&report, "policy_violation", "$.capture");
+
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &base_recipe("https://example.invalid/model.gltf"),
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect_err("network uri fails closed by default");
+    assert_build_reason(&report, "policy_violation", "$.imports[0].uri");
+
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &base_recipe("memory://model.gltf"),
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect_err("disallowed scheme fails closed");
+    assert_build_reason(&report, "policy_violation", "$.imports[0].uri");
+
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &base_recipe("Cargo.toml"),
+        scena::RecipeBuildPolicy::testing()
+            .with_allowed_roots([PathBuf::from("tests/assets/gltf")]),
+    ))
+    .expect_err("out-of-root local file fails closed");
+    assert_build_reason(&report, "policy_violation", "$.imports[0].uri");
+
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &base_recipe("tests/assets/gltf/mesh_material_vertex_color_scene.gltf"),
+        scena::RecipeBuildPolicy::testing()
+            .with_max_vertices(1)
+            .with_max_indices(1),
+    ))
+    .expect_err("oversized geometry fails closed");
+    assert_build_reason(&report, "policy_violation", "$.imports[0]");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_build_skips_only_explicit_optional_imports() {
+    let recipe = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "missing", "uri": "tests/assets/gltf/not-present.gltf", "optional": true }
+        ],
+        "capture": { "width": 160, "height": 120 }
+    }))
+    .expect("recipe serializes");
+
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &recipe,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("optional missing import does not fail the build");
+
+    assert!(build.manifest.ok, "{:#?}", build.manifest);
+    assert!(build.manifest.imports.is_empty());
+    assert_eq!(build.manifest.skipped.len(), 1);
+    assert_eq!(build.manifest.skipped[0].id, "missing");
+    assert_build_reason(&build.manifest, "optional_import_skipped", "$.imports[0]");
 }
 
 #[test]
@@ -202,6 +339,17 @@ fn scena_validate_recipe_cli_emits_json_and_nonzero_for_invalid_recipe() {
             .any(|diagnostic| diagnostic["code"] == "unknown_field"
                 && diagnostic["suggestion"] == "imports"),
         "invalid recipe should carry did-you-mean diagnostics: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+fn assert_build_reason(report: &scena::SceneRecipeBuildV1, code: &str, path: &str) {
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == code && diagnostic.path == path),
+        "expected build diagnostic {code} at {path}, got {report:#?}"
     );
 }
 

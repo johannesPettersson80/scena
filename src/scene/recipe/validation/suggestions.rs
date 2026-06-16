@@ -50,7 +50,8 @@ pub(super) const ROOT_FIELDS: &[&str] = &[
     "capture",
     "metadata",
 ];
-pub(super) const IMPORT_FIELDS: &[&str] = &["id", "uri", "transform", "expected_extent"];
+pub(super) const IMPORT_FIELDS: &[&str] =
+    &["id", "uri", "optional", "transform", "expected_extent"];
 pub(super) const CAPTURE_FIELDS: &[&str] = &["width", "height"];
 pub(super) const EXPECTED_EXTENT_FIELDS: &[&str] = &["min", "max", "unit"];
 pub(super) const UNSUPPORTED_WORKFLOW_FIELDS: &[&str] = &[
@@ -65,10 +66,21 @@ pub(super) const UNSUPPORTED_WORKFLOW_FIELDS: &[&str] = &[
     "script",
 ];
 pub(super) const UNSUPPORTED_SECTION_FIELDS: &[&str] = &[
+    "colors",
+    "geometries",
     "primitives",
     "materials",
+    "nodes",
     "cameras",
     "lights",
+    "scene",
+    "render",
+    "expect",
+    "animations",
+    "fonts",
+    "skins",
+    "morphs",
+    "particles",
     "labels",
     "viewer_profile",
     "environment",

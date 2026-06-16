@@ -1,0 +1,26 @@
+{
+  "schema": "scena.scene_recipe_build.v1",
+  "ok": true,
+  "imports": [
+    {
+      "id": "part",
+      "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
+      "import_handle": 1,
+      "root_handles": [
+        3
+      ],
+      "primary_root": 3,
+      "nodes_by_path": {
+        "part:/": 3,
+        "part:/ColoredTriangle": 3
+      }
+    }
+  ],
+  "nodes": [],
+  "cameras": [],
+  "lights": [],
+  "geometries": [],
+  "materials": [],
+  "diagnostics": [],
+  "skipped": []
+}

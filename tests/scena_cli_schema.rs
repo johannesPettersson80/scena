@@ -23,6 +23,7 @@ fn scena_schema_cli_lists_and_gets_stable_contracts() {
     assert_schema(&catalog, "scena.visibility_diagnosis.v1");
     assert_schema(&catalog, "scena.scene_recipe.v1");
     assert_schema(&catalog, "scena.scene_recipe_validation.v1");
+    assert_schema(&catalog, "scena.scene_recipe_build.v1");
     assert_schema(&catalog, "scena.placement_result.v1");
     assert_schema(&catalog, "scena.asset_catalog.v1");
     assert_schema(&catalog, "scena.asset_readiness_report.v1");

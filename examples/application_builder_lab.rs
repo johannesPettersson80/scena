@@ -492,6 +492,7 @@ fn agent_render_loop(root: &Path) -> Result<ApplicationFinding, Box<dyn Error>> 
         imports: vec![SceneRecipeImportV1 {
             id: "asset".to_owned(),
             uri: "tests/assets/gltf/mesh_material_vertex_color_scene.gltf".to_owned(),
+            optional: false,
             transform: None,
             expected_extent: Some(SceneRecipeExpectedExtentV1 {
                 min: 0.1,

@@ -225,6 +225,7 @@ fn validate_import(
     validate_import_fields(&path, object.keys().map(String::as_str), diagnostics);
     validate_import_id(&path, object.get("id"), ids, diagnostics);
     validate_import_uri(&path, object.get("uri"), diagnostics);
+    validate_import_optional(&path, object.get("optional"), diagnostics);
     if let Some(transform) = object.get("transform") {
         validate_transform(format!("{path}.transform"), transform, diagnostics);
     }
@@ -316,6 +317,24 @@ fn validate_import_uri(
             None,
             false,
         )),
+    }
+}
+
+fn validate_import_optional(
+    path: &str,
+    optional: Option<&Value>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    if optional.is_some_and(|optional| !optional.is_boolean()) {
+        diagnostics.push(diagnostic(
+            "invalid_optional",
+            "error",
+            format!("{path}.optional"),
+            "import optional must be a boolean when present",
+            "set optional to true only when a missing import may be skipped",
+            None,
+            false,
+        ));
     }
 }
 
