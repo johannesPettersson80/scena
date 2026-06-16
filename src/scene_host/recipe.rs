@@ -1,17 +1,18 @@
 use std::collections::BTreeMap;
 
-use super::{SceneHostCore, SceneHostError};
-use crate::AssetPath;
+use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
 use crate::assets::DefaultAssetFetcher;
 use crate::scene::recipe::{
     RecipeBuildPolicy, SCENE_RECIPE_BUILD_SCHEMA_V1, SceneRecipeBuildImportV1,
     SceneRecipeBuildResourceV1, SceneRecipeBuildSkippedV1, SceneRecipeBuildTargetV1,
     SceneRecipeBuildV1, SceneRecipeDiagnosticV1, build_diagnostic, parse_valid_scene_recipe_json,
 };
+use crate::{AssetPath, Assets, Renderer, SurfaceViewport};
 
 mod authoring;
 mod overlays;
 mod policy;
+mod setup;
 
 use authoring::{
     AuthoredNodeResources, build_authored_cameras, build_authored_geometries,
@@ -19,6 +20,7 @@ use authoring::{
 };
 use overlays::apply_recipe_overlays;
 use policy::asset_policy_diagnostics;
+use setup::{apply_render_setup, apply_scene_setup, renderer_options_from_recipe};
 
 #[derive(Debug)]
 pub struct SceneHostRecipeBuild<F = DefaultAssetFetcher> {
@@ -75,13 +77,18 @@ impl SceneHostCore<DefaultAssetFetcher> {
             .as_ref()
             .map(|capture| (capture.width, capture.height))
             .unwrap_or((800, 600));
-        let mut host = match Self::headless(width, height) {
+        let mut host = match recipe_headless_host(
+            width,
+            height,
+            renderer_options_from_recipe(recipe.render.as_ref()),
+        ) {
             Ok(host) => host,
             Err(error) => {
                 diagnostics.push(scene_host_error_diagnostic("$", "build_failed", error));
                 return Err(build_manifest(diagnostics, skipped));
             }
         };
+        apply_render_setup(&mut host, recipe.render.as_ref());
         let mut imports = Vec::new();
         let mut geometries = Vec::new();
         let mut materials = Vec::new();
@@ -267,6 +274,15 @@ impl SceneHostCore<DefaultAssetFetcher> {
             &mut lights,
             &mut diagnostics,
         );
+        apply_scene_setup(
+            &policy,
+            &mut host,
+            recipe_path,
+            &recipe.colors,
+            recipe.scene.as_ref(),
+            &mut diagnostics,
+        )
+        .await;
         apply_recipe_overlays(&mut host, &recipe, &imports, &nodes, &mut diagnostics);
 
         let mut manifest = build_manifest(diagnostics, skipped);
@@ -282,6 +298,24 @@ impl SceneHostCore<DefaultAssetFetcher> {
             Err(manifest)
         }
     }
+}
+
+fn recipe_headless_host(
+    width: u32,
+    height: u32,
+    options: crate::RendererOptions,
+) -> Result<SceneHostCore<DefaultAssetFetcher>, SceneHostError> {
+    let viewport = SurfaceViewport::new(width as f32, height as f32, 1.0).ok_or_else(|| {
+        SceneHostError::new(
+            SceneHostErrorCode::InvalidViewport,
+            format!("invalid viewport {width}x{height} at DPR 1"),
+        )
+    })?;
+    SceneHostCore::from_renderer(
+        Assets::new(),
+        Renderer::headless_with_options(width, height, options)?,
+        viewport,
+    )
 }
 
 fn build_manifest(

@@ -1070,6 +1070,13 @@ The current v1 recipe slice supports:
   nodes or explicit world positions
 - `lights[]` authored directional, point, or spot lights with presets, color,
   intensity/range/cone fields, and transforms
+- optional `scene` setup with named or custom background, `default`/`uri`/`none`
+  environment IBL, and grid-floor options. URI environments are loaded under
+  `RecipeBuildPolicy`; missing required environments fail the build.
+- optional `render` setup with profile, quality, anti-aliasing, bloom, SSAO,
+  exposure EV, and tonemapper. Values that renderer setters would clamp
+  (`bloom.intensity`, `bloom.radius_px`, `ssao.intensity`,
+  `ssao.depth_threshold`) are rejected during validation when out of range.
 - optional `section_box` directives over an import's bounds or an authored/
   imported node target
 - `measurements[]` distance overlays with units and labels
@@ -1080,10 +1087,10 @@ The current v1 recipe slice supports:
 - opaque caller `metadata`
 
 Unknown fields fail closed. Known future feature sections such as `primitives`,
-`scene`, `render`, `expect`, `animations`, `fonts`, `skins`, `morphs`,
-`particles`, `labels`, `anchors`, `connectors`, `bounds`, `authored_planes`,
-and `named_states` emit `unsupported_feature` until the
-feature slice that owns them implements the section. Workflow fields such as
+`expect`, `animations`, `fonts`, `skins`, `morphs`, `particles`, `labels`,
+`anchors`, `connectors`, `bounds`, `authored_planes`, and `named_states` emit
+`unsupported_feature` until the feature slice that owns them implements the
+section. Workflow fields such as
 `steps`, `sequence`, `loop`, `branch`, `timeline`, and `script` emit
 `unsupported_workflow`; recipes must stay snapshots and the host owns cadence
 and sequencing.

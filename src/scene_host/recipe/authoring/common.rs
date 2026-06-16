@@ -29,7 +29,7 @@ pub(super) fn positive_f64(value: Option<f64>) -> Option<f64> {
     value.filter(|value| value.is_finite() && *value > 0.0)
 }
 
-pub(super) fn authored_color(
+pub(in crate::scene_host::recipe) fn authored_color(
     colors: &BTreeMap<String, SceneRecipeColorV1>,
     value: &str,
 ) -> Result<Color, Box<SceneRecipeDiagnosticV1>> {
@@ -80,7 +80,7 @@ fn parse_color_string(value: &str) -> Result<Color, crate::ColorParseError> {
     }
 }
 
-pub(in crate::scene_host::recipe::authoring) trait DiagnosticPathExt {
+pub(in crate::scene_host::recipe) trait DiagnosticPathExt {
     fn with_path(self, path: String) -> Self;
 }
 

@@ -15,8 +15,8 @@
       "code": "missing_imports",
       "severity": "error",
       "path": "$.imports",
-      "message": "recipe must contain at least one import in the current slice",
-      "help": "add imports:[{id, uri}] or use a direct asset path",
+      "message": "recipe must contain at least one import or authored renderable node",
+      "help": "add imports:[{id, uri}] or author a node with geometry and material",
       "auto_fixable": false
     }
   ]

@@ -3,6 +3,7 @@ use serde_json::Value;
 mod authoring;
 mod imports;
 mod overlays;
+mod setup;
 mod suggestions;
 
 use super::types::{
@@ -90,6 +91,8 @@ fn validate_scene_recipe_value_inner(
     validate_measurements(object.get("measurements"), diagnostics);
     validate_callouts(object.get("callouts"), &import_ids, diagnostics);
     validate_exploded_view(object.get("exploded_view"), &import_ids, diagnostics);
+    setup::validate_scene_setup(object.get("scene"), diagnostics);
+    setup::validate_render_setup(object.get("render"), diagnostics);
     validate_capture(object.get("capture"), diagnostics);
     validate_metadata(object.get("metadata"), diagnostics);
 }

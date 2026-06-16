@@ -296,10 +296,10 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
       resolve; a cycle fails closed.
 
 ### Slice 4 — Scene / render setup
-- [ ] `scene`: background, environment/IBL, grid.
-- [ ] `render`: profile, quality, anti-aliasing, bloom, ssao, exposure,
+- [x] `scene`: background, environment/IBL, grid.
+- [x] `render`: profile, quality, anti-aliasing, bloom, ssao, exposure,
       tonemapper.
-- [ ] Proof: two settings produce observably different introspection / pixels
+- [x] Proof: two settings produce observably different introspection / pixels
       (no inert knobs).
 
 ### Slice 5 — Verification expectations

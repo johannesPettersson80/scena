@@ -7,6 +7,7 @@ mod nodes;
 mod transform;
 
 pub(super) use cameras::build_authored_cameras;
+pub(super) use common::{DiagnosticPathExt, authored_color};
 pub(super) use geometry::build_authored_geometries;
 pub(super) use lights::build_authored_lights;
 pub(super) use materials::build_authored_materials;

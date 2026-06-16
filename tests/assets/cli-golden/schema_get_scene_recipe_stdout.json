@@ -126,6 +126,25 @@
         }
       }
     ],
+    "render": {
+      "anti_aliasing": "fxaa",
+      "exposure_ev": 0.0,
+      "profile": "balanced",
+      "quality": "medium",
+      "tonemapper": "pbr_neutral"
+    },
+    "scene": {
+      "background": {
+        "kind": "studio"
+      },
+      "environment": {
+        "kind": "default"
+      },
+      "grid": {
+        "line_spacing": 0.04,
+        "padding": 0.05
+      }
+    },
     "schema": "scena.scene_recipe.v1",
     "section_box": {
       "helper_wireframe": true,

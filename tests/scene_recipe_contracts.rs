@@ -54,8 +54,6 @@ fn scene_recipe_validation_reports_unknown_fields_duplicate_ids_and_suggestions(
 fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
     for section in [
         "primitives",
-        "scene",
-        "render",
         "expect",
         "animations",
         "fonts",
@@ -714,6 +712,143 @@ fn scene_recipe_slice3_transform_refs_fail_closed_before_build() {
     }));
     assert!(!self_cycle.ok, "self placement cycles must fail closed");
     assert_reason(&self_cycle, "unknown_node_ref", None);
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_slice4_scene_and_render_setup_affect_real_output() {
+    let recipe = json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "body_color": "#E9B44C"
+        },
+        "geometries": [
+            { "id": "body_geo", "primitive": { "kind": "box", "size": [0.18, 0.12, 0.08] } }
+        ],
+        "materials": [
+            { "id": "body_mat", "kind": "unlit", "base_color": "body_color" }
+        ],
+        "nodes": [
+            {
+                "id": "body",
+                "geometry": "body_geo",
+                "material": "body_mat",
+                "transform": { "kind": "ground", "plane_y": 0.0 }
+            }
+        ],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "active": true,
+            "transform": { "kind": "look_at", "eye": [0.35, 0.28, 0.35], "target": "body" }
+        }],
+        "scene": {
+            "background": { "kind": "white" },
+            "environment": { "kind": "default" },
+            "grid": {
+                "enabled": true,
+                "padding": 0.08,
+                "line_spacing": 0.04
+            }
+        },
+        "render": {
+            "profile": "quality",
+            "quality": "high",
+            "anti_aliasing": "none",
+            "bloom": { "threshold_srgb": 64, "intensity": 0.25, "radius_px": 2 },
+            "ssao": { "radius_px": 2, "intensity": 0.25, "depth_threshold": 0.02 },
+            "exposure_ev": 1.0,
+            "tonemapper": "standard"
+        },
+        "capture": { "width": 96, "height": 72 }
+    });
+    let text = serde_json::to_string_pretty(&recipe).expect("recipe serializes");
+
+    let validation = scena::validate_scene_recipe_json(&text);
+    assert!(
+        validation.ok,
+        "Slice 4 scene/render setup should validate: {validation:#?}"
+    );
+
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/slice4.recipe.json",
+        &text,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("Slice 4 scene/render recipe build succeeds");
+    assert!(build.manifest.ok, "{:#?}", build.manifest);
+
+    assert_eq!(build.host.renderer().profile(), scena::Profile::Quality);
+    assert_eq!(build.host.renderer().quality(), scena::Quality::High);
+    assert_eq!(
+        build.host.renderer().anti_aliasing(),
+        scena::AntiAliasing::None
+    );
+    assert!(build.host.renderer().bloom().is_some());
+    assert!(
+        build
+            .host
+            .renderer()
+            .screen_space_ambient_occlusion()
+            .is_some()
+    );
+    assert!((build.host.renderer().exposure_ev() - 1.0).abs() < 0.001);
+    assert_eq!(
+        build.host.renderer().tonemapper(),
+        scena::Tonemapper::Standard
+    );
+    assert!(build.host.renderer().environment().is_some());
+
+    let inspection_json = build.host.inspect_json().expect("Slice 4 scene inspects");
+    let inspection: scena::SceneInspectionReportV1 =
+        serde_json::from_str(&inspection_json).expect("inspection decodes");
+    assert!(
+        inspection.counts.visible_drawable >= 3,
+        "grid floor should add real renderable floor/grid nodes: {inspection:#?}"
+    );
+
+    let mut host = build.host;
+    host.prepare().expect("Slice 4 scene prepares");
+    host.render().expect("Slice 4 scene renders");
+    let capture = host.capture().expect("Slice 4 scene captures");
+    let top_left = &capture.rgba8[..4];
+    assert!(
+        top_left[0] > 240 && top_left[1] > 240 && top_left[2] > 240,
+        "white background should be visible in the captured frame corner, got {top_left:?}"
+    );
+}
+
+#[test]
+fn scene_recipe_slice4_scene_and_render_settings_fail_closed() {
+    let report = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "body_color": "#FFFFFF"
+        },
+        "geometries": [
+            { "id": "body_geo", "primitive": { "kind": "box", "size": [0.1, 0.1, 0.1] } }
+        ],
+        "materials": [
+            { "id": "body_mat", "kind": "unlit", "base_color": "body_color" }
+        ],
+        "nodes": [
+            { "id": "body", "geometry": "body_geo", "material": "body_mat" }
+        ],
+        "scene": {
+            "background": { "kind": "not_a_background" },
+            "grid": { "enabled": true, "line_spacing": -1.0 }
+        },
+        "render": {
+            "anti_aliasing": "sparkle",
+            "bloom": { "threshold_srgb": 64, "intensity": 2.0, "radius_px": 2 },
+            "ssao": { "radius_px": 2, "intensity": 0.25, "depth_threshold": -0.01 },
+            "tonemapper": "filmic"
+        }
+    }));
+    assert!(!report.ok, "invalid scene/render knobs must fail closed");
+    assert_reason(&report, "invalid_background", None);
+    assert_reason(&report, "invalid_number", None);
+    assert_reason(&report, "invalid_render_setting", None);
 }
 
 #[test]

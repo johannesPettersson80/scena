@@ -5,6 +5,12 @@ use serde_json::Value;
 
 use crate::scene::Transform;
 
+mod setup;
+pub use setup::{
+    SceneRecipeBackgroundV1, SceneRecipeBloomV1, SceneRecipeEnvironmentV1, SceneRecipeGridV1,
+    SceneRecipeRenderV1, SceneRecipeSceneV1, SceneRecipeSsaoV1,
+};
+
 pub const SCENE_RECIPE_SCHEMA_V1: &str = "scena.scene_recipe.v1";
 pub const SCENE_RECIPE_VALIDATION_SCHEMA_V1: &str = "scena.scene_recipe_validation.v1";
 pub const SCENE_RECIPE_BUILD_SCHEMA_V1: &str = "scena.scene_recipe_build.v1";
@@ -26,6 +32,10 @@ pub struct SceneRecipeV1 {
     pub cameras: Vec<SceneRecipeCameraV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lights: Vec<SceneRecipeLightV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scene: Option<SceneRecipeSceneV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render: Option<SceneRecipeRenderV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub section_box: Option<SceneRecipeSectionBoxV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

@@ -62,6 +62,25 @@
       }
     }
   ],
+  "scene": {
+    "background": {
+      "kind": "studio"
+    },
+    "environment": {
+      "kind": "default"
+    },
+    "grid": {
+      "padding": 0.05,
+      "line_spacing": 0.04
+    }
+  },
+  "render": {
+    "profile": "balanced",
+    "quality": "medium",
+    "anti_aliasing": "fxaa",
+    "exposure_ev": 0.0,
+    "tonemapper": "pbr_neutral"
+  },
   "section_box": {
     "import": "part",
     "margin": 0.125,
