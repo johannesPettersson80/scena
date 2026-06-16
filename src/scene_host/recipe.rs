@@ -10,12 +10,14 @@ use crate::scene::recipe::{
 };
 
 mod authoring;
+mod overlays;
 mod policy;
 
 use authoring::{
-    build_authored_cameras, build_authored_geometries, build_authored_materials,
-    build_authored_nodes,
+    AuthoredNodeResources, build_authored_cameras, build_authored_geometries,
+    build_authored_lights, build_authored_materials, build_authored_nodes,
 };
+use overlays::apply_recipe_overlays;
 use policy::asset_policy_diagnostics;
 
 #[derive(Debug)]
@@ -85,6 +87,7 @@ impl SceneHostCore<DefaultAssetFetcher> {
         let mut materials = Vec::new();
         let mut nodes = Vec::new();
         let mut cameras = Vec::new();
+        let mut lights = Vec::new();
 
         for (index, import) in recipe.imports.iter().enumerate() {
             let import_path = format!("$.imports[{index}]");
@@ -218,6 +221,7 @@ impl SceneHostCore<DefaultAssetFetcher> {
         let geometry_handles = build_authored_geometries(
             &policy,
             &host,
+            &recipe.colors,
             &recipe.geometries,
             &mut geometries,
             &mut diagnostics,
@@ -225,17 +229,22 @@ impl SceneHostCore<DefaultAssetFetcher> {
         let material_handles = build_authored_materials(
             &policy,
             &host,
+            recipe_path,
             &recipe.colors,
             &recipe.materials,
             &mut materials,
             &mut diagnostics,
-        );
+        )
+        .await;
         let node_keys = build_authored_nodes(
             &policy,
             &mut host,
             &recipe.nodes,
-            &geometry_handles,
-            &material_handles,
+            &recipe.colors,
+            AuthoredNodeResources {
+                geometries: &geometry_handles,
+                materials: &material_handles,
+            },
             &mut nodes,
             &mut diagnostics,
         );
@@ -246,6 +255,14 @@ impl SceneHostCore<DefaultAssetFetcher> {
             &mut cameras,
             &mut diagnostics,
         );
+        build_authored_lights(
+            &mut host,
+            &recipe.colors,
+            &recipe.lights,
+            &mut lights,
+            &mut diagnostics,
+        );
+        apply_recipe_overlays(&mut host, &recipe, &imports, &nodes, &mut diagnostics);
 
         let mut manifest = build_manifest(diagnostics, skipped);
         manifest.imports = imports;
@@ -253,6 +270,7 @@ impl SceneHostCore<DefaultAssetFetcher> {
         manifest.materials = materials;
         manifest.nodes = nodes;
         manifest.cameras = cameras;
+        manifest.lights = lights;
         if manifest.ok && !has_errors(&manifest.diagnostics[authored_start..]) {
             Ok(SceneHostRecipeBuild { host, manifest })
         } else {

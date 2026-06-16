@@ -61,6 +61,10 @@ All notable user-facing changes are recorded here.
   remaining future sections such as anchors, connectors, bounds, authored
   planes, and named states fail as `unsupported_feature` until their owner
   features land.
+- Expanded `scena.scene_recipe.v1` authored-scene recipes with primitive and
+  custom-mesh geometries, unlit/PBR/line/wireframe/edge materials with texture
+  slots, directional/point/spot lights, node hierarchy and visual attributes,
+  and authored-node section-box/callout targets.
 - Added `Scene::frame_all_with_overlays`,
   `SceneHostCore::frame_all_with_overlays`, and browser
   `frameAllWithOverlays()` to frame geometry plus generated overlay label

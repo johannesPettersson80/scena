@@ -30,6 +30,7 @@ pub(super) fn validate_authoring_sections(
     );
     let node_ids = ids::id_set_from_array(object.get("nodes"));
     targets::validate_cameras(object.get("cameras"), &node_ids, diagnostics);
+    targets::validate_lights(object.get("lights"), &color_ids, diagnostics);
 }
 
 fn validate_required_id(

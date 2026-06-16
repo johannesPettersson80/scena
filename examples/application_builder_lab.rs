@@ -505,6 +505,7 @@ fn agent_render_loop(root: &Path) -> Result<ApplicationFinding, Box<dyn Error>> 
         materials: Vec::new(),
         nodes: Vec::new(),
         cameras: Vec::new(),
+        lights: Vec::new(),
         capture: Some(SceneRecipeCaptureV1 {
             width: 160,
             height: 120,

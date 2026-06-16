@@ -53,10 +53,18 @@ Additive public API changes in Unreleased:
   `AppearanceReasonV1`, `AppearanceFixV1`, and
   `Renderer::introspect_appearance` (gated behind `inspection`)
 - `SCENE_RECIPE_SCHEMA_V1`, `SCENE_RECIPE_VALIDATION_SCHEMA_V1`,
-  `SceneRecipeV1`, `SceneRecipeImportV1`, `SceneRecipeCaptureV1`,
-  `SceneRecipeExpectedExtentV1`, `SceneRecipeValidationReportV1`,
-  `SceneRecipeDiagnosticV1`, `validate_scene_recipe_json`,
-  `validate_scene_recipe_value`, and `parse_valid_scene_recipe_json`
+  `SCENE_RECIPE_BUILD_SCHEMA_V1`, `SceneRecipeV1`,
+  `SceneRecipeAlphaModeV1`, `SceneRecipeImportV1`, `SceneRecipeCaptureV1`,
+  `SceneRecipeExpectedExtentV1`, `SceneRecipeColorV1`,
+  `SceneRecipeGeometryV1`, `SceneRecipeMeshV1`, `SceneRecipePrimitiveV1`,
+  `SceneRecipeMaterialV1`, `SceneRecipeTextureSlotV1`,
+  `SceneRecipeTextureColorSpaceV1`, `SceneRecipeNodeV1`,
+  `SceneRecipeCameraV1`, `SceneRecipeLightV1`, `SceneRecipeTargetV1`,
+  `SceneRecipeBuildV1`, `SceneRecipeBuildImportV1`,
+  `SceneRecipeBuildResourceV1`, `SceneRecipeBuildTargetV1`,
+  `SceneRecipeValidationReportV1`, `SceneRecipeDiagnosticV1`,
+  `validate_scene_recipe_json`, `validate_scene_recipe_value`, and
+  `parse_valid_scene_recipe_json`
 - `SCENE_PLACEMENT_RESULT_SCHEMA_V1`, `ScenePlacementResultV1`,
   `ScenePlacementDiagnosticV1`, `placement_center_transform`,
   `placement_ground_transform`, `placement_fit_to_size_transform`,

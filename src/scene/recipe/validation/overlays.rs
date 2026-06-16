@@ -6,7 +6,7 @@ use super::diagnostic;
 use crate::scene::recipe::types::{
     SceneRecipeCalloutTargetV1, SceneRecipeCalloutV1, SceneRecipeDiagnosticV1,
     SceneRecipeExplodedViewModeV1, SceneRecipeExplodedViewV1, SceneRecipeMeasurementV1,
-    SceneRecipeSectionBoxV1,
+    SceneRecipeSectionBoxV1, SceneRecipeTargetV1,
 };
 
 pub(super) fn validate_section_box(
@@ -19,12 +19,33 @@ pub(super) fn validate_section_box(
     };
     match serde_json::from_value::<SceneRecipeSectionBoxV1>(section_box.clone()) {
         Ok(section_box) => {
-            validate_import_reference(
-                "$.section_box.import",
-                &section_box.import,
-                import_ids,
-                diagnostics,
-            );
+            match (&section_box.import, &section_box.target) {
+                (Some(import), None) => validate_import_reference(
+                    "$.section_box.import",
+                    import,
+                    import_ids,
+                    diagnostics,
+                ),
+                (None, Some(target)) => validate_overlay_target("$.section_box.target", target, import_ids, diagnostics),
+                (Some(_), Some(_)) => diagnostics.push(diagnostic(
+                    "invalid_section_box",
+                    "error",
+                    "$.section_box",
+                    "section_box accepts either import or target, not both",
+                    "use target:{kind:\"node\",id} for authored nodes or import for legacy import roots",
+                    None,
+                    false,
+                )),
+                (None, None) => diagnostics.push(diagnostic(
+                    "invalid_section_box",
+                    "error",
+                    "$.section_box",
+                    "section_box requires import or target",
+                    "use target:{kind:\"node\",id} or import:\"asset\"",
+                    None,
+                    false,
+                )),
+            }
             if !section_box.margin.is_finite() || section_box.margin < 0.0 {
                 diagnostics.push(diagnostic(
                     "invalid_section_box",
@@ -42,7 +63,7 @@ pub(super) fn validate_section_box(
             "error",
             "$.section_box",
             format!("section_box must match the supported recipe shape: {error}"),
-            "emit section_box:{import,margin?,inverted?,helper_wireframe?}",
+            "emit section_box:{target|import,margin?,inverted?,helper_wireframe?}",
             None,
             false,
         )),
@@ -186,6 +207,19 @@ pub(super) fn validate_callouts(
                             diagnostics,
                         );
                     }
+                    SceneRecipeCalloutTargetV1::Node { id, local_offset } => {
+                        validate_non_empty_string(
+                            &format!("{path}.target.id"),
+                            &id,
+                            "node target id",
+                            diagnostics,
+                        );
+                        validate_vec3(
+                            &format!("{path}.target.local_offset"),
+                            local_offset,
+                            diagnostics,
+                        );
+                    }
                     SceneRecipeCalloutTargetV1::World { position } => {
                         validate_vec3(&format!("{path}.target.position"), position, diagnostics);
                     }
@@ -196,7 +230,7 @@ pub(super) fn validate_callouts(
                 "error",
                 path,
                 format!("callout must match the supported recipe shape: {error}"),
-                "emit {id,text,target,label_offset?} with target kind world or import_root",
+                "emit {id,text,target,label_offset?} with target kind world, import_root, or node",
                 None,
                 false,
             )),
@@ -267,6 +301,44 @@ pub(super) fn validate_exploded_view(
             None,
             false,
         )),
+    }
+}
+
+fn validate_overlay_target(
+    path: &str,
+    target: &SceneRecipeTargetV1,
+    import_ids: &BTreeSet<String>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    match target {
+        SceneRecipeTargetV1::Node { id } => {
+            validate_non_empty_string(&format!("{path}.id"), id, "node target id", diagnostics);
+        }
+        SceneRecipeTargetV1::Import { id } => {
+            validate_import_reference(&format!("{path}.id"), id, import_ids, diagnostics);
+        }
+        SceneRecipeTargetV1::World { position } => {
+            validate_vec3(&format!("{path}.position"), *position, diagnostics);
+        }
+    }
+}
+
+fn validate_non_empty_string(
+    path: &str,
+    value: &str,
+    label: &str,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    if value.trim().is_empty() {
+        diagnostics.push(diagnostic(
+            "invalid_id",
+            "error",
+            path,
+            format!("{label} must not be empty"),
+            "use a stable target id",
+            None,
+            false,
+        ));
     }
 }
 

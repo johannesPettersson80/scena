@@ -1,5 +1,3 @@
-#[cfg(all(feature = "inspection", feature = "scene-host"))]
-use std::collections::BTreeMap;
 #[cfg(feature = "inspection")]
 use std::fs;
 use std::path::Path;
@@ -65,6 +63,7 @@ pub(crate) fn scene_recipe_has_scene_host_directives(recipe: &scena::SceneRecipe
         || !recipe.materials.is_empty()
         || !recipe.nodes.is_empty()
         || !recipe.cameras.is_empty()
+        || !recipe.lights.is_empty()
         || recipe.section_box.is_some()
         || !recipe.measurements.is_empty()
         || !recipe.callouts.is_empty()
@@ -97,182 +96,11 @@ pub(crate) async fn scene_host_from_resolved_recipe(
     let mut host = build.host;
     host.resize(width as f32, height as f32, 1.0)
         .map_err(|error| format!("failed to size recipe SceneHost renderer: {error}"))?;
-    let mut imports = BTreeMap::new();
-    for import in &build.manifest.imports {
-        imports.insert(
-            import.id.clone(),
-            RecipeImportHandles {
-                roots: import.root_handles.clone(),
-            },
-        );
-    }
-
-    apply_recipe_section_box(&mut host, recipe, &imports)?;
-    apply_recipe_measurements(&mut host, recipe)?;
-    apply_recipe_callouts(&mut host, recipe, &imports)?;
-    apply_recipe_exploded_view(&mut host, recipe, &imports)?;
     if !recipe.cameras.iter().any(|camera| camera.active) {
         host.frame_all_with_overlays()
             .map_err(|error| format!("failed to frame recipe scene including overlays: {error}"))?;
     }
     Ok(host)
-}
-
-#[cfg(all(feature = "inspection", feature = "scene-host"))]
-struct RecipeImportHandles {
-    roots: Vec<u64>,
-}
-
-#[cfg(all(feature = "inspection", feature = "scene-host"))]
-fn apply_recipe_section_box(
-    host: &mut scena::SceneHostCore,
-    recipe: &scena::SceneRecipeV1,
-    imports: &BTreeMap<String, RecipeImportHandles>,
-) -> Result<(), String> {
-    let Some(section_box) = &recipe.section_box else {
-        return Ok(());
-    };
-    let bounds = import_bounds(host, imports, &section_box.import)?;
-    host.set_section_box_json(
-        bounds,
-        section_box.margin,
-        section_box.inverted,
-        section_box.helper_wireframe,
-    )
-    .map(|_| ())
-    .map_err(|error| format!("failed to apply recipe section_box: {error}"))
-}
-
-#[cfg(all(feature = "inspection", feature = "scene-host"))]
-fn apply_recipe_measurements(
-    host: &mut scena::SceneHostCore,
-    recipe: &scena::SceneRecipeV1,
-) -> Result<(), String> {
-    for measurement in &recipe.measurements {
-        if measurement.kind != "distance" {
-            return Err(format!(
-                "unsupported recipe measurement kind '{}'",
-                measurement.kind
-            ));
-        }
-        host.add_distance_measurement_json(
-            &measurement.id,
-            scena::Vec3::from_array(measurement.start),
-            scena::Vec3::from_array(measurement.end),
-            measurement.label.as_deref(),
-            measurement.unit.as_deref().unwrap_or("unit"),
-            measurement.precision.unwrap_or(2),
-        )
-        .map(|_| ())
-        .map_err(|error| {
-            format!(
-                "failed to apply recipe measurement '{}': {error}",
-                measurement.id
-            )
-        })?;
-    }
-    Ok(())
-}
-
-#[cfg(all(feature = "inspection", feature = "scene-host"))]
-fn apply_recipe_callouts(
-    host: &mut scena::SceneHostCore,
-    recipe: &scena::SceneRecipeV1,
-    imports: &BTreeMap<String, RecipeImportHandles>,
-) -> Result<(), String> {
-    for callout in &recipe.callouts {
-        match &callout.target {
-            scena::SceneRecipeCalloutTargetV1::ImportRoot {
-                import,
-                local_offset,
-            } => {
-                let root = first_import_root(imports, import)?;
-                host.add_node_callout(
-                    &callout.id,
-                    root,
-                    *local_offset,
-                    callout.label_offset,
-                    &callout.text,
-                )
-            }
-            scena::SceneRecipeCalloutTargetV1::World { position } => {
-                host.add_world_callout(&callout.id, *position, callout.label_offset, &callout.text)
-            }
-        }
-        .map(|_| ())
-        .map_err(|error| format!("failed to apply recipe callout '{}': {error}", callout.id))?;
-    }
-    Ok(())
-}
-
-#[cfg(all(feature = "inspection", feature = "scene-host"))]
-fn apply_recipe_exploded_view(
-    host: &mut scena::SceneHostCore,
-    recipe: &scena::SceneRecipeV1,
-    imports: &BTreeMap<String, RecipeImportHandles>,
-) -> Result<(), String> {
-    let Some(exploded) = &recipe.exploded_view else {
-        return Ok(());
-    };
-    let root = first_import_root(imports, &exploded.import)?;
-    let mode = match exploded.mode {
-        scena::SceneRecipeExplodedViewModeV1::DirectChildren => {
-            scena::SceneHostExplodedViewModeV1::DirectChildren
-        }
-        scena::SceneRecipeExplodedViewModeV1::HierarchyDepth => {
-            scena::SceneHostExplodedViewModeV1::HierarchyDepth
-        }
-        scena::SceneRecipeExplodedViewModeV1::Axis => scena::SceneHostExplodedViewModeV1::Axis,
-    };
-    let patch = host
-        .exploded_view_patch(
-            root,
-            scena::SceneHostExplodedViewOptionsV1 {
-                mode,
-                axis: exploded.axis,
-                factor: exploded.factor,
-                distance: exploded.distance,
-                duration_seconds: None,
-                easing: scena::SceneHostEasing::Linear,
-            },
-        )
-        .map_err(|error| format!("failed to build recipe exploded_view patch: {error}"))?;
-    host.apply_patch(&patch)
-        .map(|_| ())
-        .map_err(|error| format!("failed to apply recipe exploded_view patch: {error}"))
-}
-
-#[cfg(all(feature = "inspection", feature = "scene-host"))]
-fn import_bounds(
-    host: &mut scena::SceneHostCore,
-    imports: &BTreeMap<String, RecipeImportHandles>,
-    import_id: &str,
-) -> Result<scena::Aabb, String> {
-    let handles = imports
-        .get(import_id)
-        .ok_or_else(|| format!("recipe references unknown import '{import_id}'"))?;
-    let mut combined = None;
-    for root in &handles.roots {
-        let Some(bounds) = host.node_world_bounds(*root).map_err(|error| {
-            format!("failed to compute bounds for import '{import_id}': {error}")
-        })?
-        else {
-            continue;
-        };
-        combined = Some(combined.map_or(bounds, |current: scena::Aabb| current.union(bounds)));
-    }
-    combined.ok_or_else(|| format!("recipe import '{import_id}' has no renderable bounds"))
-}
-
-#[cfg(all(feature = "inspection", feature = "scene-host"))]
-fn first_import_root(
-    imports: &BTreeMap<String, RecipeImportHandles>,
-    import_id: &str,
-) -> Result<u64, String> {
-    imports
-        .get(import_id)
-        .and_then(|handles| handles.roots.first().copied())
-        .ok_or_else(|| format!("recipe import '{import_id}' has no root node"))
 }
 
 #[cfg(feature = "inspection")]

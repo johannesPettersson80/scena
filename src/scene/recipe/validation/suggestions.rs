@@ -48,6 +48,7 @@ pub(super) const ROOT_FIELDS: &[&str] = &[
     "materials",
     "nodes",
     "cameras",
+    "lights",
     "section_box",
     "measurements",
     "callouts",
@@ -72,7 +73,6 @@ pub(super) const UNSUPPORTED_WORKFLOW_FIELDS: &[&str] = &[
 ];
 pub(super) const UNSUPPORTED_SECTION_FIELDS: &[&str] = &[
     "primitives",
-    "lights",
     "scene",
     "render",
     "expect",

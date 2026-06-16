@@ -54,7 +54,6 @@ fn scene_recipe_validation_reports_unknown_fields_duplicate_ids_and_suggestions(
 fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
     for section in [
         "primitives",
-        "lights",
         "scene",
         "render",
         "expect",
@@ -354,6 +353,187 @@ fn scene_recipe_authored_only_builds_manifest_and_renders_through_cli() {
     assert!(png_path.exists(), "render writes the authored-scene PNG");
 }
 
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_slice2_authoring_vocabulary_builds_and_targets_overlays() {
+    let recipe = json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "base": "#345E8A",
+            "accent": "#E9B44C",
+            "line": "#F7F7F2",
+            "tint": "#FFFFFF"
+        },
+        "geometries": [
+            { "id": "floor_geo", "primitive": { "kind": "plane", "size": [0.6, 0.4] } },
+            { "id": "rail_geo", "primitive": { "kind": "polyline", "points": [[-0.25, 0.02, -0.15], [0.0, 0.08, 0.0], [0.25, 0.02, 0.15]] } },
+            { "id": "axis_geo", "primitive": { "kind": "axes", "length": 0.12 } },
+            {
+                "id": "flag_geo",
+                "mesh": {
+                    "topology": "triangles",
+                    "positions": [[0.0, 0.04, 0.0], [0.12, 0.04, 0.0], [0.0, 0.16, 0.0]],
+                    "normals": [[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
+                    "indices": [0, 1, 2],
+                    "colors": ["accent", "base", "line"],
+                    "uvs": [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
+                }
+            }
+        ],
+        "materials": [
+            {
+                "id": "floor_mat",
+                "kind": "pbr_metallic_roughness",
+                "base_color": "base",
+                "metallic": 0.05,
+                "roughness": 0.7,
+                "double_sided": true,
+                "emissive": "accent",
+                "emissive_strength": 0.15,
+                "alpha_mode": { "kind": "opaque" },
+                "base_color_texture": {
+                    "uri": "gltf/khronos/WaterBottle/WaterBottle_baseColor.png",
+                    "color_space": "srgb"
+                }
+            },
+            { "id": "line_mat", "kind": "line", "base_color": "line", "stroke_width_px": 3.0 },
+            { "id": "flag_mat", "kind": "unlit", "base_color": "accent", "double_sided": true }
+        ],
+        "nodes": [
+            {
+                "id": "floor",
+                "geometry": "floor_geo",
+                "material": "floor_mat",
+                "name": "inspection floor",
+                "tags": ["cad", "authored"],
+                "layer_mask": 3,
+                "render_group": 2,
+                "tint": "tint"
+            },
+            {
+                "id": "rail",
+                "geometry": "rail_geo",
+                "material": "line_mat",
+                "parent": "floor",
+                "visible": true
+            },
+            {
+                "id": "axes",
+                "geometry": "axis_geo",
+                "material": "line_mat",
+                "parent": "floor"
+            },
+            {
+                "id": "flag",
+                "geometry": "flag_geo",
+                "material": "flag_mat",
+                "parent": "floor"
+            }
+        ],
+        "lights": [
+            {
+                "id": "key",
+                "kind": "directional",
+                "preset": "key",
+                "illuminance_lux": 9000.0,
+                "color": "line",
+                "transform": { "kind": "trs", "rotation_degrees": [-35.0, 25.0, 0.0] }
+            }
+        ],
+        "section_box": {
+            "target": { "kind": "node", "id": "floor" },
+            "margin": 0.02,
+            "helper_wireframe": true
+        },
+        "callouts": [{
+            "id": "floor-label",
+            "text": "Authored inspection floor",
+            "target": { "kind": "node", "id": "floor", "local_offset": [0.0, 0.04, 0.0] },
+            "label_offset": [0.08, 0.06, 0.0]
+        }],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "fov_degrees": 38.0,
+            "active": true,
+            "transform": { "kind": "look_at", "eye": [0.65, 0.45, 0.55], "target": "floor" }
+        }],
+        "capture": { "width": 320, "height": 220 }
+    });
+    let text = serde_json::to_string_pretty(&recipe).expect("recipe serializes");
+
+    let validation = scena::validate_scene_recipe_json(&text);
+    assert!(
+        validation.ok,
+        "Slice 2 authored vocabulary should validate: {validation:#?}"
+    );
+
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/slice2.recipe.json",
+        &text,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("Slice 2 authored recipe build succeeds");
+
+    assert!(build.manifest.ok, "{:#?}", build.manifest);
+    assert_eq!(build.manifest.geometries.len(), 4);
+    assert_eq!(build.manifest.materials.len(), 3);
+    assert_eq!(build.manifest.nodes.len(), 4);
+    assert_eq!(build.manifest.lights.len(), 1);
+    assert!(build.manifest.nodes.iter().any(|node| node.id == "floor"));
+    assert!(
+        build
+            .manifest
+            .geometries
+            .iter()
+            .any(|geometry| geometry.id == "flag_geo" && geometry.vertex_count == Some(3))
+    );
+
+    let mut host = build.host;
+    host.prepare().expect("Slice 2 authored scene prepares");
+    host.render().expect("Slice 2 authored scene renders");
+    let capture = host.capture().expect("Slice 2 authored scene captures");
+    let inspection_json = host
+        .inspect_json()
+        .expect("Slice 2 authored scene inspects");
+    let inspection: scena::SceneInspectionReportV1 =
+        serde_json::from_str(&inspection_json).expect("inspection decodes");
+    let report = host.renderer().introspect_capture(
+        &capture,
+        &inspection,
+        scena::RenderIntrospectionOptions::summary(),
+    );
+    assert!(report.ok, "Slice 2 render should be visible: {report:#?}");
+    assert!(
+        inspection
+            .nodes
+            .iter()
+            .any(|node| node.tags.contains(&"cad".to_owned())
+                && node.tags.contains(&"authored".to_owned())
+                && node.layer_mask == 3
+                && node.render_group == 2
+                && node.tint.is_some()),
+        "node attributes should reach the actual scene inspection report: {inspection:#?}"
+    );
+    assert!(
+        inspection.counts.clipping_planes > 0,
+        "authored-node section_box target should install real clipping planes: {inspection:#?}"
+    );
+    let projections: scena::AnnotationProjectionReportV1 = serde_json::from_str(
+        &host
+            .annotation_projections_json()
+            .expect("projections serialize"),
+    )
+    .expect("projections decode");
+    assert!(
+        projections
+            .annotations
+            .iter()
+            .any(|projection| projection.id == "floor-label"),
+        "authored-node callout target should create a real annotation projection: {projections:#?}"
+    );
+}
+
 #[test]
 fn scene_recipe_authoring_refs_and_future_variants_fail_before_build() {
     let unknown_ref = scena::validate_scene_recipe_value(json!({
@@ -458,8 +638,13 @@ fn scene_recipe_validation_accepts_overlay_authoring_sections() {
     let text = serde_json::to_string(&recipe).expect("recipe serializes");
     let parsed = scena::parse_valid_scene_recipe_json(&text).expect("overlay recipe parses");
     assert_eq!(
-        parsed.section_box.as_ref().expect("section box").import,
-        "plate"
+        parsed
+            .section_box
+            .as_ref()
+            .expect("section box")
+            .import
+            .as_deref(),
+        Some("plate")
     );
     assert_eq!(parsed.measurements.len(), 1);
     assert_eq!(parsed.callouts.len(), 1);

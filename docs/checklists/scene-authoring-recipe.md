@@ -278,14 +278,14 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
       introspection `ok`; golden build-manifest fixture.
 
 ### Slice 2 — Widen the authoring vocabulary
-- [ ] Geometry: all primitives + custom mesh (positions/normals/indices/topology,
+- [x] Geometry: all primitives + custom mesh (positions/normals/indices/topology,
       optional colors/UVs).
-- [ ] Materials: full params + texture slots (loaded under path policy).
-- [ ] Lights: directional/point/spot + presets.
-- [ ] Node attributes (`name/tags/visible/layer_mask/render_group/tint`) +
+- [x] Materials: full params + texture slots (loaded under path policy).
+- [x] Lights: directional/point/spot + presets.
+- [x] Node attributes (`name/tags/visible/layer_mask/render_group/tint`) +
       hierarchy.
-- [ ] Overlay `target` union extended to authored node ids.
-- [ ] Proof: per-directive validation tests + a multi-node authored scene that
+- [x] Overlay `target` union extended to authored node ids.
+- [x] Proof: per-directive validation tests + a multi-node authored scene that
       renders and inspects; a callout/section-box targeting an authored node.
 
 ### Slice 3 — Transform / placement

@@ -1042,35 +1042,43 @@ validate-recipe <recipe.json>` command. A recipe is a transient declarative
 snapshot input for Scena, not a project file, workflow script, host document
 model, or persisted application state.
 
-The first v1 slice supports:
+The current v1 recipe slice supports:
 
 - `schema: "scena.scene_recipe.v1"`
 - `imports[]` entries with stable caller `id`, glTF/GLB `uri`, optional
   `optional` skip policy, optional `transform`, and optional
   `expected_extent`
-- `colors` map entries with stable caller ids and `#RRGGBB` sRGB hex values
-- `geometries[]` authored resources with stable caller `id`; Slice 1 supports
-  `primitive:{kind:"box",size:[x,y,z]}` and rejects other primitive kinds as
-  `unsupported_feature`
-- `materials[]` authored resources with stable caller `id`; Slice 1 supports
-  `unlit` and `pbr_metallic_roughness` materials with fail-closed color and
-  normalized scalar validation before any lower-level setters can clamp
+- `colors` map entries with stable caller ids and direct `#RRGGBB`, `srgb8`,
+  linear RGB, Kelvin, or named color values
+- `geometries[]` authored resources with stable caller `id`; primitive kinds
+  `box`, `plane`, `sphere`, `cylinder`, `line`, `polyline`, `arrow`, `grid`,
+  and `axes`, plus custom `mesh` entries with topology, positions, normals,
+  indices, optional colors, and optional UVs
+- `materials[]` authored resources with stable caller `id`; `unlit`,
+  `pbr_metallic_roughness`, `line`, `wireframe`, and `edge` material kinds;
+  base color, metallic/roughness, double-sided, emissive, alpha mode, stroke
+  width, edge threshold, and texture slots loaded under `RecipeBuildPolicy`
 - `nodes[]` authored renderables with stable caller `id`, geometry/material
-  references, optional manifest `name`, and optional `raw`/`trs` transform
+  references, optional manifest `name`, parent hierarchy, tags, visibility,
+  layer mask, render group, tint, and optional `raw`/`trs` transform
 - `cameras[]` authored perspective cameras with stable caller `id`; at most one
   camera may be `active`, and camera `look_at` transforms may target authored
   nodes or explicit world positions
-- optional `section_box` directives over an import's bounds
+- `lights[]` authored directional, point, or spot lights with presets, color,
+  intensity/range/cone fields, and transforms
+- optional `section_box` directives over an import's bounds or an authored/
+  imported node target
 - `measurements[]` distance overlays with units and labels
-- `callouts[]` anchored to an import root or world point with label offsets
+- `callouts[]` anchored to an import root, authored/imported node, or world
+  point with label offsets
 - optional `exploded_view` directives over an import's root hierarchy
 - one optional `capture` directive with `width` and `height`
 - opaque caller `metadata`
 
 Unknown fields fail closed. Known future feature sections such as `primitives`,
-`lights`, `scene`, `render`, `expect`, `animations`, `fonts`,
-`skins`, `morphs`, `particles`, `labels`, `anchors`, `connectors`, `bounds`,
-`authored_planes`, and `named_states` emit `unsupported_feature` until the
+`scene`, `render`, `expect`, `animations`, `fonts`, `skins`, `morphs`,
+`particles`, `labels`, `anchors`, `connectors`, `bounds`, `authored_planes`,
+and `named_states` emit `unsupported_feature` until the
 feature slice that owns them implements the section. Workflow fields such as
 `steps`, `sequence`, `loop`, `branch`, `timeline`, and `script` emit
 `unsupported_workflow`; recipes must stay snapshots and the host owns cadence
