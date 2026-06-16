@@ -63,6 +63,19 @@ fn render_introspection_classifies_agent_failure_frames() {
         "warning-only framing reports must not fail the agent loop: {cropped:#?}"
     );
     assert_reason(&cropped, "cropped");
+
+    let near_edge = introspect_supplied_pixels(
+        &scene,
+        &renderer,
+        &inspection,
+        near_edge_frame(64, 64),
+        RendererStats::default(),
+    );
+    assert!(
+        near_edge.ok,
+        "edge warning reports must not fail the agent loop: {near_edge:#?}"
+    );
+    assert_reason(&near_edge, "cropped");
 }
 
 #[test]
@@ -288,6 +301,17 @@ fn cropped_frame(width: usize, height: usize) -> Vec<u8> {
     let mut rgba8 = vec![0; width * height * 4];
     for y in 8..56 {
         for x in 0..16 {
+            let offset = (y * width + x) * 4;
+            rgba8[offset..offset + 4].copy_from_slice(&[255, 255, 255, 255]);
+        }
+    }
+    rgba8
+}
+
+fn near_edge_frame(width: usize, height: usize) -> Vec<u8> {
+    let mut rgba8 = vec![0; width * height * 4];
+    for y in 8..56 {
+        for x in 1..17 {
             let offset = (y * width + x) * 4;
             rgba8[offset..offset + 4].copy_from_slice(&[255, 255, 255, 255]);
         }

@@ -105,9 +105,10 @@ pub(super) fn from_inspection(
         );
     }
 
-    let visible_drawables = inspection.counts.visible_drawable as u64;
-    let all_visible_drawables_culled =
-        visible_drawables > 0 && stats.culled_objects >= visible_drawables;
+    let all_visible_drawables_culled = inspection.counts.visible_drawable > 0
+        && stats.culled_objects > 0
+        && stats.draw_calls == 0
+        && stats.gpu_draw_submissions == 0;
     if all_visible_drawables_culled {
         let patch = frame_bounds_patch(inspection);
         push_reason(

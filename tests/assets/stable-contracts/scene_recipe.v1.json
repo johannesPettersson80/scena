@@ -11,6 +11,62 @@
       }
     }
   ],
+  "section_box": {
+    "import": "part",
+    "margin": 0.125,
+    "inverted": false,
+    "helper_wireframe": true
+  },
+  "measurements": [
+    {
+      "id": "part-width",
+      "kind": "distance",
+      "start": [
+        -0.5,
+        0.0,
+        0.0
+      ],
+      "end": [
+        0.5,
+        0.0,
+        0.0
+      ],
+      "label": "part width",
+      "unit": "m",
+      "precision": 2
+    }
+  ],
+  "callouts": [
+    {
+      "id": "part-callout",
+      "text": "Part",
+      "target": {
+        "kind": "import_root",
+        "import": "part",
+        "local_offset": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "label_offset": [
+        0.25,
+        0.25,
+        0.0
+      ]
+    }
+  ],
+  "exploded_view": {
+    "import": "part",
+    "mode": "axis",
+    "axis": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "factor": 0.0,
+    "distance": 0.0
+  },
   "capture": {
     "width": 96,
     "height": 72

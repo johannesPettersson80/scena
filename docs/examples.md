@@ -159,6 +159,24 @@ active option JSON:
 cargo run --example product_configurator --features scene-host
 ```
 
+Use `application_builder_lab.rs` to exercise one mini-application for every
+application-builder archetype in a single run: model viewer, CAD inspection,
+digital-twin state playback, product configurator, industrial dashboard,
+headless documentation renderer, agent render loop, data visualization,
+animated viewer, interaction proof, browser contract handoff, guided tour, and
+SceneHost host loop. Each archetype proves its render through the
+`render_introspection` contract and fails closed if the frame is not ok, so the
+run is a real per-archetype check rather than a screenshot dump. The example
+writes PNGs plus capture/contract/introspection JSON and a findings report under
+the output directory:
+
+```bash
+cargo run --example application_builder_lab --features scene-host -- target/gate-artifacts/application-builder-lab
+```
+
+The checked-in findings summary is
+[`docs/checklists/application-builder-example-findings.md`](checklists/application-builder-example-findings.md).
+
 Use `scena.presentation_timeline.v1` from `SceneHostCore` when a guided tour
 needs host-ticked seek/advance over visual states, camera bookmarks, labels,
 tints, transforms, and animation mixer sampling. Timeline seek emits and
@@ -191,13 +209,19 @@ Ready templates:
 - `data-visualization`
 - `animated-viewer`
 - `interaction-proof`
+- `cad-inspection`
+- `documentation-renderer`
 
-Phase-2-dependent templates such as `cad-inspection` and
-`documentation-renderer` currently emit structured deferred manifests instead
-of runnable commands.
+The CAD and documentation templates are CLI-runnable smoke workflows for asset
+load, render introspection, visibility diagnosis, and recipe-authored section
+boxes, measurements, callouts, and exploded views. Browser proof uses the
+separate `scena browser-proof` wrapper over the wasm-pack + Playwright lanes;
+the M6 lane rebuilds the browser-probe package before running the proof so it
+does not use stale WASM.
 
 ```bash
 cargo run --features scene-host -- examples agent interaction-proof --out target/scena-agent/interaction-proof
+cargo run --features scene-host,inspection -- browser-proof scene-host --dry-run
 ```
 
 ## CAD-style placement examples

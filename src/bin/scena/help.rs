@@ -11,6 +11,7 @@ pub(crate) fn help_json() -> String {
             "inspect <asset-or-recipe>",
             "diagnose <asset-or-recipe> --visibility [--handle <u64>]",
             "doctor <asset-or-recipe>",
+            "browser-proof [scene-host|m6] [--backend webgl2] [--dry-run]",
             "repair <asset-or-recipe> --from <report.json>",
             "verify appearance <asset-or-recipe> --expect <appearance-expectation.json>",
             "verify animation <asset-or-recipe> --clip <name> --times <seconds> [--expect-change] [--expect-translations 'x,y,z;...']",

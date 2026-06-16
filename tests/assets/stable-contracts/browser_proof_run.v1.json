@@ -1,0 +1,18 @@
+{
+  "schema": "scena.browser_proof_run.v1",
+  "lane": "scene-host",
+  "script": "browser:scene-host-proof",
+  "command": [
+    "npm",
+    "run",
+    "browser:scene-host-proof"
+  ],
+  "env": {
+    "SCENA_BROWSER_BACKENDS": "webgl2"
+  },
+  "artifact_json_path": "target/gate-artifacts/scene-host-browser-proof/scene-host-browser-proof.json",
+  "artifact_png_path": "target/gate-artifacts/scene-host-browser-proof/scene-host-browser-proof.png",
+  "dry_run": true,
+  "status": "ready",
+  "exit_code": 0
+}

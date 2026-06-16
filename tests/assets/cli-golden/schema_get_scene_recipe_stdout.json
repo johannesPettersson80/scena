@@ -7,33 +7,89 @@
     "fixture_path": "tests/assets/stable-contracts/scene_recipe.v1.json"
   },
   "example": {
-    "schema": "scena.scene_recipe.v1",
-    "imports": [
+    "callouts": [
       {
-        "id": "part",
-        "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
-        "expected_extent": {
-          "min": 0.1,
-          "max": 10.0,
-          "unit": "m"
-        }
+        "id": "part-callout",
+        "label_offset": [
+          0.25,
+          0.25,
+          0.0
+        ],
+        "target": {
+          "import": "part",
+          "kind": "import_root",
+          "local_offset": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "text": "Part"
       }
     ],
     "capture": {
-      "width": 96,
-      "height": 72
+      "height": 72,
+      "width": 96
     },
+    "exploded_view": {
+      "axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "distance": 0.0,
+      "factor": 0.0,
+      "import": "part",
+      "mode": "axis"
+    },
+    "imports": [
+      {
+        "expected_extent": {
+          "max": 10.0,
+          "min": 0.1,
+          "unit": "m"
+        },
+        "id": "part",
+        "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
+      }
+    ],
+    "measurements": [
+      {
+        "end": [
+          0.5,
+          0.0,
+          0.0
+        ],
+        "id": "part-width",
+        "kind": "distance",
+        "label": "part width",
+        "precision": 2,
+        "start": [
+          -0.5,
+          0.0,
+          0.0
+        ],
+        "unit": "m"
+      }
+    ],
     "metadata": {
       "purpose": "stable recipe fixture"
+    },
+    "schema": "scena.scene_recipe.v1",
+    "section_box": {
+      "helper_wireframe": true,
+      "import": "part",
+      "inverted": false,
+      "margin": 0.125
     }
   },
   "invalid_example": {
-    "schema": "scena.scene_recipe.v1",
     "importe": [
       {
         "id": "part",
         "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
       }
-    ]
+    ],
+    "schema": "scena.scene_recipe.v1"
   }
 }

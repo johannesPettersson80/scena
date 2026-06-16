@@ -18,6 +18,7 @@ pub use types::{
 };
 
 pub const RENDER_INTROSPECTION_SCHEMA_V1: &str = "scena.render_introspection.v1";
+const CROPPED_EDGE_TOLERANCE_PX: f32 = 2.0;
 
 impl RenderIntrospectionReportV1 {
     pub fn from_capture(
@@ -287,10 +288,10 @@ fn framing_summary(
     RenderIntrospectionFramingV1 {
         center_offset_fraction: [round3(center_offset_x), round3(center_offset_y)],
         fit_fraction: round3(fit_fraction),
-        cropped: bbox.min_x <= 0.0
-            || bbox.min_y <= 0.0
-            || bbox.max_x >= width.saturating_sub(1) as f32
-            || bbox.max_y >= height.saturating_sub(1) as f32,
+        cropped: bbox.min_x <= CROPPED_EDGE_TOLERANCE_PX
+            || bbox.min_y <= CROPPED_EDGE_TOLERANCE_PX
+            || bbox.max_x >= width.saturating_sub(1) as f32 - CROPPED_EDGE_TOLERANCE_PX
+            || bbox.max_y >= height.saturating_sub(1) as f32 - CROPPED_EDGE_TOLERANCE_PX,
         tiny_in_frame: visible_pixel_fraction > 0.0
             && (visible_pixel_fraction < 0.005 || fit_fraction < 0.05),
         active_camera,

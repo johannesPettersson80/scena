@@ -61,10 +61,6 @@ fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
         "viewer_profile",
         "environment",
         "placements",
-        "section_box",
-        "measurements",
-        "callouts",
-        "exploded_view",
         "named_states",
         "anchors",
         "connectors",
@@ -84,6 +80,63 @@ fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
         let report = scena::validate_scene_recipe_value(recipe);
         assert_reason(&report, "unsupported_feature", None);
     }
+}
+
+#[test]
+fn scene_recipe_validation_accepts_overlay_authoring_sections() {
+    let recipe = json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "plate", "uri": "tests/assets/gltf/cad_plate_drawing_scene.gltf" }
+        ],
+        "section_box": {
+            "import": "plate",
+            "margin": 0.01,
+            "helper_wireframe": true
+        },
+        "measurements": [{
+            "id": "plate-width",
+            "kind": "distance",
+            "start": [-0.06, 0.0, 0.0],
+            "end": [0.06, 0.0, 0.0],
+            "label": "plate width",
+            "unit": "mm",
+            "precision": 1
+        }],
+        "callouts": [{
+            "id": "datum",
+            "text": "120 x 60 mm plate",
+            "target": {
+                "kind": "import_root",
+                "import": "plate",
+                "local_offset": [0.0, 0.02, 0.0]
+            },
+            "label_offset": [0.06, 0.05, 0.0]
+        }],
+        "exploded_view": {
+            "import": "plate",
+            "mode": "axis",
+            "axis": [1.0, 0.0, 0.0],
+            "factor": 0.2,
+            "distance": 0.05
+        }
+    });
+
+    let report = scena::validate_scene_recipe_value(recipe.clone());
+    assert!(report.ok, "overlay recipe should validate: {report:#?}");
+
+    let text = serde_json::to_string(&recipe).expect("recipe serializes");
+    let parsed = scena::parse_valid_scene_recipe_json(&text).expect("overlay recipe parses");
+    assert_eq!(
+        parsed.section_box.as_ref().expect("section box").import,
+        "plate"
+    );
+    assert_eq!(parsed.measurements.len(), 1);
+    assert_eq!(parsed.callouts.len(), 1);
+    assert_eq!(
+        parsed.exploded_view.as_ref().expect("exploded").import,
+        "plate"
+    );
 }
 
 #[test]

@@ -136,6 +136,38 @@ impl Scene {
         self.frame(camera, bounds)
     }
 
+    /// Frames visible scene content plus overlay anchors with enough viewport margin for
+    /// screen-aligned label glyphs.
+    ///
+    /// This is intended for documentation, callout, and measurement captures where the
+    /// generated leader lines are part of the scene bounds but the label glyphs are
+    /// screen-space billboards. The helper keeps the camera solve geometric and only
+    /// reserves pixel margin derived from visible label metrics.
+    pub fn frame_all_with_overlays<F>(
+        &mut self,
+        camera: CameraKey,
+        assets: &Assets<F>,
+        viewport_width: u32,
+        viewport_height: u32,
+    ) -> Result<super::FramingOutcome, LookupError> {
+        let bounds = self
+            .scene_bounds_world()
+            .into_iter()
+            .chain(self.asset_backed_scene_bounds_world(assets))
+            .chain(self.visible_label_anchor_bounds_world())
+            .reduce(union_aabb)
+            .ok_or(LookupError::ImportHasNoBounds)?;
+        let margin_px = self.visible_label_margin_px(viewport_width, viewport_height);
+        self.frame_bounds(
+            camera,
+            bounds,
+            super::FramingOptions::new()
+                .viewport(viewport_width, viewport_height)
+                .margin_px(margin_px)
+                .tighten_depth_range(true),
+        )
+    }
+
     /// Frames the world-space bounds of a node and any bounded descendants.
     pub fn frame_node(&mut self, camera: CameraKey, node: NodeKey) -> Result<(), LookupError> {
         if !self.nodes.contains_key(node) {
@@ -204,6 +236,29 @@ impl Scene {
                 Some(transform_aabb(bounds, transform))
             })
             .reduce(union_aabb)
+    }
+
+    fn visible_label_anchor_bounds_world(&self) -> Option<Aabb> {
+        self.label_nodes()
+            .map(|(_node, _label, _desc, transform)| {
+                Aabb::new(transform.translation, transform.translation)
+            })
+            .reduce(union_aabb)
+    }
+
+    fn visible_label_margin_px(&self, viewport_width: u32, viewport_height: u32) -> f32 {
+        let max_label_half_extent = self
+            .label_nodes()
+            .map(|(_node, _label, desc, _transform)| {
+                let metrics = desc.metrics();
+                let padding = (desc.size() * 0.25).ceil().max(2.0);
+                metrics.width_px.max(metrics.height_px) * 0.5 + padding + 8.0
+            })
+            .fold(0.0_f32, f32::max);
+        // Keep overlay labels from consuming most of the frame. A per-side cap of 15%
+        // leaves at least 70% of the shorter viewport dimension for the framed subject.
+        let max_usable = viewport_width.min(viewport_height) as f32 * 0.15;
+        max_label_half_extent.min(max_usable).max(0.0)
     }
 
     fn node_subtree_bounds_world(&self, node: NodeKey) -> Option<Aabb> {

@@ -171,6 +171,9 @@ Additive public API changes in Unreleased:
   `render --introspect`, `inspect`, `diagnose --visibility`, and
   `repair --from <report.json>`, and
   `verify appearance --expect <appearance-expectation.json>` JSON commands
+- `scena browser-proof [scene-host|m6] [--backend webgl2] [--dry-run]`
+  for a machine-readable wrapper over the wasm-pack + Playwright browser lanes;
+  the M6 lane rebuilds its browser-probe package before running Playwright
 
 Additive public API changes in 1.7.0:
 
@@ -436,6 +439,8 @@ Additive public API changes in 1.2.0:
 Additive public API changes in 1.3.0:
 
 - `Scene::frame_bounds`
+- `Scene::frame_all_with_overlays`
+- `SceneHostCore::frame_all_with_overlays` and browser `frameAllWithOverlays`
 - `FramingOptions`
 - `FramingOptions::azimuth_elevation`
 - `FramingOptions::front`

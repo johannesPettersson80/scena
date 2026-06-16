@@ -599,20 +599,37 @@ The manifest contains:
 
 - `schema`
 - `name`
-- `status`: `ready` or `deferred`
+- `status`: usually `ready`; `deferred` is reserved for templates that have no
+  honest runnable CLI smoke path yet
 - `required_features`: crate features required to run the generated commands
 - `files`: generated file paths and their schema names
 - `commands`: argv arrays beginning with `scena`, expected output schema,
   expected `ok` value, and artifact paths that should exist after the command
-- `notes`: explanatory text for deferred templates
+- `notes`: explanatory text for limitations or deferred sub-capabilities
 
 Ready templates are CLI-only acceptance examples over the normal
-prepare/render/capture/report path. Deferred templates, such as CAD inspection
-and documentation rendering, emit no runnable commands until their Phase 2
-measurement, section, exploded-view, callout, and annotation dependencies land.
+prepare/render/capture/report path. CAD inspection and documentation rendering
+are runnable smoke templates for asset load, render introspection, visibility
+diagnosis, recipe-authored section boxes, measurements, callouts, and exploded
+views.
 
 Stable fixture:
 `tests/assets/stable-contracts/agent_smoke_template.v1.json`.
+
+### `scena.browser_proof_run.v1`
+
+`scena browser-proof [scene-host|m6] [--backend webgl2] [--dry-run]` emits
+`scena.browser_proof_run.v1`. The wrapper delegates to the existing Playwright
+lanes and keeps stdout machine-readable. The `scene-host` lane runs
+`browser:scene-host-proof`; the `m6` lane first rebuilds
+`target/m6-browser-pkg` with `wasm-pack --features browser-probe`, then runs
+`browser:m6`. `--dry-run` reports the exact command, environment, and artifact
+paths without launching a browser; real runs return `status: "passed"` or
+`"failed"` and exit non-zero on failure. Failed runs include compact stdout and
+stderr tails when the underlying command produced them.
+
+Stable fixture:
+`tests/assets/stable-contracts/browser_proof_run.v1.json`.
 
 ## Renderer stats JSON
 
@@ -1029,14 +1046,18 @@ The first v1 slice supports:
 - `schema: "scena.scene_recipe.v1"`
 - `imports[]` entries with stable caller `id`, glTF/GLB `uri`, optional
   `transform`, and optional `expected_extent`
+- optional `section_box` directives over an import's bounds
+- `measurements[]` distance overlays with units and labels
+- `callouts[]` anchored to an import root or world point with label offsets
+- optional `exploded_view` directives over an import's root hierarchy
 - one optional `capture` directive with `width` and `height`
 - opaque caller `metadata`
 
 Unknown fields fail closed. Known future feature sections such as `materials`,
-`cameras`, `labels`, `section_box`, `measurements`, `anchors`, `connectors`,
-`bounds`, and `authored_planes` emit `unsupported_feature` until the feature
-slice that owns them implements the section. Workflow fields such as `steps`,
-`sequence`, `loop`, `branch`, `timeline`, and `script` emit
+`cameras`, `labels`, `anchors`, `connectors`, `bounds`, `authored_planes`, and
+`named_states` emit `unsupported_feature` until the feature slice that owns
+them implements the section. Workflow fields such as `steps`, `sequence`,
+`loop`, `branch`, `timeline`, and `script` emit
 `unsupported_workflow`; recipes must stay snapshots and the host owns cadence
 and sequencing.
 
@@ -1059,8 +1080,10 @@ The stable fixtures live at
 validate-recipe <recipe.json>` emits validation JSON on stdout and exits
 non-zero when `ok` is false. When built with `inspection`, `scena render`,
 `scena inspect`, and `scena diagnose --visibility` accept either a direct asset
-path or a recipe file and use the first recipe import through the same
-load/prepare/render/capture path as direct assets.
+path or a recipe file. Recipes with overlay directives are instantiated through
+the same `SceneHostCore` path as native hosts, apply section boxes,
+measurements, callouts, and exploded-view directives, frame with
+`frame_all_with_overlays`, then use the normal prepare/render/capture path.
 Invalid recipe and recipe-adjacent command fixtures live under
 `tests/assets/recipe-invalid/`; they pin missing assets, invalid transforms,
 oversized assets, unknown placement verbs, and stale handle diagnosis for the

@@ -30,6 +30,7 @@ fn scena_schema_cli_lists_and_gets_stable_contracts() {
     assert_schema(&catalog, "scena.visual_repair_plan.v1");
     assert_schema(&catalog, "scena.agent_loop_result.v1");
     assert_schema(&catalog, "scena.agent_smoke_template.v1");
+    assert_schema(&catalog, "scena.browser_proof_run.v1");
     assert_schema(&catalog, "scena.animation_introspection.v1");
     assert_schema(&catalog, "scena.interaction_expectation.v1");
     assert_schema(&catalog, "scena.interaction_verification.v1");

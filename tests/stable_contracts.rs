@@ -139,6 +139,10 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
             "scena.agent_loop_result.v1",
         ),
         (
+            "tests/assets/stable-contracts/browser_proof_run.v1.json",
+            "scena.browser_proof_run.v1",
+        ),
+        (
             "tests/assets/stable-contracts/appearance_expectation.v1.json",
             "scena.appearance_expectation.v1",
         ),
@@ -435,6 +439,13 @@ fn scene_host_grounding_golden_matches_live_schema_serialization() {
 fn agent_smoke_template_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::AgentSmokeTemplateV1>(
         "tests/assets/stable-contracts/agent_smoke_template.v1.json",
+    );
+}
+
+#[test]
+fn browser_proof_run_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::BrowserProofRunV1>(
+        "tests/assets/stable-contracts/browser_proof_run.v1.json",
     );
 }
 

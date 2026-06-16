@@ -380,6 +380,70 @@ fn scene_host_render_introspection_json_uses_rendered_capture_and_inspection_con
 }
 
 #[test]
+fn scene_host_frame_all_with_overlays_keeps_callout_labels_in_frame() {
+    let mut host = SceneHostCore::headless(320, 220).expect("host builds");
+    let import = pollster::block_on(host.instantiate_url(AssetPath::from(
+        "tests/assets/gltf/cad_plate_drawing_scene.gltf",
+    )))
+    .expect("CAD asset instantiates");
+    let plate = host.node_handle(import, "CADPlate120x60mm").expect("plate");
+    let bounds = host
+        .node_world_bounds(plate)
+        .expect("plate bounds query succeeds")
+        .expect("CAD plate has bounds");
+    host.set_section_box_json(bounds, 0.01, false, true)
+        .expect("section box helper wireframe inserts");
+
+    host.add_node_callout(
+        "service-panel-label",
+        plate,
+        [0.0, 0.02, 0.0],
+        [0.06, 0.05, 0.0],
+        "120 x 60 mm plate",
+    )
+    .expect("callout inserts");
+    host.add_distance_measurement_json(
+        "body-width",
+        Vec3::new(-0.06, -0.04, 0.0),
+        Vec3::new(0.06, -0.04, 0.0),
+        Some("BODY WIDTH"),
+        "mm",
+        1,
+    )
+    .expect("measurement inserts");
+
+    host.frame_all_with_overlays()
+        .expect("overlay-aware framing solves");
+    host.prepare().expect("host prepares");
+    host.render().expect("host renders");
+    let report: RenderIntrospectionReportV1 = serde_json::from_str(
+        &host
+            .render_introspection_json(false)
+            .expect("report serializes"),
+    )
+    .expect("render introspection JSON decodes");
+
+    assert!(report.ok, "{report:#?}");
+    assert!(
+        !report.framing.cropped,
+        "overlay-aware framing must avoid edge-cropped documentation labels: {report:#?}"
+    );
+    assert!(
+        report.reasons.iter().all(|reason| reason.code != "cropped"),
+        "cropped warning must not remain after overlay-aware framing: {report:#?}"
+    );
+    assert!(
+        !report.framing.tiny_in_frame,
+        "overlay-aware framing must not shrink the primary CAD subject to a speck: {report:#?}"
+    );
+    assert!(
+        report.framing.fit_fraction > 0.4,
+        "overlay-aware framing should keep the primary subject readable, got fit_fraction={}: {report:#?}",
+        report.framing.fit_fraction
+    );
+}
+
+#[test]
 fn scene_host_visual_patch_0_1a_updates_stable_handles_and_reports_revision_deltas() {
     let mut host = SceneHostCore::headless(128, 128).expect("host builds");
     let root = host.root_handle();
@@ -2122,6 +2186,33 @@ fn scene_host_section_box_helper_drives_report_and_visual_patch_channel() {
     assert!(result.failed.is_empty());
     assert!(host.scene().section_box().is_none());
     assert!(host.scene().section_box_planes().is_none());
+}
+
+#[test]
+fn scene_host_section_box_accepts_planar_bounds_with_margin() {
+    let mut host = SceneHostCore::headless(128, 96).expect("host builds");
+    let planar_bounds = Aabb::new(Vec3::new(-0.25, -0.5, 0.0), Vec3::new(0.25, 0.5, 0.0));
+
+    let report: SceneHostSectionBoxReportV1 = serde_json::from_str(
+        &host
+            .set_section_box_json(planar_bounds, 0.01, false, false)
+            .expect("positive margin makes planar section bounds usable"),
+    )
+    .expect("section box report decodes");
+
+    assert!(report.enabled);
+    assert_eq!(report.min, [-0.25, -0.5, 0.0]);
+    assert_eq!(report.max, [0.25, 0.5, 0.0]);
+    assert_eq!(report.margin, 0.01);
+    assert_eq!(report.planes.len(), 6);
+    assert!(
+        !host
+            .scene()
+            .section_box()
+            .expect("section box is active")
+            .clips(Vec3::ZERO),
+        "ordinary section box keeps points on the original planar bounds after margin expansion"
+    );
 }
 
 #[test]

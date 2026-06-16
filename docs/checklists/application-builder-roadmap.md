@@ -570,13 +570,17 @@ Required commands:
       `scena.interaction_verification.v1`. Native CLI verification and
       browser synthetic pick/hover/select proof are complete; rendered
       interaction feedback assertions remain future hardening.
+- [x] `scena browser-proof [scene-host|m6] [--dry-run]`: emit
+      `scena.browser_proof_run.v1`; delegate to the existing wasm-pack +
+      Playwright browser lanes while keeping stdout machine-readable.
 - [x] `scena doctor <asset-or-recipe>`: expose asset-doctor-style findings
       through the same terminal command family. Evidence:
       `tests/scena_cli_agent.rs::scena_doctor_cli_emits_json_and_nonzero_for_broken_asset`
       and `tests/assets/cli-golden/doctor_broken_asset_stdout.json`.
 - [x] `scena examples agent <template> [--out <dir>]`: emit
       `scena.agent_smoke_template.v1` for core ready templates and structured
-      deferred manifests for Phase-2-dependent templates.
+      smoke manifests with explicit native-only notes for Phase-2-dependent
+      overlay sub-capabilities.
 
 CLI behavior:
 
@@ -687,9 +691,10 @@ Proposed contract:
 Scope:
 
 - [x] A recipe is a declarative scene snapshot consumed by Scena.
-- [x] The first recipe slice supports imports, per-import transforms and
-      expected extents, caller metadata, and at most one optional capture
-      directive.
+- [x] The recipe surface supports imports, per-import transforms and expected
+      extents, caller metadata, at most one optional capture directive,
+      section boxes, distance measurements, callouts, and exploded-view
+      directives.
 - [x] Future recipe sections may include primitive nodes, materials, cameras,
       lights, labels, viewer profile references, environment references, and
       feature-owned inspection/annotation helpers as those owner features land.
@@ -700,10 +705,9 @@ Scope:
       `scena place`; recipe-level authored-feature sections are reserved as
       known future sections and fail closed until their owner slice lands.
 - [x] Recipe sections are extensible with their owning features. Section boxes,
-      measurement overlays, callouts/leader lines, exploded-view directives,
-      and named-state references become recipe-expressible as the Phase 2
-      features that own them land; until then validation emits
-      `unsupported_feature`.
+      measurement overlays, callouts/leader lines, and exploded-view
+      directives are recipe-expressible; named-state references and other
+      future sections still fail closed with `unsupported_feature`.
 - [x] A recipe is not a project file, document model, workflow script, or
       persisted application state.
 
@@ -727,7 +731,8 @@ Required validation:
       ignored.
 - [x] Validation can run without rendering.
 - [x] Rendering a recipe uses the same load, prepare, render, and capture path
-      as native examples.
+      as native examples. Recipes with overlay directives go through the
+      `SceneHostCore` path and `frame_all_with_overlays`.
 
 Acceptance:
 
@@ -1033,34 +1038,33 @@ Required templates:
 - [x] `scena examples agent data-visualization`.
 - [x] `scena examples agent animated-viewer`.
 - [x] `scena examples agent interaction-proof`.
-- [x] `scena examples agent cad-inspection`, implemented as a structured
-      deferred manifest until the Phase 2 inspection, measurement,
-      section-box, exploded-view, and annotation recipe sections it exercises
-      are CLI-authorable.
-- [x] `scena examples agent documentation-renderer`, implemented as a
-      structured deferred manifest until the Phase 2 measurement,
-      callout/leader-line, annotation-layout, section-box, and exploded-view
-      recipe sections it exercises are CLI-authorable.
+- [x] `scena examples agent cad-inspection`, implemented as a runnable CLI
+      smoke workflow for asset load, render introspection, visibility
+      diagnosis, section boxes, measurements, callouts, and exploded views.
+- [x] `scena examples agent documentation-renderer`, implemented as a runnable
+      CLI smoke workflow for asset load, render introspection, visibility
+      diagnosis, section boxes, measurements, callouts, and exploded views.
 
 Required behavior:
 
-- [x] Each ready core template emits a recipe, expected assertions where the
+- [x] Each ready template emits a recipe, expected assertions where the
       workflow needs them, CLI commands, and expected artifact paths.
-- [x] Agent-track-only templates can be run through CLI-only steps and produce
+- [x] Agent-track templates can be run through CLI-only steps and produce
       `ok=true` reports for their relevant construction, appearance, temporal,
       or interaction checks when A.11 lands.
-- [x] Phase-2-dependent templates emit structured deferred manifests and add
-      CLI-only assertions as their owning
-      recipe sections and visual helpers land; they must not be marked complete
-      before those dependencies are implemented.
+- [x] Phase-2-dependent templates do not overclaim domain authoring:
+      CAD/documentation templates provide runnable overlay recipe smoke
+      commands while CAD kernels, drawing import, page layout, and prose
+      generation remain host-side.
 - [x] Templates are examples and acceptance apps, not a hidden application
       framework.
 
 Acceptance:
 
 - [x] CI or doctor verifies the six ready core template commands remain
-      runnable. The deferred Phase-2 templates record their dependency reason
-      instead of runnable commands.
+      runnable. CAD/documentation templates also run load/render/diagnose smoke
+      commands and inspect generated line/label overlays from recipe
+      directives.
 - [x] Template outputs include stable JSON reports and capture artifacts.
 - [x] Failing fixture variants exist for each dynamic verification class:
       appearance wrong color, animation wrong sampled translation, and
@@ -2472,10 +2476,11 @@ The agent-facing track starts after capture and typed diagnostics because it
 depends on those surfaces. Its CLI is a transport over stable JSON contracts,
 not a competing API layer.
 
-The A.11 CAD-inspection and documentation-renderer templates are
-Phase-2-dependent templates. They land incrementally with measurement,
-section-box, exploded-view, callout/leader-line, annotation-layout, and
-inspection helpers instead of blocking the core agent smoke templates.
+The A.11 CAD-inspection and documentation-renderer templates are runnable CLI
+smoke templates for load, render introspection, visibility diagnosis, section
+boxes, measurements, callouts, and exploded views. Their manifests keep CAD
+kernels, drawing import, page layout, prose generation, and richer application
+state explicitly host-owned.
 
 Do not start Phase 4 browser reach work by adding ad-hoc custom-element
 behavior. The element should inherit the stable patch, event, asset, capture,

@@ -5,6 +5,8 @@ use std::process;
 
 #[path = "scena/args.rs"]
 mod scena_args;
+#[path = "scena/browser_proof.rs"]
+mod scena_browser_proof;
 #[path = "scena/doctor.rs"]
 mod scena_doctor;
 #[cfg(feature = "inspection")]
@@ -35,6 +37,8 @@ mod scena_verify_interaction;
 #[cfg(feature = "inspection")]
 use scena_args::{DiagnoseCommandArgs, InspectCommandArgs, RenderCommandArgs, RepairCommandArgs};
 use scena_input::resolve_recipe_asset_uri;
+#[cfg(all(feature = "inspection", feature = "scene-host"))]
+use scena_input::scene_host_from_resolved_recipe;
 #[cfg(feature = "inspection")]
 use scena_input::{
     appearance_introspection_options, asset_doctor_outcome_or_error, capture_descriptor_path,
@@ -84,6 +88,9 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
         [command, rest @ ..] if command == "inspect" => run_inspect_command(rest),
         [command, rest @ ..] if command == "diagnose" => run_diagnose_command(rest),
         [command, rest @ ..] if command == "doctor" => scena_doctor::run_doctor_command(rest),
+        [command, rest @ ..] if command == "browser-proof" => {
+            scena_browser_proof::run_browser_proof_command(rest)
+        }
         [command, rest @ ..] if command == "repair" => run_repair_command(rest),
         [command, subcommand, rest @ ..] if command == "verify" && subcommand == "appearance" => {
             run_verify_appearance_command(rest)
@@ -103,6 +110,7 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
              'inspect <asset>', or \
              'diagnose <asset> --visibility [--handle <u64>]', or \
              'doctor <asset-or-recipe>', or \
+             'browser-proof [scene-host|m6] [--dry-run]', or \
              'repair <asset-or-recipe> --from <report.json>', or \
              'verify appearance <asset-or-recipe> --expect <json>', or \
              'verify animation <asset-or-recipe> --clip <name> --times <seconds>', or \
@@ -136,6 +144,9 @@ fn run_render_command(args: &[String]) -> Result<CliOutcome, String> {
     };
     let width = args.width.or(input.width).unwrap_or(800);
     let height = args.height.or(input.height).unwrap_or(600);
+    if input.has_scene_host_directives() {
+        return run_render_scene_host_recipe(input, width, height, args);
+    }
     let first = match pollster::block_on(
         viewer_builder(input.asset.as_str(), width, height, input.transform)
             .with_default_light()
@@ -187,6 +198,73 @@ fn run_render_command(args: &[String]) -> Result<CliOutcome, String> {
     )
 }
 
+#[cfg(all(feature = "inspection", feature = "scene-host"))]
+fn run_render_scene_host_recipe(
+    input: scena_input::ResolvedSceneInput,
+    width: u32,
+    height: u32,
+    args: RenderCommandArgs,
+) -> Result<CliOutcome, String> {
+    let mut host = pollster::block_on(scene_host_from_resolved_recipe(&input, width, height))?;
+    host.prepare()
+        .map_err(|error| format!("failed to prepare recipe scene: {error}"))?;
+    host.render()
+        .map_err(|error| format!("failed to render recipe scene: {error}"))?;
+    let capture = host
+        .capture()
+        .map_err(|error| format!("failed to capture recipe scene: {error}"))?;
+
+    ensure_parent_dir(&args.out)?;
+    capture
+        .write_png(&args.out)
+        .map_err(|error| format!("failed to write PNG '{}': {error}", args.out.display()))?;
+
+    let descriptor_path = capture_descriptor_path(&args.out);
+    ensure_parent_dir(&descriptor_path)?;
+    fs::write(
+        &descriptor_path,
+        serde_json::to_string_pretty(&capture.descriptor)
+            .map_err(|error| format!("failed to serialize capture descriptor: {error}"))?,
+    )
+    .map_err(|error| {
+        format!(
+            "failed to write capture descriptor '{}': {error}",
+            descriptor_path.display()
+        )
+    })?;
+
+    let inspection_json = host
+        .inspect_json()
+        .map_err(|error| format!("failed to inspect recipe scene: {error}"))?;
+    let inspection: scena::SceneInspectionReportV1 = serde_json::from_str(&inspection_json)
+        .map_err(|error| format!("failed to decode recipe scene inspection report: {error}"))?;
+    let options = render_introspection_options(args.detail)
+        .with_capture_png_path(path_for_json(&args.out))
+        .with_capture_descriptor_path(path_for_json(&descriptor_path));
+    let report = host
+        .renderer()
+        .introspect_capture(&capture, &inspection, options);
+    let exit_code = if report.ok { 0 } else { 1 };
+    json_outcome(
+        &report,
+        exit_code,
+        "failed to serialize render introspection report",
+    )
+}
+
+#[cfg(all(feature = "inspection", not(feature = "scene-host")))]
+fn run_render_scene_host_recipe(
+    _input: scena_input::ResolvedSceneInput,
+    _width: u32,
+    _height: u32,
+    _args: RenderCommandArgs,
+) -> Result<CliOutcome, String> {
+    Err(
+        "recipe overlay directives require building the scena binary with the 'scene-host' feature"
+            .to_string(),
+    )
+}
+
 #[cfg(not(feature = "inspection"))]
 fn run_render_command(_args: &[String]) -> Result<CliOutcome, String> {
     Err(
@@ -204,6 +282,9 @@ fn run_inspect_command(args: &[String]) -> Result<CliOutcome, String> {
     };
     let width = args.width.or(input.width).unwrap_or(800);
     let height = args.height.or(input.height).unwrap_or(600);
+    if input.has_scene_host_directives() {
+        return run_inspect_scene_host_recipe(input, width, height);
+    }
     let viewer = match pollster::block_on(
         viewer_builder(input.asset.as_str(), width, height, input.transform)
             .with_default_light()
@@ -221,6 +302,34 @@ fn run_inspect_command(args: &[String]) -> Result<CliOutcome, String> {
     json_success(&report, "failed to serialize scene inspection report")
 }
 
+#[cfg(all(feature = "inspection", feature = "scene-host"))]
+fn run_inspect_scene_host_recipe(
+    input: scena_input::ResolvedSceneInput,
+    width: u32,
+    height: u32,
+) -> Result<CliOutcome, String> {
+    let host = pollster::block_on(scene_host_from_resolved_recipe(&input, width, height))?;
+    let text = host
+        .inspect_json()
+        .map_err(|error| format!("failed to inspect recipe scene: {error}"))?;
+    Ok(CliOutcome {
+        stdout: text,
+        exit_code: 0,
+    })
+}
+
+#[cfg(all(feature = "inspection", not(feature = "scene-host")))]
+fn run_inspect_scene_host_recipe(
+    _input: scena_input::ResolvedSceneInput,
+    _width: u32,
+    _height: u32,
+) -> Result<CliOutcome, String> {
+    Err(
+        "recipe overlay directives require building the scena binary with the 'scene-host' feature"
+            .to_string(),
+    )
+}
+
 #[cfg(not(feature = "inspection"))]
 fn run_inspect_command(_args: &[String]) -> Result<CliOutcome, String> {
     Err("inspect requires building the scena binary with the 'inspection' feature".to_string())
@@ -235,6 +344,9 @@ fn run_diagnose_command(args: &[String]) -> Result<CliOutcome, String> {
     };
     let width = args.width.or(input.width).unwrap_or(800);
     let height = args.height.or(input.height).unwrap_or(600);
+    if input.has_scene_host_directives() {
+        return run_diagnose_scene_host_recipe(input, width, height, args);
+    }
     let first = match pollster::block_on(
         viewer_builder(input.asset.as_str(), width, height, input.transform)
             .with_default_light()
@@ -262,6 +374,52 @@ fn run_diagnose_command(args: &[String]) -> Result<CliOutcome, String> {
         &report,
         exit_code,
         "failed to serialize visibility diagnosis report",
+    )
+}
+
+#[cfg(all(feature = "inspection", feature = "scene-host"))]
+fn run_diagnose_scene_host_recipe(
+    input: scena_input::ResolvedSceneInput,
+    width: u32,
+    height: u32,
+    args: DiagnoseCommandArgs,
+) -> Result<CliOutcome, String> {
+    let mut host = pollster::block_on(scene_host_from_resolved_recipe(&input, width, height))?;
+    host.prepare()
+        .map_err(|error| format!("failed to prepare recipe scene for diagnosis: {error}"))?;
+    host.render()
+        .map_err(|error| format!("failed to render recipe scene for diagnosis: {error}"))?;
+    let inspection_json = host
+        .inspect_json()
+        .map_err(|error| format!("failed to inspect recipe scene: {error}"))?;
+    let inspection: scena::SceneInspectionReportV1 = serde_json::from_str(&inspection_json)
+        .map_err(|error| format!("failed to decode recipe scene inspection report: {error}"))?;
+    let options = if args.detail {
+        scena::VisibilityDiagnosisOptions::detail()
+    } else {
+        scena::VisibilityDiagnosisOptions::summary()
+    };
+    let report = host
+        .renderer()
+        .diagnose_visibility(&inspection, args.handle, options);
+    let exit_code = if report.ok { 0 } else { 1 };
+    json_outcome(
+        &report,
+        exit_code,
+        "failed to serialize visibility diagnosis report",
+    )
+}
+
+#[cfg(all(feature = "inspection", not(feature = "scene-host")))]
+fn run_diagnose_scene_host_recipe(
+    _input: scena_input::ResolvedSceneInput,
+    _width: u32,
+    _height: u32,
+    _args: DiagnoseCommandArgs,
+) -> Result<CliOutcome, String> {
+    Err(
+        "recipe overlay directives require building the scena binary with the 'scene-host' feature"
+            .to_string(),
     )
 }
 

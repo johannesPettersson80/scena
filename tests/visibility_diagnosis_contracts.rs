@@ -75,6 +75,7 @@ fn visibility_diagnosis_does_not_treat_partial_culling_as_all_culled() {
     let inspection = scene.inspect_with_assets(&assets).to_schema_report();
     let stats = RendererStats {
         culled_objects: 1,
+        draw_calls: 1,
         ..Default::default()
     };
 
@@ -88,6 +89,22 @@ fn visibility_diagnosis_does_not_treat_partial_culling_as_all_culled() {
 
     assert!(partial_cull.ok, "{partial_cull:#?}");
     assert_no_reason(&partial_cull, "all_culled");
+
+    let clipped_but_drawn_stats = RendererStats {
+        culled_objects: 438,
+        draw_calls: 4,
+        ..Default::default()
+    };
+    let clipped_but_drawn = VisibilityDiagnosisReportV1::from_inspection(
+        &inspection,
+        clipped_but_drawn_stats,
+        None,
+        VisibilityDiagnosisOptions::default(),
+        true,
+    );
+
+    assert!(clipped_but_drawn.ok, "{clipped_but_drawn:#?}");
+    assert_no_reason(&clipped_but_drawn, "all_culled");
 }
 
 #[test]

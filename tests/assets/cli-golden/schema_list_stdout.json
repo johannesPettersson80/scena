@@ -74,6 +74,12 @@
       "fixture_path": "tests/assets/stable-contracts/agent_smoke_template.v1.json"
     },
     {
+      "schema": "scena.browser_proof_run.v1",
+      "owner_module": "bin/scena",
+      "summary": "One-command browser proof wrapper result with lane, command, and artifact paths.",
+      "fixture_path": "tests/assets/stable-contracts/browser_proof_run.v1.json"
+    },
+    {
       "schema": "scena.appearance_expectation.v1",
       "owner_module": "render",
       "summary": "Transient expected appearance targets for first-time material verification.",

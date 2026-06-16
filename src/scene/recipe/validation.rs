@@ -4,11 +4,15 @@ use serde_json::Value;
 
 use crate::scene::Transform;
 
+mod overlays;
 mod suggestions;
 
 use super::types::{
     SCENE_RECIPE_SCHEMA_V1, SCENE_RECIPE_VALIDATION_SCHEMA_V1, SceneRecipeDiagnosticV1,
     SceneRecipeV1, SceneRecipeValidationReportV1,
+};
+use overlays::{
+    validate_callouts, validate_exploded_view, validate_measurements, validate_section_box,
 };
 use suggestions::{
     CAPTURE_FIELDS, EXPECTED_EXTENT_FIELDS, IMPORT_FIELDS, ROOT_FIELDS, UNSUPPORTED_SECTION_FIELDS,
@@ -80,6 +84,11 @@ fn validate_scene_recipe_value_inner(
     validate_root_fields(object.keys().map(String::as_str), diagnostics);
     validate_schema(object.get("schema"), diagnostics);
     validate_imports(object.get("imports"), diagnostics);
+    let import_ids = import_ids(object.get("imports"));
+    validate_section_box(object.get("section_box"), &import_ids, diagnostics);
+    validate_measurements(object.get("measurements"), diagnostics);
+    validate_callouts(object.get("callouts"), &import_ids, diagnostics);
+    validate_exploded_view(object.get("exploded_view"), &import_ids, diagnostics);
     validate_capture(object.get("capture"), diagnostics);
     validate_metadata(object.get("metadata"), diagnostics);
 }
@@ -389,6 +398,16 @@ fn validate_transform(
     }
 }
 
+fn import_ids(imports: Option<&Value>) -> BTreeSet<String> {
+    imports
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry.get("id").and_then(Value::as_str))
+        .map(str::to_owned)
+        .collect()
+}
+
 fn validate_capture(capture: Option<&Value>, diagnostics: &mut Vec<SceneRecipeDiagnosticV1>) {
     let Some(capture) = capture else {
         return;
@@ -461,7 +480,7 @@ fn validation_report(diagnostics: Vec<SceneRecipeDiagnosticV1>) -> SceneRecipeVa
     }
 }
 
-fn diagnostic(
+pub(super) fn diagnostic(
     code: impl Into<String>,
     severity: impl Into<String>,
     path: impl Into<String>,

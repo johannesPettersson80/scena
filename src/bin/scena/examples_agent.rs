@@ -4,6 +4,13 @@ use std::path::{Path, PathBuf};
 use serde_json::json;
 
 use super::{CliOutcome, json_outcome};
+#[path = "examples_agent/builder.rs"]
+mod builder;
+#[path = "examples_agent/overlays.rs"]
+mod overlays;
+
+use builder::{TemplateBuilder, capture_descriptor_path, path_for_json, write_json_file};
+use overlays::{add_cad_overlay_recipe_sections, add_documentation_overlay_recipe_sections};
 
 const INTERACTION_EXPECTATION_SCHEMA_V1: &str = "scena.interaction_expectation.v1";
 const INTERACTION_VERIFICATION_SCHEMA_V1: &str = "scena.interaction_verification.v1";
@@ -70,14 +77,8 @@ fn build_template(name: &str, out_dir: &Path) -> Result<scena::AgentSmokeTemplat
         "data-visualization" => data_visualization(out_dir),
         "animated-viewer" => animated_viewer(out_dir),
         "interaction-proof" => interaction_proof(out_dir),
-        "cad-inspection" => deferred_template(
-            name,
-            "cad-inspection depends on Phase 2 measurement, section box, exploded view, and callout helpers",
-        ),
-        "documentation-renderer" => deferred_template(
-            name,
-            "documentation-renderer depends on Phase 2 measurement, callout, annotation layout, section box, and exploded view helpers",
-        ),
+        "cad-inspection" => cad_inspection(out_dir),
+        "documentation-renderer" => documentation_renderer(out_dir),
         other => Err(format!(
             "unknown examples agent template '{other}'; available templates: {}",
             template_names().join(", ")
@@ -181,6 +182,42 @@ fn data_visualization(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, Str
         &mut builder,
     )?;
     add_common_commands(out_dir, &recipe, &mut builder);
+    let expectation = out_dir.join("appearance-expectation.json");
+    write_json_file(
+        &expectation,
+        &json!({
+            "schema": scena::APPEARANCE_EXPECTATION_SCHEMA_V1,
+            "targets": [{
+                "id": "data-mark-material",
+                "color_family": "blue",
+                "swatch_srgb8": [64, 128, 191],
+                "swatch_tolerance": 0.5,
+                "require_source_material": true,
+                "alpha_mode": "opaque"
+            }]
+        }),
+    )?;
+    builder.file(
+        "appearance_expectation",
+        &expectation,
+        scena::APPEARANCE_EXPECTATION_SCHEMA_V1,
+    );
+    let appearance_png = out_dir.join("appearance.png");
+    builder.command(
+        "verify_data_mark_appearance",
+        vec![
+            "verify",
+            "appearance",
+            &path_for_json(&recipe),
+            "--expect",
+            &path_for_json(&expectation),
+            "--out",
+            &path_for_json(&appearance_png),
+        ],
+        scena::APPEARANCE_INTROSPECTION_SCHEMA_V1,
+        true,
+        vec![appearance_png],
+    );
     Ok(builder.finish())
 }
 
@@ -277,9 +314,56 @@ fn interaction_proof(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, Stri
     Ok(builder.finish())
 }
 
-fn deferred_template(name: &str, note: &str) -> Result<scena::AgentSmokeTemplateV1, String> {
-    let mut builder = TemplateBuilder::new(name, "deferred", &[]);
-    builder.notes.push(note.to_string());
+fn cad_inspection(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, String> {
+    let mut builder = TemplateBuilder::ready("cad-inspection", &["inspection", "scene-host"]);
+    let recipe = write_recipe(
+        out_dir,
+        "tests/assets/gltf/cad_plate_drawing_scene.gltf",
+        128,
+        96,
+        "CAD inspection load, render, and visibility smoke proof",
+        &mut builder,
+    )?;
+    add_cad_overlay_recipe_sections(&recipe)?;
+    add_common_commands(out_dir, &recipe, &mut builder);
+    builder.command(
+        "diagnose_visibility",
+        vec!["diagnose", &path_for_json(&recipe), "--visibility"],
+        scena::VISIBILITY_DIAGNOSIS_SCHEMA_V1,
+        true,
+        Vec::new(),
+    );
+    builder.notes.push(
+        "This CLI template authors CAD inspection section-box, measurement, callout, and exploded-view directives through scene_recipe.v1, then verifies the rendered overlay scene."
+            .to_string(),
+    );
+    Ok(builder.finish())
+}
+
+fn documentation_renderer(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, String> {
+    let mut builder =
+        TemplateBuilder::ready("documentation-renderer", &["inspection", "scene-host"]);
+    let recipe = write_recipe(
+        out_dir,
+        "tests/assets/gltf/cad_plate_drawing_scene.gltf",
+        128,
+        96,
+        "documentation base render and introspection smoke proof",
+        &mut builder,
+    )?;
+    add_documentation_overlay_recipe_sections(&recipe)?;
+    add_common_commands(out_dir, &recipe, &mut builder);
+    builder.command(
+        "diagnose_visibility",
+        vec!["diagnose", &path_for_json(&recipe), "--visibility"],
+        scena::VISIBILITY_DIAGNOSIS_SCHEMA_V1,
+        true,
+        Vec::new(),
+    );
+    builder.notes.push(
+        "This CLI template authors documentation measurement, callout, section-box, and exploded-view directives through scene_recipe.v1, then verifies the rendered overlay scene."
+            .to_string(),
+    );
     Ok(builder.finish())
 }
 
@@ -343,36 +427,6 @@ fn add_common_commands(out_dir: &Path, recipe: &Path, builder: &mut TemplateBuil
     );
 }
 
-fn write_json_file(path: &Path, value: &serde_json::Value) -> Result<(), String> {
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!("failed to create directory '{}': {error}", parent.display())
-        })?;
-    }
-    fs::write(
-        path,
-        serde_json::to_string_pretty(value)
-            .map_err(|error| format!("failed to serialize '{}': {error}", path.display()))?,
-    )
-    .map_err(|error| format!("failed to write '{}': {error}", path.display()))
-}
-
-fn capture_descriptor_path(png_path: &Path) -> PathBuf {
-    let stem = png_path
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .filter(|stem| !stem.is_empty())
-        .unwrap_or("capture");
-    png_path.with_file_name(format!("{stem}.capture.json"))
-}
-
-fn path_for_json(path: &Path) -> String {
-    path.display().to_string()
-}
-
 fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, String> {
     args.get(index + 1)
         .cloned()
@@ -394,73 +448,4 @@ fn template_names() -> Vec<&'static str> {
 
 fn examples_agent_usage() -> String {
     "usage: scena examples agent <template> [--out <dir>]".to_string()
-}
-
-struct TemplateBuilder {
-    name: String,
-    status: String,
-    required_features: Vec<String>,
-    files: Vec<scena::AgentSmokeTemplateFileV1>,
-    commands: Vec<scena::AgentSmokeTemplateCommandV1>,
-    notes: Vec<String>,
-}
-
-impl TemplateBuilder {
-    fn ready(name: &str, required_features: &[&str]) -> Self {
-        Self::new(name, "ready", required_features)
-    }
-
-    fn new(name: &str, status: &str, required_features: &[&str]) -> Self {
-        Self {
-            name: name.to_string(),
-            status: status.to_string(),
-            required_features: required_features
-                .iter()
-                .map(|feature| feature.to_string())
-                .collect(),
-            files: Vec::new(),
-            commands: Vec::new(),
-            notes: Vec::new(),
-        }
-    }
-
-    fn file(&mut self, kind: &str, path: &Path, schema: &str) {
-        self.files.push(scena::AgentSmokeTemplateFileV1 {
-            kind: kind.to_string(),
-            path: path_for_json(path),
-            schema: schema.to_string(),
-        });
-    }
-
-    fn command(
-        &mut self,
-        name: &str,
-        args: Vec<&str>,
-        expected_schema: &str,
-        expected_ok: bool,
-        artifacts: Vec<PathBuf>,
-    ) {
-        let mut argv = Vec::with_capacity(args.len() + 1);
-        argv.push("scena".to_string());
-        argv.extend(args.into_iter().map(str::to_string));
-        self.commands.push(scena::AgentSmokeTemplateCommandV1 {
-            name: name.to_string(),
-            argv,
-            expected_schema: expected_schema.to_string(),
-            expected_ok,
-            artifacts: artifacts.iter().map(|path| path_for_json(path)).collect(),
-        });
-    }
-
-    fn finish(self) -> scena::AgentSmokeTemplateV1 {
-        scena::AgentSmokeTemplateV1 {
-            schema: scena::AGENT_SMOKE_TEMPLATE_SCHEMA_V1.to_string(),
-            name: self.name,
-            status: self.status,
-            required_features: self.required_features,
-            files: self.files,
-            commands: self.commands,
-            notes: self.notes,
-        }
-    }
 }

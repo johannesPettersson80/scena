@@ -40,7 +40,16 @@ fn edit_distance(left: &str, right: &str) -> usize {
     previous[right_chars.len()]
 }
 
-pub(super) const ROOT_FIELDS: &[&str] = &["schema", "imports", "capture", "metadata"];
+pub(super) const ROOT_FIELDS: &[&str] = &[
+    "schema",
+    "imports",
+    "section_box",
+    "measurements",
+    "callouts",
+    "exploded_view",
+    "capture",
+    "metadata",
+];
 pub(super) const IMPORT_FIELDS: &[&str] = &["id", "uri", "transform", "expected_extent"];
 pub(super) const CAPTURE_FIELDS: &[&str] = &["width", "height"];
 pub(super) const EXPECTED_EXTENT_FIELDS: &[&str] = &["min", "max", "unit"];
@@ -68,9 +77,5 @@ pub(super) const UNSUPPORTED_SECTION_FIELDS: &[&str] = &[
     "connectors",
     "bounds",
     "authored_planes",
-    "section_box",
-    "measurements",
-    "callouts",
-    "exploded_view",
     "named_states",
 ];

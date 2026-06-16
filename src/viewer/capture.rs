@@ -6,6 +6,9 @@ use std::path::Path;
 
 use crate::{CaptureError, CaptureOptions, CapturePngError, CaptureRgba8, capture_rgba8};
 
+#[cfg(feature = "inspection")]
+use crate::{RenderIntrospectionOptions, RenderIntrospectionReportV1};
+
 use super::{FirstRender, HeadlessGltfViewer, HeadlessGltfViewerBuilder, InteractiveGltfViewer};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -93,6 +96,36 @@ impl FirstRender {
         )
     }
 
+    /// Captures the rendered frame and evaluates it with the stable
+    /// `scena.render_introspection.v1` contract.
+    #[cfg(feature = "inspection")]
+    pub fn render_introspection(
+        &self,
+        options: RenderIntrospectionOptions,
+    ) -> Result<RenderIntrospectionReportV1, CaptureError> {
+        let capture = self.capture()?;
+        let inspection = self
+            .scene
+            .inspect_with_assets(&self.assets)
+            .to_schema_report();
+        Ok(self
+            .renderer
+            .introspect_capture(&capture, &inspection, options))
+    }
+
+    /// Serializes [`Self::render_introspection`] as JSON for agent and CLI-style
+    /// consumers.
+    #[cfg(feature = "inspection")]
+    pub fn render_introspection_json(&self, detail: bool) -> Result<String, CaptureError> {
+        let options = if detail {
+            RenderIntrospectionOptions::detail()
+        } else {
+            RenderIntrospectionOptions::summary()
+        };
+        let report = self.render_introspection(options)?;
+        Ok(serde_json::to_string(&report).expect("render introspection report is serializable"))
+    }
+
     /// Encodes the rendered frame as RGBA8 PNG bytes.
     pub fn capture_png_bytes(&self) -> Result<Vec<u8>, ViewerCaptureError> {
         self.capture()?
@@ -121,6 +154,36 @@ impl HeadlessGltfViewer {
         )
     }
 
+    /// Captures the latest rendered frame and evaluates it with the stable
+    /// `scena.render_introspection.v1` contract.
+    #[cfg(feature = "inspection")]
+    pub fn render_introspection(
+        &self,
+        options: RenderIntrospectionOptions,
+    ) -> Result<RenderIntrospectionReportV1, CaptureError> {
+        let capture = self.capture()?;
+        let inspection = self
+            .scene
+            .inspect_with_assets(&self.assets)
+            .to_schema_report();
+        Ok(self
+            .renderer
+            .introspect_capture(&capture, &inspection, options))
+    }
+
+    /// Serializes [`Self::render_introspection`] as JSON for agent and CLI-style
+    /// consumers.
+    #[cfg(feature = "inspection")]
+    pub fn render_introspection_json(&self, detail: bool) -> Result<String, CaptureError> {
+        let options = if detail {
+            RenderIntrospectionOptions::detail()
+        } else {
+            RenderIntrospectionOptions::summary()
+        };
+        let report = self.render_introspection(options)?;
+        Ok(serde_json::to_string(&report).expect("render introspection report is serializable"))
+    }
+
     /// Encodes the latest rendered frame as RGBA8 PNG bytes.
     pub fn capture_png_bytes(&self) -> Result<Vec<u8>, ViewerCaptureError> {
         self.capture()?
@@ -147,6 +210,36 @@ impl InteractiveGltfViewer {
             &self.renderer,
             capture_options_for_import(&self.import, &self.scene),
         )
+    }
+
+    /// Captures the latest rendered frame and evaluates it with the stable
+    /// `scena.render_introspection.v1` contract.
+    #[cfg(feature = "inspection")]
+    pub fn render_introspection(
+        &self,
+        options: RenderIntrospectionOptions,
+    ) -> Result<RenderIntrospectionReportV1, CaptureError> {
+        let capture = self.capture()?;
+        let inspection = self
+            .scene
+            .inspect_with_assets(&self.assets)
+            .to_schema_report();
+        Ok(self
+            .renderer
+            .introspect_capture(&capture, &inspection, options))
+    }
+
+    /// Serializes [`Self::render_introspection`] as JSON for agent and CLI-style
+    /// consumers.
+    #[cfg(feature = "inspection")]
+    pub fn render_introspection_json(&self, detail: bool) -> Result<String, CaptureError> {
+        let options = if detail {
+            RenderIntrospectionOptions::detail()
+        } else {
+            RenderIntrospectionOptions::summary()
+        };
+        let report = self.render_introspection(options)?;
+        Ok(serde_json::to_string(&report).expect("render introspection report is serializable"))
     }
 
     /// Encodes the latest rendered frame as RGBA8 PNG bytes.

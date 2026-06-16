@@ -224,6 +224,18 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         Ok(())
     }
 
+    pub fn frame_all_with_overlays(&mut self) -> Result<(), SceneHostError> {
+        self.ensure_active_camera()?;
+        let width = self.viewport.logical_width().round().max(1.0) as u32;
+        let height = self.viewport.logical_height().round().max(1.0) as u32;
+        let framing =
+            self.scene
+                .frame_all_with_overlays(self.active_camera, &self.assets, width, height)?;
+        self.cancel_camera_transition();
+        self.camera_controls = OrbitControls::from_framing(framing);
+        Ok(())
+    }
+
     fn apply_camera_pointer(
         &mut self,
         event: PointerEvent,

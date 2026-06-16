@@ -7,6 +7,7 @@ pub mod animation;
 pub mod assets;
 #[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
 pub mod browser_probe;
+pub mod browser_proof;
 pub mod capture;
 pub mod controls;
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
@@ -64,6 +65,7 @@ pub use assets::{
 pub use assets::{AssetHotReloadError, AssetHotReloadWatcher};
 #[cfg(feature = "khronos-samples")]
 pub use assets::{KhronosSample, KhronosSampleMetadata, KhronosSamples};
+pub use browser_proof::{BROWSER_PROOF_RUN_SCHEMA_V1, BrowserProofRunV1};
 pub use capture::{
     CAPTURE_BASELINE_SCHEMA_V1, CAPTURE_SCHEMA_V1, CaptureAutoFrame, CaptureAutoFrameViewport,
     CaptureBaselineDiff, CaptureBaselineError, CaptureBaselineReport, CaptureBaselineTolerance,
@@ -149,8 +151,10 @@ pub use render::{
     estimate_auto_exposure_from_linear_colors, estimate_auto_exposure_from_srgb8,
 };
 pub use scene::recipe::{
-    SCENE_RECIPE_SCHEMA_V1, SCENE_RECIPE_VALIDATION_SCHEMA_V1, SceneRecipeCaptureV1,
-    SceneRecipeDiagnosticV1, SceneRecipeExpectedExtentV1, SceneRecipeImportV1, SceneRecipeV1,
+    SCENE_RECIPE_SCHEMA_V1, SCENE_RECIPE_VALIDATION_SCHEMA_V1, SceneRecipeCalloutTargetV1,
+    SceneRecipeCalloutV1, SceneRecipeCaptureV1, SceneRecipeDiagnosticV1,
+    SceneRecipeExpectedExtentV1, SceneRecipeExplodedViewModeV1, SceneRecipeExplodedViewV1,
+    SceneRecipeImportV1, SceneRecipeMeasurementV1, SceneRecipeSectionBoxV1, SceneRecipeV1,
     SceneRecipeValidationReportV1, parse_valid_scene_recipe_json, validate_scene_recipe_json,
     validate_scene_recipe_value,
 };

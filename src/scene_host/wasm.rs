@@ -1,14 +1,15 @@
 use wasm_bindgen::prelude::*;
 
 use super::inputs::vec3_array_from_slice;
+use super::wasm_capture::capture_descriptor_json;
 use super::wasm_readback::browser_canvas_rgba8;
 use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
-use crate::{Assets, CaptureRgba8, PlatformSurface, RenderOutcome, Renderer, SurfaceViewport};
+use crate::{Assets, PlatformSurface, RenderOutcome, Renderer, SurfaceViewport};
 
 #[wasm_bindgen]
 pub struct SceneHost {
     pub(super) core: SceneHostCore,
-    browser_canvas: Option<web_sys::HtmlCanvasElement>,
+    pub(super) browser_canvas: Option<web_sys::HtmlCanvasElement>,
 }
 
 #[wasm_bindgen]
@@ -379,6 +380,11 @@ impl SceneHost {
         self.core.frame_all().map_err(js_error)
     }
 
+    #[wasm_bindgen(js_name = frameAllWithOverlays)]
+    pub fn frame_all_with_overlays(&mut self) -> Result<(), JsValue> {
+        self.core.frame_all_with_overlays().map_err(js_error)
+    }
+
     #[wasm_bindgen(js_name = worldDistance)]
     pub fn world_distance(&self, a: u64, b: u64) -> Result<f32, JsValue> {
         self.core.world_distance(a, b).map_err(js_error)
@@ -412,21 +418,6 @@ impl SceneHost {
     #[wasm_bindgen(js_name = statsJson)]
     pub fn stats_json(&self) -> String {
         self.core.stats_json()
-    }
-}
-
-impl SceneHost {
-    pub(super) fn capture_rgba8_for_wasm(&self) -> Result<CaptureRgba8, SceneHostError> {
-        match self
-            .browser_canvas
-            .as_ref()
-            .map(browser_canvas_rgba8)
-            .transpose()?
-            .flatten()
-        {
-            Some((width, height, rgba8)) => self.core.capture_from_rgba8(width, height, rgba8),
-            None => self.core.capture(),
-        }
     }
 }
 
@@ -544,13 +535,4 @@ pub(super) fn js_error(error: impl Into<SceneHostError>) -> JsValue {
         &JsValue::from_str(error.message()),
     );
     object.into()
-}
-
-fn capture_descriptor_json(capture: &CaptureRgba8) -> Result<String, SceneHostError> {
-    serde_json::to_string(&capture.descriptor).map_err(|error| {
-        SceneHostError::new(
-            super::SceneHostErrorCode::Capture,
-            format!("capture descriptor serialization failed: {error}"),
-        )
-    })
 }

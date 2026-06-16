@@ -220,9 +220,18 @@ impl SectionBox {
                 reason: "section box bounds must be finite",
             });
         }
-        if min.x >= max.x || min.y >= max.y || min.z >= max.z {
+        if min.x > max.x || min.y > max.y || min.z > max.z {
             return Err(LookupError::InvalidBounds {
-                reason: "section box min must be less than max on every axis",
+                reason: "section box min must be less than or equal to max on every axis",
+            });
+        }
+        let expanded = self.expanded_bounds();
+        if expanded.min.x >= expanded.max.x
+            || expanded.min.y >= expanded.max.y
+            || expanded.min.z >= expanded.max.z
+        {
+            return Err(LookupError::InvalidBounds {
+                reason: "section box bounds must have positive extent after margin expansion",
             });
         }
         Ok(())

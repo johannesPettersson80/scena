@@ -1123,7 +1123,6 @@ function assertScenaViewerElementProof(result) {
     ["annotation_layout_entries", 3],
     ["annotation_clamped_visible", true],
     ["annotation_overlap_hidden", true],
-    ["inspector_status", "0 errors, 1 warning; 2 draws; 12 triangles at 360x240"],
     ["inspector_warnings", 1],
     ["inspector_fixture_schema", "scena.scena_viewer_inspector_snapshot.v1"],
     ["inspector_fixture_source", "scena-viewer-inspector-fixture"],
@@ -1144,6 +1143,16 @@ function assertScenaViewerElementProof(result) {
     if (checks[key] !== value) {
       throw new Error(`<scena-viewer> proof expected ${key}=${value}: ${JSON.stringify(result)}`);
     }
+  }
+  if (
+    typeof checks.inspector_status !== "string" ||
+    !checks.inspector_status.includes("0 errors, 1 warning") ||
+    !checks.inspector_status.includes("2 draws") ||
+    !checks.inspector_status.includes("12 triangles at 360x240")
+  ) {
+    throw new Error(
+      `<scena-viewer> proof expected inspector status counts at 360x240: ${JSON.stringify(result)}`,
+    );
   }
   for (const kind of ["selection_changed", "pick", "hover", "capture_ready"]) {
     if (!Array.isArray(checks.host_event_kinds) || !checks.host_event_kinds.includes(kind)) {

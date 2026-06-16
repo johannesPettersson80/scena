@@ -44,6 +44,10 @@ pub(super) const FIXTURES: &[(&str, &str)] = &[
         "scena.agent_smoke_template.v1",
     ),
     (
+        "tests/assets/stable-contracts/browser_proof_run.v1.json",
+        "scena.browser_proof_run.v1",
+    ),
+    (
         "tests/assets/stable-contracts/appearance_expectation.v1.json",
         "scena.appearance_expectation.v1",
     ),

@@ -56,9 +56,18 @@ All notable user-facing changes are recorded here.
   command, and recipe input for `render --introspect`, `inspect`, and
   `diagnose --visibility`. Recipe validation now reports missing assets as
   structured JSON errors and expected-extent scale mismatches as warning-level
-  diagnostics. Known future recipe sections, including authored-feature
-  sections such as anchors, connectors, bounds, and authored planes, fail as
-  `unsupported_feature` until their owner features land.
+  diagnostics. Recipes now also support section-box, distance-measurement,
+  callout, and exploded-view directives through the SceneHost rendering path;
+  remaining future sections such as anchors, connectors, bounds, authored
+  planes, and named states fail as `unsupported_feature` until their owner
+  features land.
+- Added `Scene::frame_all_with_overlays`,
+  `SceneHostCore::frame_all_with_overlays`, and browser
+  `frameAllWithOverlays()` to frame geometry plus generated overlay label
+  anchors with label-derived pixel margin for documentation captures.
+- Added `scena.browser_proof_run.v1` and
+  `scena browser-proof [scene-host|m6] [--dry-run]`, a machine-readable
+  wrapper over the existing wasm-pack + Playwright browser proof lanes.
 - Added `scena.placement_result.v1` and `scena place` transform previews for
   recipe imports using `center`, `ground`, `fit_to_size`, `look_at`,
   `align_to_anchor`, and `place_on`, with render-introspection proof that
@@ -166,9 +175,24 @@ All notable user-facing changes are recorded here.
   behind-camera and optional occlusion hiding, deterministic priority-based
   overlap avoidance, and layout reports that list original and adjusted
   screen-space positions.
+- Added `examples/application_builder_lab.rs`, a SceneHost-driven app-builder
+  lab that creates one mini-application per roadmap archetype and writes PNG,
+  capture/contract JSON, and findings artifacts, plus a checked-in findings
+  summary under `docs/checklists/`. Every raw-`Scene` archetype now proves its
+  render through the `render_introspection` contract (fail-closed on
+  `ok == false`) instead of a capture-buffer-length check that could never
+  fail; the model-viewer archetype now uses the same introspection contract via
+  high-level viewer helpers.
 
 ### Changed
 
+- High-level glTF viewer results now expose render-introspection helpers, and
+  section boxes accept zero-thickness planar bounds when a positive margin
+  expands them into a usable volume for CAD-style cutaways.
+- Render introspection now flags near-edge content as cropped instead of only
+  detecting exact outermost-pixel contact, and CAD/documentation agent smoke
+  templates now emit runnable CLI load/render/diagnose workflows with explicit
+  notes for native-only overlay authoring.
 - Hardened agent-facing repair and placement contracts: patch-less
   presentation repairs such as `frame_bounds` now fail closed as
   host-input-required instead of reporting `auto_fixable=true`, placement

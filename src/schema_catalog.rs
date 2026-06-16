@@ -179,6 +179,13 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/agent_smoke_template.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.browser_proof_run.v1",
+            owner_module: "bin/scena",
+            summary: "One-command browser proof wrapper result with lane, command, and artifact paths.",
+            feature_flag: None,
+            fixture_path: Some("tests/assets/stable-contracts/browser_proof_run.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.appearance_expectation.v1",
             owner_module: "render",
             summary: "Transient expected appearance targets for first-time material verification.",

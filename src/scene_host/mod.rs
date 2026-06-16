@@ -42,6 +42,8 @@ mod wasm_assets;
 #[cfg(target_arch = "wasm32")]
 mod wasm_camera;
 #[cfg(target_arch = "wasm32")]
+mod wasm_capture;
+#[cfg(target_arch = "wasm32")]
 mod wasm_gizmo;
 #[cfg(target_arch = "wasm32")]
 mod wasm_introspection;

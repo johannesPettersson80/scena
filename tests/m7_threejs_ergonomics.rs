@@ -2856,11 +2856,11 @@ fn m7_viewer_operations_dirty_prepare_without_persistent_resource_growth() {
     set_allocation_counting(true);
     ALLOCATION_COUNT.store(0, Ordering::Relaxed);
     let control_action = controls.handle_pointer(PointerEvent::moved(34.0, 31.0, 2.0, -1.0));
+    let allocations = ALLOCATION_COUNT.load(Ordering::Relaxed);
     set_allocation_counting(false);
     assert_eq!(control_action, scena::OrbitControlAction::Orbit);
     assert_eq!(
-        ALLOCATION_COUNT.load(Ordering::Relaxed),
-        0,
+        allocations, 0,
         "steady orbit pointer handling should not allocate"
     );
 
@@ -3198,8 +3198,8 @@ fn benchmark_m7_workflow(
     let start = Instant::now();
     let outcome = operation();
     let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
-    set_allocation_counting(false);
     let allocations = ALLOCATION_COUNT.load(Ordering::Relaxed);
+    set_allocation_counting(false);
 
     serde_json::json!({
         "workflow": workflow,
