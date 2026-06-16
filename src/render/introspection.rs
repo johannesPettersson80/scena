@@ -6,7 +6,9 @@ use super::Renderer;
 use super::color_contract::linear_rgba_to_srgb8;
 
 mod failure_reasons;
+mod frame_bounds;
 mod types;
+pub(in crate::render) use frame_bounds::{frame_bounds_patch, push_frame_bounds_fix};
 pub use types::{
     RenderIntrospectionArtifactsV1, RenderIntrospectionCapabilitiesV1,
     RenderIntrospectionCaptureSummaryV1, RenderIntrospectionFixV1, RenderIntrospectionFramingV1,
@@ -75,12 +77,13 @@ impl RenderIntrospectionReportV1 {
                 &mut reasons,
                 "empty_frame",
                 "error",
+                Vec::new(),
                 "rendered frame has no non-background pixels",
             );
-            push_fix(
+            push_frame_bounds_fix(
                 &mut fixes,
-                "frame_bounds",
                 "frame the scene or target bounds before rendering again",
+                inspection,
             );
         }
         if inspection.counts.visible_drawable == 0 {
@@ -88,11 +91,14 @@ impl RenderIntrospectionReportV1 {
                 &mut reasons,
                 "no_visible_drawables",
                 "error",
+                Vec::new(),
                 "inspection reports no visible drawable nodes",
             );
             push_fix(
                 &mut fixes,
                 "set_visible",
+                hidden_node_patch_target(inspection),
+                hidden_node_patch(inspection),
                 "make at least one drawable node and its parents visible",
             );
         }
@@ -101,12 +107,13 @@ impl RenderIntrospectionReportV1 {
                 &mut reasons,
                 "all_culled",
                 "error",
+                Vec::new(),
                 "renderer stats report culled objects and no visible pixels",
             );
-            push_fix(
+            push_frame_bounds_fix(
                 &mut fixes,
-                "frame_bounds",
                 "move the camera or object so culled content falls inside the frustum",
+                inspection,
             );
         }
         if framing.tiny_in_frame {
@@ -114,12 +121,13 @@ impl RenderIntrospectionReportV1 {
                 &mut reasons,
                 "tiny_in_frame",
                 "warning",
+                Vec::new(),
                 "visible content occupies too little of the frame to verify",
             );
-            push_fix(
+            push_frame_bounds_fix(
                 &mut fixes,
-                "frame_bounds",
                 "increase framing fill or move the camera closer to the target bounds",
+                inspection,
             );
         }
         if framing.cropped {
@@ -127,12 +135,13 @@ impl RenderIntrospectionReportV1 {
                 &mut reasons,
                 "cropped",
                 "warning",
+                Vec::new(),
                 "visible content touches a viewport edge",
             );
-            push_fix(
+            push_frame_bounds_fix(
                 &mut fixes,
-                "frame_bounds",
                 "decrease framing fill or add margin before rendering again",
+                inspection,
             );
         }
 
@@ -144,7 +153,6 @@ impl RenderIntrospectionReportV1 {
                     handle: node.handle,
                     kind: node.kind.clone(),
                     visible: node.visible,
-                    coverage: if node.visible { "unknown" } else { "hidden" }.to_owned(),
                     reason_codes: if node.visible {
                         Vec::new()
                     } else {
@@ -351,10 +359,8 @@ fn nodes_summary(
         hidden,
         drawn: inspection.draw_list.len(),
         culled: stats.culled_objects,
-        clipped: 0,
-        transparent: 0,
+        transparent: transparent_draw_count(inspection),
         failed_material: stats.material_textures_missing_decoded_pixels,
-        unknown_coverage: visible,
     }
 }
 
@@ -417,6 +423,7 @@ fn push_reason(
     reasons: &mut Vec<RenderIntrospectionReasonV1>,
     code: &str,
     severity: &str,
+    affected_handles: Vec<u64>,
     message: &str,
 ) {
     if reasons.iter().any(|reason| reason.code == code) {
@@ -425,19 +432,56 @@ fn push_reason(
     reasons.push(RenderIntrospectionReasonV1 {
         code: code.to_owned(),
         severity: severity.to_owned(),
-        affected_handles: Vec::new(),
+        affected_handles,
         message: message.to_owned(),
     });
 }
 
-fn push_fix(fixes: &mut Vec<RenderIntrospectionFixV1>, action: &str, help: &str) {
+fn push_fix(
+    fixes: &mut Vec<RenderIntrospectionFixV1>,
+    action: &str,
+    target_handle: Option<u64>,
+    patch: Option<serde_json::Value>,
+    help: &str,
+) {
     if fixes.iter().any(|fix| fix.action == action) {
         return;
     }
     fixes.push(RenderIntrospectionFixV1 {
         action: action.to_owned(),
-        target_handle: None,
-        patch: None,
+        target_handle,
+        patch,
         help: help.to_owned(),
     });
+}
+
+fn transparent_draw_count(inspection: &SceneInspectionReportV1) -> u64 {
+    inspection
+        .draw_list
+        .iter()
+        .filter(|draw| {
+            draw.material.as_ref().is_some_and(|material| {
+                material.alpha_mode != "opaque" || material.base_color.a < 1.0
+            })
+        })
+        .count() as u64
+}
+
+fn hidden_node_patch_target(inspection: &SceneInspectionReportV1) -> Option<u64> {
+    inspection
+        .nodes
+        .iter()
+        .find(|node| !node.visible)
+        .map(|node| node.handle)
+}
+
+fn hidden_node_patch(inspection: &SceneInspectionReportV1) -> Option<serde_json::Value> {
+    hidden_node_patch_target(inspection).map(|node| {
+        serde_json::json!({
+            "visibility": [{
+                "node": node,
+                "visible": true
+            }]
+        })
+    })
 }

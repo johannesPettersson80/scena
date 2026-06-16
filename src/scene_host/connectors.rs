@@ -373,7 +373,6 @@ fn roll_policy_name(policy: ConnectorRollPolicy) -> &'static str {
     match policy {
         ConnectorRollPolicy::Preserve => "preserve",
         ConnectorRollPolicy::ChooseNearest => "choose_nearest",
-        ConnectorRollPolicy::ExplicitAngle => "explicit_angle",
     }
 }
 
@@ -429,6 +428,7 @@ fn connection_error_code(error: &ConnectionError) -> &'static str {
         ConnectionError::FlippedConnection { .. } => "flipped_connection",
         ConnectionError::ConnectionWouldMoveLockedNode { .. } => "locked_node",
         ConnectionError::ConnectionWouldCreateCycle { .. } => "connection_cycle",
+        ConnectionError::SnapToleranceExceeded { .. } => "out_of_snap_range",
         ConnectionError::ConnectorHostNotPrepared { .. } => "connector_host_not_prepared",
         ConnectionError::NodeNotFound(_)
         | ConnectionError::MissingAnchor { .. }

@@ -36,12 +36,7 @@ impl HeadlessGltfViewerBuilder {
 
         let mut renderer =
             Renderer::headless_with_options(self.width, self.height, self.common.renderer_options)?;
-        apply_viewer_renderer_settings(
-            &mut renderer,
-            self.common.background,
-            self.common.hover_style,
-            self.common.selection_style,
-        );
+        apply_viewer_renderer_settings(&mut renderer, self.common.background);
         if let Some(environment_path) = self.common.environment_path {
             let environment = assets.load_environment(environment_path).await?;
             renderer.set_environment(environment);
@@ -120,12 +115,7 @@ impl InteractiveGltfViewerBuilder {
         apply_viewer_lighting(&mut scene, self.common.lighting)?;
         let mut renderer =
             Renderer::from_surface_with_options(self.surface, self.common.renderer_options)?;
-        apply_viewer_renderer_settings(
-            &mut renderer,
-            self.common.background,
-            self.common.hover_style,
-            self.common.selection_style,
-        );
+        apply_viewer_renderer_settings(&mut renderer, self.common.background);
         if let Some(environment_path) = self.common.environment_path {
             let environment = pollster::block_on(assets.load_environment(environment_path))?;
             renderer.set_environment(environment);
@@ -174,12 +164,7 @@ impl InteractiveGltfViewerBuilder {
         let mut renderer =
             Renderer::from_surface_async_with_options(self.surface, self.common.renderer_options)
                 .await?;
-        apply_viewer_renderer_settings(
-            &mut renderer,
-            self.common.background,
-            self.common.hover_style,
-            self.common.selection_style,
-        );
+        apply_viewer_renderer_settings(&mut renderer, self.common.background);
         if let Some(environment_path) = self.common.environment_path {
             let environment = assets.load_environment(environment_path).await?;
             renderer.set_environment(environment);
@@ -246,20 +231,9 @@ fn apply_viewer_grid<F>(
     Ok(())
 }
 
-fn apply_viewer_renderer_settings(
-    renderer: &mut Renderer,
-    background: Option<Background>,
-    hover_style: Option<crate::InteractionStyle>,
-    selection_style: Option<crate::InteractionStyle>,
-) {
+fn apply_viewer_renderer_settings(renderer: &mut Renderer, background: Option<Background>) {
     if let Some(background) = background {
         renderer.set_background(background);
-    }
-    if let Some(style) = hover_style {
-        renderer.set_hover_style(style);
-    }
-    if let Some(style) = selection_style {
-        renderer.set_selection_style(style);
     }
 }
 

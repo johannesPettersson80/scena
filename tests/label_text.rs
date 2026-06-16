@@ -8,7 +8,7 @@ use scena::{Color, LabelDesc, PerspectiveCamera, Renderer, Scene, Transform, Vec
 
 #[test]
 fn label_desc_reports_stable_font_metrics_and_style_options() {
-    let label = LabelDesc::msdf("Hi")
+    let label = LabelDesc::bitmap("Hi")
         .with_size(14.0)
         .with_background(Color::from_srgb_u8(8, 12, 20))
         .with_halo(Color::from_srgb_u8(220, 240, 255));
@@ -36,7 +36,7 @@ fn label_text_renders_glyph_cells_with_pixel_stable_billboards() {
     scene
         .add_label(
             scene.root(),
-            LabelDesc::sdf("HI")
+            LabelDesc::bitmap("HI")
                 .with_size(14.0)
                 .with_color(Color::RED)
                 .with_halo(Color::from_srgb_u8(255, 220, 220)),
@@ -46,7 +46,7 @@ fn label_text_renders_glyph_cells_with_pixel_stable_billboards() {
     scene
         .add_label(
             scene.root(),
-            LabelDesc::msdf("HI")
+            LabelDesc::bitmap("HI")
                 .with_size(14.0)
                 .with_color(Color::GREEN)
                 .with_background(Color::from_srgb_u8(5, 14, 8)),
@@ -90,7 +90,7 @@ fn label_text_renders_glyph_cells_with_pixel_stable_billboards() {
     let artifact_dir =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/gate-artifacts/labels");
     fs::create_dir_all(&artifact_dir).expect("artifact dir exists");
-    write_ppm_artifact(&artifact_dir, "sdf-msdf-label-text", 160, 120, &frame);
+    write_ppm_artifact(&artifact_dir, "bitmap-label-text", 160, 120, &frame);
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn label_text_visual_proof_covers_multiple_sizes() {
         scene
             .add_label(
                 scene.root(),
-                LabelDesc::msdf("TEXT")
+                LabelDesc::bitmap("TEXT")
                     .with_size(size)
                     .with_color(Color::from_srgb_u8(220, 240, 255))
                     .with_background(Color::from_srgb_u8(4, 8, 16)),
@@ -138,7 +138,7 @@ fn label_text_visual_proof_covers_multiple_sizes() {
     let artifact_dir =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/gate-artifacts/labels");
     fs::create_dir_all(&artifact_dir).expect("artifact dir exists");
-    write_ppm_artifact(&artifact_dir, "sdf-msdf-label-text-sizes", 200, 140, &frame);
+    write_ppm_artifact(&artifact_dir, "bitmap-label-text-sizes", 200, 140, &frame);
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn label_text_remains_readable_across_camera_orbit() {
         scene
             .add_label(
                 scene.root(),
-                LabelDesc::msdf("ORBIT")
+                LabelDesc::bitmap("ORBIT")
                     .with_size(18.0)
                     .with_color(Color::from_srgb_u8(245, 250, 255))
                     .with_halo(Color::from_srgb_u8(40, 70, 110)),
@@ -200,7 +200,7 @@ fn label_text_many_label_prepare_benchmark_writes_artifact() {
         scene
             .add_label(
                 scene.root(),
-                LabelDesc::sdf(format!("L{index:03}"))
+                LabelDesc::bitmap(format!("L{index:03}"))
                     .with_size(12.0)
                     .with_color(Color::from_srgb_u8(220, 240, 255)),
                 Transform::at(Vec3::new(
@@ -233,7 +233,7 @@ fn label_text_many_label_prepare_benchmark_writes_artifact() {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/gate-artifacts/labels");
     fs::create_dir_all(&artifact_dir).expect("artifact dir exists");
     fs::write(
-        artifact_dir.join("sdf-msdf-label-benchmark.json"),
+        artifact_dir.join("bitmap-label-benchmark.json"),
         format!(
             "{{\n  \"schema\": \"scena.label_text_benchmark.v1\",\n  \"labels\": 128,\n  \"prepare_ms\": {:.3},\n  \"render_ms\": {:.3},\n  \"nonblack_pixels\": {}\n}}\n",
             prepare_ms,

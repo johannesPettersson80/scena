@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     scene.mesh(axes, material).add()?;
     scene.mesh(bounds, material).add()?;
     scene.mesh(anchor, material).add()?;
-    let label = LabelDesc::msdf("origin")
+    let label = LabelDesc::bitmap("origin")
         .with_color(Color::from_srgb_u8(255, 255, 255))
         .with_size(14.0);
     scene.add_label(

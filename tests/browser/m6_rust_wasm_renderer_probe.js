@@ -556,14 +556,12 @@ function assertLabelTextBrowserProof(backend, result) {
   const readback = result.renderer_readback || {};
   const pixelStats = readback.pixel_statistics || result.pixels || {};
   if (
-    metadata.proof_class !== "browser-sdf-msdf-labels" ||
+    metadata.proof_class !== "browser-bitmap-labels" ||
     metadata.labels < 12 ||
-    !Array.isArray(metadata.rasterization) ||
-    !metadata.rasterization.includes("sdf") ||
-    !metadata.rasterization.includes("msdf")
+    metadata.rasterization !== "bitmap-5x7"
   ) {
     throw new Error(
-      `${backend} labels-helpers proof did not record the dense SDF/MSDF label metadata: ${JSON.stringify(result)}`,
+      `${backend} labels-helpers proof did not record the bitmap label metadata: ${JSON.stringify(result)}`,
     );
   }
   if (!result.stats || result.stats.triangles < 200 || result.primitives < 200) {
@@ -587,6 +585,15 @@ function assertSourceGltfMaterialProof(backend, result) {
   const metadata = result.metadata || {};
   const pixels = result.pixels || {};
   const nonblack = (pixel) => Array.isArray(pixel) && (pixel[0] > 0 || pixel[1] > 0 || pixel[2] > 0);
+  const distance = (left, right) => {
+    if (!Array.isArray(left) || !Array.isArray(right)) {
+      return 0;
+    }
+    const dr = left[0] - right[0];
+    const dg = left[1] - right[1];
+    const db = left[2] - right[2];
+    return Math.sqrt(dr * dr + dg * dg + db * db);
+  };
   const diagnostics = result.diagnostics || [];
   if (
     metadata.proof_class !== "browser-source-gltf-material-comparison" ||
@@ -599,12 +606,15 @@ function assertSourceGltfMaterialProof(backend, result) {
     !metadata.source_texture_roles.includes("metallic_roughness") ||
     !metadata.source_texture_roles.includes("occlusion") ||
     !metadata.source_texture_roles.includes("emissive") ||
-    metadata.camera_framing !== "Scene::frame" ||
-    metadata.lighting !== "DirectionalLight" ||
+    !metadata.frame_bounds ||
+    !Array.isArray(metadata.frame_bounds.min) ||
+    !Array.isArray(metadata.frame_bounds.max) ||
+    !Array.isArray(metadata.lights) ||
+    !metadata.lights.some((light) => light.kind === "directional") ||
     metadata.load_warnings !== 0
   ) {
     throw new Error(
-      `${backend} source-gltf-materials proof did not load decoded source material handles, texture roles, camera framing, and lighting cleanly: ${JSON.stringify(result)}`,
+      `${backend} source-gltf-materials proof did not load decoded source material handles, texture roles, measured framing, and lighting cleanly: ${JSON.stringify(result)}`,
     );
   }
   if (
@@ -626,6 +636,24 @@ function assertSourceGltfMaterialProof(backend, result) {
   if (!nonblack(pixels.left) || !nonblack(pixels.center) || !nonblack(pixels.right)) {
     throw new Error(
       `${backend} source-gltf-materials did not render visible unlit/source/PBR comparison lanes: ${JSON.stringify(result)}`,
+    );
+  }
+  const generatedUnlitCyan =
+    pixels.left[2] > pixels.left[0] + 70 && pixels.left[1] > pixels.left[0] + 40;
+  const sourceMaterialBright =
+    pixels.center[0] > 220 && pixels.center[1] > 220 && pixels.center[2] > 150;
+  const generatedPbrWarm =
+    pixels.right[0] > pixels.right[2] + 70 && pixels.right[1] > pixels.right[2] + 40;
+  const sourceDistinct =
+    distance(pixels.center, pixels.left) > 45 && distance(pixels.center, pixels.right) > 45;
+  if (
+    !generatedUnlitCyan ||
+    !sourceMaterialBright ||
+    !generatedPbrWarm ||
+    !sourceDistinct
+  ) {
+    throw new Error(
+      `${backend} source-gltf-materials proof did not preserve lane-specific pixel colors for generated-unlit/source-gltf-material/generated-pbr: ${JSON.stringify(result)}`,
     );
   }
 }
@@ -662,9 +690,16 @@ function assertOversizedBrowserTextureProof(backend, result) {
 }
 
 function writeOversizedBrowserTextureArtifact(artifactDir, backend, result) {
+  const passed =
+    result &&
+    result.status === "passed" &&
+    result.stats &&
+    result.stats.material_texture_bindings >= 1 &&
+    result.pixels &&
+    result.pixels.nonblack > 0;
   const artifact = {
     gate: "m6-oversized-browser-texture-probe",
-    status: "passed",
+    status: passed ? "passed" : "failed",
     backend,
     result,
   };
@@ -940,6 +975,11 @@ function writeCompressedAssetBrowserLaneArtifact(artifactDir, backend, result) {
   fs.mkdirSync(root, { recursive: true });
   const metadata = result.metadata || {};
   const ktx2 = metadata.ktx2_probe || {};
+  const meshoptPassed =
+    Boolean(result.pixels && result.pixels.nonblack > 0) &&
+    result.primitives > 0 &&
+    metadata.meshopt_required_extension === true &&
+    metadata.meshopt_decoder === "EXT_meshopt_compression bufferView expansion";
   const artifact = {
     schema: "scena.compressed_asset_backend_lane.v1",
     lane,
@@ -952,7 +992,7 @@ function writeCompressedAssetBrowserLaneArtifact(artifactDir, backend, result) {
     workflow: result.workflow,
     backend: result.backend,
     meshopt: {
-      status: "passed",
+      status: meshoptPassed ? "passed" : "failed",
       proof_class: metadata.proof_class,
       pixels: result.pixels,
       stats: result.stats,

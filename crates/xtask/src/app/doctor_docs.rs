@@ -1,6 +1,7 @@
 use crate::app::prelude::*;
 
 pub(crate) mod schema_references;
+mod stable_fixtures;
 
 pub(crate) fn check_markdown_links(root: &Path, findings: &mut Vec<Finding>) {
     for rel in markdown_files(root) {
@@ -176,105 +177,13 @@ pub(crate) fn check_required_doc_contracts(root: &Path, findings: &mut Vec<Findi
 }
 
 pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut Vec<Finding>) {
-    const FIXTURES: &[(&str, &str)] = &[
-        (
-            "tests/assets/stable-contracts/capability_report.v1.json",
-            "scena.capability_report.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/schema_catalog.v1.json",
-            "scena.schema_catalog.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/schema_entry.v1.json",
-            "scena.schema_entry.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/scene_inspection.v1.json",
-            "scena.scene_inspection.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/capture.v1.json",
-            "scena.capture.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/capture_baseline.v1.json",
-            "scena.capture_baseline.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/render_introspection.v1.json",
-            "scena.render_introspection.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/visibility_diagnosis.v1.json",
-            "scena.visibility_diagnosis.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/scene_recipe.v1.json",
-            "scena.scene_recipe.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/scene_recipe_validation.v1.json",
-            "scena.scene_recipe_validation.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/placement_result.v1.json",
-            "scena.placement_result.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/annotation_projection.v1.json",
-            "scena.annotation_projection.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/asset_geometry_summary.v1.json",
-            "scena.asset_geometry_summary.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/asset_load_report.v1.json",
-            "scena.asset_load_report.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/asset_doctor.v1.json",
-            "scena.asset_doctor.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/connector_browser.v1.json",
-            "scena.connector_browser.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/scene_host_asset_import.v1.json",
-            "scena.scene_host_asset_import.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/scene_host_subtree.v1.json",
-            "scena.subtree.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/scene_host_animation_inventory.v1.json",
-            "scena.animation_inventory.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/visual_patch.v1.json",
-            "scena.visual_patch.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/visual_patch_result.v1.json",
-            "scena.visual_patch.v1",
-        ),
-        (
-            "tests/assets/stable-contracts/host_event.v1.json",
-            "scena.host_event.v1",
-        ),
-    ];
-    const REQUIRED_FILES: &[&str] = &[
-        "examples/scene_host_contracts.rs",
-        "examples/scene_host_browser_contracts.js",
-        "tests/assets/stable-contracts/asset_provenance.json",
-        "docs/checklists/scene-host-browser-gpu-proof.md",
-    ];
-
-    require_files(root, findings, "STABLE-CONTRACT-EVIDENCE", REQUIRED_FILES);
-    for (rel, expected_schema) in FIXTURES {
+    require_files(
+        root,
+        findings,
+        "STABLE-CONTRACT-EVIDENCE",
+        stable_fixtures::REQUIRED_FILES,
+    );
+    for (rel, expected_schema) in stable_fixtures::FIXTURES {
         require_files(root, findings, "STABLE-CONTRACT-EVIDENCE", &[*rel]);
         let Ok(text) = fs::read_to_string(root.join(rel)) else {
             continue;
@@ -293,7 +202,11 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
             ));
         }
     }
-    schema_references::check_schema_catalog_covers_stable_fixtures(root, findings, FIXTURES);
+    schema_references::check_schema_catalog_covers_stable_fixtures(
+        root,
+        findings,
+        stable_fixtures::FIXTURES,
+    );
     schema_references::check_schema_doc_references_listed_in_catalog(root, findings);
 
     require_contains(
@@ -380,7 +293,7 @@ pub(crate) fn check_stable_contract_release_evidence(root: &Path, findings: &mut
         "STABLE-CONTRACT-EVIDENCE",
         "docs/checklists/scene-host-browser-gpu-proof.md",
         &[
-            "Status: passed for SceneHost contracts",
+            "Status: CI/release-enforced on the Linux WebGL2 browser lane",
             "Real browser/GPU machine required",
             "scena.scene_host_browser_proof.v1",
             "SceneHost.capture()",

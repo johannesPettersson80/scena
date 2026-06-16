@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 
 use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
 use crate::{
@@ -12,8 +12,11 @@ pub struct SceneHostSectionBoxReportV1 {
     pub schema: String,
     pub enabled: bool,
     pub inverted: bool,
+    #[serde(serialize_with = "serialize_round3_array")]
     pub min: [f32; 3],
+    #[serde(serialize_with = "serialize_round3_array")]
     pub max: [f32; 3],
+    #[serde(serialize_with = "serialize_round3_f32")]
     pub margin: f32,
     pub planes: Vec<SceneHostClippingPlaneV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -22,7 +25,9 @@ pub struct SceneHostSectionBoxReportV1 {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct SceneHostClippingPlaneV1 {
+    #[serde(serialize_with = "serialize_round3_array")]
     pub normal: [f32; 3],
+    #[serde(serialize_with = "serialize_round3_f32")]
     pub distance: f32,
 }
 
@@ -106,9 +111,9 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 (
                     true,
                     section.inverted(),
-                    section.bounds().min.to_array(),
-                    section.bounds().max.to_array(),
-                    section.margin(),
+                    round_vec3(section.bounds().min),
+                    round_vec3(section.bounds().max),
+                    round3(section.margin()),
                 )
             });
         SceneHostSectionBoxReportV1 {
@@ -159,12 +164,51 @@ impl<F: AssetFetcher> SceneHostCore<F> {
 impl From<ClippingPlane> for SceneHostClippingPlaneV1 {
     fn from(plane: ClippingPlane) -> Self {
         Self {
-            normal: plane.normal().to_array(),
-            distance: plane.distance(),
+            normal: round_vec3(plane.normal()),
+            distance: round3(plane.distance()),
         }
     }
 }
 
 pub(super) fn aabb_from_arrays(min: [f32; 3], max: [f32; 3]) -> Aabb {
     Aabb::new(Vec3::from_array(min), Vec3::from_array(max))
+}
+
+fn round_vec3(value: Vec3) -> [f32; 3] {
+    [round3(value.x), round3(value.y), round3(value.z)]
+}
+
+fn round3(value: f32) -> f32 {
+    if !value.is_finite() {
+        return 0.0;
+    }
+    let rounded = (value * 1000.0).round() / 1000.0;
+    if rounded == 0.0 { 0.0 } else { rounded }
+}
+
+fn serialize_round3_f32<S>(value: &f32, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_f64(stable_round3(*value))
+}
+
+fn serialize_round3_array<S>(value: &[f32; 3], serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    [
+        stable_round3(value[0]),
+        stable_round3(value[1]),
+        stable_round3(value[2]),
+    ]
+    .serialize(serializer)
+}
+
+fn stable_round3(value: f32) -> f64 {
+    if !value.is_finite() {
+        return 0.0;
+    }
+    let rounded = (f64::from(value) * 1000.0).round() / 1000.0;
+    if rounded == 0.0 { 0.0 } else { rounded }
 }

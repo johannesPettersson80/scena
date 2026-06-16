@@ -73,27 +73,20 @@ pub(crate) fn run_verify_interaction_command(args: &[String]) -> Result<CliOutco
     let mut steps = Vec::with_capacity(expectation.steps.len());
     for (index, step) in expectation.steps.iter().enumerate() {
         let coordinates = scena::InteractionCoordinatesV1::from_step(step, expectation.viewport)?;
-        let (handle, hover_handle, selection_handle) = match step.action.as_str() {
-            "pick" => {
-                let handle = host
-                    .pick(coordinates.x_css_px, coordinates.y_css_px)
-                    .map_err(|error| format!("interaction pick failed: {error}"))?;
-                (handle, None, None)
-            }
-            "hover" => {
-                let handle = host
-                    .hover(coordinates.x_css_px, coordinates.y_css_px)
-                    .map_err(|error| format!("interaction hover failed: {error}"))?;
-                (handle, handle, None)
-            }
-            "select" => {
-                let handle = host
-                    .select(coordinates.x_css_px, coordinates.y_css_px)
-                    .map_err(|error| format!("interaction select failed: {error}"))?;
-                (handle, handle, handle)
-            }
+        let handle = match step.action.as_str() {
+            "pick" => host
+                .pick(coordinates.x_css_px, coordinates.y_css_px)
+                .map_err(|error| format!("interaction pick failed: {error}"))?,
+            "hover" => host
+                .hover(coordinates.x_css_px, coordinates.y_css_px)
+                .map_err(|error| format!("interaction hover failed: {error}"))?,
+            "select" => host
+                .select(coordinates.x_css_px, coordinates.y_css_px)
+                .map_err(|error| format!("interaction select failed: {error}"))?,
             other => return Err(format!("unsupported interaction action '{other}'")),
         };
+        let hover_handle = host.hover_handle();
+        let selection_handle = host.primary_selection_handle();
         let events = host
             .drain_events()
             .iter()

@@ -2,8 +2,6 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::geometry::Aabb;
-
 use super::import::ImportAnchor;
 use super::{
     AnchorKey, ConnectionError, NodeKey, Scene, SourceCoordinateSystem, SourceUnits, Transform,
@@ -16,7 +14,6 @@ pub struct AnchorFrame {
     name: Option<String>,
     source_units: SourceUnits,
     source_coordinate_system: SourceCoordinateSystem,
-    bounds_hint: Option<Aabb>,
     tags: BTreeSet<String>,
     label: Option<String>,
     import_live: Option<Arc<AtomicBool>>,
@@ -29,7 +26,6 @@ impl PartialEq for AnchorFrame {
             && self.name == other.name
             && self.source_units == other.source_units
             && self.source_coordinate_system == other.source_coordinate_system
-            && self.bounds_hint == other.bounds_hint
             && self.tags == other.tags
             && self.label == other.label
     }
@@ -43,7 +39,6 @@ impl AnchorFrame {
             name: None,
             source_units: SourceUnits::Meters,
             source_coordinate_system: SourceCoordinateSystem::GltfYUpRightHanded,
-            bounds_hint: None,
             tags: BTreeSet::new(),
             label: None,
             import_live: None,
@@ -83,11 +78,6 @@ impl AnchorFrame {
         self
     }
 
-    pub fn with_bounds_hint(mut self, bounds: Aabb) -> Self {
-        self.bounds_hint = Some(bounds);
-        self
-    }
-
     pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
         self.tags.insert(tag.into());
         self
@@ -116,10 +106,6 @@ impl AnchorFrame {
 
     pub const fn source_coordinate_system(&self) -> SourceCoordinateSystem {
         self.source_coordinate_system
-    }
-
-    pub const fn bounds_hint(&self) -> Option<Aabb> {
-        self.bounds_hint
     }
 
     pub fn tags(&self) -> &BTreeSet<String> {

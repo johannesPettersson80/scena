@@ -1,7 +1,6 @@
 use crate::assets::EnvironmentHandle;
 use crate::diagnostics::{DebugOverlay, OutputColorSpace};
 use crate::material::Color;
-use crate::picking::InteractionStyle;
 
 use super::{
     AntiAliasing, Background, OrderIndependentTransparencyConfig, PostBloomConfig, Renderer,
@@ -198,22 +197,6 @@ impl Renderer {
             self.debug_revision = self.debug_revision.saturating_add(1);
             self.clear_rendered_frame();
         }
-    }
-
-    pub fn hover_style(&self) -> InteractionStyle {
-        self.hover_style
-    }
-
-    pub fn set_hover_style(&mut self, style: InteractionStyle) {
-        self.hover_style = style;
-    }
-
-    pub fn selection_style(&self) -> InteractionStyle {
-        self.selection_style
-    }
-
-    pub fn set_selection_style(&mut self, style: InteractionStyle) {
-        self.selection_style = style;
     }
 
     pub fn environment(&self) -> Option<EnvironmentHandle> {

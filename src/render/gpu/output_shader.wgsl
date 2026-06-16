@@ -1,4 +1,5 @@
 const PI: f32 = 3.141592653589793;
+const MAX_GPU_LIGHTS_PER_TYPE: u32 = 4u;
 
 struct VertexIn {
     @location(0) position: vec3<f32>,
@@ -30,15 +31,16 @@ struct VertexOut {
 };
 
 struct LightingUniform {
-    directional_light_direction_intensity: vec4<f32>,
-    directional_light_color_count: vec4<f32>,
-    directional_shadow_control: vec4<f32>,
-    point_light_position_intensity: vec4<f32>,
-    point_light_color_range: vec4<f32>,
-    spot_light_position_intensity: vec4<f32>,
-    spot_light_direction_cones: vec4<f32>,
-    spot_light_cone_range: vec4<f32>,
-    spot_light_color_range: vec4<f32>,
+    directional_light_direction_intensity: array<vec4<f32>, 4>,
+    directional_light_color: array<vec4<f32>, 4>,
+    directional_shadow_control: array<vec4<f32>, 4>,
+    point_light_position_intensity: array<vec4<f32>, 4>,
+    point_light_color_range: array<vec4<f32>, 4>,
+    spot_light_position_intensity: array<vec4<f32>, 4>,
+    spot_light_direction_cones: array<vec4<f32>, 4>,
+    spot_light_cone_range: array<vec4<f32>, 4>,
+    spot_light_color_range: array<vec4<f32>, 4>,
+    light_counts: vec4<f32>,
     environment_diffuse_intensity: vec4<f32>,
     environment_specular_intensity: vec4<f32>,
 };
@@ -111,6 +113,10 @@ struct MaterialUniform {
     // .z = thicknessFactor
     // .w = attenuationDistance
     transmission_factors: vec4<f32>,
+    // KHR_materials_volume attenuation color.
+    // .rgb = attenuationColor
+    // .a = reserved
+    attenuation_color: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -439,10 +445,27 @@ fn physical_transmission_color(
     let refraction_mix = clamp(0.46 + roughness * 0.36 + rim_fresnel * 0.10, 0.46, 0.86);
     let scene_color = mix(straight, refracted_blurred, refraction_mix);
     let tint_strength = clamp(transmission * 0.035, 0.0, 0.035);
-    let transmitted = scene_color * mix(vec3<f32>(1.0), tint, tint_strength);
+    let volume_tint = volume_transmittance(thickness, material.attenuation_color.rgb, material.transmission_factors.w);
+    let transmitted = scene_color * volume_tint * mix(vec3<f32>(1.0), tint, tint_strength);
     let reflection_weight = clamp(0.08 + rim_fresnel * 0.42 + (1.0 - transmission) * 0.10, 0.08, 0.50);
     let reflected = surface_rgb * (1.08 + rim_fresnel * 0.72);
     return vec4<f32>(mix(transmitted, reflected, reflection_weight), 1.0);
+}
+
+fn volume_transmittance(
+    thickness: f32,
+    attenuation_color: vec3<f32>,
+    attenuation_distance: f32,
+) -> vec3<f32> {
+    if thickness <= 0.000001 || attenuation_distance > 1.0e20 {
+        return vec3<f32>(1.0);
+    }
+    let exponent = thickness / max(attenuation_distance, 0.0001);
+    return vec3<f32>(
+        pow(clamp(attenuation_color.r, 0.0, 1.0), exponent),
+        pow(clamp(attenuation_color.g, 0.0, 1.0), exponent),
+        pow(clamp(attenuation_color.b, 0.0, 1.0), exponent),
+    );
 }
 
 fn directional_shadow_factor(world_position: vec3<f32>) -> f32 {
@@ -492,67 +515,81 @@ fn pbr_punctual_lighting(
     shadow_visibility: f32,
 ) -> vec3<f32> {
     var shaded = vec3<f32>(0.0);
-    if camera.lighting.directional_light_direction_intensity.w > 0.0 {
-        let incoming = normalize(-camera.lighting.directional_light_direction_intensity.xyz);
-        // Phase 1B step 2: replace the per-vertex CPU-baked shadow_visibility
-        // input with the GPU shadow map sample so the GPU path stops relying
-        // on the CPU ray-cast bake (review F7). The argument is kept on the
-        // function signature for the WebGL2 fallback that does not yet have
-        // a shadow map.
-        _ = shadow_visibility;
-        let gpu_shadow = select(
-            1.0,
-            directional_shadow_factor(world_position),
-            camera.lighting.directional_shadow_control.x > 0.5,
-        );
-        let radiance = camera.lighting.directional_light_color_count.rgb *
-            camera.lighting.directional_light_direction_intensity.w * gpu_shadow;
-        shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
-        shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
-        shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
-        shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
-        shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);
-        shaded += dispersion_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, dispersion_factor, dispersion_ior);
+    // Phase 1B step 2: replace the per-vertex CPU-baked shadow_visibility
+    // input with the GPU shadow map sample so the GPU path stops relying
+    // on the CPU ray-cast bake (review F7). The argument is kept on the
+    // function signature for the WebGL2 fallback that does not yet have
+    // a shadow map.
+    _ = shadow_visibility;
+    let directional_count = min(u32(camera.lighting.light_counts.x), MAX_GPU_LIGHTS_PER_TYPE);
+    for (var i = 0u; i < MAX_GPU_LIGHTS_PER_TYPE; i = i + 1u) {
+        if i < directional_count {
+            let light_direction = camera.lighting.directional_light_direction_intensity[i];
+            let incoming = normalize(-light_direction.xyz);
+            let gpu_shadow = select(
+                1.0,
+                directional_shadow_factor(world_position),
+                camera.lighting.directional_shadow_control[i].x > 0.5,
+            );
+            let radiance = camera.lighting.directional_light_color[i].rgb *
+                light_direction.w * gpu_shadow;
+            shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
+            shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
+            shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
+            shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
+            shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);
+            shaded += dispersion_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, dispersion_factor, dispersion_ior);
+        }
     }
-    if camera.lighting.point_light_position_intensity.w > 0.0 {
-        let to_light = camera.lighting.point_light_position_intensity.xyz - world_position;
-        let incoming = normalize(to_light);
-        let attenuation = distance_attenuation(to_light, camera.lighting.point_light_color_range.w);
-        let radiance = camera.lighting.point_light_color_range.rgb *
-            camera.lighting.point_light_position_intensity.w * attenuation;
-        shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
-        shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
-        shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
-        shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
-        shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);
-        shaded += dispersion_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, dispersion_factor, dispersion_ior);
+    let point_count = min(u32(camera.lighting.light_counts.y), MAX_GPU_LIGHTS_PER_TYPE);
+    for (var i = 0u; i < MAX_GPU_LIGHTS_PER_TYPE; i = i + 1u) {
+        if i < point_count {
+            let point_light = camera.lighting.point_light_position_intensity[i];
+            let point_color = camera.lighting.point_light_color_range[i];
+            let to_light = point_light.xyz - world_position;
+            let incoming = normalize(to_light);
+            let attenuation = distance_attenuation(to_light, point_color.w);
+            let radiance = point_color.rgb * point_light.w * attenuation;
+            shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
+            shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
+            shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
+            shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
+            shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);
+            shaded += dispersion_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, dispersion_factor, dispersion_ior);
+        }
     }
-    if camera.lighting.spot_light_position_intensity.w > 0.0 {
-        let to_light = camera.lighting.spot_light_position_intensity.xyz - world_position;
-        let incoming = normalize(to_light);
-        let to_surface = -incoming;
-        let cone = spot_cone_attenuation(
-            dot(to_surface, normalize(camera.lighting.spot_light_direction_cones.xyz)),
-            camera.lighting.spot_light_cone_range.x,
-            camera.lighting.spot_light_cone_range.y,
-        );
-        let attenuation = distance_attenuation(to_light, camera.lighting.spot_light_cone_range.z);
-        let radiance = camera.lighting.spot_light_color_range.rgb *
-            camera.lighting.spot_light_position_intensity.w * attenuation * cone;
-        shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
-        shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
-        shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
-        shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
-        shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);
-        shaded += dispersion_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, dispersion_factor, dispersion_ior);
+    let spot_count = min(u32(camera.lighting.light_counts.z), MAX_GPU_LIGHTS_PER_TYPE);
+    for (var i = 0u; i < MAX_GPU_LIGHTS_PER_TYPE; i = i + 1u) {
+        if i < spot_count {
+            let spot_light = camera.lighting.spot_light_position_intensity[i];
+            let spot_direction = camera.lighting.spot_light_direction_cones[i];
+            let spot_cones = camera.lighting.spot_light_cone_range[i];
+            let to_light = spot_light.xyz - world_position;
+            let incoming = normalize(to_light);
+            let to_surface = -incoming;
+            let cone = spot_cone_attenuation(
+                dot(to_surface, normalize(spot_direction.xyz)),
+                spot_cones.x,
+                spot_cones.y,
+            );
+            let attenuation = distance_attenuation(to_light, spot_cones.z);
+            let radiance = camera.lighting.spot_light_color_range[i].rgb *
+                spot_light.w * attenuation * cone;
+            shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
+            shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
+            shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
+            shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
+            shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);
+            shaded += dispersion_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, dispersion_factor, dispersion_ior);
+        }
     }
     return shaded;
 }
 
 fn has_punctual_light() -> bool {
-    return camera.lighting.directional_light_direction_intensity.w > 0.0 ||
-        camera.lighting.point_light_position_intensity.w > 0.0 ||
-        camera.lighting.spot_light_position_intensity.w > 0.0;
+    return camera.lighting.light_counts.x > 0.0 ||
+        camera.lighting.light_counts.y > 0.0 ||
+        camera.lighting.light_counts.z > 0.0;
 }
 
 fn has_environment_light() -> bool {

@@ -1,7 +1,11 @@
 use crate::diagnostics::{Diagnostic, DiagnosticCode};
 use crate::scene::{SceneInspectionReportV1, Transform};
+use serde_json::json;
 
-use super::{RenderIntrospectionFixV1, RenderIntrospectionReasonV1, push_fix, push_reason};
+use super::{
+    RenderIntrospectionFixV1, RenderIntrospectionReasonV1, push_fix, push_frame_bounds_fix,
+    push_reason,
+};
 
 pub(super) fn push_failure_reasons(
     reasons: &mut Vec<RenderIntrospectionReasonV1>,
@@ -11,7 +15,7 @@ pub(super) fn push_failure_reasons(
     diagnostics: &[Diagnostic],
 ) {
     push_inspection_failure_reasons(reasons, fixes, inspection, visible_pixels);
-    push_renderer_diagnostic_reasons(reasons, fixes, diagnostics);
+    push_renderer_diagnostic_reasons(reasons, fixes, inspection, diagnostics);
 }
 
 fn push_inspection_failure_reasons(
@@ -29,11 +33,19 @@ fn push_inspection_failure_reasons(
                 reasons,
                 "nan_transform",
                 "error",
+                vec![node.handle],
                 "a visible node has a non-finite transform component",
             );
             push_fix(
                 fixes,
                 "set_transform",
+                Some(node.handle),
+                Some(json!({
+                    "transforms": [{
+                        "node": node.handle,
+                        "transform": Transform::IDENTITY
+                    }]
+                })),
                 "replace non-finite transforms with finite values before rendering again",
             );
         }
@@ -48,12 +60,8 @@ fn push_inspection_failure_reasons(
                 reasons,
                 "alpha_zero",
                 "error",
+                vec![draw.node],
                 "a drawable material has zero base-color alpha",
-            );
-            push_fix(
-                fixes,
-                "set_material_alpha",
-                "raise the material alpha or replace the material before rendering again",
             );
         }
     }
@@ -63,11 +71,14 @@ fn push_inspection_failure_reasons(
             reasons,
             "clipped_by_active_clipping_plane",
             "error",
+            inspection.draw_list.iter().map(|draw| draw.node).collect(),
             "active clipping planes may be removing all visible content",
         );
         push_fix(
             fixes,
             "clear_clipping_planes",
+            None,
+            Some(json!({"section_box": {"mode": "disable"}})),
             "clear active clipping planes or widen the section box before rendering again",
         );
     }
@@ -76,6 +87,7 @@ fn push_inspection_failure_reasons(
 fn push_renderer_diagnostic_reasons(
     reasons: &mut Vec<RenderIntrospectionReasonV1>,
     fixes: &mut Vec<RenderIntrospectionFixV1>,
+    inspection: &SceneInspectionReportV1,
     diagnostics: &[Diagnostic],
 ) {
     for diagnostic in diagnostics {
@@ -85,12 +97,13 @@ fn push_renderer_diagnostic_reasons(
                     reasons,
                     "behind_camera",
                     "error",
+                    Vec::new(),
                     "renderer diagnostics report all visible bounds behind the camera",
                 );
-                push_fix(
+                push_frame_bounds_fix(
                     fixes,
-                    "frame_bounds",
                     "move or frame the camera so visible content is in front of it",
+                    inspection,
                 );
             }
             DiagnosticCode::SceneOutsideCameraFrustum => {
@@ -98,12 +111,13 @@ fn push_renderer_diagnostic_reasons(
                     reasons,
                     "outside_frustum",
                     "error",
+                    Vec::new(),
                     "renderer diagnostics report visible bounds outside the camera frustum",
                 );
-                push_fix(
+                push_frame_bounds_fix(
                     fixes,
-                    "frame_bounds",
                     "frame the scene or target bounds before rendering again",
+                    inspection,
                 );
             }
             code if backend_degradation_code(code) => {
@@ -111,11 +125,14 @@ fn push_renderer_diagnostic_reasons(
                     reasons,
                     "backend_capability_degraded",
                     "warning",
+                    Vec::new(),
                     "renderer diagnostics report a degraded or disabled backend capability",
                 );
                 push_fix(
                     fixes,
                     "inspect_capabilities",
+                    None,
+                    None,
                     "inspect the capability report before relying on this visual result",
                 );
             }

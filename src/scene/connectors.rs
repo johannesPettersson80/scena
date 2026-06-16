@@ -17,6 +17,7 @@ mod options;
 mod parenting;
 mod roll;
 mod scale;
+mod solving;
 mod validation;
 pub use error::ConnectionError;
 pub use magnet::{ConnectionMagnetPreview, ConnectionMagnetVisualCue};
@@ -27,6 +28,7 @@ pub use options::{
 use parenting::node_is_descendant_of;
 use roll::roll_transform;
 use scale::preserve_source_scale;
+use solving::{effective_mate_offset, effective_roll, validate_snap_tolerance_for_apply};
 use validation::{
     inverse_transform, validate_connector_handedness, validate_connector_host_prepared,
     validate_connector_kinds, validate_connector_live, validate_connector_source_metadata,
@@ -58,6 +60,7 @@ pub struct ConnectionPreview {
     resolved_transform: Transform,
     resolved_parent: Option<NodeKey>,
     connection_line: ConnectionLineOverlay,
+    snap_distance: f32,
     warnings: Vec<ConnectionWarning>,
 }
 
@@ -284,6 +287,10 @@ impl ConnectionPreview {
     pub const fn connection_line(&self) -> ConnectionLineOverlay {
         self.connection_line
     }
+
+    pub const fn snap_distance(&self) -> f32 {
+        self.snap_distance
+    }
 }
 
 impl ConnectionLineOverlay {
@@ -436,13 +443,21 @@ impl Scene {
         }
 
         let target_connector_world = compose_transform(target_world, target.local_transform);
-        let target_offset = compose_transform(target_connector_world, options.mate_offset);
-        let target_aligned = compose_transform(target_offset, options.alignment_transform());
         let source_current_connector =
             compose_transform(source_current_world, source.local_transform);
+        let snap_distance = source_current_connector
+            .translation
+            .distance(target_connector_world.translation);
+        let mate_offset = effective_mate_offset(options, &source, &target);
+        let target_offset = compose_transform(target_connector_world, mate_offset);
+        let target_aligned = compose_transform(target_offset, options.alignment_transform());
         let target_mated = compose_transform(
             target_aligned,
-            roll_transform(options.roll(), source_current_connector, target_aligned),
+            roll_transform(
+                effective_roll(options, &source),
+                source_current_connector,
+                target_aligned,
+            ),
         );
         let source_connector_inverse =
             inverse_transform(source.local_transform).ok_or_else(|| {
@@ -474,6 +489,7 @@ impl Scene {
             target,
             resolved_transform,
             resolved_parent,
+            snap_distance,
             warnings: vec![ConnectionWarning::SourceMoved],
         })
     }
@@ -485,6 +501,7 @@ impl Scene {
         options: ConnectOptions,
     ) -> Result<ConnectionPreview, ConnectionError> {
         let preview = self.preview_connection(source, target, options)?;
+        validate_snap_tolerance_for_apply(&preview, options)?;
         self.reparent_for_connection(preview.source.node, preview.resolved_parent)?;
         self.set_transform(preview.source.node, preview.resolved_transform)
             .map_err(|_| ConnectionError::NodeNotFound(preview.source.node))?;
@@ -531,23 +548,5 @@ impl Scene {
         self.structure_revision = self.structure_revision.saturating_add(1);
         self.transform_revision = self.transform_revision.saturating_add(1);
         Ok(())
-    }
-}
-
-impl PartialEq for ConnectorFrame {
-    fn eq(&self, other: &Self) -> bool {
-        self.node == other.node
-            && self.local_transform == other.local_transform
-            && self.name == other.name
-            && self.kind == other.kind
-            && self.allowed_mates == other.allowed_mates
-            && self.tags == other.tags
-            && self.snap_tolerance == other.snap_tolerance
-            && self.clearance_hint == other.clearance_hint
-            && self.roll_policy == other.roll_policy
-            && self.polarity == other.polarity
-            && self.metadata == other.metadata
-            && self.source_units == other.source_units
-            && self.source_coordinate_system == other.source_coordinate_system
     }
 }

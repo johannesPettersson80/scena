@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
 use crate::{
     AntiAliasing, AssetFetcher, AutoExposureConfig, Background, GridFloorOptions, LookupError,
-    PostBloomConfig, ScreenSpaceAmbientOcclusionConfig,
+    PostBloomConfig, ScreenSpaceAmbientOcclusionConfig, Vec3,
 };
 
 pub const SCENE_HOST_GROUNDING_SCHEMA_V1: &str = "scena.scene_host_grounding.v1";
@@ -17,7 +17,6 @@ pub struct SceneHostGroundingReportV1 {
     pub ssao_enabled: bool,
     pub active_paths: Vec<SceneHostGroundingPathV1>,
     pub fallbacks: Vec<SceneHostGroundingFallbackV1>,
-    pub physical_shadow_claimed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,7 +24,6 @@ pub struct SceneHostGroundingReportV1 {
 pub enum SceneHostGroundingPathV1 {
     FloorReceiver,
     ScreenSpaceAmbientOcclusion,
-    DirectionalShadowReceiver,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,11 +58,15 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         target: u64,
         background: &str,
     ) -> Result<SceneHostGroundingReportV1, SceneHostError> {
-        self.resolve_node(target)?;
+        self.ground_node_to_y_zero(target)?;
         self.apply_product_studio_visuals(background)?;
         let floor_handles = self.add_product_grid_floor_under_node(target)?;
+        let floor_receiver = !floor_handles.is_empty();
         let ssao_enabled = self.renderer.screen_space_ambient_occlusion().is_some();
-        let mut active_paths = vec![SceneHostGroundingPathV1::FloorReceiver];
+        let mut active_paths = Vec::new();
+        if floor_receiver {
+            active_paths.push(SceneHostGroundingPathV1::FloorReceiver);
+        }
         if ssao_enabled {
             active_paths.push(SceneHostGroundingPathV1::ScreenSpaceAmbientOcclusion);
         }
@@ -72,11 +74,10 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             schema: SCENE_HOST_GROUNDING_SCHEMA_V1.to_owned(),
             target,
             floor_handles,
-            floor_receiver: true,
+            floor_receiver,
             ssao_enabled,
             active_paths,
             fallbacks: grounding_fallbacks(ssao_enabled),
-            physical_shadow_claimed: false,
         })
     }
 
@@ -115,18 +116,29 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             self.register_node(floor.grid),
         ])
     }
+
+    fn ground_node_to_y_zero(&mut self, node: u64) -> Result<(), SceneHostError> {
+        let node_key = self.resolve_node(node)?;
+        let bounds = self
+            .scene
+            .node_world_bounds(node_key, &self.assets)?
+            .ok_or(LookupError::ImportHasNoBounds)?;
+        let drop_y = -bounds.min.y;
+        if drop_y.abs() <= 1.0e-6 {
+            return Ok(());
+        }
+        let mut world = self
+            .scene
+            .world_transform(node_key)
+            .ok_or(LookupError::NodeNotFound(node_key))?;
+        world.translation += Vec3::new(0.0, drop_y, 0.0);
+        self.scene.align_to(node_key, world)?;
+        Ok(())
+    }
 }
 
 fn grounding_fallbacks(ssao_enabled: bool) -> Vec<SceneHostGroundingFallbackV1> {
     let mut fallbacks = Vec::new();
-    fallbacks.push(SceneHostGroundingFallbackV1 {
-        code: "directional_shadow_receiver_degraded".to_owned(),
-        severity: "warning".to_owned(),
-        message: "directional shadow receiver darkening is not claimed as physical in this preset"
-            .to_owned(),
-        help: "treat floor and SSAO as grounding aids until directional shadow proof is promoted"
-            .to_owned(),
-    });
     if ssao_enabled {
         fallbacks.push(SceneHostGroundingFallbackV1 {
             code: "ssao_is_ambient_occlusion".to_owned(),

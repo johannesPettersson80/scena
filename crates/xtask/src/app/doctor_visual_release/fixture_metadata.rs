@@ -156,8 +156,8 @@ pub(crate) fn check_visual_fixture_metadata(root: &Path, findings: &mut Vec<Find
             "status = \"reference\"",
             "max_abs_diff = 0",
             "center_rgba = [110, 189, 240, 255]",
-            "nonblack_pixels = 117",
-            "rgba_hash = \"fnv1a64:91932897d82a4f88\"",
+            "nonblack_pixels = 81",
+            "rgba_hash = \"fnv1a64:bdf6e10515be53d7\"",
         ],
     );
     require_contains(
@@ -221,8 +221,8 @@ pub(crate) fn check_m2_visual_fixture_metadata(root: &Path, findings: &mut Vec<F
             "max_abs_diff = 0",
             "center_rgba = [164, 0, 0, 255]",
             "center_rgba = [80, 80, 80, 255]",
-            "nonblack_pixels = 149",
-            "rgba_hash = \"fnv1a64:4d3a874730a5e5bc\"",
+            "nonblack_pixels = 154",
+            "rgba_hash = \"fnv1a64:0ec6270d35a4a042\"",
         ],
     );
     require_contains(

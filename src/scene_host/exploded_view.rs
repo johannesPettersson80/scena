@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use super::visual_patch::{VisualPatchTransformEasedV1, VisualPatchTransformV1, VisualPatchV1};
 use super::{SceneHostCore, SceneHostEasing, SceneHostError, SceneHostErrorCode};
@@ -52,11 +53,16 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         }
         let plan = view.transforms(&self.scene, &self.assets)?;
         let mut patch = VisualPatchV1::default();
+        let mut restore_patch = VisualPatchV1::default();
 
         match options.duration_seconds {
             Some(duration_seconds) if duration_seconds > 0.0 => {
                 for update in plan.updates() {
                     let handle = self.register_node(update.node);
+                    restore_patch.transforms.push(VisualPatchTransformV1 {
+                        node: handle,
+                        transform: update.original,
+                    });
                     patch.transforms_eased.push(VisualPatchTransformEasedV1 {
                         node: handle,
                         transform: update.transform,
@@ -68,6 +74,10 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             _ => {
                 for update in plan.updates() {
                     let handle = self.register_node(update.node);
+                    restore_patch.transforms.push(VisualPatchTransformV1 {
+                        node: handle,
+                        transform: update.original,
+                    });
                     patch.transforms.push(VisualPatchTransformV1 {
                         node: handle,
                         transform: update.transform,
@@ -75,6 +85,10 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 }
             }
         }
+        patch.metadata = Some(json!({
+            "scena_exploded_view_restore_patch": restore_patch,
+            "scena_exploded_view_restore_kind": "immediate_transforms"
+        }));
         Ok(patch)
     }
 

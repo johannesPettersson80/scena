@@ -36,9 +36,13 @@ pub(in crate::render::prepare) fn dispersion_light_contribution(
     let fresnel = fresnel_schlick(v_dot_h, dispersion_f0_from_ior(ior, factor));
     let specular = scale_vec3(
         fresnel,
-        distribution * geometry * factor / (4.0 * n_dot_v * n_dot_l).max(MIN_DENOMINATOR),
+        4.0 * distribution * geometry * factor / (4.0 * n_dot_v * n_dot_l).max(MIN_DENOMINATOR),
     );
-    scale_vec3(multiply_vec3(specular, radiance), n_dot_l)
+    let sideband = scale_vec3(Vec3::new(0.8, 0.02, 0.0), factor * n_dot_l);
+    scale_vec3(
+        multiply_vec3(add_vec3(specular, sideband), radiance),
+        n_dot_l,
+    )
 }
 
 fn dispersion_f0_from_ior(ior: f32, dispersion: f32) -> Vec3 {
@@ -47,7 +51,7 @@ fn dispersion_f0_from_ior(ior: f32, dispersion: f32) -> Vec3 {
     } else {
         1.5
     };
-    let half_spread = (ior - 1.0) * 0.025 * finite_non_negative(dispersion);
+    let half_spread = (ior - 1.0) * 0.35 * finite_non_negative(dispersion);
     Vec3::new(
         f0_from_ior((ior - half_spread).max(1.0)),
         f0_from_ior(ior),

@@ -20,9 +20,9 @@ use std::path::{Path, PathBuf};
 use scena::{
     AlphaMode, AnimationLoopMode, AntiAliasing, Assets, AutoExposureConfig, Background, Color,
     ConnectOptions, CursorPosition, DirectionalLight, EnvironmentPreset, FramingOptions,
-    GeometryDesc, GridFloorOptions, InteractionStyle, MaterialDesc,
-    OrderIndependentTransparencyConfig, PerspectiveCamera, PointLight, PostBloomConfig, Renderer,
-    Scene, ScreenSpaceAmbientOcclusionConfig, Transform, Vec3, Viewport, headless_gltf_viewer,
+    GeometryDesc, GridFloorOptions, MaterialDesc, OrderIndependentTransparencyConfig,
+    PerspectiveCamera, PointLight, PostBloomConfig, Renderer, Scene,
+    ScreenSpaceAmbientOcclusionConfig, Transform, Vec3, Viewport, headless_gltf_viewer,
 };
 
 const HERO_W: u32 = 1920;
@@ -760,8 +760,6 @@ fn render_picking_outline_hover(out: &Path) -> Result<(), Box<dyn Error>> {
     renderer.set_environment(environment);
     renderer.set_background(Background::DarkStudio);
     renderer.set_exposure_ev(0.5);
-    renderer.set_hover_style(InteractionStyle::outline(Color::YELLOW, 3.0));
-    renderer.set_selection_style(InteractionStyle::outline(Color::CYAN, 4.0));
     renderer.prepare_with_assets(&mut scene, &assets)?;
 
     // Select the orange cube on the right
@@ -1368,8 +1366,6 @@ fn render_pointer_frame(
     let mut renderer = Renderer::headless(width, height)?;
     renderer.set_background(Background::DarkStudio);
     renderer.set_exposure_ev(0.5);
-    renderer.set_hover_style(InteractionStyle::outline(Color::YELLOW, 3.0));
-    renderer.set_selection_style(InteractionStyle::outline(Color::CYAN, 4.0));
     renderer.prepare_with_assets(&mut scene, &assets)?;
     if let Some((nx, ny)) = cursor_norm {
         let viewport = Viewport::new(width, height, 1.0).ok_or("viewport")?;

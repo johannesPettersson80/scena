@@ -1,5 +1,6 @@
 use super::anisotropy_materials::check_anisotropy_material_contracts;
 use super::asset_instancing::check_m8_instancing_contracts;
+use super::asset_load_reports::check_asset_load_report_contracts;
 use super::clearcoat_materials::check_clearcoat_material_contracts;
 use super::compressed_asset_proof::check_compressed_asset_proof_contracts;
 use super::dispersion_materials::check_dispersion_material_contracts;
@@ -17,6 +18,7 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
     check_dispersion_material_contracts(root, findings);
     check_m8_visual_material_contracts(root, findings);
     check_compressed_asset_proof_contracts(root, findings);
+    check_asset_load_report_contracts(root, findings);
     require_contains(
         root,
         findings,
@@ -63,13 +65,6 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
         root,
         findings,
         "ASSETS-M8",
-        "src/assets/scene_loading.rs",
-        &["load_scene_with_progress"],
-    );
-    require_contains(
-        root,
-        findings,
-        "ASSETS-M8",
         "src/assets/texture.rs",
         &[
             "validate_texture_source_format",
@@ -79,37 +74,6 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "TextureSourceFormat::Jpeg",
             "decode_jpeg_rgba8",
             "image::ImageFormat::Jpeg",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "ASSETS-M8",
-        "src/assets/load.rs",
-        &[
-            "pub struct AssetLoadControl",
-            "pub struct AssetLoadOptions",
-            "pub struct AssetLoadReport",
-            "pub enum AssetLoadProgress",
-            "pub struct AssetMaterialFallback",
-            "material_index",
-            "strict_textures",
-            "with_strict_textures",
-            "progress_events",
-            "emit_progress",
-            "AssetError::Cancelled",
-        ],
-    );
-    require_contains(
-        root,
-        findings,
-        "ASSETS-M8",
-        "src/assets/scene_loading.rs",
-        &[
-            "load_scene_with_report",
-            "load_scene_with_options",
-            "load_scene_with_report_options",
-            "load_scene_controlled",
         ],
     );
     require_contains(

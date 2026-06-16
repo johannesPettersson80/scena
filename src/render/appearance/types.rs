@@ -124,8 +124,6 @@ pub struct AppearanceFixV1 {
     pub target_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_handle: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub patch: Option<serde_json::Value>,
     pub help: String,
 }
 

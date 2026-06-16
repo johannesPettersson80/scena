@@ -42,6 +42,7 @@ pub(in crate::render) struct PreparedPrimitive {
     original_vertex_offset: u32,
     tint: Color,
     gpu_triangle_path: bool,
+    double_sided: bool,
 }
 
 impl PreparedPrimitive {
@@ -56,6 +57,7 @@ impl PreparedPrimitive {
             original_vertex_offset: 0,
             tint,
             gpu_triangle_path: true,
+            double_sided: false,
         }
     }
 
@@ -74,6 +76,11 @@ impl PreparedPrimitive {
 
     pub(in crate::render) const fn without_gpu_triangle_path(mut self) -> Self {
         self.gpu_triangle_path = false;
+        self
+    }
+
+    pub(in crate::render) const fn with_double_sided(mut self, double_sided: bool) -> Self {
+        self.double_sided = double_sided;
         self
     }
 
@@ -111,6 +118,10 @@ impl PreparedPrimitive {
 
     pub(in crate::render) const fn gpu_triangle_path(&self) -> bool {
         self.gpu_triangle_path
+    }
+
+    pub(in crate::render) const fn double_sided(&self) -> bool {
+        self.double_sided
     }
 
     pub(in crate::render) fn world_from_model(&self) -> [f32; 16] {

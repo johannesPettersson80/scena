@@ -614,11 +614,17 @@ fn assert_no_reason(report: &VisibilityDiagnosisReportV1, code: &str) {
 }
 
 fn assert_fix(report: &VisibilityDiagnosisReportV1, action: &str) {
-    assert!(
-        report.fixes.iter().any(|fix| fix.action == action),
-        "expected fix {action} in {:#?}",
-        report.fixes
-    );
+    let fix = report
+        .fixes
+        .iter()
+        .find(|fix| fix.action == action)
+        .unwrap_or_else(|| panic!("expected fix {action} in {:#?}", report.fixes));
+    if action == "frame_bounds" {
+        assert!(
+            fix.patch.is_some(),
+            "frame_bounds fixes must carry a visual_patch camera payload: {fix:#?}"
+        );
+    }
 }
 
 fn assert_reason_code(reasons: &[scena::RenderIntrospectionReasonV1], code: &str) {

@@ -1,7 +1,4 @@
-use scena::{
-    Assets, Color, CursorPosition, GeometryDesc, InteractionStyle, MaterialDesc, Renderer, Scene,
-    Viewport,
-};
+use scena::{Assets, Color, CursorPosition, GeometryDesc, MaterialDesc, Renderer, Scene, Viewport};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let assets = Assets::new();
@@ -15,14 +12,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     scene.set_active_camera(camera)?;
 
     let mut renderer = Renderer::headless(128, 128)?;
-    renderer.set_hover_style(InteractionStyle::outline(
-        Color::from_srgb_u8(255, 210, 64),
-        2.0,
-    ));
-    renderer.set_selection_style(InteractionStyle::outline(
-        Color::from_srgb_u8(64, 160, 255),
-        3.0,
-    ));
     renderer.prepare_with_assets(&mut scene, &assets)?;
 
     let viewport = Viewport::new(128, 128, 1.0).expect("static viewport is valid");
@@ -45,10 +34,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Step 2 — select on a primary-button click: simulate a mouse-down
     // event at the same position. This updates both `interaction().hover()`
-    // and `interaction().primary_selection()` so the host can apply the
-    // selection style on top of the existing hover style. In a real
-    // interactive loop this is the path the host wires to pointer-down
-    // events.
+    // and `interaction().primary_selection()`. In a real interactive loop this
+    // is the path the host wires to pointer-down events.
     scene.pick_and_select_with_assets(
         camera,
         CursorPosition::physical(64.0, 64.0),

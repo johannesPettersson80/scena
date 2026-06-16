@@ -73,8 +73,8 @@ All notable user-facing changes are recorded here.
   the `inspection` feature.
 - Added `scena.animation_introspection.v1` observed transform values for
   `scena verify animation --expect-translations`, including sampled transforms,
-  expected translations, tolerance results, and fail-closed
-  `expected_value_mismatch` diagnostics.
+  explicit `--expect-node-handle` binding, expected translations, tolerance
+  results, and fail-closed `expected_value_mismatch` diagnostics.
 - Added stricter `scena verify interaction` assertions for cleared hover and
   selection state, with native CLI coverage for pick hits, misses, wrong
   handles, hover enter/leave, selection set/clear, and CSS-vs-physical pixel
@@ -130,8 +130,9 @@ All notable user-facing changes are recorded here.
 - Added `scena.asset_doctor.v1` runtime asset doctor reports through
   `Assets::doctor_asset_path()`, `Assets::doctor_loaded_asset()`,
   SceneHost native/WASM JSON methods, and the `scena doctor` CLI, with stable
-  finding codes, help text, suggested fixes, and browser proof for a broken
-  asset diagnosis.
+  finding codes, help text, suggested fixes, documented `ok` semantics
+  (`ok=true` means no error-severity findings, not warning-free asset
+  completeness), and browser proof for a broken asset diagnosis.
 - Added measurement overlay primitives for CAD/documentation views:
   distance, angle, bounds-dimension reports, host-supplied `UnitFormat`
   formatting, and line plus optional label rendering through
@@ -147,16 +148,17 @@ All notable user-facing changes are recorded here.
 - Added `ExplodedView` and `ExplodedViewPlan` for reversible presentation-only
   assembly exploded views, plus `SceneHostCore::exploded_view_patch_json()` for
   emitting existing `scena.visual_patch.v1` transform or eased-transform
-  channels.
+  channels with a metadata-carried restore patch for JSON/WASM hosts.
 - Added SceneHost named visual states via
   `scena.scene_host_visual_state.v1` and
   `scena.scene_host_visual_states.v1`, storing host-named `VisualPatchV1`
   presets with opaque metadata and deterministic inventory/application APIs.
-- Added real embedded-atlas label text rendering for `LabelDesc::sdf()` and
-  `LabelDesc::msdf()`: stable text metrics, screen-sized camera-facing glyph
+- Added embedded 5x7 glyph-cell label text rendering for `LabelDesc::sdf()`
+  and `LabelDesc::msdf()`: stable text metrics, screen-sized camera-facing
   billboards, optional background/halo styling, native visual proof, a
   many-label benchmark artifact, and WebGL2 browser proof for a dense label
-  helper scene.
+  helper scene. The SDF/MSDF enum values are preserved as API intent; the 1.7
+  renderer path does not yet generate distance-field glyphs.
 - Added callout and leader-line helpers for node, world, anchor, and connector
   targets, with SceneHost/WASM node and world callout entrypoints that share
   annotation anchor IDs with the `labels` visual-patch channel.
@@ -167,6 +169,12 @@ All notable user-facing changes are recorded here.
 
 ### Changed
 
+- Hardened agent-facing repair and placement contracts: patch-less
+  presentation repairs such as `frame_bounds` now fail closed as
+  host-input-required instead of reporting `auto_fixable=true`, placement
+  result transforms serialize with three-decimal stable JSON numbers, and
+  `doctor --full` now directly pins the `scena.visual_repair_plan.v1` and
+  `scena.agent_loop_result.v1` stable fixtures.
 - Updated transmission/IOR/volume asset guidance and glass preset docs to
   reflect the proven physical-glass lane: attached GPU-device native, WebGPU,
   and WebGL2 capability rows can report

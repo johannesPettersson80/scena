@@ -7,11 +7,6 @@ use super::{InstanceSetKey, NodeKey, NodeKind, Scene, Transform};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InstanceId(u64);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InstanceCullingPolicy {
-    CpuBoundingBoxFallback,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Instance {
     id: InstanceId,
@@ -26,7 +21,6 @@ pub struct InstanceSet {
     material: MaterialHandle,
     instances: Vec<Instance>,
     next_id: u64,
-    culling_policy: InstanceCullingPolicy,
 }
 
 impl Scene {
@@ -189,7 +183,6 @@ impl InstanceSet {
             material,
             instances: Vec::new(),
             next_id: 1,
-            culling_policy: InstanceCullingPolicy::CpuBoundingBoxFallback,
         }
     }
 
@@ -199,10 +192,6 @@ impl InstanceSet {
 
     pub const fn material(&self) -> MaterialHandle {
         self.material
-    }
-
-    pub const fn culling_policy(&self) -> InstanceCullingPolicy {
-        self.culling_policy
     }
 
     pub fn len(&self) -> usize {

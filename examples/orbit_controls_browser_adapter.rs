@@ -24,9 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     scene.mesh(geometry, material).add()?;
     let camera = scene.add_default_camera()?;
 
-    let mut controls = OrbitControls::new(Vec3::ZERO, 2.0)
-        .focus(Vec3::ZERO, 2.5)
-        .with_damping(0.12);
+    let mut controls = OrbitControls::new(Vec3::ZERO, 2.0).focus(Vec3::ZERO, 2.5);
     controls.handle_pointer(PointerEvent::primary_pressed(160.0, 120.0));
     controls.handle_pointer(browser_pointer_drag(166.0, 118.0, 6.0, -2.0));
     controls.handle_pointer(browser_wheel(166.0, 118.0, -120.0));

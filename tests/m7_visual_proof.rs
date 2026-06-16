@@ -150,7 +150,7 @@ fn render_labels() -> VisualArtifact {
     scene
         .add_label(
             scene.root(),
-            LabelDesc::msdf("M7").with_color(Color::from_linear_rgb(0.1, 1.0, 0.3)),
+            LabelDesc::bitmap("M7").with_color(Color::from_linear_rgb(0.1, 1.0, 0.3)),
             Transform::default(),
         )
         .expect("label inserts");
@@ -166,7 +166,6 @@ fn render_controls() -> VisualArtifact {
     scene.mesh(geometry, material).add().expect("mesh inserts");
     let camera = scene.add_default_camera().expect("camera inserts");
     OrbitControls::new(Vec3::ZERO, 2.5)
-        .with_damping(0.2)
         .focus(Vec3::ZERO, 2.0)
         .apply_to_scene(&mut scene, camera)
         .expect("controls apply");
@@ -331,7 +330,7 @@ fn render_industrial_static_scene() -> VisualArtifact {
     scene
         .add_label(
             scene.root(),
-            LabelDesc::sdf("Line A"),
+            LabelDesc::bitmap("Line A"),
             Transform::at(Vec3::new(0.0, 0.35, 0.0)),
         )
         .expect("label inserts");

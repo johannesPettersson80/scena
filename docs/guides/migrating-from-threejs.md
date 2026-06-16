@@ -137,24 +137,22 @@ The named primitives are paired with [`Color::WHITE`], [`Color::CHARCOAL`],
 `frosted_glass`, `MaterialDesc::rubber`, `Background::Studio` /
 `DarkStudio` / `NeutralGray` / `Sky` / `Transparent`, and
 `AutoExposureConfig::product_studio` / `indoor` / `outdoor` / `mixed`.
-Raw constructors (`Color::from_srgb_u8`, raw FOV,
-`with_damping(<f32>)`) remain available as escape hatches; the named
-primitives are the first-path defaults.
+Raw constructors (`Color::from_srgb_u8` and raw FOV) remain available as
+escape hatches; the named primitives are the first-path defaults.
 
 ## Camera Controls
 
-Three.js `OrbitControls` is configured by setting `enableDamping = true`,
-`dampingFactor = 0.05`, and `autoRotate = true` separately. `scena`
-[`OrbitControls`] composes those choices into named presets:
+Three.js `OrbitControls` is configured by toggling several independent
+properties. `scena` [`OrbitControls`] starts from the framing result and keeps
+host-ticked presentation modes explicit:
 
 ```rust
 let controls = OrbitControls::from_framing(framing)
-    .cinematic()                          // heavy damping, product feel
     .zoom_limits_bounds_relative(0.5, 4.0);
 
 let presentation = OrbitControls::from_framing(framing).presentation();
 let turntable = OrbitControls::from_framing(framing).turntable(6.0);
-let direct = OrbitControls::from_framing(framing).snappy();
+let direct = OrbitControls::from_framing(framing);
 ```
 
 [`Color::WHITE`]: ../api.md

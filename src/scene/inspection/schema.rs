@@ -108,7 +108,6 @@ pub struct SceneDrawInspectionV1 {
     pub index_count: usize,
     pub local_bounds: Aabb,
     pub world_transform: Transform,
-    pub visible: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -225,7 +224,6 @@ impl SceneInspectionReport {
                         index_count: draw.index_count,
                         local_bounds: draw.local_bounds,
                         world_transform: draw.world_transform,
-                        visible: draw.visible,
                     })
                 })
                 .collect(),

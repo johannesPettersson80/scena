@@ -3,7 +3,8 @@ use wasm_bindgen::prelude::JsValue;
 
 use super::super::{WorkflowScene, add_default_camera};
 use crate::{
-    Aabb, AssetLoadOptions, Assets, Color, DirectionalLight, MaterialDesc, Scene, Transform, Vec3,
+    Aabb, AssetLoadOptions, Assets, Color, DirectionalLight, Light, MaterialDesc, Scene, Transform,
+    Vec3,
 };
 
 pub(super) async fn source_gltf_materials_scene() -> Result<WorkflowScene, JsValue> {
@@ -83,12 +84,27 @@ pub(super) async fn source_gltf_materials_scene() -> Result<WorkflowScene, JsVal
         .add()
         .map_err(|error| JsValue::from_str(&format!("source material light failed: {error:?}")))?;
     let camera = add_default_camera(&mut scene)?;
+    let frame_bounds = Aabb::new(Vec3::new(-1.0, -0.65, -0.3), Vec3::new(1.0, 0.65, 0.3));
     scene
-        .frame(
-            camera,
-            Aabb::new(Vec3::new(-1.0, -0.65, -0.3), Vec3::new(1.0, 0.65, 0.3)),
-        )
+        .frame(camera, frame_bounds)
         .map_err(|error| JsValue::from_str(&format!("source material frame failed: {error:?}")))?;
+    let lights = scene
+        .light_nodes()
+        .map(|(_, _, light, _)| match light {
+            Light::Directional(light) => json!({
+                "kind": "directional",
+                "illuminance_lux": light.illuminance_lux(),
+            }),
+            Light::Point(light) => json!({
+                "kind": "point",
+                "intensity_candela": light.intensity_candela(),
+            }),
+            Light::Spot(light) => json!({
+                "kind": "spot",
+                "intensity_candela": light.intensity_candela(),
+            }),
+        })
+        .collect::<Vec<_>>();
 
     Ok(WorkflowScene {
         assets,
@@ -102,8 +118,11 @@ pub(super) async fn source_gltf_materials_scene() -> Result<WorkflowScene, JsVal
             "source_base_color_decoded": source_base_color_decoded,
             "source_texture_bindings": source_texture_bindings,
             "source_texture_roles": source_texture_roles,
-            "camera_framing": "Scene::frame",
-            "lighting": "DirectionalLight",
+            "frame_bounds": {
+                "min": [frame_bounds.min.x, frame_bounds.min.y, frame_bounds.min.z],
+                "max": [frame_bounds.max.x, frame_bounds.max.y, frame_bounds.max.z],
+            },
+            "lights": lights,
             "load_warnings": report.warnings().len(),
             "comparison_lanes": ["generated-unlit", "source-gltf-material", "generated-pbr"],
         }),

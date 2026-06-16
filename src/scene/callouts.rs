@@ -39,7 +39,6 @@ pub enum CalloutAnchor {
 pub struct CalloutReport {
     pub id: String,
     pub anchor_id: String,
-    pub anchor_kind: CalloutAnchorKind,
     pub leader_line_node: NodeKey,
     pub label_node: NodeKey,
     pub label: LabelKey,
@@ -57,7 +56,6 @@ pub(crate) struct SceneCalloutState {
 
 #[derive(Debug, Clone)]
 struct ResolvedCalloutAnchor {
-    kind: CalloutAnchorKind,
     annotation_anchor: AnnotationAnchor,
     parent: NodeKey,
     local_anchor_position: Vec3,
@@ -215,7 +213,7 @@ impl Scene {
             .add()?;
         let (label, label_node) = self.add_label_node(
             resolved.parent,
-            LabelDesc::sdf(callout.text())
+            LabelDesc::bitmap(callout.text())
                 .with_color(callout.color())
                 .with_background(Color::BLACK)
                 .with_size(callout.label_size()),
@@ -234,7 +232,6 @@ impl Scene {
         Ok(CalloutReport {
             id: callout.id.clone(),
             anchor_id: callout.id,
-            anchor_kind: resolved.kind,
             leader_line_node: line_node,
             label_node,
             label,
@@ -276,7 +273,6 @@ impl Scene {
                 }
                 validate_point(local_offset, "callout node local offset")?;
                 Ok(ResolvedCalloutAnchor {
-                    kind: CalloutAnchorKind::Node,
                     annotation_anchor: AnnotationAnchor::node(callout.id(), node, local_offset),
                     parent: node,
                     local_anchor_position: local_offset,
@@ -285,7 +281,6 @@ impl Scene {
             CalloutAnchor::World { position } => {
                 validate_point(position, "callout world position")?;
                 Ok(ResolvedCalloutAnchor {
-                    kind: CalloutAnchorKind::World,
                     annotation_anchor: AnnotationAnchor::world(callout.id(), position),
                     parent: self.root(),
                     local_anchor_position: position,
@@ -303,7 +298,6 @@ impl Scene {
                 }
                 let local_position = frame.local_transform().translation;
                 Ok(ResolvedCalloutAnchor {
-                    kind: CalloutAnchorKind::Anchor,
                     annotation_anchor: AnnotationAnchor::node(
                         callout.id(),
                         frame.node(),
@@ -325,7 +319,6 @@ impl Scene {
                 }
                 let local_position = frame.local_transform().translation;
                 Ok(ResolvedCalloutAnchor {
-                    kind: CalloutAnchorKind::Connector,
                     annotation_anchor: AnnotationAnchor::node(
                         callout.id(),
                         frame.node(),
@@ -344,7 +337,6 @@ impl SceneCalloutState {
         CalloutReport {
             id: id.to_owned(),
             anchor_id: id.to_owned(),
-            anchor_kind: self.anchor.kind(),
             leader_line_node: self.leader_line_node,
             label_node: self.label_node,
             label: self.label,

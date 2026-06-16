@@ -193,7 +193,7 @@ pub async fn load_connector_snap_from_bytes(
                 .viewport(viewport_width.max(1), viewport_height.max(1)),
         )
         .map_err(|err| JsValue::from_str(&format!("connector frame_bounds failed: {err:?}")))?;
-    let controls = OrbitControls::from_framing(framing).cinematic();
+    let controls = OrbitControls::from_framing(framing);
     controls.apply_to_scene(&mut scene, camera).map_err(|err| {
         JsValue::from_str(&format!("apply initial connector camera failed: {err:?}"))
     })?;

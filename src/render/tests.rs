@@ -1,5 +1,4 @@
 use crate::assets::Assets;
-use crate::diagnostics::DebugOverlay;
 use crate::geometry::{GeometryDesc, Primitive, Vertex};
 use crate::material::{Color, MaterialDesc};
 use crate::platform::SurfaceEvent;
@@ -416,18 +415,18 @@ fn environment_and_debug_changes_reject_transform_only_gpu_template_reuse() {
         second.prepared_primitive_collections > first.prepared_primitive_collections,
         "environment changes must force a full prepare"
     );
-    renderer.set_debug_overlay(DebugOverlay::Wireframe);
+    renderer.clear_environment();
     scene
         .set_transform(moving, Transform::at(Vec3::new(0.0, 0.0, 0.0)))
         .expect("mesh transform updates again");
     renderer
         .prepare_with_assets(&mut scene, &assets)
-        .expect("debug-changed prepare succeeds");
+        .expect("environment-clear prepare succeeds");
     let third = renderer.prepare_telemetry_for_test();
 
     assert!(
         third.prepared_primitive_collections > second.prepared_primitive_collections,
-        "debug draw-shape changes must force a full prepare"
+        "environment changes must keep forcing full prepare"
     );
 }
 

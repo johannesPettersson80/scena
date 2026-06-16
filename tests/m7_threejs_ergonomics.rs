@@ -1,7 +1,8 @@
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::cell::Cell;
 use std::fs;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use scena::{
@@ -18,14 +19,22 @@ use scena::{
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
-static COUNT_ALLOCATIONS: AtomicBool = AtomicBool::new(false);
 static ALLOCATION_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+thread_local! {
+    static COUNT_ALLOCATIONS: Cell<bool> = const { Cell::new(false) };
+}
+
+fn set_allocation_counting(enabled: bool) {
+    COUNT_ALLOCATIONS.with(|counting| counting.set(enabled));
+}
 
 struct CountingAllocator;
 
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if COUNT_ALLOCATIONS.load(Ordering::Relaxed) {
+        let should_count = COUNT_ALLOCATIONS.try_with(Cell::get).unwrap_or(false);
+        if should_count {
             ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
         }
         // SAFETY: this allocator only counts allocation calls and delegates all allocation
@@ -179,6 +188,99 @@ fn m7_connector_magnet_preview_reports_snap_range_and_visual_cue_without_mutatin
     assert!(!far.is_snap_ready());
     assert_eq!(far.visual_cue(), ConnectionMagnetVisualCue::OutOfRange);
     assert_eq!(far.visual_cue().css_class(), "scena-magnet-out-of-range");
+}
+
+#[test]
+fn m7_connect_rejects_out_of_range_snap_tolerance_without_mutating() {
+    let mut scene = Scene::new();
+    let source = scene
+        .add_empty(scene.root(), Transform::IDENTITY)
+        .expect("source node inserts");
+    let target = scene
+        .add_empty(scene.root(), Transform::at(Vec3::new(0.20, 0.0, 0.0)))
+        .expect("target node inserts");
+
+    let error = scene
+        .connect(
+            ConnectorFrame::new(source, Transform::IDENTITY).with_snap_tolerance(0.05),
+            ConnectorFrame::new(target, Transform::IDENTITY),
+            ConnectOptions::default(),
+        )
+        .expect_err("snap tolerance gates actual connection apply");
+
+    assert!(matches!(
+        error,
+        ConnectionError::SnapToleranceExceeded {
+            distance,
+            tolerance
+        } if (distance - 0.20).abs() < 0.0001 && (tolerance - 0.05).abs() < 0.0001
+    ));
+    assert_vec3_near(
+        scene
+            .world_transform(source)
+            .expect("source world transform exists")
+            .translation,
+        Vec3::ZERO,
+    );
+}
+
+#[test]
+fn m7_clearance_hint_changes_connection_gap() {
+    let mut scene = Scene::new();
+    let source = scene
+        .add_empty(scene.root(), Transform::IDENTITY)
+        .expect("source node inserts");
+    let target = scene
+        .add_empty(scene.root(), Transform::IDENTITY)
+        .expect("target node inserts");
+
+    let preview = scene
+        .connect(
+            ConnectorFrame::new(source, Transform::IDENTITY).with_clearance_hint(0.25),
+            ConnectorFrame::new(target, Transform::IDENTITY),
+            ConnectOptions::default(),
+        )
+        .expect("clearance hint applies as minimum axial gap");
+
+    assert_vec3_near(
+        preview.resolved_transform().translation,
+        Vec3::new(0.25, 0.0, 0.0),
+    );
+    assert_vec3_near(
+        scene
+            .world_transform(source)
+            .expect("source world transform exists")
+            .translation,
+        Vec3::new(0.25, 0.0, 0.0),
+    );
+}
+
+#[test]
+fn m7_connector_roll_policy_drives_default_connection_roll() {
+    let mut scene = Scene::new();
+    let source = scene
+        .add_empty(scene.root(), Transform::IDENTITY.rotate_x_deg(100.0))
+        .expect("source node inserts");
+    let target = scene
+        .add_empty(scene.root(), Transform::IDENTITY)
+        .expect("target node inserts");
+
+    scene
+        .connect(
+            ConnectorFrame::new(source, Transform::IDENTITY)
+                .with_roll_policy(ConnectorRollPolicy::ChooseNearest),
+            ConnectorFrame::new(target, Transform::IDENTITY),
+            ConnectOptions::default(),
+        )
+        .expect("connector roll policy applies when options use default roll");
+
+    assert_quat_same_orientation(
+        scene
+            .world_transform(source)
+            .expect("source world transform exists")
+            .rotation,
+        Transform::IDENTITY.rotate_x_deg(90.0).rotation,
+    );
 }
 
 #[test]
@@ -555,7 +657,7 @@ fn m7_connector_frame_metadata_guides_compatibility_without_domain_logic() {
         .add_empty(scene.root(), Transform::IDENTITY)
         .expect("source inserts");
     let target = scene
-        .add_empty(scene.root(), Transform::at(Vec3::new(2.0, 0.0, 0.0)))
+        .add_empty(scene.root(), Transform::at(Vec3::new(0.005, 0.0, 0.0)))
         .expect("target inserts");
 
     let source_connector = ConnectorFrame::new(source, Transform::IDENTITY)
@@ -595,7 +697,7 @@ fn m7_connector_frame_metadata_guides_compatibility_without_domain_logic() {
             .world_transform(source)
             .expect("source world transform exists")
             .translation,
-        Vec3::new(2.0, 0.0, 0.0),
+        Vec3::new(0.055, 0.0, 0.0),
     );
 }
 
@@ -661,7 +763,6 @@ fn m7_anchor_frame_registry_uses_typed_handles_and_metadata() {
     let node = scene
         .add_empty(scene.root(), Transform::IDENTITY)
         .expect("anchor host inserts");
-    let bounds = Aabb::new(Vec3::new(-0.1, -0.1, -0.1), Vec3::new(0.1, 0.1, 0.1));
 
     let anchor = scene
         .add_anchor(
@@ -669,7 +770,6 @@ fn m7_anchor_frame_registry_uses_typed_handles_and_metadata() {
                 .named("mount")
                 .with_tag("assembly")
                 .with_label("Mounting point")
-                .with_bounds_hint(bounds)
                 .with_source_units(SourceUnits::Millimeters)
                 .with_source_coordinate_system(SourceCoordinateSystem::ZUpRightHanded),
         )
@@ -680,7 +780,6 @@ fn m7_anchor_frame_registry_uses_typed_handles_and_metadata() {
     assert_eq!(resolved.name(), Some("mount"));
     assert_eq!(resolved.label(), Some("Mounting point"));
     assert!(resolved.tags().contains("assembly"));
-    assert_eq!(resolved.bounds_hint(), Some(bounds));
     assert_eq!(resolved.source_units(), SourceUnits::Millimeters);
     assert_eq!(
         resolved.source_coordinate_system(),
@@ -755,7 +854,7 @@ fn m7_imported_gltf_connectors_have_kind_lookup_and_stale_errors() {
     );
 
     let source = scene
-        .add_empty(scene.root(), Transform::IDENTITY)
+        .add_empty(scene.root(), Transform::at(Vec3::new(0.0, 0.09, 0.0)))
         .expect("source inserts");
     scene
         .connect(
@@ -769,7 +868,7 @@ fn m7_imported_gltf_connectors_have_kind_lookup_and_stale_errors() {
             .world_transform(source)
             .expect("source world transform exists")
             .translation,
-        Vec3::new(0.0, 0.1, 0.0),
+        Vec3::new(0.01, 0.1, 0.0),
     );
 
     let replacement = scene
@@ -1314,6 +1413,91 @@ fn m7_import_exposes_source_units_and_coordinate_system_for_placement_diagnostic
         import.source_coordinate_system(),
         SourceCoordinateSystem::ZUpRightHanded
     );
+}
+
+#[test]
+fn m7_imported_connector_unit_mismatch_returns_structured_error() {
+    let assets = Assets::new();
+    let scene_asset =
+        pollster::block_on(assets.load_scene("tests/assets/gltf/connector_debug_scene.gltf"))
+            .expect("connector fixture loads");
+    let mut scene = Scene::new();
+    let feet_import = scene
+        .instantiate_with(
+            &scene_asset,
+            ImportOptions::gltf_default().with_source_units(SourceUnits::Feet),
+        )
+        .expect("feet import instantiates");
+    let meter_import = scene
+        .instantiate(&scene_asset)
+        .expect("meter import instantiates");
+
+    let error = scene
+        .preview_connection(
+            ConnectorFrame::from_import_connector(
+                feet_import
+                    .connector("mount")
+                    .expect("feet connector resolves"),
+            ),
+            ConnectorFrame::from_import_connector(
+                meter_import
+                    .connector("mount")
+                    .expect("meter connector resolves"),
+            ),
+            ConnectOptions::default(),
+        )
+        .expect_err("import-sourced unit mismatch must fail loudly");
+
+    assert!(matches!(
+        error,
+        ConnectionError::UnitMismatch {
+            source_units: SourceUnits::Feet,
+            target_units: SourceUnits::Meters
+        }
+    ));
+}
+
+#[test]
+fn m7_imported_connector_coordinate_mismatch_returns_structured_error() {
+    let assets = Assets::new();
+    let scene_asset =
+        pollster::block_on(assets.load_scene("tests/assets/gltf/connector_debug_scene.gltf"))
+            .expect("connector fixture loads");
+    let mut scene = Scene::new();
+    let z_up_import = scene
+        .instantiate_with(
+            &scene_asset,
+            ImportOptions::gltf_default()
+                .with_source_coordinate_system(SourceCoordinateSystem::ZUpRightHanded),
+        )
+        .expect("Z-up import instantiates");
+    let gltf_import = scene
+        .instantiate(&scene_asset)
+        .expect("glTF import instantiates");
+
+    let error = scene
+        .preview_connection(
+            ConnectorFrame::from_import_connector(
+                z_up_import
+                    .connector("mount")
+                    .expect("Z-up connector resolves"),
+            ),
+            ConnectorFrame::from_import_connector(
+                gltf_import
+                    .connector("mount")
+                    .expect("glTF connector resolves"),
+            ),
+            ConnectOptions::default(),
+        )
+        .expect_err("import-sourced coordinate mismatch must fail loudly");
+
+    assert!(matches!(
+        error,
+        ConnectionError::CoordinateSystemMismatch {
+            source_coordinate_system: SourceCoordinateSystem::ZUpRightHanded,
+            target_coordinate_system: SourceCoordinateSystem::GltfYUpRightHanded
+        }
+    ));
 }
 
 #[test]
@@ -2669,10 +2853,10 @@ fn m7_viewer_operations_dirty_prepare_without_persistent_resource_growth() {
         controls.handle_pointer(PointerEvent::primary_pressed(32.0, 32.0)),
         scena::OrbitControlAction::BeginOrbit
     );
+    set_allocation_counting(true);
     ALLOCATION_COUNT.store(0, Ordering::Relaxed);
-    COUNT_ALLOCATIONS.store(true, Ordering::Relaxed);
     let control_action = controls.handle_pointer(PointerEvent::moved(34.0, 31.0, 2.0, -1.0));
-    COUNT_ALLOCATIONS.store(false, Ordering::Relaxed);
+    set_allocation_counting(false);
     assert_eq!(control_action, scena::OrbitControlAction::Orbit);
     assert_eq!(
         ALLOCATION_COUNT.load(Ordering::Relaxed),
@@ -2841,7 +3025,7 @@ fn benchmark_m7_camera_framing() -> serde_json::Value {
 fn benchmark_m7_controls_input() -> serde_json::Value {
     let mut scene = Scene::new();
     let camera = scene.add_default_camera().expect("camera inserts");
-    let mut controls = OrbitControls::new(Vec3::ZERO, 3.0).with_damping(0.2);
+    let mut controls = OrbitControls::new(Vec3::ZERO, 3.0);
 
     benchmark_m7_workflow("controls-input", || {
         controls.handle_pointer(PointerEvent::primary_pressed(8.0, 8.0));
@@ -2909,7 +3093,7 @@ fn benchmark_m7_labels() -> serde_json::Value {
         scene
             .add_label(
                 scene.root(),
-                LabelDesc::sdf("Pressure").with_size(14.0),
+                LabelDesc::bitmap("Pressure").with_size(14.0),
                 Transform::default(),
             )
             .expect("label inserts");
@@ -3009,12 +3193,12 @@ fn benchmark_m7_workflow(
     workflow: &'static str,
     operation: impl FnOnce() -> M7BenchmarkOutcome,
 ) -> serde_json::Value {
+    set_allocation_counting(true);
     ALLOCATION_COUNT.store(0, Ordering::Relaxed);
-    COUNT_ALLOCATIONS.store(true, Ordering::Relaxed);
     let start = Instant::now();
     let outcome = operation();
     let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
-    COUNT_ALLOCATIONS.store(false, Ordering::Relaxed);
+    set_allocation_counting(false);
     let allocations = ALLOCATION_COUNT.load(Ordering::Relaxed);
 
     serde_json::json!({
@@ -3164,13 +3348,10 @@ fn m7_controls_picking_units_camera_masks_and_static_batching_are_product_shaped
         .expect("camera mask updates");
     assert_eq!(scene.camera_layer_mask(camera), Some(0b0001));
 
-    let controls = OrbitControls::new(Vec3::ZERO, 2.0)
-        .with_damping(0.18)
-        .focus(Vec3::new(0.0, 0.0, 0.0), 3.0);
+    let controls = OrbitControls::new(Vec3::ZERO, 2.0).focus(Vec3::new(0.0, 0.0, 0.0), 3.0);
     controls
         .apply_to_scene(&mut scene, camera)
         .expect("controls apply camera transform");
-    assert_eq!(controls.damping_factor(), 0.18);
     assert!(
         scene
             .node(scene.camera_node(camera).expect("camera node exists"))
@@ -3251,7 +3432,7 @@ fn m7_resize_dpr_controls_helpers_anchors_and_diagnostics_are_product_shaped() {
     assert_eq!(renderer.stats().target_width, 160);
     assert_eq!(renderer.stats().target_height, 80);
 
-    let mut controls = OrbitControls::new(Vec3::ZERO, 3.0).with_damping(0.25);
+    let mut controls = OrbitControls::new(Vec3::ZERO, 3.0);
     assert_eq!(
         controls.handle_pointer(PointerEvent::primary_pressed(10.0, 10.0)),
         scena::OrbitControlAction::BeginOrbit
@@ -3584,6 +3765,9 @@ fn m7_first_assembly_helper_connects_imported_connectors_by_name() {
         .instantiate(&scene_asset)
         .expect("target connector fixture instantiates");
     scene
+        .set_transform(source.roots()[0], Transform::at(Vec3::new(0.99, 0.0, 0.0)))
+        .expect("source starts within declared snap tolerance");
+    scene
         .set_transform(target.roots()[0], Transform::at(Vec3::new(1.0, 0.0, 0.0)))
         .expect("target transform updates");
 
@@ -3602,7 +3786,7 @@ fn m7_first_assembly_helper_connects_imported_connectors_by_name() {
             .world_transform(source.roots()[0])
             .expect("source root remains in scene")
             .translation,
-        Vec3::new(1.0, 0.0, 0.0),
+        Vec3::new(1.01, 0.0, 0.0),
     );
 }
 
@@ -4248,7 +4432,6 @@ fn m7_scene_inspection_with_assets_reports_draw_list_entries() {
         instance_draw.world_transform().translation,
         Vec3::new(2.0, 0.0, 0.0)
     );
-    assert!(instance_draw.visible());
 }
 
 #[cfg(feature = "inspection")]

@@ -1165,8 +1165,7 @@ plus its generated frame sequence shows `presentation()` and
 `turntable(6.0)` changing camera pose over time.
 
 ```rust
-OrbitControls::from_framing(framing).cinematic()      // heavy damping
-OrbitControls::from_framing(framing).snappy()         // light damping
+OrbitControls::from_framing(framing)                  // direct user orbit
 OrbitControls::from_framing(framing).presentation()   // medium + slow auto-rotate
 OrbitControls::from_framing(framing).turntable(6.0)   // auto-rotate, 6 RPM
 ```
@@ -1742,16 +1741,13 @@ specific competitor primitive.
   Visual proof: browser-demo shipped for browser input-to-motion via the
   generated Playwright artifact plus
   `target/gate-artifacts/scena-viewer-mobile-a11y-browser-proof.png`.
-- **Picking + outline + hover.** Status: **[shipped]** for the library
+- **Picking + hover + selection.** Status: **[shipped]** for the library
   renderer surface. Owner: `src/picking.rs` + `src/render/`.
   `Scene::pick_and_select_with_assets` and
   `Scene::pick_and_hover_with_assets` update typed interaction state;
-  `InteractionStyle::outline` plus `Renderer::set_hover_style` and
-  `Renderer::set_selection_style` make hover/selection visible in
-  rendered output; viewer callbacks already route through the same
-  picking path. Proof:
-  `examples_visual_picking_selection_hover_renders_styled_pick_to_ppm`
-  renders the styled pick path, and doctor rule `PICKING-OUTLINE-HOVER`
+  viewer callbacks already route through the same picking path. Proof:
+  `examples_visual_picking_selection_hover_renders_pick_state_to_ppm`
+  renders the pick state path, and doctor rule `PICKING-OUTLINE-HOVER`
   pins the source API, guide, checklist, and visual proof. The future
   `<scena-viewer>` live demo can still add a richer browser recording,
   but the renderer/library contract is closed.
@@ -1918,7 +1914,7 @@ teachable.
       `vertical_fov: Angle::from_degrees(<lit>)`, raw FOV setter calls, or
       equivalent. Do not key the rule to dead API names like
       `with_fov(<float>)`.
-- [x] Ban inline `with_damping(<float>)` in `src/demo_page*` if a named
+- [x] Ban removed orbit damping helper calls in `src/demo_page*` if a named
       damping preset would do.
 - [x] Ban inline `Quat::from_*(<float>, ...)` in `examples/` **except**
       in the dedicated transform escape-hatch example.

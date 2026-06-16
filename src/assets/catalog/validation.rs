@@ -53,7 +53,9 @@ impl<F: AssetFetcher> Assets<F> {
         validate_catalog_identity(catalog_asset, &mut findings);
         validate_declared_units(catalog_asset, &mut findings);
         validate_declared_coordinate_system(catalog_asset, &mut findings);
-        let preview = validate_preview(catalog_asset, &mut findings);
+        let mut preview = validate_preview(catalog_asset, &mut findings);
+        self.validate_preview_fetch(&mut preview, &mut findings)
+            .await;
 
         for required_file in &catalog_asset.required_files {
             self.validate_required_file(required_file, &mut findings)
@@ -132,6 +134,50 @@ impl<F: AssetFetcher> Assets<F> {
                 Some(required_file.to_owned()),
                 Some("required_files"),
             ));
+        }
+    }
+
+    async fn validate_preview_fetch(
+        &self,
+        preview: &mut Option<super::AssetReadinessPreviewV1>,
+        findings: &mut Vec<AssetReadinessFindingV1>,
+    ) {
+        let Some(preview) = preview.as_mut() else {
+            return;
+        };
+        if preview.kind != "image" {
+            return;
+        }
+        let Some(path) = preview.path.as_deref() else {
+            return;
+        };
+        let path = AssetPath::from(path.to_owned());
+        match self.fetcher.fetch(&path).await {
+            Ok(bytes) if !bytes.is_empty() => {
+                preview.status = "fetched".to_owned();
+            }
+            Ok(_) => {
+                preview.status = "empty".to_owned();
+                findings.push(finding(
+                    AssetReadinessSeverityV1::Error,
+                    "preview_empty",
+                    format!("preview image '{}' is empty", path.as_str()),
+                    "replace the preview image with non-empty PNG/JPEG/WebP bytes",
+                    Some(path.as_str().to_owned()),
+                    Some("preview.path"),
+                ));
+            }
+            Err(error) => {
+                preview.status = "missing".to_owned();
+                findings.push(finding(
+                    AssetReadinessSeverityV1::Error,
+                    "preview_fetch_failed",
+                    format!("preview image '{}' is unavailable: {error}", path.as_str()),
+                    "serve the preview image from the configured AssetFetcher or mark it generated",
+                    Some(path.as_str().to_owned()),
+                    Some("preview.path"),
+                ));
+            }
         }
     }
 }

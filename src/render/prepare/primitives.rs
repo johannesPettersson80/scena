@@ -343,7 +343,8 @@ fn append_triangle_primitives<F>(
                 primitive,
                 Some(source.node),
                 draw_uniform_tint(source.tint),
-            );
+            )
+            .with_double_sided(source.material.double_sided());
             push_material_pass_primitive(
                 primitive,
                 material_pass,

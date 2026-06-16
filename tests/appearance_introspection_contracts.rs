@@ -389,7 +389,7 @@ fn sorted_material_nodes(inspection: &scena::SceneInspectionReportV1) -> [u64; 2
     let mut draws = inspection
         .draw_list
         .iter()
-        .filter(|draw| draw.visible && draw.material.is_some())
+        .filter(|draw| draw.material.is_some())
         .collect::<Vec<_>>();
     draws.sort_by(|left, right| {
         left.world_transform
@@ -405,7 +405,7 @@ fn sorted_ramp_nodes(inspection: &scena::SceneInspectionReportV1) -> [u64; 3] {
     let mut draws = inspection
         .draw_list
         .iter()
-        .filter(|draw| draw.visible && draw.material.is_some())
+        .filter(|draw| draw.material.is_some())
         .collect::<Vec<_>>();
     draws.sort_by(|left, right| {
         left.world_transform

@@ -17,7 +17,18 @@ fn visual_repair_plans_presentation_and_reversible_content_repairs() {
     assert_eq!(presentation.risk, "presentation");
     assert_eq!(presentation.root_cause.as_deref(), Some("empty_frame"));
     assert_eq!(presentation.applied_actions[0].action, "frame_bounds");
-    assert!(presentation.visual_patch.is_none());
+    assert_eq!(
+        presentation.visual_patch,
+        Some(json!({
+            "schema": "scena.visual_patch.v1",
+            "camera": {
+                "target": [0.0, 0.0, 0.0],
+                "distance": 2.8,
+                "yaw_radians": 0.785,
+                "pitch_radians": 0.524
+            }
+        }))
+    );
     assert!(presentation.rerender_required);
 
     let diagnosis = hidden_node_diagnosis();
@@ -103,6 +114,14 @@ fn render_introspection_with_frame_fix() -> RenderIntrospectionReportV1 {
         }],
         "fixes": [{
             "action": "frame_bounds",
+            "patch": {
+                "camera": {
+                    "target": [0.0, 0.0, 0.0],
+                    "distance": 2.8,
+                    "yaw_radians": 0.785,
+                    "pitch_radians": 0.524
+                }
+            },
             "help": "frame the scene or target bounds before rendering again"
         }],
         "visible_pixel_fraction": 0.0,
@@ -118,10 +137,8 @@ fn render_introspection_with_frame_fix() -> RenderIntrospectionReportV1 {
             "hidden": 0,
             "drawn": 1,
             "culled": 0,
-            "clipped": 0,
             "transparent": 0,
-            "failed_material": 0,
-            "unknown_coverage": 1
+            "failed_material": 0
         },
         "nodes_detail": [],
         "artifacts": {

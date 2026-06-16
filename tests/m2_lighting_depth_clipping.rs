@@ -774,12 +774,14 @@ fn headless_gpu_directional_shadow_visibility_darkens_receiver_when_available() 
 #[test]
 fn equirectangular_hdr_environment_loading_records_source_contract() {
     let assets = Assets::new();
-    let environment =
-        pollster::block_on(assets.load_environment("tests/assets/environment/studio_1024x512.hdr"))
-            .expect("equirectangular HDR environment loads");
-    let duplicate =
-        pollster::block_on(assets.load_environment("tests/assets/environment/studio_1024x512.hdr"))
-            .expect("duplicate equirectangular HDR environment loads");
+    let environment = pollster::block_on(
+        assets.load_environment("tests/assets/environment/polyhaven/studio_small_03_1k.hdr"),
+    )
+    .expect("equirectangular HDR environment loads");
+    let duplicate = pollster::block_on(
+        assets.load_environment("tests/assets/environment/polyhaven/studio_small_03_1k.hdr"),
+    )
+    .expect("duplicate equirectangular HDR environment loads");
     assert_eq!(environment, duplicate);
 
     let desc = assets
@@ -791,8 +793,8 @@ fn equirectangular_hdr_environment_loading_records_source_contract() {
     );
     assert!(desc.is_equirectangular_hdr());
     assert_eq!(desc.source_dimensions(), Some((1024, 512)));
-    assert_eq!(desc.cubemap_resolution(), 0);
-    assert_eq!(desc.brdf_lut_size(), 0);
+    assert_eq!(desc.cubemap_resolution(), 256);
+    assert_eq!(desc.brdf_lut_size(), 64);
     assert!(desc.derivatives().is_empty());
 
     let error = pollster::block_on(assets.load_environment("tests/assets/environment/studio.exr"))
@@ -809,9 +811,10 @@ fn equirectangular_hdr_environment_loading_records_source_contract() {
 #[test]
 fn equirectangular_environment_prepare_generates_ibl_resources() {
     let assets = Assets::new();
-    let environment =
-        pollster::block_on(assets.load_environment("tests/assets/environment/studio_1024x512.hdr"))
-            .expect("equirectangular HDR environment loads");
+    let environment = pollster::block_on(
+        assets.load_environment("tests/assets/environment/polyhaven/studio_small_03_1k.hdr"),
+    )
+    .expect("equirectangular HDR environment loads");
     let mut scene = Scene::new();
     let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
     renderer.set_environment(environment);
@@ -1047,6 +1050,7 @@ fn precision_depth_scene(origin_shift: Vec3, object_translation: Vec3) -> Scene 
 fn fxaa_pass_runs_after_pbr_neutral_without_second_tonemap() {
     let mut scene = split_screen_fxaa_scene();
     let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
+    renderer.set_anti_aliasing(AntiAliasing::Fxaa);
 
     renderer.prepare(&mut scene).expect("scene prepares");
     renderer
@@ -1121,6 +1125,7 @@ fn subtle_bloom_expands_bright_output_without_second_tonemap() {
 
     let mut scene_with_bloom = bloom_highlight_scene();
     let mut renderer = Renderer::headless(32, 32).expect("bloom renderer builds");
+    renderer.set_anti_aliasing(AntiAliasing::Fxaa);
     renderer.set_bloom(Some(PostBloomConfig::subtle()));
     renderer
         .prepare(&mut scene_with_bloom)
@@ -1513,9 +1518,10 @@ fn origin_shift_keeps_large_offset_renderable_visible_without_precision_warning(
 #[test]
 fn m2_resource_counters_return_to_baseline_after_empty_prepare() {
     let assets = Assets::new();
-    let environment =
-        pollster::block_on(assets.load_environment("tests/assets/environment/studio_1024x512.hdr"))
-            .expect("equirectangular HDR environment loads");
+    let environment = pollster::block_on(
+        assets.load_environment("tests/assets/environment/polyhaven/studio_small_03_1k.hdr"),
+    )
+    .expect("equirectangular HDR environment loads");
     let mut scene = Scene::new();
     scene
         .directional_light(DirectionalLight::default().with_shadows(true))

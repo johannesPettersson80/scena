@@ -1,5 +1,7 @@
 use scena::{
-    ReferenceImage, ReferenceImageError, ReferenceImageTolerance, regress, regress_with_tolerance,
+    Color, PerspectiveCamera, Primitive, ReferenceImage, ReferenceImageError,
+    ReferenceImageTolerance, Renderer, Scene, Transform, Vec3, Vertex, regress,
+    regress_with_tolerance,
 };
 
 #[test]
@@ -40,6 +42,63 @@ fn reference_image_regression_reports_tolerance_failure() {
     assert_eq!(report.mismatched_pixels(), 1);
     assert_eq!(report.max_abs_diff(), 4);
     assert_eq!(report.tolerance().max_abs_diff(), 2);
+}
+
+#[test]
+fn reference_image_regression_compares_real_renderer_output_to_committed_golden() {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::at(Vec3::new(0.0, 0.0, 2.0)),
+        )
+        .expect("camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("camera becomes active");
+    let color = Color::from_srgb_u8(80, 140, 220);
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![Primitive::triangle([
+                Vertex {
+                    position: Vec3::new(-2.0, -2.0, 0.0),
+                    color,
+                },
+                Vertex {
+                    position: Vec3::new(4.0, -2.0, 0.0),
+                    color,
+                },
+                Vertex {
+                    position: Vec3::new(-2.0, 4.0, 0.0),
+                    color,
+                },
+            ])],
+            Transform::default(),
+        )
+        .expect("fullscreen triangle inserts");
+
+    let mut renderer = Renderer::headless(4, 4).expect("headless renderer builds");
+    renderer.prepare(&mut scene).expect("scene prepares");
+    renderer.render(&scene, camera).expect("scene renders");
+    let actual = ReferenceImage::from_rgba8(4, 4, renderer.frame_rgba8().to_vec())
+        .expect("renderer output is rgba8");
+    let expected = ReferenceImage::from_rgba8(
+        4,
+        4,
+        vec![
+            56, 130, 214, 255, 56, 130, 214, 255, 56, 130, 214, 255, 0, 0, 0, 255, 56, 130, 214,
+            255, 56, 130, 214, 255, 56, 130, 214, 255, 56, 130, 214, 255, 56, 130, 214, 255, 56,
+            130, 214, 255, 56, 130, 214, 255, 56, 130, 214, 255, 56, 130, 214, 255, 56, 130, 214,
+            255, 56, 130, 214, 255, 56, 130, 214, 255,
+        ],
+    )
+    .expect("committed renderer golden is rgba8");
+
+    let report = regress(&actual, &expected).expect("renderer output matches committed golden");
+    assert_eq!(report.total_pixels(), 16);
+    assert_eq!(report.mismatched_pixels(), 0);
 }
 
 #[test]

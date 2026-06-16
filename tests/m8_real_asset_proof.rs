@@ -49,7 +49,7 @@ const DEMO_SAMPLE_SOURCES_PATH: &str = "demo/samples/SOURCES.md";
 
 /// Phase 1: scena-gold reference for the WaterBottle GPU render. This
 /// is the canonical "scena should keep producing this" baseline for
-/// Phase 2's ΔE-based regression checks. It is NOT a third-party
+/// Phase 2's RGB Chebyshev regression checks. It is NOT a third-party
 /// pixel match — see `reference_metadata.toml` alongside the file.
 const WATERBOTTLE_REFERENCE_PNG: &str = "tests/assets/gltf/khronos/WaterBottle/reference_512.png";
 const WATERBOTTLE_REFERENCE_SHA256: &str =
@@ -524,31 +524,28 @@ fn m8_real_asset_waterbottle_gpu_headline() {
         family_failures.join("\n")
     );
 
-    // Phase 2 reference diff (gated). With SCENA_REFERENCE_DIFF=1, also
+    // Phase 2 reference diff. When the approved GPU release lane is enabled,
     // compare the live render against the bundled scena-gold reference
-    // pixel-by-pixel; ≥95% of pixels must be within RGB Chebyshev
-    // distance 16. The diff visualisation lands next to the artifact
-    // when the threshold fails so a reviewer can SEE which regions
-    // drifted.
-    if std::env::var("SCENA_REFERENCE_DIFF").is_ok() {
-        let reference = decode_reference_png();
-        assert_eq!(
-            reference.len(),
-            frame.len(),
-            "reference PNG must match render dimensions (512x512 RGBA)"
+    // pixel-by-pixel; at least 95% of pixels must be within RGB Chebyshev
+    // distance 16. The diff visualization lands next to the artifact when
+    // the threshold fails so a reviewer can see which regions drifted.
+    let reference = decode_reference_png();
+    assert_eq!(
+        reference.len(),
+        frame.len(),
+        "reference PNG must match render dimensions (512x512 RGBA)"
+    );
+    let (within_tol, total, max_d) = pixel_diff_summary(&frame, &reference, 16);
+    let fraction = within_tol as f64 / total as f64;
+    if fraction < 0.95 {
+        write_diff_visualization(&frame, &reference);
+        panic!(
+            "WaterBottle render diverged from bundled reference: \
+             only {:.2}% of pixels are within RGB Chebyshev distance 16 \
+             (max channel distance: {max_d}). Diff visualization written to {}",
+            fraction * 100.0,
+            DIFF_PNG,
         );
-        let (within_tol, total, max_d) = pixel_diff_summary(&frame, &reference, 16);
-        let fraction = within_tol as f64 / total as f64;
-        if fraction < 0.95 {
-            write_diff_visualization(&frame, &reference);
-            panic!(
-                "WaterBottle render diverged from bundled reference: \
-                 only {:.2}% of pixels are within RGB ±16 (max channel \
-                 distance: {max_d}). Diff visualisation written to {}",
-                fraction * 100.0,
-                DIFF_PNG,
-            );
-        }
     }
 }
 

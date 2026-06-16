@@ -33,13 +33,7 @@ pub(super) fn material_for_target<'a>(
     inspection
         .draw_list
         .iter()
-        .find(|draw| draw.visible && draw.material.is_some())
-        .or_else(|| {
-            inspection
-                .draw_list
-                .iter()
-                .find(|draw| draw.material.is_some())
-        })
+        .find(|draw| draw.material.is_some())
         .and_then(draw_material)
         .or_else(|| {
             inspection
@@ -286,7 +280,6 @@ pub(super) fn push_fix(
         action: action.to_owned(),
         target_id: target_id.to_owned(),
         target_handle,
-        patch: None,
         help: help.to_owned(),
     });
 }

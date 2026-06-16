@@ -23,9 +23,6 @@ use crate::scene::FramingOutcome;
 use crate::scene::Vec3;
 use crate::scene::{CameraKey, Scene, Transform};
 
-const CINEMATIC_DAMPING: f32 = 0.18;
-const PRESENTATION_DAMPING: f32 = 0.12;
-const SNAPPY_DAMPING: f32 = 0.04;
 const PRESENTATION_RPM: f32 = 1.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,7 +87,6 @@ pub struct OrbitControls {
     distance: f32,
     yaw_radians: f32,
     pitch_radians: f32,
-    damping_factor: f32,
     auto_rotate_rpm: f32,
     min_distance: f32,
     max_distance: f32,
@@ -105,7 +101,6 @@ impl OrbitControls {
             distance: distance.max(MIN_DISTANCE),
             yaw_radians: 0.0,
             pitch_radians: 0.0,
-            damping_factor: 0.0,
             auto_rotate_rpm: 0.0,
             min_distance: MIN_DISTANCE,
             max_distance: f32::INFINITY,
@@ -174,44 +169,7 @@ impl OrbitControls {
         self
     }
 
-    pub fn with_damping(mut self, factor: f32) -> Self {
-        self.damping_factor = if factor.is_finite() {
-            factor.clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-        self
-    }
-
-    /// Applies a slow, high-damping orbit feel for product-viewer scenes.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use scena::{OrbitControls, Vec3};
-    ///
-    /// let controls = OrbitControls::new(Vec3::ZERO, 2.0).cinematic();
-    /// assert!(controls.damping_factor() > 0.0);
-    /// ```
-    pub fn cinematic(self) -> Self {
-        self.with_damping(CINEMATIC_DAMPING)
-    }
-
-    /// Applies a light-damping orbit feel for direct manipulation.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use scena::{OrbitControls, Vec3};
-    ///
-    /// let controls = OrbitControls::new(Vec3::ZERO, 2.0).snappy();
-    /// assert!(controls.damping_factor() > 0.0);
-    /// ```
-    pub fn snappy(self) -> Self {
-        self.with_damping(SNAPPY_DAMPING)
-    }
-
-    /// Applies medium damping plus a slow turntable auto-rotate.
+    /// Applies a slow turntable auto-rotate.
     ///
     /// Hosts advance the turntable explicitly with [`Self::advance`] before
     /// applying the controls to the scene camera.
@@ -225,8 +183,7 @@ impl OrbitControls {
     /// controls.advance(1.0 / 60.0);
     /// ```
     pub fn presentation(self) -> Self {
-        self.with_damping(PRESENTATION_DAMPING)
-            .turntable(PRESENTATION_RPM)
+        self.turntable(PRESENTATION_RPM)
     }
 
     /// Sets the auto-rotate speed in revolutions per minute.
@@ -364,10 +321,6 @@ impl OrbitControls {
 
     pub const fn pitch_radians(&self) -> f32 {
         self.pitch_radians
-    }
-
-    pub const fn damping_factor(&self) -> f32 {
-        self.damping_factor
     }
 
     pub const fn auto_rotate_rpm(&self) -> f32 {

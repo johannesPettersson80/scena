@@ -197,12 +197,12 @@ fn scena_validate_recipe_cli_checks_asset_presence_and_expected_extents() {
         .args(["validate-recipe", path_str(&oversized_path)])
         .output()
         .expect("scena validate-recipe oversized asset command runs");
-    assert!(oversized.status.success(), "stderr={}", stderr(&oversized));
+    assert!(!oversized.status.success(), "stderr={}", stderr(&oversized));
     let report: serde_json::Value =
         serde_json::from_slice(&oversized.stdout).expect("oversized validation emits JSON");
     assert_eq!(report["schema"], "scena.scene_recipe_validation.v1");
-    assert_eq!(report["ok"], true);
-    assert_diagnostic(&report, "extent_out_of_range", "warning");
+    assert_eq!(report["ok"], false);
+    assert_diagnostic(&report, "extent_out_of_range", "error");
 }
 
 #[test]
@@ -287,10 +287,10 @@ fn scena_recipe_invalid_fixtures_cover_landed_failure_families() {
     assert_diagnostic(&report, "invalid_transform", "error");
 
     let oversized = run_validate_recipe_fixture("oversized_asset.recipe.json");
-    assert!(oversized.status.success(), "stderr={}", stderr(&oversized));
+    assert!(!oversized.status.success(), "stderr={}", stderr(&oversized));
     let report = json_report(&oversized);
-    assert_eq!(report["ok"], true);
-    assert_diagnostic(&report, "extent_out_of_range", "warning");
+    assert_eq!(report["ok"], false);
+    assert_diagnostic(&report, "extent_out_of_range", "error");
 
     let valid_recipe = recipe_invalid_fixture_path("valid_for_commands.recipe.json");
     let unknown_verb = Command::new(env!("CARGO_BIN_EXE_scena"))

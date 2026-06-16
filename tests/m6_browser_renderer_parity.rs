@@ -21,7 +21,7 @@ async fn m6_webgl2_attached_canvas_is_not_hard_disabled() {
         | Err(BuildError::RequestDevice { backend })
         | Err(BuildError::SurfaceUnsupported { backend }) => {
             assert_eq!(backend, Backend::WebGl2);
-            return;
+            panic!("attached WebGL2 browser canvas could not build on the proof lane");
         }
         Err(BuildError::UnsupportedBackend { backend }) => {
             panic!("attached WebGL2 browser canvas is still hard-disabled for {backend:?}");
@@ -34,21 +34,18 @@ async fn m6_webgl2_attached_canvas_is_not_hard_disabled() {
     assert!(renderer.capabilities().gpu_device);
     assert!(renderer.capabilities().surface_attached);
 
-    if renderer.prepare(&mut scene).is_err() {
-        // Headless Chromium WebGL2 sometimes refuses to allocate the offscreen render
-        // target the renderer needs for prepared draw resources (the build phase already
-        // succeeded with a real WebGl2RenderingContext). Treat that as an environment
-        // gap, not as a regression of the contract that "attached WebGL2 canvases are not
-        // hard-disabled" — this test's purpose, per its name, is the build path.
-        return;
-    }
+    renderer.prepare(&mut scene).expect("WebGL2 scene prepares");
     let outcome = match renderer.render(&scene, camera) {
         Ok(outcome) => outcome,
-        Err(_) => return,
+        Err(error) => panic!("WebGL2 scene renders: {error:?}"),
     };
 
     assert_eq!(outcome.draw_calls, 1);
     assert_eq!(renderer.stats().gpu_submissions, 1);
+    assert!(
+        nonblack_pixel_count(renderer.frame_rgba8()) > 0,
+        "WebGL2 proof must include rendered pixels, not only draw counters"
+    );
     assert!(
         !matches!(
             Renderer::from_surface_async(PlatformSurface::browser_webgl2_canvas(32, 32)).await,
@@ -71,7 +68,7 @@ async fn m6_webgl2_surface_lifecycle_requires_prepare_and_retained_assets() {
         | Err(BuildError::RequestDevice { backend })
         | Err(BuildError::SurfaceUnsupported { backend }) => {
             assert_eq!(backend, Backend::WebGl2);
-            return;
+            panic!("attached WebGL2 browser canvas could not build on the proof lane");
         }
         Err(BuildError::UnsupportedBackend { backend }) => {
             panic!("attached WebGL2 browser canvas is still hard-disabled for {backend:?}");
@@ -81,17 +78,16 @@ async fn m6_webgl2_surface_lifecycle_requires_prepare_and_retained_assets() {
     let assets = Assets::new();
     let (mut scene, camera) = scene_with_white_triangle();
 
-    if renderer.prepare_with_assets(&mut scene, &assets).is_err() {
-        // Same headless-Chromium WebGL2 environment limitation as the build/render-only
-        // contract above. The lifecycle assertions below depend on a successful initial
-        // render so the surface event sequence has a baseline frame to compare against;
-        // without it, the contract under test (resize/recovery/reprepare) cannot be
-        // exercised, so this lane simply skips when the environment cannot prepare.
-        return;
-    }
-    if renderer.render(&scene, camera).is_err() {
-        return;
-    }
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("WebGL2 lifecycle scene prepares");
+    renderer
+        .render(&scene, camera)
+        .expect("WebGL2 lifecycle scene renders");
+    assert!(
+        nonblack_pixel_count(renderer.frame_rgba8()) > 0,
+        "WebGL2 lifecycle proof must start from visible rendered pixels"
+    );
 
     canvas.set_width(48);
     canvas.set_height(48);
@@ -235,4 +231,10 @@ fn scene_with_white_triangle() -> (Scene, scena::CameraKey) {
         )
         .expect("triangle inserts under root");
     (scene, camera)
+}
+
+fn nonblack_pixel_count(rgba: &[u8]) -> usize {
+    rgba.chunks_exact(4)
+        .filter(|pixel| pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0)
+        .count()
 }

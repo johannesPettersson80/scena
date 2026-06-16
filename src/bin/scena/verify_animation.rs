@@ -1,6 +1,10 @@
 use std::collections::BTreeMap;
 
 use super::{CliOutcome, json_outcome, resolve_scene_input, viewer_builder};
+use expectations::{apply_expected_node_status, expected_node_status};
+
+#[path = "verify_animation/expectations.rs"]
+mod expectations;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct VerifyAnimationCommandArgs {
@@ -8,6 +12,7 @@ pub(crate) struct VerifyAnimationCommandArgs {
     clip: String,
     times: Vec<f32>,
     expect_change: bool,
+    expected_node_handle: Option<u64>,
     expected_translations: Option<Vec<scena::Vec3>>,
     expected_tolerance: f32,
     width: Option<u32>,
@@ -93,10 +98,11 @@ pub(crate) fn run_verify_animation_command(args: &[String]) -> Result<CliOutcome
         });
     }
 
-    let selected_node = args
-        .expected_translations
-        .as_ref()
-        .and_then(|_| selected_observed_node(&observations, 0.0001));
+    let selected_node = args.expected_node_handle.or_else(|| {
+        args.expected_translations
+            .as_ref()
+            .and_then(|_| selected_observed_node(&observations, 0.0001))
+    });
     let samples = samples_from_observations(
         &observations,
         0.0001,
@@ -104,12 +110,19 @@ pub(crate) fn run_verify_animation_command(args: &[String]) -> Result<CliOutcome
         selected_node,
         args.expected_tolerance,
     );
-    let report = scena::AnimationIntrospectionReportV1::from_samples(
+    let mut report = scena::AnimationIntrospectionReportV1::from_samples(
         clip_summary,
         channel_counts,
         samples,
         args.expect_change,
     );
+    if let Some(handle) = args.expected_node_handle {
+        apply_expected_node_status(
+            &mut report,
+            handle,
+            expected_node_status(&observations, handle, 0.0001, args.expect_change),
+        );
+    }
     let exit_code = if report.ok { 0 } else { 1 };
     json_outcome(
         &report,
@@ -126,6 +139,7 @@ impl VerifyAnimationCommandArgs {
         let mut clip = None;
         let mut times = None;
         let mut expect_change = false;
+        let mut expected_node_handle = None;
         let mut expected_translations = None;
         let mut expected_tolerance = 0.001;
         let mut width = None;
@@ -145,6 +159,13 @@ impl VerifyAnimationCommandArgs {
                 "--expect-change" => {
                     expect_change = true;
                     index += 1;
+                }
+                "--expect-node-handle" => {
+                    expected_node_handle = Some(parse_u64_handle(
+                        "--expect-node-handle",
+                        flag_value(args, index, "--expect-node-handle")?,
+                    )?);
+                    index += 2;
                 }
                 "--expect-translations" => {
                     expected_translations = Some(parse_expected_translations(flag_value(
@@ -205,6 +226,7 @@ impl VerifyAnimationCommandArgs {
                 .ok_or_else(|| format!("missing --clip <name>; {}", verify_animation_usage()))?,
             times,
             expect_change,
+            expected_node_handle,
             expected_translations,
             expected_tolerance,
             width,
@@ -414,6 +436,16 @@ fn parse_positive_f32(flag: &str, value: String) -> Result<f32, String> {
     Ok(parsed)
 }
 
+fn parse_u64_handle(flag: &str, value: String) -> Result<u64, String> {
+    let parsed = value
+        .parse::<u64>()
+        .map_err(|_| format!("{flag} requires an unsigned integer handle, got '{value}'"))?;
+    if parsed == 0 {
+        return Err(format!("{flag} requires a non-zero handle"));
+    }
+    Ok(parsed)
+}
+
 fn round3(value: f32) -> f32 {
     if value.is_finite() {
         (value * 1000.0).round() / 1000.0
@@ -423,6 +455,6 @@ fn round3(value: f32) -> f32 {
 }
 
 fn verify_animation_usage() -> String {
-    "usage: scena verify animation <asset-or-recipe> --clip <name> --times <seconds[,seconds...]> [--expect-change] [--expect-translations 'x,y,z;...'] [--expect-tolerance n] [--width <px>] [--height <px>]"
+    "usage: scena verify animation <asset-or-recipe> --clip <name> --times <seconds[,seconds...]> [--expect-change] [--expect-node-handle <handle>] [--expect-translations 'x,y,z;...'] [--expect-tolerance n] [--width <px>] [--height <px>]"
         .to_string()
 }

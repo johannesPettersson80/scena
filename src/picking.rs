@@ -3,7 +3,7 @@
 use crate::Assets;
 use crate::diagnostics::LookupError;
 use crate::geometry::{GeometryDesc, GeometryTopology, Primitive};
-use crate::material::{Color, MaterialKind};
+use crate::material::MaterialKind;
 use crate::scene::{Camera, CameraKey, InstanceId, NodeKey, Scene, Transform, Vec3};
 
 mod math;
@@ -45,12 +45,6 @@ pub struct Hit {
     pub distance: f32,
     pub world_position: Vec3,
     pub normal: Option<Vec3>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct InteractionStyle {
-    color: Color,
-    outline_width_px: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -112,29 +106,6 @@ impl Hit {
     }
 }
 
-impl InteractionStyle {
-    pub const fn outline(color: Color, outline_width_px: f32) -> Self {
-        Self {
-            color,
-            outline_width_px: positive_or(outline_width_px, 2.0),
-        }
-    }
-
-    pub const fn color(self) -> Color {
-        self.color
-    }
-
-    pub const fn outline_width_px(self) -> f32 {
-        self.outline_width_px
-    }
-}
-
-impl Default for InteractionStyle {
-    fn default() -> Self {
-        Self::outline(Color::WHITE, 2.0)
-    }
-}
-
 impl InteractionContext {
     pub const fn hover(&self) -> Option<HitTarget> {
         self.hover
@@ -160,14 +131,6 @@ impl InteractionContext {
 
     pub(crate) const fn revision(&self) -> u64 {
         self.revision
-    }
-}
-
-const fn positive_or(value: f32, fallback: f32) -> f32 {
-    if !value.is_finite() || value <= 0.0 {
-        fallback
-    } else {
-        value
     }
 }
 

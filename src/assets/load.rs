@@ -7,6 +7,9 @@ use crate::diagnostics::AssetError;
 
 use super::{AssetPath, AssetProvenance, SceneAsset, SceneAssetGeometrySummary};
 
+mod fallback;
+pub use fallback::{AssetMaterialFallback, AssetMaterialFallbackKind, AssetMaterialFallbackV1};
+
 pub const ASSET_LOAD_REPORT_SCHEMA_V1: &str = "scena.asset_load_report.v1";
 
 #[derive(Debug, Clone)]
@@ -188,35 +191,6 @@ pub struct AssetExternalResourceV1 {
     pub bytes: Option<usize>,
     #[serde(default)]
     pub reason: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AssetMaterialFallback {
-    pub kind: AssetMaterialFallbackKind,
-    pub material_index: Option<usize>,
-    pub material_slot: String,
-    pub texture_index: usize,
-    pub source_path: AssetPath,
-    pub fallback_path: AssetPath,
-    pub reason: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AssetMaterialFallbackKind {
-    TextureBasisuFallback,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AssetMaterialFallbackV1 {
-    pub kind: AssetMaterialFallbackKind,
-    #[serde(default)]
-    pub material_index: Option<usize>,
-    pub material_slot: String,
-    pub texture_index: usize,
-    pub source_path: String,
-    pub fallback_path: String,
-    pub reason: String,
 }
 
 impl Default for AssetLoadControl {
@@ -479,40 +453,6 @@ impl From<&AssetExternalResource> for AssetExternalResourceV1 {
             status: resource.status,
             bytes: resource.bytes,
             reason: resource.reason.clone(),
-        }
-    }
-}
-
-impl AssetMaterialFallback {
-    pub fn texture_basisu_fallback(
-        material_index: usize,
-        material_slot: impl Into<String>,
-        texture_index: usize,
-        source_path: AssetPath,
-        fallback_path: AssetPath,
-    ) -> Self {
-        Self {
-            kind: AssetMaterialFallbackKind::TextureBasisuFallback,
-            material_index: Some(material_index),
-            material_slot: material_slot.into(),
-            texture_index,
-            source_path,
-            fallback_path,
-            reason: "KHR_texture_basisu unavailable; using authored fallback texture".to_string(),
-        }
-    }
-}
-
-impl From<&AssetMaterialFallback> for AssetMaterialFallbackV1 {
-    fn from(fallback: &AssetMaterialFallback) -> Self {
-        Self {
-            kind: fallback.kind,
-            material_index: fallback.material_index,
-            material_slot: fallback.material_slot.clone(),
-            texture_index: fallback.texture_index,
-            source_path: fallback.source_path.as_str().to_owned(),
-            fallback_path: fallback.fallback_path.as_str().to_owned(),
-            reason: fallback.reason.clone(),
         }
     }
 }

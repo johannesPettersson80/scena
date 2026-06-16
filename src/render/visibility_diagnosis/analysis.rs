@@ -11,6 +11,8 @@ use super::{
 };
 use reason::{ReasonSpec, has_error_reasons, push_evidence, push_fix, push_reason};
 
+use super::super::introspection::frame_bounds_patch;
+
 pub(super) fn from_inspection(
     inspection: &SceneInspectionReportV1,
     stats: RendererStats,
@@ -36,7 +38,13 @@ pub(super) fn from_inspection(
     let mut fixes = Vec::new();
     let mut evidence = Vec::new();
 
-    diagnose_renderer_diagnostics(diagnostics, target_handle, &mut reasons, &mut fixes);
+    diagnose_renderer_diagnostics(
+        inspection,
+        diagnostics,
+        target_handle,
+        &mut reasons,
+        &mut fixes,
+    );
     diagnose_active_clipping_planes(inspection, target_handle, &mut reasons, &mut fixes);
 
     if !prepared {
@@ -101,25 +109,28 @@ pub(super) fn from_inspection(
     let all_visible_drawables_culled =
         visible_drawables > 0 && stats.culled_objects >= visible_drawables;
     if all_visible_drawables_culled {
+        let patch = frame_bounds_patch(inspection);
         push_reason(
             &mut reasons,
             ReasonSpec {
                 code: "all_culled",
                 severity: "error",
                 confidence: "medium",
-                auto_fixable: true,
+                auto_fixable: patch.is_some(),
                 affected_handles: Vec::new(),
                 message: "renderer stats report every visible drawable was culled for this frame",
             },
         );
-        push_fix(
-            &mut fixes,
-            "frame_bounds",
-            None,
-            None,
-            "presentation",
-            "frame the target bounds and render again",
-        );
+        if let Some(patch) = patch {
+            push_fix(
+                &mut fixes,
+                "frame_bounds",
+                None,
+                Some(patch),
+                "presentation",
+                "frame the target bounds and render again",
+            );
+        }
     }
 
     if let Some(handle) = target_handle {
@@ -180,6 +191,7 @@ pub(super) fn from_inspection(
 }
 
 fn diagnose_renderer_diagnostics(
+    inspection: &SceneInspectionReportV1,
     diagnostics: &[Diagnostic],
     target_handle: Option<u64>,
     reasons: &mut Vec<VisibilityDiagnosisReasonV1>,
@@ -188,46 +200,52 @@ fn diagnose_renderer_diagnostics(
     for diagnostic in diagnostics {
         match diagnostic.code() {
             DiagnosticCode::ObjectsBehindCamera => {
+                let patch = frame_bounds_patch(inspection);
                 push_reason(
                     reasons,
                     ReasonSpec {
                         code: "behind_camera",
                         severity: "error",
                         confidence: "high",
-                        auto_fixable: true,
+                        auto_fixable: patch.is_some(),
                         affected_handles: target_handle.into_iter().collect(),
                         message: "renderer diagnostics report visible bounds behind the camera",
                     },
                 );
-                push_fix(
-                    fixes,
-                    "frame_bounds",
-                    target_handle,
-                    None,
-                    "presentation",
-                    "move or frame the camera so visible content is in front of it",
-                );
+                if let Some(patch) = patch {
+                    push_fix(
+                        fixes,
+                        "frame_bounds",
+                        target_handle,
+                        Some(patch),
+                        "presentation",
+                        "move or frame the camera so visible content is in front of it",
+                    );
+                }
             }
             DiagnosticCode::SceneOutsideCameraFrustum => {
+                let patch = frame_bounds_patch(inspection);
                 push_reason(
                     reasons,
                     ReasonSpec {
                         code: "outside_frustum",
                         severity: "error",
                         confidence: "high",
-                        auto_fixable: true,
+                        auto_fixable: patch.is_some(),
                         affected_handles: target_handle.into_iter().collect(),
                         message: "renderer diagnostics report visible bounds outside the camera frustum",
                     },
                 );
-                push_fix(
-                    fixes,
-                    "frame_bounds",
-                    target_handle,
-                    None,
-                    "presentation",
-                    "frame the scene or target bounds before rendering again",
-                );
+                if let Some(patch) = patch {
+                    push_fix(
+                        fixes,
+                        "frame_bounds",
+                        target_handle,
+                        Some(patch),
+                        "presentation",
+                        "frame the scene or target bounds before rendering again",
+                    );
+                }
             }
             code if backend_degradation_code(code) => {
                 push_reason(

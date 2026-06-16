@@ -170,7 +170,7 @@ fn render_label_path() -> VisualArtifact {
     scene
         .add_label(
             scene.root(),
-            LabelDesc::msdf("M3a")
+            LabelDesc::bitmap("M3a")
                 .with_color(Color::from_linear_rgb(0.0, 1.0, 0.0))
                 .with_size(0.5)
                 .with_billboard(LabelBillboard::ScreenAligned),

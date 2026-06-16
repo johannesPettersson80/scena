@@ -9,7 +9,7 @@ use scena::{
 
 #[test]
 fn product_grounding_preset_renders_visible_receiver_and_reports_non_physical_shadow_scope() {
-    let (grounded, grounded_report, grounded_stats) =
+    let (grounded, grounded_report, grounded_stats, grounded_min_y) =
         render_product_grounding_scene().expect("grounded product scene renders");
 
     assert!(
@@ -43,12 +43,13 @@ fn product_grounding_preset_renders_visible_receiver_and_reports_non_physical_sh
             .contains(&SceneHostGroundingPathV1::ScreenSpaceAmbientOcclusion)
     );
     assert!(
-        !grounded_report
-            .active_paths
-            .contains(&SceneHostGroundingPathV1::DirectionalShadowReceiver),
-        "4.1 must not promote the directional shadow receiver before 4.2 proof closure"
+        grounded_min_y.abs() <= 0.001,
+        "grounding preset must drop the target to y=0, min_y={grounded_min_y}"
     );
-    assert!(!grounded_report.physical_shadow_claimed);
+    assert!(
+        grounded_report.floor_receiver,
+        "grounding preset must add a floor receiver"
+    );
 }
 
 fn render_product_grounding_scene() -> Result<
@@ -56,6 +57,7 @@ fn render_product_grounding_scene() -> Result<
         RenderIntrospectionReportV1,
         scena::SceneHostGroundingReportV1,
         scena::RendererStats,
+        f32,
     ),
     Box<dyn std::error::Error>,
 > {
@@ -86,10 +88,56 @@ fn render_product_grounding_scene() -> Result<
     fs::create_dir_all("target/gate-artifacts/contact-grounding")?;
     capture.write_png("target/gate-artifacts/contact-grounding/headless-product-grounding.png")?;
     let inspection: SceneInspectionReportV1 = serde_json::from_str(&host.inspect_json()?)?;
+    let grounded_min_y = subtree_min_y(&inspection, target)
+        .ok_or("grounded target subtree has no inspectable bounds")?;
     let introspection = host.renderer().introspect_capture(
         &capture,
         &inspection,
         RenderIntrospectionOptions::default(),
     );
-    Ok((introspection, report, host.renderer().stats()))
+    Ok((
+        introspection,
+        report,
+        host.renderer().stats(),
+        grounded_min_y,
+    ))
+}
+
+fn subtree_min_y(inspection: &SceneInspectionReportV1, root: u64) -> Option<f32> {
+    let mut handles = Vec::new();
+    collect_subtree_handles(inspection, root, &mut handles);
+    inspection
+        .draw_list
+        .iter()
+        .filter(|draw| handles.contains(&draw.node))
+        .map(|draw| transform_aabb_min_y(draw.local_bounds, draw.world_transform))
+        .min_by(f32::total_cmp)
+}
+
+fn collect_subtree_handles(
+    inspection: &SceneInspectionReportV1,
+    node: u64,
+    handles: &mut Vec<u64>,
+) {
+    handles.push(node);
+    for child in inspection.children_of(node) {
+        collect_subtree_handles(inspection, child.handle, handles);
+    }
+}
+
+fn transform_aabb_min_y(bounds: scena::Aabb, transform: Transform) -> f32 {
+    [
+        Vec3::new(bounds.min.x, bounds.min.y, bounds.min.z),
+        Vec3::new(bounds.min.x, bounds.min.y, bounds.max.z),
+        Vec3::new(bounds.min.x, bounds.max.y, bounds.min.z),
+        Vec3::new(bounds.min.x, bounds.max.y, bounds.max.z),
+        Vec3::new(bounds.max.x, bounds.min.y, bounds.min.z),
+        Vec3::new(bounds.max.x, bounds.min.y, bounds.max.z),
+        Vec3::new(bounds.max.x, bounds.max.y, bounds.min.z),
+        Vec3::new(bounds.max.x, bounds.max.y, bounds.max.z),
+    ]
+    .into_iter()
+    .map(|corner| (transform.translation + transform.rotation * (corner * transform.scale)).y)
+    .min_by(f32::total_cmp)
+    .unwrap_or(0.0)
 }

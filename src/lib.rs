@@ -58,6 +58,7 @@ pub use assets::{
     SceneAssetGeometrySummary, SceneAssetLight, SceneAssetMesh, SceneAssetNode, TextureDesc,
     TextureFilter, TextureHandle, TextureSamplerDesc, TextureSourceFormat, TextureWrap,
     WasmEnvironmentDelivery, parse_sidecar_header, source_backed_material_preset_provenance,
+    validate_scene_recipe_json_with_assets,
 };
 #[cfg(all(feature = "hot-reload", not(target_arch = "wasm32")))]
 pub use assets::{AssetHotReloadError, AssetHotReloadWatcher};
@@ -99,7 +100,7 @@ pub use material::{
     AlphaMode, Color, ColorParseError, DEFAULT_EDGE_ANGLE_THRESHOLD_DEGREES,
     DEFAULT_STROKE_WIDTH_PX, MaterialDesc, MaterialKind, TextureColorSpace, TextureTransform,
 };
-pub use picking::{CursorPosition, Hit, HitTarget, InteractionContext, InteractionStyle, Viewport};
+pub use picking::{CursorPosition, Hit, HitTarget, InteractionContext, Viewport};
 #[cfg(not(target_arch = "wasm32"))]
 pub use platform::NativeWindowHandle;
 pub use platform::{PlatformSurface, SurfaceEvent, SurfaceKind, SurfaceSize, SurfaceViewport};
@@ -165,17 +166,16 @@ pub use scene::{
     ExplodedTransformUpdate, ExplodedView, ExplodedViewPlan, FramingOptions, FramingOutcome,
     GridFloorHandles, GridFloorOptions, ImportAnchor, ImportAnchorDebugMetadata, ImportClip,
     ImportConnector, ImportOptions, ImportPivot, InspectionHelperKind, InspectionHelperReport,
-    InspectionToolkitReport, Instance, InstanceCullingPolicy, InstanceId, InstanceSet,
-    InstanceSetKey, LabelBillboard, LabelDesc, LabelKey, LabelMetrics, LabelRasterization, Light,
-    LightBuilder, LightKey, MeasurementAxis, MeasurementKind, MeasurementOverlay,
-    MeasurementOverlayReport, MeasurementReport, MeshBuilder, MeshNode, ModelBuilder, ModelNode,
-    Node, NodeKey, NodeKind, OrthographicCamera, PerspectiveCamera, PointLight, ProjectedPoint,
-    Quat, SCENE_ANNOTATION_PROJECTION_SCHEMA_V1, SCENE_PLACEMENT_RESULT_SCHEMA_V1, Scene,
-    SceneDirtyState, SceneImport, ScenePlacementDiagnosticV1, ScenePlacementResultV1,
-    SceneSkinBinding, SceneTintSnapshot, SceneTintSnapshotEntry, SceneVisibilitySnapshot,
-    SceneVisibilitySnapshotEntry, ScreenRect, SectionBox, SourceCoordinateSystem, SourceUnits,
-    SpotLight, StudioLightingHandles, Transform, UnitFormat, Vec3,
-    placement_align_to_feature_transform, placement_center_transform,
+    InspectionToolkitReport, Instance, InstanceId, InstanceSet, InstanceSetKey, LabelBillboard,
+    LabelDesc, LabelKey, LabelMetrics, Light, LightBuilder, LightKey, MeasurementAxis,
+    MeasurementKind, MeasurementOverlay, MeasurementOverlayReport, MeasurementReport, MeshBuilder,
+    MeshNode, ModelBuilder, ModelNode, Node, NodeKey, NodeKind, OrthographicCamera,
+    PerspectiveCamera, PointLight, ProjectedPoint, Quat, SCENE_ANNOTATION_PROJECTION_SCHEMA_V1,
+    SCENE_PLACEMENT_RESULT_SCHEMA_V1, Scene, SceneDirtyState, SceneImport,
+    ScenePlacementDiagnosticV1, ScenePlacementResultV1, SceneSkinBinding, SceneTintSnapshot,
+    SceneTintSnapshotEntry, SceneVisibilitySnapshot, SceneVisibilitySnapshotEntry, ScreenRect,
+    SectionBox, SourceCoordinateSystem, SourceUnits, SpotLight, StudioLightingHandles, Transform,
+    UnitFormat, Vec3, placement_align_to_feature_transform, placement_center_transform,
     placement_fit_to_size_transform, placement_ground_transform, placement_look_at_transform,
     placement_place_on_feature_transform,
 };
@@ -194,12 +194,12 @@ pub use scene_host::{
     CONNECTOR_BROWSER_SCHEMA_V1, ConnectorBrowserCandidateV1, ConnectorBrowserConnectorV1,
     ConnectorBrowserReportV1, ConnectorBrowserScopeV1, ConnectorBrowserSummaryV1,
     ConnectorBrowserVisualCueV1, ConnectorLineV1, ConnectorTransformV1, HOST_EVENT_SCHEMA_V1,
-    HostEventBatchV1, HostEventButtonV1, HostEventHitV1, HostEventHoverPhaseV1,
-    HostEventModifiersV1, HostEventTargetKindV1, HostEventV1, INTERACTION_EXPECTATION_SCHEMA_V1,
-    INTERACTION_VERIFICATION_SCHEMA_V1, InteractionCoordinateSpaceV1, InteractionCoordinatesV1,
-    InteractionExpectationV1, InteractionStepExpectationV1, InteractionStepExpectedV1,
-    InteractionStepObservedV1, InteractionStepReportV1, InteractionVerificationArtifactsV1,
-    InteractionVerificationFixV1, InteractionVerificationReasonV1, InteractionVerificationReportV1,
+    HostEventBatchV1, HostEventHitV1, HostEventHoverPhaseV1, HostEventTargetKindV1, HostEventV1,
+    INTERACTION_EXPECTATION_SCHEMA_V1, INTERACTION_VERIFICATION_SCHEMA_V1,
+    InteractionCoordinateSpaceV1, InteractionCoordinatesV1, InteractionExpectationV1,
+    InteractionStepExpectationV1, InteractionStepExpectedV1, InteractionStepObservedV1,
+    InteractionStepReportV1, InteractionVerificationArtifactsV1, InteractionVerificationFixV1,
+    InteractionVerificationReasonV1, InteractionVerificationReportV1,
     InteractionVerificationSummaryV1, InteractionViewportV1, PRESENTATION_TIMELINE_SCHEMA_V1,
     PRODUCT_OPTIONS_SCHEMA_V1, PresentationTimelineActionKindV1, PresentationTimelineActionV1,
     PresentationTimelineCameraBookmarkV1, PresentationTimelineV1, ProductOptionGroupV1,

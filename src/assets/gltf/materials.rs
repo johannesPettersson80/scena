@@ -472,12 +472,7 @@ pub(super) fn parse_materials(
 
 fn texture_transform(info: &Info<'_>) -> Option<TextureTransform> {
     info.texture_transform().map(|transform| {
-        TextureTransform::new(
-            transform.offset(),
-            transform.rotation(),
-            transform.scale(),
-            transform.tex_coord(),
-        )
+        TextureTransform::new(transform.offset(), transform.rotation(), transform.scale())
     })
 }
 

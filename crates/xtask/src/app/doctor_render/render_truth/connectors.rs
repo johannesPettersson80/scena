@@ -96,7 +96,6 @@ pub(crate) fn check_renderer_truth_connector_contracts(root: &Path, findings: &m
             "pub enum ConnectionRoll",
             "pub enum ConnectionParenting",
             "ForwardToBack",
-            "NormalToOpposite",
             "pub const fn with_alignment",
             "pub const fn preserve_roll",
             "pub fn choose_nearest_roll_degrees",
@@ -338,8 +337,8 @@ pub(crate) fn check_renderer_truth_connector_contracts(root: &Path, findings: &m
             "SceneHostGroundingReportV1",
             "apply_product_grounding_preset",
             "SceneHostGroundingPathV1::FloorReceiver",
-            "directional_shadow_receiver_degraded",
-            "physical_shadow_claimed: false",
+            "SceneHostGroundingPathV1::ScreenSpaceAmbientOcclusion",
+            "ssao_is_ambient_occlusion",
         ],
     );
     require_contains(
@@ -361,7 +360,7 @@ pub(crate) fn check_renderer_truth_connector_contracts(root: &Path, findings: &m
         "tests/browser/scene_host_browser_proof.js",
         &[
             "applyProductGroundingPresetJson",
-            "contact_grounding_report_lists_floor_ssao_and_shadow_fallback",
+            "contact_grounding_report_lists_floor_ssao_and_scope_fallback",
             "contact_grounding_browser_render_nonblank",
             "contact_grounding_browser_runs_ssao_pass",
         ],
@@ -375,7 +374,7 @@ pub(crate) fn check_renderer_truth_connector_contracts(root: &Path, findings: &m
             "Contact grounding preset",
             "scena.scene_host_grounding.v1",
             "cargo test --test contact_grounding --features scene-host,inspection",
-            "physical_shadow_claimed: false",
+            "ssao_is_ambient_occlusion",
         ],
     );
     require_contains(

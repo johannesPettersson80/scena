@@ -56,7 +56,6 @@ pub struct InteractionVerificationSummaryV1 {
     pub hit_count: usize,
     pub miss_count: usize,
     pub event_count: usize,
-    pub rendered_feedback_checked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -217,7 +216,6 @@ impl InteractionVerificationReportV1 {
                 hit_count,
                 miss_count,
                 event_count,
-                rendered_feedback_checked: false,
             },
             steps,
             reasons,
@@ -299,7 +297,6 @@ pub fn host_event_kind_name(event: &HostEventV1) -> &'static str {
         HostEventV1::ContextLost { .. } => "context_lost",
         HostEventV1::ContextRestored => "context_restored",
         HostEventV1::DeviceLost { .. } => "device_lost",
-        HostEventV1::DeviceRecovered => "device_recovered",
         HostEventV1::CapabilityChanged { .. } => "capability_changed",
     }
 }

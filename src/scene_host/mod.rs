@@ -8,6 +8,7 @@ mod camera;
 mod capture;
 mod connectors;
 mod core;
+mod core_handles;
 mod error;
 mod events;
 mod exploded_view;
@@ -79,8 +80,8 @@ pub use connectors::{
 pub use core::SceneHostCore;
 pub use error::{SceneHostError, SceneHostErrorCode};
 pub use events::{
-    HOST_EVENT_SCHEMA_V1, HostEventBatchV1, HostEventButtonV1, HostEventHitV1,
-    HostEventHoverPhaseV1, HostEventModifiersV1, HostEventTargetKindV1, HostEventV1,
+    HOST_EVENT_SCHEMA_V1, HostEventBatchV1, HostEventHitV1, HostEventHoverPhaseV1,
+    HostEventTargetKindV1, HostEventV1,
 };
 pub use exploded_view::{SceneHostExplodedViewModeV1, SceneHostExplodedViewOptionsV1};
 pub use gizmo::{

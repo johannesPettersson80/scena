@@ -26,7 +26,7 @@ pub(super) fn create_shadow_sampler(device: &wgpu::Device) -> wgpu::Sampler {
 /// shadow-casting directional light is in the scene, a 1×1 placeholder is
 /// returned so the fragment shader's depth-comparison sampler binding is
 /// always valid. The shader checks
-/// `directional_light_direction_intensity.w > 0.0` before sampling, so
+/// `light_counts.x > 0.0` before sampling, so
 /// the placeholder is never read in practice.
 pub(super) fn create_shadow_texture(
     device: &wgpu::Device,

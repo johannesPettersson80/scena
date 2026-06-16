@@ -40,10 +40,8 @@
     "hidden": 0,
     "drawn": 1,
     "culled": 0,
-    "clipped": 0,
     "transparent": 0,
-    "failed_material": 0,
-    "unknown_coverage": 0
+    "failed_material": 0
   },
   "nodes_detail": [],
   "artifacts": {

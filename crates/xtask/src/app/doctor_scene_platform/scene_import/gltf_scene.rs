@@ -131,8 +131,6 @@ pub(crate) fn check_m3a_gltf_scene_contracts(root: &Path, findings: &mut Vec<Fin
         "src/scene/instances.rs",
         &[
             "pub struct InstanceId",
-            "pub enum InstanceCullingPolicy",
-            "CpuBoundingBoxFallback",
             "pub struct InstanceSet",
             "pub fn add_instance_set",
             "pub fn reserve_instances",
@@ -149,10 +147,8 @@ pub(crate) fn check_m3a_gltf_scene_contracts(root: &Path, findings: &mut Vec<Fin
         "src/scene/labels.rs",
         &[
             "pub struct LabelDesc",
-            "pub enum LabelRasterization",
             "pub enum LabelBillboard",
-            "pub fn sdf",
-            "pub fn msdf",
+            "pub fn bitmap",
             "pub fn add_label",
             "pub fn set_label_text",
             "LabelNotFound",
@@ -169,7 +165,6 @@ pub(crate) fn check_m3a_gltf_scene_contracts(root: &Path, findings: &mut Vec<Fin
             "pub enum HitTarget",
             "pub struct Hit",
             "pub struct InteractionContext",
-            "pub struct InteractionStyle",
             "set_hover",
             "set_primary_selection",
             "pub(crate) const fn revision",

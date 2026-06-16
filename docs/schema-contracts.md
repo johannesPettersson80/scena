@@ -298,6 +298,12 @@ later section-box update disables the helper or the section box.
 `metadata` is caller-owned JSON. It is returned in `VisualPatchResultV1` only
 when `echo_metadata` is `true`, so agents can correlate responses without
 forcing every result to echo arbitrary host data.
+SceneHost helper-generated patches may also use this field for machine-readable
+helper data while keeping the top-level contract as `scena.visual_patch.v1`.
+`SceneHostCore::exploded_view_patch_json()` stores
+`metadata.scena_exploded_view_restore_patch`, an immediate-transform
+`VisualPatchV1` that restores the pre-exploded local transforms for JSON/WASM
+hosts.
 
 The result includes:
 
@@ -564,8 +570,7 @@ The verification report contains:
 
 - `schema`
 - `ok`
-- `summary`: step, failure, hit, miss, and event counts, plus
-  `rendered_feedback_checked`
+- `summary`: step, failure, hit, miss, and event counts
 - `steps`: ordered expected/observed interaction results
 - `reasons`: stable failure codes such as `hit_mismatch`,
   `handle_mismatch`, `hover_missing`, `hover_unexpected`,
@@ -808,13 +813,10 @@ Scena action codes such as `frame_bounds` and `set_visible`; callers decide
 whether to apply a suggested action.
 
 Summary mode omits `nodes_detail`; detail mode includes stable node handles
-and conservative coverage categories where known. In the first v1 slice,
-per-node pixel coverage is not yet attributed, so visible nodes report
-`coverage: "unknown"`, `nodes_summary.unknown_coverage` counts those nodes,
-and `nodes_summary.clipped` / `nodes_summary.transparent` are reserved
-not-yet-computed counters that remain zero. `affected_handles` and
-`fix.patch` may be empty in this render-level report; use
-`scena.visibility_diagnosis.v1` for targeted actionable patches. The report
+and draw-derived node state. `nodes_summary.transparent` is computed from
+non-opaque prepared draw materials. Failure reasons include stable
+`affected_handles` whenever the renderer can identify the node, and fixes that
+change scene state carry apply-ready `scena.visual_patch.v1` bodies. The report
 rounds floating-point summaries to stable precision and keeps large artifacts
 outside JSON, referenced through explicit paths or the nested capture summary.
 
@@ -971,8 +973,9 @@ The stable fixtures live at
 ### `scena.animation_introspection.v1`
 
 Produced by `scena verify animation <asset-or-recipe> --clip <name> --times
-<seconds> [--expect-change] [--expect-translations 'x,y,z;...']` when the
-`inspection` feature is enabled.
+<seconds> [--expect-change] [--expect-node-handle <handle>]
+[--expect-translations 'x,y,z;...']` when the `inspection` feature is
+enabled.
 Animation verification uses the normal recipe/asset load, viewer, explicit
 `seek_animation`, prepare, render, capture, and inspection path. There is no
 hidden playback loop or separate agent render mode.
@@ -995,9 +998,13 @@ number of capture changes from the first sample. Each `samples[]` entry records
 the requested time, scene transform and appearance revisions, capture payload
 hash, moving node count compared to the first sample, and invalid node count.
 When expected translations are supplied, each sample also includes
-`observed_values[]` entries for the selected moving transform: stable node
-handle, full observed transform, expected translation, and
-`within_tolerance`.
+`observed_values[]` entries for the selected transform: stable node handle,
+full observed transform, expected translation, and `within_tolerance`.
+Without `--expect-node-handle`, the verifier reports the first moving node it
+can infer from the sampled transforms. Agents that need to verify a specific
+part should call `scena inspect` first and pass that stable handle with
+`--expect-node-handle`; a bound handle that is missing or static emits
+`expected_node_missing` or `expected_node_static`.
 
 When `--expect-change` is supplied, `ok` is false for error-severity reasons
 such as missing clip, non-advancing sampled times, frozen channels, invalid
@@ -1129,10 +1136,15 @@ actionable load/material/extension findings without compiling Rust in the
 loop.
 
 The report has `ok`, `status`, `asset`, `summary`, optional
-`asset_load_report`, and `findings`. Each finding has a stable `severity`,
-`code`, optional `path`/`field`/`extension`, `message`, `help`,
-`suggested_fix`, and `source`. The `scena doctor` CLI writes the report to
-stdout and exits non-zero when `ok=false`.
+`asset_load_report`, and `findings`. `ok=true` means the doctor found no
+error-severity findings; warning-severity findings such as missing external
+image bytes or material fallbacks remain visible in `summary.warning_count` and
+`findings[]` but do not by themselves fail the report. Use strict load options
+or the catalog readiness gate when an asset must be complete rather than merely
+loadable. Each finding has a stable `severity`, `code`, optional
+`path`/`field`/`extension`, `message`, `help`, `suggested_fix`, and `source`.
+The `scena doctor` CLI writes the report to stdout and exits non-zero when
+`ok=false`.
 
 The stable fixture lives at
 `tests/assets/stable-contracts/asset_doctor.v1.json`.
@@ -1221,9 +1233,9 @@ under a target node, SSAO when the backend supports it, and lighting defaults.
 
 The report contains the stable target handle, generated `floor_handles`, the
 active grounding paths, and explicit fallbacks. `active_paths` may include
-`floor_receiver` and `screen_space_ambient_occlusion`. It does not include
-`directional_shadow_receiver` until the directional-shadow proof gate promotes
-that path. `physical_shadow_claimed` is therefore `false` in 4.1.
+`floor_receiver` and `screen_space_ambient_occlusion`. Directional shadow
+receiver reporting is not part of this contract until a future proof gate adds
+the real path.
 
 SSAO is reported as ambient occlusion only. It may darken depth-contact edges,
 but it is not a drop-shadow or physical-shadow substitute. Consumers should
@@ -1406,10 +1418,11 @@ images discovered from the glTF. Each row has `kind` (`buffer` or `image`),
 `skipped_unsupported_format`), nullable `bytes`, and nullable `reason`.
 `progress_events` also includes `external_image_fetched` entries for fetched
 image files. `material_fallbacks` records explicit material-source substitutions
-such as an optional `KHR_texture_basisu` source falling back to an authored PNG.
-Fallback rows include `material_index` when the fallback is tied to a source
-glTF material. These two fields are additive in v1 and deserialize as empty
-arrays when absent.
+such as an optional `KHR_texture_basisu` source falling back to an authored PNG,
+or a material texture whose source bytes were missing and therefore binds
+`scena.material.fallback_texture` at render time. Fallback rows include
+`material_index` when the fallback is tied to a source glTF material. These two
+fields are additive in v1 and deserialize as empty arrays when absent.
 
 Small example:
 

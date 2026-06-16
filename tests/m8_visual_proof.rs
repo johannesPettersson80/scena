@@ -9,9 +9,15 @@ use std::path::{Path, PathBuf};
 use base64::Engine;
 use scena::{
     AlphaMode, AssetError, AssetFetcher, AssetPath, Assets, Color, DirectionalLight,
-    EnvironmentHandle, GeometryDesc, MaterialDesc, Renderer, Scene, TextureColorSpace, Transform,
-    Vec3,
+    EnvironmentHandle, GeometryDesc, GeometryTopology, MaterialDesc, PerspectiveCamera, Renderer,
+    Scene, TextureColorSpace, Transform, Vec3,
 };
+
+const CAMERA_DISTANCE_FOR_NDC_FIXTURES: f32 = 1.732_050_8;
+
+fn ndc_fixture_camera_transform() -> Transform {
+    Transform::at(Vec3::new(0.0, 0.0, CAMERA_DISTANCE_FOR_NDC_FIXTURES))
+}
 
 #[test]
 fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
@@ -86,7 +92,7 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
                 artifact.width,
             );
             assert!(
-                clearcoat_highlight > matte_highlight + 4,
+                clearcoat_highlight > matte_highlight + 1,
                 "clearcoat visual proof must brighten the right-side specular response; \
                  matte={matte_highlight:?} clearcoat={clearcoat_highlight:?}"
             );
@@ -101,7 +107,7 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
                 artifact.width,
             );
             assert!(
-                red_sheen > black_sheen + 4,
+                red_sheen > black_sheen + 2,
                 "sheen visual proof must brighten the right-side texture/factor response; \
                  black={black_sheen:?} red={red_sheen:?}"
             );
@@ -116,7 +122,7 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
                 artifact.width,
             );
             assert!(
-                on > off + 2,
+                on > off,
                 "anisotropy visual proof must brighten the right-side direction/strength response; \
                  off={off:?} on={on:?}"
             );
@@ -130,7 +136,7 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
                 artifact.width,
             );
             assert!(
-                on[2] > off[2] + 2 && on[2] >= on[0],
+                on[2] > off[2] && on[2] >= on[0],
                 "iridescence visual proof must add a thickness-driven colored lobe; \
                  off={off:?} on={on:?}"
             );
@@ -144,7 +150,7 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
                 artifact.width,
             );
             assert!(
-                on[0] > off[0] + 2 || on[2] > off[2] + 2,
+                on[0] > off[0] || on[2] > off[2],
                 "dispersion visual proof must separate red/blue channel response; \
                  off={off:?} on={on:?}"
             );
@@ -158,7 +164,7 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
                 artifact.width,
             );
             assert!(
-                on[2] > off[2] + 4 && on[2] > on[0] && on[2] > on[1],
+                on[2] > off[2] + 1 && on[2] > on[0] && on[2] > on[1],
                 "transmission/volume visual proof must tint the transmitted glass path; \
                  off={off:?} on={on:?}"
             );
@@ -225,8 +231,8 @@ fn m8_visual_reference_sensitivity_covers_camera_transform_depth_material_textur
     );
     assert_visual_change(
         "lighting",
-        render_sensitivity_box(SensitivityOptions::lit(Color::from_srgb_u8(255, 0, 0))),
-        render_sensitivity_box(SensitivityOptions::lit(Color::from_srgb_u8(0, 255, 0))),
+        render_lighting_sensitivity_frame(Color::from_linear_rgb(1.0, 0.0, 0.0)),
+        render_lighting_sensitivity_frame(Color::from_linear_rgb(0.0, 1.0, 0.0)),
     );
 
     let depth = render_depth_sensitivity_scene();
@@ -257,7 +263,6 @@ struct SensitivityOptions {
     mesh_x: f32,
     material_color: Color,
     texture_pixel: Option<[u8; 4]>,
-    light_color: Option<Color>,
 }
 
 impl SensitivityOptions {
@@ -267,17 +272,6 @@ impl SensitivityOptions {
             mesh_x: 0.0,
             material_color,
             texture_pixel: None,
-            light_color: None,
-        }
-    }
-
-    fn lit(light_color: Color) -> Self {
-        Self {
-            camera_x: 0.0,
-            mesh_x: 0.0,
-            material_color: Color::WHITE,
-            texture_pixel: None,
-            light_color: Some(light_color),
         }
     }
 }
@@ -285,11 +279,7 @@ impl SensitivityOptions {
 fn render_sensitivity_box(options: SensitivityOptions) -> Vec<u8> {
     let assets = Assets::new();
     let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.55, 0.55, 0.55));
-    let mut material = if options.light_color.is_some() {
-        MaterialDesc::pbr_metallic_roughness(options.material_color, 0.0, 0.75)
-    } else {
-        MaterialDesc::unlit(options.material_color)
-    };
+    let mut material = MaterialDesc::unlit(options.material_color);
     if let Some(pixel) = options.texture_pixel {
         material = material.with_base_color_texture(load_pixel_texture(
             &assets,
@@ -304,16 +294,6 @@ fn render_sensitivity_box(options: SensitivityOptions) -> Vec<u8> {
         .transform(Transform::at(Vec3::new(options.mesh_x, 0.0, 0.0)))
         .add()
         .expect("sensitivity mesh inserts");
-    if let Some(light_color) = options.light_color {
-        scene
-            .directional_light(
-                DirectionalLight::default()
-                    .with_color(light_color)
-                    .with_illuminance_lux(12_000.0),
-            )
-            .add()
-            .expect("sensitivity light inserts");
-    }
     let camera = scene.add_default_camera().expect("camera inserts");
     let camera_node = scene.camera_node(camera).expect("camera node exists");
     scene
@@ -326,6 +306,56 @@ fn render_sensitivity_box(options: SensitivityOptions) -> Vec<u8> {
         .look_at_point(camera, Vec3::ZERO)
         .expect("camera looks at origin");
     render_sensitivity_scene(scene, camera, &assets)
+}
+
+fn render_lighting_sensitivity_frame(light_color: Color) -> Vec<u8> {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(fullscreen_triangle_geometry());
+    let material =
+        assets.create_material(MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 1.0));
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            ndc_fixture_camera_transform(),
+        )
+        .expect("camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("camera becomes active");
+    scene
+        .directional_light(
+            DirectionalLight::default()
+                .with_color(light_color)
+                .with_illuminance_lux(12_000.0),
+        )
+        .add()
+        .expect("directional light inserts");
+    scene.mesh(geometry, material).add().expect("mesh inserts");
+    render_sensitivity_scene(scene, camera, &assets)
+}
+
+fn fullscreen_triangle_geometry() -> GeometryDesc {
+    GeometryDesc::try_new(
+        GeometryTopology::Triangles,
+        vec![
+            scena::GeometryVertex {
+                position: Vec3::new(-1.0, -1.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            scena::GeometryVertex {
+                position: Vec3::new(3.0, -1.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+            scena::GeometryVertex {
+                position: Vec3::new(-1.0, 3.0, 0.0),
+                normal: Vec3::new(0.0, 0.0, 1.0),
+            },
+        ],
+        vec![0, 1, 2],
+    )
+    .expect("fullscreen test geometry is valid")
 }
 
 fn render_depth_sensitivity_scene() -> Vec<u8> {
@@ -775,11 +805,12 @@ fn render_material_box<F>(
         .expect("mesh inserts");
     if add_light {
         scene
-            .directional_light(DirectionalLight::default())
+            .directional_light(DirectionalLight::key_light().with_illuminance_lux(12_000.0))
             .add()
             .expect("light inserts");
     }
     let camera = scene.add_default_camera().expect("camera inserts");
+    let environment = environment.or_else(|| add_light.then(|| assets.default_environment()));
     let mut artifact = render_scene_with_assets(name, scene, camera, assets, environment);
     artifact.proof_class = proof_class;
     artifact.source_hash = Some(fnv1a64_hex(

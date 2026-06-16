@@ -9,7 +9,6 @@ pub struct ConnectorMetadata {
 pub enum ConnectorRollPolicy {
     Preserve,
     ChooseNearest,
-    ExplicitAngle,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

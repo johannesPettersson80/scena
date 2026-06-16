@@ -78,9 +78,10 @@ async function main() {
     await new Promise((resolve) => server.close(resolve));
   }
 
+  const passed = results.every((result) => result.status === "passed");
   const artifact = {
     gate: "m4-platform-browser-smoke",
-    status: "passed",
+    status: passed ? "passed" : "failed",
     width: 64,
     height: 64,
     capabilities: results.map((result) => result.capabilities),

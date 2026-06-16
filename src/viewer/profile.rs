@@ -1,5 +1,3 @@
-use crate::material::Color;
-use crate::picking::InteractionStyle;
 use crate::render::{Background, Profile, RenderMode};
 
 pub const VIEWER_PROFILE_NAMES: &[&str] = &[
@@ -29,8 +27,6 @@ pub struct ViewerProfile {
     default_picking: bool,
     section_controls: bool,
     orbit_controls: bool,
-    hover_style: Option<InteractionStyle>,
-    selection_style: Option<InteractionStyle>,
 }
 
 impl ViewerProfile {
@@ -46,8 +42,6 @@ impl ViewerProfile {
             default_picking: false,
             section_controls: false,
             orbit_controls: true,
-            hover_style: None,
-            selection_style: None,
         }
     }
 
@@ -63,8 +57,6 @@ impl ViewerProfile {
             default_picking: true,
             section_controls: true,
             orbit_controls: true,
-            hover_style: Some(InteractionStyle::outline(Color::YELLOW, 2.0)),
-            selection_style: Some(InteractionStyle::outline(Color::CYAN, 3.0)),
         }
     }
 
@@ -80,8 +72,6 @@ impl ViewerProfile {
             default_picking: true,
             section_controls: false,
             orbit_controls: true,
-            hover_style: Some(InteractionStyle::outline(Color::YELLOW, 2.0)),
-            selection_style: Some(InteractionStyle::outline(Color::CYAN, 3.0)),
         }
     }
 
@@ -97,8 +87,6 @@ impl ViewerProfile {
             default_picking: true,
             section_controls: true,
             orbit_controls: true,
-            hover_style: Some(InteractionStyle::outline(Color::YELLOW, 2.0)),
-            selection_style: Some(InteractionStyle::outline(Color::CYAN, 3.0)),
         }
     }
 
@@ -114,8 +102,6 @@ impl ViewerProfile {
             default_picking: false,
             section_controls: false,
             orbit_controls: false,
-            hover_style: None,
-            selection_style: None,
         }
     }
 
@@ -174,14 +160,6 @@ impl ViewerProfile {
         self.orbit_controls
     }
 
-    pub const fn hover_style(&self) -> Option<InteractionStyle> {
-        self.hover_style
-    }
-
-    pub const fn selection_style(&self) -> Option<InteractionStyle> {
-        self.selection_style
-    }
-
     pub const fn with_grid(mut self, enabled: bool) -> Self {
         self.grid = enabled;
         self
@@ -189,16 +167,6 @@ impl ViewerProfile {
 
     pub const fn with_default_picking(mut self, enabled: bool) -> Self {
         self.default_picking = enabled;
-        self.hover_style = if enabled {
-            Some(InteractionStyle::outline(Color::YELLOW, 2.0))
-        } else {
-            None
-        };
-        self.selection_style = if enabled {
-            Some(InteractionStyle::outline(Color::CYAN, 3.0))
-        } else {
-            None
-        };
         self
     }
 

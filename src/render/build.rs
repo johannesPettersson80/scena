@@ -7,14 +7,13 @@ use crate::diagnostics::{
     Backend, BuildError, Capabilities, DebugOverlay, HardwareTier, OutputColorSpace, RendererStats,
 };
 use crate::material::Color;
-use crate::picking::InteractionStyle;
 use crate::platform::{PlatformSurface, PlatformSurfaceAttachment};
 
 use super::gpu;
 use super::gpu::GpuDeviceState;
 use super::{
-    OutputTransform, Profile, Quality, RasterTarget, RenderMode, Renderer, RendererOptions,
-    backend_for_attached_surface, validate_target_size,
+    AntiAliasing, OutputTransform, Profile, Quality, RasterTarget, RenderMode, Renderer,
+    RendererOptions, backend_for_attached_surface, validate_target_size,
 };
 
 impl Renderer {
@@ -240,7 +239,7 @@ impl Renderer {
             capabilities,
             gpu,
             output: OutputTransform::default(),
-            anti_aliasing: Default::default(),
+            anti_aliasing: anti_aliasing_for_quality(quality),
             order_independent_transparency: None,
             screen_space_ambient_occlusion: None,
             bloom: None,
@@ -256,8 +255,6 @@ impl Renderer {
             surface_lost: None,
             context_lost: None,
             device_lost: None,
-            hover_style: InteractionStyle::default(),
-            selection_style: InteractionStyle::default(),
             environment: None,
             environment_lighting_cache: Default::default(),
             background_color: Color::BLACK,
@@ -343,6 +340,13 @@ fn resolve_quality(options: RendererOptions, capabilities: Capabilities) -> Qual
             HardwareTier::Medium => Quality::Medium,
             HardwareTier::Low => Quality::Low,
         },
+    }
+}
+
+fn anti_aliasing_for_quality(quality: Quality) -> AntiAliasing {
+    match quality {
+        Quality::Low => AntiAliasing::None,
+        Quality::Medium | Quality::High => AntiAliasing::Fxaa,
     }
 }
 

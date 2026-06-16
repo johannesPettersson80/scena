@@ -95,11 +95,6 @@ impl ScenaViewerInspectorSnapshot {
     fn overlay_label(overlay: DebugOverlay) -> &'static str {
         match overlay {
             DebugOverlay::None => "None",
-            DebugOverlay::Wireframe => "Wireframe",
-            DebugOverlay::Normals => "Normals",
-            DebugOverlay::BoundingBoxes => "BoundingBoxes",
-            DebugOverlay::ShadowMap => "ShadowMap",
-            DebugOverlay::LightCount => "LightCount",
         }
     }
 }

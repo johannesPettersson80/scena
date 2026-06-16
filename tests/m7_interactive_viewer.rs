@@ -98,16 +98,7 @@ fn viewer_profiles_apply_named_presets_without_parallel_viewer_types() {
     assert_eq!(cad_profile.name(), "cad_inspection");
     assert_eq!(cad.renderer().profile(), Profile::Industrial);
     assert_eq!(cad.renderer().render_mode(), RenderMode::OnChange);
-    assert_eq!(
-        cad.renderer().hover_style(),
-        cad_profile.hover_style().expect("picking style configured")
-    );
-    assert_eq!(
-        cad.renderer().selection_style(),
-        cad_profile
-            .selection_style()
-            .expect("selection style configured")
-    );
+    assert!(cad_profile.default_picking());
     let cad_draws = cad
         .render_next_frame()
         .expect("cad-inspection profile renders")

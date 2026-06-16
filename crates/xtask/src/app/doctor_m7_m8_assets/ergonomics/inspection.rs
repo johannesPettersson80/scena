@@ -211,7 +211,7 @@ pub(crate) fn check_m7_inspection_contracts(root: &Path, findings: &mut Vec<Find
             "set_camera_layer_mask",
             "SurfaceViewport",
             "ImportAnchorDebugMetadata",
-            "with_damping",
+            "focus(Vec3",
             "m7_beginner_scene_diagnostics_explain_invisible_setups",
             "GeometryDesc::normal_lines",
             "m7_error_display_snapshots_cover_beginner_recovery_paths",

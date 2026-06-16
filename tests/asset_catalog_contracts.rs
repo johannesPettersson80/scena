@@ -39,7 +39,7 @@ fn asset_catalog_validation_reports_ready_and_invalid_assets() {
         .asset("variant-triangle")
         .expect("valid asset report");
     assert!(valid.ok, "valid catalog asset should pass readiness checks");
-    assert_eq!(valid.preview.as_ref().expect("preview").status, "declared");
+    assert_eq!(valid.preview.as_ref().expect("preview").status, "generated");
     assert_eq!(
         valid
             .asset_load_report

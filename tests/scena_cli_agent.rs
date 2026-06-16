@@ -580,6 +580,99 @@ fn scena_repair_cli_exits_nonzero_for_irreducible_diagnosis() {
 }
 
 #[test]
+fn scena_repair_cli_does_not_auto_fix_patchless_frame_bounds() {
+    let dir = artifact_dir("repair-patchless-frame-bounds");
+    let introspection_path = dir.join("introspection.json");
+    fs::write(
+        &introspection_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.render_introspection.v1",
+            "ok": false,
+            "reasons": [{
+                "code": "empty_frame",
+                "severity": "error",
+                "affected_handles": [],
+                "message": "rendered frame has no non-background pixels"
+            }],
+            "fixes": [{
+                "action": "frame_bounds",
+                "help": "frame the scene or target bounds before rendering again"
+            }],
+            "visible_pixel_fraction": 0.0,
+            "luminance": {
+                "min": 0.0,
+                "max": 0.0,
+                "mean": 0.0,
+                "p05": 0.0,
+                "p50": 0.0,
+                "p95": 0.0
+            },
+            "framing": {
+                "center_offset_fraction": [0.0, 0.0],
+                "fit_fraction": 0.0,
+                "cropped": false,
+                "tiny_in_frame": false
+            },
+            "nodes_summary": {
+                "visible": 0,
+                "hidden": 0,
+                "drawn": 0,
+                "culled": 0,
+                "transparent": 0,
+                "failed_material": 0
+            },
+            "nodes_detail": [],
+            "artifacts": {
+                "capture": {
+                    "schema": "scena.capture.v1",
+                    "width": 32,
+                    "height": 32,
+                    "payload_fnv1a64": "0x0000000000000000"
+                }
+            },
+            "capabilities": {
+                "backend": "headless",
+                "gpu_device": false,
+                "surface_attached": false,
+                "hardware_tier": "low",
+                "forward_pbr": "degraded",
+                "readback_headless_screenshots": "supported"
+            }
+        }))
+        .expect("introspection fixture serializes"),
+    )
+    .expect("introspection fixture writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "repair",
+            TEST_ASSET,
+            "--from",
+            path_str(&introspection_path),
+        ])
+        .output()
+        .expect("scena repair command runs");
+
+    assert!(
+        !output.status.success(),
+        "patchless frame_bounds repair must not report shell success"
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "patchless repair report stays machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("repair command emits JSON");
+    assert_eq!(report["schema"], "scena.visual_repair_plan.v1");
+    assert_eq!(report["status"], "needs_host_input");
+    assert_eq!(report["auto_fixable"], false);
+    assert_eq!(report["requires_host_input"], true);
+    assert!(report.get("visual_patch").is_none());
+    assert_eq!(report["skipped_actions"][0]["action"], "frame_bounds");
+}
+
+#[test]
 fn scena_verify_appearance_cli_checks_variant_color_and_fails_closed() {
     let dir = artifact_dir("verify-appearance");
     let expectation_path = dir.join("appearance-expectation.json");
@@ -886,6 +979,95 @@ fn scena_verify_animation_cli_checks_expected_sampled_translations() {
             .any(|reason| reason["code"] == "expected_value_mismatch"),
         "wrong expected value should be machine-readable: {wrong_report:#}"
     );
+}
+
+#[test]
+fn scena_verify_animation_cli_binds_expected_translations_to_requested_node() {
+    let animated = "tests/assets/gltf/animated_triangle_scene.glb";
+    let inferred = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "verify",
+            "animation",
+            animated,
+            "--clip",
+            "MoveTriangle",
+            "--times",
+            "0,0.5,1.0",
+            "--expect-change",
+            "--expect-translations",
+            "0,0,0;0.25,0,0;0.5,0,0",
+            "--width",
+            "96",
+            "--height",
+            "72",
+        ])
+        .output()
+        .expect("scena verify animation inferred target command runs");
+    assert!(inferred.status.success(), "stderr={}", stderr(&inferred));
+    let inferred_report: serde_json::Value =
+        serde_json::from_slice(&inferred.stdout).expect("animation command emits JSON");
+    let inferred_node = inferred_report["samples"][0]["observed_values"][0]["node"]
+        .as_u64()
+        .expect("inferred animation target node is reported");
+
+    let inspect = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["inspect", animated])
+        .output()
+        .expect("scena inspect command runs");
+    assert!(inspect.status.success(), "stderr={}", stderr(&inspect));
+    let inspection: serde_json::Value =
+        serde_json::from_slice(&inspect.stdout).expect("inspect emits JSON");
+    let nodes = inspection["nodes"]
+        .as_array()
+        .expect("inspection nodes array");
+    let bound_node = nodes
+        .iter()
+        .find_map(|node| {
+            let handle = node["handle"].as_u64()?;
+            (handle != inferred_node).then_some(handle)
+        })
+        .expect("fixture contains a non-animated node to bind");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "verify",
+            "animation",
+            animated,
+            "--clip",
+            "MoveTriangle",
+            "--times",
+            "0,0.5,1.0",
+            "--expect-change",
+            "--expect-node-handle",
+            &bound_node.to_string(),
+            "--expect-translations",
+            "0,0,0;0.25,0,0;0.5,0,0",
+            "--width",
+            "96",
+            "--height",
+            "72",
+        ])
+        .output()
+        .expect("scena verify animation bound target command runs");
+    assert!(
+        !output.status.success(),
+        "expected translations for a bound non-moving node must fail"
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "bound target report stays machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("animation command emits JSON");
+    assert_eq!(report["schema"], "scena.animation_introspection.v1");
+    assert_eq!(report["ok"], false);
+    assert_eq!(
+        report["samples"][0]["observed_values"][0]["node"],
+        bound_node
+    );
+    assert_report_reason(&report, "expected_node_static");
+    assert_report_reason(&report, "expected_value_mismatch");
 }
 
 #[test]

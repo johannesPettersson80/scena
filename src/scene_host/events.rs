@@ -34,8 +34,6 @@ pub enum HostEventV1 {
         x_css_px: f32,
         y_css_px: f32,
         hit: Option<HostEventHitV1>,
-        button: Option<HostEventButtonV1>,
-        modifiers: HostEventModifiersV1,
     },
     Hover {
         x_css_px: f32,
@@ -85,7 +83,6 @@ pub enum HostEventV1 {
     DeviceLost {
         recoverable: bool,
     },
-    DeviceRecovered,
     CapabilityChanged {
         capability_schema: String,
         backend: Backend,
@@ -106,22 +103,6 @@ pub struct HostEventHitV1 {
 pub enum HostEventTargetKindV1 {
     Node,
     InstanceRoot,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum HostEventButtonV1 {
-    Primary,
-    Secondary,
-    Auxiliary,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct HostEventModifiersV1 {
-    pub alt: bool,
-    pub ctrl: bool,
-    pub meta: bool,
-    pub shift: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -237,8 +218,6 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             x_css_px: x,
             y_css_px: y,
             hit: event_hit,
-            button: None,
-            modifiers: HostEventModifiersV1::default(),
         });
         Ok(handle)
     }
@@ -308,6 +287,20 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         })
     }
 
+    pub fn hover_handle(&self) -> Option<u64> {
+        self.scene
+            .interaction()
+            .hover()
+            .and_then(|target| self.handle_for_hit_target(target))
+    }
+
+    pub fn primary_selection_handle(&self) -> Option<u64> {
+        self.scene
+            .interaction()
+            .primary_selection()
+            .and_then(|target| self.handle_for_hit_target(target))
+    }
+
     pub(super) fn emit_event(&self, event: HostEventV1) {
         self.events.emit(event);
     }
@@ -365,6 +358,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     }
 
     fn pick_hit(&self, x: f32, y: f32) -> Result<Option<Hit>, SceneHostError> {
+        self.ensure_active_camera()?;
         let size = self.viewport.physical_size();
         let viewport = Viewport::new(size.width, size.height, self.viewport.device_pixel_ratio())
             .ok_or_else(|| {

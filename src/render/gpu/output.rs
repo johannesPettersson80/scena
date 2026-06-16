@@ -12,7 +12,7 @@ pub(super) const GPU_TRIANGLE_SHADER_TEXTURE_2D: &str =
     include_str!("output_shader_texture_2d.wgsl");
 
 pub(super) const MAX_OUTPUT_CLIPPING_PLANES: usize = 6;
-pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 592;
+pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 1040;
 
 pub(super) use super::draw_uniform::{
     DRAW_UNIFORM_ENTRY_STRIDE, create_draw_bind_group, create_draw_bind_group_layout,
@@ -212,7 +212,7 @@ pub(super) fn encode_output_uniform(
     } else {
         0.0
     };
-    let mut values = [0.0; 148];
+    let mut values = [0.0; 260];
     values[0..16].copy_from_slice(&upload.view_from_world);
     values[16..32].copy_from_slice(&upload.clip_from_view);
     values[32..48].copy_from_slice(&upload.clip_from_world);
@@ -226,27 +226,73 @@ pub(super) fn encode_output_uniform(
     values[70] = upload.near_far[0];
     values[71] = upload.near_far[1];
     values[72..76].copy_from_slice(&upload.color_management);
-    values[76..80].copy_from_slice(&upload.lighting.directional_light_direction_intensity);
-    values[80..84].copy_from_slice(&upload.lighting.directional_light_color_count);
-    values[84..88].copy_from_slice(&upload.lighting.directional_shadow_control);
-    values[88..92].copy_from_slice(&upload.lighting.point_light_position_intensity);
-    values[92..96].copy_from_slice(&upload.lighting.point_light_color_range);
-    values[96..100].copy_from_slice(&upload.lighting.spot_light_position_intensity);
-    values[100..104].copy_from_slice(&upload.lighting.spot_light_direction_cones);
-    values[104..108].copy_from_slice(&upload.lighting.spot_light_cone_range);
-    values[108..112].copy_from_slice(&upload.lighting.spot_light_color_range);
-    values[112..116].copy_from_slice(&upload.lighting.environment_diffuse_intensity);
-    values[116..120].copy_from_slice(&upload.lighting.environment_specular_intensity);
+    let mut offset = 76;
+    offset = encode_vec4_array(
+        &mut values,
+        offset,
+        &upload.lighting.directional_light_direction_intensity,
+    );
+    offset = encode_vec4_array(
+        &mut values,
+        offset,
+        &upload.lighting.directional_light_color,
+    );
+    offset = encode_vec4_array(
+        &mut values,
+        offset,
+        &upload.lighting.directional_shadow_control,
+    );
+    offset = encode_vec4_array(
+        &mut values,
+        offset,
+        &upload.lighting.point_light_position_intensity,
+    );
+    offset = encode_vec4_array(
+        &mut values,
+        offset,
+        &upload.lighting.point_light_color_range,
+    );
+    offset = encode_vec4_array(
+        &mut values,
+        offset,
+        &upload.lighting.spot_light_position_intensity,
+    );
+    offset = encode_vec4_array(
+        &mut values,
+        offset,
+        &upload.lighting.spot_light_direction_cones,
+    );
+    offset = encode_vec4_array(&mut values, offset, &upload.lighting.spot_light_cone_range);
+    offset = encode_vec4_array(&mut values, offset, &upload.lighting.spot_light_color_range);
+    values[offset..offset + 4].copy_from_slice(&upload.lighting.light_counts);
+    offset += 4;
+    values[offset..offset + 4].copy_from_slice(&upload.lighting.environment_diffuse_intensity);
+    offset += 4;
+    values[offset..offset + 4].copy_from_slice(&upload.lighting.environment_specular_intensity);
+    offset += 4;
     for (index, plane) in upload.clipping_planes.into_iter().enumerate() {
-        let offset = 120 + index * 4;
-        values[offset..offset + 4].copy_from_slice(&plane);
+        let plane_offset = offset + index * 4;
+        values[plane_offset..plane_offset + 4].copy_from_slice(&plane);
     }
-    values[144..148].copy_from_slice(&upload.clipping_control);
+    values[offset + 24..offset + 28].copy_from_slice(&upload.clipping_control);
     let mut bytes = [0; OUTPUT_UNIFORM_BYTE_LEN as usize];
     for (index, value) in values.into_iter().enumerate() {
         bytes[index * 4..index * 4 + 4].copy_from_slice(&value.to_ne_bytes());
     }
     bytes
+}
+
+fn encode_vec4_array<const N: usize>(
+    values: &mut [f32],
+    offset: usize,
+    array: &[[f32; 4]; N],
+) -> usize {
+    let mut offset = offset;
+    for value in array {
+        values[offset..offset + 4].copy_from_slice(value);
+        offset += 4;
+    }
+    offset
 }
 
 fn plane_uniform(plane: ClippingPlane) -> [f32; 4] {
@@ -265,9 +311,9 @@ mod tests {
     #[test]
     fn output_uniform_buffer_matches_wgsl_uniform_layout() {
         assert_eq!(
-            OUTPUT_UNIFORM_BYTE_LEN, 592,
+            OUTPUT_UNIFORM_BYTE_LEN, 1040,
             "CameraUniform stores view, projection, and view-projection matrices plus \
-             camera/exposure, viewport/depth, color-management, punctual-light, \
+             camera/exposure, viewport/depth, color-management, punctual-light arrays, \
              directional-shadow-control, environment, and six clipping-plane uniforms — per-draw model + normal matrices live on the new \
              DrawUniform bind group at @group(2)"
         );
@@ -758,7 +804,7 @@ mod tests {
              instead of multiplying by the (now retired) CPU shadow_visibility attribute"
         );
         assert!(
-            GPU_TRIANGLE_SHADER.contains("directional_shadow_control.x > 0.5")
+            GPU_TRIANGLE_SHADER.contains("directional_shadow_control[i].x > 0.5")
                 && GPU_TRIANGLE_SHADER.contains("let gpu_shadow = select(")
                 && GPU_TRIANGLE_SHADER.contains("directional_shadow_factor(world_position)")
                 && GPU_TRIANGLE_SHADER.contains("* gpu_shadow"),

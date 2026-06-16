@@ -63,5 +63,19 @@ pub(super) fn texture_slot_with_fallback(
         sinks.all.push(fallback.clone());
         sinks.source.push(fallback);
     }
+    if let Some(source) = textures
+        .get(request.texture_index)
+        .filter(|texture| texture.source_bytes_missing())
+    {
+        let fallback = AssetMaterialFallback::missing_texture_fallback(
+            request.material_index,
+            request.slot,
+            request.texture_index,
+            source.path().clone(),
+            AssetPath::from("scena.material.fallback_texture"),
+        );
+        sinks.all.push(fallback.clone());
+        sinks.source.push(fallback);
+    }
     Ok(texture)
 }

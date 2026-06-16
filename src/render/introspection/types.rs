@@ -90,18 +90,15 @@ pub struct RenderIntrospectionNodesSummaryV1 {
     pub hidden: usize,
     pub drawn: usize,
     pub culled: u64,
-    pub clipped: u64,
     pub transparent: u64,
     pub failed_material: u64,
-    pub unknown_coverage: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RenderIntrospectionNodeDetailV1 {
     pub handle: u64,
     pub kind: String,
     pub visible: bool,
-    pub coverage: String,
     #[serde(default)]
     pub reason_codes: Vec<String>,
 }

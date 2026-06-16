@@ -11,13 +11,6 @@
         "distance": 2.5,
         "world_position": [0.0, 0.0, 0.0],
         "normal": [0.0, 0.0, 1.0]
-      },
-      "button": "primary",
-      "modifiers": {
-        "alt": false,
-        "ctrl": false,
-        "meta": false,
-        "shift": true
       }
     },
     {
@@ -75,8 +68,8 @@
             "generator": null,
             "derivatives": []
           },
-          "source_units": [],
-          "source_coordinate_systems": []
+          "source_units": ["meters"],
+          "source_coordinate_systems": ["gltf_y_up_right_handed"]
         },
         "warnings": [],
         "progress_events": [
@@ -129,9 +122,6 @@
     {
       "kind": "device_lost",
       "recoverable": false
-    },
-    {
-      "kind": "device_recovered"
     },
     {
       "kind": "capability_changed",

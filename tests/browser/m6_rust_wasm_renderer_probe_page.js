@@ -385,8 +385,6 @@ window.scenaViewerModelViewerParityProbe =
         scena_pixels_nonblack: render.pixels && render.pixels.nonblack,
         scena_pixel_source: render.pixel_source,
         scena_workflow: render.workflow,
-        scene_api: render.scene_api,
-        assets_api: render.assets_api,
       });
     }
 

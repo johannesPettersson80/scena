@@ -19,15 +19,16 @@ struct VertexOut {
 };
 
 struct LightingUniform {
-    directional_light_direction_intensity: vec4<f32>,
-    directional_light_color_count: vec4<f32>,
-    directional_shadow_control: vec4<f32>,
-    point_light_position_intensity: vec4<f32>,
-    point_light_color_range: vec4<f32>,
-    spot_light_position_intensity: vec4<f32>,
-    spot_light_direction_cones: vec4<f32>,
-    spot_light_cone_range: vec4<f32>,
-    spot_light_color_range: vec4<f32>,
+    directional_light_direction_intensity: array<vec4<f32>, 4>,
+    directional_light_color: array<vec4<f32>, 4>,
+    directional_shadow_control: array<vec4<f32>, 4>,
+    point_light_position_intensity: array<vec4<f32>, 4>,
+    point_light_color_range: array<vec4<f32>, 4>,
+    spot_light_position_intensity: array<vec4<f32>, 4>,
+    spot_light_direction_cones: array<vec4<f32>, 4>,
+    spot_light_cone_range: array<vec4<f32>, 4>,
+    spot_light_color_range: array<vec4<f32>, 4>,
+    light_counts: vec4<f32>,
     environment_diffuse_intensity: vec4<f32>,
     environment_specular_intensity: vec4<f32>,
 };

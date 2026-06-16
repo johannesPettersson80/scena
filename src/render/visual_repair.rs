@@ -1,5 +1,11 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
+
+mod actions;
+use actions::{
+    aggregate_visual_patch, patchless_presentation_skip, plan_risk, presentation_action,
+    reversible_content_action, risk_for_render_fix,
+};
 
 use super::introspection::{RenderIntrospectionReasonV1, RenderIntrospectionReportV1};
 use super::visibility_diagnosis::{VisibilityDiagnosisReasonV1, VisibilityDiagnosisReportV1};
@@ -107,26 +113,26 @@ impl VisualRepairPlanV1 {
             let root_cause = planner.root_cause_for_fix(fix.target_handle);
             let risk = fix.risk.as_str();
             if risk == "presentation" {
-                planner.apply(VisualRepairActionV1 {
-                    action: fix.action.clone(),
-                    source: "visibility_diagnosis".to_owned(),
-                    risk: risk.to_owned(),
-                    confidence: root_cause
-                        .as_ref()
-                        .map(|reason| reason.confidence.clone())
-                        .unwrap_or_else(|| "medium".to_owned()),
-                    root_cause: root_cause
-                        .as_ref()
-                        .map(|reason| reason.code.clone())
-                        .unwrap_or_else(|| fix.action.clone()),
-                    auto_fixable: true,
-                    reversible: false,
-                    target_handle: fix.target_handle,
-                    before: None,
-                    after: fix.patch.clone(),
-                    patch: fix.patch.clone(),
-                    help: fix.help.clone(),
-                });
+                if let Some(action) = presentation_action(
+                    "visibility_diagnosis",
+                    &fix.action,
+                    risk,
+                    fix.target_handle,
+                    fix.patch.clone(),
+                    fix.help.clone(),
+                    root_cause.as_ref(),
+                ) {
+                    planner.apply(action);
+                } else {
+                    planner.skip(patchless_presentation_skip(
+                        "visibility_diagnosis",
+                        &fix.action,
+                        risk,
+                        fix.target_handle,
+                        fix.help.clone(),
+                        root_cause.as_ref(),
+                    ));
+                }
                 continue;
             }
 
@@ -167,26 +173,26 @@ impl VisualRepairPlanV1 {
             let root_cause = planner.root_cause_for_fix(fix.target_handle);
             let risk = risk_for_render_fix(&fix.action);
             if risk == "presentation" {
-                planner.apply(VisualRepairActionV1 {
-                    action: fix.action.clone(),
-                    source: "render_introspection".to_owned(),
-                    risk: risk.to_owned(),
-                    confidence: root_cause
-                        .as_ref()
-                        .map(|reason| reason.confidence.clone())
-                        .unwrap_or_else(|| "medium".to_owned()),
-                    root_cause: root_cause
-                        .as_ref()
-                        .map(|reason| reason.code.clone())
-                        .unwrap_or_else(|| fix.action.clone()),
-                    auto_fixable: true,
-                    reversible: false,
-                    target_handle: fix.target_handle,
-                    before: None,
-                    after: fix.patch.clone(),
-                    patch: fix.patch.clone(),
-                    help: fix.help.clone(),
-                });
+                if let Some(action) = presentation_action(
+                    "render_introspection",
+                    &fix.action,
+                    risk,
+                    fix.target_handle,
+                    fix.patch.clone(),
+                    fix.help.clone(),
+                    root_cause.as_ref(),
+                ) {
+                    planner.apply(action);
+                } else {
+                    planner.skip(patchless_presentation_skip(
+                        "render_introspection",
+                        &fix.action,
+                        risk,
+                        fix.target_handle,
+                        fix.help.clone(),
+                        root_cause.as_ref(),
+                    ));
+                }
             } else {
                 planner.skip(VisualRepairSkippedActionV1 {
                     action: fix.action.clone(),
@@ -308,7 +314,9 @@ impl RepairPlanner {
         } else {
             "irreducible"
         };
-        let requires_host_input = has_skipped || has_remaining || !has_applied;
+        let visual_patch = aggregate_visual_patch(&self.applied_actions);
+        let requires_host_input =
+            has_skipped || has_remaining || !has_applied || visual_patch.is_none();
         let auto_fixable = has_applied && !requires_host_input;
         let risk = plan_risk(&self.applied_actions, &self.skipped_actions);
         let root_cause = self
@@ -332,7 +340,6 @@ impl RepairPlanner {
                     .map(|reason| reason.confidence.clone())
             })
             .unwrap_or_else(|| "medium".to_owned());
-        let visual_patch = aggregate_visual_patch(&self.applied_actions);
         VisualRepairPlanV1 {
             schema: VISUAL_REPAIR_PLAN_SCHEMA_V1.to_owned(),
             status: status.to_owned(),
@@ -398,96 +405,4 @@ impl ReasonView {
             message: self.message.clone(),
         }
     }
-}
-
-fn reversible_content_action(
-    source: &str,
-    fix: &super::visibility_diagnosis::VisibilityDiagnosisFixV1,
-    root_cause: Option<&ReasonView>,
-) -> Option<VisualRepairActionV1> {
-    if fix.action != "set_visible" {
-        return None;
-    }
-    let patch = fix.patch.clone()?;
-    let entry = patch.get("visibility")?.as_array()?.first()?;
-    let node = entry.get("node")?.as_u64()?;
-    let visible = entry.get("visible")?.as_bool()?;
-    if !visible {
-        return None;
-    }
-    let before = json!({
-        "visibility": [
-            {
-                "node": node,
-                "visible": false
-            }
-        ]
-    });
-    Some(VisualRepairActionV1 {
-        action: fix.action.clone(),
-        source: source.to_owned(),
-        risk: "content".to_owned(),
-        confidence: root_cause
-            .map(|reason| reason.confidence.clone())
-            .unwrap_or_else(|| "medium".to_owned()),
-        root_cause: root_cause
-            .map(|reason| reason.code.clone())
-            .unwrap_or_else(|| "node_hidden".to_owned()),
-        auto_fixable: true,
-        reversible: true,
-        target_handle: fix.target_handle,
-        before: Some(before),
-        after: Some(patch.clone()),
-        patch: Some(patch),
-        help: fix.help.clone(),
-    })
-}
-
-fn risk_for_render_fix(action: &str) -> &'static str {
-    match action {
-        "frame_bounds" | "set_camera" | "prepare" | "resize_capture" | "set_view_preset" => {
-            "presentation"
-        }
-        _ => "content",
-    }
-}
-
-fn plan_risk(applied: &[VisualRepairActionV1], skipped: &[VisualRepairSkippedActionV1]) -> String {
-    if applied.iter().any(|action| action.risk == "content")
-        || skipped.iter().any(|action| action.risk == "content")
-    {
-        "content".to_owned()
-    } else if applied.iter().any(|action| action.risk == "presentation")
-        || skipped.iter().any(|action| action.risk == "presentation")
-    {
-        "presentation".to_owned()
-    } else {
-        "irreducible".to_owned()
-    }
-}
-
-fn aggregate_visual_patch(actions: &[VisualRepairActionV1]) -> Option<Value> {
-    let mut object = serde_json::Map::new();
-    object.insert("schema".to_owned(), json!("scena.visual_patch.v1"));
-    let mut has_patch = false;
-    for action in actions {
-        let Some(Value::Object(patch)) = &action.patch else {
-            continue;
-        };
-        for (key, value) in patch {
-            if key == "schema" {
-                continue;
-            }
-            has_patch = true;
-            match (object.get_mut(key), value) {
-                (Some(Value::Array(existing)), Value::Array(next)) => {
-                    existing.extend(next.iter().cloned());
-                }
-                _ => {
-                    object.insert(key.clone(), value.clone());
-                }
-            }
-        }
-    }
-    has_patch.then_some(Value::Object(object))
 }

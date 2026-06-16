@@ -1160,9 +1160,12 @@ fn prepare_with_assets_renders_line_material_as_screen_space_stroke() {
         .expect("line material prepares");
     renderer.render(&scene, camera).expect("line renders");
 
-    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 4, 3), [80, 80, 80, 255]);
-    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 4, 2), [80, 80, 80, 255]);
-    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 4, 4), [80, 80, 80, 255]);
+    assert_eq!(
+        pixel_at(renderer.frame_rgba8(), 8, 4, 3),
+        [240, 240, 240, 255]
+    );
+    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 4, 2), [0, 0, 0, 255]);
+    assert_eq!(pixel_at(renderer.frame_rgba8(), 8, 4, 4), [0, 0, 0, 255]);
 }
 
 #[test]
@@ -1184,11 +1187,11 @@ fn prepare_with_assets_renders_wireframe_material_triangle_edges() {
 
     assert_eq!(
         pixel_at(renderer.frame_rgba8(), 16, 8, 13),
-        [80, 80, 80, 255]
+        [240, 240, 240, 255]
     );
     assert_eq!(
         pixel_at(renderer.frame_rgba8(), 16, 7, 7),
-        [80, 80, 80, 255]
+        [240, 240, 240, 255]
     );
 }
 
@@ -1213,7 +1216,7 @@ fn prepare_with_assets_renders_edge_material_without_coplanar_internal_edges() {
 
     assert_eq!(
         pixel_at(renderer.frame_rgba8(), 16, 8, 13),
-        [80, 80, 80, 255]
+        [240, 240, 240, 255]
     );
     assert_eq!(pixel_at(renderer.frame_rgba8(), 16, 7, 7), [0, 0, 0, 255]);
 }

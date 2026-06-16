@@ -113,6 +113,14 @@ impl GltfTexture {
     pub(in crate::assets::gltf) fn basisu_fallback(&self) -> Option<&GltfTextureBasisuFallback> {
         self.basisu_fallback.as_ref()
     }
+
+    pub(in crate::assets::gltf) fn path(&self) -> &AssetPath {
+        &self.path
+    }
+
+    pub(in crate::assets::gltf) const fn source_bytes_missing(&self) -> bool {
+        self.source_bytes.is_none()
+    }
 }
 
 fn image_path(path: &AssetPath, image: &Image<'_>) -> Option<AssetPath> {

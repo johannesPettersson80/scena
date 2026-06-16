@@ -135,6 +135,7 @@ impl SceneAsset {
 
     pub fn geometry_summary(&self) -> SceneAssetGeometrySummary {
         let source_units = self.source_units_summary();
+        let source_coordinate_systems = self.source_coordinate_system_summary();
         SceneAssetGeometrySummary {
             schema: ASSET_GEOMETRY_SUMMARY_SCHEMA_V1.to_owned(),
             node_count: self.node_count(),
@@ -143,7 +144,7 @@ impl SceneAsset {
             bounds: self.bounds(),
             provenance: self.provenance().clone(),
             source_units,
-            source_coordinate_systems: Vec::new(),
+            source_coordinate_systems,
         }
     }
 
@@ -241,6 +242,12 @@ impl SceneAsset {
             }
         }
         units.into_iter().collect()
+    }
+
+    fn source_coordinate_system_summary(&self) -> Vec<SourceCoordinateSystem> {
+        let mut coordinate_systems = BTreeSet::new();
+        coordinate_systems.insert(SourceCoordinateSystem::GltfYUpRightHanded);
+        coordinate_systems.into_iter().collect()
     }
 }
 

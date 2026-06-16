@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::geometry::Aabb;
 
@@ -13,7 +13,12 @@ pub struct ScenePlacementResultV1 {
     pub ok: bool,
     pub verb: String,
     pub import_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_transform_option",
+        deserialize_with = "deserialize_transform_option"
+    )]
     pub transform: Option<Transform>,
     pub diagnostics: Vec<ScenePlacementDiagnosticV1>,
 }
@@ -42,7 +47,7 @@ impl ScenePlacementResultV1 {
             ok: true,
             verb: verb.into(),
             import_id: import_id.into(),
-            transform: Some(transform),
+            transform: Some(round_transform(transform)),
             diagnostics: Vec::new(),
         }
     }
@@ -273,4 +278,108 @@ fn vec3_is_finite(value: Vec3) -> bool {
 
 fn quat_is_finite(value: glam::Quat) -> bool {
     value.x.is_finite() && value.y.is_finite() && value.z.is_finite() && value.w.is_finite()
+}
+
+fn round_transform(transform: Transform) -> Transform {
+    Transform {
+        translation: round_vec3(transform.translation),
+        rotation: glam::Quat::from_xyzw(
+            round3_f32(transform.rotation.x),
+            round3_f32(transform.rotation.y),
+            round3_f32(transform.rotation.z),
+            round3_f32(transform.rotation.w),
+        ),
+        scale: round_vec3(transform.scale),
+    }
+}
+
+fn round_vec3(value: Vec3) -> Vec3 {
+    Vec3::new(
+        round3_f32(value.x),
+        round3_f32(value.y),
+        round3_f32(value.z),
+    )
+}
+
+fn round3(value: f32) -> f64 {
+    if value.is_finite() {
+        ((value as f64) * 1000.0).round() / 1000.0
+    } else {
+        value as f64
+    }
+}
+
+fn round3_f32(value: f32) -> f32 {
+    round3(value) as f32
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+struct StableTransformV1 {
+    translation: [f64; 3],
+    rotation: [f64; 4],
+    scale: [f64; 3],
+}
+
+impl From<Transform> for StableTransformV1 {
+    fn from(transform: Transform) -> Self {
+        Self {
+            translation: [
+                round3(transform.translation.x),
+                round3(transform.translation.y),
+                round3(transform.translation.z),
+            ],
+            rotation: [
+                round3(transform.rotation.x),
+                round3(transform.rotation.y),
+                round3(transform.rotation.z),
+                round3(transform.rotation.w),
+            ],
+            scale: [
+                round3(transform.scale.x),
+                round3(transform.scale.y),
+                round3(transform.scale.z),
+            ],
+        }
+    }
+}
+
+impl From<StableTransformV1> for Transform {
+    fn from(transform: StableTransformV1) -> Self {
+        Self {
+            translation: Vec3::new(
+                transform.translation[0] as f32,
+                transform.translation[1] as f32,
+                transform.translation[2] as f32,
+            ),
+            rotation: glam::Quat::from_xyzw(
+                transform.rotation[0] as f32,
+                transform.rotation[1] as f32,
+                transform.rotation[2] as f32,
+                transform.rotation[3] as f32,
+            ),
+            scale: Vec3::new(
+                transform.scale[0] as f32,
+                transform.scale[1] as f32,
+                transform.scale[2] as f32,
+            ),
+        }
+    }
+}
+
+fn serialize_transform_option<S>(
+    transform: &Option<Transform>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    transform.map(StableTransformV1::from).serialize(serializer)
+}
+
+fn deserialize_transform_option<'de, D>(deserializer: D) -> Result<Option<Transform>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<StableTransformV1>::deserialize(deserializer)
+        .map(|transform| transform.map(Transform::from))
 }

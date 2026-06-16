@@ -152,7 +152,7 @@ pub(crate) fn check_m5_release_contracts(root: &Path, findings: &mut Vec<Finding
         "ARCH-M5-RELEASE",
         "tests/m5_release.rs",
         &[
-            "m5_debug_overlay_api_is_public_and_requires_prepare_after_change",
+            "m5_debug_overlay_api_reports_disabled_overlay_state",
             "m5_public_api_baseline_names_frozen_contracts",
             "m5_benchmark_report_writes_required_scene_rows",
             "scena_convert_cli_reports_fbx_to_gltf_plan",

@@ -217,7 +217,6 @@ fn scene_host_product_grounding_preset_reports_floor_ssao_and_shadow_fallback() 
     assert_eq!(report.floor_handles.len(), 2);
     assert!(report.floor_receiver);
     assert!(report.ssao_enabled);
-    assert!(!report.physical_shadow_claimed);
     assert_eq!(
         report.active_paths,
         vec![
@@ -225,9 +224,17 @@ fn scene_host_product_grounding_preset_reports_floor_ssao_and_shadow_fallback() 
             SceneHostGroundingPathV1::ScreenSpaceAmbientOcclusion,
         ]
     );
+    let grounded_bounds = host
+        .node_world_bounds(target)
+        .expect("grounded node resolves")
+        .expect("grounded target has bounds");
+    assert!(
+        grounded_bounds.min.y.abs() <= 0.001,
+        "grounding preset must drop the target to y=0, bounds={grounded_bounds:?}"
+    );
     assert!(report.fallbacks.iter().any(|fallback| {
-        fallback.code == "directional_shadow_receiver_degraded"
-            && fallback.message.contains("not claimed as physical")
+        fallback.code == "ssao_is_ambient_occlusion"
+            && fallback.message.contains("not a drop-shadow substitute")
     }));
     for handle in &report.floor_handles {
         assert!(
@@ -250,7 +257,7 @@ fn scene_host_product_grounding_preset_reports_floor_ssao_and_shadow_fallback() 
     .expect("grounding report JSON parses");
     assert_eq!(json_report["schema"], SCENE_HOST_GROUNDING_SCHEMA_V1);
     assert_eq!(json_report["target"], target);
-    assert_eq!(json_report["physical_shadow_claimed"], false);
+    assert_eq!(json_report["floor_receiver"], true);
 }
 
 #[test]
@@ -1942,10 +1949,10 @@ fn scene_host_distance_measurement_overlay_reports_stable_line_handle() {
         .add_distance_measurement_json(
             "browser-gap",
             Vec3::ZERO,
-            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(1.0 / 3.0, 0.0, 0.0),
             Some("gap"),
-            "mm",
-            0,
+            "m",
+            3,
         )
         .expect("measurement overlay inserts");
     let report: serde_json::Value = serde_json::from_str(&json).expect("report decodes");
@@ -1953,7 +1960,10 @@ fn scene_host_distance_measurement_overlay_reports_stable_line_handle() {
     assert_eq!(report["schema"], "scena.scene_host_measurement_overlay.v1");
     assert_eq!(report["id"], "browser-gap");
     assert_eq!(report["kind"], "distance");
-    assert_eq!(report["formatted_value"], "1000 mm");
+    assert_eq!(report["value"], json!(0.333));
+    assert_eq!(report["formatted_value"], "0.333 m");
+    assert_eq!(report["label_projection"]["x_css_px"], json!(70.928));
+    assert_eq!(report["label_projection"]["y_css_px"], json!(48.0));
     assert_eq!(report["label_projection"]["visible"], true);
     assert!(
         report["label_projection"]["x_css_px"]
@@ -2011,6 +2021,18 @@ fn scene_host_section_box_helper_drives_report_and_visual_patch_channel() {
     assert_eq!(report.planes.len(), 6);
     assert_eq!(report.planes[0].normal, [1.0, 0.0, 0.0]);
     assert_eq!(report.planes[1].normal, [-1.0, 0.0, 0.0]);
+    let report_json: serde_json::Value = serde_json::from_str(&json).expect("JSON report decodes");
+    assert_eq!(report_json["margin"], json!(0.05));
+    assert_eq!(report_json["planes"][0]["distance"], json!(0.3));
+    assert_eq!(report_json["planes"][1]["normal"], json!([-1.0, 0.0, 0.0]));
+    assert!(
+        json.contains("\"distance\":0.3"),
+        "section-box report must serialize rounded plane distances: {json}"
+    );
+    assert!(
+        !json.contains("0.30000001192092896") && !json.contains("-0.0"),
+        "section-box report must not expose raw f32 tails or signed zeroes: {json}"
+    );
     assert!(
         report.helper_node.is_some(),
         "helper wireframe should produce a stable SceneHost node handle"

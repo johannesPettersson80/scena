@@ -83,7 +83,13 @@ fn render_introspection_classifies_camera_transform_material_and_clipping_failur
     let alpha_zero_report = introspect_rendered_scene(&alpha_zero);
     assert!(!alpha_zero_report.ok, "{alpha_zero_report:#?}");
     assert_reason(&alpha_zero_report, "alpha_zero");
-    assert_fix(&alpha_zero_report, "set_material_alpha");
+    assert!(
+        alpha_zero_report
+            .fixes
+            .iter()
+            .all(|fix| fix.action != "set_material_alpha"),
+        "material alpha requires a host material edit and must not advertise a patchless render-introspection fix"
+    );
 
     let nan_transform =
         rendered_box_scene_at(64, 64, Vec3::new(f32::NAN, 0.0, 0.0), Color::WHITE, false);
@@ -298,11 +304,17 @@ fn assert_reason(report: &RenderIntrospectionReportV1, code: &str) {
 }
 
 fn assert_fix(report: &RenderIntrospectionReportV1, action: &str) {
-    assert!(
-        report.fixes.iter().any(|fix| fix.action == action),
-        "expected fix {action} in {:#?}",
-        report.fixes
-    );
+    let fix = report
+        .fixes
+        .iter()
+        .find(|fix| fix.action == action)
+        .unwrap_or_else(|| panic!("expected fix {action} in {:#?}", report.fixes));
+    if action == "frame_bounds" {
+        assert!(
+            fix.patch.is_some(),
+            "frame_bounds fixes must carry a visual_patch camera payload: {fix:#?}"
+        );
+    }
 }
 
 #[allow(dead_code)]

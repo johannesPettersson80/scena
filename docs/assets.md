@@ -56,13 +56,15 @@ bytes, cache-hit state, external buffer/image counts, geometry summary,
 progress events, external buffer/image status rows, typed missing-resource
 warnings (`external_buffer_missing` and `external_image_missing`), and material
 fallback provenance such as optional compressed texture sources that used an
-authored fallback image.
+authored fallback image or missing material texture bytes that bind the generated
+renderer fallback texture.
 
 Use `AssetLoadOptions::with_strict_external_resources(true)` when missing
-external buffers or images should fail loading instead of producing warnings.
-Cache-hit reports retain the original warning, external-resource status, and
-material-fallback evidence while reporting `fetched_bytes = 0` for the cache-hit
-call itself.
+external buffers should fail loading instead of producing warnings, and
+`AssetLoadOptions::with_strict_textures(true)` when missing external images
+should fail instead of producing texture warnings. Cache-hit reports retain the
+original warning, external-resource status, and material-fallback evidence while
+reporting `fetched_bytes = 0` for the cache-hit call itself.
 Asset-aware `scena.scene_inspection.v1` reports reuse the same material source
 evidence for rendered nodes and draw rows, including source material index,
 generated-default reason, texture provenance, and matching fallback rows.
@@ -182,7 +184,10 @@ on the external validator: `Assets::doctor_asset_path()` diagnoses a path,
 `SceneHostCore::asset_doctor_json()` returns the same JSON for native hosts,
 and browser hosts can call `SceneHost.assetDoctorJson(url)`. The `scena doctor`
 CLI prints the runtime `scena.asset_doctor.v1` report to stdout and exits
-non-zero when any error finding is present.
+non-zero when any error finding is present. Runtime `ok=true` means no
+error-severity finding was produced; warning-severity findings such as missing
+external images, missing optional buffers, or material fallbacks still require
+review when the host needs complete authored assets.
 
 Every finding includes `severity`, stable `code`, `path`, `message`, `help`,
 and `suggested_fix`. CLI and library diagnostics share codes where checks

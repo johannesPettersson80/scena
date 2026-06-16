@@ -23,6 +23,8 @@ mod prepare;
 mod prepare_lifecycle;
 mod prepare_retained;
 mod reporting;
+#[cfg(feature = "inspection")]
+mod screen_bounds;
 mod settings;
 // PreparedSceneState stores clipping_planes: Vec<ClippingPlane> in state.rs.
 mod state;
@@ -39,7 +41,6 @@ use crate::diagnostics::{
     NotPreparedReason, OutputColorSpace, RenderError, RenderOutcome, RendererStats,
 };
 use crate::material::Color;
-use crate::picking::InteractionStyle;
 use crate::scene::{CameraKey, ClippingPlane, Scene, SectionBox};
 
 pub use self::background::Background;
@@ -94,8 +95,6 @@ pub struct Renderer {
     surface_lost: Option<bool>,
     context_lost: Option<bool>,
     device_lost: Option<bool>,
-    hover_style: InteractionStyle,
-    selection_style: InteractionStyle,
     environment: Option<EnvironmentHandle>,
     environment_lighting_cache: environment_cache::EnvironmentLightingCache,
     background_color: Color,

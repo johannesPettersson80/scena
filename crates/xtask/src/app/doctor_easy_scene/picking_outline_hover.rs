@@ -7,8 +7,7 @@ pub(super) fn check_picking_outline_hover(root: &Path, findings: &mut Vec<Findin
         "PICKING-OUTLINE-HOVER",
         "src/picking.rs",
         &[
-            "pub struct InteractionStyle",
-            "pub const fn outline(",
+            "pub struct InteractionContext",
             "pub fn set_hover(",
             "pub fn set_primary_selection(",
         ],
@@ -29,18 +28,11 @@ pub(super) fn check_picking_outline_hover(root: &Path, findings: &mut Vec<Findin
         root,
         findings,
         "PICKING-OUTLINE-HOVER",
-        "src/render/settings.rs",
-        &["pub fn set_hover_style(", "pub fn set_selection_style("],
-    );
-    require_contains(
-        root,
-        findings,
-        "PICKING-OUTLINE-HOVER",
         "tests/examples_visual_proof.rs",
         &[
-            "examples_visual_picking_selection_hover_renders_styled_pick_to_ppm",
+            "examples_visual_picking_selection_hover_renders_pick_state_to_ppm",
             "picking_selection_hover",
-            "InteractionStyle::outline",
+            "pick_and_select_with_assets",
         ],
     );
     require_contains(
@@ -49,9 +41,9 @@ pub(super) fn check_picking_outline_hover(root: &Path, findings: &mut Vec<Findin
         "PICKING-OUTLINE-HOVER",
         "docs/guides/easy-scene-setup.md",
         &[
-            "InteractionStyle::outline",
-            "renderer.set_hover_style",
-            "renderer.set_selection_style",
+            "selection or hover state updates",
+            "viewer.on_hover",
+            "viewer.hover_at",
         ],
     );
     require_contains(
@@ -60,10 +52,10 @@ pub(super) fn check_picking_outline_hover(root: &Path, findings: &mut Vec<Findin
         "PICKING-OUTLINE-HOVER",
         "docs/checklists/next-release-easy-use-and-state-of-the-art.md",
         &[
-            "Picking + outline + hover",
+            "Picking + hover + selection",
             "Status: **[shipped]**",
             "PICKING-OUTLINE-HOVER",
-            "examples_visual_picking_selection_hover_renders_styled_pick_to_ppm",
+            "examples_visual_picking_selection_hover_renders_pick_state_to_ppm",
         ],
     );
 }

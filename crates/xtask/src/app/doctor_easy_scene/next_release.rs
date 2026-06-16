@@ -92,10 +92,9 @@ pub(super) fn check_named_orbit_control_presets(root: &Path, findings: &mut Vec<
         "NAMED-ORBIT-CONTROL-PRESETS",
         "src/controls.rs",
         &[
-            "pub fn cinematic(",
-            "pub fn snappy(",
             "pub fn presentation(",
             "pub fn turntable(",
+            "pub fn focus(",
             "pub fn advance(",
             "pub const fn auto_rotate_rpm(",
             "pub fn auto_rotate_radians_per_second(",
@@ -107,9 +106,8 @@ pub(super) fn check_named_orbit_control_presets(root: &Path, findings: &mut Vec<
         "NAMED-ORBIT-CONTROL-PRESETS",
         "tests/round_b_orbit_controls_presets.rs",
         &[
-            "named_orbit_damping_presets_are_public_and_ordered",
             "turntable_presets_expose_explicit_frame_advance_semantics",
-            "presentation_combines_medium_damping_with_slow_turntable_motion",
+            "presentation_sets_slow_turntable_motion",
         ],
     );
     require_contains(

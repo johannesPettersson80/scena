@@ -4,7 +4,7 @@ use std::process::Command;
 use std::time::Instant;
 
 use scena::{
-    AnimationError, AssetError, Backend, BuildError, ChangeKind, Color, DebugOverlay, GeometryDesc,
+    AnimationError, AssetError, Backend, BuildError, Color, DebugOverlay, GeometryDesc,
     ImportError, InstantiateError, LookupError, MaterialDesc, NotPreparedReason, PerspectiveCamera,
     PrepareError, Primitive, RenderError, Renderer, Scene, Transform, Vec3,
 };
@@ -14,7 +14,7 @@ fn root() -> &'static Path {
 }
 
 #[test]
-fn m5_debug_overlay_api_is_public_and_requires_prepare_after_change() {
+fn m5_debug_overlay_api_reports_disabled_overlay_state() {
     let mut scene = Scene::new();
     let camera = scene
         .add_perspective_camera(
@@ -29,29 +29,12 @@ fn m5_debug_overlay_api_is_public_and_requires_prepare_after_change() {
 
     let mut renderer = Renderer::headless(8, 8).expect("headless renderer builds");
     assert_eq!(renderer.debug_overlay(), DebugOverlay::None);
-    renderer.set_debug(DebugOverlay::Wireframe);
-    assert_eq!(renderer.debug_overlay(), DebugOverlay::Wireframe);
-    renderer.set_debug_overlay(DebugOverlay::BoundingBoxes);
-    assert_eq!(renderer.debug_overlay(), DebugOverlay::BoundingBoxes);
-
+    renderer.set_debug(DebugOverlay::None);
+    assert_eq!(renderer.debug_overlay(), DebugOverlay::None);
     renderer.prepare(&mut scene).expect("scene prepares");
     renderer
         .render_active(&scene)
         .expect("first render succeeds");
-    renderer.set_debug(DebugOverlay::Normals);
-
-    let error = renderer
-        .render_active(&scene)
-        .expect_err("debug overlay change requires prepare");
-    assert!(matches!(
-        error,
-        RenderError::NotPrepared {
-            reason: NotPreparedReason::RendererChanged {
-                change: ChangeKind::DebugOverlay,
-                ..
-            }
-        }
-    ));
 }
 
 #[test]

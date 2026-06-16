@@ -3,10 +3,10 @@
 use scena::{
     Aabb, AssetError, AssetFetcher, AssetPath, Assets, BuildError, Camera, ChangeKind, Color,
     CursorPosition, GeometryDesc, GeometryTopology, GeometryVertex, HitTarget,
-    ImportDiagnosticOverlayKind, ImportOptions, InstanceCullingPolicy, InstantiateError,
-    InteractionStyle, LabelBillboard, LabelDesc, LabelRasterization, LookupError, MaterialDesc,
-    MaterialKind, NodeKind, NotPreparedReason, OffscreenTarget, PerspectiveCamera, Primitive, Quat,
-    RenderError, Renderer, Scene, SourceCoordinateSystem, SourceUnits, Transform, Vec3, Viewport,
+    ImportDiagnosticOverlayKind, ImportOptions, InstantiateError, LabelBillboard, LabelDesc,
+    LookupError, MaterialDesc, MaterialKind, NodeKind, NotPreparedReason, OffscreenTarget,
+    PerspectiveCamera, Primitive, Quat, RenderError, Renderer, Scene, SourceCoordinateSystem,
+    SourceUnits, Transform, Vec3, Viewport,
 };
 use std::collections::BTreeMap;
 use std::future::{Ready, ready};
@@ -520,8 +520,7 @@ fn gltf_required_texture_transform_and_mesh_quantization_are_realized() {
                                 "KHR_texture_transform": {
                                     "offset": [0.25, 0.5],
                                     "rotation": 1.5707964,
-                                    "scale": [2.0, 3.0],
-                                    "texCoord": 1
+                                    "scale": [2.0, 3.0]
                                 }
                             }
                         }
@@ -580,7 +579,6 @@ fn gltf_required_texture_transform_and_mesh_quantization_are_realized() {
 
     assert_eq!(transform.offset(), [0.25, 0.5]);
     assert_eq!(transform.scale(), [2.0, 3.0]);
-    assert_eq!(transform.tex_coord(), Some(1));
     assert!((transform.rotation_radians() - 1.5707964).abs() <= 0.0001);
     assert_vec3_near(geometry.vertices()[0].position, Vec3::new(-1.0, -1.0, 0.0));
     assert_vec3_near(geometry.vertices()[1].position, Vec3::new(1.0, -1.0, 0.0));
@@ -651,7 +649,7 @@ fn scene_pick_returns_typed_hit_target_for_renderable_triangle() {
 }
 
 #[test]
-fn interaction_context_and_renderer_styles_are_explicit() {
+fn interaction_context_tracks_hover_and_selection() {
     let mut scene = Scene::new();
     let node = scene
         .add_renderable(
@@ -675,15 +673,6 @@ fn interaction_context_and_renderer_styles_are_explicit() {
         scene.interaction().primary_selection(),
         Some(HitTarget::Node(node))
     );
-
-    let hover = InteractionStyle::outline(Color::from_linear_rgb(1.0, 0.8, 0.0), 3.0);
-    let selection = InteractionStyle::outline(Color::from_linear_rgb(0.1, 0.4, 1.0), 4.0);
-    let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
-    renderer.set_hover_style(hover);
-    renderer.set_selection_style(selection);
-
-    assert_eq!(renderer.hover_style(), hover);
-    assert_eq!(renderer.selection_style(), selection);
 }
 
 #[test]
@@ -705,11 +694,8 @@ fn instance_sets_have_stable_ids_mutations_and_cpu_fallback() {
         .expect("instance set inserts");
 
     assert_eq!(
-        scene
-            .instance_set(set)
-            .expect("instance set exists")
-            .culling_policy(),
-        InstanceCullingPolicy::CpuBoundingBoxFallback
+        scene.instance_set(set).expect("instance set exists").len(),
+        0
     );
 
     scene
@@ -871,7 +857,7 @@ fn m3a_resource_lifetime_counters_return_to_baseline_for_imports_targets_and_ins
     scene
         .add_label(
             scene.root(),
-            LabelDesc::sdf("serial")
+            LabelDesc::bitmap("serial")
                 .with_size(0.5)
                 .with_billboard(LabelBillboard::ScreenAligned),
             Transform::default(),
@@ -918,7 +904,7 @@ fn m3a_resource_lifetime_counters_return_to_baseline_for_imports_targets_and_ins
 }
 
 #[test]
-fn labels_use_sdf_msdf_descriptors_and_billboard_render_path() {
+fn labels_use_bitmap_billboard_render_path() {
     let mut scene = Scene::new();
     let camera = scene
         .add_perspective_camera(
@@ -927,7 +913,7 @@ fn labels_use_sdf_msdf_descriptors_and_billboard_render_path() {
             Transform::default(),
         )
         .expect("camera inserts");
-    let label_desc = LabelDesc::sdf("Pump A")
+    let label_desc = LabelDesc::bitmap("Pump A")
         .with_color(Color::from_linear_rgb(0.0, 1.0, 0.0))
         .with_size(0.5)
         .with_billboard(LabelBillboard::ScreenAligned);
@@ -936,12 +922,7 @@ fn labels_use_sdf_msdf_descriptors_and_billboard_render_path() {
         .expect("label inserts");
 
     assert_eq!(scene.label(label), Some(&label_desc));
-    assert_eq!(label_desc.rasterization(), LabelRasterization::Sdf);
     assert_eq!(label_desc.billboard(), LabelBillboard::ScreenAligned);
-    assert_eq!(
-        LabelDesc::msdf("Pump B").rasterization(),
-        LabelRasterization::Msdf
-    );
 
     let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
     renderer.prepare(&mut scene).expect("label scene prepares");

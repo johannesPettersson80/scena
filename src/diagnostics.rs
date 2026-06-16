@@ -260,11 +260,6 @@ pub enum ChangeKind {
 pub enum DebugOverlay {
     #[default]
     None,
-    Wireframe,
-    Normals,
-    BoundingBoxes,
-    ShadowMap,
-    LightCount,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

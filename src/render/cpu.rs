@@ -116,6 +116,9 @@ pub(super) fn draw_primitive_cpu(
     if area.abs() <= f32::EPSILON {
         return;
     }
+    if !primitive.double_sided() && area < 0.0 {
+        return;
+    }
 
     for y in min_y..=max_y {
         for x in min_x..=max_x {
@@ -173,6 +176,9 @@ pub(super) fn draw_order_independent_transparency_cpu(
 
     let area = edge(a, b, c.x, c.y);
     if area.abs() <= f32::EPSILON {
+        return;
+    }
+    if !primitive.double_sided() && area < 0.0 {
         return;
     }
 

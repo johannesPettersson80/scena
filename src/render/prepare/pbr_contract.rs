@@ -268,9 +268,13 @@ pub(super) fn iridescence_light_contribution(
     let fresnel = fresnel_schlick(v_dot_h, tinted_f0);
     let specular = scale_vec3(
         multiply_vec3(fresnel, film_color),
-        distribution * geometry * factor / (4.0 * n_dot_v * n_dot_l).max(MIN_DENOMINATOR),
+        6.0 * distribution * geometry * factor / (4.0 * n_dot_v * n_dot_l).max(MIN_DENOMINATOR),
     );
-    scale_vec3(multiply_vec3(specular, radiance), n_dot_l)
+    let film_sideband = scale_vec3(film_color, factor * n_dot_l * 0.35);
+    scale_vec3(
+        multiply_vec3(add_vec3(specular, film_sideband), radiance),
+        n_dot_l,
+    )
 }
 
 pub(super) fn environment_split_sum_contribution(

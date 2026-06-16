@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 #[cfg(feature = "scene-host")]
-use scena::{AssetPath, SceneHostCore, VisualPatchV1};
+use scena::{AssetPath, SceneHostCore, VisualPatchTransformV1, VisualPatchV1};
 use scena::{
     Assets, Color, ExplodedView, GeometryDesc, MaterialDesc, Renderer, Scene, Transform, Vec3,
 };
@@ -164,6 +164,27 @@ fn scene_host_exploded_view_emits_visual_patch_transform_channels() {
     assert_eq!(immediate.schema, "scena.visual_patch.v1");
     assert_eq!(immediate.transforms.len(), 2);
     assert!(immediate.transforms_eased.is_empty());
+    let restore_patch: VisualPatchV1 = serde_json::from_value(
+        immediate
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("scena_exploded_view_restore_patch"))
+            .cloned()
+            .expect("SceneHost exploded-view patch includes a restore VisualPatch"),
+    )
+    .expect("restore patch decodes");
+    assert_eq!(restore_patch.schema, "scena.visual_patch.v1");
+    assert_eq!(restore_patch.transforms.len(), immediate.transforms.len());
+    assert!(restore_patch.transforms_eased.is_empty());
+    assert!(
+        restore_patch
+            .transforms
+            .iter()
+            .zip(immediate.transforms.iter())
+            .all(|(restore, exploded)| restore.node == exploded.node
+                && restore.transform.translation != exploded.transform.translation),
+        "restore patch must target the same nodes with the pre-exploded transforms"
+    );
 
     let eased: VisualPatchV1 = serde_json::from_str(
         &host
@@ -177,6 +198,30 @@ fn scene_host_exploded_view_emits_visual_patch_transform_channels() {
     assert!(eased.transforms.is_empty());
     assert_eq!(eased.transforms_eased.len(), 2);
     assert_eq!(eased.transforms_eased[0].duration_seconds, 0.25);
+    let eased_restore = restore_transforms_from_metadata(&eased);
+    assert_eq!(eased_restore.len(), eased.transforms_eased.len());
+    assert!(
+        eased_restore
+            .iter()
+            .zip(eased.transforms_eased.iter())
+            .all(|(restore, exploded)| restore.node == exploded.node
+                && restore.transform.translation != exploded.transform.translation),
+        "eased exploded-view patches must carry immediate restore transforms for JSON/WASM hosts"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+fn restore_transforms_from_metadata(patch: &VisualPatchV1) -> Vec<VisualPatchTransformV1> {
+    let restore_patch: VisualPatchV1 = serde_json::from_value(
+        patch
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("scena_exploded_view_restore_patch"))
+            .cloned()
+            .expect("restore patch metadata exists"),
+    )
+    .expect("restore patch decodes");
+    restore_patch.transforms
 }
 
 #[test]

@@ -6,7 +6,6 @@ use super::{LabelKey, NodeKey, NodeKind, Scene, Transform};
 #[derive(Debug, Clone, PartialEq)]
 pub struct LabelDesc {
     text: String,
-    rasterization: LabelRasterization,
     billboard: LabelBillboard,
     color: Color,
     background: Option<Color>,
@@ -20,12 +19,6 @@ pub struct LabelMetrics {
     pub width_px: f32,
     pub height_px: f32,
     pub baseline_px: f32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LabelRasterization {
-    Sdf,
-    Msdf,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,20 +75,13 @@ impl Scene {
 }
 
 impl LabelDesc {
-    pub fn sdf(text: impl Into<String>) -> Self {
-        Self::new(text, LabelRasterization::Sdf)
-    }
-
-    pub fn msdf(text: impl Into<String>) -> Self {
-        Self::new(text, LabelRasterization::Msdf)
+    /// Creates a label rendered through scena's embedded 5x7 bitmap glyph path.
+    pub fn bitmap(text: impl Into<String>) -> Self {
+        Self::new(text)
     }
 
     pub fn text(&self) -> &str {
         &self.text
-    }
-
-    pub const fn rasterization(&self) -> LabelRasterization {
-        self.rasterization
     }
 
     pub const fn billboard(&self) -> LabelBillboard {
@@ -161,10 +147,9 @@ impl LabelDesc {
         self
     }
 
-    fn new(text: impl Into<String>, rasterization: LabelRasterization) -> Self {
+    fn new(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
-            rasterization,
             billboard: LabelBillboard::ScreenAligned,
             color: Color::WHITE,
             background: None,

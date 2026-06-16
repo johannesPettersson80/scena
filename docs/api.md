@@ -23,9 +23,8 @@ Additive public API changes in Unreleased:
 - `SceneHostCore::apply_patch` and `SceneHostCore::apply_patch_json`
   (gated behind `scene-host`)
 - `HOST_EVENT_SCHEMA_V1`, `HostEventBatchV1`, `HostEventV1`,
-  `HostEventHitV1`, `HostEventTargetKindV1`, `HostEventButtonV1`,
-  `HostEventModifiersV1`, and `HostEventHoverPhaseV1` (gated behind
-  `scene-host`)
+  `HostEventHitV1`, `HostEventTargetKindV1`, and
+  `HostEventHoverPhaseV1` (gated behind `scene-host`)
 - `SceneHostCore::set_event_sink`, `SceneHostCore::clear_event_sink`,
   `SceneHostCore::drain_events`, `SceneHostCore::drain_events_json`,
   `SceneHostCore::hover`, and `SceneHostCore::select` (gated behind
@@ -120,9 +119,8 @@ Additive public API changes in Unreleased:
 - `LabelMetrics`, `LabelDesc::metrics`, `LabelDesc::background`,
   `LabelDesc::halo`, `LabelDesc::with_background`,
   `LabelDesc::without_background`, `LabelDesc::with_halo`, and
-  `LabelDesc::without_halo`; `LabelDesc::sdf()` and `LabelDesc::msdf()` now
-  render through the embedded glyph-atlas billboard path instead of placeholder
-  quads
+  `LabelDesc::without_halo`; `LabelDesc::bitmap()` renders through the
+  embedded 5x7 glyph-cell billboard path.
 - `Scene::isolate`, `Scene::show_only`, `Scene::hide`, `Scene::show`,
   `Scene::toggle_visibility`, `Scene::ghost`, `Scene::restore_visibility`,
   `Scene::restore_tints`, `Scene::fit_selection_with_assets`,
@@ -136,8 +134,11 @@ Additive public API changes in Unreleased:
 - `SceneHostCore::exploded_view_patch`,
   `SceneHostCore::exploded_view_patch_json`,
   `SceneHostExplodedViewOptionsV1`, and `SceneHostExplodedViewModeV1` for
-  emitting existing visual-patch transform channels from stable host handles
-  (gated behind `scene-host`)
+  emitting existing visual-patch transform channels from stable host handles;
+  SceneHost JSON patches include
+  `metadata.scena_exploded_view_restore_patch`, an immediate-transform
+  `VisualPatchV1` for restoring the pre-exploded local transforms (gated behind
+  `scene-host`)
 - `SCENE_HOST_VISUAL_STATE_SCHEMA_V1`,
   `SCENE_HOST_VISUAL_STATES_SCHEMA_V1`, `SceneHostVisualStateV1`,
   `SceneHostVisualStateSummaryV1`, `SceneHostVisualStatesReportV1`,
@@ -218,7 +219,8 @@ Additive public API changes in 1.7.0:
 - `AssetMaterialSource` and `AssetMaterialSourceKind`
 - `AssetLoadReport<SceneAsset>::to_schema_report`
 - `AssetLoadReport<SceneAsset>::to_schema_json`
-- `AssetLoadOptions::with_strict_external_resources`
+- `AssetLoadOptions::with_strict_external_resources` for referenced buffers and
+  `AssetLoadOptions::with_strict_textures` for referenced images
 - `AssetProvenance` and `AssetDerivative`
 - `SceneAsset::provenance`
 - `TextureDesc::provenance`

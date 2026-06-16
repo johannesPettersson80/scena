@@ -314,8 +314,9 @@ Acceptance:
       and cache-hit warning retention.
 - [x] Browser proof records all external resources for a `.gltf` with `.bin`
       and texture files. Evidence: `SCENA_BROWSER_BACKENDS=webgl2 npm run
-      browser:scene-host-proof` loads the Khronos WaterBottle `.gltf` in the
-      browser proof and asserts `scena.asset_load_report.v1` reports one
+      browser:scene-host-proof` was run manually on V3D WebGL2 and loads the
+      Khronos WaterBottle `.gltf` in the browser proof, asserting
+      `scena.asset_load_report.v1` reports one
       fetched `WaterBottle.bin` buffer plus all four fetched WaterBottle PNG
       texture files.
 - [x] Stable `scena.asset_load_report.v1` additions are optional/defaulted.
@@ -437,16 +438,12 @@ Required fields and behavior:
       shader-encoded RGBA8 scale, rounded to stable precision.
 - [x] `framing`: center offset, fit fraction, crop flags, tiny-in-frame flag,
       and active camera handle.
-- [x] `nodes_summary`: counts for visible, hidden, culled, clipped,
-      transparent, failed-material, and unknown-coverage nodes.
+- [x] `nodes_summary`: counts for visible, hidden, culled, transparent, and
+      failed-material nodes.
 - [x] `nodes_detail`: optional detail mode only; stable handle, name if
-      available, projected bbox where known, coverage category, and reason
-      codes. The first slice reports stable handles, kind, visibility, and
-      conservative coverage categories; projected bbox detail remains open.
-- [x] First-slice MVP fields are explicit: per-node pixel coverage is
-      `unknown` for visible nodes, `unknown_coverage` counts those nodes,
-      `clipped` and `transparent` are reserved not-yet-computed counters, and
-      render-level fixes may omit `target_handle` / `patch`.
+      available, reason codes, and draw-derived node state. Placeholder
+      coverage and clipped counters were removed from v1 rather than exposed
+      as reserved fields.
 - [x] `artifacts`: capture PNG path, capture descriptor path or inline summary,
       and optional contact-sheet path.
 - [x] `capabilities`: active backend and capability summary, not a duplicate
@@ -564,8 +561,11 @@ Required commands:
 - [x] `scena verify appearance <recipe-or-asset> --expect <json>`: emit
       `scena.appearance_introspection.v1`.
 - [x] `scena verify animation <recipe-or-asset> --clip <name> --times <csv>
-      [--expect-change] [--expect-translations 'x,y,z;...']`: emit
-      `scena.animation_introspection.v1`.
+      [--expect-change] [--expect-node-handle <handle>]
+      [--expect-translations 'x,y,z;...']`: emit
+      `scena.animation_introspection.v1`. Explicit handles come from
+      `scena inspect`; without one the verifier reports the first moving node
+      it can infer.
 - [x] `scena verify interaction <recipe-or-asset> --expect <json>`: emit
       `scena.interaction_verification.v1`. Native CLI verification and
       browser synthetic pick/hover/select proof are complete; rendered
@@ -624,6 +624,9 @@ Acceptance:
 - [x] Tests verify `verify animation --expect-translations` records
       `samples[].observed_values`, exits zero when sampled translations match,
       and exits non-zero with `expected_value_mismatch` when they do not.
+- [x] Tests verify `verify animation --expect-node-handle` binds sampled
+      translations to the requested stable node handle instead of auto-selecting
+      another moving node.
 - [x] Tests verify non-zero exits for invalid recipe and invisible target.
 - [x] Tests verify missing assets emit JSON instead of command-error text.
 - [x] Doctor rule keeps CLI help, schema constants, docs schema references, and
@@ -1002,7 +1005,7 @@ Acceptance:
       proof gate.
 - [x] Browser proof runs without manual mouse input. Evidence:
       `SCENA_BROWSER_BACKENDS=webgl2 npm run browser:scene-host-proof` passed
-      locally with V3D WebGL2 and wrote
+      manually with V3D WebGL2 and wrote
       `target/gate-artifacts/scene-host-browser-proof/scene-host-browser-proof.json`;
       `tests/browser/scene_host_browser_proof.js` asserts synthetic
       `host.pick`, `host.hover`, and `host.select` return the tracked handle
@@ -1101,7 +1104,7 @@ Acceptance:
 - [x] Invalid camera states fail with structured errors.
 - [x] Browser proof shows a framed object remains visible during and after
       fly-to. Evidence: `SCENA_BROWSER_BACKENDS=webgl2 npm run
-      browser:scene-host-proof` passed locally with V3D WebGL2; the
+      browser:scene-host-proof` passed manually with V3D WebGL2; the
       SceneHost browser proof asserts `setCameraEased` halfway and final
       captures both have nonzero visible pixels and a nonempty content bbox,
       and that the final camera reaches the requested target state.
@@ -1155,7 +1158,8 @@ Acceptance:
       stale handles fail closed as `NodeHandleNotFound`.
 - [x] Browser proof for translate drag and rotation drag. Evidence:
       `SCENA_BROWSER_BACKENDS=webgl2 npm run browser:scene-host-proof`
-      asserts WASM `applyGizmoDragJson()` is exported, a
+      passed manually on V3D WebGL2 and asserts WASM
+      `applyGizmoDragJson()` is exported, a
       `scena.scene_host_gizmo_drag.v1` translate drag applies one
       visual-patch transform and moves the tracked mesh along X, a rotate drag
       applies one visual-patch transform and rotates local X to world Y, and
@@ -1284,7 +1288,7 @@ Evidence:
       scene_host_inspection_tools_drive_part_tree_selection_isolate_ghost_and_fit
       -- --nocapture` passes locally.
 - [x] Browser proof: `SCENA_BROWSER_BACKENDS=webgl2 npm run
-      browser:scene-host-proof` passed on V3D WebGL2 with artifact
+      browser:scene-host-proof` passed manually on V3D WebGL2 with artifact
       `target/gate-artifacts/scene-host-browser-proof/scene-host-browser-proof.json`
       and screenshot
       `target/gate-artifacts/scene-host-browser-proof/scene-host-browser-proof.png`.
@@ -1353,7 +1357,7 @@ Evidence:
       screen-space label projection was added; the focused SceneHost and stable
       contract tests pass locally after implementation.
 - [x] Browser proof: `SCENA_BROWSER_BACKENDS=webgl2 npm run
-      browser:scene-host-proof` passed on V3D WebGL2 with selected point
+      browser:scene-host-proof` passed manually on V3D WebGL2 with selected point
       centers, `scena.scene_host_measurement_overlay.v1` line-node report,
       draw-list line material, and rendered pixel evidence in
       `target/gate-artifacts/scene-host-browser-proof/scene-host-browser-proof.json`.
@@ -1399,7 +1403,7 @@ Evidence:
       stable_contracts -- --nocapture`, and `cargo test --lib --
       --nocapture` pass.
 - [x] Browser proof: `SCENA_BROWSER_BACKENDS=webgl2 npm run
-      browser:scene-host-proof` passed on V3D WebGL2 with
+      browser:scene-host-proof` passed manually on V3D WebGL2 with
       `section_box_report_exposes_six_planes_and_helper`,
       `section_box_cutaway_changes_imported_asset_pixels`,
       `section_box_invert_changes_cutaway_pixels`, and
@@ -1428,6 +1432,11 @@ Required behavior:
 - [x] Offset by hierarchy depth or selected axis.
 - [x] Support factor from `0.0` assembled to `1.0` exploded.
 - [x] Produce reversible transforms.
+      Evidence: `ExplodedViewPlan` stores `original` and exploded transforms;
+      `SceneHostCore::exploded_view_patch_json()` keeps the top-level
+      `scena.visual_patch.v1` shape and includes
+      `metadata.scena_exploded_view_restore_patch` so JSON/WASM hosts can apply
+      an immediate restore patch without retaining Rust-only plan state.
 - [x] Optional easing through `VisualPatch`.
 
 Acceptance:
@@ -1446,6 +1455,9 @@ Implementation evidence:
       -- --nocapture` passes on `scena-builder` with direct-child identity/separation,
       selected-axis, hierarchy-depth, SceneHost visual-patch, and imported
       assembly rendered-pixel assertions.
+- [x] JSON host restore proof: the SceneHost visual-patch test failed first
+      until `metadata.scena_exploded_view_restore_patch` carried immediate
+      restore transforms for both immediate and eased exploded-view patches.
 - [x] Full remote gate: `cargo fmt --check`, `cargo clippy --all-targets
       --features scene-host -- -D warnings`, `cargo test --features
       scene-host`, `cargo run -p xtask -- doctor --full`, and
@@ -1500,28 +1512,27 @@ Proof:
       `cargo run -p xtask -- doctor --full`, and
       `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features` passed.
 
-### 2.6 Real SDF/MSDF text
+### 2.6 Label text billboards
 
 Owner modules: `scene`, `render`, `geometry`, `assets`.
 
-Foothold: `LabelDesc::sdf`, `LabelDesc::msdf`, label nodes, visual proof
-fixtures. Current label rendering must be treated as incomplete until actual
-crisp text is proven.
+Foothold: `LabelDesc::bitmap`, label nodes, visual proof fixtures. The 1.7
+renderer exposes the implemented embedded 5x7 glyph-cell billboard path only;
+distance-field rasterization variants are not part of the public surface.
 
 Required behavior:
 
-- [x] Font atlas or embedded default font strategy.
-- [x] SDF/MSDF glyph generation or bundled atlas path.
+- [x] Embedded default glyph strategy.
 - [x] Stable text metrics for layout.
 - [x] Screen-aligned billboards with consistent apparent size.
 - [x] Text color, background/halo option, and DPI-aware scale.
-- [x] Labels remain readable across zoom/orbit.
+- [x] Labels remain glyph-shaped and readable across tested zoom/orbit cases.
 
 Acceptance:
 
 - [x] Unit tests for layout metrics.
 - [x] Headless visual proof for crisp text at multiple sizes.
-- [x] Browser proof for annotation-heavy scene.
+- [x] Browser proof for annotation-heavy glyph-cell scene.
 - [x] Performance benchmark for many labels.
 
 Proof:
@@ -1535,7 +1546,7 @@ Proof:
       multi-size rendered text, orbit-view readability, and the many-label
       benchmark artifact.
 - [x] Regression proof: `cargo test --test m3a_app_features
-      labels_use_sdf_msdf_descriptors_and_billboard_render_path --
+      labels_use_bitmap_billboard_render_path --
       --nocapture`, `cargo test --test measurement_visual_proof
       measurement_overlay_renders_line_and_label_pixels -- --nocapture`, and
       `cargo test --test examples_visual_proof
@@ -1545,7 +1556,7 @@ Proof:
       `wasm-pack build --dev --target web --out-dir target/m6-browser-pkg .
       --features browser-probe`, `SCENA_BROWSER_BACKENDS=webgl2 npm run
       browser:m6` passed and asserted the `labels-helpers` workflow as
-      `browser-sdf-msdf-labels` with 12 labels, 1200 glyph primitives, and
+      `browser-bitmap-labels` with 12 labels, 1200 glyph primitives, and
       visible canvas pixels.
 - [x] Remote gate proof: after syncing to `scena-builder`
       `~/projects/scena-visual-patch-impl`, `cargo fmt --check`,
@@ -1595,7 +1606,7 @@ Proof:
       `scena.capture.v1` descriptor.
 - [x] Browser proof:
       `SCENA_BROWSER_BACKENDS=webgl2 npm run browser:scene-host-proof` passed
-      locally on V3D WebGL2 and asserted `addNodeCallout`, a shared
+      manually on V3D WebGL2 and asserted `addNodeCallout`, a shared
       `browser-callout` annotation anchor ID, and before/after projection
       movement for the callout target node.
 - [x] Remote gate proof: after syncing to `scena-builder`
@@ -1758,6 +1769,12 @@ Required behavior:
       Evidence: `AssetDoctorFindingV1` pins those fields and
       `tests/assets/stable-contracts/asset_doctor.v1.json` locks the wire
       shape.
+- [x] `ok` semantics are explicit.
+      Evidence: `docs/schema-contracts.md` and `docs/assets.md` state that
+      `ok=true` means no error-severity findings; warning-severity missing
+      external images, optional buffers, and material fallbacks remain visible
+      and require strict load options or catalog readiness when completeness is
+      mandatory.
 
 Acceptance:
 
@@ -1973,7 +1990,7 @@ Acceptance:
       Evidence: `rustup run 1.95.0 wasm-pack build . --dev --target web
       --out-dir target/scene-host-browser-pkg --out-name scena --features
       scene-host` and `SCENA_BROWSER_BACKENDS=webgl2 npm run
-      browser:scene-host-proof` passed on V3D WebGL2. The proof asserts
+      browser:scene-host-proof` passed manually on V3D WebGL2. The proof asserts
       `timelinePatchJson` / `seekTimelineJson` emit and apply a guided-tour
       patch with camera, tint, label, and animation sampling, then render
       nonblank pixels.
@@ -2012,9 +2029,9 @@ Evidence: test-first proof failed on `scena-builder` with unresolved
 before implementation. `SceneHostCore::apply_product_grounding_preset()` and
 the browser `applyProductGroundingPresetJson()` now return
 `scena.scene_host_grounding.v1` with `active_paths` containing
-`floor_receiver` and `screen_space_ambient_occlusion`, a
-`directional_shadow_receiver_degraded` fallback, and
-`physical_shadow_claimed: false`; the stable fixture is
+`floor_receiver` and `screen_space_ambient_occlusion`, plus an
+`ssao_is_ambient_occlusion` fallback that prevents claiming physical shadow
+correctness; the stable fixture is
 `tests/assets/stable-contracts/scene_host_grounding.v1.json`. Headless proof:
 `cargo test --test contact_grounding --features scene-host,inspection -- --nocapture`
 writes
@@ -2141,8 +2158,11 @@ texture roles plus camera-framing and lighting metadata; the old
 The workflow now emits `source_texture_roles = [base_color, normal,
 metallic_roughness, occlusion, emissive]`, `camera_framing = Scene::frame`,
 and `lighting = DirectionalLight` from the real WaterBottle
-`SceneAsset::nodes mesh.geometry mesh.material` construction. Green browser
-proof: `wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe`
+`SceneAsset::nodes mesh.geometry mesh.material` construction. The assertion
+now also checks lane-specific rendered pixels: the generated-unlit lane is
+cyan/blue, the source glTF material lane is bright and distinct from both
+generated lanes, and the generated-PBR lane is warm. Green browser proof:
+`wasm-pack build --dev --target web --out-dir target/m6-browser-pkg . --features browser-probe`
 plus `SCENA_BROWSER_BACKENDS=webgl2 npm run browser:m6`; the artifact
 `target/gate-artifacts/m6-rust-wasm-renderer-probe.json` has
 `workflow = source-gltf-materials`, `proof_class =
@@ -2152,7 +2172,7 @@ browser-source-gltf-material-comparison`, `source =
 0`, `triangles = 13530`, `screenshot_metadata.backend = webgl2`,
 `fixture_sha256 =
 0596f4e61dc781439d254fdfb5e3462daf1762c18715e3e3ac13001aa8f3f547`, and
-nonblack left/center/right pixels for the `generated-unlit`,
+lane-specific left/center/right pixels for the `generated-unlit`,
 `source-gltf-material`, and `generated-pbr` comparison lanes. Capability
 promotion is the existing attached WebGL2 row in the same artifact with
 `forward_pbr = supported`; CPU/reference and unattached factory rows remain
@@ -2481,7 +2501,9 @@ contracts, and focused proof. Public JSON contracts have stable fixtures under
 `tests/assets/stable-contracts/` or CLI golden fixtures under
 `tests/assets/cli-golden/`; schema catalog drift is enforced by doctor.
 Browser-exposed APIs cite wasm/browser proof artifacts in their sections, while
-non-browser or docs-only entries record deterministic-proof exceptions. The
+non-browser or docs-only entries record deterministic-proof exceptions.
+`browser:m6` is the CI/release-enforced browser lane; `browser:scene-host-proof`
+is manual V3D WebGL2 evidence unless a section explicitly states otherwise. The
 final closure gate reruns `cargo run -p xtask -- doctor --full` on
 `scena-builder`; code-bearing slices above record their focused and broad
 native Rust gates. `CHANGELOG.md`, `docs/schema-contracts.md`,

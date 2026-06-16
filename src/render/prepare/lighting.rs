@@ -13,6 +13,8 @@ mod math;
 use lobes::LayeredMaterialLobes;
 use math::*;
 
+pub(in crate::render) const MAX_GPU_LIGHTS_PER_TYPE: usize = 4;
+
 #[derive(Clone)]
 pub(super) struct MaterialShadingInput {
     pub(super) position: Vec3,
@@ -40,15 +42,17 @@ pub(super) struct MaterialShadingInput {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(in crate::render) struct PreparedGpuLightUniform {
-    pub(in crate::render) directional_light_direction_intensity: [f32; 4],
-    pub(in crate::render) directional_light_color_count: [f32; 4],
-    pub(in crate::render) directional_shadow_control: [f32; 4],
-    pub(in crate::render) point_light_position_intensity: [f32; 4],
-    pub(in crate::render) point_light_color_range: [f32; 4],
-    pub(in crate::render) spot_light_position_intensity: [f32; 4],
-    pub(in crate::render) spot_light_direction_cones: [f32; 4],
-    pub(in crate::render) spot_light_cone_range: [f32; 4],
-    pub(in crate::render) spot_light_color_range: [f32; 4],
+    pub(in crate::render) directional_light_direction_intensity:
+        [[f32; 4]; MAX_GPU_LIGHTS_PER_TYPE],
+    pub(in crate::render) directional_light_color: [[f32; 4]; MAX_GPU_LIGHTS_PER_TYPE],
+    pub(in crate::render) directional_shadow_control: [[f32; 4]; MAX_GPU_LIGHTS_PER_TYPE],
+    pub(in crate::render) point_light_position_intensity: [[f32; 4]; MAX_GPU_LIGHTS_PER_TYPE],
+    pub(in crate::render) point_light_color_range: [[f32; 4]; MAX_GPU_LIGHTS_PER_TYPE],
+    pub(in crate::render) spot_light_position_intensity: [[f32; 4]; MAX_GPU_LIGHTS_PER_TYPE],
+    pub(in crate::render) spot_light_direction_cones: [[f32; 4]; MAX_GPU_LIGHTS_PER_TYPE],
+    pub(in crate::render) spot_light_cone_range: [[f32; 4]; MAX_GPU_LIGHTS_PER_TYPE],
+    pub(in crate::render) spot_light_color_range: [[f32; 4]; MAX_GPU_LIGHTS_PER_TYPE],
+    pub(in crate::render) light_counts: [f32; 4],
     pub(in crate::render) environment_diffuse_intensity: [f32; 4],
     pub(in crate::render) environment_specular_intensity: [f32; 4],
 }
@@ -56,15 +60,16 @@ pub(in crate::render) struct PreparedGpuLightUniform {
 impl Default for PreparedGpuLightUniform {
     fn default() -> Self {
         Self {
-            directional_light_direction_intensity: [0.0, 0.0, -1.0, 0.0],
-            directional_light_color_count: [1.0, 1.0, 1.0, 0.0],
-            directional_shadow_control: [0.0, 0.0, 0.0, 0.0],
-            point_light_position_intensity: [0.0, 0.0, 0.0, 0.0],
-            point_light_color_range: [1.0, 1.0, 1.0, 0.0],
-            spot_light_position_intensity: [0.0, 0.0, 0.0, 0.0],
-            spot_light_direction_cones: [0.0, 0.0, -1.0, 0.0],
-            spot_light_cone_range: [0.0, 0.0, 0.0, 0.0],
-            spot_light_color_range: [1.0, 1.0, 1.0, 0.0],
+            directional_light_direction_intensity: [[0.0, 0.0, -1.0, 0.0]; MAX_GPU_LIGHTS_PER_TYPE],
+            directional_light_color: [[1.0, 1.0, 1.0, 0.0]; MAX_GPU_LIGHTS_PER_TYPE],
+            directional_shadow_control: [[0.0, 0.0, 0.0, 0.0]; MAX_GPU_LIGHTS_PER_TYPE],
+            point_light_position_intensity: [[0.0, 0.0, 0.0, 0.0]; MAX_GPU_LIGHTS_PER_TYPE],
+            point_light_color_range: [[1.0, 1.0, 1.0, 0.0]; MAX_GPU_LIGHTS_PER_TYPE],
+            spot_light_position_intensity: [[0.0, 0.0, 0.0, 0.0]; MAX_GPU_LIGHTS_PER_TYPE],
+            spot_light_direction_cones: [[0.0, 0.0, -1.0, 0.0]; MAX_GPU_LIGHTS_PER_TYPE],
+            spot_light_cone_range: [[0.0, 0.0, 0.0, 0.0]; MAX_GPU_LIGHTS_PER_TYPE],
+            spot_light_color_range: [[1.0, 1.0, 1.0, 0.0]; MAX_GPU_LIGHTS_PER_TYPE],
+            light_counts: [0.0, 0.0, 0.0, 0.0],
             environment_diffuse_intensity: [0.0, 0.0, 0.0, 0.0],
             environment_specular_intensity: [0.0, 0.0, 0.0, 0.0],
         }
@@ -151,53 +156,66 @@ impl PreparedLights {
         &self,
         environment: PreparedEnvironmentLighting,
     ) -> PreparedGpuLightUniform {
-        let mut uniform = PreparedGpuLightUniform::default();
-        if let Some(light) = self.directional.first() {
-            uniform.directional_light_direction_intensity = [
+        let mut uniform = PreparedGpuLightUniform {
+            light_counts: [
+                self.directional.len().min(MAX_GPU_LIGHTS_PER_TYPE) as f32,
+                self.point.len().min(MAX_GPU_LIGHTS_PER_TYPE) as f32,
+                self.spot.len().min(MAX_GPU_LIGHTS_PER_TYPE) as f32,
+                0.0,
+            ],
+            ..Default::default()
+        };
+        let mut shadow_slot_used = false;
+        for (index, light) in self
+            .directional
+            .iter()
+            .take(MAX_GPU_LIGHTS_PER_TYPE)
+            .enumerate()
+        {
+            uniform.directional_light_direction_intensity[index] = [
                 light.direction.x,
                 light.direction.y,
                 light.direction.z,
                 directional_illuminance_lux(light.illuminance_lux),
             ];
-            uniform.directional_light_color_count = [
-                light.color.r,
-                light.color.g,
-                light.color.b,
-                self.directional.len() as f32,
-            ];
-            uniform.directional_shadow_control =
-                [if light.casts_shadows { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0];
+            uniform.directional_light_color[index] =
+                [light.color.r, light.color.g, light.color.b, 0.0];
+            if light.casts_shadows && !shadow_slot_used {
+                uniform.directional_shadow_control[index] = [1.0, 0.0, 0.0, 0.0];
+                shadow_slot_used = true;
+            }
         }
-        if let Some(light) = self.point.first() {
-            uniform.point_light_position_intensity = [
+        for (index, light) in self.point.iter().take(MAX_GPU_LIGHTS_PER_TYPE).enumerate() {
+            uniform.point_light_position_intensity[index] = [
                 light.position.x,
                 light.position.y,
                 light.position.z,
                 punctual_intensity_candela(light.intensity_candela),
             ];
-            uniform.point_light_color_range = [
+            uniform.point_light_color_range[index] = [
                 light.color.r,
                 light.color.g,
                 light.color.b,
                 light.range.unwrap_or(0.0).max(0.0),
             ];
         }
-        if let Some(light) = self.spot.first() {
-            uniform.spot_light_position_intensity = [
+        for (index, light) in self.spot.iter().take(MAX_GPU_LIGHTS_PER_TYPE).enumerate() {
+            uniform.spot_light_position_intensity[index] = [
                 light.position.x,
                 light.position.y,
                 light.position.z,
                 punctual_intensity_candela(light.intensity_candela),
             ];
-            uniform.spot_light_direction_cones =
+            uniform.spot_light_direction_cones[index] =
                 [light.direction.x, light.direction.y, light.direction.z, 0.0];
-            uniform.spot_light_cone_range = [
+            uniform.spot_light_cone_range[index] = [
                 light.inner_cone_cos,
                 light.outer_cone_cos,
                 light.range.unwrap_or(0.0).max(0.0),
-                self.spot.len() as f32,
+                0.0,
             ];
-            uniform.spot_light_color_range = [light.color.r, light.color.g, light.color.b, 0.0];
+            uniform.spot_light_color_range[index] =
+                [light.color.r, light.color.g, light.color.b, 0.0];
         }
         if environment.is_active() {
             uniform.environment_diffuse_intensity = environment.gpu_diffuse_intensity();
@@ -386,6 +404,18 @@ fn shade_pbr_base_color(
             .environment
             .pbr_contribution(pbr_material, normal, view),
     );
+    if input.environment.is_active() {
+        let environment_specular = input.environment.gpu_specular_intensity();
+        let environment_radiance = Vec3::new(
+            environment_specular[0] * environment_specular[3],
+            environment_specular[1] * environment_specular[3],
+            environment_specular[2] * environment_specular[3],
+        );
+        shaded = add_vec3(
+            shaded,
+            layered_lobes.contribution(normal, environment_radiance),
+        );
+    }
 
     Color::from_linear_rgba(shaded.x, shaded.y, shaded.z, base.a)
 }
@@ -393,6 +423,7 @@ fn shade_pbr_base_color(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scene::{Angle, DirectionalLight, PointLight, SpotLight, Transform};
 
     #[test]
     fn gpu_light_uniform_consumes_prepared_environment_lighting() {
@@ -403,5 +434,68 @@ mod tests {
 
         assert_eq!(uniform.environment_diffuse_intensity, [0.0; 4]);
         assert_eq!(uniform.environment_specular_intensity, [0.0; 4]);
+    }
+
+    #[test]
+    fn gpu_light_uniform_encodes_multiple_lights_per_type() {
+        let mut scene = Scene::new();
+        for index in 0..5 {
+            scene
+                .directional_light(
+                    DirectionalLight::default()
+                        .with_color(Color::from_linear_rgb(index as f32 + 0.1, 0.2, 0.3))
+                        .with_illuminance_lux(1_000.0 + index as f32)
+                        .with_shadows(index == 1),
+                )
+                .transform(Transform::default())
+                .add()
+                .expect("directional light inserts");
+            scene
+                .point_light(
+                    PointLight::default()
+                        .with_color(Color::from_linear_rgb(0.1, index as f32 + 0.2, 0.3))
+                        .with_intensity_candela(100.0 + index as f32)
+                        .with_range(10.0 + index as f32),
+                )
+                .transform(Transform::at(Vec3::new(index as f32, 2.0, 3.0)))
+                .add()
+                .expect("point light inserts");
+            scene
+                .spot_light(
+                    SpotLight::default()
+                        .with_color(Color::from_linear_rgb(0.1, 0.2, index as f32 + 0.3))
+                        .with_intensity_candela(200.0 + index as f32)
+                        .with_range(20.0 + index as f32)
+                        .with_inner_cone_angle(Angle::from_degrees(10.0))
+                        .with_outer_cone_angle(Angle::from_degrees(25.0)),
+                )
+                .transform(Transform::at(Vec3::new(1.0, index as f32, 3.0)))
+                .add()
+                .expect("spot light inserts");
+        }
+        let environment = PreparedEnvironmentLighting::default();
+
+        let uniform = collect_gpu_light_uniform(&scene, Vec3::ZERO, &environment);
+
+        assert_eq!(uniform.light_counts, [4.0, 4.0, 4.0, 0.0]);
+        assert_eq!(uniform.directional_light_color[1], [1.1, 0.2, 0.3, 0.0]);
+        assert_eq!(uniform.directional_shadow_control[1][0], 1.0);
+        assert_eq!(uniform.directional_light_color[3], [3.1, 0.2, 0.3, 0.0]);
+        assert_eq!(
+            uniform.directional_light_color[MAX_GPU_LIGHTS_PER_TYPE - 1],
+            [3.1, 0.2, 0.3, 0.0],
+            "the fifth directional light is intentionally capped, not encoded over slot 3"
+        );
+        assert_eq!(
+            uniform.point_light_position_intensity[2][0..3],
+            [2.0, 2.0, 3.0]
+        );
+        assert_eq!(uniform.point_light_color_range[2], [0.1, 2.2, 0.3, 12.0]);
+        assert_eq!(
+            uniform.spot_light_position_intensity[2][0..3],
+            [1.0, 2.0, 3.0]
+        );
+        assert_eq!(uniform.spot_light_color_range[2], [0.1, 0.2, 2.3, 0.0]);
+        assert!(uniform.spot_light_cone_range[2][0] > uniform.spot_light_cone_range[2][1]);
     }
 }

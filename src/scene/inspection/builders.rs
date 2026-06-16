@@ -174,7 +174,6 @@ fn append_draw_entry<F>(
         index_count: geometry.indices().len(),
         local_bounds: geometry.bounds(),
         world_transform: input.world_transform,
-        visible: true,
     });
 }
 

@@ -201,10 +201,11 @@ function serve(pkgRoot, assetRoot) {
 }
 
 function buildWasmPackage() {
+  const toolchain = process.env.RUST_TOOLCHAIN || "1.93.1";
   const command = [
     "rustup",
     "run",
-    "1.95.0",
+    toolchain,
     "wasm-pack",
     "build",
     ".",
@@ -2620,7 +2621,7 @@ function assertProof(pageProof, screenshot) {
   );
   const contactGrounding = pageProof.contact_grounding;
   check(
-    "contact_grounding_report_lists_floor_ssao_and_shadow_fallback",
+    "contact_grounding_report_lists_floor_ssao_and_scope_fallback",
     contactGrounding.report.schema === "scena.scene_host_grounding.v1" &&
       contactGrounding.report.floor_receiver === true &&
       contactGrounding.report.ssao_enabled === true &&
@@ -2628,10 +2629,8 @@ function assertProof(pageProof, screenshot) {
       contactGrounding.report.floor_handles.length === 2 &&
       contactGrounding.report.active_paths.includes("floor_receiver") &&
       contactGrounding.report.active_paths.includes("screen_space_ambient_occlusion") &&
-      !contactGrounding.report.active_paths.includes("directional_shadow_receiver") &&
-      contactGrounding.report.physical_shadow_claimed === false &&
       contactGrounding.report.fallbacks.some(
-        (fallback) => fallback.code === "directional_shadow_receiver_degraded",
+        (fallback) => fallback.code === "ssao_is_ambient_occlusion",
       ),
     contactGrounding.report,
   );
@@ -3018,9 +3017,10 @@ async function main() {
   }
 
   const assertions = assertProof(pageProof, screenshot);
+  const passed = Object.values(assertions).every((assertion) => assertion.passed === true);
   const artifact = {
     schema: SCHEMA,
-    status: "passed",
+    status: passed ? "passed" : "failed",
     generated_at: new Date().toISOString(),
     build,
     harness: {
@@ -3092,7 +3092,7 @@ async function main() {
   fs.writeFileSync(ARTIFACT_PATH, `${JSON.stringify(artifact, null, 2)}\n`);
   console.log(JSON.stringify({
     schema: SCHEMA,
-    status: "passed",
+    status: artifact.status,
     artifact: path.relative(process.cwd(), ARTIFACT_PATH),
     screenshot: screenshot.path,
     renderer: pageProof.webgl.renderer,

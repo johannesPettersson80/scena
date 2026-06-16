@@ -25,11 +25,11 @@ use scena::material_showcase::{
 use scena::{
     Aabb, AnimationPlaybackState, Assets, AutoExposureConfig, Background, Color, ConnectOptions,
     ConnectionAlignment, ConnectionError, ConnectorFrame, CursorPosition, DirectionalLight,
-    EnvironmentPreset, GeometryDesc, InteractionStyle, InteractiveGltfViewer, LabelDesc,
-    MaterialDesc, OrbitControlAction, OrbitControls, PerspectiveCamera, PlatformSurface,
-    PointLight, PointerEvent, Profile, Quat, Renderer, RendererOptions, Scene,
-    SourceCoordinateSystem, SourceUnits, TouchEvent, Transform, Vec3, Viewport,
-    headless_gltf_viewer, interactive_gltf_viewer,
+    EnvironmentPreset, GeometryDesc, InteractiveGltfViewer, LabelDesc, MaterialDesc,
+    OrbitControlAction, OrbitControls, PerspectiveCamera, PlatformSurface, PointLight,
+    PointerEvent, Profile, Quat, Renderer, RendererOptions, Scene, SourceCoordinateSystem,
+    SourceUnits, TouchEvent, Transform, Vec3, Viewport, headless_gltf_viewer,
+    interactive_gltf_viewer,
 };
 
 const ARTIFACT_WIDTH: u32 = 256;
@@ -545,6 +545,9 @@ fn render_directional_light_preset_tile(
     height: u32,
 ) -> Vec<u8> {
     let assets = Assets::new();
+    let environment =
+        pollster::block_on(assets.load_environment_preset(EnvironmentPreset::NeutralStudio))
+            .expect("neutral studio environment loads for light preset docs image");
     let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 0.35));
     let material = assets.create_material(MaterialDesc::pbr_metallic_roughness(
         Color::LIGHT_GRAY,
@@ -571,6 +574,7 @@ fn render_directional_light_preset_tile(
     scene.set_active_camera(camera).expect("active camera sets");
 
     let mut renderer = Renderer::headless(width, height).expect("headless renderer builds");
+    renderer.set_environment(environment);
     renderer
         .prepare_with_assets(&mut scene, &assets)
         .expect("directional light docs-image scene prepares");
@@ -582,6 +586,9 @@ fn render_directional_light_preset_tile(
 
 fn render_point_light_preset_tile(light: PointLight, width: u32, height: u32) -> Vec<u8> {
     let assets = Assets::new();
+    let environment =
+        pollster::block_on(assets.load_environment_preset(EnvironmentPreset::NeutralStudio))
+            .expect("neutral studio environment loads for light preset docs image");
     let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 0.35));
     let material = assets.create_material(MaterialDesc::pbr_metallic_roughness(
         Color::LIGHT_GRAY,
@@ -609,6 +616,7 @@ fn render_point_light_preset_tile(light: PointLight, width: u32, height: u32) ->
     scene.set_active_camera(camera).expect("active camera sets");
 
     let mut renderer = Renderer::headless(width, height).expect("headless renderer builds");
+    renderer.set_environment(environment);
     renderer
         .prepare_with_assets(&mut scene, &assets)
         .expect("point light docs-image scene prepares");
@@ -1241,9 +1249,7 @@ fn round_b_orbit_control_preset_animated_docs_image() {
     let mut frames = Vec::new();
     for controls in [
         OrbitControls::new(Vec3::ZERO, 2.0).presentation(),
-        OrbitControls::new(Vec3::ZERO, 2.0)
-            .cinematic()
-            .turntable(6.0),
+        OrbitControls::new(Vec3::ZERO, 2.0).turntable(6.0),
     ] {
         let mut controls = controls;
         let first = render_orbit_control_motion_frame(controls, frame_width, frame_height);
@@ -2033,7 +2039,7 @@ fn examples_visual_instancing_renders_instance_set_to_ppm() {
 #[test]
 fn examples_visual_labels_helpers_renders_axes_bounds_anchor_label_to_ppm() {
     // Mirror examples/labels_helpers.rs: axes + bounding box + anchor marker + a
-    // single MSDF label, all rendered through the line material.
+    // single bitmap label, all rendered through the line material.
     let assets = Assets::new();
     let axes = assets.create_geometry(GeometryDesc::axes(1.0));
     let bounds = assets.create_geometry(GeometryDesc::bounding_box(Aabb::new(
@@ -2054,7 +2060,7 @@ fn examples_visual_labels_helpers_renders_axes_bounds_anchor_label_to_ppm() {
         .mesh(anchor, material)
         .add()
         .expect("anchor mesh inserts");
-    let label = LabelDesc::msdf("origin")
+    let label = LabelDesc::bitmap("origin")
         .with_color(Color::from_srgb_u8(255, 255, 255))
         .with_size(14.0);
     scene
@@ -2095,11 +2101,11 @@ fn examples_visual_labels_helpers_renders_axes_bounds_anchor_label_to_ppm() {
 }
 
 #[test]
-fn examples_visual_picking_selection_hover_renders_styled_pick_to_ppm() {
+fn examples_visual_picking_selection_hover_renders_pick_state_to_ppm() {
     // Mirror examples/picking_selection_hover.rs: a single mesh, framed via
     // frame_all_with_assets, then pick_and_select_with_assets at the viewport
-    // center. The artifact proves the picking + selection-style + hover-style path
-    // produces visible pixels with the typed CursorPosition + Viewport API.
+    // center. The artifact proves picking updates the interaction state while
+    // the typed CursorPosition + Viewport API keeps the rendered scene visible.
     let assets = Assets::new();
     let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.7, 0.45, 0.35));
     let material = assets.create_material(MaterialDesc::unlit(Color::from_srgb_u8(64, 160, 255)));
@@ -2117,14 +2123,6 @@ fn examples_visual_picking_selection_hover_renders_styled_pick_to_ppm() {
 
     let mut renderer =
         Renderer::headless(ARTIFACT_WIDTH, ARTIFACT_HEIGHT).expect("headless renderer builds");
-    renderer.set_hover_style(InteractionStyle::outline(
-        Color::from_srgb_u8(255, 210, 64),
-        2.0,
-    ));
-    renderer.set_selection_style(InteractionStyle::outline(
-        Color::from_srgb_u8(64, 160, 255),
-        3.0,
-    ));
     renderer
         .prepare_with_assets(&mut scene, &assets)
         .expect("picking_selection_hover scene prepares");
@@ -2169,8 +2167,6 @@ fn round_d_viewer_pointer_callback_animated_docs_image() {
     )
     .build()
     .expect("interactive viewer builds");
-    let hover_style = InteractionStyle::outline(Color::from_srgb_u8(255, 210, 64), 2.0);
-    let selection_style = InteractionStyle::outline(Color::from_srgb_u8(255, 64, 180), 3.0);
 
     let (hit_x, hit_y) = viewer_hit_coordinate(&viewer, frame_width, frame_height);
     let click_events: Rc<RefCell<Vec<&'static str>>> = Rc::default();
@@ -2184,13 +2180,7 @@ fn round_d_viewer_pointer_callback_animated_docs_image() {
         move |result| hover_events.borrow_mut().push(callback_state(result))
     });
 
-    let idle_scene = render_interactive_viewer_scene_frame(
-        &mut viewer,
-        frame_width,
-        frame_height,
-        hover_style,
-        selection_style,
-    );
+    let idle_scene = render_interactive_viewer_scene_frame(&mut viewer, frame_width, frame_height);
     assert_interactive_viewer_frame_visible(&idle_scene, "idle");
     let idle = overlay_pointer_callback_state(
         idle_scene,
@@ -2202,13 +2192,7 @@ fn round_d_viewer_pointer_callback_animated_docs_image() {
     viewer
         .hover_at(hit_x, hit_y)
         .expect("hover callback pick runs");
-    let hover_scene = render_interactive_viewer_scene_frame(
-        &mut viewer,
-        frame_width,
-        frame_height,
-        hover_style,
-        selection_style,
-    );
+    let hover_scene = render_interactive_viewer_scene_frame(&mut viewer, frame_width, frame_height);
     assert_interactive_viewer_frame_visible(&hover_scene, "hover");
     let hover = overlay_pointer_callback_state(
         hover_scene,
@@ -2220,13 +2204,7 @@ fn round_d_viewer_pointer_callback_animated_docs_image() {
     viewer
         .click_at(hit_x, hit_y)
         .expect("click callback pick runs");
-    let click_scene = render_interactive_viewer_scene_frame(
-        &mut viewer,
-        frame_width,
-        frame_height,
-        hover_style,
-        selection_style,
-    );
+    let click_scene = render_interactive_viewer_scene_frame(&mut viewer, frame_width, frame_height);
     assert_interactive_viewer_frame_visible(&click_scene, "click");
     let click = overlay_pointer_callback_state(
         click_scene,
@@ -2238,13 +2216,7 @@ fn round_d_viewer_pointer_callback_animated_docs_image() {
     viewer
         .hover_at(10_000.0, 10_000.0)
         .expect("hover miss callback pick runs");
-    let miss_scene = render_interactive_viewer_scene_frame(
-        &mut viewer,
-        frame_width,
-        frame_height,
-        hover_style,
-        selection_style,
-    );
+    let miss_scene = render_interactive_viewer_scene_frame(&mut viewer, frame_width, frame_height);
     assert_interactive_viewer_frame_visible(&miss_scene, "miss");
     let miss = overlay_pointer_callback_state(
         miss_scene,
@@ -2458,14 +2430,10 @@ fn render_interactive_viewer_scene_frame(
     viewer: &mut InteractiveGltfViewer,
     width: u32,
     height: u32,
-    hover_style: InteractionStyle,
-    selection_style: InteractionStyle,
 ) -> Vec<u8> {
     let assets = viewer.assets().clone();
     let camera = viewer.camera();
     let mut renderer = Renderer::headless(width, height).expect("headless renderer builds");
-    renderer.set_hover_style(hover_style);
-    renderer.set_selection_style(selection_style);
     renderer
         .prepare_with_assets(viewer.scene_mut(), &assets)
         .expect("interactive viewer callback scene prepares");
@@ -2596,7 +2564,7 @@ fn examples_visual_industrial_static_scene_renders_to_ppm() {
     scene
         .add_label(
             scene.root(),
-            LabelDesc::sdf("Line A"),
+            LabelDesc::bitmap("Line A"),
             Transform::at(Vec3::new(0.0, 0.34, 0.0)),
         )
         .expect("label inserts");
@@ -2838,7 +2806,7 @@ fn examples_visual_industrial_connector_assembly_renders_to_ppm() {
         .set_transform(base.roots()[0], Transform::at(Vec3::new(0.0, 0.0, 0.0)))
         .expect("base transform succeeds");
     scene
-        .set_transform(pump.roots()[0], Transform::at(Vec3::new(1.0, 0.0, 0.0)))
+        .set_transform(pump.roots()[0], Transform::at(Vec3::new(0.01, 0.0, 0.0)))
         .expect("pump transform succeeds");
     scene
         .set_transform(sensor.roots()[0], Transform::at(Vec3::new(2.0, 0.0, 0.0)))
@@ -3010,7 +2978,7 @@ fn examples_visual_orbit_controls_renders_oriented_box_to_ppm() {
         .expect("orbit-controlled mesh inserts");
     let camera = scene.add_default_camera().expect("default camera inserts");
 
-    let mut controls = OrbitControls::new(Vec3::ZERO, 2.0).with_damping(0.15);
+    let mut controls = OrbitControls::new(Vec3::ZERO, 2.0);
     controls.handle_pointer(PointerEvent::primary_pressed(160.0, 120.0));
     controls.handle_pointer(PointerEvent::moved(168.0, 116.0, 8.0, -4.0));
     controls.handle_touch(TouchEvent::pinch(168.0, 116.0, -0.1));

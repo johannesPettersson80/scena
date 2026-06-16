@@ -7,10 +7,11 @@ use base64::Engine;
 use scena::{
     ASSET_LOAD_REPORT_SCHEMA_V1, AlphaMode, Angle, AssetError, AssetFetcher, AssetLoadControl,
     AssetLoadOptions, AssetLoadProgress, AssetLoadReportV1, AssetLoadWarning, AssetLoadWarningV1,
-    AssetPath, Assets, Color, DiagnosticCode, DirectionalLight, EnvironmentSourceKind,
-    GeometryDesc, GltfDecoderPolicy, GltfExtensionStatus, MaterialDesc, MaterialKind, NodeKind,
-    NotPreparedReason, PointLight, RenderError, Renderer, RetainPolicy, Scene, SpotLight,
-    TextureColorSpace, TextureFilter, TextureSourceFormat, TextureWrap, Transform, Vec3,
+    AssetPath, Assets, Color, DiagnosticCode, DirectionalLight, EnvironmentPreset,
+    EnvironmentSourceKind, GeometryDesc, GltfDecoderPolicy, GltfExtensionStatus, MaterialDesc,
+    MaterialKind, NodeKind, NotPreparedReason, PointLight, RenderError, Renderer, RetainPolicy,
+    Scene, SpotLight, TextureColorSpace, TextureFilter, TextureSourceFormat, TextureWrap,
+    Transform, Vec3,
 };
 
 fn unstable_headless_gpu_release_tests_enabled() -> bool {
@@ -223,10 +224,7 @@ fn m8_clearcoat_texture_slots_are_parsed_from_gltf() {
                             },
                             "clearcoatNormalTexture": {
                                 "index": 0,
-                                "scale": 1.75,
-                                "extensions": {
-                                    "KHR_texture_transform": { "texCoord": 1 }
-                                }
+                                "scale": 1.75
                             }
                         }
                     }
@@ -298,13 +296,7 @@ fn m8_clearcoat_texture_slots_are_parsed_from_gltf() {
             .scale(),
         [0.25, 0.5]
     );
-    assert_eq!(
-        material
-            .clearcoat_normal_texture_transform()
-            .expect("normal transform")
-            .tex_coord(),
-        Some(1)
-    );
+    assert!(material.clearcoat_normal_texture_transform().is_none());
     assert_eq!(material.clearcoat_normal_scale(), 1.75);
 }
 
@@ -1172,6 +1164,56 @@ fn m8_modern_optional_extensions_have_explicit_v1x_defer_metadata() {
 }
 
 #[test]
+fn m8_texture_transform_nonzero_texcoord_fails_closed() {
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        AssetPath::from("memory://unsupported-texcoord.gltf"),
+        br#"{
+            "asset": { "version": "2.0" },
+            "images": [{ "uri": "base.png" }],
+            "textures": [{ "source": 0 }],
+            "materials": [{
+                "pbrMetallicRoughness": {
+                    "baseColorTexture": {
+                        "index": 0,
+                        "extensions": {
+                            "KHR_texture_transform": { "texCoord": 1 }
+                        }
+                    }
+                }
+            }],
+            "meshes": [{
+                "primitives": [{
+                    "attributes": { "POSITION": 0 },
+                    "indices": 1,
+                    "material": 0
+                }]
+            }],
+            "nodes": [{ "name": "Root", "mesh": 0 }],
+            "buffers": [{ "byteLength": 42, "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAAAAAAAPwAAAL8AAAAAAAAAAAAAAD8AAAAAAAABAAIA" }],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0,  "byteLength": 36 },
+                { "buffer": 0, "byteOffset": 36, "byteLength": 6  }
+            ],
+            "accessors": [
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+                { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
+            ]
+        }"#
+        .to_vec(),
+    )]));
+
+    let error = pollster::block_on(assets.load_scene("memory://unsupported-texcoord.gltf"))
+        .expect_err("nonzero texture-transform texCoord must fail closed");
+    assert!(matches!(
+        error,
+        AssetError::Parse {
+            reason,
+            ..
+        } if reason.contains("supports only TEXCOORD_0")
+    ));
+}
+
+#[test]
 fn m8_common_gltf_texture_slots_and_material_flags_are_preserved() {
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from("memory://textures.gltf"),
@@ -1208,10 +1250,7 @@ fn m8_common_gltf_texture_slots_and_material_flags_are_preserved() {
                     "roughnessFactor": 0.75
                 },
                 "normalTexture": {
-                    "index": 1,
-                    "extensions": {
-                        "KHR_texture_transform": { "texCoord": 1 }
-                    }
+                    "index": 1
                 },
                 "occlusionTexture": { "index": 3 },
                 "emissiveTexture": {
@@ -1292,13 +1331,7 @@ fn m8_common_gltf_texture_slots_and_material_flags_are_preserved() {
             .offset(),
         [0.25, 0.5]
     );
-    assert_eq!(
-        material
-            .normal_texture_transform()
-            .expect("normal transform")
-            .tex_coord(),
-        Some(1)
-    );
+    assert!(material.normal_texture_transform().is_none());
     assert_eq!(
         material
             .emissive_texture_transform()
@@ -1842,8 +1875,18 @@ fn m8_asset_load_report_schema_serializes_warnings_geometry_and_cache_contract()
     );
     assert_eq!(
         schema_json["material_fallbacks"],
-        serde_json::json!([]),
-        "asset reports must expose material fallback provenance even when no fallbacks occurred"
+        serde_json::json!([
+            {
+                "kind": "missing_texture_fallback",
+                "material_index": 0,
+                "material_slot": "baseColorTexture",
+                "texture_index": 0,
+                "source_path": "memory://asset-report/missing.png",
+                "fallback_path": "scena.material.fallback_texture",
+                "reason": "texture bytes were unavailable; renderer will bind the generated material fallback texture"
+            }
+        ]),
+        "asset reports must expose fallback provenance when a material texture binds generated renderer fallback pixels"
     );
 
     let decoded: AssetLoadReportV1 =
@@ -2064,7 +2107,12 @@ fn m8_strict_scene_load_promotes_missing_external_image_to_error() {
 #[test]
 fn m8_scene_asset_provenance_records_source_hash_and_round_trips() {
     let path = "memory://provenance/scene.gltf";
-    let scene_bytes = textured_triangle_gltf("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==").into_bytes();
+    let scene_bytes = textured_triangle_gltf("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==")
+        .replace(
+            r#""asset": { "version": "2.0" }"#,
+            r#""asset": { "version": "2.0", "generator": "scena-test-generator", "copyright": "CC0-1.0" }"#,
+        )
+        .into_bytes();
     let expected_sha = sha256_hex(&scene_bytes);
     let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
         AssetPath::from(path),
@@ -2076,13 +2124,15 @@ fn m8_scene_asset_provenance_records_source_hash_and_round_trips() {
 
     assert_eq!(provenance.source_path().as_str(), path);
     assert_eq!(provenance.source_sha256(), Some(expected_sha.as_str()));
-    assert_eq!(provenance.license(), None);
-    assert_eq!(provenance.generator(), None);
+    assert_eq!(provenance.license(), Some("CC0-1.0"));
+    assert_eq!(provenance.generator(), Some("scena-test-generator"));
     assert!(provenance.derivatives().is_empty());
 
     let json = serde_json::to_value(provenance).expect("provenance serializes");
     assert_eq!(json["source_path"], path);
     assert_eq!(json["source_sha256"], expected_sha);
+    assert_eq!(json["license"], "CC0-1.0");
+    assert_eq!(json["generator"], "scena-test-generator");
     let decoded: scena::AssetProvenance =
         serde_json::from_value(json).expect("provenance deserializes");
     assert_eq!(decoded, provenance.clone());
@@ -3467,11 +3517,15 @@ fn render_center_rgb_for_material(material: MaterialDesc) -> [u8; 3] {
         .add()
         .expect("mesh inserts");
     scene
-        .directional_light(DirectionalLight::default().with_illuminance_lux(12_000.0))
+        .directional_light(DirectionalLight::key_light().with_illuminance_lux(12_000.0))
         .add()
         .expect("light inserts");
     let camera = scene.add_default_camera().expect("camera inserts");
     let mut renderer = Renderer::headless(48, 48).expect("renderer builds");
+    let environment =
+        pollster::block_on(assets.load_environment_preset(EnvironmentPreset::NeutralStudio))
+            .expect("neutral studio environment loads");
+    renderer.set_environment(environment);
 
     renderer
         .prepare_with_assets(&mut scene, &assets)
@@ -4907,11 +4961,15 @@ fn render_frame_with_assets(assets: &Assets, material: MaterialDesc) -> Vec<u8> 
         .add()
         .expect("mesh inserts");
     scene
-        .directional_light(DirectionalLight::default().with_illuminance_lux(12_000.0))
+        .directional_light(DirectionalLight::key_light().with_illuminance_lux(12_000.0))
         .add()
         .expect("light inserts");
     let camera = scene.add_default_camera().expect("camera inserts");
     let mut renderer = Renderer::headless(48, 48).expect("renderer builds");
+    let environment =
+        pollster::block_on(assets.load_environment_preset(EnvironmentPreset::NeutralStudio))
+            .expect("neutral studio environment loads");
+    renderer.set_environment(environment);
 
     renderer
         .prepare_with_assets(&mut scene, assets)

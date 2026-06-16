@@ -1,4 +1,4 @@
-use serde_json::json;
+use serde_json::{Map, json};
 use wasm_bindgen::prelude::JsValue;
 use web_sys::HtmlCanvasElement;
 
@@ -55,10 +55,18 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
     }
     events.push("idle-render-skipped");
 
+    let mut dirty_state = Map::new();
+
     scene
         .set_transform(node, Transform::at(Vec3::new(0.1, 0.05, 0.0)))
         .map_err(|error| JsValue::from_str(&format!("dirty transform failed: {error:?}")))?;
-    expect_scene_changed(renderer.render(&scene, camera), "dirty-transform")?;
+    dirty_state.insert(
+        "transform".to_owned(),
+        json!(expect_scene_changed(
+            renderer.render(&scene, camera),
+            "dirty-transform"
+        )?),
+    );
     reprepare_and_render(
         &mut renderer,
         &assets,
@@ -73,7 +81,13 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
         .transform(Transform::at(Vec3::new(0.35, 0.0, 0.0)))
         .add()
         .map_err(|error| JsValue::from_str(&format!("dirty material insert failed: {error:?}")))?;
-    expect_scene_changed(renderer.render(&scene, camera), "dirty-material")?;
+    dirty_state.insert(
+        "material".to_owned(),
+        json!(expect_scene_changed(
+            renderer.render(&scene, camera),
+            "dirty-material"
+        )?),
+    );
     reprepare_and_render(&mut renderer, &assets, &mut scene, camera, "dirty-material")?;
     events.push("dirty-material");
 
@@ -88,7 +102,13 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
     scene
         .push_instance(instance_set, Transform::at(Vec3::new(-0.6, -0.1, 0.0)))
         .map_err(|error| JsValue::from_str(&format!("dirty instance failed: {error:?}")))?;
-    expect_scene_changed(renderer.render(&scene, camera), "dirty-instance")?;
+    dirty_state.insert(
+        "instance".to_owned(),
+        json!(expect_scene_changed(
+            renderer.render(&scene, camera),
+            "dirty-instance"
+        )?),
+    );
     reprepare_and_render(&mut renderer, &assets, &mut scene, camera, "dirty-instance")?;
     events.push("dirty-instance");
 
@@ -98,7 +118,13 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
     scene
         .set_transform(camera_node, Transform::at(Vec3::new(0.0, 0.0, 2.4)))
         .map_err(|error| JsValue::from_str(&format!("dirty camera failed: {error:?}")))?;
-    expect_scene_changed(renderer.render(&scene, camera), "dirty-camera")?;
+    dirty_state.insert(
+        "camera".to_owned(),
+        json!(expect_scene_changed(
+            renderer.render(&scene, camera),
+            "dirty-camera"
+        )?),
+    );
     reprepare_and_render(&mut renderer, &assets, &mut scene, camera, "dirty-camera")?;
     events.push("dirty-camera");
 
@@ -113,7 +139,13 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
     renderer
         .handle_surface_event(SurfaceEvent::ScaleFactorChanged { scale_factor: 2.0 })
         .map_err(|error| JsValue::from_str(&format!("dirty DPR failed: {error:?}")))?;
-    expect_target_changed(renderer.render(&scene, camera), "dirty-resize-dpr")?;
+    dirty_state.insert(
+        "resize_dpr".to_owned(),
+        json!(expect_target_changed(
+            renderer.render(&scene, camera),
+            "dirty-resize-dpr"
+        )?),
+    );
     let resized_render = reprepare_and_render(
         &mut renderer,
         &assets,
@@ -129,7 +161,13 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
     scene
         .interaction_mut()
         .set_primary_selection(Some(HitTarget::Node(node)));
-    expect_scene_changed(renderer.render(&scene, camera), "dirty-hover-selection")?;
+    dirty_state.insert(
+        "hover_selection".to_owned(),
+        json!(expect_scene_changed(
+            renderer.render(&scene, camera),
+            "dirty-hover-selection"
+        )?),
+    );
     let selection_render = reprepare_and_render(
         &mut renderer,
         &assets,
@@ -140,7 +178,19 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
     events.push("dirty-hover-selection");
 
     let animation = verify_animation_dirty(&mut renderer, &mut events).await?;
-    super::verify_context_recovery(&mut renderer, &assets, &mut scene, camera, &mut events)?;
+    dirty_state.insert(
+        "animation_mixer".to_owned(),
+        animation["dirty_reason"].clone(),
+    );
+    let recovery =
+        super::verify_context_recovery(&mut renderer, &assets, &mut scene, camera, &mut events)?;
+    dirty_state.insert(
+        "context_recovery".to_owned(),
+        json!({
+            "context": recovery.context,
+            "device": recovery.device,
+        }),
+    );
     events.push("context-recovery");
     let renderer_readback = renderer
         .browser_probe_readback_rgba8()
@@ -153,21 +203,8 @@ pub(in crate::browser_probe) async fn render_state_lifecycle_probe(
         "schema": "scena.m6.browser_state_lifecycle_probe.v1",
         "status": "rendered",
         "workflow": "state-lifetime-idle",
-        "scene_api": "Scene",
-        "assets_api": "Assets",
-        "prepare_api": "Renderer::prepare_with_assets",
-        "render_api": "Renderer::render",
         "event_sequence": events,
-        "dirty_state": {
-            "transform": "requires explicit prepare",
-            "material": "requires explicit prepare",
-            "instance": "requires explicit prepare",
-            "camera": "requires explicit prepare",
-            "resize_dpr": "requires explicit prepare",
-            "hover_selection": "requires explicit prepare",
-            "animation_mixer": "requires explicit prepare",
-            "context_recovery": "requires explicit prepare",
-        },
+        "dirty_state": dirty_state,
         "resource_lifetime": lifetime,
         "allocation_steady_state": {
             "render_mode": "OnChange",
@@ -311,7 +348,8 @@ async fn verify_animation_dirty(
     scene
         .update_animation(mixer, 1.0 / 30.0)
         .map_err(|error| JsValue::from_str(&format!("dirty animation update failed: {error:?}")))?;
-    expect_scene_changed(renderer.render(&scene, camera), "dirty-animation-mixer")?;
+    let dirty_reason =
+        expect_scene_changed(renderer.render(&scene, camera), "dirty-animation-mixer")?;
     let render = reprepare_and_render(
         renderer,
         &assets,
@@ -323,6 +361,7 @@ async fn verify_animation_dirty(
 
     Ok(json!({
         "clip": "Square",
+        "dirty_reason": dirty_reason,
         "draw_calls": render.draw_calls,
         "primitives": render.primitives,
     }))
@@ -331,14 +370,12 @@ async fn verify_animation_dirty(
 fn expect_scene_changed(
     result: Result<crate::RenderOutcome, RenderError>,
     label: &str,
-) -> Result<(), JsValue> {
-    if matches!(
-        result,
-        Err(RenderError::NotPrepared {
-            reason: NotPreparedReason::SceneChanged { .. }
-        })
-    ) {
-        return Ok(());
+) -> Result<String, JsValue> {
+    if let Err(RenderError::NotPrepared {
+        reason: NotPreparedReason::SceneChanged { .. },
+    }) = result
+    {
+        return Ok("scene_changed".to_owned());
     }
     Err(JsValue::from_str(&format!(
         "{label}: render should require explicit prepare after scene change"
@@ -348,14 +385,12 @@ fn expect_scene_changed(
 fn expect_target_changed(
     result: Result<crate::RenderOutcome, RenderError>,
     label: &str,
-) -> Result<(), JsValue> {
-    if matches!(
-        result,
-        Err(RenderError::NotPrepared {
-            reason: NotPreparedReason::TargetChanged { .. }
-        })
-    ) {
-        return Ok(());
+) -> Result<String, JsValue> {
+    if let Err(RenderError::NotPrepared {
+        reason: NotPreparedReason::TargetChanged { .. },
+    }) = result
+    {
+        return Ok("target_changed".to_owned());
     }
     Err(JsValue::from_str(&format!(
         "{label}: render should require explicit prepare after target change"

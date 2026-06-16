@@ -3,7 +3,7 @@
   "artifacts": {
     "capture": {
       "height": 48,
-      "payload_fnv1a64": "e643268ff967a53f",
+      "payload_fnv1a64": "1bc696f29e6c5a66",
       "schema": "scena.capture.v1",
       "width": 64
     }
@@ -18,9 +18,9 @@
   "schema": "scena.appearance_introspection.v1",
   "summary": {
     "errors": 0,
-    "luminance_mean": 0.591,
+    "luminance_mean": 0.713,
     "matched": 1,
-    "sampled_pixels": 506,
+    "sampled_pixels": 421,
     "targets": 1,
     "warnings": 0
   },
@@ -66,9 +66,9 @@
       "node": 2,
       "sampled_color_family": "green",
       "sampled_color_srgb8": [
-        27,
-        200,
-        27,
+        33,
+        241,
+        33,
         255
       ],
       "sampled_region": {
@@ -81,9 +81,9 @@
           "width": 31.0
         },
         "kind": "node_bbox",
-        "sampled_pixels": 506
+        "sampled_pixels": 421
       },
-      "swatch_distance": 0.152
+      "swatch_distance": 0.11
     }
   ]
 }

@@ -72,7 +72,6 @@ pub struct SceneDrawInspection {
     index_count: usize,
     local_bounds: Aabb,
     world_transform: Transform,
-    visible: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -332,10 +331,6 @@ impl SceneDrawInspection {
 
     pub const fn world_transform(&self) -> Transform {
         self.world_transform
-    }
-
-    pub const fn visible(&self) -> bool {
-        self.visible
     }
 }
 

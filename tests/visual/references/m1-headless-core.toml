@@ -41,25 +41,25 @@ rgba_hash = "fnv1a64:af6e69ea9da6a325"
 [[reference]]
 name = "line-material"
 max_abs_diff = 0
-center_rgba = [80, 80, 80, 255]
+center_rgba = [0, 0, 0, 255]
 corner_rgba = [0, 0, 0, 255]
-nonblack_pixels = 39
-rgba_hash = "fnv1a64:40703f9da9a60e95"
+nonblack_pixels = 13
+rgba_hash = "fnv1a64:4254602f724d0955"
 
 [[reference]]
 name = "wire-edge-materials"
 max_abs_diff = 0
 center_rgba = [0, 0, 0, 255]
 corner_rgba = [0, 0, 0, 255]
-nonblack_pixels = 135
-rgba_hash = "fnv1a64:ac7efec4be459531"
+nonblack_pixels = 55
+rgba_hash = "fnv1a64:f345e3720d6b9793"
 
 [[reference]]
 name = "default-cube"
 max_abs_diff = 0
 # CPU split-sum IBL contributes real cubemap-derived irradiance to diffuse
 # PBR surfaces under the Khronos PBR Neutral output stage.
-center_rgba = [203, 208, 214, 255]
+center_rgba = [19, 22, 26, 255]
 corner_rgba = [0, 0, 0, 255]
-nonblack_pixels = 117
-rgba_hash = "fnv1a64:91932897d82a4f88"
+nonblack_pixels = 81
+rgba_hash = "fnv1a64:bdf6e10515be53d7"

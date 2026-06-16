@@ -251,7 +251,7 @@ impl Scene {
             Some(
                 self.add_label(
                     self.root(),
-                    LabelDesc::sdf(overlay.label_text(&report.formatted_value))
+                    LabelDesc::bitmap(overlay.label_text(&report.formatted_value))
                         .with_color(overlay.color)
                         .with_size(0.08),
                     Transform::at(overlay.label_position()?),

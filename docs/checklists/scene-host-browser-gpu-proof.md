@@ -1,7 +1,8 @@
 # SceneHost browser/GPU proof plan
 
-Status: passed for SceneHost contracts on Raspberry Pi V3D WebGL2; renderer
-fidelity dependencies remain open.
+Status: CI/release-enforced on the Linux WebGL2 browser lane, with prior
+Raspberry Pi V3D WebGL2 evidence retained for hardware-specific review.
+Renderer fidelity dependencies remain open.
 Date: 2026-06-02
 Scope: real browser/GPU rendered-output proof for the generic `SceneHost`
 contracts.
@@ -9,6 +10,9 @@ contracts.
 Real browser/GPU machine required. The Hetzner CPU builder is valid for Rust
 compile, test, doc, doctor, WASM compile, and headless capture proof. It is not
 valid evidence for WebGPU/WebGL2 rendered output.
+Run this plan explicitly on V3D hardware when changing SceneHost browser
+contracts that require hardware-specific proof; GitHub CI also runs the
+same harness on the Linux WebGL2 browser lane.
 
 ## Contract
 
@@ -51,7 +55,7 @@ The JSON artifact records:
 
 ## Dependencies
 
-This browser proof is blocked from final release approval while the current
+Hardware-specific browser proof is blocked from final release approval while the current
 renderer-fidelity dependencies remain open or untriaged against current `main`:
 
 - dense WebGL2 source-material proof,
@@ -70,10 +74,10 @@ Run on Raspberry Pi 5 hardware using system Chromium and ANGLE/GLES:
 SCENA_BROWSER_BACKENDS=webgl2 npm run browser:scene-host-proof
 ```
 
-The harness builds the SceneHost package with:
+The harness builds the SceneHost package with the configured Rust toolchain:
 
 ```bash
-rustup run 1.95.0 wasm-pack build . --dev --target web --out-dir target/scene-host-browser-pkg --out-name scena --features scene-host
+rustup run "$RUST_TOOLCHAIN" wasm-pack build . --dev --target web --out-dir target/scene-host-browser-pkg --out-name scena --features scene-host
 ```
 
 Artifacts:
@@ -98,6 +102,6 @@ source-material fidelity epics.
 ## Current status
 
 CPU/headless validation is covered by the Rust tests and doctor gates in this
-branch. The SceneHost browser/GPU proof above now has V3D hardware evidence.
-Final browser visual approval still waits on the renderer-fidelity dependencies
-listed above.
+branch. The SceneHost browser/GPU proof above has V3D hardware evidence and is
+also run by the WebGL2 CI/release lane. Final hardware-specific browser visual
+approval still waits on the renderer-fidelity dependencies listed above.

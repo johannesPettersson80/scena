@@ -88,8 +88,8 @@ pub use inspection_tools::{
     InspectionHelperKind, InspectionHelperReport, InspectionToolkitReport, SceneTintSnapshot,
     SceneTintSnapshotEntry, SceneVisibilitySnapshot, SceneVisibilitySnapshotEntry,
 };
-pub use instances::{Instance, InstanceCullingPolicy, InstanceId, InstanceSet};
-pub use labels::{LabelBillboard, LabelDesc, LabelMetrics, LabelRasterization};
+pub use instances::{Instance, InstanceId, InstanceSet};
+pub use labels::{LabelBillboard, LabelDesc, LabelMetrics};
 pub use lights::{
     DirectionalLight, Light, LightBuilder, PointLight, SpotLight, StudioLightingHandles,
 };

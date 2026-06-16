@@ -21,6 +21,33 @@ fn placement_result_golden_fixture_matches_live_schema() {
 }
 
 #[test]
+fn placement_result_success_rounds_transform_components_for_stable_json() {
+    let result = scena::ScenePlacementResultV1::success(
+        "part",
+        "look_at",
+        Transform {
+            translation: Vec3::new(1.234_56, -2.345_67, 3.456_78),
+            rotation: glam::Quat::from_xyzw(0.123_456_7, -0.234_567_8, 0.345_678_9, 0.901_234_5),
+            scale: Vec3::new(0.333_333_34, 1.666_666_6, 2.555_555_6),
+        },
+    );
+
+    let value = serde_json::to_value(&result).expect("placement result serializes");
+    assert_eq!(
+        value["transform"]["translation"],
+        serde_json::json!([1.235, -2.346, 3.457])
+    );
+    assert_eq!(
+        value["transform"]["rotation"],
+        serde_json::json!([0.123, -0.235, 0.346, 0.901])
+    );
+    assert_eq!(
+        value["transform"]["scale"],
+        serde_json::json!([0.333, 1.667, 2.556])
+    );
+}
+
+#[test]
 fn placement_look_at_orients_negative_z_toward_target() {
     let current = Transform::at(Vec3::new(2.0, 0.0, 0.0)).scale_by(3.0);
     let transform =

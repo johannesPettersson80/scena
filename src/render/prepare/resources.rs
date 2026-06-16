@@ -552,7 +552,6 @@ mod tests {
                     [0.25, 0.0],
                     0.0,
                     [1.0, 1.0],
-                    None,
                 )),
         );
         let mut scene = Scene::new();
@@ -620,7 +619,7 @@ mod tests {
         let assets = Assets::new();
         let texture = decoded_test_texture(&assets);
         let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.25, 0.25, 0.25));
-        let transform = TextureTransform::new([0.25, 0.5], 0.5, [0.75, 0.5], None);
+        let transform = TextureTransform::new([0.25, 0.5], 0.5, [0.75, 0.5]);
         let material = assets.create_material(
             MaterialDesc::unlit(Color::WHITE)
                 .with_base_color_texture(texture)

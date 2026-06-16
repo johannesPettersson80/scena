@@ -13,17 +13,10 @@
   ],
   "fallbacks": [
     {
-      "code": "directional_shadow_receiver_degraded",
-      "severity": "warning",
-      "message": "directional shadow receiver darkening is not claimed as physical in this preset",
-      "help": "treat floor and SSAO as grounding aids until directional shadow proof is promoted"
-    },
-    {
       "code": "ssao_is_ambient_occlusion",
       "severity": "info",
       "message": "SSAO darkens depth contact edges but is not a drop-shadow substitute",
       "help": "use the report active_paths to distinguish floor receiver, SSAO, and shadow receiver claims"
     }
-  ],
-  "physical_shadow_claimed": false
+  ]
 }

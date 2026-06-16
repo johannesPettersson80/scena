@@ -216,7 +216,7 @@ drag orbits around the framed object:
 
 ```rust
 let framing = scene.frame_bounds(camera, bounds, FramingOptions::new().viewport(width, height))?;
-let controls = scena::OrbitControls::from_framing(framing).cinematic();
+let controls = scena::OrbitControls::from_framing(framing);
 ```
 
 Clamp wheel and pinch zoom relative to that framed distance when a viewer
@@ -224,7 +224,6 @@ should stay near the inspected object:
 
 ```rust
 let controls = scena::OrbitControls::from_framing(framing)
-    .cinematic()
     .zoom_limits_bounds_relative(0.5, 4.0);
 ```
 
@@ -241,14 +240,12 @@ if matches!(controls.advance(delta_seconds), scena::OrbitControlAction::Orbit) {
 
 Host adapters can then apply the controls to the scene camera each frame.
 
-![Damped orbit motion — the cube rotates and decelerates with each frame](../assets/easy-scene-showcase/animated-orbit-damping.gif)
+![Turntable orbit motion — the cube rotates at the configured presentation rate](../assets/easy-scene-showcase/animated-orbit-damping.gif)
 
-The cube above starts at full angular velocity and decays under
-`cinematic()` damping; user-driven orbit input would feel the same way.
+The cube above advances through the host-ticked `presentation()` path.
 
 ```rust
 let controls = OrbitControls::from_framing(framing)
-    .cinematic()
     .zoom_limits_bounds_relative(0.5, 4.0);
 ```
 
@@ -305,14 +302,6 @@ viewer.on_hover({
 
 viewer.hover_at(pointer_x, pointer_y)?;
 viewer.click_at(pointer_x, pointer_y)?;
-```
-
-Set hover and selection outlines on the renderer when the interaction state
-should be visible in screenshots or demos:
-
-```rust
-renderer.set_hover_style(InteractionStyle::outline(Color::from_hex("#ffd240")?, 2.0));
-renderer.set_selection_style(InteractionStyle::outline(Color::from_hex("#40a0ff")?, 3.0));
 ```
 
 ![Pickable sphere + cube on a plinth ready for hover / select interaction](../assets/easy-scene-showcase/picking-outline-hover.jpg)

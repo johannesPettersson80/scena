@@ -203,13 +203,10 @@ fn scena_viewer_inspector_snapshot_summarizes_diagnostics_and_render_state() {
         ..RendererStats::default()
     };
 
-    let snapshot = ScenaViewerInspectorSnapshot::from_renderer_state(
-        DebugOverlay::BoundingBoxes,
-        &diagnostics,
-        stats,
-    );
+    let snapshot =
+        ScenaViewerInspectorSnapshot::from_renderer_state(DebugOverlay::None, &diagnostics, stats);
 
-    assert_eq!(snapshot.overlay(), DebugOverlay::BoundingBoxes);
+    assert_eq!(snapshot.overlay(), DebugOverlay::None);
     assert_eq!(snapshot.diagnostics().len(), 2);
     assert_eq!(
         snapshot.diagnostics()[0].severity(),
@@ -224,7 +221,7 @@ fn scena_viewer_inspector_snapshot_summarizes_diagnostics_and_render_state() {
     assert!(snapshot.has_errors());
     assert_eq!(
         snapshot.status_text(),
-        "BoundingBoxes overlay; 1 error, 1 warning; 7 draws; 42 triangles at 320x180"
+        "None overlay; 1 error, 1 warning; 7 draws; 42 triangles at 320x180"
     );
 }
 

@@ -105,6 +105,18 @@ impl AppearanceIntrospectionReportV1 {
                         )
                     })
                 })
+                .or_else(|| {
+                    matched.as_ref().and_then(|target| {
+                        inspection.node_by_handle(target.node).map(|node| {
+                            TargetSample::node_bounds(
+                                capture,
+                                node,
+                                options.background_rgba8,
+                                options.content_tolerance_rgba8,
+                            )
+                        })
+                    })
+                })
                 .unwrap_or_else(|| TargetSample::frame_content(frame_sample.clone()));
             let alpha = material
                 .as_ref()

@@ -66,7 +66,7 @@ pub(in crate::browser_probe::workflows) async fn material_presets_scene()
         scene
             .add_label(
                 scene.root(),
-                LabelDesc::sdf(preset.label)
+                LabelDesc::bitmap(preset.label)
                     .with_color(Color::from_srgb_u8(225, 230, 238))
                     .with_size(12.0),
                 Transform::at(preset.label_position()),

@@ -20,7 +20,7 @@ use crate::controls::{
 };
 use crate::diagnostics::{Diagnostic, LookupError, RenderOutcome};
 use crate::material::Color;
-use crate::picking::{Hit, InteractionStyle};
+use crate::picking::Hit;
 use crate::platform::{PlatformSurface, SurfaceEvent};
 use crate::render::{Background, Profile, Quality, RenderMode, Renderer, RendererOptions};
 use crate::scene::{CameraKey, Scene, SceneImport, Transform, Vec3};
@@ -71,8 +71,6 @@ struct ViewerCommonOptions {
     background: Option<Background>,
     camera_bookmarks: Vec<CameraBookmark>,
     grid_floor: bool,
-    hover_style: Option<InteractionStyle>,
-    selection_style: Option<InteractionStyle>,
 }
 
 impl ViewerCommonOptions {
@@ -87,8 +85,6 @@ impl ViewerCommonOptions {
             background: None,
             camera_bookmarks: Vec::new(),
             grid_floor: false,
-            hover_style: None,
-            selection_style: None,
         }
     }
 
@@ -108,8 +104,6 @@ impl ViewerCommonOptions {
         self.lighting = profile.lighting();
         self.grid_floor = profile.grid();
         self.background = profile.background();
-        self.hover_style = profile.hover_style();
-        self.selection_style = profile.selection_style();
     }
 }
 

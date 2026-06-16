@@ -157,6 +157,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     }
 
     pub fn frame_node(&mut self, node: u64) -> Result<(), SceneHostError> {
+        self.ensure_active_camera()?;
         let node = self.resolve_node(node)?;
         let bounds = self
             .scene
@@ -178,6 +179,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         node: u64,
         preset: &str,
     ) -> Result<(), SceneHostError> {
+        self.ensure_active_camera()?;
         let node = self.resolve_node(node)?;
         let bounds = self
             .scene
@@ -210,6 +212,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
     }
 
     pub fn frame_all(&mut self) -> Result<(), SceneHostError> {
+        self.ensure_active_camera()?;
         let bounds = self
             .scene
             .node_world_bounds(self.scene.root(), &self.assets)?

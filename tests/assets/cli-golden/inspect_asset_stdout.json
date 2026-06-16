@@ -82,7 +82,17 @@
           "g": 0.5,
           "r": 0.25
         },
-        "fallbacks": [],
+        "fallbacks": [
+          {
+            "fallback_path": "scena.material.fallback_texture",
+            "kind": "missing_texture_fallback",
+            "material_index": 0,
+            "material_slot": "baseColorTexture",
+            "reason": "texture bytes were unavailable; renderer will bind the generated material fallback texture",
+            "source_path": "tests/assets/gltf/textures/albedo.png",
+            "texture_index": 0
+          }
+        ],
         "kind": "unlit",
         "source": {
           "asset_path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",
@@ -112,7 +122,6 @@
       "primitive_count": 1,
       "topology": "triangles",
       "vertex_count": 3,
-      "visible": true,
       "world_transform": {
         "rotation": [
           0.0,
@@ -225,7 +234,17 @@
           "g": 0.5,
           "r": 0.25
         },
-        "fallbacks": [],
+        "fallbacks": [
+          {
+            "fallback_path": "scena.material.fallback_texture",
+            "kind": "missing_texture_fallback",
+            "material_index": 0,
+            "material_slot": "baseColorTexture",
+            "reason": "texture bytes were unavailable; renderer will bind the generated material fallback texture",
+            "source_path": "tests/assets/gltf/textures/albedo.png",
+            "texture_index": 0
+          }
+        ],
         "kind": "unlit",
         "source": {
           "asset_path": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf",

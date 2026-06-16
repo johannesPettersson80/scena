@@ -25,11 +25,11 @@ rgba_hash = "fnv1a64:386b4efab512b025"
 [[reference]]
 name = "ibl-environment"
 max_abs_diff = 0
-center_rgba = [240, 240, 240, 255]
-left_mid_rgba = [240, 240, 240, 255]
-right_mid_rgba = [240, 240, 240, 255]
+center_rgba = [219, 233, 246, 255]
+left_mid_rgba = [219, 233, 245, 255]
+right_mid_rgba = [219, 233, 246, 255]
 nonblack_pixels = 240
-rgba_hash = "fnv1a64:8d0e8c3b808294c5"
+rgba_hash = "fnv1a64:fa7f1a29918e8646"
 
 [[reference]]
 name = "fxaa-edge"
@@ -55,17 +55,17 @@ max_abs_diff = 0
 center_rgba = [0, 0, 0, 255]
 left_mid_rgba = [0, 0, 0, 255]
 right_mid_rgba = [0, 0, 0, 255]
-nonblack_pixels = 102
-rgba_hash = "fnv1a64:101dcfa11217ff01"
+nonblack_pixels = 90
+rgba_hash = "fnv1a64:9762f8b0aa4eec21"
 
 [[reference]]
 name = "ssao-contact-on-off"
 max_abs_diff = 0
 center_rgba = [0, 0, 0, 255]
 left_mid_rgba = [240, 240, 240, 255]
-right_mid_rgba = [156, 156, 156, 255]
-nonblack_pixels = 226
-rgba_hash = "fnv1a64:7ce7e7a593346e71"
+right_mid_rgba = [240, 240, 240, 255]
+nonblack_pixels = 154
+rgba_hash = "fnv1a64:0ec6270d35a4a042"
 
 [[reference]]
 name = "oit-overlap-order-invariance"
@@ -82,5 +82,5 @@ max_abs_diff = 0
 center_rgba = [240, 240, 240, 255]
 left_mid_rgba = [0, 0, 0, 255]
 right_mid_rgba = [240, 240, 240, 255]
-nonblack_pixels = 149
-rgba_hash = "fnv1a64:4d3a874730a5e5bc"
+nonblack_pixels = 135
+rgba_hash = "fnv1a64:fb523c0207ff9bf5"

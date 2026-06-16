@@ -80,6 +80,33 @@ pub(crate) fn check_schema_catalog_covers_stable_fixtures(
             ));
         }
     }
+
+    for entry in entries {
+        let schema = entry.get("schema").and_then(Value::as_str);
+        let fixture_path = entry.get("fixture_path").and_then(Value::as_str);
+        let (Some(schema), Some(fixture_path)) = (schema, fixture_path) else {
+            continue;
+        };
+        let pinned = fixtures
+            .iter()
+            .find(|(rel, _)| *rel == fixture_path)
+            .map(|(_, expected_schema)| *expected_schema);
+        match pinned {
+            Some(expected_schema) if expected_schema == schema => {}
+            Some(expected_schema) => findings.push(Finding::new(
+                "STABLE-CONTRACT-EVIDENCE",
+                format!(
+                    "{rel} lists fixture {fixture_path} as {schema}, but doctor FIXTURES pins {expected_schema}"
+                ),
+            )),
+            None => findings.push(Finding::new(
+                "STABLE-CONTRACT-EVIDENCE",
+                format!(
+                    "{rel} lists fixture {fixture_path} for schema {schema}, but doctor FIXTURES does not pin it"
+                ),
+            )),
+        }
+    }
 }
 
 fn schema_references_in_text(text: &str) -> BTreeSet<String> {

@@ -193,14 +193,17 @@ start a hidden recovery loop.
 Real browser/GPU proof is separate from CPU builder validation. The required
 proof plan and output artifacts are tracked in
 [`scene-host-browser-gpu-proof.md`](checklists/scene-host-browser-gpu-proof.md).
-The Raspberry Pi V3D run uses
-`SCENA_BROWSER_BACKENDS=webgl2 npm run browser:scene-host-proof` and records
+The WebGL2 CI/release lane runs `npm run browser:scene-host-proof`; the same
+command can be run on Raspberry Pi V3D hardware with
+`SCENA_BROWSER_BACKENDS=webgl2`. The proof records
 `scena.scene_host_browser_proof.v1` under
 `target/gate-artifacts/scene-host-browser-proof/`. That proof exercises
 `SceneHost.capture()`, `inspectJson()`, `annotationProjectionsJson()`,
 CSS-pixel picking at DPR values other than 1, URL asset loading, and
 `WEBGL_lose_context`-driven context lost/restored host events in a real
 browser. Renderer-fidelity epics remain separate and require a non-Pi GPU lane.
+The SceneHost proof is CI/release-enforced for WebGL2; the V3D run remains
+additional hardware evidence.
 
 ## Output Color Space
 

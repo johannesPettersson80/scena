@@ -73,7 +73,7 @@ async fn load_material_proof_scene(
         scene
             .add_label(
                 scene.root(),
-                LabelDesc::sdf(preset.label)
+                LabelDesc::bitmap(preset.label)
                     .with_color(Color::from_srgb_u8(225, 230, 238))
                     .with_size(12.0),
                 Transform::at(preset.label_position()),
@@ -107,7 +107,7 @@ async fn load_material_proof_scene(
         .map_err(|err| {
             JsValue::from_str(&format!("material preset frame_bounds failed: {err:?}"))
         })?;
-    let controls = OrbitControls::from_framing(framing).cinematic();
+    let controls = OrbitControls::from_framing(framing);
     log_timing("load_material_presets_scene total", total_start);
 
     Ok(DemoApp {
@@ -243,7 +243,7 @@ pub async fn load_material_spheres_scene(
         .map_err(|err| {
             JsValue::from_str(&format!("material sphere frame_bounds failed: {err:?}"))
         })?;
-    let controls = OrbitControls::from_framing(framing).cinematic();
+    let controls = OrbitControls::from_framing(framing);
     scene
         .add_studio_lighting()
         .map_err(|err| JsValue::from_str(&format!("add_studio_lighting failed: {err:?}")))?;
@@ -343,7 +343,7 @@ pub async fn load_single_material_sphere_scene(
         .map_err(|err| {
             JsValue::from_str(&format!("material sphere frame_bounds failed: {err:?}"))
         })?;
-    let controls = OrbitControls::from_framing(framing).cinematic();
+    let controls = OrbitControls::from_framing(framing);
     scene
         .add_studio_lighting()
         .map_err(|err| JsValue::from_str(&format!("add_studio_lighting failed: {err:?}")))?;

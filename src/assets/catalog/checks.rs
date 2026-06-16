@@ -1,4 +1,4 @@
-use crate::assets::{AssetExternalResourceStatus, AssetLoadReportV1};
+use crate::assets::{AssetExternalResourceKind, AssetExternalResourceStatus, AssetLoadReportV1};
 use crate::scene::{SourceCoordinateSystem, SourceUnits};
 
 use super::{
@@ -37,6 +37,36 @@ pub(super) fn validate_catalog_identity(
             "supply a glTF/GLB path or URL fetchable by the configured AssetFetcher",
             None,
             Some("source"),
+        ));
+    }
+    if asset.license.as_deref().is_none_or(str::is_empty) {
+        findings.push(finding(
+            AssetReadinessSeverityV1::Warning,
+            "license_missing",
+            "catalog asset does not declare a license",
+            "declare the upstream or host-owned license before publishing the catalog",
+            None,
+            Some("license"),
+        ));
+    }
+    if asset.provenance.as_deref().is_none_or(str::is_empty) {
+        findings.push(finding(
+            AssetReadinessSeverityV1::Warning,
+            "provenance_missing",
+            "catalog asset does not declare provenance",
+            "record source URL, package, or authoring pipeline provenance",
+            None,
+            Some("provenance"),
+        ));
+    }
+    if asset.categories.is_empty() && asset.tags.is_empty() {
+        findings.push(finding(
+            AssetReadinessSeverityV1::Info,
+            "catalog_taxonomy_empty",
+            "catalog asset has no categories or tags",
+            "add host-owned categories or tags when this asset should be searchable",
+            None,
+            Some("categories"),
         ));
     }
 }
@@ -148,7 +178,11 @@ pub(super) fn validate_preview(
 
     Some(AssetReadinessPreviewV1 {
         kind: preview.kind.clone(),
-        status: "declared".to_owned(),
+        status: match preview.kind.as_str() {
+            "generated" => "generated",
+            _ => "declared",
+        }
+        .to_owned(),
         path: preview.path.clone(),
         width: preview.width,
         height: preview.height,
@@ -160,15 +194,30 @@ pub(super) fn validate_load_report(
     findings: &mut Vec<AssetReadinessFindingV1>,
 ) {
     for resource in &report.external_resources {
-        if resource.status == AssetExternalResourceStatus::Missing {
-            findings.push(finding(
+        match resource.status {
+            AssetExternalResourceStatus::Missing => findings.push(finding(
                 AssetReadinessSeverityV1::Error,
                 "external_resource_missing",
                 format!("external resource '{}' is missing", resource.path),
                 "serve the external resource next to the glTF or embed it before approval",
                 Some(resource.path.clone()),
                 Some("required_files"),
-            ));
+            )),
+            AssetExternalResourceStatus::SkippedUnsupportedFormat => {
+                let code = match resource.kind {
+                    AssetExternalResourceKind::Image => "external_image_unsupported_format",
+                    AssetExternalResourceKind::Buffer => "external_buffer_unsupported_format",
+                };
+                findings.push(finding(
+                    AssetReadinessSeverityV1::Warning,
+                    code,
+                    format!("external resource '{}' uses an unsupported format", resource.path),
+                    "convert the resource to a supported format or enable strict loading when it must block",
+                    Some(resource.path.clone()),
+                    Some("required_files"),
+                ));
+            }
+            AssetExternalResourceStatus::Fetched => {}
         }
     }
 }

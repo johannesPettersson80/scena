@@ -106,7 +106,7 @@ impl SceneAsset {
             step_start = log_gltf_step("open_gltf_with_massage", step_start);
         }
         let blob = gltf.blob.clone();
-        let provenance = AssetProvenance::from_source_bytes(path.clone(), bytes);
+        let provenance = gltf_asset_provenance(path.clone(), bytes, &gltf);
         let scene = Self::from_gltf_document(
             &path,
             &gltf,
@@ -252,6 +252,26 @@ impl SceneAsset {
             }),
         })
     }
+}
+
+fn gltf_asset_provenance(path: AssetPath, bytes: &[u8], gltf: &Gltf) -> AssetProvenance {
+    let asset = &gltf.document.as_json().asset;
+    let mut provenance = AssetProvenance::from_source_bytes(path, bytes);
+    if let Some(generator) = asset
+        .generator
+        .as_deref()
+        .filter(|generator| !generator.trim().is_empty())
+    {
+        provenance = provenance.with_generator(generator.to_owned());
+    }
+    if let Some(copyright) = asset
+        .copyright
+        .as_deref()
+        .filter(|copyright| !copyright.trim().is_empty())
+    {
+        provenance = provenance.with_license(copyright.to_owned());
+    }
+    provenance
 }
 
 fn validate_gltf_version(path: &AssetPath, gltf: &Gltf) -> Result<(), AssetError> {

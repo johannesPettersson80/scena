@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 
 use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
 use crate::{AssetFetcher, MeasurementKind, MeasurementOverlay, UnitFormat, Vec3};
@@ -11,6 +11,7 @@ pub struct SceneHostMeasurementOverlayReportV1 {
     pub schema: String,
     pub id: String,
     pub kind: String,
+    #[serde(serialize_with = "serialize_round3_f32")]
     pub value: f32,
     pub formatted_value: String,
     pub line_node: u64,
@@ -22,7 +23,9 @@ pub struct SceneHostMeasurementOverlayReportV1 {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct SceneHostMeasurementLabelProjectionV1 {
+    #[serde(serialize_with = "serialize_round3_f32")]
     pub x_css_px: f32,
+    #[serde(serialize_with = "serialize_round3_f32")]
     pub y_css_px: f32,
     pub visible: bool,
 }
@@ -52,7 +55,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             schema: SCENE_HOST_MEASUREMENT_OVERLAY_SCHEMA_V1.to_owned(),
             id: report.id,
             kind: measurement_kind_name(report.kind).to_owned(),
-            value: report.value,
+            value: round3(report.value),
             formatted_value: report.formatted_value,
             line_node,
             label_text,
@@ -83,8 +86,8 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             });
         };
         Ok(SceneHostMeasurementLabelProjectionV1 {
-            x_css_px: projected.x,
-            y_css_px: projected.y,
+            x_css_px: round3(projected.x),
+            y_css_px: round3(projected.y),
             visible: projected.ndc_x.abs() <= 1.0 && projected.ndc_y.abs() <= 1.0,
         })
     }
@@ -110,4 +113,27 @@ fn measurement_kind_name(kind: MeasurementKind) -> &'static str {
         MeasurementKind::Angle => "angle",
         MeasurementKind::BoundsDimension => "bounds_dimension",
     }
+}
+
+fn round3(value: f32) -> f32 {
+    if !value.is_finite() {
+        return 0.0;
+    }
+    let rounded = (value * 1000.0).round() / 1000.0;
+    if rounded == 0.0 { 0.0 } else { rounded }
+}
+
+fn serialize_round3_f32<S>(value: &f32, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_f64(stable_round3(*value))
+}
+
+fn stable_round3(value: f32) -> f64 {
+    if !value.is_finite() {
+        return 0.0;
+    }
+    let rounded = (f64::from(value) * 1000.0).round() / 1000.0;
+    if rounded == 0.0 { 0.0 } else { rounded }
 }
