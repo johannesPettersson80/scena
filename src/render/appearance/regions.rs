@@ -11,12 +11,11 @@ pub(super) struct TargetSample {
 }
 
 impl TargetSample {
-    pub(super) fn frame_content(content: ContentSample) -> Self {
-        let region_bbox = content.bbox;
+    pub(super) fn empty() -> Self {
         Self {
-            kind: "frame_content",
-            region_bbox,
-            content,
+            kind: "empty",
+            region_bbox: None,
+            content: ContentSample::empty(),
         }
     }
 

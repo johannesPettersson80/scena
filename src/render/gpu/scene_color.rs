@@ -1,11 +1,11 @@
 use super::instancing::InstanceDrawBatch;
 use super::materials::MaterialResources;
-use super::pipeline::{ColorLoad, DrawFilter, UnlitPass, encode_unlit_pass};
+use super::pipeline::{ColorLoad, DrawFilter, UnlitPass, UnlitPipelines, encode_unlit_pass};
 use super::vertices::PrimitiveDrawBatch;
 
 pub(super) struct SceneColorPasses<'a> {
     pub(super) final_view: &'a wgpu::TextureView,
-    pub(super) final_pipeline: &'a wgpu::RenderPipeline,
+    pub(super) final_pipelines: UnlitPipelines<'a>,
     pub(super) depth_view: Option<&'a wgpu::TextureView>,
     pub(super) vertex_buffer: &'a wgpu::Buffer,
     pub(super) instance_buffer: &'a wgpu::Buffer,
@@ -17,7 +17,7 @@ pub(super) struct SceneColorPasses<'a> {
     pub(super) instance_batches: &'a [InstanceDrawBatch],
     pub(super) identity_instance: u32,
     pub(super) transmission_view: &'a wgpu::TextureView,
-    pub(super) transmission_pipeline: &'a wgpu::RenderPipeline,
+    pub(super) transmission_pipelines: UnlitPipelines<'a>,
     pub(super) clear_color: wgpu::Color,
     pub(super) base_label: &'static str,
     pub(super) draw_submissions: &'a mut u64,
@@ -42,7 +42,7 @@ pub(super) fn encode_scene_color_passes(
                 draw_batches: passes.draw_batches,
                 instance_batches: passes.instance_batches,
                 identity_instance: passes.identity_instance,
-                pipeline: passes.transmission_pipeline,
+                pipelines: passes.transmission_pipelines,
                 color_load: ColorLoad::Clear(passes.clear_color),
                 draw_filter: DrawFilter::OpaqueOnly,
                 label: "scena.transmission.scene_color_pass",
@@ -62,7 +62,7 @@ pub(super) fn encode_scene_color_passes(
                 draw_batches: passes.draw_batches,
                 instance_batches: passes.instance_batches,
                 identity_instance: passes.identity_instance,
-                pipeline: passes.final_pipeline,
+                pipelines: passes.final_pipelines,
                 color_load: ColorLoad::Clear(passes.clear_color),
                 draw_filter: DrawFilter::OpaqueOnly,
                 label: "scena.final.opaque_pass",
@@ -82,7 +82,7 @@ pub(super) fn encode_scene_color_passes(
                 draw_batches: passes.draw_batches,
                 instance_batches: passes.instance_batches,
                 identity_instance: passes.identity_instance,
-                pipeline: passes.final_pipeline,
+                pipelines: passes.final_pipelines,
                 color_load: ColorLoad::Load,
                 draw_filter: DrawFilter::TransparentOnly,
                 label: "scena.final.transparent_pass",
@@ -103,7 +103,7 @@ pub(super) fn encode_scene_color_passes(
                 draw_batches: passes.draw_batches,
                 instance_batches: passes.instance_batches,
                 identity_instance: passes.identity_instance,
-                pipeline: passes.final_pipeline,
+                pipelines: passes.final_pipelines,
                 color_load: ColorLoad::Clear(passes.clear_color),
                 draw_filter: DrawFilter::All,
                 label: passes.base_label,

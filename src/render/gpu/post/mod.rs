@@ -3,7 +3,7 @@ use crate::diagnostics::RenderError;
 use super::super::RasterTarget;
 use super::depth;
 use super::material_bindings::MaterialTextureBindingMode;
-use super::pipeline::create_unlit_pipeline;
+use super::pipeline::{UnlitPipelines, create_unlit_pipeline_set};
 use crate::render::AntiAliasing;
 #[cfg(target_arch = "wasm32")]
 use crate::render::PostBloomConfig;
@@ -133,7 +133,7 @@ pub(super) fn create_resources(
             "scena.gpu_post.pong_bind_group",
         ),
     ];
-    let scene_pipeline = create_unlit_pipeline(
+    let scene_pipelines = create_unlit_pipeline_set(
         device,
         POST_COLOR_FORMAT,
         output_bind_group_layout,
@@ -164,7 +164,7 @@ pub(super) fn create_resources(
         uniform,
         ssao_bind_group_layout,
         texture_bind_groups,
-        scene_pipeline,
+        scene_pipelines,
         surface_blit_pipeline,
         surface_fxaa_pipeline,
         surface_bloom_fxaa_pipeline,
@@ -176,6 +176,10 @@ pub(super) fn create_resources(
 
 pub(super) fn resources_match(resources: &PostResources, target: RasterTarget) -> bool {
     resources.target == target
+}
+
+pub(super) fn scene_pipelines(resources: &PostResources) -> UnlitPipelines<'_> {
+    resources.scene_pipelines.refs()
 }
 
 pub(super) const fn scene_view(resources: &PostResources) -> &wgpu::TextureView {

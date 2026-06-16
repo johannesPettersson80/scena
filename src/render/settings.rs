@@ -1,5 +1,5 @@
 use crate::assets::EnvironmentHandle;
-use crate::diagnostics::{DebugOverlay, OutputColorSpace};
+use crate::diagnostics::OutputColorSpace;
 use crate::material::Color;
 
 use super::{
@@ -181,22 +181,6 @@ impl Renderer {
 
     pub fn clear_bloom(&mut self) {
         self.set_bloom(None);
-    }
-
-    pub fn debug_overlay(&self) -> DebugOverlay {
-        self.debug_overlay
-    }
-
-    pub fn set_debug(&mut self, overlay: DebugOverlay) {
-        self.set_debug_overlay(overlay);
-    }
-
-    pub fn set_debug_overlay(&mut self, overlay: DebugOverlay) {
-        if self.debug_overlay != overlay {
-            self.debug_overlay = overlay;
-            self.debug_revision = self.debug_revision.saturating_add(1);
-            self.clear_rendered_frame();
-        }
     }
 
     pub fn environment(&self) -> Option<EnvironmentHandle> {

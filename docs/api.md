@@ -734,8 +734,6 @@ Common renderer calls:
 - `Renderer::prepare_with_assets`
 - `Renderer::render`
 - `Renderer::render_active`
-- `Renderer::set_debug`
-- `Renderer::set_debug_overlay`
 - `Renderer::capability_report`
 - `Renderer::gpu_adapter_report`
 
@@ -754,7 +752,6 @@ Common scene interaction calls:
 Common public event and output types:
 
 - `SurfaceEvent`
-- `DebugOverlay`
 - `PostBloomConfig`
 - `RendererStats`
 - `CapabilityReport`
@@ -886,7 +883,6 @@ UIs can show the same actionable remediation used by the asset doctor.
 - backend capability reports,
 - GPU adapter reports,
 - renderer statistics,
-- debug overlays,
 - resource and frame counters.
 
 Use capability reports when selecting optional effects or platform-specific

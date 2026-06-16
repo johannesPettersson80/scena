@@ -430,7 +430,10 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
         &[
             "scena.scena_viewer_inspector_snapshot.v1",
             "scena-viewer-inspector-fixture",
-            "\"overlay\": \"Diagnostics\"",
+            "\"diagnostics\"",
+            "\"stats\"",
+            "\"FrameBounds\"",
+            "\"drawCalls\"",
         ],
     );
     if let Ok(page_source) =

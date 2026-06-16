@@ -326,10 +326,10 @@ default, keyboard reset, and touch pinch/orbit gestures in
 `scena.scena_viewer_mobile_a11y_browser_proof.v1`.
 
 The inspector/dev overlay is host-fed and renderer-neutral. Call
-`setInspectorSnapshot({ overlay, diagnostics, stats })` or
-`setInspectorDiagnostics(diagnostics, overlay, stats)` to render a shadow-DOM
-overlay with the active debug overlay, diagnostic severities, render counters,
-and the `scena-viewer-inspector-rendered` event for browser tests. The M6
+`setInspectorSnapshot({ diagnostics, stats })` or
+`setInspectorDiagnostics(diagnostics, stats)` to render a shadow-DOM overlay
+with diagnostic severities, render counters, and the
+`scena-viewer-inspector-rendered` event for browser tests. The M6
 custom-element proof loads
 `/fixtures/viewer/inspector_snapshot.json`, asserts
 `scena.scena_viewer_inspector_snapshot.v1`, feeds that JSON through the live

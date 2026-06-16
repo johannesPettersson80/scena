@@ -298,7 +298,6 @@ impl Renderer {
             visibility_revision: scene.visibility_revision(),
             environment_revision: self.environment_revision,
             target_revision: self.target_revision,
-            debug_revision: self.debug_revision,
             retained_primitives,
             primitives,
             retained_strokes,
@@ -340,9 +339,6 @@ impl Renderer {
         }
         if prepared.target_revision != self.target_revision {
             return Some("target revision changed");
-        }
-        if prepared.debug_revision != self.debug_revision {
-            return Some("debug revision changed");
         }
         if prepared.transform_revision == scene.transform_revision() {
             return None;

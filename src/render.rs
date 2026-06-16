@@ -37,8 +37,8 @@ pub mod visual_repair;
 
 use crate::assets::EnvironmentHandle;
 use crate::diagnostics::{
-    Capabilities, ChangeKind, DebugOverlay, DevicePoll, Diagnostic, GpuAdapterReport,
-    NotPreparedReason, OutputColorSpace, RenderError, RenderOutcome, RendererStats,
+    Capabilities, ChangeKind, DevicePoll, Diagnostic, GpuAdapterReport, NotPreparedReason,
+    OutputColorSpace, RenderError, RenderOutcome, RendererStats,
 };
 use crate::material::Color;
 use crate::scene::{CameraKey, ClippingPlane, Scene, SectionBox};
@@ -90,8 +90,6 @@ pub struct Renderer {
     render_generation: u64,
     last_rendered_generation: Option<u64>,
     last_rendered_frame: Option<RenderedFrameState>,
-    debug_overlay: DebugOverlay,
-    debug_revision: u64,
     surface_lost: Option<bool>,
     context_lost: Option<bool>,
     device_lost: Option<bool>,
@@ -485,16 +483,6 @@ impl Renderer {
                     prepared_revision: prepared.target_revision,
                     current_revision: self.target_revision,
                     change: ChangeKind::RenderTarget,
-                },
-            });
-        }
-
-        if prepared.debug_revision != self.debug_revision {
-            return Err(RenderError::NotPrepared {
-                reason: NotPreparedReason::RendererChanged {
-                    prepared_revision: prepared.debug_revision,
-                    current_revision: self.debug_revision,
-                    change: ChangeKind::DebugOverlay,
                 },
             });
         }

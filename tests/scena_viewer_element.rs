@@ -1,6 +1,6 @@
 use scena::{
-    AssetLoadProgress, AssetPath, DebugOverlay, Diagnostic, DiagnosticCode, DiagnosticSeverity,
-    RendererStats, SCENA_VIEWER_TAG, ScenaViewerAccessibilityDefaults, ScenaViewerAnnotationAnchor,
+    AssetLoadProgress, AssetPath, Diagnostic, DiagnosticCode, DiagnosticSeverity, RendererStats,
+    SCENA_VIEWER_TAG, ScenaViewerAccessibilityDefaults, ScenaViewerAnnotationAnchor,
     ScenaViewerAnnotationError, ScenaViewerAnnotationLayoutInput,
     ScenaViewerAnnotationLayoutOptions, ScenaViewerAttributes, ScenaViewerDropDecision,
     ScenaViewerDropKind, ScenaViewerGestureAction, ScenaViewerInspectorSnapshot,
@@ -203,10 +203,8 @@ fn scena_viewer_inspector_snapshot_summarizes_diagnostics_and_render_state() {
         ..RendererStats::default()
     };
 
-    let snapshot =
-        ScenaViewerInspectorSnapshot::from_renderer_state(DebugOverlay::None, &diagnostics, stats);
+    let snapshot = ScenaViewerInspectorSnapshot::from_renderer_state(&diagnostics, stats);
 
-    assert_eq!(snapshot.overlay(), DebugOverlay::None);
     assert_eq!(snapshot.diagnostics().len(), 2);
     assert_eq!(
         snapshot.diagnostics()[0].severity(),
@@ -221,7 +219,7 @@ fn scena_viewer_inspector_snapshot_summarizes_diagnostics_and_render_state() {
     assert!(snapshot.has_errors());
     assert_eq!(
         snapshot.status_text(),
-        "None overlay; 1 error, 1 warning; 7 draws; 42 triangles at 320x180"
+        "1 error, 1 warning; 7 draws; 42 triangles at 320x180"
     );
 }
 

@@ -1,6 +1,7 @@
 use super::super::RasterTarget;
 use super::instancing::{INSTANCE_ATTRIBUTES, INSTANCE_BYTE_LEN, InstanceDrawBatch};
 use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
+use super::pipeline::{DrawSideFilter, SCENA_FRONT_FACE};
 use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 
 const DEPTH_PREPASS_SHADER: &str = r#"
@@ -124,7 +125,8 @@ pub(super) struct DepthPrepassResources {
     pub(super) view: wgpu::TextureView,
     color_texture: Option<wgpu::Texture>,
     color_view: Option<wgpu::TextureView>,
-    pipeline: wgpu::RenderPipeline,
+    single_sided_pipeline: wgpu::RenderPipeline,
+    double_sided_pipeline: wgpu::RenderPipeline,
     clear_depth: f32,
     reversed_z: bool,
     pub(super) color_compare: wgpu::CompareFunction,
@@ -193,21 +195,64 @@ pub(super) fn create_depth_prepass_resources(
         ],
         immediate_size: 0,
     });
-    let vertex_buffer = wgpu::VertexBufferLayout {
-        array_stride: VERTEX_BYTE_LEN as u64,
-        step_mode: wgpu::VertexStepMode::Vertex,
-        attributes: &VERTEX_ATTRIBUTES,
-    };
     let color_compare = if reversed_z {
         wgpu::CompareFunction::GreaterEqual
     } else {
         wgpu::CompareFunction::LessEqual
     };
-    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("scena.m2.depth_prepass_pipeline"),
-        layout: Some(&pipeline_layout),
+    let single_sided_pipeline = create_pipeline(
+        device,
+        &pipeline_layout,
+        &shader,
+        color_compare,
+        depth_color_enabled,
+        false,
+    );
+    let double_sided_pipeline = create_pipeline(
+        device,
+        &pipeline_layout,
+        &shader,
+        color_compare,
+        depth_color_enabled,
+        true,
+    );
+
+    DepthPrepassResources {
+        texture,
+        view,
+        color_texture,
+        color_view,
+        single_sided_pipeline,
+        double_sided_pipeline,
+        clear_depth: if reversed_z { 0.0 } else { 1.0 },
+        reversed_z,
+        color_compare,
+    }
+}
+
+fn create_pipeline(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    color_compare: wgpu::CompareFunction,
+    depth_color_enabled: bool,
+    double_sided: bool,
+) -> wgpu::RenderPipeline {
+    let vertex_buffer = wgpu::VertexBufferLayout {
+        array_stride: VERTEX_BYTE_LEN as u64,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &VERTEX_ATTRIBUTES,
+    };
+    let label = if double_sided {
+        "scena.m2.depth_prepass_pipeline.double_sided"
+    } else {
+        "scena.m2.depth_prepass_pipeline.single_sided"
+    };
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(label),
+        layout: Some(pipeline_layout),
         vertex: wgpu::VertexState {
-            module: &shader,
+            module: shader,
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             buffers: &[
@@ -219,7 +264,11 @@ pub(super) fn create_depth_prepass_resources(
                 },
             ],
         },
-        primitive: wgpu::PrimitiveState::default(),
+        primitive: wgpu::PrimitiveState {
+            front_face: SCENA_FRONT_FACE,
+            cull_mode: (!double_sided).then_some(wgpu::Face::Back),
+            ..Default::default()
+        },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
             depth_write_enabled: Some(true),
@@ -229,7 +278,7 @@ pub(super) fn create_depth_prepass_resources(
         }),
         multisample: wgpu::MultisampleState::default(),
         fragment: depth_color_enabled.then_some(wgpu::FragmentState {
-            module: &shader,
+            module: shader,
             entry_point: Some("fs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             targets: &[Some(wgpu::ColorTargetState {
@@ -240,18 +289,7 @@ pub(super) fn create_depth_prepass_resources(
         }),
         multiview_mask: None,
         cache: None,
-    });
-
-    DepthPrepassResources {
-        texture,
-        view,
-        color_texture,
-        color_view,
-        pipeline,
-        clear_depth: if reversed_z { 0.0 } else { 1.0 },
-        reversed_z,
-        color_compare,
-    }
+    })
 }
 
 impl DepthPrepassResources {
@@ -311,40 +349,46 @@ pub(super) fn encode_depth_prepass(
         occlusion_query_set: None,
         multiview_mask: None,
     });
-    pass.set_pipeline(&resources.pipeline);
     pass.set_bind_group(0, inputs.camera_bind_group, &[]);
     pass.set_vertex_buffer(0, inputs.vertex_buffer.slice(..));
     let identity_instance_offset =
         u64::from(inputs.identity_instance).saturating_mul(INSTANCE_BYTE_LEN as u64);
     pass.set_vertex_buffer(1, inputs.instance_buffer.slice(identity_instance_offset..));
-    for batch in inputs.draw_batches {
-        if !batch.depth_prepass_eligible {
-            continue;
+    for side_filter in [DrawSideFilter::SingleSided, DrawSideFilter::DoubleSided] {
+        let pipeline = match side_filter {
+            DrawSideFilter::SingleSided => &resources.single_sided_pipeline,
+            DrawSideFilter::DoubleSided => &resources.double_sided_pipeline,
+        };
+        pass.set_pipeline(pipeline);
+        for batch in inputs.draw_batches {
+            if !batch.depth_prepass_eligible || !side_filter.includes(batch) {
+                continue;
+            }
+            let draw_offset =
+                (batch.draw_uniform_index as u64).saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE) as u32;
+            pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset]);
+            pass.draw(
+                batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
+                0..1,
+            );
+            *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
         }
-        let draw_offset =
-            (batch.draw_uniform_index as u64).saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE) as u32;
-        pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset]);
-        pass.draw(
-            batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
-            0..1,
-        );
-        *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
-    }
-    for batch in inputs.instance_batches {
-        if !batch.depth_prepass_eligible {
-            continue;
+        for batch in inputs.instance_batches {
+            if !batch.depth_prepass_eligible || !side_filter.includes_instance(batch) {
+                continue;
+            }
+            let draw_offset =
+                (batch.draw_uniform_index as u64).saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE) as u32;
+            pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset]);
+            let instance_offset =
+                u64::from(batch.start_instance).saturating_mul(INSTANCE_BYTE_LEN as u64);
+            pass.set_vertex_buffer(1, inputs.instance_buffer.slice(instance_offset..));
+            pass.draw(
+                batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
+                0..batch.instance_count,
+            );
+            *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
         }
-        let draw_offset =
-            (batch.draw_uniform_index as u64).saturating_mul(DRAW_UNIFORM_ENTRY_STRIDE) as u32;
-        pass.set_bind_group(2, inputs.draw_bind_group, &[draw_offset]);
-        let instance_offset =
-            u64::from(batch.start_instance).saturating_mul(INSTANCE_BYTE_LEN as u64);
-        pass.set_vertex_buffer(1, inputs.instance_buffer.slice(instance_offset..));
-        pass.draw(
-            batch.start_vertex..batch.start_vertex.saturating_add(batch.vertex_count),
-            0..batch.instance_count,
-        );
-        *inputs.draw_submissions = inputs.draw_submissions.saturating_add(1);
     }
 }
 

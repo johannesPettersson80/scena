@@ -62,17 +62,29 @@ fn public_quality_knob_changes_renderer_state() {
 
 #[test]
 fn public_double_sided_material_knob_changes_pixels() {
-    let single_sided = render_backface(false);
-    let double_sided = render_backface(true);
+    let single_sided = render_backface_cpu(false);
+    let double_sided = render_backface_cpu(true);
 
     assert_eq!(
         nonblack_pixel_count(&single_sided),
         0,
-        "single-sided back-facing mesh should be culled"
+        "single-sided back-facing mesh should be culled on the CPU path"
     );
     assert!(
         nonblack_pixel_count(&double_sided) > 0,
-        "double-sided back-facing mesh should render visible pixels"
+        "double-sided back-facing mesh should render visible pixels on the CPU path"
+    );
+
+    let single_sided_gpu = render_backface_gpu(false);
+    let double_sided_gpu = render_backface_gpu(true);
+    assert_eq!(
+        nonblack_pixel_count(&single_sided_gpu),
+        0,
+        "single-sided back-facing mesh should be culled on the HeadlessGpu path"
+    );
+    assert!(
+        nonblack_pixel_count(&double_sided_gpu) > 0,
+        "double-sided back-facing mesh should render visible pixels on the HeadlessGpu path"
     );
 }
 
@@ -103,7 +115,29 @@ fn introspection_for_material(
     renderer.introspect_capture(&capture, &inspection, RenderIntrospectionOptions::default())
 }
 
-fn render_backface(double_sided: bool) -> Vec<u8> {
+fn render_backface_cpu(double_sided: bool) -> Vec<u8> {
+    let (assets, mut scene) = backface_scene(double_sided);
+    let mut renderer = Renderer::headless(32, 32).expect("CPU renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("CPU scene prepares");
+    renderer.render_active(&scene).expect("CPU scene renders");
+    renderer.frame_rgba8().to_vec()
+}
+
+fn render_backface_gpu(double_sided: bool) -> Vec<u8> {
+    let (assets, mut scene) = backface_scene(double_sided);
+    let mut renderer = Renderer::headless_gpu(32, 32).expect("HeadlessGpu renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("HeadlessGpu scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("HeadlessGpu scene renders");
+    renderer.frame_rgba8().to_vec()
+}
+
+fn backface_scene(double_sided: bool) -> (Assets, Scene) {
     let assets = Assets::new();
     let geometry = assets.create_geometry(
         GeometryDesc::try_new(
@@ -138,12 +172,7 @@ fn render_backface(double_sided: bool) -> Vec<u8> {
         .expect("camera inserts");
     scene.set_active_camera(camera).expect("camera activates");
     scene.mesh(geometry, material).add().expect("mesh inserts");
-    let mut renderer = Renderer::headless(32, 32).expect("renderer builds");
-    renderer
-        .prepare_with_assets(&mut scene, &assets)
-        .expect("scene prepares");
-    renderer.render_active(&scene).expect("scene renders");
-    renderer.frame_rgba8().to_vec()
+    (assets, scene)
 }
 
 fn nonblack_pixel_count(rgba: &[u8]) -> usize {

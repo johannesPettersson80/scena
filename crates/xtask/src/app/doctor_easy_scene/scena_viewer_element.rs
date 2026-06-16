@@ -338,10 +338,10 @@ pub(super) fn check_scena_viewer_element(root: &Path, findings: &mut Vec<Finding
         &[
             "scena.scena_viewer_inspector_snapshot.v1",
             "scena-viewer-inspector-fixture",
-            "\"overlay\": \"Diagnostics\"",
             "\"diagnostics\"",
             "\"stats\"",
             "\"FrameBounds\"",
+            "\"drawCalls\"",
         ],
     );
     require_contains(

@@ -12,7 +12,6 @@ pub(super) struct PreparedSceneState {
     pub(super) visibility_revision: u64,
     pub(super) environment_revision: u64,
     pub(super) target_revision: u64,
-    pub(super) debug_revision: u64,
     pub(super) retained_primitives: Vec<prepare::PreparedPrimitive>,
     pub(super) primitives: Vec<prepare::PreparedPrimitive>,
     pub(super) retained_strokes: Vec<prepare::PreparedStrokeSegment>,

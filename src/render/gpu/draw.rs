@@ -157,17 +157,17 @@ impl GpuDeviceState {
             );
         }
         let post_resources = resources.post.as_ref();
-        let (final_view, final_pipeline, base_label) = if post_enabled {
+        let (final_view, final_pipelines, base_label) = if post_enabled {
             let post_resources = post_resources.expect("post resources were created above");
             (
                 post::scene_view(post_resources),
-                &post_resources.scene_pipeline,
+                post::scene_pipelines(post_resources),
                 "scena.headless_gpu.post_scene_pass",
             )
         } else {
             (
                 &resources.view,
-                &resources.offscreen_pipeline,
+                resources.offscreen_pipelines.refs(),
                 "scena.headless_gpu.render_pass",
             )
         };
@@ -175,7 +175,7 @@ impl GpuDeviceState {
             &mut encoder,
             SceneColorPasses {
                 final_view,
-                final_pipeline,
+                final_pipelines,
                 depth_view: resources
                     .depth_prepass
                     .as_ref()
@@ -190,7 +190,7 @@ impl GpuDeviceState {
                 instance_batches: &resources.instance_batches,
                 identity_instance: resources.identity_instance,
                 transmission_view: &resources.transmission.view,
-                transmission_pipeline: &resources.transmission.pipeline,
+                transmission_pipelines: resources.transmission.pipelines.refs(),
                 clear_color: wgpu_clear_color(background_color),
                 base_label,
                 draw_submissions: &mut draw_submissions,
@@ -265,7 +265,7 @@ impl GpuDeviceState {
                 &mut encoder,
                 SceneColorPasses {
                     final_view: surface_view,
-                    final_pipeline: surface_pipeline,
+                    final_pipelines: surface_pipeline.refs(),
                     depth_view: resources
                         .depth_prepass
                         .as_ref()
@@ -280,7 +280,7 @@ impl GpuDeviceState {
                     instance_batches: &resources.instance_batches,
                     identity_instance: resources.identity_instance,
                     transmission_view: &resources.transmission.view,
-                    transmission_pipeline: &resources.transmission.pipeline,
+                    transmission_pipelines: resources.transmission.pipelines.refs(),
                     clear_color: wgpu_clear_color(background_color),
                     base_label: "scena.surface.render_pass",
                     draw_submissions: &mut draw_submissions,

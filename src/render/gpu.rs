@@ -47,6 +47,7 @@ use crate::platform::SurfaceSize;
 use self::browser_readback::BrowserReadbackResources;
 use self::instancing::InstanceDrawBatch;
 use self::material_bindings::MaterialTextureBindingMode;
+use self::pipeline::MeshPipelineSet;
 pub(super) use self::post::{GpuPostPassCounts, GpuPostSettings};
 use self::shadow::ShadowCasterResources;
 pub(super) use self::stats::GpuResourceStats;
@@ -158,8 +159,8 @@ struct GpuPreparedResources {
     texture_binding_mode: MaterialTextureBindingMode,
     depth_compare: Option<wgpu::CompareFunction>,
     post: Option<post::PostResources>,
-    offscreen_pipeline: wgpu::RenderPipeline,
-    surface_pipeline: Option<wgpu::RenderPipeline>,
+    offscreen_pipelines: MeshPipelineSet,
+    surface_pipeline: Option<MeshPipelineSet>,
     padded_bytes_per_row: u32,
     unpadded_bytes_per_row: u32,
     stats: GpuResourceStats,
@@ -195,7 +196,7 @@ struct GpuPreparedResources {
     transmission: transmission::TransmissionResources,
     depth_prepass: Option<depth::DepthPrepassResources>,
     strokes: Option<StrokeResources>,
-    surface_pipeline: wgpu::RenderPipeline,
+    surface_pipeline: MeshPipelineSet,
     readback: Option<BrowserReadbackResources>,
     #[allow(dead_code)]
     vertex_count: u32,

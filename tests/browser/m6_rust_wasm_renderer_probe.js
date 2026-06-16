@@ -1123,7 +1123,7 @@ function assertScenaViewerElementProof(result) {
     ["annotation_layout_entries", 3],
     ["annotation_clamped_visible", true],
     ["annotation_overlap_hidden", true],
-    ["inspector_overlay", "Diagnostics"],
+    ["inspector_status", "0 errors, 1 warning; 2 draws; 12 triangles at 360x240"],
     ["inspector_warnings", 1],
     ["inspector_fixture_schema", "scena.scena_viewer_inspector_snapshot.v1"],
     ["inspector_fixture_source", "scena-viewer-inspector-fixture"],

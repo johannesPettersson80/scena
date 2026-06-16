@@ -611,7 +611,7 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     annotation_overlap_hidden: Boolean(overlapEntry && overlapEntry.visible === false && overlapEntry.hidden_reason === "overlap"),
     annotation_tracking_sequence: [firstAnnotationTransform, secondAnnotationTransform],
     annotation_transform: secondAnnotationTransform,
-    inspector_overlay: inspectorDetail.overlay,
+    inspector_status: inspectorDetail.status,
     inspector_warnings: inspectorDetail.warnings,
     inspector_fixture_schema: inspectorSnapshot.schema,
     inspector_fixture_source: inspectorSnapshot.source,
@@ -686,7 +686,7 @@ window.scenaViewerElementProbe = async function scenaViewerElementProbe() {
     checks.annotation_tracking_sequence.length === 2 &&
     checks.annotation_tracking_sequence[0] !== checks.annotation_tracking_sequence[1] &&
     checks.annotation_transform !== "none" &&
-    checks.inspector_overlay === "Diagnostics" &&
+    checks.inspector_status.includes("1 warning") &&
     checks.inspector_warnings === 1 &&
     checks.keyboard_action === "orbit-left" &&
     checks.drop_accepted_names.includes("accepted-machine.glb") &&

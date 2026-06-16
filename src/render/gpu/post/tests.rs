@@ -9,7 +9,7 @@ fn post_chain_uses_encoded_rgba8_and_depth_color_contract() {
             && source.contains("TextureSampleType::Float { filterable: false }")
             && depth_source.contains("DEPTH_COLOR_FORMAT")
             && depth_source.contains("color_view")
-            && source.contains("scene_pipeline")
+            && source.contains("scene_pipelines")
             && source.contains("copy_output_to_buffer"),
         "GPU post chain must render into encoded Rgba8Unorm, expose a depth-color SSAO mechanism, and keep readback on the post output"
     );

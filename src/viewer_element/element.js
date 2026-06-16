@@ -442,7 +442,6 @@ export function defineScenaViewerElement(tagName) {
     }
 
     setInspectorSnapshot(snapshot = {}) {
-      const overlay = String(snapshot.overlay || "None");
       const diagnostics = Array.isArray(snapshot.diagnostics) ? snapshot.diagnostics : [];
       const stats = snapshot.stats || snapshot;
       const drawCalls = Number(stats.drawCalls ?? stats.draw_calls ?? 0);
@@ -451,9 +450,8 @@ export function defineScenaViewerElement(tagName) {
       const height = Number(stats.targetHeight ?? stats.target_height ?? 0);
       const errors = diagnostics.filter((diagnostic) => this._severity(diagnostic) === "error").length;
       const warnings = diagnostics.filter((diagnostic) => this._severity(diagnostic) === "warning").length;
-      const status = String(snapshot.statusText || `${overlay} overlay; ${this._countLabel(errors, "error")}, ${this._countLabel(warnings, "warning")}; ${drawCalls} draws; ${triangles} triangles at ${width}x${height}`);
+      const status = String(snapshot.statusText || `${this._countLabel(errors, "error")}, ${this._countLabel(warnings, "warning")}; ${drawCalls} draws; ${triangles} triangles at ${width}x${height}`);
       this._inspector.hidden = false;
-      this._inspector.dataset.overlay = overlay;
       this._inspectorStatus.textContent = status;
       this._inspectorList.replaceChildren();
       for (const diagnostic of diagnostics) {
@@ -466,19 +464,18 @@ export function defineScenaViewerElement(tagName) {
       }
       this.dispatchEvent(new CustomEvent("scena-viewer-inspector-rendered", {
         bubbles: true,
-        detail: { overlay, errors, warnings, diagnostics: diagnostics.length, status }
+        detail: { errors, warnings, diagnostics: diagnostics.length, status }
       }));
     }
 
-    setInspectorDiagnostics(diagnostics, overlay = "None", stats = {}) {
-      this.setInspectorSnapshot({ overlay, diagnostics, stats });
+    setInspectorDiagnostics(diagnostics, stats = {}) {
+      this.setInspectorSnapshot({ diagnostics, stats });
     }
 
     clearInspectorSnapshot() {
       this._inspector.hidden = true;
       this._inspectorStatus.textContent = "";
       this._inspectorList.replaceChildren();
-      delete this._inspector.dataset.overlay;
     }
 
     _handleDragOver(event) {

@@ -85,12 +85,11 @@ pub use controls::{
 pub use diagnostics::{
     AdapterLimitsReport, AlphaPipelineStatus, AnimationError, AssetError, Backend, BuildError,
     CAPABILITY_REPORT_SCHEMA_V1, Capabilities, CapabilityReport, CapabilityReportV1,
-    CapabilityStatus, ChangeKind, DebugOverlay, DevicePoll, Diagnostic, DiagnosticCode,
-    DiagnosticContext, DiagnosticSeverity, Error, GpuAdapterReport, HardwareTier,
-    ImportDiagnosticOverlay, ImportDiagnosticOverlayKind, ImportError, InstantiateError,
-    LookupError, NotPreparedReason, OutputColorSpace, OutputStageStatus,
-    PostProcessingDepthSourceV1, PostProcessingPassV1, PostProcessingReportV1, PrepareError,
-    RenderError, RenderOutcome, RendererStats,
+    CapabilityStatus, ChangeKind, DevicePoll, Diagnostic, DiagnosticCode, DiagnosticContext,
+    DiagnosticSeverity, Error, GpuAdapterReport, HardwareTier, ImportDiagnosticOverlay,
+    ImportDiagnosticOverlayKind, ImportError, InstantiateError, LookupError, NotPreparedReason,
+    OutputColorSpace, OutputStageStatus, PostProcessingDepthSourceV1, PostProcessingPassV1,
+    PostProcessingReportV1, PrepareError, RenderError, RenderOutcome, RendererStats,
 };
 pub use geometry::{
     Aabb, GeometryDesc, GeometryError, GeometryMorphTarget, GeometrySkin, GeometryTopology,

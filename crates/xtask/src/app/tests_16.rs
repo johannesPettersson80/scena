@@ -75,7 +75,7 @@ pub(crate) fn write_scena_viewer_element_easy_scene_fixture(fixture_root: &Path)
     );
     fs::write(
         fixture_root.join("tests/assets/viewer/inspector_snapshot.json"),
-        r#"{"schema":"scena.scena_viewer_inspector_snapshot.v1","source":"scena-viewer-inspector-fixture","overlay": "Diagnostics","diagnostics":[{"code":"FrameBounds"}],"stats":{"drawCalls":2}}"#,
+        r#"{"schema":"scena.scena_viewer_inspector_snapshot.v1","source":"scena-viewer-inspector-fixture","diagnostics":[{"code":"FrameBounds"}],"stats":{"drawCalls":2}}"#,
     )
     .expect("viewer inspector JSON fixture");
     fs::write(

@@ -214,7 +214,7 @@ For generated images, see [Headless rendering](headless-rendering.md).
 `prepare()` validates and uploads current scene state. `render()` draws
 prepared state.
 
-If you mutate scene graph, assets, surface, target, environment, debug overlay,
-or relevant renderer settings, call `prepare()` again.
+If you mutate scene graph, assets, surface, target, environment, or relevant
+renderer settings, call `prepare()` again.
 
 See [Lifecycle](lifecycle.md).

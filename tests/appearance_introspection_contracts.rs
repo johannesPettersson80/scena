@@ -232,6 +232,48 @@ fn appearance_introspection_honors_target_swatch_tolerance() {
 }
 
 #[test]
+fn appearance_introspection_unmatched_target_reports_empty_sample() {
+    let (assets, scene, renderer) = two_color_scene();
+    let capture = renderer
+        .capture_rgba8(&scene, Default::default())
+        .expect("two-color frame captures");
+    let inspection = scene.inspect_with_assets(&assets).to_schema_report();
+    let expectation: AppearanceExpectationV1 = serde_json::from_value(json!({
+        "schema": APPEARANCE_EXPECTATION_SCHEMA_V1,
+        "targets": [{
+            "id": "missing-node",
+            "node": 999_999_u64,
+            "color_family": "red",
+            "swatch_srgb8": [236, 40, 40]
+        }]
+    }))
+    .expect("appearance expectation decodes");
+
+    let report = renderer.introspect_appearance(
+        &capture,
+        &inspection,
+        &expectation,
+        AppearanceIntrospectionOptions::summary(),
+    );
+
+    assert!(!report.ok, "{report:#?}");
+    let missing = target(&report, "missing-node");
+    assert!(!missing.matched, "{report:#?}");
+    assert_eq!(missing.sampled_region.kind, "empty", "{report:#?}");
+    assert_eq!(missing.sampled_region.sampled_pixels, 0, "{report:#?}");
+    assert_eq!(missing.sampled_region.bbox_css_px, None, "{report:#?}");
+    assert_eq!(missing.sampled_color_srgb8, [0, 0, 0, 0], "{report:#?}");
+    assert_eq!(missing.swatch_distance, None, "{report:#?}");
+    assert!(
+        report
+            .reasons
+            .iter()
+            .any(|reason| reason.code == "target_not_found" && reason.target_id == "missing-node"),
+        "{report:#?}"
+    );
+}
+
+#[test]
 fn appearance_introspection_verifies_data_color_ramp_without_golden_image() {
     let (assets, scene, renderer) = color_ramp_scene();
     let capture = renderer

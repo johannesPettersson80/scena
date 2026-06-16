@@ -1,6 +1,6 @@
 use super::super::RasterTarget;
 use super::material_bindings::MaterialTextureBindingMode;
-use super::pipeline::create_unlit_pipeline;
+use super::pipeline::{MeshPipelineSet, create_unlit_pipeline_set};
 
 #[derive(Debug)]
 pub(super) struct TransmissionResources {
@@ -11,7 +11,7 @@ pub(super) struct TransmissionResources {
     pub(super) placeholder_texture: wgpu::Texture,
     pub(super) placeholder_view: wgpu::TextureView,
     pub(super) sampler: wgpu::Sampler,
-    pub(super) pipeline: wgpu::RenderPipeline,
+    pub(super) pipelines: MeshPipelineSet,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -71,7 +71,7 @@ pub(super) fn create_transmission_resources(
         mipmap_filter: wgpu::MipmapFilterMode::Nearest,
         ..Default::default()
     });
-    let pipeline = create_unlit_pipeline(
+    let pipelines = create_unlit_pipeline_set(
         device,
         format,
         output_bind_group_layout,
@@ -86,7 +86,7 @@ pub(super) fn create_transmission_resources(
         placeholder_texture,
         placeholder_view,
         sampler,
-        pipeline,
+        pipelines,
     }
 }
 

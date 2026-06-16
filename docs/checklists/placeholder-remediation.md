@@ -122,7 +122,8 @@ from data already in scope · **M** = moderate · **L** = real renderer feature.
 - [x] **C3** Orbit `damping_factor` — `src/controls.rs:93`. Never integrated in `advance()`; the
       cinematic/snappy/presentation presets differ only in this dead field. Implement velocity + exponential
       decay, or remove the field and collapse the presets. **M**
-- [x] **C4** `DebugOverlay::{Wireframe,Normals,BoundingBoxes,ShadowMap,LightCount}` — `src/diagnostics.rs:263`.
+- [x] **C4** `DebugOverlay` renderer API surface — removed instead of retaining an inert
+      overlay knob.
       No render branch; every variant renders identical to `None`. Implement a pipeline/shader branch per
       variant, or remove the enum + setter. **L**
 - [x] **C5** `hover_style` / `selection_style` (`InteractionStyle`) — `src/render.rs:97`. No outline/highlight

@@ -117,7 +117,7 @@ impl AppearanceIntrospectionReportV1 {
                         })
                     })
                 })
-                .unwrap_or_else(|| TargetSample::frame_content(frame_sample.clone()));
+                .unwrap_or_else(TargetSample::empty);
             let alpha = material
                 .as_ref()
                 .map(alpha_summary)
@@ -126,9 +126,13 @@ impl AppearanceIntrospectionReportV1 {
                     base_color_alpha: 0.0,
                     hidden: true,
                 });
-            let swatch_distance = expected
-                .swatch_srgb8
-                .map(|swatch| swatch_distance(sample.content.average_rgba8, swatch));
+            let swatch_distance = (sample.content.sampled_pixels > 0)
+                .then(|| {
+                    expected
+                        .swatch_srgb8
+                        .map(|swatch| swatch_distance(sample.content.average_rgba8, swatch))
+                })
+                .flatten();
 
             targets.push(AppearanceTargetReportV1 {
                 id: expected.id.clone(),

@@ -14,7 +14,7 @@ use super::materials::{
     material_texture_byte_len, material_texture_count,
 };
 use super::output::{create_output_bind_group_layout, create_output_uniform_buffer};
-use super::pipeline::create_unlit_pipeline;
+use super::pipeline::create_unlit_pipeline_set;
 #[cfg(not(target_arch = "wasm32"))]
 use super::pipeline::{BYTES_PER_PIXEL, GPU_COLOR_FORMAT};
 use super::resource_encoding::{
@@ -189,7 +189,7 @@ impl GpuDeviceState {
             lighting_stats.directional_shadow_map_resolution,
             environment_lighting,
         );
-        let offscreen_pipeline = create_unlit_pipeline(
+        let offscreen_pipelines = create_unlit_pipeline_set(
             &self.device,
             GPU_COLOR_FORMAT,
             &output_bind_group_layout,
@@ -199,7 +199,7 @@ impl GpuDeviceState {
             depth_compare,
         );
         let surface_pipeline = self.surface.as_ref().map(|surface| {
-            create_unlit_pipeline(
+            create_unlit_pipeline_set(
                 &self.device,
                 surface.config.format,
                 &output_bind_group_layout,
@@ -273,7 +273,7 @@ impl GpuDeviceState {
             texture_binding_mode,
             depth_compare,
             post: None,
-            offscreen_pipeline,
+            offscreen_pipelines,
             surface_pipeline,
             padded_bytes_per_row,
             unpadded_bytes_per_row,
@@ -411,7 +411,7 @@ impl GpuDeviceState {
             lighting_stats.directional_shadow_map_resolution,
             environment_lighting,
         );
-        let surface_pipeline = create_unlit_pipeline(
+        let surface_pipeline = create_unlit_pipeline_set(
             &self.device,
             surface.config.format,
             &output_bind_group_layout,

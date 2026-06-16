@@ -1,4 +1,4 @@
-//! Structured errors, debug overlays, capability reports, and renderer stats.
+//! Structured errors, capability reports, and renderer stats.
 
 use crate::animation::{AnimationClipKey, AnimationMixerKey};
 use crate::assets::{EnvironmentHandle, GeometryHandle, MaterialHandle, TextureHandle};
@@ -237,11 +237,6 @@ pub enum NotPreparedReason {
         current_revision: u64,
         change: ChangeKind,
     },
-    RendererChanged {
-        prepared_revision: u64,
-        current_revision: u64,
-        change: ChangeKind,
-    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -252,14 +247,6 @@ pub enum ChangeKind {
     Visibility,
     Environment,
     RenderTarget,
-    DebugOverlay,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[non_exhaustive]
-pub enum DebugOverlay {
-    #[default]
-    None,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

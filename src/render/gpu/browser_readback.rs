@@ -4,7 +4,7 @@ use super::super::RasterTarget;
 use super::instancing::InstanceDrawBatch;
 use super::material_bindings::MaterialTextureBindingMode;
 use super::materials::MaterialResources;
-use super::pipeline::{BYTES_PER_PIXEL, create_unlit_pipeline};
+use super::pipeline::{BYTES_PER_PIXEL, MeshPipelineSet, create_unlit_pipeline_set};
 use super::pipeline::{ColorLoad, DrawFilter, UnlitPass, encode_unlit_pass};
 use super::transmission::TransmissionResources;
 use super::vertices::PrimitiveDrawBatch;
@@ -14,7 +14,7 @@ pub(super) struct BrowserReadbackResources {
     pub(super) texture: wgpu::Texture,
     pub(super) view: wgpu::TextureView,
     pub(super) buffer: wgpu::Buffer,
-    pub(super) pipeline: wgpu::RenderPipeline,
+    pub(super) pipelines: MeshPipelineSet,
     pub(super) padded_bytes_per_row: u32,
     #[allow(dead_code)]
     pub(super) unpadded_bytes_per_row: u32,
@@ -52,7 +52,7 @@ pub(super) fn create_browser_readback_resources(
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    let pipeline = create_unlit_pipeline(
+    let pipelines = create_unlit_pipeline_set(
         device,
         wgpu::TextureFormat::Rgba8Unorm,
         output_bind_group_layout,
@@ -65,7 +65,7 @@ pub(super) fn create_browser_readback_resources(
         texture,
         view,
         buffer,
-        pipeline,
+        pipelines,
         padded_bytes_per_row,
         unpadded_bytes_per_row,
     }
@@ -108,7 +108,7 @@ pub(super) fn encode_browser_readback_pass(
                 draw_batches: pass.draw_batches,
                 instance_batches: pass.instance_batches,
                 identity_instance: pass.identity_instance,
-                pipeline: &pass.transmission.pipeline,
+                pipelines: pass.transmission.pipelines.refs(),
                 color_load: ColorLoad::Clear(pass.clear_color),
                 draw_filter: DrawFilter::OpaqueOnly,
                 label: "scena.browser.proof_transmission_scene_color_pass",
@@ -128,7 +128,7 @@ pub(super) fn encode_browser_readback_pass(
                 draw_batches: pass.draw_batches,
                 instance_batches: pass.instance_batches,
                 identity_instance: pass.identity_instance,
-                pipeline: &pass.readback.pipeline,
+                pipelines: pass.readback.pipelines.refs(),
                 color_load: ColorLoad::Clear(pass.clear_color),
                 draw_filter: DrawFilter::OpaqueOnly,
                 label: "scena.browser.proof_readback_opaque_pass",
@@ -148,7 +148,7 @@ pub(super) fn encode_browser_readback_pass(
                 draw_batches: pass.draw_batches,
                 instance_batches: pass.instance_batches,
                 identity_instance: pass.identity_instance,
-                pipeline: &pass.readback.pipeline,
+                pipelines: pass.readback.pipelines.refs(),
                 color_load: ColorLoad::Load,
                 draw_filter: DrawFilter::TransparentOnly,
                 label: "scena.browser.proof_readback_transparent_pass",
@@ -169,7 +169,7 @@ pub(super) fn encode_browser_readback_pass(
                 draw_batches: pass.draw_batches,
                 instance_batches: pass.instance_batches,
                 identity_instance: pass.identity_instance,
-                pipeline: &pass.readback.pipeline,
+                pipelines: pass.readback.pipelines.refs(),
                 color_load: ColorLoad::Clear(pass.clear_color),
                 draw_filter: DrawFilter::All,
                 label: "scena.browser.proof_readback_pass",

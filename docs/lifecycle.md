@@ -44,7 +44,7 @@ Call `prepare()` again after:
 - loading or reloading assets,
 - changing render target size,
 - receiving surface resize or context-loss events,
-- changing debug overlays or relevant renderer settings.
+- changing relevant renderer settings.
 
 ## Why this design matters
 

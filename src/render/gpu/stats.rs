@@ -86,9 +86,21 @@ pub(super) fn estimate_prepared_resource_stats(
     let uniform_bytes = output::OUTPUT_UNIFORM_BYTE_LEN;
     let transmission_textures = 2;
     let transmission_render_targets = 1;
-    let transmission_pipelines = 1;
+    let mesh_pipeline_sets = 1 + u64::from(has_surface_pipeline);
+    let mesh_pipelines = mesh_pipeline_sets * 2;
+    let transmission_pipelines = 2;
+    let shadow_caster_pipelines = 1;
+    let depth_prepass_pipelines = depth_prepass_passes.saturating_mul(2);
     let pipelines =
-        1 + u64::from(has_surface_pipeline) + depth_prepass_passes + transmission_pipelines;
+        mesh_pipelines + transmission_pipelines + shadow_caster_pipelines + depth_prepass_pipelines;
+    let mesh_shader_modules = mesh_pipelines;
+    let transmission_shader_modules = transmission_pipelines;
+    let shadow_caster_shader_modules = 1;
+    let depth_prepass_shader_modules = u64::from(depth_prepass_passes > 0);
+    let shader_modules = mesh_shader_modules
+        + transmission_shader_modules
+        + shadow_caster_shader_modules
+        + depth_prepass_shader_modules;
     #[cfg(not(target_arch = "wasm32"))]
     let shadow_map_bytes = shadow_map_resolution
         .map(|resolution| {
@@ -138,7 +150,7 @@ pub(super) fn estimate_prepared_resource_stats(
         // Adding `material_bind_groups` keeps the resource estimate
         // consistent with the actual GPU shape.
         bind_groups: 2 + u64::from(material_bind_groups),
-        shader_modules: pipelines,
+        shader_modules,
         material_bind_groups,
         #[cfg(not(target_arch = "wasm32"))]
         approximate_gpu_memory_bytes: texture_bytes
@@ -183,10 +195,10 @@ mod tests {
         assert_eq!(stats.buffers, 4);
         assert_eq!(stats.textures, 4);
         assert_eq!(stats.render_targets, 2);
-        assert_eq!(stats.pipelines, 2);
+        assert_eq!(stats.pipelines, 5);
         assert_eq!(stats.bind_groups, 3);
-        assert_eq!(stats.shader_modules, 2);
-        assert_eq!(stats.destruction_records(), 17);
+        assert_eq!(stats.shader_modules, 5);
+        assert_eq!(stats.destruction_records(), 23);
         assert!(stats.approximate_gpu_memory_bytes > 0);
     }
 
@@ -220,7 +232,7 @@ mod tests {
 
         assert_eq!(stats.textures, 5);
         assert_eq!(stats.render_targets, 3);
-        assert_eq!(stats.destruction_records(), 19);
+        assert_eq!(stats.destruction_records(), 25);
         assert!(stats.approximate_gpu_memory_bytes >= 2048 * 2048 * 4);
     }
 
@@ -239,9 +251,9 @@ mod tests {
 
         assert_eq!(stats.textures, 5);
         assert_eq!(stats.render_targets, 3);
-        assert_eq!(stats.pipelines, 3);
-        assert_eq!(stats.shader_modules, 3);
-        assert_eq!(stats.destruction_records(), 21);
+        assert_eq!(stats.pipelines, 7);
+        assert_eq!(stats.shader_modules, 6);
+        assert_eq!(stats.destruction_records(), 28);
         assert!(stats.approximate_gpu_memory_bytes >= 4 * 4 * 4);
     }
 

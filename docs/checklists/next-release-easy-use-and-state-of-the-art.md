@@ -1830,7 +1830,7 @@ specific competitor primitive.
 - **Inspector / dev overlay.** Status: **[shipped]** for the host-fed
   overlay and browser snapshot fixture.
   Owner: `crates/xtask/` doctor integration + `<scena-viewer>`.
-  `ScenaViewerInspectorSnapshot` turns renderer debug overlay,
+  `ScenaViewerInspectorSnapshot` turns renderer diagnostics,
   diagnostics, and render stats into a testable snapshot; the element
   exposes `setInspectorSnapshot(...)`, `setInspectorDiagnostics(...)`,
   `clearInspectorSnapshot()`, and emits
@@ -2649,7 +2649,7 @@ Picking/outline/hover reconciliation pass (2026-05-19):
 `<scena-viewer>` inspector overlay pass (2026-05-19):
 
 - Added `ScenaViewerInspectorSnapshot` and
-  `ScenaViewerInspectorDiagnostic` so renderer debug overlay,
+  `ScenaViewerInspectorDiagnostic` so renderer diagnostics,
   diagnostics, and render counters can feed a browser overlay through a
   typed native-tested surface.
 - Extended the custom element with `setInspectorSnapshot(...)`,

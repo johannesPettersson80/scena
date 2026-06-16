@@ -4492,7 +4492,7 @@ fn m7_scene_inspection_reports_normal_debug_segments() {
         .normal_overlays()
         .iter()
         .find(|overlay| overlay.node() == mesh)
-        .expect("normal debug overlay is exported");
+        .expect("normal inspection overlay is exported");
 
     assert_eq!(normals.geometry(), geometry);
     assert_eq!(normals.segments().len(), 24);

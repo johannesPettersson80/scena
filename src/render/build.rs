@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::diagnostics::{
-    Backend, BuildError, Capabilities, DebugOverlay, HardwareTier, OutputColorSpace, RendererStats,
+    Backend, BuildError, Capabilities, HardwareTier, OutputColorSpace, RendererStats,
 };
 use crate::material::Color;
 use crate::platform::{PlatformSurface, PlatformSurfaceAttachment};
@@ -250,8 +250,6 @@ impl Renderer {
             render_generation: 0,
             last_rendered_generation: None,
             last_rendered_frame: None,
-            debug_overlay: DebugOverlay::None,
-            debug_revision: 0,
             surface_lost: None,
             context_lost: None,
             device_lost: None,

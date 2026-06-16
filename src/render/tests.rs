@@ -391,7 +391,7 @@ fn target_change_rejects_transform_only_gpu_template_reuse() {
 }
 
 #[test]
-fn environment_and_debug_changes_reject_transform_only_gpu_template_reuse() {
+fn environment_changes_reject_transform_only_gpu_template_reuse() {
     let Ok(mut renderer) = Renderer::headless_gpu(16, 16) else {
         return;
     };
