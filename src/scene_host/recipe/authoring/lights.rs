@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use super::common::{DiagnosticPathExt, authored_color};
-use super::transform::transform_from_recipe;
+use super::transform::{TransformResolutionInput, transform_from_recipe};
 use crate::assets::DefaultAssetFetcher;
 use crate::scene::recipe::{
     SceneRecipeBuildTargetV1, SceneRecipeColorV1, SceneRecipeDiagnosticV1, SceneRecipeLightV1,
@@ -22,14 +22,24 @@ pub(in crate::scene_host::recipe) fn build_authored_lights(
     let root_handle = host.root_handle();
     for (index, recipe) in recipes.iter().enumerate() {
         let path = format!("$.lights[{index}]");
-        let transform =
-            match transform_from_recipe(recipe.transform.as_ref(), &BTreeMap::new(), host) {
-                Ok(transform) => transform,
-                Err(diagnostic) => {
-                    diagnostics.push((*diagnostic).with_path(format!("{path}.transform")));
-                    continue;
-                }
-            };
+        let empty_nodes = BTreeMap::new();
+        let empty_imports = BTreeMap::new();
+        let transform = match transform_from_recipe(
+            recipe.transform.as_ref(),
+            TransformResolutionInput {
+                node_keys: &empty_nodes,
+                imports: &empty_imports,
+                parent: Some(root),
+                current_bounds: None,
+            },
+            host,
+        ) {
+            Ok(transform) => transform,
+            Err(diagnostic) => {
+                diagnostics.push((*diagnostic).with_path(format!("{path}.transform")));
+                continue;
+            }
+        };
         let color = match recipe.color.as_deref() {
             Some(color) => match authored_color(colors, color) {
                 Ok(color) => Some(color),

@@ -1060,7 +1060,11 @@ The current v1 recipe slice supports:
   width, edge threshold, and texture slots loaded under `RecipeBuildPolicy`
 - `nodes[]` authored renderables with stable caller `id`, geometry/material
   references, optional manifest `name`, parent hierarchy, tags, visibility,
-  layer mask, render group, tint, and optional `raw`/`trs` transform
+  layer mask, render group, tint, and optional `raw`, `trs`, `look_at`,
+  `center`, `ground`, `fit_to_size`, `place_on`, or `align_to_anchor`
+  transform. `place_on` may reference only nodes declared earlier in the
+  recipe; `align_to_anchor` resolves `<import_id>.<anchor_name>` against a live
+  imported anchor. Forward refs fail closed before build.
 - `cameras[]` authored perspective cameras with stable caller `id`; at most one
   camera may be `active`, and camera `look_at` transforms may target authored
   nodes or explicit world positions

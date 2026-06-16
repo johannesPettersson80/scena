@@ -39,7 +39,10 @@
       "id": "plate",
       "geometry": "plate_geo",
       "material": "plate_mat",
-      "name": "CAD plate"
+      "name": "CAD plate",
+      "transform": {
+        "kind": "center"
+      }
     }
   ],
   "cameras": [

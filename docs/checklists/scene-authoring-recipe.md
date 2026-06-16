@@ -289,10 +289,10 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
       renders and inspects; a callout/section-box targeting an authored node.
 
 ### Slice 3 — Transform / placement
-- [ ] `TransformSpecV1` (raw + TRS + placement verbs) reused for node transforms
+- [x] `TransformSpecV1` (raw + TRS + placement verbs) reused for node transforms
       and `scena place`, backed by the existing placement impl.
-- [ ] Executor resolution order + forward-ref/cycle detection; pinned Euler order.
-- [ ] Proof: `place_on` an authored id and `align_to_anchor` an import anchor
+- [x] Executor resolution order + forward-ref/cycle detection; pinned Euler order.
+- [x] Proof: `place_on` an authored id and `align_to_anchor` an import anchor
       resolve; a cycle fails closed.
 
 ### Slice 4 — Scene / render setup

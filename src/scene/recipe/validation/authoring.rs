@@ -22,10 +22,12 @@ pub(super) fn validate_authoring_sections(
     let geometry_ids = ids::id_set_from_array(object.get("geometries"));
     resources::validate_materials(object.get("materials"), &color_ids, diagnostics);
     let material_ids = ids::id_set_from_array(object.get("materials"));
+    let import_ids = ids::id_set_from_array(object.get("imports"));
     targets::validate_nodes(
         object.get("nodes"),
         &geometry_ids,
         &material_ids,
+        &import_ids,
         diagnostics,
     );
     let node_ids = ids::id_set_from_array(object.get("nodes"));

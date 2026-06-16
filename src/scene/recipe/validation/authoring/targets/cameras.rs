@@ -103,6 +103,7 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_cameras(
                 transform,
                 TransformUse::Camera,
                 nodes,
+                &BTreeSet::new(),
                 diagnostics,
             );
         }

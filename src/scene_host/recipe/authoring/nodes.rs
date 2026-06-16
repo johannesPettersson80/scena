@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use super::common::{DiagnosticPathExt, authored_color};
-use super::transform::transform_from_recipe;
+use super::transform::{TransformResolutionInput, transform_from_recipe};
 use crate::assets::DefaultAssetFetcher;
 use crate::scene::recipe::{
     RecipeBuildPolicy, SceneRecipeBuildTargetV1, SceneRecipeColorV1, SceneRecipeDiagnosticV1,
@@ -81,14 +81,34 @@ pub(in crate::scene_host::recipe) fn build_authored_nodes(
             },
             None => root,
         };
-        let transform =
-            match transform_from_recipe(recipe.transform.as_ref(), &BTreeMap::new(), host) {
-                Ok(transform) => transform,
-                Err(diagnostic) => {
-                    diagnostics.push((*diagnostic).with_path(format!("{path}.transform")));
-                    continue;
-                }
-            };
+        let geometry_bounds = match host.assets.geometry(geometry) {
+            Some(geometry) => Some(geometry.bounds()),
+            None => {
+                diagnostics.push(error_diagnostic(
+                    &path,
+                    "geometry_bounds_missing",
+                    format!("node '{}' geometry could not be resolved", recipe.id),
+                    "declare a valid geometry before the node",
+                ));
+                continue;
+            }
+        };
+        let transform = match transform_from_recipe(
+            recipe.transform.as_ref(),
+            TransformResolutionInput {
+                node_keys: &node_keys,
+                imports: resources.imports,
+                parent: Some(parent),
+                current_bounds: geometry_bounds,
+            },
+            host,
+        ) {
+            Ok(transform) => transform,
+            Err(diagnostic) => {
+                diagnostics.push((*diagnostic).with_path(format!("{path}.transform")));
+                continue;
+            }
+        };
         let node = match host
             .scene
             .mesh(geometry, material)
@@ -130,6 +150,7 @@ pub(in crate::scene_host::recipe) fn build_authored_nodes(
 pub(in crate::scene_host::recipe) struct AuthoredNodeResources<'a> {
     pub(in crate::scene_host::recipe) geometries: &'a BTreeMap<String, GeometryHandle>,
     pub(in crate::scene_host::recipe) materials: &'a BTreeMap<String, MaterialHandle>,
+    pub(in crate::scene_host::recipe) imports: &'a BTreeMap<String, u64>,
 }
 
 fn apply_node_attributes(

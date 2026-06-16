@@ -45,6 +45,7 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_nodes(
     value: Option<&Value>,
     geometries: &BTreeSet<String>,
     materials: &BTreeSet<String>,
+    imports: &BTreeSet<String>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
     let Some(value) = value else {
@@ -159,7 +160,8 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_nodes(
                 &format!("{path}.transform"),
                 transform,
                 TransformUse::Node,
-                &BTreeSet::new(),
+                &node_ids_before(nodes, index),
+                imports,
                 diagnostics,
             );
         }

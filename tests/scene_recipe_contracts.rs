@@ -534,6 +534,188 @@ fn scene_recipe_slice2_authoring_vocabulary_builds_and_targets_overlays() {
     );
 }
 
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_slice3_transform_placement_verbs_resolve_against_authored_and_imported_targets() {
+    let recipe = json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [{
+            "id": "anchor_asset",
+            "uri": "tests/assets/gltf/anchored_triangle_scene.gltf"
+        }],
+        "colors": {
+            "base": "#7097C8",
+            "accent": "#E9B44C"
+        },
+        "geometries": [
+            { "id": "support_geo", "primitive": { "kind": "box", "size": [0.24, 0.10, 0.24] } },
+            { "id": "part_geo", "primitive": { "kind": "box", "size": [0.08, 0.08, 0.08] } },
+            { "id": "large_geo", "primitive": { "kind": "box", "size": [2.0, 2.0, 2.0] } }
+        ],
+        "materials": [
+            { "id": "base_mat", "kind": "unlit", "base_color": "base" },
+            { "id": "accent_mat", "kind": "unlit", "base_color": "accent" }
+        ],
+        "nodes": [
+            {
+                "id": "support",
+                "geometry": "support_geo",
+                "material": "base_mat",
+                "transform": { "kind": "center" }
+            },
+            {
+                "id": "placed",
+                "geometry": "part_geo",
+                "material": "accent_mat",
+                "transform": { "kind": "place_on", "target": "support", "offset": [0.0, 0.02, 0.0] }
+            },
+            {
+                "id": "grounded",
+                "geometry": "part_geo",
+                "material": "accent_mat",
+                "transform": { "kind": "ground", "plane_y": -0.25 }
+            },
+            {
+                "id": "fit",
+                "geometry": "large_geo",
+                "material": "base_mat",
+                "transform": { "kind": "fit_to_size", "size": [0.20, 0.20, 0.20] }
+            },
+            {
+                "id": "aligned",
+                "geometry": "part_geo",
+                "material": "accent_mat",
+                "transform": { "kind": "align_to_anchor", "anchor": "anchor_asset.mount" }
+            }
+        ],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "active": true,
+            "transform": { "kind": "look_at", "eye": [0.65, 0.45, 0.55], "target": "support" }
+        }],
+        "capture": { "width": 320, "height": 220 }
+    });
+    let text = serde_json::to_string_pretty(&recipe).expect("recipe serializes");
+
+    let validation = scena::validate_scene_recipe_json(&text);
+    assert!(
+        validation.ok,
+        "Slice 3 placement recipe should validate: {validation:#?}"
+    );
+
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/slice3.recipe.json",
+        &text,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("Slice 3 placement recipe build succeeds");
+
+    assert!(build.manifest.ok, "{:#?}", build.manifest);
+    let handle = |id: &str| {
+        build
+            .manifest
+            .nodes
+            .iter()
+            .find(|node| node.id == id)
+            .map(|node| node.handle)
+            .unwrap_or_else(|| panic!("node {id} exists in manifest: {:#?}", build.manifest))
+    };
+    let support = build
+        .host
+        .node_world_bounds(handle("support"))
+        .expect("support bounds query succeeds")
+        .expect("support has bounds");
+    let placed = build
+        .host
+        .node_world_bounds(handle("placed"))
+        .expect("placed bounds query succeeds")
+        .expect("placed has bounds");
+    let grounded = build
+        .host
+        .node_world_bounds(handle("grounded"))
+        .expect("grounded bounds query succeeds")
+        .expect("grounded has bounds");
+    let fit = build
+        .host
+        .node_world_bounds(handle("fit"))
+        .expect("fit bounds query succeeds")
+        .expect("fit has bounds");
+    assert!(
+        (placed.min.y - (support.max.y + 0.02)).abs() < 0.001,
+        "place_on should put the placed node on the support top plus offset: support={support:?}, placed={placed:?}"
+    );
+    assert!(
+        (grounded.min.y + 0.25).abs() < 0.001,
+        "ground should put node min_y on the requested plane: {grounded:?}"
+    );
+    assert!(
+        (fit.max - fit.min).max_element() <= 0.201,
+        "fit_to_size should uniformly shrink inside the requested box: {fit:?}"
+    );
+
+    let inspection_json = build.host.inspect_json().expect("Slice 3 scene inspects");
+    let inspection: scena::SceneInspectionReportV1 =
+        serde_json::from_str(&inspection_json).expect("inspection decodes");
+    let aligned = inspection
+        .nodes
+        .iter()
+        .find(|node| node.handle == handle("aligned"))
+        .expect("aligned node appears in inspection");
+    assert!(
+        aligned.world_transform.translation.length() < 0.001,
+        "align_to_anchor should put the node origin at the imported anchor: {aligned:#?}"
+    );
+}
+
+#[test]
+fn scene_recipe_slice3_transform_refs_fail_closed_before_build() {
+    let forward_ref = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "geometries": [
+            { "id": "box_geo", "primitive": { "kind": "box", "size": [0.1, 0.1, 0.1] } }
+        ],
+        "materials": [
+            { "id": "box_mat", "kind": "unlit", "base_color": "#FFFFFF" }
+        ],
+        "nodes": [
+            {
+                "id": "early",
+                "geometry": "box_geo",
+                "material": "box_mat",
+                "transform": { "kind": "place_on", "target": "later" }
+            },
+            {
+                "id": "later",
+                "geometry": "box_geo",
+                "material": "box_mat"
+            }
+        ]
+    }));
+    assert!(!forward_ref.ok, "forward placement refs must fail closed");
+    assert_reason(&forward_ref, "unknown_node_ref", None);
+
+    let self_cycle = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "geometries": [
+            { "id": "box_geo", "primitive": { "kind": "box", "size": [0.1, 0.1, 0.1] } }
+        ],
+        "materials": [
+            { "id": "box_mat", "kind": "unlit", "base_color": "#FFFFFF" }
+        ],
+        "nodes": [
+            {
+                "id": "early",
+                "geometry": "box_geo",
+                "material": "box_mat",
+                "transform": { "kind": "place_on", "target": "early" }
+            }
+        ]
+    }));
+    assert!(!self_cycle.ok, "self placement cycles must fail closed");
+    assert_reason(&self_cycle, "unknown_node_ref", None);
+}
+
 #[test]
 fn scene_recipe_authoring_refs_and_future_variants_fail_before_build() {
     let unknown_ref = scena::validate_scene_recipe_value(json!({

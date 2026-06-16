@@ -217,6 +217,10 @@ impl SceneHostCore<DefaultAssetFetcher> {
             });
         }
 
+        let import_handles = imports
+            .iter()
+            .map(|import| (import.id.clone(), import.import_handle))
+            .collect::<BTreeMap<_, _>>();
         let authored_start = diagnostics.len();
         let geometry_handles = build_authored_geometries(
             &policy,
@@ -244,6 +248,7 @@ impl SceneHostCore<DefaultAssetFetcher> {
             AuthoredNodeResources {
                 geometries: &geometry_handles,
                 materials: &material_handles,
+                imports: &import_handles,
             },
             &mut nodes,
             &mut diagnostics,

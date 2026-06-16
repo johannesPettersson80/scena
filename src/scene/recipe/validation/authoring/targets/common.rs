@@ -10,6 +10,11 @@ use crate::scene::recipe::validation::diagnostic;
 const RAW_TRANSFORM_FIELDS: &[&str] = &["kind", "translation", "rotation", "scale"];
 const TRS_TRANSFORM_FIELDS: &[&str] = &["kind", "translation", "rotation_degrees", "scale"];
 const LOOK_AT_TRANSFORM_FIELDS: &[&str] = &["kind", "eye", "target", "up"];
+const CENTER_TRANSFORM_FIELDS: &[&str] = &["kind"];
+const GROUND_TRANSFORM_FIELDS: &[&str] = &["kind", "plane_y"];
+const FIT_TO_SIZE_TRANSFORM_FIELDS: &[&str] = &["kind", "size"];
+const PLACE_ON_TRANSFORM_FIELDS: &[&str] = &["kind", "target", "offset"];
+const ALIGN_TO_ANCHOR_TRANSFORM_FIELDS: &[&str] = &["kind", "anchor"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::scene::recipe::validation::authoring) enum TransformUse {
@@ -20,8 +25,9 @@ pub(in crate::scene::recipe::validation::authoring) enum TransformUse {
 pub(in crate::scene::recipe::validation::authoring) fn validate_transform(
     path: &str,
     value: &Value,
-    usage: TransformUse,
+    _usage: TransformUse,
     node_ids: &BTreeSet<String>,
+    import_ids: &BTreeSet<String>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
     let Some(object) = value.as_object() else {
@@ -65,7 +71,7 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_transform(
             );
             validate_vec3_optional(&format!("{path}.scale"), object.get("scale"), diagnostics);
         }
-        Some("look_at") if usage == TransformUse::Camera => {
+        Some("look_at") => {
             validate_known_fields(path, object, LOOK_AT_TRANSFORM_FIELDS, diagnostics);
             validate_vec3(&format!("{path}.eye"), object.get("eye"), diagnostics);
             validate_look_at_target(
@@ -76,21 +82,47 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_transform(
             );
             validate_vec3_optional(&format!("{path}.up"), object.get("up"), diagnostics);
         }
-        Some("look_at") => diagnostics.push(diagnostic(
-            "unsupported_feature",
-            "error",
-            format!("{path}.kind"),
-            "look_at transforms are only implemented for cameras in this slice",
-            "use raw or trs for authored nodes until the placement slice lands",
-            None,
-            false,
-        )),
+        Some("center") => {
+            validate_known_fields(path, object, CENTER_TRANSFORM_FIELDS, diagnostics);
+        }
+        Some("ground") => {
+            validate_known_fields(path, object, GROUND_TRANSFORM_FIELDS, diagnostics);
+            validate_finite_number_optional(
+                &format!("{path}.plane_y"),
+                object.get("plane_y"),
+                diagnostics,
+            );
+        }
+        Some("fit_to_size") => {
+            validate_known_fields(path, object, FIT_TO_SIZE_TRANSFORM_FIELDS, diagnostics);
+            validate_positive_vec3(&format!("{path}.size"), object.get("size"), diagnostics);
+        }
+        Some("place_on") => {
+            validate_known_fields(path, object, PLACE_ON_TRANSFORM_FIELDS, diagnostics);
+            validate_ref(
+                &format!("{path}.target"),
+                object.get("target"),
+                node_ids,
+                "node",
+                diagnostics,
+            );
+            validate_vec3_optional(&format!("{path}.offset"), object.get("offset"), diagnostics);
+        }
+        Some("align_to_anchor") => {
+            validate_known_fields(path, object, ALIGN_TO_ANCHOR_TRANSFORM_FIELDS, diagnostics);
+            validate_anchor_ref(
+                &format!("{path}.anchor"),
+                object.get("anchor"),
+                import_ids,
+                diagnostics,
+            );
+        }
         Some(kind) => diagnostics.push(diagnostic(
             "unsupported_feature",
             "error",
             format!("{path}.kind"),
             format!("transform kind '{kind}' is not implemented in this slice"),
-            "use raw, trs, or a camera look_at transform",
+            "use raw, trs, look_at, center, ground, fit_to_size, place_on, or align_to_anchor",
             None,
             false,
         )),
@@ -103,6 +135,59 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_transform(
             None,
             false,
         )),
+    }
+}
+
+fn validate_anchor_ref(
+    path: &str,
+    value: Option<&Value>,
+    import_ids: &BTreeSet<String>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    let Some(value) = value.and_then(Value::as_str) else {
+        diagnostics.push(diagnostic(
+            "missing_anchor_ref",
+            "error",
+            path,
+            "align_to_anchor requires an anchor string in the form <import_id>.<anchor_name>",
+            "target an imported anchor such as machine.mount",
+            None,
+            false,
+        ));
+        return;
+    };
+    let Some((import, anchor)) = value.split_once('.') else {
+        diagnostics.push(diagnostic(
+            "invalid_anchor_ref",
+            "error",
+            path,
+            "anchor ref must be in the form <import_id>.<anchor_name>",
+            "target an imported anchor such as machine.mount",
+            None,
+            false,
+        ));
+        return;
+    };
+    if import.trim().is_empty() || anchor.trim().is_empty() {
+        diagnostics.push(diagnostic(
+            "invalid_anchor_ref",
+            "error",
+            path,
+            "anchor ref must include non-empty import and anchor names",
+            "target an imported anchor such as machine.mount",
+            None,
+            false,
+        ));
+    } else if !import_ids.contains(import) {
+        diagnostics.push(diagnostic(
+            "unknown_import_ref",
+            "error",
+            path,
+            format!("anchor ref references unknown import '{import}'"),
+            "target an import id declared in imports",
+            None,
+            false,
+        ));
     }
 }
 
@@ -323,6 +408,47 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_vec3_optional(
 ) {
     if value.is_some() {
         validate_vec3(path, value, diagnostics);
+    }
+}
+
+fn validate_finite_number_optional(
+    path: &str,
+    value: Option<&Value>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    match value.as_f64() {
+        Some(value) if value.is_finite() => {}
+        _ => diagnostics.push(diagnostic(
+            "invalid_number",
+            "error",
+            path,
+            "field must be a finite number",
+            "use a finite numeric value",
+            None,
+            false,
+        )),
+    }
+}
+
+fn validate_positive_vec3(
+    path: &str,
+    value: Option<&Value>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    match value.and_then(finite_vec3) {
+        Some(value) if value[0] > 0.0 && value[1] > 0.0 && value[2] > 0.0 => {}
+        _ => diagnostics.push(diagnostic(
+            "invalid_vector",
+            "error",
+            path,
+            "size must be a finite positive [x,y,z] array",
+            "use positive dimensions in meters",
+            None,
+            false,
+        )),
     }
 }
 

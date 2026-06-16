@@ -251,6 +251,22 @@ pub enum SceneRecipeTransformV1 {
         )]
         up: [f64; 3],
     },
+    Center {},
+    Ground {
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        plane_y: f64,
+    },
+    FitToSize {
+        size: [f64; 3],
+    },
+    PlaceOn {
+        target: String,
+        #[serde(default, skip_serializing_if = "is_zero_vec3")]
+        offset: [f64; 3],
+    },
+    AlignToAnchor {
+        anchor: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -469,6 +485,10 @@ fn default_transform_up() -> [f64; 3] {
 
 fn is_zero_vec3(value: &[f64; 3]) -> bool {
     *value == [0.0, 0.0, 0.0]
+}
+
+fn is_zero_f64(value: &f64) -> bool {
+    *value == 0.0
 }
 
 fn is_default_scale(value: &[f64; 3]) -> bool {

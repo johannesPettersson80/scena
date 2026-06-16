@@ -127,6 +127,7 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_lights(
                 transform,
                 TransformUse::Node,
                 &BTreeSet::new(),
+                &BTreeSet::new(),
                 diagnostics,
             );
         }

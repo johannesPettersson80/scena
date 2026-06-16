@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use super::common::DiagnosticPathExt;
-use super::transform::transform_from_recipe;
+use super::transform::{TransformResolutionInput, transform_from_recipe};
 use crate::assets::DefaultAssetFetcher;
 use crate::scene::recipe::{
     SceneRecipeBuildTargetV1, SceneRecipeCameraV1, SceneRecipeDiagnosticV1,
@@ -38,7 +38,17 @@ pub(in crate::scene_host::recipe) fn build_authored_cameras(
         let camera = PerspectiveCamera::default()
             .with_fov_degrees(recipe.fov_degrees.unwrap_or(60.0) as f32)
             .with_aspect(host.viewport.logical_width() / host.viewport.logical_height());
-        let transform = match transform_from_recipe(recipe.transform.as_ref(), node_keys, host) {
+        let empty_imports = BTreeMap::new();
+        let transform = match transform_from_recipe(
+            recipe.transform.as_ref(),
+            TransformResolutionInput {
+                node_keys,
+                imports: &empty_imports,
+                parent: Some(root),
+                current_bounds: None,
+            },
+            host,
+        ) {
             Ok(transform) => transform,
             Err(diagnostic) => {
                 diagnostics.push((*diagnostic).with_path(format!("{path}.transform")));
