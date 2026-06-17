@@ -58,6 +58,7 @@ impl Scene {
         label: LabelDesc,
         transform: Transform,
     ) -> Result<(LabelKey, NodeKey), LookupError> {
+        label.validate_style()?;
         let label_key = self.labels.insert(label);
         match self.insert_node(parent, NodeKind::Label(label_key), transform) {
             Ok(node) => Ok((label_key, node)),
@@ -226,6 +227,17 @@ impl LabelDesc {
             LabelFont::TrueType(_) => validate_basic_latin_text(text),
         }
     }
+
+    fn validate_style(&self) -> Result<(), LookupError> {
+        validate_opaque_color("label text color", self.color)?;
+        if let Some(background) = self.background {
+            validate_opaque_color("label background color", background)?;
+        }
+        if let Some(halo) = self.halo {
+            validate_opaque_color("label halo color", halo)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -250,5 +262,21 @@ fn readable_size_or(value: f32, fallback: f32) -> f32 {
         value
     } else {
         fallback
+    }
+}
+
+fn validate_opaque_color(field: &'static str, color: Color) -> Result<(), LookupError> {
+    if color.r.is_finite()
+        && color.g.is_finite()
+        && color.b.is_finite()
+        && color.a.is_finite()
+        && color.a == 1.0
+    {
+        Ok(())
+    } else {
+        Err(LookupError::InvalidLabelStyle {
+            field,
+            reason: "label billboard colors must be finite and opaque until a transparent label path exists",
+        })
     }
 }

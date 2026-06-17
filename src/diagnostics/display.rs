@@ -484,6 +484,9 @@ impl fmt::Display for LookupError {
                     "label text is not supported by its font: {reason}"
                 )
             }
+            Self::InvalidLabelStyle { field, reason } => {
+                write!(formatter, "{field} is not supported: {reason}")
+            }
         }
     }
 }

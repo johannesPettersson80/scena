@@ -61,7 +61,8 @@ pub(crate) use crate::app::doctor_m7_m8_assets::{
 pub(crate) use crate::app::doctor_render::{
     check_asset_api_contracts, check_diagnostics_contracts, check_fxaa_output_contracts,
     check_headless_gpu_test_guard_contracts, check_output_stage_contracts,
-    check_prepare_asset_contracts, check_render_alpha_contracts, check_render_world_bake_contracts,
+    check_particle_prepare_allocation_contract, check_prepare_asset_contracts,
+    check_render_alpha_contracts, check_render_world_bake_contracts,
     check_renderer_standard_math_contracts, check_renderer_stats_contracts,
     check_renderer_truth_contracts,
 };

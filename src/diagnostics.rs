@@ -351,6 +351,10 @@ pub enum LookupError {
         label: LabelKey,
         reason: String,
     },
+    InvalidLabelStyle {
+        field: &'static str,
+        reason: &'static str,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

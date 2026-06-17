@@ -67,6 +67,7 @@ pub(crate) fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) 
     check_render_singleton_contracts(root, findings);
     check_asset_api_contracts(root, findings);
     check_prepare_asset_contracts(root, findings);
+    check_particle_prepare_allocation_contract(root, findings);
     check_environment_lifecycle_contracts(root, findings);
     check_equirectangular_hdr_environment_contracts(root, findings);
     check_environment_ibl_prepare_contracts(root, findings);

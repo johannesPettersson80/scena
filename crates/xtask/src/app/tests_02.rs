@@ -190,6 +190,40 @@ pub(crate) fn prepare_asset_contracts_are_source_enforced() {
 }
 
 #[test]
+pub(crate) fn particle_prepare_allocation_contract_is_source_enforced() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let mut findings = Vec::new();
+
+    check_particle_prepare_allocation_contract(&root, &mut findings);
+
+    assert_eq!(findings, Vec::new());
+}
+
+#[test]
+pub(crate) fn doctor_rejects_particle_prepare_collect_regression() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/particle-prepare-collect");
+    let particles_path = fixture_root.join("src/render/prepare/particles.rs");
+    fs::create_dir_all(particles_path.parent().expect("particle prepare parent"))
+        .expect("fixture dir");
+    fs::write(
+        &particles_path,
+        "fn append_particle_primitives(scene: &Scene, primitives: &mut Vec<PreparedPrimitive>) {\n    let particles = scene.particle_set_nodes().collect::<Vec<_>>();\n    primitives.reserve(particles.len());\n}\n",
+    )
+    .expect("particle prepare fixture");
+    let mut findings = Vec::new();
+
+    check_particle_prepare_allocation_contract(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-PREPARE-PARTICLES" && finding.message.contains("collect::<Vec")
+        }),
+        "doctor must reject intermediate Vec collection in particle prepare: {findings:?}",
+    );
+}
+
+#[test]
 pub(crate) fn render_world_bake_contracts_are_source_enforced() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let mut findings = Vec::new();

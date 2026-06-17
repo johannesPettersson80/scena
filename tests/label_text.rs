@@ -23,6 +23,35 @@ fn label_desc_reports_stable_font_metrics_and_style_options() {
 }
 
 #[test]
+fn label_desc_translucent_explicit_colors_fail_closed_until_transparent_path_exists() {
+    for (name, label) in [
+        (
+            "text color",
+            LabelDesc::bitmap("A").with_color(Color::from_linear_rgba(1.0, 1.0, 1.0, 0.5)),
+        ),
+        (
+            "background",
+            LabelDesc::bitmap("A").with_background(Color::from_linear_rgba(0.0, 0.0, 0.0, 0.5)),
+        ),
+        (
+            "halo",
+            LabelDesc::bitmap("A").with_halo(Color::from_linear_rgba(1.0, 0.0, 0.0, 0.5)),
+        ),
+    ] {
+        let mut scene = Scene::new();
+        let error = scene
+            .add_label(scene.root(), label, Transform::IDENTITY)
+            .expect_err(
+                "translucent label colors must not be accepted without a transparent GPU path",
+            );
+        assert!(
+            error.to_string().contains("opaque"),
+            "{name} should fail closed with an opaque-label explanation: {error}"
+        );
+    }
+}
+
+#[test]
 fn label_desc_truetype_font_changes_metrics_and_rendered_coverage() {
     let font_bytes = fs::read(system_test_font_path()).expect("test TrueType font reads");
     let bitmap = LabelDesc::bitmap("AVAV")

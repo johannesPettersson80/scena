@@ -173,6 +173,9 @@ impl LookupError {
             Self::UnsupportedLabelText { .. } => {
                 "use basic Latin text for TrueType labels or render complex-script text in the host"
             }
+            Self::InvalidLabelStyle { .. } => {
+                "use opaque label colors or omit the optional background/halo until transparent labels are implemented"
+            }
         }
     }
 }

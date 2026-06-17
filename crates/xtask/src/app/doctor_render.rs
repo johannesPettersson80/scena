@@ -13,5 +13,6 @@ pub(crate) use diagnostics_stats_world::{
 };
 pub(crate) use render_truth::check_renderer_truth_contracts;
 pub(crate) use standard_math_prepare::{
-    check_prepare_asset_contracts, check_renderer_standard_math_contracts,
+    check_particle_prepare_allocation_contract, check_prepare_asset_contracts,
+    check_renderer_standard_math_contracts,
 };

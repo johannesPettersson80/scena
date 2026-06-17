@@ -181,8 +181,8 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
 - **instance_sets[]** (Slice 6): `id`; `geometry`; `material`; `parent?`; root
   `transform?`; `instances[]` with stable `id`, `transform?`, opaque `tint?`,
   and `visible?`.
-- **labels[]** (Slice 6): `id`; `text`; `parent?`; `transform?`; `color?`;
-  `background?`; `halo?`; `size_px?`.
+- **labels[]** (Slice 6): `id`; `text`; `parent?`; `transform?`; opaque
+  `color?`; opaque `background?`; opaque `halo?`; `size_px?`.
 - **clipping_planes[]** (Slice 6): `id`; finite non-zero `normal`; finite
   `distance`; `active?` (default true), bounded by renderer
   `max_clipping_planes`.

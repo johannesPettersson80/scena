@@ -153,3 +153,35 @@ pub(crate) fn check_prepare_asset_contracts(root: &Path, findings: &mut Vec<Find
         &["pub fn prepare_with_assets<F>"],
     );
 }
+
+pub(crate) fn check_particle_prepare_allocation_contract(root: &Path, findings: &mut Vec<Finding>) {
+    let rel = "src/render/prepare/particles.rs";
+    let path = root.join(rel);
+    let Ok(source) = fs::read_to_string(&path) else {
+        findings.push(Finding::new(
+            "ARCH-PREPARE-PARTICLES",
+            format!("could not read {rel}"),
+        ));
+        return;
+    };
+    for forbidden in [".collect::<Vec", ".collect()"] {
+        if source.contains(forbidden) {
+            findings.push(Finding::new(
+                "ARCH-PREPARE-PARTICLES",
+                format!(
+                    "{rel} must not collect particle iterators into an intermediate Vec before CPU-baked billboard emission; found `{forbidden}`"
+                ),
+            ));
+        }
+    }
+    for required in ["particle_primitive_count", "primitives.reserve"] {
+        if !source.contains(required) {
+            findings.push(Finding::new(
+                "ARCH-PREPARE-PARTICLES",
+                format!(
+                    "{rel} must pre-count particle primitives and reserve output capacity before appending; missing `{required}`"
+                ),
+            ));
+        }
+    }
+}

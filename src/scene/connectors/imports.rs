@@ -86,7 +86,8 @@ fn connector_lookup_error(error: LookupError, requested_name: &str) -> Connectio
         | LookupError::ParticleSetNotFound(_)
         | LookupError::InstanceNotFound { .. }
         | LookupError::LabelNotFound(_)
-        | LookupError::UnsupportedLabelText { .. } => ConnectionError::MissingConnectorName {
+        | LookupError::UnsupportedLabelText { .. }
+        | LookupError::InvalidLabelStyle { .. } => ConnectionError::MissingConnectorName {
             name: requested_name.to_string(),
         },
     }
