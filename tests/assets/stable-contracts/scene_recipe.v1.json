@@ -16,6 +16,7 @@
     "label_bg": "#1D2733",
     "label_fg": "#FFFFFF",
     "pbr_white": "#FFFFFF",
+    "particle_red": "#E03030",
     "attenuation_blue": "#BFD7FF",
     "plate_blue": "#3A7BD5"
   },
@@ -280,6 +281,42 @@
             ]
           },
           "visible": false
+        }
+      ]
+    }
+  ],
+  "particles": [
+    {
+      "id": "status_particles",
+      "transform": {
+        "kind": "trs",
+        "translation": [
+          0.0,
+          0.0,
+          0.02
+        ]
+      },
+      "particles": [
+        {
+          "id": "ok-green",
+          "position": [
+            -0.08,
+            0.02,
+            0.0
+          ],
+          "color": "instance_tint",
+          "size_px": 14.0
+        },
+        {
+          "id": "alarm-red",
+          "position": [
+            0.08,
+            0.02,
+            0.0
+          ],
+          "color": "particle_red",
+          "size_px": 20.0,
+          "rotation_degrees": 15.0
         }
       ]
     }

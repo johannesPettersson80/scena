@@ -56,7 +56,6 @@ fn scene_recipe_validation_reports_unknown_fields_duplicate_ids_and_suggestions(
 fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
     for section in [
         "primitives",
-        "particles",
         "viewer_profile",
         "environment",
         "placements",
@@ -1363,6 +1362,243 @@ fn slice12_skin_morph_recipe(morph_weight: f64, joint_lift: f64) -> serde_json::
         }],
         "capture": { "width": 180, "height": 140 }
     })
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_slice13_particles_render_per_particle_output_and_fail_closed() {
+    let recipe = json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "green": "#20D060",
+            "yellow": "#F0C020",
+            "blue": "#2050E0",
+            "red": "#E03030"
+        },
+        "particles": [{
+            "id": "status_particles",
+            "particles": [
+                { "id": "left_green", "position": [-0.35, 0.0, 0.0], "color": "green", "size_px": 18.0 },
+                { "id": "right_yellow", "position": [0.35, 0.0, 0.0], "color": "yellow", "size_px": 30.0 },
+                { "id": "far_blue", "position": [0.0, 0.0, -0.35], "color": "blue", "size_px": 34.0 },
+                { "id": "near_red", "position": [0.0, 0.0, 0.0], "color": "red", "size_px": 18.0 }
+            ]
+        }],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "active": true,
+            "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": [0.0, 0.0, 0.0] }
+        }],
+        "capture": { "width": 160, "height": 120 }
+    });
+    let text = serde_json::to_string_pretty(&recipe).expect("recipe serializes");
+
+    let validation = scena::validate_scene_recipe_json(&text);
+    assert!(
+        validation.ok,
+        "Slice 13 particle recipe should validate: {validation:#?}"
+    );
+
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/slice13.recipe.json",
+        &text,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("Slice 13 recipe build succeeds");
+    assert!(build.manifest.ok, "{:#?}", build.manifest);
+    assert!(
+        build
+            .manifest
+            .nodes
+            .iter()
+            .any(|node| node.id == "status_particles" && node.kind == "particle_set"),
+        "particle set must appear as a targetable authored node: {:#?}",
+        build.manifest
+    );
+
+    let mut host = build.host;
+    host.prepare().expect("Slice 13 scene prepares");
+    host.render().expect("Slice 13 scene renders");
+    let capture = host.capture().expect("Slice 13 scene captures");
+    let inspection_json = host.inspect_json().expect("Slice 13 scene inspects");
+    let inspection: scena::SceneInspectionReportV1 =
+        serde_json::from_str(&inspection_json).expect("inspection decodes");
+    let report = host.renderer().introspect_capture(
+        &capture,
+        &inspection,
+        scena::RenderIntrospectionOptions::summary(),
+    );
+    assert!(report.ok, "Slice 13 render should be visible: {report:#?}");
+
+    let invalid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "green": "#20D060" },
+        "particles": [{
+            "id": "bad_particles",
+            "particles": [
+                { "id": "", "position": [0.0, 0.0, 0.0], "color": "green", "size_px": -1.0 },
+                { "id": "unknown_color", "position": ["x", 0.0, 0.0], "color": "missing", "size_px": 12.0 }
+            ],
+            "visible": "yes"
+        }]
+    }));
+    assert!(!invalid.ok);
+    assert_reason(&invalid, "invalid_id", None);
+    assert_reason(&invalid, "invalid_particle", None);
+    assert_reason(&invalid, "unknown_color_ref", None);
+    assert_reason(&invalid, "invalid_visible", None);
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_slice13_particles_change_headless_gpu_pixels_by_color_size_position_and_depth() {
+    let rgba = render_slice13_particles_gpu();
+    let green = slice13_color_bounds(&rgba, 160, |pixel| {
+        pixel[1] > 150 && pixel[0] < 80 && pixel[2] < 120
+    })
+    .expect("green particle is visible");
+    let yellow = slice13_color_bounds(&rgba, 160, |pixel| {
+        pixel[0] > 180 && pixel[1] > 130 && pixel[2] < 90
+    })
+    .expect("yellow particle is visible");
+    let blue = slice13_color_bounds(&rgba, 160, |pixel| {
+        pixel[2] > 140 && pixel[0] < 90 && pixel[1] < 120
+    })
+    .expect("far blue particle remains visible around the nearer red particle");
+
+    assert!(
+        green.center_x() < 70.0 && yellow.center_x() > 90.0,
+        "particle screen positions should track their authored x positions: green={green:?}, yellow={yellow:?}"
+    );
+    assert!(
+        (14..=24).contains(&green.width())
+            && (25..=40).contains(&yellow.width())
+            && yellow.width() > green.width() + 8,
+        "particle size_px must produce distinct rendered sprite sizes: green={green:?}, yellow={yellow:?}"
+    );
+    assert!(
+        blue.width() > 22 && blue.height() > 22,
+        "larger far blue sprite should leave a visible ring for depth verification: {blue:?}"
+    );
+
+    let center = slice13_pixel(&rgba, 160, 80, 60);
+    assert!(
+        center[0] > 150 && center[1] < 100 && center[2] < 100,
+        "near red particle must depth-test in front of far blue at the same screen position, center pixel={center:?}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+fn render_slice13_particles_gpu() -> Vec<u8> {
+    let mut scene = scena::Scene::new();
+    let particles = scena::ParticleSet::try_new(vec![
+        scena::Particle::new(
+            scena::Vec3::new(-0.35, 0.0, 0.0),
+            scena::Color::from_srgb_u8(32, 208, 96),
+            18.0,
+        ),
+        scena::Particle::new(
+            scena::Vec3::new(0.35, 0.0, 0.0),
+            scena::Color::from_srgb_u8(240, 192, 32),
+            30.0,
+        ),
+        scena::Particle::new(
+            scena::Vec3::new(0.0, 0.0, -0.35),
+            scena::Color::from_srgb_u8(32, 80, 224),
+            34.0,
+        ),
+        scena::Particle::new(
+            scena::Vec3::new(0.0, 0.0, 0.0),
+            scena::Color::from_srgb_u8(224, 48, 48),
+            18.0,
+        ),
+    ])
+    .expect("particle buffer validates");
+    scene
+        .add_particle_set_node(scene.root(), particles, scena::Transform::IDENTITY)
+        .expect("particle set inserts");
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            scena::PerspectiveCamera::default(),
+            scena::Transform::at(scena::Vec3::new(0.0, 0.0, 2.0))
+                .looking_at(scena::Vec3::ZERO, scena::Vec3::Y),
+        )
+        .expect("camera inserts");
+    scene.set_active_camera(camera).expect("camera activates");
+
+    let mut renderer =
+        scena::Renderer::headless_gpu(160, 120).expect("HeadlessGpu renderer builds");
+    renderer
+        .prepare(&mut scene)
+        .expect("Slice 13 HeadlessGpu scene prepares");
+    renderer
+        .render(&scene, camera)
+        .expect("Slice 13 HeadlessGpu scene renders");
+    renderer.frame_rgba8().to_vec()
+}
+
+#[cfg(feature = "scene-host")]
+#[derive(Debug)]
+struct Slice13ColorBounds {
+    min_x: usize,
+    min_y: usize,
+    max_x: usize,
+    max_y: usize,
+}
+
+#[cfg(feature = "scene-host")]
+impl Slice13ColorBounds {
+    fn width(&self) -> usize {
+        self.max_x.saturating_sub(self.min_x) + 1
+    }
+
+    fn height(&self) -> usize {
+        self.max_y.saturating_sub(self.min_y) + 1
+    }
+
+    fn center_x(&self) -> f32 {
+        (self.min_x + self.max_x) as f32 * 0.5
+    }
+}
+
+#[cfg(feature = "scene-host")]
+fn slice13_color_bounds(
+    rgba: &[u8],
+    width: usize,
+    matches: impl Fn(&[u8]) -> bool,
+) -> Option<Slice13ColorBounds> {
+    let mut bounds: Option<Slice13ColorBounds> = None;
+    for (index, pixel) in rgba.chunks_exact(4).enumerate() {
+        if !matches(pixel) {
+            continue;
+        }
+        let x = index % width;
+        let y = index / width;
+        bounds = Some(match bounds {
+            Some(mut bounds) => {
+                bounds.min_x = bounds.min_x.min(x);
+                bounds.min_y = bounds.min_y.min(y);
+                bounds.max_x = bounds.max_x.max(x);
+                bounds.max_y = bounds.max_y.max(y);
+                bounds
+            }
+            None => Slice13ColorBounds {
+                min_x: x,
+                min_y: y,
+                max_x: x,
+                max_y: y,
+            },
+        });
+    }
+    bounds
+}
+
+#[cfg(feature = "scene-host")]
+fn slice13_pixel(rgba: &[u8], width: usize, x: usize, y: usize) -> &[u8] {
+    let start = (y * width + x) * 4;
+    &rgba[start..start + 4]
 }
 
 #[cfg(feature = "scene-host")]

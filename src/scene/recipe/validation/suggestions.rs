@@ -50,6 +50,7 @@ pub(super) const ROOT_FIELDS: &[&str] = &[
     "materials",
     "nodes",
     "instance_sets",
+    "particles",
     "fonts",
     "labels",
     "clipping_planes",
@@ -83,7 +84,6 @@ pub(super) const UNSUPPORTED_WORKFLOW_FIELDS: &[&str] = &[
 ];
 pub(super) const UNSUPPORTED_SECTION_FIELDS: &[&str] = &[
     "primitives",
-    "particles",
     "viewer_profile",
     "environment",
     "placements",

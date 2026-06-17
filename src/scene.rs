@@ -39,6 +39,7 @@ mod measurements;
 mod mixers;
 mod morphs;
 mod origin;
+mod particles;
 mod picking;
 mod placement;
 pub mod recipe;
@@ -98,6 +99,7 @@ pub use measurements::{
     MeasurementAxis, MeasurementKind, MeasurementOverlay, MeasurementOverlayReport,
     MeasurementReport, UnitFormat,
 };
+pub use particles::{Particle, ParticleSet, ParticleSetError};
 pub use placement::{
     SCENE_PLACEMENT_RESULT_SCHEMA_V1, ScenePlacementDiagnosticV1, ScenePlacementResultV1,
     placement_align_to_feature_transform, placement_center_transform,
@@ -112,6 +114,7 @@ new_key_type! {
     pub struct LightKey;
     pub struct ClippingPlaneKey;
     pub struct InstanceSetKey;
+    pub struct ParticleSetKey;
     pub struct LabelKey;
     pub struct AnchorKey;
     pub struct ConnectorKey;
@@ -124,6 +127,7 @@ pub struct Scene {
     cameras: SlotMap<CameraKey, Camera>,
     lights: SlotMap<LightKey, Light>,
     instance_sets: SlotMap<InstanceSetKey, InstanceSet>,
+    particle_sets: SlotMap<ParticleSetKey, ParticleSet>,
     animation_mixers: SlotMap<AnimationMixerKey, AnimationMixer>,
     labels: SlotMap<LabelKey, LabelDesc>,
     anchors: SlotMap<AnchorKey, AnchorFrame>,
@@ -171,6 +175,7 @@ pub enum NodeKind {
     Mesh(MeshNode),
     Model(ModelNode),
     InstanceSet(InstanceSetKey),
+    ParticleSet(ParticleSetKey),
     Label(LabelKey),
     Camera(CameraKey),
     Light(LightKey),
@@ -202,6 +207,7 @@ impl Scene {
             cameras: SlotMap::with_key(),
             lights: SlotMap::with_key(),
             instance_sets: SlotMap::with_key(),
+            particle_sets: SlotMap::with_key(),
             animation_mixers: SlotMap::with_key(),
             labels: SlotMap::with_key(),
             anchors: SlotMap::with_key(),
@@ -341,18 +347,15 @@ impl Scene {
     }
 
     pub(crate) fn mesh_nodes(&self) -> impl Iterator<Item = (NodeKey, MeshNode, Transform)> + '_ {
-        self.nodes.iter().filter_map(|(key, node)| match node.kind {
-            NodeKind::Mesh(mesh) if self.visible_for_active_camera(key) => self
-                .world_transform(key)
-                .map(|transform| (key, mesh, transform)),
-            NodeKind::Empty
-            | NodeKind::Renderable(_)
-            | NodeKind::Mesh(_)
-            | NodeKind::Model(_)
-            | NodeKind::InstanceSet(_)
-            | NodeKind::Label(_)
-            | NodeKind::Camera(_)
-            | NodeKind::Light(_) => None,
+        self.nodes.iter().filter_map(|(key, node)| {
+            let NodeKind::Mesh(mesh) = node.kind else {
+                return None;
+            };
+            if !self.visible_for_active_camera(key) {
+                return None;
+            }
+            self.world_transform(key)
+                .map(|transform| (key, mesh, transform))
         })
     }
 
@@ -376,16 +379,11 @@ impl Scene {
     }
 
     pub(crate) fn model_nodes(&self) -> impl Iterator<Item = NodeKey> + '_ {
-        self.nodes.iter().filter_map(|(key, node)| match node.kind {
-            NodeKind::Model(_) if self.visible_for_active_camera(key) => Some(key),
-            NodeKind::Empty
-            | NodeKind::Renderable(_)
-            | NodeKind::Mesh(_)
-            | NodeKind::Model(_)
-            | NodeKind::InstanceSet(_)
-            | NodeKind::Label(_)
-            | NodeKind::Camera(_)
-            | NodeKind::Light(_) => None,
+        self.nodes.iter().filter_map(|(key, node)| {
+            if !matches!(node.kind, NodeKind::Model(_)) || !self.visible_for_active_camera(key) {
+                return None;
+            }
+            Some(key)
         })
     }
 

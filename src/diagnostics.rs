@@ -5,8 +5,8 @@ use crate::assets::{EnvironmentHandle, GeometryHandle, MaterialHandle, TextureHa
 use crate::geometry::{Aabb, GeometryTopology};
 use crate::material::{AlphaMode, MaterialKind};
 use crate::scene::{
-    CameraKey, ClippingPlaneKey, InstanceSetKey, LabelKey, NodeKey, SourceCoordinateSystem,
-    SourceUnits, Transform,
+    CameraKey, ClippingPlaneKey, InstanceSetKey, LabelKey, NodeKey, ParticleSetKey,
+    SourceCoordinateSystem, SourceUnits, Transform,
 };
 
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
@@ -340,6 +340,7 @@ pub enum LookupError {
     CameraNotFound(CameraKey),
     ClippingPlaneNotFound(ClippingPlaneKey),
     InstanceSetNotFound(InstanceSetKey),
+    ParticleSetNotFound(ParticleSetKey),
     InstanceNotFound {
         instance_set: InstanceSetKey,
         instance: crate::scene::InstanceId,

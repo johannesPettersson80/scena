@@ -15,11 +15,11 @@ mod policy;
 mod setup;
 
 use authoring::{
-    AuthoredNodeResources, InstanceSetResources, LabelResources, build_authored_animations,
-    build_authored_cameras, build_authored_clipping_planes, build_authored_fonts,
-    build_authored_geometries, build_authored_instance_sets, build_authored_labels,
-    build_authored_lights, build_authored_materials, build_authored_morphs, build_authored_nodes,
-    build_authored_skins,
+    AuthoredNodeResources, InstanceSetResources, LabelResources, ParticleSetResources,
+    build_authored_animations, build_authored_cameras, build_authored_clipping_planes,
+    build_authored_fonts, build_authored_geometries, build_authored_instance_sets,
+    build_authored_labels, build_authored_lights, build_authored_materials, build_authored_morphs,
+    build_authored_nodes, build_authored_particle_sets, build_authored_skins,
 };
 use overlays::apply_recipe_overlays;
 use policy::asset_policy_diagnostics;
@@ -313,6 +313,19 @@ impl SceneHostCore<DefaultAssetFetcher> {
         let mut target_node_keys = node_keys.clone();
         target_node_keys.extend(imported_node_keys);
         target_node_keys.extend(instance_set_keys);
+        let particle_set_keys = build_authored_particle_sets(
+            &policy,
+            &mut host,
+            &recipe.particles,
+            &recipe.colors,
+            ParticleSetResources {
+                nodes: &target_node_keys,
+                imports: &import_handles,
+            },
+            &mut nodes,
+            &mut diagnostics,
+        );
+        target_node_keys.extend(particle_set_keys);
         let label_keys = build_authored_labels(
             &mut host,
             &recipe.labels,

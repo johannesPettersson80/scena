@@ -395,7 +395,7 @@ fn first_non_basic_latin(text: &str) -> Option<char> {
         .find(|character| !matches!(character, '\u{20}'..='\u{7e}'))
 }
 
-fn validate_color_value(
+pub(in crate::scene::recipe::validation::authoring::targets) fn validate_color_value(
     path: &str,
     value: Option<&Value>,
     colors: &BTreeSet<String>,

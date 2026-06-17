@@ -414,44 +414,48 @@ accessors only).
 
 ### Slice 13 — Particle / point-sprite rendering (#18b)
 A **new render path** — grep finds no particle/point-sprite rendering today.
-- [ ] New GPU/CPU-visible primitive class: host-supplied particle buffer
+- [x] New GPU/CPU-visible primitive class: host-supplied particle buffer
       (position / color / size / rotation) rendered as instanced sprites or
       points, with bounds, capture proof, and an explicit picking/visibility
       policy decision.
-- [ ] Recipe directive for a static or host-driven particle set.
-- [ ] Proof: assert expected **per-particle color / size / screen-position /
+- [x] Recipe directive for a static or host-driven particle set.
+- [x] Proof: assert expected **per-particle color / size / screen-position /
       depth** behavior, not just non-empty pixels; fail-closed on malformed
       buffers.
-- [ ] **Renderer boundary (the one carve-out):** time-stepped particle
+- [x] **Renderer boundary (the one carve-out):** time-stepped particle
       *simulation* (emitter physics / lifetime / velocity integration over time)
       stays host-side per AGENTS.md — scena **renders host-supplied particle
       state, it does not run the sim loop.** Flipping this is an RFC/charter
       change, not part of this checklist.
+      Evidence:
+      `scene_recipe_slice13_particles_render_per_particle_output_and_fail_closed`
+      + `scene_recipe_slice13_particles_change_headless_gpu_pixels_by_color_size_position_and_depth`
+      and `scene_recipe_build_manifest_golden_matches_executor_for_stable_recipe`.
 
 ## Tier C — plumbing every new directive needs
 
-- [ ] **Fail-closed validation per directive** (reject bad refs, non-finite
+- [x] **Fail-closed validation per directive** (reject bad refs, non-finite
       values, out-of-range params), per the semantics above — and reject
       out-of-range values **before** any public setter silently clamps them
       (advanced PBR, Slice 9).
-- [ ] **GPU/browser proofs must FAIL when the backend is unavailable, not
+- [x] **GPU/browser proofs must FAIL when the backend is unavailable, not
       silently skip** — a skipped proof is not acceptance evidence (esp. the
       headless-GPU pixel diffs in Slices 9/13 and the browser proof).
-- [ ] **Catalog / doctor pins — correctly scoped.** Additive fields on the
+- [x] **Catalog / doctor pins — correctly scoped.** Additive fields on the
       existing `scene_recipe.v1` update its single golden fixture and catalog
       example (they do **not** create one catalog entry per section). Only a
       genuinely new contract — `scene_recipe_build` and `recipe_render_result` —
       each gets its own golden fixture, `schema_catalog` entry, and doctor
       `FIXTURES` pin; the bidirectional catalog↔FIXTURES check must stay green.
-- [ ] **Root-field migration per slice.** For each new section, move its key from
+- [x] **Root-field migration per slice.** For each new section, move its key from
       `UNSUPPORTED_SECTION_FIELDS` to `ROOT_FIELDS` in
       `scene::recipe::validation::suggestions`, refresh the `nearest_root_field`
       did-you-mean candidates, and update the schema examples, CLI goldens
       (`tests/assets/cli-golden/*`), and the `scene_recipe.v1` stable fixture in
       lockstep.
-- [ ] **Round-trip determinism** (rounded floats, `BTreeMap` ordering) so
+- [x] **Round-trip determinism** (rounded floats, `BTreeMap` ordering) so
       authored recipes and the build manifest are byte-stable.
-- [ ] The verify/introspect/diagnose/repair loop already works on authored nodes
+- [x] The verify/introspect/diagnose/repair loop already works on authored nodes
       once they have stable handles — **no new verification surface needed.**
 
 ## Earlier review findings — resolved on this branch (verified)

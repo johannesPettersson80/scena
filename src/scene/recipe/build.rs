@@ -15,6 +15,7 @@ const DEFAULT_MAX_TEXTURES: usize = 256;
 const DEFAULT_MAX_TEXTURE_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_MAX_IMAGE_DIMENSION: u32 = 8192;
 const DEFAULT_MAX_INSTANCES: usize = 100_000;
+const DEFAULT_MAX_PARTICLES: usize = 100_000;
 const DEFAULT_MAX_OUTPUT_PIXELS: u64 = 4096 * 4096;
 const DEFAULT_FETCH_BYTE_LIMIT: usize = 64 * 1024 * 1024;
 
@@ -29,6 +30,7 @@ pub struct RecipeBuildPolicy {
     max_texture_bytes: usize,
     max_image_dimension: u32,
     max_instances: usize,
+    max_particles: usize,
     max_output_pixels: u64,
     fetch_byte_limit: usize,
     allow_network: bool,
@@ -50,6 +52,7 @@ impl Default for RecipeBuildPolicy {
             max_texture_bytes: DEFAULT_MAX_TEXTURE_BYTES,
             max_image_dimension: DEFAULT_MAX_IMAGE_DIMENSION,
             max_instances: DEFAULT_MAX_INSTANCES,
+            max_particles: DEFAULT_MAX_PARTICLES,
             max_output_pixels: DEFAULT_MAX_OUTPUT_PIXELS,
             fetch_byte_limit: DEFAULT_FETCH_BYTE_LIMIT,
             allow_network: false,
@@ -98,6 +101,10 @@ impl RecipeBuildPolicy {
 
     pub const fn max_instances(&self) -> usize {
         self.max_instances
+    }
+
+    pub const fn max_particles(&self) -> usize {
+        self.max_particles
     }
 
     pub const fn max_output_pixels(&self) -> u64 {
@@ -162,6 +169,11 @@ impl RecipeBuildPolicy {
 
     pub const fn with_max_instances(mut self, max_instances: usize) -> Self {
         self.max_instances = max_instances;
+        self
+    }
+
+    pub const fn with_max_particles(mut self, max_particles: usize) -> Self {
+        self.max_particles = max_particles;
         self
     }
 

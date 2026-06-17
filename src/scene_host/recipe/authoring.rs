@@ -8,6 +8,7 @@ mod geometry;
 mod lights;
 mod materials;
 mod nodes;
+mod particles;
 mod transform;
 
 pub(super) use animations::build_authored_animations;
@@ -23,3 +24,4 @@ pub(super) use geometry::build_authored_geometries;
 pub(super) use lights::build_authored_lights;
 pub(super) use materials::build_authored_materials;
 pub(super) use nodes::{AuthoredNodeResources, build_authored_nodes};
+pub(super) use particles::{ParticleSetResources, build_authored_particle_sets};

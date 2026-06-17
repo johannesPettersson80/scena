@@ -21,6 +21,7 @@ impl Scene {
                 | NodeKind::Mesh(_)
                 | NodeKind::Model(_)
                 | NodeKind::InstanceSet(_)
+                | NodeKind::ParticleSet(_)
                 | NodeKind::Label(_)
                 | NodeKind::Camera(_)
                 | NodeKind::Light(_) => None,
@@ -32,6 +33,7 @@ impl Scene {
             + self.mesh_nodes().count()
             + self.model_nodes().count()
             + self.instance_set_nodes().count()
+            + self.particle_set_nodes().count()
             + self.label_nodes().count()
     }
 }

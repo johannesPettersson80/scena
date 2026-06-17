@@ -283,6 +283,35 @@ pub struct SceneRecipeInstanceV1 {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct SceneRecipeParticleSetV1 {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform: Option<SceneRecipeTransformV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_mask: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render_group: Option<i16>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub particles: Vec<SceneRecipeParticleV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeParticleV1 {
+    pub id: String,
+    pub position: [f64; 3],
+    pub color: String,
+    pub size_px: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotation_degrees: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SceneRecipeFontV1 {
     pub id: String,
     pub uri: String,

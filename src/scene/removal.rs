@@ -105,6 +105,9 @@ impl Scene {
             NodeKind::InstanceSet(instance_set) => {
                 self.instance_sets.remove(instance_set);
             }
+            NodeKind::ParticleSet(particle_set) => {
+                self.particle_sets.remove(particle_set);
+            }
             NodeKind::Label(label) => {
                 self.labels.remove(label);
             }

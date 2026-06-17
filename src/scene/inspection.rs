@@ -427,6 +427,7 @@ const fn kind_name(kind: &NodeKind) -> &'static str {
         NodeKind::Mesh(_) => "Mesh",
         NodeKind::Model(_) => "Model",
         NodeKind::InstanceSet(_) => "InstanceSet",
+        NodeKind::ParticleSet(_) => "ParticleSet",
         NodeKind::Label(_) => "Label",
         NodeKind::Camera(_) => "Camera",
         NodeKind::Light(_) => "Light",

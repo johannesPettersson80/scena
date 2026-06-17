@@ -337,6 +337,7 @@ impl Scene {
             NodeKind::Empty
             | NodeKind::Renderable(_)
             | NodeKind::Model(_)
+            | NodeKind::ParticleSet(_)
             | NodeKind::Label(_)
             | NodeKind::Camera(_)
             | NodeKind::Light(_) => None,

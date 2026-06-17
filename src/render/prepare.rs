@@ -44,6 +44,7 @@ mod material_batch;
 pub(in crate::render) use self::material_batch::compute_material_batch_plan;
 mod lighting;
 mod materials;
+mod particles;
 mod pbr_contract;
 mod primitives;
 mod resources;
@@ -108,6 +109,7 @@ pub(super) fn collect_prepared_primitives<F>(
         origin_shift,
         &mut primitives,
     );
+    particles::append_particle_primitives(scene, camera_projection, origin_shift, &mut primitives);
     let mut transparent_primitives = Vec::new();
     let mut strokes = Vec::new();
     let mut instances = Vec::new();

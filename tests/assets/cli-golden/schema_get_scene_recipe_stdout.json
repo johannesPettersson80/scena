@@ -96,6 +96,7 @@
       "instance_tint": "#F6C85F",
       "label_bg": "#1D2733",
       "label_fg": "#FFFFFF",
+      "particle_red": "#E03030",
       "pbr_white": "#FFFFFF",
       "plate_blue": "#3A7BD5"
     },
@@ -407,6 +408,42 @@
             0.18,
             0.0,
             0.0
+          ]
+        }
+      }
+    ],
+    "particles": [
+      {
+        "id": "status_particles",
+        "particles": [
+          {
+            "color": "instance_tint",
+            "id": "ok-green",
+            "position": [
+              -0.08,
+              0.02,
+              0.0
+            ],
+            "size_px": 14.0
+          },
+          {
+            "color": "particle_red",
+            "id": "alarm-red",
+            "position": [
+              0.08,
+              0.02,
+              0.0
+            ],
+            "rotation_degrees": 15.0,
+            "size_px": 20.0
+          }
+        ],
+        "transform": {
+          "kind": "trs",
+          "translation": [
+            0.0,
+            0.0,
+            0.02
           ]
         }
       }

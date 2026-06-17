@@ -11,6 +11,7 @@ mod targets;
 pub(super) fn has_authored_renderable_nodes(object: &Map<String, Value>) -> bool {
     targets::has_authored_renderable_nodes(object)
         || targets::has_authored_instance_sets(object.get("instance_sets"))
+        || targets::has_authored_particle_sets(object.get("particles"))
         || targets::has_authored_labels(object.get("labels"))
 }
 
@@ -76,8 +77,18 @@ pub(super) fn validate_authoring_sections(
         diagnostics,
     );
     let instance_set_ids = ids::id_set_from_array(object.get("instance_sets"));
-    let mut label_target_ids = node_ids.clone();
-    label_target_ids.extend(instance_set_ids.iter().cloned());
+    let mut particle_parent_ids = node_ids.clone();
+    particle_parent_ids.extend(instance_set_ids.iter().cloned());
+    targets::validate_particle_sets(
+        object.get("particles"),
+        &color_ids,
+        &particle_parent_ids,
+        &import_ids,
+        diagnostics,
+    );
+    let particle_set_ids = ids::id_set_from_array(object.get("particles"));
+    let mut label_target_ids = particle_parent_ids;
+    label_target_ids.extend(particle_set_ids.iter().cloned());
     targets::validate_labels(
         object.get("labels"),
         &color_ids,

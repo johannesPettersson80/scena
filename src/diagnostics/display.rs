@@ -463,9 +463,8 @@ impl fmt::Display for LookupError {
             Self::ClippingPlaneNotFound(_) => {
                 write!(formatter, "clipping plane key does not exist in the scene")
             }
-            Self::InstanceSetNotFound(_) => {
-                write!(formatter, "instance set key does not exist in the scene")
-            }
+            Self::InstanceSetNotFound(_) => write!(formatter, "instance set key does not exist"),
+            Self::ParticleSetNotFound(_) => write!(formatter, "particle set key does not exist"),
             Self::InstanceNotFound {
                 instance_set,
                 instance,

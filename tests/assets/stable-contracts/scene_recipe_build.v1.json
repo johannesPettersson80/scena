@@ -43,8 +43,14 @@
       "parent": 4294967297
     },
     {
-      "id": "status_label",
+      "id": "status_particles",
       "handle": 4294967304,
+      "kind": "particle_set",
+      "parent": 4294967297
+    },
+    {
+      "id": "status_label",
+      "handle": 4294967305,
       "kind": "label",
       "parent": 4294967297,
       "name": "OK"
@@ -53,7 +59,7 @@
   "cameras": [
     {
       "id": "main",
-      "handle": 4294967305,
+      "handle": 4294967306,
       "kind": "camera",
       "parent": 4294967297,
       "active": true

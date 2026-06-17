@@ -16,9 +16,9 @@ pub use authoring::{
     SceneRecipeExpectedExtentV1, SceneRecipeFontV1, SceneRecipeGeometryV1, SceneRecipeImportV1,
     SceneRecipeInstanceSetV1, SceneRecipeInstanceV1, SceneRecipeLabelV1, SceneRecipeLightV1,
     SceneRecipeLookAtTargetV1, SceneRecipeMaterialV1, SceneRecipeMeshV1, SceneRecipeMorphTargetV1,
-    SceneRecipeMorphV1, SceneRecipeNodeSkinBindingV1, SceneRecipeNodeV1, SceneRecipePrimitiveV1,
-    SceneRecipeSkinV1, SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1,
-    SceneRecipeTransformV1,
+    SceneRecipeMorphV1, SceneRecipeNodeSkinBindingV1, SceneRecipeNodeV1, SceneRecipeParticleSetV1,
+    SceneRecipeParticleV1, SceneRecipePrimitiveV1, SceneRecipeSkinV1,
+    SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1, SceneRecipeTransformV1,
 };
 pub use build_manifest::{
     SceneRecipeBuildAnimationV1, SceneRecipeBuildImportV1, SceneRecipeBuildResourceV1,
@@ -68,6 +68,8 @@ pub struct SceneRecipeV1 {
     pub nodes: Vec<SceneRecipeNodeV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub instance_sets: Vec<SceneRecipeInstanceSetV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub particles: Vec<SceneRecipeParticleSetV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fonts: Vec<SceneRecipeFontV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
