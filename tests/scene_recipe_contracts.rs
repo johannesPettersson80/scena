@@ -54,7 +54,6 @@ fn scene_recipe_validation_reports_unknown_fields_duplicate_ids_and_suggestions(
 fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
     for section in [
         "primitives",
-        "animations",
         "fonts",
         "skins",
         "morphs",
@@ -80,6 +79,77 @@ fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
         let report = scena::validate_scene_recipe_value(recipe);
         assert_reason(&report, "unsupported_feature", None);
     }
+}
+
+#[test]
+fn scene_recipe_validation_accepts_authored_animation_and_rejects_bad_channels() {
+    let valid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "blue": "#3A7BD5" },
+        "geometries": [
+            { "id": "cube_geo", "primitive": { "kind": "box", "size": [0.08, 0.08, 0.08] } }
+        ],
+        "materials": [
+            { "id": "cube_mat", "kind": "unlit", "base_color": "blue" }
+        ],
+        "nodes": [
+            { "id": "cube", "geometry": "cube_geo", "material": "cube_mat" }
+        ],
+        "animations": [{
+            "id": "move_cube",
+            "duration": 1.0,
+            "channels": [{
+                "target": { "kind": "node", "id": "cube" },
+                "path": "translation",
+                "times": [0.0, 1.0],
+                "values": [[0.0, 0.0, 0.0], [0.15, 0.0, 0.0]]
+            }]
+        }]
+    }));
+    assert!(
+        valid.ok,
+        "authored animation recipe should validate: {valid:#?}"
+    );
+
+    let invalid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "blue": "#3A7BD5" },
+        "geometries": [
+            { "id": "cube_geo", "primitive": { "kind": "box", "size": [0.08, 0.08, 0.08] } }
+        ],
+        "materials": [
+            { "id": "cube_mat", "kind": "unlit", "base_color": "blue" }
+        ],
+        "nodes": [
+            { "id": "cube", "geometry": "cube_geo", "material": "cube_mat" }
+        ],
+        "animations": [{
+            "id": "bad_clip",
+            "duration": 1.0,
+            "channels": [{
+                "target": { "kind": "node", "id": "missing" },
+                "path": "translation",
+                "times": [0.0, 0.5, 0.5],
+                "values": [[0.0, 0.0, 0.0]]
+            }, {
+                "target": { "kind": "node", "id": "cube" },
+                "path": "scale",
+                "times": [0.0, 3.5e38],
+                "values": [[1.0, 1.0, 1.0], [1.2, 1.2, 1.2]]
+            }, {
+                "target": { "kind": "node", "id": "cube" },
+                "path": "weights",
+                "times": [0.0, 1.0],
+                "values": [[0.0], [1.0]]
+            }]
+        }]
+    }));
+    assert!(!invalid.ok);
+    assert_reason(&invalid, "unknown_animation_target", None);
+    assert_reason(&invalid, "invalid_animation_time", None);
+    assert_reason(&invalid, "invalid_animation_times", None);
+    assert_reason(&invalid, "invalid_animation_values", None);
+    assert_reason(&invalid, "unsupported_feature", None);
 }
 
 #[test]

@@ -109,6 +109,14 @@ impl AnimationClipKey {
 }
 
 impl AnimationClip {
+    pub fn authored(
+        name: Option<String>,
+        channels: Vec<AnimationChannel>,
+        duration_seconds: f32,
+    ) -> Self {
+        Self::new(AnimationClipKey::fresh(), name, channels, duration_seconds)
+    }
+
     pub fn new(
         key: AnimationClipKey,
         name: Option<String>,

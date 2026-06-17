@@ -1077,6 +1077,12 @@ The current v1 recipe slice supports:
 - `clipping_planes[]` arbitrary active clipping planes with stable caller `id`,
   finite non-zero normal, finite distance, and optional `active` flag. Recipes
   fail closed when active planes exceed the renderer's `max_clipping_planes`.
+- `animations[]` authored keyframe clips with stable caller `id`, finite
+  positive `duration`, and channels targeting authored or imported node ids.
+  Channel paths are `translation`, `rotation`, `scale`, or `weights`; `weights`
+  channels are valid only for imported morph targets until authored morphs land.
+  Times must be finite, non-negative, and strictly increasing; values must match
+  the channel arity and interpolation shape.
 - `cameras[]` authored perspective cameras with stable caller `id`; at most one
   camera may be `active`, and camera `look_at` transforms may target authored
   nodes, instance sets, labels, or explicit world positions
@@ -1099,8 +1105,8 @@ The current v1 recipe slice supports:
 - opaque caller `metadata`
 
 Unknown fields fail closed. Known future feature sections such as `primitives`,
-`animations`, `fonts`, `skins`, `morphs`, `particles`, `anchors`,
-`connectors`, `bounds`, and `named_states` emit
+`fonts`, `skins`, `morphs`, `particles`, `anchors`, `connectors`, `bounds`, and
+`named_states` emit
 `unsupported_feature` until the feature slice that owns them implements the
 section. Workflow fields such as
 `steps`, `sequence`, `loop`, `branch`, `timeline`, and `script` emit
@@ -1119,7 +1125,8 @@ the caller `id`, resolved `uri`, stable `import_handle`, `root_handles`,
 `primary_root`, and `nodes_by_path`. Path keys use the shared namespace
 `<import_id>:/<path>`; `<import_id>:/` names the primary import root and named
 glTF children are included when their authored path is unambiguous. `nodes`,
-`cameras`, and `lights` are targetable manifest entries with stable handles.
+`cameras`, `lights`, and `animations` are targetable manifest entries with
+stable handles.
 Authored mesh nodes, instance-set nodes, label nodes, and cameras include their
 recipe ids and stable handles in the same targetable lists as imported node
 handles. `geometries` and

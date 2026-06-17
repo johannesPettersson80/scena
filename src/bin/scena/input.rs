@@ -65,6 +65,7 @@ pub(crate) fn scene_recipe_has_scene_host_directives(recipe: &scena::SceneRecipe
         || !recipe.instance_sets.is_empty()
         || !recipe.labels.is_empty()
         || !recipe.clipping_planes.is_empty()
+        || !recipe.animations.is_empty()
         || !recipe.cameras.is_empty()
         || !recipe.lights.is_empty()
         || recipe.scene.is_some()
@@ -82,6 +83,17 @@ pub(crate) async fn scene_host_from_resolved_recipe(
     width: u32,
     height: u32,
 ) -> Result<scena::SceneHostCore, String> {
+    Ok(scene_host_build_from_resolved_recipe(input, width, height)
+        .await?
+        .host)
+}
+
+#[cfg(all(feature = "inspection", feature = "scene-host"))]
+pub(crate) async fn scene_host_build_from_resolved_recipe(
+    input: &ResolvedSceneInput,
+    width: u32,
+    height: u32,
+) -> Result<scena::SceneHostRecipeBuild, String> {
     let recipe = input
         .recipe
         .as_ref()
@@ -89,7 +101,7 @@ pub(crate) async fn scene_host_from_resolved_recipe(
     let recipe_path = input.recipe_path.as_deref().unwrap_or(&input.asset);
     let recipe_text = serde_json::to_string(recipe)
         .map_err(|error| format!("failed to serialize scene recipe for build: {error}"))?;
-    let build = scena::SceneHostCore::build_recipe_json(
+    let mut build = scena::SceneHostCore::build_recipe_json(
         recipe_path,
         &recipe_text,
         scena::RecipeBuildPolicy::testing(),
@@ -99,14 +111,17 @@ pub(crate) async fn scene_host_from_resolved_recipe(
         serde_json::to_string_pretty(&manifest)
             .unwrap_or_else(|error| format!("failed to serialize build failure manifest: {error}"))
     })?;
-    let mut host = build.host;
-    host.resize(width as f32, height as f32, 1.0)
+    build
+        .host
+        .resize(width as f32, height as f32, 1.0)
         .map_err(|error| format!("failed to size recipe SceneHost renderer: {error}"))?;
     if !recipe.cameras.iter().any(|camera| camera.active) {
-        host.frame_all_with_overlays()
+        build
+            .host
+            .frame_all_with_overlays()
             .map_err(|error| format!("failed to frame recipe scene including overlays: {error}"))?;
     }
-    Ok(host)
+    Ok(build)
 }
 
 #[cfg(feature = "inspection")]

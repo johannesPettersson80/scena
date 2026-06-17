@@ -20,6 +20,7 @@ pub(super) fn validate_global_ids(
         "instance_sets",
         "labels",
         "clipping_planes",
+        "animations",
         "cameras",
         "lights",
     ] {

@@ -15,7 +15,7 @@ mod policy;
 mod setup;
 
 use authoring::{
-    AuthoredNodeResources, InstanceSetResources, build_authored_cameras,
+    AuthoredNodeResources, InstanceSetResources, build_authored_animations, build_authored_cameras,
     build_authored_clipping_planes, build_authored_geometries, build_authored_instance_sets,
     build_authored_labels, build_authored_lights, build_authored_materials, build_authored_nodes,
 };
@@ -96,6 +96,8 @@ impl SceneHostCore<DefaultAssetFetcher> {
         let mut nodes = Vec::new();
         let mut cameras = Vec::new();
         let mut lights = Vec::new();
+        let mut animations = Vec::new();
+        let mut imported_node_keys = BTreeMap::new();
 
         for (index, import) in recipe.imports.iter().enumerate() {
             let import_path = format!("$.imports[{index}]");
@@ -212,7 +214,11 @@ impl SceneHostCore<DefaultAssetFetcher> {
             };
             let nodes_by_path = addressable_paths
                 .into_iter()
-                .map(|(path, node)| (format!("{}:{path}", import.id), host.register_node(node)))
+                .map(|(path, node)| {
+                    let id = format!("{}:{path}", import.id);
+                    imported_node_keys.insert(id.clone(), node);
+                    (id, host.register_node(node))
+                })
                 .collect::<BTreeMap<_, _>>();
 
             imports.push(SceneRecipeBuildImportV1 {
@@ -276,6 +282,7 @@ impl SceneHostCore<DefaultAssetFetcher> {
             &mut diagnostics,
         );
         let mut target_node_keys = node_keys.clone();
+        target_node_keys.extend(imported_node_keys);
         target_node_keys.extend(instance_set_keys);
         let label_keys = build_authored_labels(
             &mut host,
@@ -288,6 +295,13 @@ impl SceneHostCore<DefaultAssetFetcher> {
         );
         target_node_keys.extend(label_keys);
         build_authored_clipping_planes(&mut host, &recipe.clipping_planes, &mut diagnostics);
+        build_authored_animations(
+            &mut host,
+            &recipe.animations,
+            &target_node_keys,
+            &mut animations,
+            &mut diagnostics,
+        );
         build_authored_cameras(
             &mut host,
             &recipe.cameras,
@@ -320,6 +334,7 @@ impl SceneHostCore<DefaultAssetFetcher> {
         manifest.nodes = nodes;
         manifest.cameras = cameras;
         manifest.lights = lights;
+        manifest.animations = animations;
         if manifest.ok && !has_errors(&manifest.diagnostics[authored_start..]) {
             Ok(SceneHostRecipeBuild { host, manifest })
         } else {
@@ -357,6 +372,7 @@ fn build_manifest(
         nodes: Vec::<SceneRecipeBuildTargetV1>::new(),
         cameras: Vec::new(),
         lights: Vec::new(),
+        animations: Vec::new(),
         geometries: Vec::<SceneRecipeBuildResourceV1>::new(),
         materials: Vec::new(),
         diagnostics,

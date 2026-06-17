@@ -340,18 +340,18 @@ deferred. (Former Tier B findings #14→Slice 8, #15→9, #16→10, #17→11; #1
 into Slice 12 skin/morph authoring + Slice 13 particle rendering.)
 
 ### Slice 8 — Keyframe animation authoring (#14)
-- [ ] **Add the missing public authoring seam.** `AnimationClip`/`AnimationChannel`
+- [x] **Add the missing public authoring seam.** `AnimationClip`/`AnimationChannel`
       are public (`src/animation.rs`) but `AnimationClipKey::fresh()` is
       `pub(crate)` (`src/animation.rs:101`) and `Scene::create_animation_mixer`
       only consumes imported clips (`src/scene/mixers.rs:26`). Add a public
       authored-clip API (e.g. `Scene::add_animation_clip` /
       `create_authored_animation_mixer`) so a caller can mint a clip and play it.
-- [ ] Recipe `animations`: `[{ id, duration, channels: [{ target, path:
+- [x] Recipe `animations`: `[{ id, duration, channels: [{ target, path:
       translation|rotation|scale|weights, interpolation, times[], values[] }] }]`,
       bound to authored/imported node ids. **`weights` channels here target
       imported morph assets only** — authored morph-weight animation lands with
       Slice 12 (authored morph), not before.
-- [ ] Proof: author a clip, seek, and confirm the node moved via
+- [x] Proof: author a clip, seek, and confirm the node moved via
       `verify animation --expect-translations`; fail-closed on non-finite times,
       mismatched times/values lengths, or unknown target.
 

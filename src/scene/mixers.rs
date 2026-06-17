@@ -1,3 +1,5 @@
+use std::sync::{Arc, atomic::AtomicBool};
+
 use crate::animation::{
     AnimationChannel, AnimationLoopMode, AnimationMixer, AnimationMixerKey, AnimationPlaybackState,
     AnimationTarget,
@@ -67,6 +69,30 @@ impl Scene {
         clip_name: &str,
     ) -> Result<AnimationMixerKey, AnimationError> {
         let mixer = self.create_animation_mixer(import, clip_name)?;
+        self.play_animation(mixer)?;
+        Ok(mixer)
+    }
+
+    /// Creates a paused mixer for a caller-authored animation clip.
+    ///
+    /// Authored clips are not tied to a glTF import lifecycle, so the mixer is
+    /// not invalidated by import replacement. The host still owns ticking by
+    /// calling [`Self::update_animation`] or explicit sampling with
+    /// [`Self::seek_animation`].
+    pub fn create_authored_animation_mixer(
+        &mut self,
+        clip: crate::animation::AnimationClip,
+    ) -> AnimationMixerKey {
+        self.animation_mixers
+            .insert(AnimationMixer::new(clip, Arc::new(AtomicBool::new(true))))
+    }
+
+    /// Creates and starts a mixer for a caller-authored animation clip.
+    pub fn play_authored_animation(
+        &mut self,
+        clip: crate::animation::AnimationClip,
+    ) -> Result<AnimationMixerKey, AnimationError> {
+        let mixer = self.create_authored_animation_mixer(clip);
         self.play_animation(mixer)?;
         Ok(mixer)
     }
@@ -241,8 +267,6 @@ impl Scene {
         &mut self,
         clip: crate::animation::AnimationClip,
     ) -> AnimationMixerKey {
-        use std::sync::{Arc, atomic::AtomicBool};
-
         self.animation_mixers
             .insert(AnimationMixer::new(clip, Arc::new(AtomicBool::new(true))))
     }

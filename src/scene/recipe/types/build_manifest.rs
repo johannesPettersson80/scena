@@ -9,7 +9,7 @@ pub struct SceneRecipeValidationReportV1 {
     pub diagnostics: Vec<SceneRecipeDiagnosticV1>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SceneRecipeBuildV1 {
     pub schema: String,
     pub ok: bool,
@@ -17,6 +17,8 @@ pub struct SceneRecipeBuildV1 {
     pub nodes: Vec<SceneRecipeBuildTargetV1>,
     pub cameras: Vec<SceneRecipeBuildTargetV1>,
     pub lights: Vec<SceneRecipeBuildTargetV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub animations: Vec<SceneRecipeBuildAnimationV1>,
     pub geometries: Vec<SceneRecipeBuildResourceV1>,
     pub materials: Vec<SceneRecipeBuildResourceV1>,
     pub diagnostics: Vec<SceneRecipeDiagnosticV1>,
@@ -45,6 +47,14 @@ pub struct SceneRecipeBuildTargetV1 {
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SceneRecipeBuildAnimationV1 {
+    pub id: String,
+    pub handle: u64,
+    pub duration_seconds: f32,
+    pub channel_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

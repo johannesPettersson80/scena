@@ -460,6 +460,87 @@ fn scena_recipe_render_verify_passes_color_pick_and_fit_expectations() {
 
 #[cfg(feature = "scene-host")]
 #[test]
+fn scena_verify_animation_accepts_authored_recipe_clip() {
+    let dir = artifact_dir("authored-animation");
+    let recipe_path = dir.join("authored-animation.recipe.json");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "cube_blue": "#3A7BD5"
+            },
+            "geometries": [
+                { "id": "cube_geo", "primitive": { "kind": "box", "size": [0.08, 0.08, 0.08] } }
+            ],
+            "materials": [
+                { "id": "cube_mat", "kind": "unlit", "base_color": "cube_blue" }
+            ],
+            "nodes": [
+                { "id": "cube", "geometry": "cube_geo", "material": "cube_mat" }
+            ],
+            "animations": [{
+                "id": "move_cube",
+                "duration": 1.0,
+                "channels": [{
+                    "target": { "kind": "node", "id": "cube" },
+                    "path": "translation",
+                    "interpolation": "linear",
+                    "times": [0.0, 1.0],
+                    "values": [[0.0, 0.0, 0.0], [0.15, 0.0, 0.0]]
+                }]
+            }],
+            "cameras": [
+                { "id": "main", "kind": "perspective", "fov_degrees": 32.0, "active": true, "transform": { "kind": "look_at", "eye": [0.25, 0.18, 0.25], "target": [0.05, 0.0, 0.0] } }
+            ],
+            "capture": { "width": 320, "height": 220 }
+        }))
+        .expect("authored animation recipe serializes"),
+    )
+    .expect("authored animation recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "verify",
+            "animation",
+            path_str(&recipe_path),
+            "--clip",
+            "move_cube",
+            "--times",
+            "0,1",
+            "--expect-change",
+            "--expect-translations",
+            "0,0,0;0.15,0,0",
+            "--width",
+            "320",
+            "--height",
+            "220",
+        ])
+        .output()
+        .expect("scena verify animation authored recipe command runs");
+
+    assert!(
+        output.status.success(),
+        "authored recipe animation should verify, stderr={}, stdout={}",
+        stderr(&output),
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "authored animation verification keeps JSON on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("animation verification emits JSON");
+    assert_eq!(report["schema"], "scena.animation_introspection.v1");
+    assert_eq!(report["ok"], true, "{report:#}");
+    assert_eq!(report["clip"]["name"], "move_cube");
+    assert_eq!(report["summary"]["changed_channel_count"], 1);
+    assert_eq!(report["summary"]["invalid_channel_count"], 0);
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
 fn scena_recipe_render_verify_fails_color_pick_and_fit_expectations() {
     let dir = artifact_dir("recipe-render-verify-fail");
     let recipe_path = dir.join("verified-negative.recipe.json");

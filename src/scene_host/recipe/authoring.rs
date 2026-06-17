@@ -1,3 +1,4 @@
+mod animations;
 mod cameras;
 mod common;
 mod extras;
@@ -7,6 +8,7 @@ mod materials;
 mod nodes;
 mod transform;
 
+pub(super) use animations::build_authored_animations;
 pub(super) use cameras::build_authored_cameras;
 pub(super) use common::{DiagnosticPathExt, authored_color};
 pub(super) use extras::{

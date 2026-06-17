@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::scene::Transform;
 
+use super::overlays::SceneRecipeTargetV1;
 use super::{
     default_transform_scale, default_transform_up, default_true, is_default_scale, is_default_up,
     is_false, is_true, is_zero_f64, is_zero_vec3,
@@ -202,6 +203,30 @@ pub struct SceneRecipeClippingPlaneV1 {
     pub distance: f64,
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub active: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeAnimationV1 {
+    pub id: String,
+    pub duration: f64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub channels: Vec<SceneRecipeAnimationChannelV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeAnimationChannelV1 {
+    pub target: SceneRecipeTargetV1,
+    pub path: String,
+    #[serde(default = "default_animation_interpolation")]
+    pub interpolation: String,
+    pub times: Vec<f64>,
+    pub values: Vec<Vec<f64>>,
+}
+
+fn default_animation_interpolation() -> String {
+    "linear".to_owned()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -7,6 +7,38 @@
     "fixture_path": "tests/assets/stable-contracts/scene_recipe.v1.json"
   },
   "example": {
+    "animations": [
+      {
+        "channels": [
+          {
+            "interpolation": "linear",
+            "path": "translation",
+            "target": {
+              "id": "plate",
+              "kind": "node"
+            },
+            "times": [
+              0.0,
+              1.0
+            ],
+            "values": [
+              [
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.04,
+                0.0,
+                0.0
+              ]
+            ]
+          }
+        ],
+        "duration": 1.0,
+        "id": "plate_slide"
+      }
+    ],
     "callouts": [
       {
         "id": "part-callout",

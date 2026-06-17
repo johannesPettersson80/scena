@@ -507,6 +507,7 @@ fn agent_render_loop(root: &Path) -> Result<ApplicationFinding, Box<dyn Error>> 
         instance_sets: Vec::new(),
         labels: Vec::new(),
         clipping_planes: Vec::new(),
+        animations: Vec::new(),
         cameras: Vec::new(),
         lights: Vec::new(),
         scene: None,

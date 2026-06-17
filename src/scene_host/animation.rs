@@ -127,6 +127,18 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             .map_err(map_animation_error)
     }
 
+    pub fn animation_clip_for_handle(
+        &self,
+        handle: u64,
+    ) -> Result<&crate::animation::AnimationClip, SceneHostError> {
+        let mixer = self.resolve_animation_handle(handle)?;
+        Ok(self
+            .scene
+            .animation_mixer(mixer)
+            .map_err(map_animation_error)?
+            .clip())
+    }
+
     pub(super) fn advance_animation(
         &mut self,
         handle: u64,

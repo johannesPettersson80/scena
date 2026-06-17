@@ -3,6 +3,7 @@ use serde_json::{Map, Value};
 use super::super::types::SceneRecipeDiagnosticV1;
 use super::diagnostic;
 
+mod animations;
 mod ids;
 mod resources;
 mod targets;
@@ -56,6 +57,14 @@ pub(super) fn validate_authoring_sections(
     let mut camera_target_ids = label_target_ids;
     camera_target_ids.extend(label_ids);
     targets::validate_clipping_planes(object.get("clipping_planes"), diagnostics);
+    let animation_target_ids = camera_target_ids.clone();
+    animations::validate_animations(
+        object.get("animations"),
+        &animation_target_ids,
+        &animation_target_ids,
+        &import_ids,
+        diagnostics,
+    );
     targets::validate_cameras(object.get("cameras"), &camera_target_ids, diagnostics);
     targets::validate_lights(object.get("lights"), &color_ids, diagnostics);
 }

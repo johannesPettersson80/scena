@@ -48,6 +48,14 @@
     }
   ],
   "lights": [],
+  "animations": [
+    {
+      "id": "plate_slide",
+      "handle": 25769803777,
+      "duration_seconds": 1.0,
+      "channel_count": 1
+    }
+  ],
   "geometries": [
     {
       "id": "plate_geo",

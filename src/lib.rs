@@ -152,7 +152,8 @@ pub use render::{
 };
 pub use scene::recipe::{
     RecipeBuildPolicy, SCENE_RECIPE_BUILD_SCHEMA_V1, SCENE_RECIPE_SCHEMA_V1,
-    SCENE_RECIPE_VALIDATION_SCHEMA_V1, SceneRecipeAlphaModeV1, SceneRecipeBboxFitExpectationV1,
+    SCENE_RECIPE_VALIDATION_SCHEMA_V1, SceneRecipeAlphaModeV1, SceneRecipeAnimationChannelV1,
+    SceneRecipeAnimationV1, SceneRecipeBboxFitExpectationV1, SceneRecipeBuildAnimationV1,
     SceneRecipeBuildImportV1, SceneRecipeBuildResourceV1, SceneRecipeBuildSkippedV1,
     SceneRecipeBuildTargetV1, SceneRecipeBuildV1, SceneRecipeCalloutTargetV1, SceneRecipeCalloutV1,
     SceneRecipeCameraV1, SceneRecipeCaptureV1, SceneRecipeClippingPlaneV1,

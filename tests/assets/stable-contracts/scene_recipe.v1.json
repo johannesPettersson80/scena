@@ -109,6 +109,38 @@
       "distance": 0.5
     }
   ],
+  "animations": [
+    {
+      "id": "plate_slide",
+      "duration": 1.0,
+      "channels": [
+        {
+          "target": {
+            "kind": "node",
+            "id": "plate"
+          },
+          "path": "translation",
+          "interpolation": "linear",
+          "times": [
+            0.0,
+            1.0
+          ],
+          "values": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.04,
+              0.0,
+              0.0
+            ]
+          ]
+        }
+      ]
+    }
+  ],
   "cameras": [
     {
       "id": "main",

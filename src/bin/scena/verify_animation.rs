@@ -6,6 +6,9 @@ use expectations::{apply_expected_node_status, expected_node_status};
 
 #[path = "verify_animation/expectations.rs"]
 mod expectations;
+#[cfg(feature = "scene-host")]
+#[path = "verify_animation/recipe.rs"]
+mod recipe;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct VerifyAnimationCommandArgs {
@@ -37,6 +40,20 @@ pub(crate) fn run_verify_animation_command(args: &[String]) -> Result<CliOutcome
     };
     let width = args.width.or(input.width).unwrap_or(800);
     let height = args.height.or(input.height).unwrap_or(600);
+    if input.has_scene_host_directives() {
+        #[cfg(feature = "scene-host")]
+        {
+            return pollster::block_on(recipe::run_verify_recipe_animation(
+                args, input, width, height,
+            ));
+        }
+        #[cfg(not(feature = "scene-host"))]
+        {
+            return Err(
+                "verify animation for authored recipes requires the scene-host feature".to_owned(),
+            );
+        }
+    }
     let mut viewer = pollster::block_on(
         viewer_builder(input.asset.as_str(), width, height, input.transform)
             .with_default_light()

@@ -11,7 +11,8 @@ mod overlays;
 mod render_result;
 mod setup;
 pub use authoring::{
-    SceneRecipeAlphaModeV1, SceneRecipeCameraV1, SceneRecipeClippingPlaneV1, SceneRecipeColorV1,
+    SceneRecipeAlphaModeV1, SceneRecipeAnimationChannelV1, SceneRecipeAnimationV1,
+    SceneRecipeCameraV1, SceneRecipeClippingPlaneV1, SceneRecipeColorV1,
     SceneRecipeExpectedExtentV1, SceneRecipeGeometryV1, SceneRecipeImportV1,
     SceneRecipeInstanceSetV1, SceneRecipeInstanceV1, SceneRecipeLabelV1, SceneRecipeLightV1,
     SceneRecipeLookAtTargetV1, SceneRecipeMaterialV1, SceneRecipeMeshV1, SceneRecipeNodeV1,
@@ -19,9 +20,9 @@ pub use authoring::{
     SceneRecipeTransformV1,
 };
 pub use build_manifest::{
-    SceneRecipeBuildImportV1, SceneRecipeBuildResourceV1, SceneRecipeBuildSkippedV1,
-    SceneRecipeBuildTargetV1, SceneRecipeBuildV1, SceneRecipeDiagnosticV1,
-    SceneRecipeValidationReportV1,
+    SceneRecipeBuildAnimationV1, SceneRecipeBuildImportV1, SceneRecipeBuildResourceV1,
+    SceneRecipeBuildSkippedV1, SceneRecipeBuildTargetV1, SceneRecipeBuildV1,
+    SceneRecipeDiagnosticV1, SceneRecipeValidationReportV1,
 };
 pub use expectations::{
     SceneRecipeBboxFitExpectationV1, SceneRecipeColorExpectationV1, SceneRecipeExpectV1,
@@ -66,6 +67,8 @@ pub struct SceneRecipeV1 {
     pub labels: Vec<SceneRecipeLabelV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub clipping_planes: Vec<SceneRecipeClippingPlaneV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub animations: Vec<SceneRecipeAnimationV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cameras: Vec<SceneRecipeCameraV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
