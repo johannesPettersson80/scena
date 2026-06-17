@@ -45,6 +45,8 @@ pub(super) const ROOT_FIELDS: &[&str] = &[
     "imports",
     "colors",
     "geometries",
+    "morphs",
+    "skins",
     "materials",
     "nodes",
     "instance_sets",
@@ -81,8 +83,6 @@ pub(super) const UNSUPPORTED_WORKFLOW_FIELDS: &[&str] = &[
 ];
 pub(super) const UNSUPPORTED_SECTION_FIELDS: &[&str] = &[
     "primitives",
-    "skins",
-    "morphs",
     "particles",
     "viewer_profile",
     "environment",

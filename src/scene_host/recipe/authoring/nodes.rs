@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use super::common::{DiagnosticPathExt, authored_color};
 use super::transform::{TransformResolutionInput, transform_from_recipe};
 use crate::assets::DefaultAssetFetcher;
+use crate::geometry::SkinningMatrix;
+use crate::scene::SceneSkinBinding;
 use crate::scene::recipe::{
     RecipeBuildPolicy, SceneRecipeBuildTargetV1, SceneRecipeColorV1, SceneRecipeDiagnosticV1,
     SceneRecipeNodeV1,
@@ -144,6 +146,20 @@ pub(in crate::scene_host::recipe) fn build_authored_nodes(
             active: None,
         });
     }
+    for (index, recipe) in recipes.iter().enumerate() {
+        let path = format!("$.nodes[{index}]");
+        if let Some(node) = node_keys.get(&recipe.id).copied() {
+            apply_node_deformations(
+                host,
+                recipe,
+                node,
+                resources.geometries,
+                &node_keys,
+                &path,
+                diagnostics,
+            );
+        }
+    }
     node_keys
 }
 
@@ -216,4 +232,178 @@ fn apply_node_attributes(
             Err(diagnostic) => diagnostics.push((*diagnostic).with_path(format!("{path}.tint"))),
         }
     }
+}
+
+fn apply_node_deformations(
+    host: &mut SceneHostCore<DefaultAssetFetcher>,
+    recipe: &SceneRecipeNodeV1,
+    node: NodeKey,
+    geometries: &BTreeMap<String, GeometryHandle>,
+    node_keys: &BTreeMap<String, NodeKey>,
+    path: &str,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    if !recipe.morph_weights.is_empty() {
+        match validate_morph_weight_count(host, recipe, geometries) {
+            Ok(()) => {
+                let weights = recipe
+                    .morph_weights
+                    .iter()
+                    .map(|weight| *weight as f32)
+                    .collect::<Vec<_>>();
+                if let Err(error) = host.scene.set_morph_weights(node, weights) {
+                    diagnostics.push(error_diagnostic(
+                        path,
+                        "morph_weights_failed",
+                        error.to_string(),
+                        "check the node and morph target references",
+                    ));
+                }
+            }
+            Err(diagnostic) => {
+                diagnostics.push((*diagnostic).with_path(format!("{path}.morph_weights")))
+            }
+        }
+    }
+    if let Some(binding) = &recipe.skin_binding {
+        match scene_skin_binding(host, recipe, binding, geometries, node_keys) {
+            Ok(binding) => {
+                if let Err(error) = host.scene.set_skin_binding(node, binding) {
+                    diagnostics.push(error_diagnostic(
+                        path,
+                        "skin_binding_failed",
+                        error.to_string(),
+                        "check the node and skin binding references",
+                    ));
+                }
+            }
+            Err(diagnostic) => {
+                diagnostics.push((*diagnostic).with_path(format!("{path}.skin_binding")))
+            }
+        }
+    }
+}
+
+fn validate_morph_weight_count(
+    host: &SceneHostCore<DefaultAssetFetcher>,
+    recipe: &SceneRecipeNodeV1,
+    geometries: &BTreeMap<String, GeometryHandle>,
+) -> Result<(), Box<SceneRecipeDiagnosticV1>> {
+    let Some(handle) = geometries.get(&recipe.geometry).copied() else {
+        return Err(Box::new(error_diagnostic(
+            "$",
+            "unknown_geometry_ref",
+            format!(
+                "node '{}' references missing geometry '{}'",
+                recipe.id, recipe.geometry
+            ),
+            "declare the geometry before the node",
+        )));
+    };
+    let Some(geometry) = host.assets.geometry(handle) else {
+        return Err(Box::new(error_diagnostic(
+            "$",
+            "geometry_missing",
+            format!(
+                "node '{}' geometry '{}' could not be resolved",
+                recipe.id, recipe.geometry
+            ),
+            "declare a valid geometry before the node",
+        )));
+    };
+    let target_count = geometry.morph_targets().len();
+    if target_count == 0 || recipe.morph_weights.len() != target_count {
+        return Err(Box::new(error_diagnostic(
+            "$",
+            "invalid_morph",
+            format!(
+                "node '{}' has {} morph weights but geometry '{}' has {target_count} morph targets",
+                recipe.id,
+                recipe.morph_weights.len(),
+                recipe.geometry
+            ),
+            "emit exactly one morph weight per target",
+        )));
+    }
+    Ok(())
+}
+
+fn scene_skin_binding(
+    host: &SceneHostCore<DefaultAssetFetcher>,
+    recipe: &SceneRecipeNodeV1,
+    binding: &crate::SceneRecipeNodeSkinBindingV1,
+    geometries: &BTreeMap<String, GeometryHandle>,
+    node_keys: &BTreeMap<String, NodeKey>,
+) -> Result<SceneSkinBinding, Box<SceneRecipeDiagnosticV1>> {
+    let Some(handle) = geometries.get(&recipe.geometry).copied() else {
+        return Err(Box::new(error_diagnostic(
+            "$",
+            "unknown_geometry_ref",
+            format!(
+                "node '{}' references missing geometry '{}'",
+                recipe.id, recipe.geometry
+            ),
+            "declare the geometry before the node",
+        )));
+    };
+    let Some(geometry) = host.assets.geometry(handle) else {
+        return Err(Box::new(error_diagnostic(
+            "$",
+            "geometry_missing",
+            format!(
+                "node '{}' geometry '{}' could not be resolved",
+                recipe.id, recipe.geometry
+            ),
+            "declare a valid geometry before the node",
+        )));
+    };
+    let Some(skin) = geometry.skin() else {
+        return Err(Box::new(error_diagnostic(
+            "$",
+            "invalid_skin",
+            format!(
+                "node '{}' declares skin_binding for non-skinned geometry '{}'",
+                recipe.id, recipe.geometry
+            ),
+            "remove skin_binding or use a skin-derived geometry",
+        )));
+    };
+    let binding_nodes = binding
+        .binding_nodes()
+        .iter()
+        .map(|node_id| {
+            node_keys.get(node_id).copied().ok_or_else(|| {
+                Box::new(error_diagnostic(
+                    "$",
+                    "unknown_node_ref",
+                    format!("skin_binding references unknown node '{node_id}'"),
+                    "target an authored node id",
+                ))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if skin
+        .influence_indices()
+        .iter()
+        .flatten()
+        .any(|influence| *influence >= binding_nodes.len())
+    {
+        return Err(Box::new(error_diagnostic(
+            "$",
+            "invalid_skin",
+            format!(
+                "node '{}' skin geometry '{}' references an influence index outside its {}-node binding",
+                recipe.id,
+                recipe.geometry,
+                binding_nodes.len()
+            ),
+            "make skin influence indices reference entries in skin_binding",
+        )));
+    }
+    let matrices = binding
+        .inverse_bind_matrices
+        .iter()
+        .map(|values| SkinningMatrix::from_gltf_column_major(values.map(|value| value as f32)))
+        .collect();
+    Ok(SceneSkinBinding::new(binding_nodes, matrices))
 }

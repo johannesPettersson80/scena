@@ -10,4 +10,4 @@ pub(super) use extras::{
     validate_instance_sets, validate_labels,
 };
 pub(super) use lights::validate_lights;
-pub(super) use nodes::{has_authored_renderable_nodes, validate_nodes};
+pub(super) use nodes::{NodeValidationResources, has_authored_renderable_nodes, validate_nodes};

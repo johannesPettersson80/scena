@@ -40,6 +40,124 @@
         "segments": 12,
         "rings": 6
       }
+    },
+    {
+      "id": "tri_base",
+      "mesh": {
+        "topology": "triangles",
+        "positions": [
+          [
+            -0.04,
+            -0.03,
+            0.0
+          ],
+          [
+            0.04,
+            -0.03,
+            0.0
+          ],
+          [
+            0.0,
+            0.03,
+            0.0
+          ]
+        ],
+        "normals": [
+          [
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "indices": [
+          0,
+          1,
+          2
+        ]
+      }
+    }
+  ],
+  "morphs": [
+    {
+      "id": "tri_morph",
+      "source_geometry": "tri_base",
+      "targets": [
+        {
+          "position_deltas": [
+            [
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.04,
+              0.0
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "skins": [
+    {
+      "id": "tri_skin",
+      "source_geometry": "tri_morph",
+      "joints": [
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "weights": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      ]
     }
   ],
   "materials": [
@@ -75,6 +193,61 @@
       "name": "CAD plate",
       "transform": {
         "kind": "center"
+      }
+    },
+    {
+      "id": "tri_joint",
+      "geometry": "tri_base",
+      "material": "plate_mat",
+      "visible": false,
+      "transform": {
+        "kind": "trs",
+        "translation": [
+          0.0,
+          0.02,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": "tri_deformed",
+      "geometry": "tri_skin",
+      "material": "plate_mat",
+      "transform": {
+        "kind": "trs",
+        "translation": [
+          0.18,
+          0.0,
+          0.0
+        ]
+      },
+      "morph_weights": [
+        0.5
+      ],
+      "skin_binding": {
+        "joints": [
+          "tri_joint"
+        ],
+        "inverse_bind_matrices": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
       }
     }
   ],

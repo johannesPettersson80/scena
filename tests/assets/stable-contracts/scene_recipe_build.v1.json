@@ -25,14 +25,26 @@
       "name": "CAD plate"
     },
     {
-      "id": "plate_instances",
+      "id": "tri_joint",
       "handle": 4294967301,
+      "kind": "node",
+      "parent": 4294967297
+    },
+    {
+      "id": "tri_deformed",
+      "handle": 4294967302,
+      "kind": "node",
+      "parent": 4294967297
+    },
+    {
+      "id": "plate_instances",
+      "handle": 4294967303,
       "kind": "instance_set",
       "parent": 4294967297
     },
     {
       "id": "status_label",
-      "handle": 4294967302,
+      "handle": 4294967304,
       "kind": "label",
       "parent": 4294967297,
       "name": "OK"
@@ -41,7 +53,7 @@
   "cameras": [
     {
       "id": "main",
-      "handle": 4294967303,
+      "handle": 4294967305,
       "kind": "camera",
       "parent": 4294967297,
       "active": true
@@ -68,6 +80,24 @@
       "kind": "torus",
       "vertex_count": 91,
       "index_count": 432
+    },
+    {
+      "id": "tri_base",
+      "kind": "mesh",
+      "vertex_count": 3,
+      "index_count": 3
+    },
+    {
+      "id": "tri_morph",
+      "kind": "morph",
+      "vertex_count": 3,
+      "index_count": 3
+    },
+    {
+      "id": "tri_skin",
+      "kind": "skin",
+      "vertex_count": 3,
+      "index_count": 3
     }
   ],
   "materials": [

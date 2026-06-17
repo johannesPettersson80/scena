@@ -94,6 +94,10 @@ impl GeometrySkin {
         &self.joints
     }
 
+    pub fn influence_indices(&self) -> &[[usize; 4]] {
+        &self.joints
+    }
+
     pub fn weights(&self) -> &[[f32; 4]] {
         &self.weights
     }

@@ -159,6 +159,9 @@ impl LookupError {
             Self::GeometryNotFound { .. } => {
                 "call asset-aware helpers with the same Assets store that created or loaded the geometry"
             }
+            Self::InvalidSkinBinding { .. } => {
+                "provide exactly one inverse bind matrix for each joint in the skin binding"
+            }
             Self::CameraNotFound(_) => "use a CameraKey created by this Scene",
             Self::ClippingPlaneNotFound(_) => "use a ClippingPlaneKey created by this Scene",
             Self::InstanceSetNotFound(_) => "use an InstanceSetKey created by this Scene",

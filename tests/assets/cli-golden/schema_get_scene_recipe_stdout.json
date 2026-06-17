@@ -163,6 +163,51 @@
           "rings": 6,
           "segments": 12
         }
+      },
+      {
+        "id": "tri_base",
+        "mesh": {
+          "indices": [
+            0,
+            1,
+            2
+          ],
+          "normals": [
+            [
+              0.0,
+              0.0,
+              1.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "positions": [
+            [
+              -0.04,
+              -0.03,
+              0.0
+            ],
+            [
+              0.04,
+              -0.03,
+              0.0
+            ],
+            [
+              0.0,
+              0.03,
+              0.0
+            ]
+          ],
+          "topology": "triangles"
+        }
       }
     ],
     "imports": [
@@ -273,6 +318,33 @@
     "metadata": {
       "purpose": "stable recipe fixture"
     },
+    "morphs": [
+      {
+        "id": "tri_morph",
+        "source_geometry": "tri_base",
+        "targets": [
+          {
+            "position_deltas": [
+              [
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.04,
+                0.0
+              ]
+            ]
+          }
+        ]
+      }
+    ],
     "nodes": [
       {
         "geometry": "plate_geo",
@@ -281,6 +353,61 @@
         "name": "CAD plate",
         "transform": {
           "kind": "center"
+        }
+      },
+      {
+        "geometry": "tri_base",
+        "id": "tri_joint",
+        "material": "plate_mat",
+        "transform": {
+          "kind": "trs",
+          "translation": [
+            0.0,
+            0.02,
+            0.0
+          ]
+        },
+        "visible": false
+      },
+      {
+        "geometry": "tri_skin",
+        "id": "tri_deformed",
+        "material": "plate_mat",
+        "morph_weights": [
+          0.5
+        ],
+        "skin_binding": {
+          "inverse_bind_matrices": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "joints": [
+            "tri_joint"
+          ]
+        },
+        "transform": {
+          "kind": "trs",
+          "translation": [
+            0.18,
+            0.0,
+            0.0
+          ]
         }
       }
     ],
@@ -309,7 +436,53 @@
       "import": "part",
       "inverted": false,
       "margin": 0.125
-    }
+    },
+    "skins": [
+      {
+        "id": "tri_skin",
+        "joints": [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "source_geometry": "tri_morph",
+        "weights": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ]
+      }
+    ]
   },
   "invalid_example": {
     "importe": [

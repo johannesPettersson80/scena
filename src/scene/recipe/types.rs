@@ -15,8 +15,9 @@ pub use authoring::{
     SceneRecipeCameraV1, SceneRecipeClippingPlaneV1, SceneRecipeColorV1,
     SceneRecipeExpectedExtentV1, SceneRecipeFontV1, SceneRecipeGeometryV1, SceneRecipeImportV1,
     SceneRecipeInstanceSetV1, SceneRecipeInstanceV1, SceneRecipeLabelV1, SceneRecipeLightV1,
-    SceneRecipeLookAtTargetV1, SceneRecipeMaterialV1, SceneRecipeMeshV1, SceneRecipeNodeV1,
-    SceneRecipePrimitiveV1, SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1,
+    SceneRecipeLookAtTargetV1, SceneRecipeMaterialV1, SceneRecipeMeshV1, SceneRecipeMorphTargetV1,
+    SceneRecipeMorphV1, SceneRecipeNodeSkinBindingV1, SceneRecipeNodeV1, SceneRecipePrimitiveV1,
+    SceneRecipeSkinV1, SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1,
     SceneRecipeTransformV1,
 };
 pub use build_manifest::{
@@ -57,6 +58,10 @@ pub struct SceneRecipeV1 {
     pub colors: BTreeMap<String, SceneRecipeColorV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub geometries: Vec<SceneRecipeGeometryV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub morphs: Vec<SceneRecipeMorphV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skins: Vec<SceneRecipeSkinV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub materials: Vec<SceneRecipeMaterialV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

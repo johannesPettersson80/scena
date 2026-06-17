@@ -452,6 +452,13 @@ impl fmt::Display for LookupError {
                     "geometry for mesh node {node:?} was not found in Assets"
                 )
             }
+            Self::InvalidSkinBinding {
+                joint_count,
+                inverse_bind_count,
+            } => write!(
+                formatter,
+                "skin binding has {joint_count} joints but {inverse_bind_count} inverse bind matrices"
+            ),
             Self::CameraNotFound(_) => write!(formatter, "camera key does not exist in the scene"),
             Self::ClippingPlaneNotFound(_) => {
                 write!(formatter, "clipping plane key does not exist in the scene")

@@ -397,16 +397,20 @@ into Slice 12 skin/morph authoring + Slice 13 particle rendering.)
 Larger than "expose existing types": today skin binding is read-only / import-
 oriented (`src/scene/skinning.rs` exposes `skin_binding`/`skin_matrices`
 accessors only).
-- [ ] **Add the missing public skin-binding authoring seam** so recipe ids can
+- [x] **Add the missing public skin-binding authoring seam** so recipe ids can
       bind joints, inverse-bind matrices, geometry vertex weights, and morph
       targets/weights deterministically (the same render data scena already plays
       from glTF).
-- [ ] Recipe directives for authored skin + morph; this is where authored
+- [x] Recipe directives for authored skin + morph; this is where authored
       morph-weight animation (deferred from Slice 8) becomes valid.
-- [ ] Proof: compare the **undeformed vs deformed pose** (pixel/bounds change),
+- [x] Proof: compare the **undeformed vs deformed pose** (pixel/bounds change),
       plus a **negative test that fails if joints/weights/morph deltas are
       ignored** — introspection alone can pass on an ignored deformation;
       fail-closed on malformed joints/weights/targets.
+      Evidence:
+      `scene_recipe_slice12_skin_morph_authoring_deforms_rendered_output_and_fails_closed`
+      + `scene_recipe_slice12_skin_morph_authoring_changes_headless_gpu_silhouette`
+      and `scene_recipe_build_manifest_golden_matches_executor_for_stable_recipe`.
 
 ### Slice 13 — Particle / point-sprite rendering (#18b)
 A **new render path** — grep finds no particle/point-sprite rendering today.

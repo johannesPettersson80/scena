@@ -23,19 +23,49 @@ pub(super) fn validate_authoring_sections(
     let color_ids = ids::id_set_from_map(object.get("colors"));
     resources::validate_geometries(object.get("geometries"), diagnostics);
     let geometry_ids = ids::id_set_from_array(object.get("geometries"));
+    let mut geometry_vertex_counts = resources::geometry_vertex_counts(object.get("geometries"));
+    let morph_info = resources::validate_morphs(
+        object.get("morphs"),
+        &geometry_ids,
+        &geometry_vertex_counts,
+        diagnostics,
+    );
+    let mut morph_source_ids = geometry_ids.clone();
+    morph_source_ids.extend(morph_info.ids.iter().cloned());
+    geometry_vertex_counts.extend(morph_info.vertex_counts.clone());
+    let skin_info = resources::validate_skins(
+        object.get("skins"),
+        &morph_source_ids,
+        &geometry_vertex_counts,
+        &morph_info.target_counts,
+        diagnostics,
+    );
+    geometry_vertex_counts.extend(skin_info.vertex_counts.clone());
+    let mut all_geometry_ids = geometry_ids.clone();
+    all_geometry_ids.extend(morph_info.ids.iter().cloned());
+    all_geometry_ids.extend(skin_info.ids.iter().cloned());
+    let mut morph_target_counts = morph_info.target_counts.clone();
+    morph_target_counts.extend(skin_info.target_counts.clone());
     resources::validate_materials(object.get("materials"), &color_ids, diagnostics);
     let material_ids = ids::id_set_from_array(object.get("materials"));
     resources::validate_fonts(object.get("fonts"), diagnostics);
     let font_ids = ids::id_set_from_array(object.get("fonts"));
     let import_ids = ids::id_set_from_array(object.get("imports"));
+    let node_ids = ids::id_set_from_array(object.get("nodes"));
     targets::validate_nodes(
         object.get("nodes"),
-        &geometry_ids,
-        &material_ids,
-        &import_ids,
+        targets::NodeValidationResources {
+            geometries: &all_geometry_ids,
+            materials: &material_ids,
+            morph_target_counts: &morph_target_counts,
+            skinned_geometries: &skin_info.ids,
+            all_node_ids: &node_ids,
+            imports: &import_ids,
+        },
         diagnostics,
     );
-    let node_ids = ids::id_set_from_array(object.get("nodes"));
+    let authored_morph_targets =
+        authored_morph_animation_targets(object.get("nodes"), &morph_target_counts);
     targets::validate_instance_sets(
         object.get("instance_sets"),
         &geometry_ids,
@@ -66,10 +96,28 @@ pub(super) fn validate_authoring_sections(
         &animation_target_ids,
         &animation_target_ids,
         &import_ids,
+        &authored_morph_targets,
         diagnostics,
     );
     targets::validate_cameras(object.get("cameras"), &camera_target_ids, diagnostics);
     targets::validate_lights(object.get("lights"), &color_ids, diagnostics);
+}
+
+fn authored_morph_animation_targets(
+    nodes: Option<&Value>,
+    morph_target_counts: &std::collections::BTreeMap<String, usize>,
+) -> std::collections::BTreeMap<String, usize> {
+    nodes
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|node| {
+            let id = node.get("id")?.as_str()?;
+            let geometry = node.get("geometry")?.as_str()?;
+            let target_count = morph_target_counts.get(geometry).copied()?;
+            Some((id.to_owned(), target_count))
+        })
+        .collect()
 }
 
 fn validate_required_id(

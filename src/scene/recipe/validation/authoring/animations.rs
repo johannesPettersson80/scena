@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
@@ -6,6 +6,9 @@ use crate::scene::recipe::types::SceneRecipeDiagnosticV1;
 use crate::scene::recipe::validation::diagnostic;
 
 use super::{validate_known_fields, validate_required_id};
+
+mod values;
+use values::validate_values;
 
 const ANIMATION_FIELDS: &[&str] = &["id", "duration", "channels"];
 const CHANNEL_FIELDS: &[&str] = &["target", "path", "interpolation", "times", "values"];
@@ -18,6 +21,7 @@ pub(super) fn validate_animations(
     authored_target_ids: &BTreeSet<String>,
     target_ids: &BTreeSet<String>,
     import_ids: &BTreeSet<String>,
+    authored_morph_target_counts: &BTreeMap<String, usize>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
     let Some(value) = value else {
@@ -58,6 +62,7 @@ pub(super) fn validate_animations(
             authored_target_ids,
             target_ids,
             import_ids,
+            authored_morph_target_counts,
             diagnostics,
         );
     }
@@ -89,6 +94,7 @@ fn validate_channels(
     authored_target_ids: &BTreeSet<String>,
     target_ids: &BTreeSet<String>,
     import_ids: &BTreeSet<String>,
+    authored_morph_target_counts: &BTreeMap<String, usize>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
     let Some(channels) = value
@@ -134,21 +140,31 @@ fn validate_channels(
             object.get("path"),
             diagnostics,
         );
-        if channel_kind == Some("weights")
-            && target_id
-                .as_deref()
-                .is_some_and(|id| authored_target_ids.contains(id))
-        {
-            diagnostics.push(diagnostic(
-                "unsupported_feature",
-                "error",
-                format!("{channel_path}.path"),
-                "authored-node morph weight animation is not available until authored morph targets land",
-                "target an imported morph node for weights, or use translation/rotation/scale on authored nodes",
-                None,
-                false,
-            ));
-        }
+        let authored_weight_count = if channel_kind == Some("weights") {
+            target_id.as_deref().and_then(|id| {
+                if authored_target_ids.contains(id) {
+                    match authored_morph_target_counts.get(id).copied() {
+                        Some(count) => Some(count),
+                        None => {
+                            diagnostics.push(diagnostic(
+                                "invalid_animation_target",
+                                "error",
+                                format!("{channel_path}.target.id"),
+                                "authored weights animation requires a morph-capable target node",
+                                "target a node using a morph-derived geometry",
+                                None,
+                                false,
+                            ));
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+            })
+        } else {
+            None
+        };
         validate_interpolation(
             &format!("{channel_path}.interpolation"),
             object.get("interpolation"),
@@ -168,6 +184,7 @@ fn validate_channels(
                 .and_then(Value::as_str)
                 .unwrap_or("linear"),
             times,
+            authored_weight_count,
             diagnostics,
         );
     }
@@ -375,119 +392,4 @@ fn validate_times(
         previous = Some(time);
     }
     Some(times.len())
-}
-
-fn validate_values(
-    path: &str,
-    value: Option<&Value>,
-    channel_kind: Option<&str>,
-    interpolation: &str,
-    time_count: Option<usize>,
-    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
-) {
-    let Some(values) = value
-        .and_then(Value::as_array)
-        .filter(|values| !values.is_empty())
-    else {
-        diagnostics.push(diagnostic(
-            "invalid_animation_values",
-            "error",
-            path,
-            "animation values must be a non-empty array",
-            "emit one value per time, or three values per time for cubic_spline",
-            None,
-            false,
-        ));
-        return;
-    };
-    let expected_values = time_count.map(|count| {
-        if interpolation == "cubic_spline" {
-            count.saturating_mul(3)
-        } else {
-            count
-        }
-    });
-    if let Some(expected) = expected_values
-        && values.len() != expected
-    {
-        diagnostics.push(diagnostic(
-            "invalid_animation_values",
-            "error",
-            path,
-            format!(
-                "animation values length {} does not match expected {expected}",
-                values.len()
-            ),
-            "emit one value per time, or three values per time for cubic_spline",
-            None,
-            false,
-        ));
-    }
-    let Some(component_count) = component_count(channel_kind) else {
-        return;
-    };
-    for (index, value) in values.iter().enumerate() {
-        let Some(components) = value.as_array() else {
-            diagnostics.push(diagnostic(
-                "invalid_animation_value",
-                "error",
-                format!("{path}[{index}]"),
-                "animation value must be an array",
-                "emit vector components as numbers",
-                None,
-                false,
-            ));
-            continue;
-        };
-        if channel_kind == Some("weights") {
-            if components.is_empty() {
-                diagnostics.push(diagnostic(
-                    "invalid_animation_value",
-                    "error",
-                    format!("{path}[{index}]"),
-                    "weights animation value must include at least one weight",
-                    "emit one numeric component per morph target",
-                    None,
-                    false,
-                ));
-            }
-        } else if components.len() != component_count {
-            diagnostics.push(diagnostic(
-                "invalid_animation_value",
-                "error",
-                format!("{path}[{index}]"),
-                format!(
-                    "animation value for {} must have {component_count} components",
-                    channel_kind.unwrap_or("unknown")
-                ),
-                "emit translation/scale as [x,y,z] and rotation as [x,y,z,w]",
-                None,
-                false,
-            ));
-        }
-        for (component_index, component) in components.iter().enumerate() {
-            match component.as_f64() {
-                Some(component)
-                    if component.is_finite() && component.abs() <= f64::from(f32::MAX) => {}
-                _ => diagnostics.push(diagnostic(
-                    "invalid_animation_value",
-                    "error",
-                    format!("{path}[{index}][{component_index}]"),
-                    "animation components must be finite f32-compatible numbers",
-                    "emit finite numeric components",
-                    None,
-                    false,
-                )),
-            }
-        }
-    }
-}
-
-fn component_count(channel_kind: Option<&str>) -> Option<usize> {
-    match channel_kind {
-        Some("translation" | "scale") => Some(3),
-        Some("rotation") => Some(4),
-        Some("weights") => Some(1),
-        _ => None,
-    }
 }

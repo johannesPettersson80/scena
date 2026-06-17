@@ -56,8 +56,6 @@ fn scene_recipe_validation_reports_unknown_fields_duplicate_ids_and_suggestions(
 fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
     for section in [
         "primitives",
-        "skins",
-        "morphs",
         "particles",
         "viewer_profile",
         "environment",
@@ -150,7 +148,7 @@ fn scene_recipe_validation_accepts_authored_animation_and_rejects_bad_channels()
     assert_reason(&invalid, "invalid_animation_time", None);
     assert_reason(&invalid, "invalid_animation_times", None);
     assert_reason(&invalid, "invalid_animation_values", None);
-    assert_reason(&invalid, "unsupported_feature", None);
+    assert_reason(&invalid, "invalid_animation_target", None);
 }
 
 #[test]
@@ -1043,6 +1041,328 @@ fn scene_recipe_slice11_fonts_validate_build_render_and_fail_closed() {
     }));
     assert!(!complex.ok);
     assert_reason(&complex, "unsupported_feature", None);
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_slice12_skin_morph_authoring_deforms_rendered_output_and_fails_closed() {
+    let undeformed = render_slice12_skin_morph_recipe(slice12_skin_morph_recipe(0.0, 0.0));
+    let deformed = render_slice12_skin_morph_recipe(slice12_skin_morph_recipe(1.0, 0.28));
+
+    assert!(
+        deformed
+            .manifest
+            .geometries
+            .iter()
+            .any(|geometry| geometry.id == "tri_morph" && geometry.kind == "morph"),
+        "morph-derived geometry must appear in the typed build manifest: {:#?}",
+        deformed.manifest
+    );
+    assert!(
+        deformed
+            .manifest
+            .geometries
+            .iter()
+            .any(|geometry| geometry.id == "tri_skin" && geometry.kind == "skin"),
+        "skin-derived geometry must appear in the typed build manifest: {:#?}",
+        deformed.manifest
+    );
+
+    let undeformed_bbox = undeformed
+        .report
+        .content_bbox_css_px
+        .expect("undeformed render has content bbox");
+    let deformed_bbox = deformed
+        .report
+        .content_bbox_css_px
+        .expect("deformed render has content bbox");
+    assert!(
+        deformed_bbox.height > undeformed_bbox.height + 8.0
+            && deformed_bbox.min_y < undeformed_bbox.min_y - 4.0,
+        "morph + skin deformation must change the rendered silhouette, undeformed={undeformed_bbox:?}, deformed={deformed_bbox:?}"
+    );
+
+    let invalid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "red": "#E4572E" },
+        "geometries": [{
+            "id": "tri_base",
+            "mesh": {
+                "topology": "triangles",
+                "positions": [[-0.42, -0.25, 0.0], [0.42, -0.25, 0.0], [0.0, 0.25, 0.0]],
+                "normals": [[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
+                "indices": [0, 1, 2]
+            }
+        }],
+        "morphs": [{
+            "id": "bad_morph",
+            "source_geometry": "tri_base",
+            "targets": [{ "position_deltas": [[0.0, 0.0, 0.0]] }]
+        }],
+        "skins": [{
+            "id": "bad_skin",
+            "source_geometry": "tri_base",
+            "joints": [[0, 0, 0, 0]],
+            "weights": [[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]]
+        }],
+        "materials": [{ "id": "mat", "kind": "unlit", "base_color": "red" }],
+        "nodes": [{
+            "id": "tri",
+            "geometry": "bad_skin",
+            "material": "mat",
+            "morph_weights": [1.0],
+            "skin_binding": {
+                "joints": ["missing_joint"],
+                "inverse_bind_matrices": [[
+                    1.0, 0.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0, 0.0,
+                    0.0, 0.0, 1.0, 0.0,
+                    0.0, 0.0, 0.0, 1.0
+                ]]
+            }
+        }]
+    }));
+    assert!(!invalid.ok);
+    assert_reason(&invalid, "invalid_morph", None);
+    assert_reason(&invalid, "invalid_skin", None);
+    assert_reason(&invalid, "unknown_node_ref", None);
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_slice12_skin_morph_authoring_changes_headless_gpu_silhouette() {
+    let undeformed = render_slice12_skin_morph_gpu(0.0, 0.0);
+    let deformed = render_slice12_skin_morph_gpu(1.0, 0.28);
+
+    assert!(
+        deformed.height > undeformed.height + 8
+            && deformed.min_y + 4 < undeformed.min_y
+            && deformed.nonblack > undeformed.nonblack,
+        "HeadlessGpu must render authored morph + skin deformation, undeformed={undeformed:?}, deformed={deformed:?}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+struct Slice12RenderProof {
+    manifest: scena::SceneRecipeBuildV1,
+    report: scena::RenderIntrospectionReportV1,
+}
+
+#[cfg(feature = "scene-host")]
+#[derive(Debug)]
+struct Slice12GpuBounds {
+    min_y: usize,
+    height: usize,
+    nonblack: usize,
+}
+
+#[cfg(feature = "scene-host")]
+fn render_slice12_skin_morph_gpu(morph_weight: f32, joint_lift: f32) -> Slice12GpuBounds {
+    let (assets, mut scene, camera) = slice12_skin_morph_scene(morph_weight, joint_lift);
+    let mut renderer =
+        scena::Renderer::headless_gpu(180, 140).expect("HeadlessGpu renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("Slice 12 HeadlessGpu scene prepares");
+    renderer
+        .render(&scene, camera)
+        .expect("Slice 12 HeadlessGpu scene renders");
+    slice12_gpu_bounds(renderer.frame_rgba8(), 180, 140)
+        .expect("Slice 12 HeadlessGpu frame is visible")
+}
+
+#[cfg(feature = "scene-host")]
+fn slice12_skin_morph_scene(
+    morph_weight: f32,
+    joint_lift: f32,
+) -> (scena::Assets, scena::Scene, scena::CameraKey) {
+    let assets = scena::Assets::new();
+    let vertices = vec![
+        scena::GeometryVertex {
+            position: scena::Vec3::new(-0.42, -0.25, 0.0),
+            normal: scena::Vec3::new(0.0, 0.0, 1.0),
+        },
+        scena::GeometryVertex {
+            position: scena::Vec3::new(0.42, -0.25, 0.0),
+            normal: scena::Vec3::new(0.0, 0.0, 1.0),
+        },
+        scena::GeometryVertex {
+            position: scena::Vec3::new(0.0, 0.25, 0.0),
+            normal: scena::Vec3::new(0.0, 0.0, 1.0),
+        },
+    ];
+    let geometry =
+        scena::GeometryDesc::try_new(scena::GeometryTopology::Triangles, vertices, vec![0, 1, 2])
+            .expect("base geometry builds")
+            .with_morph_targets(vec![scena::GeometryMorphTarget::new(vec![
+                scena::Vec3::ZERO,
+                scena::Vec3::ZERO,
+                scena::Vec3::new(0.0, 0.45, 0.0),
+            ])])
+            .expect("morph geometry builds")
+            .with_skin(scena::GeometrySkin::new(
+                vec![[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]],
+                vec![[1.0, 0.0, 0.0, 0.0]; 3],
+            ))
+            .expect("skin geometry builds");
+    let geometry = assets.create_geometry(geometry);
+    let material = assets.create_material(
+        scena::MaterialDesc::unlit(scena::Color::from_srgb_u8(228, 87, 46)).with_double_sided(true),
+    );
+
+    let mut scene = scena::Scene::new();
+    let joint = scene
+        .add_empty(
+            scene.root(),
+            scena::Transform::at(scena::Vec3::new(0.0, joint_lift, 0.0)),
+        )
+        .expect("binding node inserts");
+    let mesh = scene
+        .mesh(geometry, material)
+        .add()
+        .expect("deformed mesh inserts");
+    scene
+        .set_morph_weights(mesh, vec![morph_weight])
+        .expect("morph weight applies");
+    scene
+        .set_skin_binding(
+            mesh,
+            scena::SceneSkinBinding::new(vec![joint], vec![scena::SkinningMatrix::IDENTITY]),
+        )
+        .expect("skin binding applies");
+    let camera = scene.add_default_camera().expect("camera inserts");
+
+    (assets, scene, camera)
+}
+
+#[cfg(feature = "scene-host")]
+fn slice12_gpu_bounds(rgba: &[u8], width: usize, height: usize) -> Option<Slice12GpuBounds> {
+    let mut min_y = height;
+    let mut max_y = 0usize;
+    let mut nonblack = 0usize;
+    for (index, pixel) in rgba.chunks_exact(4).enumerate() {
+        if pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 0 {
+            continue;
+        }
+        let y = index / width;
+        min_y = min_y.min(y);
+        max_y = max_y.max(y);
+        nonblack += 1;
+    }
+    (nonblack > 0).then_some(Slice12GpuBounds {
+        min_y,
+        height: max_y.saturating_sub(min_y) + 1,
+        nonblack,
+    })
+}
+
+#[cfg(feature = "scene-host")]
+fn render_slice12_skin_morph_recipe(recipe: serde_json::Value) -> Slice12RenderProof {
+    let text = serde_json::to_string_pretty(&recipe).expect("recipe serializes");
+    let validation = scena::validate_scene_recipe_json(&text);
+    assert!(
+        validation.ok,
+        "Slice 12 skin/morph recipe should validate before build: {validation:#?}"
+    );
+
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/slice12.recipe.json",
+        &text,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("Slice 12 recipe build succeeds");
+    assert!(build.manifest.ok, "{:#?}", build.manifest);
+
+    let mut host = build.host;
+    host.prepare().expect("Slice 12 scene prepares");
+    host.render().expect("Slice 12 scene renders");
+    let capture = host.capture().expect("Slice 12 scene captures");
+    let inspection_json = host.inspect_json().expect("Slice 12 scene inspects");
+    let inspection: scena::SceneInspectionReportV1 =
+        serde_json::from_str(&inspection_json).expect("inspection decodes");
+    let report = host.renderer().introspect_capture(
+        &capture,
+        &inspection,
+        scena::RenderIntrospectionOptions::summary(),
+    );
+    assert!(report.ok, "Slice 12 render should be visible: {report:#?}");
+
+    Slice12RenderProof {
+        manifest: build.manifest,
+        report,
+    }
+}
+
+#[cfg(feature = "scene-host")]
+fn slice12_skin_morph_recipe(morph_weight: f64, joint_lift: f64) -> serde_json::Value {
+    json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "red": "#E4572E",
+            "dark": "#1D2733"
+        },
+        "geometries": [
+            {
+                "id": "tri_base",
+                "mesh": {
+                    "topology": "triangles",
+                    "positions": [[-0.42, -0.25, 0.0], [0.42, -0.25, 0.0], [0.0, 0.25, 0.0]],
+                    "normals": [[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
+                    "indices": [0, 1, 2]
+                }
+            },
+            { "id": "joint_marker_geo", "primitive": { "kind": "box", "size": [0.04, 0.04, 0.04] } }
+        ],
+        "morphs": [{
+            "id": "tri_morph",
+            "source_geometry": "tri_base",
+            "targets": [{
+                "position_deltas": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.45, 0.0]]
+            }]
+        }],
+        "skins": [{
+            "id": "tri_skin",
+            "source_geometry": "tri_morph",
+            "joints": [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]],
+            "weights": [[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]]
+        }],
+        "materials": [
+            { "id": "tri_mat", "kind": "unlit", "base_color": "red", "double_sided": true },
+            { "id": "joint_mat", "kind": "unlit", "base_color": "dark" }
+        ],
+        "nodes": [
+            {
+                "id": "joint",
+                "geometry": "joint_marker_geo",
+                "material": "joint_mat",
+                "visible": false,
+                "transform": { "kind": "trs", "translation": [0.0, joint_lift, 0.0] }
+            },
+            {
+                "id": "tri",
+                "geometry": "tri_skin",
+                "material": "tri_mat",
+                "morph_weights": [morph_weight],
+                "skin_binding": {
+                    "joints": ["joint"],
+                    "inverse_bind_matrices": [[
+                        1.0, 0.0, 0.0, 0.0,
+                        0.0, 1.0, 0.0, 0.0,
+                        0.0, 0.0, 1.0, 0.0,
+                        0.0, 0.0, 0.0, 1.0
+                    ]]
+                }
+            }
+        ],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "fov_degrees": 35.0,
+            "active": true,
+            "transform": { "kind": "look_at", "eye": [0.0, 0.18, 2.0], "target": [0.0, 0.18, 0.0] }
+        }],
+        "capture": { "width": 180, "height": 140 }
+    })
 }
 
 #[cfg(feature = "scene-host")]

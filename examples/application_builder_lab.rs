@@ -502,6 +502,8 @@ fn agent_render_loop(root: &Path) -> Result<ApplicationFinding, Box<dyn Error>> 
         }],
         colors: BTreeMap::new(),
         geometries: Vec::new(),
+        morphs: Vec::new(),
+        skins: Vec::new(),
         materials: Vec::new(),
         nodes: Vec::new(),
         instance_sets: Vec::new(),

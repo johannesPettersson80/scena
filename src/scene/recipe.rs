@@ -18,8 +18,9 @@ pub use types::{
     SceneRecipeFontV1, SceneRecipeGeometryV1, SceneRecipeGridV1, SceneRecipeImportV1,
     SceneRecipeInstanceSetV1, SceneRecipeInstanceV1, SceneRecipeLabelV1, SceneRecipeLightV1,
     SceneRecipeLookAtTargetV1, SceneRecipeMaterialV1, SceneRecipeMeasurementV1, SceneRecipeMeshV1,
-    SceneRecipeNodeV1, SceneRecipePickExpectationV1, SceneRecipePrimitiveV1, SceneRecipeRenderV1,
-    SceneRecipeSceneV1, SceneRecipeSectionBoxV1, SceneRecipeSsaoV1, SceneRecipeTargetV1,
+    SceneRecipeMorphTargetV1, SceneRecipeMorphV1, SceneRecipeNodeSkinBindingV1, SceneRecipeNodeV1,
+    SceneRecipePickExpectationV1, SceneRecipePrimitiveV1, SceneRecipeRenderV1, SceneRecipeSceneV1,
+    SceneRecipeSectionBoxV1, SceneRecipeSkinV1, SceneRecipeSsaoV1, SceneRecipeTargetV1,
     SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1, SceneRecipeTransformV1,
     SceneRecipeV1, SceneRecipeValidationReportV1, SceneRecipeVisibleExpectationV1,
 };

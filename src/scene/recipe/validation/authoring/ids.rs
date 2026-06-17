@@ -15,6 +15,8 @@ pub(super) fn validate_global_ids(
     collect_map_ids("colors", object.get("colors"), &mut ids, diagnostics);
     for section in [
         "geometries",
+        "morphs",
+        "skins",
         "materials",
         "nodes",
         "instance_sets",

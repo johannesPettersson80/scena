@@ -73,6 +73,36 @@ pub struct SceneRecipeMeshV1 {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct SceneRecipeMorphV1 {
+    pub id: String,
+    pub source_geometry: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub targets: Vec<SceneRecipeMorphTargetV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeMorphTargetV1 {
+    pub position_deltas: Vec<[f64; 3]>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeSkinV1 {
+    pub id: String,
+    pub source_geometry: String,
+    pub joints: Vec<[usize; 4]>,
+    pub weights: Vec<[f64; 4]>,
+}
+
+impl SceneRecipeSkinV1 {
+    pub fn influence_indices(&self) -> &[[usize; 4]] {
+        &self.joints
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SceneRecipeMaterialV1 {
     pub id: String,
     pub kind: String,
@@ -206,6 +236,23 @@ pub struct SceneRecipeNodeV1 {
     pub tint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transform: Option<SceneRecipeTransformV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub morph_weights: Vec<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skin_binding: Option<SceneRecipeNodeSkinBindingV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeNodeSkinBindingV1 {
+    pub joints: Vec<String>,
+    pub inverse_bind_matrices: Vec<[f64; 16]>,
+}
+
+impl SceneRecipeNodeSkinBindingV1 {
+    pub fn binding_nodes(&self) -> &[String] {
+        &self.joints
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

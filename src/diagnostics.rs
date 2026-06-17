@@ -333,6 +333,10 @@ pub enum LookupError {
         node: NodeKey,
         geometry: GeometryHandle,
     },
+    InvalidSkinBinding {
+        joint_count: usize,
+        inverse_bind_count: usize,
+    },
     CameraNotFound(CameraKey),
     ClippingPlaneNotFound(ClippingPlaneKey),
     InstanceSetNotFound(InstanceSetKey),

@@ -70,6 +70,11 @@ All notable user-facing changes are recorded here.
   Font-backed labels use real glyph metrics, kerning, and raster coverage for
   basic Latin text, and fail closed for missing/oversized fonts or complex-script
   text that scena does not shape.
+- Added authored morph and skin recipe directives plus `Scene::set_skin_binding`
+  for deterministic recipe-built deformation data. `scene_recipe.v1` can now
+  derive morph and skin geometries, bind authored joint nodes with inverse bind
+  matrices, set initial morph weights, and author morph-weight animation on
+  morph-capable nodes with fail-closed validation.
 - Added `Scene::frame_all_with_overlays`,
   `SceneHostCore::frame_all_with_overlays`, and browser
   `frameAllWithOverlays()` to frame geometry plus generated overlay label

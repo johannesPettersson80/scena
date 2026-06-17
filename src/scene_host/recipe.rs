@@ -18,7 +18,8 @@ use authoring::{
     AuthoredNodeResources, InstanceSetResources, LabelResources, build_authored_animations,
     build_authored_cameras, build_authored_clipping_planes, build_authored_fonts,
     build_authored_geometries, build_authored_instance_sets, build_authored_labels,
-    build_authored_lights, build_authored_materials, build_authored_nodes,
+    build_authored_lights, build_authored_materials, build_authored_morphs, build_authored_nodes,
+    build_authored_skins,
 };
 use overlays::apply_recipe_overlays;
 use policy::asset_policy_diagnostics;
@@ -238,7 +239,7 @@ impl SceneHostCore<DefaultAssetFetcher> {
             .map(|import| (import.id.clone(), import.import_handle))
             .collect::<BTreeMap<_, _>>();
         let authored_start = diagnostics.len();
-        let geometry_handles = build_authored_geometries(
+        let mut geometry_handles = build_authored_geometries(
             &policy,
             &host,
             &recipe.colors,
@@ -246,6 +247,24 @@ impl SceneHostCore<DefaultAssetFetcher> {
             &mut geometries,
             &mut diagnostics,
         );
+        let morph_handles = build_authored_morphs(
+            &policy,
+            &host,
+            &recipe.morphs,
+            &geometry_handles,
+            &mut geometries,
+            &mut diagnostics,
+        );
+        geometry_handles.extend(morph_handles);
+        let skin_handles = build_authored_skins(
+            &policy,
+            &host,
+            &recipe.skins,
+            &geometry_handles,
+            &mut geometries,
+            &mut diagnostics,
+        );
+        geometry_handles.extend(skin_handles);
         let material_handles = build_authored_materials(
             &policy,
             &host,
