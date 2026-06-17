@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 mod authoring;
+mod expectations;
 mod imports;
 mod overlays;
 mod setup;
@@ -93,6 +94,7 @@ fn validate_scene_recipe_value_inner(
     validate_exploded_view(object.get("exploded_view"), &import_ids, diagnostics);
     setup::validate_scene_setup(object.get("scene"), diagnostics);
     setup::validate_render_setup(object.get("render"), diagnostics);
+    expectations::validate_expectations(object.get("expect"), diagnostics);
     validate_capture(object.get("capture"), diagnostics);
     validate_metadata(object.get("metadata"), diagnostics);
 }

@@ -84,6 +84,10 @@ pub(super) const FIXTURES: &[(&str, &str)] = &[
         "scena.scene_recipe_build.v1",
     ),
     (
+        "tests/assets/stable-contracts/recipe_render_result.v1.json",
+        "scena.recipe_render_result.v1",
+    ),
+    (
         "tests/assets/stable-contracts/placement_result.v1.json",
         "scena.placement_result.v1",
     ),

@@ -1,7 +1,8 @@
 use std::fs;
 use std::path::PathBuf;
 
-use super::{CliOutcome, json_outcome, resolve_scene_input};
+use super::scena_input::resolve_scene_input;
+use super::scena_output::{CliOutcome, json_outcome};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct VerifyInteractionCommandArgs {

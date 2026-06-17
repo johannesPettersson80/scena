@@ -303,14 +303,15 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
       (no inert knobs).
 
 ### Slice 5 — Verification expectations
-- [ ] `expect_*` compiling to the appearance / interaction / render-introspection
+- [x] `expect_*` compiling to the appearance / interaction / render-introspection
       contracts.
-- [ ] `scena recipe render --introspect --verify` → build + render + verify in one
+- [x] `scena recipe render --introspect --verify` → build + render + verify in one
       fail-closed report: a new cataloged `recipe_render_result` contract nesting
       `{ build, capture, introspection, verification }`, with top-level `ok` true
-      only when all four are ok. (New contract → its own fixture + catalog entry +
-      doctor pin; see schema-naming note.)
-- [ ] Proof: a recipe whose color/pick/fit expectations pass, and a negative
+      only when build/introspection/verification are ok and a capture exists.
+      (New contract → its own fixture + catalog entry + doctor pin; see
+      schema-naming note.)
+- [x] Proof: a recipe whose color/pick/fit expectations pass, and a negative
       recipe failing each with a structured reason.
 
 ### Slice 6 — Instancing, labels, clipping planes

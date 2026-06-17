@@ -5,7 +5,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 #[cfg(feature = "inspection")]
-use super::{CliOutcome, json_outcome};
+use super::scena_output::{CliOutcome, json_outcome};
 
 #[cfg(feature = "inspection")]
 #[derive(Debug, Clone, PartialEq)]
@@ -64,6 +64,9 @@ pub(crate) fn scene_recipe_has_scene_host_directives(recipe: &scena::SceneRecipe
         || !recipe.nodes.is_empty()
         || !recipe.cameras.is_empty()
         || !recipe.lights.is_empty()
+        || recipe.scene.is_some()
+        || recipe.render.is_some()
+        || recipe.expect.is_some()
         || recipe.section_box.is_some()
         || !recipe.measurements.is_empty()
         || !recipe.callouts.is_empty()

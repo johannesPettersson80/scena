@@ -137,6 +137,38 @@
     "factor": 0.0,
     "distance": 0.0
   },
+  "expect": {
+    "expect_color": [
+      {
+        "id": "plate-color",
+        "target": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "swatch_srgb8": [
+          58,
+          123,
+          213
+        ],
+        "tolerance": 0.2
+      }
+    ],
+    "expect_bbox_fit": {
+      "min": 0.05,
+      "max": 0.95
+    },
+    "expect_pick": [
+      {
+        "id": "plate-pick",
+        "x_css_px": 48.0,
+        "y_css_px": 36.0,
+        "target": {
+          "kind": "node",
+          "id": "plate"
+        }
+      }
+    ]
+  },
   "capture": {
     "width": 96,
     "height": 72

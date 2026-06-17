@@ -334,6 +334,202 @@ fn scena_recipe_invalid_fixtures_cover_landed_failure_families() {
     );
 }
 
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_render_cli_applies_scene_setup_for_import_only_recipes() {
+    let dir = artifact_dir("render-import-scene-setup");
+    let recipe_path = dir.join("white-background.recipe.json");
+    let png_path = dir.join("white-background.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                { "id": "part", "uri": TEST_ASSET }
+            ],
+            "scene": {
+                "background": { "kind": "white" }
+            },
+            "capture": {
+                "width": 96,
+                "height": 72
+            }
+        }))
+        .expect("scene setup recipe serializes"),
+    )
+    .expect("scene setup recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena render import-only scene setup recipe runs");
+
+    assert!(
+        output.status.success(),
+        "import-only scene setup recipe should render, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert_eq!(report["schema"], "scena.render_introspection.v1");
+    assert_eq!(report["ok"], true, "{report:#}");
+    assert!(
+        report["luminance"]["mean"]
+            .as_f64()
+            .is_some_and(|mean| mean > 150.0),
+        "white recipe background should be applied through SceneHost routing: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_passes_color_pick_and_fit_expectations() {
+    let dir = artifact_dir("recipe-render-verify-pass");
+    let recipe_path = dir.join("verified.recipe.json");
+    let png_path = dir.join("verified.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&authored_verification_recipe(json!({
+            "expect_color": [{
+                "id": "plate-is-red",
+                "target": { "kind": "node", "id": "plate" },
+                "swatch_srgb8": [220, 32, 32],
+                "tolerance": 0.20
+            }],
+            "expect_bbox_fit": {
+                "min": 0.20,
+                "max": 0.95
+            },
+            "expect_pick": [{
+                "id": "center-picks-plate",
+                "x_css_px": 64.0,
+                "y_css_px": 64.0,
+                "target": { "kind": "node", "id": "plate" }
+            }]
+        })))
+        .expect("verified recipe serializes"),
+    )
+    .expect("verified recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena recipe render command runs");
+
+    assert!(
+        output.status.success(),
+        "recipe render verification should pass, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "recipe render verification keeps stderr empty, stderr={}",
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert_eq!(report["schema"], "scena.recipe_render_result.v1");
+    assert_eq!(report["ok"], true, "{report:#}");
+    assert_eq!(report["build"]["ok"], true, "{report:#}");
+    assert_eq!(report["introspection"]["ok"], true, "{report:#}");
+    assert_eq!(report["verification"]["ok"], true, "{report:#}");
+    assert_eq!(
+        report["verification"]["appearance"]["ok"], true,
+        "{report:#}"
+    );
+    assert_eq!(
+        report["verification"]["interaction"]["ok"], true,
+        "{report:#}"
+    );
+    assert!(png_path.exists(), "recipe render writes the requested PNG");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_fails_color_pick_and_fit_expectations() {
+    let dir = artifact_dir("recipe-render-verify-fail");
+    let recipe_path = dir.join("verified-negative.recipe.json");
+    let png_path = dir.join("verified-negative.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&authored_verification_recipe(json!({
+            "expect_color": [{
+                "id": "plate-should-not-be-green",
+                "target": { "kind": "node", "id": "plate" },
+                "swatch_srgb8": [0, 255, 0],
+                "tolerance": 0.05
+            }],
+            "expect_bbox_fit": {
+                "min": 0.95
+            },
+            "expect_pick": [{
+                "id": "center-should-not-pick-side",
+                "x_css_px": 64.0,
+                "y_css_px": 64.0,
+                "target": { "kind": "node", "id": "side" }
+            }]
+        })))
+        .expect("negative verified recipe serializes"),
+    )
+    .expect("negative verified recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena negative recipe render command runs");
+
+    assert!(!output.status.success(), "negative verification must fail");
+    assert!(
+        output.stderr.is_empty(),
+        "recipe verification failures stay machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert_eq!(report["schema"], "scena.recipe_render_result.v1");
+    assert_eq!(report["ok"], false, "{report:#}");
+    assert_eq!(report["build"]["ok"], true, "{report:#}");
+    assert_eq!(report["verification"]["ok"], false, "{report:#}");
+    let reasons = report["verification"]["reasons"]
+        .as_array()
+        .expect("verification reasons array");
+    for code in [
+        "swatch_mismatch",
+        "fit_fraction_below_min",
+        "handle_mismatch",
+    ] {
+        assert!(
+            reasons.iter().any(|reason| reason["code"] == code),
+            "expected {code} reason in {report:#}"
+        );
+    }
+    assert!(
+        png_path.exists(),
+        "negative verification still writes the proof PNG"
+    );
+}
+
 #[test]
 fn scena_place_cli_exits_nonzero_for_unknown_import() {
     let dir = artifact_dir("place-invalid");
@@ -506,6 +702,51 @@ fn scena_place_cli_previews_render_as_visible_framed_recipes() {
         ANCHORED_ASSET,
         json_transform(&aligned),
     );
+}
+
+#[cfg(feature = "scene-host")]
+fn authored_verification_recipe(expect: serde_json::Value) -> serde_json::Value {
+    json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "red": "#DC2020",
+            "blue": "#2D68C4"
+        },
+        "geometries": [
+            { "id": "plate_geo", "primitive": { "kind": "box", "size": [0.6, 0.6, 0.08] } },
+            { "id": "side_geo", "primitive": { "kind": "box", "size": [0.12, 0.12, 0.08] } }
+        ],
+        "materials": [
+            { "id": "red_mat", "kind": "unlit", "base_color": "red" },
+            { "id": "blue_mat", "kind": "unlit", "base_color": "blue" }
+        ],
+        "nodes": [
+            {
+                "id": "plate",
+                "geometry": "plate_geo",
+                "material": "red_mat",
+                "transform": { "kind": "center" }
+            },
+            {
+                "id": "side",
+                "geometry": "side_geo",
+                "material": "blue_mat",
+                "transform": {
+                    "kind": "trs",
+                    "translation": [0.8, 0.0, 0.0]
+                }
+            }
+        ],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "fov_degrees": 36.0,
+            "active": true,
+            "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": "plate" }
+        }],
+        "capture": { "width": 128, "height": 128 },
+        "expect": expect
+    })
 }
 
 fn write_valid_recipe(dir: &Path) -> PathBuf {

@@ -1,5 +1,5 @@
 use super::scena_args::ValidateRecipeCommandArgs;
-use super::{CliOutcome, json_outcome};
+use super::scena_output::{CliOutcome, json_outcome};
 use std::fs;
 
 pub(crate) fn run_validate_recipe_command(args: &[String]) -> Result<CliOutcome, String> {

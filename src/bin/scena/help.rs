@@ -6,6 +6,7 @@ pub(crate) fn help_json() -> String {
             "schema get <scena.*.vN>",
             "validate-recipe <recipe.json>",
             "place <recipe.json> --import <id> --verb <verb>",
+            "recipe render <recipe.json> --introspect --verify --out <png>",
             "examples agent <template> [--out <dir>]",
             "render <asset-or-recipe> --introspect --out <png>",
             "inspect <asset-or-recipe>",

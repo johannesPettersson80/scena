@@ -277,6 +277,13 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/scene_recipe_build.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.recipe_render_result.v1",
+            owner_module: "bin/scena",
+            summary: "One-command recipe build, render, introspection, and verification result.",
+            feature_flag: Some("scene-host"),
+            fixture_path: Some("tests/assets/stable-contracts/recipe_render_result.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.placement_result.v1",
             owner_module: "scene",
             summary: "Semantic placement transform preview for declarative recipe imports.",

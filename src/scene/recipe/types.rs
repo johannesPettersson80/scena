@@ -5,7 +5,20 @@ use serde_json::Value;
 
 use crate::scene::Transform;
 
+mod expectations;
+#[cfg(all(feature = "inspection", feature = "scene-host"))]
+mod render_result;
 mod setup;
+pub use expectations::{
+    SceneRecipeBboxFitExpectationV1, SceneRecipeColorExpectationV1, SceneRecipeExpectV1,
+    SceneRecipePickExpectationV1, SceneRecipeVisibleExpectationV1,
+};
+#[cfg(all(feature = "inspection", feature = "scene-host"))]
+pub use render_result::{
+    SCENE_RECIPE_RENDER_RESULT_SCHEMA_V1, SceneRecipeRenderResultV1,
+    SceneRecipeVerificationReasonV1, SceneRecipeVerificationReportV1,
+    SceneRecipeVerificationSummaryV1,
+};
 pub use setup::{
     SceneRecipeBackgroundV1, SceneRecipeBloomV1, SceneRecipeEnvironmentV1, SceneRecipeGridV1,
     SceneRecipeRenderV1, SceneRecipeSceneV1, SceneRecipeSsaoV1,
@@ -36,6 +49,8 @@ pub struct SceneRecipeV1 {
     pub scene: Option<SceneRecipeSceneV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub render: Option<SceneRecipeRenderV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect: Option<SceneRecipeExpectV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub section_box: Option<SceneRecipeSectionBoxV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::json;
 
-use super::{CliOutcome, json_outcome};
+use super::scena_output::{CliOutcome, json_outcome};
 #[path = "examples_agent/builder.rs"]
 mod builder;
 #[path = "examples_agent/overlays.rs"]

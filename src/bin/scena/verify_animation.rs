@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
-use super::{CliOutcome, json_outcome, resolve_scene_input, viewer_builder};
+use super::scena_input::{resolve_scene_input, viewer_builder};
+use super::scena_output::{CliOutcome, json_outcome};
 use expectations::{apply_expected_node_status, expected_node_status};
 
 #[path = "verify_animation/expectations.rs"]

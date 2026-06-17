@@ -1,7 +1,8 @@
 use std::fs;
 
 use super::scena_args::PlaceCommandArgs;
-use super::{CliOutcome, json_outcome, resolve_recipe_asset_uri};
+use super::scena_input::resolve_recipe_asset_uri;
+use super::scena_output::{CliOutcome, json_outcome};
 
 mod authored_features;
 

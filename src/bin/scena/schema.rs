@@ -1,4 +1,4 @@
-use super::{CliOutcome, json_success};
+use super::scena_output::{CliOutcome, json_success};
 
 pub(crate) fn run_schema_list_command() -> Result<CliOutcome, String> {
     json_success(

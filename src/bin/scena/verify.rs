@@ -1,9 +1,9 @@
 use std::fs;
 
-use super::{
-    CliOutcome, appearance_introspection_options, ensure_parent_dir, json_outcome,
-    resolve_scene_input, viewer_builder,
+use super::scena_input::{
+    appearance_introspection_options, ensure_parent_dir, resolve_scene_input, viewer_builder,
 };
+use super::scena_output::{CliOutcome, json_outcome};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct VerifyAppearanceCommandArgs {

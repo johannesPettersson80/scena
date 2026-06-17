@@ -1087,7 +1087,7 @@ The current v1 recipe slice supports:
 - opaque caller `metadata`
 
 Unknown fields fail closed. Known future feature sections such as `primitives`,
-`expect`, `animations`, `fonts`, `skins`, `morphs`, `particles`, `labels`,
+`animations`, `fonts`, `skins`, `morphs`, `particles`, `labels`,
 `anchors`, `connectors`, `bounds`, `authored_planes`, and `named_states` emit
 `unsupported_feature` until the feature slice that owns them implements the
 section. Workflow fields such as
@@ -1116,6 +1116,20 @@ report real vertex and index counts.
 recipe schema, and fail-closed policy or required-load failures appear as
 deterministic build diagnostics.
 
+`expect` is additive recipe sugar over existing verification contracts. Color
+expectations compile to `scena.appearance_expectation.v1`, pick expectations
+compile to `scena.interaction_expectation.v1`, and bbox/no-warning checks read
+the real `scena.render_introspection.v1` report. Expectation targets use stable
+recipe ids resolved through `scena.scene_recipe_build.v1`; missing ids fail
+closed as verification reasons.
+
+`scena.recipe_render_result.v1` is emitted by
+`scena recipe render <recipe.json> --introspect --verify --out <png>`. It
+nests the build manifest, capture descriptor, render-introspection report, and
+aggregate verification report. Top-level `ok` is true only when build,
+introspection, and verification are all true. If build fails before a frame
+exists, `capture` and `introspection` are `null` rather than fabricated.
+
 `scena validate-recipe <recipe.json>` first runs shape validation without
 rendering, then loads declared assets far enough to validate asset presence and
 optional `expected_extent` scale sanity. Missing or unloadable assets emit an
@@ -1128,7 +1142,9 @@ The stable fixtures live at
 `tests/assets/stable-contracts/scene_recipe.v1.json` and
 `tests/assets/stable-contracts/scene_recipe_validation.v1.json`; the build
 manifest fixture lives at
-`tests/assets/stable-contracts/scene_recipe_build.v1.json`. `scena
+`tests/assets/stable-contracts/scene_recipe_build.v1.json`; the combined
+render/verify fixture lives at
+`tests/assets/stable-contracts/recipe_render_result.v1.json`. `scena
 validate-recipe <recipe.json>` emits validation JSON on stdout and exits
 non-zero when `ok` is false. When built with `inspection`, `scena render`,
 `scena inspect`, and `scena diagnose --visibility` accept either a direct asset

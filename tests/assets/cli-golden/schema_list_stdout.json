@@ -169,6 +169,13 @@
       "fixture_path": "tests/assets/stable-contracts/scene_recipe_build.v1.json"
     },
     {
+      "schema": "scena.recipe_render_result.v1",
+      "owner_module": "bin/scena",
+      "summary": "One-command recipe build, render, introspection, and verification result.",
+      "feature_flag": "scene-host",
+      "fixture_path": "tests/assets/stable-contracts/recipe_render_result.v1.json"
+    },
+    {
       "schema": "scena.placement_result.v1",
       "owner_module": "scene",
       "summary": "Semantic placement transform preview for declarative recipe imports.",

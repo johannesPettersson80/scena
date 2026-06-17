@@ -2,7 +2,9 @@ use super::CliOutcome;
 #[cfg(feature = "inspection")]
 use super::scena_args::DoctorCommandArgs;
 #[cfg(feature = "inspection")]
-use super::{json_outcome, resolve_scene_input};
+use super::scena_input::resolve_scene_input;
+#[cfg(feature = "inspection")]
+use super::scena_output::json_outcome;
 
 #[cfg(feature = "inspection")]
 pub(crate) fn run_doctor_command(args: &[String]) -> Result<CliOutcome, String> {

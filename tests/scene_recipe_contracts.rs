@@ -54,7 +54,6 @@ fn scene_recipe_validation_reports_unknown_fields_duplicate_ids_and_suggestions(
 fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
     for section in [
         "primitives",
-        "expect",
         "animations",
         "fonts",
         "skins",
@@ -83,6 +82,74 @@ fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
         let report = scena::validate_scene_recipe_value(recipe);
         assert_reason(&report, "unsupported_feature", None);
     }
+}
+
+#[test]
+fn scene_recipe_validation_accepts_expect_and_rejects_malformed_expectations() {
+    let valid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "red": "#DC2020"
+        },
+        "geometries": [
+            { "id": "plate_geo", "primitive": { "kind": "box", "size": [0.2, 0.2, 0.02] } }
+        ],
+        "materials": [
+            { "id": "plate_mat", "kind": "unlit", "base_color": "red" }
+        ],
+        "nodes": [
+            { "id": "plate", "geometry": "plate_geo", "material": "plate_mat" }
+        ],
+        "expect": {
+            "expect_color": [{
+                "id": "plate-red",
+                "target": { "kind": "node", "id": "plate" },
+                "swatch_srgb8": [220, 32, 32],
+                "tolerance": 0.2
+            }],
+            "expect_bbox_fit": { "min": 0.1, "max": 0.9 },
+            "expect_pick": [{
+                "id": "pick-plate",
+                "x_css_px": 32.0,
+                "y_css_px": 32.0,
+                "target": { "kind": "node", "id": "plate" }
+            }]
+        }
+    }));
+    assert!(valid.ok, "expect is a landed root field: {valid:#?}");
+
+    let invalid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "red": "#DC2020"
+        },
+        "geometries": [
+            { "id": "plate_geo", "primitive": { "kind": "box", "size": [0.2, 0.2, 0.02] } }
+        ],
+        "materials": [
+            { "id": "plate_mat", "kind": "unlit", "base_color": "red" }
+        ],
+        "nodes": [
+            { "id": "plate", "geometry": "plate_geo", "material": "plate_mat" }
+        ],
+        "expect": {
+            "expect_color": [{
+                "id": "bad-swatch",
+                "target": { "kind": "node", "id": "plate" },
+                "swatch_srgb8": [999, 0],
+                "tolerance": -1.0
+            }],
+            "expect_pick": [{
+                "id": "bad-pick",
+                "x_css_px": "left",
+                "y_css_px": 32.0,
+                "target": { "kind": "world", "position": [0.0, 0.0, 0.0] }
+            }]
+        }
+    }));
+    assert!(!invalid.ok);
+    assert_reason(&invalid, "invalid_expect", None);
+    assert_reason(&invalid, "unsupported_feature", None);
 }
 
 #[cfg(feature = "scene-host")]
