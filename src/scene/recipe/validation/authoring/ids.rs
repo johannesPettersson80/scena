@@ -18,6 +18,7 @@ pub(super) fn validate_global_ids(
         "materials",
         "nodes",
         "instance_sets",
+        "fonts",
         "labels",
         "clipping_planes",
         "animations",

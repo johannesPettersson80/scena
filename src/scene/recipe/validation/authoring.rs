@@ -25,6 +25,8 @@ pub(super) fn validate_authoring_sections(
     let geometry_ids = ids::id_set_from_array(object.get("geometries"));
     resources::validate_materials(object.get("materials"), &color_ids, diagnostics);
     let material_ids = ids::id_set_from_array(object.get("materials"));
+    resources::validate_fonts(object.get("fonts"), diagnostics);
+    let font_ids = ids::id_set_from_array(object.get("fonts"));
     let import_ids = ids::id_set_from_array(object.get("imports"));
     targets::validate_nodes(
         object.get("nodes"),
@@ -49,6 +51,7 @@ pub(super) fn validate_authoring_sections(
     targets::validate_labels(
         object.get("labels"),
         &color_ids,
+        &font_ids,
         &label_target_ids,
         &import_ids,
         diagnostics,

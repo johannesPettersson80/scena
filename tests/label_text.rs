@@ -23,6 +23,96 @@ fn label_desc_reports_stable_font_metrics_and_style_options() {
 }
 
 #[test]
+fn label_desc_truetype_font_changes_metrics_and_rendered_coverage() {
+    let font_bytes = fs::read(system_test_font_path()).expect("test TrueType font reads");
+    let bitmap = LabelDesc::bitmap("AVAV")
+        .with_size(28.0)
+        .with_color(Color::RED);
+    let truetype = LabelDesc::truetype("AVAV", font_bytes)
+        .expect("TrueType font loads")
+        .with_size(28.0)
+        .with_color(Color::GREEN);
+
+    let bitmap_metrics = bitmap.metrics();
+    let truetype_metrics = truetype.metrics();
+    assert_eq!(bitmap_metrics.glyph_count, 4);
+    assert_eq!(truetype_metrics.glyph_count, 4);
+    assert!(
+        (bitmap_metrics.width_px - truetype_metrics.width_px).abs() >= 4.0,
+        "loaded TrueType metrics must not silently use bitmap metrics: bitmap={bitmap_metrics:?} truetype={truetype_metrics:?}"
+    );
+
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::standard(),
+            Transform::at(Vec3::new(0.0, 0.0, 4.0)),
+        )
+        .expect("camera inserts");
+    scene.set_active_camera(camera).expect("camera activates");
+    scene
+        .add_label(
+            scene.root(),
+            bitmap,
+            Transform::at(Vec3::new(-0.45, 0.0, 0.0)),
+        )
+        .expect("bitmap label inserts");
+    scene
+        .add_label(
+            scene.root(),
+            truetype,
+            Transform::at(Vec3::new(0.45, 0.0, 0.0)),
+        )
+        .expect("truetype label inserts");
+
+    let mut renderer = Renderer::headless(220, 120).expect("renderer builds");
+    renderer.prepare(&mut scene).expect("font scene prepares");
+    renderer.render_active(&scene).expect("font scene renders");
+    let frame = renderer.frame_rgba8().to_vec();
+
+    let bitmap_bounds = color_bounds(&frame, 220, 120, |pixel| {
+        pixel[0] > 90
+            && pixel[0] > pixel[1].saturating_mul(2)
+            && pixel[0] > pixel[2].saturating_mul(2)
+    })
+    .expect("bitmap label renders");
+    let truetype_bounds = color_bounds(&frame, 220, 120, |pixel| {
+        pixel[1] > 80
+            && pixel[1] > pixel[0].saturating_mul(2)
+            && pixel[1] > pixel[2].saturating_mul(2)
+    })
+    .expect("truetype label renders");
+    assert!(
+        (bitmap_bounds.width() as i32 - truetype_bounds.width() as i32).abs() >= 4
+            || (bitmap_bounds.height() as i32 - truetype_bounds.height() as i32).abs() >= 2
+            || (bitmap_bounds.occupancy() - truetype_bounds.occupancy()).abs() >= 0.05,
+        "loaded TrueType coverage must be distinguishable from embedded bitmap coverage: bitmap={bitmap_bounds:?} truetype={truetype_bounds:?}"
+    );
+
+    let artifact_dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/gate-artifacts/labels");
+    fs::create_dir_all(&artifact_dir).expect("artifact dir exists");
+    write_ppm_artifact(
+        &artifact_dir,
+        "truetype-vs-bitmap-label-text",
+        220,
+        120,
+        &frame,
+    );
+}
+
+#[test]
+fn label_desc_truetype_rejects_complex_script_text() {
+    let font_bytes = fs::read(system_test_font_path()).expect("test TrueType font reads");
+    let error = LabelDesc::truetype("سلام", font_bytes).expect_err("complex script rejected");
+    assert!(
+        error.to_string().contains("basic Latin"),
+        "error should tell an agent the supported font scope: {error}"
+    );
+}
+
+#[test]
 fn label_text_renders_glyph_cells_with_pixel_stable_billboards() {
     let mut scene = Scene::new();
     let camera = scene
@@ -339,4 +429,17 @@ fn write_ppm_artifact(dir: &Path, name: &str, width: u32, height: u32, rgba: &[u
         ppm.extend_from_slice(&pixel[..3]);
     }
     fs::write(dir.join(format!("{name}.ppm")), ppm).expect("PPM artifact writes");
+}
+
+fn system_test_font_path() -> PathBuf {
+    let candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ];
+    candidates
+        .iter()
+        .map(Path::new)
+        .find(|path| path.exists())
+        .map(Path::to_path_buf)
+        .expect("builder must provide a TrueType test font")
 }

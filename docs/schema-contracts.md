@@ -1118,11 +1118,16 @@ The current v1 recipe slice supports:
 - `callouts[]` anchored to an import root, authored/imported node, or world
   point with label offsets
 - optional `exploded_view` directives over an import's root hierarchy
+- `fonts[]` TrueType/OpenType font resources with `id`, `uri`, and optional
+  `optional`; labels may reference a font by id with `font`
+- font-backed labels support basic Latin glyphs, per-glyph metrics, and kerning
+  pairs; complex-script text fails closed with `unsupported_feature` rather
+  than falling back to broken glyph order
 - one optional `capture` directive with `width` and `height`
 - opaque caller `metadata`
 
 Unknown fields fail closed. Known future feature sections such as `primitives`,
-`fonts`, `skins`, `morphs`, `particles`, `anchors`, `connectors`, `bounds`, and
+`skins`, `morphs`, `particles`, `anchors`, `connectors`, `bounds`, and
 `named_states` emit
 `unsupported_feature` until the feature slice that owns them implements the
 section. Workflow fields such as
@@ -1146,9 +1151,9 @@ glTF children are included when their authored path is unambiguous. `nodes`,
 stable handles.
 Authored mesh nodes, instance-set nodes, label nodes, and cameras include their
 recipe ids and stable handles in the same targetable lists as imported node
-handles. `geometries` and
-`materials` are non-targetable resources without handles; authored geometries
-report real vertex and index counts.
+handles. `geometries`, `materials`, and `fonts` are non-targetable resources
+without handles; authored geometries report real vertex and index counts, and
+font entries report the loaded font resource kind.
 `RecipeBuildPolicy` is operator-owned configuration, not part of the authored
 recipe schema, and fail-closed policy or required-load failures appear as
 deterministic build diagnostics.

@@ -15,9 +15,10 @@ mod policy;
 mod setup;
 
 use authoring::{
-    AuthoredNodeResources, InstanceSetResources, build_authored_animations, build_authored_cameras,
-    build_authored_clipping_planes, build_authored_geometries, build_authored_instance_sets,
-    build_authored_labels, build_authored_lights, build_authored_materials, build_authored_nodes,
+    AuthoredNodeResources, InstanceSetResources, LabelResources, build_authored_animations,
+    build_authored_cameras, build_authored_clipping_planes, build_authored_fonts,
+    build_authored_geometries, build_authored_instance_sets, build_authored_labels,
+    build_authored_lights, build_authored_materials, build_authored_nodes,
 };
 use overlays::apply_recipe_overlays;
 use policy::asset_policy_diagnostics;
@@ -93,6 +94,7 @@ impl SceneHostCore<DefaultAssetFetcher> {
         let mut imports = Vec::new();
         let mut geometries = Vec::new();
         let mut materials = Vec::new();
+        let mut fonts = Vec::new();
         let mut nodes = Vec::new();
         let mut cameras = Vec::new();
         let mut lights = Vec::new();
@@ -254,6 +256,14 @@ impl SceneHostCore<DefaultAssetFetcher> {
             &mut diagnostics,
         )
         .await;
+        let font_faces = build_authored_fonts(
+            &policy,
+            recipe_path,
+            &recipe.fonts,
+            &mut fonts,
+            &mut skipped,
+            &mut diagnostics,
+        );
         let node_keys = build_authored_nodes(
             &policy,
             &mut host,
@@ -287,9 +297,12 @@ impl SceneHostCore<DefaultAssetFetcher> {
         let label_keys = build_authored_labels(
             &mut host,
             &recipe.labels,
-            &recipe.colors,
-            &target_node_keys,
-            &import_handles,
+            LabelResources {
+                colors: &recipe.colors,
+                fonts: &font_faces,
+                nodes: &target_node_keys,
+                imports: &import_handles,
+            },
             &mut nodes,
             &mut diagnostics,
         );
@@ -331,6 +344,7 @@ impl SceneHostCore<DefaultAssetFetcher> {
         manifest.imports = imports;
         manifest.geometries = geometries;
         manifest.materials = materials;
+        manifest.fonts = fonts;
         manifest.nodes = nodes;
         manifest.cameras = cameras;
         manifest.lights = lights;
@@ -375,6 +389,7 @@ fn build_manifest(
         animations: Vec::new(),
         geometries: Vec::<SceneRecipeBuildResourceV1>::new(),
         materials: Vec::new(),
+        fonts: Vec::new(),
         diagnostics,
         skipped,
     }

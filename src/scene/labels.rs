@@ -1,16 +1,32 @@
+use std::fmt;
+
 use crate::diagnostics::LookupError;
 use crate::material::Color;
 
 use super::{LabelKey, NodeKey, NodeKind, Scene, Transform};
 
+mod bitmap;
+mod font;
+
+use bitmap::{bitmap_glyph_cells, bitmap_label_metrics};
+pub use font::{LabelFontError, LabelFontFace};
+use font::{truetype_glyph_cells, truetype_metrics, validate_basic_latin_text};
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct LabelDesc {
     text: String,
+    font: LabelFont,
     billboard: LabelBillboard,
     color: Color,
     background: Option<Color>,
     halo: Option<Color>,
     size: f32,
+}
+
+#[derive(Clone, PartialEq)]
+enum LabelFont {
+    Bitmap,
+    TrueType(LabelFontFace),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -61,11 +77,18 @@ impl Scene {
         label: LabelKey,
         text: impl Into<String>,
     ) -> Result<(), LookupError> {
+        let label_key = label;
         let label = self
             .labels
-            .get_mut(label)
-            .ok_or(LookupError::LabelNotFound(label))?;
+            .get_mut(label_key)
+            .ok_or(LookupError::LabelNotFound(label_key))?;
         let text = text.into();
+        if let Err(error) = label.validate_text(&text) {
+            return Err(LookupError::UnsupportedLabelText {
+                label: label_key,
+                reason: error.to_string(),
+            });
+        }
         if label.text != text {
             label.text = text;
             self.structure_revision = self.structure_revision.saturating_add(1);
@@ -78,6 +101,38 @@ impl LabelDesc {
     /// Creates a label rendered through scena's embedded 5x7 bitmap glyph path.
     pub fn bitmap(text: impl Into<String>) -> Self {
         Self::new(text)
+    }
+
+    /// Creates a label rendered through a caller-supplied TrueType/OpenType font.
+    ///
+    /// This first font path intentionally supports basic Latin text only. Complex
+    /// shaping scripts are rejected instead of being approximated by broken glyph
+    /// order or fallback boxes.
+    pub fn truetype(
+        text: impl Into<String>,
+        font_bytes: impl AsRef<[u8]>,
+    ) -> Result<Self, LabelFontError> {
+        let text = text.into();
+        validate_basic_latin_text(&text)?;
+        let font = LabelFontFace::from_truetype_bytes(font_bytes)?;
+        Self::truetype_face(text, font)
+    }
+
+    pub fn truetype_face(
+        text: impl Into<String>,
+        font: LabelFontFace,
+    ) -> Result<Self, LabelFontError> {
+        let text = text.into();
+        validate_basic_latin_text(&text)?;
+        Ok(Self {
+            text,
+            font: LabelFont::TrueType(font),
+            billboard: LabelBillboard::ScreenAligned,
+            color: Color::WHITE,
+            background: None,
+            halo: None,
+            size: 14.0,
+        })
     }
 
     pub fn text(&self) -> &str {
@@ -105,7 +160,10 @@ impl LabelDesc {
     }
 
     pub fn metrics(&self) -> LabelMetrics {
-        label_metrics(&self.text, self.size)
+        match &self.font {
+            LabelFont::Bitmap => bitmap_label_metrics(&self.text, self.size),
+            LabelFont::TrueType(font) => truetype_metrics(font, &self.text, self.size),
+        }
     }
 
     pub fn with_color(mut self, color: Color) -> Self {
@@ -134,7 +192,10 @@ impl LabelDesc {
     }
 
     pub(crate) fn glyph_cells(&self) -> Vec<LabelGlyphCell> {
-        glyph_cells(&self.text, self.size)
+        match &self.font {
+            LabelFont::Bitmap => bitmap_glyph_cells(&self.text, self.size),
+            LabelFont::TrueType(font) => truetype_glyph_cells(font, &self.text, self.size),
+        }
     }
 
     pub fn with_size(mut self, size: f32) -> Self {
@@ -150,11 +211,19 @@ impl LabelDesc {
     fn new(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
+            font: LabelFont::Bitmap,
             billboard: LabelBillboard::ScreenAligned,
             color: Color::WHITE,
             background: None,
             halo: None,
             size: 14.0,
+        }
+    }
+
+    fn validate_text(&self, text: &str) -> Result<(), LabelFontError> {
+        match &self.font {
+            LabelFont::Bitmap => Ok(()),
+            LabelFont::TrueType(_) => validate_basic_latin_text(text),
         }
     }
 }
@@ -167,203 +236,13 @@ pub(crate) struct LabelGlyphCell {
     pub(crate) y1_px: f32,
 }
 
-const FONT_WIDTH: f32 = 5.0;
-const FONT_HEIGHT: f32 = 7.0;
-const FONT_ADVANCE: f32 = 6.0;
-const FONT_BASELINE: f32 = 6.0;
-
-fn label_metrics(text: &str, size: f32) -> LabelMetrics {
-    let glyph_count = text.chars().count();
-    let scale = size / FONT_HEIGHT;
-    let width_units = if glyph_count == 0 {
-        0.0
-    } else {
-        (glyph_count.saturating_sub(1) as f32 * FONT_ADVANCE) + FONT_WIDTH
-    };
-    LabelMetrics {
-        glyph_count,
-        width_px: width_units * scale,
-        height_px: size,
-        baseline_px: FONT_BASELINE * scale,
-    }
-}
-
-fn glyph_cells(text: &str, size: f32) -> Vec<LabelGlyphCell> {
-    let scale = size / FONT_HEIGHT;
-    let mut cells = Vec::new();
-    for (index, ch) in text.chars().enumerate() {
-        let x_offset = index as f32 * FONT_ADVANCE * scale;
-        let rows = glyph_rows(ch);
-        for (row, bits) in rows.iter().copied().enumerate() {
-            for col in 0..FONT_WIDTH as u8 {
-                let mask = 1u8 << ((FONT_WIDTH as u8 - 1 - col) as u32);
-                if bits & mask == 0 {
-                    continue;
-                }
-                let x0 = x_offset + col as f32 * scale;
-                let y0 = row as f32 * scale;
-                cells.push(LabelGlyphCell {
-                    x0_px: x0,
-                    y0_px: y0,
-                    x1_px: x0 + scale,
-                    y1_px: y0 + scale,
-                });
-            }
+impl fmt::Debug for LabelFont {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Bitmap => formatter.write_str("Bitmap"),
+            Self::TrueType(font) => formatter.debug_tuple("TrueType").field(font).finish(),
         }
     }
-    cells
-}
-
-fn glyph_rows(ch: char) -> [u8; 7] {
-    match ch.to_ascii_uppercase() {
-        'A' => rows([
-            "01110", "10001", "10001", "11111", "10001", "10001", "10001",
-        ]),
-        'B' => rows([
-            "11110", "10001", "10001", "11110", "10001", "10001", "11110",
-        ]),
-        'C' => rows([
-            "01111", "10000", "10000", "10000", "10000", "10000", "01111",
-        ]),
-        'D' => rows([
-            "11110", "10001", "10001", "10001", "10001", "10001", "11110",
-        ]),
-        'E' => rows([
-            "11111", "10000", "10000", "11110", "10000", "10000", "11111",
-        ]),
-        'F' => rows([
-            "11111", "10000", "10000", "11110", "10000", "10000", "10000",
-        ]),
-        'G' => rows([
-            "01111", "10000", "10000", "10011", "10001", "10001", "01111",
-        ]),
-        'H' => rows([
-            "10001", "10001", "10001", "11111", "10001", "10001", "10001",
-        ]),
-        'I' => rows([
-            "11111", "00100", "00100", "00100", "00100", "00100", "11111",
-        ]),
-        'J' => rows([
-            "00111", "00010", "00010", "00010", "10010", "10010", "01100",
-        ]),
-        'K' => rows([
-            "10001", "10010", "10100", "11000", "10100", "10010", "10001",
-        ]),
-        'L' => rows([
-            "10000", "10000", "10000", "10000", "10000", "10000", "11111",
-        ]),
-        'M' => rows([
-            "10001", "11011", "10101", "10101", "10001", "10001", "10001",
-        ]),
-        'N' => rows([
-            "10001", "11001", "10101", "10011", "10001", "10001", "10001",
-        ]),
-        'O' => rows([
-            "01110", "10001", "10001", "10001", "10001", "10001", "01110",
-        ]),
-        'P' => rows([
-            "11110", "10001", "10001", "11110", "10000", "10000", "10000",
-        ]),
-        'Q' => rows([
-            "01110", "10001", "10001", "10001", "10101", "10010", "01101",
-        ]),
-        'R' => rows([
-            "11110", "10001", "10001", "11110", "10100", "10010", "10001",
-        ]),
-        'S' => rows([
-            "01111", "10000", "10000", "01110", "00001", "00001", "11110",
-        ]),
-        'T' => rows([
-            "11111", "00100", "00100", "00100", "00100", "00100", "00100",
-        ]),
-        'U' => rows([
-            "10001", "10001", "10001", "10001", "10001", "10001", "01110",
-        ]),
-        'V' => rows([
-            "10001", "10001", "10001", "10001", "10001", "01010", "00100",
-        ]),
-        'W' => rows([
-            "10001", "10001", "10001", "10101", "10101", "10101", "01010",
-        ]),
-        'X' => rows([
-            "10001", "10001", "01010", "00100", "01010", "10001", "10001",
-        ]),
-        'Y' => rows([
-            "10001", "10001", "01010", "00100", "00100", "00100", "00100",
-        ]),
-        'Z' => rows([
-            "11111", "00001", "00010", "00100", "01000", "10000", "11111",
-        ]),
-        '0' => rows([
-            "01110", "10001", "10011", "10101", "11001", "10001", "01110",
-        ]),
-        '1' => rows([
-            "00100", "01100", "00100", "00100", "00100", "00100", "01110",
-        ]),
-        '2' => rows([
-            "01110", "10001", "00001", "00010", "00100", "01000", "11111",
-        ]),
-        '3' => rows([
-            "11110", "00001", "00001", "01110", "00001", "00001", "11110",
-        ]),
-        '4' => rows([
-            "00010", "00110", "01010", "10010", "11111", "00010", "00010",
-        ]),
-        '5' => rows([
-            "11111", "10000", "10000", "11110", "00001", "00001", "11110",
-        ]),
-        '6' => rows([
-            "01110", "10000", "10000", "11110", "10001", "10001", "01110",
-        ]),
-        '7' => rows([
-            "11111", "00001", "00010", "00100", "01000", "01000", "01000",
-        ]),
-        '8' => rows([
-            "01110", "10001", "10001", "01110", "10001", "10001", "01110",
-        ]),
-        '9' => rows([
-            "01110", "10001", "10001", "01111", "00001", "00001", "01110",
-        ]),
-        '-' => rows([
-            "00000", "00000", "00000", "11111", "00000", "00000", "00000",
-        ]),
-        '_' => rows([
-            "00000", "00000", "00000", "00000", "00000", "00000", "11111",
-        ]),
-        '.' => rows([
-            "00000", "00000", "00000", "00000", "00000", "01100", "01100",
-        ]),
-        ':' => rows([
-            "00000", "01100", "01100", "00000", "01100", "01100", "00000",
-        ]),
-        '/' => rows([
-            "00001", "00010", "00010", "00100", "01000", "01000", "10000",
-        ]),
-        ' ' => [0; 7],
-        _ => rows([
-            "01110", "10001", "00001", "00010", "00100", "00000", "00100",
-        ]),
-    }
-}
-
-fn rows(pattern: [&str; 7]) -> [u8; 7] {
-    let mut output = [0; 7];
-    for (row_index, row) in pattern.iter().enumerate() {
-        let mut bits = 0;
-        for (col, byte) in row
-            .as_bytes()
-            .iter()
-            .copied()
-            .enumerate()
-            .take(FONT_WIDTH as usize)
-        {
-            if byte == b'1' {
-                bits |= 1u8 << ((FONT_WIDTH as usize - 1 - col) as u32);
-            }
-        }
-        output[row_index] = bits;
-    }
-    output
 }
 
 fn readable_size_or(value: f32, fallback: f32) -> f32 {

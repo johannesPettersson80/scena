@@ -166,6 +166,9 @@ impl LookupError {
                 "use an InstanceId that is still present in the requested InstanceSet"
             }
             Self::LabelNotFound(_) => "use a LabelKey created by this Scene",
+            Self::UnsupportedLabelText { .. } => {
+                "use basic Latin text for TrueType labels or render complex-script text in the host"
+            }
         }
     }
 }

@@ -377,19 +377,21 @@ into Slice 12 skin/morph authoring + Slice 13 particle rendering.)
       bare "renders non-empty".
 
 ### Slice 11 — Real fonts (#17)
-**Major slice, not a small extension** — today labels are a built-in 5×7 bitmap
-(`src/scene/labels.rs:77`, GPU prep `src/render/prepare/labels.rs:97`); there is
-no font-loading seam.
-- [ ] TrueType/asset font loading: glyph atlas + metrics + caching + font asset
+**Major slice, not a small extension** — labels now support both the embedded
+5×7 bitmap path and loaded TrueType/OpenType faces.
+- [x] TrueType/asset font loading: parsed font metrics + glyph raster caching + font asset
       ownership; `LabelDesc` font selection; recipe label `font` ref under path
       policy.
-- [ ] **Pin font scope explicitly:** basic Latin glyph atlas + per-glyph metrics
+- [x] **Pin font scope explicitly:** basic Latin glyph raster coverage + per-glyph metrics
       + kerning pairs are **in**; complex-script shaping (Arabic/Indic, bidi,
       ligature substitution) is **out** for this slice and must fail closed with a
       clear `unsupported_feature`, not render garbage.
-- [ ] Proof: text rendered with a loaded font produces distinct glyph coverage vs
+- [x] Proof: text rendered with a loaded font produces distinct glyph coverage vs
       the bitmap path (pixel proof); fail-closed on missing/oversize font under
       policy.
+      Evidence: `label_desc_truetype_font_changes_metrics_and_rendered_coverage`,
+      `label_desc_truetype_rejects_complex_script_text`, and
+      `scene_recipe_slice11_fonts_validate_build_render_and_fail_closed`.
 
 ### Slice 12 — Skeletal / morph authoring (#18a)
 Larger than "expose existing types": today skin binding is read-only / import-

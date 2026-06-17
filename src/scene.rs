@@ -89,7 +89,7 @@ pub use inspection_tools::{
     SceneTintSnapshotEntry, SceneVisibilitySnapshot, SceneVisibilitySnapshotEntry,
 };
 pub use instances::{Instance, InstanceId, InstanceSet};
-pub use labels::{LabelBillboard, LabelDesc, LabelMetrics};
+pub use labels::{LabelBillboard, LabelDesc, LabelFontError, LabelFontFace, LabelMetrics};
 pub use lights::{
     DirectionalLight, Light, LightBuilder, PointLight, SpotLight, StudioLightingHandles,
 };

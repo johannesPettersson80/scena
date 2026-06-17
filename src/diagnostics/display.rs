@@ -468,6 +468,12 @@ impl fmt::Display for LookupError {
                 instance, instance_set
             ),
             Self::LabelNotFound(_) => write!(formatter, "label key does not exist in the scene"),
+            Self::UnsupportedLabelText { reason, .. } => {
+                write!(
+                    formatter,
+                    "label text is not supported by its font: {reason}"
+                )
+            }
         }
     }
 }

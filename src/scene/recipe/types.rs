@@ -13,7 +13,7 @@ mod setup;
 pub use authoring::{
     SceneRecipeAlphaModeV1, SceneRecipeAnimationChannelV1, SceneRecipeAnimationV1,
     SceneRecipeCameraV1, SceneRecipeClippingPlaneV1, SceneRecipeColorV1,
-    SceneRecipeExpectedExtentV1, SceneRecipeGeometryV1, SceneRecipeImportV1,
+    SceneRecipeExpectedExtentV1, SceneRecipeFontV1, SceneRecipeGeometryV1, SceneRecipeImportV1,
     SceneRecipeInstanceSetV1, SceneRecipeInstanceV1, SceneRecipeLabelV1, SceneRecipeLightV1,
     SceneRecipeLookAtTargetV1, SceneRecipeMaterialV1, SceneRecipeMeshV1, SceneRecipeNodeV1,
     SceneRecipePrimitiveV1, SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1,
@@ -63,6 +63,8 @@ pub struct SceneRecipeV1 {
     pub nodes: Vec<SceneRecipeNodeV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub instance_sets: Vec<SceneRecipeInstanceSetV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fonts: Vec<SceneRecipeFontV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels: Vec<SceneRecipeLabelV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

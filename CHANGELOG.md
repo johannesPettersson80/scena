@@ -65,6 +65,11 @@ All notable user-facing changes are recorded here.
   custom-mesh geometries, unlit/PBR/line/wireframe/edge materials with texture
   slots, directional/point/spot lights, node hierarchy and visual attributes,
   and authored-node section-box/callout targets.
+- Added real TrueType/OpenType label fonts through `LabelFontFace`,
+  `LabelDesc::truetype`, and recipe `fonts[]` plus label `font` references.
+  Font-backed labels use real glyph metrics, kerning, and raster coverage for
+  basic Latin text, and fail closed for missing/oversized fonts or complex-script
+  text that scena does not shape.
 - Added `Scene::frame_all_with_overlays`,
   `SceneHostCore::frame_all_with_overlays`, and browser
   `frameAllWithOverlays()` to frame geometry plus generated overlay label

@@ -328,6 +328,11 @@ SceneHost/WASM callers use `add_node_callout` / `add_world_callout` or
 The returned `anchor_id` is the annotation ID reported by
 `annotation_projections_json()` and remains compatible with the 0.1C `labels`
 visual-patch channel; there is no parallel host text-update model.
+Labels can use the embedded bitmap font with `LabelDesc::bitmap` or a real
+TrueType/OpenType face with `LabelFontFace::from_truetype_bytes`,
+`LabelDesc::truetype`, or recipe `fonts[]` plus label `font`. Font-backed labels
+support basic Latin metrics, kerning, and raster coverage; complex-script text
+fails closed instead of rendering fallback garbage.
 Browser custom-element annotations use the same screen-projection data but
 perform HTML layout in CSS-pixel space. Native/browser hosts can call
 `layout_scena_viewer_annotations()` with

@@ -83,7 +83,8 @@ fn connector_lookup_error(error: LookupError, requested_name: &str) -> Connectio
         | LookupError::ClippingPlaneNotFound(_)
         | LookupError::InstanceSetNotFound(_)
         | LookupError::InstanceNotFound { .. }
-        | LookupError::LabelNotFound(_) => ConnectionError::MissingConnectorName {
+        | LookupError::LabelNotFound(_)
+        | LookupError::UnsupportedLabelText { .. } => ConnectionError::MissingConnectorName {
             name: requested_name.to_string(),
         },
     }

@@ -56,7 +56,6 @@ fn scene_recipe_validation_reports_unknown_fields_duplicate_ids_and_suggestions(
 fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
     for section in [
         "primitives",
-        "fonts",
         "skins",
         "morphs",
         "particles",
@@ -929,6 +928,125 @@ fn scene_recipe_slice10_primitives_validate_build_and_render_with_deterministic_
 
 #[cfg(feature = "scene-host")]
 #[test]
+fn scene_recipe_slice11_fonts_validate_build_render_and_fail_closed() {
+    let font_path = system_test_font_path();
+    let font_uri = path_str(&font_path).to_owned();
+    let recipe = json!({
+        "schema": "scena.scene_recipe.v1",
+        "fonts": [
+            { "id": "dejavu", "uri": font_uri }
+        ],
+        "labels": [{
+            "id": "font_label",
+            "text": "AVAV",
+            "font": "dejavu",
+            "size_px": 32.0,
+            "color": "#19D96E",
+            "transform": { "kind": "trs", "translation": [0.0, 0.0, 0.0] }
+        }],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "active": true,
+            "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.5], "target": "font_label" }
+        }],
+        "capture": { "width": 180, "height": 96 }
+    });
+    let text = serde_json::to_string_pretty(&recipe).expect("recipe serializes");
+    let validation = scena::validate_scene_recipe_json(&text);
+    assert!(
+        validation.ok,
+        "Slice 11 font recipe should validate: {validation:#?}"
+    );
+
+    let policy = scena::RecipeBuildPolicy::testing().with_allowed_roots([
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+        PathBuf::from("/usr/share/fonts"),
+    ]);
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/slice11.recipe.json",
+        &text,
+        policy.clone(),
+    ))
+    .expect("Slice 11 font recipe build succeeds");
+    assert!(build.manifest.ok, "{:#?}", build.manifest);
+    assert!(
+        build
+            .manifest
+            .nodes
+            .iter()
+            .any(|node| node.id == "font_label" && node.kind == "label"),
+        "font label must be targetable in the build manifest: {:#?}",
+        build.manifest
+    );
+
+    let mut host = build.host;
+    host.prepare().expect("font label scene prepares");
+    host.render().expect("font label scene renders");
+    let capture = host.capture().expect("font label scene captures");
+    let inspection_json = host.inspect_json().expect("font label scene inspects");
+    let inspection: scena::SceneInspectionReportV1 =
+        serde_json::from_str(&inspection_json).expect("inspection decodes");
+    let report = host.renderer().introspect_capture(
+        &capture,
+        &inspection,
+        scena::RenderIntrospectionOptions::summary(),
+    );
+    assert!(
+        report.ok,
+        "font label render should be visible: {report:#?}"
+    );
+    assert!(
+        report.visible_pixel_fraction > 0.005,
+        "font label should produce measurable glyph pixels: {report:#?}"
+    );
+
+    let too_small_policy = policy.with_fetch_byte_limit(16);
+    let oversized = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/slice11.recipe.json",
+        &text,
+        too_small_policy,
+    ))
+    .expect_err("oversize font should fail closed under policy");
+    assert_build_reason(&oversized, "policy_violation", "$.fonts[0].uri");
+
+    let missing = json!({
+        "schema": "scena.scene_recipe.v1",
+        "fonts": [
+            { "id": "missing_font", "uri": "tests/assets/missing-font.ttf" }
+        ],
+        "labels": [{
+            "id": "font_label",
+            "text": "AVAV",
+            "font": "missing_font"
+        }]
+    });
+    let missing_text = serde_json::to_string_pretty(&missing).expect("recipe serializes");
+    let missing_report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/slice11.recipe.json",
+        &missing_text,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect_err("missing required font should fail closed");
+    assert_build_reason(&missing_report, "font_load_failed", "$.fonts[0]");
+
+    let complex = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "fonts": [
+            { "id": "dejavu", "uri": font_uri }
+        ],
+        "labels": [{
+            "id": "complex",
+            "text": "سلام",
+            "font": "dejavu"
+        }]
+    }));
+    assert!(!complex.ok);
+    assert_reason(&complex, "unsupported_feature", None);
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
 fn scene_recipe_slice3_transform_placement_verbs_resolve_against_authored_and_imported_targets() {
     let recipe = json!({
         "schema": "scena.scene_recipe.v1",
@@ -1648,6 +1766,20 @@ fn artifact_dir(name: &str) -> PathBuf {
 
 fn path_str(path: &Path) -> &str {
     path.to_str().expect("test path is valid UTF-8")
+}
+
+#[cfg(feature = "scene-host")]
+fn system_test_font_path() -> PathBuf {
+    let candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ];
+    candidates
+        .iter()
+        .map(Path::new)
+        .find(|path| path.exists())
+        .map(Path::to_path_buf)
+        .expect("builder must provide a TrueType test font")
 }
 
 fn stderr(output: &std::process::Output) -> String {

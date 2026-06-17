@@ -71,6 +71,7 @@ required-features = ["scene-host"]
 [dependencies]
 base64 = "0.22"
 bytemuck = { version = "1", features = ["derive"] }
+fontdue = "0.9"
 glam = { version = "0.32", default-features = false, features = ["std", "scalar-math", "serde"] }
 gltf = { version = "1.4", default-features = false, features = ["utils", "names", "extras", "extensions", "image", "import", "KHR_lights_punctual", "KHR_materials_unlit", "KHR_materials_emissive_strength", "KHR_texture_transform", "KHR_materials_variants"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

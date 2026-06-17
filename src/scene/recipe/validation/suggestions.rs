@@ -48,6 +48,7 @@ pub(super) const ROOT_FIELDS: &[&str] = &[
     "materials",
     "nodes",
     "instance_sets",
+    "fonts",
     "labels",
     "clipping_planes",
     "animations",
@@ -80,7 +81,6 @@ pub(super) const UNSUPPORTED_WORKFLOW_FIELDS: &[&str] = &[
 ];
 pub(super) const UNSUPPORTED_SECTION_FIELDS: &[&str] = &[
     "primitives",
-    "fonts",
     "skins",
     "morphs",
     "particles",

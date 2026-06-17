@@ -21,6 +21,8 @@ pub struct SceneRecipeBuildV1 {
     pub animations: Vec<SceneRecipeBuildAnimationV1>,
     pub geometries: Vec<SceneRecipeBuildResourceV1>,
     pub materials: Vec<SceneRecipeBuildResourceV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fonts: Vec<SceneRecipeBuildResourceV1>,
     pub diagnostics: Vec<SceneRecipeDiagnosticV1>,
     pub skipped: Vec<SceneRecipeBuildSkippedV1>,
 }

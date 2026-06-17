@@ -21,6 +21,7 @@ const INSTANCE_FIELDS: &[&str] = &["id", "transform", "tint", "visible"];
 const LABEL_FIELDS: &[&str] = &[
     "id",
     "text",
+    "font",
     "parent",
     "transform",
     "color",
@@ -266,6 +267,7 @@ fn validate_instances(
 pub(in crate::scene::recipe::validation::authoring) fn validate_labels(
     value: Option<&Value>,
     colors: &BTreeSet<String>,
+    fonts: &BTreeSet<String>,
     target_ids: &BTreeSet<String>,
     import_ids: &BTreeSet<String>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
@@ -301,7 +303,8 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_labels(
         };
         validate_known_fields(&path, object, LABEL_FIELDS, diagnostics);
         validate_required_id(&path, object.get("id"), diagnostics);
-        match object.get("text").and_then(Value::as_str) {
+        let text = object.get("text").and_then(Value::as_str);
+        match text {
             Some(text) if !text.trim().is_empty() => {}
             _ => diagnostics.push(diagnostic(
                 "invalid_label",
@@ -312,6 +315,31 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_labels(
                 None,
                 false,
             )),
+        }
+        if let Some(font) = object.get("font") {
+            validate_ref(
+                &format!("{path}.font"),
+                Some(font),
+                fonts,
+                "font",
+                diagnostics,
+            );
+            if let Some(text) = text
+                && let Some(character) = first_non_basic_latin(text)
+            {
+                diagnostics.push(diagnostic(
+                    "unsupported_feature",
+                    "error",
+                    format!("{path}.text"),
+                    format!(
+                        "font-backed labels support basic Latin text only; found U+{:04X}",
+                        character as u32
+                    ),
+                    "render complex-script text in the host or use basic Latin for recipe-authored labels",
+                    None,
+                    false,
+                ));
+            }
         }
         if let Some(parent) = object.get("parent") {
             validate_ref(
@@ -360,6 +388,11 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_labels(
             None => {}
         }
     }
+}
+
+fn first_non_basic_latin(text: &str) -> Option<char> {
+    text.chars()
+        .find(|character| !matches!(character, '\u{20}'..='\u{7e}'))
 }
 
 fn validate_color_value(

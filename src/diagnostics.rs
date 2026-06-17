@@ -341,6 +341,10 @@ pub enum LookupError {
         instance: crate::scene::InstanceId,
     },
     LabelNotFound(LabelKey),
+    UnsupportedLabelText {
+        label: LabelKey,
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

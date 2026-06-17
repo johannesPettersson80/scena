@@ -8,7 +8,10 @@ use crate::scene::recipe::{
     SceneRecipeInstanceSetV1, SceneRecipeLabelV1,
 };
 use crate::scene_host::SceneHostCore;
-use crate::{ClippingPlane, ClippingPlaneSet, GeometryHandle, LabelDesc, MaterialHandle, NodeKey};
+use crate::{
+    ClippingPlane, ClippingPlaneSet, GeometryHandle, LabelDesc, LabelFontFace, MaterialHandle,
+    NodeKey,
+};
 
 use super::super::error_diagnostic;
 
@@ -221,9 +224,7 @@ pub(in crate::scene_host::recipe) struct InstanceSetResources<'a> {
 pub(in crate::scene_host::recipe) fn build_authored_labels(
     host: &mut SceneHostCore<DefaultAssetFetcher>,
     recipes: &[SceneRecipeLabelV1],
-    colors: &BTreeMap<String, SceneRecipeColorV1>,
-    node_keys: &BTreeMap<String, NodeKey>,
-    import_handles: &BTreeMap<String, u64>,
+    resources: LabelResources<'_>,
     manifest: &mut Vec<crate::SceneRecipeBuildTargetV1>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) -> BTreeMap<String, NodeKey> {
@@ -233,7 +234,7 @@ pub(in crate::scene_host::recipe) fn build_authored_labels(
     for (index, recipe) in recipes.iter().enumerate() {
         let path = format!("$.labels[{index}]");
         let parent = match &recipe.parent {
-            Some(parent) => match node_keys.get(parent).copied() {
+            Some(parent) => match resources.nodes.get(parent).copied() {
                 Some(parent) => parent,
                 None => {
                     diagnostics.push(error_diagnostic(
@@ -253,8 +254,8 @@ pub(in crate::scene_host::recipe) fn build_authored_labels(
         let transform = match transform_from_recipe(
             recipe.transform.as_ref(),
             TransformResolutionInput {
-                node_keys,
-                imports: import_handles,
+                node_keys: resources.nodes,
+                imports: resources.imports,
                 parent: Some(parent),
                 current_bounds: None,
             },
@@ -266,7 +267,7 @@ pub(in crate::scene_host::recipe) fn build_authored_labels(
                 continue;
             }
         };
-        let label = match label_desc_from_recipe(recipe, colors, &path) {
+        let label = match label_desc_from_recipe(recipe, resources.colors, resources.fonts, &path) {
             Ok(label) => label,
             Err(diagnostic) => {
                 diagnostics.push(*diagnostic);
@@ -304,12 +305,42 @@ pub(in crate::scene_host::recipe) fn build_authored_labels(
     label_nodes
 }
 
+pub(in crate::scene_host::recipe) struct LabelResources<'a> {
+    pub(in crate::scene_host::recipe) colors: &'a BTreeMap<String, SceneRecipeColorV1>,
+    pub(in crate::scene_host::recipe) fonts: &'a BTreeMap<String, LabelFontFace>,
+    pub(in crate::scene_host::recipe) nodes: &'a BTreeMap<String, NodeKey>,
+    pub(in crate::scene_host::recipe) imports: &'a BTreeMap<String, u64>,
+}
+
 fn label_desc_from_recipe(
     recipe: &SceneRecipeLabelV1,
     colors: &BTreeMap<String, SceneRecipeColorV1>,
+    fonts: &BTreeMap<String, LabelFontFace>,
     path: &str,
 ) -> Result<LabelDesc, Box<SceneRecipeDiagnosticV1>> {
-    let mut label = LabelDesc::bitmap(recipe.text.clone());
+    let mut label = if let Some(font_id) = &recipe.font {
+        let Some(font) = fonts.get(font_id).cloned() else {
+            return Err(Box::new(error_diagnostic(
+                format!("{path}.font"),
+                "unknown_font_ref",
+                format!(
+                    "label '{}' references missing font '{}'",
+                    recipe.id, font_id
+                ),
+                "declare and successfully load the font before referencing it",
+            )));
+        };
+        LabelDesc::truetype_face(recipe.text.clone(), font).map_err(|error| {
+            Box::new(error_diagnostic(
+                format!("{path}.text"),
+                "unsupported_feature",
+                error.to_string(),
+                "use basic Latin text for font-backed labels",
+            ))
+        })?
+    } else {
+        LabelDesc::bitmap(recipe.text.clone())
+    };
     if let Some(size) = recipe.size_px {
         if !size.is_finite() || size <= 0.0 {
             return Err(Box::new(error_diagnostic(
