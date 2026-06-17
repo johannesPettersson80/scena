@@ -6,6 +6,10 @@ All notable user-facing changes are recorded here.
 
 ### Added
 
+- Tightened recipe-authored advanced-PBR validation so `ior` matches the public
+  material builder domain exactly and GPU-inert volume texture slots
+  (`transmission_texture`, `thickness_texture`) fail closed instead of silently
+  rendering differently across backends.
 - Added the `scena.visual_patch.v1` SceneHost patch contract for batched
   transform, tint, visibility, camera, eased transition, animation-time,
   selection/hover, material variant, label-anchor, and metadata updates, with

@@ -710,9 +710,7 @@ fn scene_recipe_slice9_advanced_pbr_fields_validate_build_and_reject_clamped_val
             "sheen_roughness_texture": { "uri": texture, "color_space": "linear" },
             "anisotropy_texture": { "uri": texture, "color_space": "linear" },
             "iridescence_texture": { "uri": texture, "color_space": "linear" },
-            "iridescence_thickness_texture": { "uri": texture, "color_space": "linear" },
-            "transmission_texture": { "uri": texture, "color_space": "linear" },
-            "thickness_texture": { "uri": texture, "color_space": "linear" }
+            "iridescence_thickness_texture": { "uri": texture, "color_space": "linear" }
         }],
         "nodes": [{
             "id": "sphere",
@@ -751,6 +749,66 @@ fn scene_recipe_slice9_advanced_pbr_fields_validate_build_and_reject_clamped_val
     assert!(build.manifest.ok, "{:#?}", build.manifest);
     assert_eq!(build.manifest.materials.len(), 1);
 
+    let unsupported_gpu_textures = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "base": "#7C8798" },
+        "materials": [{
+            "id": "advanced",
+            "kind": "pbr_metallic_roughness",
+            "base_color": "base",
+            "transmission_texture": { "uri": texture, "color_space": "linear" },
+            "thickness_texture": { "uri": texture, "color_space": "linear" }
+        }]
+    }));
+    assert!(!unsupported_gpu_textures.ok);
+    assert_reason_at(
+        &unsupported_gpu_textures,
+        "unsupported_feature",
+        "$.materials[0].transmission_texture",
+    );
+    assert_reason_at(
+        &unsupported_gpu_textures,
+        "unsupported_feature",
+        "$.materials[0].thickness_texture",
+    );
+
+    let invalid_ior = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "base": "#7C8798" },
+        "materials": [{
+            "id": "advanced",
+            "kind": "pbr_metallic_roughness",
+            "base_color": "base",
+            "ior": 0.9
+        }]
+    }));
+    assert!(!invalid_ior.ok);
+    assert_reason_at(&invalid_ior, "invalid_ior", "$.materials[0].ior");
+
+    let zero_ior = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "base": "#7C8798" },
+        "geometries": [{
+            "id": "g",
+            "primitive": { "kind": "box", "size": [0.1, 0.1, 0.1] }
+        }],
+        "materials": [{
+            "id": "advanced",
+            "kind": "pbr_metallic_roughness",
+            "base_color": "base",
+            "ior": 0.0
+        }],
+        "nodes": [{
+            "id": "n",
+            "geometry": "g",
+            "material": "advanced"
+        }]
+    }));
+    assert!(
+        zero_ior.ok,
+        "ior:0.0 is MaterialDesc's documented sentinel and should validate: {zero_ior:#?}"
+    );
+
     let invalid = scena::validate_scene_recipe_value(json!({
         "schema": "scena.scene_recipe.v1",
         "colors": { "base": "#7C8798", "white": "#FFFFFF" },
@@ -776,9 +834,32 @@ fn scene_recipe_slice9_advanced_pbr_fields_validate_build_and_reject_clamped_val
         }]
     }));
     assert!(!invalid.ok);
-    assert_reason(&invalid, "invalid_unit_value", None);
-    assert_reason(&invalid, "unknown_color_ref", None);
-    assert_reason(&invalid, "invalid_number", None);
+    assert_reason_at(
+        &invalid,
+        "invalid_unit_value",
+        "$.materials[0].clearcoat_factor",
+    );
+    assert_reason_at(
+        &invalid,
+        "unknown_color_ref",
+        "$.materials[0].sheen_color_factor",
+    );
+    assert_reason_at(
+        &invalid,
+        "invalid_unit_value",
+        "$.materials[0].anisotropy_strength_factor",
+    );
+    assert_reason_at(&invalid, "invalid_number", "$.materials[0].iridescence_ior");
+    assert_reason_at(
+        &invalid,
+        "invalid_unit_value",
+        "$.materials[0].transmission_factor",
+    );
+    assert_reason_at(
+        &invalid,
+        "invalid_number",
+        "$.materials[0].attenuation_distance",
+    );
 }
 
 #[cfg(feature = "scene-host")]
@@ -1827,21 +1908,21 @@ fn scene_recipe_import_node_paths_validate_and_build_for_authored_targets() {
             "id": "placed_on_import",
             "geometry": "placed_geo",
             "material": "placed_mat",
-            "transform": { "kind": "place_on", "target": "part:/" }
+            "transform": { "kind": "place_on", "target": "part:/ColoredTriangle" }
         }],
         "instance_sets": [{
             "id": "instances_on_import",
             "geometry": "placed_geo",
             "material": "placed_mat",
-            "transform": { "kind": "place_on", "target": "part:/" },
+            "transform": { "kind": "place_on", "target": "part:/ColoredTriangle" },
             "instances": [
-                { "id": "i0", "transform": { "kind": "look_at", "eye": [0.0, 0.1, 0.3], "target": "part:/" } }
+                { "id": "i0", "transform": { "kind": "look_at", "eye": [0.0, 0.1, 0.3], "target": "part:/ColoredTriangle" } }
             ]
         }],
         "particles": [{
             "id": "import_particles",
-            "parent": "part:/",
-            "transform": { "kind": "place_on", "target": "part:/" },
+            "parent": "part:/ColoredTriangle",
+            "transform": { "kind": "place_on", "target": "part:/ColoredTriangle" },
             "particles": [
                 { "id": "p0", "position": [0.0, 0.0, 0.0], "color": "particle", "size_px": 18.0 }
             ]
@@ -1849,16 +1930,16 @@ fn scene_recipe_import_node_paths_validate_and_build_for_authored_targets() {
         "labels": [{
             "id": "import_label",
             "text": "ROOT",
-            "parent": "part:/",
+            "parent": "part:/ColoredTriangle",
             "color": "label",
             "size_px": 18.0,
-            "transform": { "kind": "look_at", "eye": [0.0, 0.1, 0.3], "target": "part:/" }
+            "transform": { "kind": "look_at", "eye": [0.0, 0.1, 0.3], "target": "part:/ColoredTriangle" }
         }],
         "cameras": [{
             "id": "main",
             "kind": "perspective",
             "active": true,
-            "transform": { "kind": "look_at", "eye": [0.4, 0.3, 0.5], "target": "part:/" }
+            "transform": { "kind": "look_at", "eye": [0.4, 0.3, 0.5], "target": "part:/ColoredTriangle" }
         }],
         "capture": { "width": 180, "height": 120 }
     });
@@ -1907,6 +1988,45 @@ fn scene_recipe_import_node_paths_validate_and_build_for_authored_targets() {
         scena::RenderIntrospectionOptions::summary(),
     );
     assert!(report.ok, "import target scene should render: {report:#?}");
+
+    let unknown = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [{
+            "id": "part",
+            "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
+        }],
+        "colors": {
+            "label": "#FFFFFF",
+            "particle": "#30D060"
+        },
+        "particles": [{
+            "id": "import_particles",
+            "parent": "ghost:/Mesh",
+            "particles": [
+                { "id": "p0", "position": [0.0, 0.0, 0.0], "color": "particle", "size_px": 18.0 }
+            ]
+        }],
+        "labels": [{
+            "id": "import_label",
+            "text": "ROOT",
+            "parent": "ghost:/Mesh",
+            "color": "label"
+        }],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "active": true,
+            "transform": { "kind": "look_at", "eye": [0.4, 0.3, 0.5], "target": "ghost:/Mesh" }
+        }]
+    }));
+    assert!(!unknown.ok);
+    assert_reason_at(&unknown, "unknown_import_ref", "$.particles[0].parent");
+    assert_reason_at(&unknown, "unknown_import_ref", "$.labels[0].parent");
+    assert_reason_at(
+        &unknown,
+        "unknown_import_ref",
+        "$.cameras[0].transform.target",
+    );
 }
 
 #[test]
@@ -2482,6 +2602,17 @@ fn assert_reason(
                     .is_none_or(|expected| diagnostic.suggestion.as_deref() == Some(expected))
         }),
         "missing diagnostic {code}/{suggestion:?}: {report:#?}",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+fn assert_reason_at(report: &scena::SceneRecipeValidationReportV1, code: &str, path: &str) {
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == code && diagnostic.path == path),
+        "missing diagnostic {code} at {path}: {report:#?}",
     );
 }
 

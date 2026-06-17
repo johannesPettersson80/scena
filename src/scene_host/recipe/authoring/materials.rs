@@ -347,31 +347,35 @@ async fn authored_material(
             |diagnostic| Box::new((*diagnostic).with_path(format!("{path}.attenuation_color"))),
         )?);
     }
-    if let Some(texture) = load_texture_slot(
-        policy,
-        host,
-        recipe_path,
+    reject_gpu_unsupported_volume_texture(
         recipe.transmission_texture.as_ref(),
-        &format!("{path}.transmission_texture"),
-        TextureColorSpace::Linear,
-    )
-    .await?
-    {
-        material = material.with_transmission_texture(texture);
-    }
-    if let Some(texture) = load_texture_slot(
-        policy,
-        host,
-        recipe_path,
+        path,
+        "transmission_texture",
+    )?;
+    reject_gpu_unsupported_volume_texture(
         recipe.thickness_texture.as_ref(),
-        &format!("{path}.thickness_texture"),
-        TextureColorSpace::Linear,
-    )
-    .await?
-    {
-        material = material.with_thickness_texture(texture);
-    }
+        path,
+        "thickness_texture",
+    )?;
     Ok((kind.to_owned(), material))
+}
+
+fn reject_gpu_unsupported_volume_texture(
+    slot: Option<&SceneRecipeTextureSlotV1>,
+    path: &str,
+    field: &str,
+) -> Result<(), Box<SceneRecipeDiagnosticV1>> {
+    if slot.is_none() {
+        return Ok(());
+    }
+    Err(Box::new(error_diagnostic(
+        format!("{path}.{field}"),
+        "unsupported_feature",
+        format!(
+            "{field} is not exposed by scene_recipe.v1 until the GPU path supports it without exceeding the WebGL2 texture-unit floor"
+        ),
+        "remove this texture slot or use scalar transmission/thickness factors for now",
+    )))
 }
 
 async fn load_texture_slot(
@@ -454,9 +458,7 @@ mod tests {
             "sheen_roughness_texture": { "uri": texture, "color_space": "linear" },
             "anisotropy_texture": { "uri": texture, "color_space": "linear" },
             "iridescence_texture": { "uri": texture, "color_space": "linear" },
-            "iridescence_thickness_texture": { "uri": texture, "color_space": "linear" },
-            "transmission_texture": { "uri": texture, "color_space": "linear" },
-            "thickness_texture": { "uri": texture, "color_space": "linear" }
+            "iridescence_thickness_texture": { "uri": texture, "color_space": "linear" }
         }));
 
         assert_close(material.clearcoat_factor(), 0.8);
@@ -484,8 +486,52 @@ mod tests {
         assert!(material.anisotropy_texture().is_some());
         assert!(material.iridescence_texture().is_some());
         assert!(material.iridescence_thickness_texture().is_some());
-        assert!(material.transmission_texture().is_some());
-        assert!(material.thickness_texture().is_some());
+        assert!(material.transmission_texture().is_none());
+        assert!(material.thickness_texture().is_none());
+    }
+
+    #[test]
+    fn authored_advanced_pbr_recipe_ior_matches_public_setter_domain() {
+        let zero = recipe_material(json!({
+            "id": "advanced",
+            "kind": "pbr_metallic_roughness",
+            "base_color": "base",
+            "ior": 0.0
+        }));
+        assert_close(zero.ior(), 0.0);
+
+        let boundary = recipe_material(json!({
+            "id": "advanced",
+            "kind": "pbr_metallic_roughness",
+            "base_color": "base",
+            "ior": 1.0
+        }));
+        assert_close(boundary.ior(), 1.0);
+    }
+
+    #[test]
+    fn authored_advanced_pbr_recipe_rejects_gpu_unsupported_volume_textures() {
+        for field in ["transmission_texture", "thickness_texture"] {
+            let mut material = json!({
+                "id": "advanced",
+                "kind": "pbr_metallic_roughness",
+                "base_color": "base"
+            });
+            material
+                .as_object_mut()
+                .expect("material recipe is an object")
+                .insert(
+                    field.to_owned(),
+                    json!({
+                    "uri": "gltf/khronos/WaterBottle/WaterBottle_baseColor.png",
+                    "color_space": "linear"
+                    }),
+                );
+            let result = try_recipe_material(material);
+            let error = result.expect_err("GPU-unsupported recipe texture should fail closed");
+            assert_eq!(error.code, "unsupported_feature");
+            assert_eq!(error.path, format!("$.materials[0].{field}"));
+        }
     }
 
     #[test]
@@ -530,6 +576,12 @@ mod tests {
     }
 
     fn recipe_material(value: serde_json::Value) -> MaterialDesc {
+        try_recipe_material(value).expect("recipe material builds")
+    }
+
+    fn try_recipe_material(
+        value: serde_json::Value,
+    ) -> Result<MaterialDesc, Box<SceneRecipeDiagnosticV1>> {
         let recipe: SceneRecipeMaterialV1 =
             serde_json::from_value(value).expect("recipe material decodes");
         let colors = test_colors();
@@ -544,8 +596,7 @@ mod tests {
             base_color,
             "$.materials[0]",
         ))
-        .expect("recipe material builds")
-        .1
+        .map(|(_, material)| material)
     }
 
     fn render_material_gpu(material: MaterialDesc) -> Vec<u8> {

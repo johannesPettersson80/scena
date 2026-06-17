@@ -442,7 +442,10 @@ A **new render path** — grep finds no particle/point-sprite rendering today.
 - [x] **Fail-closed validation per directive** (reject bad refs, non-finite
       values, out-of-range params), per the semantics above — and reject
       out-of-range values **before** any public setter silently clamps them
-      (advanced PBR, Slice 9).
+      (advanced PBR, Slice 9). Recipe-authored `transmission_texture` and
+      `thickness_texture` are rejected until the GPU material path can sample
+      them without exceeding WebGL2's fragment texture-unit floor; scalar
+      `transmission_factor` and `thickness_factor` remain supported.
 - [x] **GPU/browser proofs must FAIL when the backend is unavailable, not
       silently skip** — a skipped proof is not acceptance evidence (esp. the
       headless-GPU pixel diffs in Slices 9/13 and the browser proof).

@@ -73,6 +73,28 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_optional_positiv
     }
 }
 
+pub(in crate::scene::recipe::validation::authoring) fn validate_optional_ior(
+    path: &str,
+    value: Option<&Value>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    match value.as_f64() {
+        Some(value) if value.is_finite() && (value == 0.0 || value >= 1.0) => {}
+        _ => diagnostics.push(diagnostic(
+            "invalid_ior",
+            "error",
+            path,
+            "ior must be finite and either 0 or greater than or equal to 1.0",
+            "use 0 for the MaterialDesc sentinel or a physical IOR such as 1.45",
+            None,
+            false,
+        )),
+    }
+}
+
 pub(in crate::scene::recipe::validation::authoring) fn validate_optional_non_negative(
     path: &str,
     value: Option<&Value>,

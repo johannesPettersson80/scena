@@ -128,3 +128,19 @@ fn texture_layout_entry(
         count: None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::MATERIAL_TEXTURE_BINDING_INDICES;
+
+    #[test]
+    fn material_and_global_fragment_textures_fit_webgl2_floor() {
+        const WEBGL2_MIN_FRAGMENT_TEXTURE_UNITS: usize = 16;
+        const GLOBAL_OUTPUT_TEXTURE_UNITS: usize = 3;
+        let material_textures = MATERIAL_TEXTURE_BINDING_INDICES.len();
+        assert!(
+            material_textures + GLOBAL_OUTPUT_TEXTURE_UNITS <= WEBGL2_MIN_FRAGMENT_TEXTURE_UNITS,
+            "material textures ({material_textures}) plus global output textures ({GLOBAL_OUTPUT_TEXTURE_UNITS}) must stay within WebGL2's 16 texture-unit floor"
+        );
+    }
+}

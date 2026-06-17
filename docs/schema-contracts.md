@@ -1075,16 +1075,21 @@ The current v1 recipe slice supports:
   `clearcoat_texture`, `clearcoat_roughness_texture`,
   `clearcoat_normal_texture`, `sheen_color_texture`,
   `sheen_roughness_texture`, `anisotropy_texture`,
-  `iridescence_texture`, `iridescence_thickness_texture`,
-  `transmission_texture`, and `thickness_texture`. Recipe validation rejects
-  out-of-range values before `MaterialDesc` setters can clamp or sanitize them.
+  `iridescence_texture`, and `iridescence_thickness_texture`.
+  Recipe validation rejects out-of-range values before `MaterialDesc` setters
+  can clamp or sanitize them. `ior` must be finite and either `0` or `>= 1.0`,
+  matching `MaterialDesc`'s sentinel/domain. `transmission_texture` and
+  `thickness_texture` remain invalid in recipe-authored materials until the GPU
+  path can sample them without exceeding the WebGL2 fragment texture-unit floor;
+  use scalar `transmission_factor` and `thickness_factor` meanwhile.
 - `nodes[]` authored renderables with stable caller `id`, geometry/material
   references, optional manifest `name`, parent hierarchy, tags, visibility,
   layer mask, render group, tint, and optional `raw`, `trs`, `look_at`,
   `center`, `ground`, `fit_to_size`, `place_on`, or `align_to_anchor`
-  transform. `place_on` may reference only nodes declared earlier in the
-  recipe; `align_to_anchor` resolves `<import_id>.<anchor_name>` against a live
-  imported anchor. Forward refs fail closed before build.
+  transform. `place_on` and `look_at` may reference authored nodes declared
+  earlier in the recipe or imported node paths of the form `<import_id>:/<path>`;
+  `align_to_anchor` resolves `<import_id>.<anchor_name>` against a live imported
+  anchor. Forward refs fail closed before build.
 - `instance_sets[]` authored instance-set nodes with stable caller `id`,
   geometry/material references, optional parent and root transform, and
   per-instance stable ids with transform, opaque tint, and visibility. Hidden

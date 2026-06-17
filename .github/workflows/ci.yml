@@ -29,6 +29,7 @@ jobs:
           cargo fmt --check
           cargo clippy --all-targets -- -D warnings
           cargo test
+          cargo test --features scene-host,inspection --test scene_recipe_contracts --test label_text
           cargo test --features inspection --test m7_threejs_ergonomics m7_scene_inspection
           cargo test --features ktx2 --test m8_assets_materials_ecosystem m8_ktx2_basisu_feature_loads_compressed_texture_descriptor
           bash scripts/release_lane_command.sh linux-native-vulkan cargo test --test m9_platform_release

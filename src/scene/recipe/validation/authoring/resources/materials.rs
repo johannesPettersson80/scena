@@ -6,7 +6,7 @@ use crate::scene::recipe::types::SceneRecipeDiagnosticV1;
 
 use super::super::{validate_known_fields, validate_required_id};
 use super::material_fields::{
-    validate_alpha_mode, validate_color_ref, validate_optional_finite,
+    validate_alpha_mode, validate_color_ref, validate_optional_finite, validate_optional_ior,
     validate_optional_non_negative, validate_optional_positive, validate_optional_range,
     validate_texture_slot, validate_unit_float,
 };
@@ -77,6 +77,20 @@ const ADVANCED_PBR_SCALAR_FIELDS: &[&str] = &[
     "attenuation_distance",
     "attenuation_color",
 ];
+
+const GPU_SUPPORTED_ADVANCED_PBR_TEXTURE_FIELDS: &[&str] = &[
+    "clearcoat_texture",
+    "clearcoat_roughness_texture",
+    "clearcoat_normal_texture",
+    "sheen_color_texture",
+    "sheen_roughness_texture",
+    "anisotropy_texture",
+    "iridescence_texture",
+    "iridescence_thickness_texture",
+];
+
+const GPU_UNSUPPORTED_VOLUME_TEXTURE_FIELDS: &[&str] =
+    &["transmission_texture", "thickness_texture"];
 
 const ADVANCED_PBR_TEXTURE_FIELDS: &[&str] = &[
     "clearcoat_texture",
@@ -182,7 +196,7 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_materials(
         ] {
             validate_texture_slot(&format!("{path}.{field}"), object.get(field), diagnostics);
         }
-        for field in ADVANCED_PBR_TEXTURE_FIELDS {
+        for field in GPU_SUPPORTED_ADVANCED_PBR_TEXTURE_FIELDS {
             validate_texture_slot(&format!("{path}.{field}"), object.get(*field), diagnostics);
         }
         match kind {
@@ -291,12 +305,28 @@ fn validate_advanced_pbr_fields(
         object.get("anisotropy_rotation_radians"),
         diagnostics,
     );
-    for field in ["iridescence_ior", "ior", "attenuation_distance"] {
+    for field in ["iridescence_ior", "attenuation_distance"] {
         validate_optional_positive(&format!("{path}.{field}"), object.get(field), diagnostics);
     }
+    validate_optional_ior(&format!("{path}.ior"), object.get("ior"), diagnostics);
     for field in ["sheen_color_factor", "attenuation_color"] {
         if let Some(value) = object.get(field) {
             validate_color_ref(&format!("{path}.{field}"), Some(value), colors, diagnostics);
+        }
+    }
+    for field in GPU_UNSUPPORTED_VOLUME_TEXTURE_FIELDS {
+        if object.contains_key(*field) {
+            diagnostics.push(diagnostic(
+                "unsupported_feature",
+                "error",
+                format!("{path}.{field}"),
+                format!(
+                    "{field} is not exposed by scene_recipe.v1 until the GPU path supports it without exceeding the WebGL2 texture-unit floor"
+                ),
+                "remove this texture slot or use scalar transmission/thickness factors for now",
+                None,
+                false,
+            ));
         }
     }
 }
