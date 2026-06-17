@@ -52,8 +52,9 @@ the LLM authors objects it cannot then reference for verify/diagnose/patch.
   - `geometries`, `materials` — **resources**; carry their recipe `id` and a
     summary (kind, vertex/index counts), **no node handle**.
 - Authored node ids and imported node ids share the *same handle space and the
-  same manifest*, so an authored node and an imported node are targeted
-  identically. Do not keep a separate import-roots path.
+  same manifest*, so verification, overlays, cameras, and placement targets use
+  the same target-id vocabulary for authored and imported nodes. Do not keep a
+  separate import-roots path.
 
 ### Fail-closed semantics (LLM-trust contract)
 
@@ -382,13 +383,14 @@ into Slice 12 skin/morph authoring + Slice 13 particle rendering.)
 - [x] TrueType/asset font loading: parsed font metrics + glyph raster caching + font asset
       ownership; `LabelDesc` font selection; recipe label `font` ref under path
       policy.
-- [x] **Pin font scope explicitly:** basic Latin glyph raster coverage + per-glyph metrics
-      + kerning pairs are **in**; complex-script shaping (Arabic/Indic, bidi,
-      ligature substitution) is **out** for this slice and must fail closed with a
-      clear `unsupported_feature`, not render garbage.
-- [x] Proof: text rendered with a loaded font produces distinct glyph coverage vs
-      the bitmap path (pixel proof); fail-closed on missing/oversize font under
-      policy.
+- [x] **Pin font scope explicitly:** basic Latin glyph metrics + kerning pairs +
+      hard-edged glyph-cell shapes are **in**; antialiasing is **out** until the
+      transparent billboard path exists; complex-script shaping (Arabic/Indic,
+      bidi, ligature substitution) is **out** for this slice and must fail closed
+      with a clear `unsupported_feature`, not render garbage.
+- [x] Proof: text rendered with a loaded font produces distinct hard-edged glyph
+      cells vs the bitmap path (pixel proof); fail-closed on missing/oversize and
+      present-but-corrupt fonts under policy.
       Evidence: `label_desc_truetype_font_changes_metrics_and_rendered_coverage`,
       `label_desc_truetype_rejects_complex_script_text`, and
       `scene_recipe_slice11_fonts_validate_build_render_and_fail_closed`.

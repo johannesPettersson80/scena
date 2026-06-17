@@ -5,6 +5,7 @@ use serde_json::Value;
 use crate::scene::recipe::types::SceneRecipeDiagnosticV1;
 
 use super::super::{finite_vec3, validate_known_fields};
+use super::import_refs::{validate_look_at_target, validate_node_ref};
 use crate::scene::recipe::validation::diagnostic;
 
 const RAW_TRANSFORM_FIELDS: &[&str] = &["kind", "translation", "rotation", "scale"];
@@ -78,6 +79,7 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_transform(
                 &format!("{path}.target"),
                 object.get("target"),
                 node_ids,
+                import_ids,
                 diagnostics,
             );
             validate_vec3_optional(&format!("{path}.up"), object.get("up"), diagnostics);
@@ -99,11 +101,11 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_transform(
         }
         Some("place_on") => {
             validate_known_fields(path, object, PLACE_ON_TRANSFORM_FIELDS, diagnostics);
-            validate_ref(
+            validate_node_ref(
                 &format!("{path}.target"),
                 object.get("target"),
                 node_ids,
-                "node",
+                import_ids,
                 diagnostics,
             );
             validate_vec3_optional(&format!("{path}.offset"), object.get("offset"), diagnostics);
@@ -188,45 +190,6 @@ fn validate_anchor_ref(
             None,
             false,
         ));
-    }
-}
-
-pub(in crate::scene::recipe::validation::authoring) fn validate_look_at_target(
-    path: &str,
-    value: Option<&Value>,
-    node_ids: &BTreeSet<String>,
-    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
-) {
-    match value {
-        Some(Value::String(target)) if node_ids.contains(target) => {}
-        Some(Value::String(target)) => diagnostics.push(diagnostic(
-            "unknown_node_ref",
-            "error",
-            path,
-            format!("look_at target references unknown node '{target}'"),
-            "target an authored node id or provide a [x,y,z] position",
-            None,
-            false,
-        )),
-        Some(value) if finite_vec3(value).is_some() => {}
-        Some(_) => diagnostics.push(diagnostic(
-            "invalid_look_at_target",
-            "error",
-            path,
-            "look_at target must be an authored node id or a finite [x,y,z] position",
-            "target an authored node id or provide a [x,y,z] position",
-            None,
-            false,
-        )),
-        None => diagnostics.push(diagnostic(
-            "missing_look_at_target",
-            "error",
-            path,
-            "look_at transform requires a target",
-            "target an authored node id or provide a [x,y,z] position",
-            None,
-            false,
-        )),
     }
 }
 

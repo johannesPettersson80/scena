@@ -998,7 +998,7 @@ fn scene_recipe_slice11_fonts_validate_build_render_and_fail_closed() {
         "font label should produce measurable glyph pixels: {report:#?}"
     );
 
-    let too_small_policy = policy.with_fetch_byte_limit(16);
+    let too_small_policy = policy.clone().with_fetch_byte_limit(16);
     let oversized = pollster::block_on(scena::SceneHostCore::build_recipe_json(
         "tests/assets/slice11.recipe.json",
         &text,
@@ -1026,6 +1026,32 @@ fn scene_recipe_slice11_fonts_validate_build_render_and_fail_closed() {
     ))
     .expect_err("missing required font should fail closed");
     assert_build_reason(&missing_report, "font_load_failed", "$.fonts[0]");
+
+    let corrupt_font_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets/fonts/corrupt-font.ttf");
+    assert!(
+        corrupt_font_path.exists(),
+        "corrupt font fixture must be present"
+    );
+    let corrupt = json!({
+        "schema": "scena.scene_recipe.v1",
+        "fonts": [
+            { "id": "corrupt_font", "uri": path_str(&corrupt_font_path) }
+        ],
+        "labels": [{
+            "id": "font_label",
+            "text": "AVAV",
+            "font": "corrupt_font"
+        }]
+    });
+    let corrupt_text = serde_json::to_string_pretty(&corrupt).expect("recipe serializes");
+    let corrupt_report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/slice11.recipe.json",
+        &corrupt_text,
+        policy.clone(),
+    ))
+    .expect_err("present but malformed font should fail closed");
+    assert_build_reason(&corrupt_report, "font_load_failed", "$.fonts[0]");
 
     let complex = scena::validate_scene_recipe_value(json!({
         "schema": "scena.scene_recipe.v1",
@@ -1775,6 +1801,112 @@ fn scene_recipe_slice3_transform_placement_verbs_resolve_against_authored_and_im
         aligned.world_transform.translation.length() < 0.001,
         "align_to_anchor should put the node origin at the imported anchor: {aligned:#?}"
     );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_import_node_paths_validate_and_build_for_authored_targets() {
+    let recipe = json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [{
+            "id": "part",
+            "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
+        }],
+        "colors": {
+            "node": "#A0C8FF",
+            "label": "#FFFFFF",
+            "particle": "#30D060"
+        },
+        "geometries": [
+            { "id": "placed_geo", "primitive": { "kind": "box", "size": [0.05, 0.05, 0.05] } }
+        ],
+        "materials": [
+            { "id": "placed_mat", "kind": "unlit", "base_color": "node" }
+        ],
+        "nodes": [{
+            "id": "placed_on_import",
+            "geometry": "placed_geo",
+            "material": "placed_mat",
+            "transform": { "kind": "place_on", "target": "part:/" }
+        }],
+        "instance_sets": [{
+            "id": "instances_on_import",
+            "geometry": "placed_geo",
+            "material": "placed_mat",
+            "transform": { "kind": "place_on", "target": "part:/" },
+            "instances": [
+                { "id": "i0", "transform": { "kind": "look_at", "eye": [0.0, 0.1, 0.3], "target": "part:/" } }
+            ]
+        }],
+        "particles": [{
+            "id": "import_particles",
+            "parent": "part:/",
+            "transform": { "kind": "place_on", "target": "part:/" },
+            "particles": [
+                { "id": "p0", "position": [0.0, 0.0, 0.0], "color": "particle", "size_px": 18.0 }
+            ]
+        }],
+        "labels": [{
+            "id": "import_label",
+            "text": "ROOT",
+            "parent": "part:/",
+            "color": "label",
+            "size_px": 18.0,
+            "transform": { "kind": "look_at", "eye": [0.0, 0.1, 0.3], "target": "part:/" }
+        }],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "active": true,
+            "transform": { "kind": "look_at", "eye": [0.4, 0.3, 0.5], "target": "part:/" }
+        }],
+        "capture": { "width": 180, "height": 120 }
+    });
+    let text = serde_json::to_string_pretty(&recipe).expect("recipe serializes");
+
+    let validation = scena::validate_scene_recipe_json(&text);
+    assert!(
+        validation.ok,
+        "import node path ids should validate as authored targets: {validation:#?}"
+    );
+
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/import-targets.recipe.json",
+        &text,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("import node target recipe builds");
+    assert!(build.manifest.ok, "{:#?}", build.manifest);
+    for (id, kind) in [
+        ("placed_on_import", "node"),
+        ("instances_on_import", "instance_set"),
+        ("import_particles", "particle_set"),
+        ("import_label", "label"),
+    ] {
+        assert!(
+            build
+                .manifest
+                .nodes
+                .iter()
+                .any(|node| node.id == id && node.kind == kind),
+            "{id} should be targetable in the build manifest: {:#?}",
+            build.manifest
+        );
+    }
+
+    let mut host = build.host;
+    host.prepare().expect("import target scene prepares");
+    host.render().expect("import target scene renders");
+    let capture = host.capture().expect("import target scene captures");
+    let inspection_json = host.inspect_json().expect("import target scene inspects");
+    let inspection: scena::SceneInspectionReportV1 =
+        serde_json::from_str(&inspection_json).expect("inspection decodes");
+    let report = host.renderer().introspect_capture(
+        &capture,
+        &inspection,
+        scena::RenderIntrospectionOptions::summary(),
+    );
+    assert!(report.ok, "import target scene should render: {report:#?}");
 }
 
 #[test]

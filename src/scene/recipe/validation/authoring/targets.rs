@@ -1,6 +1,7 @@
 mod cameras;
 mod common;
 mod extras;
+mod import_refs;
 mod lights;
 mod nodes;
 mod particles;

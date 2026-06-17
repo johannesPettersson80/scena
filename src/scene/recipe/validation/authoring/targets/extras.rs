@@ -7,6 +7,7 @@ use crate::scene::recipe::types::SceneRecipeDiagnosticV1;
 
 use super::super::{finite_vec3, validate_known_fields, validate_required_id};
 use super::common::{TransformUse, validate_ref, validate_transform, validate_vec3};
+use super::import_refs::validate_node_ref;
 use crate::scene::recipe::validation::diagnostic;
 
 const INSTANCE_SET_FIELDS: &[&str] = &[
@@ -342,11 +343,11 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_labels(
             }
         }
         if let Some(parent) = object.get("parent") {
-            validate_ref(
+            validate_node_ref(
                 &format!("{path}.parent"),
                 Some(parent),
                 target_ids,
-                "node",
+                import_ids,
                 diagnostics,
             );
         }

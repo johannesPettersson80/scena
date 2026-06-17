@@ -13,6 +13,7 @@ const CAMERA_FIELDS: &[&str] = &["id", "kind", "fov_degrees", "active", "transfo
 pub(in crate::scene::recipe::validation::authoring) fn validate_cameras(
     value: Option<&Value>,
     nodes: &BTreeSet<String>,
+    imports: &BTreeSet<String>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
     let Some(value) = value else {
@@ -103,7 +104,7 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_cameras(
                 transform,
                 TransformUse::Camera,
                 nodes,
-                &BTreeSet::new(),
+                imports,
                 diagnostics,
             );
         }

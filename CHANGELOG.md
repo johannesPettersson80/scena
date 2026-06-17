@@ -67,10 +67,12 @@ All notable user-facing changes are recorded here.
   and authored-node section-box/callout targets.
 - Added real TrueType/OpenType label fonts through `LabelFontFace`,
   `LabelDesc::truetype`, and recipe `fonts[]` plus label `font` references.
-  Font-backed labels use real glyph metrics, kerning, and raster coverage for
-  basic Latin text, and fail closed for missing/oversized fonts or complex-script
-  text that scena does not shape. Explicit label text/background/halo colors are
-  now fail-closed unless opaque so GPU billboards do not silently ignore alpha.
+  Font-backed labels use real glyph metrics and kerning for basic Latin glyph
+  shapes, then threshold coverage into hard-edged opaque cells; antialiased text
+  waits for the transparent billboard path. They fail closed for
+  missing/oversized fonts or complex-script text that scena does not shape.
+  Explicit label text/background/halo colors are now fail-closed unless opaque so
+  GPU billboards do not silently ignore alpha.
 - Added authored morph and skin recipe directives plus `Scene::set_skin_binding`
   for deterministic recipe-built deformation data. `scene_recipe.v1` can now
   derive morph and skin geometries, bind authored joint nodes with inverse bind

@@ -95,10 +95,12 @@ pub(in crate::scene_host::recipe) fn build_authored_nodes(
                 continue;
             }
         };
+        let mut transform_nodes = resources.imported_nodes.clone();
+        transform_nodes.extend(node_keys.clone());
         let transform = match transform_from_recipe(
             recipe.transform.as_ref(),
             TransformResolutionInput {
-                node_keys: &node_keys,
+                node_keys: &transform_nodes,
                 imports: resources.imports,
                 parent: Some(parent),
                 current_bounds: geometry_bounds,
@@ -166,6 +168,7 @@ pub(in crate::scene_host::recipe) fn build_authored_nodes(
 pub(in crate::scene_host::recipe) struct AuthoredNodeResources<'a> {
     pub(in crate::scene_host::recipe) geometries: &'a BTreeMap<String, GeometryHandle>,
     pub(in crate::scene_host::recipe) materials: &'a BTreeMap<String, MaterialHandle>,
+    pub(in crate::scene_host::recipe) imported_nodes: &'a BTreeMap<String, NodeKey>,
     pub(in crate::scene_host::recipe) imports: &'a BTreeMap<String, u64>,
 }
 

@@ -110,7 +110,12 @@ pub(super) fn validate_authoring_sections(
         &authored_morph_targets,
         diagnostics,
     );
-    targets::validate_cameras(object.get("cameras"), &camera_target_ids, diagnostics);
+    targets::validate_cameras(
+        object.get("cameras"),
+        &camera_target_ids,
+        &import_ids,
+        diagnostics,
+    );
     targets::validate_lights(object.get("lights"), &color_ids, diagnostics);
 }
 

@@ -212,6 +212,111 @@ fn label_text_renders_glyph_cells_with_pixel_stable_billboards() {
     write_ppm_artifact(&artifact_dir, "bitmap-label-text", 160, 120, &frame);
 }
 
+#[cfg(feature = "scene-host")]
+#[test]
+fn label_text_headless_gpu_proves_color_position_size_and_depth() {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::standard(),
+            Transform::at(Vec3::new(0.0, 0.0, 2.2)).looking_at(Vec3::ZERO, Vec3::Y),
+        )
+        .expect("camera inserts");
+    scene.set_active_camera(camera).expect("camera activates");
+    scene
+        .add_label(
+            scene.root(),
+            LabelDesc::bitmap("BIG")
+                .with_size(30.0)
+                .with_color(Color::from_srgb_u8(32, 80, 230))
+                .with_background(Color::from_srgb_u8(32, 80, 230)),
+            Transform::at(Vec3::new(0.0, 0.0, -0.35)),
+        )
+        .expect("far blue label inserts");
+    scene
+        .add_label(
+            scene.root(),
+            LabelDesc::bitmap("TOP")
+                .with_size(18.0)
+                .with_color(Color::from_srgb_u8(230, 48, 48))
+                .with_background(Color::from_srgb_u8(230, 48, 48)),
+            Transform::at(Vec3::ZERO),
+        )
+        .expect("near red label inserts");
+    scene
+        .add_label(
+            scene.root(),
+            LabelDesc::bitmap("L")
+                .with_size(16.0)
+                .with_color(Color::from_srgb_u8(32, 210, 96)),
+            Transform::at(Vec3::new(-0.45, 0.32, 0.0)),
+        )
+        .expect("left green label inserts");
+    scene
+        .add_label(
+            scene.root(),
+            LabelDesc::bitmap("HI")
+                .with_size(28.0)
+                .with_color(Color::from_srgb_u8(240, 192, 32)),
+            Transform::at(Vec3::new(0.45, -0.32, 0.0)),
+        )
+        .expect("right yellow label inserts");
+
+    let mut renderer = Renderer::headless_gpu(160, 120).expect("HeadlessGpu renderer builds");
+    renderer
+        .prepare(&mut scene)
+        .expect("GPU label scene prepares");
+    renderer
+        .render(&scene, camera)
+        .expect("GPU label scene renders");
+    let frame = renderer.frame_rgba8().to_vec();
+
+    let green = color_bounds(&frame, 160, 120, |pixel| {
+        pixel[1] > 150 && pixel[0] < 90 && pixel[2] < 130
+    })
+    .expect("green label is visible");
+    let yellow = color_bounds(&frame, 160, 120, |pixel| {
+        pixel[0] > 180 && pixel[1] > 130 && pixel[2] < 100
+    })
+    .expect("yellow label is visible");
+    let blue = color_bounds(&frame, 160, 120, |pixel| {
+        pixel[2] > 150 && pixel[0] < 120 && pixel[1] < 130
+    })
+    .expect("far blue label ring is visible");
+    let red = color_bounds(&frame, 160, 120, |pixel| {
+        pixel[0] > 150 && pixel[1] < 110 && pixel[2] < 110
+    })
+    .expect("near red label is visible");
+
+    assert!(
+        green.center_x() < 70.0 && green.center_y() < 55.0,
+        "green label should track its authored upper-left position: {green:?}"
+    );
+    assert!(
+        yellow.center_x() > 90.0 && yellow.center_y() > 65.0,
+        "yellow label should track its authored lower-right position: {yellow:?}"
+    );
+    assert!(
+        yellow.width() > green.width() + 8 && yellow.height() > green.height() + 8,
+        "label size_px must produce distinct GPU glyph sizes: green={green:?} yellow={yellow:?}"
+    );
+    assert!(
+        blue.width() > red.width() + 8 && blue.height() > red.height() + 8,
+        "larger far blue label should leave a visible depth-test ring: blue={blue:?} red={red:?}"
+    );
+    let center = pixel_at(&frame, 160, 80, 60);
+    assert!(
+        center[0] > 150 && center[1] < 110 && center[2] < 110,
+        "near red label must depth-test in front of far blue at the same screen position, center={center:?}"
+    );
+
+    let artifact_dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/gate-artifacts/labels");
+    fs::create_dir_all(&artifact_dir).expect("artifact dir exists");
+    write_ppm_artifact(&artifact_dir, "gpu-label-text", 160, 120, &frame);
+}
+
 #[test]
 fn label_text_visual_proof_covers_multiple_sizes() {
     let mut scene = Scene::new();
@@ -384,6 +489,16 @@ impl PixelBounds {
     fn occupancy(&self) -> f32 {
         self.pixels as f32 / (self.width() * self.height()).max(1) as f32
     }
+
+    #[cfg(feature = "scene-host")]
+    fn center_x(&self) -> f32 {
+        (self.min_x + self.max_x) as f32 * 0.5
+    }
+
+    #[cfg(feature = "scene-host")]
+    fn center_y(&self) -> f32 {
+        (self.min_y + self.max_y) as f32 * 0.5
+    }
 }
 
 fn color_bounds(
@@ -450,6 +565,12 @@ fn nonblack_pixel_count(frame: &[u8]) -> usize {
         .chunks_exact(4)
         .filter(|pixel| pixel[0] > 0 || pixel[1] > 0 || pixel[2] > 0)
         .count()
+}
+
+#[cfg(feature = "scene-host")]
+fn pixel_at(rgba: &[u8], width: u32, x: u32, y: u32) -> &[u8] {
+    let start = ((y * width + x) * 4) as usize;
+    &rgba[start..start + 4]
 }
 
 fn write_ppm_artifact(dir: &Path, name: &str, width: u32, height: u32, rgba: &[u8]) {

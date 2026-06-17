@@ -331,10 +331,12 @@ visual-patch channel; there is no parallel host text-update model.
 Labels can use the embedded bitmap font with `LabelDesc::bitmap` or a real
 TrueType/OpenType face with `LabelFontFace::from_truetype_bytes`,
 `LabelDesc::truetype`, or recipe `fonts[]` plus label `font`. Font-backed labels
-support basic Latin metrics, kerning, and raster coverage; complex-script text
-fails closed instead of rendering fallback garbage. Explicit label text,
-background, and halo colors are opaque-only; omit the background/halo for no
-quad instead of passing translucent colors until a transparent label path exists.
+support basic Latin metrics, kerning, and glyph shapes, then threshold coverage
+into hard-edged opaque glyph cells; antialiased text waits for the transparent
+billboard path. Complex-script text fails closed instead of rendering fallback
+garbage. Explicit label text, background, and halo colors are opaque-only; omit
+the background/halo for no quad instead of passing translucent colors until a
+transparent label path exists.
 Browser custom-element annotations use the same screen-projection data but
 perform HTML layout in CSS-pixel space. Native/browser hosts can call
 `layout_scena_viewer_annotations()` with

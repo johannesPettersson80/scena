@@ -291,6 +291,7 @@ impl SceneHostCore<DefaultAssetFetcher> {
             AuthoredNodeResources {
                 geometries: &geometry_handles,
                 materials: &material_handles,
+                imported_nodes: &imported_node_keys,
                 imports: &import_handles,
             },
             &mut nodes,
@@ -305,6 +306,7 @@ impl SceneHostCore<DefaultAssetFetcher> {
                 geometries: &geometry_handles,
                 materials: &material_handles,
                 nodes: &node_keys,
+                imported_nodes: &imported_node_keys,
                 imports: &import_handles,
             },
             &mut nodes,

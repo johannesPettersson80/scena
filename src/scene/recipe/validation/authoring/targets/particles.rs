@@ -7,10 +7,10 @@ use crate::scene::recipe::validation::diagnostic;
 
 use super::super::validate_known_fields;
 use super::common::{
-    TransformUse, validate_optional_i16, validate_optional_u64, validate_ref, validate_transform,
-    validate_vec3,
+    TransformUse, validate_optional_i16, validate_optional_u64, validate_transform, validate_vec3,
 };
 use super::extras::validate_color_value;
+use super::import_refs::validate_node_ref;
 
 const PARTICLE_SET_FIELDS: &[&str] = &[
     "id",
@@ -77,11 +77,11 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_particle_sets(
         validate_known_fields(&path, object, PARTICLE_SET_FIELDS, diagnostics);
         validate_particle_set_id(&format!("{path}.id"), object.get("id"), diagnostics);
         if let Some(parent) = object.get("parent") {
-            validate_ref(
+            validate_node_ref(
                 &format!("{path}.parent"),
                 Some(parent),
                 node_ids,
-                "node",
+                import_ids,
                 diagnostics,
             );
         }

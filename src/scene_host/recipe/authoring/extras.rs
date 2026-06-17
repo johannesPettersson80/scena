@@ -103,10 +103,12 @@ pub(in crate::scene_host::recipe) fn build_authored_instance_sets(
                 continue;
             }
         };
+        let mut transform_nodes = resources.imported_nodes.clone();
+        transform_nodes.extend(resources.nodes.clone());
         let root_transform = match transform_from_recipe(
             recipe.transform.as_ref(),
             TransformResolutionInput {
-                node_keys: resources.nodes,
+                node_keys: &transform_nodes,
                 imports: resources.imports,
                 parent: Some(parent),
                 current_bounds: geometry_bounds,
@@ -140,7 +142,7 @@ pub(in crate::scene_host::recipe) fn build_authored_instance_sets(
             let transform = match transform_from_recipe(
                 instance.transform.as_ref(),
                 TransformResolutionInput {
-                    node_keys: resources.nodes,
+                    node_keys: &transform_nodes,
                     imports: resources.imports,
                     parent: Some(node),
                     current_bounds: geometry_bounds,
@@ -218,6 +220,7 @@ pub(in crate::scene_host::recipe) struct InstanceSetResources<'a> {
     pub(in crate::scene_host::recipe) geometries: &'a BTreeMap<String, GeometryHandle>,
     pub(in crate::scene_host::recipe) materials: &'a BTreeMap<String, MaterialHandle>,
     pub(in crate::scene_host::recipe) nodes: &'a BTreeMap<String, NodeKey>,
+    pub(in crate::scene_host::recipe) imported_nodes: &'a BTreeMap<String, NodeKey>,
     pub(in crate::scene_host::recipe) imports: &'a BTreeMap<String, u64>,
 }
 
