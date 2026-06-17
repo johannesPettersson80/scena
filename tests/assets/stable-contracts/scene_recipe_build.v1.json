@@ -67,7 +67,7 @@
   "materials": [
     {
       "id": "plate_mat",
-      "kind": "unlit"
+      "kind": "pbr_metallic_roughness"
     }
   ],
   "diagnostics": [],

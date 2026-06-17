@@ -669,6 +669,122 @@ fn scene_recipe_slice2_authoring_vocabulary_builds_and_targets_overlays() {
 
 #[cfg(feature = "scene-host")]
 #[test]
+fn scene_recipe_slice9_advanced_pbr_fields_validate_build_and_reject_clamped_values() {
+    let texture = "gltf/khronos/WaterBottle/WaterBottle_baseColor.png";
+    let recipe = json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "base": "#7C8798",
+            "white": "#FFFFFF",
+            "blue": "#BFD7FF"
+        },
+        "geometries": [{
+            "id": "sphere_geo",
+            "primitive": { "kind": "sphere", "radius": 0.18, "segments": 24, "rings": 12 }
+        }],
+        "materials": [{
+            "id": "advanced",
+            "kind": "pbr_metallic_roughness",
+            "base_color": "base",
+            "metallic": 0.0,
+            "roughness": 0.42,
+            "clearcoat_factor": 0.8,
+            "clearcoat_roughness_factor": 0.16,
+            "clearcoat_normal_scale": 1.0,
+            "sheen_color_factor": "white",
+            "sheen_roughness_factor": 0.35,
+            "anisotropy_strength_factor": 0.65,
+            "anisotropy_rotation_radians": 0.3,
+            "iridescence_factor": 0.45,
+            "iridescence_ior": 1.45,
+            "iridescence_thickness_minimum_nm": 120.0,
+            "iridescence_thickness_maximum_nm": 480.0,
+            "dispersion_factor": 0.02,
+            "transmission_factor": 0.18,
+            "ior": 1.52,
+            "thickness_factor": 0.05,
+            "attenuation_distance": 2.5,
+            "attenuation_color": "blue",
+            "clearcoat_texture": { "uri": texture, "color_space": "linear" },
+            "clearcoat_roughness_texture": { "uri": texture, "color_space": "linear" },
+            "clearcoat_normal_texture": { "uri": texture, "color_space": "linear" },
+            "sheen_color_texture": { "uri": texture, "color_space": "srgb" },
+            "sheen_roughness_texture": { "uri": texture, "color_space": "linear" },
+            "anisotropy_texture": { "uri": texture, "color_space": "linear" },
+            "iridescence_texture": { "uri": texture, "color_space": "linear" },
+            "iridescence_thickness_texture": { "uri": texture, "color_space": "linear" },
+            "transmission_texture": { "uri": texture, "color_space": "linear" },
+            "thickness_texture": { "uri": texture, "color_space": "linear" }
+        }],
+        "nodes": [{
+            "id": "sphere",
+            "geometry": "sphere_geo",
+            "material": "advanced",
+            "transform": { "kind": "trs", "translation": [0.0, 0.0, -1.8] }
+        }],
+        "lights": [{
+            "id": "key",
+            "kind": "directional",
+            "preset": "key",
+            "illuminance_lux": 12000.0
+        }],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "active": true,
+            "transform": { "kind": "look_at", "eye": [0.0, 0.0, 0.0], "target": "sphere" }
+        }],
+        "capture": { "width": 128, "height": 96 }
+    });
+    let text = serde_json::to_string_pretty(&recipe).expect("recipe serializes");
+
+    let validation = scena::validate_scene_recipe_json(&text);
+    assert!(
+        validation.ok,
+        "advanced PBR recipe fields should validate before build: {validation:#?}"
+    );
+
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/slice9.recipe.json",
+        &text,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("Slice 9 advanced PBR recipe build succeeds");
+    assert!(build.manifest.ok, "{:#?}", build.manifest);
+    assert_eq!(build.manifest.materials.len(), 1);
+
+    let invalid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "base": "#7C8798", "white": "#FFFFFF" },
+        "geometries": [{
+            "id": "sphere_geo",
+            "primitive": { "kind": "sphere", "radius": 0.18 }
+        }],
+        "materials": [{
+            "id": "advanced",
+            "kind": "pbr_metallic_roughness",
+            "base_color": "base",
+            "clearcoat_factor": 1.25,
+            "sheen_color_factor": "missing_color",
+            "anisotropy_strength_factor": -0.2,
+            "iridescence_ior": 0.0,
+            "transmission_factor": 2.0,
+            "attenuation_distance": 0.0
+        }],
+        "nodes": [{
+            "id": "sphere",
+            "geometry": "sphere_geo",
+            "material": "advanced"
+        }]
+    }));
+    assert!(!invalid.ok);
+    assert_reason(&invalid, "invalid_unit_value", None);
+    assert_reason(&invalid, "unknown_color_ref", None);
+    assert_reason(&invalid, "invalid_number", None);
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
 fn scene_recipe_slice3_transform_placement_verbs_resolve_against_authored_and_imported_targets() {
     let recipe = json!({
         "schema": "scena.scene_recipe.v1",

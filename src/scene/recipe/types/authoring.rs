@@ -99,6 +99,60 @@ pub struct SceneRecipeMaterialV1 {
     pub occlusion_texture: Option<SceneRecipeTextureSlotV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub emissive_texture: Option<SceneRecipeTextureSlotV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clearcoat_factor: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clearcoat_roughness_factor: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clearcoat_normal_scale: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clearcoat_texture: Option<SceneRecipeTextureSlotV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clearcoat_roughness_texture: Option<SceneRecipeTextureSlotV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clearcoat_normal_texture: Option<SceneRecipeTextureSlotV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sheen_color_factor: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sheen_roughness_factor: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sheen_color_texture: Option<SceneRecipeTextureSlotV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sheen_roughness_texture: Option<SceneRecipeTextureSlotV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anisotropy_strength_factor: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anisotropy_rotation_radians: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anisotropy_texture: Option<SceneRecipeTextureSlotV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iridescence_factor: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iridescence_ior: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iridescence_thickness_minimum_nm: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iridescence_thickness_maximum_nm: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iridescence_texture: Option<SceneRecipeTextureSlotV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iridescence_thickness_texture: Option<SceneRecipeTextureSlotV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dispersion_factor: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transmission_factor: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ior: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thickness_factor: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attenuation_distance: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attenuation_color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transmission_texture: Option<SceneRecipeTextureSlotV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thickness_texture: Option<SceneRecipeTextureSlotV1>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

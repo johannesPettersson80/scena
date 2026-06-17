@@ -1060,7 +1060,22 @@ The current v1 recipe slice supports:
 - `materials[]` authored resources with stable caller `id`; `unlit`,
   `pbr_metallic_roughness`, `line`, `wireframe`, and `edge` material kinds;
   base color, metallic/roughness, double-sided, emissive, alpha mode, stroke
-  width, edge threshold, and texture slots loaded under `RecipeBuildPolicy`
+  width, edge threshold, and texture slots loaded under `RecipeBuildPolicy`.
+  `pbr_metallic_roughness` also accepts advanced-PBR scalars
+  `clearcoat_factor`, `clearcoat_roughness_factor`, `clearcoat_normal_scale`,
+  `sheen_color_factor`, `sheen_roughness_factor`,
+  `anisotropy_strength_factor`, `anisotropy_rotation_radians`,
+  `iridescence_factor`, `iridescence_ior`,
+  `iridescence_thickness_minimum_nm`,
+  `iridescence_thickness_maximum_nm`, `dispersion_factor`,
+  `transmission_factor`, `ior`, `thickness_factor`,
+  `attenuation_distance`, and `attenuation_color`, plus texture slots
+  `clearcoat_texture`, `clearcoat_roughness_texture`,
+  `clearcoat_normal_texture`, `sheen_color_texture`,
+  `sheen_roughness_texture`, `anisotropy_texture`,
+  `iridescence_texture`, `iridescence_thickness_texture`,
+  `transmission_texture`, and `thickness_texture`. Recipe validation rejects
+  out-of-range values before `MaterialDesc` setters can clamp or sanitize them.
 - `nodes[]` authored renderables with stable caller `id`, geometry/material
   references, optional manifest `name`, parent hierarchy, tags, visibility,
   layer mask, render group, tint, and optional `raw`, `trs`, `look_at`,

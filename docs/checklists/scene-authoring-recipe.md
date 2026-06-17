@@ -356,16 +356,16 @@ into Slice 12 skin/morph authoring + Slice 13 particle rendering.)
       mismatched times/values lengths, or unknown target.
 
 ### Slice 9 — Advanced PBR in the recipe (#15)
-- [ ] The public setters **already exist** (`with_clearcoat_factor`,
+- [x] The public setters **already exist** (`with_clearcoat_factor`,
       `with_sheen_color_factor`, `with_anisotropy_strength_factor`,
       `with_iridescence_factor`, `with_transmission_factor`, + texture variants in
       `src/material/extensions.rs`). The task is **recipe mapping**, not new
       builders: expose these fields in the recipe `materials` directive.
-- [ ] **Validate fail-closed BEFORE the setters sanitize.** Those setters clamp
+- [x] **Validate fail-closed BEFORE the setters sanitize.** Those setters clamp
       (`clamp_unit_or`, `finite_or`, …), so recipe validation must reject
       out-of-range / non-finite values up front — otherwise the LLM gets a
       "success" that silently differs from what it requested.
-- [ ] Proof: each exposed field **changes rendered pixels on the headless-GPU
+- [x] Proof: each exposed field **changes rendered pixels on the headless-GPU
       path** vs a baseline (a real render diff, not a stored-but-inert field), and
       a negative recipe is rejected at validation.
 

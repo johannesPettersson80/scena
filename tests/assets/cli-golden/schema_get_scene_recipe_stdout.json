@@ -92,9 +92,11 @@
       }
     ],
     "colors": {
+      "attenuation_blue": "#BFD7FF",
       "instance_tint": "#F6C85F",
       "label_bg": "#1D2733",
       "label_fg": "#FFFFFF",
+      "pbr_white": "#FFFFFF",
       "plate_blue": "#3A7BD5"
     },
     "expect": {
@@ -216,9 +218,27 @@
     ],
     "materials": [
       {
+        "anisotropy_rotation_radians": 0.3,
+        "anisotropy_strength_factor": 0.65,
+        "attenuation_color": "attenuation_blue",
+        "attenuation_distance": 2.5,
         "base_color": "plate_blue",
+        "clearcoat_factor": 0.8,
+        "clearcoat_roughness_factor": 0.16,
+        "dispersion_factor": 0.02,
         "id": "plate_mat",
-        "kind": "unlit"
+        "ior": 1.52,
+        "iridescence_factor": 0.45,
+        "iridescence_ior": 1.45,
+        "iridescence_thickness_maximum_nm": 480.0,
+        "iridescence_thickness_minimum_nm": 120.0,
+        "kind": "pbr_metallic_roughness",
+        "metallic": 0.0,
+        "roughness": 0.42,
+        "sheen_color_factor": "pbr_white",
+        "sheen_roughness_factor": 0.35,
+        "thickness_factor": 0.05,
+        "transmission_factor": 0.18
       }
     ],
     "measurements": [

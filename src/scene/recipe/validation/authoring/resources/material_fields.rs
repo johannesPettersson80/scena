@@ -95,6 +95,28 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_optional_non_neg
     }
 }
 
+pub(in crate::scene::recipe::validation::authoring) fn validate_optional_finite(
+    path: &str,
+    value: Option<&Value>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    match value.as_f64() {
+        Some(value) if value.is_finite() => {}
+        _ => diagnostics.push(diagnostic(
+            "invalid_number",
+            "error",
+            path,
+            "field must be finite",
+            "use a finite number",
+            None,
+            false,
+        )),
+    }
+}
+
 pub(in crate::scene::recipe::validation::authoring) fn validate_optional_range(
     path: &str,
     value: Option<&Value>,

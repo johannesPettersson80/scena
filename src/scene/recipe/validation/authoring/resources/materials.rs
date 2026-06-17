@@ -6,9 +6,9 @@ use crate::scene::recipe::types::SceneRecipeDiagnosticV1;
 
 use super::super::{validate_known_fields, validate_required_id};
 use super::material_fields::{
-    validate_alpha_mode, validate_color_ref, validate_optional_non_negative,
-    validate_optional_positive, validate_optional_range, validate_texture_slot,
-    validate_unit_float,
+    validate_alpha_mode, validate_color_ref, validate_optional_finite,
+    validate_optional_non_negative, validate_optional_positive, validate_optional_range,
+    validate_texture_slot, validate_unit_float,
 };
 use crate::scene::recipe::validation::diagnostic;
 
@@ -29,6 +29,66 @@ const MATERIAL_FIELDS: &[&str] = &[
     "metallic_roughness_texture",
     "occlusion_texture",
     "emissive_texture",
+    "clearcoat_factor",
+    "clearcoat_roughness_factor",
+    "clearcoat_normal_scale",
+    "clearcoat_texture",
+    "clearcoat_roughness_texture",
+    "clearcoat_normal_texture",
+    "sheen_color_factor",
+    "sheen_roughness_factor",
+    "sheen_color_texture",
+    "sheen_roughness_texture",
+    "anisotropy_strength_factor",
+    "anisotropy_rotation_radians",
+    "anisotropy_texture",
+    "iridescence_factor",
+    "iridescence_ior",
+    "iridescence_thickness_minimum_nm",
+    "iridescence_thickness_maximum_nm",
+    "iridescence_texture",
+    "iridescence_thickness_texture",
+    "dispersion_factor",
+    "transmission_factor",
+    "ior",
+    "thickness_factor",
+    "attenuation_distance",
+    "attenuation_color",
+    "transmission_texture",
+    "thickness_texture",
+];
+
+const ADVANCED_PBR_SCALAR_FIELDS: &[&str] = &[
+    "clearcoat_factor",
+    "clearcoat_roughness_factor",
+    "clearcoat_normal_scale",
+    "sheen_color_factor",
+    "sheen_roughness_factor",
+    "anisotropy_strength_factor",
+    "anisotropy_rotation_radians",
+    "iridescence_factor",
+    "iridescence_ior",
+    "iridescence_thickness_minimum_nm",
+    "iridescence_thickness_maximum_nm",
+    "dispersion_factor",
+    "transmission_factor",
+    "ior",
+    "thickness_factor",
+    "attenuation_distance",
+    "attenuation_color",
+];
+
+const ADVANCED_PBR_TEXTURE_FIELDS: &[&str] = &[
+    "clearcoat_texture",
+    "clearcoat_roughness_texture",
+    "clearcoat_normal_texture",
+    "sheen_color_texture",
+    "sheen_roughness_texture",
+    "anisotropy_texture",
+    "iridescence_texture",
+    "iridescence_thickness_texture",
+    "transmission_texture",
+    "thickness_texture",
 ];
 
 pub(in crate::scene::recipe::validation::authoring) fn validate_materials(
@@ -122,6 +182,9 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_materials(
         ] {
             validate_texture_slot(&format!("{path}.{field}"), object.get(field), diagnostics);
         }
+        for field in ADVANCED_PBR_TEXTURE_FIELDS {
+            validate_texture_slot(&format!("{path}.{field}"), object.get(*field), diagnostics);
+        }
         match kind {
             Some("unlit" | "line" | "wireframe" | "edge") => {
                 for field in ["metallic", "roughness"] {
@@ -149,8 +212,12 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_materials(
                     object.get("roughness"),
                     diagnostics,
                 );
+                validate_advanced_pbr_fields(&path, object, colors, diagnostics);
             }
             Some(_) | None => {}
+        }
+        if kind != Some("pbr_metallic_roughness") {
+            reject_advanced_pbr_fields_for_non_pbr(&path, object, diagnostics);
         }
         match kind {
             Some("line" | "wireframe" | "edge") => validate_optional_positive(
@@ -187,6 +254,69 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_materials(
                 format!("{path}.edge_angle_threshold_degrees"),
                 "edge_angle_threshold_degrees only applies to edge materials",
                 "remove the field or use kind:\"edge\"",
+                None,
+                false,
+            ));
+        }
+    }
+}
+
+fn validate_advanced_pbr_fields(
+    path: &str,
+    object: &serde_json::Map<String, Value>,
+    colors: &BTreeSet<String>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    for field in [
+        "clearcoat_factor",
+        "clearcoat_roughness_factor",
+        "sheen_roughness_factor",
+        "anisotropy_strength_factor",
+        "iridescence_factor",
+        "transmission_factor",
+    ] {
+        validate_unit_float(&format!("{path}.{field}"), object.get(field), diagnostics);
+    }
+    for field in [
+        "clearcoat_normal_scale",
+        "iridescence_thickness_minimum_nm",
+        "iridescence_thickness_maximum_nm",
+        "dispersion_factor",
+        "thickness_factor",
+    ] {
+        validate_optional_non_negative(&format!("{path}.{field}"), object.get(field), diagnostics);
+    }
+    validate_optional_finite(
+        &format!("{path}.anisotropy_rotation_radians"),
+        object.get("anisotropy_rotation_radians"),
+        diagnostics,
+    );
+    for field in ["iridescence_ior", "ior", "attenuation_distance"] {
+        validate_optional_positive(&format!("{path}.{field}"), object.get(field), diagnostics);
+    }
+    for field in ["sheen_color_factor", "attenuation_color"] {
+        if let Some(value) = object.get(field) {
+            validate_color_ref(&format!("{path}.{field}"), Some(value), colors, diagnostics);
+        }
+    }
+}
+
+fn reject_advanced_pbr_fields_for_non_pbr(
+    path: &str,
+    object: &serde_json::Map<String, Value>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    for field in ADVANCED_PBR_SCALAR_FIELDS
+        .iter()
+        .chain(ADVANCED_PBR_TEXTURE_FIELDS)
+    {
+        if object.contains_key(*field) {
+            diagnostics.push(diagnostic(
+                "unsupported_feature",
+                "error",
+                format!("{path}.{field}"),
+                format!("{field} only applies to pbr_metallic_roughness materials"),
+                "remove the field or use kind:\"pbr_metallic_roughness\"",
                 None,
                 false,
             ));
