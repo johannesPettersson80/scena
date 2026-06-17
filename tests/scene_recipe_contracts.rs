@@ -1,3 +1,5 @@
+#[cfg(feature = "scene-host")]
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -785,6 +787,148 @@ fn scene_recipe_slice9_advanced_pbr_fields_validate_build_and_reject_clamped_val
 
 #[cfg(feature = "scene-host")]
 #[test]
+fn scene_recipe_slice10_primitives_validate_build_and_render_with_deterministic_counts() {
+    let recipe = json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "cone_color": "#E4572E",
+            "torus_color": "#17BEBB",
+            "disc_color": "#FFC914",
+            "wedge_color": "#6A4C93"
+        },
+        "geometries": [
+            { "id": "cone_geo", "primitive": { "kind": "cone", "radius": 0.10, "height": 0.22, "segments": 12 } },
+            { "id": "torus_geo", "primitive": { "kind": "torus", "major_radius": 0.11, "minor_radius": 0.03, "segments": 12, "rings": 6 } },
+            { "id": "disc_geo", "primitive": { "kind": "disc", "radius": 0.12, "segments": 16 } },
+            { "id": "wedge_geo", "primitive": { "kind": "wedge", "size": [0.20, 0.12, 0.16] } }
+        ],
+        "materials": [
+            { "id": "cone_mat", "kind": "unlit", "base_color": "cone_color", "double_sided": true },
+            { "id": "torus_mat", "kind": "unlit", "base_color": "torus_color", "double_sided": true },
+            { "id": "disc_mat", "kind": "unlit", "base_color": "disc_color", "double_sided": true },
+            { "id": "wedge_mat", "kind": "unlit", "base_color": "wedge_color", "double_sided": true }
+        ],
+        "nodes": [
+            { "id": "cone", "geometry": "cone_geo", "material": "cone_mat", "name": "cone", "transform": { "kind": "trs", "translation": [-0.24, 0.03, 0.0] } },
+            { "id": "torus", "geometry": "torus_geo", "material": "torus_mat", "name": "torus", "transform": { "kind": "trs", "translation": [0.0, 0.04, 0.0], "rotation_degrees": [65.0, 0.0, 0.0] } },
+            { "id": "disc", "geometry": "disc_geo", "material": "disc_mat", "name": "disc", "transform": { "kind": "trs", "translation": [0.24, 0.02, 0.0], "rotation_degrees": [70.0, 0.0, 0.0] } },
+            { "id": "wedge", "geometry": "wedge_geo", "material": "wedge_mat", "name": "wedge", "transform": { "kind": "trs", "translation": [0.0, 0.02, -0.22] } }
+        ],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "active": true,
+            "transform": { "kind": "look_at", "eye": [0.0, 0.42, 0.72], "target": "torus" }
+        }],
+        "capture": { "width": 192, "height": 144 }
+    });
+    let text = serde_json::to_string_pretty(&recipe).expect("recipe serializes");
+
+    let validation = scena::validate_scene_recipe_json(&text);
+    assert!(
+        validation.ok,
+        "Slice 10 primitives should validate: {validation:#?}"
+    );
+
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/slice10.recipe.json",
+        &text,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("Slice 10 primitive recipe build succeeds");
+    assert!(build.manifest.ok, "{:#?}", build.manifest);
+
+    let counts: BTreeMap<_, _> = build
+        .manifest
+        .geometries
+        .iter()
+        .map(|geometry| {
+            (
+                geometry.id.as_str(),
+                (
+                    geometry.kind.as_str(),
+                    geometry.vertex_count,
+                    geometry.index_count,
+                ),
+            )
+        })
+        .collect();
+    assert_eq!(counts["cone_geo"], ("cone", Some(49), Some(72)));
+    assert_eq!(counts["torus_geo"], ("torus", Some(91), Some(432)));
+    assert_eq!(counts["disc_geo"], ("disc", Some(17), Some(48)));
+    assert_eq!(counts["wedge_geo"], ("wedge", Some(18), Some(24)));
+
+    let node_handles: BTreeMap<_, _> = build
+        .manifest
+        .nodes
+        .iter()
+        .map(|node| (node.id.as_str(), node.handle))
+        .collect();
+
+    let mut host = build.host;
+    host.prepare().expect("Slice 10 primitive scene prepares");
+    host.render().expect("Slice 10 primitive scene renders");
+    let capture = host.capture().expect("Slice 10 primitive scene captures");
+    let inspection_json = host
+        .inspect_json()
+        .expect("Slice 10 primitive scene inspects");
+    let inspection: scena::SceneInspectionReportV1 =
+        serde_json::from_str(&inspection_json).expect("inspection decodes");
+    let report = host.renderer().introspect_capture(
+        &capture,
+        &inspection,
+        scena::RenderIntrospectionOptions::summary(),
+    );
+    assert!(
+        report.ok,
+        "Slice 10 primitive render should be visible: {report:#?}"
+    );
+    assert!(
+        !report.framing.tiny_in_frame && report.framing.fit_fraction > 0.25,
+        "primitive silhouettes should occupy a measurable framed area: {report:#?}"
+    );
+    for node_id in ["cone", "torus", "disc", "wedge"] {
+        let handle = node_handles[node_id];
+        let node = inspection
+            .draw_list
+            .iter()
+            .find(|draw| draw.node == handle)
+            .unwrap_or_else(|| {
+                panic!("missing inspected draw for node {node_id}: {inspection:#?}")
+            });
+        let bounds = &node.local_bounds;
+        assert!(
+            [
+                bounds.min.x,
+                bounds.min.y,
+                bounds.min.z,
+                bounds.max.x,
+                bounds.max.y,
+                bounds.max.z,
+            ]
+            .iter()
+            .all(|value| value.is_finite()),
+            "node {node_id} bounds must be finite: {bounds:#?}"
+        );
+    }
+
+    let invalid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "geometries": [
+            { "id": "bad_cone", "primitive": { "kind": "cone", "radius": -0.1, "height": 0.2 } },
+            { "id": "bad_torus", "primitive": { "kind": "torus", "major_radius": 0.1, "minor_radius": 0.0 } },
+            { "id": "bad_disc", "primitive": { "kind": "disc", "radius": 0.1, "segments": 0 } },
+            { "id": "bad_wedge", "primitive": { "kind": "wedge", "size": [0.2, 0.1] } }
+        ]
+    }));
+    assert!(!invalid.ok);
+    assert_reason(&invalid, "invalid_number", None);
+    assert_reason(&invalid, "invalid_integer", None);
+    assert_reason(&invalid, "invalid_vector", None);
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
 fn scene_recipe_slice3_transform_placement_verbs_resolve_against_authored_and_imported_targets() {
     let recipe = json!({
         "schema": "scena.scene_recipe.v1",
@@ -1320,7 +1464,7 @@ fn scene_recipe_authoring_refs_and_future_variants_fail_before_build() {
         "colors": { "blue": "#3A7BD5" },
         "geometries": [{
             "id": "plate_geo",
-            "primitive": { "kind": "torus", "major_radius": 1.0 }
+            "primitive": { "kind": "capsule", "radius": 1.0, "height": 2.0 }
         }],
         "materials": [{
             "id": "plate_mat",

@@ -62,6 +62,12 @@
       "kind": "box",
       "vertex_count": 24,
       "index_count": 36
+    },
+    {
+      "id": "torus_geo",
+      "kind": "torus",
+      "vertex_count": 91,
+      "index_count": 432
     }
   ],
   "materials": [

@@ -1055,8 +1055,10 @@ The current v1 recipe slice supports:
   linear RGB, Kelvin, or named color values
 - `geometries[]` authored resources with stable caller `id`; primitive kinds
   `box`, `plane`, `sphere`, `cylinder`, `line`, `polyline`, `arrow`, `grid`,
-  and `axes`, plus custom `mesh` entries with topology, positions, normals,
-  indices, optional colors, and optional UVs
+  `axes`, `cone`, `torus`, `disc`, and `wedge`, plus custom `mesh` entries with
+  topology, positions, normals, indices, optional colors, and optional UVs.
+  `torus` uses explicit `major_radius` and `minor_radius`; generated primitive
+  tessellation is deterministic and build manifests report vertex/index counts
 - `materials[]` authored resources with stable caller `id`; `unlit`,
   `pbr_metallic_roughness`, `line`, `wireframe`, and `edge` material kinds;
   base color, metallic/roughness, double-sided, emissive, alpha mode, stroke

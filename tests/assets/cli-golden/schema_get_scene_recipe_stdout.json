@@ -153,6 +153,16 @@
             0.004
           ]
         }
+      },
+      {
+        "id": "torus_geo",
+        "primitive": {
+          "kind": "torus",
+          "major_radius": 0.08,
+          "minor_radius": 0.02,
+          "rings": 6,
+          "segments": 12
+        }
       }
     ],
     "imports": [

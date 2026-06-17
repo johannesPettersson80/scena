@@ -185,6 +185,179 @@ impl GeometryDesc {
         new_with_tex_coords(GeometryTopology::Triangles, vertices, indices, tex_coords0)
     }
 
+    pub fn cone(radius: f32, height: f32, segments: u32) -> Self {
+        let radius = radius.abs();
+        let half_height = height.abs() * 0.5;
+        let segments = segments.max(3);
+        let mut vertices = Vec::with_capacity((segments as usize * 4) + 1);
+        let mut tex_coords0 = Vec::with_capacity((segments as usize * 4) + 1);
+        let mut indices = Vec::with_capacity(segments as usize * 6);
+
+        for segment in 0..segments {
+            let next = (segment + 1) % segments;
+            let theta = segment as f32 / segments as f32 * std::f32::consts::TAU;
+            let next_theta = next as f32 / segments as f32 * std::f32::consts::TAU;
+            let p0 = Vec3::new(theta.cos() * radius, -half_height, theta.sin() * radius);
+            let p1 = Vec3::new(
+                next_theta.cos() * radius,
+                -half_height,
+                next_theta.sin() * radius,
+            );
+            let tip = Vec3::new(0.0, half_height, 0.0);
+            let normal = triangle_normal(p0, p1, tip);
+            let base = vertices.len() as u32;
+            vertices.extend_from_slice(&[
+                GeometryVertex {
+                    position: p0,
+                    normal,
+                },
+                GeometryVertex {
+                    position: p1,
+                    normal,
+                },
+                GeometryVertex {
+                    position: tip,
+                    normal,
+                },
+            ]);
+            tex_coords0.extend_from_slice(&[
+                [segment as f32 / segments as f32, 1.0],
+                [next as f32 / segments as f32, 1.0],
+                [(segment as f32 + 0.5) / segments as f32, 0.0],
+            ]);
+            indices.extend_from_slice(&[base, base + 1, base + 2]);
+        }
+
+        let bottom_center = vertices.len() as u32;
+        vertices.push(GeometryVertex {
+            position: Vec3::new(0.0, -half_height, 0.0),
+            normal: Vec3::new(0.0, -1.0, 0.0),
+        });
+        tex_coords0.push([0.5, 0.5]);
+        let bottom_base = vertices.len() as u32;
+        for segment in 0..segments {
+            let theta = segment as f32 / segments as f32 * std::f32::consts::TAU;
+            vertices.push(GeometryVertex {
+                position: Vec3::new(theta.cos() * radius, -half_height, theta.sin() * radius),
+                normal: Vec3::new(0.0, -1.0, 0.0),
+            });
+            tex_coords0.push([theta.cos() * 0.5 + 0.5, theta.sin() * 0.5 + 0.5]);
+        }
+        for segment in 0..segments {
+            let next = (segment + 1) % segments;
+            indices.extend_from_slice(&[bottom_center, bottom_base + segment, bottom_base + next]);
+        }
+
+        new_with_tex_coords(GeometryTopology::Triangles, vertices, indices, tex_coords0)
+    }
+
+    pub fn disc(radius: f32, segments: u32) -> Self {
+        let radius = radius.abs();
+        let segments = segments.max(3);
+        let normal = Vec3::new(0.0, 1.0, 0.0);
+        let mut vertices = Vec::with_capacity(segments as usize + 1);
+        let mut tex_coords0 = Vec::with_capacity(segments as usize + 1);
+        let mut indices = Vec::with_capacity(segments as usize * 3);
+        vertices.push(GeometryVertex {
+            position: Vec3::ZERO,
+            normal,
+        });
+        tex_coords0.push([0.5, 0.5]);
+        for segment in 0..segments {
+            let theta = segment as f32 / segments as f32 * std::f32::consts::TAU;
+            vertices.push(GeometryVertex {
+                position: Vec3::new(theta.cos() * radius, 0.0, theta.sin() * radius),
+                normal,
+            });
+            tex_coords0.push([theta.cos() * 0.5 + 0.5, theta.sin() * 0.5 + 0.5]);
+        }
+        for segment in 0..segments {
+            let current = 1 + segment;
+            let next = 1 + ((segment + 1) % segments);
+            indices.extend_from_slice(&[0, current, next]);
+        }
+        new_with_tex_coords(GeometryTopology::Triangles, vertices, indices, tex_coords0)
+    }
+
+    pub fn torus(major_radius: f32, minor_radius: f32, segments: u32, rings: u32) -> Self {
+        let major_radius = major_radius.abs();
+        let minor_radius = minor_radius.abs();
+        let segments = segments.max(3);
+        let rings = rings.max(3);
+        let mut vertices = Vec::with_capacity(((segments + 1) * (rings + 1)) as usize);
+        let mut tex_coords0 = Vec::with_capacity(((segments + 1) * (rings + 1)) as usize);
+        let mut indices = Vec::with_capacity((segments * rings * 6) as usize);
+
+        for segment in 0..=segments {
+            let u = segment as f32 / segments as f32;
+            let theta = u * std::f32::consts::TAU;
+            let radial = Vec3::new(theta.cos(), 0.0, theta.sin());
+            for ring in 0..=rings {
+                let v = ring as f32 / rings as f32;
+                let phi = v * std::f32::consts::TAU;
+                let normal = Vec3::new(radial.x * phi.cos(), phi.sin(), radial.z * phi.cos());
+                let center = scale(radial, major_radius);
+                vertices.push(GeometryVertex {
+                    position: add(center, scale(normal, minor_radius)),
+                    normal,
+                });
+                tex_coords0.push([u, v]);
+            }
+        }
+
+        let row = rings + 1;
+        for segment in 0..segments {
+            for ring in 0..rings {
+                let a = segment * row + ring;
+                let b = (segment + 1) * row + ring;
+                let c = a + 1;
+                let d = b + 1;
+                indices.extend_from_slice(&[a, b, c, c, b, d]);
+            }
+        }
+
+        new_with_tex_coords(GeometryTopology::Triangles, vertices, indices, tex_coords0)
+    }
+
+    pub fn wedge(width: f32, height: f32, depth: f32) -> Self {
+        let half_width = width.abs() * 0.5;
+        let half_height = height.abs() * 0.5;
+        let half_depth = depth.abs() * 0.5;
+        let a = Vec3::new(-half_width, -half_height, -half_depth);
+        let b = Vec3::new(half_width, -half_height, -half_depth);
+        let c = Vec3::new(-half_width, -half_height, half_depth);
+        let d = Vec3::new(half_width, -half_height, half_depth);
+        let e = Vec3::new(-half_width, half_height, half_depth);
+        let f = Vec3::new(half_width, half_height, half_depth);
+        let faces: &[&[Vec3]] = &[
+            &[a, c, d, b],
+            &[c, e, f, d],
+            &[a, b, f, e],
+            &[a, e, c],
+            &[b, d, f],
+        ];
+        let face_uvs = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
+        let mut vertices = Vec::with_capacity(18);
+        let mut tex_coords0 = Vec::with_capacity(18);
+        let mut indices = Vec::with_capacity(24);
+        for face in faces {
+            let base = vertices.len() as u32;
+            let normal = triangle_normal(face[0], face[1], face[2]);
+            vertices.extend(
+                face.iter()
+                    .copied()
+                    .map(|position| GeometryVertex { position, normal }),
+            );
+            tex_coords0.extend(face.iter().enumerate().map(|(index, _)| face_uvs[index]));
+            if face.len() == 3 {
+                indices.extend_from_slice(&[base, base + 1, base + 2]);
+            } else {
+                indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+            }
+        }
+        new_with_tex_coords(GeometryTopology::Triangles, vertices, indices, tex_coords0)
+    }
+
     pub fn plane(width: f32, depth: f32) -> Self {
         let half_width = width.abs() * 0.5;
         let half_depth = depth.abs() * 0.5;
@@ -235,4 +408,77 @@ fn new_with_tex_coords(
 
 fn scale(value: Vec3, factor: f32) -> Vec3 {
     Vec3::new(value.x * factor, value.y * factor, value.z * factor)
+}
+
+fn add(lhs: Vec3, rhs: Vec3) -> Vec3 {
+    Vec3::new(lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z)
+}
+
+fn sub(lhs: Vec3, rhs: Vec3) -> Vec3 {
+    Vec3::new(lhs.x - rhs.x, lhs.y - rhs.y, lhs.z - rhs.z)
+}
+
+fn cross(lhs: Vec3, rhs: Vec3) -> Vec3 {
+    Vec3::new(
+        lhs.y * rhs.z - lhs.z * rhs.y,
+        lhs.z * rhs.x - lhs.x * rhs.z,
+        lhs.x * rhs.y - lhs.y * rhs.x,
+    )
+}
+
+fn normalize(value: Vec3) -> Vec3 {
+    let length = (value.x * value.x + value.y * value.y + value.z * value.z).sqrt();
+    if length <= f32::EPSILON {
+        Vec3::new(0.0, 1.0, 0.0)
+    } else {
+        scale(value, 1.0 / length)
+    }
+}
+
+fn triangle_normal(a: Vec3, b: Vec3, c: Vec3) -> Vec3 {
+    normalize(cross(sub(b, a), sub(c, a)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extended_primitives_have_deterministic_counts_bounds_and_normals() {
+        let cases = [
+            ("cone", GeometryDesc::cone(0.10, 0.22, 12), 49, 72),
+            ("torus", GeometryDesc::torus(0.11, 0.03, 12, 6), 91, 432),
+            ("disc", GeometryDesc::disc(0.12, 16), 17, 48),
+            ("wedge", GeometryDesc::wedge(0.20, 0.12, 0.16), 18, 24),
+        ];
+        for (name, geometry, vertex_count, index_count) in cases {
+            assert_eq!(geometry.topology(), GeometryTopology::Triangles, "{name}");
+            assert_eq!(geometry.vertices().len(), vertex_count, "{name}");
+            assert_eq!(geometry.indices().len(), index_count, "{name}");
+            let bounds = geometry.bounds();
+            for value in [
+                bounds.min.x,
+                bounds.min.y,
+                bounds.min.z,
+                bounds.max.x,
+                bounds.max.y,
+                bounds.max.z,
+            ] {
+                assert!(value.is_finite(), "{name} bound component must be finite");
+            }
+            assert!(
+                bounds.max.x > bounds.min.x || bounds.max.z > bounds.min.z,
+                "{name} should have a measurable silhouette in the ground plane"
+            );
+            assert!(
+                geometry.vertices().iter().any(|vertex| {
+                    let normal = vertex.normal;
+                    let length =
+                        (normal.x * normal.x + normal.y * normal.y + normal.z * normal.z).sqrt();
+                    length > 0.9 && length < 1.1
+                }),
+                "{name} should carry renderable normals"
+            );
+        }
+    }
 }

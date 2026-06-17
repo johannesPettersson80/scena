@@ -29,6 +29,11 @@ pub(super) fn positive_f64(value: Option<f64>) -> Option<f64> {
     value.filter(|value| value.is_finite() && *value > 0.0)
 }
 
+pub(super) fn u32_at_least(value: Option<u32>, default: u32, min: u32) -> Option<u32> {
+    let value = value.unwrap_or(default);
+    (value >= min).then_some(value)
+}
+
 pub(in crate::scene_host::recipe) fn authored_color(
     colors: &BTreeMap<String, SceneRecipeColorV1>,
     value: &str,

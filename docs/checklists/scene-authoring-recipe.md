@@ -174,7 +174,7 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
 ### Per-directive field sketches
 
 - **colors**: map `id -> "#RRGGBB" | "srgb8(r,g,b)" | "linear(r,g,b)" | "kelvin(k)" | <named>`.
-- **geometries[]**: `id`; one of `primitive { kind: box|sphere|cylinder|plane|line|polyline|arrow|grid|axes, <params> }` or `mesh { topology: triangles|lines, positions[], normals[], indices[], colors?[], uvs?[] }`.
+- **geometries[]**: `id`; one of `primitive { kind: box|sphere|cylinder|plane|line|polyline|arrow|grid|axes|cone|torus|disc|wedge, <params> }` or `mesh { topology: triangles|lines, positions[], normals[], indices[], colors?[], uvs?[] }`.
 - **materials[]**: `id`; `kind: unlit|pbr_metallic_roughness|line|wireframe|edge`; `base_color` (color ref); `metallic`, `roughness`, `emissive`, `emissive_strength`, `alpha_mode: opaque|mask{cutoff}|blend`, `double_sided`, `stroke_width_px`, advanced-PBR factor/texture fields (Slice 9), texture slots `{ uri, transform?, optional? }` (uri under path policy).
 - **fonts[]** (Slice 11): `id`; `uri` (TrueType/asset font, under path policy); `optional?`. Referenced by a label's `font` id.
 - **nodes[]**: `id`; `geometry?`, `material?` (resource refs) or `empty: true`; `parent?` (node id, default root); `transform: TransformSpec`; `name?`, `tags?[]`, `visible?`, `layer_mask?`, `render_group?`, `tint?`.
@@ -370,9 +370,9 @@ into Slice 12 skin/morph authoring + Slice 13 particle rendering.)
       a negative recipe is rejected at validation.
 
 ### Slice 10 — Primitive coverage (#16)
-- [ ] Add the committed primitive set to `GeometryDesc` (e.g. cone, torus, disc,
+- [x] Add the committed primitive set to `GeometryDesc` (e.g. cone, torus, disc,
       wedge) with deterministic tessellation; recipe `primitive` kinds.
-- [ ] Proof: each primitive asserts **deterministic vertex/index counts, finite
+- [x] Proof: each primitive asserts **deterministic vertex/index counts, finite
       bounds, and projected silhouette / bbox / normal-facing evidence** — not a
       bare "renders non-empty".
 

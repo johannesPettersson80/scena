@@ -36,6 +36,10 @@ pub struct SceneRecipePrimitiveV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub radius: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub major_radius: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub minor_radius: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub segments: Option<u32>,

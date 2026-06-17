@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use super::common::{
-    DiagnosticPathExt, authored_color, positive_f64, primitive_size2, primitive_size3, vec3,
+    DiagnosticPathExt, authored_color, positive_f64, primitive_size2, primitive_size3,
+    u32_at_least, vec3,
 };
 use crate::assets::DefaultAssetFetcher;
 use crate::geometry::{GeometryDesc, GeometryTopology, GeometryVertex};
@@ -158,6 +159,110 @@ fn authored_geometry(
                     height as f32,
                     primitive.segments.unwrap_or(32),
                 ),
+            ))
+        }
+        "cone" => {
+            let radius = positive_f64(primitive.radius).ok_or_else(|| {
+                Box::new(error_diagnostic(
+                    "$",
+                    "invalid_primitive",
+                    "cone primitive requires a finite positive radius",
+                    "emit primitive:{kind:\"cone\",radius,height,segments?}",
+                ))
+            })?;
+            let height = positive_f64(primitive.height).ok_or_else(|| {
+                Box::new(error_diagnostic(
+                    "$",
+                    "invalid_primitive",
+                    "cone primitive requires a finite positive height",
+                    "emit primitive:{kind:\"cone\",radius,height,segments?}",
+                ))
+            })?;
+            let segments = u32_at_least(primitive.segments, 32, 3).ok_or_else(|| {
+                Box::new(error_diagnostic(
+                    "$",
+                    "invalid_primitive",
+                    "cone primitive segments must be at least 3",
+                    "emit segments:3 or larger",
+                ))
+            })?;
+            Ok((
+                "cone".to_owned(),
+                GeometryDesc::cone(radius as f32, height as f32, segments),
+            ))
+        }
+        "disc" => {
+            let radius = positive_f64(primitive.radius).ok_or_else(|| {
+                Box::new(error_diagnostic(
+                    "$",
+                    "invalid_primitive",
+                    "disc primitive requires a finite positive radius",
+                    "emit primitive:{kind:\"disc\",radius,segments?}",
+                ))
+            })?;
+            let segments = u32_at_least(primitive.segments, 32, 3).ok_or_else(|| {
+                Box::new(error_diagnostic(
+                    "$",
+                    "invalid_primitive",
+                    "disc primitive segments must be at least 3",
+                    "emit segments:3 or larger",
+                ))
+            })?;
+            Ok((
+                "disc".to_owned(),
+                GeometryDesc::disc(radius as f32, segments),
+            ))
+        }
+        "torus" => {
+            let major_radius = positive_f64(primitive.major_radius).ok_or_else(|| {
+                Box::new(error_diagnostic(
+                    "$",
+                    "invalid_primitive",
+                    "torus primitive requires a finite positive major_radius",
+                    "emit primitive:{kind:\"torus\",major_radius,minor_radius}",
+                ))
+            })?;
+            let minor_radius = positive_f64(primitive.minor_radius).ok_or_else(|| {
+                Box::new(error_diagnostic(
+                    "$",
+                    "invalid_primitive",
+                    "torus primitive requires a finite positive minor_radius",
+                    "emit primitive:{kind:\"torus\",major_radius,minor_radius}",
+                ))
+            })?;
+            let segments = u32_at_least(primitive.segments, 32, 3).ok_or_else(|| {
+                Box::new(error_diagnostic(
+                    "$",
+                    "invalid_primitive",
+                    "torus primitive segments must be at least 3",
+                    "emit segments:3 or larger",
+                ))
+            })?;
+            let rings = u32_at_least(primitive.rings, 12, 3).ok_or_else(|| {
+                Box::new(error_diagnostic(
+                    "$",
+                    "invalid_primitive",
+                    "torus primitive rings must be at least 3",
+                    "emit rings:3 or larger",
+                ))
+            })?;
+            Ok((
+                "torus".to_owned(),
+                GeometryDesc::torus(major_radius as f32, minor_radius as f32, segments, rings),
+            ))
+        }
+        "wedge" => {
+            let [width, height, depth] = primitive_size3(primitive).ok_or_else(|| {
+                Box::new(error_diagnostic(
+                    "$",
+                    "invalid_primitive",
+                    "wedge primitive requires a finite positive size",
+                    "emit primitive:{kind:\"wedge\",size:[width,height,depth]}",
+                ))
+            })?;
+            Ok((
+                "wedge".to_owned(),
+                GeometryDesc::wedge(width as f32, height as f32, depth as f32),
             ))
         }
         "line" => {

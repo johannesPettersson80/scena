@@ -69,6 +69,29 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_optional_positiv
     }
 }
 
+pub(in crate::scene::recipe::validation::authoring) fn validate_optional_min_u32(
+    path: &str,
+    value: Option<&Value>,
+    min: u32,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    match value.as_u64() {
+        Some(value) if value >= u64::from(min) && value <= u64::from(u32::MAX) => {}
+        _ => diagnostics.push(diagnostic(
+            "invalid_integer",
+            "error",
+            path,
+            format!("field must be an integer greater than or equal to {min}"),
+            format!("use {min} or larger"),
+            None,
+            false,
+        )),
+    }
+}
+
 pub(in crate::scene::recipe::validation::authoring) fn validate_vec3(
     path: &str,
     value: Option<&Value>,

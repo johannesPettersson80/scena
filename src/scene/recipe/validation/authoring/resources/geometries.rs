@@ -4,9 +4,9 @@ use crate::scene::recipe::types::SceneRecipeDiagnosticV1;
 
 use super::super::{validate_known_fields, validate_required_id};
 use super::common::{
-    validate_indices, validate_optional_positive_u32, validate_optional_string_array,
-    validate_optional_vec2_array, validate_optional_vec3_array, validate_points,
-    validate_positive_number, validate_positive_number_list, validate_vec3,
+    validate_indices, validate_optional_min_u32, validate_optional_positive_u32,
+    validate_optional_string_array, validate_optional_vec2_array, validate_optional_vec3_array,
+    validate_points, validate_positive_number, validate_positive_number_list, validate_vec3,
 };
 use crate::scene::recipe::validation::diagnostic;
 
@@ -15,6 +15,8 @@ const PRIMITIVE_FIELDS: &[&str] = &[
     "kind",
     "size",
     "radius",
+    "major_radius",
+    "minor_radius",
     "height",
     "segments",
     "rings",
@@ -148,6 +150,57 @@ fn validate_primitive(path: &str, value: &Value, diagnostics: &mut Vec<SceneReci
                 diagnostics,
             );
         }
+        Some("cone") => {
+            validate_positive_number(&format!("{path}.radius"), object.get("radius"), diagnostics);
+            validate_positive_number(&format!("{path}.height"), object.get("height"), diagnostics);
+            validate_optional_min_u32(
+                &format!("{path}.segments"),
+                object.get("segments"),
+                3,
+                diagnostics,
+            );
+        }
+        Some("disc") => {
+            validate_positive_number(&format!("{path}.radius"), object.get("radius"), diagnostics);
+            validate_optional_min_u32(
+                &format!("{path}.segments"),
+                object.get("segments"),
+                3,
+                diagnostics,
+            );
+        }
+        Some("torus") => {
+            validate_positive_number(
+                &format!("{path}.major_radius"),
+                object.get("major_radius"),
+                diagnostics,
+            );
+            validate_positive_number(
+                &format!("{path}.minor_radius"),
+                object.get("minor_radius"),
+                diagnostics,
+            );
+            validate_optional_min_u32(
+                &format!("{path}.segments"),
+                object.get("segments"),
+                3,
+                diagnostics,
+            );
+            validate_optional_min_u32(
+                &format!("{path}.rings"),
+                object.get("rings"),
+                3,
+                diagnostics,
+            );
+        }
+        Some("wedge") => validate_positive_number_list(
+            &format!("{path}.size"),
+            object.get("size"),
+            3,
+            "wedge primitive size must contain three finite positive dimensions",
+            "use size:[width,height,depth] in meters",
+            diagnostics,
+        ),
         Some("line" | "arrow") => {
             validate_vec3(&format!("{path}.start"), object.get("start"), diagnostics);
             validate_vec3(&format!("{path}.end"), object.get("end"), diagnostics);
