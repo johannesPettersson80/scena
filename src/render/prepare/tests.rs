@@ -176,3 +176,47 @@ fn opaque_node_tint_is_retained_per_primitive_not_baked_into_vertex_colors() {
         "instance-set tint should be retained as draw tint without rewriting vertex colors"
     );
 }
+
+#[test]
+fn hidden_instances_are_filtered_from_gpu_instance_records() {
+    let assets = Assets::new();
+    let geometry = assets.create_geometry(GeometryDesc::box_xyz(1.0, 1.0, 1.0));
+    let material = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+    let mut scene = Scene::new();
+    let instance_set = scene
+        .add_instance_set(scene.root(), geometry, material, Transform::IDENTITY)
+        .expect("instance set inserts");
+    let visible = scene
+        .push_instance(instance_set, Transform::at(Vec3::new(-1.0, 0.0, 0.0)))
+        .expect("visible instance inserts");
+    let hidden = scene
+        .push_instance(instance_set, Transform::at(Vec3::new(1.0, 0.0, 0.0)))
+        .expect("hidden instance inserts");
+    scene
+        .set_instance_visible(instance_set, hidden, false)
+        .expect("hidden instance visibility sets");
+
+    let prepared = collect_prepared_primitives(
+        RasterTarget {
+            width: 64,
+            height: 64,
+            backend: Backend::HeadlessGpu,
+        },
+        &scene,
+        Some(&assets),
+        None,
+        &[],
+        &[],
+        PreparedEnvironmentLighting::default(),
+    )
+    .expect("scene prepares");
+
+    assert_eq!(prepared.instances.len(), 1);
+    let records = prepared.instances[0].instances();
+    assert_eq!(
+        records.len(),
+        1,
+        "hidden instances must not be retained for GPU instanced draws"
+    );
+    assert_eq!(records[0].source_instance(), visible);
+}

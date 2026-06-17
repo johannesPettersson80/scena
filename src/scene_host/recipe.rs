@@ -15,8 +15,9 @@ mod policy;
 mod setup;
 
 use authoring::{
-    AuthoredNodeResources, build_authored_cameras, build_authored_geometries,
-    build_authored_lights, build_authored_materials, build_authored_nodes,
+    AuthoredNodeResources, InstanceSetResources, build_authored_cameras,
+    build_authored_clipping_planes, build_authored_geometries, build_authored_instance_sets,
+    build_authored_labels, build_authored_lights, build_authored_materials, build_authored_nodes,
 };
 use overlays::apply_recipe_overlays;
 use policy::asset_policy_diagnostics;
@@ -260,10 +261,37 @@ impl SceneHostCore<DefaultAssetFetcher> {
             &mut nodes,
             &mut diagnostics,
         );
+        let instance_set_keys = build_authored_instance_sets(
+            &policy,
+            &mut host,
+            &recipe.instance_sets,
+            &recipe.colors,
+            InstanceSetResources {
+                geometries: &geometry_handles,
+                materials: &material_handles,
+                nodes: &node_keys,
+                imports: &import_handles,
+            },
+            &mut nodes,
+            &mut diagnostics,
+        );
+        let mut target_node_keys = node_keys.clone();
+        target_node_keys.extend(instance_set_keys);
+        let label_keys = build_authored_labels(
+            &mut host,
+            &recipe.labels,
+            &recipe.colors,
+            &target_node_keys,
+            &import_handles,
+            &mut nodes,
+            &mut diagnostics,
+        );
+        target_node_keys.extend(label_keys);
+        build_authored_clipping_planes(&mut host, &recipe.clipping_planes, &mut diagnostics);
         build_authored_cameras(
             &mut host,
             &recipe.cameras,
-            &node_keys,
+            &target_node_keys,
             &mut cameras,
             &mut diagnostics,
         );

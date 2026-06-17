@@ -9,6 +9,8 @@ mod targets;
 
 pub(super) fn has_authored_renderable_nodes(object: &Map<String, Value>) -> bool {
     targets::has_authored_renderable_nodes(object)
+        || targets::has_authored_instance_sets(object.get("instance_sets"))
+        || targets::has_authored_labels(object.get("labels"))
 }
 
 pub(super) fn validate_authoring_sections(
@@ -31,7 +33,30 @@ pub(super) fn validate_authoring_sections(
         diagnostics,
     );
     let node_ids = ids::id_set_from_array(object.get("nodes"));
-    targets::validate_cameras(object.get("cameras"), &node_ids, diagnostics);
+    targets::validate_instance_sets(
+        object.get("instance_sets"),
+        &geometry_ids,
+        &material_ids,
+        &color_ids,
+        &node_ids,
+        &import_ids,
+        diagnostics,
+    );
+    let instance_set_ids = ids::id_set_from_array(object.get("instance_sets"));
+    let mut label_target_ids = node_ids.clone();
+    label_target_ids.extend(instance_set_ids.iter().cloned());
+    targets::validate_labels(
+        object.get("labels"),
+        &color_ids,
+        &label_target_ids,
+        &import_ids,
+        diagnostics,
+    );
+    let label_ids = ids::id_set_from_array(object.get("labels"));
+    let mut camera_target_ids = label_target_ids;
+    camera_target_ids.extend(label_ids);
+    targets::validate_clipping_planes(object.get("clipping_planes"), diagnostics);
+    targets::validate_cameras(object.get("cameras"), &camera_target_ids, diagnostics);
     targets::validate_lights(object.get("lights"), &color_ids, diagnostics);
 }
 

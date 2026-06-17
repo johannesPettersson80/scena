@@ -1065,9 +1065,18 @@ The current v1 recipe slice supports:
   transform. `place_on` may reference only nodes declared earlier in the
   recipe; `align_to_anchor` resolves `<import_id>.<anchor_name>` against a live
   imported anchor. Forward refs fail closed before build.
+- `instance_sets[]` authored instance-set nodes with stable caller `id`,
+  geometry/material references, optional parent and root transform, and
+  per-instance stable ids with transform, opaque tint, and visibility. Hidden
+  instances are filtered out of render preparation and inspection draw lists.
+- `labels[]` free-standing `LabelDesc` nodes with stable caller `id`, text,
+  optional parent, transform, color/background/halo colors, and size.
+- `clipping_planes[]` arbitrary active clipping planes with stable caller `id`,
+  finite non-zero normal, finite distance, and optional `active` flag. Recipes
+  fail closed when active planes exceed the renderer's `max_clipping_planes`.
 - `cameras[]` authored perspective cameras with stable caller `id`; at most one
   camera may be `active`, and camera `look_at` transforms may target authored
-  nodes or explicit world positions
+  nodes, instance sets, labels, or explicit world positions
 - `lights[]` authored directional, point, or spot lights with presets, color,
   intensity/range/cone fields, and transforms
 - optional `scene` setup with named or custom background, `default`/`uri`/`none`
@@ -1087,8 +1096,8 @@ The current v1 recipe slice supports:
 - opaque caller `metadata`
 
 Unknown fields fail closed. Known future feature sections such as `primitives`,
-`animations`, `fonts`, `skins`, `morphs`, `particles`, `labels`,
-`anchors`, `connectors`, `bounds`, `authored_planes`, and `named_states` emit
+`animations`, `fonts`, `skins`, `morphs`, `particles`, `anchors`,
+`connectors`, `bounds`, and `named_states` emit
 `unsupported_feature` until the feature slice that owns them implements the
 section. Workflow fields such as
 `steps`, `sequence`, `loop`, `branch`, `timeline`, and `script` emit
@@ -1108,8 +1117,9 @@ the caller `id`, resolved `uri`, stable `import_handle`, `root_handles`,
 `<import_id>:/<path>`; `<import_id>:/` names the primary import root and named
 glTF children are included when their authored path is unambiguous. `nodes`,
 `cameras`, and `lights` are targetable manifest entries with stable handles.
-Authored `nodes` and `cameras` include their recipe ids and stable handles in
-the same targetable lists as imported node handles. `geometries` and
+Authored mesh nodes, instance-set nodes, label nodes, and cameras include their
+recipe ids and stable handles in the same targetable lists as imported node
+handles. `geometries` and
 `materials` are non-targetable resources without handles; authored geometries
 report real vertex and index counts.
 `RecipeBuildPolicy` is operator-owned configuration, not part of the authored

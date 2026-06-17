@@ -32,7 +32,10 @@ impl Scene {
         }
         for (node, instance_set, node_transform) in self.instance_set_nodes() {
             let node_world = self.world_transform(node).unwrap_or(node_transform);
-            for instance in instance_set.instances() {
+            for instance in instance_set
+                .instances()
+                .filter(|instance| instance.visible())
+            {
                 append_draw_entry(
                     &mut draw_list,
                     assets,
@@ -71,7 +74,10 @@ impl Scene {
         }
         for (node, instance_set, node_transform) in self.instance_set_nodes() {
             let node_world = self.world_transform(node).unwrap_or(node_transform);
-            for instance in instance_set.instances() {
+            for instance in instance_set
+                .instances()
+                .filter(|instance| instance.visible())
+            {
                 append_normal_overlay(
                     &mut overlays,
                     assets,

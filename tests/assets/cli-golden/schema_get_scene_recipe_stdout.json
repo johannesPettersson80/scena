@@ -48,19 +48,22 @@
       "height": 72,
       "width": 96
     },
+    "clipping_planes": [
+      {
+        "distance": 0.5,
+        "id": "front_clip",
+        "normal": [
+          0.0,
+          0.0,
+          1.0
+        ]
+      }
+    ],
     "colors": {
+      "instance_tint": "#F6C85F",
+      "label_bg": "#1D2733",
+      "label_fg": "#FFFFFF",
       "plate_blue": "#3A7BD5"
-    },
-    "exploded_view": {
-      "axis": [
-        1.0,
-        0.0,
-        0.0
-      ],
-      "distance": 0.0,
-      "factor": 0.0,
-      "import": "part",
-      "mode": "axis"
     },
     "expect": {
       "expect_bbox_fit": {
@@ -94,6 +97,17 @@
         }
       ]
     },
+    "exploded_view": {
+      "axis": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "distance": 0.0,
+      "factor": 0.0,
+      "import": "part",
+      "mode": "axis"
+    },
     "geometries": [
       {
         "id": "plate_geo",
@@ -116,6 +130,56 @@
         },
         "id": "part",
         "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
+      }
+    ],
+    "instance_sets": [
+      {
+        "geometry": "plate_geo",
+        "id": "plate_instances",
+        "instances": [
+          {
+            "id": "visible-copy",
+            "tint": "instance_tint",
+            "transform": {
+              "kind": "trs",
+              "translation": [
+                -0.08,
+                0.0,
+                0.0
+              ]
+            }
+          },
+          {
+            "id": "hidden-copy",
+            "transform": {
+              "kind": "trs",
+              "translation": [
+                0.08,
+                0.0,
+                0.0
+              ]
+            },
+            "visible": false
+          }
+        ],
+        "material": "plate_mat"
+      }
+    ],
+    "labels": [
+      {
+        "background": "label_bg",
+        "color": "label_fg",
+        "id": "status_label",
+        "size_px": 18.0,
+        "text": "OK",
+        "transform": {
+          "kind": "trs",
+          "translation": [
+            0.0,
+            0.08,
+            0.0
+          ]
+        }
       }
     ],
     "materials": [

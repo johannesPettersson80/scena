@@ -322,6 +322,7 @@ fn collect_prepared_instance_records(
     let node_tint = scene.node_tint(node).unwrap_or(None);
     instance_set
         .instances()
+        .filter(|instance| instance.visible())
         .map(|instance| {
             PreparedInstanceRecord::new(
                 instance.id(),

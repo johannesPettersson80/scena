@@ -13,7 +13,16 @@ pub(super) fn validate_global_ids(
     let mut ids = BTreeSet::new();
     collect_import_ids(object.get("imports"), &mut ids, diagnostics);
     collect_map_ids("colors", object.get("colors"), &mut ids, diagnostics);
-    for section in ["geometries", "materials", "nodes", "cameras", "lights"] {
+    for section in [
+        "geometries",
+        "materials",
+        "nodes",
+        "instance_sets",
+        "labels",
+        "clipping_planes",
+        "cameras",
+        "lights",
+    ] {
         collect_array_ids(section, object.get(section), &mut ids, diagnostics);
     }
 }

@@ -59,7 +59,6 @@ fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
         "skins",
         "morphs",
         "particles",
-        "labels",
         "viewer_profile",
         "environment",
         "placements",
@@ -67,7 +66,6 @@ fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
         "anchors",
         "connectors",
         "bounds",
-        "authored_planes",
     ] {
         let mut recipe = json!({
             "schema": "scena.scene_recipe.v1",
@@ -916,6 +914,185 @@ fn scene_recipe_slice4_scene_and_render_settings_fail_closed() {
     assert_reason(&report, "invalid_background", None);
     assert_reason(&report, "invalid_number", None);
     assert_reason(&report, "invalid_render_setting", None);
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_slice6_instancing_labels_and_clipping_planes_build_and_render() {
+    let recipe = json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "part": "#4A90E2",
+            "tint": "#F6C85F",
+            "label_fg": "#FFFFFF",
+            "label_bg": "#1D2733"
+        },
+        "geometries": [
+            { "id": "cube_geo", "primitive": { "kind": "box", "size": [0.08, 0.08, 0.08] } }
+        ],
+        "materials": [
+            { "id": "cube_mat", "kind": "unlit", "base_color": "part", "double_sided": true }
+        ],
+        "instance_sets": [{
+            "id": "cube_field",
+            "geometry": "cube_geo",
+            "material": "cube_mat",
+            "instances": [
+                {
+                    "id": "left",
+                    "transform": { "kind": "trs", "translation": [-0.06, 0.0, 0.0] },
+                    "tint": "tint"
+                },
+                {
+                    "id": "right-hidden",
+                    "transform": { "kind": "trs", "translation": [0.06, 0.0, 0.0] },
+                    "visible": false
+                }
+            ]
+        }],
+        "labels": [{
+            "id": "status_label",
+            "text": "OK",
+            "color": "label_fg",
+            "background": "label_bg",
+            "size_px": 18.0,
+            "transform": { "kind": "trs", "translation": [0.0, 0.1, 0.0] }
+        }],
+        "clipping_planes": [{
+            "id": "keep-visible-half",
+            "normal": [1.0, 0.0, 0.0],
+            "distance": 0.2
+        }],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "fov_degrees": 40.0,
+            "active": true,
+            "transform": { "kind": "look_at", "eye": [0.24, 0.2, 0.28], "target": [0.0, 0.03, 0.0] }
+        }],
+        "capture": { "width": 220, "height": 180 }
+    });
+    let text = serde_json::to_string_pretty(&recipe).expect("recipe serializes");
+
+    let validation = scena::validate_scene_recipe_json(&text);
+    assert!(
+        validation.ok,
+        "Slice 6 recipe should validate: {validation:#?}"
+    );
+
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/slice6.recipe.json",
+        &text,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("Slice 6 recipe build succeeds");
+
+    assert!(build.manifest.ok, "{:#?}", build.manifest);
+    assert!(
+        build
+            .manifest
+            .nodes
+            .iter()
+            .any(|node| node.id == "cube_field" && node.kind == "instance_set"),
+        "instance set root should be targetable in the build manifest: {:#?}",
+        build.manifest
+    );
+    assert!(
+        build
+            .manifest
+            .nodes
+            .iter()
+            .any(|node| node.id == "status_label" && node.kind == "label"),
+        "free-standing label should be targetable in the build manifest: {:#?}",
+        build.manifest
+    );
+
+    let mut host = build.host;
+    host.prepare().expect("Slice 6 scene prepares");
+    host.render().expect("Slice 6 scene renders");
+    let capture = host.capture().expect("Slice 6 scene captures");
+    let inspection_json = host.inspect_json().expect("Slice 6 scene inspects");
+    let inspection: scena::SceneInspectionReportV1 =
+        serde_json::from_str(&inspection_json).expect("inspection decodes");
+    assert_eq!(
+        inspection.counts.clipping_planes, 1,
+        "arbitrary clipping plane should be active in the scene: {inspection:#?}"
+    );
+    assert!(
+        inspection
+            .nodes
+            .iter()
+            .any(|node| node.kind == "InstanceSet"),
+        "recipe instance set should create a real scene InstanceSet node: {inspection:#?}"
+    );
+    assert!(
+        inspection.nodes.iter().any(|node| node.kind == "Label"),
+        "recipe label should create a real scene Label node: {inspection:#?}"
+    );
+    let drawn_instances = inspection
+        .draw_list
+        .iter()
+        .filter(|draw| draw.instance.is_some())
+        .count();
+    assert_eq!(
+        drawn_instances, 1,
+        "only the visible per-instance entry should draw: {inspection:#?}"
+    );
+    let report = host.renderer().introspect_capture(
+        &capture,
+        &inspection,
+        scena::RenderIntrospectionOptions::summary(),
+    );
+    assert!(report.ok, "Slice 6 render should be visible: {report:#?}");
+}
+
+#[test]
+fn scene_recipe_slice6_validation_rejects_bad_instances_labels_and_clipping_planes() {
+    let invalid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "part": "#4A90E2" },
+        "geometries": [
+            { "id": "cube_geo", "primitive": { "kind": "box", "size": [0.08, 0.08, 0.08] } }
+        ],
+        "materials": [
+            { "id": "cube_mat", "kind": "unlit", "base_color": "part" }
+        ],
+        "instance_sets": [{
+            "id": "cube_field",
+            "geometry": "missing_geo",
+            "material": "cube_mat",
+            "instances": [
+                { "id": "", "visible": "yes", "tint": "missing_color" }
+            ]
+        }],
+        "labels": [{
+            "id": "bad_label",
+            "text": "",
+            "size_px": -1.0,
+            "color": "missing_color",
+            "transform": { "kind": "trs", "translation": [0.0, "bad", 0.0] }
+        }],
+        "clipping_planes": [{
+            "id": "bad_plane",
+            "normal": [0.0, 0.0, 0.0],
+            "distance": "near"
+        }],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "active": true,
+            "transform": { "kind": "look_at", "eye": [0.24, 0.2, 0.28], "target": [0.0, 0.0, 0.0] }
+        }]
+    }));
+
+    assert!(!invalid.ok);
+    assert_reason(&invalid, "unknown_geometry_ref", None);
+    assert_reason(&invalid, "invalid_id", None);
+    assert_reason(&invalid, "invalid_visible", None);
+    assert_reason(&invalid, "unknown_color_ref", None);
+    assert_reason(&invalid, "invalid_label", None);
+    assert_reason(&invalid, "invalid_vector", None);
+    assert_reason(&invalid, "invalid_clipping_plane", None);
 }
 
 #[test]

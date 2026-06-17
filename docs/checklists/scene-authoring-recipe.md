@@ -178,6 +178,14 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
 - **materials[]**: `id`; `kind: unlit|pbr_metallic_roughness|line|wireframe|edge`; `base_color` (color ref); `metallic`, `roughness`, `emissive`, `emissive_strength`, `alpha_mode: opaque|mask{cutoff}|blend`, `double_sided`, `stroke_width_px`, advanced-PBR factor/texture fields (Slice 9), texture slots `{ uri, transform?, optional? }` (uri under path policy).
 - **fonts[]** (Slice 11): `id`; `uri` (TrueType/asset font, under path policy); `optional?`. Referenced by a label's `font` id.
 - **nodes[]**: `id`; `geometry?`, `material?` (resource refs) or `empty: true`; `parent?` (node id, default root); `transform: TransformSpec`; `name?`, `tags?[]`, `visible?`, `layer_mask?`, `render_group?`, `tint?`.
+- **instance_sets[]** (Slice 6): `id`; `geometry`; `material`; `parent?`; root
+  `transform?`; `instances[]` with stable `id`, `transform?`, opaque `tint?`,
+  and `visible?`.
+- **labels[]** (Slice 6): `id`; `text`; `parent?`; `transform?`; `color?`;
+  `background?`; `halo?`; `size_px?`.
+- **clipping_planes[]** (Slice 6): `id`; finite non-zero `normal`; finite
+  `distance`; `active?` (default true), bounded by renderer
+  `max_clipping_planes`.
 - **lights[]**: `id`; `kind: directional|point|spot` or `preset: sun|key|fill|rim|softbox|...`; `color?`, intensity (`illuminance_lux`|`intensity_candela`), `range?`, cone angles (spot); `transform: TransformSpec`.
 - **cameras[]**: `id`; `kind: perspective|orthographic`; `fov_degrees?`/ortho extents; `aspect?`, `depth_range?`; `active?`; `transform: TransformSpec`.
 - **TransformSpec** (exact wire variants):
@@ -315,7 +323,7 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
       recipe failing each with a structured reason.
 
 ### Slice 6 — Instancing, labels, clipping planes
-- [ ] Instance sets (per-instance transform/tint/visibility); free-standing
+- [x] Instance sets (per-instance transform/tint/visibility); free-standing
       labels (`LabelDesc`); arbitrary clipping planes.
 
 ### Slice 7 — Starter snippets

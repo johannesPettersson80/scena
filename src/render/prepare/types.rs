@@ -215,6 +215,11 @@ impl PreparedInstanceRecord {
     pub(in crate::render) const fn tint(self) -> Color {
         self.tint
     }
+
+    #[cfg(test)]
+    pub(in crate::render) const fn source_instance(self) -> InstanceId {
+        self.source_instance
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

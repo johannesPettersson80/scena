@@ -23,12 +23,25 @@
       "kind": "node",
       "parent": 4294967297,
       "name": "CAD plate"
+    },
+    {
+      "id": "plate_instances",
+      "handle": 4294967301,
+      "kind": "instance_set",
+      "parent": 4294967297
+    },
+    {
+      "id": "status_label",
+      "handle": 4294967302,
+      "kind": "label",
+      "parent": 4294967297,
+      "name": "OK"
     }
   ],
   "cameras": [
     {
       "id": "main",
-      "handle": 4294967301,
+      "handle": 4294967303,
       "kind": "camera",
       "parent": 4294967297,
       "active": true

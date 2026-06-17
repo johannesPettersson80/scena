@@ -12,6 +12,9 @@
     }
   ],
   "colors": {
+    "instance_tint": "#F6C85F",
+    "label_bg": "#1D2733",
+    "label_fg": "#FFFFFF",
     "plate_blue": "#3A7BD5"
   },
   "geometries": [
@@ -43,6 +46,67 @@
       "transform": {
         "kind": "center"
       }
+    }
+  ],
+  "instance_sets": [
+    {
+      "id": "plate_instances",
+      "geometry": "plate_geo",
+      "material": "plate_mat",
+      "instances": [
+        {
+          "id": "visible-copy",
+          "transform": {
+            "kind": "trs",
+            "translation": [
+              -0.08,
+              0.0,
+              0.0
+            ]
+          },
+          "tint": "instance_tint"
+        },
+        {
+          "id": "hidden-copy",
+          "transform": {
+            "kind": "trs",
+            "translation": [
+              0.08,
+              0.0,
+              0.0
+            ]
+          },
+          "visible": false
+        }
+      ]
+    }
+  ],
+  "labels": [
+    {
+      "id": "status_label",
+      "text": "OK",
+      "color": "label_fg",
+      "background": "label_bg",
+      "size_px": 18.0,
+      "transform": {
+        "kind": "trs",
+        "translation": [
+          0.0,
+          0.08,
+          0.0
+        ]
+      }
+    }
+  ],
+  "clipping_planes": [
+    {
+      "id": "front_clip",
+      "normal": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "distance": 0.5
     }
   ],
   "cameras": [
