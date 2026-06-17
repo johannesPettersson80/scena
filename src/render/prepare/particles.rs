@@ -16,6 +16,11 @@ pub(super) fn append_particle_primitives(
         return;
     };
     let (billboard_right, billboard_up) = camera_projection.billboard_axes();
+    let particle_primitive_count = scene
+        .particle_set_nodes()
+        .map(|(_, particle_set, _)| particle_set.len().saturating_mul(2))
+        .sum::<usize>();
+    primitives.reserve(particle_primitive_count);
     for (node, particle_set, transform) in scene.particle_set_nodes() {
         for particle in particle_set.particles() {
             let Some((left_bottom, right_bottom, right_top, left_top)) = particle_corners(

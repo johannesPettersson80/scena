@@ -1373,7 +1373,8 @@ fn scene_recipe_slice13_particles_render_per_particle_output_and_fail_closed() {
             "green": "#20D060",
             "yellow": "#F0C020",
             "blue": "#2050E0",
-            "red": "#E03030"
+            "red": "#E03030",
+            "magenta": "#D028D0"
         },
         "particles": [{
             "id": "status_particles",
@@ -1381,7 +1382,8 @@ fn scene_recipe_slice13_particles_render_per_particle_output_and_fail_closed() {
                 { "id": "left_green", "position": [-0.35, 0.0, 0.0], "color": "green", "size_px": 18.0 },
                 { "id": "right_yellow", "position": [0.35, 0.0, 0.0], "color": "yellow", "size_px": 30.0 },
                 { "id": "far_blue", "position": [0.0, 0.0, -0.35], "color": "blue", "size_px": 34.0 },
-                { "id": "near_red", "position": [0.0, 0.0, 0.0], "color": "red", "size_px": 18.0 }
+                { "id": "near_red", "position": [0.0, 0.0, 0.0], "color": "red", "size_px": 18.0 },
+                { "id": "rotated_magenta", "position": [0.0, -0.35, 0.0], "color": "magenta", "size_px": 24.0, "rotation_degrees": 45.0 }
             ]
         }],
         "cameras": [{
@@ -1430,6 +1432,7 @@ fn scene_recipe_slice13_particles_render_per_particle_output_and_fail_closed() {
         scena::RenderIntrospectionOptions::summary(),
     );
     assert!(report.ok, "Slice 13 render should be visible: {report:#?}");
+    assert_slice13_particle_pixels(capture.rgba8.as_slice(), 160);
 
     let invalid = scena::validate_scene_recipe_value(json!({
         "schema": "scena.scene_recipe.v1",
@@ -1454,22 +1457,41 @@ fn scene_recipe_slice13_particles_render_per_particle_output_and_fail_closed() {
 #[test]
 fn scene_recipe_slice13_particles_change_headless_gpu_pixels_by_color_size_position_and_depth() {
     let rgba = render_slice13_particles_gpu();
-    let green = slice13_color_bounds(&rgba, 160, |pixel| {
+    assert_slice13_particle_pixels(rgba.as_slice(), 160);
+}
+
+#[cfg(feature = "scene-host")]
+fn assert_slice13_particle_pixels(rgba: &[u8], width: usize) {
+    let green = slice13_color_bounds(rgba, width, |pixel| {
         pixel[1] > 150 && pixel[0] < 80 && pixel[2] < 120
     })
     .expect("green particle is visible");
-    let yellow = slice13_color_bounds(&rgba, 160, |pixel| {
+    let yellow = slice13_color_bounds(rgba, width, |pixel| {
         pixel[0] > 180 && pixel[1] > 130 && pixel[2] < 90
     })
     .expect("yellow particle is visible");
-    let blue = slice13_color_bounds(&rgba, 160, |pixel| {
+    let blue = slice13_color_bounds(rgba, width, |pixel| {
         pixel[2] > 140 && pixel[0] < 90 && pixel[1] < 120
     })
     .expect("far blue particle remains visible around the nearer red particle");
+    let red = slice13_color_bounds(rgba, width, |pixel| {
+        pixel[0] > 150 && pixel[1] < 100 && pixel[2] < 100
+    })
+    .expect("near red particle is visible");
+    let magenta = slice13_color_bounds(rgba, width, |pixel| {
+        pixel[0] > 130 && pixel[1] < 100 && pixel[2] > 130
+    })
+    .expect("rotated magenta particle is visible");
 
     assert!(
         green.center_x() < 70.0 && yellow.center_x() > 90.0,
         "particle screen positions should track their authored x positions: green={green:?}, yellow={yellow:?}"
+    );
+    assert!(
+        (green.center_y() - 60.0).abs() < 8.0
+            && (yellow.center_y() - 60.0).abs() < 8.0
+            && (red.center_y() - 60.0).abs() < 8.0,
+        "particle screen positions should track their authored y positions: green={green:?}, yellow={yellow:?}, red={red:?}"
     );
     assert!(
         (14..=24).contains(&green.width())
@@ -1481,8 +1503,18 @@ fn scene_recipe_slice13_particles_change_headless_gpu_pixels_by_color_size_posit
         blue.width() > 22 && blue.height() > 22,
         "larger far blue sprite should leave a visible ring for depth verification: {blue:?}"
     );
+    assert!(
+        (red.center_x() - 80.0).abs() < 8.0
+            && (red.center_y() - 60.0).abs() < 8.0
+            && (14..=24).contains(&red.width()),
+        "near red particle color and placement should be independently visible: {red:?}"
+    );
+    assert!(
+        magenta.center_y() > 70.0 && magenta.width() >= 30 && magenta.height() >= 30,
+        "rotated particle should move on the y axis and expand its screen-space bbox: {magenta:?}"
+    );
 
-    let center = slice13_pixel(&rgba, 160, 80, 60);
+    let center = slice13_pixel(rgba, width, 80, 60);
     assert!(
         center[0] > 150 && center[1] < 100 && center[2] < 100,
         "near red particle must depth-test in front of far blue at the same screen position, center pixel={center:?}"
@@ -1513,6 +1545,12 @@ fn render_slice13_particles_gpu() -> Vec<u8> {
             scena::Color::from_srgb_u8(224, 48, 48),
             18.0,
         ),
+        scena::Particle::new(
+            scena::Vec3::new(0.0, -0.35, 0.0),
+            scena::Color::from_srgb_u8(208, 40, 208),
+            24.0,
+        )
+        .with_rotation_radians(std::f32::consts::FRAC_PI_4),
     ])
     .expect("particle buffer validates");
     scene
@@ -1560,6 +1598,10 @@ impl Slice13ColorBounds {
 
     fn center_x(&self) -> f32 {
         (self.min_x + self.max_x) as f32 * 0.5
+    }
+
+    fn center_y(&self) -> f32 {
+        (self.min_y + self.max_y) as f32 * 0.5
     }
 }
 

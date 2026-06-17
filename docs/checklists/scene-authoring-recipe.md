@@ -415,13 +415,16 @@ accessors only).
 ### Slice 13 — Particle / point-sprite rendering (#18b)
 A **new render path** — grep finds no particle/point-sprite rendering today.
 - [x] New GPU/CPU-visible primitive class: host-supplied particle buffer
-      (position / color / size / rotation) rendered as instanced sprites or
-      points, with bounds, capture proof, and an explicit picking/visibility
-      policy decision.
+      (position / opaque color / size / rotation) rendered as camera-facing
+      screen-sized sprites, with bounds, capture proof, and an explicit
+      picking/visibility policy decision. The current path bakes sprite quads
+      during prepare; a shader-instanced particle path is a future performance
+      improvement, not a claimed Slice 13 capability.
 - [x] Recipe directive for a static or host-driven particle set.
-- [x] Proof: assert expected **per-particle color / size / screen-position /
-      depth** behavior, not just non-empty pixels; fail-closed on malformed
-      buffers.
+- [x] Proof: assert expected **per-particle color / size / rotation /
+      screen-position / depth** behavior, not just non-empty pixels; fail-closed
+      on malformed buffers and translucent Rust particle colors until a real
+      transparent particle path exists.
 - [x] **Renderer boundary (the one carve-out):** time-stepped particle
       *simulation* (emitter physics / lifetime / velocity integration over time)
       stays host-side per AGENTS.md — scena **renders host-supplied particle

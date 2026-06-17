@@ -15,6 +15,7 @@ mod capabilities;
 mod capability_status;
 mod diagnostic;
 mod display;
+mod display_animation;
 mod help;
 mod post_processing;
 mod stats;

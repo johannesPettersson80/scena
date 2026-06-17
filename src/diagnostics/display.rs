@@ -463,8 +463,12 @@ impl fmt::Display for LookupError {
             Self::ClippingPlaneNotFound(_) => {
                 write!(formatter, "clipping plane key does not exist in the scene")
             }
-            Self::InstanceSetNotFound(_) => write!(formatter, "instance set key does not exist"),
-            Self::ParticleSetNotFound(_) => write!(formatter, "particle set key does not exist"),
+            Self::InstanceSetNotFound(_) => {
+                write!(formatter, "instance set key does not exist in the scene")
+            }
+            Self::ParticleSetNotFound(_) => {
+                write!(formatter, "particle set key does not exist in the scene")
+            }
             Self::InstanceNotFound {
                 instance_set,
                 instance,
@@ -480,24 +484,6 @@ impl fmt::Display for LookupError {
                     "label text is not supported by its font: {reason}"
                 )
             }
-        }
-    }
-}
-
-impl fmt::Display for AnimationError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ClipNotFound { name } => {
-                write!(
-                    formatter,
-                    "imported scene has no animation clip named '{name}'"
-                )
-            }
-            Self::MixerNotFound(_) => write!(formatter, "animation mixer key does not exist"),
-            Self::StaleMixer(_) => write!(
-                formatter,
-                "animation mixer is stale because its source import was replaced"
-            ),
         }
     }
 }

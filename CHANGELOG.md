@@ -77,10 +77,10 @@ All notable user-facing changes are recorded here.
   morph-capable nodes with fail-closed validation.
 - Added host-supplied particle rendering through `Particle`, `ParticleSet`,
   `Scene::add_particle_set_node()`, and additive `scene_recipe.v1` `particles[]`
-  directives. Particles render as camera-facing screen-sized sprites with
-  per-particle color, size, rotation, bounds, fail-closed recipe validation, and
-  headless-GPU proof for color, position, size, and depth behavior; time-stepped
-  particle simulation remains host-owned.
+  directives. Particles render as opaque camera-facing screen-sized sprites with
+  per-particle color, size, rotation, bounds, fail-closed recipe and Rust API
+  validation, and headless-GPU proof for color, position, size, rotation, and
+  depth behavior; time-stepped particle simulation remains host-owned.
 - Added `Scene::frame_all_with_overlays`,
   `SceneHostCore::frame_all_with_overlays`, and browser
   `frameAllWithOverlays()` to frame geometry plus generated overlay label

@@ -7,6 +7,10 @@ use crate::material::Color;
 
 use super::{NodeKey, NodeKind, ParticleSetKey, Scene, Transform, Vec3};
 
+/// One host-supplied screen-space particle.
+///
+/// Particles render as camera-facing opaque sprites. `ParticleSet::try_new`
+/// rejects translucent colors until a transparent particle path is implemented.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Particle {
     position: Vec3,
@@ -15,12 +19,14 @@ pub struct Particle {
     rotation_radians: f32,
 }
 
+/// A validated particle buffer owned by the scene graph.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParticleSet {
     particles: Vec<Particle>,
     bounds: Aabb,
 }
 
+/// Validation errors for host-supplied particle buffers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParticleSetError {
     Empty,
@@ -179,7 +185,10 @@ impl fmt::Display for ParticleSetError {
                 write!(formatter, "particle {index} position must be finite")
             }
             Self::InvalidColor { index } => {
-                write!(formatter, "particle {index} color channels must be finite")
+                write!(
+                    formatter,
+                    "particle {index} color channels must be finite and alpha must be 1.0"
+                )
             }
             Self::InvalidSize { index } => {
                 write!(
@@ -213,6 +222,7 @@ fn validate_particles(particles: &[Particle]) -> Result<(), ParticleSetError> {
             || !color.g.is_finite()
             || !color.b.is_finite()
             || !color.a.is_finite()
+            || color.a != 1.0
         {
             return Err(ParticleSetError::InvalidColor { index });
         }
@@ -240,4 +250,20 @@ fn particle_bounds(particles: &[Particle]) -> Option<Aabb> {
         max.z = max.z.max(position.z);
     }
     Some(Aabb::new(min, max))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn particle_set_rejects_translucent_particles_until_transparent_path_exists() {
+        let result = ParticleSet::try_new(vec![Particle::new(
+            Vec3::ZERO,
+            Color::from_linear_rgba(1.0, 0.0, 0.0, 0.5),
+            16.0,
+        )]);
+
+        assert_eq!(result, Err(ParticleSetError::InvalidColor { index: 0 }));
+    }
 }
