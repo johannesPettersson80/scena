@@ -100,7 +100,7 @@ fn run(args: Vec<String>) -> Result<CliOutcome, String> {
              'validate-recipe <recipe.json>', \
              'place <recipe.json> --import <id> --verb <verb>', \
              'recipe render <recipe.json> --introspect --verify --out <png>', \
-             'examples agent <template> [--out <dir>]', \
+             'examples agent [get] <template> [--out <dir>]', \
              'render <asset> --introspect --out <png>', or \
              'inspect <asset>', or \
              'diagnose <asset> --visibility [--handle <u64>]', or \

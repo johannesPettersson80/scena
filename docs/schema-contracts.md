@@ -594,7 +594,10 @@ Stable fixtures:
 
 The `scena examples agent <template> [--out <dir>]` CLI command writes a small
 set of recipe, expectation, and artifact-path files for a named smoke template
-and emits a manifest with schema `scena.agent_smoke_template.v1`.
+and emits a manifest with schema `scena.agent_smoke_template.v1`. The
+`scena examples agent get <name> [--out <dir>]` form emits authored-from-scratch
+starter snippets such as `primitive_scene`, `cad_plate`, `dashboard_bars`,
+`machine_state_viewer`, and `product_configurator`.
 
 The manifest contains:
 

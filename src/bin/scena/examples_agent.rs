@@ -8,6 +8,8 @@ use super::scena_output::{CliOutcome, json_outcome};
 mod builder;
 #[path = "examples_agent/overlays.rs"]
 mod overlays;
+#[path = "examples_agent/starter.rs"]
+mod starter;
 
 use builder::{TemplateBuilder, capture_descriptor_path, path_for_json, write_json_file};
 use overlays::{add_cad_overlay_recipe_sections, add_documentation_overlay_recipe_sections};
@@ -33,11 +35,18 @@ pub(crate) fn run_examples_agent_command(args: &[String]) -> Result<CliOutcome, 
 
 impl ExamplesAgentCommandArgs {
     fn parse(args: &[String]) -> Result<Self, String> {
-        let Some(name) = args.first() else {
+        let Some(first) = args.first() else {
             return Err(examples_agent_usage());
         };
+        let (name, mut index) = if first == "get" {
+            let Some(name) = args.get(1) else {
+                return Err(examples_agent_usage());
+            };
+            (name.clone(), 2)
+        } else {
+            (first.clone(), 1)
+        };
         let mut out = None;
-        let mut index = 1;
         while index < args.len() {
             match args[index].as_str() {
                 "--out" => {
@@ -55,11 +64,8 @@ impl ExamplesAgentCommandArgs {
                 }
             }
         }
-        let out = out.unwrap_or_else(|| PathBuf::from("target/scena-agent").join(name));
-        Ok(Self {
-            name: name.clone(),
-            out,
-        })
+        let out = out.unwrap_or_else(|| PathBuf::from("target/scena-agent").join(&name));
+        Ok(Self { name, out })
     }
 }
 
@@ -72,6 +78,11 @@ fn build_template(name: &str, out_dir: &Path) -> Result<scena::AgentSmokeTemplat
     })?;
     match name {
         "product-configurator" => product_configurator(out_dir),
+        "primitive_scene" => starter::primitive_scene(out_dir),
+        "cad_plate" => starter::cad_plate(out_dir),
+        "dashboard_bars" => starter::dashboard_bars(out_dir),
+        "machine_state_viewer" => starter::machine_state_viewer(out_dir),
+        "product_configurator" => starter::product_configurator(out_dir),
         "live-state-viewer" => live_state_viewer(out_dir),
         "web-viewer" => web_viewer(out_dir),
         "data-visualization" => data_visualization(out_dir),
@@ -436,6 +447,11 @@ fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, Strin
 fn template_names() -> Vec<&'static str> {
     vec![
         "product-configurator",
+        "primitive_scene",
+        "cad_plate",
+        "dashboard_bars",
+        "machine_state_viewer",
+        "product_configurator",
         "live-state-viewer",
         "web-viewer",
         "data-visualization",
@@ -447,5 +463,5 @@ fn template_names() -> Vec<&'static str> {
 }
 
 fn examples_agent_usage() -> String {
-    "usage: scena examples agent <template> [--out <dir>]".to_string()
+    "usage: scena examples agent [get] <template> [--out <dir>]".to_string()
 }

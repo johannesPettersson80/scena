@@ -15,6 +15,14 @@ const TEMPLATE_NAMES: &[&str] = &[
     "documentation-renderer",
 ];
 
+const STARTER_SNIPPET_NAMES: &[&str] = &[
+    "primitive_scene",
+    "cad_plate",
+    "dashboard_bars",
+    "machine_state_viewer",
+    "product_configurator",
+];
+
 #[test]
 fn scena_examples_agent_templates_generate_and_run_cli_smoke_commands() {
     let root = artifact_dir("agent-templates");
@@ -219,6 +227,99 @@ fn scena_examples_agent_cad_and_documentation_templates_are_runnable_with_overla
                     .any(|node| node["kind"] == "Label"),
             "overlay recipe should produce line geometry and labels: {inspection:#}"
         );
+    }
+}
+
+#[test]
+fn scena_examples_agent_get_starter_snippets_are_authored_and_runnable() {
+    let root = artifact_dir("agent-starter-snippets");
+
+    for name in STARTER_SNIPPET_NAMES {
+        let output_dir = root.join(name);
+        let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+            .args([
+                "examples",
+                "agent",
+                "get",
+                name,
+                "--out",
+                path_str(&output_dir),
+            ])
+            .output()
+            .expect("scena examples agent get command runs");
+
+        assert!(
+            output.status.success(),
+            "starter snippet {name} failed, stderr={}",
+            stderr(&output)
+        );
+        assert!(
+            output.stderr.is_empty(),
+            "starter snippet {name} keeps JSON on stdout, stderr={}",
+            stderr(&output)
+        );
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("starter snippet emits JSON");
+        assert_eq!(manifest["schema"], "scena.agent_smoke_template.v1");
+        assert_eq!(manifest["name"], *name);
+        assert_eq!(manifest["status"], "ready");
+
+        let recipe_path = output_dir.join("recipe.json");
+        let recipe: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(&recipe_path).expect("starter snippet recipe exists"),
+        )
+        .expect("starter snippet recipe parses");
+        assert_eq!(recipe["schema"], "scena.scene_recipe.v1");
+        assert!(
+            recipe["imports"]
+                .as_array()
+                .is_none_or(|imports| imports.is_empty()),
+            "starter snippet should be authored from scratch, not import-only: {recipe:#}"
+        );
+        assert!(
+            recipe["geometries"]
+                .as_array()
+                .is_some_and(|items| !items.is_empty())
+                && recipe["materials"]
+                    .as_array()
+                    .is_some_and(|items| !items.is_empty())
+                && recipe["nodes"]
+                    .as_array()
+                    .is_some_and(|items| !items.is_empty()),
+            "starter snippet should contain authored geometry/material/node content: {recipe:#}"
+        );
+
+        for command in manifest["commands"].as_array().expect("commands array") {
+            if command["name"] != "validate_recipe" && command["name"] != "render_introspect" {
+                continue;
+            }
+            let argv = command["argv"]
+                .as_array()
+                .expect("argv array")
+                .iter()
+                .map(|value| value.as_str().expect("argv string").to_owned())
+                .collect::<Vec<_>>();
+            let command_output = Command::new(env!("CARGO_BIN_EXE_scena"))
+                .args(&argv[1..])
+                .output()
+                .unwrap_or_else(|error| {
+                    panic!("starter snippet {name} command {argv:?} runs: {error}")
+                });
+            assert!(
+                command_output.status.success(),
+                "starter snippet {name} command {argv:?} failed, stderr={}",
+                stderr(&command_output)
+            );
+            assert!(
+                command_output.stderr.is_empty(),
+                "starter snippet {name} command {argv:?} keeps JSON on stdout, stderr={}",
+                stderr(&command_output)
+            );
+            let report: serde_json::Value =
+                serde_json::from_slice(&command_output.stdout).expect("command emits JSON");
+            assert_eq!(report["schema"], command["expected_schema"]);
+            assert_eq!(report["ok"], command["expected_ok"]);
+        }
     }
 }
 

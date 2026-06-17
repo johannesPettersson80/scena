@@ -201,6 +201,11 @@ recipe plus any expectation files needed by that workflow, then emits a
 `scena.agent_smoke_template.v1` manifest containing the exact `scena` commands
 to run and the artifacts they should create.
 
+Use `scena examples agent get <name> --out <dir>` for authored-from-scratch
+starter snippets. The current starter names are `primitive_scene`, `cad_plate`,
+`dashboard_bars`, `machine_state_viewer`, and `product_configurator`; each writes
+a real `scene_recipe.v1` and commands that validate and render it.
+
 Ready templates:
 
 - `product-configurator`

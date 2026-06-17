@@ -327,8 +327,8 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
       labels (`LabelDesc`); arbitrary clipping planes.
 
 ### Slice 7 — Starter snippets
-- [ ] `scena examples agent get <name>`: `primitive_scene`, `cad_plate`,
-      `dashboard_bars`, `digital_twin_machine`, `product_configurator` — real
+- [x] `scena examples agent get <name>`: `primitive_scene`, `cad_plate`,
+      `dashboard_bars`, `machine_state_viewer`, `product_configurator` — real
       recipes that round-trip through `build_recipe` and pass `validate-recipe` +
       render introspection in a test.
 

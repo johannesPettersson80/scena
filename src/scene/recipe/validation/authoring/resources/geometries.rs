@@ -161,7 +161,22 @@ fn validate_primitive(path: &str, value: &Value, diagnostics: &mut Vec<SceneReci
             );
         }
         Some("grid") => {
-            validate_positive_number(&format!("{path}.size"), object.get("size"), diagnostics);
+            if object.get("length").is_some() {
+                validate_positive_number(
+                    &format!("{path}.length"),
+                    object.get("length"),
+                    diagnostics,
+                );
+            } else {
+                validate_positive_number_list(
+                    &format!("{path}.size"),
+                    object.get("size"),
+                    1,
+                    "grid primitive size must contain one finite positive dimension",
+                    "use length or size:[size] in meters",
+                    diagnostics,
+                );
+            }
             validate_optional_positive_u32(
                 &format!("{path}.divisions"),
                 object.get("divisions"),
