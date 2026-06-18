@@ -245,6 +245,31 @@ pub(crate) fn check_render_alpha_contracts(root: &Path, findings: &mut Vec<Findi
             "AlphaPipelineStatus::LinearSourceOver",
         ],
     );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-ALPHA",
+        "src/scene/instances.rs",
+        &[
+            "fn validate_instance_tint",
+            "InvalidInstanceTint",
+            "instanced scene roots only accept opaque per-instance tint",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-ALPHA",
+        "src/diagnostics.rs",
+        &["InvalidInstanceTint"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-ALPHA",
+        "src/scene/instances.rs",
+        &["scene_set_instance_tint_rejects_non_opaque_tint_before_backend_divergence"],
+    );
 }
 
 pub(crate) fn check_output_stage_contracts(root: &Path, findings: &mut Vec<Finding>) {

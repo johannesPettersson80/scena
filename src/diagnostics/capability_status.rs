@@ -219,8 +219,8 @@ pub(in crate::diagnostics) const fn default_clipping_planes(backend: Backend) ->
 
 pub(in crate::diagnostics) const fn max_clipping_planes(backend: Backend) -> u8 {
     match backend {
-        Backend::WebGl2 => 8,
-        Backend::Headless
+        Backend::WebGl2
+        | Backend::Headless
         | Backend::HeadlessGpu
         | Backend::SurfaceDescriptor
         | Backend::NativeSurface

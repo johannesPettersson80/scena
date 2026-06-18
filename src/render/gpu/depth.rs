@@ -43,7 +43,7 @@ struct CameraUniform {
     viewport_near_far: vec4<f32>,
     color_management: vec4<f32>,
     lighting: LightingUniform,
-    clipping_planes: array<vec4<f32>, 6>,
+    clipping_planes: array<vec4<f32>, 16>,
     clipping_control: vec4<f32>,
 };
 
@@ -59,23 +59,34 @@ var<uniform> camera: CameraUniform;
 var<uniform> draw: DrawUniform;
 
 fn clipped_by_scene(world_position: vec3<f32>) -> bool {
-    let plane_count = i32(clamp(camera.clipping_control.x, 0.0, 6.0));
+    let plane_count = i32(clamp(camera.clipping_control.x, 0.0, 16.0));
     if plane_count <= 0 {
         return false;
     }
     var rejected = false;
-    var inside_all = true;
-    for (var index = 0; index < 6; index = index + 1) {
+    var section_inside_all = true;
+    var section_seen = false;
+    let section_start = i32(clamp(camera.clipping_control.y, 0.0, 16.0));
+    let has_section = camera.clipping_control.w > 0.5;
+    for (var index = 0; index < 16; index = index + 1) {
         if index < plane_count {
             let plane = camera.clipping_planes[index];
             let inside = dot(plane.xyz, world_position) + plane.w >= 0.0;
-            rejected = rejected || !inside;
-            inside_all = inside_all && inside;
+            if has_section && index >= section_start {
+                section_seen = true;
+                section_inside_all = section_inside_all && inside;
+            } else {
+                rejected = rejected || !inside;
+            }
         }
     }
-    let inverted_section = camera.clipping_control.y > 0.5 && camera.clipping_control.z > 0.5;
-    if inverted_section {
-        return inside_all;
+    if has_section && section_seen {
+        let inverted_section = camera.clipping_control.z > 0.5;
+        if inverted_section {
+            rejected = rejected || section_inside_all;
+        } else {
+            rejected = rejected || !section_inside_all;
+        }
     }
     return rejected;
 }

@@ -169,6 +169,9 @@ impl LookupError {
             Self::InstanceNotFound { .. } => {
                 "use an InstanceId that is still present in the requested InstanceSet"
             }
+            Self::InvalidInstanceTint { .. } => {
+                "use finite opaque per-instance tints; transparent instance tinting requires a transparent instancing path"
+            }
             Self::LabelNotFound(_) => "use a LabelKey created by this Scene",
             Self::UnsupportedLabelText { .. } => {
                 "use basic Latin text for TrueType labels or render complex-script text in the host"

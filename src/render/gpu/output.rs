@@ -11,8 +11,11 @@ pub(super) const GPU_TRIANGLE_SHADER: &str = include_str!("output_shader.wgsl");
 pub(super) const GPU_TRIANGLE_SHADER_TEXTURE_2D: &str =
     include_str!("output_shader_texture_2d.wgsl");
 
-pub(super) const MAX_OUTPUT_CLIPPING_PLANES: usize = 6;
-pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 1040;
+pub(super) const MAX_OUTPUT_CLIPPING_PLANES: usize = 16;
+const OUTPUT_UNIFORM_BASE_FLOAT_COUNT: usize = 232;
+const OUTPUT_UNIFORM_FLOAT_COUNT: usize =
+    OUTPUT_UNIFORM_BASE_FLOAT_COUNT + MAX_OUTPUT_CLIPPING_PLANES * 4 + 4;
+pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 1200;
 
 pub(super) use super::draw_uniform::{
     DRAW_UNIFORM_ENTRY_STRIDE, create_draw_bind_group, create_draw_bind_group_layout,
@@ -170,36 +173,37 @@ pub(super) fn encode_clipping_uniform(
     section_box: Option<SectionBox>,
 ) -> ([[f32; 4]; MAX_OUTPUT_CLIPPING_PLANES], [f32; 4]) {
     let mut encoded = [[0.0; 4]; MAX_OUTPUT_CLIPPING_PLANES];
-    if let Some(section_box) = section_box {
-        for (index, plane) in section_box.planes().into_iter().enumerate() {
-            encoded[index] = plane_uniform(plane);
-        }
-        return (
-            encoded,
-            [
-                MAX_OUTPUT_CLIPPING_PLANES as f32,
-                1.0,
-                if section_box.inverted() { 1.0 } else { 0.0 },
-                0.0,
-            ],
-        );
-    }
-
-    for (index, plane) in clipping_planes
+    let mut count = 0usize;
+    for plane in clipping_planes
         .iter()
         .take(MAX_OUTPUT_CLIPPING_PLANES)
         .copied()
-        .enumerate()
     {
-        encoded[index] = plane_uniform(plane);
+        encoded[count] = plane_uniform(plane);
+        count += 1;
     }
+    let section_start = count;
+    let mut has_section = false;
+    let mut inverted_section = false;
+    if let Some(section_box) = section_box {
+        inverted_section = section_box.inverted();
+        for plane in section_box.planes() {
+            if count == MAX_OUTPUT_CLIPPING_PLANES {
+                break;
+            }
+            encoded[count] = plane_uniform(plane);
+            count += 1;
+            has_section = true;
+        }
+    }
+
     (
         encoded,
         [
-            clipping_planes.len().min(MAX_OUTPUT_CLIPPING_PLANES) as f32,
-            0.0,
-            0.0,
-            0.0,
+            count as f32,
+            section_start as f32,
+            if inverted_section { 1.0 } else { 0.0 },
+            if has_section { 1.0 } else { 0.0 },
         ],
     )
 }
@@ -212,7 +216,7 @@ pub(super) fn encode_output_uniform(
     } else {
         0.0
     };
-    let mut values = [0.0; 260];
+    let mut values = [0.0; OUTPUT_UNIFORM_FLOAT_COUNT];
     values[0..16].copy_from_slice(&upload.view_from_world);
     values[16..32].copy_from_slice(&upload.clip_from_view);
     values[32..48].copy_from_slice(&upload.clip_from_world);
@@ -274,7 +278,9 @@ pub(super) fn encode_output_uniform(
         let plane_offset = offset + index * 4;
         values[plane_offset..plane_offset + 4].copy_from_slice(&plane);
     }
-    values[offset + 24..offset + 28].copy_from_slice(&upload.clipping_control);
+    let clipping_control_offset = offset + MAX_OUTPUT_CLIPPING_PLANES * 4;
+    values[clipping_control_offset..clipping_control_offset + 4]
+        .copy_from_slice(&upload.clipping_control);
     let mut bytes = [0; OUTPUT_UNIFORM_BYTE_LEN as usize];
     for (index, value) in values.into_iter().enumerate() {
         bytes[index * 4..index * 4 + 4].copy_from_slice(&value.to_ne_bytes());
@@ -311,10 +317,10 @@ mod tests {
     #[test]
     fn output_uniform_buffer_matches_wgsl_uniform_layout() {
         assert_eq!(
-            OUTPUT_UNIFORM_BYTE_LEN, 1040,
+            OUTPUT_UNIFORM_BYTE_LEN, 1200,
             "CameraUniform stores view, projection, and view-projection matrices plus \
              camera/exposure, viewport/depth, color-management, punctual-light arrays, \
-             directional-shadow-control, environment, and six clipping-plane uniforms — per-draw model + normal matrices live on the new \
+             directional-shadow-control, environment, and sixteen clipping-plane uniforms — per-draw model + normal matrices live on the new \
              DrawUniform bind group at @group(2)"
         );
         let (clipping_planes, clipping_control) = encode_clipping_uniform(&[], None);
@@ -336,6 +342,43 @@ mod tests {
             .len(),
             OUTPUT_UNIFORM_BYTE_LEN as usize
         );
+    }
+
+    #[test]
+    fn capability_clipping_plane_max_matches_shader_uniform_array() {
+        assert_eq!(
+            crate::Capabilities::for_backend(crate::Backend::WebGl2).max_clipping_planes as usize,
+            MAX_OUTPUT_CLIPPING_PLANES,
+            "WebGL2 max_clipping_planes must match the GPU clipping uniform array"
+        );
+        assert_eq!(
+            crate::Capabilities::for_backend(crate::Backend::HeadlessGpu).max_clipping_planes
+                as usize,
+            MAX_OUTPUT_CLIPPING_PLANES,
+            "HeadlessGpu max_clipping_planes must match the GPU clipping uniform array"
+        );
+        assert_eq!(
+            crate::Capabilities::for_backend(crate::Backend::WebGpu).max_clipping_planes as usize,
+            MAX_OUTPUT_CLIPPING_PLANES,
+            "WebGpu max_clipping_planes must match the GPU clipping uniform array"
+        );
+    }
+
+    #[test]
+    fn clipping_uniform_encodes_user_planes_and_section_box_together() {
+        let user = ClippingPlane::new(crate::Vec3::X, 0.25);
+        let section = SectionBox::from_bounds(crate::Aabb::new(
+            crate::Vec3::new(-1.0, -2.0, -3.0),
+            crate::Vec3::new(1.0, 2.0, 3.0),
+        ))
+        .with_inverted(true);
+
+        let (planes, control) = encode_clipping_uniform(&[user], Some(section));
+
+        assert_eq!(control, [7.0, 1.0, 1.0, 1.0]);
+        assert_eq!(planes[0], [1.0, 0.0, 0.0, 0.25]);
+        assert_eq!(planes[1], [1.0, 0.0, 0.0, 1.0]);
+        assert_eq!(planes[2], [-1.0, -0.0, -0.0, 1.0]);
     }
 
     #[test]

@@ -1397,6 +1397,86 @@ fn clipping_plane_set_clips_rendered_output_half_space() {
 }
 
 #[test]
+fn headless_gpu_clipping_plane_set_discards_fragments() {
+    let mut scene = fullscreen_white_scene();
+    let plane = scene.add_clipping_plane(ClippingPlane::new(Vec3::new(1.0, 0.0, 0.0), 0.0));
+    scene
+        .set_clipping_planes(ClippingPlaneSet::new().with_plane(plane))
+        .expect("active clipping plane set is valid");
+    let mut renderer = Renderer::headless_gpu(16, 16).expect("HeadlessGpu renderer builds");
+
+    renderer.prepare(&mut scene).expect("scene prepares");
+    renderer
+        .render_active(&scene)
+        .expect("clipped scene renders on HeadlessGpu");
+
+    assert_pixel_black(renderer.frame_rgba8(), 16, 3, 8);
+    assert_pixel_white(renderer.frame_rgba8(), 16, 12, 8);
+}
+
+#[test]
+fn cpu_and_gpu_apply_user_clipping_planes_and_section_box_together() {
+    let mut cpu_scene = user_and_section_clipping_scene();
+    let mut cpu_renderer = Renderer::headless(32, 16).expect("CPU renderer builds");
+    cpu_renderer
+        .prepare(&mut cpu_scene)
+        .expect("CPU dual clipping scene prepares");
+    cpu_renderer
+        .render_active(&cpu_scene)
+        .expect("CPU dual clipping scene renders");
+
+    let mut gpu_scene = user_and_section_clipping_scene();
+    let mut gpu_renderer = Renderer::headless_gpu(32, 16).expect("HeadlessGpu renderer builds");
+    gpu_renderer
+        .prepare(&mut gpu_scene)
+        .expect("GPU dual clipping scene prepares");
+    gpu_renderer
+        .render_active(&gpu_scene)
+        .expect("GPU dual clipping scene renders");
+
+    for (x, y, visible) in [(6, 8, false), (18, 8, false), (28, 8, false)] {
+        if visible {
+            assert_pixel_white(cpu_renderer.frame_rgba8(), 32, x, y);
+            assert_pixel_white(gpu_renderer.frame_rgba8(), 32, x, y);
+        } else {
+            assert_pixel_black(cpu_renderer.frame_rgba8(), 32, x, y);
+            assert_pixel_black(gpu_renderer.frame_rgba8(), 32, x, y);
+        }
+    }
+}
+
+fn user_and_section_clipping_scene() -> Scene {
+    let mut scene = fullscreen_white_scene();
+    let user_plane = scene.add_clipping_plane(ClippingPlane::new(Vec3::new(0.0, 0.0, 1.0), -0.1));
+    scene
+        .set_clipping_planes(ClippingPlaneSet::new().with_plane(user_plane))
+        .expect("active user plane set is valid");
+    scene
+        .set_section_box(scena::SectionBox::from_bounds(scena::Aabb::new(
+            Vec3::new(0.0, -2.0, -1.0),
+            Vec3::new(4.0, 2.0, 1.0),
+        )))
+        .expect("section box activates");
+    scene
+}
+
+fn assert_pixel_black(frame: &[u8], width: u32, x: u32, y: u32) {
+    assert_eq!(
+        pixel_at(frame, width, x, y),
+        [0, 0, 0, 255],
+        "expected black pixel at {x},{y}"
+    );
+}
+
+fn assert_pixel_white(frame: &[u8], width: u32, x: u32, y: u32) {
+    let pixel = pixel_at(frame, width, x, y);
+    assert!(
+        pixel[0] >= 230 && pixel[1] >= 230 && pixel[2] >= 230 && pixel[3] == 255,
+        "expected white pixel at {x},{y}, got {pixel:?}"
+    );
+}
+
+#[test]
 fn section_box_clips_rendered_output_and_inverts_inside_region() {
     let mut scene = fullscreen_white_scene();
     let section = scena::SectionBox::from_bounds(scena::Aabb::new(

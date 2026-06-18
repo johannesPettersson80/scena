@@ -133,7 +133,7 @@ fn capability_matrix_reports_hardware_tier_and_backend_feature_states() {
 
     let webgl2 = scena::Capabilities::for_backend(Backend::WebGl2);
     assert_eq!(webgl2.hardware_tier, HardwareTier::Low);
-    assert_eq!(webgl2.max_clipping_planes, 8);
+    assert_eq!(webgl2.max_clipping_planes, 16);
     assert_eq!(webgl2.default_clipping_planes, 4);
     assert_eq!(webgl2.ibl_cubemap_default_size, 128);
     assert_eq!(

@@ -44,6 +44,8 @@ pub(in crate::scene_host::recipe) fn build_authored_instance_sets(
 
     let root = host.scene.root();
     let root_handle = host.root_handle();
+    let mut transform_nodes = resources.imported_nodes.clone();
+    transform_nodes.extend(resources.nodes.clone());
     for (index, recipe) in recipes.iter().enumerate() {
         let path = format!("$.instance_sets[{index}]");
         let Some(geometry) = resources.geometries.get(&recipe.geometry).copied() else {
@@ -71,7 +73,7 @@ pub(in crate::scene_host::recipe) fn build_authored_instance_sets(
             continue;
         };
         let parent = match &recipe.parent {
-            Some(parent) => match resources.nodes.get(parent).copied() {
+            Some(parent) => match transform_nodes.get(parent).copied() {
                 Some(parent) => parent,
                 None => {
                     diagnostics.push(error_diagnostic(
@@ -81,7 +83,7 @@ pub(in crate::scene_host::recipe) fn build_authored_instance_sets(
                             "instance set '{}' references missing parent '{}'",
                             recipe.id, parent
                         ),
-                        "parent instance sets under authored nodes declared earlier",
+                        "parent instance sets under authored nodes or imported node paths declared earlier",
                     ));
                     continue;
                 }
@@ -103,8 +105,6 @@ pub(in crate::scene_host::recipe) fn build_authored_instance_sets(
                 continue;
             }
         };
-        let mut transform_nodes = resources.imported_nodes.clone();
-        transform_nodes.extend(resources.nodes.clone());
         let root_transform = match transform_from_recipe(
             recipe.transform.as_ref(),
             TransformResolutionInput {

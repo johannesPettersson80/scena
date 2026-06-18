@@ -123,11 +123,11 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_instance_sets(
             diagnostics,
         );
         if let Some(parent) = object.get("parent") {
-            validate_ref(
+            validate_node_ref(
                 &format!("{path}.parent"),
                 Some(parent),
                 node_ids,
-                "node",
+                import_ids,
                 diagnostics,
             );
         }

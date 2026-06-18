@@ -477,6 +477,15 @@ impl fmt::Display for LookupError {
                 "instance {:?} does not exist in instance set {:?}",
                 instance, instance_set
             ),
+            Self::InvalidInstanceTint {
+                instance_set,
+                instance,
+                reason,
+            } => write!(
+                formatter,
+                "instance {:?} in instance set {:?} has invalid tint: {reason}",
+                instance, instance_set
+            ),
             Self::LabelNotFound(_) => write!(formatter, "label key does not exist in the scene"),
             Self::UnsupportedLabelText { reason, .. } => {
                 write!(

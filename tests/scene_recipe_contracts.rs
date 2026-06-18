@@ -700,8 +700,8 @@ fn scene_recipe_slice9_advanced_pbr_fields_validate_build_and_reject_clamped_val
             "dispersion_factor": 0.02,
             "transmission_factor": 0.18,
             "ior": 1.52,
-            "thickness_factor": 0.05,
-            "attenuation_distance": 2.5,
+            "thickness_factor": 0.35,
+            "attenuation_distance": 2.0,
             "attenuation_color": "blue",
             "clearcoat_texture": { "uri": texture, "color_space": "linear" },
             "clearcoat_roughness_texture": { "uri": texture, "color_space": "linear" },
@@ -1914,6 +1914,7 @@ fn scene_recipe_import_node_paths_validate_and_build_for_authored_targets() {
             "id": "instances_on_import",
             "geometry": "placed_geo",
             "material": "placed_mat",
+            "parent": "part:/ColoredTriangle",
             "transform": { "kind": "place_on", "target": "part:/ColoredTriangle" },
             "instances": [
                 { "id": "i0", "transform": { "kind": "look_at", "eye": [0.0, 0.1, 0.3], "target": "part:/ColoredTriangle" } }
@@ -2012,6 +2013,15 @@ fn scene_recipe_import_node_paths_validate_and_build_for_authored_targets() {
             "parent": "ghost:/Mesh",
             "color": "label"
         }],
+        "instance_sets": [{
+            "id": "import_instances",
+            "geometry": "placed_geo",
+            "material": "placed_mat",
+            "parent": "ghost:/Mesh",
+            "instances": [
+                { "id": "i0" }
+            ]
+        }],
         "cameras": [{
             "id": "main",
             "kind": "perspective",
@@ -2022,6 +2032,7 @@ fn scene_recipe_import_node_paths_validate_and_build_for_authored_targets() {
     assert!(!unknown.ok);
     assert_reason_at(&unknown, "unknown_import_ref", "$.particles[0].parent");
     assert_reason_at(&unknown, "unknown_import_ref", "$.labels[0].parent");
+    assert_reason_at(&unknown, "unknown_import_ref", "$.instance_sets[0].parent");
     assert_reason_at(
         &unknown,
         "unknown_import_ref",
@@ -2342,6 +2353,108 @@ fn scene_recipe_slice6_instancing_labels_and_clipping_planes_build_and_render() 
         scena::RenderIntrospectionOptions::summary(),
     );
     assert!(report.ok, "Slice 6 render should be visible: {report:#?}");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_slice6_rejects_clipping_plane_count_above_renderer_cap() {
+    let limit = scena::Capabilities::for_backend(scena::Backend::Headless).max_clipping_planes;
+    let clipping_planes = (0..=limit)
+        .map(|index| {
+            json!({
+                "id": format!("p{index}"),
+                "normal": [1.0, 0.0, 0.0],
+                "distance": f64::from(index) * 0.01
+            })
+        })
+        .collect::<Vec<_>>();
+    let recipe = json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "part": "#4A90E2" },
+        "geometries": [
+            { "id": "cube_geo", "primitive": { "kind": "box", "size": [0.08, 0.08, 0.08] } }
+        ],
+        "materials": [
+            { "id": "cube_mat", "kind": "unlit", "base_color": "part" }
+        ],
+        "nodes": [
+            { "id": "cube", "geometry": "cube_geo", "material": "cube_mat" }
+        ],
+        "clipping_planes": clipping_planes,
+        "capture": { "width": 64, "height": 64 }
+    });
+    let text = serde_json::to_string_pretty(&recipe).expect("recipe serializes");
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/slice6-too-many-clipping-planes.recipe.json",
+        &text,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect_err("clipping plane count above renderer cap must fail the build");
+
+    assert!(!build.ok, "{build:#?}");
+    assert_build_reason(&build, "policy_violation", "$.clipping_planes");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_slice6_inactive_clipping_plane_leaves_geometry_intact() {
+    let recipe = json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "part": "#F6C85F" },
+        "geometries": [
+            { "id": "cube_geo", "primitive": { "kind": "box", "size": [0.32, 0.32, 0.32] } }
+        ],
+        "materials": [
+            { "id": "cube_mat", "kind": "unlit", "base_color": "part", "double_sided": true }
+        ],
+        "nodes": [
+            { "id": "cube", "geometry": "cube_geo", "material": "cube_mat" }
+        ],
+        "clipping_planes": [{
+            "id": "would_clip_everything",
+            "normal": [1.0, 0.0, 0.0],
+            "distance": -10.0,
+            "active": false
+        }],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "active": true,
+            "transform": { "kind": "look_at", "eye": [0.0, 0.0, 1.4], "target": "cube" }
+        }],
+        "capture": { "width": 96, "height": 96 }
+    });
+    let text = serde_json::to_string_pretty(&recipe).expect("recipe serializes");
+    let validation = scena::validate_scene_recipe_json(&text);
+    assert!(validation.ok, "{validation:#?}");
+
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/slice6-inactive-clipping-plane.recipe.json",
+        &text,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("inactive clipping plane recipe builds");
+    assert!(build.manifest.ok, "{:#?}", build.manifest);
+
+    let mut host = build.host;
+    host.prepare().expect("inactive clipping scene prepares");
+    host.render().expect("inactive clipping scene renders");
+    let capture = host.capture().expect("inactive clipping scene captures");
+    let inspection_json = host
+        .inspect_json()
+        .expect("inactive clipping scene inspects");
+    let inspection: scena::SceneInspectionReportV1 =
+        serde_json::from_str(&inspection_json).expect("inspection decodes");
+    let report = host.renderer().introspect_capture(
+        &capture,
+        &inspection,
+        scena::RenderIntrospectionOptions::summary(),
+    );
+    assert!(report.ok, "{report:#?}");
+    assert!(
+        report.framing.fit_fraction > 0.2 && !report.framing.tiny_in_frame,
+        "inactive clipping plane must leave the subject visibly intact: {report:#?}"
+    );
 }
 
 #[test]

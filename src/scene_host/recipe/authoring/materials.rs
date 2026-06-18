@@ -374,7 +374,7 @@ fn reject_gpu_unsupported_volume_texture(
         format!(
             "{field} is not exposed by scene_recipe.v1 until the GPU path supports it without exceeding the WebGL2 texture-unit floor"
         ),
-        "remove this texture slot or use scalar transmission/thickness factors for now",
+        "remove this texture slot; transmission_factor remains supported for recipe-authored glass",
     )))
 }
 
@@ -418,12 +418,10 @@ async fn load_texture_slot(
 mod tests {
     use std::collections::BTreeMap;
 
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     use super::*;
-    use crate::{
-        Assets, DirectionalLight, EnvironmentPreset, GeometryDesc, Renderer, Scene, Transform, Vec3,
-    };
+    use crate::{Assets, Color, DirectionalLight, GeometryDesc, Renderer, Scene, Transform, Vec3};
 
     #[test]
     fn authored_advanced_pbr_recipe_fields_map_to_material_descriptor() {
@@ -448,8 +446,8 @@ mod tests {
             "dispersion_factor": 0.02,
             "transmission_factor": 0.18,
             "ior": 1.52,
-            "thickness_factor": 0.05,
-            "attenuation_distance": 2.5,
+            "thickness_factor": 0.35,
+            "attenuation_distance": 2.0,
             "attenuation_color": "blue",
             "clearcoat_texture": { "uri": texture, "color_space": "linear" },
             "clearcoat_roughness_texture": { "uri": texture, "color_space": "linear" },
@@ -475,9 +473,9 @@ mod tests {
         assert_close(material.dispersion_factor(), 0.02);
         assert_close(material.transmission_factor(), 0.18);
         assert_close(material.ior(), 1.52);
-        assert_close(material.thickness_factor(), 0.05);
-        assert_close(material.attenuation_distance(), 2.5);
-        assert_close(material.attenuation_color().b, 1.0);
+        assert_close(material.thickness_factor(), 0.35);
+        assert_close(material.attenuation_distance(), 2.0);
+        assert!(material.attenuation_color().b > material.attenuation_color().r);
         assert!(material.clearcoat_texture().is_some());
         assert!(material.clearcoat_roughness_texture().is_some());
         assert!(material.clearcoat_normal_texture().is_some());
@@ -510,8 +508,23 @@ mod tests {
     }
 
     #[test]
-    fn authored_advanced_pbr_recipe_rejects_gpu_unsupported_volume_textures() {
-        for field in ["transmission_texture", "thickness_texture"] {
+    fn authored_advanced_pbr_recipe_rejects_gpu_unsupported_volume_texture_fields() {
+        for (field, value) in [
+            (
+                "transmission_texture",
+                json!({
+                    "uri": "gltf/khronos/WaterBottle/WaterBottle_baseColor.png",
+                    "color_space": "linear"
+                }),
+            ),
+            (
+                "thickness_texture",
+                json!({
+                    "uri": "gltf/khronos/WaterBottle/WaterBottle_baseColor.png",
+                    "color_space": "linear"
+                }),
+            ),
+        ] {
             let mut material = json!({
                 "id": "advanced",
                 "kind": "pbr_metallic_roughness",
@@ -520,63 +533,416 @@ mod tests {
             material
                 .as_object_mut()
                 .expect("material recipe is an object")
-                .insert(
-                    field.to_owned(),
-                    json!({
-                    "uri": "gltf/khronos/WaterBottle/WaterBottle_baseColor.png",
-                    "color_space": "linear"
-                    }),
-                );
+                .insert(field.to_owned(), value);
             let result = try_recipe_material(material);
-            let error = result.expect_err("GPU-unsupported recipe texture should fail closed");
+            let error = result.expect_err("GPU-unsupported recipe volume field should fail closed");
             assert_eq!(error.code, "unsupported_feature");
             assert_eq!(error.path, format!("$.materials[0].{field}"));
         }
     }
 
     #[test]
-    fn authored_advanced_pbr_recipe_factors_change_headless_gpu_pixels() {
-        let baseline = recipe_material(json!({
-            "id": "baseline",
-            "kind": "pbr_metallic_roughness",
-            "base_color": "base",
-            "metallic": 0.0,
-            "roughness": 0.42
-        }));
-        let advanced = recipe_material(json!({
-            "id": "advanced",
+    fn authored_advanced_pbr_recipe_scalars_each_change_headless_gpu_pixels() {
+        struct ScalarGpuCase {
+            name: &'static str,
+            baseline: Vec<(&'static str, Value)>,
+            changed: Vec<(&'static str, Value)>,
+            min_delta: u64,
+        }
+
+        let linear_texture = json!({
+            "uri": "gltf/khronos/WaterBottle/WaterBottle_baseColor.png",
+            "color_space": "linear"
+        });
+        let cases = vec![
+            ScalarGpuCase {
+                name: "clearcoat_factor",
+                baseline: vec![
+                    ("roughness", json!(0.24)),
+                    ("clearcoat_factor", json!(0.0)),
+                    ("clearcoat_roughness_factor", json!(0.12)),
+                ],
+                changed: vec![
+                    ("roughness", json!(0.24)),
+                    ("clearcoat_factor", json!(0.9)),
+                    ("clearcoat_roughness_factor", json!(0.12)),
+                ],
+                min_delta: 16,
+            },
+            ScalarGpuCase {
+                name: "clearcoat_roughness_factor",
+                baseline: vec![
+                    ("roughness", json!(0.18)),
+                    ("clearcoat_factor", json!(0.9)),
+                    ("clearcoat_roughness_factor", json!(0.02)),
+                ],
+                changed: vec![
+                    ("roughness", json!(0.18)),
+                    ("clearcoat_factor", json!(0.9)),
+                    ("clearcoat_roughness_factor", json!(0.72)),
+                ],
+                min_delta: 16,
+            },
+            ScalarGpuCase {
+                name: "clearcoat_normal_scale",
+                baseline: vec![
+                    ("roughness", json!(0.28)),
+                    ("clearcoat_factor", json!(0.85)),
+                    ("clearcoat_roughness_factor", json!(0.08)),
+                    ("clearcoat_normal_scale", json!(0.0)),
+                    ("clearcoat_normal_texture", linear_texture.clone()),
+                ],
+                changed: vec![
+                    ("roughness", json!(0.28)),
+                    ("clearcoat_factor", json!(0.85)),
+                    ("clearcoat_roughness_factor", json!(0.08)),
+                    ("clearcoat_normal_scale", json!(2.0)),
+                    ("clearcoat_normal_texture", linear_texture.clone()),
+                ],
+                min_delta: 16,
+            },
+            ScalarGpuCase {
+                name: "sheen_color_factor",
+                baseline: vec![
+                    ("roughness", json!(0.5)),
+                    ("sheen_color_factor", json!("base")),
+                    ("sheen_roughness_factor", json!(0.35)),
+                ],
+                changed: vec![
+                    ("roughness", json!(0.5)),
+                    ("sheen_color_factor", json!("blue")),
+                    ("sheen_roughness_factor", json!(0.35)),
+                ],
+                min_delta: 16,
+            },
+            ScalarGpuCase {
+                name: "sheen_roughness_factor",
+                baseline: vec![
+                    ("roughness", json!(0.46)),
+                    ("sheen_color_factor", json!("white")),
+                    ("sheen_roughness_factor", json!(0.02)),
+                ],
+                changed: vec![
+                    ("roughness", json!(0.46)),
+                    ("sheen_color_factor", json!("white")),
+                    ("sheen_roughness_factor", json!(0.9)),
+                ],
+                min_delta: 16,
+            },
+            ScalarGpuCase {
+                name: "anisotropy_strength_factor",
+                baseline: vec![
+                    ("roughness", json!(0.28)),
+                    ("anisotropy_strength_factor", json!(0.0)),
+                    ("anisotropy_rotation_radians", json!(0.65)),
+                ],
+                changed: vec![
+                    ("roughness", json!(0.28)),
+                    ("anisotropy_strength_factor", json!(0.9)),
+                    ("anisotropy_rotation_radians", json!(0.65)),
+                ],
+                min_delta: 16,
+            },
+            ScalarGpuCase {
+                name: "anisotropy_rotation_radians",
+                baseline: vec![
+                    ("roughness", json!(0.28)),
+                    ("anisotropy_strength_factor", json!(0.85)),
+                    ("anisotropy_rotation_radians", json!(0.0)),
+                ],
+                changed: vec![
+                    ("roughness", json!(0.28)),
+                    ("anisotropy_strength_factor", json!(0.85)),
+                    ("anisotropy_rotation_radians", json!(1.25)),
+                ],
+                min_delta: 16,
+            },
+            ScalarGpuCase {
+                name: "iridescence_factor",
+                baseline: vec![
+                    ("roughness", json!(0.34)),
+                    ("iridescence_factor", json!(0.0)),
+                    ("iridescence_ior", json!(1.45)),
+                    ("iridescence_thickness_minimum_nm", json!(140.0)),
+                    ("iridescence_thickness_maximum_nm", json!(560.0)),
+                ],
+                changed: vec![
+                    ("roughness", json!(0.34)),
+                    ("iridescence_factor", json!(0.85)),
+                    ("iridescence_ior", json!(1.45)),
+                    ("iridescence_thickness_minimum_nm", json!(140.0)),
+                    ("iridescence_thickness_maximum_nm", json!(560.0)),
+                ],
+                min_delta: 16,
+            },
+            ScalarGpuCase {
+                name: "iridescence_ior",
+                baseline: vec![
+                    ("roughness", json!(0.34)),
+                    ("iridescence_factor", json!(0.8)),
+                    ("iridescence_ior", json!(1.1)),
+                    ("iridescence_thickness_minimum_nm", json!(140.0)),
+                    ("iridescence_thickness_maximum_nm", json!(560.0)),
+                ],
+                changed: vec![
+                    ("roughness", json!(0.34)),
+                    ("iridescence_factor", json!(0.8)),
+                    ("iridescence_ior", json!(2.0)),
+                    ("iridescence_thickness_minimum_nm", json!(140.0)),
+                    ("iridescence_thickness_maximum_nm", json!(560.0)),
+                ],
+                min_delta: 16,
+            },
+            ScalarGpuCase {
+                name: "iridescence_thickness_minimum_nm",
+                baseline: vec![
+                    ("roughness", json!(0.34)),
+                    ("iridescence_factor", json!(0.8)),
+                    ("iridescence_ior", json!(1.45)),
+                    ("iridescence_thickness_minimum_nm", json!(100.0)),
+                    ("iridescence_thickness_maximum_nm", json!(650.0)),
+                    ("iridescence_thickness_texture", linear_texture.clone()),
+                ],
+                changed: vec![
+                    ("roughness", json!(0.34)),
+                    ("iridescence_factor", json!(0.8)),
+                    ("iridescence_ior", json!(1.45)),
+                    ("iridescence_thickness_minimum_nm", json!(500.0)),
+                    ("iridescence_thickness_maximum_nm", json!(650.0)),
+                    ("iridescence_thickness_texture", linear_texture.clone()),
+                ],
+                min_delta: 16,
+            },
+            ScalarGpuCase {
+                name: "iridescence_thickness_maximum_nm",
+                baseline: vec![
+                    ("roughness", json!(0.34)),
+                    ("iridescence_factor", json!(0.8)),
+                    ("iridescence_ior", json!(1.45)),
+                    ("iridescence_thickness_minimum_nm", json!(120.0)),
+                    ("iridescence_thickness_maximum_nm", json!(180.0)),
+                ],
+                changed: vec![
+                    ("roughness", json!(0.34)),
+                    ("iridescence_factor", json!(0.8)),
+                    ("iridescence_ior", json!(1.45)),
+                    ("iridescence_thickness_minimum_nm", json!(120.0)),
+                    ("iridescence_thickness_maximum_nm", json!(700.0)),
+                ],
+                min_delta: 16,
+            },
+            ScalarGpuCase {
+                name: "dispersion_factor",
+                baseline: vec![
+                    ("roughness", json!(0.22)),
+                    ("transmission_factor", json!(0.65)),
+                    ("ior", json!(1.55)),
+                    ("dispersion_factor", json!(0.0)),
+                ],
+                changed: vec![
+                    ("roughness", json!(0.22)),
+                    ("transmission_factor", json!(0.65)),
+                    ("ior", json!(1.55)),
+                    ("dispersion_factor", json!(0.08)),
+                ],
+                min_delta: 16,
+            },
+            ScalarGpuCase {
+                name: "transmission_factor",
+                baseline: vec![
+                    ("roughness", json!(0.18)),
+                    ("alpha_mode", json!({ "kind": "blend" })),
+                    ("transmission_factor", json!(0.0)),
+                    ("ior", json!(1.55)),
+                ],
+                changed: vec![
+                    ("roughness", json!(0.18)),
+                    ("alpha_mode", json!({ "kind": "blend" })),
+                    ("transmission_factor", json!(0.65)),
+                    ("ior", json!(1.55)),
+                ],
+                min_delta: 16,
+            },
+            ScalarGpuCase {
+                name: "ior",
+                baseline: vec![
+                    ("roughness", json!(0.22)),
+                    ("dispersion_factor", json!(0.08)),
+                    ("ior", json!(1.01)),
+                ],
+                changed: vec![
+                    ("roughness", json!(0.22)),
+                    ("dispersion_factor", json!(0.08)),
+                    ("ior", json!(4.0)),
+                ],
+                min_delta: 16,
+            },
+        ];
+
+        let mut failures = Vec::new();
+        for case in cases {
+            let baseline_frame =
+                render_recipe_material_gpu(advanced_material_recipe("baseline", case.baseline));
+            let changed_frame =
+                render_recipe_material_gpu(advanced_material_recipe("changed", case.changed));
+            let delta = rgba8_absolute_delta(&baseline_frame, &changed_frame);
+            if delta < case.min_delta {
+                failures.push(format!(
+                    "{} delta {delta}, expected >= {}",
+                    case.name, case.min_delta
+                ));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "advanced PBR recipe scalar GPU attribution failures: {}",
+            failures.join("; ")
+        );
+    }
+
+    #[test]
+    fn authored_advanced_pbr_recipe_volume_scalars_change_headless_gpu_pixels_in_coupled_scene() {
+        let red_frame = render_recipe_material_gpu(advanced_material_recipe(
+            "red_volume",
+            coupled_volume_fields("red", 0.22),
+        ));
+        let blue_frame = render_recipe_material_gpu(advanced_material_recipe(
+            "blue_volume",
+            coupled_volume_fields("blue", 0.22),
+        ));
+        let (red_absorption, blue_absorption, color_changed_pixels, color_delta) =
+            changed_region_rgb_averages(&red_frame, &blue_frame);
+        assert!(
+            color_delta >= 24 && color_changed_pixels >= 16,
+            "attenuation_color must visibly change the transmitted region: delta={color_delta}, changed_pixels={color_changed_pixels}, red={red_absorption:?}, blue={blue_absorption:?}"
+        );
+        assert!(
+            red_absorption[0] > blue_absorption[0] && blue_absorption[2] > red_absorption[2],
+            "red vs blue KHR_materials_volume attenuation should bias different channels: red={red_absorption:?}, blue={blue_absorption:?}"
+        );
+
+        let strong_frame = render_recipe_material_gpu(advanced_material_recipe(
+            "short_distance",
+            coupled_volume_fields("red", 0.18),
+        ));
+        let weak_frame = render_recipe_material_gpu(advanced_material_recipe(
+            "long_distance",
+            coupled_volume_fields("red", 3.0),
+        ));
+        let (strong_absorption, weak_absorption, distance_changed_pixels, distance_delta) =
+            changed_region_rgb_averages(&strong_frame, &weak_frame);
+        assert!(
+            distance_delta >= 18 && distance_changed_pixels >= 16,
+            "attenuation_distance must change volume absorption when transmission and thickness are active: delta={distance_delta}, changed_pixels={distance_changed_pixels}, strong={strong_absorption:?}, weak={weak_absorption:?}"
+        );
+    }
+
+    fn coupled_volume_fields(color: &str, attenuation_distance: f64) -> Vec<(&str, Value)> {
+        vec![
+            ("base_color", json!("white")),
+            ("alpha_mode", json!({ "kind": "blend" })),
+            ("roughness", json!(0.08)),
+            ("transmission_factor", json!(1.0)),
+            ("ior", json!(1.5)),
+            ("thickness_factor", json!(1.0)),
+            ("attenuation_distance", json!(attenuation_distance)),
+            ("attenuation_color", json!(color)),
+        ]
+    }
+
+    fn advanced_material_recipe(id: &str, fields: Vec<(&str, Value)>) -> Value {
+        let mut material = json!({
+            "id": id,
             "kind": "pbr_metallic_roughness",
             "base_color": "base",
             "metallic": 0.0,
             "roughness": 0.42,
-            "clearcoat_factor": 0.9,
-            "clearcoat_roughness_factor": 0.12,
-            "sheen_color_factor": "white",
-            "sheen_roughness_factor": 0.25,
-            "anisotropy_strength_factor": 0.8,
-            "anisotropy_rotation_radians": 0.5,
-            "iridescence_factor": 0.7,
-            "iridescence_ior": 1.45,
-            "iridescence_thickness_minimum_nm": 110.0,
-            "iridescence_thickness_maximum_nm": 520.0,
-            "dispersion_factor": 0.04,
-            "transmission_factor": 0.25,
-            "ior": 1.55,
-            "thickness_factor": 0.08,
-            "attenuation_distance": 2.0,
-            "attenuation_color": "blue"
-        }));
+            "double_sided": true
+        });
+        let object = material
+            .as_object_mut()
+            .expect("material recipe is an object");
+        for (field, value) in fields {
+            object.insert(field.to_owned(), value);
+        }
+        material
+    }
 
-        let baseline_frame = render_material_gpu(baseline);
-        let advanced_frame = render_material_gpu(advanced);
-        assert_ne!(
-            baseline_frame, advanced_frame,
-            "advanced PBR recipe factors must affect HeadlessGpu pixels"
-        );
+    fn rgba8_absolute_delta(a: &[u8], b: &[u8]) -> u64 {
+        assert_eq!(a.len(), b.len(), "frames must have matching dimensions");
+        a.iter()
+            .zip(b)
+            .map(|(left, right)| u64::from(left.abs_diff(*right)))
+            .sum()
+    }
+
+    fn changed_region_rgb_averages(left: &[u8], right: &[u8]) -> ([u8; 3], [u8; 3], usize, u64) {
+        const WIDTH: usize = 64;
+        const HEIGHT: usize = 64;
+        assert_eq!(left.len(), WIDTH * HEIGHT * 4);
+        assert_eq!(right.len(), left.len());
+        let mut left_sum = [0u64; 3];
+        let mut right_sum = [0u64; 3];
+        let mut count = 0u64;
+        let mut delta = 0u64;
+        for y in 0..HEIGHT {
+            for x in 0..WIDTH {
+                let offset = (y * WIDTH + x) * 4;
+                let pixel_delta = (0..3)
+                    .map(|channel| {
+                        u64::from(left[offset + channel].abs_diff(right[offset + channel]))
+                    })
+                    .sum::<u64>();
+                delta += pixel_delta;
+                if pixel_delta >= 8 {
+                    for channel in 0..3 {
+                        left_sum[channel] += u64::from(left[offset + channel]);
+                        right_sum[channel] += u64::from(right[offset + channel]);
+                    }
+                    count += 1;
+                }
+            }
+        }
+        if count == 0 {
+            return ([0; 3], [0; 3], 0, delta);
+        }
+        (
+            [
+                (left_sum[0] / count) as u8,
+                (left_sum[1] / count) as u8,
+                (left_sum[2] / count) as u8,
+            ],
+            [
+                (right_sum[0] / count) as u8,
+                (right_sum[1] / count) as u8,
+                (right_sum[2] / count) as u8,
+            ],
+            count as usize,
+            delta,
+        )
     }
 
     fn recipe_material(value: serde_json::Value) -> MaterialDesc {
         try_recipe_material(value).expect("recipe material builds")
+    }
+
+    fn render_recipe_material_gpu(value: Value) -> Vec<u8> {
+        let recipe: SceneRecipeMaterialV1 =
+            serde_json::from_value(value).expect("recipe material decodes");
+        let colors = test_colors();
+        let base_color = authored_color(&colors, &recipe.base_color).expect("base color resolves");
+        let host = SceneHostCore::headless(64, 64).expect("host builds");
+        let (_, material) = pollster::block_on(authored_material(
+            &RecipeBuildPolicy::testing(),
+            &host,
+            "tests/assets/slice9.recipe.json",
+            &colors,
+            &recipe,
+            base_color,
+            "$.materials[0]",
+        ))
+        .expect("recipe material builds");
+        render_material_with_assets_gpu(&host.assets, material)
     }
 
     fn try_recipe_material(
@@ -599,28 +965,31 @@ mod tests {
         .map(|(_, material)| material)
     }
 
-    fn render_material_gpu(material: MaterialDesc) -> Vec<u8> {
-        let assets = Assets::new();
-        let geometry = assets.create_geometry(GeometryDesc::sphere(0.45, 32, 16));
+    fn render_material_with_assets_gpu(assets: &Assets, material: MaterialDesc) -> Vec<u8> {
+        let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.65, 0.65, 0.05));
         let material = assets.create_material(material);
+        let backdrop_geometry = assets.create_geometry(GeometryDesc::box_xyz(3.0, 3.0, 0.02));
+        let backdrop = assets.create_material(MaterialDesc::unlit(Color::WHITE));
         let mut scene = Scene::new();
+        scene
+            .mesh(backdrop_geometry, backdrop)
+            .transform(Transform::at(Vec3::new(0.0, 0.0, -0.28)))
+            .add()
+            .expect("backdrop mesh inserts");
         scene
             .mesh(geometry, material)
             .transform(Transform::at(Vec3::ZERO))
             .add()
             .expect("mesh inserts");
         scene
-            .directional_light(DirectionalLight::key_light().with_illuminance_lux(12_000.0))
+            .directional_light(DirectionalLight::default().with_illuminance_lux(18_000.0))
             .add()
             .expect("light inserts");
         let camera = scene.add_default_camera().expect("camera inserts");
         let mut renderer = Renderer::headless_gpu(64, 64).expect("HeadlessGpu renderer builds");
-        let environment =
-            pollster::block_on(assets.load_environment_preset(EnvironmentPreset::NeutralStudio))
-                .expect("neutral studio environment loads");
-        renderer.set_environment(environment);
+        renderer.set_background_color(Color::from_srgb_u8(18, 24, 32));
         renderer
-            .prepare_with_assets(&mut scene, &assets)
+            .prepare_with_assets(&mut scene, assets)
             .expect("scene prepares on HeadlessGpu");
         renderer
             .render(&scene, camera)
@@ -641,6 +1010,14 @@ mod tests {
             (
                 "blue".to_owned(),
                 SceneRecipeColorV1::Hex("#BFD7FF".to_owned()),
+            ),
+            (
+                "red".to_owned(),
+                SceneRecipeColorV1::Hex("#FF4040".to_owned()),
+            ),
+            (
+                "black".to_owned(),
+                SceneRecipeColorV1::Hex("#000000".to_owned()),
             ),
         ]
         .into_iter()

@@ -346,6 +346,11 @@ pub enum LookupError {
         instance_set: InstanceSetKey,
         instance: crate::scene::InstanceId,
     },
+    InvalidInstanceTint {
+        instance_set: InstanceSetKey,
+        instance: crate::scene::InstanceId,
+        reason: &'static str,
+    },
     LabelNotFound(LabelKey),
     UnsupportedLabelText {
         label: LabelKey,

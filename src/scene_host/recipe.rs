@@ -435,6 +435,158 @@ fn has_errors(diagnostics: &[SceneRecipeDiagnosticV1]) -> bool {
         .any(|diagnostic| diagnostic.severity == "error")
 }
 
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::Renderer;
+
+    #[test]
+    fn recipe_instance_sets_change_headless_gpu_pixels_by_transform_tint_and_visibility() {
+        let recipe = serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "white": "#FFFFFF",
+                "red": "#E03030",
+                "blue": "#2050E0",
+                "green": "#20D060"
+            },
+            "geometries": [
+                { "id": "quad_geo", "primitive": { "kind": "box", "size": [0.18, 0.18, 0.02] } }
+            ],
+            "materials": [
+                { "id": "quad_mat", "kind": "unlit", "base_color": "white", "double_sided": true }
+            ],
+            "instance_sets": [{
+                "id": "instanced_pixels",
+                "geometry": "quad_geo",
+                "material": "quad_mat",
+                "instances": [
+                    {
+                        "id": "left_red",
+                        "transform": { "kind": "trs", "translation": [-0.32, 0.0, 0.0] },
+                        "tint": "red"
+                    },
+                    {
+                        "id": "right_blue",
+                        "transform": { "kind": "trs", "translation": [0.32, 0.0, 0.0] },
+                        "tint": "blue"
+                    },
+                    {
+                        "id": "hidden_green",
+                        "transform": { "kind": "trs", "translation": [0.0, 0.0, 0.0] },
+                        "tint": "green",
+                        "visible": false
+                    }
+                ]
+            }],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 1.7], "target": [0.0, 0.0, 0.0] }
+            }],
+            "capture": { "width": 160, "height": 120 }
+        }))
+        .expect("recipe serializes");
+
+        let build = pollster::block_on(SceneHostCore::build_recipe_json(
+            "tests/assets/slice6-instance-pixels.recipe.json",
+            &recipe,
+            RecipeBuildPolicy::testing(),
+        ))
+        .expect("recipe builds");
+        assert!(build.manifest.ok, "{:#?}", build.manifest);
+
+        let mut scene = build.host.scene;
+        let assets = build.host.assets;
+        let camera = build.host.active_camera;
+        let mut renderer = Renderer::headless_gpu(160, 120).expect("HeadlessGpu renderer builds");
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("instance recipe prepares on HeadlessGpu");
+        renderer
+            .render(&scene, camera)
+            .expect("instance recipe renders on HeadlessGpu");
+        let rgba = renderer.frame_rgba8();
+
+        let red = color_bounds(rgba, 160, |pixel| {
+            pixel[0] > 150 && pixel[1] < 100 && pixel[2] < 100
+        })
+        .expect("red instance pixels are visible");
+        let blue = color_bounds(rgba, 160, |pixel| {
+            pixel[2] > 130 && pixel[0] < 100 && pixel[1] < 120
+        })
+        .expect("blue instance pixels are visible");
+        let green = color_bounds(rgba, 160, |pixel| {
+            pixel[1] > 130 && pixel[0] < 100 && pixel[2] < 120
+        });
+
+        assert!(
+            red.center_x() < 70.0 && blue.center_x() > 90.0,
+            "per-instance transforms should move rendered pixels: red={red:?}, blue={blue:?}"
+        );
+        assert!(
+            (red.center_y() - 60.0).abs() < 8.0 && (blue.center_y() - 60.0).abs() < 8.0,
+            "instance y positions should remain centered: red={red:?}, blue={blue:?}"
+        );
+        assert!(
+            green.is_none(),
+            "hidden instance must not produce green pixels: {green:?}"
+        );
+    }
+
+    #[derive(Debug)]
+    struct ColorBounds {
+        min_x: usize,
+        min_y: usize,
+        max_x: usize,
+        max_y: usize,
+    }
+
+    impl ColorBounds {
+        fn center_x(&self) -> f32 {
+            (self.min_x + self.max_x) as f32 * 0.5
+        }
+
+        fn center_y(&self) -> f32 {
+            (self.min_y + self.max_y) as f32 * 0.5
+        }
+    }
+
+    fn color_bounds(
+        rgba: &[u8],
+        width: usize,
+        matches: impl Fn(&[u8]) -> bool,
+    ) -> Option<ColorBounds> {
+        let mut bounds: Option<ColorBounds> = None;
+        for (index, pixel) in rgba.chunks_exact(4).enumerate() {
+            if !matches(pixel) {
+                continue;
+            }
+            let x = index % width;
+            let y = index / width;
+            bounds = Some(match bounds {
+                Some(mut bounds) => {
+                    bounds.min_x = bounds.min_x.min(x);
+                    bounds.min_y = bounds.min_y.min(y);
+                    bounds.max_x = bounds.max_x.max(x);
+                    bounds.max_y = bounds.max_y.max(y);
+                    bounds
+                }
+                None => ColorBounds {
+                    min_x: x,
+                    min_y: y,
+                    max_x: x,
+                    max_y: y,
+                },
+            });
+        }
+        bounds
+    }
+}
+
 pub(super) fn scene_host_error_diagnostic(
     path: impl Into<String>,
     code: impl Into<String>,

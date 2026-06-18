@@ -1070,8 +1070,7 @@ The current v1 recipe slice supports:
   `iridescence_factor`, `iridescence_ior`,
   `iridescence_thickness_minimum_nm`,
   `iridescence_thickness_maximum_nm`, `dispersion_factor`,
-  `transmission_factor`, `ior`, `thickness_factor`,
-  `attenuation_distance`, and `attenuation_color`, plus texture slots
+  `transmission_factor`, and `ior`, plus texture slots
   `clearcoat_texture`, `clearcoat_roughness_texture`,
   `clearcoat_normal_texture`, `sheen_color_texture`,
   `sheen_roughness_texture`, `anisotropy_texture`,
@@ -1080,8 +1079,12 @@ The current v1 recipe slice supports:
   can clamp or sanitize them. `ior` must be finite and either `0` or `>= 1.0`,
   matching `MaterialDesc`'s sentinel/domain. `transmission_texture` and
   `thickness_texture` remain invalid in recipe-authored materials until the GPU
-  path can sample them without exceeding the WebGL2 fragment texture-unit floor;
-  use scalar `transmission_factor` and `thickness_factor` meanwhile.
+  path can sample them without exceeding the WebGL2 fragment texture-unit floor.
+  Scalar KHR volume fields `thickness_factor`, `attenuation_distance`, and
+  `attenuation_color` are valid recipe-authored fields; they are verified with
+  a coupled GPU volume scene because absorption only changes pixels when
+  transmission, thickness, finite attenuation distance, and attenuation color
+  are active together.
 - `nodes[]` authored renderables with stable caller `id`, geometry/material
   references, optional manifest `name`, parent hierarchy, tags, visibility,
   layer mask, render group, tint, and optional `raw`, `trs`, `look_at`,

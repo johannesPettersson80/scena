@@ -305,9 +305,16 @@ fn validate_advanced_pbr_fields(
         object.get("anisotropy_rotation_radians"),
         diagnostics,
     );
-    for field in ["iridescence_ior", "attenuation_distance"] {
-        validate_optional_positive(&format!("{path}.{field}"), object.get(field), diagnostics);
-    }
+    validate_optional_positive(
+        &format!("{path}.iridescence_ior"),
+        object.get("iridescence_ior"),
+        diagnostics,
+    );
+    validate_optional_positive(
+        &format!("{path}.attenuation_distance"),
+        object.get("attenuation_distance"),
+        diagnostics,
+    );
     validate_optional_ior(&format!("{path}.ior"), object.get("ior"), diagnostics);
     for field in ["sheen_color_factor", "attenuation_color"] {
         if let Some(value) = object.get(field) {
@@ -323,7 +330,7 @@ fn validate_advanced_pbr_fields(
                 format!(
                     "{field} is not exposed by scene_recipe.v1 until the GPU path supports it without exceeding the WebGL2 texture-unit floor"
                 ),
-                "remove this texture slot or use scalar transmission/thickness factors for now",
+                "remove this texture slot; transmission_factor remains supported for recipe-authored glass",
                 None,
                 false,
             ));

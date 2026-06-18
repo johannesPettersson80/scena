@@ -153,9 +153,9 @@ small material texture binding shim for wgpu 29's GL backend, but it does not
 use a separate raw WebGL renderer.
 
 The GPU output uniform layout is pinned by
-`OUTPUT_UNIFORM_BYTE_LEN: u64 = 1040`. That buffer contains view, projection,
+`OUTPUT_UNIFORM_BYTE_LEN: u64 = 1200`. That buffer contains view, projection,
 view-projection, light-space projection, camera/exposure, viewport/depth,
-color-management, punctual/environment/shadow lighting, and six
+color-management, punctual/environment/shadow lighting, and sixteen
 scene-clipping plane uniforms plus clipping control. Per-draw model and normal
 matrices live in the draw-uniform bind group instead.
 
