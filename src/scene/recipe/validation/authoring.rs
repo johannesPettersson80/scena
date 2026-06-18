@@ -1,5 +1,6 @@
 use serde_json::{Map, Value};
 
+use super::super::RecipeBuildPolicy;
 use super::super::types::SceneRecipeDiagnosticV1;
 use super::diagnostic;
 
@@ -17,6 +18,7 @@ pub(super) fn has_authored_renderable_nodes(object: &Map<String, Value>) -> bool
 
 pub(super) fn validate_authoring_sections(
     object: &Map<String, Value>,
+    policy: &RecipeBuildPolicy,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
     ids::validate_global_ids(object, diagnostics);
@@ -60,6 +62,7 @@ pub(super) fn validate_authoring_sections(
             materials: &material_ids,
             morph_target_counts: &morph_target_counts,
             skinned_geometries: &skin_info.ids,
+            skin_max_joint_indices: &skin_info.max_joint_indices,
             all_node_ids: &node_ids,
             imports: &import_ids,
         },
@@ -104,6 +107,7 @@ pub(super) fn validate_authoring_sections(
     let animation_target_ids = camera_target_ids.clone();
     animations::validate_animations(
         object.get("animations"),
+        policy,
         &animation_target_ids,
         &animation_target_ids,
         &import_ids,

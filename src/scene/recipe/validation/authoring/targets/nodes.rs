@@ -4,6 +4,7 @@ use serde_json::{Map, Value};
 
 use crate::scene::recipe::types::SceneRecipeDiagnosticV1;
 
+use super::super::resources::SkinJointIndexLimit;
 use super::super::{validate_known_fields, validate_required_id};
 use super::common::{
     TransformUse, validate_optional_i16, validate_optional_u64, validate_ref, validate_tags,
@@ -50,6 +51,8 @@ pub(in crate::scene::recipe::validation::authoring) struct NodeValidationResourc
     pub(in crate::scene::recipe::validation::authoring) morph_target_counts:
         &'a BTreeMap<String, usize>,
     pub(in crate::scene::recipe::validation::authoring) skinned_geometries: &'a BTreeSet<String>,
+    pub(in crate::scene::recipe::validation::authoring) skin_max_joint_indices:
+        &'a BTreeMap<String, SkinJointIndexLimit>,
     pub(in crate::scene::recipe::validation::authoring) all_node_ids: &'a BTreeSet<String>,
     pub(in crate::scene::recipe::validation::authoring) imports: &'a BTreeSet<String>,
 }
@@ -188,6 +191,7 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_nodes(
             object.get("skin_binding"),
             geometry_id,
             resources.skinned_geometries,
+            resources.skin_max_joint_indices,
             resources.all_node_ids,
             diagnostics,
         );
@@ -271,6 +275,7 @@ fn validate_skin_binding(
     value: Option<&Value>,
     geometry_id: Option<&str>,
     skinned_geometries: &BTreeSet<String>,
+    skin_max_joint_indices: &BTreeMap<String, SkinJointIndexLimit>,
     node_ids: &BTreeSet<String>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
@@ -322,6 +327,23 @@ fn validate_skin_binding(
         node_ids,
         diagnostics,
     );
+    if let (Some(geometry), Some(joint_count)) = (geometry_id, joint_count)
+        && let Some(limit) = skin_max_joint_indices.get(geometry)
+        && limit.index >= joint_count
+    {
+        diagnostics.push(diagnostic(
+            "invalid_skin",
+            "error",
+            &limit.path,
+            format!(
+                "skin geometry '{geometry}' references joint index {} but its node binding has only {joint_count} joint(s)",
+                limit.index
+            ),
+            "add enough skin_binding joints or lower the authored skin joint indices",
+            None,
+            false,
+        ));
+    }
     validate_inverse_bind_matrices(
         &format!("{path}.inverse_bind_matrices"),
         object.get("inverse_bind_matrices"),

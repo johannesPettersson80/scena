@@ -149,6 +149,34 @@ pub(crate) fn check_prepare_asset_contracts(root: &Path, findings: &mut Vec<Find
         root,
         findings,
         "ARCH-PREPARE-ASSETS",
+        "src/geometry/primitive_meshes.rs",
+        &["built_in_triangle_primitives_are_wound_against_vertex_normals"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-ASSETS",
+        "src/scene_host/recipe/authoring/geometry/projection.rs",
+        &["projected_geometry_counts_match_authored_primitive_builders"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-ASSETS",
+        "tests/scene_recipe_contracts.rs",
+        &["scene_recipe_build_policy_rejects_arrow_projection_underestimate"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-ASSETS",
+        "src/scene_host/recipe.rs",
+        &["recipe_primitives_render_lit_single_sided_pixels_on_headless_gpu"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-ASSETS",
         "docs/specs/public-api.md",
         &["pub fn prepare_with_assets<F>"],
     );

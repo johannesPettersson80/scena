@@ -7,6 +7,7 @@ mod overlays;
 mod setup;
 mod suggestions;
 
+use super::RecipeBuildPolicy;
 use super::types::{
     SCENE_RECIPE_SCHEMA_V1, SCENE_RECIPE_VALIDATION_SCHEMA_V1, SceneRecipeDiagnosticV1,
     SceneRecipeV1, SceneRecipeValidationReportV1,
@@ -21,6 +22,16 @@ use suggestions::{
 };
 
 pub fn validate_scene_recipe_json(text: &str) -> SceneRecipeValidationReportV1 {
+    validate_scene_recipe_json_with_policy(text, &RecipeBuildPolicy::default())
+}
+
+pub fn validate_scene_recipe_json_with_policy(
+    text: &str,
+    policy: &RecipeBuildPolicy,
+) -> SceneRecipeValidationReportV1 {
+    if text.len() > policy.max_recipe_bytes() {
+        return recipe_too_large_report(text.len(), policy.max_recipe_bytes());
+    }
     match serde_json::from_str::<Value>(text) {
         Ok(value) => validate_scene_recipe_value(value),
         Err(error) => validation_report(vec![diagnostic(
@@ -36,19 +47,39 @@ pub fn validate_scene_recipe_json(text: &str) -> SceneRecipeValidationReportV1 {
 }
 
 pub fn validate_scene_recipe_value(value: Value) -> SceneRecipeValidationReportV1 {
+    validate_scene_recipe_value_with_policy(value, &RecipeBuildPolicy::default())
+}
+
+pub fn validate_scene_recipe_value_with_policy(
+    value: Value,
+    policy: &RecipeBuildPolicy,
+) -> SceneRecipeValidationReportV1 {
     let mut diagnostics = Vec::new();
-    validate_scene_recipe_value_inner(&value, &mut diagnostics);
+    validate_scene_recipe_value_inner(&value, policy, &mut diagnostics);
     validation_report(diagnostics)
 }
 
 pub fn parse_valid_scene_recipe_json(
     text: &str,
 ) -> Result<SceneRecipeV1, SceneRecipeValidationReportV1> {
+    parse_valid_scene_recipe_json_with_policy(text, &RecipeBuildPolicy::default())
+}
+
+pub fn parse_valid_scene_recipe_json_with_policy(
+    text: &str,
+    policy: &RecipeBuildPolicy,
+) -> Result<SceneRecipeV1, SceneRecipeValidationReportV1> {
+    if text.len() > policy.max_recipe_bytes() {
+        return Err(recipe_too_large_report(
+            text.len(),
+            policy.max_recipe_bytes(),
+        ));
+    }
     let value = match serde_json::from_str::<Value>(text) {
         Ok(value) => value,
-        Err(_) => return Err(validate_scene_recipe_json(text)),
+        Err(_) => return Err(validate_scene_recipe_json_with_policy(text, policy)),
     };
-    let report = validate_scene_recipe_value(value.clone());
+    let report = validate_scene_recipe_value_with_policy(value.clone(), policy);
     if !report.ok {
         return Err(report);
     }
@@ -67,6 +98,7 @@ pub fn parse_valid_scene_recipe_json(
 
 fn validate_scene_recipe_value_inner(
     value: &Value,
+    policy: &RecipeBuildPolicy,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
     let Some(object) = value.as_object() else {
@@ -86,7 +118,7 @@ fn validate_scene_recipe_value_inner(
     validate_schema(object.get("schema"), diagnostics);
     let allow_empty_imports = has_authored_renderable_nodes(object);
     imports::validate_imports(object.get("imports"), allow_empty_imports, diagnostics);
-    validate_authoring_sections(object, diagnostics);
+    validate_authoring_sections(object, policy, diagnostics);
     let import_ids = imports::import_ids(object.get("imports"));
     validate_section_box(object.get("section_box"), &import_ids, diagnostics);
     validate_measurements(object.get("measurements"), diagnostics);
@@ -97,6 +129,23 @@ fn validate_scene_recipe_value_inner(
     expectations::validate_expectations(object.get("expect"), diagnostics);
     validate_capture(object.get("capture"), diagnostics);
     validate_metadata(object.get("metadata"), diagnostics);
+}
+
+pub fn recipe_too_large_report(
+    byte_len: usize,
+    max_recipe_bytes: usize,
+) -> SceneRecipeValidationReportV1 {
+    validation_report(vec![diagnostic(
+        "policy_violation",
+        "error",
+        "$",
+        format!(
+            "recipe document is {byte_len} bytes, exceeding RecipeBuildPolicy max_recipe_bytes {max_recipe_bytes}"
+        ),
+        "use a smaller recipe document or raise the operator-owned max_recipe_bytes policy",
+        None,
+        false,
+    )])
 }
 
 fn validate_root_fields<'a>(

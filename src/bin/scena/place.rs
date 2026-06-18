@@ -1,15 +1,28 @@
-use std::fs;
-
 use super::scena_args::PlaceCommandArgs;
-use super::scena_input::resolve_recipe_asset_uri;
+use super::scena_input::{RecipeReadError, read_recipe_text, resolve_recipe_asset_uri};
 use super::scena_output::{CliOutcome, json_outcome};
 
 mod authored_features;
 
 pub(crate) fn run_place_command(args: &[String]) -> Result<CliOutcome, String> {
     let args = PlaceCommandArgs::parse(args)?;
-    let text = fs::read_to_string(&args.recipe)
-        .map_err(|error| format!("failed to read recipe '{}': {error}", args.recipe.display()))?;
+    let policy = scena::RecipeBuildPolicy::testing();
+    let text = match read_recipe_text(&args.recipe, &policy) {
+        Ok(text) => text,
+        Err(RecipeReadError::TooLarge(report)) => {
+            return json_outcome(
+                &report,
+                1,
+                "failed to serialize scene recipe validation report",
+            );
+        }
+        Err(RecipeReadError::Io(error)) => {
+            return Err(format!(
+                "failed to read recipe '{}': {error}",
+                args.recipe.display()
+            ));
+        }
+    };
     let recipe = match scena::parse_valid_scene_recipe_json(&text) {
         Ok(recipe) => recipe,
         Err(report) => {

@@ -4,29 +4,44 @@ use crate::animation::{
     AnimationChannel, AnimationClip, AnimationInterpolation, AnimationOutput, AnimationTarget,
 };
 use crate::assets::DefaultAssetFetcher;
+use crate::scene::NodeKind;
 use crate::scene::recipe::{
-    SceneRecipeAnimationV1, SceneRecipeBuildAnimationV1, SceneRecipeDiagnosticV1,
-    SceneRecipeTargetV1,
+    RecipeBuildPolicy, SceneRecipeAnimationV1, SceneRecipeBuildAnimationV1,
+    SceneRecipeDiagnosticV1, SceneRecipeTargetV1,
 };
 use crate::scene_host::SceneHostCore;
 use crate::{NodeKey, Quat, Vec3};
 
 use super::super::error_diagnostic;
+use super::super::policy::RecipeBuildBudget;
 
 pub(in crate::scene_host::recipe) fn build_authored_animations(
+    policy: &RecipeBuildPolicy,
     host: &mut SceneHostCore<DefaultAssetFetcher>,
     recipes: &[SceneRecipeAnimationV1],
     node_keys: &BTreeMap<String, NodeKey>,
+    build_budget: &mut RecipeBuildBudget,
     manifest: &mut Vec<SceneRecipeBuildAnimationV1>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
     for (index, recipe) in recipes.iter().enumerate() {
         let path = format!("$.animations[{index}]");
+        let keyframes = recipe
+            .channels
+            .iter()
+            .map(|channel| channel.times.len())
+            .sum::<usize>();
+        if let Some(diagnostic) =
+            build_budget.reserve_animation(policy, &path, recipe.channels.len(), keyframes)
+        {
+            diagnostics.push(diagnostic);
+            continue;
+        }
         let mut channels = Vec::new();
         let mut animation_failed = false;
         for (channel_index, channel) in recipe.channels.iter().enumerate() {
             let channel_path = format!("{path}.channels[{channel_index}]");
-            match channel_from_recipe(&channel_path, channel, node_keys) {
+            match channel_from_recipe(&channel_path, channel, host, node_keys) {
                 Ok(channel) => channels.push(channel),
                 Err(diagnostic) => {
                     diagnostics.push(*diagnostic);
@@ -45,11 +60,39 @@ pub(in crate::scene_host::recipe) fn build_authored_animations(
             }
             continue;
         }
-        let clip =
-            AnimationClip::authored(Some(recipe.id.clone()), channels, recipe.duration as f32);
+        let clip = match AnimationClip::authored(
+            Some(recipe.id.clone()),
+            channels,
+            recipe.duration as f32,
+        ) {
+            Ok(clip) => clip,
+            Err(error) => {
+                diagnostics.push(error_diagnostic(
+                    &path,
+                    "animation_create_failed",
+                    format!("animation '{}' is invalid: {error}", recipe.id),
+                    "fix the animation channels and retry",
+                ));
+                continue;
+            }
+        };
         let duration_seconds = round3(clip.duration_seconds());
         let channel_count = clip.channels().len();
-        let mixer = host.scene.create_authored_animation_mixer(clip);
+        let mixer = match host.scene.create_authored_animation_mixer(clip) {
+            Ok(mixer) => mixer,
+            Err(error) => {
+                diagnostics.push(error_diagnostic(
+                    &path,
+                    "animation_create_failed",
+                    format!(
+                        "animation '{}' could not create a mixer: {error}",
+                        recipe.id
+                    ),
+                    "fix the animation channels and retry",
+                ));
+                continue;
+            }
+        };
         let handle = host.animation_handles.insert(mixer);
         manifest.push(SceneRecipeBuildAnimationV1 {
             id: recipe.id.clone(),
@@ -63,6 +106,7 @@ pub(in crate::scene_host::recipe) fn build_authored_animations(
 fn channel_from_recipe(
     path: &str,
     channel: &crate::SceneRecipeAnimationChannelV1,
+    host: &SceneHostCore<DefaultAssetFetcher>,
     node_keys: &BTreeMap<String, NodeKey>,
 ) -> Result<AnimationChannel, Box<SceneRecipeDiagnosticV1>> {
     let SceneRecipeTargetV1::Node { id } = &channel.target else {
@@ -128,6 +172,30 @@ fn channel_from_recipe(
                     "emit one numeric component per morph target",
                 )));
             }
+            let Some(target_count) = morph_target_count(host, node) else {
+                return Err(Box::new(error_diagnostic(
+                    format!("{path}.target.id"),
+                    "invalid_animation_target",
+                    "weights animation requires a morph-capable target node",
+                    "target a mesh node whose geometry has morph targets",
+                )));
+            };
+            if let Some((value_index, value)) = channel
+                .values
+                .iter()
+                .enumerate()
+                .find(|(_, value)| value.len() != target_count)
+            {
+                return Err(Box::new(error_diagnostic(
+                    format!("{path}.values[{value_index}]"),
+                    "invalid_animation_value",
+                    format!(
+                        "weights animation value has {} components but target has {target_count} morph targets",
+                        value.len()
+                    ),
+                    "emit exactly one weight per morph target",
+                )));
+            }
             AnimationOutput::Weights(weight_values(&format!("{path}.values"), &channel.values)?)
         }
     };
@@ -138,6 +206,16 @@ fn channel_from_recipe(
         output,
         interpolation,
     ))
+}
+
+fn morph_target_count(host: &SceneHostCore<DefaultAssetFetcher>, node: NodeKey) -> Option<usize> {
+    let node = host.scene.node(node)?;
+    let NodeKind::Mesh(mesh) = node.kind() else {
+        return None;
+    };
+    let geometry = host.assets.geometry(mesh.geometry())?;
+    let count = geometry.morph_targets().len();
+    (count > 0).then_some(count)
 }
 
 fn f32_values(path: &str, values: &[f64]) -> Result<Vec<f32>, Box<SceneRecipeDiagnosticV1>> {

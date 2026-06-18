@@ -246,11 +246,13 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
       limits; so it gets no schema / fixture / doctor pin). Enforced in the
       executor, fail-closed, structured
       diagnostics: `max_vertices`, `max_indices`, `max_nodes`, `max_instances`,
-      `max_materials`, `max_textures`, `max_texture_bytes`, `max_image_dimension`,
-      `max_output_pixels`, `fetch_byte_limit`, `allowed_uri_roots`,
-      `allowed_uri_schemes`, `allow_network` (default false). Canonicalize paths;
-      reject `..`/symlink traversal outside roots. No timeout knob is exposed
-      until the asset-loading seam can enforce it.
+      `max_particles`, `max_animations`, `max_animation_channels`,
+      `max_animation_keyframes`, `max_materials`, `max_textures`,
+      `max_texture_bytes`, `max_image_dimension`, `max_output_pixels`,
+      `fetch_byte_limit`, `max_recipe_bytes`, `allowed_uri_roots`,
+      `allowed_uri_schemes`, `allow_network` (default false). Canonicalize
+      paths; reject `..`/symlink traversal outside roots. No timeout knob is
+      exposed until the asset-loading seam can enforce it.
 - [x] Default limits (implementation may tune, but must ship + document defaults;
       do not leave unbounded):
 
@@ -260,8 +262,11 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
       | `max_indices` | 6_000_000 | `max_output_pixels` | 16_777_216 (4096²) |
       | `max_nodes` | 10_000 | `fetch_byte_limit` | 64 MiB |
       | `max_instances` | 100_000 | `allow_network` | `false` |
-      | `max_materials` | 2_000 | `allowed_uri_schemes` | `["file"]` |
-      | `max_textures` | 256 | `allowed_uri_roots` | current working dir by default; caller-configurable |
+      | `max_particles` | 100_000 | `max_recipe_bytes` | 8 MiB |
+      | `max_animations` | 4_000 | `allowed_uri_schemes` | `["file"]` |
+      | `max_animation_channels` | 100_000 | `allowed_uri_roots` | current working dir by default; caller-configurable |
+      | `max_animation_keyframes` | 2_000_000 | `max_materials` | 2_000 |
+      | `max_textures` | 256 | - | - |
       | `max_texture_bytes` | 64 MiB | - | - |
 
 - [x] Defaults are **documented defaults with named override profiles** (the
@@ -349,12 +354,17 @@ into Slice 12 skin/morph authoring + Slice 13 particle rendering.)
       `create_authored_animation_mixer`) so a caller can mint a clip and play it.
 - [x] Recipe `animations`: `[{ id, duration, channels: [{ target, path:
       translation|rotation|scale|weights, interpolation, times[], values[] }] }]`,
-      bound to authored/imported node ids. **`weights` channels here target
-      imported morph assets only** — authored morph-weight animation lands with
-      Slice 12 (authored morph), not before.
+      bound to authored/imported node ids. `duration` must cover the largest
+      keyframe time. `weights` channels require a morph-capable target with
+      exactly one value component per morph target; non-morph imported targets
+      fail closed instead of accepting an inert channel.
+- [x] Recipe animation payloads are under `RecipeBuildPolicy`: `max_animations`,
+      `max_animation_channels`, and aggregate `max_animation_keyframes` are
+      enforced during validation and again before mixer creation.
 - [x] Proof: author a clip, seek, and confirm the node moved via
       `verify animation --expect-translations`; fail-closed on non-finite times,
-      mismatched times/values lengths, or unknown target.
+      mismatched times/values lengths, keyframe times beyond duration, over-cap
+      keyframe payloads, imported non-morph weight targets, or unknown target.
 
 ### Slice 9 — Advanced PBR in the recipe (#15)
 - [x] The public setters **already exist** (`with_clearcoat_factor`,
@@ -405,6 +415,11 @@ accessors only).
       from glTF).
 - [x] Recipe directives for authored skin + morph; this is where authored
       morph-weight animation (deferred from Slice 8) becomes valid.
+- [x] Document the current lighting-normal scope: authored/imported skin and
+      morph deformation is position-correct for rendered silhouettes, while
+      morph normals are not authored/deformed and skinned normals use the joint
+      direction transform rather than an inverse-transpose normal matrix for
+      non-uniform joint scale.
 - [x] Proof: compare the **undeformed vs deformed pose** (pixel/bounds change),
       plus a **negative test that fails if joints/weights/morph deltas are
       ignored** — introspection alone can pass on an ignored deformation;
@@ -412,6 +427,9 @@ accessors only).
       Evidence:
       `scene_recipe_slice12_skin_morph_authoring_deforms_rendered_output_and_fails_closed`
       + `scene_recipe_slice12_skin_morph_authoring_changes_headless_gpu_silhouette`
+      + `scene_recipe_slice12_skin_only_changes_headless_gpu_silhouette`
+      + `scene_recipe_slice12_joint_animation_rebakes_headless_gpu_vertices`
+      + `scene_recipe_slice12_authored_morph_weight_animation_changes_rendered_output`
       and `scene_recipe_build_manifest_golden_matches_executor_for_stable_recipe`.
 
 ### Slice 13 — Particle / point-sprite rendering (#18b)

@@ -14,8 +14,12 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
             "scene_recipe_build_policy_rejects_authored_allocation_bypasses",
             "scene_recipe_build_policy_rejects_authored_texture_and_environment_bypasses",
             "scene_recipe_build_policy_rejects_fail_open_path_sandboxes",
+            "scene_recipe_build_policy_rejects_arrow_projection_underestimate",
+            "scene_recipe_rejects_imported_weight_animation_without_morph_targets",
             "\"$.geometries[0]\"",
             "\"$.geometries\"",
+            "\"$.animations[0].channels[0]\"",
+            "\"$.animations[0].channels[0].target.id\"",
             "\"$.materials[0].base_color_texture\"",
             "\"$.scene.environment.uri\"",
             "\"$.imports[0].uri\"",
@@ -29,6 +33,16 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
         &root.join("src/scene/recipe/build.rs"),
         &[
             "const DEFAULT_MAX_NODES: usize = 10_000;",
+            "const DEFAULT_MAX_VERTICES: usize = 2_000_000;",
+            "const DEFAULT_MAX_INDICES: usize = 6_000_000;",
+            "const DEFAULT_MAX_MATERIALS: usize = 2_000;",
+            "const DEFAULT_MAX_TEXTURES: usize = 256;",
+            "const DEFAULT_MAX_INSTANCES: usize = 100_000;",
+            "const DEFAULT_MAX_PARTICLES: usize = 100_000;",
+            "const DEFAULT_MAX_ANIMATIONS: usize = 4_000;",
+            "const DEFAULT_MAX_ANIMATION_CHANNELS: usize = 100_000;",
+            "const DEFAULT_MAX_ANIMATION_KEYFRAMES: usize = 2_000_000;",
+            "const DEFAULT_MAX_RECIPE_BYTES: usize = 8 * 1024 * 1024;",
             "RecipeBuildPolicy has no allowed local roots",
             "file URI authorities are not allowed by RecipeBuildPolicy",
             "validate_source_size",
@@ -47,7 +61,16 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
             "reserve_loaded_textures",
             "reserve_texture_uri",
             "reserve_environment_uri",
+            "reserve_animation",
         ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join(".github/workflows/ci.yml"),
+        &["cargo test --features inspection --test scena_cli_recipe --test scena_cli_agent"],
     );
 
     require_markers(

@@ -209,6 +209,10 @@ fn map_animation_error(error: AnimationError) -> SceneHostError {
             SceneHostErrorCode::AnimationClipNotFound,
             format!("animation clip {name} was not found"),
         ),
+        AnimationError::InvalidClip { reason } => SceneHostError::new(
+            SceneHostErrorCode::InvalidInput,
+            format!("animation clip is invalid: {reason}"),
+        ),
         AnimationError::MixerNotFound(mixer) => SceneHostError::new(
             SceneHostErrorCode::AnimationHandleNotFound,
             format!("animation mixer {mixer:?} was not found"),

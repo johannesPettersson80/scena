@@ -1,11 +1,16 @@
-#[cfg(feature = "inspection")]
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 #[cfg(feature = "inspection")]
 use std::path::PathBuf;
 
 #[cfg(feature = "inspection")]
 use super::scena_output::{CliOutcome, json_outcome};
+
+pub(crate) enum RecipeReadError {
+    Io(String),
+    TooLarge(scena::SceneRecipeValidationReportV1),
+}
 
 #[cfg(feature = "inspection")]
 #[derive(Debug, Clone, PartialEq)]
@@ -207,10 +212,21 @@ pub(crate) fn path_for_json(path: &Path) -> String {
 #[cfg(feature = "inspection")]
 fn try_load_recipe(input: &str) -> Result<Option<scena::SceneRecipeV1>, CliOutcome> {
     let path = Path::new(input);
-    let Ok(text) = fs::read_to_string(path) else {
-        return Ok(None);
-    };
     let is_recipe_path = input.ends_with(".recipe.json");
+    let policy = scena::RecipeBuildPolicy::testing();
+    let text = match read_recipe_text(path, &policy) {
+        Ok(text) => text,
+        Err(RecipeReadError::Io(_)) => return Ok(None),
+        Err(RecipeReadError::TooLarge(report)) if is_recipe_path => {
+            return Err(json_outcome(
+                &report,
+                1,
+                "failed to serialize scene recipe validation report",
+            )
+            .expect("scene recipe validation report serializes"));
+        }
+        Err(RecipeReadError::TooLarge(_)) => return Ok(None),
+    };
     let parsed = serde_json::from_str::<serde_json::Value>(&text);
     let is_recipe_schema = parsed
         .as_ref()
@@ -233,6 +249,37 @@ fn try_load_recipe(input: &str) -> Result<Option<scena::SceneRecipeV1>, CliOutco
             Err(outcome)
         }
     }
+}
+
+pub(crate) fn read_recipe_text(
+    path: &Path,
+    policy: &scena::RecipeBuildPolicy,
+) -> Result<String, RecipeReadError> {
+    let max_bytes = policy.max_recipe_bytes();
+    if let Ok(metadata) = fs::metadata(path)
+        && metadata.is_file()
+    {
+        let byte_len = usize::try_from(metadata.len()).unwrap_or(usize::MAX);
+        if byte_len > max_bytes {
+            return Err(RecipeReadError::TooLarge(scena::recipe_too_large_report(
+                byte_len, max_bytes,
+            )));
+        }
+    }
+
+    let file = fs::File::open(path).map_err(|error| RecipeReadError::Io(error.to_string()))?;
+    let mut reader = file.take(max_bytes.saturating_add(1) as u64);
+    let mut text = String::new();
+    reader
+        .read_to_string(&mut text)
+        .map_err(|error| RecipeReadError::Io(error.to_string()))?;
+    if text.len() > max_bytes {
+        return Err(RecipeReadError::TooLarge(scena::recipe_too_large_report(
+            text.len(),
+            max_bytes,
+        )));
+    }
+    Ok(text)
 }
 
 pub(crate) fn resolve_recipe_asset_uri(recipe_path: &str, uri: &str) -> String {

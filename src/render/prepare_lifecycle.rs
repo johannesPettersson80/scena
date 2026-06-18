@@ -351,6 +351,12 @@ impl Renderer {
         }
         if scene
             .mesh_nodes()
+            .any(|(node, _mesh, _transform)| scene.skin_binding(node).is_some())
+        {
+            return Some("skinned joints may have moved");
+        }
+        if scene
+            .mesh_nodes()
             .any(|(_node, mesh, _transform)| !backend_material_handles.contains(&mesh.material()))
         {
             return Some("moving mesh missing GPU material slot");

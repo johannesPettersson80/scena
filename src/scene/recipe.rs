@@ -32,5 +32,7 @@ pub use types::{
     SceneRecipeVerificationSummaryV1,
 };
 pub use validation::{
-    parse_valid_scene_recipe_json, validate_scene_recipe_json, validate_scene_recipe_value,
+    parse_valid_scene_recipe_json, parse_valid_scene_recipe_json_with_policy,
+    recipe_too_large_report, validate_scene_recipe_json, validate_scene_recipe_json_with_policy,
+    validate_scene_recipe_value, validate_scene_recipe_value_with_policy,
 };

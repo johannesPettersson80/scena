@@ -106,11 +106,11 @@ fn projected_primitive_counts(
             indices: primitive.points.len().saturating_sub(1).saturating_mul(2) as u64,
         },
         "arrow" => ProjectedGeometryCounts {
-            vertices: 2,
-            indices: 2,
+            vertices: 6,
+            indices: 6,
         },
         "grid" => {
-            let divisions = u64::from(primitive.divisions.unwrap_or(10));
+            let divisions = u64::from(primitive.divisions.unwrap_or(10).max(1));
             let lines = checked_mul(divisions + 1, 2, "grid lines")?;
             ProjectedGeometryCounts {
                 vertices: checked_mul(lines, 2, "grid vertices")?,
@@ -149,4 +149,297 @@ fn checked_add(left: u64, right: u64, what: &str) -> Result<u64, Box<SceneRecipe
             "reduce primitive tessellation before building the recipe",
         ))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use crate::scene::recipe::{SceneRecipeGeometryV1, SceneRecipePrimitiveV1};
+    use crate::scene_host::recipe::authoring::geometry::authored_geometry;
+
+    use super::projected_geometry_counts;
+
+    #[test]
+    fn projected_geometry_counts_match_authored_primitive_builders() {
+        let cases = primitive_count_cases();
+        for (name, primitive) in cases {
+            let recipe = SceneRecipeGeometryV1 {
+                id: name.to_owned(),
+                mesh: None,
+                primitive: Some(primitive),
+            };
+            let projected = projected_geometry_counts(&recipe)
+                .unwrap_or_else(|diagnostic| panic!("{name} projection failed: {diagnostic:#?}"));
+            let (_kind, geometry) = authored_geometry(&recipe, &BTreeMap::new())
+                .unwrap_or_else(|diagnostic| panic!("{name} build failed: {diagnostic:#?}"));
+            if name == "arrow-degenerate" {
+                assert!(
+                    projected.vertices >= geometry.vertices().len() as u64,
+                    "{name} projected vertex count must fail closed"
+                );
+                assert!(
+                    projected.indices >= geometry.indices().len() as u64,
+                    "{name} projected index count must fail closed"
+                );
+            } else {
+                assert_eq!(
+                    projected.vertices,
+                    geometry.vertices().len() as u64,
+                    "{name} projected vertex count must match the builder"
+                );
+                assert_eq!(
+                    projected.indices,
+                    geometry.indices().len() as u64,
+                    "{name} projected index count must match the builder"
+                );
+            }
+        }
+    }
+
+    fn primitive_count_cases() -> Vec<(&'static str, SceneRecipePrimitiveV1)> {
+        vec![
+            (
+                "box-default",
+                primitive("box").with_size(vec![0.2, 0.1, 0.3]).build(),
+            ),
+            (
+                "plane-default",
+                primitive("plane").with_size(vec![0.2, 0.3]).build(),
+            ),
+            (
+                "sphere-default",
+                primitive("sphere").with_radius(0.2).build(),
+            ),
+            (
+                "sphere-min-clamp",
+                primitive("sphere")
+                    .with_radius(0.2)
+                    .with_segments(0)
+                    .with_rings(0)
+                    .build(),
+            ),
+            (
+                "sphere-large",
+                primitive("sphere")
+                    .with_radius(0.2)
+                    .with_segments(40)
+                    .with_rings(18)
+                    .build(),
+            ),
+            (
+                "cylinder-default",
+                primitive("cylinder")
+                    .with_radius(0.2)
+                    .with_height(0.4)
+                    .build(),
+            ),
+            (
+                "cylinder-min-clamp",
+                primitive("cylinder")
+                    .with_radius(0.2)
+                    .with_height(0.4)
+                    .with_segments(0)
+                    .build(),
+            ),
+            (
+                "cylinder-large",
+                primitive("cylinder")
+                    .with_radius(0.2)
+                    .with_height(0.4)
+                    .with_segments(48)
+                    .build(),
+            ),
+            (
+                "cone-default",
+                primitive("cone").with_radius(0.2).with_height(0.4).build(),
+            ),
+            (
+                "cone-min-clamp",
+                primitive("cone")
+                    .with_radius(0.2)
+                    .with_height(0.4)
+                    .with_segments(3)
+                    .build(),
+            ),
+            (
+                "cone-large",
+                primitive("cone")
+                    .with_radius(0.2)
+                    .with_height(0.4)
+                    .with_segments(48)
+                    .build(),
+            ),
+            ("disc-default", primitive("disc").with_radius(0.2).build()),
+            (
+                "disc-min-clamp",
+                primitive("disc").with_radius(0.2).with_segments(3).build(),
+            ),
+            (
+                "disc-large",
+                primitive("disc").with_radius(0.2).with_segments(48).build(),
+            ),
+            (
+                "torus-default",
+                primitive("torus")
+                    .with_major_radius(0.3)
+                    .with_minor_radius(0.08)
+                    .build(),
+            ),
+            (
+                "torus-min-clamp",
+                primitive("torus")
+                    .with_major_radius(0.3)
+                    .with_minor_radius(0.08)
+                    .with_segments(3)
+                    .with_rings(3)
+                    .build(),
+            ),
+            (
+                "torus-large",
+                primitive("torus")
+                    .with_major_radius(0.3)
+                    .with_minor_radius(0.08)
+                    .with_segments(48)
+                    .with_rings(20)
+                    .build(),
+            ),
+            (
+                "wedge-default",
+                primitive("wedge").with_size(vec![0.2, 0.1, 0.3]).build(),
+            ),
+            (
+                "line-default",
+                primitive("line")
+                    .with_start([0.0, 0.0, 0.0])
+                    .with_end([1.0, 0.0, 0.0])
+                    .build(),
+            ),
+            (
+                "polyline-default",
+                primitive("polyline")
+                    .with_points(vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]])
+                    .build(),
+            ),
+            (
+                "arrow-default",
+                primitive("arrow")
+                    .with_start([0.0, 0.0, 0.0])
+                    .with_end([1.0, 0.0, 0.0])
+                    .build(),
+            ),
+            (
+                "arrow-degenerate",
+                primitive("arrow")
+                    .with_start([0.0, 0.0, 0.0])
+                    .with_end([0.0, 0.0, 0.0])
+                    .build(),
+            ),
+            (
+                "grid-default",
+                primitive("grid").with_size(vec![1.0]).build(),
+            ),
+            (
+                "grid-min-clamp",
+                primitive("grid")
+                    .with_size(vec![1.0])
+                    .with_divisions(0)
+                    .build(),
+            ),
+            (
+                "grid-large",
+                primitive("grid")
+                    .with_size(vec![1.0])
+                    .with_divisions(64)
+                    .build(),
+            ),
+            ("axes-default", primitive("axes").with_length(1.0).build()),
+        ]
+    }
+
+    fn primitive(kind: &'static str) -> PrimitiveCase {
+        PrimitiveCase(SceneRecipePrimitiveV1 {
+            kind: kind.to_owned(),
+            size: None,
+            radius: None,
+            major_radius: None,
+            minor_radius: None,
+            height: None,
+            segments: None,
+            rings: None,
+            divisions: None,
+            length: None,
+            start: None,
+            end: None,
+            points: Vec::new(),
+        })
+    }
+
+    struct PrimitiveCase(SceneRecipePrimitiveV1);
+
+    impl PrimitiveCase {
+        fn with_size(mut self, size: Vec<f64>) -> Self {
+            self.0.size = Some(size);
+            self
+        }
+
+        fn with_radius(mut self, radius: f64) -> Self {
+            self.0.radius = Some(radius);
+            self
+        }
+
+        fn with_major_radius(mut self, radius: f64) -> Self {
+            self.0.major_radius = Some(radius);
+            self
+        }
+
+        fn with_minor_radius(mut self, radius: f64) -> Self {
+            self.0.minor_radius = Some(radius);
+            self
+        }
+
+        fn with_height(mut self, height: f64) -> Self {
+            self.0.height = Some(height);
+            self
+        }
+
+        fn with_segments(mut self, segments: u32) -> Self {
+            self.0.segments = Some(segments);
+            self
+        }
+
+        fn with_rings(mut self, rings: u32) -> Self {
+            self.0.rings = Some(rings);
+            self
+        }
+
+        fn with_divisions(mut self, divisions: u32) -> Self {
+            self.0.divisions = Some(divisions);
+            self
+        }
+
+        fn with_length(mut self, length: f64) -> Self {
+            self.0.length = Some(length);
+            self
+        }
+
+        fn with_start(mut self, start: [f64; 3]) -> Self {
+            self.0.start = Some(start);
+            self
+        }
+
+        fn with_end(mut self, end: [f64; 3]) -> Self {
+            self.0.end = Some(end);
+            self
+        }
+
+        fn with_points(mut self, points: Vec<[f64; 3]>) -> Self {
+            self.0.points = points;
+            self
+        }
+
+        fn build(self) -> SceneRecipePrimitiveV1 {
+            self.0
+        }
+    }
 }

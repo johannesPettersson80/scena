@@ -23,6 +23,14 @@ pub(in crate::scene::recipe::validation::authoring) struct SkinValidationInfo {
     pub(in crate::scene::recipe::validation::authoring) ids: BTreeSet<String>,
     pub(in crate::scene::recipe::validation::authoring) vertex_counts: BTreeMap<String, usize>,
     pub(in crate::scene::recipe::validation::authoring) target_counts: BTreeMap<String, usize>,
+    pub(in crate::scene::recipe::validation::authoring) max_joint_indices:
+        BTreeMap<String, SkinJointIndexLimit>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::scene::recipe::validation::authoring) struct SkinJointIndexLimit {
+    pub(in crate::scene::recipe::validation::authoring) index: usize,
+    pub(in crate::scene::recipe::validation::authoring) path: String,
 }
 
 pub(in crate::scene::recipe::validation::authoring) fn geometry_vertex_counts(
@@ -167,12 +175,14 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_skins(
             None => continue,
         };
         let source_vertex_count = source_vertex_counts.get(source).copied();
-        validate_skin_joints(
+        if let Some(limit) = validate_skin_joints(
             &format!("{path}.joints"),
             object.get("joints"),
             source_vertex_count,
             diagnostics,
-        );
+        ) {
+            info.max_joint_indices.insert(id.to_owned(), limit);
+        }
         validate_skin_weights(
             &format!("{path}.weights"),
             object.get("weights"),
@@ -315,7 +325,7 @@ fn validate_skin_joints(
     value: Option<&Value>,
     source_vertex_count: Option<usize>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
-) {
+) -> Option<SkinJointIndexLimit> {
     let Some(rows) = value
         .and_then(Value::as_array)
         .filter(|rows| !rows.is_empty())
@@ -329,7 +339,7 @@ fn validate_skin_joints(
             None,
             false,
         ));
-        return;
+        return None;
     };
     if let Some(expected) = source_vertex_count
         && rows.len() != expected
@@ -347,6 +357,7 @@ fn validate_skin_joints(
             false,
         ));
     }
+    let mut max_index = None;
     for (row_index, row) in rows.iter().enumerate() {
         let Some(values) = row.as_array() else {
             diagnostics.push(diagnostic(
@@ -372,19 +383,34 @@ fn validate_skin_joints(
             ));
         }
         for (joint_index, value) in values.iter().enumerate() {
-            if value.as_u64().is_none() {
-                diagnostics.push(diagnostic(
-                    "invalid_skin",
-                    "error",
-                    format!("{path}[{row_index}][{joint_index}]"),
-                    "skin joint index must be a non-negative integer",
-                    "emit integer joint indices into the node skin_binding joint list",
-                    None,
-                    false,
-                ));
+            let value_path = format!("{path}[{row_index}][{joint_index}]");
+            match value.as_u64().and_then(|raw| usize::try_from(raw).ok()) {
+                Some(index) => {
+                    if max_index
+                        .as_ref()
+                        .is_none_or(|max: &SkinJointIndexLimit| index > max.index)
+                    {
+                        max_index = Some(SkinJointIndexLimit {
+                            index,
+                            path: value_path,
+                        });
+                    }
+                }
+                None => {
+                    diagnostics.push(diagnostic(
+                        "invalid_skin",
+                        "error",
+                        value_path,
+                        "skin joint index must be a non-negative usize-compatible integer",
+                        "emit integer joint indices into the node skin_binding joint list",
+                        None,
+                        false,
+                    ));
+                }
             }
         }
     }
+    max_index
 }
 
 fn validate_skin_weights(

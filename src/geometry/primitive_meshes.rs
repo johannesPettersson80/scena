@@ -74,7 +74,7 @@ impl GeometryDesc {
                     .map(|position| GeometryVertex { position, normal }),
             );
             tex_coords0.extend(face_uvs);
-            indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+            indices.extend_from_slice(&[base, base + 2, base + 1, base, base + 3, base + 2]);
         }
         new_with_tex_coords(GeometryTopology::Triangles, vertices, indices, tex_coords0)
     }
@@ -109,7 +109,7 @@ impl GeometryDesc {
                 let b = a + 1;
                 let c = a + row;
                 let d = c + 1;
-                indices.extend_from_slice(&[a, c, b, b, c, d]);
+                indices.extend_from_slice(&[a, b, c, b, d, c]);
             }
         }
 
@@ -274,7 +274,7 @@ impl GeometryDesc {
         for segment in 0..segments {
             let current = 1 + segment;
             let next = 1 + ((segment + 1) % segments);
-            indices.extend_from_slice(&[0, current, next]);
+            indices.extend_from_slice(&[0, next, current]);
         }
         new_with_tex_coords(GeometryTopology::Triangles, vertices, indices, tex_coords0)
     }
@@ -316,7 +316,7 @@ impl GeometryDesc {
                 let b = (segment + 1) * row + ring;
                 let c = a + 1;
                 let d = b + 1;
-                indices.extend_from_slice(&[a, b, c, c, b, d]);
+                indices.extend_from_slice(&[a, c, b, b, c, d]);
             }
         }
 
@@ -387,7 +387,7 @@ impl GeometryDesc {
         new_with_tex_coords(
             GeometryTopology::Triangles,
             vertices,
-            vec![0, 1, 2, 0, 2, 3],
+            vec![0, 2, 1, 0, 3, 2],
             vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
         )
     }
@@ -450,6 +450,10 @@ mod tests {
     #[test]
     fn extended_primitives_have_deterministic_counts_bounds_and_normals() {
         let cases = [
+            ("box", GeometryDesc::box_xyz(0.20, 0.12, 0.16), 24, 36),
+            ("sphere", GeometryDesc::sphere(0.11, 8, 4), 45, 192),
+            ("cylinder", GeometryDesc::cylinder(0.10, 0.22, 12), 50, 144),
+            ("plane", GeometryDesc::plane(0.20, 0.16), 4, 6),
             ("cone", GeometryDesc::cone(0.10, 0.22, 12), 49, 72),
             ("torus", GeometryDesc::torus(0.11, 0.03, 12, 6), 91, 432),
             ("disc", GeometryDesc::disc(0.12, 16), 17, 48),
@@ -483,6 +487,46 @@ mod tests {
                 }),
                 "{name} should carry renderable normals"
             );
+        }
+    }
+
+    #[test]
+    fn built_in_triangle_primitives_are_wound_against_vertex_normals() {
+        let cases = [
+            ("box", GeometryDesc::box_xyz(0.20, 0.12, 0.16)),
+            ("sphere", GeometryDesc::sphere(0.11, 8, 4)),
+            ("cylinder", GeometryDesc::cylinder(0.10, 0.22, 12)),
+            ("plane", GeometryDesc::plane(0.20, 0.16)),
+            ("cone", GeometryDesc::cone(0.10, 0.22, 12)),
+            ("torus", GeometryDesc::torus(0.11, 0.03, 12, 6)),
+            ("disc", GeometryDesc::disc(0.12, 16)),
+            ("wedge", GeometryDesc::wedge(0.20, 0.12, 0.16)),
+        ];
+
+        for (name, geometry) in cases {
+            assert_eq!(geometry.topology(), GeometryTopology::Triangles, "{name}");
+            for (triangle_index, triangle) in geometry.indices().chunks_exact(3).enumerate() {
+                let a = geometry.vertices()[triangle[0] as usize];
+                let b = geometry.vertices()[triangle[1] as usize];
+                let c = geometry.vertices()[triangle[2] as usize];
+                let face_normal = cross(sub(b.position, a.position), sub(c.position, a.position));
+                let face_length = (face_normal.x * face_normal.x
+                    + face_normal.y * face_normal.y
+                    + face_normal.z * face_normal.z)
+                    .sqrt();
+                if face_length <= 1.0e-6 {
+                    continue;
+                }
+                let face_normal = scale(face_normal, 1.0 / face_length);
+                let vertex_normal = normalize(add(add(a.normal, b.normal), c.normal));
+                let alignment = face_normal.x * vertex_normal.x
+                    + face_normal.y * vertex_normal.y
+                    + face_normal.z * vertex_normal.z;
+                assert!(
+                    alignment > 0.0,
+                    "{name} triangle {triangle_index} is wound against its vertex normals: alignment={alignment}"
+                );
+            }
         }
     }
 }

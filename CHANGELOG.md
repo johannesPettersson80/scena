@@ -12,6 +12,12 @@ All notable user-facing changes are recorded here.
   rendering differently across backends; scalar KHR volume fields
   (`thickness_factor`, `attenuation_distance`, `attenuation_color`) remain
   supported and now have coupled-scene GPU pixel proof.
+- Tightened recipe-authored animation validation and execution: recipe JSON now
+  has an operator-owned byte cap, authored animation clips/channels/keyframes
+  are capped by `RecipeBuildPolicy`, clip duration must cover every keyframe,
+  weight channels fail closed on non-morph targets or wrong morph widths, and
+  public authored clip/mixer creation rejects malformed clips instead of
+  accepting inert or mis-sampled animation data.
 - Added the `scena.visual_patch.v1` SceneHost patch contract for batched
   transform, tint, visibility, camera, eased transition, animation-time,
   selection/hover, material variant, label-anchor, and metadata updates, with
@@ -83,7 +89,10 @@ All notable user-facing changes are recorded here.
   for deterministic recipe-built deformation data. `scene_recipe.v1` can now
   derive morph and skin geometries, bind authored joint nodes with inverse bind
   matrices, set initial morph weights, and author morph-weight animation on
-  morph-capable nodes with fail-closed validation.
+  morph-capable nodes with fail-closed validation. Deformation support is
+  position-focused in this release: morph targets do not author morphed normals,
+  and skinned normals use the joint direction transform, so non-uniform joint
+  scale is not a lighting-correctness guarantee.
 - Added host-supplied particle rendering through `Particle`, `ParticleSet`,
   `Scene::add_particle_set_node()`, and additive `scene_recipe.v1` `particles[]`
   directives. Particles render as opaque camera-facing screen-sized sprites with

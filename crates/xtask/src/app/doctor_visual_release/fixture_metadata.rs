@@ -157,7 +157,7 @@ pub(crate) fn check_visual_fixture_metadata(root: &Path, findings: &mut Vec<Find
             "max_abs_diff = 0",
             "center_rgba = [110, 189, 240, 255]",
             "nonblack_pixels = 81",
-            "rgba_hash = \"fnv1a64:bdf6e10515be53d7\"",
+            "rgba_hash = \"fnv1a64:ec7f096ec1bfdc88\"",
         ],
     );
     require_contains(

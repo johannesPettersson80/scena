@@ -167,7 +167,9 @@ pub use scene::recipe::{
     SceneRecipePrimitiveV1, SceneRecipeSectionBoxV1, SceneRecipeSkinV1, SceneRecipeTargetV1,
     SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1, SceneRecipeTransformV1,
     SceneRecipeV1, SceneRecipeValidationReportV1, SceneRecipeVisibleExpectationV1,
-    parse_valid_scene_recipe_json, validate_scene_recipe_json, validate_scene_recipe_value,
+    parse_valid_scene_recipe_json, parse_valid_scene_recipe_json_with_policy,
+    recipe_too_large_report, validate_scene_recipe_json, validate_scene_recipe_json_with_policy,
+    validate_scene_recipe_value, validate_scene_recipe_value_with_policy,
 };
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
 pub use scene::recipe::{

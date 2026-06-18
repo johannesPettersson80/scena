@@ -370,6 +370,7 @@ pub enum LookupError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AnimationError {
     ClipNotFound { name: String },
+    InvalidClip { reason: String },
     MixerNotFound(AnimationMixerKey),
     StaleMixer(AnimationMixerKey),
 }

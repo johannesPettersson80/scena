@@ -9,6 +9,9 @@ pub(in crate::scene_host::recipe) struct RecipeBuildBudget {
     vertices: u64,
     indices: u64,
     materials: usize,
+    animations: usize,
+    animation_channels: usize,
+    animation_keyframes: usize,
 }
 
 impl RecipeBuildBudget {
@@ -111,6 +114,55 @@ impl RecipeBuildBudget {
             ));
         }
         self.materials = next;
+        None
+    }
+
+    pub(in crate::scene_host::recipe) fn reserve_animation(
+        &mut self,
+        policy: &RecipeBuildPolicy,
+        diagnostic_path: &str,
+        channels: usize,
+        keyframes: usize,
+    ) -> Option<SceneRecipeDiagnosticV1> {
+        let next_animations = self.animations.saturating_add(1);
+        if next_animations > policy.max_animations() {
+            return Some(error_diagnostic(
+                diagnostic_path,
+                "policy_violation",
+                format!(
+                    "recipe build would contain {next_animations} animations, exceeding RecipeBuildPolicy max_animations {}",
+                    policy.max_animations()
+                ),
+                "reduce animation count or raise the operator-owned max_animations policy",
+            ));
+        }
+        let next_channels = self.animation_channels.saturating_add(channels);
+        if next_channels > policy.max_animation_channels() {
+            return Some(error_diagnostic(
+                diagnostic_path,
+                "policy_violation",
+                format!(
+                    "recipe build would contain {next_channels} animation channels, exceeding RecipeBuildPolicy max_animation_channels {}",
+                    policy.max_animation_channels()
+                ),
+                "reduce animation channel count or raise the operator-owned max_animation_channels policy",
+            ));
+        }
+        let next_keyframes = self.animation_keyframes.saturating_add(keyframes);
+        if next_keyframes > policy.max_animation_keyframes() {
+            return Some(error_diagnostic(
+                diagnostic_path,
+                "policy_violation",
+                format!(
+                    "recipe build would contain {next_keyframes} animation keyframes, exceeding RecipeBuildPolicy max_animation_keyframes {}",
+                    policy.max_animation_keyframes()
+                ),
+                "reduce keyframe count or raise the operator-owned max_animation_keyframes policy",
+            ));
+        }
+        self.animations = next_animations;
+        self.animation_channels = next_channels;
+        self.animation_keyframes = next_keyframes;
         None
     }
 }

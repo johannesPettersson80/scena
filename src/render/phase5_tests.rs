@@ -1,11 +1,12 @@
+use crate::SkinningMatrix;
 use crate::animation::{
     AnimationChannel, AnimationClip, AnimationClipKey, AnimationInterpolation, AnimationOutput,
     AnimationTarget,
 };
 use crate::assets::Assets;
-use crate::geometry::GeometryDesc;
+use crate::geometry::{GeometryDesc, GeometrySkin};
 use crate::material::{Color, MaterialDesc};
-use crate::scene::{Scene, Vec3};
+use crate::scene::{Scene, SceneSkinBinding, Transform, Vec3};
 
 use super::{PrepareTelemetry, Renderer};
 
@@ -101,6 +102,49 @@ fn transform_animation_gpu_prepare_uses_dynamic_path_without_recollecting_primit
     );
 }
 
+#[test]
+fn skinned_joint_transform_rejects_dynamic_gpu_prepare_fast_path() {
+    let mut renderer = Renderer::headless_gpu(48, 48).expect("HeadlessGpu renderer builds");
+    let assets = Assets::new();
+    let geometry = GeometryDesc::box_xyz(0.25, 0.25, 0.25)
+        .with_skin(GeometrySkin::new(
+            vec![[0, 0, 0, 0]; 24],
+            vec![[1.0, 0.0, 0.0, 0.0]; 24],
+        ))
+        .expect("skinned geometry builds");
+    let geometry = assets.create_geometry(geometry);
+    let material =
+        assets.create_material(MaterialDesc::pbr_metallic_roughness(Color::WHITE, 0.0, 1.0));
+    let mut scene = Scene::new();
+    scene.add_default_camera().expect("camera inserts");
+    let joint = scene
+        .add_empty(scene.root(), Transform::IDENTITY)
+        .expect("joint inserts");
+    let skinned = scene
+        .mesh(geometry, material)
+        .add()
+        .expect("skinned mesh inserts");
+    scene
+        .set_skin_binding(
+            skinned,
+            SceneSkinBinding::new(vec![joint], vec![SkinningMatrix::IDENTITY]),
+        )
+        .expect("skin binding applies");
+
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("initial GPU prepare succeeds");
+    scene
+        .set_transform(joint, Transform::at(Vec3::new(0.0, 0.2, 0.0)))
+        .expect("joint transform updates");
+
+    assert_eq!(
+        renderer.phase5_dynamic_rejection_reason_for_test(&scene, &assets),
+        Some("skinned joints may have moved"),
+        "skinned joint motion must force a full GPU re-bake until skinning is shader-driven"
+    );
+}
+
 #[cfg(feature = "scene-host")]
 #[test]
 fn eased_tint_transition_gpu_prepare_uses_dynamic_path_without_recollecting_primitives() {
@@ -164,4 +208,5 @@ fn translation_clip(node: crate::scene::NodeKey) -> AnimationClip {
         )],
         1.0,
     )
+    .expect("test translation clip is valid")
 }

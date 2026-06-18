@@ -180,6 +180,25 @@ fn validate_primitive(path: &str, value: &Value, diagnostics: &mut Vec<SceneReci
                 object.get("minor_radius"),
                 diagnostics,
             );
+            if let (Some(major_radius), Some(minor_radius)) = (
+                object.get("major_radius").and_then(Value::as_f64),
+                object.get("minor_radius").and_then(Value::as_f64),
+            ) && major_radius.is_finite()
+                && minor_radius.is_finite()
+                && major_radius > 0.0
+                && minor_radius > 0.0
+                && minor_radius >= major_radius
+            {
+                diagnostics.push(diagnostic(
+                    "invalid_primitive",
+                    "error",
+                    format!("{path}.minor_radius"),
+                    "torus minor_radius must be smaller than major_radius",
+                    "use a tube radius below the torus major radius",
+                    None,
+                    false,
+                ));
+            }
             validate_optional_min_u32(
                 &format!("{path}.segments"),
                 object.get("segments"),

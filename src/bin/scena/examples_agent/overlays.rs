@@ -1,9 +1,9 @@
-use std::fs;
 use std::path::Path;
 
 use serde_json::json;
 
 use super::builder::write_json_file;
+use crate::scena_input::{RecipeReadError, read_recipe_text};
 
 pub(super) fn add_cad_overlay_recipe_sections(recipe: &Path) -> Result<(), String> {
     merge_recipe_sections(
@@ -83,8 +83,22 @@ pub(super) fn add_documentation_overlay_recipe_sections(recipe: &Path) -> Result
 }
 
 fn merge_recipe_sections(recipe: &Path, sections: serde_json::Value) -> Result<(), String> {
-    let text = fs::read_to_string(recipe)
-        .map_err(|error| format!("failed to read recipe '{}': {error}", recipe.display()))?;
+    let text = match read_recipe_text(recipe, &scena::RecipeBuildPolicy::testing()) {
+        Ok(text) => text,
+        Err(RecipeReadError::TooLarge(report)) => {
+            return Err(format!(
+                "recipe '{}' exceeds RecipeBuildPolicy max_recipe_bytes: {}",
+                recipe.display(),
+                report.diagnostics[0].message
+            ));
+        }
+        Err(RecipeReadError::Io(error)) => {
+            return Err(format!(
+                "failed to read recipe '{}': {error}",
+                recipe.display()
+            ));
+        }
+    };
     let mut value: serde_json::Value = serde_json::from_str(&text)
         .map_err(|error| format!("failed to parse recipe '{}': {error}", recipe.display()))?;
     let object = value

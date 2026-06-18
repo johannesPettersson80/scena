@@ -1,11 +1,20 @@
 use super::scena_args::ValidateRecipeCommandArgs;
+use super::scena_input::{RecipeReadError, read_recipe_text};
 use super::scena_output::{CliOutcome, json_outcome};
-use std::fs;
 
 pub(crate) fn run_validate_recipe_command(args: &[String]) -> Result<CliOutcome, String> {
     let recipe_path = ValidateRecipeCommandArgs::parse(args)?.recipe;
-    let text = fs::read_to_string(&recipe_path)
-        .map_err(|error| format!("failed to read recipe '{}': {error}", recipe_path.display()))?;
+    let policy = scena::RecipeBuildPolicy::testing();
+    let text = match read_recipe_text(&recipe_path, &policy) {
+        Ok(text) => text,
+        Err(RecipeReadError::TooLarge(report)) => return emit_report(report),
+        Err(RecipeReadError::Io(error)) => {
+            return Err(format!(
+                "failed to read recipe '{}': {error}",
+                recipe_path.display()
+            ));
+        }
+    };
     let recipe_path = recipe_path
         .to_str()
         .ok_or_else(|| format!("recipe path '{}' is not valid UTF-8", recipe_path.display()))?;

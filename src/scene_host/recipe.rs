@@ -6,7 +6,8 @@ use crate::diagnostics::AssetError;
 use crate::scene::recipe::{
     RecipeBuildPolicy, SCENE_RECIPE_BUILD_SCHEMA_V1, SceneRecipeBuildImportV1,
     SceneRecipeBuildResourceV1, SceneRecipeBuildSkippedV1, SceneRecipeBuildTargetV1,
-    SceneRecipeBuildV1, SceneRecipeDiagnosticV1, build_diagnostic, parse_valid_scene_recipe_json,
+    SceneRecipeBuildV1, SceneRecipeDiagnosticV1, build_diagnostic,
+    parse_valid_scene_recipe_json_with_policy,
 };
 use crate::{AssetPath, Assets, Renderer, SurfaceViewport};
 
@@ -40,7 +41,7 @@ impl SceneHostCore<DefaultAssetFetcher> {
         policy: RecipeBuildPolicy,
     ) -> Result<SceneHostRecipeBuild<DefaultAssetFetcher>, SceneRecipeBuildV1> {
         let recipe_path = recipe_path.as_ref();
-        let recipe = match parse_valid_scene_recipe_json(text) {
+        let recipe = match parse_valid_scene_recipe_json_with_policy(text, &policy) {
             Ok(recipe) => recipe,
             Err(report) => return Err(build_manifest(report.diagnostics, Vec::new())),
         };
@@ -371,9 +372,11 @@ impl SceneHostCore<DefaultAssetFetcher> {
         target_node_keys.extend(label_keys);
         build_authored_clipping_planes(&mut host, &recipe.clipping_planes, &mut diagnostics);
         build_authored_animations(
+            &policy,
             &mut host,
             &recipe.animations,
             &target_node_keys,
+            &mut build_budget,
             &mut animations,
             &mut diagnostics,
         );
@@ -566,6 +569,121 @@ mod tests {
         );
     }
 
+    #[test]
+    fn recipe_primitives_render_lit_single_sided_pixels_on_headless_gpu() {
+        let cases = [
+            (
+                "box",
+                json!({ "kind": "box", "size": [0.20, 0.12, 0.16] }),
+                json!({ "kind": "trs" }),
+            ),
+            (
+                "sphere",
+                json!({ "kind": "sphere", "radius": 0.11, "segments": 12, "rings": 6 }),
+                json!({ "kind": "trs" }),
+            ),
+            (
+                "cylinder",
+                json!({ "kind": "cylinder", "radius": 0.10, "height": 0.22, "segments": 12 }),
+                json!({ "kind": "trs" }),
+            ),
+            (
+                "plane",
+                json!({ "kind": "plane", "size": [0.20, 0.16] }),
+                json!({ "kind": "trs", "rotation_degrees": [70.0, 0.0, 0.0] }),
+            ),
+            (
+                "cone",
+                json!({ "kind": "cone", "radius": 0.10, "height": 0.22, "segments": 12 }),
+                json!({ "kind": "trs" }),
+            ),
+            (
+                "torus",
+                json!({ "kind": "torus", "major_radius": 0.11, "minor_radius": 0.03, "segments": 12, "rings": 6 }),
+                json!({ "kind": "trs", "rotation_degrees": [65.0, 0.0, 0.0] }),
+            ),
+            (
+                "disc",
+                json!({ "kind": "disc", "radius": 0.12, "segments": 16 }),
+                json!({ "kind": "trs", "rotation_degrees": [70.0, 0.0, 0.0] }),
+            ),
+            (
+                "wedge",
+                json!({ "kind": "wedge", "size": [0.20, 0.12, 0.16] }),
+                json!({ "kind": "trs" }),
+            ),
+        ];
+
+        for (name, primitive, transform) in cases {
+            let recipe = serde_json::to_string_pretty(&json!({
+                "schema": "scena.scene_recipe.v1",
+                "colors": {
+                    "mat_color": "#E8C060"
+                },
+                "geometries": [
+                    { "id": "geo", "primitive": primitive }
+                ],
+                "materials": [
+                    { "id": "mat", "kind": "pbr_metallic_roughness", "base_color": "mat_color", "metallic": 0.0, "roughness": 0.55 }
+                ],
+                "lights": [{
+                    "id": "key",
+                    "kind": "directional",
+                    "preset": "key",
+                    "illuminance_lux": 9000.0
+                }],
+                "nodes": [
+                    { "id": "node", "geometry": "geo", "material": "mat", "transform": transform }
+                ],
+                "cameras": [{
+                    "id": "main",
+                    "kind": "perspective",
+                    "active": true,
+                    "transform": { "kind": "look_at", "eye": [0.0, 0.42, 0.72], "target": [0.0, 0.0, 0.0] }
+                }],
+                "capture": { "width": 96, "height": 72 }
+            }))
+            .expect("recipe serializes");
+
+            let build = pollster::block_on(SceneHostCore::build_recipe_json(
+                "tests/assets/slice10-primitive-pixels.recipe.json",
+                &recipe,
+                RecipeBuildPolicy::testing(),
+            ))
+            .unwrap_or_else(|error| panic!("{name} recipe builds: {error:#?}"));
+            assert!(build.manifest.ok, "{name}: {:#?}", build.manifest);
+
+            let mut scene = build.host.scene;
+            let assets = build.host.assets;
+            let camera = build.host.active_camera;
+            let mut renderer = Renderer::headless_gpu(96, 72).expect("HeadlessGpu renderer builds");
+            renderer.set_background_color(crate::Color::from_srgb_u8(18, 24, 32));
+            renderer
+                .prepare_with_assets(&mut scene, &assets)
+                .unwrap_or_else(|error| panic!("{name} prepares on HeadlessGpu: {error:#?}"));
+            renderer
+                .render(&scene, camera)
+                .unwrap_or_else(|error| panic!("{name} renders on HeadlessGpu: {error:#?}"));
+            let rgba = renderer.frame_rgba8();
+            let bounds = color_bounds(rgba, 96, |pixel| {
+                let r = i16::from(pixel[0]);
+                let g = i16::from(pixel[1]);
+                let b = i16::from(pixel[2]);
+                (r - 18).abs() > 10 || (g - 24).abs() > 10 || (b - 32).abs() > 10
+            })
+            .unwrap_or_else(|| panic!("{name} must render visible non-background pixels"));
+
+            assert!(
+                bounds.pixel_count() > 12,
+                "{name} should have a measurable per-primitive silhouette: {bounds:?}"
+            );
+            assert!(
+                (bounds.center_x() - 48.0).abs() < 20.0 && (bounds.center_y() - 36.0).abs() < 20.0,
+                "{name} silhouette should be framed near the capture center: {bounds:?}"
+            );
+        }
+    }
+
     #[derive(Debug)]
     struct ColorBounds {
         min_x: usize,
@@ -581,6 +699,10 @@ mod tests {
 
         fn center_y(&self) -> f32 {
             (self.min_y + self.max_y) as f32 * 0.5
+        }
+
+        fn pixel_count(&self) -> usize {
+            (self.max_x - self.min_x + 1) * (self.max_y - self.min_y + 1)
         }
     }
 

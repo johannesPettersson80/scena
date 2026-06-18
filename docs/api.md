@@ -63,8 +63,10 @@ Additive public API changes in Unreleased:
   `SceneRecipeBuildV1`, `SceneRecipeBuildImportV1`,
   `SceneRecipeBuildResourceV1`, `SceneRecipeBuildTargetV1`,
   `SceneRecipeValidationReportV1`, `SceneRecipeDiagnosticV1`,
-  `validate_scene_recipe_json`, `validate_scene_recipe_value`, and
-  `parse_valid_scene_recipe_json`
+  `validate_scene_recipe_json`, `validate_scene_recipe_json_with_policy`,
+  `validate_scene_recipe_value`, `validate_scene_recipe_value_with_policy`,
+  `parse_valid_scene_recipe_json`, `parse_valid_scene_recipe_json_with_policy`,
+  and `recipe_too_large_report`
 - `SCENE_PLACEMENT_RESULT_SCHEMA_V1`, `ScenePlacementResultV1`,
   `ScenePlacementDiagnosticV1`, `placement_center_transform`,
   `placement_ground_transform`, `placement_fit_to_size_transform`,
@@ -337,6 +339,13 @@ billboard path. Complex-script text fails closed instead of rendering fallback
 garbage. Explicit label text, background, and halo colors are opaque-only; omit
 the background/halo for no quad instead of passing translucent colors until a
 transparent label path exists.
+
+Recipe-authored skin and morph data deform vertex positions through the same
+prepare path used by imported glTF deformation data. Lighting normals remain the
+source/geometric normals for morph targets, and skinned normals use the joint
+direction transform rather than an inverse-transpose normal matrix. That means
+non-uniform joint scale and morph-normal deformation are not lighting-correctness
+guarantees in the current renderer.
 Browser custom-element annotations use the same screen-projection data but
 perform HTML layout in CSS-pixel space. Native/browser hosts can call
 `layout_scena_viewer_annotations()` with

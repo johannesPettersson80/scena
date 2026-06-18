@@ -7,6 +7,7 @@ use std::sync::{
 
 use slotmap::new_key_type;
 
+use crate::diagnostics::AnimationError;
 use crate::scene::{NodeKey, Quat, Vec3};
 
 mod sampling;
@@ -113,11 +114,26 @@ impl AnimationClip {
         name: Option<String>,
         channels: Vec<AnimationChannel>,
         duration_seconds: f32,
-    ) -> Self {
+    ) -> Result<Self, AnimationError> {
         Self::new(AnimationClipKey::fresh(), name, channels, duration_seconds)
     }
 
     pub fn new(
+        key: AnimationClipKey,
+        name: Option<String>,
+        channels: Vec<AnimationChannel>,
+        duration_seconds: f32,
+    ) -> Result<Self, AnimationError> {
+        validate_clip(&channels, duration_seconds)?;
+        Ok(Self {
+            key,
+            name,
+            channels,
+            duration_seconds,
+        })
+    }
+
+    pub(crate) fn new_unchecked(
         key: AnimationClipKey,
         name: Option<String>,
         channels: Vec<AnimationChannel>,
@@ -188,8 +204,138 @@ impl AnimationSourceClip {
             .iter()
             .filter_map(|channel| channel.rebind(&mut map_node, &mut map_vec3))
             .collect();
-        AnimationClip::new(key, self.name.clone(), channels, self.duration_seconds)
+        AnimationClip::new_unchecked(key, self.name.clone(), channels, self.duration_seconds)
     }
+}
+
+fn validate_clip(
+    channels: &[AnimationChannel],
+    duration_seconds: f32,
+) -> Result<(), AnimationError> {
+    if !duration_seconds.is_finite() || duration_seconds <= 0.0 {
+        return Err(AnimationError::InvalidClip {
+            reason: "duration_seconds must be finite and positive".to_owned(),
+        });
+    }
+    if channels.is_empty() {
+        return Err(AnimationError::InvalidClip {
+            reason: "clip must contain at least one channel".to_owned(),
+        });
+    }
+    for (channel_index, channel) in channels.iter().enumerate() {
+        validate_channel(channel_index, channel, duration_seconds)?;
+    }
+    Ok(())
+}
+
+fn validate_channel(
+    channel_index: usize,
+    channel: &AnimationChannel,
+    duration_seconds: f32,
+) -> Result<(), AnimationError> {
+    if channel.input_seconds.is_empty() {
+        return Err(invalid_channel(channel_index, "times must not be empty"));
+    }
+    let mut previous = None;
+    for (time_index, time) in channel.input_seconds.iter().copied().enumerate() {
+        if !time.is_finite() || time < 0.0 {
+            return Err(invalid_channel(
+                channel_index,
+                format!("time[{time_index}] must be finite and non-negative"),
+            ));
+        }
+        if time > duration_seconds {
+            return Err(invalid_channel(
+                channel_index,
+                format!("time[{time_index}] exceeds clip duration"),
+            ));
+        }
+        if previous.is_some_and(|previous| time <= previous) {
+            return Err(invalid_channel(
+                channel_index,
+                format!("time[{time_index}] must be strictly increasing"),
+            ));
+        }
+        previous = Some(time);
+    }
+    let expected_values = if channel.interpolation == AnimationInterpolation::CubicSpline {
+        channel.input_seconds.len().saturating_mul(3)
+    } else {
+        channel.input_seconds.len()
+    };
+    match &channel.output {
+        AnimationOutput::Vec3(values) => {
+            if values.len() != expected_values {
+                return Err(invalid_channel(
+                    channel_index,
+                    format!("Vec3 output length must be {expected_values}"),
+                ));
+            }
+            if let Some(index) = values.iter().position(|value| !vec3_is_finite(*value)) {
+                return Err(invalid_channel(
+                    channel_index,
+                    format!("Vec3 output[{index}] must be finite"),
+                ));
+            }
+        }
+        AnimationOutput::Quat(values) => {
+            if values.len() != expected_values {
+                return Err(invalid_channel(
+                    channel_index,
+                    format!("Quat output length must be {expected_values}"),
+                ));
+            }
+            if let Some(index) = values.iter().position(|value| !quat_is_finite(*value)) {
+                return Err(invalid_channel(
+                    channel_index,
+                    format!("Quat output[{index}] must be finite"),
+                ));
+            }
+        }
+        AnimationOutput::Weights(values) => {
+            if values.len() != expected_values {
+                return Err(invalid_channel(
+                    channel_index,
+                    format!("Weights output length must be {expected_values}"),
+                ));
+            }
+            let Some(width) = values.first().map(Vec::len).filter(|width| *width > 0) else {
+                return Err(invalid_channel(
+                    channel_index,
+                    "weights output must contain at least one morph target",
+                ));
+            };
+            for (index, value) in values.iter().enumerate() {
+                if value.len() != width {
+                    return Err(invalid_channel(
+                        channel_index,
+                        format!("weights output[{index}] has inconsistent width"),
+                    ));
+                }
+                if value.iter().any(|component| !component.is_finite()) {
+                    return Err(invalid_channel(
+                        channel_index,
+                        format!("weights output[{index}] must be finite"),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn invalid_channel(channel_index: usize, reason: impl Into<String>) -> AnimationError {
+    AnimationError::InvalidClip {
+        reason: format!("channel {channel_index}: {}", reason.into()),
+    }
+}
+
+fn quat_is_finite(value: Quat) -> bool {
+    value.x.is_finite() && value.y.is_finite() && value.z.is_finite() && value.w.is_finite()
+}
+
+fn vec3_is_finite(value: Vec3) -> bool {
+    value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
 }
 
 impl AnimationChannel {

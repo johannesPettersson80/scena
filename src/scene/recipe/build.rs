@@ -16,8 +16,12 @@ const DEFAULT_MAX_TEXTURE_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_MAX_IMAGE_DIMENSION: u32 = 8192;
 const DEFAULT_MAX_INSTANCES: usize = 100_000;
 const DEFAULT_MAX_PARTICLES: usize = 100_000;
+const DEFAULT_MAX_ANIMATIONS: usize = 4_000;
+const DEFAULT_MAX_ANIMATION_CHANNELS: usize = 100_000;
+const DEFAULT_MAX_ANIMATION_KEYFRAMES: usize = 2_000_000;
 const DEFAULT_MAX_OUTPUT_PIXELS: u64 = 4096 * 4096;
 const DEFAULT_FETCH_BYTE_LIMIT: usize = 64 * 1024 * 1024;
+const DEFAULT_MAX_RECIPE_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecipeBuildPolicy {
@@ -31,8 +35,12 @@ pub struct RecipeBuildPolicy {
     max_image_dimension: u32,
     max_instances: usize,
     max_particles: usize,
+    max_animations: usize,
+    max_animation_channels: usize,
+    max_animation_keyframes: usize,
     max_output_pixels: u64,
     fetch_byte_limit: usize,
+    max_recipe_bytes: usize,
     allow_network: bool,
     allowed_uri_schemes: BTreeSet<String>,
     allowed_roots: Vec<PathBuf>,
@@ -53,8 +61,12 @@ impl Default for RecipeBuildPolicy {
             max_image_dimension: DEFAULT_MAX_IMAGE_DIMENSION,
             max_instances: DEFAULT_MAX_INSTANCES,
             max_particles: DEFAULT_MAX_PARTICLES,
+            max_animations: DEFAULT_MAX_ANIMATIONS,
+            max_animation_channels: DEFAULT_MAX_ANIMATION_CHANNELS,
+            max_animation_keyframes: DEFAULT_MAX_ANIMATION_KEYFRAMES,
             max_output_pixels: DEFAULT_MAX_OUTPUT_PIXELS,
             fetch_byte_limit: DEFAULT_FETCH_BYTE_LIMIT,
+            max_recipe_bytes: DEFAULT_MAX_RECIPE_BYTES,
             allow_network: false,
             allowed_uri_schemes,
             allowed_roots: default_allowed_roots(),
@@ -121,6 +133,21 @@ impl RecipeBuildPolicy {
         self.max_particles
     }
 
+    /// Maximum authored animation clips allowed in one build.
+    pub const fn max_animations(&self) -> usize {
+        self.max_animations
+    }
+
+    /// Maximum aggregate authored animation channels allowed in one build.
+    pub const fn max_animation_channels(&self) -> usize {
+        self.max_animation_channels
+    }
+
+    /// Maximum aggregate authored animation keyframes allowed in one build.
+    pub const fn max_animation_keyframes(&self) -> usize {
+        self.max_animation_keyframes
+    }
+
     /// Maximum requested capture size, in pixels.
     pub const fn max_output_pixels(&self) -> u64 {
         self.max_output_pixels
@@ -129,6 +156,11 @@ impl RecipeBuildPolicy {
     /// Maximum source bytes fetched for one local resource.
     pub const fn fetch_byte_limit(&self) -> usize {
         self.fetch_byte_limit
+    }
+
+    /// Maximum scene recipe JSON document size, in bytes.
+    pub const fn max_recipe_bytes(&self) -> usize {
+        self.max_recipe_bytes
     }
 
     /// Whether HTTP(S) resources are allowed.
@@ -199,6 +231,21 @@ impl RecipeBuildPolicy {
         self
     }
 
+    pub const fn with_max_animations(mut self, max_animations: usize) -> Self {
+        self.max_animations = max_animations;
+        self
+    }
+
+    pub const fn with_max_animation_channels(mut self, max_animation_channels: usize) -> Self {
+        self.max_animation_channels = max_animation_channels;
+        self
+    }
+
+    pub const fn with_max_animation_keyframes(mut self, max_animation_keyframes: usize) -> Self {
+        self.max_animation_keyframes = max_animation_keyframes;
+        self
+    }
+
     pub const fn with_max_output_pixels(mut self, max_output_pixels: u64) -> Self {
         self.max_output_pixels = max_output_pixels;
         self
@@ -206,6 +253,11 @@ impl RecipeBuildPolicy {
 
     pub const fn with_fetch_byte_limit(mut self, fetch_byte_limit: usize) -> Self {
         self.fetch_byte_limit = fetch_byte_limit;
+        self
+    }
+
+    pub const fn with_max_recipe_bytes(mut self, max_recipe_bytes: usize) -> Self {
+        self.max_recipe_bytes = max_recipe_bytes;
         self
     }
 

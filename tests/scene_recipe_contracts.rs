@@ -136,6 +136,11 @@ fn scene_recipe_validation_accepts_authored_animation_and_rejects_bad_channels()
                 "values": [[1.0, 1.0, 1.0], [1.2, 1.2, 1.2]]
             }, {
                 "target": { "kind": "node", "id": "cube" },
+                "path": "translation",
+                "times": [0.0, 1.5],
+                "values": [[0.0, 0.0, 0.0], [0.1, 0.0, 0.0]]
+            }, {
+                "target": { "kind": "node", "id": "cube" },
                 "path": "weights",
                 "times": [0.0, 1.0],
                 "values": [[0.0], [1.0]]
@@ -143,11 +148,36 @@ fn scene_recipe_validation_accepts_authored_animation_and_rejects_bad_channels()
         }]
     }));
     assert!(!invalid.ok);
-    assert_reason(&invalid, "unknown_animation_target", None);
-    assert_reason(&invalid, "invalid_animation_time", None);
-    assert_reason(&invalid, "invalid_animation_times", None);
-    assert_reason(&invalid, "invalid_animation_values", None);
-    assert_reason(&invalid, "invalid_animation_target", None);
+    assert_reason_at(
+        &invalid,
+        "unknown_animation_target",
+        "$.animations[0].channels[0].target.id",
+    );
+    assert_reason_at(
+        &invalid,
+        "invalid_animation_times",
+        "$.animations[0].channels[0].times[2]",
+    );
+    assert_reason_at(
+        &invalid,
+        "invalid_animation_values",
+        "$.animations[0].channels[0].values",
+    );
+    assert_reason_at(
+        &invalid,
+        "invalid_animation_time",
+        "$.animations[0].channels[1].times[1]",
+    );
+    assert_reason_at(
+        &invalid,
+        "invalid_animation_duration",
+        "$.animations[0].channels[2].times[1]",
+    );
+    assert_reason_at(
+        &invalid,
+        "invalid_animation_target",
+        "$.animations[0].channels[3].target.id",
+    );
 }
 
 #[test]
@@ -338,6 +368,21 @@ fn scene_recipe_build_policy_rejects_unsafe_or_oversized_inputs() {
     ))
     .expect_err("oversized geometry fails closed");
     assert_build_reason(&report, "policy_violation", "$.imports[0]");
+
+    let oversized_text = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "part", "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf" }
+        ]
+    }))
+    .expect("recipe serializes");
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &oversized_text,
+        scena::RecipeBuildPolicy::testing().with_max_recipe_bytes(16),
+    ))
+    .expect_err("oversized recipe text fails before JSON parsing");
+    assert_build_reason(&report, "policy_violation", "$");
 }
 
 #[cfg(feature = "scene-host")]
@@ -391,6 +436,217 @@ fn scene_recipe_build_policy_rejects_authored_allocation_bypasses() {
     ))
     .expect_err("aggregate authored geometry budget fails closed");
     assert_build_reason(&report, "policy_violation", "$.geometries");
+
+    let keyframe_over_cap = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "white": "#FFFFFF" },
+        "geometries": [
+            { "id": "geo", "primitive": { "kind": "box", "size": [0.1, 0.1, 0.1] } }
+        ],
+        "materials": [{ "id": "mat", "kind": "unlit", "base_color": "white" }],
+        "nodes": [{ "id": "node", "geometry": "geo", "material": "mat" }],
+        "animations": [{
+            "id": "too_many_keys",
+            "duration": 2.0,
+            "channels": [{
+                "target": { "kind": "node", "id": "node" },
+                "path": "translation",
+                "times": [0.0, 1.0, 2.0],
+                "values": [[0.0, 0.0, 0.0], [0.1, 0.0, 0.0], [0.2, 0.0, 0.0]]
+            }]
+        }]
+    }))
+    .expect("recipe serializes");
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &keyframe_over_cap,
+        scena::RecipeBuildPolicy::testing().with_max_animation_keyframes(2),
+    ))
+    .expect_err("animation keyframes must be capped before typed build allocation");
+    assert_build_reason(&report, "policy_violation", "$.animations[0].channels[0]");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_build_policy_rejects_arrow_projection_underestimate() {
+    let arrow_underestimate = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "white": "#FFFFFF" },
+        "geometries": [
+            { "id": "a", "primitive": { "kind": "arrow", "start": [0.0, 0.0, 0.0], "end": [1.0, 0.0, 0.0] } },
+            { "id": "b", "primitive": { "kind": "arrow", "start": [0.0, 0.0, 0.0], "end": [0.0, 1.0, 0.0] } }
+        ],
+        "materials": [{ "id": "mat", "kind": "line", "base_color": "white" }],
+        "nodes": [
+            { "id": "a_node", "geometry": "a", "material": "mat" },
+            { "id": "b_node", "geometry": "b", "material": "mat" }
+        ]
+    }))
+    .expect("recipe serializes");
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &arrow_underestimate,
+        scena::RecipeBuildPolicy::testing().with_max_vertices(10),
+    ))
+    .expect_err("arrow projection must fail closed before builder allocation exceeds the cap");
+    assert_build_reason(&report, "policy_violation", "$.geometries");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_rejects_imported_weight_animation_without_morph_targets() {
+    let recipe = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [{
+            "id": "part",
+            "uri": "tests/assets/gltf/mesh_material_vertex_color_scene.gltf"
+        }],
+        "animations": [{
+            "id": "bad_weights",
+            "duration": 1.0,
+            "channels": [{
+                "target": { "kind": "node", "id": "part:/ColoredTriangle" },
+                "path": "weights",
+                "times": [0.0, 1.0],
+                "values": [[0.0], [1.0]]
+            }]
+        }]
+    }))
+    .expect("recipe serializes");
+
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/imported-weights.recipe.json",
+        &recipe,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect_err("weights animation on non-morph imported node must fail closed");
+    assert_build_reason(
+        &report,
+        "invalid_animation_target",
+        "$.animations[0].channels[0].target.id",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_authored_animation_recipe_applies_scale_rotation_and_interpolation_modes() {
+    let recipe = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "white": "#FFFFFF" },
+        "geometries": [
+            { "id": "geo", "primitive": { "kind": "box", "size": [0.1, 0.1, 0.1] } }
+        ],
+        "materials": [{ "id": "mat", "kind": "unlit", "base_color": "white" }],
+        "nodes": [{ "id": "node", "geometry": "geo", "material": "mat" }],
+        "animations": [{
+            "id": "scale_step",
+            "duration": 1.0,
+            "channels": [{
+                "target": { "kind": "node", "id": "node" },
+                "path": "scale",
+                "interpolation": "step",
+                "times": [0.0, 1.0],
+                "values": [[1.0, 1.0, 1.0], [2.0, 3.0, 4.0]]
+            }]
+        }, {
+            "id": "rotate_linear",
+            "duration": 1.0,
+            "channels": [{
+                "target": { "kind": "node", "id": "node" },
+                "path": "rotation",
+                "interpolation": "linear",
+                "times": [0.0, 1.0],
+                "values": [
+                    [0.0, 0.0, 0.0, 1.0],
+                    [
+                        0.0,
+                        0.0,
+                        std::f64::consts::FRAC_1_SQRT_2,
+                        std::f64::consts::FRAC_1_SQRT_2
+                    ]
+                ]
+            }]
+        }, {
+            "id": "move_cubic",
+            "duration": 1.0,
+            "channels": [{
+                "target": { "kind": "node", "id": "node" },
+                "path": "translation",
+                "interpolation": "cubic_spline",
+                "times": [0.0, 1.0],
+                "values": [
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0]
+                ]
+            }]
+        }]
+    }))
+    .expect("recipe serializes");
+
+    let mut build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/authored-animation.recipe.json",
+        &recipe,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("authored animation recipe builds");
+    let node_handle = build
+        .manifest
+        .nodes
+        .iter()
+        .find(|node| node.id == "node")
+        .expect("node is in manifest")
+        .handle;
+    let animation_handle = |id: &str, manifest: &scena::SceneRecipeBuildV1| {
+        manifest
+            .animations
+            .iter()
+            .find(|animation| animation.id == id)
+            .unwrap_or_else(|| panic!("missing animation {id}: {manifest:#?}"))
+            .handle
+    };
+
+    build
+        .host
+        .seek_animation(animation_handle("scale_step", &build.manifest), 0.5)
+        .expect("step scale seek applies");
+    let transform = inspected_node_transform(&build.host, node_handle);
+    assert_eq!(
+        transform.scale,
+        scena::Vec3::new(1.0, 1.0, 1.0),
+        "STEP interpolation must hold the left value before the next key"
+    );
+    build
+        .host
+        .seek_animation(animation_handle("scale_step", &build.manifest), 1.0)
+        .expect("step scale final seek applies");
+    let transform = inspected_node_transform(&build.host, node_handle);
+    assert_eq!(transform.scale, scena::Vec3::new(2.0, 3.0, 4.0));
+
+    build
+        .host
+        .seek_animation(animation_handle("rotate_linear", &build.manifest), 0.5)
+        .expect("linear rotation seek applies");
+    let transform = inspected_node_transform(&build.host, node_handle);
+    assert!(
+        transform.rotation.z.abs() > 0.35 && transform.rotation.w < 0.95,
+        "rotation channel must change from identity through recipe linear mapping: {:?}",
+        transform.rotation
+    );
+
+    build
+        .host
+        .seek_animation(animation_handle("move_cubic", &build.manifest), 0.5)
+        .expect("cubic translation seek applies");
+    let transform = inspected_node_transform(&build.host, node_handle);
+    assert!(
+        (transform.translation.x - 0.5).abs() < 0.02,
+        "cubic_spline recipe mapping must sample the Hermite midpoint, got {:?}",
+        transform.translation
+    );
 }
 
 #[cfg(feature = "scene-host")]
@@ -1043,11 +1299,17 @@ fn scene_recipe_slice10_primitives_validate_build_and_render_with_deterministic_
             { "id": "wedge_geo", "primitive": { "kind": "wedge", "size": [0.20, 0.12, 0.16] } }
         ],
         "materials": [
-            { "id": "cone_mat", "kind": "unlit", "base_color": "cone_color", "double_sided": true },
-            { "id": "torus_mat", "kind": "unlit", "base_color": "torus_color", "double_sided": true },
-            { "id": "disc_mat", "kind": "unlit", "base_color": "disc_color", "double_sided": true },
-            { "id": "wedge_mat", "kind": "unlit", "base_color": "wedge_color", "double_sided": true }
+            { "id": "cone_mat", "kind": "pbr_metallic_roughness", "base_color": "cone_color", "metallic": 0.0, "roughness": 0.55 },
+            { "id": "torus_mat", "kind": "pbr_metallic_roughness", "base_color": "torus_color", "metallic": 0.0, "roughness": 0.55 },
+            { "id": "disc_mat", "kind": "pbr_metallic_roughness", "base_color": "disc_color", "metallic": 0.0, "roughness": 0.55 },
+            { "id": "wedge_mat", "kind": "pbr_metallic_roughness", "base_color": "wedge_color", "metallic": 0.0, "roughness": 0.55 }
         ],
+        "lights": [{
+            "id": "key",
+            "kind": "directional",
+            "preset": "key",
+            "illuminance_lux": 9000.0
+        }],
         "nodes": [
             { "id": "cone", "geometry": "cone_geo", "material": "cone_mat", "name": "cone", "transform": { "kind": "trs", "translation": [-0.24, 0.03, 0.0] } },
             { "id": "torus", "geometry": "torus_geo", "material": "torus_mat", "name": "torus", "transform": { "kind": "trs", "translation": [0.0, 0.04, 0.0], "rotation_degrees": [65.0, 0.0, 0.0] } },
@@ -1157,6 +1419,7 @@ fn scene_recipe_slice10_primitives_validate_build_and_render_with_deterministic_
         "geometries": [
             { "id": "bad_cone", "primitive": { "kind": "cone", "radius": -0.1, "height": 0.2 } },
             { "id": "bad_torus", "primitive": { "kind": "torus", "major_radius": 0.1, "minor_radius": 0.0 } },
+            { "id": "inside_out_torus", "primitive": { "kind": "torus", "major_radius": 0.1, "minor_radius": 0.1 } },
             { "id": "bad_disc", "primitive": { "kind": "disc", "radius": 0.1, "segments": 0 } },
             { "id": "bad_wedge", "primitive": { "kind": "wedge", "size": [0.2, 0.1] } }
         ]
@@ -1165,6 +1428,11 @@ fn scene_recipe_slice10_primitives_validate_build_and_render_with_deterministic_
     assert_reason(&invalid, "invalid_number", None);
     assert_reason(&invalid, "invalid_integer", None);
     assert_reason(&invalid, "invalid_vector", None);
+    assert_reason_at(
+        &invalid,
+        "invalid_primitive",
+        "$.geometries[2].primitive.minor_radius",
+    );
 }
 
 #[cfg(feature = "scene-host")]
@@ -1412,6 +1680,148 @@ fn scene_recipe_slice12_skin_morph_authoring_changes_headless_gpu_silhouette() {
 }
 
 #[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_slice12_skin_only_changes_headless_gpu_silhouette() {
+    let undeformed = render_slice12_skin_morph_gpu(0.0, 0.0);
+    let skinned = render_slice12_skin_morph_gpu(0.0, 0.28);
+
+    assert!(
+        skinned.min_y + 4 < undeformed.min_y,
+        "HeadlessGpu must move the silhouette from authored skinning alone, undeformed={undeformed:?}, skinned={skinned:?}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_slice12_joint_animation_rebakes_headless_gpu_vertices() {
+    let (assets, mut scene, camera, joint) = slice12_skin_morph_scene(0.0, 0.0);
+    let mut renderer =
+        scena::Renderer::headless_gpu(180, 140).expect("HeadlessGpu renderer builds");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("initial skinned scene prepares");
+    renderer
+        .render(&scene, camera)
+        .expect("initial skinned scene renders");
+    let initial = slice12_gpu_bounds(renderer.frame_rgba8(), 180, 140)
+        .expect("initial skinned frame is visible");
+
+    scene
+        .set_transform(
+            joint,
+            scena::Transform::at(scena::Vec3::new(0.0, 0.28, 0.0)),
+        )
+        .expect("joint transform updates");
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("moved skinned scene prepares");
+    renderer
+        .render(&scene, camera)
+        .expect("moved skinned scene renders");
+    let moved = slice12_gpu_bounds(renderer.frame_rgba8(), 180, 140)
+        .expect("moved skinned frame is visible");
+
+    assert!(
+        moved.min_y + 4 < initial.min_y,
+        "HeadlessGpu must re-bake skinned vertices after joint transform animation, initial={initial:?}, moved={moved:?}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_slice12_authored_morph_weight_animation_changes_rendered_output() {
+    let mut recipe = slice12_skin_morph_recipe(0.0, 0.0);
+    recipe.as_object_mut().expect("recipe is an object").insert(
+        "animations".to_owned(),
+        json!([{
+            "id": "grow_tri",
+            "duration": 1.0,
+            "channels": [{
+                "target": { "kind": "node", "id": "tri" },
+                "path": "weights",
+                "times": [0.0, 1.0],
+                "values": [[0.0], [1.0]]
+            }]
+        }]),
+    );
+    let text = serde_json::to_string_pretty(&recipe).expect("recipe serializes");
+    let mut build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/slice12-animation.recipe.json",
+        &text,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("Slice 12 animated morph recipe builds");
+    let animation = build
+        .manifest
+        .animations
+        .iter()
+        .find(|animation| animation.id == "grow_tri")
+        .expect("authored morph animation appears in manifest")
+        .handle;
+
+    let initial = slice12_host_render_report(&mut build.host);
+    let initial_bbox = initial
+        .content_bbox_css_px
+        .expect("initial animated morph frame has content bbox");
+    build
+        .host
+        .seek_animation(animation, 1.0)
+        .expect("authored morph animation seeks");
+    let moved = slice12_host_render_report(&mut build.host);
+    let moved_bbox = moved
+        .content_bbox_css_px
+        .expect("morphed animation frame has content bbox");
+
+    assert!(
+        moved_bbox.height > initial_bbox.height + 8.0,
+        "authored morph weight animation must alter the rendered silhouette, initial={initial_bbox:?}, moved={moved_bbox:?}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_slice12_validation_rejects_skin_indices_outside_binding() {
+    let invalid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "red": "#E4572E" },
+        "geometries": [{
+            "id": "tri_base",
+            "mesh": {
+                "topology": "triangles",
+                "positions": [[-0.42, -0.25, 0.0], [0.42, -0.25, 0.0], [0.0, 0.25, 0.0]],
+                "normals": [[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
+                "indices": [0, 1, 2]
+            }
+        }],
+        "skins": [{
+            "id": "bad_skin",
+            "source_geometry": "tri_base",
+            "joints": [[1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0]],
+            "weights": [[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]]
+        }],
+        "materials": [{ "id": "mat", "kind": "unlit", "base_color": "red" }],
+        "nodes": [
+            { "id": "joint", "geometry": "tri_base", "material": "mat", "visible": false },
+            {
+                "id": "tri",
+                "geometry": "bad_skin",
+                "material": "mat",
+                "skin_binding": {
+                    "joints": ["joint"],
+                    "inverse_bind_matrices": [[
+                        1.0, 0.0, 0.0, 0.0,
+                        0.0, 1.0, 0.0, 0.0,
+                        0.0, 0.0, 1.0, 0.0,
+                        0.0, 0.0, 0.0, 1.0
+                    ]]
+                }
+            }
+        ]
+    }));
+    assert_reason_at(&invalid, "invalid_skin", "$.skins[0].joints[0][0]");
+}
+
+#[cfg(feature = "scene-host")]
 struct Slice12RenderProof {
     manifest: scena::SceneRecipeBuildV1,
     report: scena::RenderIntrospectionReportV1,
@@ -1427,7 +1837,7 @@ struct Slice12GpuBounds {
 
 #[cfg(feature = "scene-host")]
 fn render_slice12_skin_morph_gpu(morph_weight: f32, joint_lift: f32) -> Slice12GpuBounds {
-    let (assets, mut scene, camera) = slice12_skin_morph_scene(morph_weight, joint_lift);
+    let (assets, mut scene, camera, _) = slice12_skin_morph_scene(morph_weight, joint_lift);
     let mut renderer =
         scena::Renderer::headless_gpu(180, 140).expect("HeadlessGpu renderer builds");
     renderer
@@ -1444,7 +1854,12 @@ fn render_slice12_skin_morph_gpu(morph_weight: f32, joint_lift: f32) -> Slice12G
 fn slice12_skin_morph_scene(
     morph_weight: f32,
     joint_lift: f32,
-) -> (scena::Assets, scena::Scene, scena::CameraKey) {
+) -> (
+    scena::Assets,
+    scena::Scene,
+    scena::CameraKey,
+    scena::NodeKey,
+) {
     let assets = scena::Assets::new();
     let vertices = vec![
         scena::GeometryVertex {
@@ -1501,7 +1916,7 @@ fn slice12_skin_morph_scene(
         .expect("skin binding applies");
     let camera = scene.add_default_camera().expect("camera inserts");
 
-    (assets, scene, camera)
+    (assets, scene, camera, joint)
 }
 
 #[cfg(feature = "scene-host")]
@@ -1543,6 +1958,18 @@ fn render_slice12_skin_morph_recipe(recipe: serde_json::Value) -> Slice12RenderP
     assert!(build.manifest.ok, "{:#?}", build.manifest);
 
     let mut host = build.host;
+    let report = slice12_host_render_report(&mut host);
+
+    Slice12RenderProof {
+        manifest: build.manifest,
+        report,
+    }
+}
+
+#[cfg(feature = "scene-host")]
+fn slice12_host_render_report(
+    host: &mut scena::SceneHostCore,
+) -> scena::RenderIntrospectionReportV1 {
     host.prepare().expect("Slice 12 scene prepares");
     host.render().expect("Slice 12 scene renders");
     let capture = host.capture().expect("Slice 12 scene captures");
@@ -1555,11 +1982,7 @@ fn render_slice12_skin_morph_recipe(recipe: serde_json::Value) -> Slice12RenderP
         scena::RenderIntrospectionOptions::summary(),
     );
     assert!(report.ok, "Slice 12 render should be visible: {report:#?}");
-
-    Slice12RenderProof {
-        manifest: build.manifest,
-        report,
-    }
+    report
 }
 
 #[cfg(feature = "scene-host")]
@@ -2866,6 +3289,19 @@ fn assert_build_reason(report: &scena::SceneRecipeBuildV1, code: &str, path: &st
     );
 }
 
+#[cfg(feature = "scene-host")]
+fn inspected_node_transform(host: &scena::SceneHostCore, handle: u64) -> scena::Transform {
+    let inspection_json = host.inspect_json().expect("scene host inspects");
+    let inspection: scena::SceneInspectionReportV1 =
+        serde_json::from_str(&inspection_json).expect("inspection decodes");
+    inspection
+        .nodes
+        .iter()
+        .find(|node| node.handle == handle)
+        .unwrap_or_else(|| panic!("missing node handle {handle}: {inspection:#?}"))
+        .local_transform
+}
+
 fn assert_reason(
     report: &scena::SceneRecipeValidationReportV1,
     code: &str,
@@ -2881,7 +3317,6 @@ fn assert_reason(
     );
 }
 
-#[cfg(feature = "scene-host")]
 fn assert_reason_at(report: &scena::SceneRecipeValidationReportV1, code: &str, path: &str) {
     assert!(
         report

@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use super::scena_input::{
-    capture_descriptor_path, ensure_parent_dir, path_for_json, render_introspection_options,
+    RecipeReadError, capture_descriptor_path, ensure_parent_dir, path_for_json, read_recipe_text,
+    render_introspection_options,
 };
 use super::scena_output::{CliOutcome, json_outcome};
 
@@ -25,12 +26,27 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, S
         return Err(recipe_render_usage());
     }
 
-    let recipe_text = std::fs::read_to_string(&args.recipe)
-        .map_err(|error| format!("failed to read recipe '{}': {error}", args.recipe.display()))?;
+    let policy = scena::RecipeBuildPolicy::testing();
+    let recipe_text = match read_recipe_text(&args.recipe, &policy) {
+        Ok(text) => text,
+        Err(RecipeReadError::TooLarge(report)) => {
+            return json_outcome(
+                &report,
+                1,
+                "failed to serialize scene recipe validation report",
+            );
+        }
+        Err(RecipeReadError::Io(error)) => {
+            return Err(format!(
+                "failed to read recipe '{}': {error}",
+                args.recipe.display()
+            ));
+        }
+    };
     let build = match pollster::block_on(scena::SceneHostCore::build_recipe_json(
         args.recipe.display().to_string(),
         &recipe_text,
-        scena::RecipeBuildPolicy::testing(),
+        policy,
     )) {
         Ok(build) => build,
         Err(manifest) => {

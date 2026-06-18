@@ -279,6 +279,14 @@ fn authored_geometry(
                     "emit primitive:{kind:\"torus\",major_radius,minor_radius}",
                 ))
             })?;
+            if minor_radius >= major_radius {
+                return Err(Box::new(error_diagnostic(
+                    "$",
+                    "invalid_primitive",
+                    "torus minor_radius must be smaller than major_radius",
+                    "use a tube radius below the torus major radius",
+                )));
+            }
             let segments = u32_at_least(primitive.segments, 32, 3).ok_or_else(|| {
                 Box::new(error_diagnostic(
                     "$",

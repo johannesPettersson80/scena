@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
+use crate::scene::recipe::RecipeBuildPolicy;
 use crate::scene::recipe::types::SceneRecipeDiagnosticV1;
 use crate::scene::recipe::validation::diagnostic;
 
@@ -16,8 +17,20 @@ const TARGET_FIELDS: &[&str] = &["kind", "id"];
 const CHANNEL_PATHS: &[&str] = &["translation", "rotation", "scale", "weights"];
 const INTERPOLATIONS: &[&str] = &["linear", "step", "cubic_spline"];
 
+struct AnimationValidationState<'a, 'd> {
+    policy: &'a RecipeBuildPolicy,
+    total_channels: &'a mut usize,
+    total_keyframes: &'a mut usize,
+    authored_target_ids: &'a BTreeSet<String>,
+    target_ids: &'a BTreeSet<String>,
+    import_ids: &'a BTreeSet<String>,
+    authored_morph_target_counts: &'a BTreeMap<String, usize>,
+    diagnostics: &'d mut Vec<SceneRecipeDiagnosticV1>,
+}
+
 pub(super) fn validate_animations(
     value: Option<&Value>,
+    policy: &RecipeBuildPolicy,
     authored_target_ids: &BTreeSet<String>,
     target_ids: &BTreeSet<String>,
     import_ids: &BTreeSet<String>,
@@ -39,6 +52,23 @@ pub(super) fn validate_animations(
         ));
         return;
     };
+    if animations.len() > policy.max_animations() {
+        diagnostics.push(diagnostic(
+            "policy_violation",
+            "error",
+            "$.animations",
+            format!(
+                "recipe declares {} animations, exceeding RecipeBuildPolicy max_animations {}",
+                animations.len(),
+                policy.max_animations()
+            ),
+            "reduce animation count or raise the operator-owned max_animations policy",
+            None,
+            false,
+        ));
+    }
+    let mut total_channels = 0usize;
+    let mut total_keyframes = 0usize;
     for (index, animation) in animations.iter().enumerate() {
         let path = format!("$.animations[{index}]");
         let Some(object) = animation.as_object() else {
@@ -55,16 +85,18 @@ pub(super) fn validate_animations(
         };
         validate_known_fields(&path, object, ANIMATION_FIELDS, diagnostics);
         validate_required_id(&path, object.get("id"), diagnostics);
-        validate_duration(&path, object.get("duration"), diagnostics);
-        validate_channels(
-            &path,
-            object.get("channels"),
+        let duration = validate_duration(&path, object.get("duration"), diagnostics);
+        let mut state = AnimationValidationState {
+            policy,
+            total_channels: &mut total_channels,
+            total_keyframes: &mut total_keyframes,
             authored_target_ids,
             target_ids,
             import_ids,
             authored_morph_target_counts,
             diagnostics,
-        );
+        };
+        validate_channels(&path, object.get("channels"), duration, &mut state);
     }
 }
 
@@ -72,36 +104,39 @@ fn validate_duration(
     path: &str,
     value: Option<&Value>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
-) {
+) -> Option<f64> {
     match value.and_then(Value::as_f64) {
         Some(duration)
-            if duration.is_finite() && duration > 0.0 && duration <= f64::from(f32::MAX) => {}
-        _ => diagnostics.push(diagnostic(
-            "invalid_animation_duration",
-            "error",
-            format!("{path}.duration"),
-            "animation duration must be a finite positive number of seconds",
-            "emit a duration such as 1.0",
-            None,
-            false,
-        )),
+            if duration.is_finite() && duration > 0.0 && duration <= f64::from(f32::MAX) =>
+        {
+            Some(duration)
+        }
+        _ => {
+            diagnostics.push(diagnostic(
+                "invalid_animation_duration",
+                "error",
+                format!("{path}.duration"),
+                "animation duration must be a finite positive number of seconds",
+                "emit a duration such as 1.0",
+                None,
+                false,
+            ));
+            None
+        }
     }
 }
 
 fn validate_channels(
     path: &str,
     value: Option<&Value>,
-    authored_target_ids: &BTreeSet<String>,
-    target_ids: &BTreeSet<String>,
-    import_ids: &BTreeSet<String>,
-    authored_morph_target_counts: &BTreeMap<String, usize>,
-    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+    duration: Option<f64>,
+    state: &mut AnimationValidationState<'_, '_>,
 ) {
     let Some(channels) = value
         .and_then(Value::as_array)
         .filter(|channels| !channels.is_empty())
     else {
-        diagnostics.push(diagnostic(
+        state.diagnostics.push(diagnostic(
             "invalid_animation_channels",
             "error",
             format!("{path}.channels"),
@@ -113,10 +148,27 @@ fn validate_channels(
         return;
     };
 
+    *state.total_channels = (*state.total_channels).saturating_add(channels.len());
+    if *state.total_channels > state.policy.max_animation_channels() {
+        state.diagnostics.push(diagnostic(
+            "policy_violation",
+            "error",
+            format!("{path}.channels"),
+            format!(
+                "recipe declares {} animation channels, exceeding RecipeBuildPolicy max_animation_channels {}",
+                *state.total_channels,
+                state.policy.max_animation_channels()
+            ),
+            "reduce animation channel count or raise the operator-owned max_animation_channels policy",
+            None,
+            false,
+        ));
+    }
+
     for (index, channel) in channels.iter().enumerate() {
         let channel_path = format!("{path}.channels[{index}]");
         let Some(object) = channel.as_object() else {
-            diagnostics.push(diagnostic(
+            state.diagnostics.push(diagnostic(
                 "invalid_animation_channel",
                 "error",
                 &channel_path,
@@ -127,26 +179,26 @@ fn validate_channels(
             ));
             continue;
         };
-        validate_known_fields(&channel_path, object, CHANNEL_FIELDS, diagnostics);
+        validate_known_fields(&channel_path, object, CHANNEL_FIELDS, state.diagnostics);
         let target_id = validate_target(
             &format!("{channel_path}.target"),
             object.get("target"),
-            target_ids,
-            import_ids,
-            diagnostics,
+            state.target_ids,
+            state.import_ids,
+            state.diagnostics,
         );
         let channel_kind = validate_channel_path(
             &format!("{channel_path}.path"),
             object.get("path"),
-            diagnostics,
+            state.diagnostics,
         );
         let authored_weight_count = if channel_kind == Some("weights") {
             target_id.as_deref().and_then(|id| {
-                if authored_target_ids.contains(id) {
-                    match authored_morph_target_counts.get(id).copied() {
+                if state.authored_target_ids.contains(id) {
+                    match state.authored_morph_target_counts.get(id).copied() {
                         Some(count) => Some(count),
                         None => {
-                            diagnostics.push(diagnostic(
+                            state.diagnostics.push(diagnostic(
                                 "invalid_animation_target",
                                 "error",
                                 format!("{channel_path}.target.id"),
@@ -168,13 +220,32 @@ fn validate_channels(
         validate_interpolation(
             &format!("{channel_path}.interpolation"),
             object.get("interpolation"),
-            diagnostics,
+            state.diagnostics,
         );
         let times = validate_times(
             &format!("{channel_path}.times"),
             object.get("times"),
-            diagnostics,
+            duration,
+            state.diagnostics,
         );
+        if let Some(times) = times {
+            *state.total_keyframes = (*state.total_keyframes).saturating_add(times);
+            if *state.total_keyframes > state.policy.max_animation_keyframes() {
+                state.diagnostics.push(diagnostic(
+                    "policy_violation",
+                    "error",
+                    &channel_path,
+                    format!(
+                        "recipe declares {} animation keyframes, exceeding RecipeBuildPolicy max_animation_keyframes {}",
+                        *state.total_keyframes,
+                        state.policy.max_animation_keyframes()
+                    ),
+                    "reduce keyframe count or raise the operator-owned max_animation_keyframes policy",
+                    None,
+                    false,
+                ));
+            }
+        }
         validate_values(
             &format!("{channel_path}.values"),
             object.get("values"),
@@ -185,7 +256,7 @@ fn validate_channels(
                 .unwrap_or("linear"),
             times,
             authored_weight_count,
-            diagnostics,
+            state.diagnostics,
         );
     }
 }
@@ -337,6 +408,7 @@ fn validate_interpolation(
 fn validate_times(
     path: &str,
     value: Option<&Value>,
+    duration: Option<f64>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) -> Option<usize> {
     let Some(times) = value
@@ -375,6 +447,16 @@ fn validate_times(
                 format!("{path}[{index}]"),
                 format!("animation time must be finite and non-negative, got {time}"),
                 "emit finite non-negative seconds",
+                None,
+                false,
+            ));
+        } else if duration.is_some_and(|duration| time > duration) {
+            diagnostics.push(diagnostic(
+                "invalid_animation_duration",
+                "error",
+                format!("{path}[{index}]"),
+                format!("animation keyframe time {time} exceeds clip duration"),
+                "set duration to at least the largest keyframe time or lower the keyframe time",
                 None,
                 false,
             ));
