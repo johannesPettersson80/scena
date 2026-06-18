@@ -73,6 +73,17 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "source_format",
             "TextureSourceFormat::Jpeg",
             "decode_jpeg_rgba8",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ASSETS-M8",
+        "src/assets/texture_image_decode.rs",
+        &[
+            "decode_png_rgba8",
+            "decode_jpeg_rgba8",
+            "image::ImageFormat::Png",
             "image::ImageFormat::Jpeg",
         ],
     );
@@ -241,8 +252,6 @@ pub(crate) fn check_m8_assets_materials_contracts(root: &Path, findings: &mut Ve
             "wrap_texture_coordinate",
             "TextureWrap::ClampToEdge",
             "TextureWrap::MirroredRepeat",
-            "image::ImageFormat::Png",
-            "image::ImageFormat::Jpeg",
             "decoded_mip_metadata",
         ],
     );

@@ -1,0 +1,2 @@
+pub(super) const IMAGE_DECODE_MAX_DIMENSION: u32 = 8192;
+pub(super) const IMAGE_DECODE_MAX_ALLOC_BYTES: u64 = 512 * 1024 * 1024;

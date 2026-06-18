@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
-use crate::assets::DefaultAssetFetcher;
+use crate::assets::{AssetLoadOptions, DefaultAssetFetcher};
+use crate::diagnostics::AssetError;
 use crate::scene::recipe::{
     RecipeBuildPolicy, SCENE_RECIPE_BUILD_SCHEMA_V1, SceneRecipeBuildImportV1,
     SceneRecipeBuildResourceV1, SceneRecipeBuildSkippedV1, SceneRecipeBuildTargetV1,
@@ -15,14 +16,15 @@ mod policy;
 mod setup;
 
 use authoring::{
-    AuthoredNodeResources, InstanceSetResources, LabelResources, ParticleSetResources,
-    build_authored_animations, build_authored_cameras, build_authored_clipping_planes,
-    build_authored_fonts, build_authored_geometries, build_authored_instance_sets,
-    build_authored_labels, build_authored_lights, build_authored_materials, build_authored_morphs,
-    build_authored_nodes, build_authored_particle_sets, build_authored_skins,
+    AuthoredMaterialResources, AuthoredNodeResources, InstanceSetResources, LabelResources,
+    ParticleSetResources, build_authored_animations, build_authored_cameras,
+    build_authored_clipping_planes, build_authored_fonts, build_authored_geometries,
+    build_authored_instance_sets, build_authored_labels, build_authored_lights,
+    build_authored_materials, build_authored_morphs, build_authored_nodes,
+    build_authored_particle_sets, build_authored_skins,
 };
 use overlays::apply_recipe_overlays;
-use policy::asset_policy_diagnostics;
+use policy::{RecipeBuildBudget, RecipeTextureBudget, asset_policy_diagnostics};
 use setup::{apply_render_setup, apply_scene_setup, renderer_options_from_recipe};
 
 #[derive(Debug)]
@@ -101,6 +103,8 @@ impl SceneHostCore<DefaultAssetFetcher> {
         let mut lights = Vec::new();
         let mut animations = Vec::new();
         let mut imported_node_keys = BTreeMap::new();
+        let mut build_budget = RecipeBuildBudget::default();
+        let mut texture_budget = RecipeTextureBudget::default();
 
         for (index, import) in recipe.imports.iter().enumerate() {
             let import_path = format!("$.imports[{index}]");
@@ -119,9 +123,22 @@ impl SceneHostCore<DefaultAssetFetcher> {
             let report =
                 match host
                     .assets
-                    .load_scene_with_report(AssetPath::from(resolved_uri.as_str()))
+                    .load_scene_with_report_options(
+                        AssetPath::from(resolved_uri.as_str()),
+                        AssetLoadOptions::default()
+                            .with_fetch_byte_limit(policy.fetch_byte_limit()),
+                    )
                     .await
                 {
+                    Err(AssetError::PolicyViolation { reason, help, .. }) => {
+                        diagnostics.push(error_diagnostic(
+                            &import_path,
+                            "policy_violation",
+                            reason,
+                            help,
+                        ));
+                        continue;
+                    }
                     Ok(report) => report,
                     Err(error) if import.optional => {
                         diagnostics.push(build_diagnostic(
@@ -158,6 +175,8 @@ impl SceneHostCore<DefaultAssetFetcher> {
             let diagnostic_start = diagnostics.len();
             diagnostics.extend(asset_policy_diagnostics(
                 &policy,
+                &mut build_budget,
+                &mut texture_budget,
                 &host,
                 &report,
                 &import_path,
@@ -244,6 +263,7 @@ impl SceneHostCore<DefaultAssetFetcher> {
             &host,
             &recipe.colors,
             &recipe.geometries,
+            &mut build_budget,
             &mut geometries,
             &mut diagnostics,
         );
@@ -252,6 +272,7 @@ impl SceneHostCore<DefaultAssetFetcher> {
             &host,
             &recipe.morphs,
             &geometry_handles,
+            &mut build_budget,
             &mut geometries,
             &mut diagnostics,
         );
@@ -261,6 +282,7 @@ impl SceneHostCore<DefaultAssetFetcher> {
             &host,
             &recipe.skins,
             &geometry_handles,
+            &mut build_budget,
             &mut geometries,
             &mut diagnostics,
         );
@@ -269,8 +291,12 @@ impl SceneHostCore<DefaultAssetFetcher> {
             &policy,
             &host,
             recipe_path,
-            &recipe.colors,
             &recipe.materials,
+            AuthoredMaterialResources {
+                colors: &recipe.colors,
+                build_budget: &mut build_budget,
+                texture_budget: &mut texture_budget,
+            },
             &mut materials,
             &mut diagnostics,
         )
@@ -287,12 +313,13 @@ impl SceneHostCore<DefaultAssetFetcher> {
             &policy,
             &mut host,
             &recipe.nodes,
-            &recipe.colors,
             AuthoredNodeResources {
+                colors: &recipe.colors,
                 geometries: &geometry_handles,
                 materials: &material_handles,
                 imported_nodes: &imported_node_keys,
                 imports: &import_handles,
+                build_budget: &mut build_budget,
             },
             &mut nodes,
             &mut diagnostics,
@@ -301,13 +328,14 @@ impl SceneHostCore<DefaultAssetFetcher> {
             &policy,
             &mut host,
             &recipe.instance_sets,
-            &recipe.colors,
             InstanceSetResources {
+                colors: &recipe.colors,
                 geometries: &geometry_handles,
                 materials: &material_handles,
                 nodes: &node_keys,
                 imported_nodes: &imported_node_keys,
                 imports: &import_handles,
+                build_budget: &mut build_budget,
             },
             &mut nodes,
             &mut diagnostics,
@@ -369,6 +397,7 @@ impl SceneHostCore<DefaultAssetFetcher> {
             recipe_path,
             &recipe.colors,
             recipe.scene.as_ref(),
+            &mut texture_budget,
             &mut diagnostics,
         )
         .await;

@@ -5,6 +5,7 @@ impl AssetError {
         match self {
             Self::NotFound { .. } => "check the asset path and the configured AssetFetcher",
             Self::Io { .. } => "check filesystem or network access in the host application",
+            Self::PolicyViolation { help, .. } => help,
             Self::Parse { .. } => "validate the asset with the source tool or glTF validator",
             Self::UnsupportedRequiredExtension { .. } => {
                 "remove the required extension, export with a supported profile, or enable a decoder feature when one exists"

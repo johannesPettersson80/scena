@@ -12,17 +12,23 @@ use crate::scene_host::SceneHostCore;
 use crate::{AssetPath, Color, MaterialHandle};
 
 use super::super::error_diagnostic;
+use super::super::policy::{RecipeBuildBudget, RecipeTextureBudget};
 
 pub(in crate::scene_host::recipe) async fn build_authored_materials(
     policy: &RecipeBuildPolicy,
     host: &SceneHostCore<DefaultAssetFetcher>,
     recipe_path: &str,
-    colors: &BTreeMap<String, SceneRecipeColorV1>,
     recipes: &[SceneRecipeMaterialV1],
+    resources: AuthoredMaterialResources<'_>,
     manifest: &mut Vec<SceneRecipeBuildResourceV1>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) -> BTreeMap<String, MaterialHandle> {
     let mut handles = BTreeMap::new();
+    let AuthoredMaterialResources {
+        colors,
+        build_budget,
+        texture_budget,
+    } = resources;
     if recipes.len() > policy.max_materials() {
         diagnostics.push(error_diagnostic(
             "$.materials",
@@ -36,25 +42,40 @@ pub(in crate::scene_host::recipe) async fn build_authored_materials(
         ));
         return handles;
     }
+    if let Some(diagnostic) = build_budget.reserve_materials(policy, "$.materials", recipes.len()) {
+        diagnostics.push(diagnostic);
+        return handles;
+    }
+    let mut material_context = MaterialRecipeBuildRefs {
+        colors,
+        texture_budget,
+    };
     for (index, recipe) in recipes.iter().enumerate() {
         let path = format!("$.materials[{index}]");
-        let base_color = match authored_color(colors, &recipe.base_color) {
+        let base_color = match authored_color(material_context.colors, &recipe.base_color) {
             Ok(color) => color,
             Err(diagnostic) => {
                 diagnostics.push((*diagnostic).with_path(format!("{path}.base_color")));
                 continue;
             }
         };
-        let (kind, material) =
-            match authored_material(policy, host, recipe_path, colors, recipe, base_color, &path)
-                .await
-            {
-                Ok(value) => value,
-                Err(diagnostic) => {
-                    diagnostics.push(*diagnostic);
-                    continue;
-                }
-            };
+        let (kind, material) = match authored_material(
+            policy,
+            host,
+            recipe_path,
+            recipe,
+            base_color,
+            &path,
+            &mut material_context,
+        )
+        .await
+        {
+            Ok(value) => value,
+            Err(diagnostic) => {
+                diagnostics.push(*diagnostic);
+                continue;
+            }
+        };
         let handle = host.assets.create_material(material);
         handles.insert(recipe.id.clone(), handle);
         manifest.push(SceneRecipeBuildResourceV1 {
@@ -67,14 +88,25 @@ pub(in crate::scene_host::recipe) async fn build_authored_materials(
     handles
 }
 
+pub(in crate::scene_host::recipe) struct AuthoredMaterialResources<'a> {
+    pub(in crate::scene_host::recipe) colors: &'a BTreeMap<String, SceneRecipeColorV1>,
+    pub(in crate::scene_host::recipe) build_budget: &'a mut RecipeBuildBudget,
+    pub(in crate::scene_host::recipe) texture_budget: &'a mut RecipeTextureBudget,
+}
+
+struct MaterialRecipeBuildRefs<'a> {
+    colors: &'a BTreeMap<String, SceneRecipeColorV1>,
+    texture_budget: &'a mut RecipeTextureBudget,
+}
+
 async fn authored_material(
     policy: &RecipeBuildPolicy,
     host: &SceneHostCore<DefaultAssetFetcher>,
     recipe_path: &str,
-    colors: &BTreeMap<String, SceneRecipeColorV1>,
     recipe: &SceneRecipeMaterialV1,
     base_color: Color,
     path: &str,
+    resources: &mut MaterialRecipeBuildRefs<'_>,
 ) -> Result<(String, MaterialDesc), Box<SceneRecipeDiagnosticV1>> {
     let (kind, mut material) = match recipe.kind.as_str() {
         "unlit" => ("unlit", MaterialDesc::unlit(base_color)),
@@ -114,9 +146,9 @@ async fn authored_material(
     material = material.with_double_sided(recipe.double_sided);
     if let Some(emissive) = &recipe.emissive {
         material =
-            material.with_emissive(authored_color(colors, emissive).map_err(|diagnostic| {
-                Box::new((*diagnostic).with_path(format!("{path}.emissive")))
-            })?);
+            material.with_emissive(authored_color(resources.colors, emissive).map_err(
+                |diagnostic| Box::new((*diagnostic).with_path(format!("{path}.emissive"))),
+            )?);
     }
     if let Some(strength) = recipe.emissive_strength {
         material = material.with_emissive_strength(strength as f32);
@@ -137,6 +169,7 @@ async fn authored_material(
         recipe.base_color_texture.as_ref(),
         &format!("{path}.base_color_texture"),
         TextureColorSpace::Srgb,
+        resources.texture_budget,
     )
     .await?
     {
@@ -149,6 +182,7 @@ async fn authored_material(
         recipe.normal_texture.as_ref(),
         &format!("{path}.normal_texture"),
         TextureColorSpace::Linear,
+        resources.texture_budget,
     )
     .await?
     {
@@ -161,6 +195,7 @@ async fn authored_material(
         recipe.metallic_roughness_texture.as_ref(),
         &format!("{path}.metallic_roughness_texture"),
         TextureColorSpace::Linear,
+        resources.texture_budget,
     )
     .await?
     {
@@ -173,6 +208,7 @@ async fn authored_material(
         recipe.occlusion_texture.as_ref(),
         &format!("{path}.occlusion_texture"),
         TextureColorSpace::Linear,
+        resources.texture_budget,
     )
     .await?
     {
@@ -185,6 +221,7 @@ async fn authored_material(
         recipe.emissive_texture.as_ref(),
         &format!("{path}.emissive_texture"),
         TextureColorSpace::Srgb,
+        resources.texture_budget,
     )
     .await?
     {
@@ -206,6 +243,7 @@ async fn authored_material(
         recipe.clearcoat_texture.as_ref(),
         &format!("{path}.clearcoat_texture"),
         TextureColorSpace::Linear,
+        resources.texture_budget,
     )
     .await?
     {
@@ -218,6 +256,7 @@ async fn authored_material(
         recipe.clearcoat_roughness_texture.as_ref(),
         &format!("{path}.clearcoat_roughness_texture"),
         TextureColorSpace::Linear,
+        resources.texture_budget,
     )
     .await?
     {
@@ -230,15 +269,18 @@ async fn authored_material(
         recipe.clearcoat_normal_texture.as_ref(),
         &format!("{path}.clearcoat_normal_texture"),
         TextureColorSpace::Linear,
+        resources.texture_budget,
     )
     .await?
     {
         material = material.with_clearcoat_normal_texture(texture);
     }
     if let Some(color) = &recipe.sheen_color_factor {
-        material = material.with_sheen_color_factor(authored_color(colors, color).map_err(
-            |diagnostic| Box::new((*diagnostic).with_path(format!("{path}.sheen_color_factor"))),
-        )?);
+        material = material.with_sheen_color_factor(
+            authored_color(resources.colors, color).map_err(|diagnostic| {
+                Box::new((*diagnostic).with_path(format!("{path}.sheen_color_factor")))
+            })?,
+        );
     }
     if let Some(value) = recipe.sheen_roughness_factor {
         material = material.with_sheen_roughness_factor(value as f32);
@@ -250,6 +292,7 @@ async fn authored_material(
         recipe.sheen_color_texture.as_ref(),
         &format!("{path}.sheen_color_texture"),
         TextureColorSpace::Srgb,
+        resources.texture_budget,
     )
     .await?
     {
@@ -262,6 +305,7 @@ async fn authored_material(
         recipe.sheen_roughness_texture.as_ref(),
         &format!("{path}.sheen_roughness_texture"),
         TextureColorSpace::Linear,
+        resources.texture_budget,
     )
     .await?
     {
@@ -280,6 +324,7 @@ async fn authored_material(
         recipe.anisotropy_texture.as_ref(),
         &format!("{path}.anisotropy_texture"),
         TextureColorSpace::Linear,
+        resources.texture_budget,
     )
     .await?
     {
@@ -310,6 +355,7 @@ async fn authored_material(
         recipe.iridescence_texture.as_ref(),
         &format!("{path}.iridescence_texture"),
         TextureColorSpace::Linear,
+        resources.texture_budget,
     )
     .await?
     {
@@ -322,6 +368,7 @@ async fn authored_material(
         recipe.iridescence_thickness_texture.as_ref(),
         &format!("{path}.iridescence_thickness_texture"),
         TextureColorSpace::Linear,
+        resources.texture_budget,
     )
     .await?
     {
@@ -343,9 +390,10 @@ async fn authored_material(
         material = material.with_attenuation_distance(value as f32);
     }
     if let Some(color) = &recipe.attenuation_color {
-        material = material.with_attenuation_color(authored_color(colors, color).map_err(
-            |diagnostic| Box::new((*diagnostic).with_path(format!("{path}.attenuation_color"))),
-        )?);
+        material =
+            material.with_attenuation_color(authored_color(resources.colors, color).map_err(
+                |diagnostic| Box::new((*diagnostic).with_path(format!("{path}.attenuation_color"))),
+            )?);
     }
     reject_gpu_unsupported_volume_texture(
         recipe.transmission_texture.as_ref(),
@@ -385,6 +433,7 @@ async fn load_texture_slot(
     slot: Option<&SceneRecipeTextureSlotV1>,
     path: &str,
     default_color_space: TextureColorSpace,
+    texture_budget: &mut RecipeTextureBudget,
 ) -> Result<Option<crate::TextureHandle>, Box<SceneRecipeDiagnosticV1>> {
     let Some(slot) = slot else {
         return Ok(None);
@@ -394,7 +443,8 @@ async fn load_texture_slot(
         Some(SceneRecipeTextureColorSpaceV1::Linear) => TextureColorSpace::Linear,
         None => default_color_space,
     };
-    let resolved = policy.resolve_import_uri(recipe_path, &slot.uri, format!("{path}.uri"))?;
+    let resolved =
+        texture_budget.reserve_texture_uri(policy, recipe_path, &slot.uri, path.to_owned())?;
     match host
         .assets
         .load_texture(AssetPath::from(resolved.as_str()), color_space)
@@ -932,14 +982,19 @@ mod tests {
         let colors = test_colors();
         let base_color = authored_color(&colors, &recipe.base_color).expect("base color resolves");
         let host = SceneHostCore::headless(64, 64).expect("host builds");
+        let mut texture_budget = RecipeTextureBudget::default();
+        let mut resources = MaterialRecipeBuildRefs {
+            colors: &colors,
+            texture_budget: &mut texture_budget,
+        };
         let (_, material) = pollster::block_on(authored_material(
             &RecipeBuildPolicy::testing(),
             &host,
             "tests/assets/slice9.recipe.json",
-            &colors,
             &recipe,
             base_color,
             "$.materials[0]",
+            &mut resources,
         ))
         .expect("recipe material builds");
         render_material_with_assets_gpu(&host.assets, material)
@@ -953,14 +1008,19 @@ mod tests {
         let colors = test_colors();
         let base_color = authored_color(&colors, &recipe.base_color).expect("base color resolves");
         let host = SceneHostCore::headless(64, 64).expect("host builds");
+        let mut texture_budget = RecipeTextureBudget::default();
+        let mut resources = MaterialRecipeBuildRefs {
+            colors: &colors,
+            texture_budget: &mut texture_budget,
+        };
         pollster::block_on(authored_material(
             &RecipeBuildPolicy::testing(),
             &host,
             "tests/assets/slice9.recipe.json",
-            &colors,
             &recipe,
             base_color,
             "$.materials[0]",
+            &mut resources,
         ))
         .map(|(_, material)| material)
     }

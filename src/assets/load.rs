@@ -34,6 +34,7 @@ pub struct AssetLoadReport<T> {
 pub struct AssetLoadOptions {
     strict_textures: bool,
     strict_external_resources: bool,
+    fetch_byte_limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -268,6 +269,7 @@ impl AssetLoadOptions {
         Self {
             strict_textures: false,
             strict_external_resources: false,
+            fetch_byte_limit: None,
         }
     }
 
@@ -287,6 +289,15 @@ impl AssetLoadOptions {
 
     pub const fn strict_external_resources(&self) -> bool {
         self.strict_external_resources
+    }
+
+    pub const fn with_fetch_byte_limit(mut self, fetch_byte_limit: usize) -> Self {
+        self.fetch_byte_limit = Some(fetch_byte_limit);
+        self
+    }
+
+    pub const fn fetch_byte_limit(&self) -> Option<usize> {
+        self.fetch_byte_limit
     }
 }
 

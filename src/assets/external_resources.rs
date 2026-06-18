@@ -85,6 +85,7 @@ async fn fetch_external_buffer<F: AssetFetcher>(
     byte_length: usize,
 ) -> Result<(), AssetError> {
     check_cancelled(plan.scene_path, plan.control)?;
+    check_fetch_budget_before_fetch(plan, output, &external_path, Some(byte_length))?;
     let bytes = match plan.fetcher.fetch(&external_path).await {
         Ok(bytes) => bytes,
         Err(error @ AssetError::NotFound { .. }) => {
@@ -120,6 +121,7 @@ async fn fetch_external_buffer<F: AssetFetcher>(
         }
         Err(error) => return Err(error),
     };
+    check_fetch_budget_after_fetch(plan, output, &external_path, bytes.len())?;
 
     load::emit_progress(
         progress_events,
@@ -166,6 +168,7 @@ async fn fetch_external_image<F: AssetFetcher>(
     }
 
     check_cancelled(plan.scene_path, plan.control)?;
+    check_fetch_budget_before_fetch(plan, output, &external_path, None)?;
     let bytes = match plan.fetcher.fetch(&external_path).await {
         Ok(bytes) => bytes,
         Err(error @ AssetError::NotFound { .. }) => {
@@ -192,6 +195,7 @@ async fn fetch_external_image<F: AssetFetcher>(
         }
         Err(error) => return Err(error),
     };
+    check_fetch_budget_after_fetch(plan, output, &external_path, bytes.len())?;
 
     load::emit_progress(
         progress_events,
@@ -211,6 +215,57 @@ async fn fetch_external_image<F: AssetFetcher>(
         ));
     output.images.insert(external_path, bytes);
     output.telemetry.external_images = output.telemetry.external_images.saturating_add(1);
+    Ok(())
+}
+
+fn check_fetch_budget_before_fetch<F: AssetFetcher>(
+    plan: &ExternalResourceLoadPlan<'_, F>,
+    output: &LoadedExternalResources,
+    path: &AssetPath,
+    declared_bytes: Option<usize>,
+) -> Result<(), AssetError> {
+    let Some(limit) = plan.options.fetch_byte_limit() else {
+        return Ok(());
+    };
+    if let Some(declared_bytes) = declared_bytes {
+        check_fetch_budget_total(path, output.telemetry.fetched_bytes, declared_bytes, limit)?;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Ok(metadata) = std::fs::metadata(path.as_str())
+        && metadata.is_file()
+    {
+        let source_bytes = usize::try_from(metadata.len()).unwrap_or(usize::MAX);
+        check_fetch_budget_total(path, output.telemetry.fetched_bytes, source_bytes, limit)?;
+    }
+    Ok(())
+}
+
+fn check_fetch_budget_after_fetch<F: AssetFetcher>(
+    plan: &ExternalResourceLoadPlan<'_, F>,
+    output: &LoadedExternalResources,
+    path: &AssetPath,
+    bytes: usize,
+) -> Result<(), AssetError> {
+    let Some(limit) = plan.options.fetch_byte_limit() else {
+        return Ok(());
+    };
+    check_fetch_budget_total(path, output.telemetry.fetched_bytes, bytes, limit)
+}
+
+fn check_fetch_budget_total(
+    path: &AssetPath,
+    already_fetched: usize,
+    requested_bytes: usize,
+    limit: usize,
+) -> Result<(), AssetError> {
+    let total = already_fetched.saturating_add(requested_bytes);
+    if total > limit {
+        return Err(AssetError::PolicyViolation {
+            path: path.as_str().to_string(),
+            reason: format!("fetch would reach {total} bytes, exceeding fetch_byte_limit {limit}"),
+            help: "use smaller external resources or raise the operator-owned fetch_byte_limit policy",
+        });
+    }
     Ok(())
 }
 

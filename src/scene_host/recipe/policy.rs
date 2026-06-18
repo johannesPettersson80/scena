@@ -5,8 +5,14 @@ use crate::scene::recipe::{RecipeBuildPolicy, SceneRecipeDiagnosticV1};
 use crate::scene_host::SceneHostCore;
 use crate::{GeometryHandle, MaterialHandle};
 
+#[path = "policy/budget.rs"]
+mod budget;
+pub(in crate::scene_host::recipe) use budget::{RecipeBuildBudget, RecipeTextureBudget};
+
 pub(super) fn asset_policy_diagnostics(
     policy: &RecipeBuildPolicy,
+    build_budget: &mut RecipeBuildBudget,
+    texture_budget: &mut RecipeTextureBudget,
     host: &SceneHostCore<DefaultAssetFetcher>,
     report: &AssetLoadReport<SceneAsset>,
     import_path: &str,
@@ -43,6 +49,9 @@ pub(super) fn asset_policy_diagnostics(
             "use a smaller asset or raise the operator-owned max_nodes policy",
         ));
     }
+    if let Some(diagnostic) = build_budget.reserve_nodes(policy, import_path, node_count) {
+        diagnostics.push(diagnostic);
+    }
 
     let instance_count = asset
         .nodes()
@@ -60,6 +69,9 @@ pub(super) fn asset_policy_diagnostics(
             "use fewer instances or raise the operator-owned max_instances policy",
         ));
     }
+    if let Some(diagnostic) = build_budget.reserve_instances(policy, import_path, instance_count) {
+        diagnostics.push(diagnostic);
+    }
 
     let mut geometries = Vec::<GeometryHandle>::new();
     let mut materials = Vec::<MaterialHandle>::new();
@@ -74,8 +86,23 @@ pub(super) fn asset_policy_diagnostics(
     }
 
     check_material_count(policy, import_path, materials.len(), &mut diagnostics);
-    check_geometry_budget(policy, host, import_path, geometries, &mut diagnostics);
-    check_texture_budget(policy, host, import_path, materials, &mut diagnostics);
+    if let Some(diagnostic) = build_budget.reserve_materials(policy, import_path, materials.len()) {
+        diagnostics.push(diagnostic);
+    }
+    let (vertices, indices) =
+        check_geometry_budget(policy, host, import_path, geometries, &mut diagnostics);
+    if let Some(diagnostic) =
+        build_budget.reserve_geometry(policy, import_path, vertices as u64, indices as u64)
+    {
+        diagnostics.push(diagnostic);
+    }
+    let (textures, decoded_texture_bytes) =
+        check_texture_budget(policy, host, import_path, materials, &mut diagnostics);
+    if let Some(diagnostic) =
+        texture_budget.reserve_loaded_textures(policy, import_path, textures, decoded_texture_bytes)
+    {
+        diagnostics.push(diagnostic);
+    }
     diagnostics
 }
 
@@ -104,7 +131,7 @@ fn check_geometry_budget(
     import_path: &str,
     geometries: Vec<GeometryHandle>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
-) {
+) -> (usize, usize) {
     let mut vertex_count = 0usize;
     let mut index_count = 0usize;
     for geometry in geometries {
@@ -135,6 +162,7 @@ fn check_geometry_budget(
             "use lower-detail geometry or raise the operator-owned max_indices policy",
         ));
     }
+    (vertex_count, index_count)
 }
 
 fn check_texture_budget(
@@ -143,7 +171,7 @@ fn check_texture_budget(
     import_path: &str,
     materials: Vec<MaterialHandle>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
-) {
+) -> (usize, usize) {
     let mut textures = Vec::<TextureHandle>::new();
     for material in materials {
         if let Some(desc) = host.assets.material(material) {
@@ -175,6 +203,7 @@ fn check_texture_budget(
             "use smaller textures or raise the operator-owned max_texture_bytes policy",
         ));
     }
+    (textures.len(), decoded_texture_bytes)
 }
 
 fn check_texture_dimensions(

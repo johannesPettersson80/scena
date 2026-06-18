@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use super::authoring::{DiagnosticPathExt, authored_color};
+use super::policy::RecipeTextureBudget;
 use super::{error_diagnostic, scene_host_error_diagnostic};
 use crate::assets::DefaultAssetFetcher;
 use crate::scene::recipe::{
@@ -64,6 +65,7 @@ pub(super) async fn apply_scene_setup(
     recipe_path: &str,
     colors: &BTreeMap<String, SceneRecipeColorV1>,
     scene: Option<&SceneRecipeSceneV1>,
+    texture_budget: &mut RecipeTextureBudget,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
     let Some(scene) = scene else {
@@ -76,7 +78,15 @@ pub(super) async fn apply_scene_setup(
         }
     }
     if let Some(environment) = &scene.environment {
-        apply_environment(policy, host, recipe_path, environment, diagnostics).await;
+        apply_environment(
+            policy,
+            host,
+            recipe_path,
+            environment,
+            texture_budget,
+            diagnostics,
+        )
+        .await;
     }
     if let Some(grid) = &scene.grid
         && grid.enabled
@@ -175,6 +185,7 @@ async fn apply_environment(
     host: &mut SceneHostCore<DefaultAssetFetcher>,
     recipe_path: &str,
     environment: &SceneRecipeEnvironmentV1,
+    texture_budget: &mut RecipeTextureBudget,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
     match environment.kind.as_str() {
@@ -193,10 +204,11 @@ async fn apply_environment(
                 ));
                 return;
             };
-            let resolved = match policy.resolve_import_uri(
+            let resolved = match texture_budget.reserve_environment_uri(
+                policy,
                 recipe_path,
                 uri,
-                "$.scene.environment.uri".to_owned(),
+                "$.scene.environment.uri",
             ) {
                 Ok(uri) => uri,
                 Err(diagnostic) => {

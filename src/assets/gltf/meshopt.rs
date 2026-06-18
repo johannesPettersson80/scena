@@ -8,6 +8,12 @@ use super::AssetPath;
 use super::buffers::ResolvedGltfBuffers;
 
 const EXTENSION: &str = "EXT_meshopt_compression";
+#[cfg(feature = "meshopt")]
+const MAX_MESHOPT_ATTRIBUTE_COUNT: usize = 2_000_000;
+#[cfg(feature = "meshopt")]
+const MAX_MESHOPT_INDEX_COUNT: usize = 6_000_000;
+#[cfg(feature = "meshopt")]
+const MAX_MESHOPT_DECODED_BYTES: usize = 256 * 1024 * 1024;
 
 pub(super) fn decode_meshopt_buffer_views(
     path: &AssetPath,
@@ -115,6 +121,7 @@ impl MeshoptBufferView {
             self.byte_stride,
             "decoded meshopt byte length",
         )?;
+        self.validate_decode_budget(path, view_index, decoded_len)?;
         let Some(source_buffer) = buffers.raw_buffer(self.buffer) else {
             return Err(parse_error(
                 path,
@@ -191,6 +198,38 @@ impl MeshoptBufferView {
         }
         self.apply_filter(path, view_index, &mut decoded)?;
         Ok(decoded)
+    }
+
+    fn validate_decode_budget(
+        &self,
+        path: &AssetPath,
+        view_index: usize,
+        decoded_len: usize,
+    ) -> Result<(), AssetError> {
+        let count_limit = match self.mode {
+            MeshoptMode::Attributes => MAX_MESHOPT_ATTRIBUTE_COUNT,
+            MeshoptMode::Triangles | MeshoptMode::Indices => MAX_MESHOPT_INDEX_COUNT,
+        };
+        if self.count > count_limit {
+            return Err(AssetError::PolicyViolation {
+                path: path.as_str().to_string(),
+                reason: format!(
+                    "EXT_meshopt_compression view {view_index} declares {} elements, exceeding decode budget {count_limit}",
+                    self.count
+                ),
+                help: "use a smaller meshopt-compressed asset or split the geometry",
+            });
+        }
+        if decoded_len > MAX_MESHOPT_DECODED_BYTES {
+            return Err(AssetError::PolicyViolation {
+                path: path.as_str().to_string(),
+                reason: format!(
+                    "EXT_meshopt_compression view {view_index} would decode to {decoded_len} bytes, exceeding decode budget {MAX_MESHOPT_DECODED_BYTES}"
+                ),
+                help: "use a smaller meshopt-compressed asset or split the geometry",
+            });
+        }
+        Ok(())
     }
 
     fn apply_filter(

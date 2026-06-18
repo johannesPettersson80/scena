@@ -22,6 +22,6 @@ pub(super) use extras::{
 pub(super) use fonts::build_authored_fonts;
 pub(super) use geometry::build_authored_geometries;
 pub(super) use lights::build_authored_lights;
-pub(super) use materials::build_authored_materials;
+pub(super) use materials::{AuthoredMaterialResources, build_authored_materials};
 pub(super) use nodes::{AuthoredNodeResources, build_authored_nodes};
 pub(super) use particles::{ParticleSetResources, build_authored_particle_sets};

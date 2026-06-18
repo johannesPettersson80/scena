@@ -64,6 +64,11 @@ pub enum AssetError {
         path: String,
         reason: String,
     },
+    PolicyViolation {
+        path: String,
+        reason: String,
+        help: &'static str,
+    },
     Parse {
         path: String,
         reason: String,

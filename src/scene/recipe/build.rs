@@ -7,7 +7,7 @@ use std::path::{Component, Path};
 use super::types::SceneRecipeDiagnosticV1;
 
 const DEFAULT_MAX_IMPORTS: usize = 64;
-const DEFAULT_MAX_NODES: usize = 50_000;
+const DEFAULT_MAX_NODES: usize = 10_000;
 const DEFAULT_MAX_VERTICES: usize = 2_000_000;
 const DEFAULT_MAX_INDICES: usize = 6_000_000;
 const DEFAULT_MAX_MATERIALS: usize = 2_000;
@@ -63,66 +63,88 @@ impl Default for RecipeBuildPolicy {
 }
 
 impl RecipeBuildPolicy {
+    /// Returns the default deny-network, local-root sandbox used by tests and examples.
+    ///
+    /// The policy is operator-owned: recipes cannot raise these limits. `testing()` is an
+    /// alias for `default()` so test and CLI paths exercise the same sandbox defaults.
     pub fn testing() -> Self {
         Self::default()
     }
 
+    /// Maximum number of imports allowed in one recipe.
     pub const fn max_imports(&self) -> usize {
         self.max_imports
     }
 
+    /// Maximum aggregate scene nodes allowed after imports and authored nodes are built.
     pub const fn max_nodes(&self) -> usize {
         self.max_nodes
     }
 
+    /// Maximum aggregate vertex count allowed across imported and authored geometry.
     pub const fn max_vertices(&self) -> usize {
         self.max_vertices
     }
 
+    /// Maximum aggregate index count allowed across imported and authored geometry.
     pub const fn max_indices(&self) -> usize {
         self.max_indices
     }
 
+    /// Maximum authored/imported material count allowed in one build.
     pub const fn max_materials(&self) -> usize {
         self.max_materials
     }
 
+    /// Maximum texture count allowed in one build.
     pub const fn max_textures(&self) -> usize {
         self.max_textures
     }
 
+    /// Maximum decoded texture memory budget in bytes.
     pub const fn max_texture_bytes(&self) -> usize {
         self.max_texture_bytes
     }
 
+    /// Maximum allowed width or height for a decoded image.
     pub const fn max_image_dimension(&self) -> u32 {
         self.max_image_dimension
     }
 
+    /// Maximum authored/imported instance count allowed in one build.
     pub const fn max_instances(&self) -> usize {
         self.max_instances
     }
 
+    /// Maximum authored particle count allowed in one build.
     pub const fn max_particles(&self) -> usize {
         self.max_particles
     }
 
+    /// Maximum requested capture size, in pixels.
     pub const fn max_output_pixels(&self) -> u64 {
         self.max_output_pixels
     }
 
+    /// Maximum source bytes fetched for one local resource.
     pub const fn fetch_byte_limit(&self) -> usize {
         self.fetch_byte_limit
     }
 
+    /// Whether HTTP(S) resources are allowed.
     pub const fn allow_network(&self) -> bool {
         self.allow_network
     }
 
+    /// URI schemes accepted by the recipe executor.
     pub fn allowed_uri_schemes(&self) -> &BTreeSet<String> {
         &self.allowed_uri_schemes
     }
 
+    /// Canonical local roots that local file resources must stay under.
+    ///
+    /// Empty or uncanonicalizable root sets deny local file resources. There is no implicit
+    /// unsandboxed mode.
     pub fn allowed_roots(&self) -> &[PathBuf] {
         &self.allowed_roots
     }
@@ -237,13 +259,14 @@ impl RecipeBuildPolicy {
         }
 
         let local_uri = match scheme {
-            Some(ref scheme) if scheme == "file" => strip_file_scheme(uri),
+            Some(ref scheme) if scheme == "file" => {
+                strip_file_scheme(uri, diagnostic_path.clone())?
+            }
             Some(_) => return Ok(uri.to_owned()),
             None => uri,
         };
         let resolved = resolve_recipe_asset_uri(recipe_path, local_uri);
-        self.validate_local_path(&resolved, diagnostic_path)?;
-        Ok(resolved)
+        self.validate_local_path(&resolved, diagnostic_path)
     }
 
     #[cfg(feature = "scene-host")]
@@ -251,8 +274,9 @@ impl RecipeBuildPolicy {
         &self,
         resolved: &str,
         diagnostic_path: String,
-    ) -> Result<(), Box<SceneRecipeDiagnosticV1>> {
+    ) -> Result<String, Box<SceneRecipeDiagnosticV1>> {
         let path = Path::new(resolved);
+        let allowed_roots = self.canonical_allowed_roots(diagnostic_path.clone())?;
         if has_parent_dir(path) && !path.exists() {
             return Err(Box::new(policy_error(
                 diagnostic_path,
@@ -260,17 +284,36 @@ impl RecipeBuildPolicy {
                 "use a canonical path under an allowed RecipeBuildPolicy root",
             )));
         }
-        let Ok(canonical) = path.canonicalize() else {
-            return Ok(());
+        let canonical = match path.canonicalize() {
+            Ok(canonical) => canonical,
+            Err(error) => {
+                let parent = path
+                    .parent()
+                    .filter(|parent| !parent.as_os_str().is_empty())
+                    .unwrap_or_else(|| Path::new("."));
+                let parent = parent.canonicalize().map_err(|parent_error| {
+                    Box::new(policy_error(
+                        diagnostic_path.clone(),
+                        format!(
+                            "local path '{resolved}' cannot be validated under allowed roots: {error}; parent validation failed: {parent_error}"
+                        ),
+                        "use an existing parent directory under an allowed RecipeBuildPolicy root",
+                    ))
+                })?;
+                if !allowed_roots.iter().any(|root| parent.starts_with(root)) {
+                    return Err(Box::new(policy_error(
+                        diagnostic_path,
+                        format!(
+                            "local path '{}' is outside the allowed recipe roots",
+                            parent.display()
+                        ),
+                        "put assets under an allowed root or update the operator-owned RecipeBuildPolicy",
+                    )));
+                }
+                return Ok(resolved.to_owned());
+            }
         };
-        let allowed_roots = self
-            .allowed_roots
-            .iter()
-            .filter_map(|root| root.canonicalize().ok())
-            .collect::<Vec<_>>();
-        if !allowed_roots.is_empty()
-            && !allowed_roots.iter().any(|root| canonical.starts_with(root))
-        {
+        if !allowed_roots.iter().any(|root| canonical.starts_with(root)) {
             return Err(Box::new(policy_error(
                 diagnostic_path,
                 format!(
@@ -280,15 +323,85 @@ impl RecipeBuildPolicy {
                 "put assets under an allowed root or update the operator-owned RecipeBuildPolicy",
             )));
         }
+        self.validate_source_size(&canonical, diagnostic_path)?;
+        Ok(stable_canonical_path(&canonical))
+    }
+
+    #[cfg(feature = "scene-host")]
+    fn canonical_allowed_roots(
+        &self,
+        diagnostic_path: String,
+    ) -> Result<Vec<PathBuf>, Box<SceneRecipeDiagnosticV1>> {
+        if self.allowed_roots.is_empty() {
+            return Err(Box::new(policy_error(
+                diagnostic_path,
+                "RecipeBuildPolicy has no allowed local roots",
+                "configure at least one existing allowed root; scena does not silently run unsandboxed",
+            )));
+        }
+        self.allowed_roots
+            .iter()
+            .map(|root| {
+                root.canonicalize().map_err(|error| {
+                    Box::new(policy_error(
+                        diagnostic_path.clone(),
+                        format!(
+                            "RecipeBuildPolicy allowed root '{}' could not be canonicalized: {error}",
+                            root.display()
+                        ),
+                        "configure only existing allowed roots; missing roots deny local file loading",
+                    ))
+                })
+            })
+            .collect()
+    }
+
+    #[cfg(feature = "scene-host")]
+    fn validate_source_size(
+        &self,
+        canonical: &Path,
+        diagnostic_path: String,
+    ) -> Result<(), Box<SceneRecipeDiagnosticV1>> {
+        let Ok(metadata) = std::fs::metadata(canonical) else {
+            return Ok(());
+        };
+        if !metadata.is_file() {
+            return Ok(());
+        }
+        let source_bytes = usize::try_from(metadata.len()).unwrap_or(usize::MAX);
+        if source_bytes > self.fetch_byte_limit {
+            return Err(Box::new(policy_error(
+                diagnostic_path,
+                format!(
+                    "local resource is {source_bytes} bytes, exceeding RecipeBuildPolicy fetch_byte_limit {}",
+                    self.fetch_byte_limit
+                ),
+                "use a smaller resource or raise the operator-owned fetch_byte_limit policy",
+            )));
+        }
         Ok(())
     }
 }
 
 #[cfg(feature = "scene-host")]
-fn strip_file_scheme(uri: &str) -> &str {
-    uri.strip_prefix("file://")
+fn strip_file_scheme(
+    uri: &str,
+    diagnostic_path: String,
+) -> Result<&str, Box<SceneRecipeDiagnosticV1>> {
+    let Some(rest) = uri
+        .strip_prefix("file://")
         .or_else(|| uri.strip_prefix("FILE://"))
-        .unwrap_or(uri)
+    else {
+        return Ok(uri);
+    };
+    if !rest.starts_with('/') {
+        return Err(Box::new(policy_error(
+            diagnostic_path,
+            "file URI authorities are not allowed by RecipeBuildPolicy",
+            "use a local path or a file:/// absolute path without an authority",
+        )));
+    }
+    Ok(rest)
 }
 
 #[cfg(feature = "scene-host")]
@@ -371,4 +484,16 @@ fn has_parent_dir(path: &Path) -> bool {
 
 fn default_allowed_roots() -> Vec<PathBuf> {
     std::env::current_dir().ok().into_iter().collect::<Vec<_>>()
+}
+
+#[cfg(feature = "scene-host")]
+fn stable_canonical_path(path: &Path) -> String {
+    let current_dir = std::env::current_dir().ok();
+    if let Some(current_dir) = current_dir.as_deref()
+        && let Ok(relative) = path.strip_prefix(current_dir)
+        && !relative.as_os_str().is_empty()
+    {
+        return relative.display().to_string();
+    }
+    path.display().to_string()
 }

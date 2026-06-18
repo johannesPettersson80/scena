@@ -260,7 +260,9 @@ impl<F: AssetFetcher> Assets<F> {
         let mut step_start = total_start;
 
         check_cancelled(&path, control)?;
+        check_fetch_byte_limit_before_fetch(&path, options.fetch_byte_limit())?;
         let bytes = self.fetcher.fetch(&path).await?;
+        check_fetch_byte_limit_after_fetch(&path, bytes.len(), options.fetch_byte_limit())?;
         #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
         {
             step_start = log_asset_step("fetch scene bytes", step_start);
@@ -360,4 +362,47 @@ impl<F: AssetFetcher> Assets<F> {
         }
         Ok(())
     }
+}
+
+fn check_fetch_byte_limit_before_fetch(
+    path: &AssetPath,
+    limit: Option<usize>,
+) -> Result<(), AssetError> {
+    let Some(limit) = limit else {
+        return Ok(());
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Ok(metadata) = std::fs::metadata(path.as_str())
+        && metadata.is_file()
+    {
+        let source_bytes = usize::try_from(metadata.len()).unwrap_or(usize::MAX);
+        if source_bytes > limit {
+            return Err(AssetError::PolicyViolation {
+                path: path.as_str().to_string(),
+                reason: format!(
+                    "source is {source_bytes} bytes, exceeding fetch_byte_limit {limit}"
+                ),
+                help: "use a smaller asset or raise the operator-owned fetch_byte_limit policy",
+            });
+        }
+    }
+    Ok(())
+}
+
+fn check_fetch_byte_limit_after_fetch(
+    path: &AssetPath,
+    bytes: usize,
+    limit: Option<usize>,
+) -> Result<(), AssetError> {
+    let Some(limit) = limit else {
+        return Ok(());
+    };
+    if bytes > limit {
+        return Err(AssetError::PolicyViolation {
+            path: path.as_str().to_string(),
+            reason: format!("source is {bytes} bytes, exceeding fetch_byte_limit {limit}"),
+            help: "use a smaller asset or raise the operator-owned fetch_byte_limit policy",
+        });
+    }
+    Ok(())
 }

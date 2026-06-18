@@ -257,10 +257,7 @@ fn scene_recipe_builds_import_manifest_with_stable_handles() {
 fn scene_recipe_build_manifest_golden_matches_executor_for_stable_recipe() {
     let recipe = fs::read_to_string("tests/assets/stable-contracts/scene_recipe.v1.json")
         .expect("scene recipe fixture reads");
-    let expected: scena::SceneRecipeBuildV1 = serde_json::from_str(include_str!(
-        "assets/stable-contracts/scene_recipe_build.v1.json"
-    ))
-    .expect("scene recipe build fixture parses");
+    let expected = include_str!("assets/stable-contracts/scene_recipe_build.v1.json");
 
     let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
         "scene_recipe.v1.json",
@@ -269,9 +266,11 @@ fn scene_recipe_build_manifest_golden_matches_executor_for_stable_recipe() {
     ))
     .expect("stable scene recipe build succeeds");
 
+    let actual = serde_json::to_string_pretty(&build.manifest).expect("build manifest serializes");
     assert_eq!(
-        build.manifest, expected,
-        "stable build manifest fixture must be produced by the real executor"
+        actual.trim_end(),
+        expected.trim_end(),
+        "stable build manifest fixture must be byte-stable output from the real executor"
     );
 }
 
@@ -339,6 +338,170 @@ fn scene_recipe_build_policy_rejects_unsafe_or_oversized_inputs() {
     ))
     .expect_err("oversized geometry fails closed");
     assert_build_reason(&report, "policy_violation", "$.imports[0]");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_build_policy_rejects_authored_allocation_bypasses() {
+    let huge_torus = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "white": "#FFFFFF" },
+        "geometries": [{
+            "id": "bomb",
+            "primitive": {
+                "kind": "torus",
+                "major_radius": 1.0,
+                "minor_radius": 0.1,
+                "segments": 65535,
+                "rings": 65535
+            }
+        }],
+        "materials": [{ "id": "mat", "kind": "unlit", "base_color": "white" }],
+        "nodes": [{ "id": "node", "geometry": "bomb", "material": "mat" }]
+    }))
+    .expect("recipe serializes");
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &huge_torus,
+        scena::RecipeBuildPolicy::testing()
+            .with_max_vertices(10_000)
+            .with_max_indices(10_000),
+    ))
+    .expect_err("huge primitive must fail closed before tessellation");
+    assert_build_reason(&report, "policy_violation", "$.geometries[0]");
+
+    let aggregate = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "white": "#FFFFFF" },
+        "geometries": [
+            { "id": "a", "primitive": { "kind": "plane", "size": [1.0, 1.0] } },
+            { "id": "b", "primitive": { "kind": "plane", "size": [1.0, 1.0] } }
+        ],
+        "materials": [{ "id": "mat", "kind": "unlit", "base_color": "white" }],
+        "nodes": [
+            { "id": "a_node", "geometry": "a", "material": "mat" },
+            { "id": "b_node", "geometry": "b", "material": "mat" }
+        ]
+    }))
+    .expect("recipe serializes");
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &aggregate,
+        scena::RecipeBuildPolicy::testing().with_max_vertices(6),
+    ))
+    .expect_err("aggregate authored geometry budget fails closed");
+    assert_build_reason(&report, "policy_violation", "$.geometries");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_build_policy_rejects_authored_texture_and_environment_bypasses() {
+    let texture_uri = "tests/assets/gltf/khronos/TextureTransformTest/Error.png";
+    let textured_material = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "white": "#FFFFFF" },
+        "materials": [{
+            "id": "mat",
+            "kind": "unlit",
+            "base_color": "white",
+            "base_color_texture": { "uri": texture_uri }
+        }],
+        "geometries": [{ "id": "geo", "primitive": { "kind": "box", "size": [0.1, 0.1, 0.1] } }],
+        "nodes": [{ "id": "node", "geometry": "geo", "material": "mat" }]
+    }))
+    .expect("recipe serializes");
+
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &textured_material,
+        scena::RecipeBuildPolicy::testing().with_max_textures(0),
+    ))
+    .expect_err("authored texture count cap fails closed");
+    assert_build_reason(
+        &report,
+        "policy_violation",
+        "$.materials[0].base_color_texture",
+    );
+
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &textured_material,
+        scena::RecipeBuildPolicy::testing().with_max_image_dimension(16),
+    ))
+    .expect_err("authored texture dimension cap fails closed");
+    assert_build_reason(
+        &report,
+        "policy_violation",
+        "$.materials[0].base_color_texture",
+    );
+
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &textured_material,
+        scena::RecipeBuildPolicy::testing().with_max_texture_bytes(16),
+    ))
+    .expect_err("authored texture byte cap fails closed");
+    assert_build_reason(
+        &report,
+        "policy_violation",
+        "$.materials[0].base_color_texture",
+    );
+
+    let environment = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "white": "#FFFFFF" },
+        "geometries": [{ "id": "geo", "primitive": { "kind": "box", "size": [0.1, 0.1, 0.1] } }],
+        "materials": [{ "id": "mat", "kind": "unlit", "base_color": "white" }],
+        "nodes": [{ "id": "node", "geometry": "geo", "material": "mat" }],
+        "scene": {
+            "environment": {
+                "kind": "uri",
+                "uri": "tests/assets/environment/polyhaven/studio_small_03_1k.hdr"
+            }
+        }
+    }))
+    .expect("recipe serializes");
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &environment,
+        scena::RecipeBuildPolicy::testing().with_fetch_byte_limit(16),
+    ))
+    .expect_err("environment fetch cap fails closed");
+    assert_build_reason(&report, "policy_violation", "$.scene.environment.uri");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_build_policy_rejects_fail_open_path_sandboxes() {
+    let recipe = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "part", "uri": "/etc/passwd" }
+        ]
+    }))
+    .expect("recipe serializes");
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &recipe,
+        scena::RecipeBuildPolicy::testing().with_allowed_roots([]),
+    ))
+    .expect_err("empty allowed roots deny absolute paths");
+    assert_build_reason(&report, "policy_violation", "$.imports[0].uri");
+
+    let host_file_uri = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "imports": [
+            { "id": "part", "uri": "file://example.invalid/tmp/model.gltf" }
+        ]
+    }))
+    .expect("recipe serializes");
+    let report = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/policy.recipe.json",
+        &host_file_uri,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect_err("file uri authority fails closed");
+    assert_build_reason(&report, "policy_violation", "$.imports[0].uri");
 }
 
 #[cfg(feature = "scene-host")]

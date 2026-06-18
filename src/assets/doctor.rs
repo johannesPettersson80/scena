@@ -293,6 +293,13 @@ fn finding_for_asset_error(error: &AssetError, fallback_path: &str) -> AssetDoct
             None,
             "Fix filesystem or network access, then retry the load.",
         ),
+        AssetError::PolicyViolation { path, .. } => (
+            "asset_policy_violation",
+            path.clone(),
+            Some("source".to_owned()),
+            None,
+            "Use a smaller asset or raise the operator-owned load policy.",
+        ),
         AssetError::Parse { path, .. } => (
             "asset_parse",
             path.clone(),

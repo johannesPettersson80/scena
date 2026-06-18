@@ -13,12 +13,12 @@ use crate::scene_host::SceneHostCore;
 use crate::{GeometryHandle, MaterialHandle, NodeKey};
 
 use super::super::error_diagnostic;
+use super::super::policy::RecipeBuildBudget;
 
 pub(in crate::scene_host::recipe) fn build_authored_nodes(
     policy: &RecipeBuildPolicy,
     host: &mut SceneHostCore<DefaultAssetFetcher>,
     recipes: &[SceneRecipeNodeV1],
-    colors: &BTreeMap<String, SceneRecipeColorV1>,
     resources: AuthoredNodeResources<'_>,
     manifest: &mut Vec<SceneRecipeBuildTargetV1>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
@@ -35,6 +35,13 @@ pub(in crate::scene_host::recipe) fn build_authored_nodes(
             ),
             "reduce node count or raise the operator-owned max_nodes policy",
         ));
+        return node_keys;
+    }
+    if let Some(diagnostic) = resources
+        .build_budget
+        .reserve_nodes(policy, "$.nodes", recipes.len())
+    {
+        diagnostics.push(diagnostic);
         return node_keys;
     }
     let root = host.scene.root();
@@ -131,7 +138,7 @@ pub(in crate::scene_host::recipe) fn build_authored_nodes(
                 continue;
             }
         };
-        apply_node_attributes(host, recipe, node, colors, &path, diagnostics);
+        apply_node_attributes(host, recipe, node, resources.colors, &path, diagnostics);
         let handle = host.register_node(node);
         node_keys.insert(recipe.id.clone(), node);
         manifest.push(SceneRecipeBuildTargetV1 {
@@ -166,10 +173,12 @@ pub(in crate::scene_host::recipe) fn build_authored_nodes(
 }
 
 pub(in crate::scene_host::recipe) struct AuthoredNodeResources<'a> {
+    pub(in crate::scene_host::recipe) colors: &'a BTreeMap<String, SceneRecipeColorV1>,
     pub(in crate::scene_host::recipe) geometries: &'a BTreeMap<String, GeometryHandle>,
     pub(in crate::scene_host::recipe) materials: &'a BTreeMap<String, MaterialHandle>,
     pub(in crate::scene_host::recipe) imported_nodes: &'a BTreeMap<String, NodeKey>,
     pub(in crate::scene_host::recipe) imports: &'a BTreeMap<String, u64>,
+    pub(in crate::scene_host::recipe) build_budget: &'a mut RecipeBuildBudget,
 }
 
 fn apply_node_attributes(

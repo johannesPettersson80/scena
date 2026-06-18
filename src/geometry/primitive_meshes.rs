@@ -284,9 +284,13 @@ impl GeometryDesc {
         let minor_radius = minor_radius.abs();
         let segments = segments.max(3);
         let rings = rings.max(3);
-        let mut vertices = Vec::with_capacity(((segments + 1) * (rings + 1)) as usize);
-        let mut tex_coords0 = Vec::with_capacity(((segments + 1) * (rings + 1)) as usize);
-        let mut indices = Vec::with_capacity((segments * rings * 6) as usize);
+        let vertex_capacity = (segments as usize + 1).saturating_mul(rings as usize + 1);
+        let index_capacity = (segments as usize)
+            .saturating_mul(rings as usize)
+            .saturating_mul(6);
+        let mut vertices = Vec::with_capacity(vertex_capacity);
+        let mut tex_coords0 = Vec::with_capacity(vertex_capacity);
+        let mut indices = Vec::with_capacity(index_capacity);
 
         for segment in 0..=segments {
             let u = segment as f32 / segments as f32;

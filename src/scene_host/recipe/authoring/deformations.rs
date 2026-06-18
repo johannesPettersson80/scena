@@ -10,12 +10,14 @@ use crate::scene_host::SceneHostCore;
 use crate::{GeometryHandle, Vec3};
 
 use super::super::error_diagnostic;
+use super::super::policy::RecipeBuildBudget;
 
 pub(in crate::scene_host::recipe) fn build_authored_morphs(
     policy: &RecipeBuildPolicy,
     host: &SceneHostCore<DefaultAssetFetcher>,
     recipes: &[SceneRecipeMorphV1],
     geometries: &BTreeMap<String, GeometryHandle>,
+    build_budget: &mut RecipeBuildBudget,
     manifest: &mut Vec<SceneRecipeBuildResourceV1>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) -> BTreeMap<String, GeometryHandle> {
@@ -76,6 +78,15 @@ pub(in crate::scene_host::recipe) fn build_authored_morphs(
         }
         let vertex_count = geometry.vertices().len();
         let index_count = geometry.indices().len();
+        if let Some(diagnostic) = build_budget.reserve_geometry(
+            policy,
+            "$.morphs",
+            vertex_count as u64,
+            index_count as u64,
+        ) {
+            diagnostics.push(diagnostic);
+            continue;
+        }
         let handle = host.assets.create_geometry(geometry);
         handles.insert(recipe.id.clone(), handle);
         manifest.push(SceneRecipeBuildResourceV1 {
@@ -93,6 +104,7 @@ pub(in crate::scene_host::recipe) fn build_authored_skins(
     host: &SceneHostCore<DefaultAssetFetcher>,
     recipes: &[SceneRecipeSkinV1],
     geometries: &BTreeMap<String, GeometryHandle>,
+    build_budget: &mut RecipeBuildBudget,
     manifest: &mut Vec<SceneRecipeBuildResourceV1>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) -> BTreeMap<String, GeometryHandle> {
@@ -148,6 +160,15 @@ pub(in crate::scene_host::recipe) fn build_authored_skins(
         }
         let vertex_count = geometry.vertices().len();
         let index_count = geometry.indices().len();
+        if let Some(diagnostic) = build_budget.reserve_geometry(
+            policy,
+            "$.skins",
+            vertex_count as u64,
+            index_count as u64,
+        ) {
+            diagnostics.push(diagnostic);
+            continue;
+        }
         let handle = host.assets.create_geometry(geometry);
         handles.insert(recipe.id.clone(), handle);
         manifest.push(SceneRecipeBuildResourceV1 {

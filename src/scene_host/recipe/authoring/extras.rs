@@ -14,12 +14,12 @@ use crate::{
 };
 
 use super::super::error_diagnostic;
+use super::super::policy::RecipeBuildBudget;
 
 pub(in crate::scene_host::recipe) fn build_authored_instance_sets(
     policy: &RecipeBuildPolicy,
     host: &mut SceneHostCore<DefaultAssetFetcher>,
     recipes: &[SceneRecipeInstanceSetV1],
-    colors: &BTreeMap<String, SceneRecipeColorV1>,
     resources: InstanceSetResources<'_>,
     manifest: &mut Vec<crate::SceneRecipeBuildTargetV1>,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
@@ -39,6 +39,14 @@ pub(in crate::scene_host::recipe) fn build_authored_instance_sets(
             ),
             "reduce instance count or raise the operator-owned max_instances policy",
         ));
+        return node_keys;
+    }
+    if let Some(diagnostic) =
+        resources
+            .build_budget
+            .reserve_instances(policy, "$.instance_sets", requested_instances)
+    {
+        diagnostics.push(diagnostic);
         return node_keys;
     }
 
@@ -178,7 +186,7 @@ pub(in crate::scene_host::recipe) fn build_authored_instance_sets(
                 ));
             }
             if let Some(tint) = &instance.tint {
-                match authored_color(colors, tint) {
+                match authored_color(resources.colors, tint) {
                     Ok(tint) => {
                         if let Err(error) =
                             host.scene.set_instance_tint(set, instance_id, Some(tint))
@@ -217,11 +225,13 @@ pub(in crate::scene_host::recipe) fn build_authored_instance_sets(
 }
 
 pub(in crate::scene_host::recipe) struct InstanceSetResources<'a> {
+    pub(in crate::scene_host::recipe) colors: &'a BTreeMap<String, SceneRecipeColorV1>,
     pub(in crate::scene_host::recipe) geometries: &'a BTreeMap<String, GeometryHandle>,
     pub(in crate::scene_host::recipe) materials: &'a BTreeMap<String, MaterialHandle>,
     pub(in crate::scene_host::recipe) nodes: &'a BTreeMap<String, NodeKey>,
     pub(in crate::scene_host::recipe) imported_nodes: &'a BTreeMap<String, NodeKey>,
     pub(in crate::scene_host::recipe) imports: &'a BTreeMap<String, u64>,
+    pub(in crate::scene_host::recipe) build_budget: &'a mut RecipeBuildBudget,
 }
 
 pub(in crate::scene_host::recipe) fn build_authored_labels(
