@@ -24,12 +24,22 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.93.1
         with:
           components: rustfmt, clippy
+      - name: Install software Vulkan
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mesa-vulkan-drivers vulkan-tools
+          LVP_ICD="$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n1)"
+          test -n "$LVP_ICD"
+          echo "VK_ICD_FILENAMES=$LVP_ICD" >> "$GITHUB_ENV"
+          echo "LIBGL_ALWAYS_SOFTWARE=1" >> "$GITHUB_ENV"
       - name: Cargo gates
         run: |
           cargo fmt --check
           cargo clippy --all-targets -- -D warnings
           cargo test
+          cargo test --lib --features scene-host,inspection
           cargo test --features scene-host,inspection --test scene_recipe_contracts --test label_text
+          cargo test --features scene-host,inspection --test scena_cli_agent_templates
           cargo test --features inspection --test scena_cli_recipe --test scena_cli_agent
           cargo test --features inspection --test m7_threejs_ergonomics m7_scene_inspection
           cargo test --features ktx2 --test m8_assets_materials_ecosystem m8_ktx2_basisu_feature_loads_compressed_texture_descriptor

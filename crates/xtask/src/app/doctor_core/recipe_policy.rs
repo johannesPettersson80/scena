@@ -16,6 +16,12 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
             "scene_recipe_build_policy_rejects_fail_open_path_sandboxes",
             "scene_recipe_build_policy_rejects_arrow_projection_underestimate",
             "scene_recipe_rejects_imported_weight_animation_without_morph_targets",
+            "scene_recipe_rotation_degrees_uses_non_commuting_xyz_call_order",
+            "scene_recipe_slice4_render_settings_change_pixels_through_recipe",
+            "scene_recipe_slice4_grid_emits_visible_line_pixels",
+            "scene_recipe_light_presets_fail_closed",
+            "invalid_color_count",
+            "\"$.geometries[0].mesh.indices[1]\"",
             "\"$.geometries[0]\"",
             "\"$.geometries\"",
             "\"$.animations[0].channels[0]\"",
@@ -70,7 +76,41 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
         findings,
         "RECIPE-BUILD-POLICY-BOUNDARY",
         &root.join(".github/workflows/ci.yml"),
-        &["cargo test --features inspection --test scena_cli_recipe --test scena_cli_agent"],
+        &[
+            "mesa-vulkan-drivers",
+            "VK_ICD_FILENAMES",
+            "cargo test --lib --features scene-host,inspection",
+            "cargo test --features scene-host,inspection --test scena_cli_agent_templates",
+            "cargo test --features inspection --test scena_cli_recipe --test scena_cli_agent",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join("src/scene/recipe/validation/authoring/targets/lights.rs"),
+        &[
+            "validate_light_preset",
+            "DIRECTIONAL_PRESETS",
+            "POINT_PRESETS",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join("src/scene_host/recipe.rs"),
+        &["recipe_environment_changes_lit_pbr_pixels_on_headless_gpu"],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join("docs/checklists/scene-authoring-recipe.md"),
+        &["[90, 45, 0]", "[0, 45, 90]", "Renderer::headless_gpu"],
     );
 
     require_markers(

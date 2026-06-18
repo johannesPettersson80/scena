@@ -23,6 +23,8 @@ const LIGHT_FIELDS: &[&str] = &[
     "outer_cone_degrees",
     "transform",
 ];
+const DIRECTIONAL_PRESETS: &[&str] = &["sun", "key", "fill", "rim"];
+const POINT_PRESETS: &[&str] = &["softbox", "bulb_warm", "bulb_cool"];
 
 pub(in crate::scene::recipe::validation::authoring) fn validate_lights(
     value: Option<&Value>,
@@ -60,7 +62,8 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_lights(
         };
         validate_known_fields(&path, object, LIGHT_FIELDS, diagnostics);
         validate_required_id(&path, object.get("id"), diagnostics);
-        match object.get("kind").and_then(Value::as_str) {
+        let kind = object.get("kind").and_then(Value::as_str);
+        match kind {
             Some("directional" | "point" | "spot") => {}
             Some(kind) => diagnostics.push(diagnostic(
                 "unsupported_feature",
@@ -81,6 +84,7 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_lights(
                 false,
             )),
         }
+        validate_light_preset(&path, kind, object.get("preset"), diagnostics);
         if let Some(color) = object.get("color") {
             match color.as_str() {
                 Some(value) if colors.contains(value) || Color::from_hex(value).is_ok() => {}
@@ -131,5 +135,61 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_lights(
                 diagnostics,
             );
         }
+    }
+}
+
+fn validate_light_preset(
+    path: &str,
+    kind: Option<&str>,
+    preset: Option<&Value>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    let Some(preset) = preset else {
+        return;
+    };
+    let preset_path = format!("{path}.preset");
+    let Some(preset) = preset.as_str() else {
+        diagnostics.push(diagnostic(
+            "invalid_light_preset",
+            "error",
+            preset_path,
+            "light preset must be a string",
+            "use a documented preset for the light kind",
+            None,
+            false,
+        ));
+        return;
+    };
+    match kind {
+        Some("directional") if DIRECTIONAL_PRESETS.contains(&preset) => {}
+        Some("point") if POINT_PRESETS.contains(&preset) => {}
+        Some("spot") => diagnostics.push(diagnostic(
+            "unsupported_feature",
+            "error",
+            preset_path,
+            "spot light presets are not supported",
+            "omit preset and set spot light intensity, range, and cone angles explicitly",
+            None,
+            false,
+        )),
+        Some("directional") => diagnostics.push(diagnostic(
+            "invalid_light_preset",
+            "error",
+            preset_path,
+            format!("preset '{preset}' is not valid for directional lights"),
+            "use sun, key, fill, or rim",
+            None,
+            false,
+        )),
+        Some("point") => diagnostics.push(diagnostic(
+            "invalid_light_preset",
+            "error",
+            preset_path,
+            format!("preset '{preset}' is not valid for point lights"),
+            "use softbox, bulb_warm, or bulb_cool",
+            None,
+            false,
+        )),
+        _ => {}
     }
 }

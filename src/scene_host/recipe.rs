@@ -684,6 +684,85 @@ mod tests {
         }
     }
 
+    #[test]
+    fn recipe_environment_changes_lit_pbr_pixels_on_headless_gpu() {
+        let without_environment = render_recipe_environment_gpu(false);
+        let with_environment = render_recipe_environment_gpu(true);
+        let delta = frame_abs_diff(&without_environment, &with_environment);
+        assert!(
+            delta > 100,
+            "recipe scene.environment must alter lit PBR pixels on HeadlessGpu, delta={delta}"
+        );
+    }
+
+    fn render_recipe_environment_gpu(enable_environment: bool) -> Vec<u8> {
+        let environment = if enable_environment {
+            json!({ "kind": "default" })
+        } else {
+            json!({ "kind": "none" })
+        };
+        let recipe = serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "mat_color": "#D8A64A"
+            },
+            "geometries": [
+                { "id": "body_geo", "primitive": { "kind": "sphere", "radius": 0.22, "segments": 24, "rings": 12 } }
+            ],
+            "materials": [
+                { "id": "body_mat", "kind": "pbr_metallic_roughness", "base_color": "mat_color", "metallic": 0.0, "roughness": 0.38 }
+            ],
+            "nodes": [
+                { "id": "body", "geometry": "body_geo", "material": "body_mat" }
+            ],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 1.1], "target": "body" }
+            }],
+            "scene": {
+                "background": { "kind": "black" },
+                "environment": environment
+            },
+            "capture": { "width": 96, "height": 72 }
+        }))
+        .expect("recipe serializes");
+
+        let build = pollster::block_on(SceneHostCore::build_recipe_json(
+            "tests/assets/slice4-environment-pixels.recipe.json",
+            &recipe,
+            RecipeBuildPolicy::testing(),
+        ))
+        .expect("environment recipe builds");
+        assert!(build.manifest.ok, "{:#?}", build.manifest);
+        let environment = build.host.renderer.environment();
+        let mut scene = build.host.scene;
+        let assets = build.host.assets;
+        let camera = build.host.active_camera;
+        let mut renderer = Renderer::headless_gpu(96, 72).expect("HeadlessGpu renderer builds");
+        renderer.set_background_color(crate::Color::BLACK);
+        if let Some(environment) = environment {
+            renderer.set_environment(environment);
+        }
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("environment recipe prepares on HeadlessGpu");
+        renderer
+            .render(&scene, camera)
+            .expect("environment recipe renders on HeadlessGpu");
+        renderer.frame_rgba8().to_vec()
+    }
+
+    fn frame_abs_diff(before: &[u8], after: &[u8]) -> u64 {
+        assert_eq!(before.len(), after.len(), "frames must match");
+        before
+            .iter()
+            .zip(after)
+            .map(|(before, after)| u64::from(before.abs_diff(*after)))
+            .sum()
+    }
+
     #[derive(Debug)]
     struct ColorBounds {
         min_x: usize,

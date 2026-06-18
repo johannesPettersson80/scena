@@ -208,7 +208,7 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
 - `rotation_degrees: [rx, ry, rz]` (degrees) is computed by **exactly calling**
   `Transform::default().rotate_x_deg(rx).rotate_y_deg(ry).rotate_z_deg(rz)`. The
   contract is that literal call, not a re-described Euler convention. Pin it with
-  a non-commuting regression test (e.g. `[90, 90, 0]` ≠ `[0, 90, 90]`) asserting
+  a non-commuting regression test (e.g. `[90, 45, 0]` ≠ `[0, 45, 90]`) asserting
   the exact resulting quaternion or a rotated basis vector.
 - TRS composition (local→world and parent→child) is **scale → rotate →
   translate**, matching `Transform::compose` (parent ∘ child).
@@ -315,6 +315,11 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
       tonemapper.
 - [x] Proof: two settings produce observably different introspection / pixels
       (no inert knobs).
+      `scena recipe render` proves the CPU headless CLI path. GPU-only effects
+      such as environment/IBL must be proven by building the same recipe and
+      rendering that built scene through `Renderer::headless_gpu`, explicitly
+      applying the recipe scene/environment/render settings to that renderer;
+      `headless_gpu` constructors do not consume recipe JSON directly.
 
 ### Slice 5 — Verification expectations
 - [x] `expect_*` compiling to the appearance / interaction / render-introspection

@@ -611,6 +611,165 @@ fn scena_recipe_render_verify_fails_color_pick_and_fit_expectations() {
     );
 }
 
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_fails_visibility_warning_and_fit_max_expectations() {
+    let dir = artifact_dir("recipe-render-verify-render-negatives");
+
+    let fit_path = dir.join("fit-visible-negative.recipe.json");
+    let fit_png = dir.join("fit-visible-negative.png");
+    fs::write(
+        &fit_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "red": "#DC2020",
+                "blue": "#2D68C4"
+            },
+            "geometries": [
+                { "id": "plate_geo", "primitive": { "kind": "box", "size": [0.6, 0.6, 0.08] } },
+                { "id": "side_geo", "primitive": { "kind": "box", "size": [0.12, 0.12, 0.08] } }
+            ],
+            "materials": [
+                { "id": "red_mat", "kind": "unlit", "base_color": "red" },
+                { "id": "blue_mat", "kind": "unlit", "base_color": "blue" }
+            ],
+            "nodes": [
+                {
+                    "id": "plate",
+                    "geometry": "plate_geo",
+                    "material": "red_mat",
+                    "transform": { "kind": "center" }
+                },
+                {
+                    "id": "side",
+                    "geometry": "side_geo",
+                    "material": "blue_mat",
+                    "visible": false,
+                    "transform": {
+                        "kind": "trs",
+                        "translation": [0.8, 0.0, 0.0]
+                    }
+                }
+            ],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 36.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": "plate" }
+            }],
+            "capture": { "width": 128, "height": 128 },
+            "expect": {
+                "expect_visible": [{
+                    "id": "side-must-be-drawn",
+                    "target": { "kind": "node", "id": "side" }
+                }],
+                "expect_bbox_fit": {
+                    "max": 0.10
+                }
+            }
+        }))
+        .expect("fit negative recipe serializes"),
+    )
+    .expect("fit negative recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&fit_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&fit_png),
+        ])
+        .output()
+        .expect("scena fit negative recipe render command runs");
+
+    assert!(!output.status.success(), "negative verification must fail");
+    assert!(
+        output.stderr.is_empty(),
+        "recipe verification failures stay machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert_eq!(report["schema"], "scena.recipe_render_result.v1");
+    assert_eq!(report["ok"], false, "{report:#}");
+    let reasons = report["verification"]["reasons"]
+        .as_array()
+        .expect("verification reasons array");
+    for code in ["target_not_visible", "fit_fraction_above_max"] {
+        assert!(
+            reasons.iter().any(|reason| reason["code"] == code),
+            "expected {code} reason in {report:#}"
+        );
+    }
+
+    let warning_path = dir.join("warning-negative.recipe.json");
+    let warning_png = dir.join("warning-negative.png");
+    fs::write(
+        &warning_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": { "red": "#DC2020" },
+            "geometries": [
+                { "id": "pin_geo", "primitive": { "kind": "box", "size": [0.02, 0.02, 0.02] } }
+            ],
+            "materials": [
+                { "id": "pin_mat", "kind": "unlit", "base_color": "red" }
+            ],
+            "nodes": [
+                { "id": "pin", "geometry": "pin_geo", "material": "pin_mat" }
+            ],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 36.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 4.0], "target": "pin" }
+            }],
+            "capture": { "width": 128, "height": 128 },
+            "expect": {
+                "expect_no_warnings": true
+            }
+        }))
+        .expect("warning negative recipe serializes"),
+    )
+    .expect("warning negative recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&warning_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&warning_png),
+        ])
+        .output()
+        .expect("scena warning negative recipe render command runs");
+
+    assert!(!output.status.success(), "warning expectation must fail");
+    assert!(
+        output.stderr.is_empty(),
+        "recipe warning failures stay machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert_eq!(report["schema"], "scena.recipe_render_result.v1");
+    assert_eq!(report["ok"], false, "{report:#}");
+    assert!(
+        report["verification"]["reasons"]
+            .as_array()
+            .expect("verification reasons array")
+            .iter()
+            .any(|reason| reason["code"] == "render_warning"),
+        "expected render_warning reason in {report:#}"
+    );
+}
+
 #[test]
 fn scena_place_cli_exits_nonzero_for_unknown_import() {
     let dir = artifact_dir("place-invalid");
