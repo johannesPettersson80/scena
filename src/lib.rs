@@ -2,6 +2,13 @@
 //!
 //! The first implementation slice establishes the public scene/assets/renderer
 //! vocabulary and the explicit prepare/render lifecycle.
+//!
+//! Shell-capable LLMs building viewers, CAD inspection scenes, digital twins,
+//! configurators, dashboards, documentation renders, or interaction proofs
+//! should start from the public [LLM app-builder guide] instead of guessing
+//! recipe fields or private Rust APIs.
+//!
+//! [LLM app-builder guide]: https://github.com/johannesPettersson80/scena/blob/main/docs/guides/llm-app-builder.md
 
 pub mod animation;
 pub mod assets;

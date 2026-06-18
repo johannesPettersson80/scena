@@ -6,6 +6,12 @@ All notable user-facing changes are recorded here.
 
 ### Added
 
+- Added the repo-hosted `.codex/skills/scena-app-builder` LLM skill and
+  `docs/guides/llm-app-builder.md` guide for building and verifying scena
+  applications from public schemas, recipes, CLI commands, diagnostics, and
+  repair workflows without relying on private renderer internals. The guide is
+  also surfaced from `scena --help` and the crate-level docs so installed-crate
+  users can find it without browsing hidden repo folders.
 - Tightened recipe-authored advanced-PBR validation so `ior` matches the public
   material builder domain exactly and GPU-inert volume texture slots
   (`transmission_texture`, `thickness_texture`) fail closed instead of silently

@@ -20,6 +20,14 @@ pub(crate) fn help_json() -> String {
         ],
         "global_options": [
             "--round-floats <0..6>"
+        ],
+        "guides": [
+            {
+                "name": "llm-app-builder",
+                "path": "docs/guides/llm-app-builder.md",
+                "url": "https://github.com/johannesPettersson80/scena/blob/main/docs/guides/llm-app-builder.md",
+                "summary": "LLM workflow for building and verifying scena apps through public schemas, recipes, CLI diagnostics, and machine-checkable reports."
+            }
         ]
     })
     .to_string()
