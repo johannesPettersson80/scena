@@ -97,6 +97,7 @@ pub(crate) fn run_architecture_doctor(root: &Path, findings: &mut Vec<Finding>) 
     check_diagnostics_contracts(root, findings);
     check_renderer_stats_contracts(root, findings);
     check_renderer_truth_contracts(root, findings);
+    check_render_quality_contracts(root, findings);
     check_render_world_bake_contracts(root, findings);
     check_solid_kiss(root, findings);
     check_backend_vocabulary(root, findings);

@@ -57,6 +57,7 @@ pub struct HeadlessGltfViewerBuilder {
     path: AssetPath,
     width: u32,
     height: u32,
+    prefer_gpu: bool,
     common: ViewerCommonOptions,
 }
 
@@ -113,6 +114,7 @@ pub fn headless_gltf_viewer(path: impl Into<AssetPath>) -> HeadlessGltfViewerBui
         path: path.into(),
         width: 800,
         height: 600,
+        prefer_gpu: false,
         common: ViewerCommonOptions::new(),
     }
 }
@@ -202,6 +204,15 @@ impl HeadlessGltfViewerBuilder {
     /// Uses an explicit render mode when the headless renderer is created.
     pub const fn with_render_mode(mut self, render_mode: RenderMode) -> Self {
         self.common.renderer_options = self.common.renderer_options.with_render_mode(render_mode);
+        self
+    }
+
+    /// Requests the native headless GPU renderer for the first render. When no
+    /// compatible GPU adapter is available, the builder falls back to the CPU
+    /// headless renderer; inspect [`FirstRender::renderer`] capabilities to see
+    /// which backend was actually used.
+    pub const fn with_headless_gpu(mut self) -> Self {
+        self.prefer_gpu = true;
         self
     }
 

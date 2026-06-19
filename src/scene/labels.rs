@@ -1,32 +1,24 @@
-use std::fmt;
-
 use crate::diagnostics::LookupError;
 use crate::material::Color;
 
 use super::{LabelKey, NodeKey, NodeKind, Scene, Transform};
 
-mod bitmap;
 mod font;
 
-use bitmap::{bitmap_glyph_cells, bitmap_label_metrics};
 pub use font::{LabelFontError, LabelFontFace};
-use font::{truetype_glyph_cells, truetype_metrics, validate_basic_latin_text};
+use font::{
+    default_label_font_face, truetype_glyph_rasters, truetype_metrics, validate_basic_latin_text,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LabelDesc {
     text: String,
-    font: LabelFont,
+    font: LabelFontFace,
     billboard: LabelBillboard,
     color: Color,
     background: Option<Color>,
     halo: Option<Color>,
     size: f32,
-}
-
-#[derive(Clone, PartialEq)]
-enum LabelFont {
-    Bitmap,
-    TrueType(LabelFontFace),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -99,9 +91,17 @@ impl Scene {
 }
 
 impl LabelDesc {
-    /// Creates a label rendered through scena's embedded 5x7 bitmap glyph path.
-    pub fn bitmap(text: impl Into<String>) -> Self {
-        Self::new(text)
+    /// Creates a label rendered through scena's embedded TrueType font.
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            font: default_label_font_face(),
+            billboard: LabelBillboard::ScreenAligned,
+            color: Color::WHITE,
+            background: None,
+            halo: None,
+            size: 14.0,
+        }
     }
 
     /// Creates a label rendered through a caller-supplied TrueType/OpenType font.
@@ -127,7 +127,7 @@ impl LabelDesc {
         validate_basic_latin_text(&text)?;
         Ok(Self {
             text,
-            font: LabelFont::TrueType(font),
+            font,
             billboard: LabelBillboard::ScreenAligned,
             color: Color::WHITE,
             background: None,
@@ -161,10 +161,7 @@ impl LabelDesc {
     }
 
     pub fn metrics(&self) -> LabelMetrics {
-        match &self.font {
-            LabelFont::Bitmap => bitmap_label_metrics(&self.text, self.size),
-            LabelFont::TrueType(font) => truetype_metrics(font, &self.text, self.size),
-        }
+        truetype_metrics(&self.font, &self.text, self.size)
     }
 
     pub fn with_color(mut self, color: Color) -> Self {
@@ -192,11 +189,8 @@ impl LabelDesc {
         self
     }
 
-    pub(crate) fn glyph_cells(&self) -> Vec<LabelGlyphCell> {
-        match &self.font {
-            LabelFont::Bitmap => bitmap_glyph_cells(&self.text, self.size),
-            LabelFont::TrueType(font) => truetype_glyph_cells(font, &self.text, self.size),
-        }
+    pub(crate) fn glyph_rasters(&self) -> Vec<LabelGlyphRaster> {
+        truetype_glyph_rasters(&self.font, &self.text, self.size)
     }
 
     pub fn with_size(mut self, size: f32) -> Self {
@@ -209,26 +203,17 @@ impl LabelDesc {
         self
     }
 
-    fn new(text: impl Into<String>) -> Self {
-        Self {
-            text: text.into(),
-            font: LabelFont::Bitmap,
-            billboard: LabelBillboard::ScreenAligned,
-            color: Color::WHITE,
-            background: None,
-            halo: None,
-            size: 14.0,
-        }
-    }
-
     fn validate_text(&self, text: &str) -> Result<(), LabelFontError> {
-        match &self.font {
-            LabelFont::Bitmap => Ok(()),
-            LabelFont::TrueType(_) => validate_basic_latin_text(text),
-        }
+        validate_basic_latin_text(text)
     }
 
     fn validate_style(&self) -> Result<(), LookupError> {
+        if self.validate_text(&self.text).is_err() {
+            return Err(LookupError::InvalidLabelStyle {
+                field: "label text",
+                reason: "embedded label font supports basic Latin text only",
+            });
+        }
         validate_opaque_color("label text color", self.color)?;
         if let Some(background) = self.background {
             validate_opaque_color("label background color", background)?;
@@ -240,21 +225,15 @@ impl LabelDesc {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct LabelGlyphCell {
-    pub(crate) x0_px: f32,
-    pub(crate) y0_px: f32,
-    pub(crate) x1_px: f32,
-    pub(crate) y1_px: f32,
-}
-
-impl fmt::Debug for LabelFont {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Bitmap => formatter.write_str("Bitmap"),
-            Self::TrueType(font) => formatter.debug_tuple("TrueType").field(font).finish(),
-        }
-    }
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct LabelGlyphRaster {
+    pub(crate) x_px: f32,
+    pub(crate) y_px: f32,
+    pub(crate) width_px: f32,
+    pub(crate) height_px: f32,
+    pub(crate) alpha_width: u32,
+    pub(crate) alpha_height: u32,
+    pub(crate) alpha: Vec<u8>,
 }
 
 fn readable_size_or(value: f32, fallback: f32) -> f32 {

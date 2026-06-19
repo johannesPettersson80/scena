@@ -857,7 +857,7 @@ fn m3a_resource_lifetime_counters_return_to_baseline_for_imports_targets_and_ins
     scene
         .add_label(
             scene.root(),
-            LabelDesc::bitmap("serial")
+            LabelDesc::new("serial")
                 .with_size(0.5)
                 .with_billboard(LabelBillboard::ScreenAligned),
             Transform::default(),
@@ -904,7 +904,7 @@ fn m3a_resource_lifetime_counters_return_to_baseline_for_imports_targets_and_ins
 }
 
 #[test]
-fn labels_use_bitmap_billboard_render_path() {
+fn labels_use_truetype_billboard_atlas_render_path() {
     let mut scene = Scene::new();
     let camera = scene
         .add_perspective_camera(
@@ -913,7 +913,7 @@ fn labels_use_bitmap_billboard_render_path() {
             Transform::default(),
         )
         .expect("camera inserts");
-    let label_desc = LabelDesc::bitmap("Pump A")
+    let label_desc = LabelDesc::new("Pump A")
         .with_color(Color::from_linear_rgb(0.0, 1.0, 0.0))
         .with_size(0.5)
         .with_billboard(LabelBillboard::ScreenAligned);
@@ -927,7 +927,10 @@ fn labels_use_bitmap_billboard_render_path() {
     let mut renderer = Renderer::headless(8, 8).expect("renderer builds");
     renderer.prepare(&mut scene).expect("label scene prepares");
     let outcome = renderer.render(&scene, camera).expect("label renders");
-    assert_eq!(outcome.primitives, 2);
+    assert_eq!(
+        outcome.primitives, 0,
+        "labels must render through the dedicated atlas path, not prepared triangle primitives"
+    );
     assert!(renderer.frame_rgba8().iter().any(|channel| *channel != 0));
 
     scene

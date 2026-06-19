@@ -418,20 +418,33 @@ pub(crate) fn check_headless_gpu_test_guard_contracts(root: &Path, findings: &mu
     let Ok(text) = fs::read_to_string(&render_build) else {
         return;
     };
-    let Some(body) = braced_body_after(&text, "pub fn headless_gpu") else {
+    let Some(headless_body) = braced_body_after(&text, "pub fn headless_gpu") else {
         findings.push(Finding::new(
             "ARCH-HEADLESS-GPU-TEST-GUARD",
             "src/render/build.rs is missing native Renderer::headless_gpu",
         ));
         return;
     };
-    let guard_index = body.find("HeadlessGpuTestSupportGuard::acquire()");
-    let request_index = body.find("gpu::request_headless_gpu");
+    if !headless_body.contains("Self::headless_gpu_with_options") {
+        findings.push(Finding::new(
+            "ARCH-HEADLESS-GPU-TEST-GUARD",
+            "Renderer::headless_gpu must delegate to the guarded options-aware constructor",
+        ));
+    }
+    let Some(options_body) = braced_body_after(&text, "pub fn headless_gpu_with_options") else {
+        findings.push(Finding::new(
+            "ARCH-HEADLESS-GPU-TEST-GUARD",
+            "src/render/build.rs is missing native Renderer::headless_gpu_with_options",
+        ));
+        return;
+    };
+    let guard_index = options_body.find("HeadlessGpuTestSupportGuard::acquire()");
+    let request_index = options_body.find("gpu::request_headless_gpu");
     match (guard_index, request_index) {
         (Some(guard_index), Some(request_index)) if guard_index < request_index => {}
         _ => findings.push(Finding::new(
             "ARCH-HEADLESS-GPU-TEST-GUARD",
-            "Renderer::headless_gpu must acquire the shared headless GPU test-support guard before device creation",
+            "Renderer::headless_gpu_with_options must acquire the shared headless GPU test-support guard before device creation",
         )),
     }
 }

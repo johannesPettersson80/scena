@@ -57,6 +57,7 @@ fn scena_examples_agent_templates_generate_and_run_cli_smoke_commands() {
                 .all(|file| Path::new(file["path"].as_str().expect("file path")).exists()),
             "template files should exist: {manifest:#}"
         );
+        assert_template_recipe_has_beauty_defaults(&output_dir.join("recipe.json"), name);
 
         for command in manifest["commands"].as_array().expect("commands array") {
             let argv = command["argv"]
@@ -66,6 +67,18 @@ fn scena_examples_agent_templates_generate_and_run_cli_smoke_commands() {
                 .map(|value| value.as_str().expect("argv string").to_owned())
                 .collect::<Vec<_>>();
             assert_eq!(argv.first().map(String::as_str), Some("scena"));
+            if command["name"] == "render_introspect" {
+                assert_eq!(
+                    argv.get(1).map(String::as_str),
+                    Some("recipe"),
+                    "agent templates should use canonical recipe render command: {manifest:#}"
+                );
+                assert_eq!(
+                    argv.get(2).map(String::as_str),
+                    Some("render"),
+                    "agent templates should use canonical recipe render command: {manifest:#}"
+                );
+            }
             let command_output = Command::new(env!("CARGO_BIN_EXE_scena"))
                 .args(&argv[1..])
                 .output()
@@ -190,6 +203,16 @@ fn scena_examples_agent_cad_and_documentation_templates_are_runnable_with_overla
             .iter()
             .map(|value| value.as_str().expect("argv string").to_owned())
             .collect::<Vec<_>>();
+        assert_eq!(
+            argv.get(1).map(String::as_str),
+            Some("recipe"),
+            "CAD/docs template should use canonical recipe render command: {manifest:#}"
+        );
+        assert_eq!(
+            argv.get(2).map(String::as_str),
+            Some("render"),
+            "CAD/docs template should use canonical recipe render command: {manifest:#}"
+        );
         let render_output = Command::new(env!("CARGO_BIN_EXE_scena"))
             .args(&argv[1..])
             .output()
@@ -288,6 +311,7 @@ fn scena_examples_agent_get_starter_snippets_are_authored_and_runnable() {
                     .is_some_and(|items| !items.is_empty()),
             "starter snippet should contain authored geometry/material/node content: {recipe:#}"
         );
+        assert_template_recipe_has_beauty_defaults(&recipe_path, name);
 
         for command in manifest["commands"].as_array().expect("commands array") {
             if command["name"] != "validate_recipe" && command["name"] != "render_introspect" {
@@ -299,6 +323,18 @@ fn scena_examples_agent_get_starter_snippets_are_authored_and_runnable() {
                 .iter()
                 .map(|value| value.as_str().expect("argv string").to_owned())
                 .collect::<Vec<_>>();
+            if command["name"] == "render_introspect" {
+                assert_eq!(
+                    argv.get(1).map(String::as_str),
+                    Some("recipe"),
+                    "starter snippet should use canonical recipe render command: {manifest:#}"
+                );
+                assert_eq!(
+                    argv.get(2).map(String::as_str),
+                    Some("render"),
+                    "starter snippet should use canonical recipe render command: {manifest:#}"
+                );
+            }
             let command_output = Command::new(env!("CARGO_BIN_EXE_scena"))
                 .args(&argv[1..])
                 .output()
@@ -335,4 +371,51 @@ fn path_str(path: &Path) -> &str {
 
 fn stderr(output: &std::process::Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+fn assert_template_recipe_has_beauty_defaults(recipe_path: &Path, name: &str) {
+    let recipe: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(recipe_path).expect("template recipe exists"))
+            .expect("template recipe parses");
+    let Some(lights) = recipe["lights"].as_array() else {
+        panic!("template {name} should include a visible light rig: {recipe:#}");
+    };
+    assert!(
+        lights.len() >= 3,
+        "template {name} should include a visible light rig: {recipe:#}"
+    );
+    for preset in ["key", "fill", "rim"] {
+        assert!(
+            lights
+                .iter()
+                .any(|light| light["kind"] == "directional" && light["preset"] == preset),
+            "template {name} should include directional {preset} light: {recipe:#}"
+        );
+    }
+    assert_eq!(
+        recipe["scene"]["environment"]["kind"], "uri",
+        "template {name} should use a bundled HDRI environment: {recipe:#}"
+    );
+    assert!(
+        recipe["scene"]["environment"]["uri"]
+            .as_str()
+            .is_some_and(|uri| uri.ends_with("studio_small_03_1k.hdr")),
+        "template {name} should point at the bundled studio HDRI: {recipe:#}"
+    );
+    assert!(
+        matches!(
+            recipe["scene"]["background"]["kind"].as_str(),
+            Some("studio" | "dark_studio" | "neutral_gray")
+        ),
+        "template {name} should choose a presentable background: {recipe:#}"
+    );
+    assert!(
+        recipe["capture"]["width"]
+            .as_u64()
+            .is_some_and(|width| width >= 512)
+            && recipe["capture"]["height"]
+                .as_u64()
+                .is_some_and(|height| height >= 384),
+        "template {name} should render high enough resolution for visual review: {recipe:#}"
+    );
 }

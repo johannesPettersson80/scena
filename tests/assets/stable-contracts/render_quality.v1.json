@@ -1,0 +1,68 @@
+{
+  "schema": "scena.render_quality.v1",
+  "ok": false,
+  "profile": "documentation",
+  "summary": {
+    "checks": 2,
+    "errors": 2,
+    "warnings": 0
+  },
+  "checks": [
+    {
+      "id": "label-fixture",
+      "code": "label_ink_isolation",
+      "severity": "error",
+      "region": {
+        "kind": "label",
+        "handle": 4294967299,
+        "rect_css_px": {
+          "min_x": 12.0,
+          "min_y": 20.0,
+          "max_x": 148.0,
+          "max_y": 48.0,
+          "width": 136.0,
+          "height": 28.0
+        }
+      },
+      "observed": {
+        "ink_isolation": 0.036
+      },
+      "threshold": {
+        "max_ink_isolation": 0.01
+      },
+      "fix_hint": "use the TrueType coverage path and render labels at native resolution; increase label size if strokes are fragmented"
+    },
+    {
+      "id": "line-fixture",
+      "code": "line_missing_antialiasing",
+      "severity": "error",
+      "region": {
+        "kind": "line",
+        "handle": 4294967300,
+        "rect_css_px": {
+          "min_x": 20.0,
+          "min_y": 36.0,
+          "max_x": 156.0,
+          "max_y": 52.0,
+          "width": 136.0,
+          "height": 16.0
+        }
+      },
+      "observed": {
+        "intermediate_edge_fraction": 0.0
+      },
+      "threshold": {
+        "min_intermediate_edge_fraction": 0.02
+      },
+      "fix_hint": "render dimension and leader lines through the antialiased stroke pass instead of hard 1px geometry"
+    }
+  ],
+  "capabilities": {
+    "backend": "headless",
+    "gpu_device": false,
+    "surface_attached": false,
+    "hardware_tier": "low",
+    "forward_pbr": "error_if_required",
+    "readback_headless_screenshots": "supported"
+  }
+}

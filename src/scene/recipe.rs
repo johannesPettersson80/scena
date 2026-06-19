@@ -20,9 +20,12 @@ pub use types::{
     SceneRecipeLookAtTargetV1, SceneRecipeMaterialV1, SceneRecipeMeasurementV1, SceneRecipeMeshV1,
     SceneRecipeMorphTargetV1, SceneRecipeMorphV1, SceneRecipeNodeSkinBindingV1, SceneRecipeNodeV1,
     SceneRecipeParticleSetV1, SceneRecipeParticleV1, SceneRecipePickExpectationV1,
-    SceneRecipePrimitiveV1, SceneRecipeRenderV1, SceneRecipeSceneV1, SceneRecipeSectionBoxV1,
-    SceneRecipeSkinV1, SceneRecipeSsaoV1, SceneRecipeTargetV1, SceneRecipeTextureColorSpaceV1,
-    SceneRecipeTextureSlotV1, SceneRecipeTransformV1, SceneRecipeV1, SceneRecipeValidationReportV1,
+    SceneRecipePrimitiveV1, SceneRecipeQualityContrastV1, SceneRecipeQualityExpectationV1,
+    SceneRecipeQualityExposureV1, SceneRecipeQualityLineV1, SceneRecipeQualityNoiseV1,
+    SceneRecipeQualityTextV1, SceneRecipeReferenceExpectationV1, SceneRecipeRenderV1,
+    SceneRecipeSceneV1, SceneRecipeSectionBoxV1, SceneRecipeSkinV1, SceneRecipeSsaoV1,
+    SceneRecipeTargetV1, SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1,
+    SceneRecipeTransformV1, SceneRecipeV1, SceneRecipeValidationReportV1,
     SceneRecipeVisibleExpectationV1,
 };
 #[cfg(all(feature = "inspection", feature = "scene-host"))]

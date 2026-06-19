@@ -19,6 +19,7 @@ mod inspection_tools;
 mod instances;
 mod interaction_verification;
 mod introspection;
+mod label_quality;
 mod material_variants;
 mod measurements;
 mod post;

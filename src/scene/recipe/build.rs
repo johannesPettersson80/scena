@@ -1,9 +1,6 @@
 use std::collections::BTreeSet;
-use std::path::PathBuf;
-#[cfg(feature = "scene-host")]
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
-#[cfg(feature = "scene-host")]
 use super::types::SceneRecipeDiagnosticV1;
 
 const DEFAULT_MAX_IMPORTS: usize = 64;
@@ -284,7 +281,6 @@ impl RecipeBuildPolicy {
         self
     }
 
-    #[cfg(feature = "scene-host")]
     pub(crate) fn resolve_import_uri(
         &self,
         recipe_path: &str,
@@ -321,7 +317,6 @@ impl RecipeBuildPolicy {
         self.validate_local_path(&resolved, diagnostic_path)
     }
 
-    #[cfg(feature = "scene-host")]
     fn validate_local_path(
         &self,
         resolved: &str,
@@ -356,8 +351,9 @@ impl RecipeBuildPolicy {
                     return Err(Box::new(policy_error(
                         diagnostic_path,
                         format!(
-                            "local path '{}' is outside the allowed recipe roots",
-                            parent.display()
+                            "local path '{}' is outside the allowed recipe roots; allowed roots: {}",
+                            parent.display(),
+                            format_allowed_roots(&allowed_roots)
                         ),
                         "put assets under an allowed root or update the operator-owned RecipeBuildPolicy",
                     )));
@@ -369,8 +365,9 @@ impl RecipeBuildPolicy {
             return Err(Box::new(policy_error(
                 diagnostic_path,
                 format!(
-                    "local path '{}' is outside the allowed recipe roots",
-                    canonical.display()
+                    "local path '{}' is outside the allowed recipe roots; allowed roots: {}",
+                    canonical.display(),
+                    format_allowed_roots(&allowed_roots)
                 ),
                 "put assets under an allowed root or update the operator-owned RecipeBuildPolicy",
             )));
@@ -379,7 +376,6 @@ impl RecipeBuildPolicy {
         Ok(stable_canonical_path(&canonical))
     }
 
-    #[cfg(feature = "scene-host")]
     fn canonical_allowed_roots(
         &self,
         diagnostic_path: String,
@@ -408,7 +404,6 @@ impl RecipeBuildPolicy {
             .collect()
     }
 
-    #[cfg(feature = "scene-host")]
     fn validate_source_size(
         &self,
         canonical: &Path,
@@ -435,7 +430,6 @@ impl RecipeBuildPolicy {
     }
 }
 
-#[cfg(feature = "scene-host")]
 fn strip_file_scheme(
     uri: &str,
     diagnostic_path: String,
@@ -456,7 +450,6 @@ fn strip_file_scheme(
     Ok(rest)
 }
 
-#[cfg(feature = "scene-host")]
 pub(crate) fn resolve_recipe_asset_uri(recipe_path: &str, uri: &str) -> String {
     let uri_path = Path::new(uri);
     if uri_path.is_absolute() || uri.contains("://") || uri.starts_with("data:") {
@@ -471,7 +464,6 @@ pub(crate) fn resolve_recipe_asset_uri(recipe_path: &str, uri: &str) -> String {
     uri.to_owned()
 }
 
-#[cfg(feature = "scene-host")]
 pub(crate) fn build_diagnostic(
     code: impl Into<String>,
     severity: impl Into<String>,
@@ -492,7 +484,6 @@ pub(crate) fn build_diagnostic(
     }
 }
 
-#[cfg(feature = "scene-host")]
 fn policy_error(
     path: impl Into<String>,
     message: impl Into<String>,
@@ -509,7 +500,6 @@ fn policy_error(
     )
 }
 
-#[cfg(feature = "scene-host")]
 fn uri_scheme(uri: &str) -> Option<&str> {
     let colon = uri.find(':')?;
     let candidate = &uri[..colon];
@@ -528,7 +518,6 @@ fn uri_scheme(uri: &str) -> Option<&str> {
     Some(candidate)
 }
 
-#[cfg(feature = "scene-host")]
 fn has_parent_dir(path: &Path) -> bool {
     path.components()
         .any(|component| matches!(component, Component::ParentDir))
@@ -538,7 +527,6 @@ fn default_allowed_roots() -> Vec<PathBuf> {
     std::env::current_dir().ok().into_iter().collect::<Vec<_>>()
 }
 
-#[cfg(feature = "scene-host")]
 fn stable_canonical_path(path: &Path) -> String {
     let current_dir = std::env::current_dir().ok();
     if let Some(current_dir) = current_dir.as_deref()
@@ -548,4 +536,15 @@ fn stable_canonical_path(path: &Path) -> String {
         return relative.display().to_string();
     }
     path.display().to_string()
+}
+
+fn format_allowed_roots(roots: &[PathBuf]) -> String {
+    if roots.is_empty() {
+        return "<none>".to_owned();
+    }
+    roots
+        .iter()
+        .map(|root| root.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
 }

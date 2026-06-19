@@ -46,6 +46,13 @@
       "fixture_path": "tests/assets/stable-contracts/render_introspection.v1.json"
     },
     {
+      "schema": "scena.render_quality.v1",
+      "owner_module": "render",
+      "summary": "Profile-scoped native-capture render quality checks with actionable fix hints.",
+      "feature_flag": "inspection",
+      "fixture_path": "tests/assets/stable-contracts/render_quality.v1.json"
+    },
+    {
       "schema": "scena.visibility_diagnosis.v1",
       "owner_module": "render",
       "summary": "Inspection-backed visibility diagnosis with stable reasons and suggested fixes.",

@@ -14,7 +14,9 @@ use super::draw_common::{
 use super::output::{OutputUniformUpload, encode_clipping_uniform, encode_output_uniform};
 use super::scene_color::{SceneColorPasses, encode_scene_color_passes};
 use super::shadow::{self, encode_shadow_caster_pass};
-use super::{GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuRenderResult, post, strokes};
+use super::{
+    GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuRenderResult, labels, post, strokes,
+};
 
 impl GpuDeviceState {
     #[cfg(not(target_arch = "wasm32"))]
@@ -215,6 +217,28 @@ impl GpuDeviceState {
                     resources: stroke_resources,
                     pipeline: stroke_pipeline,
                     label: "scena.gpu_strokes.offscreen_pass",
+                    draw_submissions: &mut draw_submissions,
+                },
+            );
+        }
+        if let Some(label_resources) = resources.labels.as_ref() {
+            let label_pipeline = if post_enabled {
+                labels::post_pipeline(label_resources)
+            } else {
+                labels::pipeline(label_resources)
+            };
+            labels::encode_pass(
+                &mut encoder,
+                labels::LabelPass {
+                    view: final_view,
+                    depth_view: resources
+                        .depth_prepass
+                        .as_ref()
+                        .map(|depth_prepass| &depth_prepass.view),
+                    output_bind_group: &resources.output_bind_group,
+                    resources: label_resources,
+                    pipeline: label_pipeline,
+                    label: "scena.gpu_labels.offscreen_pass",
                     draw_submissions: &mut draw_submissions,
                 },
             );

@@ -101,6 +101,74 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
         root,
         findings,
         "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join("src/bin/scena/examples_agent.rs"),
+        &[
+            "TEMPLATE_STUDIO_ENVIRONMENT",
+            "studio_small_03_1k.hdr",
+            "TEMPLATE_CAPTURE_MIN_WIDTH: u32 = 640",
+            "\"preset\": \"key\"",
+            "\"preset\": \"fill\"",
+            "\"preset\": \"rim\"",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join("src/bin/scena/examples_agent/starter.rs"),
+        &[
+            "apply_presentation_defaults",
+            "TEMPLATE_STUDIO_ENVIRONMENT",
+            "TEMPLATE_CAPTURE_MIN_WIDTH",
+            "\"preset\": \"key\"",
+            "\"environment\"",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join("tests/scena_cli_agent_templates.rs"),
+        &["assert_template_recipe_has_beauty_defaults"],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join("tests/assets/stable-contracts/scene_recipe.v1.json"),
+        &[
+            "\"preset\": \"key\"",
+            "\"preset\": \"fill\"",
+            "\"preset\": \"rim\"",
+            "studio_small_03_1k.hdr",
+            "\"width\": 640",
+            "\"height\": 480",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join(".codex/skills/scena-app-builder/SKILL.md"),
+        &["Make the output presentable", "studio_small_03_1k.hdr"],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join("docs/guides/llm-app-builder.md"),
+        &["Make It Look Good", "studio_small_03_1k.hdr"],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
         &root.join("src/scene_host/recipe.rs"),
         &["recipe_environment_changes_lit_pbr_pixels_on_headless_gpu"],
     );

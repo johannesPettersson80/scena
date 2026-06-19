@@ -1520,13 +1520,13 @@ Proof:
 
 Owner modules: `scene`, `render`, `geometry`, `assets`.
 
-Foothold: `LabelDesc::bitmap`, label nodes, visual proof fixtures. The 1.7
-renderer exposes the implemented embedded 5x7 glyph-cell billboard path only;
-distance-field rasterization variants are not part of the public surface.
+Foothold: `LabelDesc::new`, label nodes, visual proof fixtures. Labels render
+through the embedded/default TrueType atlas path; distance-field rasterization
+variants are not part of the public surface.
 
 Required behavior:
 
-- [x] Embedded default glyph strategy.
+- [x] Embedded default TrueType glyph strategy.
 - [x] Stable text metrics for layout.
 - [x] Screen-aligned billboards with consistent apparent size.
 - [x] Text color, background/halo option, and DPI-aware scale.
@@ -1536,7 +1536,7 @@ Acceptance:
 
 - [x] Unit tests for layout metrics.
 - [x] Headless visual proof for crisp text at multiple sizes.
-- [x] Browser proof for annotation-heavy glyph-cell scene.
+- [x] Browser proof for annotation-heavy TrueType-atlas label scene.
 - [x] Performance benchmark for many labels.
 
 Proof:
@@ -1550,7 +1550,7 @@ Proof:
       multi-size rendered text, orbit-view readability, and the many-label
       benchmark artifact.
 - [x] Regression proof: `cargo test --test m3a_app_features
-      labels_use_bitmap_billboard_render_path --
+      labels_use_truetype_billboard_atlas_render_path --
       --nocapture`, `cargo test --test measurement_visual_proof
       measurement_overlay_renders_line_and_label_pixels -- --nocapture`, and
       `cargo test --test examples_visual_proof
@@ -1560,8 +1560,7 @@ Proof:
       `wasm-pack build --dev --target web --out-dir target/m6-browser-pkg .
       --features browser-probe`, `SCENA_BROWSER_BACKENDS=webgl2 npm run
       browser:m6` passed and asserted the `labels-helpers` workflow as
-      `browser-bitmap-labels` with 12 labels, 1200 glyph primitives, and
-      visible canvas pixels.
+	      `browser-truetype-labels` with 12 labels and visible canvas pixels.
 - [x] Remote gate proof: after syncing to `scena-builder`
       `~/projects/scena-visual-patch-impl`, `cargo fmt --check`,
       `cargo clippy --all-targets --features scene-host -- -D warnings`,

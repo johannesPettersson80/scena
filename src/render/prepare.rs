@@ -57,7 +57,8 @@ mod tests;
 pub(super) mod transforms;
 mod types;
 pub(in crate::render) use types::{
-    PreparedInstanceRecord, PreparedInstanceSet, PreparedPrimitive, PreparedStrokeSegment,
+    PreparedInstanceRecord, PreparedInstanceSet, PreparedLabelAtlas, PreparedLabelQuad,
+    PreparedPrimitive, PreparedStrokeSegment,
 };
 
 pub(super) fn collect_prepared_primitives<F>(
@@ -102,15 +103,9 @@ pub(super) fn collect_prepared_primitives<F>(
             })
         })
         .collect();
-    labels::append_label_primitives(
-        target,
-        scene,
-        camera_projection,
-        origin_shift,
-        &mut primitives,
-    );
-    particles::append_particle_primitives(scene, camera_projection, origin_shift, &mut primitives);
     let mut transparent_primitives = Vec::new();
+    let labels = labels::prepare_label_atlas(target, scene, camera_projection, origin_shift);
+    particles::append_particle_primitives(scene, camera_projection, origin_shift, &mut primitives);
     let mut strokes = Vec::new();
     let mut instances = Vec::new();
     let gpu_instance_path = matches!(
@@ -311,6 +306,7 @@ pub(super) fn collect_prepared_primitives<F>(
     Ok(PreparedScene {
         primitives,
         strokes,
+        labels,
         instances,
         light_from_world,
     })

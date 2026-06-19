@@ -352,7 +352,7 @@ fn label_desc_from_recipe(
             ))
         })?
     } else {
-        LabelDesc::bitmap(recipe.text.clone())
+        LabelDesc::new(recipe.text.clone())
     };
     if let Some(size) = recipe.size_px {
         if !size.is_finite() || size <= 0.0 {

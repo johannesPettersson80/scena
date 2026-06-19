@@ -847,6 +847,34 @@ binary's first CLI transport is `scena render <asset-or-recipe> --introspect
 --out <png>` when built with the `inspection` feature. It writes the PNG and
 capture descriptor artifacts, then emits this report on stdout.
 
+### `scena.render_quality.v1`
+
+Produced by recipe verification when the `inspection` feature is enabled. The
+report evaluates native-resolution RGBA8 captures, never downscaled images, and
+keeps render quality separate from correctness checks. It is nested under
+`SceneRecipeVerificationReportV1.quality` and carries profile-scoped checks for
+exposure, contrast, noise, text integrity, line integrity, and reference
+fidelity.
+
+Required top-level fields:
+
+- `schema`
+- `ok`
+- `profile`
+- `summary`
+- `checks`
+- `capabilities`
+
+Each `checks[]` entry has `id`, stable `code`, `severity`, `region`,
+deterministically ordered `observed` and `threshold` maps, and an actionable
+`fix_hint`. Exact failure codes include `severe_black_crush`,
+`label_ink_isolation`, `label_missing_antialiasing`,
+`line_missing_antialiasing`, `line_not_straight`,
+`reference_delta_e2000_exceeded`, and `reference_ssim_too_low`.
+
+The stable fixture lives at
+`tests/assets/stable-contracts/render_quality.v1.json`.
+
 ### `scena.visibility_diagnosis.v1`
 
 Produced by `Renderer::diagnose_visibility` and
@@ -1176,9 +1204,12 @@ closed as verification reasons.
 `scena.recipe_render_result.v1` is emitted by
 `scena recipe render <recipe.json> --introspect --verify --out <png>`. It
 nests the build manifest, capture descriptor, render-introspection report, and
-aggregate verification report. Top-level `ok` is true only when build,
-introspection, and verification are all true. If build fails before a frame
-exists, `capture` and `introspection` are `null` rather than fabricated.
+aggregate verification report. Verification includes a nested
+`scena.render_quality.v1` report for always-on severe quality failures and
+opt-in `expect_quality` / `expect_reference` checks. Top-level `ok` is true
+only when build, introspection, and verification are all true. If build fails
+before a frame exists, `capture` and `introspection` are `null` rather than
+fabricated.
 
 `scena validate-recipe <recipe.json>` first runs shape validation without
 rendering, then loads declared assets far enough to validate asset presence and

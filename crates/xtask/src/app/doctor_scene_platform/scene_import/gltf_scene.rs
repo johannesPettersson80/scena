@@ -148,7 +148,7 @@ pub(crate) fn check_m3a_gltf_scene_contracts(root: &Path, findings: &mut Vec<Fin
         &[
             "pub struct LabelDesc",
             "pub enum LabelBillboard",
-            "pub fn bitmap",
+            "pub fn new",
             "pub fn add_label",
             "pub fn set_label_text",
             "LabelNotFound",
@@ -179,7 +179,7 @@ pub(crate) fn check_m3a_gltf_scene_contracts(root: &Path, findings: &mut Vec<Fin
         "src/render/prepare.rs",
         &[
             "scene.instance_set_nodes()",
-            "labels::append_label_primitives",
+            "labels::prepare_label_atlas",
             "compose_transform",
             "instance_set.geometry()",
             "instance_set.material()",

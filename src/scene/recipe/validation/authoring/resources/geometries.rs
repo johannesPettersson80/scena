@@ -26,6 +26,8 @@ const PRIMITIVE_FIELDS: &[&str] = &[
     "end",
     "points",
 ];
+const SUPPORTED_PRIMITIVE_KINDS: &str =
+    "box, plane, sphere, cylinder, cone, disc, torus, wedge, line, polyline, arrow, grid, axes";
 const MESH_FIELDS: &[&str] = &[
     "topology",
     "positions",
@@ -262,8 +264,8 @@ fn validate_primitive(path: &str, value: &Value, diagnostics: &mut Vec<SceneReci
             "unsupported_feature",
             "error",
             format!("{path}.kind"),
-            format!("primitive kind '{kind}' is not implemented in this slice"),
-            "use kind:\"box\" until the primitive-coverage slice lands",
+            format!("primitive kind '{kind}' is not supported"),
+            format!("use one of: {SUPPORTED_PRIMITIVE_KINDS}"),
             None,
             false,
         )),

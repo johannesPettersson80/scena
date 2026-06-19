@@ -150,7 +150,7 @@ fn render_labels() -> VisualArtifact {
     scene
         .add_label(
             scene.root(),
-            LabelDesc::bitmap("M7").with_color(Color::from_linear_rgb(0.1, 1.0, 0.3)),
+            LabelDesc::new("M7").with_color(Color::from_linear_rgb(0.1, 1.0, 0.3)),
             Transform::default(),
         )
         .expect("label inserts");
@@ -330,7 +330,7 @@ fn render_industrial_static_scene() -> VisualArtifact {
     scene
         .add_label(
             scene.root(),
-            LabelDesc::bitmap("Line A"),
+            LabelDesc::new("Line A"),
             Transform::at(Vec3::new(0.0, 0.35, 0.0)),
         )
         .expect("label inserts");

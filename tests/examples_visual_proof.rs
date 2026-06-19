@@ -2060,7 +2060,7 @@ fn examples_visual_labels_helpers_renders_axes_bounds_anchor_label_to_ppm() {
         .mesh(anchor, material)
         .add()
         .expect("anchor mesh inserts");
-    let label = LabelDesc::bitmap("origin")
+    let label = LabelDesc::new("origin")
         .with_color(Color::from_srgb_u8(255, 255, 255))
         .with_size(14.0);
     scene
@@ -2564,7 +2564,7 @@ fn examples_visual_industrial_static_scene_renders_to_ppm() {
     scene
         .add_label(
             scene.root(),
-            LabelDesc::bitmap("Line A"),
+            LabelDesc::new("Line A"),
             Transform::at(Vec3::new(0.0, 0.34, 0.0)),
         )
         .expect("label inserts");

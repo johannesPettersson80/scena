@@ -19,10 +19,11 @@ pub(crate) fn run_validate_recipe_command(args: &[String]) -> Result<CliOutcome,
         .to_str()
         .ok_or_else(|| format!("recipe path '{}' is not valid UTF-8", recipe_path.display()))?;
     let assets = scena::Assets::new();
-    let report = pollster::block_on(scena::validate_scene_recipe_json_with_assets(
+    let report = pollster::block_on(scena::validate_scene_recipe_json_with_assets_and_policy(
         recipe_path,
         &text,
         &assets,
+        &policy,
     ));
     emit_report(report)
 }

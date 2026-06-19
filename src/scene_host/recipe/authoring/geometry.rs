@@ -19,6 +19,9 @@ use super::super::policy::RecipeBuildBudget;
 mod projection;
 use projection::projected_geometry_counts;
 
+const SUPPORTED_PRIMITIVE_KINDS: &str =
+    "box, plane, sphere, cylinder, cone, disc, torus, wedge, line, polyline, arrow, grid, axes";
+
 pub(in crate::scene_host::recipe) fn build_authored_geometries(
     policy: &RecipeBuildPolicy,
     host: &SceneHostCore<DefaultAssetFetcher>,
@@ -412,8 +415,8 @@ fn authored_geometry(
         kind => Err(Box::new(error_diagnostic(
             "$",
             "unsupported_feature",
-            format!("primitive kind '{kind}' is not implemented in this slice"),
-            "use kind:\"box\" until the primitive-coverage slice lands",
+            format!("primitive kind '{kind}' is not supported"),
+            format!("use one of: {SUPPORTED_PRIMITIVE_KINDS}"),
         ))),
     }
 }

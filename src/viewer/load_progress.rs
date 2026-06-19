@@ -34,8 +34,22 @@ impl HeadlessGltfViewerBuilder {
         apply_viewer_grid(&mut scene, &assets, &import, self.common.grid_floor)?;
         apply_viewer_lighting(&mut scene, self.common.lighting)?;
 
-        let mut renderer =
-            Renderer::headless_with_options(self.width, self.height, self.common.renderer_options)?;
+        let mut renderer = if self.prefer_gpu {
+            Renderer::headless_gpu_with_options(
+                self.width,
+                self.height,
+                self.common.renderer_options,
+            )
+            .or_else(|_gpu_error| {
+                Renderer::headless_with_options(
+                    self.width,
+                    self.height,
+                    self.common.renderer_options,
+                )
+            })?
+        } else {
+            Renderer::headless_with_options(self.width, self.height, self.common.renderer_options)?
+        };
         apply_viewer_renderer_settings(&mut renderer, self.common.background);
         if let Some(environment_path) = self.common.environment_path {
             let environment = assets.load_environment(environment_path).await?;

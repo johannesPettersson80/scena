@@ -24,15 +24,22 @@ pub(crate) fn run_render_command(args: &[String]) -> Result<CliOutcome, String> 
         return run_render_scene_host_recipe(input, width, height, args);
     }
     let first = match pollster::block_on(
-        viewer_builder(input.asset.as_str(), width, height, input.transform)
-            .with_default_light()
-            .render(),
+        viewer_builder(
+            input.asset.as_str(),
+            width,
+            height,
+            input.transform,
+            args.gpu,
+        )
+        .with_default_light()
+        .render(),
     ) {
         Ok(first) => first,
         Err(error) => {
             return asset_doctor_outcome_or_error(&input.asset, "render", error.to_string());
         }
     };
+    warn_gpu_fallback(args.gpu, first.renderer().capabilities().backend);
     let capture = first
         .capture()
         .map_err(|error| format!("failed to capture '{}': {error}", input.asset))?;
@@ -74,6 +81,14 @@ pub(crate) fn run_render_command(args: &[String]) -> Result<CliOutcome, String> 
     )
 }
 
+fn warn_gpu_fallback(requested_gpu: bool, backend: scena::Backend) {
+    if requested_gpu && backend != scena::Backend::HeadlessGpu {
+        eprintln!(
+            "scena: --gpu requested but HeadlessGpu was unavailable; rendered with {backend:?}"
+        );
+    }
+}
+
 #[cfg(feature = "scene-host")]
 fn run_render_scene_host_recipe(
     input: super::scena_input::ResolvedSceneInput,
@@ -81,7 +96,10 @@ fn run_render_scene_host_recipe(
     height: u32,
     args: RenderCommandArgs,
 ) -> Result<CliOutcome, String> {
-    let mut host = pollster::block_on(scene_host_from_resolved_recipe(&input, width, height))?;
+    let mut host = pollster::block_on(scene_host_from_resolved_recipe(
+        &input, width, height, args.gpu,
+    ))?;
+    warn_gpu_fallback(args.gpu, host.backend());
     host.prepare()
         .map_err(|error| format!("failed to prepare recipe scene: {error}"))?;
     host.render()
@@ -153,7 +171,7 @@ pub(crate) fn run_inspect_command(args: &[String]) -> Result<CliOutcome, String>
         return run_inspect_scene_host_recipe(input, width, height);
     }
     let viewer = match pollster::block_on(
-        viewer_builder(input.asset.as_str(), width, height, input.transform)
+        viewer_builder(input.asset.as_str(), width, height, input.transform, false)
             .with_default_light()
             .build(),
     ) {
@@ -175,7 +193,9 @@ fn run_inspect_scene_host_recipe(
     width: u32,
     height: u32,
 ) -> Result<CliOutcome, String> {
-    let host = pollster::block_on(scene_host_from_resolved_recipe(&input, width, height))?;
+    let host = pollster::block_on(scene_host_from_resolved_recipe(
+        &input, width, height, false,
+    ))?;
     let text = host
         .inspect_json()
         .map_err(|error| format!("failed to inspect recipe scene: {error}"))?;
@@ -209,7 +229,7 @@ pub(crate) fn run_diagnose_command(args: &[String]) -> Result<CliOutcome, String
         return run_diagnose_scene_host_recipe(input, width, height, args);
     }
     let first = match pollster::block_on(
-        viewer_builder(input.asset.as_str(), width, height, input.transform)
+        viewer_builder(input.asset.as_str(), width, height, input.transform, false)
             .with_default_light()
             .render(),
     ) {
@@ -245,7 +265,9 @@ fn run_diagnose_scene_host_recipe(
     height: u32,
     args: DiagnoseCommandArgs,
 ) -> Result<CliOutcome, String> {
-    let mut host = pollster::block_on(scene_host_from_resolved_recipe(&input, width, height))?;
+    let mut host = pollster::block_on(scene_host_from_resolved_recipe(
+        &input, width, height, false,
+    ))?;
     host.prepare()
         .map_err(|error| format!("failed to prepare recipe scene for diagnosis: {error}"))?;
     host.render()

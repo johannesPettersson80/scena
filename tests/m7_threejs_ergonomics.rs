@@ -3093,7 +3093,7 @@ fn benchmark_m7_labels() -> serde_json::Value {
         scene
             .add_label(
                 scene.root(),
-                LabelDesc::bitmap("Pressure").with_size(14.0),
+                LabelDesc::new("Pressure").with_size(14.0),
                 Transform::default(),
             )
             .expect("label inserts");

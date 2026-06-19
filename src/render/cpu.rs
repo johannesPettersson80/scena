@@ -4,6 +4,8 @@ use crate::scene::{ClippingPlane, SectionBox, Vec3};
 
 use super::RasterTarget;
 use super::camera::CameraProjection;
+use super::color_contract::{apply_exposure, linear_rgba_to_srgb8};
+use super::output::Tonemapper;
 use super::output::{OrderIndependentTransparencyConfig, OutputTransform};
 use super::prepare::PreparedPrimitive;
 
@@ -25,7 +27,7 @@ impl Default for OitAccumPixel {
 }
 
 pub(super) struct CpuFrame<'frame> {
-    target: RasterTarget,
+    pub(super) target: RasterTarget,
     output: OutputTransform,
     linear_frame: &'frame mut [Color],
     depth_frame: &'frame mut [f32],
@@ -335,7 +337,7 @@ fn is_clipped(
         || section_box.is_some_and(|section| section.clips(position))
 }
 
-fn write_pixel(cpu_frame: &mut CpuFrame<'_>, x: u32, y: u32, color: Color, depth: f32) {
+pub(super) fn write_pixel(cpu_frame: &mut CpuFrame<'_>, x: u32, y: u32, color: Color, depth: f32) {
     if !depth.is_finite() {
         return;
     }
@@ -352,6 +354,85 @@ fn write_pixel(cpu_frame: &mut CpuFrame<'_>, x: u32, y: u32, color: Color, depth
     let byte_index = pixel_index * 4;
     cpu_frame.frame[byte_index..byte_index + 4]
         .copy_from_slice(&cpu_frame.output.encode_rgba8(blended));
+}
+
+pub(super) fn write_label_overlay_pixel(
+    cpu_frame: &mut CpuFrame<'_>,
+    x: u32,
+    y: u32,
+    color: Color,
+    coverage: f32,
+    depth: f32,
+) {
+    if !depth.is_finite() {
+        return;
+    }
+    let source_alpha = clamp_alpha_or(color.a, 1.0) * coverage.clamp(0.0, 1.0);
+    if source_alpha <= 0.0 {
+        return;
+    }
+    let pixel_index = cpu_frame.target.pixel_index(x, y);
+    if depth > cpu_frame.depth_frame[pixel_index] + f32::EPSILON {
+        return;
+    }
+
+    let source = Color::from_linear_rgba(color.r, color.g, color.b, source_alpha);
+    cpu_frame.linear_frame[pixel_index] =
+        blend_source_over(source, cpu_frame.linear_frame[pixel_index]);
+    if source_alpha >= 1.0 - f32::EPSILON {
+        cpu_frame.depth_frame[pixel_index] = depth;
+    }
+
+    let byte_index = pixel_index * 4;
+    let source_rgb = encode_label_overlay_rgb8(cpu_frame.output, color);
+    blend_display_source_over(
+        source_rgb,
+        source_alpha,
+        &mut cpu_frame.frame[byte_index..byte_index + 4],
+    );
+}
+
+fn encode_label_overlay_rgb8(output: OutputTransform, color: Color) -> [u8; 3] {
+    let transformed = match output.tonemapper() {
+        Tonemapper::Standard => apply_exposure(color, output.exposure_ev()),
+        Tonemapper::Aces | Tonemapper::PbrNeutral => {
+            label_overlay_aces_tonemap(color, output.exposure_ev())
+        }
+    };
+    let [r, g, b, _a] = linear_rgba_to_srgb8(transformed);
+    [r, g, b]
+}
+
+fn label_overlay_aces_tonemap(color: Color, exposure_ev: f32) -> Color {
+    let exposed = apply_exposure(color, exposure_ev);
+    Color::from_linear_rgba(
+        label_overlay_aces_channel(exposed.r),
+        label_overlay_aces_channel(exposed.g),
+        label_overlay_aces_channel(exposed.b),
+        color.a,
+    )
+}
+
+fn label_overlay_aces_channel(channel: f32) -> f32 {
+    let value = channel.clamp(0.0, 1.0);
+    let a = 2.51;
+    let b = 0.03;
+    let c = 2.43;
+    let d = 0.59;
+    let e = 0.14;
+    ((value * (a * value + b)) / (value * (c * value + d) + e)).clamp(0.0, 1.0)
+}
+
+fn blend_display_source_over(source_rgb: [u8; 3], source_alpha: f32, destination: &mut [u8]) {
+    let alpha = source_alpha.clamp(0.0, 1.0);
+    let inverse = 1.0 - alpha;
+    for channel in 0..3 {
+        destination[channel] = (f32::from(source_rgb[channel]) * alpha
+            + f32::from(destination[channel]) * inverse)
+            .round()
+            .clamp(0.0, 255.0) as u8;
+    }
+    destination[3] = 255;
 }
 
 fn accumulate_order_independent_transparency(

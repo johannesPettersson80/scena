@@ -73,7 +73,7 @@ async fn load_material_proof_scene(
         scene
             .add_label(
                 scene.root(),
-                LabelDesc::bitmap(preset.label)
+                LabelDesc::new(preset.label)
                     .with_color(Color::from_srgb_u8(225, 230, 238))
                     .with_size(12.0),
                 Transform::at(preset.label_position()),

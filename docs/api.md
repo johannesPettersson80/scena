@@ -35,6 +35,14 @@ Additive public API changes in Unreleased:
   `RenderIntrospectionNodesSummaryV1`, `RenderIntrospectionNodeDetailV1`,
   `RenderIntrospectionArtifactsV1`, and
   `Renderer::introspect_capture` (gated behind `inspection`)
+- `RENDER_QUALITY_SCHEMA_V1`, `RenderQualityReportV1`,
+  `RenderQualityCheckV1`, `RenderQualitySummaryV1`,
+  `RenderQualityRegionV1`, `RenderQualityProfile`,
+  `RenderQualityFrameMetrics`, `RenderQualityLabelMetrics`,
+  `ReferenceQualityMetrics`, `evaluate_render_quality`,
+  `evaluate_render_quality_rgba8`, `evaluate_label_region_quality`,
+  `frame_metrics`, `label_metrics`, `reference_quality_metrics`, and
+  `ssim_grayscale` (gated behind `inspection`)
 - `SceneHostCore::render_introspection` and
   `SceneHostCore::render_introspection_json` (gated behind `scene-host`)
 - `VISIBILITY_DIAGNOSIS_SCHEMA_V1`, `VisibilityDiagnosisReportV1`,
@@ -129,8 +137,8 @@ Additive public API changes in Unreleased:
 - `LabelMetrics`, `LabelDesc::metrics`, `LabelDesc::background`,
   `LabelDesc::halo`, `LabelDesc::with_background`,
   `LabelDesc::without_background`, `LabelDesc::with_halo`, and
-  `LabelDesc::without_halo`; `LabelDesc::bitmap()` renders through the
-  embedded 5x7 glyph-cell billboard path.
+  `LabelDesc::without_halo`; `LabelDesc::new()` renders through the
+  embedded TrueType atlas path.
 - `Scene::isolate`, `Scene::show_only`, `Scene::hide`, `Scene::show`,
   `Scene::toggle_visibility`, `Scene::ghost`, `Scene::restore_visibility`,
   `Scene::restore_tints`, `Scene::fit_selection_with_assets`,
@@ -330,15 +338,14 @@ SceneHost/WASM callers use `add_node_callout` / `add_world_callout` or
 The returned `anchor_id` is the annotation ID reported by
 `annotation_projections_json()` and remains compatible with the 0.1C `labels`
 visual-patch channel; there is no parallel host text-update model.
-Labels can use the embedded bitmap font with `LabelDesc::bitmap` or a real
-TrueType/OpenType face with `LabelFontFace::from_truetype_bytes`,
-`LabelDesc::truetype`, or recipe `fonts[]` plus label `font`. Font-backed labels
-support basic Latin metrics, kerning, and glyph shapes, then threshold coverage
-into hard-edged opaque glyph cells; antialiased text waits for the transparent
-billboard path. Complex-script text fails closed instead of rendering fallback
-garbage. Explicit label text, background, and halo colors are opaque-only; omit
-the background/halo for no quad instead of passing translucent colors until a
-transparent label path exists.
+Labels use an embedded TrueType font by default with `LabelDesc::new`, or an
+explicit TrueType/OpenType face with `LabelFontFace::from_truetype_bytes`,
+`LabelDesc::truetype`, or recipe `fonts[]` plus label `font`. Labels support
+basic Latin metrics, kerning, glyph shapes, and renderer-owned antialiasing
+coverage through the label atlas path. Complex-script text fails closed instead
+of rendering fallback garbage. Explicit label text, background, and halo colors
+are opaque-only; omit the background/halo for no quad instead of passing
+translucent user colors.
 
 Recipe-authored skin and morph data deform vertex positions through the same
 prepare path used by imported glTF deformation data. Lighting normals remain the

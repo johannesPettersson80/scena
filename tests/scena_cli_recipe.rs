@@ -1,6 +1,7 @@
 #![cfg(feature = "inspection")]
 
 use std::fs;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -10,6 +11,13 @@ const TEST_ASSET: &str = "tests/assets/gltf/mesh_material_vertex_color_scene.glt
 const ANCHORED_ASSET: &str = "tests/assets/gltf/anchored_triangle_scene.gltf";
 const ANCHOR_ASSET: &str = "tests/assets/gltf/anchor_debug_scene.gltf";
 const CONNECTOR_ASSET: &str = "tests/assets/gltf/connector_basis_scene.gltf";
+const LAVAPIPE_ICD: &str = "/usr/share/vulkan/icd.d/lvp_icd.json";
+
+fn configure_command_for_lavapipe(command: &mut Command) {
+    if Path::new(LAVAPIPE_ICD).exists() {
+        command.env("VK_ICD_FILENAMES", LAVAPIPE_ICD);
+    }
+}
 
 #[test]
 fn scena_render_cli_accepts_scene_recipe_input() {
@@ -39,6 +47,50 @@ fn scena_render_cli_accepts_scene_recipe_input() {
     assert_eq!(report["schema"], "scena.render_introspection.v1");
     assert_eq!(report["ok"], true);
     assert_eq!(report["artifacts"]["capture_png_path"], path_str(&png_path));
+    assert!(fs::metadata(&png_path).expect("PNG artifact exists").len() > 0);
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_render_gpu_flag_reports_actual_backend_for_recipe_input() {
+    let dir = artifact_dir("render-gpu");
+    let recipe_path = write_valid_recipe(&dir);
+    let png_path = dir.join("gpu-frame.png");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "render",
+            path_str(&recipe_path),
+            "--gpu",
+            "--introspect",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena render --gpu recipe command runs");
+
+    assert!(
+        output.status.success(),
+        "render --gpu should render or fall back cleanly, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("render --gpu emits JSON");
+    assert_eq!(report["schema"], "scena.render_introspection.v1");
+    assert_eq!(report["ok"], true, "{report:#}");
+    let backend = report["capabilities"]["backend"]
+        .as_str()
+        .expect("backend is reported");
+    assert!(
+        backend == "headless" || backend == "headless_gpu",
+        "render --gpu must report the actual backend used: {report:#}"
+    );
+    assert_eq!(
+        report["capabilities"]["gpu_device"],
+        backend == "headless_gpu",
+        "gpu_device must reflect the actual backend, not the requested flag: {report:#}"
+    );
     assert!(fs::metadata(&png_path).expect("PNG artifact exists").len() > 0);
 }
 
@@ -203,6 +255,195 @@ fn scena_validate_recipe_cli_checks_asset_presence_and_expected_extents() {
     assert_eq!(report["schema"], "scena.scene_recipe_validation.v1");
     assert_eq!(report["ok"], false);
     assert_diagnostic(&report, "extent_out_of_range", "error");
+}
+
+#[test]
+fn scena_validate_recipe_cli_rejects_out_of_root_imports_before_build() {
+    let dir = artifact_dir("validate-path-policy");
+    let outside_asset = std::env::temp_dir().join("scena-outside-root-policy.gltf");
+    fs::write(&outside_asset, "{}").expect("outside-root fixture writes");
+    let recipe_path = dir.join("outside-root.recipe.json");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                { "id": "outside", "uri": path_str(&outside_asset) }
+            ]
+        }))
+        .expect("outside-root recipe serializes"),
+    )
+    .expect("outside-root recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["validate-recipe", path_str(&recipe_path)])
+        .output()
+        .expect("scena validate-recipe outside-root command runs");
+
+    assert!(!output.status.success(), "validate should fail closed");
+    assert!(
+        output.stderr.is_empty(),
+        "validation diagnostics stay machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("outside-root validation emits JSON");
+    assert_eq!(report["schema"], "scena.scene_recipe_validation.v1");
+    assert_eq!(report["ok"], false, "{report:#}");
+    let diagnostic = report["diagnostics"]
+        .as_array()
+        .expect("diagnostics array")
+        .iter()
+        .find(|diagnostic| diagnostic["code"] == "policy_violation")
+        .unwrap_or_else(|| panic!("expected policy_violation before asset load: {report:#}"));
+    assert_eq!(diagnostic["path"], "$.imports[0].uri", "{report:#}");
+    let message = diagnostic["message"].as_str().expect("message string");
+    let help = diagnostic["help"].as_str().expect("help string");
+    assert!(
+        message.contains("outside the allowed recipe roots")
+            && message.contains("allowed roots:")
+            && help.contains("RecipeBuildPolicy"),
+        "policy diagnostic should name the allowed roots and policy knob: {report:#}"
+    );
+}
+
+#[test]
+fn invalid_primitive_diagnostic_lists_supported_kinds() {
+    let dir = artifact_dir("invalid-primitive-supported-kinds");
+    let recipe_path = dir.join("invalid-primitive.recipe.json");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": { "white": "#FFFFFF" },
+            "geometries": [
+                { "id": "bad_geo", "primitive": { "kind": "capsule", "radius": 0.1, "height": 0.2 } }
+            ],
+            "materials": [
+                { "id": "mat", "kind": "unlit", "base_color": "white" }
+            ],
+            "nodes": [
+                { "id": "bad", "geometry": "bad_geo", "material": "mat" }
+            ],
+            "capture": { "width": 64, "height": 64 }
+        }))
+        .expect("invalid primitive recipe serializes"),
+    )
+    .expect("invalid primitive recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args(["validate-recipe", path_str(&recipe_path)])
+        .output()
+        .expect("scena validate-recipe invalid primitive command runs");
+
+    assert!(!output.status.success(), "invalid primitive should fail");
+    assert!(output.stderr.is_empty(), "stderr={}", stderr(&output));
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("invalid primitive report emits JSON");
+    let diagnostic = report["diagnostics"]
+        .as_array()
+        .expect("diagnostics array")
+        .iter()
+        .find(|diagnostic| diagnostic["path"] == "$.geometries[0].primitive.kind")
+        .unwrap_or_else(|| panic!("expected primitive kind diagnostic: {report:#}"));
+    assert_eq!(diagnostic["code"], "unsupported_feature", "{report:#}");
+    let text = format!(
+        "{} {}",
+        diagnostic["message"].as_str().unwrap_or_default(),
+        diagnostic["help"].as_str().unwrap_or_default()
+    );
+    for kind in [
+        "box", "plane", "sphere", "cylinder", "cone", "disc", "torus", "wedge", "line", "polyline",
+        "arrow", "grid", "axes",
+    ] {
+        assert!(
+            text.contains(kind),
+            "diagnostic should list supported primitive kind {kind}: {report:#}"
+        );
+    }
+    assert!(
+        !text.contains("until the primitive-coverage slice lands"),
+        "diagnostic should not mention a completed slice as pending: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn recipe_bbox_fit_expectation_uses_subject_bounds_not_ground_plane() {
+    let dir = artifact_dir("recipe-bbox-fit-subject");
+    let recipe_path = dir.join("grounded.recipe.json");
+    let png_path = dir.join("grounded.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "body": "#3A7BD5",
+                "floor": "#1D2733",
+                "grid": "#697386"
+            },
+            "geometries": [
+                { "id": "box_geo", "primitive": { "kind": "box", "size": [0.2, 0.12, 0.16] } }
+            ],
+            "materials": [
+                { "id": "body_mat", "kind": "pbr_metallic_roughness", "base_color": "body", "metallic": 0.0, "roughness": 0.55 }
+            ],
+            "nodes": [
+                { "id": "subject", "geometry": "box_geo", "material": "body_mat", "transform": { "kind": "ground" } }
+            ],
+            "lights": [
+                { "id": "key", "kind": "directional", "preset": "key" },
+                { "id": "fill", "kind": "directional", "preset": "fill" },
+                { "id": "rim", "kind": "directional", "preset": "rim" }
+            ],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 34.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.34, 0.24, 0.32], "target": "subject" }
+            }],
+            "scene": {
+                "background": { "kind": "dark_studio" },
+                "grid": {
+                    "padding": 2.0,
+                    "line_spacing": 0.1,
+                    "color": "floor",
+                    "line_color": "grid"
+                }
+            },
+            "capture": { "width": 320, "height": 220 },
+            "expect": {
+                "expect_bbox_fit": { "min": 0.2, "max": 0.8 }
+            }
+        }))
+        .expect("grounded recipe serializes"),
+    )
+    .expect("grounded recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena grounded recipe render runs");
+
+    assert!(
+        output.status.success(),
+        "grounded subject should satisfy bbox fit independent of floor/grid, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert_eq!(report["schema"], "scena.recipe_render_result.v1");
+    assert_eq!(report["ok"], true, "{report:#}");
+    assert_eq!(report["verification"]["ok"], true, "{report:#}");
 }
 
 #[test]
@@ -456,6 +697,619 @@ fn scena_recipe_render_verify_passes_color_pick_and_fit_expectations() {
         "{report:#}"
     );
     assert!(png_path.exists(), "recipe render writes the requested PNG");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_introspect_succeeds_without_verify() {
+    let dir = artifact_dir("recipe-render-introspect-only");
+    let recipe_path = dir.join("introspect-only.recipe.json");
+    let png_path = dir.join("introspect-only.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&authored_verification_recipe(json!({
+            "expect_bbox_fit": {
+                "min": 0.20,
+                "max": 0.95
+            }
+        })))
+        .expect("introspection recipe serializes"),
+    )
+    .expect("introspection recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena recipe render introspection-only command runs");
+
+    assert!(
+        output.status.success(),
+        "recipe render --introspect should not require --verify, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert_eq!(report["schema"], "scena.render_introspection.v1");
+    assert_eq!(report["ok"], true, "{report:#}");
+    assert_eq!(report["artifacts"]["capture_png_path"], path_str(&png_path));
+    assert!(png_path.exists(), "recipe render writes the requested PNG");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_gpu_flag_reports_actual_backend() {
+    let dir = artifact_dir("recipe-render-gpu");
+    let recipe_path = dir.join("gpu.recipe.json");
+    let cpu_png = dir.join("cpu.png");
+    let gpu_png = dir.join("gpu.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&authored_verification_recipe(json!({
+            "expect_bbox_fit": {
+                "min": 0.20,
+                "max": 0.95
+            }
+        })))
+        .expect("GPU recipe serializes"),
+    )
+    .expect("GPU recipe writes");
+
+    let cpu = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&cpu_png),
+        ])
+        .output()
+        .expect("CPU recipe render command runs");
+    assert!(cpu.status.success(), "stderr={}", stderr(&cpu));
+    let cpu_report = json_report(&cpu);
+    assert_eq!(
+        cpu_report["introspection"]["capabilities"]["backend"], "headless",
+        "{cpu_report:#}"
+    );
+    assert_eq!(
+        cpu_report["introspection"]["capabilities"]["gpu_device"], false,
+        "{cpu_report:#}"
+    );
+
+    let gpu = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--gpu",
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&gpu_png),
+        ])
+        .output()
+        .expect("GPU recipe render command runs");
+    assert!(
+        gpu.status.success(),
+        "GPU opt-in should render or fall back cleanly, stdout={}, stderr={}",
+        String::from_utf8_lossy(&gpu.stdout),
+        stderr(&gpu)
+    );
+    let gpu_report = json_report(&gpu);
+    assert_eq!(gpu_report["schema"], "scena.recipe_render_result.v1");
+    assert_eq!(gpu_report["ok"], true, "{gpu_report:#}");
+    let backend = gpu_report["introspection"]["capabilities"]["backend"]
+        .as_str()
+        .expect("backend is reported");
+    assert!(
+        backend == "headless" || backend == "headless_gpu",
+        "GPU opt-in must report the actual backend used: {gpu_report:#}"
+    );
+    assert_eq!(
+        gpu_report["capture"]["capabilities"]["backend"], backend,
+        "capture descriptor and introspection must agree on backend: {gpu_report:#}"
+    );
+    assert_eq!(
+        gpu_report["introspection"]["capabilities"]["gpu_device"],
+        backend == "headless_gpu",
+        "gpu_device must reflect the actual backend, not the requested flag: {gpu_report:#}"
+    );
+    assert!(
+        gpu_png.exists(),
+        "GPU/fallback render writes the requested PNG"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_reports_reference_quality_failure() {
+    let dir = artifact_dir("recipe-render-reference-quality");
+    let recipe_path = dir.join("reference.recipe.json");
+    let png_path = dir.join("verified.png");
+    let reference_path = dir.join("wrong-reference.png");
+    write_rgba_png(&reference_path, 128, 128, &[0, 0, 0, 255]);
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&authored_verification_recipe(json!({
+            "expect_bbox_fit": {
+                "min": 0.20,
+                "max": 0.95
+            },
+            "expect_reference": [{
+                "id": "wrong-reference-ssim",
+                "image": "wrong-reference.png",
+                "metric": "ssim",
+                "min_ssim": 0.99
+            }]
+        })))
+        .expect("reference quality recipe serializes"),
+    )
+    .expect("reference quality recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena recipe render command runs");
+
+    assert!(
+        !output.status.success(),
+        "wrong reference image must fail recipe verification"
+    );
+    let report = json_report(&output);
+    assert_eq!(report["schema"], "scena.recipe_render_result.v1");
+    assert_eq!(report["verification"]["quality"]["ok"], false);
+    assert!(
+        report["verification"]["quality"]["checks"]
+            .as_array()
+            .expect("quality checks")
+            .iter()
+            .any(|check| check["code"] == "reference_ssim_too_low"
+                && check["id"] == "wrong-reference-ssim"
+                && check["fix_hint"]
+                    .as_str()
+                    .is_some_and(|hint| hint.contains("reference"))),
+        "expected exact reference_ssim_too_low quality check: {report:#}"
+    );
+    assert!(
+        report["verification"]["reasons"]
+            .as_array()
+            .expect("verification reasons")
+            .iter()
+            .any(|reason| reason["code"] == "reference_ssim_too_low"
+                && reason["source"] == "quality"),
+        "quality reference failure must also appear in compact reasons: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+fn write_label_quality_recipe(
+    dir: &Path,
+    name: &str,
+    background: &str,
+    min_intermediate_edge_fraction: f64,
+) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    let font_path = dir.join("dejavu.ttf");
+    fs::copy(system_test_font_path(), &font_path).expect("test font copied into recipe sandbox");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "fonts": [
+                { "id": "dejavu", "uri": path_str(&font_path) }
+            ],
+            "labels": [{
+                "id": "font_label",
+                "text": "BATTERY",
+                "font": "dejavu",
+                "size_px": 42.0,
+                "color": "#FFFFFF",
+                "background": background,
+                "transform": { "kind": "trs", "translation": [0.0, 0.0, 0.0] }
+            }],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 3.5], "target": "font_label" }
+            }],
+            "capture": { "width": 220, "height": 120 },
+            "expect": {
+                "expect_quality": {
+                    "profile": "documentation",
+                    "text": {
+                        "min_ink_coverage": 0.06,
+                        "max_ink_isolation": 0.02,
+                        "min_intermediate_edge_fraction": min_intermediate_edge_fraction
+                    }
+                }
+            }
+        }))
+        .expect("label quality recipe serializes"),
+    )
+    .expect("label quality recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_passes_quality_per_label_region_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-label-quality-pass");
+    let mut rendered = Vec::new();
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (recipe_path, png_path) =
+            write_label_quality_recipe(&dir, &format!("label-quality-{backend}"), "#808080", 0.01);
+        let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena label quality recipe render command runs");
+
+        assert!(
+            output.status.success(),
+            "live {backend} atlas label recipe quality should pass, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        assert_eq!(report["verification"]["quality"]["ok"], true, "{report:#}");
+        if use_gpu {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU quality proof must use the GPU backend, not a fallback: {report:#}"
+            );
+        }
+        rendered.push((backend, png_path));
+    }
+
+    let (_, cpu_png) = &rendered[0];
+    let (_, gpu_png) = &rendered[1];
+    let cpu = decode_png_rgba8(cpu_png);
+    let gpu = decode_png_rgba8(gpu_png);
+    assert_eq!((cpu.width, cpu.height), (gpu.width, gpu.height));
+    let region = expected_label_background_region(cpu.width, cpu.height);
+    let diff = frame_delta_in_region(&cpu.rgba8, &gpu.rgba8, cpu.width, region);
+    let cpu_luma = mean_luminance_in_region(&cpu.rgba8, cpu.width, region);
+    let gpu_luma = mean_luminance_in_region(&gpu.rgba8, gpu.width, region);
+    fs::write(
+        dir.join("label-quality-full-region-parity.json"),
+        format!(
+            "{{\n  \"schema\": \"scena.label_quality_parity.v1\",\n  \"max_channel_delta\": {},\n  \"mean_channel_delta\": {:.3},\n  \"cpu_luma\": {:.3},\n  \"gpu_luma\": {:.3},\n  \"region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}\n}}\n",
+            diff.max_channel_delta,
+            diff.mean_channel_delta,
+            cpu_luma,
+            gpu_luma,
+            region.x,
+            region.y,
+            region.width,
+            region.height
+        ),
+    )
+    .expect("label quality parity artifact writes");
+    assert!(
+        diff.max_channel_delta <= 220 && diff.mean_channel_delta <= 8.0,
+        "CPU and GPU recipe renders must match over the full label region including the background pill, diff={diff:?}, cpu_luma={cpu_luma:.3}, gpu_luma={gpu_luma:.3}, region={region:?}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_label_quality_regions_include_background_pill_padding() {
+    let dir = artifact_dir("label-quality-region-padding");
+    let (recipe_path, _png_path) =
+        write_label_quality_recipe(&dir, "label-quality-region-padding", "#1D2733", 0.01);
+    let recipe_text = fs::read_to_string(&recipe_path).expect("recipe reads");
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        path_str(&recipe_path),
+        &recipe_text,
+        scena::RecipeBuildPolicy::default(),
+    ))
+    .expect("label quality recipe builds");
+    let regions = build.host.label_quality_regions(220, 120);
+    assert_eq!(regions.len(), 1, "one label region expected: {regions:#?}");
+    let region = QualityPixelRegion {
+        x: regions[0].x,
+        y: regions[0].y,
+        width: regions[0].width,
+        height: regions[0].height,
+    };
+    assert_label_quality_region_covers_background_pill(region);
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_dark_label_background_matches_cpu_and_gpu_over_full_region() {
+    let dir = artifact_dir("recipe-render-label-background-parity");
+    let mut rendered = Vec::new();
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (recipe_path, png_path) = write_label_quality_recipe(
+            &dir,
+            &format!("label-background-{backend}"),
+            "#1D2733",
+            0.01,
+        );
+        let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--out", path_str(&png_path)]);
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena dark label parity render command runs");
+
+        assert!(
+            output.status.success(),
+            "dark label parity render should succeed on {backend}, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        if use_gpu {
+            assert_eq!(
+                report["capabilities"]["backend"], "headless_gpu",
+                "GPU parity proof must use the GPU backend, not a fallback: {report:#}"
+            );
+        }
+        rendered.push((backend, png_path));
+    }
+
+    let (_, cpu_png) = &rendered[0];
+    let (_, gpu_png) = &rendered[1];
+    let cpu = decode_png_rgba8(cpu_png);
+    let gpu = decode_png_rgba8(gpu_png);
+    assert_eq!((cpu.width, cpu.height), (gpu.width, gpu.height));
+    let region = expected_label_background_region(cpu.width, cpu.height);
+    let diff = frame_delta_in_region(&cpu.rgba8, &gpu.rgba8, cpu.width, region);
+    let cpu_luma = mean_luminance_in_region(&cpu.rgba8, cpu.width, region);
+    let gpu_luma = mean_luminance_in_region(&gpu.rgba8, gpu.width, region);
+    fs::write(
+        dir.join("label-background-full-region-parity.json"),
+        format!(
+            "{{\n  \"schema\": \"scena.label_background_parity.v1\",\n  \"max_channel_delta\": {},\n  \"mean_channel_delta\": {:.3},\n  \"cpu_luma\": {:.3},\n  \"gpu_luma\": {:.3},\n  \"region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}\n}}\n",
+            diff.max_channel_delta,
+            diff.mean_channel_delta,
+            cpu_luma,
+            gpu_luma,
+            region.x,
+            region.y,
+            region.width,
+            region.height
+        ),
+    )
+    .expect("dark label background parity artifact writes");
+    assert!(
+        diff.max_channel_delta <= 220 && diff.mean_channel_delta <= 8.0,
+        "CPU and GPU recipe renders must match over the full dark label region including the background pill, diff={diff:?}, cpu_luma={cpu_luma:.3}, gpu_luma={gpu_luma:.3}, region={region:?}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_fails_quality_per_label_region() {
+    let dir = artifact_dir("recipe-render-label-quality");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (recipe_path, png_path) =
+            write_label_quality_recipe(&dir, &format!("label-quality-{backend}"), "#000000", 0.50);
+        let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena label quality recipe render command runs");
+
+        assert!(
+            !output.status.success(),
+            "impossible label quality threshold should fail on {backend}, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        if use_gpu {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU quality failure proof must use the GPU backend, not a fallback: {report:#}"
+            );
+        }
+        let checks = report["verification"]["quality"]["checks"]
+            .as_array()
+            .expect("quality checks serialize");
+        assert!(
+            checks.iter().any(|check| {
+                check["id"]
+                    .as_str()
+                    .is_some_and(|id| id.starts_with("expect_quality.text.label["))
+                    && check["code"] == "label_missing_antialiasing"
+                    && check["region"]["kind"] == "label"
+                    && check["region"]["handle"].as_u64().is_some()
+            }),
+            "quality verifier must evaluate projected label regions on {backend}, not just the subject bbox: {report:#}"
+        );
+        assert!(png_path.exists(), "label quality render writes the PNG");
+    }
+}
+
+#[cfg(feature = "scene-host")]
+fn write_line_quality_recipe(
+    dir: &Path,
+    name: &str,
+    min_intermediate_edge_fraction: f64,
+    max_straightness_error: f64,
+) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "geometries": [
+                { "id": "marker_geo", "primitive": { "kind": "box", "size": [0.08, 0.08, 0.08] } }
+            ],
+            "materials": [
+                { "id": "marker_mat", "kind": "unlit", "base_color": "#3A7BD5" }
+            ],
+            "nodes": [
+                { "id": "marker", "geometry": "marker_geo", "material": "marker_mat" }
+            ],
+            "scene": {
+                "background": { "kind": "custom", "color": "#808080" }
+            },
+            "measurements": [{
+                "id": "length-line",
+                "kind": "distance",
+                "start": [-0.7, -0.25, 0.0],
+                "end": [0.7, 0.35, 0.0],
+                "label": "LENGTH",
+                "unit": "m",
+                "precision": 2
+            }],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 3.0], "target": "marker" }
+            }],
+            "capture": { "width": 260, "height": 160 },
+            "expect": {
+                "expect_quality": {
+                    "profile": "documentation",
+                    "line": {
+                        "min_intermediate_edge_fraction": min_intermediate_edge_fraction,
+                        "max_straightness_error": max_straightness_error
+                    }
+                }
+            }
+        }))
+        .expect("line quality recipe serializes"),
+    )
+    .expect("line quality recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_passes_quality_per_line_region_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-line-quality-pass");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (recipe_path, png_path) =
+            write_line_quality_recipe(&dir, &format!("line-quality-{backend}"), 0.005, 0.12);
+        let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena line quality recipe render command runs");
+
+        assert!(
+            output.status.success(),
+            "live {backend} antialiased line recipe quality should pass, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        assert_eq!(report["verification"]["quality"]["ok"], true, "{report:#}");
+        if use_gpu {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU line quality proof must use the GPU backend, not a fallback: {report:#}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_fails_quality_per_line_region() {
+    let dir = artifact_dir("recipe-render-line-quality");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (recipe_path, png_path) =
+            write_line_quality_recipe(&dir, &format!("line-quality-{backend}"), 0.005, 0.0);
+        let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena line quality recipe render command runs");
+
+        assert!(
+            !output.status.success(),
+            "impossible line quality threshold should fail on {backend}, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        if use_gpu {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU line quality failure proof must use the GPU backend, not a fallback: {report:#}"
+            );
+        }
+        let checks = report["verification"]["quality"]["checks"]
+            .as_array()
+            .expect("quality checks serialize");
+        assert!(
+            checks.iter().any(|check| {
+                check["id"]
+                    .as_str()
+                    .is_some_and(|id| id.starts_with("expect_quality.line.segment["))
+                    && check["code"] == "line_not_straight"
+                    && check["region"]["kind"] == "line"
+                    && check["region"]["handle"].as_u64().is_some()
+            }),
+            "quality verifier must evaluate projected line regions on {backend}, not just the subject bbox: {report:#}"
+        );
+        assert!(png_path.exists(), "line quality render writes the PNG");
+    }
 }
 
 #[cfg(feature = "scene-host")]
@@ -1192,6 +2046,162 @@ fn artifact_dir(name: &str) -> PathBuf {
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("artifact directory creates");
     dir
+}
+
+#[cfg(feature = "scene-host")]
+#[derive(Debug)]
+struct DecodedPng {
+    width: u32,
+    height: u32,
+    rgba8: Vec<u8>,
+}
+
+#[cfg(feature = "scene-host")]
+fn decode_png_rgba8(path: &Path) -> DecodedPng {
+    let bytes = fs::read(path).unwrap_or_else(|error| panic!("PNG {path:?} reads: {error}"));
+    let decoder = png::Decoder::new(Cursor::new(bytes));
+    let mut reader = decoder.read_info().expect("PNG header reads");
+    let mut buffer = vec![
+        0;
+        reader
+            .output_buffer_size()
+            .expect("PNG output buffer size is known")
+    ];
+    let info = reader.next_frame(&mut buffer).expect("PNG frame decodes");
+    assert_eq!(info.color_type, png::ColorType::Rgba);
+    assert_eq!(info.bit_depth, png::BitDepth::Eight);
+    DecodedPng {
+        width: info.width,
+        height: info.height,
+        rgba8: buffer[..info.buffer_size()].to_vec(),
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct QualityPixelRegion {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+}
+
+#[cfg(feature = "scene-host")]
+fn assert_label_quality_region_covers_background_pill(region: QualityPixelRegion) {
+    let font_bytes = fs::read(system_test_font_path()).expect("test TrueType font reads");
+    let label = scena::LabelDesc::truetype("BATTERY", font_bytes)
+        .expect("TrueType label builds")
+        .with_size(42.0);
+    let metrics = label.metrics();
+    let padding = (label.size() * 0.25).ceil().max(2.0);
+    assert!(
+        region.width as f32 >= metrics.width_px + padding * 1.75
+            && region.height as f32 >= metrics.height_px + padding * 1.75,
+        "label quality region must include the rendered background pill padding, region={region:?}, metrics={metrics:?}, padding={padding}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+fn expected_label_background_region(width: u32, height: u32) -> QualityPixelRegion {
+    let font_bytes = fs::read(system_test_font_path()).expect("test TrueType font reads");
+    let label = scena::LabelDesc::truetype("BATTERY", font_bytes)
+        .expect("TrueType label builds")
+        .with_size(42.0);
+    let metrics = label.metrics();
+    let padding = (label.size() * 0.25).ceil().max(2.0);
+    let label_width = metrics.width_px + padding * 2.0;
+    let label_height = metrics.height_px + padding * 2.0;
+    let center_x = width as f32 * 0.5;
+    let center_y = height as f32 * 0.5;
+    let x0 = (center_x - label_width * 0.5).floor().max(0.0);
+    let y0 = (center_y - label_height * 0.5).floor().max(0.0);
+    let x1 = (center_x + label_width * 0.5).ceil().min(width as f32);
+    let y1 = (center_y + label_height * 0.5).ceil().min(height as f32);
+    QualityPixelRegion {
+        x: x0 as u32,
+        y: y0 as u32,
+        width: (x1.max(x0) as u32).saturating_sub(x0 as u32).max(1),
+        height: (y1.max(y0) as u32).saturating_sub(y0 as u32).max(1),
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[derive(Debug)]
+struct FrameDelta {
+    max_channel_delta: u8,
+    mean_channel_delta: f32,
+}
+
+#[cfg(feature = "scene-host")]
+fn frame_delta_in_region(
+    left: &[u8],
+    right: &[u8],
+    frame_width: u32,
+    region: QualityPixelRegion,
+) -> FrameDelta {
+    assert_eq!(left.len(), right.len());
+    let mut max_channel_delta = 0_u8;
+    let mut total = 0_u64;
+    let mut count = 0_u64;
+    for y in region.y..region.y.saturating_add(region.height) {
+        for x in region.x..region.x.saturating_add(region.width) {
+            let offset = ((y * frame_width + x) * 4) as usize;
+            for channel in 0..3 {
+                let delta = left[offset + channel].abs_diff(right[offset + channel]);
+                max_channel_delta = max_channel_delta.max(delta);
+                total = total.saturating_add(u64::from(delta));
+                count = count.saturating_add(1);
+            }
+        }
+    }
+    FrameDelta {
+        max_channel_delta,
+        mean_channel_delta: total as f32 / count.max(1) as f32,
+    }
+}
+
+#[cfg(feature = "scene-host")]
+fn mean_luminance_in_region(rgba: &[u8], frame_width: u32, region: QualityPixelRegion) -> f32 {
+    let mut total = 0.0_f32;
+    let mut count = 0_u32;
+    for y in region.y..region.y.saturating_add(region.height) {
+        for x in region.x..region.x.saturating_add(region.width) {
+            let offset = ((y * frame_width + x) * 4) as usize;
+            total += 0.2126 * f32::from(rgba[offset])
+                + 0.7152 * f32::from(rgba[offset + 1])
+                + 0.0722 * f32::from(rgba[offset + 2]);
+            count = count.saturating_add(1);
+        }
+    }
+    total / count.max(1) as f32
+}
+
+fn system_test_font_path() -> PathBuf {
+    let candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ];
+    candidates
+        .iter()
+        .map(Path::new)
+        .find(|path| path.exists())
+        .map(Path::to_path_buf)
+        .expect("builder must provide a TrueType test font")
+}
+
+fn write_rgba_png(path: &Path, width: u32, height: u32, pixel: &[u8; 4]) {
+    let file = fs::File::create(path).expect("reference PNG creates");
+    let mut encoder = png::Encoder::new(file, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().expect("reference PNG header writes");
+    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+    for _ in 0..width.saturating_mul(height) {
+        rgba.extend_from_slice(pixel);
+    }
+    writer
+        .write_image_data(&rgba)
+        .expect("reference PNG pixels write");
 }
 
 fn path_str(path: &Path) -> &str {

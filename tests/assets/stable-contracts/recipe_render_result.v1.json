@@ -30,6 +30,7 @@
       "render_checks": 0,
       "appearance_targets": 0,
       "interaction_steps": 0,
+      "quality_checks": 0,
       "errors": 1,
       "warnings": 0
     },

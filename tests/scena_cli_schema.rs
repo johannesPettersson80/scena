@@ -20,6 +20,7 @@ fn scena_schema_cli_lists_and_gets_stable_contracts() {
         serde_json::from_slice(&output.stdout).expect("schema list emits JSON");
     assert_eq!(catalog["schema"], "scena.schema_catalog.v1");
     assert_schema(&catalog, "scena.render_introspection.v1");
+    assert_schema(&catalog, "scena.render_quality.v1");
     assert_schema(&catalog, "scena.visibility_diagnosis.v1");
     assert_schema(&catalog, "scena.scene_recipe.v1");
     assert_schema(&catalog, "scena.scene_recipe_validation.v1");

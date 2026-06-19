@@ -22,7 +22,7 @@ schema-backed name only when the suggestion is unambiguous.
 Run render with introspection and inspect reasons:
 
 ```bash
-scena recipe render "$RECIPE" --introspect --verify --out frame.png
+scena recipe render "$RECIPE" --introspect --out frame.png
 ```
 
 Common causes:

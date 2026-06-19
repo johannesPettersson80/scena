@@ -2,6 +2,7 @@
 
 use super::super::RasterTarget;
 use super::instancing::InstanceDrawBatch;
+use super::labels::{self, LabelResources};
 use super::material_bindings::MaterialTextureBindingMode;
 use super::materials::MaterialResources;
 use super::pipeline::{BYTES_PER_PIXEL, MeshPipelineSet, create_unlit_pipeline_set};
@@ -81,6 +82,7 @@ pub(super) struct BrowserReadbackPass<'a> {
     pub(super) opaque_output_bind_group: &'a wgpu::BindGroup,
     pub(super) draw_bind_group: &'a wgpu::BindGroup,
     pub(super) material_resources: &'a MaterialResources,
+    pub(super) label_resources: Option<&'a LabelResources>,
     pub(super) draw_batches: &'a [PrimitiveDrawBatch],
     pub(super) instance_batches: &'a [InstanceDrawBatch],
     pub(super) identity_instance: u32,
@@ -173,6 +175,20 @@ pub(super) fn encode_browser_readback_pass(
                 color_load: ColorLoad::Clear(pass.clear_color),
                 draw_filter: DrawFilter::All,
                 label: "scena.browser.proof_readback_pass",
+                draw_submissions: &mut *draw_submissions,
+            },
+        );
+    }
+    if let Some(label_resources) = pass.label_resources {
+        labels::encode_pass(
+            encoder,
+            labels::LabelPass {
+                view: &pass.readback.view,
+                depth_view: pass.depth_view,
+                output_bind_group: pass.output_bind_group,
+                resources: label_resources,
+                pipeline: labels::post_pipeline(label_resources),
+                label: "scena.browser.proof_label_readback_pass",
                 draw_submissions: &mut *draw_submissions,
             },
         );

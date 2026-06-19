@@ -16,6 +16,10 @@ use overlays::{add_cad_overlay_recipe_sections, add_documentation_overlay_recipe
 
 const INTERACTION_EXPECTATION_SCHEMA_V1: &str = "scena.interaction_expectation.v1";
 const INTERACTION_VERIFICATION_SCHEMA_V1: &str = "scena.interaction_verification.v1";
+const TEMPLATE_STUDIO_ENVIRONMENT: &str =
+    "tests/assets/environment/polyhaven/studio_small_03_1k.hdr";
+const TEMPLATE_CAPTURE_MIN_WIDTH: u32 = 640;
+const TEMPLATE_CAPTURE_MIN_HEIGHT: u32 = 480;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExamplesAgentCommandArgs {
@@ -387,6 +391,8 @@ fn write_recipe(
     builder: &mut TemplateBuilder,
 ) -> Result<PathBuf, String> {
     let recipe = out_dir.join("recipe.json");
+    let width = width.max(TEMPLATE_CAPTURE_MIN_WIDTH);
+    let height = height.max(TEMPLATE_CAPTURE_MIN_HEIGHT);
     write_json_file(
         &recipe,
         &json!({
@@ -400,6 +406,14 @@ fn write_recipe(
                     "unit": "m"
                 }
             }],
+            "lights": template_light_rig(),
+            "scene": template_scene_setup("studio"),
+            "render": {
+                "profile": "balanced",
+                "quality": "medium",
+                "anti_aliasing": "fxaa",
+                "tonemapper": "pbr_neutral"
+            },
             "capture": {
                 "width": width,
                 "height": height
@@ -414,6 +428,21 @@ fn write_recipe(
     Ok(recipe)
 }
 
+fn template_light_rig() -> serde_json::Value {
+    json!([
+        { "id": "key", "kind": "directional", "preset": "key" },
+        { "id": "fill", "kind": "directional", "preset": "fill" },
+        { "id": "rim", "kind": "directional", "preset": "rim" }
+    ])
+}
+
+fn template_scene_setup(background: &str) -> serde_json::Value {
+    json!({
+        "background": { "kind": background },
+        "environment": { "kind": "uri", "uri": TEMPLATE_STUDIO_ENVIRONMENT }
+    })
+}
+
 fn add_common_commands(out_dir: &Path, recipe: &Path, builder: &mut TemplateBuilder) {
     builder.command(
         "validate_recipe",
@@ -426,6 +455,7 @@ fn add_common_commands(out_dir: &Path, recipe: &Path, builder: &mut TemplateBuil
     builder.command(
         "render_introspect",
         vec![
+            "recipe",
             "render",
             &path_for_json(recipe),
             "--introspect",

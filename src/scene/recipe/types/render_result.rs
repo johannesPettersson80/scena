@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use super::SceneRecipeBuildV1;
 use crate::{
     AppearanceIntrospectionReportV1, CaptureDescriptor, InteractionVerificationReportV1,
-    RenderIntrospectionReportV1,
+    RenderIntrospectionReportV1, RenderQualityReportV1,
 };
 
 pub const SCENE_RECIPE_RENDER_RESULT_SCHEMA_V1: &str = "scena.recipe_render_result.v1";
@@ -27,6 +27,8 @@ pub struct SceneRecipeVerificationReportV1 {
     pub appearance: Option<AppearanceIntrospectionReportV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interaction: Option<InteractionVerificationReportV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<RenderQualityReportV1>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,6 +36,7 @@ pub struct SceneRecipeVerificationSummaryV1 {
     pub render_checks: usize,
     pub appearance_targets: usize,
     pub interaction_steps: usize,
+    pub quality_checks: usize,
     pub errors: usize,
     pub warnings: usize,
 }
@@ -81,6 +84,7 @@ impl SceneRecipeRenderResultV1 {
             }],
             None,
             None,
+            None,
         );
         Self {
             schema: SCENE_RECIPE_RENDER_RESULT_SCHEMA_V1.to_owned(),
@@ -99,6 +103,7 @@ impl SceneRecipeVerificationReportV1 {
         reasons: Vec<SceneRecipeVerificationReasonV1>,
         appearance: Option<AppearanceIntrospectionReportV1>,
         interaction: Option<InteractionVerificationReportV1>,
+        quality: Option<RenderQualityReportV1>,
     ) -> Self {
         let appearance_targets = appearance
             .as_ref()
@@ -107,6 +112,10 @@ impl SceneRecipeVerificationReportV1 {
         let interaction_steps = interaction
             .as_ref()
             .map(|report| report.summary.step_count)
+            .unwrap_or(0);
+        let quality_checks = quality
+            .as_ref()
+            .map(|report| report.summary.checks)
             .unwrap_or(0);
         let errors = reasons
             .iter()
@@ -122,12 +131,14 @@ impl SceneRecipeVerificationReportV1 {
                 render_checks,
                 appearance_targets,
                 interaction_steps,
+                quality_checks,
                 errors,
                 warnings,
             },
             reasons,
             appearance,
             interaction,
+            quality,
         }
     }
 }

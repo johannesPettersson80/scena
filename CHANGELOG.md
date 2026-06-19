@@ -6,6 +6,16 @@ All notable user-facing changes are recorded here.
 
 ### Added
 
+- Improved the LLM app-builder path: schema examples and `examples agent`
+  templates now include a key/fill/rim light rig, bundled HDR environment,
+  presentable backgrounds, and a useful capture-size floor; `validate-recipe`
+  enforces the same local path policy as recipe build, recipe bbox-fit
+  expectations measure subject bounds instead of floor/grid helpers, and recipe
+  animation verification handles imported glTF clips as well as authored clips.
+- Added opt-in GPU rendering for `scena render` and `scena recipe render`
+  through `--gpu` / `SCENA_USE_GPU=1`; CPU headless rendering remains the
+  deterministic default, and reports continue to expose the backend actually
+  used.
 - Added the repo-hosted `.codex/skills/scena-app-builder` LLM skill and
   `docs/guides/llm-app-builder.md` guide for building and verifying scena
   applications from public schemas, recipes, CLI commands, diagnostics, and
@@ -49,6 +59,11 @@ All notable user-facing changes are recorded here.
   SceneHost native and WASM hosts can now request the same report through
   `render_introspection_json` / `renderIntrospectionJson()`, with browser proof
   covering empty, offscreen, and valid centered frames.
+- Added `scena.render_quality.v1`, a native-resolution recipe verification
+  report for severe exposure failures, profile-scoped exposure/contrast/noise
+  and text-integrity checks, and opt-in reference fidelity (`rgba_abs_diff`,
+  Delta E 2000, SSIM). Failures carry actionable `fix_hint` strings and are
+  surfaced in the compact recipe verification reasons.
 - Added `scena.visibility_diagnosis.v1`, an inspection-backed visibility
   diagnoser with stable reason codes and explicit fix suggestions behind the
   `inspection` feature. Whole-scene `all_culled` diagnosis requires every
@@ -86,11 +101,10 @@ All notable user-facing changes are recorded here.
 - Added real TrueType/OpenType label fonts through `LabelFontFace`,
   `LabelDesc::truetype`, and recipe `fonts[]` plus label `font` references.
   Font-backed labels use real glyph metrics and kerning for basic Latin glyph
-  shapes, then threshold coverage into hard-edged opaque cells; antialiased text
-  waits for the transparent billboard path. They fail closed for
-  missing/oversized fonts or complex-script text that scena does not shape.
-  Explicit label text/background/halo colors are now fail-closed unless opaque so
-  GPU billboards do not silently ignore alpha.
+  shapes, preserve glyph coverage through the renderer-owned atlas path, and
+  fail closed for missing/oversized fonts or complex-script text that scena does
+  not shape. Explicit label text/background/halo colors are now fail-closed
+  unless opaque so user alpha is not silently ignored.
 - Added authored morph and skin recipe directives plus `Scene::set_skin_binding`
   for deterministic recipe-built deformation data. `scene_recipe.v1` can now
   derive morph and skin geometries, bind authored joint nodes with inverse bind
@@ -230,6 +244,10 @@ All notable user-facing changes are recorded here.
 
 ### Changed
 
+- `scena recipe render <recipe> --introspect` now succeeds without `--verify`
+  and emits the same `scena.render_introspection.v1` shape as generic
+  `scena render`; adding `--verify` keeps the existing combined
+  recipe-render result.
 - High-level glTF viewer results now expose render-introspection helpers, and
   section boxes accept zero-thickness planar bounds when a positive margin
   expands them into a usable volume for CAD-style cutaways.
@@ -258,6 +276,17 @@ All notable user-facing changes are recorded here.
   drained `HostEvent` entries as DOM events, and delegates capture/download,
   picking, hover, selection, framing, camera, and studio-lighting helpers to
   the existing Rust/WASM host methods.
+
+### Fixed
+
+- TrueType label rendering now preserves glyph coverage instead of thresholding
+  anti-aliased pixels into hard-edged 1-bit cells. Renderer-owned glyph
+  coverage is distinct from user label alpha, so the existing fail-closed
+  opaque-label style invariant remains intact while CPU and GPU captures keep
+  smooth label edges.
+- CPU label backgrounds now use the same flat overlay color transform and
+  display-space blending as the GPU label atlas path, so full label regions
+  (background pill plus glyphs) match within the documented lavapipe tolerance.
 
 ## [1.7.1] - 2026-06-12
 

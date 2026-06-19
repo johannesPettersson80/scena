@@ -84,7 +84,9 @@ pub use material_presets::{
 };
 pub use material_source::{AssetMaterialSource, AssetMaterialSourceKind};
 pub use provenance::{AssetDerivative, AssetProvenance};
-pub use recipe_validation::validate_scene_recipe_json_with_assets;
+pub use recipe_validation::{
+    validate_scene_recipe_json_with_assets, validate_scene_recipe_json_with_assets_and_policy,
+};
 #[cfg(all(target_arch = "wasm32", feature = "browser-probe"))]
 pub(crate) use texture::BROWSER_TEXTURE_MAX_DIMENSION_2D;
 pub use texture::{

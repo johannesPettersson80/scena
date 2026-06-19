@@ -27,7 +27,9 @@ pub use build_manifest::{
 };
 pub use expectations::{
     SceneRecipeBboxFitExpectationV1, SceneRecipeColorExpectationV1, SceneRecipeExpectV1,
-    SceneRecipePickExpectationV1, SceneRecipeVisibleExpectationV1,
+    SceneRecipePickExpectationV1, SceneRecipeQualityContrastV1, SceneRecipeQualityExpectationV1,
+    SceneRecipeQualityExposureV1, SceneRecipeQualityLineV1, SceneRecipeQualityNoiseV1,
+    SceneRecipeQualityTextV1, SceneRecipeReferenceExpectationV1, SceneRecipeVisibleExpectationV1,
 };
 pub use overlays::{
     SceneRecipeCalloutTargetV1, SceneRecipeCalloutV1, SceneRecipeCaptureV1,

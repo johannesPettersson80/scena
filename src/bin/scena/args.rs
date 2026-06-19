@@ -14,6 +14,7 @@ pub(crate) struct RenderCommandArgs {
     pub(crate) width: Option<u32>,
     pub(crate) height: Option<u32>,
     pub(crate) detail: bool,
+    pub(crate) gpu: bool,
 }
 
 #[cfg(feature = "inspection")]
@@ -221,6 +222,7 @@ impl RenderCommandArgs {
         let mut width = None;
         let mut height = None;
         let mut detail = false;
+        let mut gpu = super::scena_input::gpu_requested_from_env();
 
         let mut index = 1;
         while index < args.len() {
@@ -252,6 +254,10 @@ impl RenderCommandArgs {
                     detail = true;
                     index += 1;
                 }
+                "--gpu" => {
+                    gpu = true;
+                    index += 1;
+                }
                 "--json" => {
                     index += 1;
                 }
@@ -270,6 +276,7 @@ impl RenderCommandArgs {
             width,
             height,
             detail,
+            gpu,
         })
     }
 }
@@ -502,7 +509,7 @@ fn place_usage() -> String {
 
 #[cfg(feature = "inspection")]
 fn render_usage() -> String {
-    "usage: scena render <asset-or-recipe> --introspect --out <png> [--width <px>] [--height <px>] [--detail] [--round-floats <0..6>]"
+    "usage: scena render <asset-or-recipe> --introspect --out <png> [--gpu] [--width <px>] [--height <px>] [--detail] [--round-floats <0..6>]"
         .to_string()
 }
 

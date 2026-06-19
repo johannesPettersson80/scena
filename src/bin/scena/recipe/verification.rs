@@ -1,27 +1,56 @@
 use super::super::scena_input::appearance_introspection_options;
 
+mod bbox_fit;
+mod reference_quality;
+
+use std::path::Path;
+
+pub(crate) struct RecipeVerificationInput<'a> {
+    pub(crate) host: &'a mut scena::SceneHostCore,
+    pub(crate) manifest: &'a scena::SceneRecipeBuildV1,
+    pub(crate) expect: Option<&'a scena::SceneRecipeExpectV1>,
+    pub(crate) capture: &'a scena::CaptureRgba8,
+    pub(crate) inspection: &'a scena::SceneInspectionReportV1,
+    pub(crate) introspection: &'a scena::RenderIntrospectionReportV1,
+    pub(crate) detail: bool,
+    pub(crate) recipe_dir: &'a Path,
+}
+
 pub(crate) fn verify_recipe_expectations(
-    host: &mut scena::SceneHostCore,
-    manifest: &scena::SceneRecipeBuildV1,
-    expect: Option<&scena::SceneRecipeExpectV1>,
-    capture: &scena::CaptureRgba8,
-    inspection: &scena::SceneInspectionReportV1,
-    introspection: &scena::RenderIntrospectionReportV1,
-    detail: bool,
+    input: RecipeVerificationInput<'_>,
 ) -> Result<scena::SceneRecipeVerificationReportV1, String> {
+    let RecipeVerificationInput {
+        host,
+        manifest,
+        expect,
+        capture,
+        inspection,
+        introspection,
+        detail,
+        recipe_dir,
+    } = input;
     let mut reasons = Vec::new();
     let mut render_checks = 0;
-    let Some(expect) = expect else {
-        return Ok(scena::SceneRecipeVerificationReportV1::new(
-            0, reasons, None, None,
-        ));
-    };
 
-    render_checks += verify_visible(expect, manifest, inspection, &mut reasons);
-    render_checks += verify_bbox_fit(expect.expect_bbox_fit, introspection, &mut reasons);
-    render_checks += verify_no_warnings(expect, introspection, &mut reasons);
+    if let Some(expect) = expect {
+        render_checks += verify_visible(expect, manifest, inspection, &mut reasons);
+        render_checks += bbox_fit::verify_bbox_fit(
+            expect.expect_bbox_fit,
+            manifest,
+            capture,
+            inspection,
+            introspection,
+            &mut reasons,
+        );
+        render_checks += verify_no_warnings(expect, introspection, &mut reasons);
+    }
 
-    let appearance_expectation = compile_appearance_expectation(expect, manifest, &mut reasons);
+    let appearance_expectation = expect
+        .map(|expect| compile_appearance_expectation(expect, manifest, &mut reasons))
+        .unwrap_or_else(|| scena::AppearanceExpectationV1 {
+            schema: scena::APPEARANCE_EXPECTATION_SCHEMA_V1.to_owned(),
+            targets: Vec::new(),
+        });
     let appearance = if appearance_expectation.targets.is_empty() {
         None
     } else {
@@ -44,8 +73,17 @@ pub(crate) fn verify_recipe_expectations(
         Some(report)
     };
 
-    let interaction_expectation =
-        compile_interaction_expectation(expect, manifest, capture, &mut reasons);
+    let interaction_expectation = expect
+        .map(|expect| compile_interaction_expectation(expect, manifest, capture, &mut reasons))
+        .unwrap_or_else(|| scena::InteractionExpectationV1 {
+            schema: scena::INTERACTION_EXPECTATION_SCHEMA_V1.to_owned(),
+            viewport: scena::InteractionViewportV1 {
+                width_css_px: capture.descriptor.width as f32,
+                height_css_px: capture.descriptor.height as f32,
+                device_pixel_ratio: 1.0,
+            },
+            steps: Vec::new(),
+        });
     let interaction = if interaction_expectation.steps.is_empty() {
         None
     } else {
@@ -63,11 +101,85 @@ pub(crate) fn verify_recipe_expectations(
         Some(report)
     };
 
+    let quality_expectation_without_text = expect
+        .and_then(|expect| expect.expect_quality.as_ref())
+        .cloned()
+        .map(|mut expectation| {
+            expectation.text = None;
+            expectation.line = None;
+            expectation
+        });
+    let mut quality = scena::evaluate_render_quality(
+        capture,
+        introspection,
+        quality_expectation_without_text.as_ref(),
+    );
+    if let Some(expect) = expect {
+        if let Some(text) = expect
+            .expect_quality
+            .as_ref()
+            .and_then(|quality| quality.text)
+        {
+            let label_regions =
+                host.label_quality_regions(capture.descriptor.width, capture.descriptor.height);
+            for (index, region) in label_regions.into_iter().enumerate() {
+                quality.checks.extend(scena::evaluate_label_region_quality(
+                    &format!("expect_quality.text.label[{index}]"),
+                    &capture.rgba8,
+                    capture.descriptor.width,
+                    capture.descriptor.height,
+                    region,
+                    text,
+                ));
+            }
+        }
+        if let Some(line) = expect
+            .expect_quality
+            .as_ref()
+            .and_then(|quality| quality.line)
+        {
+            let line_regions =
+                host.line_quality_regions(capture.descriptor.width, capture.descriptor.height);
+            for (index, region) in line_regions.into_iter().enumerate() {
+                quality.checks.extend(scena::evaluate_line_region_quality(
+                    &format!("expect_quality.line.segment[{index}]"),
+                    &capture.rgba8,
+                    capture.descriptor.width,
+                    capture.descriptor.height,
+                    region,
+                    line,
+                ));
+            }
+        }
+        quality
+            .checks
+            .extend(reference_quality::verify_reference_expectations(
+                &expect.expect_reference,
+                capture,
+                recipe_dir,
+            )?);
+        reference_quality::refresh_quality_summary(&mut quality);
+    }
+    reasons.extend(
+        quality
+            .checks
+            .iter()
+            .map(|check| scena::SceneRecipeVerificationReasonV1 {
+                code: check.code.clone(),
+                severity: check.severity.clone(),
+                source: "quality".to_owned(),
+                expectation_id: Some(check.id.clone()),
+                affected_handles: check.region.handle.into_iter().collect(),
+                message: format!("{}; fix: {}", check.code, check.fix_hint),
+            }),
+    );
+
     Ok(scena::SceneRecipeVerificationReportV1::new(
         render_checks,
         reasons,
         appearance,
         interaction,
+        Some(quality),
     ))
 }
 
@@ -110,47 +222,6 @@ fn verify_visible(
         }
     }
     checks
-}
-
-fn verify_bbox_fit(
-    expectation: Option<scena::SceneRecipeBboxFitExpectationV1>,
-    introspection: &scena::RenderIntrospectionReportV1,
-    reasons: &mut Vec<scena::SceneRecipeVerificationReasonV1>,
-) -> usize {
-    let Some(expectation) = expectation else {
-        return 0;
-    };
-    if let Some(min) = expectation.min
-        && f64::from(introspection.framing.fit_fraction) < min
-    {
-        push_reason(
-            reasons,
-            "fit_fraction_below_min",
-            "render",
-            Some("expect_bbox_fit".to_owned()),
-            Vec::new(),
-            format!(
-                "expected fit_fraction >= {min}, observed {}",
-                introspection.framing.fit_fraction
-            ),
-        );
-    }
-    if let Some(max) = expectation.max
-        && f64::from(introspection.framing.fit_fraction) > max
-    {
-        push_reason(
-            reasons,
-            "fit_fraction_above_max",
-            "render",
-            Some("expect_bbox_fit".to_owned()),
-            Vec::new(),
-            format!(
-                "expected fit_fraction <= {max}, observed {}",
-                introspection.framing.fit_fraction
-            ),
-        );
-    }
-    1
 }
 
 fn verify_no_warnings(

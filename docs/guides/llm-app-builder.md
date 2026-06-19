@@ -73,14 +73,49 @@ Validate before rendering:
 scena validate-recipe "$RECIPE"
 ```
 
-Render with introspection and verification:
+Render with introspection:
 
 ```bash
-scena recipe render "$RECIPE" --introspect --verify --out frame.png
+scena recipe render "$RECIPE" --introspect --out frame.png
 ```
 
 Success means the command exits 0 and the top-level report says `ok:true`.
 Never claim success from a PNG path or nonzero byte length alone.
+When the recipe has an `expect` block, add `--verify`; that mode emits the
+combined recipe build/capture/introspection/verification report instead of the
+plain render-introspection report.
+For presentation or beauty output, add `--gpu`; CPU remains the default, and
+the report `capabilities.backend` / `gpu_device` fields say which backend
+actually ran.
+
+## Make It Look Good
+
+Correctness proof is not aesthetic proof. For scenes meant for a user-facing
+screenshot or demo, add presentation defaults instead of relying on the flat
+implicit setup:
+
+```json
+"lights": [
+  { "id": "key", "kind": "directional", "preset": "key" },
+  { "id": "fill", "kind": "directional", "preset": "fill" },
+  { "id": "rim", "kind": "directional", "preset": "rim" }
+],
+"scene": {
+  "background": { "kind": "studio" },
+  "environment": {
+    "kind": "uri",
+    "uri": "tests/assets/environment/polyhaven/studio_small_03_1k.hdr"
+  }
+},
+"capture": { "width": 1280, "height": 960 }
+```
+
+Use `studio` or `neutral_gray` for model/product inspection, `dark_studio` for
+dashboards and twin state views, `white` or `transparent` for documentation
+exports, and `custom` only when the user gave an explicit color. The default
+environment is flat; the bundled HDRI gives reflections and material response.
+Use real glTF/GLB assets for realistic products and digital twins. Use authored
+primitives for functional/CAD/diagram/chart scenes and tests.
 
 ## Dedicated Verifiers
 

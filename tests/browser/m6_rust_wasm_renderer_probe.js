@@ -556,17 +556,12 @@ function assertLabelTextBrowserProof(backend, result) {
   const readback = result.renderer_readback || {};
   const pixelStats = readback.pixel_statistics || result.pixels || {};
   if (
-    metadata.proof_class !== "browser-bitmap-labels" ||
+    metadata.proof_class !== "browser-truetype-labels" ||
     metadata.labels < 12 ||
-    metadata.rasterization !== "bitmap-5x7"
+    metadata.rasterization !== "truetype-atlas-aa"
   ) {
     throw new Error(
-      `${backend} labels-helpers proof did not record the bitmap label metadata: ${JSON.stringify(result)}`,
-    );
-  }
-  if (!result.stats || result.stats.triangles < 200 || result.primitives < 200) {
-    throw new Error(
-      `${backend} labels-helpers proof did not prepare glyph-shaped label geometry: ${JSON.stringify(result)}`,
+      `${backend} labels-helpers proof did not record the TrueType atlas label metadata: ${JSON.stringify(result)}`,
     );
   }
   if (

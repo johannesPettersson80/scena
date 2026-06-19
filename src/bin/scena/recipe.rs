@@ -9,7 +9,7 @@ use super::scena_output::{CliOutcome, json_outcome};
 #[path = "recipe/verification.rs"]
 mod verification;
 
-use verification::verify_recipe_expectations;
+use verification::{RecipeVerificationInput, verify_recipe_expectations};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RecipeRenderCommandArgs {
@@ -18,11 +18,12 @@ pub(crate) struct RecipeRenderCommandArgs {
     introspect: bool,
     verify: bool,
     detail: bool,
+    gpu: bool,
 }
 
 pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, String> {
     let args = RecipeRenderCommandArgs::parse(args)?;
-    if !args.introspect || !args.verify {
+    if !args.introspect {
         return Err(recipe_render_usage());
     }
 
@@ -43,11 +44,21 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, S
             ));
         }
     };
-    let build = match pollster::block_on(scena::SceneHostCore::build_recipe_json(
-        args.recipe.display().to_string(),
-        &recipe_text,
-        policy,
-    )) {
+    let recipe_path = args.recipe.display().to_string();
+    let build = if args.gpu {
+        pollster::block_on(scena::SceneHostCore::build_recipe_json_prefer_gpu(
+            &recipe_path,
+            &recipe_text,
+            policy,
+        ))
+    } else {
+        pollster::block_on(scena::SceneHostCore::build_recipe_json(
+            &recipe_path,
+            &recipe_text,
+            policy,
+        ))
+    };
+    let build = match build {
         Ok(build) => build,
         Err(manifest) => {
             let result = scena::SceneRecipeRenderResultV1::build_failed(manifest);
@@ -99,15 +110,27 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, S
     let introspection =
         host.renderer()
             .introspect_capture(&capture, &inspection, introspection_options);
-    let verification = verify_recipe_expectations(
-        &mut host,
-        &build.manifest,
-        recipe.expect.as_ref(),
-        &capture,
-        &inspection,
-        &introspection,
-        args.detail,
-    )?;
+    if !args.verify {
+        let exit_code = if introspection.ok { 0 } else { 1 };
+        return json_outcome(
+            &introspection,
+            exit_code,
+            "failed to serialize render introspection report",
+        );
+    }
+    let verification = verify_recipe_expectations(RecipeVerificationInput {
+        host: &mut host,
+        manifest: &build.manifest,
+        expect: recipe.expect.as_ref(),
+        capture: &capture,
+        inspection: &inspection,
+        introspection: &introspection,
+        detail: args.detail,
+        recipe_dir: args
+            .recipe
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new(".")),
+    })?;
     let result = scena::SceneRecipeRenderResultV1::new(
         build.manifest,
         capture.descriptor,
@@ -131,6 +154,7 @@ impl RecipeRenderCommandArgs {
         let mut introspect = false;
         let mut verify = false;
         let mut detail = false;
+        let mut gpu = super::scena_input::gpu_requested_from_env();
         let mut index = 1;
         while index < args.len() {
             match args[index].as_str() {
@@ -150,6 +174,10 @@ impl RecipeRenderCommandArgs {
                     detail = true;
                     index += 1;
                 }
+                "--gpu" => {
+                    gpu = true;
+                    index += 1;
+                }
                 "--json" => {
                     index += 1;
                 }
@@ -167,6 +195,7 @@ impl RecipeRenderCommandArgs {
             introspect,
             verify,
             detail,
+            gpu,
         })
     }
 }
@@ -178,5 +207,6 @@ fn flag_value(args: &[String], index: usize, flag: &str) -> Result<String, Strin
 }
 
 fn recipe_render_usage() -> String {
-    "usage: scena recipe render <recipe.json> --introspect --verify --out <png>".to_owned()
+    "usage: scena recipe render <recipe.json> --introspect [--verify] --out <png> [--gpu]"
+        .to_owned()
 }

@@ -393,20 +393,20 @@ into Slice 12 skin/morph authoring + Slice 13 particle rendering.)
       bare "renders non-empty".
 
 ### Slice 11 — Real fonts (#17)
-**Major slice, not a small extension** — labels now support both the embedded
-5×7 bitmap path and loaded TrueType/OpenType faces.
+**Major slice, not a small extension** — labels now use an embedded default
+TrueType font and support loaded TrueType/OpenType faces; the old 5×7 bitmap
+font path is removed.
 - [x] TrueType/asset font loading: parsed font metrics + glyph raster caching + font asset
       ownership; `LabelDesc` font selection; recipe label `font` ref under path
       policy.
 - [x] **Pin font scope explicitly:** basic Latin glyph metrics + kerning pairs +
-      hard-edged glyph-cell shapes are **in**; antialiasing is **out** until the
-      transparent billboard path exists; complex-script shaping (Arabic/Indic,
-      bidi, ligature substitution) is **out** for this slice and must fail closed
-      with a clear `unsupported_feature`, not render garbage.
-- [x] Proof: text rendered with a loaded font produces distinct hard-edged glyph
-      cells vs the bitmap path (pixel proof); fail-closed on missing/oversize and
-      present-but-corrupt fonts under policy.
-      Evidence: `label_desc_truetype_font_changes_metrics_and_rendered_coverage`,
+      antialiased atlas-rendered glyph shapes are **in**; complex-script shaping
+      (Arabic/Indic, bidi, ligature substitution) is **out** for this slice and
+      must fail closed with a clear `unsupported_feature`, not render garbage.
+- [x] Proof: text rendered with the embedded default TrueType and with a loaded
+      font produces antialiased glyph coverage (pixel proof); fail-closed on
+      missing/oversize and present-but-corrupt fonts under policy.
+      Evidence: `label_desc_default_font_is_embedded_truetype_and_explicit_fonts_change_metrics`,
       `label_desc_truetype_rejects_complex_script_text`, and
       `scene_recipe_slice11_fonts_validate_build_render_and_fail_closed`.
 

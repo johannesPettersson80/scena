@@ -40,6 +40,23 @@ impl SceneHostCore<DefaultAssetFetcher> {
         text: &str,
         policy: RecipeBuildPolicy,
     ) -> Result<SceneHostRecipeBuild<DefaultAssetFetcher>, SceneRecipeBuildV1> {
+        Self::build_recipe_json_with_backend(recipe_path, text, policy, false).await
+    }
+
+    pub async fn build_recipe_json_prefer_gpu(
+        recipe_path: impl AsRef<str>,
+        text: &str,
+        policy: RecipeBuildPolicy,
+    ) -> Result<SceneHostRecipeBuild<DefaultAssetFetcher>, SceneRecipeBuildV1> {
+        Self::build_recipe_json_with_backend(recipe_path, text, policy, true).await
+    }
+
+    async fn build_recipe_json_with_backend(
+        recipe_path: impl AsRef<str>,
+        text: &str,
+        policy: RecipeBuildPolicy,
+        prefer_gpu: bool,
+    ) -> Result<SceneHostRecipeBuild<DefaultAssetFetcher>, SceneRecipeBuildV1> {
         let recipe_path = recipe_path.as_ref();
         let recipe = match parse_valid_scene_recipe_json_with_policy(text, &policy) {
             Ok(recipe) => recipe,
@@ -87,6 +104,7 @@ impl SceneHostCore<DefaultAssetFetcher> {
             width,
             height,
             renderer_options_from_recipe(recipe.render.as_ref()),
+            prefer_gpu,
         ) {
             Ok(host) => host,
             Err(error) => {
@@ -427,6 +445,7 @@ fn recipe_headless_host(
     width: u32,
     height: u32,
     options: crate::RendererOptions,
+    prefer_gpu: bool,
 ) -> Result<SceneHostCore<DefaultAssetFetcher>, SceneHostError> {
     let viewport = SurfaceViewport::new(width as f32, height as f32, 1.0).ok_or_else(|| {
         SceneHostError::new(
@@ -434,11 +453,13 @@ fn recipe_headless_host(
             format!("invalid viewport {width}x{height} at DPR 1"),
         )
     })?;
-    SceneHostCore::from_renderer(
-        Assets::new(),
-        Renderer::headless_with_options(width, height, options)?,
-        viewport,
-    )
+    let renderer = if prefer_gpu {
+        Renderer::headless_gpu_with_options(width, height, options)
+            .or_else(|_gpu_error| Renderer::headless_with_options(width, height, options))?
+    } else {
+        Renderer::headless_with_options(width, height, options)?
+    };
+    SceneHostCore::from_renderer(Assets::new(), renderer, viewport)
 }
 
 fn build_manifest(

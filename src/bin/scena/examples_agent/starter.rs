@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 
 use super::add_common_commands;
 use super::builder::{TemplateBuilder, write_json_file};
+use super::{TEMPLATE_CAPTURE_MIN_HEIGHT, TEMPLATE_CAPTURE_MIN_WIDTH, TEMPLATE_STUDIO_ENVIRONMENT};
 
 pub(super) fn primitive_scene(out_dir: &Path) -> Result<scena::AgentSmokeTemplateV1, String> {
     authored_template(
@@ -253,12 +254,68 @@ pub(super) fn product_configurator(out_dir: &Path) -> Result<scena::AgentSmokeTe
 fn authored_template(
     name: &str,
     out_dir: &Path,
-    recipe_value: Value,
+    mut recipe_value: Value,
 ) -> Result<scena::AgentSmokeTemplateV1, String> {
+    apply_presentation_defaults(&mut recipe_value);
     let mut builder = TemplateBuilder::ready(name, &["inspection", "scene-host"]);
     let recipe = write_authored_recipe(out_dir, recipe_value, &mut builder)?;
     add_common_commands(out_dir, &recipe, &mut builder);
     Ok(builder.finish())
+}
+
+fn apply_presentation_defaults(recipe: &mut Value) {
+    let Some(object) = recipe.as_object_mut() else {
+        return;
+    };
+    object.insert(
+        "lights".to_owned(),
+        json!([
+            { "id": "key", "kind": "directional", "preset": "key" },
+            { "id": "fill", "kind": "directional", "preset": "fill" },
+            { "id": "rim", "kind": "directional", "preset": "rim" }
+        ]),
+    );
+
+    let scene = object.entry("scene").or_insert_with(|| json!({}));
+    if !scene.is_object() {
+        *scene = json!({});
+    }
+    let scene = scene
+        .as_object_mut()
+        .expect("scene object was just initialized");
+    scene
+        .entry("background")
+        .or_insert_with(|| json!({ "kind": "studio" }));
+    scene.insert(
+        "environment".to_owned(),
+        json!({ "kind": "uri", "uri": TEMPLATE_STUDIO_ENVIRONMENT }),
+    );
+
+    object.entry("render").or_insert_with(|| {
+        json!({
+            "profile": "balanced",
+            "quality": "medium",
+            "anti_aliasing": "fxaa",
+            "tonemapper": "pbr_neutral"
+        })
+    });
+
+    let capture = object.entry("capture").or_insert_with(|| json!({}));
+    if !capture.is_object() {
+        *capture = json!({});
+    }
+    let capture = capture
+        .as_object_mut()
+        .expect("capture object was just initialized");
+    set_min_u32(capture, "width", TEMPLATE_CAPTURE_MIN_WIDTH);
+    set_min_u32(capture, "height", TEMPLATE_CAPTURE_MIN_HEIGHT);
+}
+
+fn set_min_u32(object: &mut serde_json::Map<String, Value>, key: &str, minimum: u32) {
+    let current = object.get(key).and_then(Value::as_u64).unwrap_or(0);
+    if current < u64::from(minimum) {
+        object.insert(key.to_owned(), json!(minimum));
+    }
 }
 
 fn write_authored_recipe(

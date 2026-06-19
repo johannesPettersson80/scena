@@ -11,6 +11,8 @@ mod build;
 mod camera;
 mod color_contract;
 mod cpu;
+mod cpu_labels;
+mod cpu_strokes;
 mod culling;
 mod environment_cache;
 mod exposure;
@@ -22,6 +24,8 @@ mod output;
 mod prepare;
 mod prepare_lifecycle;
 mod prepare_retained;
+#[cfg(feature = "inspection")]
+pub mod quality;
 mod reporting;
 #[cfg(feature = "inspection")]
 mod screen_bounds;
@@ -160,10 +164,12 @@ impl Renderer {
                 self.stats.order_independent_transparency_passes = 0;
                 Some(gpu_result.post_counts)
             } else {
-                let (primitives, clipping_planes, section_box) = {
+                let (primitives, strokes, labels, clipping_planes, section_box) = {
                     let prepared = self.prepared_state(scene)?;
                     (
                         prepared.primitives.clone(),
+                        prepared.strokes.clone(),
+                        prepared.labels.clone(),
                         prepared.clipping_planes.clone(),
                         prepared.section_box,
                     )
@@ -188,6 +194,9 @@ impl Renderer {
                     if let Some(config) = self.order_independent_transparency {
                         cpu::clear_order_independent_transparency(&mut self.oit_scratch);
                         for primitive in &primitives {
+                            if !primitive.gpu_triangle_path() {
+                                continue;
+                            }
                             if cpu::primitive_needs_order_independent_transparency(primitive) {
                                 cpu::draw_order_independent_transparency_cpu(
                                     &mut cpu_frame,
@@ -214,6 +223,9 @@ impl Renderer {
                         )
                     } else {
                         for primitive in &primitives {
+                            if !primitive.gpu_triangle_path() {
+                                continue;
+                            }
                             cpu::draw_primitive_cpu(
                                 &mut cpu_frame,
                                 primitive,
@@ -224,6 +236,14 @@ impl Renderer {
                         }
                         0
                     };
+                cpu_strokes::draw_overlay_layers_cpu(
+                    &mut cpu_frame,
+                    &strokes,
+                    &labels,
+                    &clipping_planes,
+                    section_box,
+                    &camera_projection,
+                );
                 None
             };
             if let Some(post_counts) = gpu_post_counts {

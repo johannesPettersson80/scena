@@ -14,7 +14,9 @@ use super::draw_common::{
 use super::output::{OutputUniformUpload, encode_clipping_uniform, encode_output_uniform};
 use super::scene_color::{SceneColorPasses, encode_scene_color_passes};
 use super::shadow::{self, encode_shadow_caster_pass};
-use super::{GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuRenderResult, post, strokes};
+use super::{
+    GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuRenderResult, labels, post, strokes,
+};
 
 impl GpuDeviceState {
     pub(in crate::render) fn render_to_surface(
@@ -144,16 +146,14 @@ impl GpuDeviceState {
                     SceneColorPasses {
                         final_view: post::scene_view(post_resources),
                         final_pipelines: post::scene_pipelines(post_resources),
-                        depth_view: resources
-                            .depth_prepass
-                            .as_ref()
-                            .map(|depth_prepass| &depth_prepass.view),
+                        depth_view: resources.depth_prepass.as_ref().map(|d| &d.view),
                         vertex_buffer: &resources.vertex_buffer,
                         instance_buffer: &resources.instance_buffer,
                         output_bind_group: &resources.output_bind_group,
                         opaque_output_bind_group: &resources.opaque_output_bind_group,
                         draw_bind_group: &resources.draw_bind_group,
                         material_resources: &resources.material_resources,
+                        label_resources: resources.labels.as_ref(),
                         draw_batches: &resources.draw_batches,
                         instance_batches: &resources.instance_batches,
                         identity_instance: resources.identity_instance,
@@ -169,15 +169,26 @@ impl GpuDeviceState {
                         &mut encoder,
                         strokes::StrokePass {
                             view: post::scene_view(post_resources),
-                            depth_view: resources
-                                .depth_prepass
-                                .as_ref()
-                                .map(|depth_prepass| &depth_prepass.view),
+                            depth_view: resources.depth_prepass.as_ref().map(|d| &d.view),
                             output_bind_group: &resources.output_bind_group,
                             draw_bind_group: &resources.draw_bind_group,
                             resources: stroke_resources,
                             pipeline: strokes::post_pipeline(stroke_resources),
                             label: "scena.browser.proof_stroke_post_scene_pass",
+                            draw_submissions: &mut draw_submissions,
+                        },
+                    );
+                }
+                if let Some(label_resources) = resources.labels.as_ref() {
+                    labels::encode_pass(
+                        &mut encoder,
+                        labels::LabelPass {
+                            view: post::scene_view(post_resources),
+                            depth_view: resources.depth_prepass.as_ref().map(|d| &d.view),
+                            output_bind_group: &resources.output_bind_group,
+                            resources: label_resources,
+                            pipeline: labels::post_pipeline(label_resources),
+                            label: "scena.browser.proof_label_post_scene_pass",
                             draw_submissions: &mut draw_submissions,
                         },
                     );
@@ -205,15 +216,13 @@ impl GpuDeviceState {
                     BrowserReadbackPass {
                         target,
                         readback,
-                        depth_view: resources
-                            .depth_prepass
-                            .as_ref()
-                            .map(|depth_prepass| &depth_prepass.view),
+                        depth_view: resources.depth_prepass.as_ref().map(|d| &d.view),
                         vertex_buffer: &resources.vertex_buffer,
                         output_bind_group: &resources.output_bind_group,
                         opaque_output_bind_group: &resources.opaque_output_bind_group,
                         draw_bind_group: &resources.draw_bind_group,
                         material_resources: &resources.material_resources,
+                        label_resources: resources.labels.as_ref(),
                         draw_batches: &resources.draw_batches,
                         instance_buffer: &resources.instance_buffer,
                         instance_batches: &resources.instance_batches,
@@ -299,10 +308,7 @@ impl GpuDeviceState {
             SceneColorPasses {
                 final_view,
                 final_pipelines,
-                depth_view: resources
-                    .depth_prepass
-                    .as_ref()
-                    .map(|depth_prepass| &depth_prepass.view),
+                depth_view: resources.depth_prepass.as_ref().map(|d| &d.view),
                 vertex_buffer: &resources.vertex_buffer,
                 instance_buffer: &resources.instance_buffer,
                 output_bind_group: &resources.output_bind_group,
@@ -329,15 +335,31 @@ impl GpuDeviceState {
                 &mut encoder,
                 strokes::StrokePass {
                     view: final_view,
-                    depth_view: resources
-                        .depth_prepass
-                        .as_ref()
-                        .map(|depth_prepass| &depth_prepass.view),
+                    depth_view: resources.depth_prepass.as_ref().map(|d| &d.view),
                     output_bind_group: &resources.output_bind_group,
                     draw_bind_group: &resources.draw_bind_group,
                     resources: stroke_resources,
                     pipeline: stroke_pipeline,
                     label: "scena.browser.stroke_scene_pass",
+                    draw_submissions: &mut draw_submissions,
+                },
+            );
+        }
+        if let Some(label_resources) = resources.labels.as_ref() {
+            let label_pipeline = if post_enabled {
+                labels::post_pipeline(label_resources)
+            } else {
+                labels::pipeline(label_resources)
+            };
+            labels::encode_pass(
+                &mut encoder,
+                labels::LabelPass {
+                    view: final_view,
+                    depth_view: resources.depth_prepass.as_ref().map(|d| &d.view),
+                    output_bind_group: &resources.output_bind_group,
+                    resources: label_resources,
+                    pipeline: label_pipeline,
+                    label: "scena.browser.label_scene_pass",
                     draw_submissions: &mut draw_submissions,
                 },
             );
@@ -444,6 +466,7 @@ impl GpuDeviceState {
                     opaque_output_bind_group: &resources.opaque_output_bind_group,
                     draw_bind_group: &resources.draw_bind_group,
                     material_resources: &resources.material_resources,
+                    label_resources: resources.labels.as_ref(),
                     draw_batches: &resources.draw_batches,
                     instance_batches: &resources.instance_batches,
                     identity_instance: resources.identity_instance,

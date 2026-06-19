@@ -213,7 +213,7 @@ impl Scene {
             .add()?;
         let (label, label_node) = self.add_label_node(
             resolved.parent,
-            LabelDesc::bitmap(callout.text())
+            LabelDesc::new(callout.text())
                 .with_color(callout.color())
                 .with_background(Color::BLACK)
                 .with_size(callout.label_size()),

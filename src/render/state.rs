@@ -16,6 +16,8 @@ pub(super) struct PreparedSceneState {
     pub(super) primitives: Vec<prepare::PreparedPrimitive>,
     pub(super) retained_strokes: Vec<prepare::PreparedStrokeSegment>,
     pub(super) strokes: Vec<prepare::PreparedStrokeSegment>,
+    pub(super) retained_labels: prepare::PreparedLabelAtlas,
+    pub(super) labels: prepare::PreparedLabelAtlas,
     pub(super) retained_instances: Vec<prepare::PreparedInstanceSet>,
     pub(super) instances: Vec<prepare::PreparedInstanceSet>,
     pub(super) clipping_planes: Vec<ClippingPlane>,

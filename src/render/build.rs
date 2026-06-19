@@ -41,6 +41,15 @@ impl Renderer {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn headless_gpu(width: u32, height: u32) -> Result<Self, BuildError> {
+        Self::headless_gpu_with_options(width, height, RendererOptions::default())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn headless_gpu_with_options(
+        width: u32,
+        height: u32,
+        options: RendererOptions,
+    ) -> Result<Self, BuildError> {
         validate_target_size(width, height)
             .map_err(|()| BuildError::InvalidTargetSize { width, height })?;
         let headless_gpu_test_guard = Some(HeadlessGpuTestSupportGuard::acquire());
@@ -51,7 +60,7 @@ impl Renderer {
             Backend::HeadlessGpu,
             Some(gpu),
             false,
-            RendererOptions::default(),
+            options,
         )?;
         renderer._headless_gpu_test_guard = headless_gpu_test_guard;
         Ok(renderer)
@@ -64,6 +73,15 @@ impl Renderer {
         Err(BuildError::UnsupportedBackend {
             backend: Backend::HeadlessGpu,
         })
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn headless_gpu_with_options(
+        width: u32,
+        height: u32,
+        _options: RendererOptions,
+    ) -> Result<Self, BuildError> {
+        Self::headless_gpu(width, height)
     }
 
     pub fn from_surface(surface: PlatformSurface) -> Result<Self, BuildError> {

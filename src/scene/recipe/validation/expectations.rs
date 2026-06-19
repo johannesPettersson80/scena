@@ -3,11 +3,15 @@ use serde_json::Value;
 use super::diagnostic;
 use crate::scene::recipe::SceneRecipeDiagnosticV1;
 
+mod quality;
+
 const EXPECT_FIELDS: &[&str] = &[
     "expect_visible",
     "expect_color",
     "expect_bbox_fit",
     "expect_pick",
+    "expect_quality",
+    "expect_reference",
     "expect_no_warnings",
 ];
 const VISIBLE_FIELDS: &[&str] = &["id", "target"];
@@ -69,6 +73,14 @@ pub(super) fn validate_expectations(
         "$.expect.expect_pick",
         PICK_FIELDS,
         validate_pick_expectation,
+        diagnostics,
+    );
+    quality::validate_quality(object.get("expect_quality"), diagnostics);
+    validate_array(
+        object.get("expect_reference"),
+        "$.expect.expect_reference",
+        quality::REFERENCE_FIELDS,
+        quality::validate_reference_expectation,
         diagnostics,
     );
     if let Some(value) = object.get("expect_no_warnings")

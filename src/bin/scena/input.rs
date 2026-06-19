@@ -87,10 +87,13 @@ pub(crate) async fn scene_host_from_resolved_recipe(
     input: &ResolvedSceneInput,
     width: u32,
     height: u32,
+    prefer_gpu: bool,
 ) -> Result<scena::SceneHostCore, String> {
-    Ok(scene_host_build_from_resolved_recipe(input, width, height)
-        .await?
-        .host)
+    Ok(
+        scene_host_build_from_resolved_recipe(input, width, height, prefer_gpu)
+            .await?
+            .host,
+    )
 }
 
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
@@ -98,6 +101,7 @@ pub(crate) async fn scene_host_build_from_resolved_recipe(
     input: &ResolvedSceneInput,
     width: u32,
     height: u32,
+    prefer_gpu: bool,
 ) -> Result<scena::SceneHostRecipeBuild, String> {
     let recipe = input
         .recipe
@@ -106,12 +110,12 @@ pub(crate) async fn scene_host_build_from_resolved_recipe(
     let recipe_path = input.recipe_path.as_deref().unwrap_or(&input.asset);
     let recipe_text = serde_json::to_string(recipe)
         .map_err(|error| format!("failed to serialize scene recipe for build: {error}"))?;
-    let mut build = scena::SceneHostCore::build_recipe_json(
-        recipe_path,
-        &recipe_text,
-        scena::RecipeBuildPolicy::testing(),
-    )
-    .await
+    let policy = scena::RecipeBuildPolicy::testing();
+    let mut build = if prefer_gpu {
+        scena::SceneHostCore::build_recipe_json_prefer_gpu(recipe_path, &recipe_text, policy).await
+    } else {
+        scena::SceneHostCore::build_recipe_json(recipe_path, &recipe_text, policy).await
+    }
     .map_err(|manifest| {
         serde_json::to_string_pretty(&manifest)
             .unwrap_or_else(|error| format!("failed to serialize build failure manifest: {error}"))
@@ -135,13 +139,29 @@ pub(crate) fn viewer_builder(
     width: u32,
     height: u32,
     transform: Option<scena::Transform>,
+    prefer_gpu: bool,
 ) -> scena::HeadlessGltfViewerBuilder {
     let builder = scena::headless_gltf_viewer(asset).size(width, height);
+    let builder = if prefer_gpu {
+        builder.with_headless_gpu()
+    } else {
+        builder
+    };
     if let Some(transform) = transform {
         builder.with_import_transform(transform)
     } else {
         builder
     }
+}
+
+#[cfg(feature = "inspection")]
+pub(crate) fn gpu_requested_from_env() -> bool {
+    std::env::var("SCENA_USE_GPU").is_ok_and(|value| {
+        matches!(
+            value.to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
 }
 
 #[cfg(feature = "inspection")]

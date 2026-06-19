@@ -65,7 +65,26 @@
       "active": true
     }
   ],
-  "lights": [],
+  "lights": [
+    {
+      "id": "key",
+      "handle": 4294967307,
+      "kind": "light",
+      "parent": 4294967297
+    },
+    {
+      "id": "fill",
+      "handle": 4294967308,
+      "kind": "light",
+      "parent": 4294967297
+    },
+    {
+      "id": "rim",
+      "handle": 4294967309,
+      "kind": "light",
+      "parent": 4294967297
+    }
+  ],
   "animations": [
     {
       "id": "plate_slide",

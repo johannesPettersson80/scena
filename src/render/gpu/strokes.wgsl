@@ -12,6 +12,8 @@ struct StrokeInstance {
 struct VertexOut {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
+    @location(1) distance_px: f32,
+    @location(2) half_width_px: f32,
 };
 
 struct LightingUniform {
@@ -73,7 +75,9 @@ fn vs_main(quad: QuadVertex, segment: StrokeInstance) -> VertexOut {
     let direction = select(vec2<f32>(1.0, 0.0), normalize(delta), length_px > 0.001);
     let normal = vec2<f32>(-direction.y, direction.x);
     let half_width = max(segment.width_px, 0.001) * 0.5;
-    let offset_ndc = normal * quad.side_along.x * half_width * vec2<f32>(
+    let aa_radius = 1.0;
+    let expanded_half_width = half_width + aa_radius;
+    let offset_ndc = normal * quad.side_along.x * expanded_half_width * vec2<f32>(
         2.0 / max(camera.viewport_near_far.x, 1.0),
         2.0 / max(camera.viewport_near_far.y, 1.0),
     );
@@ -86,14 +90,27 @@ fn vs_main(quad: QuadVertex, segment: StrokeInstance) -> VertexOut {
     var out: VertexOut;
     out.position = position;
     out.color = segment.color * draw.tint;
+    out.distance_px = quad.side_along.x * expanded_half_width;
+    out.half_width_px = half_width;
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+    let coverage = stroke_coverage(abs(in.distance_px), in.half_width_px);
+    if coverage <= 0.0 {
+        discard;
+    }
     let color_management_mode = camera.color_management.x;
     let rgb = apply_tonemapper(in.color.rgb * camera.camera_position_exposure.w, color_management_mode);
-    return vec4<f32>(encode_post_target_rgb(rgb), in.color.a);
+    return vec4<f32>(encode_post_target_rgb(rgb), in.color.a * coverage);
+}
+
+fn stroke_coverage(distance_px: f32, half_width_px: f32) -> f32 {
+    if distance_px <= half_width_px {
+        return 1.0;
+    }
+    return clamp(1.0 - (distance_px - half_width_px), 0.0, 1.0);
 }
 
 fn clip_segment_to_near(start: vec4<f32>, end: vec4<f32>) -> ClippedSegment {

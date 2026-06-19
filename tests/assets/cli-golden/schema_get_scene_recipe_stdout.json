@@ -77,8 +77,8 @@
       }
     ],
     "capture": {
-      "height": 72,
-      "width": 96
+      "height": 480,
+      "width": 640
     },
     "clipping_planes": [
       {
@@ -130,7 +130,19 @@
           "x_css_px": 48.0,
           "y_css_px": 36.0
         }
-      ]
+      ],
+      "expect_quality": {
+        "line": {
+          "max_straightness_error": 0.08,
+          "min_intermediate_edge_fraction": 0.005
+        },
+        "profile": "documentation",
+        "text": {
+          "max_ink_isolation": 0.01,
+          "min_ink_coverage": 0.05,
+          "min_intermediate_edge_fraction": 0.02
+        }
+      }
     },
     "exploded_view": {
       "axis": [
@@ -270,6 +282,23 @@
             0.0
           ]
         }
+      }
+    ],
+    "lights": [
+      {
+        "id": "key",
+        "kind": "directional",
+        "preset": "key"
+      },
+      {
+        "id": "fill",
+        "kind": "directional",
+        "preset": "fill"
+      },
+      {
+        "id": "rim",
+        "kind": "directional",
+        "preset": "rim"
       }
     ],
     "materials": [
@@ -460,7 +489,8 @@
         "kind": "studio"
       },
       "environment": {
-        "kind": "default"
+        "kind": "uri",
+        "uri": "tests/assets/environment/polyhaven/studio_small_03_1k.hdr"
       },
       "grid": {
         "line_spacing": 0.04,

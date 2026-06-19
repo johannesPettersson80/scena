@@ -7,10 +7,11 @@ pub(crate) fn check_m3a_render_view_contracts(root: &Path, findings: &mut Vec<Fi
         "ARCH-M3A-SCENE-IMPORT",
         "src/render/prepare/labels.rs",
         &[
-            "pub(super) fn append_label_primitives",
+            "pub(super) fn prepare_label_atlas",
             "scene.label_nodes()",
             "LabelBillboard::ScreenAligned",
-            "Primitive::triangle",
+            "PreparedLabelAtlas",
+            "PreparedLabelQuad",
         ],
     );
     require_contains(

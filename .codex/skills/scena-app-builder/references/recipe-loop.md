@@ -51,6 +51,10 @@ Rules:
 - use meters and Y-up right-handed coordinates;
 - use `rotation_degrees` only as documented by the schema;
 - use opaque colors unless a field explicitly supports alpha;
+- add a key/fill/rim directional light rig and an HDRI environment for
+  user-facing renders unless the task is deliberately flat or unlit;
+- use `studio`, `neutral_gray`, or `dark_studio` backgrounds by default and
+  raise capture size for images people will inspect;
 - mark optional assets as optional only when missing content is acceptable;
 - keep host/domain state out of recipe JSON.
 
@@ -66,21 +70,26 @@ If validation fails, fix the recipe from the diagnostic `path`, `code`,
 `message`, and `help`. Do not work around validation by deleting requested
 content unless the user agrees.
 
-## 4. Render And Verify
+## 4. Render And Introspect
 
 Run:
 
 ```bash
-scena recipe render "$RECIPE" --introspect --verify --out frame.png
+scena recipe render "$RECIPE" --introspect --out frame.png
 ```
 
 Accept success only when:
 
 - command exits 0;
 - top-level `ok` is true;
-- build/introspection/verification are true when present;
 - requested artifacts exist;
 - no required content was skipped.
+
+When the recipe has an `expect` block, add `--verify`; that mode emits the
+combined recipe build/capture/introspection/verification report instead of the
+plain render-introspection report.
+For presentation or beauty output, add `--gpu`; never claim GPU output unless
+the returned report says `capabilities.gpu_device == true`.
 
 ## 5. Diagnose And Repair
 

@@ -392,7 +392,7 @@ fn industrial_dashboard(root: &Path) -> Result<ApplicationFinding, Box<dyn Error
     }
     scene.add_label(
         scene.root(),
-        LabelDesc::bitmap("Line A"),
+        LabelDesc::new("Line A"),
         Transform::at(Vec3::new(0.0, 0.34, 0.0)),
     )?;
     let camera = scene.add_default_camera()?;
@@ -600,7 +600,7 @@ fn data_visualization(root: &Path) -> Result<ApplicationFinding, Box<dyn Error>>
     }
     scene.add_label(
         scene.root(),
-        LabelDesc::bitmap("Throughput"),
+        LabelDesc::new("Throughput"),
         Transform::at(Vec3::new(0.0, 0.55, 0.0)),
     )?;
     let camera = scene.add_default_camera()?;

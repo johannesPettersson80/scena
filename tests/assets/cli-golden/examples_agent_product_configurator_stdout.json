@@ -33,6 +33,7 @@
       "name": "render_introspect",
       "argv": [
         "scena",
+        "recipe",
         "render",
         "target/gate-artifacts/scena-cli-agent-template-golden/product-configurator/recipe.json",
         "--introspect",

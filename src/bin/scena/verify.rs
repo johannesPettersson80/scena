@@ -39,7 +39,7 @@ pub(crate) fn run_verify_appearance_command(args: &[String]) -> Result<CliOutcom
     let width = args.width.or(input.width).unwrap_or(800);
     let height = args.height.or(input.height).unwrap_or(600);
     let mut viewer = pollster::block_on(
-        viewer_builder(input.asset.as_str(), width, height, input.transform)
+        viewer_builder(input.asset.as_str(), width, height, input.transform, false)
             .with_default_light()
             .build(),
     )

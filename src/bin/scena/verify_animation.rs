@@ -55,7 +55,7 @@ pub(crate) fn run_verify_animation_command(args: &[String]) -> Result<CliOutcome
         }
     }
     let mut viewer = pollster::block_on(
-        viewer_builder(input.asset.as_str(), width, height, input.transform)
+        viewer_builder(input.asset.as_str(), width, height, input.transform, false)
             .with_default_light()
             .build(),
     )

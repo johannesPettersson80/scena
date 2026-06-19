@@ -129,9 +129,9 @@ from data already in scope · **M** = moderate · **L** = real renderer feature.
 - [x] **C5** `hover_style` / `selection_style` (`InteractionStyle`) — `src/render.rs:97`. No outline/highlight
       pass; picked objects render identically. (Confirm: `InteractionStyle::color()`/`outline_width_px()`
       appear uncalled.) Add a screen-space outline pass, or remove the styles. **L**
-- [x] **C6** `LabelRasterization::Sdf`/`Msdf` — `src/scene/labels.rs:25`. Always the hardcoded 5×7 bitmap;
-      both variants produce byte-identical output. Implement real SDF/MSDF atlas generation + sampling shader
-      (branch single- vs multi-channel), or remove the variants and keep one honest `Bitmap` path. **L**
+- [x] **C6** label rasterization variants — old `src/scene/labels.rs` enum. The fake SDF/MSDF variants were
+      removed, and the later overlay-quality slice removed the 5×7 bitmap fallback entirely in favor of the
+      embedded TrueType atlas path. **L**
 - [x] **C7** Minor dead surface — implement-or-remove each: `InstanceCullingPolicy` single variant with no
       branch (`src/scene/instances.rs:11`); `AnchorFrame::bounds_hint` never read (`src/scene/anchors.rs:19`);
       `TextureTransform.tex_coord` with no 2nd UV channel (`src/material/types.rs:12`); `CalloutReport.anchor_kind`
@@ -147,8 +147,8 @@ from data already in scope · **M** = moderate · **L** = real renderer feature.
       single render's `draw_calls`. Capture each recovery render's result separately. **S**
 - [x] **D3** `src/browser_probe/probes/state_lifecycle.rs:161-170` — eight `dirty_state` keys all hardcoded
       `"requires explicit prepare"`. Emit the actual observed reason per edit type. **S**
-- [x] **D4** `src/browser_probe/workflows.rs:337` — `"rasterization":["sdf","msdf"]` (both are the same bitmap
-      path). Report the truth (`"bitmap-5x7"`) until C6 lands. **S**
+- [x] **D4** `src/browser_probe/workflows.rs:337` — `"rasterization":["sdf","msdf"]` once reported an unimplemented
+      path. Browser proof metadata now reports the actual TrueType atlas path. **S**
 - [x] **D5** Remaining hardcoded label/status strings — `probes.rs:118` `"final_prepare":"ok"`;
       `scene_host_browser_proof.js:3022,3080` hardcoded `status:"passed"` + editorial/hardware prose; static
       `scene_api`/`prepare_api`/`render_api` labels. Derive from results; derive `status` from a real pass/fail

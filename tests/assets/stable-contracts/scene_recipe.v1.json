@@ -398,12 +398,30 @@
       }
     }
   ],
+  "lights": [
+    {
+      "id": "key",
+      "kind": "directional",
+      "preset": "key"
+    },
+    {
+      "id": "fill",
+      "kind": "directional",
+      "preset": "fill"
+    },
+    {
+      "id": "rim",
+      "kind": "directional",
+      "preset": "rim"
+    }
+  ],
   "scene": {
     "background": {
       "kind": "studio"
     },
     "environment": {
-      "kind": "default"
+      "kind": "uri",
+      "uri": "tests/assets/environment/polyhaven/studio_small_03_1k.hdr"
     },
     "grid": {
       "padding": 0.05,
@@ -503,11 +521,23 @@
           "id": "plate"
         }
       }
-    ]
+    ],
+    "expect_quality": {
+      "profile": "documentation",
+      "text": {
+        "min_ink_coverage": 0.05,
+        "max_ink_isolation": 0.01,
+        "min_intermediate_edge_fraction": 0.02
+      },
+      "line": {
+        "min_intermediate_edge_fraction": 0.005,
+        "max_straightness_error": 0.08
+      }
+    }
   },
   "capture": {
-    "width": 96,
-    "height": 72
+    "width": 640,
+    "height": 480
   },
   "metadata": {
     "purpose": "stable recipe fixture"

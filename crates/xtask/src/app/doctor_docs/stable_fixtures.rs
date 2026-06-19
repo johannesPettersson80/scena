@@ -28,6 +28,10 @@ pub(super) const FIXTURES: &[(&str, &str)] = &[
         "scena.render_introspection.v1",
     ),
     (
+        "tests/assets/stable-contracts/render_quality.v1.json",
+        "scena.render_quality.v1",
+    ),
+    (
         "tests/assets/stable-contracts/visibility_diagnosis.v1.json",
         "scena.visibility_diagnosis.v1",
     ),

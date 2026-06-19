@@ -47,6 +47,10 @@ impl SceneHostCore<DefaultAssetFetcher> {
     pub fn headless(width: u32, height: u32) -> Result<Self, SceneHostError> {
         Self::headless_with_fetcher(DefaultAssetFetcher::default(), width, height)
     }
+
+    pub fn headless_gpu(width: u32, height: u32) -> Result<Self, SceneHostError> {
+        Self::headless_gpu_with_fetcher(DefaultAssetFetcher::default(), width, height)
+    }
 }
 
 impl<F: AssetFetcher> SceneHostCore<F> {
@@ -66,6 +70,17 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             Renderer::headless(width, height)?,
             viewport,
         )
+    }
+
+    pub fn headless_gpu_with_fetcher(
+        fetcher: F,
+        width: u32,
+        height: u32,
+    ) -> Result<Self, SceneHostError> {
+        let viewport = headless_viewport(width, height)?;
+        let renderer = Renderer::headless_gpu(width, height)
+            .or_else(|_gpu_error| Renderer::headless(width, height))?;
+        Self::from_renderer(Assets::with_fetcher(fetcher), renderer, viewport)
     }
 
     pub fn from_renderer(
@@ -487,4 +502,13 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             })
             .collect()
     }
+}
+
+fn headless_viewport(width: u32, height: u32) -> Result<SurfaceViewport, SceneHostError> {
+    SurfaceViewport::new(width as f32, height as f32, 1.0).ok_or_else(|| {
+        SceneHostError::new(
+            SceneHostErrorCode::InvalidViewport,
+            format!("invalid viewport {width}x{height} at DPR 1"),
+        )
+    })
 }

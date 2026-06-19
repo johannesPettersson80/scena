@@ -75,13 +75,51 @@ RECIPE=target/scena-agent/primitive_scene/recipe.json
 scena validate-recipe "$RECIPE"
 ```
 
-5. Render with verification, not just capture:
+5. Render with introspection, not just capture:
 
 ```bash
-scena recipe render "$RECIPE" --introspect --verify --out frame.png
+scena recipe render "$RECIPE" --introspect --out frame.png
 ```
 
-6. If it fails, diagnose from structured JSON:
+This emits `scena.render_introspection.v1`. Add `--verify` when the recipe has
+an `expect` block and you need the combined recipe build/capture/introspection/
+verification result.
+For beauty renders, add `--gpu`; CPU remains the default, and the report
+`capabilities.backend` / `gpu_device` fields say which backend actually ran.
+
+6. Make the output presentable when the user will look at it.
+
+Use a 3-point light rig and a real environment unless the task is intentionally
+flat, technical, or unlit:
+
+```json
+"lights": [
+  { "id": "key", "kind": "directional", "preset": "key" },
+  { "id": "fill", "kind": "directional", "preset": "fill" },
+  { "id": "rim", "kind": "directional", "preset": "rim" }
+],
+"scene": {
+  "background": { "kind": "studio" },
+  "environment": {
+    "kind": "uri",
+    "uri": "tests/assets/environment/polyhaven/studio_small_03_1k.hdr"
+  }
+},
+"capture": { "width": 1280, "height": 960 }
+```
+
+Use `studio` or `neutral_gray` for product/model inspection, `dark_studio` for
+dashboards and status views, `white`/`transparent` for documentation exports,
+and `custom` only when the user gives a color. The default environment is flat;
+the bundled HDRI gives reflections and better material response. Import real
+glTF/GLB assets for realistic products or twins; primitives are best for
+functional scenes, CAD plates, diagrams, charts, and tests.
+
+`ok:true` proves the requested content rendered and passed checks. It does not
+mean the image is aesthetically good. Inspect the rendered image when visual
+quality matters.
+
+7. If it fails, diagnose from structured JSON:
 
 ```bash
 scena inspect "$RECIPE"

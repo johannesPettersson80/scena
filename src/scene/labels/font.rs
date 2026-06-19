@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
 use std::fmt;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
-use super::{LabelGlyphCell, LabelMetrics};
+use super::{LabelGlyphRaster, LabelMetrics};
+
+const DEFAULT_LABEL_FONT_BYTES: &[u8] = include_bytes!("fonts/LiberationSans-Regular.ttf");
 
 #[derive(Clone)]
 pub struct LabelFontFace {
@@ -79,6 +81,16 @@ impl LabelFontFace {
     }
 }
 
+pub(super) fn default_label_font_face() -> LabelFontFace {
+    static DEFAULT_FONT: OnceLock<LabelFontFace> = OnceLock::new();
+    DEFAULT_FONT
+        .get_or_init(|| {
+            LabelFontFace::from_truetype_bytes(DEFAULT_LABEL_FONT_BYTES)
+                .expect("embedded Liberation Sans regular font must parse")
+        })
+        .clone()
+}
+
 impl fmt::Debug for LabelFontFace {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -113,14 +125,14 @@ pub(super) fn truetype_metrics(font: &LabelFontFace, text: &str, size: f32) -> L
     truetype_layout(font, text, size).metrics
 }
 
-pub(super) fn truetype_glyph_cells(
+pub(super) fn truetype_glyph_rasters(
     font: &LabelFontFace,
     text: &str,
     size: f32,
-) -> Vec<LabelGlyphCell> {
+) -> Vec<LabelGlyphRaster> {
     let layout = truetype_layout(font, text, size);
     let baseline = layout.metrics.baseline_px;
-    let mut cells = Vec::new();
+    let mut rasters = Vec::new();
     let mut pen_x = 0.0;
     let mut previous = None;
     for ch in text.chars() {
@@ -128,31 +140,26 @@ pub(super) fn truetype_glyph_cells(
             pen_x += font.font.horizontal_kern(previous, ch, size).unwrap_or(0.0);
         }
         let glyph = font.cached_glyph(ch, size);
+        if glyph.width == 0 || glyph.height == 0 {
+            pen_x += glyph.advance_width;
+            previous = Some(ch);
+            continue;
+        }
         let glyph_left = pen_x + glyph.xmin as f32 - layout.min_x;
         let glyph_top = baseline - (glyph.ymin as f32 + glyph.height as f32);
-        for row in 0..glyph.height {
-            for col in 0..glyph.width {
-                let index = row * glyph.width + col;
-                let Some(alpha) = glyph.alpha.get(index).copied() else {
-                    continue;
-                };
-                if alpha <= 16 {
-                    continue;
-                }
-                let x0 = glyph_left + col as f32;
-                let y0 = glyph_top + row as f32;
-                cells.push(LabelGlyphCell {
-                    x0_px: x0,
-                    y0_px: y0,
-                    x1_px: x0 + 1.0,
-                    y1_px: y0 + 1.0,
-                });
-            }
-        }
+        rasters.push(LabelGlyphRaster {
+            x_px: glyph_left,
+            y_px: glyph_top,
+            width_px: glyph.width as f32,
+            height_px: glyph.height as f32,
+            alpha_width: glyph.width as u32,
+            alpha_height: glyph.height as u32,
+            alpha: glyph.alpha.clone(),
+        });
         pen_x += glyph.advance_width;
         previous = Some(ch);
     }
-    cells
+    rasters
 }
 
 pub(super) fn validate_basic_latin_text(text: &str) -> Result<(), LabelFontError> {

@@ -41,18 +41,18 @@ rgba_hash = "fnv1a64:af6e69ea9da6a325"
 [[reference]]
 name = "line-material"
 max_abs_diff = 0
-center_rgba = [0, 0, 0, 255]
+center_rgba = [116, 116, 116, 255]
 corner_rgba = [0, 0, 0, 255]
-nonblack_pixels = 13
-rgba_hash = "fnv1a64:4254602f724d0955"
+nonblack_pixels = 45
+rgba_hash = "fnv1a64:b391edfd1a7d37cd"
 
 [[reference]]
 name = "wire-edge-materials"
 max_abs_diff = 0
-center_rgba = [0, 0, 0, 255]
+center_rgba = [25, 36, 38, 255]
 corner_rgba = [0, 0, 0, 255]
-nonblack_pixels = 55
-rgba_hash = "fnv1a64:f345e3720d6b9793"
+nonblack_pixels = 179
+rgba_hash = "fnv1a64:ff72e666c50396dc"
 
 [[reference]]
 name = "default-cube"

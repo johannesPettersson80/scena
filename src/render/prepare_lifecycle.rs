@@ -4,8 +4,9 @@ use crate::scene::Scene;
 
 use super::camera;
 use super::prepare_retained::{
-    assign_original_instance_vertex_offsets, assign_original_stroke_indices,
-    assign_original_vertex_offsets, filter_retained_instances_for_scene,
+    assign_original_instance_vertex_offsets, assign_original_label_quad_indices,
+    assign_original_stroke_indices, assign_original_vertex_offsets,
+    filter_retained_instances_for_scene, filter_retained_labels_for_scene,
     filter_retained_primitives_for_scene, filter_retained_strokes_for_scene,
     next_gpu_vertex_offset, prepared_instance_count, retained_template_covers_visible_sources,
 };
@@ -229,6 +230,9 @@ impl Renderer {
         let retained_strokes = assign_original_stroke_indices(prepared_scene.strokes);
         let strokes = filter_retained_strokes_for_scene(scene, &retained_strokes)
             .unwrap_or_else(|| retained_strokes.clone());
+        let retained_labels = assign_original_label_quad_indices(prepared_scene.labels);
+        let labels = filter_retained_labels_for_scene(scene, &retained_labels)
+            .unwrap_or_else(|| retained_labels.clone());
         let retained_instances = assign_original_instance_vertex_offsets(
             prepared_scene.instances,
             next_gpu_vertex_offset(&retained_primitives),
@@ -271,6 +275,8 @@ impl Renderer {
                 &instances,
                 &retained_strokes,
                 &strokes,
+                &retained_labels,
+                &labels,
                 lighting_stats,
                 gpu_light_uniform,
                 light_from_world,
@@ -302,6 +308,8 @@ impl Renderer {
             primitives,
             retained_strokes,
             strokes,
+            retained_labels,
+            labels,
             retained_instances,
             instances,
             clipping_planes: scene.active_clipping_plane_values().collect(),
@@ -384,6 +392,7 @@ impl Renderer {
             scene,
             &prepared.retained_primitives,
             &prepared.retained_strokes,
+            &prepared.retained_labels,
             &prepared.retained_instances,
         ) {
             return None;
@@ -395,6 +404,10 @@ impl Renderer {
                 .collect();
         let strokes = filter_retained_strokes_for_scene(scene, &prepared.retained_strokes)?;
         let instances = filter_retained_instances_for_scene(scene, &prepared.retained_instances)?;
+        let labels = filter_retained_labels_for_scene(scene, &prepared.retained_labels)?;
+        if !labels.is_empty() {
+            return None;
+        }
         Some((primitives, strokes, instances))
     }
 

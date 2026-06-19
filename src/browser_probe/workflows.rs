@@ -307,9 +307,9 @@ fn labels_helpers_scene() -> Result<WorkflowScene, JsValue> {
         let col = index % 4;
         let row = index / 4;
         let label = if index % 2 == 0 {
-            LabelDesc::bitmap(format!("S{index:02}"))
+            LabelDesc::new(format!("S{index:02}"))
         } else {
-            LabelDesc::bitmap(format!("M{index:02}"))
+            LabelDesc::new(format!("M{index:02}"))
         }
         .with_color(Color::from_srgb_u8(245, 250, 255))
         .with_size(13.0)
@@ -333,8 +333,8 @@ fn labels_helpers_scene() -> Result<WorkflowScene, JsValue> {
         metadata: json!({
             "helpers": ["axes"],
             "labels": 12,
-            "proof_class": "browser-bitmap-labels",
-            "rasterization": "bitmap-5x7",
+            "proof_class": "browser-truetype-labels",
+            "rasterization": "truetype-atlas-aa",
         }),
     })
 }

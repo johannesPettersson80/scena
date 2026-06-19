@@ -18,6 +18,7 @@ mod draw_uniform;
 mod dynamic_draw_state;
 mod environment;
 mod instancing;
+mod labels;
 mod lifecycle;
 mod material_batched;
 mod material_bindings;
@@ -29,6 +30,8 @@ mod output;
 mod pipeline;
 mod post;
 mod prepare_resources;
+#[cfg(target_arch = "wasm32")]
+mod prepare_resources_wasm;
 mod resource_encoding;
 mod scene_color;
 mod shadow;
@@ -46,6 +49,7 @@ use crate::platform::SurfaceSize;
 #[cfg(target_arch = "wasm32")]
 use self::browser_readback::BrowserReadbackResources;
 use self::instancing::InstanceDrawBatch;
+use self::labels::LabelResources;
 use self::material_bindings::MaterialTextureBindingMode;
 use self::pipeline::MeshPipelineSet;
 pub(super) use self::post::{GpuPostPassCounts, GpuPostSettings};
@@ -138,6 +142,7 @@ struct GpuPreparedResources {
     transmission: transmission::TransmissionResources,
     depth_prepass: Option<depth::DepthPrepassResources>,
     strokes: Option<StrokeResources>,
+    labels: Option<LabelResources>,
     #[allow(dead_code)]
     vertex_count: u32,
     draw_batches: Vec<PrimitiveDrawBatch>,
@@ -196,6 +201,7 @@ struct GpuPreparedResources {
     transmission: transmission::TransmissionResources,
     depth_prepass: Option<depth::DepthPrepassResources>,
     strokes: Option<StrokeResources>,
+    labels: Option<LabelResources>,
     surface_pipeline: MeshPipelineSet,
     readback: Option<BrowserReadbackResources>,
     #[allow(dead_code)]
