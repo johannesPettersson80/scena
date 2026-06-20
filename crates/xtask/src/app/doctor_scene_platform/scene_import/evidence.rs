@@ -25,6 +25,14 @@ pub(crate) fn check_m3a_evidence_contracts(root: &Path, findings: &mut Vec<Findi
             "AmbiguousClipName",
             "PathNotFound",
             "NodeIsNotMesh",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-M3A-SCENE-IMPORT",
+        "src/diagnostics/import_overlay.rs",
+        &[
             "pub struct ImportDiagnosticOverlay",
             "pub enum ImportDiagnosticOverlayKind",
             "pub const fn source_units",

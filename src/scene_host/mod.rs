@@ -6,6 +6,7 @@ mod assets;
 mod callouts;
 mod camera;
 mod capture;
+mod composition;
 mod connectors;
 mod core;
 mod core_handles;
@@ -76,6 +77,7 @@ pub type SceneHostCameraState = crate::controls::CameraState;
 pub type SceneHostEasing = crate::controls::TransitionEasing;
 pub use animation::{SceneHostAnimationLoopMode, SceneHostAnimationPlayOptions};
 pub use callouts::SceneHostCalloutReportV1;
+pub use composition::CompositionOverlaySegmentV1;
 pub use connectors::{
     CONNECTOR_BROWSER_SCHEMA_V1, ConnectorBrowserCandidateV1, ConnectorBrowserConnectorV1,
     ConnectorBrowserReportV1, ConnectorBrowserScopeV1, ConnectorBrowserSummaryV1,

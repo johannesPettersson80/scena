@@ -73,9 +73,14 @@ edge). Two tiers:
       silhouettes — straight, curved, diagonal, thin. On by default or via
       `quality:"high"`.
 - [x] **Tier 2 — supersample quality tier (opt-in).** `render.supersample`
-      factor (2/3/4) renders the whole frame at N× and downsamples, on both
-      backends. Removes edge aliasing *and* specular/highlight/texture shimmer
-      MSAA can't touch. For hero shots; document the N² cost.
+      factor (2/3/4 and guarded 8 for small captures) renders the whole frame
+      at N× and downsamples, on both backends. `render.reconstruction` selects
+      `box` (default), `tent`, or `gaussian` for hero stills. Removes edge
+      aliasing *and* specular/highlight/texture shimmer MSAA can't touch. For
+      hero shots; document the N² cost and the wider-kernel blur tradeoff.
+      `tent` is the line-safe recommendation for floor grids/wireframes;
+      `gaussian` is deliberately softer and must be inspected at native
+      resolution.
 - Owner: `src/render/gpu/pipeline.rs` (MSAA target) + `src/render/gpu/post/` +
   render-scale plumbing + `src/scene/recipe` render settings + CPU rasterizer.
 - Proof class: reference-image ON/OFF, both backends.

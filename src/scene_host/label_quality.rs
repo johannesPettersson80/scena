@@ -2,7 +2,10 @@ use super::SceneHostCore;
 use crate::geometry::GeometryTopology;
 use crate::material::Color;
 use crate::scene::LabelBillboard;
-use crate::{AssetFetcher, RenderQualityRegion, Transform, Vec3};
+use crate::{
+    AssetFetcher, CaptureScreenRegion, RenderQualityRegion, Transform, Vec3,
+    screen_region_from_center_size, screen_region_from_points,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LabelQualityTarget {
@@ -38,31 +41,23 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             };
             let metrics = label.metrics();
             let padding = (label.size() * 0.25).ceil().max(2.0);
-            let x0 = (projected.x - metrics.width_px * 0.5 - padding)
-                .floor()
-                .max(0.0);
-            let y0 = (projected.y - metrics.height_px * 0.5 - padding)
-                .floor()
-                .max(0.0);
-            let x1 = (projected.x + metrics.width_px * 0.5 + padding)
-                .ceil()
-                .min(width as f32);
-            let y1 = (projected.y + metrics.height_px * 0.5 + padding)
-                .ceil()
-                .min(height as f32);
-            let x = x0 as u32;
-            let y = y0 as u32;
-            let max_x = x1.max(x0) as u32;
-            let max_y = y1.max(y0) as u32;
+            let Some(region) = screen_region_from_center_size(
+                projected.x,
+                projected.y,
+                metrics.width_px,
+                metrics.height_px,
+                padding,
+                width,
+                height,
+            ) else {
+                continue;
+            };
             targets.push(LabelQualityTarget {
-                region: RenderQualityRegion {
-                    kind: "label",
-                    handle: self.node_handle_map.get(&node).copied(),
-                    x: x.min(width),
-                    y: y.min(height),
-                    width: max_x.saturating_sub(x).max(1),
-                    height: max_y.saturating_sub(y).max(1),
-                },
+                region: render_quality_region(
+                    "label",
+                    self.node_handle_map.get(&node).copied(),
+                    region,
+                ),
                 background_srgb8: label.background().map(linear_color_to_srgb8),
             });
         }
@@ -114,26 +109,19 @@ impl<F: AssetFetcher> SceneHostCore<F> {
                 else {
                     continue;
                 };
-                let x0 = (start.x.min(end.x) - stroke_padding).floor().max(0.0);
-                let y0 = (start.y.min(end.y) - stroke_padding).floor().max(0.0);
-                let x1 = (start.x.max(end.x) + stroke_padding)
-                    .ceil()
-                    .min(width as f32);
-                let y1 = (start.y.max(end.y) + stroke_padding)
-                    .ceil()
-                    .min(height as f32);
-                let x = x0 as u32;
-                let y = y0 as u32;
-                let max_x = x1.max(x0) as u32;
-                let max_y = y1.max(y0) as u32;
-                regions.push(RenderQualityRegion {
-                    kind: "line",
-                    handle: self.node_handle_map.get(&node).copied(),
-                    x: x.min(width),
-                    y: y.min(height),
-                    width: max_x.saturating_sub(x).max(1),
-                    height: max_y.saturating_sub(y).max(1),
-                });
+                let Some(region) = screen_region_from_points(
+                    &[(start.x, start.y), (end.x, end.y)],
+                    stroke_padding,
+                    width,
+                    height,
+                ) else {
+                    continue;
+                };
+                regions.push(render_quality_region(
+                    "line",
+                    self.node_handle_map.get(&node).copied(),
+                    region,
+                ));
             }
         }
         regions
@@ -142,6 +130,21 @@ impl<F: AssetFetcher> SceneHostCore<F> {
 
 fn transform_point(transform: Transform, point: Vec3) -> Vec3 {
     transform.translation + transform.rotation * (point * transform.scale)
+}
+
+fn render_quality_region(
+    kind: &'static str,
+    handle: Option<u64>,
+    region: CaptureScreenRegion,
+) -> RenderQualityRegion {
+    RenderQualityRegion {
+        kind,
+        handle,
+        x: region.x,
+        y: region.y,
+        width: region.width,
+        height: region.height,
+    }
 }
 
 fn linear_color_to_srgb8(color: Color) -> [u8; 3] {

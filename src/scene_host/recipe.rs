@@ -112,7 +112,10 @@ impl SceneHostCore<DefaultAssetFetcher> {
                 return Err(build_manifest(diagnostics, skipped));
             }
         };
-        apply_render_setup(&mut host, recipe.render.as_ref());
+        apply_render_setup(&mut host, recipe.render.as_ref(), &mut diagnostics);
+        if has_errors(&diagnostics) {
+            return Err(build_manifest(diagnostics, skipped));
+        }
         let mut imports = Vec::new();
         let mut geometries = Vec::new();
         let mut materials = Vec::new();

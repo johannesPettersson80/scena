@@ -604,7 +604,9 @@ Renderer features:
 - `PostBloomConfig`
 - `Renderer::set_anti_aliasing`
 - `Renderer::set_supersample_factor`
+- `Renderer::set_reconstruction_filter`
 - `AntiAliasing`
+- `ReconstructionFilter`
 - `Renderer::set_screen_space_ambient_occlusion`
 - `Renderer::clear_screen_space_ambient_occlusion`
 - `ScreenSpaceAmbientOcclusionConfig`

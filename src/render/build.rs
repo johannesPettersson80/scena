@@ -259,6 +259,7 @@ impl Renderer {
             output: OutputTransform::default(),
             anti_aliasing: anti_aliasing_for_quality(quality),
             supersample_factor: 1,
+            reconstruction_filter: super::ReconstructionFilter::Box,
             order_independent_transparency: None,
             screen_space_ambient_occlusion: None,
             bloom: None,

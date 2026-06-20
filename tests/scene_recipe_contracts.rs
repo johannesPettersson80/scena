@@ -2949,6 +2949,63 @@ fn scene_recipe_slice4_scene_and_render_settings_fail_closed() {
     assert_reason(&report, "invalid_render_setting", None);
 }
 
+#[test]
+fn scene_recipe_render_reconstruction_validates_fail_closed() {
+    let valid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "body_color": "#FFFFFF"
+        },
+        "geometries": [
+            { "id": "body_geo", "primitive": { "kind": "box", "size": [0.1, 0.1, 0.1] } }
+        ],
+        "materials": [
+            { "id": "body_mat", "kind": "unlit", "base_color": "body_color" }
+        ],
+        "nodes": [
+            { "id": "body", "geometry": "body_geo", "material": "body_mat" }
+        ],
+        "render": {
+            "anti_aliasing": "msaa4",
+            "supersample": 2,
+            "reconstruction": "tent"
+        }
+    }));
+    assert!(
+        valid.ok,
+        "documented render reconstruction value should validate: {valid:#?}"
+    );
+
+    let invalid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "body_color": "#FFFFFF"
+        },
+        "geometries": [
+            { "id": "body_geo", "primitive": { "kind": "box", "size": [0.1, 0.1, 0.1] } }
+        ],
+        "materials": [
+            { "id": "body_mat", "kind": "unlit", "base_color": "body_color" }
+        ],
+        "nodes": [
+            { "id": "body", "geometry": "body_geo", "material": "body_mat" }
+        ],
+        "render": {
+            "supersample": 2,
+            "reconstruction": "lanczos"
+        }
+    }));
+    assert!(
+        !invalid.ok,
+        "unknown reconstruction filters must fail closed"
+    );
+    assert_reason_at(
+        &invalid,
+        "invalid_render_setting",
+        "$.render.reconstruction",
+    );
+}
+
 #[cfg(feature = "scene-host")]
 #[test]
 fn scene_recipe_slice4_render_settings_change_pixels_through_recipe() {

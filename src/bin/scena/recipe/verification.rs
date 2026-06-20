@@ -9,6 +9,7 @@ use std::path::Path;
 pub(crate) struct RecipeVerificationInput<'a> {
     pub(crate) host: &'a mut scena::SceneHostCore,
     pub(crate) manifest: &'a scena::SceneRecipeBuildV1,
+    pub(crate) recipe: &'a scena::SceneRecipeV1,
     pub(crate) expect: Option<&'a scena::SceneRecipeExpectV1>,
     pub(crate) capture: &'a scena::CaptureRgba8,
     pub(crate) inspection: &'a scena::SceneInspectionReportV1,
@@ -23,6 +24,7 @@ pub(crate) fn verify_recipe_expectations(
     let RecipeVerificationInput {
         host,
         manifest,
+        recipe,
         expect,
         capture,
         inspection,
@@ -101,6 +103,9 @@ pub(crate) fn verify_recipe_expectations(
         }));
         Some(report)
     };
+
+    let composition = host.composition_report(recipe, manifest, capture, inspection, expect);
+    push_composition_reasons(&composition, &mut reasons);
 
     let quality_expectation_without_text =
         quality::expectation_without_region_specific_checks(expect);
@@ -189,6 +194,7 @@ pub(crate) fn verify_recipe_expectations(
         reasons,
         appearance,
         interaction,
+        Some(composition),
         Some(quality),
     ))
 }
@@ -445,4 +451,26 @@ fn push_reason(
         affected_handles,
         message,
     });
+}
+
+fn push_composition_reasons(
+    composition: &scena::SceneCompositionReportV1,
+    reasons: &mut Vec<scena::SceneRecipeVerificationReasonV1>,
+) {
+    for check in &composition.checks {
+        if check.severity != "error" && check.severity != "warning" {
+            continue;
+        }
+        if check.severity == "warning" && check.status == scena::SceneCompositionStatusV1::Checked {
+            continue;
+        }
+        reasons.push(scena::SceneRecipeVerificationReasonV1 {
+            code: check.code.clone(),
+            severity: check.severity.clone(),
+            source: "composition".to_owned(),
+            expectation_id: Some(check.id.clone()),
+            affected_handles: check.affected_handles.clone(),
+            message: format!("{}; fix: {}", check.message, check.fix_hint),
+        });
+    }
 }

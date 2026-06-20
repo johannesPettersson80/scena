@@ -475,7 +475,8 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         &[
             "Medium quality uses FXAA by default",
             "High quality uses sample-based edge AA",
-            "Renderer::set_supersample_factor(2..=4)",
+            "Renderer::set_supersample_factor(2)",
+            "guarded `8`",
         ],
     );
     require_contains(

@@ -99,6 +99,9 @@ impl RenderError {
             Self::UnsupportedSampleCount { .. } => {
                 "choose an anti_aliasing sample count supported by the active GPU adapter, such as msaa4"
             }
+            Self::UnsupportedSupersampleFactor { .. } => {
+                "lower render.supersample or reduce capture width/height; full-frame supersampling costs N^2 pixels"
+            }
             Self::GpuReadback { .. } => {
                 "retry after device polling or choose a supported readback path"
             }

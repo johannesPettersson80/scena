@@ -12,7 +12,7 @@ use crate::scene::recipe::{
 use crate::scene_host::SceneHostCore;
 use crate::{
     AntiAliasing, AssetPath, Background, GridFloorOptions, PostBloomConfig, Profile, Quality,
-    RendererOptions, ScreenSpaceAmbientOcclusionConfig, Tonemapper,
+    ReconstructionFilter, RendererOptions, ScreenSpaceAmbientOcclusionConfig, Tonemapper,
 };
 
 pub(super) fn renderer_options_from_recipe(
@@ -34,6 +34,7 @@ pub(super) fn renderer_options_from_recipe(
 pub(super) fn apply_render_setup(
     host: &mut SceneHostCore<DefaultAssetFetcher>,
     render: Option<&SceneRecipeRenderV1>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
     let Some(render) = render else {
         return;
@@ -45,8 +46,22 @@ pub(super) fn apply_render_setup(
     {
         host.renderer.set_anti_aliasing(anti_aliasing);
     }
-    if let Some(supersample) = render.supersample {
-        let _ = host.renderer.set_supersample_factor(u32::from(supersample));
+    if let Some(supersample) = render.supersample
+        && let Err(error) = host.renderer.set_supersample_factor(u32::from(supersample))
+    {
+        diagnostics.push(error_diagnostic(
+            "$.render.supersample",
+            "invalid_render_setting",
+            error.to_string(),
+            error.help(),
+        ));
+    }
+    if let Some(reconstruction) = render
+        .reconstruction
+        .as_deref()
+        .map(reconstruction_from_recipe)
+    {
+        host.renderer.set_reconstruction_filter(reconstruction);
     }
     if let Some(bloom) = render.bloom.map(bloom_from_recipe) {
         host.renderer.set_bloom(Some(bloom));
@@ -122,6 +137,14 @@ fn anti_aliasing_from_recipe(value: &str) -> AntiAliasing {
         "msaa4" => AntiAliasing::Msaa4,
         "msaa8" => AntiAliasing::Msaa8,
         _ => AntiAliasing::Fxaa,
+    }
+}
+
+fn reconstruction_from_recipe(value: &str) -> ReconstructionFilter {
+    match value {
+        "tent" => ReconstructionFilter::Tent,
+        "gaussian" => ReconstructionFilter::Gaussian,
+        _ => ReconstructionFilter::Box,
     }
 }
 

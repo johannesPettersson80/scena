@@ -3,8 +3,8 @@ use crate::diagnostics::OutputColorSpace;
 use crate::material::Color;
 
 use super::{
-    AntiAliasing, Background, OrderIndependentTransparencyConfig, PostBloomConfig, Renderer,
-    ScreenSpaceAmbientOcclusionConfig, Tonemapper,
+    AntiAliasing, Background, OrderIndependentTransparencyConfig, PostBloomConfig,
+    ReconstructionFilter, Renderer, ScreenSpaceAmbientOcclusionConfig, Tonemapper,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -122,6 +122,10 @@ impl Renderer {
         self.supersample_factor
     }
 
+    pub fn reconstruction_filter(&self) -> ReconstructionFilter {
+        self.reconstruction_filter
+    }
+
     pub fn set_anti_aliasing(&mut self, anti_aliasing: AntiAliasing) {
         if self.anti_aliasing != anti_aliasing {
             self.anti_aliasing = anti_aliasing;
@@ -130,12 +134,7 @@ impl Renderer {
     }
 
     pub fn set_supersample_factor(&mut self, factor: u32) -> Result<(), crate::RenderError> {
-        if !(1..=4).contains(&factor) {
-            return Err(crate::RenderError::InvalidSurfaceSize {
-                width: self.target.width.saturating_mul(factor),
-                height: self.target.height.saturating_mul(factor),
-            });
-        }
+        super::target::validate_supersample_target(self.target, factor)?;
         if self.supersample_factor != factor {
             self.supersample_factor = factor;
             self.target_revision = self.target_revision.saturating_add(1);
@@ -143,6 +142,13 @@ impl Renderer {
             self.mark_output_changed();
         }
         Ok(())
+    }
+
+    pub fn set_reconstruction_filter(&mut self, filter: ReconstructionFilter) {
+        if self.reconstruction_filter != filter {
+            self.reconstruction_filter = filter;
+            self.mark_output_changed();
+        }
     }
 
     pub fn set_tonemapper(&mut self, tonemapper: Tonemapper) {

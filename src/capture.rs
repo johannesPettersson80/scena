@@ -14,6 +14,7 @@ use crate::scene::{Scene, Transform};
 mod metadata;
 mod pixels;
 mod png;
+mod projection;
 mod proof;
 
 use metadata::{capture_auto_frame, capture_camera, capture_viewport, revisions_from_dirty};
@@ -24,6 +25,11 @@ pub use pixels::{
     summarize_rgba8,
 };
 pub use png::CapturePngError;
+pub use projection::{
+    CaptureProjectedPoint, CaptureScreenRegion, project_aabb_from_capture,
+    project_world_point_from_capture, screen_region_from_center_size, screen_region_from_points,
+    screen_region_from_rect, transform_point_for_projection,
+};
 pub use proof::{
     CAPTURE_BASELINE_SCHEMA_V1, CaptureBaselineDiff, CaptureBaselineError, CaptureBaselineReport,
     CaptureBaselineTolerance, CaptureContactSheet, CaptureContactSheetError,

@@ -147,6 +147,7 @@ struct GpuPreparedResources {
     brdf_lut_texture: wgpu::Texture,
     transmission: transmission::TransmissionResources,
     depth_prepass: Option<depth::DepthPrepassResources>,
+    overlay_depth_prepass: Option<depth::DepthPrepassResources>,
     strokes: Option<StrokeResources>,
     labels: Option<LabelResources>,
     #[allow(dead_code)]

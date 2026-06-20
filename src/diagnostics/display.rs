@@ -254,6 +254,20 @@ impl fmt::Display for RenderError {
                     "backend {backend:?} does not support MSAA sample count {requested}; maximum supported sample count is {maximum}"
                 )
             }
+            Self::UnsupportedSupersampleFactor {
+                factor,
+                width,
+                height,
+                scaled_width,
+                scaled_height,
+                maximum_dimension,
+                maximum_pixels,
+            } => {
+                write!(
+                    formatter,
+                    "supersample factor {factor} for {width}x{height} would render {scaled_width}x{scaled_height}, exceeding the maximum internal target {maximum_dimension}px per axis or {maximum_pixels} pixels"
+                )
+            }
             Self::GpuReadback { backend } => {
                 write!(formatter, "failed to read rendered output for {backend:?}")
             }

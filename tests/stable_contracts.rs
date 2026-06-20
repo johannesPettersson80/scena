@@ -131,6 +131,10 @@ fn stable_contract_golden_fixtures_are_versioned_json() {
             "scena.render_quality.v1",
         ),
         (
+            "tests/assets/stable-contracts/scene_composition.v1.json",
+            "scena.scene_composition.v1",
+        ),
+        (
             "tests/assets/stable-contracts/visibility_diagnosis.v1.json",
             "scena.visibility_diagnosis.v1",
         ),
@@ -325,6 +329,14 @@ fn scene_recipe_build_golden_matches_live_schema_serialization() {
 fn recipe_render_result_golden_matches_live_schema_serialization() {
     assert_fixture_matches_live_serialization::<scena::SceneRecipeRenderResultV1>(
         "tests/assets/stable-contracts/recipe_render_result.v1.json",
+    );
+}
+
+#[cfg(all(feature = "inspection", feature = "scene-host"))]
+#[test]
+fn scene_composition_golden_matches_live_schema_serialization() {
+    assert_fixture_matches_live_serialization::<scena::SceneCompositionReportV1>(
+        "tests/assets/stable-contracts/scene_composition.v1.json",
     );
 }
 

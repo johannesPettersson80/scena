@@ -57,7 +57,7 @@ use self::gpu::GpuDeviceState;
 pub use self::offscreen::{OffscreenTarget, PixelReadback};
 use self::output::OutputTransform;
 pub use self::output::{
-    AntiAliasing, OrderIndependentTransparencyConfig, PostBloomConfig,
+    AntiAliasing, OrderIndependentTransparencyConfig, PostBloomConfig, ReconstructionFilter,
     ScreenSpaceAmbientOcclusionConfig, Tonemapper,
 };
 #[doc(hidden)]
@@ -86,6 +86,7 @@ pub struct Renderer {
     output: OutputTransform,
     anti_aliasing: AntiAliasing,
     supersample_factor: u32,
+    reconstruction_filter: ReconstructionFilter,
     order_independent_transparency: Option<OrderIndependentTransparencyConfig>,
     screen_space_ambient_occlusion: Option<ScreenSpaceAmbientOcclusionConfig>,
     bloom: Option<PostBloomConfig>,
@@ -312,12 +313,13 @@ impl Renderer {
                 post_settings,
             )?;
             if scale > 1 {
-                cpu_render::downsample_rgba8_box_filter(
+                cpu_render::downsample_rgba8_reconstruction_filter(
                     target,
                     scale,
                     supersample_frame.as_slice(),
                     self.target,
                     &mut self.frame,
+                    self.reconstruction_filter,
                 );
             }
             if result.submitted {
@@ -359,12 +361,7 @@ impl Renderer {
         } else {
             1
         };
-        self.target
-            .scaled(scale)
-            .ok_or_else(|| RenderError::InvalidSurfaceSize {
-                width: self.target.width.saturating_mul(scale),
-                height: self.target.height.saturating_mul(scale),
-            })
+        self::target::validate_supersample_target(self.target, scale)
     }
 
     fn prepared_state(&self, scene: &Scene) -> Result<&PreparedSceneState, RenderError> {

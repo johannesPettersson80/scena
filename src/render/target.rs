@@ -1,5 +1,9 @@
-use crate::diagnostics::Backend;
+use crate::diagnostics::{Backend, RenderError};
 use crate::platform::SurfaceKind;
+
+pub(super) const MAX_FULL_FRAME_SUPERSAMPLE_FACTOR: u32 = 8;
+const MAX_FULL_FRAME_SUPERSAMPLE_DIMENSION: u32 = 16_384;
+const MAX_FULL_FRAME_SUPERSAMPLE_PIXELS: u64 = 134_217_728;
 
 /// Row-major render target dimensions used for CPU frame and accumulator indexing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +33,35 @@ impl RasterTarget {
             backend: self.backend,
         })
     }
+}
+
+pub(super) fn validate_supersample_target(
+    target: RasterTarget,
+    factor: u32,
+) -> Result<RasterTarget, RenderError> {
+    let scaled = target
+        .scaled(factor)
+        .ok_or_else(|| RenderError::InvalidSurfaceSize {
+            width: target.width.saturating_mul(factor),
+            height: target.height.saturating_mul(factor),
+        })?;
+    let pixels = u64::from(scaled.width) * u64::from(scaled.height);
+    if !matches!(factor, 1 | 2 | 3 | 4 | MAX_FULL_FRAME_SUPERSAMPLE_FACTOR)
+        || scaled.width > MAX_FULL_FRAME_SUPERSAMPLE_DIMENSION
+        || scaled.height > MAX_FULL_FRAME_SUPERSAMPLE_DIMENSION
+        || pixels > MAX_FULL_FRAME_SUPERSAMPLE_PIXELS
+    {
+        return Err(RenderError::UnsupportedSupersampleFactor {
+            factor,
+            width: target.width,
+            height: target.height,
+            scaled_width: scaled.width,
+            scaled_height: scaled.height,
+            maximum_dimension: MAX_FULL_FRAME_SUPERSAMPLE_DIMENSION,
+            maximum_pixels: MAX_FULL_FRAME_SUPERSAMPLE_PIXELS,
+        });
+    }
+    Ok(scaled)
 }
 
 pub(super) fn backend_for_attached_surface(kind: SurfaceKind) -> Backend {

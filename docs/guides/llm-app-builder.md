@@ -124,6 +124,13 @@ primitives for functional/CAD/diagram/chart scenes and tests.
 Use `quality:"high"` / `anti_aliasing:"msaa4"` for smooth geometry edges.
 Use `render.supersample:2..4` only for hero captures or fine glossy/texture
 details; it renders at N× resolution and downsamples, so cost grows with N^2.
+For final hero stills with high-contrast silhouettes, add
+`render.reconstruction:"tent"` after checking the native-resolution image;
+prefer it for floor grids, wireframes, and other line-heavy scenes because it
+keeps stroke contrast. Use `"gaussian"` only when a softer silhouette resolve is
+acceptable. Keep the default `"box"` for deterministic verification.
+`supersample:8` is available only for small captures that stay within renderer
+limits.
 
 ## Dedicated Verifiers
 

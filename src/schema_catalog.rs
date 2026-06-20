@@ -158,6 +158,13 @@ fn schema_entry_rows() -> &'static [SchemaEntryRow] {
             fixture_path: Some("tests/assets/stable-contracts/render_quality.v1.json"),
         },
         SchemaEntryRow {
+            schema: "scena.scene_composition.v1",
+            owner_module: "scene_host",
+            summary: "Composition-conformance checks over declared recipe elements and generated overlays.",
+            feature_flag: Some("scene-host"),
+            fixture_path: Some("tests/assets/stable-contracts/scene_composition.v1.json"),
+        },
+        SchemaEntryRow {
             schema: "scena.visibility_diagnosis.v1",
             owner_module: "render",
             summary: "Inspection-backed visibility diagnosis with stable reasons and suggested fixes.",

@@ -103,6 +103,14 @@ impl AntiAliasing {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReconstructionFilter {
+    #[default]
+    Box,
+    Tent,
+    Gaussian,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OrderIndependentTransparencyConfig {
     coverage_boost: f32,

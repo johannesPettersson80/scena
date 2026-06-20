@@ -184,11 +184,21 @@ renderer.set_anti_aliasing(scena::AntiAliasing::Fxaa);
 renderer.set_anti_aliasing(scena::AntiAliasing::Msaa4);
 ```
 
-For offline or hero captures, use `Renderer::set_supersample_factor(2..=4)` or
+For offline or hero captures, use `Renderer::set_supersample_factor(2)`,
+`3`, `4`, or a guarded `8`, or
 recipe `render.supersample` to render the frame at N× resolution and
 downsample. This improves curved silhouettes, thin grid/wire strokes, textures,
 and glossy highlights that MSAA alone cannot fully stabilize. Cost grows with
 N^2, so keep it opt-in.
+
+Recipes can also opt into `render.reconstruction:"tent"` or `"gaussian"` to
+downsample hero supersample captures with a wider positive kernel. The default
+`"box"` filter remains the stable choice. Use `"tent"` for grid/wire/line-heavy
+captures where stroke contrast matters; `"gaussian"` is a softer silhouette
+reconstruction for inspected hero stills. `Renderer::set_supersample_factor(8)`
+and `render.supersample:8` are allowed
+only for small captures that keep the scaled internal target within renderer
+limits.
 
 Headless and descriptor-backed CPU renders can also enable the depth-aware
 screen-space ambient occlusion baseline:

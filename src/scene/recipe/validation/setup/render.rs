@@ -11,6 +11,7 @@ const RENDER_FIELDS: &[&str] = &[
     "quality",
     "anti_aliasing",
     "supersample",
+    "reconstruction",
     "bloom",
     "ssao",
     "exposure_ev",
@@ -32,7 +33,7 @@ pub(in crate::scene::recipe::validation) fn validate_render_setup(
             "error",
             "$.render",
             "render must be an object",
-            "emit render:{profile?,quality?,anti_aliasing?,supersample?,bloom?,ssao?,exposure_ev?,tonemapper?}",
+            "emit render:{profile?,quality?,anti_aliasing?,supersample?,reconstruction?,bloom?,ssao?,exposure_ev?,tonemapper?}",
             None,
             false,
         ));
@@ -62,6 +63,13 @@ pub(in crate::scene::recipe::validation) fn validate_render_setup(
     );
     validate_supersample(object.get("supersample"), diagnostics);
     super::validate_enum(
+        "$.render.reconstruction",
+        object.get("reconstruction"),
+        &["box", "tent", "gaussian"],
+        "invalid_render_setting",
+        diagnostics,
+    );
+    super::validate_enum(
         "$.render.tonemapper",
         object.get("tonemapper"),
         &["standard", "aces", "pbr_neutral"],
@@ -86,20 +94,20 @@ fn validate_supersample(value: Option<&Value>, diagnostics: &mut Vec<SceneRecipe
             "invalid_render_setting",
             "error",
             "$.render.supersample",
-            "supersample must be an integer factor 1, 2, 3, or 4",
-            "emit supersample:2, supersample:3, or supersample:4 for hero-shot quality; cost grows with N^2",
+            "supersample must be an integer factor 1, 2, 3, 4, or 8",
+            "emit supersample:2, supersample:3, supersample:4, or supersample:8 for hero-shot quality; cost grows with N^2 and 8 requires small captures",
             None,
             false,
         ));
         return;
     };
-    if !(1..=4).contains(&factor) {
+    if !matches!(factor, 1 | 2 | 3 | 4 | 8) {
         diagnostics.push(diagnostic(
             "invalid_render_setting",
             "error",
             "$.render.supersample",
-            "supersample must be 1, 2, 3, or 4",
-            "use 1 to disable full-frame supersampling; use 2-4 only for hero-shot quality because cost grows with N^2",
+            "supersample must be 1, 2, 3, 4, or 8",
+            "use 1 to disable full-frame supersampling; use 2-4 for hero-shot quality; use 8 only for small captures because cost grows with N^2",
             None,
             false,
         ));

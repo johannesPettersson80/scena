@@ -1409,6 +1409,73 @@ fn write_geometry_edge_quality_recipe(
 }
 
 #[cfg(feature = "scene-host")]
+fn write_grid_occlusion_recipe(dir: &Path, name: &str, anti_aliasing: &str) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "blue": "#0B5FFF",
+                "floor": "#202020",
+                "grid": "#FF2020"
+            },
+            "geometries": [
+                { "id": "bar_geo", "primitive": { "kind": "box", "size": [0.52, 0.72, 0.18] } }
+            ],
+            "materials": [
+                { "id": "bar_mat", "kind": "unlit", "base_color": "blue", "double_sided": false }
+            ],
+            "nodes": [
+                {
+                    "id": "bar",
+                    "geometry": "bar_geo",
+                    "material": "bar_mat",
+                    "transform": {
+                        "kind": "trs",
+                        "translation": [0.0, 0.36, 0.0]
+                    }
+                }
+            ],
+            "scene": {
+                "background": { "kind": "custom", "color": "#101010" },
+                "grid": {
+                    "enabled": true,
+                    "floor_y": 0.0,
+                    "padding": 0.2,
+                    "line_spacing": 0.12,
+                    "color": "floor",
+                    "line_color": "grid",
+                    "roughness": 1.0
+                }
+            },
+            "render": {
+                "anti_aliasing": anti_aliasing,
+                "tonemapper": "standard",
+                "exposure_ev": 0.0
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 42.0,
+                "active": true,
+                "transform": {
+                    "kind": "look_at",
+                    "eye": [0.55, 0.62, 1.65],
+                    "target": "bar"
+                }
+            }],
+            "capture": { "width": 220, "height": 160 },
+            "expect": {}
+        }))
+        .expect("grid occlusion recipe serializes"),
+    )
+    .expect("grid occlusion recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
 fn write_supersample_recipe(
     dir: &Path,
     name: &str,
@@ -1496,6 +1563,114 @@ fn write_supersample_recipe(
         .expect("supersample recipe serializes"),
     )
     .expect("supersample recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
+fn write_reconstruction_bar_recipe(
+    dir: &Path,
+    name: &str,
+    supersample: u8,
+    reconstruction: &str,
+) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "bar": "#1A1E2A",
+                "background": "#F7F7F4"
+            },
+            "geometries": [
+                { "id": "bar_geo", "primitive": { "kind": "box", "size": [1.35, 0.42, 0.12] } }
+            ],
+            "materials": [
+                { "id": "bar_mat", "kind": "unlit", "base_color": "bar", "double_sided": false }
+            ],
+            "nodes": [
+                {
+                    "id": "dashboard_bar",
+                    "geometry": "bar_geo",
+                    "material": "bar_mat",
+                    "transform": { "kind": "trs", "rotation_degrees": [0.0, 0.0, 14.0] }
+                }
+            ],
+            "scene": {
+                "background": { "kind": "custom", "color": "background" }
+            },
+            "render": {
+                "anti_aliasing": "msaa4",
+                "supersample": supersample,
+                "reconstruction": reconstruction,
+                "tonemapper": "standard",
+                "exposure_ev": 0.0
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 22.0,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 4.0], "target": "dashboard_bar" }
+            }],
+            "capture": { "width": 260, "height": 180 }
+        }))
+        .expect("reconstruction bar recipe serializes"),
+    )
+    .expect("reconstruction bar recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
+fn write_reconstruction_grid_recipe(
+    dir: &Path,
+    name: &str,
+    supersample: u8,
+    reconstruction: &str,
+) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "geometries": [
+                { "id": "grid_geo", "primitive": { "kind": "grid", "size": [1.35], "divisions": 11 } }
+            ],
+            "materials": [
+                { "id": "grid_mat", "kind": "line", "base_color": "#E8E8E8", "stroke_width_px": 1.0 }
+            ],
+            "nodes": [
+                {
+                    "id": "floor_grid",
+                    "geometry": "grid_geo",
+                    "material": "grid_mat",
+                    "transform": { "kind": "trs", "rotation_degrees": [63.0, 0.0, 17.0] }
+                }
+            ],
+            "scene": {
+                "background": { "kind": "custom", "color": "#30343A" }
+            },
+            "render": {
+                "anti_aliasing": "msaa4",
+                "supersample": supersample,
+                "reconstruction": reconstruction,
+                "tonemapper": "standard",
+                "exposure_ev": 0.0
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 22.0,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 3.4], "target": "floor_grid" }
+            }],
+            "capture": { "width": 260, "height": 180 }
+        }))
+        .expect("reconstruction grid recipe serializes"),
+    )
+    .expect("reconstruction grid recipe writes");
     (recipe_path, png_path)
 }
 
@@ -1787,6 +1962,77 @@ fn scena_recipe_render_verify_passes_geometry_edge_quality_with_msaa4_on_gpu() {
 
 #[cfg(feature = "scene-host")]
 #[test]
+fn scena_recipe_render_gpu_msaa_grid_floor_is_occluded_by_object() {
+    let dir = artifact_dir("recipe-render-gpu-msaa-grid-occlusion");
+    let (recipe_path, png_path) =
+        write_grid_occlusion_recipe(&dir, "msaa4-grid-occlusion", "msaa4");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+    configure_command_for_lavapipe(&mut command);
+    let output = command
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--gpu",
+            "--introspect",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena GPU MSAA grid occlusion render command runs");
+
+    assert!(
+        output.status.success(),
+        "GPU MSAA4 grid occlusion render should succeed, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert_eq!(
+        report["capabilities"]["backend"], "headless_gpu",
+        "GPU grid occlusion proof must use HeadlessGpu, not CPU fallback: {report:#}"
+    );
+
+    let image = decode_png_rgba8(&png_path);
+    let object_bbox = color_bbox(
+        &image.rgba8,
+        image.width,
+        image.height,
+        is_blue_object_pixel,
+    )
+    .expect("blue occluder object should be visible in the rendered PNG");
+    let object_interior = shrink_region(object_bbox, 6)
+        .expect("blue occluder object should have an interior region after edge inset");
+    let red_pixels = count_pixels_in_region(
+        &image.rgba8,
+        image.width,
+        object_interior,
+        is_red_grid_pixel,
+    );
+    fs::write(
+        dir.join("msaa4-grid-occlusion.json"),
+        format!(
+            "{{\n  \"schema\": \"scena.grid_occlusion_probe.v1\",\n  \"red_grid_pixels_inside_object_interior\": {},\n  \"object_bbox\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }},\n  \"object_interior\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}\n}}\n",
+            red_pixels,
+            object_bbox.x,
+            object_bbox.y,
+            object_bbox.width,
+            object_bbox.height,
+            object_interior.x,
+            object_interior.y,
+            object_interior.width,
+            object_interior.height
+        ),
+    )
+    .expect("grid occlusion probe artifact writes");
+    assert!(
+        red_pixels == 0,
+        "depth-tested grid floor strokes must be occluded by the object under GPU MSAA4; red_pixels_inside_object_interior={red_pixels}, object_bbox={object_bbox:?}, object_interior={object_interior:?}, png={png_path:?}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
 fn scena_recipe_render_gpu_msaa_overlays_write_png_on_real_adapter() {
     let dir = artifact_dir("recipe-render-gpu-msaa-overlays");
     let cases = [
@@ -1906,6 +2152,117 @@ fn scena_recipe_render_supersample_changes_curve_grid_and_specular_pixels_on_cpu
             );
         }
     }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_gpu_reconstruction_widens_dashboard_bar_and_grid_edges_without_haloing() {
+    let dir = artifact_dir("recipe-render-reconstruction-dashboard-edge");
+    let mut results = Vec::new();
+    let mut grid_results = Vec::new();
+    for supersample in [2_u8, 4] {
+        for reconstruction in ["box", "tent", "gaussian"] {
+            let (recipe_path, png_path) = write_reconstruction_bar_recipe(
+                &dir,
+                &format!("dashboard-bar-{reconstruction}-ss{supersample}"),
+                supersample,
+                reconstruction,
+            );
+            let report = run_recipe_render_verify(&recipe_path, &png_path, true);
+            assert_eq!(report["capture"]["width"], 260, "{report:#}");
+            assert_eq!(report["capture"]["height"], 180, "{report:#}");
+            let image = decode_png_rgba8(&png_path);
+            let metrics = edge_reconstruction_metrics(&image.rgba8, image.width, image.height);
+            results.push((reconstruction.to_owned(), supersample, metrics));
+
+            let (grid_recipe_path, grid_png_path) = write_reconstruction_grid_recipe(
+                &dir,
+                &format!("dashboard-grid-{reconstruction}-ss{supersample}"),
+                supersample,
+                reconstruction,
+            );
+            let grid_report = run_recipe_render_verify(&grid_recipe_path, &grid_png_path, true);
+            assert_eq!(grid_report["capture"]["width"], 260, "{grid_report:#}");
+            assert_eq!(grid_report["capture"]["height"], 180, "{grid_report:#}");
+            let grid_image = decode_png_rgba8(&grid_png_path);
+            let grid_metrics =
+                edge_reconstruction_metrics(&grid_image.rgba8, grid_image.width, grid_image.height);
+            grid_results.push((reconstruction.to_owned(), supersample, grid_metrics));
+        }
+    }
+    let box_ss2 = results
+        .iter()
+        .find(|(filter, supersample, _)| filter == "box" && *supersample == 2)
+        .expect("box ss2 metrics exist")
+        .2;
+    let gaussian_ss4 = results
+        .iter()
+        .find(|(filter, supersample, _)| filter == "gaussian" && *supersample == 4)
+        .expect("gaussian ss4 metrics exist")
+        .2;
+    let tent_ss4 = results
+        .iter()
+        .find(|(filter, supersample, _)| filter == "tent" && *supersample == 4)
+        .expect("tent ss4 metrics exist")
+        .2;
+    let grid_box_ss2 = grid_results
+        .iter()
+        .find(|(filter, supersample, _)| filter == "box" && *supersample == 2)
+        .expect("grid box ss2 metrics exist")
+        .2;
+    let grid_tent_ss2 = grid_results
+        .iter()
+        .find(|(filter, supersample, _)| filter == "tent" && *supersample == 2)
+        .expect("grid tent ss2 metrics exist")
+        .2;
+
+    fs::write(
+        dir.join("dashboard-bar-reconstruction-metrics.json"),
+        format_reconstruction_metrics(&results),
+    )
+    .expect("reconstruction metrics artifact writes");
+    fs::write(
+        dir.join("dashboard-grid-reconstruction-metrics.json"),
+        format_reconstruction_metrics(&grid_results),
+    )
+    .expect("grid reconstruction metrics artifact writes");
+
+    assert!(
+        gaussian_ss4.intermediate_px_per_edge > box_ss2.intermediate_px_per_edge + 0.35,
+        "gaussian ss4 should widen the measured dashboard bar edge ramp; box_ss2={box_ss2:?}, gaussian_ss4={gaussian_ss4:?}, all={results:#?}"
+    );
+    assert!(
+        gaussian_ss4.transition_width_px > box_ss2.transition_width_px + 0.35,
+        "gaussian ss4 should increase transition width; box_ss2={box_ss2:?}, gaussian_ss4={gaussian_ss4:?}, all={results:#?}"
+    );
+    assert!(
+        gaussian_ss4.unique_luma_levels >= box_ss2.unique_luma_levels,
+        "gaussian ss4 should retain or increase edge luma levels; box_ss2={box_ss2:?}, gaussian_ss4={gaussian_ss4:?}, all={results:#?}"
+    );
+    assert!(
+        gaussian_ss4.halo_overshoot <= 0.02 && tent_ss4.halo_overshoot <= 0.02,
+        "positive reconstruction kernels must not introduce visible edge halos; tent_ss4={tent_ss4:?}, gaussian_ss4={gaussian_ss4:?}, all={results:#?}"
+    );
+    assert!(
+        gaussian_ss4.contrast_range >= box_ss2.contrast_range * 0.82,
+        "hero reconstruction should retain most edge contrast; box_ss2={box_ss2:?}, gaussian_ss4={gaussian_ss4:?}, all={results:#?}"
+    );
+    assert!(
+        grid_tent_ss2.intermediate_px_per_edge > grid_box_ss2.intermediate_px_per_edge + 0.75,
+        "tent ss2 should widen the measured floor/grid stroke ramp, not just mesh silhouettes; grid_box_ss2={grid_box_ss2:?}, grid_tent_ss2={grid_tent_ss2:?}, all={grid_results:#?}"
+    );
+    assert!(
+        grid_tent_ss2.unique_luma_levels > grid_box_ss2.unique_luma_levels,
+        "tent ss2 should increase floor/grid stroke luma levels; grid_box_ss2={grid_box_ss2:?}, grid_tent_ss2={grid_tent_ss2:?}, all={grid_results:#?}"
+    );
+    assert!(
+        grid_tent_ss2.halo_overshoot <= grid_box_ss2.halo_overshoot,
+        "floor/grid stroke reconstruction must not increase the measured halo/overshoot; grid_box_ss2={grid_box_ss2:?}, grid_tent_ss2={grid_tent_ss2:?}, all={grid_results:#?}"
+    );
+    assert!(
+        grid_tent_ss2.contrast_range >= grid_box_ss2.contrast_range * 0.82,
+        "floor/grid stroke reconstruction should retain most line contrast; grid_box_ss2={grid_box_ss2:?}, grid_tent_ss2={grid_tent_ss2:?}, all={grid_results:#?}"
+    );
 }
 
 #[cfg(feature = "scene-host")]
@@ -2058,6 +2415,211 @@ fn scena_recipe_render_verify_fails_color_pick_and_fit_expectations() {
     assert!(
         png_path.exists(),
         "negative verification still writes the proof PNG"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_emits_passing_composition_report_for_declared_node() {
+    let dir = artifact_dir("recipe-composition-good");
+    let recipe_path = dir.join("composition.recipe.json");
+    let png_path = dir.join("composition.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "green": "#2F9E44"
+            },
+            "geometries": [
+                { "id": "visible_geo", "primitive": { "kind": "box", "size": [0.35, 0.35, 0.08] } }
+            ],
+            "materials": [
+                { "id": "green_mat", "kind": "unlit", "base_color": "green" }
+            ],
+            "nodes": [
+                {
+                    "id": "visible_box",
+                    "geometry": "visible_geo",
+                    "material": "green_mat",
+                    "transform": { "kind": "center" }
+                }
+            ],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 36.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": "visible_box" }
+            }],
+            "capture": { "width": 128, "height": 128 },
+            "expect": {}
+        }))
+        .expect("composition recipe serializes"),
+    )
+    .expect("composition recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena composition recipe render command runs");
+
+    assert!(
+        output.status.success(),
+        "composition-good recipe should pass verification, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert_eq!(report["schema"], "scena.recipe_render_result.v1");
+    assert_eq!(report["ok"], true, "{report:#}");
+    let composition = &report["verification"]["composition"];
+    assert_eq!(composition["schema"], "scena.scene_composition.v1");
+    assert_eq!(composition["ok"], true, "{report:#}");
+    assert!(
+        composition["checks"]
+            .as_array()
+            .expect("composition checks array")
+            .iter()
+            .any(|check| check["id"] == "node.visible_box.presence"
+                && check["status"] == "checked"
+                && check["code"] == "node_visible"),
+        "visible declared node should be checked: {report:#}"
+    );
+    assert!(
+        composition["checks"]
+            .as_array()
+            .expect("composition checks array")
+            .iter()
+            .any(|check| check["status"] == "skipped_no_backend_support"
+                && check["code"] == "object_mask_not_available"),
+        "coverage gaps should be explicit: {report:#}"
+    );
+    assert!(
+        report["verification"]["reasons"]
+            .as_array()
+            .expect("verification reasons array")
+            .iter()
+            .all(|reason| !(reason["source"] == "composition" && reason["severity"] == "error")),
+        "passing composition checks should not produce composition errors: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_emits_composition_report_for_declared_nodes() {
+    let dir = artifact_dir("recipe-composition-report");
+    let recipe_path = dir.join("composition.recipe.json");
+    let png_path = dir.join("composition.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "green": "#2F9E44",
+                "red": "#C92A2A"
+            },
+            "geometries": [
+                { "id": "visible_geo", "primitive": { "kind": "box", "size": [0.35, 0.35, 0.08] } },
+                { "id": "hidden_geo", "primitive": { "kind": "box", "size": [0.20, 0.20, 0.08] } }
+            ],
+            "materials": [
+                { "id": "green_mat", "kind": "unlit", "base_color": "green" },
+                { "id": "red_mat", "kind": "unlit", "base_color": "red" }
+            ],
+            "nodes": [
+                {
+                    "id": "visible_box",
+                    "geometry": "visible_geo",
+                    "material": "green_mat",
+                    "transform": { "kind": "center" }
+                },
+                {
+                    "id": "hidden_box",
+                    "geometry": "hidden_geo",
+                    "material": "red_mat",
+                    "visible": false,
+                    "transform": { "kind": "trs", "translation": [0.45, 0.0, 0.0] }
+                }
+            ],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 36.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": "visible_box" }
+            }],
+            "capture": { "width": 128, "height": 128 },
+            "expect": {}
+        }))
+        .expect("composition recipe serializes"),
+    )
+    .expect("composition recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena composition recipe render command runs");
+
+    assert!(
+        !output.status.success(),
+        "declared hidden node should fail composition verification"
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "composition failures stay machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert_eq!(report["schema"], "scena.recipe_render_result.v1");
+    assert_eq!(report["build"]["ok"], true, "{report:#}");
+    let composition = &report["verification"]["composition"];
+    assert_eq!(composition["schema"], "scena.scene_composition.v1");
+    assert_eq!(composition["ok"], false, "{report:#}");
+    assert!(
+        composition["checks"]
+            .as_array()
+            .expect("composition checks array")
+            .iter()
+            .any(|check| check["id"] == "node.visible_box.presence"
+                && check["status"] == "checked"
+                && check["code"] == "node_visible"),
+        "visible declared node should be explicitly checked: {report:#}"
+    );
+    assert!(
+        composition["checks"]
+            .as_array()
+            .expect("composition checks array")
+            .iter()
+            .any(|check| check["id"] == "node.hidden_box.presence"
+                && check["status"] == "failed"
+                && check["code"] == "declared_node_not_drawn"),
+        "hidden declared node should be an exact composition failure: {report:#}"
+    );
+    assert!(
+        report["verification"]["reasons"]
+            .as_array()
+            .expect("verification reasons array")
+            .iter()
+            .any(|reason| reason["source"] == "composition"
+                && reason["code"] == "declared_node_not_drawn"),
+        "composition failures must surface in verification reasons: {report:#}"
     );
 }
 
@@ -2770,6 +3332,215 @@ fn mean_luminance_in_region(rgba: &[u8], frame_width: u32, region: QualityPixelR
         }
     }
     total / count.max(1) as f32
+}
+
+#[cfg(feature = "scene-host")]
+#[derive(Debug, Clone, Copy)]
+struct EdgeReconstructionMetrics {
+    intermediate_px_per_edge: f32,
+    unique_luma_levels: usize,
+    transition_width_px: f32,
+    halo_overshoot: f32,
+    contrast_range: f32,
+}
+
+#[cfg(feature = "scene-host")]
+fn edge_reconstruction_metrics(rgba: &[u8], width: u32, height: u32) -> EdgeReconstructionMetrics {
+    let mut unique_luma_levels = std::collections::BTreeSet::new();
+    let mut transition_total = 0.0_f32;
+    let mut edge_rows = 0_u32;
+    let y0 = height / 5;
+    let y1 = height.saturating_mul(4) / 5;
+    let mut all_luma = Vec::with_capacity((width as usize).saturating_mul(height as usize));
+    for y in 0..height {
+        for x in 0..width {
+            all_luma.push(linear_luminance_at(rgba, width, x, y));
+        }
+    }
+    all_luma.sort_by(f32::total_cmp);
+    let global_low = percentile(&all_luma, 0.05);
+    let global_high = percentile(&all_luma, 0.95);
+    let contrast_range = (global_high - global_low).max(0.0);
+    let mut halo_overshoot = 0.0_f32;
+    for y in y0..y1 {
+        let mut strongest_x = 1;
+        let mut strongest_gradient = 0.0_f32;
+        let mut previous = linear_luminance_at(rgba, width, 0, y);
+        for x in 1..width {
+            let current = linear_luminance_at(rgba, width, x, y);
+            let gradient = (current - previous).abs();
+            if gradient > strongest_gradient {
+                strongest_gradient = gradient;
+                strongest_x = x;
+            }
+            previous = current;
+        }
+        if strongest_gradient < 0.08 {
+            continue;
+        }
+        let window_min_x = strongest_x.saturating_sub(10);
+        let window_max_x = strongest_x.saturating_add(10).min(width.saturating_sub(1));
+        let mut row_min = f32::INFINITY;
+        let mut row_max = f32::NEG_INFINITY;
+        for x in window_min_x..=window_max_x {
+            let luma = linear_luminance_at(rgba, width, x, y);
+            row_min = row_min.min(luma);
+            row_max = row_max.max(luma);
+        }
+        let row_range = row_max - row_min;
+        if row_range < 0.18 {
+            continue;
+        }
+        let low_cutoff = row_min + row_range * 0.05;
+        let high_cutoff = row_max - row_range * 0.05;
+        let mut transition_width = 0_u32;
+        for x in window_min_x..=window_max_x {
+            let luma = linear_luminance_at(rgba, width, x, y);
+            if (low_cutoff..high_cutoff).contains(&luma) {
+                transition_width = transition_width.saturating_add(1);
+                unique_luma_levels.insert((luma * 255.0).round().clamp(0.0, 255.0) as u8);
+            }
+        }
+        halo_overshoot = halo_overshoot
+            .max((global_low - row_min).max(0.0))
+            .max((row_max - global_high).max(0.0));
+        transition_total += transition_width as f32;
+        edge_rows = edge_rows.saturating_add(1);
+    }
+    let intermediate_px_per_edge = transition_total / edge_rows.max(1) as f32;
+    EdgeReconstructionMetrics {
+        intermediate_px_per_edge,
+        unique_luma_levels: unique_luma_levels.len(),
+        transition_width_px: intermediate_px_per_edge,
+        halo_overshoot,
+        contrast_range,
+    }
+}
+
+#[cfg(feature = "scene-host")]
+fn format_reconstruction_metrics(results: &[(String, u8, EdgeReconstructionMetrics)]) -> String {
+    let rows = results
+        .iter()
+        .map(|(filter, supersample, metrics)| {
+            format!(
+                "    {{ \"reconstruction\": \"{}\", \"supersample\": {}, \"intermediate_px_per_edge\": {:.3}, \"unique_luma_levels\": {}, \"transition_width_px\": {:.3}, \"halo_overshoot\": {:.3}, \"contrast_range\": {:.3} }}",
+                filter,
+                supersample,
+                metrics.intermediate_px_per_edge,
+                metrics.unique_luma_levels,
+                metrics.transition_width_px,
+                metrics.halo_overshoot,
+                metrics.contrast_range
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",\n");
+    format!(
+        "{{\n  \"schema\": \"scena.edge_reconstruction_probe.v1\",\n  \"rows\": [\n{rows}\n  ]\n}}\n"
+    )
+}
+
+#[cfg(feature = "scene-host")]
+fn linear_luminance_at(rgba: &[u8], width: u32, x: u32, y: u32) -> f32 {
+    let offset = ((y * width + x) * 4) as usize;
+    let to_linear = |value: u8| {
+        let value = f32::from(value) / 255.0;
+        if value <= 0.04045 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * to_linear(rgba[offset])
+        + 0.7152 * to_linear(rgba[offset + 1])
+        + 0.0722 * to_linear(rgba[offset + 2])
+}
+
+#[cfg(feature = "scene-host")]
+fn percentile(sorted: &[f32], fraction: f32) -> f32 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let position = fraction.clamp(0.0, 1.0) * (sorted.len().saturating_sub(1)) as f32;
+    let lower = position.floor() as usize;
+    let upper = position.ceil() as usize;
+    if lower == upper {
+        sorted[lower]
+    } else {
+        let t = position - lower as f32;
+        sorted[lower] * (1.0 - t) + sorted[upper] * t
+    }
+}
+
+#[cfg(feature = "scene-host")]
+fn color_bbox(
+    rgba: &[u8],
+    frame_width: u32,
+    frame_height: u32,
+    predicate: fn(u8, u8, u8) -> bool,
+) -> Option<QualityPixelRegion> {
+    let mut min_x = u32::MAX;
+    let mut min_y = u32::MAX;
+    let mut max_x = 0;
+    let mut max_y = 0;
+    let mut found = false;
+    for y in 0..frame_height {
+        for x in 0..frame_width {
+            let offset = ((y * frame_width + x) * 4) as usize;
+            if predicate(rgba[offset], rgba[offset + 1], rgba[offset + 2]) {
+                min_x = min_x.min(x);
+                min_y = min_y.min(y);
+                max_x = max_x.max(x);
+                max_y = max_y.max(y);
+                found = true;
+            }
+        }
+    }
+    found.then_some(QualityPixelRegion {
+        x: min_x,
+        y: min_y,
+        width: max_x.saturating_sub(min_x).saturating_add(1),
+        height: max_y.saturating_sub(min_y).saturating_add(1),
+    })
+}
+
+#[cfg(feature = "scene-host")]
+fn count_pixels_in_region(
+    rgba: &[u8],
+    frame_width: u32,
+    region: QualityPixelRegion,
+    predicate: fn(u8, u8, u8) -> bool,
+) -> u32 {
+    let mut count = 0_u32;
+    for y in region.y..region.y.saturating_add(region.height) {
+        for x in region.x..region.x.saturating_add(region.width) {
+            let offset = ((y * frame_width + x) * 4) as usize;
+            count += u32::from(predicate(rgba[offset], rgba[offset + 1], rgba[offset + 2]));
+        }
+    }
+    count
+}
+
+#[cfg(feature = "scene-host")]
+fn shrink_region(region: QualityPixelRegion, inset: u32) -> Option<QualityPixelRegion> {
+    (region.width > inset.saturating_mul(2) && region.height > inset.saturating_mul(2)).then_some(
+        QualityPixelRegion {
+            x: region.x.saturating_add(inset),
+            y: region.y.saturating_add(inset),
+            width: region.width.saturating_sub(inset.saturating_mul(2)),
+            height: region.height.saturating_sub(inset.saturating_mul(2)),
+        },
+    )
+}
+
+#[cfg(feature = "scene-host")]
+fn is_blue_object_pixel(r: u8, g: u8, b: u8) -> bool {
+    b > 150 && r < 80 && g > 40 && g < 150
+}
+
+#[cfg(feature = "scene-host")]
+fn is_red_grid_pixel(r: u8, g: u8, b: u8) -> bool {
+    r > 150 && g < 95 && b < 95
 }
 
 fn system_test_font_path() -> PathBuf {

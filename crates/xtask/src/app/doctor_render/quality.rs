@@ -74,7 +74,66 @@ pub(crate) fn check_render_quality_contracts(root: &Path, findings: &mut Vec<Fin
             "scena_recipe_render_verify_fails_geometry_edge_quality_without_sample_aa_on_cpu_and_gpu",
             "scena_recipe_render_verify_passes_geometry_edge_quality_with_msaa4_on_gpu",
             "scena_recipe_render_supersample_changes_curve_grid_and_specular_pixels_on_cpu_and_gpu",
+            "scena_recipe_render_gpu_reconstruction_widens_dashboard_bar_and_grid_edges_without_haloing",
+            "dashboard-bar-reconstruction-metrics.json",
+            "dashboard-grid-reconstruction-metrics.json",
+            "scena_recipe_render_gpu_msaa_grid_floor_is_occluded_by_object",
+            "red_grid_pixels_inside_object_interior",
+            "scena_recipe_render_verify_emits_composition_report_for_declared_nodes",
+            "\"schema\": \"scena.scene_recipe.v1\"",
+            "declared_node_not_drawn",
+            "source\"] == \"composition\"",
             "\"supersample\": supersample",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-QUALITY",
+        "src/render/cpu_render.rs",
+        &[
+            "downsample_rgba8_reconstruction_filter",
+            "rgba8_supersample_downsample_averages_rgb_in_linear_light",
+            "srgb8_to_linear",
+            "ReconstructionFilter::Gaussian",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SCENE-COMPOSITION",
+        "src/scene_host/composition.rs",
+        &[
+            "composition_report",
+            "SceneCompositionStatusV1::SkippedNoDeclaredIntent",
+            "SceneCompositionStatusV1::SkippedNoBackendSupport",
+            "unexpected_draw_output",
+            "object_mask_not_available",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SCENE-COMPOSITION",
+        "src/scene_host/composition/checks.rs",
+        &[
+            "SceneCompositionStatusV1::Checked",
+            "SceneCompositionStatusV1::Failed",
+            "fix_hint",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SCENE-COMPOSITION",
+        "tests/assets/stable-contracts/scene_composition.v1.json",
+        &[
+            "\"schema\": \"scena.scene_composition.v1\"",
+            "\"status\": \"checked\"",
+            "\"status\": \"failed\"",
+            "\"status\": \"skipped_no_backend_support\"",
+            "\"code\": \"declared_node_not_drawn\"",
+            "\"fix_hint\"",
         ],
     );
     require_contains(
@@ -102,6 +161,18 @@ pub(crate) fn check_render_quality_contracts(root: &Path, findings: &mut Vec<Fin
             "`line_missing_antialiasing`",
             "`geometry_missing_antialiasing`",
             "`reference_ssim_too_low`",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SCENE-COMPOSITION",
+        "docs/schema-contracts.md",
+        &[
+            "### `scena.scene_composition.v1`",
+            "`skipped_no_backend_support`",
+            "`declared_node_not_drawn`",
+            "`object_mask_not_available`",
         ],
     );
     check_label_atlas_replaced_cell_primitives(root, findings);

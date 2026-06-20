@@ -1,0 +1,70 @@
+{
+  "schema": "scena.scene_composition.v1",
+  "ok": false,
+  "summary": {
+    "checks": 3,
+    "checked": 1,
+    "failed": 1,
+    "skipped": 1,
+    "unsupported": 0,
+    "not_applicable": 0,
+    "errors": 1,
+    "warnings": 1
+  },
+  "checks": [
+    {
+      "id": "node.pump.presence",
+      "category": "completeness",
+      "code": "node_visible",
+      "status": "checked",
+      "severity": "info",
+      "region": {
+        "kind": "node",
+        "handle": 7,
+        "rect_css_px": {
+          "min_x": 10.0,
+          "min_y": 12.0,
+          "max_x": 42.0,
+          "max_y": 36.0,
+          "width": 32.0,
+          "height": 24.0
+        }
+      },
+      "target_id": "pump",
+      "affected_handles": [7],
+      "observed": {
+        "draw_count": 1,
+        "visible": true
+      },
+      "message": "declared node is visible and contributes owned output",
+      "fix_hint": "no action needed"
+    },
+    {
+      "id": "node.panel.presence",
+      "category": "completeness",
+      "code": "declared_node_not_drawn",
+      "status": "failed",
+      "severity": "error",
+      "target_id": "panel",
+      "affected_handles": [9],
+      "observed": {
+        "draw_count": 0,
+        "visible": false
+      },
+      "message": "declared recipe node did not produce visible draw output",
+      "fix_hint": "make the node visible, move it into frame, or remove it from the declared recipe"
+    },
+    {
+      "id": "node.pump.visible_coverage",
+      "category": "occlusion_depth",
+      "code": "object_mask_not_available",
+      "status": "skipped_no_backend_support",
+      "severity": "warning",
+      "target_id": "pump",
+      "affected_handles": [7],
+      "observed": {},
+      "message": "per-object visible-pixel masks are not available in this foundation layer",
+      "fix_hint": "add a depth/id-mask backend before treating occlusion coverage as checked"
+    }
+  ]
+}

@@ -433,6 +433,7 @@
     "quality": "medium",
     "anti_aliasing": "fxaa",
     "supersample": 1,
+    "reconstruction": "box",
     "exposure_ev": 0.0,
     "tonemapper": "pbr_neutral"
   },

@@ -78,11 +78,13 @@ pub use capture::{
     CaptureBaselineDiff, CaptureBaselineError, CaptureBaselineReport, CaptureBaselineTolerance,
     CaptureCamera, CaptureContactSheet, CaptureContactSheetError, CaptureContactSheetTile,
     CaptureDescriptor, CaptureError, CaptureOptions, CapturePayload, CapturePayloadKind,
-    CapturePixelBounds, CapturePixelSummary, CapturePngError, CapturePoint2, CaptureProjection,
-    CaptureRevisions, CaptureRgba8, CaptureScreenRect, CaptureViewport, auto_frame_metadata,
-    capture_contact_sheet_rgba8, capture_rgba8, capture_rgba8_from_pixels,
-    compare_captures_with_tolerance, fnv1a64_hex, sample_rgba8, summarize_pixel_readback,
-    summarize_rgba8,
+    CapturePixelBounds, CapturePixelSummary, CapturePngError, CapturePoint2, CaptureProjectedPoint,
+    CaptureProjection, CaptureRevisions, CaptureRgba8, CaptureScreenRect, CaptureScreenRegion,
+    CaptureViewport, auto_frame_metadata, capture_contact_sheet_rgba8, capture_rgba8,
+    capture_rgba8_from_pixels, compare_captures_with_tolerance, fnv1a64_hex,
+    project_aabb_from_capture, project_world_point_from_capture, sample_rgba8,
+    screen_region_from_center_size, screen_region_from_points, screen_region_from_rect,
+    summarize_pixel_readback, summarize_rgba8, transform_point_for_projection,
 };
 pub use controls::{
     CameraBookmark, CameraFlyTo, CameraOrbitUrlState, CameraOrbitUrlStateError, CameraState,
@@ -166,8 +168,8 @@ pub use render::visual_repair::{
 pub use render::{
     AntiAliasing, AutoExposureConfig, AutoExposureResult, Background, OffscreenTarget,
     OrderIndependentTransparencyConfig, PixelReadback, PostBloomConfig, Profile, Quality,
-    RenderMode, Renderer, RendererOptions, ScreenSpaceAmbientOcclusionConfig, Tonemapper,
-    estimate_auto_exposure_from_linear_colors, estimate_auto_exposure_from_srgb8,
+    ReconstructionFilter, RenderMode, Renderer, RendererOptions, ScreenSpaceAmbientOcclusionConfig,
+    Tonemapper, estimate_auto_exposure_from_linear_colors, estimate_auto_exposure_from_srgb8,
 };
 pub use scene::recipe::{
     RecipeBuildPolicy, SCENE_RECIPE_BUILD_SCHEMA_V1, SCENE_RECIPE_SCHEMA_V1,
@@ -195,9 +197,10 @@ pub use scene::recipe::{
 };
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
 pub use scene::recipe::{
-    SCENE_RECIPE_RENDER_RESULT_SCHEMA_V1, SceneRecipeRenderResultV1,
-    SceneRecipeVerificationReasonV1, SceneRecipeVerificationReportV1,
-    SceneRecipeVerificationSummaryV1,
+    SCENE_COMPOSITION_SCHEMA_V1, SCENE_RECIPE_RENDER_RESULT_SCHEMA_V1, SceneCompositionCheckV1,
+    SceneCompositionRegionV1, SceneCompositionReportV1, SceneCompositionStatusV1,
+    SceneCompositionSummaryV1, SceneRecipeRenderResultV1, SceneRecipeVerificationReasonV1,
+    SceneRecipeVerificationReportV1, SceneRecipeVerificationSummaryV1,
 };
 pub use scene::{
     AnchorFrame, AnchorKey, Angle, AnnotationAnchor, AnnotationAnchorTarget,

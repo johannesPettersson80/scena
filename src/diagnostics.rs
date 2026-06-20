@@ -2,11 +2,11 @@
 
 use crate::animation::{AnimationClipKey, AnimationMixerKey};
 use crate::assets::{EnvironmentHandle, GeometryHandle, MaterialHandle, TextureHandle};
-use crate::geometry::{Aabb, GeometryTopology};
+use crate::geometry::GeometryTopology;
 use crate::material::{AlphaMode, MaterialKind};
 use crate::scene::{
     CameraKey, ClippingPlaneKey, InstanceSetKey, LabelKey, NodeKey, ParticleSetKey,
-    SourceCoordinateSystem, SourceUnits, Transform,
+    SourceCoordinateSystem,
 };
 
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
@@ -17,6 +17,7 @@ mod diagnostic;
 mod display;
 mod display_animation;
 mod help;
+mod import_overlay;
 mod post_processing;
 mod stats;
 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
@@ -27,6 +28,7 @@ pub use capabilities::{
     OutputColorSpace, OutputStageStatus,
 };
 pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticContext, DiagnosticSeverity};
+pub use import_overlay::{ImportDiagnosticOverlay, ImportDiagnosticOverlayKind};
 pub use post_processing::{
     PostProcessingDepthSourceV1, PostProcessingPassV1, PostProcessingReportV1,
 };
@@ -215,6 +217,15 @@ pub enum RenderError {
         requested: u32,
         maximum: u32,
     },
+    UnsupportedSupersampleFactor {
+        factor: u32,
+        width: u32,
+        height: u32,
+        scaled_width: u32,
+        scaled_height: u32,
+        maximum_dimension: u32,
+        maximum_pixels: u64,
+    },
     GpuReadback {
         backend: Backend,
     },
@@ -393,85 +404,6 @@ pub enum AnimationError {
     InvalidClip { reason: String },
     MixerNotFound(AnimationMixerKey),
     StaleMixer(AnimationMixerKey),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ImportDiagnosticOverlay {
-    kind: ImportDiagnosticOverlayKind,
-    node: NodeKey,
-    transform: Transform,
-    bounds: Option<Aabb>,
-    label: Option<String>,
-    source_units: SourceUnits,
-    source_coordinate_system: SourceCoordinateSystem,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ImportDiagnosticOverlayKind {
-    Origin,
-    Axes,
-    Bounds,
-    Anchor,
-    Connector,
-    Pivot,
-}
-
-impl ImportDiagnosticOverlay {
-    pub fn new(
-        kind: ImportDiagnosticOverlayKind,
-        node: NodeKey,
-        transform: Transform,
-        bounds: Option<Aabb>,
-        label: Option<String>,
-    ) -> Self {
-        Self {
-            kind,
-            node,
-            transform,
-            bounds,
-            label,
-            source_units: SourceUnits::Meters,
-            source_coordinate_system: SourceCoordinateSystem::GltfYUpRightHanded,
-        }
-    }
-
-    pub const fn with_source_metadata(
-        mut self,
-        units: SourceUnits,
-        coordinate_system: SourceCoordinateSystem,
-    ) -> Self {
-        self.source_units = units;
-        self.source_coordinate_system = coordinate_system;
-        self
-    }
-
-    pub const fn kind(&self) -> ImportDiagnosticOverlayKind {
-        self.kind
-    }
-
-    pub const fn node(&self) -> NodeKey {
-        self.node
-    }
-
-    pub const fn transform(&self) -> Transform {
-        self.transform
-    }
-
-    pub const fn bounds(&self) -> Option<Aabb> {
-        self.bounds
-    }
-
-    pub fn label(&self) -> Option<&str> {
-        self.label.as_deref()
-    }
-
-    pub const fn source_units(&self) -> SourceUnits {
-        self.source_units
-    }
-
-    pub const fn source_coordinate_system(&self) -> SourceCoordinateSystem {
-        self.source_coordinate_system
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

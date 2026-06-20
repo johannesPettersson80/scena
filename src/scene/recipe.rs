@@ -5,6 +5,13 @@ mod validation;
 pub use build::RecipeBuildPolicy;
 #[cfg(feature = "scene-host")]
 pub(crate) use build::build_diagnostic;
+#[cfg(all(feature = "inspection", feature = "scene-host"))]
+pub use types::{
+    SCENE_COMPOSITION_SCHEMA_V1, SCENE_RECIPE_RENDER_RESULT_SCHEMA_V1, SceneCompositionCheckV1,
+    SceneCompositionRegionV1, SceneCompositionReportV1, SceneCompositionStatusV1,
+    SceneCompositionSummaryV1, SceneRecipeRenderResultV1, SceneRecipeVerificationReasonV1,
+    SceneRecipeVerificationReportV1, SceneRecipeVerificationSummaryV1,
+};
 pub use types::{
     SCENE_RECIPE_BUILD_SCHEMA_V1, SCENE_RECIPE_SCHEMA_V1, SCENE_RECIPE_VALIDATION_SCHEMA_V1,
     SceneRecipeAlphaModeV1, SceneRecipeAnimationChannelV1, SceneRecipeAnimationV1,
@@ -27,12 +34,6 @@ pub use types::{
     SceneRecipeSsaoV1, SceneRecipeTargetV1, SceneRecipeTextureColorSpaceV1,
     SceneRecipeTextureSlotV1, SceneRecipeTransformV1, SceneRecipeV1, SceneRecipeValidationReportV1,
     SceneRecipeVisibleExpectationV1,
-};
-#[cfg(all(feature = "inspection", feature = "scene-host"))]
-pub use types::{
-    SCENE_RECIPE_RENDER_RESULT_SCHEMA_V1, SceneRecipeRenderResultV1,
-    SceneRecipeVerificationReasonV1, SceneRecipeVerificationReportV1,
-    SceneRecipeVerificationSummaryV1,
 };
 pub use validation::{
     parse_valid_scene_recipe_json, parse_valid_scene_recipe_json_with_policy,

@@ -8,9 +8,14 @@ pub(super) fn resolved_depth_view(
     resources: &GpuPreparedResources,
     sample_count: u32,
 ) -> Option<&wgpu::TextureView> {
-    (sample_count == 1)
-        .then(|| resources.depth_prepass.as_ref().map(|depth| &depth.view))
-        .flatten()
+    if sample_count == 1 {
+        resources.depth_prepass.as_ref().map(|depth| &depth.view)
+    } else {
+        resources
+            .overlay_depth_prepass
+            .as_ref()
+            .map(|depth| &depth.view)
+    }
 }
 
 pub(super) fn encode_offscreen_overlay_pass(

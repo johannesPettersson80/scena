@@ -121,6 +121,7 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, S
     let verification = verify_recipe_expectations(RecipeVerificationInput {
         host: &mut host,
         manifest: &build.manifest,
+        recipe: &recipe,
         expect: recipe.expect.as_ref(),
         capture: &capture,
         inspection: &inspection,

@@ -69,9 +69,22 @@ fn public_supersample_knob_changes_renderer_state() {
         .set_supersample_factor(3)
         .expect("supersample factor accepts documented hero-shot values");
     assert_eq!(renderer.supersample_factor(), 3);
+    renderer
+        .set_supersample_factor(8)
+        .expect("supersample factor 8 is supported for small hero captures");
+    assert_eq!(renderer.supersample_factor(), 8);
     assert!(
-        renderer.set_supersample_factor(5).is_err(),
-        "supersample rejects factors outside the documented 1..=4 range"
+        renderer.set_supersample_factor(6).is_err(),
+        "supersample rejects factors outside the documented set"
+    );
+
+    let mut large = Renderer::headless(3200, 1800).expect("large renderer builds");
+    assert!(
+        matches!(
+            large.set_supersample_factor(8),
+            Err(scena::RenderError::UnsupportedSupersampleFactor { .. })
+        ),
+        "supersample:8 must fail closed for huge internal targets instead of allocating a 25600x14400 frame"
     );
 }
 

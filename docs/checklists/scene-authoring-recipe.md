@@ -197,7 +197,7 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
   - `{ "kind": "place_on", "target": "<node id>", "offset": [x,y,z] }`
   - `{ "kind": "align_to_anchor", "anchor": "<import id>.<anchor name>" }`
 - **scene** (Slice 4): `background`, `environment`, `grid`.
-- **render** (Slice 4): `profile`, `quality`, `anti_aliasing`, `supersample`, `bloom`, `ssao`, `exposure_ev`, `tonemapper`.
+- **render** (Slice 4): `profile`, `quality`, `anti_aliasing`, `supersample`, `reconstruction`, `bloom`, `ssao`, `exposure_ev`, `tonemapper`.
 - **overlays** (section_box/measurements/callouts/exploded_view): existing fields + `target: { kind: node|import|world, id|position }`.
 - **expect** (Slice 5): `expect_visible`, `expect_color { target, swatch, tolerance? }`, `expect_bbox_fit { min?, max? }`, `expect_pick { x, y, target }`, `expect_no_warnings`.
 

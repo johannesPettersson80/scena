@@ -39,9 +39,10 @@ pub use overlays::{
 };
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
 pub use render_result::{
-    SCENE_RECIPE_RENDER_RESULT_SCHEMA_V1, SceneRecipeRenderResultV1,
-    SceneRecipeVerificationReasonV1, SceneRecipeVerificationReportV1,
-    SceneRecipeVerificationSummaryV1,
+    SCENE_COMPOSITION_SCHEMA_V1, SCENE_RECIPE_RENDER_RESULT_SCHEMA_V1, SceneCompositionCheckV1,
+    SceneCompositionRegionV1, SceneCompositionReportV1, SceneCompositionStatusV1,
+    SceneCompositionSummaryV1, SceneRecipeRenderResultV1, SceneRecipeVerificationReasonV1,
+    SceneRecipeVerificationReportV1, SceneRecipeVerificationSummaryV1,
 };
 pub use setup::{
     SceneRecipeBackgroundV1, SceneRecipeBloomV1, SceneRecipeEnvironmentV1, SceneRecipeGridV1,

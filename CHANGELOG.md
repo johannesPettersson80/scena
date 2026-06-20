@@ -16,6 +16,10 @@ All notable user-facing changes are recorded here.
   through `--gpu` / `SCENA_USE_GPU=1`; CPU headless rendering remains the
   deterministic default, and reports continue to expose the backend actually
   used.
+- Added opt-in hero reconstruction for supersampled recipe renders with
+  `render.reconstruction: "box" | "tent" | "gaussian"`; downsampling now filters
+  in linear light, `box` remains the default, and supersample factor `8` is
+  guarded by target-size capability checks before allocating the internal frame.
 - Added the repo-hosted `.codex/skills/scena-app-builder` LLM skill and
   `docs/guides/llm-app-builder.md` guide for building and verifying scena
   applications from public schemas, recipes, CLI commands, diagnostics, and

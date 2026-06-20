@@ -338,7 +338,7 @@ impl Renderer {
         } else {
             1
         };
-        self.target.scaled(scale).ok_or(())
+        super::target::validate_supersample_target(self.target, scale).map_err(|_| ())
     }
 
     pub(super) fn dynamic_gpu_prepare_rejection_reason(

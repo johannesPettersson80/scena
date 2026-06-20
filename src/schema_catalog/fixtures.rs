@@ -52,6 +52,10 @@ fn schema_fixture_map() -> &'static [(&'static str, &'static str)] {
             include_str!("../../tests/assets/stable-contracts/render_quality.v1.json"),
         ),
         (
+            "scena.scene_composition.v1",
+            include_str!("../../tests/assets/stable-contracts/scene_composition.v1.json"),
+        ),
+        (
             "scena.visibility_diagnosis.v1",
             include_str!("../../tests/assets/stable-contracts/visibility_diagnosis.v1.json"),
         ),

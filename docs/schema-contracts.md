@@ -27,6 +27,8 @@ Rules:
   - `scena.capture.v1`
   - `scena.capture_baseline.v1`
   - `scena.render_introspection.v1`
+  - `scena.render_quality.v1`
+  - `scena.scene_composition.v1`
   - `scena.visibility_diagnosis.v1`
   - `scena.visual_repair_plan.v1`
   - `scena.agent_loop_result.v1`
@@ -876,6 +878,40 @@ deterministically ordered `observed` and `threshold` maps, and an actionable
 The stable fixture lives at
 `tests/assets/stable-contracts/render_quality.v1.json`.
 
+### `scena.scene_composition.v1`
+
+Produced by recipe verification when the `scene-host` feature is enabled. The
+report is nested under `SceneRecipeVerificationReportV1.composition` and
+records whether declared recipe elements and generated overlays have explicit,
+owned projected output. It is a foundation/spec-conformance layer, not the
+per-category pixel-quality verifier.
+
+Required top-level fields:
+
+- `schema`
+- `ok`
+- `summary`
+- `checks`
+
+Each `checks[]` entry has an `id`, `category`, stable `code`, explicit
+`status`, `severity`, optional projected `region`, stable `affected_handles`,
+deterministically ordered `observed` data, and an actionable `fix_hint`.
+Statuses are one of `checked`, `failed`, `skipped_no_declared_intent`,
+`skipped_no_backend_support`, `skipped_import_unknown`, `unsupported`, and
+`not_applicable`. Failed checks are verification errors. Skipped checks remain
+visible as warning-level coverage gaps unless a later profile elevates that
+category.
+
+The foundation report checks declared-node presence, projected bboxes and
+screen size when bounds exist, declared color intent coverage, explicit
+overlay label/line geometry, and unexpected draw output. Exact reason codes
+include `declared_node_not_drawn`, `unexpected_draw_output`, and
+`object_mask_not_available`. Per-object visible-pixel coverage is reported as
+`skipped_no_backend_support` until an object-mask/depth-id backend exists.
+
+The stable fixture lives at
+`tests/assets/stable-contracts/scene_composition.v1.json`.
+
 ### `scena.visibility_diagnosis.v1`
 
 Produced by `Renderer::diagnose_visibility` and
@@ -1146,11 +1182,15 @@ The current v1 recipe slice supports:
   environment IBL, and grid-floor options. URI environments are loaded under
   `RecipeBuildPolicy`; missing required environments fail the build.
 - optional `render` setup with profile, quality, anti-aliasing, supersample,
-  bloom, SSAO, exposure EV, and tonemapper. `anti_aliasing` accepts `none`,
-  `fxaa`, `msaa4`, and `msaa8`; `quality:"high"` maps to sample AA. The
-  opt-in `supersample` factor accepts `1`, `2`, `3`, or `4` and renders the
-  capture at N× resolution before downsampling; it composes with sample AA and
-  should be reserved for hero captures because cost grows with N^2. Values that
+  reconstruction filter, bloom, SSAO, exposure EV, and tonemapper.
+  `anti_aliasing` accepts `none`, `fxaa`, `msaa4`, and `msaa8`;
+  `quality:"high"` maps to sample AA. The opt-in `supersample` factor accepts
+  `1`, `2`, `3`, `4`, or `8` and renders the capture at N× resolution before
+  downsampling; `8` is accepted only when the scaled internal target stays
+  within renderer limits. `reconstruction` accepts `box` (default), `tent`, or
+  `gaussian`; the wider filters are hero-shot opt-ins because they can soften
+  the frame. Supersampling composes with sample AA and should be reserved for
+  hero captures because cost grows with N^2. Values that
   renderer setters would clamp
   (`bloom.intensity`, `bloom.radius_px`, `ssao.intensity`,
   `ssao.depth_threshold`) are rejected during validation when out of range.
@@ -1211,11 +1251,12 @@ closed as verification reasons.
 `scena recipe render <recipe.json> --introspect --verify --out <png>`. It
 nests the build manifest, capture descriptor, render-introspection report, and
 aggregate verification report. Verification includes a nested
-`scena.render_quality.v1` report for always-on severe quality failures and
-opt-in `expect_quality` / `expect_reference` checks. Top-level `ok` is true
-only when build, introspection, and verification are all true. If build fails
-before a frame exists, `capture` and `introspection` are `null` rather than
-fabricated.
+`scena.scene_composition.v1` report for declared-element composition
+conformance and a nested `scena.render_quality.v1` report for always-on severe
+quality failures and opt-in `expect_quality` / `expect_reference` checks.
+Top-level `ok` is true only when build, introspection, and verification are
+all true. If build fails before a frame exists, `capture` and `introspection`
+are `null` rather than fabricated.
 
 `scena validate-recipe <recipe.json>` first runs shape validation without
 rendering, then loads declared assets far enough to validate asset presence and

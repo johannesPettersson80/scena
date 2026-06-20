@@ -15,7 +15,9 @@ use super::output::{OutputUniformUpload, encode_clipping_uniform, encode_output_
 use super::pipeline::GPU_COLOR_FORMAT;
 use super::scene_color::{SceneColorPasses, encode_scene_color_passes};
 use super::shadow::{self, encode_shadow_caster_pass};
-use super::{GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuRenderResult, post};
+use super::{
+    GpuDeviceState, GpuPostPassCounts, GpuPostSettings, GpuPreparedResources, GpuRenderResult, post,
+};
 
 impl GpuDeviceState {
     #[cfg(not(target_arch = "wasm32"))]
@@ -176,6 +178,27 @@ impl GpuDeviceState {
                     draw_submissions: &mut draw_submissions,
                 },
             );
+        }
+        if sample_count > 1 {
+            ensure_overlay_depth_prepass(&self.device, resources, target);
+            if let Some(overlay_depth_prepass) = &resources.overlay_depth_prepass {
+                depth::encode_depth_prepass(
+                    &mut encoder,
+                    overlay_depth_prepass,
+                    depth::DepthPrepassInputs {
+                        vertex_buffer: &resources.vertex_buffer,
+                        instance_buffer: &resources.instance_buffer,
+                        camera_bind_group: &resources.output_bind_group,
+                        draw_bind_group: &resources.draw_bind_group,
+                        draw_batches: &resources.draw_batches,
+                        instance_batches: &resources.instance_batches,
+                        identity_instance: resources.identity_instance,
+                        draw_submissions: &mut draw_submissions,
+                    },
+                );
+            }
+        } else {
+            resources.overlay_depth_prepass = None;
         }
         if sample_count == 8 {
             if post_enabled {
@@ -375,4 +398,39 @@ impl GpuDeviceState {
             draw_submissions,
         })
     }
+}
+
+fn ensure_overlay_depth_prepass(
+    device: &wgpu::Device,
+    resources: &mut GpuPreparedResources,
+    target: RasterTarget,
+) {
+    let Some((reversed_z, sample_count)) = resources
+        .depth_prepass
+        .as_ref()
+        .map(|depth_prepass| (depth_prepass.reversed_z(), depth_prepass.sample_count()))
+    else {
+        resources.overlay_depth_prepass = None;
+        return;
+    };
+    if sample_count <= 1 {
+        resources.overlay_depth_prepass = None;
+        return;
+    }
+    let matches_existing = resources
+        .overlay_depth_prepass
+        .as_ref()
+        .is_some_and(|depth| depth.reversed_z() == reversed_z && depth.sample_count() == 1);
+    if matches_existing {
+        return;
+    }
+    resources.overlay_depth_prepass = Some(depth::create_depth_prepass_resources(
+        device,
+        target,
+        reversed_z,
+        &resources.output_bind_group_layout,
+        &resources.draw_bind_group_layout,
+        false,
+        1,
+    ));
 }

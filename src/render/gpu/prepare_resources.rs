@@ -288,6 +288,7 @@ impl GpuDeviceState {
             brdf_lut_texture,
             transmission,
             depth_prepass,
+            overlay_depth_prepass: None,
             strokes,
             labels,
             vertex_count: (vertex_bytes.len() / VERTEX_BYTE_LEN) as u32,
