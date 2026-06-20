@@ -98,6 +98,12 @@ pub struct RenderQualityLineMetrics {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RenderQualityGeometryEdgeMetrics {
+    pub intermediate_edge_fraction: f32,
+    pub edge_candidate_fraction: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ReferenceQualityMetrics {
     pub mean_abs_diff: f32,
     pub mean_delta_e2000: f32,
@@ -174,6 +180,14 @@ impl RenderQualityProfile {
             Self::Cad => 0.08,
             Self::Documentation | Self::Dashboard => 0.16,
             Self::Product | Self::Twin => 0.12,
+        }
+    }
+
+    pub const fn default_min_geometry_intermediate_edge_fraction(self) -> f32 {
+        match self {
+            Self::Product => 0.30,
+            Self::Documentation | Self::Cad | Self::Twin => 0.02,
+            Self::Dashboard => 0.01,
         }
     }
 }

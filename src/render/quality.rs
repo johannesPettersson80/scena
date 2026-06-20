@@ -1,29 +1,34 @@
-use std::collections::BTreeMap;
-
+mod checks;
+mod geometry;
 mod metrics;
 mod reference;
 mod types;
 
-pub use metrics::{frame_metrics, label_background_metrics, label_metrics, line_metrics};
+pub use geometry::evaluate_geometry_region_quality;
+pub use metrics::{
+    frame_metrics, geometry_edge_metrics, label_background_metrics, label_metrics, line_metrics,
+};
 pub use reference::{reference_quality_metrics, ssim_grayscale};
 pub use types::{
     RENDER_QUALITY_SCHEMA_V1, ReferenceQualityMetrics, RenderQualityCheckV1,
-    RenderQualityFrameMetrics, RenderQualityLabelBackgroundMetrics, RenderQualityLabelMetrics,
-    RenderQualityLineMetrics, RenderQualityProfile, RenderQualityRegion, RenderQualityRegionV1,
-    RenderQualityReportV1, RenderQualitySummaryV1,
+    RenderQualityFrameMetrics, RenderQualityGeometryEdgeMetrics,
+    RenderQualityLabelBackgroundMetrics, RenderQualityLabelMetrics, RenderQualityLineMetrics,
+    RenderQualityProfile, RenderQualityRegion, RenderQualityRegionV1, RenderQualityReportV1,
+    RenderQualitySummaryV1,
 };
 
 use crate::{
-    CaptureRgba8, RenderIntrospectionCapabilitiesV1, RenderIntrospectionRectV1,
-    RenderIntrospectionReportV1, SceneRecipeQualityExpectationV1, SceneRecipeQualityLineV1,
-    SceneRecipeQualityTextV1,
+    CaptureRgba8, RenderIntrospectionCapabilitiesV1, RenderIntrospectionReportV1,
+    SceneRecipeQualityExpectationV1, SceneRecipeQualityLineV1, SceneRecipeQualityTextV1,
+};
+use checks::{
+    SingleValueCheck, ThresholdCheck, push_threshold_check, region_from_rect, single_value_check,
 };
 use metrics::{
     frame_metrics as compute_frame_metrics,
     label_background_metrics as compute_label_background_metrics,
     label_metrics as compute_label_metrics, line_metrics as compute_line_metrics,
 };
-use types::round3;
 
 #[derive(Debug, Clone, Copy)]
 pub struct RenderQualityRgba8Input<'a> {
@@ -255,6 +260,16 @@ fn evaluate_render_quality_rgba8_region(
                 text,
             ));
         }
+        if let Some(geometry) = expectation.geometry {
+            checks.extend(evaluate_geometry_region_quality(
+                "expect_quality.geometry",
+                input.rgba8,
+                input.width,
+                input.height,
+                region,
+                geometry,
+            ));
+        }
     }
 
     RenderQualityReportV1::from_checks(profile, input.capabilities, checks)
@@ -425,79 +440,6 @@ pub fn evaluate_line_region_quality(
         },
     );
     checks
-}
-
-struct ThresholdCheck<'a> {
-    id: &'a str,
-    code: &'a str,
-    severity: &'a str,
-    region: RenderQualityRegion,
-    observed_key: &'a str,
-    observed: f32,
-    threshold_key: &'a str,
-    threshold: f32,
-    fails: bool,
-    fix_hint: &'a str,
-}
-
-fn push_threshold_check(checks: &mut Vec<RenderQualityCheckV1>, check: ThresholdCheck<'_>) {
-    if check.fails {
-        checks.push(single_value_check(SingleValueCheck {
-            id: check.id,
-            code: check.code,
-            severity: check.severity,
-            region: check.region,
-            observed_key: check.observed_key,
-            observed: check.observed,
-            threshold_key: check.threshold_key,
-            threshold: check.threshold,
-            fix_hint: check.fix_hint,
-        }));
-    }
-}
-
-struct SingleValueCheck<'a> {
-    id: &'a str,
-    code: &'a str,
-    severity: &'a str,
-    region: RenderQualityRegion,
-    observed_key: &'a str,
-    observed: f32,
-    threshold_key: &'a str,
-    threshold: f32,
-    fix_hint: &'a str,
-}
-
-fn single_value_check(check: SingleValueCheck<'_>) -> RenderQualityCheckV1 {
-    RenderQualityCheckV1 {
-        id: check.id.to_owned(),
-        code: check.code.to_owned(),
-        severity: check.severity.to_owned(),
-        region: check.region.to_report(),
-        observed: BTreeMap::from([(check.observed_key.to_owned(), round3(check.observed))]),
-        threshold: BTreeMap::from([(check.threshold_key.to_owned(), round3(check.threshold))]),
-        fix_hint: check.fix_hint.to_owned(),
-    }
-}
-
-fn region_from_rect(
-    kind: &'static str,
-    rect: RenderIntrospectionRectV1,
-    width: u32,
-    height: u32,
-) -> RenderQualityRegion {
-    let x = rect.min_x.floor().max(0.0) as u32;
-    let y = rect.min_y.floor().max(0.0) as u32;
-    let max_x = rect.max_x.ceil().max(rect.min_x).min(width as f32) as u32;
-    let max_y = rect.max_y.ceil().max(rect.min_y).min(height as f32) as u32;
-    RenderQualityRegion {
-        kind,
-        handle: None,
-        x: x.min(width),
-        y: y.min(height),
-        width: max_x.saturating_sub(x).max(1),
-        height: max_y.saturating_sub(y).max(1),
-    }
 }
 
 #[cfg(test)]
@@ -720,6 +662,58 @@ mod tests {
     }
 
     #[test]
+    fn geometry_edge_quality_known_bad_fails_exact_reason_and_good_passes() {
+        let width = 32;
+        let height = 24;
+        let region = RenderQualityRegion::full_frame(width, height);
+        let expectation = crate::SceneRecipeQualityGeometryV1 {
+            min_intermediate_edge_fraction: Some(0.05),
+        };
+
+        let bad = hard_geometry_edge_fixture(width, height);
+        write_ppm_artifact(
+            "target/gate-artifacts/render-quality/geometry-edge-known-bad-hard.ppm",
+            &bad,
+            width,
+            height,
+        );
+        let bad_checks = evaluate_geometry_region_quality(
+            "bad-geometry-edge",
+            &bad,
+            width,
+            height,
+            region,
+            expectation,
+        );
+        assert!(
+            bad_checks
+                .iter()
+                .any(|check| check.code == "geometry_missing_antialiasing"),
+            "hard 1-bit geometry edge fixture must fail exact geometry_missing_antialiasing: {bad_checks:#?}"
+        );
+
+        let good = antialiased_geometry_edge_fixture(width, height);
+        write_ppm_artifact(
+            "target/gate-artifacts/render-quality/geometry-edge-known-good-sampled.ppm",
+            &good,
+            width,
+            height,
+        );
+        let good_checks = evaluate_geometry_region_quality(
+            "good-geometry-edge",
+            &good,
+            width,
+            height,
+            region,
+            expectation,
+        );
+        assert!(
+            good_checks.is_empty(),
+            "known-good sampled geometry edge should pass quality checks: {good_checks:#?}"
+        );
+    }
+
+    #[test]
     fn exposure_quality_known_bad_fails_exact_black_crush_reason() {
         let width = 20;
         let height = 20;
@@ -787,6 +781,7 @@ mod tests {
             noise: None,
             text: None,
             line: None,
+            geometry: None,
         };
         let mut low_clip = solid_frame(width, height, [96, 96, 96, 255]);
         for pixel in low_clip
@@ -834,6 +829,7 @@ mod tests {
             noise: None,
             text: None,
             line: None,
+            geometry: None,
         };
         let flat_frame = solid_frame(width, height, [128, 128, 128, 255]);
         let flat = evaluate_render_quality_rgba8(
@@ -859,6 +855,7 @@ mod tests {
             }),
             text: None,
             line: None,
+            geometry: None,
         };
         let mut noisy = solid_frame(width, height, [128, 128, 128, 255]);
         for y in (2..height - 2).step_by(4) {
@@ -917,7 +914,7 @@ mod tests {
         }
         let identical = ssim_grayscale(&a, &a, width, height).expect("SSIM computes");
         let changed = ssim_grayscale(&a, &b, width, height).expect("SSIM computes");
-        assert_eq!(round3(identical), 1.0);
+        assert_eq!(types::round3(identical), 1.0);
         assert!(
             changed < 0.9,
             "changed reference pair must produce lower SSIM before SSIM gates anything: {changed}"
@@ -1026,6 +1023,34 @@ mod tests {
                 if coverage > 0.0 {
                     set_gray(&mut rgba, width, x, y, (coverage * 255.0).round() as u8);
                 }
+            }
+        }
+        rgba
+    }
+
+    fn hard_geometry_edge_fixture(width: u32, height: u32) -> Vec<u8> {
+        let mut rgba = black_frame(width, height);
+        for y in 3..height.saturating_sub(3) {
+            for x in width / 2..width.saturating_sub(3) {
+                set_gray(&mut rgba, width, x, y, 255);
+            }
+        }
+        rgba
+    }
+
+    fn antialiased_geometry_edge_fixture(width: u32, height: u32) -> Vec<u8> {
+        let mut rgba = black_frame(width, height);
+        let edge = width / 2;
+        for y in 3..height.saturating_sub(3) {
+            for x in edge.saturating_sub(1)..width.saturating_sub(3) {
+                let value = if x == edge.saturating_sub(1) {
+                    72
+                } else if x == edge {
+                    192
+                } else {
+                    255
+                };
+                set_gray(&mut rgba, width, x, y, value);
             }
         }
         rgba

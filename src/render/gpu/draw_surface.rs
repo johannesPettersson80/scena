@@ -101,6 +101,7 @@ impl GpuDeviceState {
                 &resources.output_bind_group_layout,
                 &resources.draw_bind_group_layout,
                 post_settings.needs_depth_color(),
+                1,
             ));
         }
         #[cfg(feature = "browser-probe")]
@@ -146,7 +147,8 @@ impl GpuDeviceState {
                     &mut encoder,
                     SceneColorPasses {
                         final_view: post::scene_view(post_resources),
-                        final_pipelines: post::scene_pipelines(post_resources),
+                        final_resolve_target: None,
+                        final_pipelines: post::scene_pipelines(post_resources, 1),
                         depth_view: resources.depth_prepass.as_ref().map(|d| &d.view),
                         vertex_buffer: &resources.vertex_buffer,
                         instance_buffer: &resources.instance_buffer,
@@ -280,7 +282,7 @@ impl GpuDeviceState {
             let post_resources = post_resources.expect("post resources were created above");
             (
                 post::scene_view(post_resources),
-                post::scene_pipelines(post_resources),
+                post::scene_pipelines(post_resources, 1),
                 "scena.browser.post_scene_pass",
             )
         } else {
@@ -294,6 +296,7 @@ impl GpuDeviceState {
             &mut encoder,
             SceneColorPasses {
                 final_view,
+                final_resolve_target: None,
                 final_pipelines,
                 depth_view: resources.depth_prepass.as_ref().map(|d| &d.view),
                 vertex_buffer: &resources.vertex_buffer,

@@ -16,6 +16,7 @@ pub(super) const SCENA_FRONT_FACE: wgpu::FrontFace = wgpu::FrontFace::Ccw;
 
 pub(super) struct UnlitPass<'a> {
     pub(super) view: &'a wgpu::TextureView,
+    pub(super) resolve_target: Option<&'a wgpu::TextureView>,
     pub(super) depth_view: Option<&'a wgpu::TextureView>,
     pub(super) vertex_buffer: &'a wgpu::Buffer,
     pub(super) instance_buffer: &'a wgpu::Buffer,
@@ -67,7 +68,7 @@ pub(super) fn encode_unlit_pass(encoder: &mut wgpu::CommandEncoder, inputs: Unli
     let color_attachment = Some(wgpu::RenderPassColorAttachment {
         view: inputs.view,
         depth_slice: None,
-        resolve_target: None,
+        resolve_target: inputs.resolve_target,
         ops: wgpu::Operations {
             load: match inputs.color_load {
                 ColorLoad::Clear(color) => wgpu::LoadOp::Clear(color),
@@ -262,6 +263,7 @@ pub(super) fn create_unlit_pipeline_set(
     draw_bind_group_layout: &wgpu::BindGroupLayout,
     texture_binding_mode: MaterialTextureBindingMode,
     depth_compare: Option<wgpu::CompareFunction>,
+    sample_count: u32,
 ) -> MeshPipelineSet {
     MeshPipelineSet {
         single_sided: create_unlit_pipeline(
@@ -273,6 +275,7 @@ pub(super) fn create_unlit_pipeline_set(
             texture_binding_mode,
             depth_compare,
             false,
+            sample_count,
         ),
         double_sided: create_unlit_pipeline(
             device,
@@ -283,6 +286,7 @@ pub(super) fn create_unlit_pipeline_set(
             texture_binding_mode,
             depth_compare,
             true,
+            sample_count,
         ),
     }
 }
@@ -297,6 +301,7 @@ fn create_unlit_pipeline(
     texture_binding_mode: MaterialTextureBindingMode,
     depth_compare: Option<wgpu::CompareFunction>,
     double_sided: bool,
+    sample_count: u32,
 ) -> wgpu::RenderPipeline {
     let shader_source = match texture_binding_mode {
         MaterialTextureBindingMode::Texture2d => GPU_TRIANGLE_SHADER_TEXTURE_2D,
@@ -351,7 +356,10 @@ fn create_unlit_pipeline(
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
-        multisample: wgpu::MultisampleState::default(),
+        multisample: wgpu::MultisampleState {
+            count: sample_count,
+            ..Default::default()
+        },
         fragment: Some(wgpu::FragmentState {
             module: &shader,
             entry_point: Some("fs_main"),

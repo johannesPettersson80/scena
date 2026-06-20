@@ -389,9 +389,11 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
             "cpu::resolve_order_independent_transparency_cpu(",
             "output::apply_screen_space_ambient_occlusion_rgba8(",
             "output::apply_bloom_rgba8(",
-            "AntiAliasing::None => 0",
+            "AntiAliasing::None | AntiAliasing::Msaa4 | AntiAliasing::Msaa8 => 0",
             "AntiAliasing::Fxaa =>",
             "output::apply_fxaa_rgba8(",
+            "self.supersample_factor > 1",
+            "downsample_rgba8_box_filter",
             "self.stats.ambient_occlusion_passes",
             "self.stats.order_independent_transparency_passes",
             "self.stats.bloom_passes",
@@ -405,6 +407,10 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         "src/render/output.rs",
         &[
             "pub enum AntiAliasing",
+            "Msaa4",
+            "Msaa8",
+            "gpu_sample_count",
+            "cpu_supersample_scale",
             "pub struct OrderIndependentTransparencyConfig",
             "pub struct PostBloomConfig",
             "pub struct ScreenSpaceAmbientOcclusionConfig",
@@ -465,8 +471,12 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         root,
         findings,
         "ARCH-FXAA-OUTPUT",
-        "docs/specs/public-api.md",
-        &["pub fxaa_passes: u64", "tonemapper again"],
+        "docs/rendering.md",
+        &[
+            "Medium quality uses FXAA by default",
+            "High quality uses sample-based edge AA",
+            "Renderer::set_supersample_factor(2..=4)",
+        ],
     );
     require_contains(
         root,

@@ -45,6 +45,33 @@ rsync -az --delete --exclude .git --exclude target ./ scena-builder:~/projects/s
 After syncing, remote `git status --short --branch` should show the same relevant working
 tree changes as the local checkout.
 
+## Mandatory Disk Preflight
+
+Before every remote sync or cargo gate, check builder disk pressure. This is not optional:
+late linker failures from full target caches waste long gate runs.
+
+```bash
+ssh scena-builder 'df -hT "$HOME" "$HOME/.cache" /tmp && du -sh "$HOME/.cache/codex-targets" "$HOME/projects/scena/target" 2>/dev/null || true'
+```
+
+Use a task-scoped target cache for validation, for example:
+
+```bash
+ssh scena-builder 'cd "$HOME/projects/scena" && env CARGO_TARGET_DIR="$HOME/.cache/codex-targets/scena-<task-slug>" CARGO_PROFILE_TEST_DEBUG=0 cargo test'
+```
+
+If the preflight shows low free space, or a gate fails with `No space left on device`,
+`Disk full`, or `Disk quota exceeded`, clean only generated output that belongs to the
+current validation task, then rerun the preflight:
+
+```bash
+ssh scena-builder 'rm -rf "$HOME/.cache/codex-targets/scena-<task-slug>"'
+```
+
+Do not delete unrelated caches, other repositories, checkouts, or user files without
+explicit user approval. If `/tmp` is the constrained filesystem, set a task-local `TMPDIR`
+inside the validation checkout or task target cache before rerunning.
+
 ## Gate Commands
 
 Run gates through SSH from the local machine:

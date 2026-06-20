@@ -571,7 +571,8 @@ use scena::{
     ScreenSpaceAmbientOcclusionConfig,
 };
 
-renderer.set_anti_aliasing(AntiAliasing::Fxaa); // default; AntiAliasing::None for crisp diff lanes
+renderer.set_anti_aliasing(AntiAliasing::Msaa4); // high-quality sample AA; AntiAliasing::None for exact diff lanes
+renderer.set_supersample_factor(2)?; // optional hero-shot tier; cost grows with N^2
 renderer.set_bloom(Some(PostBloomConfig::subtle()));
 renderer.set_screen_space_ambient_occlusion(Some(ScreenSpaceAmbientOcclusionConfig::subtle()));
 renderer.set_order_independent_transparency(Some(OrderIndependentTransparencyConfig::weighted_blended()));

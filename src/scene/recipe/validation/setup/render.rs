@@ -10,6 +10,7 @@ const RENDER_FIELDS: &[&str] = &[
     "profile",
     "quality",
     "anti_aliasing",
+    "supersample",
     "bloom",
     "ssao",
     "exposure_ev",
@@ -31,7 +32,7 @@ pub(in crate::scene::recipe::validation) fn validate_render_setup(
             "error",
             "$.render",
             "render must be an object",
-            "emit render:{profile?,quality?,anti_aliasing?,bloom?,ssao?,exposure_ev?,tonemapper?}",
+            "emit render:{profile?,quality?,anti_aliasing?,supersample?,bloom?,ssao?,exposure_ev?,tonemapper?}",
             None,
             false,
         ));
@@ -55,10 +56,11 @@ pub(in crate::scene::recipe::validation) fn validate_render_setup(
     super::validate_enum(
         "$.render.anti_aliasing",
         object.get("anti_aliasing"),
-        &["none", "fxaa"],
+        &["none", "fxaa", "msaa4", "msaa8"],
         "invalid_render_setting",
         diagnostics,
     );
+    validate_supersample(object.get("supersample"), diagnostics);
     super::validate_enum(
         "$.render.tonemapper",
         object.get("tonemapper"),
@@ -73,6 +75,35 @@ pub(in crate::scene::recipe::validation) fn validate_render_setup(
     );
     validate_bloom(object.get("bloom"), diagnostics);
     validate_ssao(object.get("ssao"), diagnostics);
+}
+
+fn validate_supersample(value: Option<&Value>, diagnostics: &mut Vec<SceneRecipeDiagnosticV1>) {
+    let Some(value) = value else {
+        return;
+    };
+    let Some(factor) = value.as_u64() else {
+        diagnostics.push(diagnostic(
+            "invalid_render_setting",
+            "error",
+            "$.render.supersample",
+            "supersample must be an integer factor 1, 2, 3, or 4",
+            "emit supersample:2, supersample:3, or supersample:4 for hero-shot quality; cost grows with N^2",
+            None,
+            false,
+        ));
+        return;
+    };
+    if !(1..=4).contains(&factor) {
+        diagnostics.push(diagnostic(
+            "invalid_render_setting",
+            "error",
+            "$.render.supersample",
+            "supersample must be 1, 2, 3, or 4",
+            "use 1 to disable full-frame supersampling; use 2-4 only for hero-shot quality because cost grows with N^2",
+            None,
+            false,
+        ));
+    }
 }
 
 fn validate_bloom(value: Option<&Value>, diagnostics: &mut Vec<SceneRecipeDiagnosticV1>) {

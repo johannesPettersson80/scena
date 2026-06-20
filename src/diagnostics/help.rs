@@ -96,6 +96,9 @@ impl RenderError {
                 "call recover_context with retained assets, then prepare again"
             }
             Self::GpuResourcesNotPrepared { .. } => "call Renderer::prepare before rendering",
+            Self::UnsupportedSampleCount { .. } => {
+                "choose an anti_aliasing sample count supported by the active GPU adapter, such as msaa4"
+            }
             Self::GpuReadback { .. } => {
                 "retry after device polling or choose a supported readback path"
             }

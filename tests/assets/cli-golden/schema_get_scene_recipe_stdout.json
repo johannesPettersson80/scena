@@ -481,6 +481,7 @@
     ],
     "render": {
       "anti_aliasing": "fxaa",
+      "supersample": 1,
       "exposure_ev": 0.0,
       "profile": "balanced",
       "quality": "medium",

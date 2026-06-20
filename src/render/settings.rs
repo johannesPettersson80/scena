@@ -118,11 +118,31 @@ impl Renderer {
         self.anti_aliasing
     }
 
+    pub fn supersample_factor(&self) -> u32 {
+        self.supersample_factor
+    }
+
     pub fn set_anti_aliasing(&mut self, anti_aliasing: AntiAliasing) {
         if self.anti_aliasing != anti_aliasing {
             self.anti_aliasing = anti_aliasing;
             self.mark_output_changed();
         }
+    }
+
+    pub fn set_supersample_factor(&mut self, factor: u32) -> Result<(), crate::RenderError> {
+        if !(1..=4).contains(&factor) {
+            return Err(crate::RenderError::InvalidSurfaceSize {
+                width: self.target.width.saturating_mul(factor),
+                height: self.target.height.saturating_mul(factor),
+            });
+        }
+        if self.supersample_factor != factor {
+            self.supersample_factor = factor;
+            self.target_revision = self.target_revision.saturating_add(1);
+            self.clear_rendered_frame();
+            self.mark_output_changed();
+        }
+        Ok(())
     }
 
     pub fn set_tonemapper(&mut self, tonemapper: Tonemapper) {

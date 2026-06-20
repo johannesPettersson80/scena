@@ -173,13 +173,22 @@ renderer.set_bloom(Some(scena::PostBloomConfig::subtle()));
 The bloom pass runs on the output frame before FXAA and is reported through
 `RendererStats::bloom_passes`.
 
-FXAA is the default anti-aliasing path. Disable it only for visual proof or
-when a host wants exact unfiltered pixels:
+Medium quality uses FXAA by default. High quality uses sample-based edge AA
+(`Msaa4` on the GPU path and a matching CPU supersample resolve) so geometry
+silhouettes are actually smoothed instead of only post-filtered. Disable AA
+only for visual proof or when a host wants exact unfiltered pixels:
 
 ```rust
 renderer.set_anti_aliasing(scena::AntiAliasing::None);
 renderer.set_anti_aliasing(scena::AntiAliasing::Fxaa);
+renderer.set_anti_aliasing(scena::AntiAliasing::Msaa4);
 ```
+
+For offline or hero captures, use `Renderer::set_supersample_factor(2..=4)` or
+recipe `render.supersample` to render the frame at N× resolution and
+downsample. This improves curved silhouettes, thin grid/wire strokes, textures,
+and glossy highlights that MSAA alone cannot fully stabilize. Cost grows with
+N^2, so keep it opt-in.
 
 Headless and descriptor-backed CPU renders can also enable the depth-aware
 screen-space ambient occlusion baseline:

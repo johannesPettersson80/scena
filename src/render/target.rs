@@ -21,6 +21,14 @@ impl RasterTarget {
     pub(super) fn pixel_index(self, x: u32, y: u32) -> usize {
         (y as usize) * (self.width as usize) + (x as usize)
     }
+
+    pub(super) fn scaled(self, scale: u32) -> Option<Self> {
+        Some(Self {
+            width: self.width.checked_mul(scale)?,
+            height: self.height.checked_mul(scale)?,
+            backend: self.backend,
+        })
+    }
 }
 
 pub(super) fn backend_for_attached_surface(kind: SurfaceKind) -> Backend {

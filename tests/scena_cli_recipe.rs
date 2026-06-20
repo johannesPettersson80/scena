@@ -1272,54 +1272,266 @@ fn write_line_quality_recipe(
     min_intermediate_edge_fraction: f64,
     max_straightness_error: f64,
 ) -> (PathBuf, PathBuf) {
+    write_line_quality_recipe_with_render(
+        dir,
+        name,
+        min_intermediate_edge_fraction,
+        max_straightness_error,
+        None,
+    )
+}
+
+#[cfg(feature = "scene-host")]
+fn write_line_quality_recipe_with_render(
+    dir: &Path,
+    name: &str,
+    min_intermediate_edge_fraction: f64,
+    max_straightness_error: f64,
+    render: Option<serde_json::Value>,
+) -> (PathBuf, PathBuf) {
     let recipe_path = dir.join(format!("{name}.recipe.json"));
     let png_path = dir.join(format!("{name}.png"));
+    let mut recipe = json!({
+        "schema": "scena.scene_recipe.v1",
+        "geometries": [
+            { "id": "marker_geo", "primitive": { "kind": "box", "size": [0.08, 0.08, 0.08] } }
+        ],
+        "materials": [
+            { "id": "marker_mat", "kind": "unlit", "base_color": "#3A7BD5" }
+        ],
+        "nodes": [
+            { "id": "marker", "geometry": "marker_geo", "material": "marker_mat" }
+        ],
+        "scene": {
+            "background": { "kind": "custom", "color": "#808080" }
+        },
+        "measurements": [{
+            "id": "length-line",
+            "kind": "distance",
+            "start": [-0.7, -0.25, 0.0],
+            "end": [0.7, 0.35, 0.0],
+            "label": "LENGTH",
+            "unit": "m",
+            "precision": 2
+        }],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "active": true,
+            "transform": { "kind": "look_at", "eye": [0.0, 0.0, 3.0], "target": "marker" }
+        }],
+        "capture": { "width": 260, "height": 160 },
+        "expect": {
+            "expect_quality": {
+                "profile": "documentation",
+                "line": {
+                    "min_intermediate_edge_fraction": min_intermediate_edge_fraction,
+                    "max_straightness_error": max_straightness_error
+                }
+            }
+        }
+    });
+    if let Some(render) = render {
+        recipe["render"] = render;
+    }
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&recipe).expect("line quality recipe serializes"),
+    )
+    .expect("line quality recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
+fn write_geometry_edge_quality_recipe(
+    dir: &Path,
+    name: &str,
+    anti_aliasing: &str,
+    supersample: Option<u8>,
+    min_intermediate_edge_fraction: Option<f64>,
+) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    let mut render = json!({
+        "anti_aliasing": anti_aliasing,
+        "tonemapper": "standard",
+        "exposure_ev": 0.0
+    });
+    if let Some(supersample) = supersample {
+        render["supersample"] = json!(supersample);
+    }
+    let mut expect_quality = json!({
+        "profile": "product"
+    });
+    if let Some(min_intermediate_edge_fraction) = min_intermediate_edge_fraction {
+        expect_quality["geometry"] = json!({
+            "min_intermediate_edge_fraction": min_intermediate_edge_fraction
+        });
+    }
     fs::write(
         &recipe_path,
         serde_json::to_string_pretty(&json!({
             "schema": "scena.scene_recipe.v1",
             "geometries": [
-                { "id": "marker_geo", "primitive": { "kind": "box", "size": [0.08, 0.08, 0.08] } }
+                { "id": "bar_geo", "primitive": { "kind": "box", "size": [1.45, 0.16, 0.08] } }
             ],
             "materials": [
-                { "id": "marker_mat", "kind": "unlit", "base_color": "#3A7BD5" }
+                { "id": "bar_mat", "kind": "unlit", "base_color": "#D8D8D8", "double_sided": false }
             ],
             "nodes": [
-                { "id": "marker", "geometry": "marker_geo", "material": "marker_mat" }
+                {
+                    "id": "slanted_bar",
+                    "geometry": "bar_geo",
+                    "material": "bar_mat",
+                    "transform": { "kind": "trs", "rotation_degrees": [0.0, 0.0, 18.0] }
+                }
             ],
             "scene": {
                 "background": { "kind": "custom", "color": "#808080" }
             },
-            "measurements": [{
-                "id": "length-line",
-                "kind": "distance",
-                "start": [-0.7, -0.25, 0.0],
-                "end": [0.7, 0.35, 0.0],
-                "label": "LENGTH",
-                "unit": "m",
-                "precision": 2
-            }],
+            "render": render,
             "cameras": [{
                 "id": "main",
                 "kind": "perspective",
                 "active": true,
-                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 3.0], "target": "marker" }
+                "fov_degrees": 24.0,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 5.0], "target": "slanted_bar" }
             }],
-            "capture": { "width": 260, "height": 160 },
+            "capture": { "width": 220, "height": 140 },
             "expect": {
-                "expect_quality": {
-                    "profile": "documentation",
-                    "line": {
-                        "min_intermediate_edge_fraction": min_intermediate_edge_fraction,
-                        "max_straightness_error": max_straightness_error
-                    }
-                }
+                "expect_quality": expect_quality
             }
         }))
-        .expect("line quality recipe serializes"),
+        .expect("geometry edge quality recipe serializes"),
     )
-    .expect("line quality recipe writes");
+    .expect("geometry edge quality recipe writes");
     (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
+fn write_supersample_recipe(
+    dir: &Path,
+    name: &str,
+    case: &str,
+    supersample: u8,
+) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    let (geometry, material, node, lights, camera_eye, camera_target) = match case {
+        "curve" => (
+            json!({ "id": "curve_geo", "primitive": { "kind": "sphere", "radius": 0.52, "segments": 48, "rings": 24 } }),
+            json!({ "id": "curve_mat", "kind": "unlit", "base_color": "#D8D8D8", "double_sided": false }),
+            json!({ "id": "subject", "geometry": "curve_geo", "material": "curve_mat" }),
+            json!([]),
+            json!([0.0, 0.0, 4.0]),
+            json!("subject"),
+        ),
+        "grid" => (
+            json!({ "id": "grid_geo", "primitive": { "kind": "grid", "size": [1.35], "divisions": 11 } }),
+            json!({ "id": "grid_mat", "kind": "line", "base_color": "#E8E8E8", "stroke_width_px": 1.0 }),
+            json!({
+                "id": "subject",
+                "geometry": "grid_geo",
+                "material": "grid_mat",
+                "transform": { "kind": "trs", "rotation_degrees": [63.0, 0.0, 17.0] }
+            }),
+            json!([]),
+            json!([0.0, 0.0, 3.4]),
+            json!("subject"),
+        ),
+        "specular" => (
+            json!({ "id": "gloss_geo", "primitive": { "kind": "sphere", "radius": 0.52, "segments": 48, "rings": 24 } }),
+            json!({
+                "id": "gloss_mat",
+                "kind": "pbr_metallic_roughness",
+                "base_color": "#D6DAE8",
+                "metallic": 1.0,
+                "roughness": 0.05,
+                "double_sided": false
+            }),
+            json!({ "id": "subject", "geometry": "gloss_geo", "material": "gloss_mat" }),
+            json!([
+                { "id": "key", "kind": "directional", "preset": "key" },
+                { "id": "rim", "kind": "directional", "preset": "rim" },
+                {
+                    "id": "hotspot",
+                    "kind": "point",
+                    "preset": "softbox",
+                    "intensity_candela": 850.0,
+                    "range": 8.0,
+                    "transform": { "kind": "trs", "translation": [0.65, 0.8, 1.4] }
+                }
+            ]),
+            json!([0.0, 0.0, 4.0]),
+            json!("subject"),
+        ),
+        other => panic!("unknown supersample case {other}"),
+    };
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "geometries": [geometry],
+            "materials": [material],
+            "nodes": [node],
+            "lights": lights,
+            "scene": {
+                "background": { "kind": "custom", "color": "#30343A" }
+            },
+            "render": {
+                "anti_aliasing": "msaa4",
+                "supersample": supersample,
+                "tonemapper": "pbr_neutral",
+                "exposure_ev": 0.0
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 22.0,
+                "transform": { "kind": "look_at", "eye": camera_eye, "target": camera_target }
+            }],
+            "capture": { "width": 180, "height": 120 }
+        }))
+        .expect("supersample recipe serializes"),
+    )
+    .expect("supersample recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
+fn run_recipe_render_verify(
+    recipe_path: &Path,
+    png_path: &Path,
+    use_gpu: bool,
+) -> serde_json::Value {
+    let mut args = vec!["recipe", "render", path_str(recipe_path)];
+    if use_gpu {
+        args.push("--gpu");
+    }
+    args.extend(["--introspect", "--verify", "--out", path_str(png_path)]);
+    let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+    if use_gpu {
+        configure_command_for_lavapipe(&mut command);
+    }
+    let output = command
+        .args(args)
+        .output()
+        .expect("scena recipe render command runs");
+    assert!(
+        output.status.success(),
+        "recipe render should pass, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    if use_gpu {
+        assert_eq!(
+            report["introspection"]["capabilities"]["backend"], "headless_gpu",
+            "GPU supersample proof must use the GPU backend, not a fallback: {report:#}"
+        );
+    }
+    report
 }
 
 #[cfg(feature = "scene-host")]
@@ -1409,6 +1621,290 @@ fn scena_recipe_render_verify_fails_quality_per_line_region() {
             "quality verifier must evaluate projected line regions on {backend}, not just the subject bbox: {report:#}"
         );
         assert!(png_path.exists(), "line quality render writes the PNG");
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_fails_geometry_edge_quality_without_sample_aa_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-geometry-edge-no-sample-aa");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let anti_aliasing = if use_gpu { "fxaa" } else { "none" };
+        let (recipe_path, png_path) = write_geometry_edge_quality_recipe(
+            &dir,
+            &format!("geometry-edge-no-sample-aa-{backend}"),
+            anti_aliasing,
+            None,
+            Some(0.30),
+        );
+        let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena geometry-edge quality render command runs");
+
+        assert!(
+            !output.status.success(),
+            "unsampled geometry edge should fail on {backend}, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        if use_gpu {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU geometry quality failure proof must use the GPU backend, not a fallback: {report:#}"
+            );
+        }
+        let checks = report["verification"]["quality"]["checks"]
+            .as_array()
+            .expect("quality checks serialize");
+        assert!(
+            checks.iter().any(|check| {
+                check["id"] == "expect_quality.geometry"
+                    && check["code"] == "geometry_missing_antialiasing"
+                    && check["region"]["kind"] == "subject"
+                    && check["observed"]["intermediate_edge_fraction"]
+                        .as_f64()
+                        .is_some_and(|value| value < 0.30)
+            }),
+            "quality verifier must fail hard geometry edges with exact geometry_missing_antialiasing on {backend}: {report:#}"
+        );
+        assert!(
+            png_path.exists(),
+            "geometry-edge unsampled render writes the PNG"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_profile_quality_runs_geometry_edge_check_by_default() {
+    let dir = artifact_dir("recipe-render-geometry-edge-profile-default");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let anti_aliasing = if use_gpu { "fxaa" } else { "none" };
+        let (recipe_path, png_path) = write_geometry_edge_quality_recipe(
+            &dir,
+            &format!("geometry-edge-profile-default-{backend}"),
+            anti_aliasing,
+            None,
+            None,
+        );
+        let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena geometry-edge profile quality render command runs");
+
+        assert!(
+            !output.status.success(),
+            "profile-only expect_quality should fail aliased geometry edges on {backend}, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        if use_gpu {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU profile-only geometry quality proof must use HeadlessGpu, not a fallback: {report:#}"
+            );
+        }
+        let checks = report["verification"]["quality"]["checks"]
+            .as_array()
+            .expect("quality checks serialize");
+        assert!(
+            checks.iter().any(|check| {
+                check["id"] == "expect_quality.geometry"
+                    && check["code"] == "geometry_missing_antialiasing"
+                    && check["region"]["kind"] == "subject"
+            }),
+            "profile-only quality must include the geometry-edge check by default on {backend}: {report:#}"
+        );
+        assert!(
+            png_path.exists(),
+            "geometry-edge profile-default render writes the PNG"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_passes_geometry_edge_quality_with_msaa4_on_gpu() {
+    let dir = artifact_dir("recipe-render-geometry-edge-sample-aa");
+    let (recipe_path, png_path) = write_geometry_edge_quality_recipe(
+        &dir,
+        "geometry-edge-msaa4-gpu",
+        "msaa4",
+        None,
+        Some(0.30),
+    );
+    let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+    configure_command_for_lavapipe(&mut command);
+    let output = command
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--gpu",
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena geometry-edge MSAA4 render command runs");
+
+    assert!(
+        output.status.success(),
+        "GPU MSAA4 should pass geometry-edge quality, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert_eq!(report["verification"]["quality"]["ok"], true, "{report:#}");
+    assert_eq!(
+        report["introspection"]["capabilities"]["backend"], "headless_gpu",
+        "GPU geometry quality proof must use the GPU backend, not a fallback: {report:#}"
+    );
+    assert!(png_path.exists(), "GPU MSAA4 render writes the PNG");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_gpu_msaa_overlays_write_png_on_real_adapter() {
+    let dir = artifact_dir("recipe-render-gpu-msaa-overlays");
+    let cases = [
+        ("msaa4", json!({ "anti_aliasing": "msaa4" })),
+        ("quality-high", json!({ "quality": "high" })),
+    ];
+    for (name, render) in cases {
+        let (recipe_path, png_path) =
+            write_line_quality_recipe_with_render(&dir, name, 0.0, 0.25, Some(render));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        configure_command_for_lavapipe(&mut command);
+        let output = command
+            .args([
+                "recipe",
+                "render",
+                path_str(&recipe_path),
+                "--gpu",
+                "--introspect",
+                "--verify",
+                "--out",
+                path_str(&png_path),
+            ])
+            .output()
+            .expect("scena GPU MSAA overlay render command runs");
+
+        assert!(
+            output.status.success(),
+            "GPU {name} overlay render should write a PNG without wgpu validation errors, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        assert_eq!(
+            report["introspection"]["capabilities"]["backend"], "headless_gpu",
+            "GPU {name} overlay proof must use HeadlessGpu, not CPU fallback: {report:#}"
+        );
+        assert!(
+            png_path.exists(),
+            "GPU {name} overlay render writes the PNG"
+        );
+    }
+
+    let (recipe_path, png_path) = write_line_quality_recipe_with_render(
+        &dir,
+        "msaa8",
+        0.0,
+        0.25,
+        Some(json!({ "anti_aliasing": "msaa8" })),
+    );
+    let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+    configure_command_for_lavapipe(&mut command);
+    let output = command
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--gpu",
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena GPU MSAA8 overlay render command runs");
+    let stderr = stderr(&output);
+    assert!(
+        output.status.success() || (!stderr.contains("wgpu error") && !stderr.contains("panicked")),
+        "GPU msaa8 must either render or fail before wgpu validation/panic on adapters without 8x depth support, stdout={}, stderr={stderr}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    if output.status.success() {
+        let report = json_report(&output);
+        assert_eq!(
+            report["introspection"]["capabilities"]["backend"], "headless_gpu",
+            "GPU msaa8 overlay proof must use HeadlessGpu, not CPU fallback: {report:#}"
+        );
+        assert!(png_path.exists(), "GPU msaa8 overlay render writes the PNG");
+    } else {
+        assert!(
+            stderr.contains("does not support MSAA sample count 8")
+                && stderr.contains("maximum supported sample count"),
+            "GPU msaa8 must fail with an actionable sample-count capability diagnostic, got stderr={stderr}"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_supersample_changes_curve_grid_and_specular_pixels_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-supersample-quality");
+    for case in ["curve", "grid", "specular"] {
+        for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+            let (base_recipe, base_png) =
+                write_supersample_recipe(&dir, &format!("{case}-{backend}-base"), case, 1);
+            let (hero_recipe, hero_png) =
+                write_supersample_recipe(&dir, &format!("{case}-{backend}-hero"), case, 3);
+
+            let base = run_recipe_render_verify(&base_recipe, &base_png, use_gpu);
+            let hero = run_recipe_render_verify(&hero_recipe, &hero_png, use_gpu);
+
+            assert_eq!(base["capture"]["width"], 180, "{base:#}");
+            assert_eq!(base["capture"]["height"], 120, "{base:#}");
+            assert_eq!(hero["capture"]["width"], 180, "{hero:#}");
+            assert_eq!(hero["capture"]["height"], 120, "{hero:#}");
+            assert_ne!(
+                base["capture"]["payload"]["fnv1a64"], hero["capture"]["payload"]["fnv1a64"],
+                "supersample:3 must change final native-resolution pixels for {case} on {backend}; base={base:#}; hero={hero:#}"
+            );
+
+            let base_png = decode_png_rgba8(&base_png);
+            let hero_png = decode_png_rgba8(&hero_png);
+            assert_eq!((base_png.width, base_png.height), (180, 120));
+            assert_eq!((hero_png.width, hero_png.height), (180, 120));
+            assert_ne!(
+                base_png.rgba8, hero_png.rgba8,
+                "decoded PNG pixels should differ for supersampled {case} on {backend}"
+            );
+        }
     }
 }
 

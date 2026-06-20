@@ -37,6 +37,8 @@ pub(crate) fn check_render_quality_contracts(root: &Path, findings: &mut Vec<Fin
             "line-known-good-antialiased.ppm",
             "line_missing_antialiasing",
             "line_not_straight",
+            "geometry_edge_quality_known_bad_fails_exact_reason_and_good_passes",
+            "geometry_missing_antialiasing",
         ],
     );
     require_contains(
@@ -69,6 +71,10 @@ pub(crate) fn check_render_quality_contracts(root: &Path, findings: &mut Vec<Fin
             "wrong-reference-ssim",
             "scena_recipe_render_verify_passes_quality_per_line_region_on_cpu_and_gpu",
             "expect_quality.line.segment",
+            "scena_recipe_render_verify_fails_geometry_edge_quality_without_sample_aa_on_cpu_and_gpu",
+            "scena_recipe_render_verify_passes_geometry_edge_quality_with_msaa4_on_gpu",
+            "scena_recipe_render_supersample_changes_curve_grid_and_specular_pixels_on_cpu_and_gpu",
+            "\"supersample\": supersample",
         ],
     );
     require_contains(
@@ -80,6 +86,7 @@ pub(crate) fn check_render_quality_contracts(root: &Path, findings: &mut Vec<Fin
             "\"schema\": \"scena.render_quality.v1\"",
             "\"code\": \"label_ink_isolation\"",
             "\"code\": \"line_missing_antialiasing\"",
+            "\"code\": \"geometry_missing_antialiasing\"",
             "\"fix_hint\"",
         ],
     );
@@ -93,6 +100,7 @@ pub(crate) fn check_render_quality_contracts(root: &Path, findings: &mut Vec<Fin
             "`label_ink_isolation`",
             "`label_missing_antialiasing`",
             "`line_missing_antialiasing`",
+            "`geometry_missing_antialiasing`",
             "`reference_ssim_too_low`",
         ],
     );

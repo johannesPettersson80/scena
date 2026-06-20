@@ -79,6 +79,7 @@ pub(super) fn create_transmission_resources(
         draw_bind_group_layout,
         texture_binding_mode,
         None,
+        1,
     );
     TransmissionResources {
         texture,

@@ -62,6 +62,7 @@ pub(super) fn create_browser_readback_resources(
         draw_bind_group_layout,
         texture_binding_mode,
         depth_compare,
+        1,
     );
     BrowserReadbackResources {
         texture,
@@ -103,6 +104,7 @@ pub(super) fn encode_browser_readback_pass(
             encoder,
             UnlitPass {
                 view: &pass.transmission.view,
+                resolve_target: None,
                 depth_view: None,
                 vertex_buffer: pass.vertex_buffer,
                 instance_buffer: pass.instance_buffer,
@@ -123,6 +125,7 @@ pub(super) fn encode_browser_readback_pass(
             encoder,
             UnlitPass {
                 view: &pass.readback.view,
+                resolve_target: None,
                 depth_view: pass.depth_view,
                 vertex_buffer: pass.vertex_buffer,
                 instance_buffer: pass.instance_buffer,
@@ -143,6 +146,7 @@ pub(super) fn encode_browser_readback_pass(
             encoder,
             UnlitPass {
                 view: &pass.readback.view,
+                resolve_target: None,
                 depth_view: pass.depth_view,
                 vertex_buffer: pass.vertex_buffer,
                 instance_buffer: pass.instance_buffer,
@@ -164,6 +168,7 @@ pub(super) fn encode_browser_readback_pass(
             encoder,
             UnlitPass {
                 view: &pass.readback.view,
+                resolve_target: None,
                 depth_view: pass.depth_view,
                 vertex_buffer: pass.vertex_buffer,
                 instance_buffer: pass.instance_buffer,

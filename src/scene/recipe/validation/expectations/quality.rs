@@ -4,7 +4,9 @@ use super::super::diagnostic;
 use super::validate_known_fields;
 use crate::scene::recipe::SceneRecipeDiagnosticV1;
 
-const QUALITY_FIELDS: &[&str] = &["profile", "exposure", "contrast", "noise", "text", "line"];
+const QUALITY_FIELDS: &[&str] = &[
+    "profile", "exposure", "contrast", "noise", "text", "line", "geometry",
+];
 const QUALITY_EXPOSURE_FIELDS: &[&str] = &["max_low_clip_fraction", "max_high_clip_fraction"];
 const QUALITY_CONTRAST_FIELDS: &[&str] = &["min_luminance_range", "min_sobel_energy"];
 const QUALITY_NOISE_FIELDS: &[&str] = &["max_outlier_fraction"];
@@ -16,6 +18,7 @@ const QUALITY_TEXT_FIELDS: &[&str] = &[
     "max_background_mean_delta",
 ];
 const QUALITY_LINE_FIELDS: &[&str] = &["min_intermediate_edge_fraction", "max_straightness_error"];
+const QUALITY_GEOMETRY_FIELDS: &[&str] = &["min_intermediate_edge_fraction"];
 pub(super) const REFERENCE_FIELDS: &[&str] = &["id", "image", "metric", "mean_max", "min_ssim"];
 
 pub(super) fn validate_quality(
@@ -31,7 +34,7 @@ pub(super) fn validate_quality(
             "error",
             "$.expect.expect_quality",
             "expect_quality must be an object",
-            "emit expect_quality:{profile,exposure,contrast,noise,text,line}",
+            "emit expect_quality:{profile,exposure,contrast,noise,text,line,geometry}",
             None,
             false,
         ));
@@ -83,6 +86,12 @@ pub(super) fn validate_quality(
         object.get("line"),
         "$.expect.expect_quality.line",
         QUALITY_LINE_FIELDS,
+        diagnostics,
+    );
+    validate_threshold_object(
+        object.get("geometry"),
+        "$.expect.expect_quality.geometry",
+        QUALITY_GEOMETRY_FIELDS,
         diagnostics,
     );
 }

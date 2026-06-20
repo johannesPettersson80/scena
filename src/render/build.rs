@@ -258,6 +258,7 @@ impl Renderer {
             gpu,
             output: OutputTransform::default(),
             anti_aliasing: anti_aliasing_for_quality(quality),
+            supersample_factor: 1,
             order_independent_transparency: None,
             screen_space_ambient_occlusion: None,
             bloom: None,
@@ -362,7 +363,8 @@ fn resolve_quality(options: RendererOptions, capabilities: Capabilities) -> Qual
 fn anti_aliasing_for_quality(quality: Quality) -> AntiAliasing {
     match quality {
         Quality::Low => AntiAliasing::None,
-        Quality::Medium | Quality::High => AntiAliasing::Fxaa,
+        Quality::Medium => AntiAliasing::Fxaa,
+        Quality::High => AntiAliasing::Msaa4,
     }
 }
 

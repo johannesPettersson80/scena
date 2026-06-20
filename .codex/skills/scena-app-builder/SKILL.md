@@ -105,6 +105,11 @@ flat, technical, or unlit:
     "uri": "tests/assets/environment/polyhaven/studio_small_03_1k.hdr"
   }
 },
+"render": {
+  "quality": "high",
+  "anti_aliasing": "msaa4",
+  "supersample": 2
+},
 "capture": { "width": 1280, "height": 960 }
 ```
 
@@ -114,6 +119,9 @@ and `custom` only when the user gives a color. The default environment is flat;
 the bundled HDRI gives reflections and better material response. Import real
 glTF/GLB assets for realistic products or twins; primitives are best for
 functional scenes, CAD plates, diagrams, charts, and tests.
+Use `quality:"high"` / `anti_aliasing:"msaa4"` for smooth geometry edges.
+Use `render.supersample:2..4` only for hero captures or fine glossy/texture
+details; it renders at N× resolution and downsamples, so cost grows with N^2.
 
 `ok:true` proves the requested content rendered and passed checks. It does not
 mean the image is aesthetically good. Inspect the rendered image when visual

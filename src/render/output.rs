@@ -77,6 +77,30 @@ pub enum AntiAliasing {
     None,
     #[default]
     Fxaa,
+    Msaa4,
+    Msaa8,
+}
+
+impl AntiAliasing {
+    pub const fn gpu_sample_count(self) -> u32 {
+        match self {
+            Self::None | Self::Fxaa => 1,
+            Self::Msaa4 => 4,
+            Self::Msaa8 => 8,
+        }
+    }
+
+    pub const fn cpu_supersample_scale(self) -> u32 {
+        match self {
+            Self::None | Self::Fxaa => 1,
+            Self::Msaa4 => 2,
+            Self::Msaa8 => 3,
+        }
+    }
+
+    pub const fn uses_post_fxaa(self) -> bool {
+        matches!(self, Self::Fxaa)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

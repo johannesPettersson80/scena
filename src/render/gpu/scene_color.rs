@@ -5,6 +5,7 @@ use super::vertices::PrimitiveDrawBatch;
 
 pub(super) struct SceneColorPasses<'a> {
     pub(super) final_view: &'a wgpu::TextureView,
+    pub(super) final_resolve_target: Option<&'a wgpu::TextureView>,
     pub(super) final_pipelines: UnlitPipelines<'a>,
     pub(super) depth_view: Option<&'a wgpu::TextureView>,
     pub(super) vertex_buffer: &'a wgpu::Buffer,
@@ -33,6 +34,7 @@ pub(super) fn encode_scene_color_passes(
             encoder,
             UnlitPass {
                 view: passes.transmission_view,
+                resolve_target: None,
                 depth_view: None,
                 vertex_buffer: passes.vertex_buffer,
                 instance_buffer: passes.instance_buffer,
@@ -53,6 +55,7 @@ pub(super) fn encode_scene_color_passes(
             encoder,
             UnlitPass {
                 view: passes.final_view,
+                resolve_target: passes.final_resolve_target,
                 depth_view: passes.depth_view,
                 vertex_buffer: passes.vertex_buffer,
                 instance_buffer: passes.instance_buffer,
@@ -73,6 +76,7 @@ pub(super) fn encode_scene_color_passes(
             encoder,
             UnlitPass {
                 view: passes.final_view,
+                resolve_target: passes.final_resolve_target,
                 depth_view: passes.depth_view,
                 vertex_buffer: passes.vertex_buffer,
                 instance_buffer: passes.instance_buffer,
@@ -94,6 +98,7 @@ pub(super) fn encode_scene_color_passes(
             encoder,
             UnlitPass {
                 view: passes.final_view,
+                resolve_target: passes.final_resolve_target,
                 depth_view: passes.depth_view,
                 vertex_buffer: passes.vertex_buffer,
                 instance_buffer: passes.instance_buffer,

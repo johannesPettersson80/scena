@@ -1,6 +1,7 @@
 use super::super::scena_input::appearance_introspection_options;
 
 mod bbox_fit;
+mod quality;
 mod reference_quality;
 
 use std::path::Path;
@@ -101,14 +102,8 @@ pub(crate) fn verify_recipe_expectations(
         Some(report)
     };
 
-    let quality_expectation_without_text = expect
-        .and_then(|expect| expect.expect_quality.as_ref())
-        .cloned()
-        .map(|mut expectation| {
-            expectation.text = None;
-            expectation.line = None;
-            expectation
-        });
+    let quality_expectation_without_text =
+        quality::expectation_without_region_specific_checks(expect);
     let mut quality = scena::evaluate_render_quality(
         capture,
         introspection,
@@ -153,6 +148,18 @@ pub(crate) fn verify_recipe_expectations(
                     line,
                 ));
             }
+        }
+        if let Some(geometry) = quality::geometry_expectation(expect.expect_quality.as_ref()) {
+            quality
+                .checks
+                .extend(scena::evaluate_geometry_region_quality(
+                    "expect_quality.geometry",
+                    &capture.rgba8,
+                    capture.descriptor.width,
+                    capture.descriptor.height,
+                    quality::subject_region(capture, introspection),
+                    geometry,
+                ));
         }
         quality
             .checks

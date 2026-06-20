@@ -1209,12 +1209,13 @@ capability / performance items need structural or measured proof first
 data, allocation/performance gates), plus a rendered reference only when
 the rendered result is part of the contract.
 
-- **Anti-aliasing.** Status: **[shipped]** for the FXAA output-space
-  baseline. `AntiAliasing::Fxaa` is the default and
+- **Anti-aliasing.** Status: **[shipped]** for FXAA plus sample-based edge AA.
+  Medium quality uses `AntiAliasing::Fxaa`; high quality maps to
+  `AntiAliasing::Msaa4`, and
   `Renderer::set_anti_aliasing(AntiAliasing::None)` gives deterministic
-  unfiltered output for exact-pixel and ON/OFF proof. MSAA/TAA are reopened
-  under Round E for material-proof quality, but are not part of this shipped
-  FXAA claim. Proof:
+  unfiltered output for exact-pixel and ON/OFF proof. Recipe
+  `render.supersample` adds an opt-in N× full-frame resolve for hero captures.
+  Proof:
   `anti_aliasing_can_be_disabled_for_on_off_visual_proof` asserts the
   aliased edge stays hard with AA disabled and becomes visibly smoothed
   with FXAA, while `tests/m2_visual_proof.rs` writes the
@@ -2081,9 +2082,9 @@ the material-specific proof fixture below.
         not used by the current Round E fixture, so it is not a material-
         identity blocker for this fixture. Current proof:
         `round_e_fixture_does_not_depend_on_ssao_ssr_or_msaa_taa`.
-32. - [x] MSAA/TAA beyond current FXAA only where aliasing breaks fixture
+32. - [x] Historical Round E note: MSAA/TAA beyond FXAA was required only where aliasing broke fixture
         thresholds for shiny curved metal or thin brushed highlights (§3.1).
-        MSAA/TAA beyond current FXAA is not used by the current Round E
+        MSAA/TAA beyond FXAA was not used by the Round E
         fixture, so it is not a material-identity blocker for this fixture.
         Current proof:
         `round_e_fixture_does_not_depend_on_ssao_ssr_or_msaa_taa`.
@@ -2223,10 +2224,10 @@ release-evidence gaps; larger renderer research lanes follow.
        **[not required by current fixture]**. The current Round E fixture does
        not use reflective floor/product-scene evidence, so SSR is not a
        material-identity blocker for this finish line.
-11. - [x] **MSAA/TAA beyond current FXAA** —
-       **[not required by current fixture]**. The current Round E fixture
-       thresholds pass under the existing AA path. Reopen this only if a future
-       shiny/anisotropic fixture makes aliasing fail the committed thresholds.
+11. - [x] **Historical Round E MSAA/TAA note** —
+       **[not required by that fixture]**. The Round E fixture thresholds
+       passed under its then-current AA path. Later renderer-quality work adds
+       `msaa4`/`msaa8` plus `render.supersample` for agent-authored captures.
 12. - [ ] **Area lights with LTC** —
        **[deferred, later-product-lighting]**. Product-material proof can
        benefit from physically plausible rect/disc/sphere light shapes, but LTC

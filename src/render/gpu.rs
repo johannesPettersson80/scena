@@ -10,6 +10,8 @@ mod depth;
 #[cfg(not(target_arch = "wasm32"))]
 mod draw;
 mod draw_common;
+#[cfg(not(target_arch = "wasm32"))]
+mod draw_overlays;
 #[cfg(target_arch = "wasm32")]
 mod draw_surface;
 #[cfg(target_arch = "wasm32")]
@@ -26,6 +28,7 @@ mod material_mips;
 mod material_uniform;
 mod material_upload;
 mod materials;
+mod msaa;
 mod output;
 mod overlays;
 mod pipeline;
@@ -33,6 +36,8 @@ mod post;
 mod prepare_resources;
 #[cfg(target_arch = "wasm32")]
 mod prepare_resources_wasm;
+#[cfg(not(target_arch = "wasm32"))]
+mod readback;
 mod resource_encoding;
 mod scene_color;
 mod shadow;
@@ -166,10 +171,24 @@ struct GpuPreparedResources {
     depth_compare: Option<wgpu::CompareFunction>,
     post: Option<post::PostResources>,
     offscreen_pipelines: MeshPipelineSet,
+    offscreen_msaa4_pipelines: MeshPipelineSet,
+    offscreen_msaa8_pipelines: Option<MeshPipelineSet>,
+    msaa_color: Option<MsaaColorResources>,
     surface_pipeline: Option<MeshPipelineSet>,
     padded_bytes_per_row: u32,
     unpadded_bytes_per_row: u32,
     stats: GpuResourceStats,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug)]
+struct MsaaColorResources {
+    target: RasterTarget,
+    format: wgpu::TextureFormat,
+    sample_count: u32,
+    #[allow(dead_code)]
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
 }
 
 #[cfg(target_arch = "wasm32")]

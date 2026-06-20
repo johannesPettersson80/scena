@@ -145,10 +145,11 @@ pub use render::quality::{
     RenderQualityFrameMetrics, RenderQualityLabelBackgroundMetrics, RenderQualityLabelMetrics,
     RenderQualityLineMetrics, RenderQualityProfile, RenderQualityRegion, RenderQualityRegionV1,
     RenderQualityReportV1, RenderQualityRgba8Input, RenderQualitySummaryV1,
-    evaluate_label_region_quality, evaluate_label_region_quality_with_background,
-    evaluate_line_region_quality, evaluate_render_quality, evaluate_render_quality_rgba8,
-    frame_metrics, label_background_metrics, label_metrics, line_metrics,
-    reference_quality_metrics, ssim_grayscale,
+    evaluate_geometry_region_quality, evaluate_label_region_quality,
+    evaluate_label_region_quality_with_background, evaluate_line_region_quality,
+    evaluate_render_quality, evaluate_render_quality_rgba8, frame_metrics,
+    label_background_metrics, label_metrics, line_metrics, reference_quality_metrics,
+    ssim_grayscale,
 };
 #[cfg(feature = "inspection")]
 pub use render::visibility_diagnosis::{
@@ -183,14 +184,14 @@ pub use scene::recipe::{
     SceneRecipeMorphTargetV1, SceneRecipeMorphV1, SceneRecipeNodeSkinBindingV1, SceneRecipeNodeV1,
     SceneRecipeParticleSetV1, SceneRecipeParticleV1, SceneRecipePickExpectationV1,
     SceneRecipePrimitiveV1, SceneRecipeQualityContrastV1, SceneRecipeQualityExpectationV1,
-    SceneRecipeQualityExposureV1, SceneRecipeQualityLineV1, SceneRecipeQualityNoiseV1,
-    SceneRecipeQualityTextV1, SceneRecipeReferenceExpectationV1, SceneRecipeSectionBoxV1,
-    SceneRecipeSkinV1, SceneRecipeTargetV1, SceneRecipeTextureColorSpaceV1,
-    SceneRecipeTextureSlotV1, SceneRecipeTransformV1, SceneRecipeV1, SceneRecipeValidationReportV1,
-    SceneRecipeVisibleExpectationV1, parse_valid_scene_recipe_json,
-    parse_valid_scene_recipe_json_with_policy, recipe_too_large_report, validate_scene_recipe_json,
-    validate_scene_recipe_json_with_policy, validate_scene_recipe_value,
-    validate_scene_recipe_value_with_policy,
+    SceneRecipeQualityExposureV1, SceneRecipeQualityGeometryV1, SceneRecipeQualityLineV1,
+    SceneRecipeQualityNoiseV1, SceneRecipeQualityTextV1, SceneRecipeReferenceExpectationV1,
+    SceneRecipeSectionBoxV1, SceneRecipeSkinV1, SceneRecipeTargetV1,
+    SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1, SceneRecipeTransformV1,
+    SceneRecipeV1, SceneRecipeValidationReportV1, SceneRecipeVisibleExpectationV1,
+    parse_valid_scene_recipe_json, parse_valid_scene_recipe_json_with_policy,
+    recipe_too_large_report, validate_scene_recipe_json, validate_scene_recipe_json_with_policy,
+    validate_scene_recipe_value, validate_scene_recipe_value_with_policy,
 };
 #[cfg(all(feature = "inspection", feature = "scene-host"))]
 pub use scene::recipe::{

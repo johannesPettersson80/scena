@@ -82,22 +82,25 @@ impl Renderer {
         let mut step_start = total_start;
         self.poll_device();
         self.diagnostics.clear();
-        validate_target_size(self.target.width, self.target.height).map_err(|()| {
-            PrepareError::InvalidTargetSize {
+        let target = self
+            .prepare_target()
+            .map_err(|()| PrepareError::InvalidTargetSize {
                 width: self.target.width,
                 height: self.target.height,
+            })?;
+        validate_target_size(target.width, target.height).map_err(|()| {
+            PrepareError::InvalidTargetSize {
+                width: target.width,
+                height: target.height,
             }
         })?;
-        let mut diagnostics = prepare::collect_precision_diagnostics(scene, self.target.backend);
+        let mut diagnostics = prepare::collect_precision_diagnostics(scene, target.backend);
         diagnostics.extend(prepare::collect_camera_visibility_diagnostics(
-            scene,
-            self.target,
+            scene, target,
         ));
         if let Some(assets) = assets {
             diagnostics.extend(prepare::collect_asset_camera_visibility_diagnostics(
-                scene,
-                self.target,
-                assets,
+                scene, target, assets,
             ));
             diagnostics.extend(prepare::collect_material_texture_diagnostics(scene, assets));
         }
@@ -123,9 +126,9 @@ impl Renderer {
         let gpu_light_uniform =
             prepare::collect_gpu_light_uniform(scene, scene.origin_shift(), &environment_lighting);
         step_start = log_prepare_step("environment + lights", step_start);
-        let active_camera_projection = scene.active_camera().and_then(|camera| {
-            camera::CameraProjection::from_scene(scene, camera, self.target).ok()
-        });
+        let active_camera_projection = scene
+            .active_camera()
+            .and_then(|camera| camera::CameraProjection::from_scene(scene, camera, target).ok());
         let backend_material_slots = if self.gpu.is_some() {
             prepare::collect_backend_material_slots(scene, assets)
         } else {
@@ -150,7 +153,7 @@ impl Renderer {
                     Ok(light_from_world) => {
                         if let Some(gpu) = &mut self.gpu {
                             match gpu.update_dynamic_draw_state(
-                                self.target,
+                                target,
                                 gpu_light_uniform,
                                 light_from_world,
                                 &dynamic_primitives,
@@ -203,7 +206,7 @@ impl Renderer {
             .filter_map(|slot| slot.base_color.as_ref().map(|texture| texture.handle))
             .collect::<Vec<_>>();
         let prepared_scene = prepare::collect_prepared_primitives(
-            self.target,
+            target,
             scene,
             assets,
             active_camera_projection.as_ref(),
@@ -255,8 +258,7 @@ impl Renderer {
                 .iter()
                 .flat_map(|set| set.primitives().iter().cloned()),
         );
-        let depth_stats =
-            prepare::collect_depth_prepass_stats(&depth_primitives, self.target.backend);
+        let depth_stats = prepare::collect_depth_prepass_stats(&depth_primitives, target.backend);
         self.apply_prepare_stats(
             logical_stats,
             environment_prepare_stats,
@@ -268,7 +270,7 @@ impl Renderer {
         step_start = log_prepare_step("cull + stats", step_start);
         if let Some(gpu) = &mut self.gpu {
             gpu.prepare(
-                self.target,
+                target,
                 &gpu_retained_primitives,
                 &gpu_primitives,
                 &retained_instances,
@@ -326,6 +328,17 @@ impl Renderer {
         log_prepare_step("prepare_inner tail", step_start);
         log_prepare_step("prepare_inner total", total_start);
         Ok(())
+    }
+
+    fn prepare_target(&self) -> Result<super::RasterTarget, ()> {
+        let scale = if self.gpu.is_some()
+            && self.target.backend == crate::diagnostics::Backend::HeadlessGpu
+        {
+            self.supersample_factor
+        } else {
+            1
+        };
+        self.target.scaled(scale).ok_or(())
     }
 
     pub(super) fn dynamic_gpu_prepare_rejection_reason(

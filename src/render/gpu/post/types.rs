@@ -30,7 +30,7 @@ impl GpuPostSettings {
     }
 
     pub(in crate::render::gpu) const fn enabled(self) -> bool {
-        matches!(self.anti_aliasing, AntiAliasing::Fxaa)
+        self.anti_aliasing.uses_post_fxaa()
             || self.bloom.is_some()
             || self.ambient_occlusion.is_some()
     }
@@ -41,7 +41,11 @@ impl GpuPostSettings {
 
     #[allow(dead_code)]
     pub(in crate::render::gpu) const fn uses_fxaa(self) -> bool {
-        matches!(self.anti_aliasing, AntiAliasing::Fxaa)
+        self.anti_aliasing.uses_post_fxaa()
+    }
+
+    pub(in crate::render::gpu) const fn sample_count(self) -> u32 {
+        self.anti_aliasing.gpu_sample_count()
     }
 
     #[allow(dead_code)]
@@ -84,6 +88,8 @@ pub(in crate::render::gpu) struct PostResources {
     pub(in crate::render::gpu) ssao_bind_group_layout: wgpu::BindGroupLayout,
     pub(in crate::render::gpu) texture_bind_groups: [wgpu::BindGroup; 3],
     pub(in crate::render::gpu) scene_pipelines: MeshPipelineSet,
+    pub(in crate::render::gpu) scene_msaa4_pipelines: MeshPipelineSet,
+    pub(in crate::render::gpu) scene_msaa8_pipelines: Option<MeshPipelineSet>,
     pub(in crate::render::gpu) output_blit_pipeline: wgpu::RenderPipeline,
     pub(in crate::render::gpu) surface_blit_pipeline: Option<wgpu::RenderPipeline>,
     #[allow(dead_code)]

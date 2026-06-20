@@ -107,6 +107,11 @@ implicit setup:
     "uri": "tests/assets/environment/polyhaven/studio_small_03_1k.hdr"
   }
 },
+"render": {
+  "quality": "high",
+  "anti_aliasing": "msaa4",
+  "supersample": 2
+},
 "capture": { "width": 1280, "height": 960 }
 ```
 
@@ -116,6 +121,9 @@ exports, and `custom` only when the user gave an explicit color. The default
 environment is flat; the bundled HDRI gives reflections and material response.
 Use real glTF/GLB assets for realistic products and digital twins. Use authored
 primitives for functional/CAD/diagram/chart scenes and tests.
+Use `quality:"high"` / `anti_aliasing:"msaa4"` for smooth geometry edges.
+Use `render.supersample:2..4` only for hero captures or fine glossy/texture
+details; it renders at N× resolution and downsamples, so cost grows with N^2.
 
 ## Dedicated Verifiers
 

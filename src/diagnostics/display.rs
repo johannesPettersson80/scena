@@ -244,6 +244,16 @@ impl fmt::Display for RenderError {
             Self::GpuResourcesNotPrepared { backend } => {
                 write!(formatter, "GPU resources for {backend:?} were not prepared")
             }
+            Self::UnsupportedSampleCount {
+                backend,
+                requested,
+                maximum,
+            } => {
+                write!(
+                    formatter,
+                    "backend {backend:?} does not support MSAA sample count {requested}; maximum supported sample count is {maximum}"
+                )
+            }
             Self::GpuReadback { backend } => {
                 write!(formatter, "failed to read rendered output for {backend:?}")
             }

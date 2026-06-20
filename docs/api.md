@@ -603,6 +603,7 @@ Renderer features:
 - `Renderer::clear_bloom`
 - `PostBloomConfig`
 - `Renderer::set_anti_aliasing`
+- `Renderer::set_supersample_factor`
 - `AntiAliasing`
 - `Renderer::set_screen_space_ambient_occlusion`
 - `Renderer::clear_screen_space_ambient_occlusion`

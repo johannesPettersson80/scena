@@ -124,6 +124,7 @@ impl GpuDeviceState {
                     &output_bind_group_layout,
                     &draw_bind_group_layout,
                     false,
+                    1,
                 )
             });
         let depth_compare = depth_prepass
@@ -138,6 +139,7 @@ impl GpuDeviceState {
             &draw_bind_group_layout,
             texture_binding_mode,
             depth_compare,
+            1,
         );
         let environment::OutputResources {
             shadow_caster,

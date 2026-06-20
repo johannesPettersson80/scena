@@ -58,6 +58,8 @@ pub struct SceneRecipeRenderV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub anti_aliasing: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supersample: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bloom: Option<SceneRecipeBloomV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssao: Option<SceneRecipeSsaoV1>,

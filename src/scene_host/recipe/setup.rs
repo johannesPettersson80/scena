@@ -45,6 +45,9 @@ pub(super) fn apply_render_setup(
     {
         host.renderer.set_anti_aliasing(anti_aliasing);
     }
+    if let Some(supersample) = render.supersample {
+        let _ = host.renderer.set_supersample_factor(u32::from(supersample));
+    }
     if let Some(bloom) = render.bloom.map(bloom_from_recipe) {
         host.renderer.set_bloom(Some(bloom));
     }
@@ -116,6 +119,8 @@ fn quality_from_recipe(value: &str) -> Quality {
 fn anti_aliasing_from_recipe(value: &str) -> AntiAliasing {
     match value {
         "none" => AntiAliasing::None,
+        "msaa4" => AntiAliasing::Msaa4,
+        "msaa8" => AntiAliasing::Msaa8,
         _ => AntiAliasing::Fxaa,
     }
 }

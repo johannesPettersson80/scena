@@ -57,7 +57,22 @@ fn public_quality_knob_changes_renderer_state() {
     assert_eq!(low.quality(), Quality::Low);
     assert_eq!(high.quality(), Quality::High);
     assert_eq!(low.anti_aliasing(), AntiAliasing::None);
-    assert_eq!(high.anti_aliasing(), AntiAliasing::Fxaa);
+    assert_eq!(high.anti_aliasing(), AntiAliasing::Msaa4);
+}
+
+#[test]
+fn public_supersample_knob_changes_renderer_state() {
+    let mut renderer = Renderer::headless(16, 16).expect("renderer builds");
+
+    assert_eq!(renderer.supersample_factor(), 1);
+    renderer
+        .set_supersample_factor(3)
+        .expect("supersample factor accepts documented hero-shot values");
+    assert_eq!(renderer.supersample_factor(), 3);
+    assert!(
+        renderer.set_supersample_factor(5).is_err(),
+        "supersample rejects factors outside the documented 1..=4 range"
+    );
 }
 
 #[test]

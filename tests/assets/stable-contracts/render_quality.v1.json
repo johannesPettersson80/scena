@@ -3,8 +3,8 @@
   "ok": false,
   "profile": "documentation",
   "summary": {
-    "checks": 2,
-    "errors": 2,
+    "checks": 3,
+    "errors": 3,
     "warnings": 0
   },
   "checks": [
@@ -55,6 +55,29 @@
         "min_intermediate_edge_fraction": 0.02
       },
       "fix_hint": "render dimension and leader lines through the antialiased stroke pass instead of hard 1px geometry"
+    },
+    {
+      "id": "geometry-fixture",
+      "code": "geometry_missing_antialiasing",
+      "severity": "error",
+      "region": {
+        "kind": "subject",
+        "rect_css_px": {
+          "min_x": 24.0,
+          "min_y": 24.0,
+          "max_x": 152.0,
+          "max_y": 96.0,
+          "width": 128.0,
+          "height": 72.0
+        }
+      },
+      "observed": {
+        "intermediate_edge_fraction": 0.0
+      },
+      "threshold": {
+        "min_intermediate_edge_fraction": 0.02
+      },
+      "fix_hint": "enable msaa4 or msaa8 for GPU renders, or CPU sample AA, so geometry silhouettes have intermediate edge coverage"
     }
   ],
   "capabilities": {

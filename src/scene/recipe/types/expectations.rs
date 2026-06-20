@@ -77,6 +77,8 @@ pub struct SceneRecipeQualityExpectationV1 {
     pub text: Option<SceneRecipeQualityTextV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line: Option<SceneRecipeQualityLineV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geometry: Option<SceneRecipeQualityGeometryV1>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -126,6 +128,13 @@ pub struct SceneRecipeQualityLineV1 {
     pub min_intermediate_edge_fraction: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_straightness_error: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeQualityGeometryV1 {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_intermediate_edge_fraction: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

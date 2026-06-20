@@ -74,7 +74,7 @@ impl Renderer {
     }
 
     fn post_processing_report(&self) -> PostProcessingReportV1 {
-        let anti_aliasing = matches!(self.anti_aliasing, super::AntiAliasing::Fxaa);
+        let anti_aliasing = self.anti_aliasing.uses_post_fxaa();
         let bloom = self.bloom.is_some();
         let screen_space_ambient_occlusion = self.screen_space_ambient_occlusion.is_some();
         let mut active_passes = Vec::new();

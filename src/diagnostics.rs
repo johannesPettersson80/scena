@@ -189,15 +189,35 @@ pub enum PrepareError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenderError {
-    NotPrepared { reason: NotPreparedReason },
+    NotPrepared {
+        reason: NotPreparedReason,
+    },
     NoActiveCamera,
     CameraNotFound(CameraKey),
-    InvalidSurfaceSize { width: u32, height: u32 },
-    SurfaceLost { recoverable: bool },
-    ContextLost { recoverable: bool },
-    GpuDeviceLost { recoverable: bool },
-    GpuResourcesNotPrepared { backend: Backend },
-    GpuReadback { backend: Backend },
+    InvalidSurfaceSize {
+        width: u32,
+        height: u32,
+    },
+    SurfaceLost {
+        recoverable: bool,
+    },
+    ContextLost {
+        recoverable: bool,
+    },
+    GpuDeviceLost {
+        recoverable: bool,
+    },
+    GpuResourcesNotPrepared {
+        backend: Backend,
+    },
+    UnsupportedSampleCount {
+        backend: Backend,
+        requested: u32,
+        maximum: u32,
+    },
+    GpuReadback {
+        backend: Backend,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

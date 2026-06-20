@@ -135,12 +135,16 @@ pub(super) struct DepthPrepassResources {
     texture: wgpu::Texture,
     pub(super) view: wgpu::TextureView,
     color_texture: Option<wgpu::Texture>,
+    #[allow(dead_code)]
+    color_msaa_texture: Option<wgpu::Texture>,
+    color_msaa_view: Option<wgpu::TextureView>,
     color_view: Option<wgpu::TextureView>,
     single_sided_pipeline: wgpu::RenderPipeline,
     double_sided_pipeline: wgpu::RenderPipeline,
     clear_depth: f32,
     reversed_z: bool,
     pub(super) color_compare: wgpu::CompareFunction,
+    sample_count: u32,
 }
 
 pub(super) fn create_depth_prepass_resources(
@@ -150,6 +154,7 @@ pub(super) fn create_depth_prepass_resources(
     camera_bind_group_layout: &wgpu::BindGroupLayout,
     draw_bind_group_layout: &wgpu::BindGroupLayout,
     depth_color_enabled: bool,
+    sample_count: u32,
 ) -> DepthPrepassResources {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("scena.m2.depth_prepass"),
@@ -159,14 +164,14 @@ pub(super) fn create_depth_prepass_resources(
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
-        sample_count: 1,
+        sample_count,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Depth32Float,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let (color_texture, color_view) = if depth_color_enabled {
+    let (color_texture, color_msaa_texture, color_msaa_view, color_view) = if depth_color_enabled {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("scena.m2.depth_prepass_color"),
             size: wgpu::Extent3d {
@@ -182,9 +187,29 @@ pub(super) fn create_depth_prepass_resources(
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        (Some(texture), Some(view))
+        let (msaa_texture, msaa_view) = if sample_count > 1 {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("scena.m2.depth_prepass_color_msaa"),
+                size: wgpu::Extent3d {
+                    width: target.width,
+                    height: target.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count,
+                dimension: wgpu::TextureDimension::D2,
+                format: DEPTH_COLOR_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            (Some(texture), Some(view))
+        } else {
+            (None, None)
+        };
+        (Some(texture), msaa_texture, msaa_view, Some(view))
     } else {
-        (None, None)
+        (None, None, None, None)
     };
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("scena.m2.depth_prepass_shader"),
@@ -218,6 +243,7 @@ pub(super) fn create_depth_prepass_resources(
         color_compare,
         depth_color_enabled,
         false,
+        sample_count,
     );
     let double_sided_pipeline = create_pipeline(
         device,
@@ -226,18 +252,22 @@ pub(super) fn create_depth_prepass_resources(
         color_compare,
         depth_color_enabled,
         true,
+        sample_count,
     );
 
     DepthPrepassResources {
         texture,
         view,
         color_texture,
+        color_msaa_texture,
+        color_msaa_view,
         color_view,
         single_sided_pipeline,
         double_sided_pipeline,
         clear_depth: if reversed_z { 0.0 } else { 1.0 },
         reversed_z,
         color_compare,
+        sample_count,
     }
 }
 
@@ -248,6 +278,7 @@ fn create_pipeline(
     color_compare: wgpu::CompareFunction,
     depth_color_enabled: bool,
     double_sided: bool,
+    sample_count: u32,
 ) -> wgpu::RenderPipeline {
     let vertex_buffer = wgpu::VertexBufferLayout {
         array_stride: VERTEX_BYTE_LEN as u64,
@@ -287,7 +318,10 @@ fn create_pipeline(
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
-        multisample: wgpu::MultisampleState::default(),
+        multisample: wgpu::MultisampleState {
+            count: sample_count,
+            ..Default::default()
+        },
         fragment: depth_color_enabled.then_some(wgpu::FragmentState {
             module: shader,
             entry_point: Some("fs_main"),
@@ -319,6 +353,10 @@ impl DepthPrepassResources {
     pub(super) const fn depth_color_enabled(&self) -> bool {
         self.color_view.is_some()
     }
+
+    pub(super) const fn sample_count(&self) -> u32 {
+        self.sample_count
+    }
 }
 
 pub(super) fn encode_depth_prepass(
@@ -334,19 +372,18 @@ pub(super) fn encode_depth_prepass(
         }),
         stencil_ops: None,
     });
-    let color_attachment =
-        resources
-            .color_view
-            .as_ref()
-            .map(|view| wgpu::RenderPassColorAttachment {
-                view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(depth_clear_color(resources.clear_depth)),
-                    store: wgpu::StoreOp::Store,
-                },
-            });
+    let color_attachment = resources.color_view.as_ref().map(|view| {
+        let attachment_view = resources.color_msaa_view.as_ref().unwrap_or(view);
+        wgpu::RenderPassColorAttachment {
+            view: attachment_view,
+            depth_slice: None,
+            resolve_target: resources.color_msaa_view.as_ref().map(|_| view),
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(depth_clear_color(resources.clear_depth)),
+                store: wgpu::StoreOp::Store,
+            },
+        }
+    });
     let color_attachments = if color_attachment.is_some() {
         std::slice::from_ref(&color_attachment)
     } else {

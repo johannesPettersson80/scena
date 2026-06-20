@@ -58,7 +58,8 @@ pub(crate) fn check_diagnostics_contracts(root: &Path, findings: &mut Vec<Findin
         "src/render/prepare_lifecycle.rs",
         &[
             "self.diagnostics.clear()",
-            "prepare::collect_precision_diagnostics(scene, self.target.backend)",
+            ".prepare_target()",
+            "prepare::collect_precision_diagnostics(scene, target.backend)",
             "prepare::collect_camera_visibility_diagnostics",
         ],
     );

@@ -159,6 +159,7 @@ impl GpuDeviceState {
                 &output_bind_group_layout,
                 &draw_bind_group_layout,
                 false,
+                1,
             )
         });
         let depth_compare = depth_prepass
@@ -202,6 +203,17 @@ impl GpuDeviceState {
             &draw_bind_group_layout,
             texture_binding_mode,
             depth_compare,
+            1,
+        );
+        let offscreen_msaa4_pipelines = create_unlit_pipeline_set(
+            &self.device,
+            GPU_COLOR_FORMAT,
+            &output_bind_group_layout,
+            &material_bind_group_layout,
+            &draw_bind_group_layout,
+            texture_binding_mode,
+            depth_compare,
+            4,
         );
         let surface_pipeline = self.surface.as_ref().map(|surface| {
             create_unlit_pipeline_set(
@@ -212,6 +224,7 @@ impl GpuDeviceState {
                 &draw_bind_group_layout,
                 texture_binding_mode,
                 depth_compare,
+                1,
             )
         });
         let strokes = (!retained_strokes.is_empty()).then(|| {
@@ -293,6 +306,9 @@ impl GpuDeviceState {
             depth_compare,
             post: None,
             offscreen_pipelines,
+            offscreen_msaa4_pipelines,
+            offscreen_msaa8_pipelines: None,
+            msaa_color: None,
             surface_pipeline,
             padded_bytes_per_row,
             unpadded_bytes_per_row,

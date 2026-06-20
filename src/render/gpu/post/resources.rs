@@ -4,7 +4,7 @@ use super::super::pipeline::{GPU_COLOR_FORMAT, create_unlit_pipeline_set};
 use super::types::PostResources;
 use super::{blit, bloom, bloom_fxaa, fxaa, ssao};
 
-const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+pub(super) const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const POST_UNIFORM_BYTE_LEN: u64 = 32;
 
 #[allow(clippy::too_many_arguments)]
@@ -120,6 +120,17 @@ pub(in crate::render::gpu) fn create_resources(
         draw_bind_group_layout,
         texture_binding_mode,
         depth_compare,
+        1,
+    );
+    let scene_msaa4_pipelines = create_unlit_pipeline_set(
+        device,
+        POST_COLOR_FORMAT,
+        output_bind_group_layout,
+        material_bind_group_layout,
+        draw_bind_group_layout,
+        texture_binding_mode,
+        depth_compare,
+        4,
     );
     let output_blit_pipeline =
         blit::create_srgb_pipeline(device, &texture_bind_group_layout, GPU_COLOR_FORMAT);
@@ -146,6 +157,8 @@ pub(in crate::render::gpu) fn create_resources(
         ssao_bind_group_layout,
         texture_bind_groups,
         scene_pipelines,
+        scene_msaa4_pipelines,
+        scene_msaa8_pipelines: None,
         output_blit_pipeline,
         surface_blit_pipeline,
         surface_fxaa_pipeline,

@@ -853,8 +853,8 @@ Produced by recipe verification when the `inspection` feature is enabled. The
 report evaluates native-resolution RGBA8 captures, never downscaled images, and
 keeps render quality separate from correctness checks. It is nested under
 `SceneRecipeVerificationReportV1.quality` and carries profile-scoped checks for
-exposure, contrast, noise, text integrity, line integrity, and reference
-fidelity.
+exposure, contrast, noise, text integrity, line integrity, geometry-edge
+integrity, and reference fidelity.
 
 Required top-level fields:
 
@@ -870,7 +870,8 @@ deterministically ordered `observed` and `threshold` maps, and an actionable
 `fix_hint`. Exact failure codes include `severe_black_crush`,
 `label_ink_isolation`, `label_missing_antialiasing`,
 `line_missing_antialiasing`, `line_not_straight`,
-`reference_delta_e2000_exceeded`, and `reference_ssim_too_low`.
+`geometry_missing_antialiasing`, `reference_delta_e2000_exceeded`, and
+`reference_ssim_too_low`.
 
 The stable fixture lives at
 `tests/assets/stable-contracts/render_quality.v1.json`.
@@ -1144,8 +1145,13 @@ The current v1 recipe slice supports:
 - optional `scene` setup with named or custom background, `default`/`uri`/`none`
   environment IBL, and grid-floor options. URI environments are loaded under
   `RecipeBuildPolicy`; missing required environments fail the build.
-- optional `render` setup with profile, quality, anti-aliasing, bloom, SSAO,
-  exposure EV, and tonemapper. Values that renderer setters would clamp
+- optional `render` setup with profile, quality, anti-aliasing, supersample,
+  bloom, SSAO, exposure EV, and tonemapper. `anti_aliasing` accepts `none`,
+  `fxaa`, `msaa4`, and `msaa8`; `quality:"high"` maps to sample AA. The
+  opt-in `supersample` factor accepts `1`, `2`, `3`, or `4` and renders the
+  capture at N× resolution before downsampling; it composes with sample AA and
+  should be reserved for hero captures because cost grows with N^2. Values that
+  renderer setters would clamp
   (`bloom.intensity`, `bloom.radius_px`, `ssao.intensity`,
   `ssao.depth_threshold`) are rejected during validation when out of range.
 - optional `section_box` directives over an import's bounds or an authored/

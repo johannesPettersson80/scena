@@ -55,6 +55,9 @@ Rules:
   user-facing renders unless the task is deliberately flat or unlit;
 - use `studio`, `neutral_gray`, or `dark_studio` backgrounds by default and
   raise capture size for images people will inspect;
+- use `render.quality:"high"` or `anti_aliasing:"msaa4"` for smooth geometry
+  edges; add `render.supersample:2..4` only for hero captures because cost
+  grows with N^2;
 - mark optional assets as optional only when missing content is acceptable;
 - keep host/domain state out of recipe JSON.
 

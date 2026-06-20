@@ -51,8 +51,10 @@ pub(super) struct StrokeResources {
     #[allow(dead_code)]
     instance_capacity: usize,
     pipeline: wgpu::RenderPipeline,
+    flat_pipeline: wgpu::RenderPipeline,
     #[allow(dead_code)]
     surface_pipeline: Option<wgpu::RenderPipeline>,
+    surface_flat_pipeline: Option<wgpu::RenderPipeline>,
     #[allow(dead_code)]
     post_pipeline: wgpu::RenderPipeline,
     pub(super) batches: Vec<StrokeDrawBatch>,
@@ -119,6 +121,15 @@ pub(super) fn create_resources(
         shader_for_format(descriptor.target_format),
         "scena.gpu_strokes.pipeline",
     );
+    let flat_pipeline = create_pipeline(
+        device,
+        descriptor.target_format,
+        descriptor.output_bind_group_layout,
+        descriptor.draw_bind_group_layout,
+        None,
+        shader_for_format(descriptor.target_format),
+        "scena.gpu_strokes.flat_pipeline",
+    );
     let surface_pipeline = descriptor.surface_format.map(|format| {
         create_pipeline(
             device,
@@ -130,12 +141,23 @@ pub(super) fn create_resources(
             "scena.gpu_strokes.surface_pipeline",
         )
     });
+    let surface_flat_pipeline = descriptor.surface_format.map(|format| {
+        create_pipeline(
+            device,
+            format,
+            descriptor.output_bind_group_layout,
+            descriptor.draw_bind_group_layout,
+            None,
+            shader_for_format(format),
+            "scena.gpu_strokes.surface_flat_pipeline",
+        )
+    });
     let post_pipeline = create_pipeline(
         device,
         POST_COLOR_FORMAT,
         descriptor.output_bind_group_layout,
         descriptor.draw_bind_group_layout,
-        descriptor.depth_compare,
+        None,
         ENCODED_SHADER,
         "scena.gpu_strokes.post_pipeline",
     );
@@ -145,7 +167,9 @@ pub(super) fn create_resources(
         instance_buffer,
         instance_capacity,
         pipeline,
+        flat_pipeline,
         surface_pipeline,
+        surface_flat_pipeline,
         post_pipeline,
         batches: descriptor.batches,
     }
@@ -227,9 +251,18 @@ pub(super) const fn pipeline(resources: &StrokeResources) -> &wgpu::RenderPipeli
     &resources.pipeline
 }
 
+pub(super) const fn flat_pipeline(resources: &StrokeResources) -> &wgpu::RenderPipeline {
+    &resources.flat_pipeline
+}
+
 #[allow(dead_code)]
 pub(super) fn surface_pipeline(resources: &StrokeResources) -> Option<&wgpu::RenderPipeline> {
     resources.surface_pipeline.as_ref()
+}
+
+#[allow(dead_code)]
+pub(super) fn surface_flat_pipeline(resources: &StrokeResources) -> Option<&wgpu::RenderPipeline> {
+    resources.surface_flat_pipeline.as_ref()
 }
 
 #[allow(dead_code)]

@@ -88,6 +88,21 @@ Heavy Rust work runs on the Hetzner CPU builder by default:
 - Keep the remote checkout matched to the work being validated. If local changes are not
   committed and pushed, verify the remote tree is clean, then mirror the local working tree
   to the remote repo with `rsync`, excluding `.git` and `target`.
+- Before syncing or running any cargo gate, run a remote disk preflight. The builder often
+  fails late from full target caches, so check free space and clean only scoped generated
+  build output before starting:
+
+```bash
+ssh scena-builder 'df -hT "$HOME" "$HOME/.cache" /tmp && du -sh "$HOME/.cache/codex-targets" "$HOME/projects/scena/target" 2>/dev/null || true'
+```
+
+- Prefer a task-scoped target cache, for example
+  `CARGO_TARGET_DIR=$HOME/.cache/codex-targets/scena-<task-slug>`. If the preflight shows
+  low space or a previous run failed with `No space left on device`, `Disk full`, or
+  `Disk quota exceeded`, remove only that task-scoped cache and rerun the preflight. Do not
+  delete unrelated caches, checkouts, or user files unless the user explicitly approves it.
+- If `/tmp` is the constrained filesystem, set a task-local `TMPDIR` under the validation
+  checkout or target cache before rerunning.
 - Do not put private SSH key material or cloud credentials in this repo.
 
 Use this command shape for remote gates:

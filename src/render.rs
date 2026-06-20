@@ -85,6 +85,7 @@ pub struct Renderer {
     gpu: Option<GpuDeviceState>,
     output: OutputTransform,
     anti_aliasing: AntiAliasing,
+    supersample_factor: u32,
     order_independent_transparency: Option<OrderIndependentTransparencyConfig>,
     screen_space_ambient_occlusion: Option<ScreenSpaceAmbientOcclusionConfig>,
     bloom: Option<PostBloomConfig>,
@@ -149,7 +150,13 @@ impl Renderer {
             });
         }
 
-        let camera_projection = camera::CameraProjection::from_scene(scene, camera, self.target)?;
+        let gpu_target = if self.gpu.is_some() {
+            Some(self.gpu_render_target()?)
+        } else {
+            None
+        };
+        let camera_projection =
+            camera::CameraProjection::from_scene(scene, camera, gpu_target.unwrap_or(self.target))?;
         let primitive_count = prepared_triangle_alias_count(self.prepared_state(scene)?);
         let mut auto_exposure_attempted = false;
         let mut gpu_draw_submissions = 0;
@@ -159,15 +166,21 @@ impl Renderer {
                     let prepared = self.prepared_state(scene)?;
                     (prepared.clipping_planes.clone(), prepared.section_box)
                 };
-                let gpu_result =
-                    self.draw_gpu(&camera_projection, &clipping_planes, section_box)?;
+                let gpu_result = self.draw_gpu(
+                    gpu_target.expect("GPU render target exists when GPU is active"),
+                    &camera_projection,
+                    &clipping_planes,
+                    section_box,
+                )?;
                 gpu_draw_submissions = gpu_result.draw_submissions;
                 self.stats.order_independent_transparency_passes = 0;
                 self.stats.ambient_occlusion_passes = gpu_result.post_counts.ambient_occlusion;
                 self.stats.bloom_passes = gpu_result.post_counts.bloom;
                 self.stats.fxaa_passes = gpu_result.post_counts.fxaa;
             } else {
-                self.draw_cpu(scene, &camera_projection)?;
+                let cpu_projection =
+                    camera::CameraProjection::from_scene(scene, camera, self.target)?;
+                self.draw_cpu(scene, camera, &cpu_projection)?;
             }
             if auto_exposure_attempted || !self.apply_managed_auto_exposure_after_render() {
                 break;
@@ -260,6 +273,7 @@ impl Renderer {
 
     fn draw_gpu(
         &mut self,
+        target: RasterTarget,
         camera_projection: &camera::CameraProjection,
         clipping_planes: &[ClippingPlane],
         section_box: Option<SectionBox>,
@@ -275,17 +289,37 @@ impl Renderer {
                 .gpu
                 .as_mut()
                 .expect("draw_gpu is called only when a GPU device exists");
+            let scale = if target == self.target {
+                1
+            } else {
+                self.supersample_factor
+            };
+            let mut supersample_frame = Vec::new();
+            let frame = if scale > 1 {
+                &mut supersample_frame
+            } else {
+                &mut self.frame
+            };
             let result = gpu.render_to_frame(
-                self.target,
+                target,
                 self.output.exposure_ev(),
                 self.output.color_management_uniform(),
                 self.background_color,
                 camera_projection,
                 clipping_planes,
                 section_box,
-                &mut self.frame,
+                frame,
                 post_settings,
             )?;
+            if scale > 1 {
+                cpu_render::downsample_rgba8_box_filter(
+                    target,
+                    scale,
+                    supersample_frame.as_slice(),
+                    self.target,
+                    &mut self.frame,
+                );
+            }
             if result.submitted {
                 self.stats.gpu_submissions = self.stats.gpu_submissions.saturating_add(1);
             }
@@ -317,6 +351,20 @@ impl Renderer {
             }
             Ok(result)
         }
+    }
+
+    fn gpu_render_target(&self) -> Result<RasterTarget, RenderError> {
+        let scale = if self.target.backend == crate::diagnostics::Backend::HeadlessGpu {
+            self.supersample_factor
+        } else {
+            1
+        };
+        self.target
+            .scaled(scale)
+            .ok_or_else(|| RenderError::InvalidSurfaceSize {
+                width: self.target.width.saturating_mul(scale),
+                height: self.target.height.saturating_mul(scale),
+            })
     }
 
     fn prepared_state(&self, scene: &Scene) -> Result<&PreparedSceneState, RenderError> {

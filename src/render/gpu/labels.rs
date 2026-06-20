@@ -65,8 +65,10 @@ pub(super) struct LabelResources {
     atlas_texture: wgpu::Texture,
     atlas_bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
+    flat_pipeline: wgpu::RenderPipeline,
     #[allow(dead_code)]
     surface_pipeline: Option<wgpu::RenderPipeline>,
+    surface_flat_pipeline: Option<wgpu::RenderPipeline>,
     post_pipeline: wgpu::RenderPipeline,
     instance_count: u32,
 }
@@ -173,6 +175,15 @@ pub(super) fn create_resources(
         shader_for_format(descriptor.target_format),
         "scena.gpu_labels.pipeline",
     );
+    let flat_pipeline = create_pipeline(
+        device,
+        descriptor.target_format,
+        descriptor.output_bind_group_layout,
+        &atlas_layout,
+        None,
+        shader_for_format(descriptor.target_format),
+        "scena.gpu_labels.flat_pipeline",
+    );
     let surface_pipeline = descriptor.surface_format.map(|format| {
         create_pipeline(
             device,
@@ -184,12 +195,23 @@ pub(super) fn create_resources(
             "scena.gpu_labels.surface_pipeline",
         )
     });
+    let surface_flat_pipeline = descriptor.surface_format.map(|format| {
+        create_pipeline(
+            device,
+            format,
+            descriptor.output_bind_group_layout,
+            &atlas_layout,
+            None,
+            shader_for_format(format),
+            "scena.gpu_labels.surface_flat_pipeline",
+        )
+    });
     let post_pipeline = create_pipeline(
         device,
         POST_COLOR_FORMAT,
         descriptor.output_bind_group_layout,
         &atlas_layout,
-        descriptor.depth_compare,
+        None,
         ENCODED_SHADER,
         "scena.gpu_labels.post_pipeline",
     );
@@ -200,7 +222,9 @@ pub(super) fn create_resources(
         atlas_texture,
         atlas_bind_group,
         pipeline,
+        flat_pipeline,
         surface_pipeline,
+        surface_flat_pipeline,
         post_pipeline,
         instance_count: descriptor.labels.quads().len() as u32,
     }
@@ -251,9 +275,18 @@ pub(super) const fn pipeline(resources: &LabelResources) -> &wgpu::RenderPipelin
     &resources.pipeline
 }
 
+pub(super) const fn flat_pipeline(resources: &LabelResources) -> &wgpu::RenderPipeline {
+    &resources.flat_pipeline
+}
+
 #[allow(dead_code)]
 pub(super) fn surface_pipeline(resources: &LabelResources) -> Option<&wgpu::RenderPipeline> {
     resources.surface_pipeline.as_ref()
+}
+
+#[allow(dead_code)]
+pub(super) fn surface_flat_pipeline(resources: &LabelResources) -> Option<&wgpu::RenderPipeline> {
+    resources.surface_flat_pipeline.as_ref()
 }
 
 pub(super) const fn post_pipeline(resources: &LabelResources) -> &wgpu::RenderPipeline {

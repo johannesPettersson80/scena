@@ -2,8 +2,8 @@ use crate::diagnostics::RenderError;
 
 use super::super::RasterTarget;
 use super::depth;
-use super::pipeline::UnlitPipelines;
-use crate::render::AntiAliasing;
+use super::material_bindings::MaterialTextureBindingMode;
+use super::pipeline::{UnlitPipelines, create_unlit_pipeline_set};
 #[cfg(target_arch = "wasm32")]
 use crate::render::PostBloomConfig;
 
@@ -31,8 +31,60 @@ pub(super) fn resources_match(resources: &PostResources, target: RasterTarget) -
     resources.target == target
 }
 
-pub(super) fn scene_pipelines(resources: &PostResources) -> UnlitPipelines<'_> {
-    resources.scene_pipelines.refs()
+pub(super) fn scene_pipelines(resources: &PostResources, sample_count: u32) -> UnlitPipelines<'_> {
+    match sample_count {
+        4 => resources.scene_msaa4_pipelines.refs(),
+        8 => resources
+            .scene_msaa8_pipelines
+            .as_ref()
+            .expect("post MSAA8 pipelines must be prepared before encoding")
+            .refs(),
+        _ => resources.scene_pipelines.refs(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn ensure_scene_msaa8_pipelines(
+    adapter: &wgpu::Adapter,
+    device: &wgpu::Device,
+    resources: &mut PostResources,
+    target: RasterTarget,
+    output_bind_group_layout: &wgpu::BindGroupLayout,
+    material_bind_group_layout: &wgpu::BindGroupLayout,
+    draw_bind_group_layout: &wgpu::BindGroupLayout,
+    texture_binding_mode: MaterialTextureBindingMode,
+    depth_compare: Option<wgpu::CompareFunction>,
+) -> Result<(), RenderError> {
+    if resources.scene_msaa8_pipelines.is_some() {
+        return Ok(());
+    }
+    if !super::msaa::texture_format_supports_sample_count(device, adapter, scene_color_format(), 8)
+    {
+        return Err(RenderError::UnsupportedSampleCount {
+            backend: target.backend,
+            requested: 8,
+            maximum: super::msaa::max_supported_sample_count(
+                device,
+                adapter,
+                &[scene_color_format()],
+            ),
+        });
+    }
+    resources.scene_msaa8_pipelines = Some(create_unlit_pipeline_set(
+        device,
+        scene_color_format(),
+        output_bind_group_layout,
+        material_bind_group_layout,
+        draw_bind_group_layout,
+        texture_binding_mode,
+        depth_compare,
+        8,
+    ));
+    Ok(())
+}
+
+pub(super) const fn scene_color_format() -> wgpu::TextureFormat {
+    resources::POST_COLOR_FORMAT
 }
 
 pub(super) const fn scene_view(resources: &PostResources) -> &wgpu::TextureView {
@@ -128,7 +180,7 @@ pub(super) fn encode_chain(
         counts.bloom = 1;
     }
 
-    if matches!(settings.anti_aliasing, AntiAliasing::Fxaa) {
+    if settings.anti_aliasing.uses_post_fxaa() {
         write_uniform(
             queue,
             resources,
