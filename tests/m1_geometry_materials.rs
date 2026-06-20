@@ -1174,7 +1174,7 @@ fn prepare_with_assets_renders_line_material_as_screen_space_stroke() {
         "screen-space stroke should render a bright core: {luminance:?}"
     );
     assert!(
-        luminance.iter().any(|value| (1..180).contains(value)),
+        luminance.iter().any(|value| (1..254).contains(value)),
         "screen-space stroke should include antialiased edge coverage, not a hard 1px line: {luminance:?}"
     );
 }

@@ -12,6 +12,7 @@ use super::draw_common::{
     camera_position_uniform, identity_matrix, post_color_management_uniform, wgpu_clear_color,
 };
 use super::output::{OutputUniformUpload, encode_clipping_uniform, encode_output_uniform};
+use super::overlays::{OverlayPasses, encode_overlay_passes};
 use super::scene_color::{SceneColorPasses, encode_scene_color_passes};
 use super::shadow::{self, encode_shadow_caster_pass};
 use super::{
@@ -198,47 +199,19 @@ impl GpuDeviceState {
                 draw_submissions: &mut draw_submissions,
             },
         );
-        if let Some(stroke_resources) = resources.strokes.as_ref() {
-            let stroke_pipeline = if post_enabled {
-                strokes::post_pipeline(stroke_resources)
-            } else {
-                strokes::pipeline(stroke_resources)
-            };
-            strokes::encode_pass(
+        if !post_enabled {
+            encode_overlay_passes(
                 &mut encoder,
-                strokes::StrokePass {
+                OverlayPasses {
                     view: final_view,
-                    depth_view: resources
-                        .depth_prepass
-                        .as_ref()
-                        .map(|depth_prepass| &depth_prepass.view),
+                    depth_view: resources.depth_prepass.as_ref().map(|depth| &depth.view),
                     output_bind_group: &resources.output_bind_group,
                     draw_bind_group: &resources.draw_bind_group,
-                    resources: stroke_resources,
-                    pipeline: stroke_pipeline,
-                    label: "scena.gpu_strokes.offscreen_pass",
-                    draw_submissions: &mut draw_submissions,
-                },
-            );
-        }
-        if let Some(label_resources) = resources.labels.as_ref() {
-            let label_pipeline = if post_enabled {
-                labels::post_pipeline(label_resources)
-            } else {
-                labels::pipeline(label_resources)
-            };
-            labels::encode_pass(
-                &mut encoder,
-                labels::LabelPass {
-                    view: final_view,
-                    depth_view: resources
-                        .depth_prepass
-                        .as_ref()
-                        .map(|depth_prepass| &depth_prepass.view),
-                    output_bind_group: &resources.output_bind_group,
-                    resources: label_resources,
-                    pipeline: label_pipeline,
-                    label: "scena.gpu_labels.offscreen_pass",
+                    stroke_resources: resources.strokes.as_ref(),
+                    stroke_pipeline: resources.strokes.as_ref().map(strokes::pipeline),
+                    label_resources: resources.labels.as_ref(),
+                    label_pipeline: resources.labels.as_ref().map(labels::pipeline),
+                    label: "scena.gpu_overlay.offscreen_pass",
                     draw_submissions: &mut draw_submissions,
                 },
             );
@@ -254,6 +227,29 @@ impl GpuDeviceState {
                 resources.depth_prepass.as_ref(),
                 &mut draw_submissions,
             )?;
+            post::encode_blit_to_view(
+                &mut encoder,
+                post_resources,
+                output,
+                &resources.view,
+                post::output_blit_pipeline(post_resources),
+                &mut draw_submissions,
+            );
+            encode_overlay_passes(
+                &mut encoder,
+                OverlayPasses {
+                    view: &resources.view,
+                    depth_view: resources.depth_prepass.as_ref().map(|depth| &depth.view),
+                    output_bind_group: &resources.output_bind_group,
+                    draw_bind_group: &resources.draw_bind_group,
+                    stroke_resources: resources.strokes.as_ref(),
+                    stroke_pipeline: resources.strokes.as_ref().map(strokes::pipeline),
+                    label_resources: resources.labels.as_ref(),
+                    label_pipeline: resources.labels.as_ref().map(labels::pipeline),
+                    label: "scena.gpu_overlay.post_final_offscreen_pass",
+                    draw_submissions: &mut draw_submissions,
+                },
+            );
             if let Some(surface_view) = surface_view.as_ref() {
                 let Some(surface_blit_pipeline) = post::surface_blit_pipeline(post_resources)
                 else {
@@ -269,13 +265,62 @@ impl GpuDeviceState {
                     surface_blit_pipeline,
                     &mut draw_submissions,
                 );
+                let stroke_pipeline = match resources.strokes.as_ref() {
+                    Some(stroke_resources) => {
+                        Some(strokes::surface_pipeline(stroke_resources).ok_or(
+                            RenderError::GpuResourcesNotPrepared {
+                                backend: target.backend,
+                            },
+                        )?)
+                    }
+                    None => None,
+                };
+                let label_pipeline = match resources.labels.as_ref() {
+                    Some(label_resources) => {
+                        Some(labels::surface_pipeline(label_resources).ok_or(
+                            RenderError::GpuResourcesNotPrepared {
+                                backend: target.backend,
+                            },
+                        )?)
+                    }
+                    None => None,
+                };
+                encode_overlay_passes(
+                    &mut encoder,
+                    OverlayPasses {
+                        view: surface_view,
+                        depth_view: resources.depth_prepass.as_ref().map(|depth| &depth.view),
+                        output_bind_group: &resources.output_bind_group,
+                        draw_bind_group: &resources.draw_bind_group,
+                        stroke_resources: resources.strokes.as_ref(),
+                        stroke_pipeline,
+                        label_resources: resources.labels.as_ref(),
+                        label_pipeline,
+                        label: "scena.gpu_overlay.post_final_surface_pass",
+                        draw_submissions: &mut draw_submissions,
+                    },
+                );
             }
-            post::copy_output_to_buffer(
-                &mut encoder,
-                post_resources,
-                output,
-                &resources.readback,
-                resources.padded_bytes_per_row,
+            encoder.copy_texture_to_buffer(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &resources.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyBufferInfo {
+                    buffer: &resources.readback,
+                    layout: wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(resources.padded_bytes_per_row),
+                        rows_per_image: None,
+                    },
+                },
+                wgpu::Extent3d {
+                    width: target.width,
+                    height: target.height,
+                    depth_or_array_layers: 1,
+                },
             );
             Some((output, post_counts))
         } else {
@@ -316,19 +361,49 @@ impl GpuDeviceState {
                         backend: target.backend,
                     });
                 };
-                strokes::encode_pass(
+                let label_pipeline = match resources.labels.as_ref() {
+                    Some(label_resources) => {
+                        Some(labels::surface_pipeline(label_resources).ok_or(
+                            RenderError::GpuResourcesNotPrepared {
+                                backend: target.backend,
+                            },
+                        )?)
+                    }
+                    None => None,
+                };
+                encode_overlay_passes(
                     &mut encoder,
-                    strokes::StrokePass {
+                    OverlayPasses {
                         view: surface_view,
-                        depth_view: resources
-                            .depth_prepass
-                            .as_ref()
-                            .map(|depth_prepass| &depth_prepass.view),
+                        depth_view: resources.depth_prepass.as_ref().map(|depth| &depth.view),
                         output_bind_group: &resources.output_bind_group,
                         draw_bind_group: &resources.draw_bind_group,
-                        resources: stroke_resources,
-                        pipeline: surface_pipeline,
-                        label: "scena.gpu_strokes.surface_pass",
+                        stroke_resources: Some(stroke_resources),
+                        stroke_pipeline: Some(surface_pipeline),
+                        label_resources: resources.labels.as_ref(),
+                        label_pipeline,
+                        label: "scena.gpu_overlay.surface_pass",
+                        draw_submissions: &mut draw_submissions,
+                    },
+                );
+            } else if let Some(label_resources) = resources.labels.as_ref() {
+                let Some(surface_pipeline) = labels::surface_pipeline(label_resources) else {
+                    return Err(RenderError::GpuResourcesNotPrepared {
+                        backend: target.backend,
+                    });
+                };
+                encode_overlay_passes(
+                    &mut encoder,
+                    OverlayPasses {
+                        view: surface_view,
+                        depth_view: resources.depth_prepass.as_ref().map(|depth| &depth.view),
+                        output_bind_group: &resources.output_bind_group,
+                        draw_bind_group: &resources.draw_bind_group,
+                        stroke_resources: None,
+                        stroke_pipeline: None,
+                        label_resources: Some(label_resources),
+                        label_pipeline: Some(surface_pipeline),
+                        label: "scena.gpu_overlay.surface_pass",
                         draw_submissions: &mut draw_submissions,
                     },
                 );

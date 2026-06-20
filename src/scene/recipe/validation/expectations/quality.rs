@@ -12,6 +12,8 @@ const QUALITY_TEXT_FIELDS: &[&str] = &[
     "min_ink_coverage",
     "max_ink_isolation",
     "min_intermediate_edge_fraction",
+    "max_background_luminance_range",
+    "max_background_mean_delta",
 ];
 const QUALITY_LINE_FIELDS: &[&str] = &["min_intermediate_edge_fraction", "max_straightness_error"];
 pub(super) const REFERENCE_FIELDS: &[&str] = &["id", "image", "metric", "mean_max", "min_ssim"];

@@ -1,8 +1,9 @@
 use crate::render::prepare::PreparedLabelAtlas;
 
-const SHADER: &str = include_str!("labels.wgsl");
+const FINAL_SHADER: &str = include_str!("labels.wgsl");
+const ENCODED_SHADER: &str = include_str!("labels_encoded.wgsl");
 const QUAD_VERTEX_BYTE_LEN: usize = 2 * std::mem::size_of::<f32>();
-const INSTANCE_FLOATS: usize = 22;
+const INSTANCE_FLOATS: usize = 23;
 const INSTANCE_BYTE_LEN: usize = INSTANCE_FLOATS * std::mem::size_of::<f32>();
 const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const QUAD_VERTICES: [[f32; 2]; 4] = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
@@ -11,7 +12,7 @@ const QUAD_ATTRIBUTES: [wgpu::VertexAttribute; 1] = [wgpu::VertexAttribute {
     offset: 0,
     shader_location: 0,
 }];
-const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 7] = [
+const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 8] = [
     wgpu::VertexAttribute {
         format: wgpu::VertexFormat::Float32x3,
         offset: 0,
@@ -46,6 +47,11 @@ const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 7] = [
         format: wgpu::VertexFormat::Float32x4,
         offset: 18 * std::mem::size_of::<f32>() as u64,
         shader_location: 7,
+    },
+    wgpu::VertexAttribute {
+        format: wgpu::VertexFormat::Float32,
+        offset: 22 * std::mem::size_of::<f32>() as u64,
+        shader_location: 8,
     },
 ];
 
@@ -164,6 +170,7 @@ pub(super) fn create_resources(
         descriptor.output_bind_group_layout,
         &atlas_layout,
         descriptor.depth_compare,
+        shader_for_format(descriptor.target_format),
         "scena.gpu_labels.pipeline",
     );
     let surface_pipeline = descriptor.surface_format.map(|format| {
@@ -173,6 +180,7 @@ pub(super) fn create_resources(
             descriptor.output_bind_group_layout,
             &atlas_layout,
             descriptor.depth_compare,
+            shader_for_format(format),
             "scena.gpu_labels.surface_pipeline",
         )
     });
@@ -182,6 +190,7 @@ pub(super) fn create_resources(
         descriptor.output_bind_group_layout,
         &atlas_layout,
         descriptor.depth_compare,
+        ENCODED_SHADER,
         "scena.gpu_labels.post_pipeline",
     );
     LabelResources {
@@ -273,11 +282,12 @@ fn create_pipeline(
     output_bind_group_layout: &wgpu::BindGroupLayout,
     atlas_bind_group_layout: &wgpu::BindGroupLayout,
     depth_compare: Option<wgpu::CompareFunction>,
+    shader_source: &'static str,
     label: &'static str,
 ) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("scena.gpu_labels.shader"),
-        source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+        source: wgpu::ShaderSource::Wgsl(shader_source.into()),
     });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("scena.gpu_labels.pipeline_layout"),
@@ -333,6 +343,13 @@ fn create_pipeline(
     })
 }
 
+const fn shader_for_format(format: wgpu::TextureFormat) -> &'static str {
+    match format {
+        wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb => FINAL_SHADER,
+        _ => ENCODED_SHADER,
+    }
+}
+
 fn encode_quad_vertices() -> Vec<u8> {
     let mut bytes = Vec::with_capacity(QUAD_VERTICES.len() * QUAD_VERTEX_BYTE_LEN);
     for vertex in QUAD_VERTICES {
@@ -370,6 +387,7 @@ fn encode_instances(labels: &PreparedLabelAtlas) -> Vec<u8> {
             color.g,
             color.b,
             color.a,
+            if quad.solid_coverage() { 1.0 } else { 0.0 },
         ] {
             bytes.extend_from_slice(&value.to_ne_bytes());
         }

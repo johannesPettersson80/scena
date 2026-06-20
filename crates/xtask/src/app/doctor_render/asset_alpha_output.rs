@@ -199,11 +199,14 @@ pub(crate) fn check_render_alpha_contracts(root: &Path, findings: &mut Vec<Findi
         findings,
         "ARCH-RENDER-ALPHA",
         "src/render.rs",
-        &[
-            "linear_frame: Option<Vec<Color>>",
-            "cpu::clear_cpu",
-            "cpu::draw_primitive_cpu",
-        ],
+        &["linear_frame: Option<Vec<Color>>"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-ALPHA",
+        "src/render/cpu_render.rs",
+        &["cpu::clear_cpu", "cpu::draw_primitive_cpu"],
     );
     require_contains(
         root,
@@ -371,6 +374,17 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
             "oit_scratch: Vec<cpu::OitAccumPixel>",
             "order_independent_transparency: Option<OrderIndependentTransparencyConfig>",
             "screen_space_ambient_occlusion: Option<ScreenSpaceAmbientOcclusionConfig>",
+            "self.stats.ambient_occlusion_passes = gpu_result.post_counts.ambient_occlusion",
+            "self.stats.bloom_passes = gpu_result.post_counts.bloom",
+            "self.stats.fxaa_passes = gpu_result.post_counts.fxaa",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-FXAA-OUTPUT",
+        "src/render/cpu_render.rs",
+        &[
             "cpu::draw_order_independent_transparency_cpu(",
             "cpu::resolve_order_independent_transparency_cpu(",
             "output::apply_screen_space_ambient_occlusion_rgba8(",

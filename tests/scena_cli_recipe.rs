@@ -904,45 +904,67 @@ fn write_label_quality_recipe(
     background: &str,
     min_intermediate_edge_fraction: f64,
 ) -> (PathBuf, PathBuf) {
+    write_label_quality_recipe_with_antialiasing(
+        dir,
+        name,
+        background,
+        min_intermediate_edge_fraction,
+        None,
+    )
+}
+
+#[cfg(feature = "scene-host")]
+fn write_label_quality_recipe_with_antialiasing(
+    dir: &Path,
+    name: &str,
+    background: &str,
+    min_intermediate_edge_fraction: f64,
+    anti_aliasing: Option<&str>,
+) -> (PathBuf, PathBuf) {
     let recipe_path = dir.join(format!("{name}.recipe.json"));
     let png_path = dir.join(format!("{name}.png"));
     let font_path = dir.join("dejavu.ttf");
     fs::copy(system_test_font_path(), &font_path).expect("test font copied into recipe sandbox");
-    fs::write(
-        &recipe_path,
-        serde_json::to_string_pretty(&json!({
-            "schema": "scena.scene_recipe.v1",
-            "fonts": [
-                { "id": "dejavu", "uri": path_str(&font_path) }
-            ],
-            "labels": [{
-                "id": "font_label",
-                "text": "BATTERY",
-                "font": "dejavu",
-                "size_px": 42.0,
-                "color": "#FFFFFF",
-                "background": background,
-                "transform": { "kind": "trs", "translation": [0.0, 0.0, 0.0] }
-            }],
-            "cameras": [{
-                "id": "main",
-                "kind": "perspective",
-                "active": true,
-                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 3.5], "target": "font_label" }
-            }],
-            "capture": { "width": 220, "height": 120 },
-            "expect": {
-                "expect_quality": {
-                    "profile": "documentation",
-                    "text": {
-                        "min_ink_coverage": 0.06,
-                        "max_ink_isolation": 0.02,
-                        "min_intermediate_edge_fraction": min_intermediate_edge_fraction
-                    }
+    let mut recipe = json!({
+        "schema": "scena.scene_recipe.v1",
+        "fonts": [
+            { "id": "dejavu", "uri": path_str(&font_path) }
+        ],
+        "labels": [{
+            "id": "font_label",
+            "text": "BATTERY",
+            "font": "dejavu",
+            "size_px": 42.0,
+            "color": "#FFFFFF",
+            "background": background,
+            "transform": { "kind": "trs", "translation": [0.0, 0.0, 0.0] }
+        }],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "active": true,
+            "transform": { "kind": "look_at", "eye": [0.0, 0.0, 3.5], "target": "font_label" }
+        }],
+        "capture": { "width": 220, "height": 120 },
+        "expect": {
+            "expect_quality": {
+                "profile": "documentation",
+                "text": {
+                    "min_ink_coverage": 0.06,
+                    "max_ink_isolation": 0.02,
+                    "min_intermediate_edge_fraction": min_intermediate_edge_fraction,
+                    "max_background_luminance_range": 0.03,
+                    "max_background_mean_delta": 0.03
                 }
             }
-        }))
-        .expect("label quality recipe serializes"),
+        }
+    });
+    if let Some(anti_aliasing) = anti_aliasing {
+        recipe["render"] = json!({ "anti_aliasing": anti_aliasing });
+    }
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&recipe).expect("label quality recipe serializes"),
     )
     .expect("label quality recipe writes");
     (recipe_path, png_path)
@@ -1111,6 +1133,84 @@ fn scena_recipe_render_dark_label_background_matches_cpu_and_gpu_over_full_regio
         diff.max_channel_delta <= 220 && diff.mean_channel_delta <= 8.0,
         "CPU and GPU recipe renders must match over the full dark label region including the background pill, diff={diff:?}, cpu_luma={cpu_luma:.3}, gpu_luma={gpu_luma:.3}, region={region:?}"
     );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_overlay_label_region_is_not_changed_by_fxaa_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-overlay-final-pass");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (none_recipe, none_png) = write_label_quality_recipe_with_antialiasing(
+            &dir,
+            &format!("overlay-{backend}-none"),
+            "#1D2733",
+            0.01,
+            Some("none"),
+        );
+        let (fxaa_recipe, fxaa_png) = write_label_quality_recipe_with_antialiasing(
+            &dir,
+            &format!("overlay-{backend}-fxaa"),
+            "#1D2733",
+            0.01,
+            Some("fxaa"),
+        );
+
+        for (mode, recipe_path, png_path) in [
+            ("none", &none_recipe, &none_png),
+            ("fxaa", &fxaa_recipe, &fxaa_png),
+        ] {
+            let mut args = vec!["recipe", "render", path_str(recipe_path)];
+            if use_gpu {
+                args.push("--gpu");
+            }
+            args.extend(["--introspect", "--out", path_str(png_path)]);
+            let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+            if use_gpu {
+                configure_command_for_lavapipe(&mut command);
+            }
+            let output = command
+                .args(args)
+                .output()
+                .expect("scena overlay final-pass render command runs");
+            assert!(
+                output.status.success(),
+                "{backend} {mode} overlay render should succeed, stdout={}, stderr={}",
+                String::from_utf8_lossy(&output.stdout),
+                stderr(&output)
+            );
+            let report = json_report(&output);
+            if use_gpu {
+                assert_eq!(
+                    report["capabilities"]["backend"], "headless_gpu",
+                    "GPU overlay proof must use the GPU backend, not a fallback: {report:#}"
+                );
+            }
+        }
+
+        let none = decode_png_rgba8(&none_png);
+        let fxaa = decode_png_rgba8(&fxaa_png);
+        assert_eq!((none.width, none.height), (fxaa.width, fxaa.height));
+        let region = expected_label_background_region(none.width, none.height);
+        let diff = frame_delta_in_region(&none.rgba8, &fxaa.rgba8, none.width, region);
+        fs::write(
+            dir.join(format!("overlay-{backend}-aa-delta.json")),
+            format!(
+                "{{\n  \"schema\": \"scena.overlay_final_pass_delta.v1\",\n  \"backend\": \"{}\",\n  \"max_channel_delta\": {},\n  \"mean_channel_delta\": {:.3},\n  \"region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}\n}}\n",
+                backend,
+                diff.max_channel_delta,
+                diff.mean_channel_delta,
+                region.x,
+                region.y,
+                region.width,
+                region.height
+            ),
+        )
+        .expect("overlay final-pass delta artifact writes");
+        assert!(
+            diff.max_channel_delta <= 1 && diff.mean_channel_delta <= 0.05,
+            "final overlay labels must not be altered by FXAA on {backend}; diff={diff:?}, region={region:?}"
+        );
+    }
 }
 
 #[cfg(feature = "scene-host")]

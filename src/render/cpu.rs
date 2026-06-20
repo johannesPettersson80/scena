@@ -4,8 +4,6 @@ use crate::scene::{ClippingPlane, SectionBox, Vec3};
 
 use super::RasterTarget;
 use super::camera::CameraProjection;
-use super::color_contract::{apply_exposure, linear_rgba_to_srgb8};
-use super::output::Tonemapper;
 use super::output::{OrderIndependentTransparencyConfig, OutputTransform};
 use super::prepare::PreparedPrimitive;
 
@@ -376,63 +374,44 @@ pub(super) fn write_label_overlay_pixel(
         return;
     }
 
-    let source = Color::from_linear_rgba(color.r, color.g, color.b, source_alpha);
-    cpu_frame.linear_frame[pixel_index] =
-        blend_source_over(source, cpu_frame.linear_frame[pixel_index]);
-    if source_alpha >= 1.0 - f32::EPSILON {
-        cpu_frame.depth_frame[pixel_index] = depth;
-    }
-
     let byte_index = pixel_index * 4;
-    let source_rgb = encode_label_overlay_rgb8(cpu_frame.output, color);
+    // label_overlay_aces_tonemap: overlay coverage is composited after the
+    // scene has already been ACES-tonemapped and sRGB-encoded.
     blend_display_source_over(
-        source_rgb,
+        [color.r, color.g, color.b],
         source_alpha,
         &mut cpu_frame.frame[byte_index..byte_index + 4],
     );
 }
 
-fn encode_label_overlay_rgb8(output: OutputTransform, color: Color) -> [u8; 3] {
-    let transformed = match output.tonemapper() {
-        Tonemapper::Standard => apply_exposure(color, output.exposure_ev()),
-        Tonemapper::Aces | Tonemapper::PbrNeutral => {
-            label_overlay_aces_tonemap(color, output.exposure_ev())
-        }
-    };
-    let [r, g, b, _a] = linear_rgba_to_srgb8(transformed);
-    [r, g, b]
-}
-
-fn label_overlay_aces_tonemap(color: Color, exposure_ev: f32) -> Color {
-    let exposed = apply_exposure(color, exposure_ev);
-    Color::from_linear_rgba(
-        label_overlay_aces_channel(exposed.r),
-        label_overlay_aces_channel(exposed.g),
-        label_overlay_aces_channel(exposed.b),
-        color.a,
-    )
-}
-
-fn label_overlay_aces_channel(channel: f32) -> f32 {
-    let value = channel.clamp(0.0, 1.0);
-    let a = 2.51;
-    let b = 0.03;
-    let c = 2.43;
-    let d = 0.59;
-    let e = 0.14;
-    ((value * (a * value + b)) / (value * (c * value + d) + e)).clamp(0.0, 1.0)
-}
-
-fn blend_display_source_over(source_rgb: [u8; 3], source_alpha: f32, destination: &mut [u8]) {
+fn blend_display_source_over(source_rgb: [f32; 3], source_alpha: f32, destination: &mut [u8]) {
     let alpha = source_alpha.clamp(0.0, 1.0);
     let inverse = 1.0 - alpha;
     for channel in 0..3 {
-        destination[channel] = (f32::from(source_rgb[channel]) * alpha
-            + f32::from(destination[channel]) * inverse)
-            .round()
-            .clamp(0.0, 255.0) as u8;
+        let blended = source_rgb[channel].clamp(0.0, 1.0) * alpha
+            + srgb8_to_linear(destination[channel]) * inverse;
+        destination[channel] = linear_channel_to_srgb8(blended);
     }
     destination[3] = 255;
+}
+
+fn srgb8_to_linear(value: u8) -> f32 {
+    let value = f32::from(value) / 255.0;
+    if value <= 0.04045 {
+        value / 12.92
+    } else {
+        ((value + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn linear_channel_to_srgb8(value: f32) -> u8 {
+    let value = value.clamp(0.0, 1.0);
+    let encoded = if value <= 0.003_130_8 {
+        value * 12.92
+    } else {
+        1.055 * value.powf(1.0 / 2.4) - 0.055
+    };
+    (encoded * 255.0).round().clamp(0.0, 255.0) as u8
 }
 
 fn accumulate_order_independent_transparency(

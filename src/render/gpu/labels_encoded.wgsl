@@ -76,7 +76,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     if coverage <= 0.0 {
         discard;
     }
-    return vec4<f32>(clamp(in.color.rgb, vec3<f32>(0.0), vec3<f32>(1.0)), in.color.a * coverage);
+    return vec4<f32>(linear_to_srgb(in.color.rgb), in.color.a * coverage);
 }
 
 fn manual_bilinear_coverage(uv: vec2<f32>) -> f32 {
@@ -96,4 +96,20 @@ fn manual_bilinear_coverage(uv: vec2<f32>) -> f32 {
     let top = mix(c00, c10, frac.x);
     let bottom = mix(c01, c11, frac.x);
     return clamp(mix(top, bottom, frac.y), 0.0, 1.0);
+}
+
+fn linear_to_srgb(color: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(
+        linear_to_srgb_channel(color.r),
+        linear_to_srgb_channel(color.g),
+        linear_to_srgb_channel(color.b),
+    );
+}
+
+fn linear_to_srgb_channel(channel: f32) -> f32 {
+    let value = clamp(channel, 0.0, 1.0);
+    if value <= 0.0031308 {
+        return value * 12.92;
+    }
+    return 1.055 * pow(value, 1.0 / 2.4) - 0.055;
 }

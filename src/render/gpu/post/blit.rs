@@ -1,6 +1,7 @@
 use super::create_post_pipeline;
 
 const SHADER: &str = include_str!("blit.wgsl");
+const SRGB_SHADER: &str = include_str!("blit_srgb.wgsl");
 
 pub(super) fn create_surface_pipeline(
     device: &wgpu::Device,
@@ -11,6 +12,20 @@ pub(super) fn create_surface_pipeline(
         device,
         "scena.gpu_post.surface_blit_pipeline",
         SHADER,
+        bind_group_layout,
+        format,
+    )
+}
+
+pub(super) fn create_srgb_pipeline(
+    device: &wgpu::Device,
+    bind_group_layout: &wgpu::BindGroupLayout,
+    format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    create_post_pipeline(
+        device,
+        "scena.gpu_post.srgb_blit_pipeline",
+        SRGB_SHADER,
         bind_group_layout,
         format,
     )

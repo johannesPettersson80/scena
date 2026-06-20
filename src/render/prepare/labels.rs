@@ -103,22 +103,25 @@ fn prepare_pixel_label_billboard(
     };
 
     if let Some(background) = inputs.label.background() {
-        quads.push(PreparedLabelQuad::new(
-            Some(inputs.node),
-            frame.anchor,
-            frame.right,
-            frame.up,
-            frame.world_units_per_px,
-            [
-                -half_width - padding,
-                -half_height - padding,
-                half_width + padding,
-                half_height + padding,
-            ],
-            inputs.solid.uv_rect(),
-            background,
-            Color::WHITE,
-        ));
+        quads.push(
+            PreparedLabelQuad::new(
+                Some(inputs.node),
+                frame.anchor,
+                frame.right,
+                frame.up,
+                frame.world_units_per_px,
+                [
+                    -half_width - padding,
+                    -half_height - padding,
+                    half_width + padding,
+                    half_height + padding,
+                ],
+                inputs.solid.uv_rect(),
+                background,
+                Color::WHITE,
+            )
+            .with_solid_coverage(),
+        );
     }
 
     let glyphs = inputs.label.glyph_rasters();
@@ -178,17 +181,20 @@ fn prepare_fallback_world_label(
     let half_width = metrics.width_px * 0.5;
     let half_height = metrics.height_px * 0.5;
     let world_units_per_px = 1.0 / (120.0 * target_scale);
-    quads.push(PreparedLabelQuad::new(
-        Some(node),
-        center,
-        Vec3::new(1.0, 0.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-        world_units_per_px,
-        [-half_width, -half_height, half_width, half_height],
-        solid.uv_rect(),
-        label.color(),
-        Color::WHITE,
-    ));
+    quads.push(
+        PreparedLabelQuad::new(
+            Some(node),
+            center,
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            world_units_per_px,
+            [-half_width, -half_height, half_width, half_height],
+            solid.uv_rect(),
+            label.color(),
+            Color::WHITE,
+        )
+        .with_solid_coverage(),
+    );
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -84,6 +84,7 @@ pub(in crate::render::gpu) struct PostResources {
     pub(in crate::render::gpu) ssao_bind_group_layout: wgpu::BindGroupLayout,
     pub(in crate::render::gpu) texture_bind_groups: [wgpu::BindGroup; 3],
     pub(in crate::render::gpu) scene_pipelines: MeshPipelineSet,
+    pub(in crate::render::gpu) output_blit_pipeline: wgpu::RenderPipeline,
     pub(in crate::render::gpu) surface_blit_pipeline: Option<wgpu::RenderPipeline>,
     #[allow(dead_code)]
     pub(in crate::render::gpu) surface_fxaa_pipeline: Option<wgpu::RenderPipeline>,

@@ -365,6 +365,7 @@ pub(in crate::render) struct PreparedLabelQuad {
     uv_rect: [f32; 4],
     color: Color,
     tint: Color,
+    solid_coverage: bool,
     original_quad_index: u32,
 }
 
@@ -391,8 +392,14 @@ impl PreparedLabelQuad {
             uv_rect,
             color,
             tint,
+            solid_coverage: false,
             original_quad_index: 0,
         }
+    }
+
+    pub(in crate::render) const fn with_solid_coverage(mut self) -> Self {
+        self.solid_coverage = true;
+        self
     }
 
     pub(in crate::render) const fn with_original_quad_index(
@@ -429,6 +436,10 @@ impl PreparedLabelQuad {
 
     pub(in crate::render) const fn uv_rect(&self) -> [f32; 4] {
         self.uv_rect
+    }
+
+    pub(in crate::render) const fn solid_coverage(&self) -> bool {
+        self.solid_coverage
     }
 
     pub(in crate::render) fn set_tint(&mut self, tint: Color) {

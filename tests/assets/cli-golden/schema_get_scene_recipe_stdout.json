@@ -138,6 +138,8 @@
         },
         "profile": "documentation",
         "text": {
+          "max_background_luminance_range": 0.03,
+          "max_background_mean_delta": 0.03,
           "max_ink_isolation": 0.01,
           "min_ink_coverage": 0.05,
           "min_intermediate_edge_fraction": 0.02

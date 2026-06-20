@@ -27,6 +27,7 @@ mod material_uniform;
 mod material_upload;
 mod materials;
 mod output;
+mod overlays;
 mod pipeline;
 mod post;
 mod prepare_resources;

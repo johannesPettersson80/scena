@@ -120,17 +120,20 @@ pub(crate) fn verify_recipe_expectations(
             .as_ref()
             .and_then(|quality| quality.text)
         {
-            let label_regions =
-                host.label_quality_regions(capture.descriptor.width, capture.descriptor.height);
-            for (index, region) in label_regions.into_iter().enumerate() {
-                quality.checks.extend(scena::evaluate_label_region_quality(
-                    &format!("expect_quality.text.label[{index}]"),
-                    &capture.rgba8,
-                    capture.descriptor.width,
-                    capture.descriptor.height,
-                    region,
-                    text,
-                ));
+            let label_targets =
+                host.label_quality_targets(capture.descriptor.width, capture.descriptor.height);
+            for (index, target) in label_targets.into_iter().enumerate() {
+                quality
+                    .checks
+                    .extend(scena::evaluate_label_region_quality_with_background(
+                        &format!("expect_quality.text.label[{index}]"),
+                        &capture.rgba8,
+                        capture.descriptor.width,
+                        capture.descriptor.height,
+                        target.region,
+                        text,
+                        target.background_srgb8,
+                    ));
             }
         }
         if let Some(line) = expect

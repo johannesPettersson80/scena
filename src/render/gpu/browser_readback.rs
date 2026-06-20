@@ -7,6 +7,7 @@ use super::material_bindings::MaterialTextureBindingMode;
 use super::materials::MaterialResources;
 use super::pipeline::{BYTES_PER_PIXEL, MeshPipelineSet, create_unlit_pipeline_set};
 use super::pipeline::{ColorLoad, DrawFilter, UnlitPass, encode_unlit_pass};
+use super::strokes::{self, StrokeResources};
 use super::transmission::TransmissionResources;
 use super::vertices::PrimitiveDrawBatch;
 
@@ -82,6 +83,7 @@ pub(super) struct BrowserReadbackPass<'a> {
     pub(super) opaque_output_bind_group: &'a wgpu::BindGroup,
     pub(super) draw_bind_group: &'a wgpu::BindGroup,
     pub(super) material_resources: &'a MaterialResources,
+    pub(super) stroke_resources: Option<&'a StrokeResources>,
     pub(super) label_resources: Option<&'a LabelResources>,
     pub(super) draw_batches: &'a [PrimitiveDrawBatch],
     pub(super) instance_batches: &'a [InstanceDrawBatch],
@@ -175,6 +177,21 @@ pub(super) fn encode_browser_readback_pass(
                 color_load: ColorLoad::Clear(pass.clear_color),
                 draw_filter: DrawFilter::All,
                 label: "scena.browser.proof_readback_pass",
+                draw_submissions: &mut *draw_submissions,
+            },
+        );
+    }
+    if let Some(stroke_resources) = pass.stroke_resources {
+        strokes::encode_pass(
+            encoder,
+            strokes::StrokePass {
+                view: &pass.readback.view,
+                depth_view: pass.depth_view,
+                output_bind_group: pass.output_bind_group,
+                draw_bind_group: pass.draw_bind_group,
+                resources: stroke_resources,
+                pipeline: strokes::post_pipeline(stroke_resources),
+                label: "scena.browser.proof_stroke_readback_pass",
                 draw_submissions: &mut *draw_submissions,
             },
         );

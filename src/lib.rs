@@ -142,11 +142,13 @@ pub use render::introspection::{
 #[cfg(feature = "inspection")]
 pub use render::quality::{
     RENDER_QUALITY_SCHEMA_V1, ReferenceQualityMetrics, RenderQualityCheckV1,
-    RenderQualityFrameMetrics, RenderQualityLabelMetrics, RenderQualityLineMetrics,
-    RenderQualityProfile, RenderQualityRegion, RenderQualityRegionV1, RenderQualityReportV1,
-    RenderQualityRgba8Input, RenderQualitySummaryV1, evaluate_label_region_quality,
+    RenderQualityFrameMetrics, RenderQualityLabelBackgroundMetrics, RenderQualityLabelMetrics,
+    RenderQualityLineMetrics, RenderQualityProfile, RenderQualityRegion, RenderQualityRegionV1,
+    RenderQualityReportV1, RenderQualityRgba8Input, RenderQualitySummaryV1,
+    evaluate_label_region_quality, evaluate_label_region_quality_with_background,
     evaluate_line_region_quality, evaluate_render_quality, evaluate_render_quality_rgba8,
-    frame_metrics, label_metrics, line_metrics, reference_quality_metrics, ssim_grayscale,
+    frame_metrics, label_background_metrics, label_metrics, line_metrics,
+    reference_quality_metrics, ssim_grayscale,
 };
 #[cfg(feature = "inspection")]
 pub use render::visibility_diagnosis::{

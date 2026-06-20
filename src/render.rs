@@ -12,6 +12,7 @@ mod camera;
 mod color_contract;
 mod cpu;
 mod cpu_labels;
+mod cpu_render;
 mod cpu_strokes;
 mod culling;
 mod environment_cache;
@@ -153,7 +154,7 @@ impl Renderer {
         let mut auto_exposure_attempted = false;
         let mut gpu_draw_submissions = 0;
         loop {
-            let gpu_post_counts = if self.gpu.is_some() {
+            if self.gpu.is_some() {
                 let (clipping_planes, section_box) = {
                     let prepared = self.prepared_state(scene)?;
                     (prepared.clipping_planes.clone(), prepared.section_box)
@@ -162,125 +163,11 @@ impl Renderer {
                     self.draw_gpu(&camera_projection, &clipping_planes, section_box)?;
                 gpu_draw_submissions = gpu_result.draw_submissions;
                 self.stats.order_independent_transparency_passes = 0;
-                Some(gpu_result.post_counts)
+                self.stats.ambient_occlusion_passes = gpu_result.post_counts.ambient_occlusion;
+                self.stats.bloom_passes = gpu_result.post_counts.bloom;
+                self.stats.fxaa_passes = gpu_result.post_counts.fxaa;
             } else {
-                let (primitives, strokes, labels, clipping_planes, section_box) = {
-                    let prepared = self.prepared_state(scene)?;
-                    (
-                        prepared.primitives.clone(),
-                        prepared.strokes.clone(),
-                        prepared.labels.clone(),
-                        prepared.clipping_planes.clone(),
-                        prepared.section_box,
-                    )
-                };
-                let linear_frame = self
-                    .linear_frame
-                    .as_mut()
-                    .expect("CPU renderer owns a linear accumulator");
-                let depth_frame = self
-                    .depth_frame
-                    .as_mut()
-                    .expect("CPU renderer owns a depth buffer");
-                let mut cpu_frame = cpu::CpuFrame::new(
-                    self.target,
-                    self.output,
-                    linear_frame,
-                    depth_frame,
-                    &mut self.frame,
-                );
-                cpu::clear_cpu(&mut cpu_frame, self.background_color);
-                self.stats.order_independent_transparency_passes =
-                    if let Some(config) = self.order_independent_transparency {
-                        cpu::clear_order_independent_transparency(&mut self.oit_scratch);
-                        for primitive in &primitives {
-                            if !primitive.gpu_triangle_path() {
-                                continue;
-                            }
-                            if cpu::primitive_needs_order_independent_transparency(primitive) {
-                                cpu::draw_order_independent_transparency_cpu(
-                                    &mut cpu_frame,
-                                    primitive,
-                                    &clipping_planes,
-                                    section_box,
-                                    &camera_projection,
-                                    &mut self.oit_scratch,
-                                    config,
-                                );
-                            } else {
-                                cpu::draw_primitive_cpu(
-                                    &mut cpu_frame,
-                                    primitive,
-                                    &clipping_planes,
-                                    section_box,
-                                    &camera_projection,
-                                );
-                            }
-                        }
-                        cpu::resolve_order_independent_transparency_cpu(
-                            &mut cpu_frame,
-                            &self.oit_scratch,
-                        )
-                    } else {
-                        for primitive in &primitives {
-                            if !primitive.gpu_triangle_path() {
-                                continue;
-                            }
-                            cpu::draw_primitive_cpu(
-                                &mut cpu_frame,
-                                primitive,
-                                &clipping_planes,
-                                section_box,
-                                &camera_projection,
-                            );
-                        }
-                        0
-                    };
-                cpu_strokes::draw_overlay_layers_cpu(
-                    &mut cpu_frame,
-                    &strokes,
-                    &labels,
-                    &clipping_planes,
-                    section_box,
-                    &camera_projection,
-                );
-                None
-            };
-            if let Some(post_counts) = gpu_post_counts {
-                self.stats.ambient_occlusion_passes = post_counts.ambient_occlusion;
-                self.stats.bloom_passes = post_counts.bloom;
-                self.stats.fxaa_passes = post_counts.fxaa;
-            } else {
-                self.stats.ambient_occlusion_passes = match (
-                    self.screen_space_ambient_occlusion,
-                    self.depth_frame.as_ref(),
-                ) {
-                    (Some(config), Some(depth_frame)) => {
-                        output::apply_screen_space_ambient_occlusion_rgba8(
-                            self.target,
-                            &mut self.frame,
-                            depth_frame,
-                            config,
-                        )
-                    }
-                    _ => 0,
-                };
-                self.stats.bloom_passes = self.bloom.map_or(0, |bloom| {
-                    output::apply_bloom_rgba8(
-                        self.target,
-                        &mut self.frame,
-                        &mut self.bloom_scratch,
-                        bloom,
-                    )
-                });
-                self.stats.fxaa_passes = match self.anti_aliasing {
-                    AntiAliasing::None => 0,
-                    AntiAliasing::Fxaa => output::apply_fxaa_rgba8(
-                        self.target,
-                        &mut self.frame,
-                        &mut self.fxaa_scratch,
-                    ),
-                };
+                self.draw_cpu(scene, &camera_projection)?;
             }
             if auto_exposure_attempted || !self.apply_managed_auto_exposure_after_render() {
                 break;

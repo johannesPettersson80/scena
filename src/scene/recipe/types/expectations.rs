@@ -113,6 +113,10 @@ pub struct SceneRecipeQualityTextV1 {
     pub max_ink_isolation: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_intermediate_edge_fraction: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_background_luminance_range: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_background_mean_delta: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

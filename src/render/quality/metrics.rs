@@ -1,6 +1,6 @@
 use super::types::{
-    RenderQualityFrameMetrics, RenderQualityLabelMetrics, RenderQualityLineMetrics,
-    RenderQualityRegion, round3,
+    RenderQualityFrameMetrics, RenderQualityLabelBackgroundMetrics, RenderQualityLabelMetrics,
+    RenderQualityLineMetrics, RenderQualityRegion, round3,
 };
 
 pub fn frame_metrics(
@@ -91,6 +91,69 @@ pub fn label_metrics(
             isolated as f32 / ink_pixels as f32
         }),
         intermediate_edge_fraction: round3(intermediate as f32 / area),
+    }
+}
+
+pub fn label_background_metrics(
+    rgba8: &[u8],
+    width: u32,
+    height: u32,
+    region: RenderQualityRegion,
+    expected_srgb8: [u8; 3],
+) -> RenderQualityLabelBackgroundMetrics {
+    let max_x = region.x.saturating_add(region.width).min(width);
+    let max_y = region.y.saturating_add(region.height).min(height);
+    if region.x >= max_x || region.y >= max_y {
+        return RenderQualityLabelBackgroundMetrics {
+            luminance_range: 1.0,
+            mean_rgb_delta: 255.0,
+        };
+    }
+    let inset = 3;
+    let inner_x0 = region.x.saturating_add(inset).min(max_x);
+    let inner_y0 = region.y.saturating_add(inset).min(max_y);
+    let inner_x1 = max_x.saturating_sub(inset).max(inner_x0);
+    let inner_y1 = max_y.saturating_sub(inset).max(inner_y0);
+    let inner_width = inner_x1.saturating_sub(inner_x0).max(1);
+    let inner_height = inner_y1.saturating_sub(inner_y0).max(1);
+    let border_x = ((inner_width as f32 * 0.12).ceil() as u32).clamp(2, inner_width);
+    let border_y = ((inner_height as f32 * 0.18).ceil() as u32).clamp(2, inner_height);
+    let mut min_luminance = f32::INFINITY;
+    let mut max_luminance = f32::NEG_INFINITY;
+    let mut total_delta = 0.0_f32;
+    let mut samples = 0_u32;
+    for y in inner_y0..inner_y1 {
+        for x in inner_x0..inner_x1 {
+            let in_horizontal_corner =
+                x < inner_x0.saturating_add(border_x) || x.saturating_add(border_x) >= inner_x1;
+            let in_vertical_corner =
+                y < inner_y0.saturating_add(border_y) || y.saturating_add(border_y) >= inner_y1;
+            if !(in_horizontal_corner && in_vertical_corner) {
+                continue;
+            }
+            let Some(offset) = pixel_offset(rgba8, width, x, y) else {
+                continue;
+            };
+            let rgb = [rgba8[offset], rgba8[offset + 1], rgba8[offset + 2]];
+            let luminance = luminance_from_srgb8(rgb[0], rgb[1], rgb[2]);
+            min_luminance = min_luminance.min(luminance);
+            max_luminance = max_luminance.max(luminance);
+            total_delta += ((f32::from(rgb[0]) - f32::from(expected_srgb8[0])).abs()
+                + (f32::from(rgb[1]) - f32::from(expected_srgb8[1])).abs()
+                + (f32::from(rgb[2]) - f32::from(expected_srgb8[2])).abs())
+                / (3.0 * 255.0);
+            samples = samples.saturating_add(1);
+        }
+    }
+    if samples == 0 {
+        return RenderQualityLabelBackgroundMetrics {
+            luminance_range: 1.0,
+            mean_rgb_delta: 255.0,
+        };
+    }
+    RenderQualityLabelBackgroundMetrics {
+        luminance_range: round3((max_luminance - min_luminance).max(0.0)),
+        mean_rgb_delta: round3(total_delta / samples as f32),
     }
 }
 
@@ -328,9 +391,14 @@ fn line_straightness_error(
 }
 
 fn pixel_luminance(rgba8: &[u8], width: u32, x: u32, y: u32) -> Option<f32> {
-    let offset = ((y.checked_mul(width)?).checked_add(x)?).checked_mul(4)? as usize;
+    let offset = pixel_offset(rgba8, width, x, y)?;
     let pixel = rgba8.get(offset..offset + 4)?;
     Some(luminance_from_srgb8(pixel[0], pixel[1], pixel[2]))
+}
+
+fn pixel_offset(rgba8: &[u8], width: u32, x: u32, y: u32) -> Option<usize> {
+    let offset = ((y.checked_mul(width)?).checked_add(x)?).checked_mul(4)? as usize;
+    rgba8.get(offset..offset + 4).map(|_| offset)
 }
 
 pub(super) fn luminance_from_srgb8(r: u8, g: u8, b: u8) -> f32 {

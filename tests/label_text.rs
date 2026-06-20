@@ -449,6 +449,8 @@ fn assert_live_atlas_quality_passes(
         min_ink_coverage: Some(0.06),
         max_ink_isolation: Some(0.02),
         min_intermediate_edge_fraction: Some(0.01),
+        max_background_luminance_range: None,
+        max_background_mean_delta: None,
     };
     for (backend, frame) in [("CPU", cpu_frame), ("HeadlessGpu", gpu_frame)] {
         let checks = evaluate_label_region_quality(

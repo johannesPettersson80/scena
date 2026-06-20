@@ -85,6 +85,12 @@ pub struct RenderQualityLabelMetrics {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RenderQualityLabelBackgroundMetrics {
+    pub luminance_range: f32,
+    pub mean_rgb_delta: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RenderQualityLineMetrics {
     pub ink_coverage: f32,
     pub intermediate_edge_fraction: f32,

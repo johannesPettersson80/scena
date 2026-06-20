@@ -4,13 +4,13 @@ mod metrics;
 mod reference;
 mod types;
 
-pub use metrics::{frame_metrics, label_metrics, line_metrics};
+pub use metrics::{frame_metrics, label_background_metrics, label_metrics, line_metrics};
 pub use reference::{reference_quality_metrics, ssim_grayscale};
 pub use types::{
     RENDER_QUALITY_SCHEMA_V1, ReferenceQualityMetrics, RenderQualityCheckV1,
-    RenderQualityFrameMetrics, RenderQualityLabelMetrics, RenderQualityLineMetrics,
-    RenderQualityProfile, RenderQualityRegion, RenderQualityRegionV1, RenderQualityReportV1,
-    RenderQualitySummaryV1,
+    RenderQualityFrameMetrics, RenderQualityLabelBackgroundMetrics, RenderQualityLabelMetrics,
+    RenderQualityLineMetrics, RenderQualityProfile, RenderQualityRegion, RenderQualityRegionV1,
+    RenderQualityReportV1, RenderQualitySummaryV1,
 };
 
 use crate::{
@@ -19,8 +19,9 @@ use crate::{
     SceneRecipeQualityTextV1,
 };
 use metrics::{
-    frame_metrics as compute_frame_metrics, label_metrics as compute_label_metrics,
-    line_metrics as compute_line_metrics,
+    frame_metrics as compute_frame_metrics,
+    label_background_metrics as compute_label_background_metrics,
+    label_metrics as compute_label_metrics, line_metrics as compute_line_metrics,
 };
 use types::round3;
 
@@ -267,6 +268,26 @@ pub fn evaluate_label_region_quality(
     region: RenderQualityRegion,
     expectation: SceneRecipeQualityTextV1,
 ) -> Vec<RenderQualityCheckV1> {
+    evaluate_label_region_quality_with_background(
+        id,
+        rgba8,
+        width,
+        height,
+        region,
+        expectation,
+        None,
+    )
+}
+
+pub fn evaluate_label_region_quality_with_background(
+    id: &str,
+    rgba8: &[u8],
+    width: u32,
+    height: u32,
+    region: RenderQualityRegion,
+    expectation: SceneRecipeQualityTextV1,
+    expected_background_srgb8: Option<[u8; 3]>,
+) -> Vec<RenderQualityCheckV1> {
     let metrics = compute_label_metrics(rgba8, width, height, region);
     let max_isolation = expectation.max_ink_isolation.unwrap_or(0.01) as f32;
     let min_coverage = expectation.min_ink_coverage.unwrap_or(0.10) as f32;
@@ -317,6 +338,47 @@ pub fn evaluate_label_region_quality(
             fix_hint: "preserve font coverage and avoid thresholding glyph alpha into 1-bit cells",
         },
     );
+    if let Some(expected_background_srgb8) = expected_background_srgb8 {
+        let background = compute_label_background_metrics(
+            rgba8,
+            width,
+            height,
+            region,
+            expected_background_srgb8,
+        );
+        let max_luminance_range = expectation.max_background_luminance_range.unwrap_or(0.03) as f32;
+        let max_mean_delta = expectation.max_background_mean_delta.unwrap_or(0.03) as f32;
+        push_threshold_check(
+            &mut checks,
+            ThresholdCheck {
+                id,
+                code: "label_background_not_uniform",
+                severity: "error",
+                region,
+                observed_key: "background_luminance_range",
+                observed: background.luminance_range,
+                threshold_key: "max_background_luminance_range",
+                threshold: max_luminance_range,
+                fails: background.luminance_range > max_luminance_range,
+                fix_hint: "render label backgrounds in the final flat overlay pass as one opaque unlit fill",
+            },
+        );
+        push_threshold_check(
+            &mut checks,
+            ThresholdCheck {
+                id,
+                code: "label_background_color_mismatch",
+                severity: "error",
+                region,
+                observed_key: "background_mean_rgb_delta",
+                observed: background.mean_rgb_delta,
+                threshold_key: "max_background_mean_delta",
+                threshold: max_mean_delta,
+                fails: background.mean_rgb_delta > max_mean_delta,
+                fix_hint: "draw the label background after post-processing using the authored label background color",
+            },
+        );
+    }
     checks
 }
 
@@ -452,6 +514,8 @@ mod tests {
             min_ink_coverage: Some(0.10),
             max_ink_isolation: Some(0.01),
             min_intermediate_edge_fraction: Some(0.01),
+            max_background_luminance_range: None,
+            max_background_mean_delta: None,
         };
         let bad = eroded_label_fixture(width, height);
         write_ppm_artifact(
@@ -502,6 +566,8 @@ mod tests {
             min_ink_coverage: Some(0.30),
             max_ink_isolation: Some(0.01),
             min_intermediate_edge_fraction: Some(0.01),
+            max_background_luminance_range: None,
+            max_background_mean_delta: None,
         };
         let checks =
             evaluate_label_region_quality("gpu-eroded", &rgba8, width, height, region, expectation);
@@ -528,6 +594,8 @@ mod tests {
             min_ink_coverage: Some(0.08),
             max_ink_isolation: Some(0.02),
             min_intermediate_edge_fraction: Some(0.01),
+            max_background_luminance_range: None,
+            max_background_mean_delta: None,
         };
         let bad = blocky_text_fixture(width, height);
         write_ppm_artifact(
@@ -549,6 +617,65 @@ mod tests {
                 .iter()
                 .any(|check| check.code == "label_missing_antialiasing"),
             "old blocky bitmap-style label fixture must fail exact label_missing_antialiasing: {checks:#?}"
+        );
+    }
+
+    #[test]
+    fn label_background_quality_known_bad_fails_exact_reason_and_good_passes() {
+        let width = 48;
+        let height = 24;
+        let region = RenderQualityRegion::full_frame(width, height);
+        let expected = [29, 39, 51];
+        let expectation = SceneRecipeQualityTextV1 {
+            min_ink_coverage: Some(0.0),
+            max_ink_isolation: Some(1.0),
+            min_intermediate_edge_fraction: Some(0.0),
+            max_background_luminance_range: Some(0.02),
+            max_background_mean_delta: Some(0.02),
+        };
+
+        let bad = nonuniform_label_background_fixture(width, height, expected);
+        write_ppm_artifact(
+            "target/gate-artifacts/render-quality/label-background-known-bad.ppm",
+            &bad,
+            width,
+            height,
+        );
+        let bad_checks = evaluate_label_region_quality_with_background(
+            "bad-label-background",
+            &bad,
+            width,
+            height,
+            region,
+            expectation,
+            Some(expected),
+        );
+        assert!(
+            bad_checks
+                .iter()
+                .any(|check| check.code == "label_background_not_uniform"),
+            "non-uniform label background fixture must fail exact label_background_not_uniform: {bad_checks:#?}"
+        );
+
+        let good = solid_label_background_fixture(width, height, expected);
+        write_ppm_artifact(
+            "target/gate-artifacts/render-quality/label-background-known-good.ppm",
+            &good,
+            width,
+            height,
+        );
+        let good_checks = evaluate_label_region_quality_with_background(
+            "good-label-background",
+            &good,
+            width,
+            height,
+            region,
+            expectation,
+            Some(expected),
+        );
+        assert!(
+            good_checks.is_empty(),
+            "flat authored label background should pass quality checks: {good_checks:#?}"
         );
     }
 
@@ -836,6 +963,29 @@ mod tests {
                             255,
                         );
                     }
+                }
+            }
+        }
+        rgba
+    }
+
+    fn solid_label_background_fixture(width: u32, height: u32, rgb: [u8; 3]) -> Vec<u8> {
+        let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+        for _ in 0..width.saturating_mul(height) {
+            rgba.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
+        }
+        rgba
+    }
+
+    fn nonuniform_label_background_fixture(width: u32, height: u32, rgb: [u8; 3]) -> Vec<u8> {
+        let mut rgba = solid_label_background_fixture(width, height, rgb);
+        for y in 0..height {
+            for x in 0..width {
+                if x > width / 2 || y > height * 2 / 3 {
+                    let offset = ((y * width + x) * 4) as usize;
+                    rgba[offset] = rgba[offset].saturating_add(58);
+                    rgba[offset + 1] = rgba[offset + 1].saturating_add(58);
+                    rgba[offset + 2] = rgba[offset + 2].saturating_add(58);
                 }
             }
         }

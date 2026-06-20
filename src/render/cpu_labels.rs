@@ -1,4 +1,3 @@
-use crate::material::Color;
 use crate::scene::{ClippingPlane, SectionBox, Vec3};
 
 use super::camera::CameraProjection;
@@ -47,7 +46,7 @@ fn draw_label_quad_cpu(
             (bottom_right, u1, v1),
             (top_right, u1, v0),
         ],
-        quad.final_color(),
+        quad,
         clipping_planes,
         section_box,
         camera,
@@ -60,7 +59,7 @@ fn draw_label_quad_cpu(
             (top_right, u1, v0),
             (top_left, u0, v0),
         ],
-        quad.final_color(),
+        quad,
         clipping_planes,
         section_box,
         camera,
@@ -71,7 +70,7 @@ fn draw_label_triangle_cpu(
     cpu_frame: &mut CpuFrame<'_>,
     atlas: &PreparedLabelAtlas,
     vertices: [(Vec3, f32, f32); 3],
-    color: Color,
+    quad: &PreparedLabelQuad,
     clipping_planes: &[ClippingPlane],
     section_box: Option<SectionBox>,
     camera: &CameraProjection,
@@ -116,12 +115,16 @@ fn draw_label_triangle_cpu(
                 continue;
             }
             let (u, v) = mix_uv(a, b, c, w0, w1, w2);
-            let coverage = sample_label_atlas_coverage(atlas, u, v);
+            let coverage = if quad.solid_coverage() {
+                1.0
+            } else {
+                sample_label_atlas_coverage(atlas, u, v)
+            };
             if coverage <= 0.0 {
                 continue;
             }
             let depth = mix_depth(a.depth, b.depth, c.depth, w0, w1, w2);
-            write_label_overlay_pixel(cpu_frame, x, y, color, coverage, depth);
+            write_label_overlay_pixel(cpu_frame, x, y, quad.final_color(), coverage, depth);
         }
     }
 }
