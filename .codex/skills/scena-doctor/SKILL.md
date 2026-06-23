@@ -13,7 +13,9 @@ unit tests, rendered-output proof, browser checks, or release gates.
 ## Commands
 
 Run the narrowest relevant doctor during development and the full doctor before handoff on
-`scena-builder`:
+`scena-builder`. Do not use `doctor --full` as a substitute for a focused reproducer: first
+prove the bug or drift with the smallest test/check that can fail, then run the doctor gate
+that enforces the recurring family.
 
 ```bash
 ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --docs'
@@ -32,6 +34,15 @@ checkout.
 3. Run the doctor before and after the fix when changing enforcement behavior.
 4. Keep doctor findings fail-closed. Waivers need an ADR or release-note entry with owner,
    expiry, affected rule, user-visible risk, and replacement evidence.
+
+If only a doctor pin or checklist guard changed, the normal scoped gate is the relevant
+doctor command plus any formatting check required by Rust edits. Do not run unrelated cargo
+test suites unless the doctor change also touched production behavior.
+
+For a multi-finding cleanup, add doctor coverage only after the focused proof for that
+finding exists or the finding is source-checkable by doctor alone. Run the relevant doctor
+gate for the new rule, then defer full release validation to the batch checkpoint unless the
+doctor edit also changes public behavior.
 
 ## Current Rule Families
 

@@ -79,15 +79,63 @@ milestone work from that RFC.
 - Do not mark a checklist implementation item complete without naming the test-first proof
   or the documented exception.
 
+## Test Flow Discipline
+
+Do not turn every edit into a full release-gate loop. Use an evidence ladder and stop
+expanding when the current proof is sufficient for the risk:
+
+1. Reproduce or pin the exact failure first. Prefer one focused test, one CLI proof, one
+   browser probe, or one rendered-output comparison that would fail on the old behavior.
+2. Patch the smallest surface that can make that proof pass.
+3. Rerun the same focused proof. If it still fails, keep iterating there; do not broaden to
+   unrelated suites.
+4. Add scoped gates only for the touched surface: formatting after Rust edits, the affected
+   integration test after CLI/schema edits, `doctor --full` after doctor/checklist/schema
+   pins, and browser proof only for browser-visible changes.
+5. Run the full release chain once at a natural checkpoint: before a release handoff, before
+   a requested commit that claims broad readiness, after cross-backend renderer changes, or
+   when the user explicitly asks for it. Do not run the same full chain after every small
+   patch in a multi-step investigation.
+
+For checklist or multi-slice work, validate and report one logical unit at a time. The
+default per-unit rhythm is focused proof -> scoped gate(s) -> commit-or-handoff for that
+unit. Treat boilerplate "run all gates" text in a checklist as the checkpoint requirement
+for the completed batch unless the current user request explicitly says to run the full
+chain for each unit. Do not keep running broader suites to compensate for an unclear root
+cause; reduce the repro until it measures the defect.
+
+When reporting validation, say which tier was run and why broader gates were or were not
+needed. A focused failing proof is more useful than hours of unrelated green tests.
+If a broad gate already passed for the current diff and no file in that gate's risk surface
+changed afterward, do not rerun it just to generate a newer timestamp; report the existing
+evidence and the unchanged surface.
+
+Use a short validation ledger in handoffs:
+
+- `focused`: exact reproducer/proof and result.
+- `scoped`: only the gate(s) added because of touched files.
+- `full`: release-level gates, only when warranted, with the reason.
+- `skipped`: broader gates intentionally not run, with the risk reason.
+
 ## Validation
 
 Heavy Rust work runs on the Hetzner CPU builder by default:
 
 - SSH alias: `scena-builder`
 - Remote repo path: `/home/johannes/projects/scena`
+- Do not run local `cargo build`, `cargo check`, `cargo test`, `cargo clippy`, `cargo doc`,
+  wasm builds, npm browser proof, or long-running render probes unless the user explicitly
+  permits it. Local inspection commands such as `rg`, `sed`, `git diff`, and `git status`
+  are fine.
 - Keep the remote checkout matched to the work being validated. If local changes are not
   committed and pushed, verify the remote tree is clean, then mirror the local working tree
   to the remote repo with `rsync`, excluding `.git` and `target`.
+- If the remote project checkout is dirty, on the wrong branch, or being used by another
+  agent, do not overwrite it. Create an isolated validation copy under
+  `$HOME/.cache/codex-worktrees/scena-<task-slug>` with `rsync --delete --exclude .git
+  --exclude target`, and pair it with a task-scoped `CARGO_TARGET_DIR` under
+  `$HOME/.cache/codex-targets/scena-<task-slug>`. Report both paths in the validation
+  ledger. Clean only that isolated copy/cache when done.
 - Before syncing or running any cargo gate, run a remote disk preflight. The builder often
   fails late from full target caches, so check free space and clean only scoped generated
   build output before starting:
@@ -125,6 +173,11 @@ small edit:
    chain for production renderer behavior, public API/schema changes, release-ready work,
    cross-backend rendering changes, or when the user explicitly asks for release-level proof.
 
+For a sequence of related renderer fixes, run the full chain at the integration checkpoint
+after the focused proofs and scoped gates have passed. If no file in a broad gate's risk
+surface changed since the last passing run, reuse that evidence and say so instead of
+spending another cycle.
+
 For a normal production code change, the default remote gate set is:
 
 ```bash
@@ -133,6 +186,10 @@ ssh scena-builder 'cd "$HOME/projects/scena" && cargo clippy --all-targets -- -D
 ssh scena-builder 'cd "$HOME/projects/scena" && cargo test'
 ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --full'
 ```
+
+Use that normal set as the default only after the focused proof is green. During active
+debugging, run the focused proof first and repeat only that proof until the defect is
+understood.
 
 For a narrow proof-only change, do not run the whole suite just to spend time. Run the
 focused proof, `cargo fmt --check` if Rust formatting could change, and `doctor --full` only

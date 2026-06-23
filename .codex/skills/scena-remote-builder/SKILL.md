@@ -19,6 +19,11 @@ Use the Hetzner CPU builder for heavy Rust compilation and test gates.
 
 Do not store private SSH key material, cloud credentials, or provider tokens in the repo.
 
+Do not run local `cargo build`, `cargo check`, `cargo test`, `cargo clippy`, `cargo doc`,
+wasm builds, npm browser proof, or long-running render probes unless the user explicitly
+permits it. Local inspection commands such as `rg`, `sed`, `git diff`, and `git status` are
+allowed.
+
 ## Sync Rule
 
 Before a remote gate, make the remote checkout match the exact work being validated.
@@ -32,9 +37,8 @@ ssh scena-builder 'cd "$HOME/projects/scena" && git fetch origin && git checkout
 For local uncommitted work:
 
 1. Check local and remote status.
-2. If the remote has unrelated dirty changes, stop and report them.
-3. Mirror the local working tree to the remote repo, keeping the remote `.git` and build
-   cache intact:
+2. If the remote project checkout is clean and on the intended branch, mirror the local
+   working tree to that checkout, keeping the remote `.git` and build cache intact:
 
 ```bash
 git status --short --branch
@@ -44,6 +48,19 @@ rsync -az --delete --exclude .git --exclude target ./ scena-builder:~/projects/s
 
 After syncing, remote `git status --short --branch` should show the same relevant working
 tree changes as the local checkout.
+
+If the remote project checkout is dirty, on the wrong branch, or being used by another
+agent, do **not** overwrite it. Use an isolated validation copy instead:
+
+```bash
+ssh scena-builder 'mkdir -p "$HOME/.cache/codex-worktrees"'
+rsync -az --delete --exclude .git --exclude target ./ scena-builder:~/.cache/codex-worktrees/scena-<task-slug>/
+ssh scena-builder 'cd "$HOME/.cache/codex-worktrees/scena-<task-slug>" && <focused-or-scoped-command>'
+```
+
+Pair each isolated copy with a task-scoped target cache such as
+`$HOME/.cache/codex-targets/scena-<task-slug>`. Report both paths in the validation ledger.
+Clean only that isolated copy and target cache when they are no longer needed.
 
 ## Mandatory Disk Preflight
 
@@ -95,6 +112,32 @@ For tiny test-only or doctor-pin-only changes, a focused proof plus the relevant
 is usually enough. Do not spend hours on unrelated full-suite loops unless there is a real
 risk path from the edit to that gate.
 
+For checklist, backlog, or multi-slice implementation work, batch validation deliberately:
+
+- Per logical unit: focused proof first, then only scoped gates for files touched by that
+  unit.
+- Batch checkpoint: run the full release chain once after the related units are integrated,
+  or earlier only when the user explicitly requests release-level proof.
+- If a prompt includes a full gate list as boilerplate, treat it as the checkpoint bar, not
+  permission to rerun every expensive gate after every small patch.
+- If a focused proof does not catch the human-visible defect, stop broadening and replace
+  the proof with a better measurement. A green broad suite is not useful while the focused
+  proof is wrong.
+
+During a multi-step investigation, run the full release chain once at a checkpoint, not after
+every patch. If the focused proof is still failing or the root cause is not understood, the
+next correct action is another focused measurement or smaller reproducer, not a broader gate.
+If a broad gate already passed on the current diff and no file in that gate's risk surface
+changed afterward, do not rerun it just to generate another timestamp; report the existing
+evidence and the unchanged surface.
+
+Keep a short validation ledger in the handoff:
+
+- `focused`: exact reproducer/proof and result
+- `scoped`: only the gate(s) added because of touched files
+- `full`: run only when release-level proof is warranted, with the reason
+- `skipped`: broader gates intentionally not run, with the risk reason
+
 ## Gate Commands
 
 Run gates through SSH from the local machine:
@@ -121,6 +164,9 @@ Report:
 
 - command run
 - remote host alias and repo path
+- whether the command ran in `$HOME/projects/scena` or an isolated copy under
+  `$HOME/.cache/codex-worktrees`
+- task-scoped `CARGO_TARGET_DIR` when one was used
 - pass/fail status and timing when available
 - remote git status and HEAD when relevant
 - any gate not run and the concrete reason

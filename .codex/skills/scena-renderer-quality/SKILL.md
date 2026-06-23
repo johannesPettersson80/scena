@@ -43,6 +43,10 @@ fail on the exact bug, then add scoped gates for the touched surface. Full relea
 required for cross-backend renderer behavior, browser/WASM-visible changes, public API/schema
 changes, or release-ready work; they are not the default for every test-only proof update.
 
+Do not run local cargo/build/test/browser/render proof unless the user explicitly permits it.
+For visual work, local image inspection is allowed only as inspection of existing artifacts,
+not as a substitute for the required remote or real-GPU proof.
+
 ## Unit Test First Workflow
 
 1. Identify the contract from the spec/checklist.
@@ -58,6 +62,30 @@ For proof-only hardening, the proof must still be real: it should fail on the ol
 output or missing contract. But once that focused proof passes, do not keep running unrelated
 test suites unless the edit touched production behavior or the checklist/release gate
 requires it.
+
+For multi-item visual work, keep a per-item proof ledger. Each item should name the exact
+artifact or metric that went red, the production change that made it green, and the scoped
+gate that protects it. Run broad visual/browser/release gates at the integration checkpoint,
+not after every proof-only edit.
+
+## Smarter Render Validation
+
+Use measurement before breadth:
+
+- First locate the failing render path: CPU vs GPU, WebGL2 vs WebGPU, recipe vs Rust API,
+  browser page vs headless CLI, overlay vs geometry vs material.
+- Add the smallest rendered-output proof that can fail on that path. Examples: one crop
+  diff, one pixel movement assertion, one edge metric, one CPU/GPU parity comparison, or one
+  browser canvas probe.
+- Keep thresholds tied to the defect being fixed. A broad `ok:true`, nonblack, draw-count,
+  or before/after DOM change is not enough when the bug is visual.
+- If the first proof passes while the human-visible defect remains, the proof is wrong.
+  Replace the proof with a measurement of the actual defect before touching production code.
+- If the root cause is unclear, do not run more unrelated suites. Split the scene by render
+  path or element type until the measurement localizes the failing path.
+- After the focused render proof passes, run only the scoped gate that can catch regressions
+  in the changed path. Save full cross-backend/browser/release gates for cross-backend
+  changes, public behavior changes, or explicit release checkpoints.
 
 ## Quality Language
 

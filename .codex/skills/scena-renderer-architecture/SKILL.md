@@ -34,7 +34,13 @@ description: Use when implementing or refactoring scena renderer architecture, p
 
 ## Required Checks
 
-Run on `scena-builder`:
+Use `scena-remote-builder` for compile/test gates and follow its validation ladder. Start
+with the focused contract test or rendered proof for the change, then add scoped gates for
+the touched surface. Do not run local cargo/build/test unless the user explicitly permits
+it. Full release gates are for cross-module renderer changes, public API/schema behavior,
+release-ready handoff, or explicit user request.
+
+Common scoped gates on `scena-builder`:
 
 ```bash
 ssh scena-builder 'cd "$HOME/projects/scena" && cargo fmt --check'
@@ -42,4 +48,8 @@ ssh scena-builder 'cd "$HOME/projects/scena" && cargo clippy --all-targets -- -D
 ssh scena-builder 'cd "$HOME/projects/scena" && cargo test'
 ```
 
-Use `scena-remote-builder` to sync local uncommitted work before running these gates.
+Use the full set only after the focused proof is green and the implementation risk justifies
+it. Use `scena-remote-builder` to sync local uncommitted work before running these gates.
+For multi-step architecture work, validate one ownership or lifecycle change at a time with
+its focused proof. Save the full cargo/clippy/test/doc/browser chain for the integration
+checkpoint unless the user explicitly requests it earlier.
