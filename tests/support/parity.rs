@@ -3,6 +3,11 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
+use scena::{AntiAliasing, Assets, CameraKey, Renderer, Scene};
+
+#[allow(dead_code)]
+const LAVAPIPE_ICD: &str = "/usr/share/vulkan/icd.d/lvp_icd.json";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PixelRegion {
     pub x: u32,
@@ -42,6 +47,145 @@ impl PixelRegion {
             width: x1 - x0,
             height: y1 - y0,
         })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum RenderBackend {
+    Cpu,
+    Gpu,
+}
+
+impl RenderBackend {
+    #[allow(dead_code)]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Cpu => "cpu",
+            Self::Gpu => "gpu",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct OwnedRgbaFrame {
+    pub name: String,
+    pub rgba8: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl OwnedRgbaFrame {
+    #[allow(dead_code)]
+    pub fn borrowed(&self) -> RgbaFrame<'_> {
+        RgbaFrame::new(&self.name, &self.rgba8, self.width, self.height)
+    }
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct CpuGpuFramePair {
+    pub cpu: OwnedRgbaFrame,
+    pub gpu: OwnedRgbaFrame,
+}
+
+#[allow(dead_code)]
+pub fn require_cpu_gpu_parity_adapter_or_skip(test_name: &str) -> bool {
+    if std::env::var_os("SCENA_USE_GPU").is_none()
+        && std::env::var_os("VK_ICD_FILENAMES").is_none()
+        && !Path::new(LAVAPIPE_ICD).exists()
+    {
+        eprintln!(
+            "skipping {test_name}; set SCENA_USE_GPU=1 or install lavapipe at {LAVAPIPE_ICD} to require CPU/GPU parity proof"
+        );
+        return false;
+    }
+    configure_lavapipe_adapter();
+    true
+}
+
+#[allow(dead_code)]
+pub fn configure_lavapipe_adapter() {
+    if std::env::var_os("VK_ICD_FILENAMES").is_none() && Path::new(LAVAPIPE_ICD).exists() {
+        // SAFETY: parity tests set the process adapter hint immediately before
+        // constructing wgpu and do not read it concurrently themselves. This
+        // turns installed lavapipe into an exercised GPU lane instead of a
+        // silent skip.
+        unsafe {
+            std::env::set_var("VK_ICD_FILENAMES", LAVAPIPE_ICD);
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub fn renderer_for_backend(
+    backend: RenderBackend,
+    width: u32,
+    height: u32,
+    anti_aliasing: AntiAliasing,
+) -> Renderer {
+    let mut renderer = match backend {
+        RenderBackend::Cpu => Renderer::headless(width, height).expect("CPU renderer builds"),
+        RenderBackend::Gpu => Renderer::headless_gpu(width, height)
+            .expect("HeadlessGpu renderer builds for required CPU/GPU parity proof"),
+    };
+    renderer.set_anti_aliasing(anti_aliasing);
+    renderer
+}
+
+#[allow(dead_code)]
+pub fn render_scene_frame(
+    backend: RenderBackend,
+    name: impl Into<String>,
+    width: u32,
+    height: u32,
+    anti_aliasing: AntiAliasing,
+    build: impl FnOnce(&mut Scene, &Assets) -> CameraKey,
+) -> OwnedRgbaFrame {
+    let assets = Assets::new();
+    let mut scene = Scene::new();
+    let camera = build(&mut scene, &assets);
+    let mut renderer = renderer_for_backend(backend, width, height, anti_aliasing);
+    renderer
+        .prepare_with_assets(&mut scene, &assets)
+        .expect("scene prepare succeeds");
+    renderer
+        .render(&scene, camera)
+        .expect("scene render succeeds");
+    OwnedRgbaFrame {
+        name: name.into(),
+        rgba8: renderer.frame_rgba8().to_vec(),
+        width,
+        height,
+    }
+}
+
+#[allow(dead_code)]
+pub fn render_scene_cpu_gpu_pair(
+    name: &str,
+    width: u32,
+    height: u32,
+    anti_aliasing: AntiAliasing,
+    build: impl Fn(&mut Scene, &Assets) -> CameraKey + Copy,
+) -> CpuGpuFramePair {
+    CpuGpuFramePair {
+        cpu: render_scene_frame(
+            RenderBackend::Cpu,
+            format!("{name}-cpu"),
+            width,
+            height,
+            anti_aliasing,
+            build,
+        ),
+        gpu: render_scene_frame(
+            RenderBackend::Gpu,
+            format!("{name}-gpu"),
+            width,
+            height,
+            anti_aliasing,
+            build,
+        ),
     }
 }
 

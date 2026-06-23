@@ -388,10 +388,26 @@ pub(crate) fn check_render_quality_contracts(root: &Path, findings: &mut Vec<Fin
         root,
         findings,
         "ARCH-RENDER-MOVEMENT",
+        "tests/support/parity.rs",
+        &[
+            "pub enum RenderBackend",
+            "require_cpu_gpu_parity_adapter_or_skip",
+            "configure_lavapipe_adapter",
+            "render_scene_cpu_gpu_pair",
+            "pub struct ParitySweep",
+            "sobel_luminance_energy_in_region",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-MOVEMENT",
         "tests/dynamic_transform_parity.rs",
         &[
             "scena.dynamic_transform_parity_sweep.v1",
             "dynamic_transform_motion_matches_cpu_and_gpu_for_authored_animation_and_imports",
+            "require_cpu_gpu_parity_adapter_or_skip",
+            "renderer_for_backend",
             "authored-set-transform",
             "authored-animation-seek",
             "imported-gltf-set-transform",

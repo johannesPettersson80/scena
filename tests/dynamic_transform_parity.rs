@@ -7,29 +7,16 @@ use std::path::{Path, PathBuf};
 
 use scena::{
     AnimationChannel, AnimationClip, AnimationInterpolation, AnimationOutput, AnimationTarget,
-    AntiAliasing, AssetPath, Assets, Color, GeometryDesc, MaterialDesc, Renderer, Scene, Transform,
-    Vec3,
+    AntiAliasing, AssetPath, Assets, Color, GeometryDesc, MaterialDesc, Scene, Transform, Vec3,
 };
-use support::parity::{ParitySweep, PixelRegion, RgbaFrame};
+use support::parity::{
+    ParitySweep, PixelRegion, RenderBackend, RgbaFrame, renderer_for_backend,
+    require_cpu_gpu_parity_adapter_or_skip,
+};
 
 const WIDTH: u32 = 96;
 const HEIGHT: u32 = 72;
 const SCHEMA: &str = "scena.dynamic_transform_parity_sweep.v1";
-
-#[derive(Debug, Clone, Copy)]
-enum Backend {
-    Cpu,
-    Gpu,
-}
-
-impl Backend {
-    const fn name(self) -> &'static str {
-        match self {
-            Self::Cpu => "cpu",
-            Self::Gpu => "gpu",
-        }
-    }
-}
 
 #[derive(Debug)]
 struct MotionCapture {
@@ -50,10 +37,9 @@ struct MovementRecord {
 
 #[test]
 fn dynamic_transform_motion_matches_cpu_and_gpu_for_authored_animation_and_imports() {
-    if std::env::var_os("SCENA_USE_GPU").is_none() {
-        eprintln!(
-            "skipping dynamic transform CPU/GPU parity proof; set SCENA_USE_GPU=1 with lavapipe to require it"
-        );
+    if !require_cpu_gpu_parity_adapter_or_skip(
+        "dynamic_transform_motion_matches_cpu_and_gpu_for_authored_animation_and_imports",
+    ) {
         return;
     }
 
@@ -101,14 +87,14 @@ fn dynamic_transform_motion_matches_cpu_and_gpu_for_authored_animation_and_impor
 
 fn compare_case(
     case_name: &'static str,
-    render: fn(Backend, &Path, &'static str) -> MotionCapture,
+    render: fn(RenderBackend, &Path, &'static str) -> MotionCapture,
     artifacts: &Path,
     region: PixelRegion,
     sweep: &mut ParitySweep,
     movements: &mut Vec<MovementRecord>,
 ) {
-    let cpu = render(Backend::Cpu, artifacts, case_name);
-    let gpu = render(Backend::Gpu, artifacts, case_name);
+    let cpu = render(RenderBackend::Cpu, artifacts, case_name);
+    let gpu = render(RenderBackend::Gpu, artifacts, case_name);
 
     let cpu_delta_x = cpu.after_centroid.0 - cpu.before_centroid.0;
     let gpu_delta_x = gpu.after_centroid.0 - gpu.before_centroid.0;
@@ -179,7 +165,7 @@ fn compare_case(
 }
 
 fn render_authored_set_transform(
-    backend: Backend,
+    backend: RenderBackend,
     artifacts: &Path,
     case_name: &'static str,
 ) -> MotionCapture {
@@ -201,7 +187,7 @@ fn render_authored_set_transform(
 }
 
 fn render_authored_animation_seek(
-    backend: Backend,
+    backend: RenderBackend,
     artifacts: &Path,
     case_name: &'static str,
 ) -> MotionCapture {
@@ -240,7 +226,7 @@ fn render_authored_animation_seek(
 }
 
 fn render_imported_set_transform(
-    backend: Backend,
+    backend: RenderBackend,
     artifacts: &Path,
     case_name: &'static str,
 ) -> MotionCapture {
@@ -265,7 +251,7 @@ fn render_imported_set_transform(
 }
 
 fn render_motion(
-    backend: Backend,
+    backend: RenderBackend,
     artifacts: &Path,
     case_name: &'static str,
     build: impl FnOnce(&mut Scene, &Assets) -> Box<dyn FnOnce(&mut Scene)>,
@@ -274,7 +260,7 @@ fn render_motion(
     let mut scene = Scene::new();
     let camera = scene.add_default_camera().expect("camera inserts");
     let mutate = build(&mut scene, &assets);
-    let mut renderer = renderer_for_backend(backend);
+    let mut renderer = renderer_for_backend(backend, WIDTH, HEIGHT, AntiAliasing::None);
 
     renderer
         .prepare_with_assets(&mut scene, &assets)
@@ -311,16 +297,6 @@ fn render_motion(
         before_centroid,
         after_centroid,
     }
-}
-
-fn renderer_for_backend(backend: Backend) -> Renderer {
-    let mut renderer = match backend {
-        Backend::Cpu => Renderer::headless(WIDTH, HEIGHT).expect("CPU renderer builds"),
-        Backend::Gpu => Renderer::headless_gpu(WIDTH, HEIGHT)
-            .expect("SCENA_USE_GPU is set, so HeadlessGpu must be available"),
-    };
-    renderer.set_anti_aliasing(AntiAliasing::None);
-    renderer
 }
 
 fn visible_centroid(frame: &[u8]) -> Option<(f32, f32)> {
