@@ -6,6 +6,7 @@ import { chromium } from "playwright";
 
 const baseUrl = new URL(process.argv[2] || "http://127.0.0.1:18133/");
 const outDir = path.resolve("target/gate-artifacts/showcase-demo");
+const connectorOnly = process.env.SCENA_SHOWCASE_CONNECTOR_ONLY === "1";
 const HARDWARE_SECTION_ACTIVATION_BUDGET_MS = 800;
 const CONSTRAINED_HARDWARE_SECTION_ACTIVATION_BUDGET_MS = 2000;
 const SOFTWARE_SECTION_ACTIVATION_BUDGET_MS = 2000;
@@ -196,6 +197,121 @@ async function canvasStats(page, selector) {
   }, selector);
 }
 
+async function sampledCanvasPixels(page, selector, label) {
+  return page.evaluate(
+    ({ canvasSelector, label }) => {
+      const canvas = document.querySelector(canvasSelector);
+      if (!canvas) throw new Error(`missing canvas ${canvasSelector}`);
+      const sample = document.createElement("canvas");
+      sample.width = 128;
+      sample.height = 128;
+      const ctx = sample.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(canvas, 0, 0, sample.width, sample.height);
+      const image = ctx.getImageData(0, 0, sample.width, sample.height);
+      return {
+        label,
+        width: sample.width,
+        height: sample.height,
+        rgba: Array.from(image.data),
+      };
+    },
+    { canvasSelector: selector, label },
+  );
+}
+
+function canvasDiffStats(before, after) {
+  if (before.width !== after.width || before.height !== after.height) {
+    throw new Error(
+      `canvas snapshots have different dimensions: ${before.width}x${before.height} vs ${after.width}x${after.height}`,
+    );
+  }
+  let changed = 0;
+  let sumSq = 0;
+  let maxDelta = 0;
+  let changedMinX = before.width;
+  let changedMinY = before.height;
+  let changedMaxX = -1;
+  let changedMaxY = -1;
+  const pixels = before.width * before.height;
+  for (let i = 0; i < before.rgba.length; i += 4) {
+    const dr = after.rgba[i] - before.rgba[i];
+    const dg = after.rgba[i + 1] - before.rgba[i + 1];
+    const db = after.rgba[i + 2] - before.rgba[i + 2];
+    const delta = Math.hypot(dr, dg, db);
+    sumSq += dr * dr + dg * dg + db * db;
+    maxDelta = Math.max(maxDelta, delta);
+    if (delta > 24) {
+      const pixel = i / 4;
+      const x = pixel % before.width;
+      const y = Math.floor(pixel / before.width);
+      changed += 1;
+      changedMinX = Math.min(changedMinX, x);
+      changedMinY = Math.min(changedMinY, y);
+      changedMaxX = Math.max(changedMaxX, x);
+      changedMaxY = Math.max(changedMaxY, y);
+    }
+  }
+  return {
+    from: before.label,
+    to: after.label,
+    changedRatio: changed / Math.max(1, pixels),
+    rmse: Math.sqrt(sumSq / Math.max(1, pixels * 3)),
+    maxDelta,
+    changedBBox:
+      changed > 0
+        ? {
+            x: changedMinX,
+            y: changedMinY,
+            width: changedMaxX - changedMinX + 1,
+            height: changedMaxY - changedMinY + 1,
+          }
+        : null,
+  };
+}
+
+async function waitForConnectorStatus(page, pattern, timeout = 90000) {
+  await page.waitForFunction(
+    (source) => {
+      const regex = new RegExp(source, "i");
+      const entry = window.__scenaShowcaseProbe
+        ?.controllers()
+        ?.find((candidate) => candidate.scene === "connector");
+      return Boolean(entry?.loaded && entry?.active && regex.test(entry.status || ""));
+    },
+    pattern.source,
+    { timeout },
+  );
+}
+
+async function assertConnectorReplayMovesCanvas(page) {
+  const selector = ".stage[data-scene='connector'] canvas";
+  await waitForConnectorStatus(page, /assembled/);
+  const assembledBefore = await sampledCanvasPixels(page, selector, "connector-assembled-before");
+  await page.locator(".stage[data-scene='connector'] .replay").click();
+  await waitForConnectorStatus(page, /mating connectors/);
+  await page.waitForTimeout(180);
+  const replaying = await sampledCanvasPixels(page, selector, "connector-replay-in-flight");
+  await waitForConnectorStatus(page, /assembled/);
+  const assembledAfter = await sampledCanvasPixels(page, selector, "connector-assembled-after");
+  const resetDiff = canvasDiffStats(assembledBefore, replaying);
+  const finishDiff = canvasDiffStats(replaying, assembledAfter);
+  const assembledDiff = canvasDiffStats(assembledBefore, assembledAfter);
+  const minChangedRatio = 0.0025;
+  const minRmse = 2.0;
+  for (const diff of [resetDiff, finishDiff]) {
+    if (diff.changedRatio < minChangedRatio || diff.rmse < minRmse) {
+      throw new Error(
+        `connector replay changed DOM state without moving the rendered WebGL part: ${JSON.stringify(diff)}`,
+      );
+    }
+  }
+  return {
+    reset: resetDiff,
+    finish: finishDiff,
+    assembled_repeatability: assembledDiff,
+  };
+}
+
 async function assertCanvasVisible(page, selector, label, options = {}) {
   const stats = await canvasStats(page, selector);
   const minForegroundRatio = options.minForegroundRatio ?? 0.008;
@@ -290,82 +406,119 @@ try {
   await assertNoErrors(errors, "root showcase");
   await waitForPreparedControllers(page, ["material", "model", "connector"], 5000);
 
-  const materialActivationMs = await activateSection(page, "material", "#materials", "materials showcase");
-  await assertCanvasVisible(page, ".stage[data-scene='material'] canvas", "materials showcase", {
-    minForegroundRatio: 0.03,
-    minLuminanceStdDev: 7.0,
-    minRenderScale: 1.35,
-  });
-  await page.locator("[data-material='leather']").click();
-  await page.waitForFunction(() => window.__scenaShowcaseProbe?.materialSelection() === "leather", {
-    timeout: 30000,
-  });
-  await waitForController(page, "material");
-  await assertCanvasVisible(page, ".stage[data-scene='material'] canvas", "materials showcase", {
-    minForegroundRatio: 0.03,
-    minLuminanceStdDev: 7.0,
-    minRenderScale: 1.35,
-  });
-  const materialCode = await page.locator("#material-code").textContent();
-  if (!materialCode.includes("assets.material_presets().leather().await?")) {
-    throw new Error(`material code did not follow thumbnail selection: ${materialCode}`);
-  }
-  await page.screenshot({ path: path.join(outDir, "materials.png"), fullPage: false });
-  await assertNoErrors(errors, "materials showcase");
-
-  const modelActivationMs = await activateSection(page, "model", "#model", "model showcase");
-  await assertCanvasVisible(page, ".stage[data-scene='model'] canvas", "model showcase", {
-    minForegroundRatio: 0.006,
-    minLuminanceStdDev: 3.0,
-    minRenderScale: 1.25,
-  });
-  await page.screenshot({ path: path.join(outDir, "model.png"), fullPage: false });
-  await assertNoErrors(errors, "model showcase");
-
-  const connectorActivationMs = await activateSection(page, "connector", "#connectors", "connector showcase");
-  await assertCanvasVisible(page, ".stage[data-scene='connector'] canvas", "connector showcase", {
-    minForegroundRatio: 0.006,
-    minLuminanceStdDev: 3.0,
-    minRenderScale: 1.25,
-  });
-  await page.screenshot({ path: path.join(outDir, "connectors.png"), fullPage: false });
-  await assertNoErrors(errors, "connector showcase");
-
-  const proofErrors = [];
-  const proof = await browser.newPage({ viewport: { width: 1366, height: 820 } });
-  await wireErrorCapture(proof, proofErrors);
-  await proof.goto(urlFor("/proof/"), { waitUntil: "domcontentloaded" });
-  await proof.waitForFunction(() => document.querySelector("#sample-list"), { timeout: 30000 });
-  const proofTitle = await proof.title();
-  if (proofTitle !== "scena proof harness") {
-    throw new Error(`unexpected proof harness title: ${proofTitle}`);
-  }
-  if ((await proof.locator("#sample-list").count()) !== 1) {
-    throw new Error("technical proof harness did not expose the sample list");
-  }
-  await proof.waitForFunction(() => /rendered|ready|select/i.test(document.body.textContent || ""), {
-    timeout: 90000,
-  });
-  await proof.screenshot({ path: path.join(outDir, "proof.png"), fullPage: false });
-  await assertNoErrors(proofErrors, "proof harness");
-
-  console.log(
-    JSON.stringify(
-      {
-        ok: true,
-        outDir,
-        activation_ms: {
-          material: Math.round(materialActivationMs),
-          model: Math.round(modelActivationMs),
-          connector: Math.round(connectorActivationMs),
+  if (connectorOnly) {
+    const connectorActivationMs = await activateSection(
+      page,
+      "connector",
+      "#connectors",
+      "connector showcase",
+    );
+    await assertCanvasVisible(page, ".stage[data-scene='connector'] canvas", "connector showcase", {
+      minForegroundRatio: 0.006,
+      minLuminanceStdDev: 3.0,
+      minRenderScale: 1.25,
+    });
+    const connectorReplayCanvasMovement = await assertConnectorReplayMovesCanvas(page);
+    await page.screenshot({ path: path.join(outDir, "connectors.png"), fullPage: false });
+    await assertNoErrors(errors, "connector showcase");
+    console.log(
+      JSON.stringify(
+        {
+          ok: true,
+          mode: "connector-only",
+          outDir,
+          activation_ms: {
+            connector: Math.round(connectorActivationMs),
+          },
+          connector_replay_canvas_movement: connectorReplayCanvasMovement,
+          section_activation_budget_ms: sectionActivationBudgetMs,
+          webgl,
         },
-        section_activation_budget_ms: sectionActivationBudgetMs,
-        webgl,
-      },
-      null,
-      2,
-    ),
-  );
+        null,
+        2,
+      ),
+    );
+  } else {
+
+    const materialActivationMs = await activateSection(page, "material", "#materials", "materials showcase");
+    await assertCanvasVisible(page, ".stage[data-scene='material'] canvas", "materials showcase", {
+      minForegroundRatio: 0.03,
+      minLuminanceStdDev: 7.0,
+      minRenderScale: 1.35,
+    });
+    await page.locator("[data-material='leather']").click();
+    await page.waitForFunction(() => window.__scenaShowcaseProbe?.materialSelection() === "leather", {
+      timeout: 30000,
+    });
+    await waitForController(page, "material");
+    await assertCanvasVisible(page, ".stage[data-scene='material'] canvas", "materials showcase", {
+      minForegroundRatio: 0.03,
+      minLuminanceStdDev: 7.0,
+      minRenderScale: 1.35,
+    });
+    const materialCode = await page.locator("#material-code").textContent();
+    if (!materialCode.includes("assets.material_presets().leather().await?")) {
+      throw new Error(`material code did not follow thumbnail selection: ${materialCode}`);
+    }
+    await page.screenshot({ path: path.join(outDir, "materials.png"), fullPage: false });
+    await assertNoErrors(errors, "materials showcase");
+
+    const modelActivationMs = await activateSection(page, "model", "#model", "model showcase");
+    await assertCanvasVisible(page, ".stage[data-scene='model'] canvas", "model showcase", {
+      minForegroundRatio: 0.006,
+      minLuminanceStdDev: 3.0,
+      minRenderScale: 1.25,
+    });
+    await page.screenshot({ path: path.join(outDir, "model.png"), fullPage: false });
+    await assertNoErrors(errors, "model showcase");
+
+    const connectorActivationMs = await activateSection(page, "connector", "#connectors", "connector showcase");
+    await assertCanvasVisible(page, ".stage[data-scene='connector'] canvas", "connector showcase", {
+      minForegroundRatio: 0.006,
+      minLuminanceStdDev: 3.0,
+      minRenderScale: 1.25,
+    });
+    const connectorReplayCanvasMovement = await assertConnectorReplayMovesCanvas(page);
+    await page.screenshot({ path: path.join(outDir, "connectors.png"), fullPage: false });
+    await assertNoErrors(errors, "connector showcase");
+
+    const proofErrors = [];
+    const proof = await browser.newPage({ viewport: { width: 1366, height: 820 } });
+    await wireErrorCapture(proof, proofErrors);
+    await proof.goto(urlFor("/proof/"), { waitUntil: "domcontentloaded" });
+    await proof.waitForFunction(() => document.querySelector("#sample-list"), { timeout: 30000 });
+    const proofTitle = await proof.title();
+    if (proofTitle !== "scena proof harness") {
+      throw new Error(`unexpected proof harness title: ${proofTitle}`);
+    }
+    if ((await proof.locator("#sample-list").count()) !== 1) {
+      throw new Error("technical proof harness did not expose the sample list");
+    }
+    await proof.waitForFunction(() => /rendered|ready|select/i.test(document.body.textContent || ""), {
+      timeout: 90000,
+    });
+    await proof.screenshot({ path: path.join(outDir, "proof.png"), fullPage: false });
+    await assertNoErrors(proofErrors, "proof harness");
+
+    console.log(
+      JSON.stringify(
+        {
+          ok: true,
+          outDir,
+          activation_ms: {
+            material: Math.round(materialActivationMs),
+            model: Math.round(modelActivationMs),
+            connector: Math.round(connectorActivationMs),
+          },
+          connector_replay_canvas_movement: connectorReplayCanvasMovement,
+          section_activation_budget_ms: sectionActivationBudgetMs,
+          webgl,
+        },
+        null,
+        2,
+      ),
+    );
+  }
 } finally {
   await browser.close();
 }

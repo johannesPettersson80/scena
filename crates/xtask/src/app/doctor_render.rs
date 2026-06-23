@@ -1,6 +1,7 @@
 mod asset_alpha_output;
 mod diagnostics_stats_world;
 mod material_reflection;
+mod movement;
 mod quality;
 mod quality_composition;
 mod quality_reflection;
@@ -16,6 +17,7 @@ pub(crate) use diagnostics_stats_world::{
     check_render_world_bake_contracts, check_renderer_stats_contracts,
 };
 pub(crate) use material_reflection::check_material_reflection_quality_contracts;
+pub(crate) use movement::check_render_movement_contracts;
 pub(crate) use quality::check_render_quality_contracts;
 pub(crate) use quality_reflection::check_render_quality_reflection_contracts;
 pub(crate) use render_truth::check_renderer_truth_contracts;
