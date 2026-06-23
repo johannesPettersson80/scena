@@ -114,10 +114,10 @@ would call, so they are safer than hand-tuned low-level values:
   "auto_exposure": "product_studio",
   "quality": "high",
   "anti_aliasing": "msaa4",
-  "supersample": 2,
-  "reconstruction": "tent"
+  "supersample": 1,
+  "reconstruction": "box"
 },
-"capture": { "width": 1280, "height": 960 }
+"capture": { "width": 960, "height": 720 }
 ```
 
 Use `product_studio` for product/model screenshots, `cad_studio` for technical
@@ -171,6 +171,10 @@ roles. If glass output is load-bearing, render with `--gpu`, add
 `expect_backend`, and inspect the native-resolution image.
 Use `render.supersample:2..4` only for hero captures or fine glossy/texture
 details; it renders at N× resolution and downsamples, so cost grows with N^2.
+Do not put large captures plus `supersample:2` into the default iteration loop:
+on CPU or lavapipe this can take minutes. First prove the recipe at
+`supersample:1`; use `supersample:2` or higher only for final GPU-device hero
+renders after the composition is already accepted.
 For visible floor grids, set `scene.grid.line_width_px` around `3.6`-`4.2` and
 use `render.reconstruction:"tent"` on hero stills so grid lines have enough
 native-resolution coverage without softening the whole image like `"gaussian"`.
@@ -196,6 +200,16 @@ as `depth_of_field_blur_insufficient` and `depth_of_field_focal_softened`.
 `ok:true` proves the requested content rendered and passed checks. It does not
 mean the image is aesthetically good. Inspect the rendered image when visual
 quality matters.
+
+For A/B comparison cards and contact sheets, keep the comparison controlled.
+Do not use `scene.preset` or auto-framing if each panel must share the same
+view; those helpers are for single hero frames and may reposition panels.
+Use one fixed camera/look-at, fixed capture size, fixed environment/background,
+and vary exactly one field per panel (`camera.lens`, light preset,
+`environment.preset`, `render.auto_exposure`, or material preset). An
+auto-exposure comparison needs genuinely different scene luminance per panel;
+four presets on the same metal ball under one IBL can converge visually even
+though all presets are working.
 
 Before accepting any user-facing render, do a native-resolution composition
 review in explicit "what is wrong?" mode. Check the full frame, not only crops:

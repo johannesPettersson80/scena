@@ -125,10 +125,10 @@ would call:
   "auto_exposure": "product_studio",
   "quality": "high",
   "anti_aliasing": "msaa4",
-  "supersample": 2,
-  "reconstruction": "tent"
+  "supersample": 1,
+  "reconstruction": "box"
 },
-"capture": { "width": 1280, "height": 960 }
+"capture": { "width": 960, "height": 720 }
 ```
 
 Use `product_studio` for product/model screenshots, `cad_studio` for technical
@@ -188,6 +188,10 @@ budget supports them. If glass output is load-bearing, render with `--gpu`, add
 `expect_backend`, and inspect the native-resolution output.
 Use `render.supersample:2..4` only for hero captures or fine glossy/texture
 details; it renders at N× resolution and downsamples, so cost grows with N^2.
+Do not use large captures plus `supersample:2` in the default iteration loop:
+on CPU or lavapipe this can take minutes. Prove the recipe at `supersample:1`
+first, then use `supersample:2` or higher only for final GPU-device hero
+renders after composition is accepted.
 For final hero stills with high-contrast silhouettes, add
 `render.reconstruction:"tent"` after checking the native-resolution image;
 prefer it for floor grids, wireframes, and other line-heavy scenes because it
@@ -218,6 +222,20 @@ structured `background_target` so blur is measurable. Add
 `depth_of_field_checked` or fails with actionable codes such as
 `depth_of_field_blur_insufficient`, `depth_of_field_background_detail_missing`,
 or `depth_of_field_focal_softened`.
+
+## Comparison Cards And Contact Sheets
+
+For A/B comparison cards, keep the camera and scene constant. Do not use
+`scene.preset` or auto-framing when every panel must share the same view; those
+helpers are for single hero frames and may reposition each panel. Use one fixed
+camera/look-at, fixed capture size, fixed background/environment, and vary only
+one field per panel, such as `camera.lens`, a light preset,
+`environment.preset`, `render.auto_exposure`, or material preset.
+
+An auto-exposure comparison needs genuinely different luminance per panel. The
+four presets can legitimately converge on a single metal ball under one HDRI,
+so use panels with different dark/bright/mixed lighting if the goal is to show
+the preset difference.
 `supersample:8` is available only for small captures that stay within renderer
 limits.
 

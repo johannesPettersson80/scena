@@ -52,6 +52,15 @@ Verify:
 - hidden accessories are not visible;
 - missing material/texture fallbacks fail closed.
 
+## Comparison Cards And Contact Sheets
+
+Use a fixed camera, fixed capture size, fixed environment/background, and vary
+exactly one field per panel. Do not use `scene.preset` or auto-framing when
+panel-to-panel camera consistency is the point; those helpers are for single
+hero frames and may reposition each panel. For auto-exposure comparisons, use
+panels with meaningfully different luminance, not the same reflective object
+under the same IBL.
+
 ## Industrial Dashboard
 
 Use authored primitives, labels, callouts, state colors, and simple timelines.
