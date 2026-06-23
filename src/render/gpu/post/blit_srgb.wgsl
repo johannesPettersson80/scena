@@ -32,11 +32,3 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         encoded.a,
     );
 }
-
-fn srgb_to_linear_channel(channel: f32) -> f32 {
-    let value = clamp(channel, 0.0, 1.0);
-    if value <= 0.04045 {
-        return value / 12.92;
-    }
-    return pow((value + 0.055) / 1.055, 2.4);
-}

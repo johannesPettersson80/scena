@@ -1,7 +1,11 @@
 use super::create_post_pipeline;
 
 const SHADER: &str = include_str!("blit.wgsl");
-const SRGB_SHADER: &str = include_str!("blit_srgb.wgsl");
+const SRGB_SHADER: &str = concat!(
+    include_str!("blit_srgb.wgsl"),
+    "\n",
+    include_str!("../../color_contract.wgsl")
+);
 
 pub(super) fn create_surface_pipeline(
     device: &wgpu::Device,

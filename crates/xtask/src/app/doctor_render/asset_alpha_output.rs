@@ -300,6 +300,26 @@ pub(crate) fn check_output_stage_contracts(root: &Path, findings: &mut Vec<Findi
             "ACES_OUTPUT_MATRIX",
             "pub(super) fn pbr_neutral_tonemap",
             "Srgb::from_linear",
+            "wgsl_color_contract_pins_same_reference_formulas",
+            "include_str!(\"color_contract.wgsl\")",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-OUTPUT-STAGE",
+        "src/render/color_contract.wgsl",
+        &[
+            "scena.color_contract.wgsl",
+            "SCENA_PBR_NEUTRAL_START_COMPRESSION",
+            "SCENA_PBR_NEUTRAL_DESATURATION",
+            "fn apply_tonemapper",
+            "fn encode_post_target_rgb",
+            "fn linear_to_srgb_channel",
+            "fn srgb_to_linear_channel",
+            "fn pbr_neutral_tonemap",
+            "fn aces_tonemap",
+            "fn rrt_and_odt_fit",
         ],
     );
     require_contains(
@@ -308,8 +328,11 @@ pub(crate) fn check_output_stage_contracts(root: &Path, findings: &mut Vec<Findi
         "ARCH-OUTPUT-STAGE",
         "src/render/gpu/output.rs",
         &[
-            "fn aces_tonemap(color: vec3<f32>) -> vec3<f32>",
-            "fn rrt_and_odt_fit(value: f32) -> f32",
+            "GPU_COLOR_CONTRACT_WGSL",
+            "include_str!(\"../color_contract.wgsl\")",
+            "include_str!(\"output_shader.wgsl\")",
+            "GPU_TRIANGLE_SHADER_TEXTURE_2D",
+            "include_str!(\"output_shader_texture_2d.wgsl\")",
             "camera_position_exposure: vec4<f32>",
             "viewport_near_far: vec4<f32>",
             "color_management: vec4<f32>",
@@ -324,6 +347,51 @@ pub(crate) fn check_output_stage_contracts(root: &Path, findings: &mut Vec<Findi
         &[
             "GPU_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb",
             "pass.set_bind_group(0, inputs.output_bind_group, &[])",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-OUTPUT-STAGE",
+        "src/render/gpu/labels.rs",
+        &[
+            "include_str!(\"../color_contract.wgsl\")",
+            "labels_encoded.wgsl",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-OUTPUT-STAGE",
+        "src/render/gpu/strokes.rs",
+        &[
+            "include_str!(\"../color_contract.wgsl\")",
+            "strokes_encoded.wgsl",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-OUTPUT-STAGE",
+        "src/render/gpu/post/blit.rs",
+        &[
+            "include_str!(\"../../color_contract.wgsl\")",
+            "blit_srgb.wgsl",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-OUTPUT-STAGE",
+        "tests/scena_cli_recipe.rs",
+        &[
+            "scena_recipe_render_tonemap_color_contract_matches_oracle_on_cpu_and_gpu",
+            "scena.tonemap_color_parity_sweep.v1",
+            "standard-gray-ev2",
+            "pbr-neutral-color",
+            "aces-color",
+            "tonemap-color-parity.json",
+            "assert_rgb8_close",
         ],
     );
     require_contains(

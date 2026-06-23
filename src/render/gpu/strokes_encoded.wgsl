@@ -134,19 +134,3 @@ fn clip_segment_to_near(start: vec4<f32>, end: vec4<f32>) -> ClippedSegment {
     }
     return ClippedSegment(a, b, 1.0);
 }
-
-fn linear_to_srgb(color: vec3<f32>) -> vec3<f32> {
-    return vec3<f32>(
-        linear_to_srgb_channel(color.r),
-        linear_to_srgb_channel(color.g),
-        linear_to_srgb_channel(color.b),
-    );
-}
-
-fn linear_to_srgb_channel(channel: f32) -> f32 {
-    let value = clamp(channel, 0.0, 1.0);
-    if value <= 0.0031308 {
-        return value * 12.92;
-    }
-    return 1.055 * pow(value, 1.0 / 2.4) - 0.055;
-}

@@ -4,9 +4,10 @@ use palette::{LinSrgb, Srgb};
 /// Khronos glTF/PBR color contract helpers.
 ///
 /// This module owns scene-referred linear Rec.709 to display-referred sRGB
-/// transforms used by CPU output and mirrored by the GPU/WebGL shader code.
-/// Asset-specific renders must not introduce private color-calibration
-/// constants outside this module.
+/// transforms used by CPU output. GPU/WebGPU/WebGL2 shaders consume the sibling
+/// `color_contract.wgsl` block, which must keep the same constants and formulas.
+/// Asset-specific renders must not introduce private color-calibration constants
+/// outside this module pair.
 pub(super) fn apply_exposure(color: Color, exposure_ev: f32) -> Color {
     let exposure = 2.0_f32.powf(exposure_ev);
     Color::from_linear_rgba(
@@ -202,6 +203,35 @@ mod tests {
             linear_rgba_to_srgb8(Color::from_linear_rgba(0.18, 0.5, 2.0, 0.25)),
             [118, 188, 255, 64]
         );
+    }
+
+    #[test]
+    fn wgsl_color_contract_pins_same_reference_formulas() {
+        let wgsl = include_str!("color_contract.wgsl");
+        for expected in [
+            "scena.color_contract.wgsl",
+            "SCENA_PBR_NEUTRAL_F90: f32 = 0.04",
+            "SCENA_PBR_NEUTRAL_START_COMPRESSION: f32 = 0.8 - SCENA_PBR_NEUTRAL_F90",
+            "SCENA_PBR_NEUTRAL_DESATURATION: f32 = 0.15",
+            "0.59719, 0.35458, 0.04823",
+            "0.076, 0.90834, 0.01566",
+            "0.0284, 0.13383, 0.83777",
+            "1.60475, -0.53108, -0.07367",
+            "-0.10208, 1.10813, -0.00605",
+            "-0.00327, -0.07276, 1.07602",
+            "0.0245786",
+            "0.000090537",
+            "0.983729",
+            "0.432951",
+            "0.238081",
+            "if value <= 0.0031308",
+            "if value <= 0.04045",
+        ] {
+            assert!(
+                wgsl.contains(expected),
+                "WGSL color contract must pin the Rust reference token {expected:?}"
+            );
+        }
     }
 
     fn assert_close(actual: f32, expected: f32) {

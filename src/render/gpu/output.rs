@@ -8,9 +8,18 @@ use crate::scene::{ClippingPlane, SectionBox};
 /// the same — `include_str!` produces a static `&'static str`.
 /// Instanced shader contract: `draw.world_from_model * instance_world_from_model * vec4<f32>(in.position, 1.0)`
 /// and `let normal_from_model = draw.normal_from_model * instance_normal_from_model`.
-pub(super) const GPU_TRIANGLE_SHADER: &str = include_str!("output_shader.wgsl");
-pub(super) const GPU_TRIANGLE_SHADER_TEXTURE_2D: &str =
-    include_str!("output_shader_texture_2d.wgsl");
+#[cfg(test)]
+pub(super) const GPU_COLOR_CONTRACT_WGSL: &str = include_str!("../color_contract.wgsl");
+pub(super) const GPU_TRIANGLE_SHADER: &str = concat!(
+    include_str!("output_shader.wgsl"),
+    "\n",
+    include_str!("../color_contract.wgsl")
+);
+pub(super) const GPU_TRIANGLE_SHADER_TEXTURE_2D: &str = concat!(
+    include_str!("output_shader_texture_2d.wgsl"),
+    "\n",
+    include_str!("../color_contract.wgsl")
+);
 
 pub(super) const MAX_OUTPUT_CLIPPING_PLANES: usize = 16;
 const OUTPUT_UNIFORM_BASE_FLOAT_COUNT: usize = 696;
@@ -456,9 +465,12 @@ mod tests {
     #[test]
     fn triangle_shader_contains_khronos_pbr_neutral_tonemapper() {
         assert!(
-            GPU_TRIANGLE_SHADER.contains("pbr_neutral_tonemap")
-                && GPU_TRIANGLE_SHADER.contains("start_compression")
-                && GPU_TRIANGLE_SHADER.contains("desaturation")
+            GPU_COLOR_CONTRACT_WGSL.contains("scena.color_contract.wgsl")
+                && GPU_COLOR_CONTRACT_WGSL.contains("pbr_neutral_tonemap")
+                && GPU_COLOR_CONTRACT_WGSL.contains("SCENA_PBR_NEUTRAL_START_COMPRESSION")
+                && GPU_COLOR_CONTRACT_WGSL.contains("SCENA_PBR_NEUTRAL_DESATURATION")
+                && GPU_TRIANGLE_SHADER.contains("scena.color_contract.wgsl")
+                && GPU_TRIANGLE_SHADER_TEXTURE_2D.contains("scena.color_contract.wgsl")
                 && GPU_TRIANGLE_SHADER.contains("color_management_mode > 1.5"),
             "native/WebGPU shader must expose the Khronos PBR Neutral tone-mapping branch; \
              WaterBottle screenshots must not be tuned through private color constants"

@@ -1,7 +1,11 @@
 use crate::render::prepare::PreparedLabelAtlas;
 
 const FINAL_SHADER: &str = include_str!("labels.wgsl");
-const ENCODED_SHADER: &str = include_str!("labels_encoded.wgsl");
+const ENCODED_SHADER: &str = concat!(
+    include_str!("labels_encoded.wgsl"),
+    "\n",
+    include_str!("../color_contract.wgsl")
+);
 const QUAD_VERTEX_BYTE_LEN: usize = 2 * std::mem::size_of::<f32>();
 const INSTANCE_FLOATS: usize = 23;
 const INSTANCE_BYTE_LEN: usize = INSTANCE_FLOATS * std::mem::size_of::<f32>();

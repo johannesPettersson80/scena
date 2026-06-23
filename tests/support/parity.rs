@@ -147,7 +147,11 @@ impl ParitySweep {
         }
         writeln!(&mut json, "  \"records\": [").expect("write to string");
         for (index, record) in self.records.iter().enumerate() {
-            let comma = if index + 1 == self.records.len() { "" } else { "," };
+            let comma = if index + 1 == self.records.len() {
+                ""
+            } else {
+                ","
+            };
             writeln!(
                 &mut json,
                 "    {{ \"name\": \"{}\", \"reference\": \"{}\", \"candidate\": \"{}\", \"rmse\": {:.5}, \"max_channel_delta\": {}, \"mean_channel_delta\": {:.5}, \"reference_sobel_energy\": {:.5}, \"candidate_sobel_energy\": {:.5}, \"reference_luminance_range\": {:.5}, \"candidate_luminance_range\": {:.5}, \"reference_unique_luma_levels\": {}, \"candidate_unique_luma_levels\": {}, \"reference_foreground_fraction\": {:.5}, \"candidate_foreground_fraction\": {:.5}, \"region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }} }}{}",

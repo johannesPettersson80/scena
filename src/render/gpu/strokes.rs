@@ -4,7 +4,11 @@ use super::output::DRAW_UNIFORM_ENTRY_STRIDE;
 use super::vertices::DrawUniformValue;
 
 const FINAL_SHADER: &str = include_str!("strokes.wgsl");
-const ENCODED_SHADER: &str = include_str!("strokes_encoded.wgsl");
+const ENCODED_SHADER: &str = concat!(
+    include_str!("strokes_encoded.wgsl"),
+    "\n",
+    include_str!("../color_contract.wgsl")
+);
 const QUAD_VERTEX_BYTE_LEN: usize = 2 * std::mem::size_of::<f32>();
 const INSTANCE_BYTE_LEN: usize = 11 * std::mem::size_of::<f32>();
 const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;

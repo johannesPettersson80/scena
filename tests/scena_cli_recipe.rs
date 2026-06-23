@@ -2002,6 +2002,56 @@ fn write_chrome_ibl_panel_recipe(dir: &Path, name: &str, roughness: f64) -> (Pat
 }
 
 #[cfg(feature = "scene-host")]
+fn write_tonemap_color_contract_recipe(
+    dir: &Path,
+    name: &str,
+    tonemapper: &str,
+    exposure_ev: f64,
+    linear_color: [f64; 3],
+) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "probe": { "linear": linear_color },
+                "background": "#000000"
+            },
+            "geometries": [
+                { "id": "panel_geo", "primitive": { "kind": "box", "size": [0.7, 0.7, 0.04] } }
+            ],
+            "materials": [
+                { "id": "panel_mat", "kind": "unlit", "base_color": "probe", "double_sided": false }
+            ],
+            "nodes": [
+                { "id": "panel", "geometry": "panel_geo", "material": "panel_mat" }
+            ],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 20.0,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 3.2], "target": [0.0, 0.0, 0.0] }
+            }],
+            "scene": {
+                "background": { "kind": "custom", "color": "background" }
+            },
+            "render": {
+                "anti_aliasing": "none",
+                "tonemapper": tonemapper,
+                "exposure_ev": exposure_ev
+            },
+            "capture": { "width": 96, "height": 96 }
+        }))
+        .expect("tonemap color-contract recipe serializes"),
+    )
+    .expect("tonemap color-contract recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
 fn write_grid_occlusion_recipe(dir: &Path, name: &str, anti_aliasing: &str) -> (PathBuf, PathBuf) {
     let recipe_path = dir.join(format!("{name}.recipe.json"));
     let png_path = dir.join(format!("{name}.png"));
@@ -3819,6 +3869,89 @@ fn scena_recipe_render_ergonomic_product_scene_reaches_rust_api_quality_on_cpu_a
 
 #[cfg(feature = "scene-host")]
 #[test]
+fn scena_recipe_render_tonemap_color_contract_matches_oracle_on_cpu_and_gpu() {
+    // Doctor pin: the render output stage must share the same PBR Neutral,
+    // ACES, exposure, and sRGB transfer contract on CPU and HeadlessGpu.
+    // This is a rendered-pixel oracle, not just a shader-string presence check.
+    let dir = artifact_dir("recipe-render-tonemap-color-contract");
+    let cases = [
+        (
+            "standard-gray-ev2",
+            "standard",
+            2.0,
+            [0.18, 0.18, 0.18],
+            [221, 221, 221],
+        ),
+        (
+            "pbr-neutral-color",
+            "pbr_neutral",
+            0.0,
+            [0.8, 0.2, 0.05],
+            [227, 113, 34],
+        ),
+        ("aces-color", "aces", 0.0, [0.8, 0.2, 0.05], [198, 104, 45]),
+    ];
+    let mut sweep = support::parity::ParitySweep::new("scena.tonemap_color_parity_sweep.v1");
+    for (name, tonemapper, exposure_ev, linear_color, expected_srgb8) in cases {
+        let (cpu_recipe, cpu_png) = write_tonemap_color_contract_recipe(
+            &dir,
+            &format!("{name}-cpu"),
+            tonemapper,
+            exposure_ev,
+            linear_color,
+        );
+        let (gpu_recipe, gpu_png) = write_tonemap_color_contract_recipe(
+            &dir,
+            &format!("{name}-gpu"),
+            tonemapper,
+            exposure_ev,
+            linear_color,
+        );
+        let cpu_report = run_recipe_render_introspect(&cpu_recipe, &cpu_png, false);
+        let gpu_report = run_recipe_render_introspect(&gpu_recipe, &gpu_png, true);
+        let cpu = decode_png_rgba8(&cpu_png);
+        let gpu = decode_png_rgba8(&gpu_png);
+        let region = content_region_from_introspection_report(&cpu_report)
+            .intersect(content_region_from_introspection_report(&gpu_report))
+            .and_then(|region| region.shrink(8))
+            .expect("tonemap color proof should have a stable shared panel region");
+        let comparison = sweep.compare_region(
+            format!("{name}_cpu_vs_gpu"),
+            support::parity::RgbaFrame::new("cpu", &cpu.rgba8, cpu.width, cpu.height),
+            support::parity::RgbaFrame::new("gpu", &gpu.rgba8, gpu.width, gpu.height),
+            region,
+        );
+        assert!(
+            comparison.rmse <= 0.018
+                && comparison.channel_delta.mean_channel_delta <= 2.5
+                && comparison.channel_delta.max_channel_delta <= 8,
+            "CPU/GPU {tonemapper} output must match the shared color contract within a tight region tolerance; comparison={comparison:?}, region={region:?}, cpu_png={cpu_png:?}, gpu_png={gpu_png:?}"
+        );
+        let cpu_pixel = center_pixel(&cpu);
+        let gpu_pixel = center_pixel(&gpu);
+        assert_rgb8_close(
+            cpu_pixel,
+            expected_srgb8,
+            2,
+            &format!("CPU {tonemapper} oracle pixel"),
+        );
+        assert_rgb8_close(
+            gpu_pixel,
+            expected_srgb8,
+            3,
+            &format!("GPU {tonemapper} oracle pixel"),
+        );
+    }
+    assert_eq!(
+        sweep.records().len(),
+        cases.len(),
+        "tonemap/color proof must record every tonemapper/exposure case"
+    );
+    sweep.write_json(&dir.join("tonemap-color-parity.json"), &[]);
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
 fn scena_recipe_render_verify_chrome_ibl_fireflies_are_filtered_on_cpu_and_gpu() {
     // Doctor pin: chrome IBL fireflies were baked into GGX prefilter mips
     // when the prefilter point-sampled tiny HDR emitters. This recipe uses
@@ -4019,9 +4152,14 @@ fn scena_recipe_render_chrome_ibl_near_mirror_matches_cpu_and_keeps_detail_on_gp
         .intersect(content_region_from_introspection_report(&gpu_rough_report))
         .expect("GPU roughness blur region must overlap near-mirror region");
 
-    let mut sweep = support::parity::ParitySweep::new("scena.chrome_ibl_near_mirror_parity_probe.v1");
-    let panel_comparison =
-        sweep.compare_region("chrome_panel_r005_cpu_vs_gpu", cpu_frame, gpu_frame, panel_interior);
+    let mut sweep =
+        support::parity::ParitySweep::new("scena.chrome_ibl_near_mirror_parity_probe.v1");
+    let panel_comparison = sweep.compare_region(
+        "chrome_panel_r005_cpu_vs_gpu",
+        cpu_frame,
+        gpu_frame,
+        panel_interior,
+    );
     let mirror_comparison = sweep.compare_region(
         "chrome_sphere_r005_vs_r000_gpu",
         gpu_sphere_frame,
@@ -4068,16 +4206,25 @@ fn scena_recipe_render_chrome_ibl_near_mirror_matches_cpu_and_keeps_detail_on_gp
     let gpu_mid025_delta = mid025_comparison.rmse;
     let gpu_rough_delta = rough_comparison.rmse;
     sweep.write_json(
-        dir.join("chrome-ibl-near-mirror-parity.json"),
+        &dir.join("chrome-ibl-near-mirror-parity.json"),
         &[
             (
                 "parity_harness_schema",
                 "\"scena.cpu_gpu_parity_sweep.v1\"".to_owned(),
             ),
             ("panel_cpu_gpu_rmse", format!("{parity_rmse:.5}")),
-            ("sphere_gpu_r005_r000_rmse", format!("{gpu_mirror_delta:.5}")),
-            ("sphere_gpu_r012_r000_rmse", format!("{gpu_mid012_delta:.5}")),
-            ("sphere_gpu_r025_r000_rmse", format!("{gpu_mid025_delta:.5}")),
+            (
+                "sphere_gpu_r005_r000_rmse",
+                format!("{gpu_mirror_delta:.5}"),
+            ),
+            (
+                "sphere_gpu_r012_r000_rmse",
+                format!("{gpu_mid012_delta:.5}"),
+            ),
+            (
+                "sphere_gpu_r025_r000_rmse",
+                format!("{gpu_mid025_delta:.5}"),
+            ),
             ("sphere_gpu_r050_r000_rmse", format!("{gpu_rough_delta:.5}")),
             ("gpu_sobel_energy", format!("{gpu_sobel:.5}")),
             ("gpu_mirror_sobel_energy", format!("{gpu_mirror_sobel:.5}")),
@@ -9257,6 +9404,33 @@ fn decode_png_rgba8(path: &Path) -> DecodedPng {
 }
 
 #[cfg(feature = "scene-host")]
+fn center_pixel(image: &DecodedPng) -> [u8; 4] {
+    let x = image.width / 2;
+    let y = image.height / 2;
+    let offset = ((y * image.width + x) * 4) as usize;
+    [
+        image.rgba8[offset],
+        image.rgba8[offset + 1],
+        image.rgba8[offset + 2],
+        image.rgba8[offset + 3],
+    ]
+}
+
+#[cfg(feature = "scene-host")]
+fn assert_rgb8_close(actual: [u8; 4], expected: [u8; 3], tolerance: u8, label: &str) {
+    for channel in 0..3 {
+        let delta = actual[channel].abs_diff(expected[channel]);
+        assert!(
+            delta <= tolerance,
+            "{label} channel {channel} expected {:?} +/- {tolerance}, got {:?}",
+            expected,
+            actual
+        );
+    }
+    assert_eq!(actual[3], 255, "{label} should be fully opaque");
+}
+
+#[cfg(feature = "scene-host")]
 fn floor_grid_detail_crop(image: &DecodedPng) -> DecodedPng {
     let crop_width = ((image.width as f32) * 0.56).round() as u32;
     let crop_height = ((image.height as f32) * 0.34).round() as u32;
@@ -9328,7 +9502,9 @@ fn node_region_from_composition_report(
 }
 
 #[cfg(feature = "scene-host")]
-fn content_region_from_introspection_report(report: &serde_json::Value) -> support::parity::PixelRegion {
+fn content_region_from_introspection_report(
+    report: &serde_json::Value,
+) -> support::parity::PixelRegion {
     let rect = &report["content_bbox_css_px"];
     let min_x = rect["min_x"].as_f64().expect("content bbox min_x");
     let min_y = rect["min_y"].as_f64().expect("content bbox min_y");
