@@ -387,6 +387,20 @@ pub(crate) fn check_render_quality_contracts(root: &Path, findings: &mut Vec<Fin
     require_contains(
         root,
         findings,
+        "ARCH-RENDER-MOVEMENT",
+        "tests/dynamic_transform_parity.rs",
+        &[
+            "scena.dynamic_transform_parity_sweep.v1",
+            "dynamic_transform_motion_matches_cpu_and_gpu_for_authored_animation_and_imports",
+            "authored-set-transform",
+            "authored-animation-seek",
+            "imported-gltf-set-transform",
+            "GPU path must move rendered object pixels",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
         "ARCH-RENDER-QUALITY",
         "tests/scene_recipe_contracts.rs",
         &[
