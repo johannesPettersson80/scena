@@ -281,6 +281,21 @@ pub(crate) fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mu
             "khronos_correlated_ggx_reference_probes_match_bec106e",
         ],
     );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "tests/pbr_brdf_parity.rs",
+        &[
+            "scena.core_pbr_brdf_parity_sweep.v1",
+            "core_pbr_brdf_matches_cpu_and_gpu_across_metallic_roughness_sweep",
+            "render_scene_cpu_gpu_pair_with_renderer",
+            "dielectric-glossy",
+            "metal-glossy",
+            "metallic must visibly change direct-PBR output",
+            "pbr-brdf-parity.json",
+        ],
+    );
     forbid_contains(
         root,
         findings,

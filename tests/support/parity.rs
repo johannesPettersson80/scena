@@ -143,10 +143,24 @@ pub fn render_scene_frame(
     anti_aliasing: AntiAliasing,
     build: impl FnOnce(&mut Scene, &Assets) -> CameraKey,
 ) -> OwnedRgbaFrame {
+    render_scene_frame_with_renderer(backend, name, width, height, anti_aliasing, |_| {}, build)
+}
+
+#[allow(dead_code)]
+pub fn render_scene_frame_with_renderer(
+    backend: RenderBackend,
+    name: impl Into<String>,
+    width: u32,
+    height: u32,
+    anti_aliasing: AntiAliasing,
+    configure_renderer: impl FnOnce(&mut Renderer),
+    build: impl FnOnce(&mut Scene, &Assets) -> CameraKey,
+) -> OwnedRgbaFrame {
     let assets = Assets::new();
     let mut scene = Scene::new();
     let camera = build(&mut scene, &assets);
     let mut renderer = renderer_for_backend(backend, width, height, anti_aliasing);
+    configure_renderer(&mut renderer);
     renderer
         .prepare_with_assets(&mut scene, &assets)
         .expect("scene prepare succeeds");
@@ -169,21 +183,35 @@ pub fn render_scene_cpu_gpu_pair(
     anti_aliasing: AntiAliasing,
     build: impl Fn(&mut Scene, &Assets) -> CameraKey + Copy,
 ) -> CpuGpuFramePair {
+    render_scene_cpu_gpu_pair_with_renderer(name, width, height, anti_aliasing, |_| {}, build)
+}
+
+#[allow(dead_code)]
+pub fn render_scene_cpu_gpu_pair_with_renderer(
+    name: &str,
+    width: u32,
+    height: u32,
+    anti_aliasing: AntiAliasing,
+    configure_renderer: impl Fn(&mut Renderer) + Copy,
+    build: impl Fn(&mut Scene, &Assets) -> CameraKey + Copy,
+) -> CpuGpuFramePair {
     CpuGpuFramePair {
-        cpu: render_scene_frame(
+        cpu: render_scene_frame_with_renderer(
             RenderBackend::Cpu,
             format!("{name}-cpu"),
             width,
             height,
             anti_aliasing,
+            configure_renderer,
             build,
         ),
-        gpu: render_scene_frame(
+        gpu: render_scene_frame_with_renderer(
             RenderBackend::Gpu,
             format!("{name}-gpu"),
             width,
             height,
             anti_aliasing,
+            configure_renderer,
             build,
         ),
     }
