@@ -73,7 +73,7 @@ impl GeometryDesc {
                 );
                 normal = add_vec3(
                     normal,
-                    scale_vec3(matrix.transform_direction(source.normal), weight),
+                    scale_vec3(matrix.transform_normal(source.normal), weight),
                 );
             }
             vertices.push(GeometryVertex {
@@ -190,6 +190,38 @@ impl SkinningMatrix {
         )
     }
 
+    pub fn transform_normal(self, normal: Vec3) -> Vec3 {
+        let m00 = self.rows[0][0];
+        let m01 = self.rows[0][1];
+        let m02 = self.rows[0][2];
+        let m10 = self.rows[1][0];
+        let m11 = self.rows[1][1];
+        let m12 = self.rows[1][2];
+        let m20 = self.rows[2][0];
+        let m21 = self.rows[2][1];
+        let m22 = self.rows[2][2];
+
+        let c00 = m11 * m22 - m12 * m21;
+        let c01 = m12 * m20 - m10 * m22;
+        let c02 = m10 * m21 - m11 * m20;
+        let c10 = m02 * m21 - m01 * m22;
+        let c11 = m00 * m22 - m02 * m20;
+        let c12 = m01 * m20 - m00 * m21;
+        let c20 = m01 * m12 - m02 * m11;
+        let c21 = m02 * m10 - m00 * m12;
+        let c22 = m00 * m11 - m01 * m10;
+        let determinant = m00 * c00 + m01 * c01 + m02 * c02;
+        if determinant.abs() <= f32::EPSILON || !determinant.is_finite() {
+            return self.transform_direction(normal);
+        }
+        let inverse_determinant = determinant.recip();
+        Vec3::new(
+            (c00 * normal.x + c01 * normal.y + c02 * normal.z) * inverse_determinant,
+            (c10 * normal.x + c11 * normal.y + c12 * normal.z) * inverse_determinant,
+            (c20 * normal.x + c21 * normal.y + c22 * normal.z) * inverse_determinant,
+        )
+    }
+
     fn translation(translation: Vec3) -> Self {
         let mut matrix = Self::IDENTITY;
         matrix.rows[0][3] = translation.x;
@@ -276,5 +308,61 @@ fn normalize_or(vector: Vec3, fallback: Vec3) -> Vec3 {
         fallback
     } else {
         Vec3::new(vector.x / length, vector.y / length, vector.z / length)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geometry::GeometryTopology;
+
+    #[test]
+    fn skinned_normals_use_inverse_transpose_under_nonuniform_joint_scale() {
+        let diagonal = normalize_or(Vec3::new(1.0, 1.0, 0.0), Vec3::Y);
+        let geometry = GeometryDesc::try_new(
+            GeometryTopology::Triangles,
+            vec![
+                GeometryVertex {
+                    position: Vec3::ZERO,
+                    normal: diagonal,
+                },
+                GeometryVertex {
+                    position: Vec3::X,
+                    normal: diagonal,
+                },
+                GeometryVertex {
+                    position: Vec3::Y,
+                    normal: diagonal,
+                },
+            ],
+            vec![0, 1, 2],
+        )
+        .expect("geometry validates")
+        .with_skin(GeometrySkin::new(
+            vec![[0, 0, 0, 0]; 3],
+            vec![[1.0, 0.0, 0.0, 0.0]; 3],
+        ))
+        .expect("skin validates");
+        let joint = SkinningMatrix::from_transform(Transform {
+            scale: Vec3::new(2.0, 1.0, 1.0),
+            ..Transform::default()
+        });
+        let skinned = geometry
+            .skinned_vertices(geometry.vertices(), &[joint])
+            .expect("skinning succeeds")
+            .expect("skinned vertices are produced");
+
+        let expected = normalize_or(Vec3::new(0.5, 1.0, 0.0), Vec3::Y);
+        assert_vec3_near(skinned[0].normal, expected);
+    }
+
+    fn assert_vec3_near(actual: Vec3, expected: Vec3) {
+        const EPSILON: f32 = 0.0001;
+        assert!(
+            (actual.x - expected.x).abs() <= EPSILON
+                && (actual.y - expected.y).abs() <= EPSILON
+                && (actual.z - expected.z).abs() <= EPSILON,
+            "expected {actual:?} to be within {EPSILON} of {expected:?}"
+        );
     }
 }

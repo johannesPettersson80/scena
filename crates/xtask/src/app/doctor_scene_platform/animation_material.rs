@@ -193,6 +193,9 @@ pub(crate) fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Find
             "pub struct GeometryMorphTarget",
             "pub fn with_morph_targets",
             "pub fn morphed_vertices",
+            "normal_deltas",
+            "pub fn new_with_normals",
+            "pub fn normal_deltas",
             "InvalidMorphTargetVertexCount",
         ],
     );
@@ -208,7 +211,9 @@ pub(crate) fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Find
             "pub fn skinned_vertices",
             "from_gltf_column_major",
             "inverse_from_transform",
+            "pub fn transform_normal",
             "pub fn then",
+            "skinned_normals_use_inverse_transpose_under_nonuniform_joint_scale",
         ],
     );
     require_contains(
@@ -219,6 +224,8 @@ pub(crate) fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Find
         &[
             "read_morph_targets",
             "GeometryMorphTarget::new",
+            "GeometryMorphTarget::new_with_normals",
+            "normals.map(Vec3::from_array)",
             "read_joints",
             "read_weights",
             "GeometrySkin::new",
@@ -298,6 +305,7 @@ pub(crate) fn check_m3b_animation_contracts(root: &Path, findings: &mut Vec<Find
             "replace_import_invalidates_animation_mixers_with_stale_error",
             "gltf_animation_supports_rotation_scale_weights_and_normalizes_quaternions",
             "morph_target_weights_channel_updates_scene_morph_weights",
+            "gltf_morph_target_normal_deltas_deform_vertex_normals",
             "skinning_rebinds_joints_and_deforms_vertices_from_skeleton_hierarchy",
             "combined_morph_and_skinning_deforms_morphed_vertices_through_joint_matrices",
             "interpolation_handles_step_cubic_spline_and_quaternion_slerp",

@@ -98,9 +98,16 @@ fn parse_primitive(
     };
     let morph_targets = reader
         .read_morph_targets()
-        .filter_map(|(positions, _normals, _tangents)| {
+        .filter_map(|(positions, normals, _tangents)| {
             positions.map(|iter| {
-                GeometryMorphTarget::new(iter.map(Vec3::from_array).collect::<Vec<_>>())
+                let position_deltas = iter.map(Vec3::from_array).collect::<Vec<_>>();
+                match normals {
+                    Some(normals) => GeometryMorphTarget::new_with_normals(
+                        position_deltas,
+                        normals.map(Vec3::from_array).collect::<Vec<_>>(),
+                    ),
+                    None => GeometryMorphTarget::new(position_deltas),
+                }
             })
         })
         .collect::<Vec<_>>();
