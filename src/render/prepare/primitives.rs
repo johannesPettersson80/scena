@@ -2,7 +2,9 @@ use crate::diagnostics::PrepareError;
 use crate::geometry::{GeometryTopology, Primitive, PrimitiveVertexAttributes, Vertex};
 use crate::material::{MaterialDesc, MaterialKind};
 use crate::render::camera::CameraProjection;
-use crate::render::physical_transmission::PreparedPhysicalTransmission;
+use crate::render::physical_transmission::{
+    PreparedPhysicalTransmission, PreparedPhysicalTransmissionInput,
+};
 
 use super::cpu_bake::{
     CpuBakeCorner, baked_area_shadow_visibility, baked_shadow_visibility, cpu_texture_subdivisions,
@@ -335,8 +337,16 @@ fn append_triangle_primitives<F>(
         ];
         let subdivisions = cpu_texture_subdivisions(source.material, backend_shaded_material);
         let material_reflection = material_reflection(source.material);
-        let material_transmission = material_transmission(source.material);
         for sub_triangle in subdivided_cpu_corners(corners, subdivisions) {
+            let material_transmission = material_transmission(
+                source.material,
+                average_texture_sample(&sub_triangle, |uv| {
+                    transmission_texture_sample(source.assets, source.material, uv)
+                }),
+                average_texture_sample(&sub_triangle, |uv| {
+                    thickness_texture_sample(source.assets, source.material, uv)
+                }),
+            );
             let primitive = Primitive::triangle_with_attributes(
                 sub_triangle.map(|corner| Vertex {
                     position: corner.position,
@@ -379,18 +389,31 @@ fn material_reflection(material: &MaterialDesc) -> Option<PreparedMaterialReflec
     PreparedMaterialReflection::new(material.metallic_factor(), material.roughness_factor())
 }
 
-fn material_transmission(material: &MaterialDesc) -> Option<PreparedPhysicalTransmission> {
+fn material_transmission(
+    material: &MaterialDesc,
+    transmission_texture: f32,
+    thickness_texture: f32,
+) -> Option<PreparedPhysicalTransmission> {
     if material.kind() != MaterialKind::PbrMetallicRoughness {
         return None;
     }
-    PreparedPhysicalTransmission::new(
-        material.transmission_factor(),
-        material.ior(),
-        material.thickness_factor(),
-        material.attenuation_color(),
-        material.attenuation_distance(),
-        material.roughness_factor(),
-    )
+    PreparedPhysicalTransmission::new(PreparedPhysicalTransmissionInput {
+        transmission: material.transmission_factor(),
+        transmission_texture,
+        ior: material.ior(),
+        thickness: material.thickness_factor(),
+        thickness_texture,
+        attenuation_color: material.attenuation_color(),
+        attenuation_distance: material.attenuation_distance(),
+        roughness: material.roughness_factor(),
+    })
+}
+
+fn average_texture_sample(
+    corners: &[CpuBakeCorner; 3],
+    mut sample: impl FnMut([f32; 2]) -> f32,
+) -> f32 {
+    (sample(corners[0].uv) + sample(corners[1].uv) + sample(corners[2].uv)) / 3.0
 }
 
 fn structural_vertex_tint(tint: Option<crate::material::Color>) -> Option<crate::material::Color> {

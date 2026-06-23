@@ -3428,8 +3428,12 @@ fn m8_transmission_volume_textures_affect_cpu_preview_pixels() {
         render_center_rgb_for_transmission_volume_textures([255, 0, 0, 255], [0, 255, 0, 255]);
 
     assert!(
-        blue_glass[2] > blocked[2] + 12,
-        "transmissionTexture R and volume thickness/attenuation must affect CPU preview pixels: blocked={blocked:?} blue_glass={blue_glass:?}",
+        rgb_distance_u8(blocked, blue_glass) > 120,
+        "transmissionTexture R must gate physical transmission and change CPU preview pixels substantially: blocked={blocked:?} blue_glass={blue_glass:?}",
+    );
+    assert!(
+        rgb_sum(blocked) > rgb_sum(blue_glass) + 180,
+        "blocked transmission should stay opaque/bright while transmitted volume is absorbed by glass: blocked={blocked:?} blue_glass={blue_glass:?}",
     );
     assert!(
         blue_glass[2] > blue_glass[0] + 12 && blue_glass[2] > blue_glass[1] + 6,
@@ -4904,6 +4908,17 @@ fn dominant_rgb_channel(value: [u8; 3]) -> usize {
     } else {
         2
     }
+}
+
+fn rgb_sum(value: [u8; 3]) -> u16 {
+    u16::from(value[0]) + u16::from(value[1]) + u16::from(value[2])
+}
+
+fn rgb_distance_u8(left: [u8; 3], right: [u8; 3]) -> u16 {
+    left.into_iter()
+        .zip(right)
+        .map(|(left, right)| u16::from(left.abs_diff(right)))
+        .sum()
 }
 
 fn render_center_rgb_with_assets(assets: &Assets, material: MaterialDesc) -> [u8; 3] {

@@ -18,30 +18,37 @@ pub(in crate::render) struct PreparedPhysicalTransmission {
     roughness: f32,
 }
 
+pub(in crate::render) struct PreparedPhysicalTransmissionInput {
+    pub(in crate::render) transmission: f32,
+    pub(in crate::render) transmission_texture: f32,
+    pub(in crate::render) ior: f32,
+    pub(in crate::render) thickness: f32,
+    pub(in crate::render) thickness_texture: f32,
+    pub(in crate::render) attenuation_color: Color,
+    pub(in crate::render) attenuation_distance: f32,
+    pub(in crate::render) roughness: f32,
+}
+
 impl PreparedPhysicalTransmission {
-    pub(in crate::render) fn new(
-        transmission: f32,
-        ior: f32,
-        thickness: f32,
-        attenuation_color: Color,
-        attenuation_distance: f32,
-        roughness: f32,
-    ) -> Option<Self> {
-        let transmission = finite_or(transmission, 0.0).clamp(0.0, 1.0);
+    pub(in crate::render) fn new(input: PreparedPhysicalTransmissionInput) -> Option<Self> {
+        let transmission = finite_or(input.transmission, 0.0).clamp(0.0, 1.0)
+            * finite_or(input.transmission_texture, 1.0).clamp(0.0, 1.0);
         if transmission <= 0.001 {
             return None;
         }
+        let thickness = finite_or(input.thickness, 0.0).max(0.0)
+            * finite_or(input.thickness_texture, 1.0).max(0.0);
         Some(Self {
             transmission,
-            ior: finite_or(ior, 1.5).max(1.01),
-            thickness: finite_or(thickness, 0.0).max(0.0),
+            ior: finite_or(input.ior, 1.5).max(1.01),
+            thickness,
             attenuation_color: Vec3::new(
-                finite_or(attenuation_color.r, 1.0).clamp(0.0, 1.0),
-                finite_or(attenuation_color.g, 1.0).clamp(0.0, 1.0),
-                finite_or(attenuation_color.b, 1.0).clamp(0.0, 1.0),
+                finite_or(input.attenuation_color.r, 1.0).clamp(0.0, 1.0),
+                finite_or(input.attenuation_color.g, 1.0).clamp(0.0, 1.0),
+                finite_or(input.attenuation_color.b, 1.0).clamp(0.0, 1.0),
             ),
-            attenuation_distance,
-            roughness: finite_or(roughness, 1.0).clamp(0.04, 1.0),
+            attenuation_distance: input.attenuation_distance,
+            roughness: finite_or(input.roughness, 1.0).clamp(0.04, 1.0),
         })
     }
 }
@@ -192,14 +199,16 @@ mod tests {
 
     #[test]
     fn scene_color_transmission_uses_refraction_volume_and_reflection_terms() {
-        let material = PreparedPhysicalTransmission::new(
-            1.0,
-            1.48,
-            0.42,
-            Color::from_linear_rgb(0.35, 0.58, 1.0),
-            0.8,
-            0.08,
-        )
+        let material = PreparedPhysicalTransmission::new(PreparedPhysicalTransmissionInput {
+            transmission: 1.0,
+            transmission_texture: 1.0,
+            ior: 1.48,
+            thickness: 0.42,
+            thickness_texture: 1.0,
+            attenuation_color: Color::from_linear_rgb(0.35, 0.58, 1.0),
+            attenuation_distance: 0.8,
+            roughness: 0.08,
+        })
         .expect("transmission material is valid");
         let color = physical_transmission_color(
             material,

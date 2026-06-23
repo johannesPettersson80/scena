@@ -164,8 +164,13 @@ fn m8_headless_visual_artifacts_cover_material_texture_environment_paths() {
                 artifact.width,
             );
             assert!(
-                on[2] > off[2] + 1 && on[2] > on[0] && on[2] > on[1],
-                "transmission/volume visual proof must tint the transmitted glass path; \
+                rgb_distance(off, on) > 120 && rgb_sum(off) > rgb_sum(on) + 180,
+                "transmissionTexture must gate physical transmission and visibly separate blocked from transmitted glass; \
+                 off={off:?} on={on:?}"
+            );
+            assert!(
+                on[2] > on[0] && on[2] > on[1],
+                "volume attenuation visual proof must tint the transmitted glass path toward blue; \
                  off={off:?} on={on:?}"
             );
         }
@@ -987,6 +992,17 @@ fn max_rgb_in_region(rgba: &[u8], width: u32, min_x: u32, max_x: u32) -> [u16; 3
         }
     }
     max_rgb
+}
+
+fn rgb_sum(value: [u16; 3]) -> u16 {
+    value[0] + value[1] + value[2]
+}
+
+fn rgb_distance(left: [u16; 3], right: [u16; 3]) -> u16 {
+    left.into_iter()
+        .zip(right)
+        .map(|(left, right)| left.abs_diff(right))
+        .sum()
 }
 
 fn write_ppm_artifact(dir: &Path, artifact: &VisualArtifact) {
