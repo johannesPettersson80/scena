@@ -165,7 +165,7 @@ mod tests {
 
         let actual =
             ltc_area_light_specular_contribution(wide, position, normal, view, material, 1.0);
-        let expected = Vec3::new(0.168_247_9, 0.154_115_4, 0.134_073_29);
+        let expected = Vec3::new(0.172_101_13, 0.157_660_25, 0.137_179_69);
         let delta = (actual - expected).abs();
 
         assert!(

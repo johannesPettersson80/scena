@@ -253,7 +253,7 @@ pub(crate) fn check_prepare_asset_contracts(root: &Path, findings: &mut Vec<Find
             "selfshadow/ltc_code",
             "sample_ltc_tables",
             "clip_quad_to_horizon",
-            "ltc_lookup_matches_selfshadow_table_texel_probes",
+            "ltc_lookup_matches_reference_derived_compact_table_probes",
             "ltc_rect_probe_matches_selfshadow_reference_irradiance",
         ],
     );

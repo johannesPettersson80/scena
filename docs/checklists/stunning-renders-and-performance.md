@@ -254,14 +254,16 @@ Area lights give **soft shadows and broad soft speculars** — the studio-softbo
   proves the same finite-emitter soft-shadow quality check for `rect`, `disc`,
   and `sphere` area lights on both backends. Dedicated fitted-table LTC
   specular evaluation now runs in the CPU reference path and both GPU PBR
-  shader variants (`ltc_area_light_specular_contribution`,
+  shader variants with compact tables bilinearly resampled from the public
+  selfshadow/ltc_code 64x64 reference (`ltc_area_light_specular_contribution`,
   `ltc_lookup_tables`, `ltc_clip_quad_to_horizon`, `ltc_integrate_edge`).
   Test-first evidence:
   `triangle_shader_contains_ltc_area_light_specular_path_for_both_texture_layouts`
   failed before the WGSL implementation and now passes. The CPU unit
   `area_ltc_specular_matches_selfshadow_reference_probe` failed against the
   previous hand-rolled approximation (`1.242` red vs reference `0.168`) and now
-  passes through the shared selfshadow/ltc_code fitted-table path. The recipe
+  passes through the shared selfshadow/ltc_code fitted-table path, with a
+  compact-table oracle pinned against the full reference within 2.5%. The recipe
   proof `scena_recipe_render_area_light_ltc_specular_matches_cpu_and_gpu`
   renders a `rect`/`disc`/`sphere` roughness sweep through
   `recipe render --verify` on CPU and lavapipe HeadlessGpu and records

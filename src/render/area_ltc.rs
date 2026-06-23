@@ -54,8 +54,8 @@ pub(crate) fn evaluate_specular_polygon(
     }
     let integral = integrate_transformed_quad(transformed, true);
     let irradiance = integral;
-    let fresnel_scale = f0 * sample.fresnel_terms[0]
-        + (Vec3::new(1.0, 1.0, 1.0) - f0) * sample.fresnel_terms[1];
+    let fresnel_scale =
+        f0 * sample.fresnel_terms[0] + (Vec3::new(1.0, 1.0, 1.0) - f0) * sample.fresnel_terms[1];
     LtcSpecularProbe {
         irradiance,
         fresnel_scale,
@@ -73,7 +73,11 @@ fn sample_ltc_tables(roughness: f32, n_dot_v: f32) -> LtcTableSample {
     }
 }
 
-fn bilinear_sample(table: &[[[f32; 4]; area_ltc_tables::LTC_LUT_SIZE]; area_ltc_tables::LTC_LUT_SIZE], x: f32, y: f32) -> [f32; 4] {
+fn bilinear_sample(
+    table: &[[[f32; 4]; area_ltc_tables::LTC_LUT_SIZE]; area_ltc_tables::LTC_LUT_SIZE],
+    x: f32,
+    y: f32,
+) -> [f32; 4] {
     let x0 = x.floor() as usize;
     let y0 = y.floor() as usize;
     let x1 = (x0 + 1).min(area_ltc_tables::LTC_LUT_SIZE - 1);
@@ -259,7 +263,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ltc_lookup_matches_selfshadow_table_texel_probes() {
+    fn ltc_lookup_matches_reference_derived_compact_table_probes() {
         let probes = [
             (
                 0usize,
@@ -268,20 +272,20 @@ mod tests {
                 [1.0, 0.0, 0.0, 0.0],
             ),
             (
-                17,
-                23,
-                [0.863_371, -0.088_664_3, 0.347_744, 0.229_351],
-                [0.980_491, 0.000_105_514, 0.0, 0.023_963_5],
+                4,
+                6,
+                [0.868_313_4, -0.103_537_63, 0.344_345_93, 0.274_845],
+                [0.964_973_6, 0.000_118_414_864, 0.0, 0.041_082_84],
             ),
             (
-                42,
-                11,
-                [0.309_18, -0.028_105_4, 0.462_417, 0.018_949_8],
-                [0.998_878, 0.018_258, 0.0, 0.011_055_2],
+                10,
+                2,
+                [0.308_826_2, -0.016_467_8, 0.462_100_6, 0.011_038_956],
+                [0.999_632_6, 0.017_669_02, 0.0, 0.002_596_034],
             ),
             (
-                63,
-                63,
+                15,
+                15,
                 [0.996_389, -0.080_812_4, 0.048_900_7, 1.657_7],
                 [0.932_164, 0.047_189_9, 0.0, 1.0],
             ),
@@ -321,14 +325,18 @@ mod tests {
         );
 
         assert!(
-            (actual.irradiance - 0.005_732_002).abs() <= 0.000_000_5,
-            "LTC reference irradiance drifted: {actual:?}"
+            (actual.irradiance - 0.005_868_076).abs() <= 0.000_000_5,
+            "compact LTC irradiance drifted: {actual:?}"
         );
-        let expected_fresnel = Vec3::new(0.788_894_3, 0.752_738_24, 0.698_504_1);
+        let expected_fresnel = Vec3::new(0.788_249_14, 0.752_195_54, 0.698_115_17);
         let delta = (actual.fresnel_scale - expected_fresnel).abs();
         assert!(
             delta.max_element() <= 0.000_01,
-            "LTC reference Fresnel scale drifted: actual={actual:?}, expected={expected_fresnel:?}, delta={delta:?}"
+            "compact LTC Fresnel scale drifted: actual={actual:?}, expected={expected_fresnel:?}, delta={delta:?}"
+        );
+        assert!(
+            (actual.irradiance - 0.005_732_002).abs() <= 0.000_14,
+            "compact LTC table must remain within 2.5% of the 64x64 selfshadow reference irradiance; actual={actual:?}"
         );
     }
 
