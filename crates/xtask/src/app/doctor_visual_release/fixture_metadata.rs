@@ -222,7 +222,7 @@ pub(crate) fn check_m2_visual_fixture_metadata(root: &Path, findings: &mut Vec<F
             "center_rgba = [164, 0, 0, 255]",
             "center_rgba = [80, 80, 80, 255]",
             "nonblack_pixels = 154",
-            "rgba_hash = \"fnv1a64:0ec6270d35a4a042\"",
+            "rgba_hash = \"fnv1a64:d8583641b89998e4\"",
         ],
     );
     require_contains(

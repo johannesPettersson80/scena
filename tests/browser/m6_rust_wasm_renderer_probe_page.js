@@ -840,8 +840,9 @@ window.scenaViewerMobileA11yProbe = async function scenaViewerMobileA11yProbe() 
 
 function createCanvas(backend, workflow = "triangle") {
   const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 64;
+  const squareProofSize = workflow === "pbr-material-presets" ? 96 : 64;
+  canvas.width = squareProofSize;
+  canvas.height = squareProofSize;
   canvas.dataset.backend = backend;
   canvas.dataset.workflow = workflow;
   document.body.appendChild(canvas);
@@ -882,17 +883,164 @@ function summarizePixels(width, height, pixels) {
   };
 }
 
-function readWebGl2Pixels(canvas) {
+function summarizePixelBuffer(buffer) {
+  return buffer ? summarizePixels(buffer.width, buffer.height, buffer.pixels) : null;
+}
+
+function rendererReadbackPixelBuffer(result) {
+  const readback = result && result.renderer_readback;
+  if (
+    !readback ||
+    !Number.isFinite(readback.width) ||
+    !Number.isFinite(readback.height) ||
+    typeof readback.rgba8_base64 !== "string"
+  ) {
+    return null;
+  }
+  const binary = atob(readback.rgba8_base64);
+  const pixels = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    pixels[index] = binary.charCodeAt(index);
+  }
+  return { width: readback.width, height: readback.height, pixels };
+}
+
+function samplePixelBuffer(buffer, xNorm, yNorm) {
+  if (!buffer) {
+    return null;
+  }
+  const x = Math.max(0, Math.min(buffer.width - 1, Math.floor(xNorm * buffer.width)));
+  const y = Math.max(0, Math.min(buffer.height - 1, Math.floor(yNorm * buffer.height)));
+  const offset = (y * buffer.width + x) * 4;
+  return Array.from(buffer.pixels.slice(offset, offset + 4));
+}
+
+function pixelLuma(pixel) {
+  if (!pixel || pixel.length < 3) {
+    return null;
+  }
+  return 0.2126 * pixel[0] + 0.7152 * pixel[1] + 0.0722 * pixel[2];
+}
+
+function samplePixelNeighborhood(buffer, xNorm, yNorm, radius = 2) {
+  if (!buffer) {
+    return null;
+  }
+  const centerX = Math.max(0, Math.min(buffer.width - 1, Math.floor(xNorm * buffer.width)));
+  const centerY = Math.max(0, Math.min(buffer.height - 1, Math.floor(yNorm * buffer.height)));
+  let minimumLuma = Number.POSITIVE_INFINITY;
+  let maximumLuma = Number.NEGATIVE_INFINITY;
+  let sumLuma = 0;
+  let samples = 0;
+  for (let y = Math.max(0, centerY - radius); y <= Math.min(buffer.height - 1, centerY + radius); y += 1) {
+    for (let x = Math.max(0, centerX - radius); x <= Math.min(buffer.width - 1, centerX + radius); x += 1) {
+      const offset = (y * buffer.width + x) * 4;
+      const luma = pixelLuma(buffer.pixels.slice(offset, offset + 4));
+      if (!Number.isFinite(luma)) {
+        continue;
+      }
+      minimumLuma = Math.min(minimumLuma, luma);
+      maximumLuma = Math.max(maximumLuma, luma);
+      sumLuma += luma;
+      samples += 1;
+    }
+  }
+  if (samples === 0) {
+    return null;
+  }
+  return {
+    center_x: centerX,
+    center_y: centerY,
+    radius,
+    samples,
+    min_luma: minimumLuma,
+    max_luma: maximumLuma,
+    mean_luma: sumLuma / samples,
+  };
+}
+
+function materialPresetGlassPixelProof(metadata, buffer) {
+  const probes = Array.isArray(metadata && metadata.glass_pixel_probes)
+    ? metadata.glass_pixel_probes
+    : [];
+  if (!buffer || probes.length === 0) {
+    return {
+      status: "failed",
+      reason: "material preset glass proof has no projected browser pixel probes",
+      probes: [],
+      preset_contrasts: [],
+    };
+  }
+  const measured = probes.map((probe) => {
+    const pixel = samplePixelBuffer(buffer, probe.x_norm, probe.y_norm);
+    const neighborhood = samplePixelNeighborhood(buffer, probe.x_norm, probe.y_norm);
+    return {
+      preset: probe.preset,
+      bar_index: probe.bar_index,
+      expected: probe.expected,
+      x_norm: probe.x_norm,
+      y_norm: probe.y_norm,
+      pixel,
+      luma: pixelLuma(pixel),
+      neighborhood,
+    };
+  });
+  const byPreset = new Map();
+  for (const probe of measured) {
+    if (!byPreset.has(probe.preset)) {
+      byPreset.set(probe.preset, { bright: [], dark: [] });
+    }
+    const bucket = byPreset.get(probe.preset);
+    if (probe.expected === "bright" && probe.neighborhood) {
+      bucket.bright.push(probe.neighborhood.max_luma);
+    } else if (probe.expected === "dark" && probe.neighborhood) {
+      bucket.dark.push(probe.neighborhood.min_luma);
+    }
+  }
+  const presetContrasts = [];
+  for (const [preset, bucket] of byPreset.entries()) {
+    const bright = bucket.bright.length
+      ? Math.max(...bucket.bright)
+      : null;
+    const dark = bucket.dark.length
+      ? Math.min(...bucket.dark)
+      : null;
+    const contrast = Number.isFinite(bright) && Number.isFinite(dark) ? bright - dark : null;
+    presetContrasts.push({
+      preset,
+      bright_luma: bright,
+      dark_luma: dark,
+      contrast,
+      passed: Number.isFinite(contrast) && contrast >= 10,
+    });
+  }
+  const passed =
+    presetContrasts.length >= 2 &&
+    presetContrasts.every((entry) => entry.passed === true);
+  return {
+    status: passed ? "passed" : "failed",
+    proof_class: "browser-glass-pixel-probes",
+    min_contrast: presetContrasts.reduce(
+      (minimum, entry) =>
+        Number.isFinite(entry.contrast) ? Math.min(minimum, entry.contrast) : minimum,
+      Number.POSITIVE_INFINITY,
+    ),
+    probes: measured,
+    preset_contrasts: presetContrasts,
+  };
+}
+
+function readWebGl2PixelBuffer(canvas) {
   const gl = canvas.getContext("webgl2", { antialias: false, preserveDrawingBuffer: true });
   if (!gl) {
     return null;
   }
   const pixels = new Uint8Array(canvas.width * canvas.height * 4);
   gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-  return summarizePixels(canvas.width, canvas.height, pixels);
+  return { width: canvas.width, height: canvas.height, pixels };
 }
 
-function readCanvasPixels(canvas) {
+function readCanvasPixelBuffer(canvas) {
   const copy = document.createElement("canvas");
   copy.width = canvas.width;
   copy.height = canvas.height;
@@ -901,11 +1049,26 @@ function readCanvasPixels(canvas) {
     return null;
   }
   context.drawImage(canvas, 0, 0);
-  return summarizePixels(
-    copy.width,
-    copy.height,
-    context.getImageData(0, 0, copy.width, copy.height).data,
-  );
+  return {
+    width: copy.width,
+    height: copy.height,
+    pixels: context.getImageData(0, 0, copy.width, copy.height).data,
+  };
+}
+
+function readRenderedPixelBuffer(backend, canvas) {
+  if (backend === "webgl2") {
+    return readWebGl2PixelBuffer(canvas) || readCanvasPixelBuffer(canvas);
+  }
+  return readCanvasPixelBuffer(canvas);
+}
+
+function readWebGl2Pixels(canvas) {
+  return summarizePixelBuffer(readWebGl2PixelBuffer(canvas));
+}
+
+function readCanvasPixels(canvas) {
+  return summarizePixelBuffer(readCanvasPixelBuffer(canvas));
 }
 
 function readRenderedPixels(backend, canvas) {
@@ -979,6 +1142,12 @@ async function runProbe(backend, workflow, render) {
   result.pixels = pixelStatistics;
   result.pixel_source = useRendererReadback ? "renderer-owned-gpu-copy" : "canvas-readback";
   result.pixel_readback_attempts = readback.attempts;
+  if (workflow === "pbr-material-presets") {
+    result.material_preset_glass_pixels = materialPresetGlassPixelProof(
+      result.metadata || {},
+      rendererReadbackPixelBuffer(result) || readRenderedPixelBuffer(backend, canvas),
+    );
+  }
   result.canvas_data_url = canvas.toDataURL("image/png");
   result.screenshot_metadata = {
     backend,

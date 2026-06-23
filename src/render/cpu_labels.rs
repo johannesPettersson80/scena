@@ -159,7 +159,7 @@ impl ScreenLabelVertex {
             x: (projected.ndc_x * 0.5 + 0.5) * width,
             y: (1.0 - (projected.ndc_y * 0.5 + 0.5)) * height,
             depth: projected.depth,
-            inv_depth: projected.depth.recip(),
+            inv_depth: projected.view_depth.recip(),
             position: vertex.0,
             u: vertex.1,
             v: vertex.2,

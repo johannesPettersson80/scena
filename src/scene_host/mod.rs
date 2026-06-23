@@ -112,7 +112,7 @@ pub use presentation_timeline::{
 };
 pub use product::{
     SCENE_HOST_GROUNDING_SCHEMA_V1, SceneHostGroundingFallbackV1, SceneHostGroundingPathV1,
-    SceneHostGroundingReportV1,
+    SceneHostGroundingReportV1, SceneSetupPreset,
 };
 pub use product_options::{
     PRODUCT_OPTIONS_SCHEMA_V1, ProductOptionGroupV1, ProductOptionV1, ProductOptionsV1,

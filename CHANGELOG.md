@@ -8,10 +8,13 @@ All notable user-facing changes are recorded here.
 
 - Improved the LLM app-builder path: schema examples and `examples agent`
   templates now include a key/fill/rim light rig, bundled HDR environment,
-  presentable backgrounds, and a useful capture-size floor; `validate-recipe`
-  enforces the same local path policy as recipe build, recipe bbox-fit
-  expectations measure subject bounds instead of floor/grid helpers, and recipe
-  animation verification handles imported glTF clips as well as authored clips.
+  presentable backgrounds, and a useful capture-size floor; recipes can now use
+  `scene.preset:"product_studio"|"cad_studio"|"industrial_studio"` to apply a
+  matching environment, background, floor/grid, floor reflection, and
+  contact-shadow SSAO from one field; `validate-recipe` enforces the same local
+  path policy as recipe build, recipe bbox-fit expectations measure subject
+  bounds instead of floor/grid helpers, and recipe animation verification
+  handles imported glTF clips as well as authored clips.
 - Added opt-in GPU rendering for `scena render` and `scena recipe render`
   through `--gpu` / `SCENA_USE_GPU=1`; CPU headless rendering remains the
   deterministic default, and reports continue to expose the backend actually
@@ -20,6 +23,32 @@ All notable user-facing changes are recorded here.
   `render.reconstruction: "box" | "tent" | "gaussian"`; downsampling now filters
   in linear light, `box` remains the default, and supersample factor `8` is
   guarded by target-size capability checks before allocating the internal frame.
+- Added opt-in depth-of-field post-processing through
+  `DepthOfFieldConfig` and recipe `render.depth_of_field`, with CPU and
+  HeadlessGpu depth-source reporting plus an `expect_quality.depth_of_field`
+  verifier that compares the native-resolution render against a same-backend
+  no-DoF baseline.
+- Added conservative GPU prepare auto-instancing for repeated ordinary mesh
+  nodes with identical geometry/material and no morph/skin deformation, reducing
+  repeated authored-node draw setup while keeping the CPU reference path and
+  scene identity unchanged.
+- Added allocation-aware M9 performance budgets: benchmark rows now record
+  `p95_allocations_per_frame` and `max_allocations_per_frame`, compare them
+  against stored baselines, and fail release-readiness when frame-time or
+  allocation budgets regress.
+- Increased the default/recommended grid-floor stroke width and tightened the
+  recipe grid-line quality verifier to inspect the native-resolution
+  lower-floor detail crop, so hero floor grids no longer pass from a broad
+  full-frame metric while still looking chunky in the visible crop.
+- Reduced HDRI specular fireflies in chrome/polished-metal reflections by
+  source-mip sampling during GGX environment prefiltering, and added
+  `expect_quality.reflection.max_firefly_fraction` so recipe verification can
+  fail isolated bright reflection specks instead of treating them as valid
+  structure.
+- Added LTC-style area-light specular evaluation for rectangular, disc, and
+  sphere recipe area lights on the CPU reference path and both GPU PBR shader
+  variants, with CPU/lavapipe recipe-render parity proof for broad softbox
+  highlights.
 - Added the repo-hosted `.codex/skills/scena-app-builder` LLM skill and
   `docs/guides/llm-app-builder.md` guide for building and verifying scena
   applications from public schemas, recipes, CLI commands, diagnostics, and
@@ -65,9 +94,10 @@ All notable user-facing changes are recorded here.
   covering empty, offscreen, and valid centered frames.
 - Added `scena.render_quality.v1`, a native-resolution recipe verification
   report for severe exposure failures, profile-scoped exposure/contrast/noise
-  and text-integrity checks, and opt-in reference fidelity (`rgba_abs_diff`,
-  Delta E 2000, SSIM). Failures carry actionable `fix_hint` strings and are
-  surfaced in the compact recipe verification reasons.
+  and text-integrity checks, geometry/line/reflection/area-light/grounding/depth-
+  of-field checks, and opt-in reference fidelity (`rgba_abs_diff`, Delta E 2000,
+  SSIM). Failures carry actionable `fix_hint` strings and are surfaced in the
+  compact recipe verification reasons.
 - Added `scena.visibility_diagnosis.v1`, an inspection-backed visibility
   diagnoser with stable reason codes and explicit fix suggestions behind the
   `inspection` feature. Whole-scene `all_culled` diagnosis requires every
@@ -283,6 +313,10 @@ All notable user-facing changes are recorded here.
 
 ### Fixed
 
+- CPU depth buffers now store normalized post-process depth while preserving
+  view-depth interpolation for rasterization, so CPU SSAO uses the same
+  threshold space as GPU SSAO and no longer turns tiny floor-depth jitter into
+  broad noisy contact-shadow bands.
 - TrueType label rendering now preserves glyph coverage instead of thresholding
   anti-aliased pixels into hard-edged 1-bit cells. Renderer-owned glyph
   coverage is distinct from user label alpha, so the existing fail-closed

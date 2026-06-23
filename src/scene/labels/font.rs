@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use super::{LabelGlyphRaster, LabelMetrics};
 
-const DEFAULT_LABEL_FONT_BYTES: &[u8] = include_bytes!("fonts/LiberationSans-Regular.ttf");
+const DEFAULT_LABEL_FONT_BYTES: &[u8] = include_bytes!("fonts/ScenaBasicLatin-Regular.ttf");
 
 #[derive(Clone)]
 pub struct LabelFontFace {
@@ -86,7 +86,7 @@ pub(super) fn default_label_font_face() -> LabelFontFace {
     DEFAULT_FONT
         .get_or_init(|| {
             LabelFontFace::from_truetype_bytes(DEFAULT_LABEL_FONT_BYTES)
-                .expect("embedded Liberation Sans regular font must parse")
+                .expect("embedded Scena basic Latin font must parse")
         })
         .clone()
 }

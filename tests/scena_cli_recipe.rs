@@ -1294,7 +1294,7 @@ fn write_line_quality_recipe_with_render(
     let mut recipe = json!({
         "schema": "scena.scene_recipe.v1",
         "geometries": [
-            { "id": "marker_geo", "primitive": { "kind": "box", "size": [0.08, 0.08, 0.08] } }
+            { "id": "marker_geo", "primitive": { "kind": "box", "size": [0.6, 0.6, 0.08] } }
         ],
         "materials": [
             { "id": "marker_mat", "kind": "unlit", "base_color": "#3A7BD5" }
@@ -1310,7 +1310,6 @@ fn write_line_quality_recipe_with_render(
             "kind": "distance",
             "start": [-0.7, -0.25, 0.0],
             "end": [0.7, 0.35, 0.0],
-            "label": "LENGTH",
             "unit": "m",
             "precision": 2
         }],
@@ -1350,6 +1349,50 @@ fn write_geometry_edge_quality_recipe(
     supersample: Option<u8>,
     min_intermediate_edge_fraction: Option<f64>,
 ) -> (PathBuf, PathBuf) {
+    write_geometry_edge_quality_recipe_with_profile_and_colors(
+        dir,
+        name,
+        anti_aliasing,
+        supersample,
+        min_intermediate_edge_fraction,
+        "product",
+        "#D8D8D8",
+        "#808080",
+    )
+}
+
+fn write_geometry_edge_quality_recipe_with_colors(
+    dir: &Path,
+    name: &str,
+    anti_aliasing: &str,
+    supersample: Option<u8>,
+    min_intermediate_edge_fraction: Option<f64>,
+    bar_color: &str,
+    background_color: &str,
+) -> (PathBuf, PathBuf) {
+    write_geometry_edge_quality_recipe_with_profile_and_colors(
+        dir,
+        name,
+        anti_aliasing,
+        supersample,
+        min_intermediate_edge_fraction,
+        "product",
+        bar_color,
+        background_color,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_geometry_edge_quality_recipe_with_profile_and_colors(
+    dir: &Path,
+    name: &str,
+    anti_aliasing: &str,
+    supersample: Option<u8>,
+    min_intermediate_edge_fraction: Option<f64>,
+    quality_profile: &str,
+    bar_color: &str,
+    background_color: &str,
+) -> (PathBuf, PathBuf) {
     let recipe_path = dir.join(format!("{name}.recipe.json"));
     let png_path = dir.join(format!("{name}.png"));
     let mut render = json!({
@@ -1361,7 +1404,7 @@ fn write_geometry_edge_quality_recipe(
         render["supersample"] = json!(supersample);
     }
     let mut expect_quality = json!({
-        "profile": "product"
+        "profile": quality_profile
     });
     if let Some(min_intermediate_edge_fraction) = min_intermediate_edge_fraction {
         expect_quality["geometry"] = json!({
@@ -1376,7 +1419,7 @@ fn write_geometry_edge_quality_recipe(
                 { "id": "bar_geo", "primitive": { "kind": "box", "size": [1.45, 0.16, 0.08] } }
             ],
             "materials": [
-                { "id": "bar_mat", "kind": "unlit", "base_color": "#D8D8D8", "double_sided": false }
+                { "id": "bar_mat", "kind": "unlit", "base_color": bar_color, "double_sided": false }
             ],
             "nodes": [
                 {
@@ -1387,7 +1430,7 @@ fn write_geometry_edge_quality_recipe(
                 }
             ],
             "scene": {
-                "background": { "kind": "custom", "color": "#808080" }
+                "background": { "kind": "custom", "color": background_color }
             },
             "render": render,
             "cameras": [{
@@ -1405,6 +1448,477 @@ fn write_geometry_edge_quality_recipe(
         .expect("geometry edge quality recipe serializes"),
     )
     .expect("geometry edge quality recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
+fn write_reflection_quality_recipe(
+    dir: &Path,
+    name: &str,
+    reflection_enabled: bool,
+) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    let mut grid = json!({
+        "enabled": true,
+        "floor_y": 0.0,
+        "padding": 0.55,
+        "line_spacing": 0.18,
+        "line_width_px": 4.0,
+        "color": "floor",
+        "line_color": "floor_line",
+        "roughness": 0.04
+    });
+    if reflection_enabled {
+        grid["reflection"] = json!({
+            "enabled": true,
+            "strength": 0.72
+        });
+    }
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "red": "#E83A3A",
+                "blue": "#236BFF",
+                "floor": "#3B414B",
+                "floor_line": "#F2F6FF"
+            },
+            "geometries": [
+                { "id": "tower_geo", "primitive": { "kind": "box", "size": [0.28, 0.82, 0.18] } },
+                { "id": "cap_geo", "primitive": { "kind": "box", "size": [0.42, 0.16, 0.22] } }
+            ],
+            "materials": [
+                { "id": "tower_red", "kind": "pbr_metallic_roughness", "base_color": "red", "metallic": 0.0, "roughness": 0.30 },
+                { "id": "cap_blue", "kind": "pbr_metallic_roughness", "base_color": "blue", "metallic": 0.0, "roughness": 0.26 }
+            ],
+            "nodes": [
+                {
+                    "id": "tower",
+                    "geometry": "tower_geo",
+                    "material": "tower_red",
+                    "transform": { "kind": "trs", "translation": [-0.11, 0.41, 0.0] }
+                },
+                {
+                    "id": "cap",
+                    "geometry": "cap_geo",
+                    "material": "cap_blue",
+                    "transform": { "kind": "trs", "translation": [0.11, 0.90, 0.0] }
+                }
+            ],
+            "lights": [
+                { "id": "key", "kind": "directional", "preset": "key" },
+                { "id": "fill", "kind": "directional", "preset": "fill" }
+            ],
+            "scene": {
+                "background": { "kind": "white" },
+                "grid": grid,
+                "environment": { "kind": "default" }
+            },
+            "render": {
+                "anti_aliasing": "msaa4",
+                "tonemapper": "standard",
+                "exposure_ev": 0.0
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 34.0,
+                "transform": { "kind": "look_at", "eye": [0.0, 1.18, 2.85], "target": [0.0, 0.42, 0.0] }
+            }],
+            "capture": { "width": 260, "height": 220 },
+            "expect": {
+                "expect_quality": {
+                    "profile": "product",
+                    "reflection": {
+                        "min_luminance_range": 0.18,
+                        "min_sobel_energy": 0.035,
+                        "min_chroma_range": 0.08
+                    }
+                }
+            }
+        }))
+        .expect("reflection quality recipe serializes"),
+    )
+    .expect("reflection quality recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
+fn write_screen_space_reflection_quality_recipe(dir: &Path, name: &str) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    let mut render = json!({
+        "anti_aliasing": "msaa4",
+        "tonemapper": "standard",
+        "exposure_ev": 0.0,
+        "screen_space_reflections": {
+            "strength": 0.82,
+            "roughness": 0.16,
+            "horizon_fraction": 0.58,
+            "fade": 0.28
+        }
+    });
+    render["supersample"] = json!(2);
+    render["reconstruction"] = json!("tent");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "red": "#E83A3A",
+                "blue": "#236BFF",
+                "floor": "#3B414B",
+                "floor_line": "#F2F6FF"
+            },
+            "geometries": [
+                { "id": "tower_geo", "primitive": { "kind": "box", "size": [0.28, 0.82, 0.18] } },
+                { "id": "cap_geo", "primitive": { "kind": "box", "size": [0.42, 0.16, 0.22] } }
+            ],
+            "materials": [
+                { "id": "tower_red", "kind": "pbr_metallic_roughness", "base_color": "red", "metallic": 0.0, "roughness": 0.30 },
+                { "id": "cap_blue", "kind": "pbr_metallic_roughness", "base_color": "blue", "metallic": 0.0, "roughness": 0.26 }
+            ],
+            "nodes": [
+                {
+                    "id": "tower",
+                    "geometry": "tower_geo",
+                    "material": "tower_red",
+                    "transform": { "kind": "trs", "translation": [-0.11, 0.41, 0.0] }
+                },
+                {
+                    "id": "cap",
+                    "geometry": "cap_geo",
+                    "material": "cap_blue",
+                    "transform": { "kind": "trs", "translation": [0.11, 0.90, 0.0] }
+                }
+            ],
+            "lights": [
+                { "id": "key", "kind": "directional", "preset": "key" },
+                { "id": "fill", "kind": "directional", "preset": "fill" }
+            ],
+            "scene": {
+                "background": { "kind": "white" },
+                "grid": {
+                    "enabled": true,
+                    "floor_y": 0.0,
+                    "padding": 0.55,
+                    "line_spacing": 0.18,
+                    "line_width_px": 4.0,
+                    "color": "floor",
+                    "line_color": "floor_line",
+                    "roughness": 0.04
+                },
+                "environment": { "kind": "default" }
+            },
+            "render": render,
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 34.0,
+                "transform": { "kind": "look_at", "eye": [0.0, 1.18, 2.85], "target": [0.0, 0.42, 0.0] }
+            }],
+            "capture": { "width": 260, "height": 220 },
+            "expect": {
+                "expect_quality": {
+                    "profile": "product",
+                    "reflection": {
+                        "min_luminance_range": 0.18,
+                        "min_sobel_energy": 0.035,
+                        "min_chroma_range": 0.08
+                    }
+                }
+            }
+        }))
+        .expect("screen-space reflection quality recipe serializes"),
+    )
+    .expect("screen-space reflection quality recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
+fn write_material_reflection_quality_recipe(
+    dir: &Path,
+    name: &str,
+    enable_ssr: bool,
+) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    let render = if enable_ssr {
+        json!({
+            "anti_aliasing": "msaa4",
+            "supersample": 2,
+            "reconstruction": "tent",
+            "tonemapper": "standard",
+            "exposure_ev": 0.0,
+            "screen_space_reflections": {
+                "strength": 0.92,
+                "roughness": 0.10,
+                "horizon_fraction": 0.95,
+                "fade": 0.20
+            }
+        })
+    } else {
+        json!({
+            "anti_aliasing": "msaa4",
+            "supersample": 2,
+            "reconstruction": "tent",
+            "tonemapper": "standard",
+            "exposure_ev": 0.0
+        })
+    };
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "mirror_color": "#D8DDE6",
+                "red": "#E42323",
+                "blue": "#1F66FF",
+                "white": "#F7F8FA"
+            },
+            "geometries": [
+                { "id": "mirror_geo", "primitive": { "kind": "sphere", "radius": 0.42, "segments": 48, "rings": 24 } },
+                { "id": "secondary_mirror_geo", "primitive": { "kind": "box", "size": [0.34, 0.58, 0.16] } },
+                { "id": "red_geo", "primitive": { "kind": "box", "size": [0.24, 0.82, 0.20] } },
+                { "id": "blue_geo", "primitive": { "kind": "box", "size": [0.24, 0.82, 0.20] } }
+            ],
+            "materials": [
+                { "id": "mirror_mat", "kind": "pbr_metallic_roughness", "base_color": "mirror_color", "metallic": 1.0, "roughness": 0.045 },
+                { "id": "secondary_mirror_mat", "kind": "pbr_metallic_roughness", "base_color": "mirror_color", "metallic": 1.0, "roughness": 0.08 },
+                { "id": "red_mat", "kind": "pbr_metallic_roughness", "base_color": "red", "metallic": 0.0, "roughness": 0.35 },
+                { "id": "blue_mat", "kind": "pbr_metallic_roughness", "base_color": "blue", "metallic": 0.0, "roughness": 0.35 }
+            ],
+            "nodes": [
+                { "id": "mirror", "geometry": "mirror_geo", "material": "mirror_mat", "transform": { "kind": "trs", "translation": [-0.28, 0.47, 0.0] } },
+                { "id": "mirror_secondary", "geometry": "secondary_mirror_geo", "material": "secondary_mirror_mat", "transform": { "kind": "trs", "translation": [0.46, 0.50, -0.02], "rotation_degrees": [0.0, -16.0, 0.0] } },
+                { "id": "red_panel", "geometry": "red_geo", "material": "red_mat", "transform": { "kind": "trs", "translation": [-0.86, 0.44, 0.24] } },
+                { "id": "blue_panel", "geometry": "blue_geo", "material": "blue_mat", "transform": { "kind": "trs", "translation": [0.92, 0.44, 0.24] } }
+            ],
+            "lights": [
+                { "id": "key", "kind": "directional", "preset": "key" },
+                { "id": "fill", "kind": "directional", "preset": "fill" },
+                { "id": "rim", "kind": "directional", "preset": "rim" }
+            ],
+            "scene": {
+                "background": { "kind": "white" },
+                "environment": { "kind": "default" }
+            },
+            "render": render,
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 30.0,
+                "transform": { "kind": "look_at", "eye": [0.10, 0.78, 3.35], "target": [0.08, 0.48, 0.0] }
+            }],
+            "capture": { "width": 320, "height": 260 },
+            "expect": {
+                "expect_quality": {
+                    "profile": "product",
+                    "reflection": {
+                        "target": { "kind": "node", "id": "mirror" },
+                        "min_luminance_range": 0.18,
+                        "min_sobel_energy": 0.070,
+                        "min_chroma_range": 0.16
+                    }
+                }
+            }
+        }))
+        .expect("material reflection quality recipe serializes"),
+    )
+    .expect("material reflection quality recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
+fn write_ergonomic_product_recipe(dir: &Path, name: &str) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "red_panel_color": "#E42323",
+                "blue_panel_color": "#1F66FF"
+            },
+            "geometries": [
+                { "id": "product_geo", "primitive": { "kind": "sphere", "radius": 0.42, "segments": 64, "rings": 32 } },
+                { "id": "red_panel_geo", "primitive": { "kind": "box", "size": [0.24, 0.82, 0.20] } },
+                { "id": "blue_panel_geo", "primitive": { "kind": "box", "size": [0.24, 0.82, 0.20] } }
+            ],
+            "materials": [
+                { "id": "product_mat", "preset": "chrome", "roughness": 0.045 },
+                { "id": "red_mat", "preset": "plastic", "base_color": "red_panel_color", "roughness": 0.35 },
+                { "id": "blue_mat", "preset": "plastic", "base_color": "blue_panel_color", "roughness": 0.35 }
+            ],
+            "nodes": [
+                {
+                    "id": "product",
+                    "geometry": "product_geo",
+                    "material": "product_mat",
+                    "transform": { "kind": "trs", "translation": [-0.18, 0.46, 0.0] }
+                },
+                {
+                    "id": "red_panel",
+                    "geometry": "red_panel_geo",
+                    "material": "red_mat",
+                    "transform": { "kind": "trs", "translation": [-0.86, 0.42, 0.22] }
+                },
+                {
+                    "id": "blue_panel",
+                    "geometry": "blue_panel_geo",
+                    "material": "blue_mat",
+                    "transform": { "kind": "trs", "translation": [0.82, 0.42, 0.22] }
+                }
+            ],
+            "lights": [
+                { "id": "studio", "kind": "studio_rig", "preset": "studio_rig" }
+            ],
+            "scene": {
+                "preset": "product_studio",
+                "environment": { "preset": "studio" }
+            },
+            "render": {
+                "auto_exposure": "product_studio",
+                "anti_aliasing": "msaa4",
+                "supersample": 2,
+                "reconstruction": "tent",
+                "tonemapper": "standard",
+                "screen_space_reflections": {
+                    "strength": 0.92,
+                    "roughness": 0.10,
+                    "horizon_fraction": 0.95,
+                    "fade": 0.20
+                }
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "lens": "portrait",
+                "framing": {
+                    "preset": "three_quarter_front_right",
+                    "fill": 0.64,
+                    "margin_px": 18.0
+                },
+                "active": true
+            }],
+            "capture": { "width": 320, "height": 260 },
+            "expect": {
+                "expect_visible": [
+                    { "id": "product-visible", "target": { "kind": "node", "id": "product" } }
+                ],
+                "expect_bbox_fit": { "min": 0.35, "max": 0.92 },
+                "expect_quality": {
+                    "profile": "product",
+                    "exposure": {
+                        "max_low_clip_fraction": 0.70,
+                        "max_high_clip_fraction": 0.10
+                    },
+                    "geometry": {
+                        "min_intermediate_edge_fraction": 0.0
+                    },
+                    "reflection": {
+                        "target": { "kind": "node", "id": "product" },
+                        "min_luminance_range": 0.12,
+                        "min_sobel_energy": 0.045,
+                        "min_chroma_range": 0.08
+                    }
+                }
+            }
+        }))
+        .expect("ergonomic product recipe serializes"),
+    )
+    .expect("ergonomic product recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
+fn write_chrome_ibl_firefly_recipe(dir: &Path, name: &str) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "chrome": "#F2F4F8"
+            },
+            "geometries": [
+                {
+                    "id": "chrome_geo",
+                    "primitive": {
+                        "kind": "sphere",
+                        "radius": 0.48,
+                        "segments": 64,
+                        "rings": 32
+                    }
+                }
+            ],
+            "materials": [
+                {
+                    "id": "chrome_mat",
+                    "kind": "pbr_metallic_roughness",
+                    "base_color": "chrome",
+                    "metallic": 1.0,
+                    "roughness": 0.05
+                }
+            ],
+            "nodes": [
+                {
+                    "id": "chrome_sphere",
+                    "geometry": "chrome_geo",
+                    "material": "chrome_mat",
+                    "transform": {
+                        "kind": "trs",
+                        "translation": [0.0, 0.52, 0.0]
+                    }
+                }
+            ],
+            "scene": {
+                "background": { "kind": "white" },
+                "environment": {
+                    "kind": "uri",
+                    "uri": "tests/assets/environment/polyhaven/studio_small_03_1k.hdr"
+                }
+            },
+            "render": {
+                "anti_aliasing": "none",
+                "tonemapper": "standard",
+                "exposure_ev": 0.0
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 30.0,
+                "transform": {
+                    "kind": "look_at",
+                    "eye": [0.0, 0.74, 3.2],
+                    "target": "chrome_sphere"
+                }
+            }],
+            "capture": { "width": 260, "height": 220 },
+            "expect": {
+                "expect_quality": {
+                    "profile": "product",
+                    "reflection": {
+                        "target": { "kind": "node", "id": "chrome_sphere" },
+                        "min_luminance_range": 0.0,
+                        "min_sobel_energy": 0.0,
+                        "min_chroma_range": 0.0,
+                        "max_firefly_fraction": 0.006
+                    }
+                }
+            }
+        }))
+        .expect("chrome IBL firefly recipe serializes"),
+    )
+    .expect("chrome IBL firefly recipe writes");
     (recipe_path, png_path)
 }
 
@@ -1675,6 +2189,688 @@ fn write_reconstruction_grid_recipe(
 }
 
 #[cfg(feature = "scene-host")]
+fn write_recipe_grid_floor_line_quality_recipe(dir: &Path, name: &str) -> (PathBuf, PathBuf) {
+    write_recipe_grid_floor_line_quality_recipe_with_settings(
+        dir, name, "msaa4", 2, "tent", 4.0, "#F2F6FF", true,
+    )
+}
+
+#[cfg(feature = "scene-host")]
+#[allow(clippy::too_many_arguments)]
+fn write_recipe_grid_floor_line_quality_recipe_with_settings(
+    dir: &Path,
+    name: &str,
+    anti_aliasing: &str,
+    supersample: u8,
+    reconstruction: &str,
+    line_width_px: f64,
+    grid_line_color: &str,
+    expect_quality: bool,
+) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    let mut expect = json!({
+        "expect_grounded": [{
+            "id": "grid_anchor_grounded",
+            "target": { "kind": "node", "id": "grid_anchor" },
+            "plane_y": 0.0,
+            "tolerance": 0.02
+        }]
+    });
+    if expect_quality {
+        expect["expect_quality"] = json!({
+            "profile": "product"
+        });
+    }
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "anchor": "#8A94A6",
+                "floor": "#242A32",
+                "grid_line": grid_line_color
+            },
+            "geometries": [
+                { "id": "anchor_geo", "primitive": { "kind": "box", "size": [0.18, 0.18, 0.18] } }
+            ],
+            "materials": [
+                { "id": "anchor_mat", "kind": "unlit", "base_color": "anchor" }
+            ],
+            "nodes": [
+                {
+                    "id": "grid_anchor",
+                    "geometry": "anchor_geo",
+                    "material": "anchor_mat",
+                    "transform": { "kind": "trs", "translation": [0.0, 0.09, 0.0] }
+                }
+            ],
+            "scene": {
+                "background": { "kind": "custom", "color": "#242A32" },
+                "grid": {
+                    "enabled": true,
+                    "floor_y": 0.0,
+                    "padding": 0.42,
+                    "line_spacing": 0.105,
+                    "color": "floor",
+                    "line_color": "grid_line",
+                    "line_width_px": line_width_px,
+                    "roughness": 0.85
+                }
+            },
+            "render": {
+                "anti_aliasing": anti_aliasing,
+                "supersample": supersample,
+                "reconstruction": reconstruction,
+                "tonemapper": "standard",
+                "exposure_ev": 0.0
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 35.0,
+                "transform": {
+                    "kind": "look_at",
+                    "eye": [0.0, 0.78, 1.68],
+                    "target": [0.0, 0.0, 0.0]
+                }
+            }],
+            "capture": { "width": 320, "height": 220 },
+            "expect": expect
+        }))
+        .expect("grid floor line quality recipe serializes"),
+    )
+    .expect("grid floor line quality recipe writes");
+    (recipe_path, png_path)
+}
+
+fn add_text_quality_block(recipe_path: &Path) {
+    let mut recipe: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(recipe_path).expect("recipe exists"))
+            .expect("recipe parses");
+    recipe["expect"]["expect_quality"]["text"] = json!({
+        "min_ink_coverage": 0.01,
+        "max_ink_isolation": 0.50,
+        "min_intermediate_edge_fraction": 0.01
+    });
+    fs::write(
+        recipe_path,
+        serde_json::to_string_pretty(&recipe).expect("recipe serializes"),
+    )
+    .expect("recipe writes");
+}
+
+#[cfg(feature = "scene-host")]
+fn write_area_light_shape_recipe(dir: &Path, name: &str, width: f64) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "body_color": "#4F5B70",
+                "warm_color": "#FFE3BC",
+                "bg_color": "#20242C"
+            },
+            "geometries": [
+                { "id": "body_geo", "primitive": { "kind": "sphere", "radius": 0.46, "segments": 64, "rings": 32 } }
+            ],
+            "materials": [
+                { "id": "body_mat", "kind": "pbr_metallic_roughness", "base_color": "body_color", "metallic": 0.0, "roughness": 0.10 }
+            ],
+            "nodes": [
+                { "id": "body", "geometry": "body_geo", "material": "body_mat" }
+            ],
+            "lights": [{
+                "id": "softbox",
+                "kind": "area",
+                "preset": "softbox",
+                "shape": "rect",
+                "color": "warm_color",
+                "width": width,
+                "height": 0.7,
+                "luminous_flux_lumens": 3600.0,
+                "range": 4.0,
+                "transform": {
+                    "kind": "look_at",
+                    "eye": [0.0, 0.9, 1.35],
+                    "target": [0.0, 0.0, 0.0]
+                }
+            }, {
+                "id": "accent_point",
+                "kind": "point",
+                "color": "warm_color",
+                "intensity_candela": 20.0,
+                "range": 3.0,
+                "transform": {
+                    "kind": "trs",
+                    "translation": [0.7, 0.35, 1.2]
+                }
+            }],
+            "scene": {
+                "background": { "kind": "custom", "color": "bg_color" },
+                "environment": { "kind": "none" }
+            },
+            "render": {
+                "anti_aliasing": "msaa4",
+                "supersample": 2,
+                "reconstruction": "tent",
+                "tonemapper": "standard",
+                "exposure_ev": 0.0
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 32.0,
+                "transform": {
+                    "kind": "look_at",
+                    "eye": [0.0, 0.25, 2.15],
+                    "target": "body"
+                }
+            }],
+            "capture": { "width": 180, "height": 140 },
+            "expect": {
+                "expect_visible": [{
+                    "id": "body-visible",
+                    "target": { "kind": "node", "id": "body" }
+                }],
+                "expect_bbox_fit": { "min": 0.30, "max": 0.95 }
+            }
+        }))
+        .expect("area-light shape recipe serializes"),
+    )
+    .expect("area-light shape recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
+fn write_area_light_specular_recipe(
+    dir: &Path,
+    name: &str,
+    broad_area: bool,
+) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    let light = if broad_area {
+        json!({
+            "id": "softbox",
+            "kind": "area",
+            "preset": "softbox",
+            "shape": "rect",
+            "color": "warm_color",
+            "width": 1.6,
+            "height": 0.9,
+            "luminous_flux_lumens": 4200.0,
+            "range": 4.0,
+            "transform": {
+                "kind": "look_at",
+                "eye": [0.0, 0.9, 1.35],
+                "target": [0.0, 0.0, 0.0]
+            }
+        })
+    } else {
+        json!({
+            "id": "point_key",
+            "kind": "point",
+            "color": "warm_color",
+            "intensity_candela": 230.0,
+            "range": 4.0,
+            "transform": {
+                "kind": "trs",
+                "translation": [0.0, 0.9, 1.35]
+            }
+        })
+    };
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "body_color": "#252D3D",
+                "warm_color": "#FFE3BC",
+                "bg_color": "#171B22"
+            },
+            "geometries": [
+                { "id": "body_geo", "primitive": { "kind": "sphere", "radius": 0.46, "segments": 64, "rings": 32 } }
+            ],
+            "materials": [
+                { "id": "body_mat", "kind": "pbr_metallic_roughness", "base_color": "body_color", "metallic": 0.0, "roughness": 0.055 }
+            ],
+            "nodes": [
+                { "id": "body", "geometry": "body_geo", "material": "body_mat" }
+            ],
+            "lights": [light],
+            "scene": {
+                "background": { "kind": "custom", "color": "bg_color" },
+                "environment": { "kind": "none" }
+            },
+            "render": {
+                "anti_aliasing": "msaa4",
+                "supersample": 2,
+                "reconstruction": "tent",
+                "tonemapper": "standard",
+                "exposure_ev": -0.2
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 32.0,
+                "transform": {
+                    "kind": "look_at",
+                    "eye": [0.0, 0.22, 2.15],
+                    "target": "body"
+                }
+            }],
+            "capture": { "width": 180, "height": 140 },
+            "expect": {
+                "expect_visible": [{
+                    "id": "body-visible",
+                    "target": { "kind": "node", "id": "body" }
+                }],
+                "expect_bbox_fit": { "min": 0.30, "max": 0.95 }
+            }
+        }))
+        .expect("area-light specular recipe serializes"),
+    )
+    .expect("area-light specular recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
+fn receiver_grid_mesh(divisions: u32, width: f64, depth: f64) -> serde_json::Value {
+    let mut positions = Vec::new();
+    let mut normals = Vec::new();
+    let mut indices = Vec::new();
+    for z in 0..=divisions {
+        let vz = z as f64 / divisions as f64;
+        for x in 0..=divisions {
+            let vx = x as f64 / divisions as f64;
+            positions.push(json!([(vx - 0.5) * width, 0.0, (vz - 0.5) * depth]));
+            normals.push(json!([0.0, 1.0, 0.0]));
+        }
+    }
+    let row = divisions + 1;
+    for z in 0..divisions {
+        for x in 0..divisions {
+            let a = z * row + x;
+            let b = a + 1;
+            let d = (z + 1) * row + x;
+            let c = d + 1;
+            indices.extend([a, c, b, a, d, c]);
+        }
+    }
+    json!({
+        "topology": "triangles",
+        "positions": positions,
+        "normals": normals,
+        "indices": indices
+    })
+}
+
+#[cfg(feature = "scene-host")]
+fn write_area_light_shadow_recipe(
+    dir: &Path,
+    name: &str,
+    include_caster: bool,
+) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    let mut nodes = vec![json!({
+        "id": "receiver",
+        "geometry": "receiver_geo",
+        "material": "receiver_mat"
+    })];
+    if include_caster {
+        nodes.push(json!({
+            "id": "caster",
+            "geometry": "caster_geo",
+            "material": "caster_mat",
+            "transform": { "kind": "trs", "translation": [0.0, 0.18, -0.02] }
+        }));
+    }
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "receiver_color": "#B8C8DD",
+                "caster_color": "#D64A5D",
+                "light_color": "#FFE3BC",
+                "bg_color": "#151922"
+            },
+            "geometries": [
+                { "id": "receiver_geo", "mesh": receiver_grid_mesh(24, 1.35, 1.0) },
+                { "id": "caster_geo", "primitive": { "kind": "box", "size": [0.16, 0.28, 0.16] } }
+            ],
+            "materials": [
+                {
+                    "id": "receiver_mat",
+                    "kind": "pbr_metallic_roughness",
+                    "base_color": "receiver_color",
+                    "metallic": 0.0,
+                    "roughness": 0.74
+                },
+                { "id": "caster_mat", "kind": "unlit", "base_color": "caster_color" }
+            ],
+            "nodes": nodes,
+            "lights": [{
+                "id": "softbox",
+                "kind": "area",
+                "preset": "softbox",
+                "shape": "rect",
+                "color": "light_color",
+                "width": 0.95,
+                "height": 0.65,
+                "luminous_flux_lumens": 100.0,
+                "range": 3.0,
+                "transform": {
+                    "kind": "look_at",
+                    "eye": [0.0, 1.15, 0.55],
+                    "target": [0.0, 0.0, -0.08]
+                }
+            }],
+            "scene": {
+                "background": { "kind": "custom", "color": "bg_color" },
+                "environment": { "kind": "none" }
+            },
+            "render": {
+                "anti_aliasing": "msaa4",
+                "supersample": 2,
+                "reconstruction": "tent",
+                "tonemapper": "standard",
+                "exposure_ev": -1.1
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 44.0,
+                "transform": {
+                    "kind": "look_at",
+                    "eye": [0.48, 0.78, 1.90],
+                    "target": [0.0, 0.02, 0.0]
+                }
+            }],
+            "capture": { "width": 220, "height": 170 },
+            "expect": {
+                "expect_visible": [{
+                    "id": "receiver-visible",
+                    "target": { "kind": "node", "id": "receiver" }
+                }]
+            }
+        }))
+        .expect("area-light shadow recipe serializes"),
+    )
+    .expect("area-light shadow recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
+fn write_area_light_quality_recipe(
+    dir: &Path,
+    name: &str,
+    area_width: f64,
+    include_caster: bool,
+) -> (PathBuf, PathBuf) {
+    write_area_light_quality_recipe_for_shape(dir, name, "rect", area_width, include_caster)
+}
+
+#[cfg(feature = "scene-host")]
+fn write_area_light_quality_recipe_for_shape(
+    dir: &Path,
+    name: &str,
+    shape: &str,
+    emitter_extent: f64,
+    include_caster: bool,
+) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    let mut nodes = vec![json!({
+        "id": "receiver",
+        "geometry": "receiver_geo",
+        "material": "receiver_mat"
+    })];
+    if include_caster {
+        nodes.push(json!({
+            "id": "caster",
+            "geometry": "caster_geo",
+            "material": "caster_mat",
+            "transform": { "kind": "trs", "translation": [0.0, 0.18, -0.02] }
+        }));
+    }
+    let mut light = json!({
+        "id": "softbox",
+        "kind": "area",
+        "preset": "softbox",
+        "shape": shape,
+        "color": "light_color",
+        "luminous_flux_lumens": 100.0,
+        "range": 3.0,
+        "transform": {
+            "kind": "look_at",
+            "eye": [0.0, 1.15, 0.55],
+            "target": [0.0, 0.0, -0.08]
+        }
+    });
+    let light_object = light
+        .as_object_mut()
+        .expect("area-light fixture literal is an object");
+    match shape {
+        "disc" | "sphere" => {
+            light_object.insert("radius".to_owned(), json!(emitter_extent * 0.5));
+        }
+        _ => {
+            light_object.insert("width".to_owned(), json!(emitter_extent));
+            light_object.insert("height".to_owned(), json!(0.65));
+        }
+    }
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "receiver_color": "#B8C8DD",
+                "caster_color": "#D64A5D",
+                "light_color": "#FFE3BC",
+                "bg_color": "#151922"
+            },
+            "geometries": [
+                { "id": "receiver_geo", "mesh": receiver_grid_mesh(24, 1.35, 1.0) },
+                { "id": "caster_geo", "primitive": { "kind": "box", "size": [0.16, 0.28, 0.16] } }
+            ],
+            "materials": [
+                {
+                    "id": "receiver_mat",
+                    "kind": "pbr_metallic_roughness",
+                    "base_color": "receiver_color",
+                    "metallic": 0.0,
+                    "roughness": 0.74
+                },
+                { "id": "caster_mat", "kind": "unlit", "base_color": "caster_color" }
+            ],
+            "nodes": nodes,
+            "lights": [light],
+            "scene": {
+                "background": { "kind": "custom", "color": "bg_color" },
+                "environment": { "kind": "none" }
+            },
+            "render": {
+                "anti_aliasing": "msaa4",
+                "supersample": 2,
+                "reconstruction": "tent",
+                "tonemapper": "standard",
+                "exposure_ev": -1.1
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 44.0,
+                "transform": {
+                    "kind": "look_at",
+                    "eye": [0.48, 0.78, 1.90],
+                    "target": [0.0, 0.02, 0.0]
+                }
+            }],
+            "capture": { "width": 220, "height": 170 },
+            "expect": {
+                "expect_visible": [{
+                    "id": "receiver-visible",
+                    "target": { "kind": "node", "id": "receiver" }
+                }],
+                "expect_quality": {
+                    "profile": "product",
+                    "area_light": {
+                        "target": { "kind": "node", "id": "receiver" },
+                        "min_shadow_contrast": 0.025,
+                        "min_penumbra_width_px": 1.5,
+                        "min_penumbra_luma_levels": 18.0,
+                        "min_emitter_extent_meters": 0.5
+                    }
+                }
+            }
+        }))
+        .expect("area-light quality recipe serializes"),
+    )
+    .expect("area-light quality recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
+fn write_depth_of_field_quality_recipe(
+    dir: &Path,
+    name: &str,
+    focus_distance: Option<f64>,
+) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    let mut render = json!({
+        "anti_aliasing": "none",
+        "tonemapper": "standard",
+        "exposure_ev": 0.0
+    });
+    if let Some(focus_distance) = focus_distance {
+        render["depth_of_field"] = json!({
+            "focus_distance": focus_distance,
+            "aperture_f_stop": 0.7,
+            "radius_px": 12
+        });
+    }
+
+    let nodes = vec![
+        json!({
+            "id": "background",
+            "geometry": "background_geo",
+            "material": "background_mat",
+            "transform": { "kind": "trs", "translation": [0.0, 0.0, -1.35] }
+        }),
+        json!({
+            "id": "subject",
+            "geometry": "subject_geo",
+            "material": "subject_mat"
+        }),
+    ];
+
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "geometries": [
+                { "id": "subject_geo", "primitive": { "kind": "box", "size": [0.34, 0.34, 0.34] } },
+                { "id": "background_geo", "mesh": depth_of_field_checker_mesh(12, 8) }
+            ],
+            "materials": [
+                { "id": "subject_mat", "kind": "unlit", "base_color": "#D64645" },
+                { "id": "background_mat", "kind": "unlit", "base_color": "#FFFFFF", "double_sided": true }
+            ],
+            "nodes": nodes,
+            "scene": {
+                "background": { "kind": "custom", "color": "#E8ECF2" },
+                "environment": { "kind": "none" }
+            },
+            "render": render,
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 31.0,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 3.0], "target": "subject" }
+            }],
+            "capture": { "width": 220, "height": 160 },
+            "expect": {
+                "expect_visible": [
+                    { "id": "subject-visible", "target": { "kind": "node", "id": "subject" } },
+                    { "id": "background-visible", "target": { "kind": "node", "id": "background" } }
+                ],
+                "expect_quality": {
+                    "profile": "product",
+                    "depth_of_field": {
+                        "target": { "kind": "node", "id": "subject" },
+                        "background_target": { "kind": "node", "id": "background" },
+                        "min_source_background_sobel": 0.04,
+                        "min_background_sobel_drop": 0.015,
+                        "min_background_sobel_drop_fraction": 0.18,
+                        "max_focal_mean_delta": 0.08
+                    }
+                }
+            }
+        }))
+        .expect("depth-of-field quality recipe serializes"),
+    )
+    .expect("depth-of-field quality recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
+fn depth_of_field_checker_mesh(columns: u32, rows: u32) -> serde_json::Value {
+    let mut positions = Vec::new();
+    let mut normals = Vec::new();
+    let mut colors = Vec::new();
+    let mut indices = Vec::new();
+    let width = 1.72_f64;
+    let height = 1.14_f64;
+    for row in 0..rows {
+        for column in 0..columns {
+            let x0 = -width * 0.5 + width * f64::from(column) / f64::from(columns);
+            let x1 = -width * 0.5 + width * f64::from(column + 1) / f64::from(columns);
+            let y0 = -height * 0.5 + height * f64::from(row) / f64::from(rows);
+            let y1 = -height * 0.5 + height * f64::from(row + 1) / f64::from(rows);
+            let base = positions.len() as u32;
+            positions.extend([
+                json!([x0, y0, 0.0]),
+                json!([x1, y0, 0.0]),
+                json!([x1, y1, 0.0]),
+                json!([x0, y1, 0.0]),
+            ]);
+            normals.extend([
+                json!([0.0, 0.0, 1.0]),
+                json!([0.0, 0.0, 1.0]),
+                json!([0.0, 0.0, 1.0]),
+                json!([0.0, 0.0, 1.0]),
+            ]);
+            let color = if (row + column) % 2 == 0 {
+                "#F3F6FF"
+            } else {
+                "#111827"
+            };
+            colors.extend([json!(color), json!(color), json!(color), json!(color)]);
+            indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+        }
+    }
+    json!({
+        "topology": "triangles",
+        "positions": positions,
+        "normals": normals,
+        "indices": indices,
+        "colors": colors
+    })
+}
+
+#[cfg(feature = "scene-host")]
 fn run_recipe_render_verify(
     recipe_path: &Path,
     png_path: &Path,
@@ -1710,12 +2906,69 @@ fn run_recipe_render_verify(
 }
 
 #[cfg(feature = "scene-host")]
+fn run_recipe_render_verify_expect_failure(
+    recipe_path: &Path,
+    png_path: &Path,
+    use_gpu: bool,
+) -> serde_json::Value {
+    let mut args = vec!["recipe", "render", path_str(recipe_path)];
+    if use_gpu {
+        args.push("--gpu");
+    }
+    args.extend(["--introspect", "--verify", "--out", path_str(png_path)]);
+    let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+    if use_gpu {
+        configure_command_for_lavapipe(&mut command);
+    }
+    let output = command
+        .args(args)
+        .output()
+        .expect("scena recipe render failure command runs");
+    assert!(
+        !output.status.success(),
+        "recipe render should fail verification, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    if use_gpu {
+        assert_eq!(
+            report["introspection"]["capabilities"]["backend"], "headless_gpu",
+            "GPU negative proof must use the GPU backend, not a fallback: {report:#}"
+        );
+    }
+    report
+}
+
+#[cfg(feature = "scene-host")]
+fn assert_quality_reason(report: &serde_json::Value, code: &str, expectation_id: &str) {
+    assert!(
+        report["verification"]["quality"]["checks"]
+            .as_array()
+            .expect("quality checks serialize")
+            .iter()
+            .any(|check| check["code"] == code && check["id"] == expectation_id),
+        "expected quality check {code}/{expectation_id}: {report:#}"
+    );
+    assert!(
+        report["verification"]["reasons"]
+            .as_array()
+            .expect("verification reasons serialize")
+            .iter()
+            .any(|reason| reason["code"] == code
+                && reason["expectation_id"] == expectation_id
+                && reason["source"] == "quality"),
+        "expected agent-facing quality reason {code}/{expectation_id}: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
 #[test]
 fn scena_recipe_render_verify_passes_quality_per_line_region_on_cpu_and_gpu() {
     let dir = artifact_dir("recipe-render-line-quality-pass");
     for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
         let (recipe_path, png_path) =
-            write_line_quality_recipe(&dir, &format!("line-quality-{backend}"), 0.005, 0.12);
+            write_line_quality_recipe(&dir, &format!("line-quality-{backend}"), 0.005, 0.15);
         let mut args = vec!["recipe", "render", path_str(&recipe_path)];
         if use_gpu {
             args.push("--gpu");
@@ -1920,6 +3173,67 @@ fn scena_recipe_render_profile_quality_runs_geometry_edge_check_by_default() {
 
 #[cfg(feature = "scene-host")]
 #[test]
+fn scena_recipe_render_profile_quality_runs_geometry_edge_check_for_non_product_profiles() {
+    let dir = artifact_dir("recipe-render-geometry-edge-profile-non-product");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (recipe_path, png_path) = write_geometry_edge_quality_recipe_with_profile_and_colors(
+            &dir,
+            &format!("geometry-edge-cad-profile-{backend}"),
+            "none",
+            None,
+            None,
+            "cad",
+            "#D8D8D8",
+            "#808080",
+        );
+        add_text_quality_block(&recipe_path);
+        let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena non-product profile geometry quality render command runs");
+
+        assert!(
+            !output.status.success(),
+            "cad profile-only expect_quality should still fail hard aliased geometry edges on {backend}, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        if use_gpu {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU non-product profile geometry quality proof must use HeadlessGpu, not a fallback: {report:#}"
+            );
+        }
+        let checks = report["verification"]["quality"]["checks"]
+            .as_array()
+            .expect("quality checks serialize");
+        assert!(
+            checks.iter().any(|check| {
+                check["id"] == "expect_quality.geometry"
+                    && check["code"] == "geometry_missing_antialiasing"
+                    && check["threshold"]["min_intermediate_edge_fraction"] == 0.02
+            }),
+            "cad profile-only quality must include the geometry-edge check by default on {backend}: {report:#}"
+        );
+        assert!(
+            png_path.exists(),
+            "non-product profile geometry-edge render writes the PNG"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
 fn scena_recipe_render_verify_passes_geometry_edge_quality_with_msaa4_on_gpu() {
     let dir = artifact_dir("recipe-render-geometry-edge-sample-aa");
     let (recipe_path, png_path) = write_geometry_edge_quality_recipe(
@@ -1927,7 +3241,7 @@ fn scena_recipe_render_verify_passes_geometry_edge_quality_with_msaa4_on_gpu() {
         "geometry-edge-msaa4-gpu",
         "msaa4",
         None,
-        Some(0.30),
+        Some(0.25),
     );
     let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
     configure_command_for_lavapipe(&mut command);
@@ -1958,6 +3272,546 @@ fn scena_recipe_render_verify_passes_geometry_edge_quality_with_msaa4_on_gpu() {
         "GPU geometry quality proof must use the GPU backend, not a fallback: {report:#}"
     );
     assert!(png_path.exists(), "GPU MSAA4 render writes the PNG");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_low_contrast_geometry_edges_require_sample_aa_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-geometry-edge-low-contrast");
+    let cases = [
+        ("cpu-none", false, "none", None, false),
+        ("cpu-ss4", false, "none", Some(4), true),
+        ("gpu-none", true, "none", None, false),
+        ("gpu-msaa4", true, "msaa4", None, true),
+    ];
+    for (name, use_gpu, anti_aliasing, supersample, should_pass) in cases {
+        let (recipe_path, png_path) = write_geometry_edge_quality_recipe_with_colors(
+            &dir,
+            name,
+            anti_aliasing,
+            supersample,
+            None,
+            "#A8A8A8",
+            "#808080",
+        );
+        let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena low-contrast geometry-edge quality command runs");
+        let report = json_report(&output);
+        if use_gpu {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU low-contrast edge proof must use HeadlessGpu, not a fallback: {report:#}"
+            );
+        }
+        let checks = report["verification"]["quality"]["checks"]
+            .as_array()
+            .expect("quality checks serialize");
+        if should_pass {
+            assert!(
+                output.status.success(),
+                "sampled low-contrast geometry edge should pass for {name}; stdout={}, stderr={}",
+                String::from_utf8_lossy(&output.stdout),
+                stderr(&output)
+            );
+            assert!(
+                checks
+                    .iter()
+                    .all(|check| check["code"] != "geometry_missing_antialiasing"),
+                "sampled low-contrast geometry edge should not emit geometry_missing_antialiasing for {name}: {report:#}"
+            );
+        } else {
+            let edge_check = checks
+                .iter()
+                .find(|check| {
+                    check["id"] == "expect_quality.geometry"
+                        && check["code"] == "geometry_missing_antialiasing"
+                        && check["region"]["kind"] == "subject"
+                })
+                .unwrap_or_else(|| {
+                    panic!(
+                        "low-contrast geometry edge quality check must fail for {name}: {report:#}"
+                    )
+                });
+            let intermediate = edge_check["observed"]["intermediate_edge_fraction"]
+                .as_f64()
+                .expect("intermediate edge fraction serializes");
+            let threshold = edge_check["threshold"]["min_intermediate_edge_fraction"]
+                .as_f64()
+                .expect("geometry edge threshold serializes");
+            assert!(
+                !output.status.success(),
+                "unsampled low-contrast geometry edge should fail for {name}; intermediate={intermediate}, stdout={}, stderr={}",
+                String::from_utf8_lossy(&output.stdout),
+                stderr(&output)
+            );
+            assert!(
+                intermediate < threshold,
+                "unsampled low-contrast geometry edge should stay below threshold for {name}: {report:#}"
+            );
+        }
+        assert!(
+            png_path.exists(),
+            "low-contrast geometry edge render writes a PNG for {name}"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_fails_missing_reflection_quality_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-reflection-quality");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (recipe_path, png_path) =
+            write_reflection_quality_recipe(&dir, &format!("reflection-quality-{backend}"), false);
+        let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena reflection quality render command runs");
+
+        assert!(
+            !output.status.success(),
+            "a matte floor without SSR/reflection should fail reflection quality on {backend}; stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        if use_gpu {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU reflection quality proof must use HeadlessGpu, not a fallback: {report:#}"
+            );
+        }
+        let checks = report["verification"]["quality"]["checks"]
+            .as_array()
+            .expect("quality checks serialize");
+        assert!(
+            checks.iter().any(|check| {
+                check["id"] == "expect_quality.reflection"
+                    && check["code"] == "reflection_structure_missing"
+                    && check["region"]["kind"] == "reflection_surface"
+            }),
+            "reflection quality must fail with exact reflection_structure_missing on {backend}: {report:#}"
+        );
+        assert!(
+            png_path.exists(),
+            "reflection-quality failure render writes the PNG"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_passes_grid_reflection_quality_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-reflection-quality-pass");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (recipe_path, png_path) = write_reflection_quality_recipe(
+            &dir,
+            &format!("reflection-quality-pass-{backend}"),
+            true,
+        );
+        let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena grid reflection quality render command runs");
+
+        assert!(
+            output.status.success(),
+            "grid reflection should pass reflection quality on {backend}; stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        if use_gpu {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU grid reflection quality proof must use HeadlessGpu, not a fallback: {report:#}"
+            );
+        }
+        assert_eq!(
+            report["verification"]["quality"]["ok"], true,
+            "reflection quality should pass on {backend}: {report:#}"
+        );
+        let checks = report["verification"]["quality"]["checks"]
+            .as_array()
+            .expect("quality checks serialize");
+        assert!(
+            checks
+                .iter()
+                .all(|check| check["code"] != "reflection_structure_missing"),
+            "grid reflection should not emit reflection_structure_missing on {backend}: {report:#}"
+        );
+        assert!(png_path.exists(), "grid reflection render writes the PNG");
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_passes_screen_space_reflection_quality_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-screen-space-reflection-quality-pass");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (recipe_path, png_path) = write_screen_space_reflection_quality_recipe(
+            &dir,
+            &format!("screen-space-reflection-quality-pass-{backend}"),
+        );
+        let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena screen-space reflection quality render command runs");
+
+        assert!(
+            output.status.success(),
+            "screen-space reflections should pass reflection quality on {backend}; stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        if use_gpu {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU screen-space reflection proof must use HeadlessGpu, not a fallback: {report:#}"
+            );
+        }
+        assert_eq!(
+            report["verification"]["quality"]["ok"], true,
+            "screen-space reflection quality should pass on {backend}: {report:#}"
+        );
+        let checks = report["verification"]["quality"]["checks"]
+            .as_array()
+            .expect("quality checks serialize");
+        assert!(
+            checks
+                .iter()
+                .all(|check| check["code"] != "reflection_structure_missing"),
+            "screen-space reflections should not emit reflection_structure_missing on {backend}: {report:#}"
+        );
+        assert!(
+            png_path.exists(),
+            "screen-space reflection render writes the PNG"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_material_reflection_changes_target_pixels_on_cpu_and_gpu() {
+    // Doctor pin: expect_quality.reflection.target is the target-scoped
+    // material reflection quality contract. The pixel delta assertions below
+    // additionally prove the renderer applies material SSR to multiple
+    // chrome-like metallic targets, not only to the verifier-selected target.
+    let dir = artifact_dir("recipe-render-material-reflection-quality-pass");
+    let mut all_results = Vec::new();
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let mut rendered = Vec::new();
+        for (case, enable_ssr, should_pass) in [("off", false, false), ("on", true, true)] {
+            let (recipe_path, png_path) = write_material_reflection_quality_recipe(
+                &dir,
+                &format!("material-reflection-quality-{case}-{backend}"),
+                enable_ssr,
+            );
+            let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+            if use_gpu {
+                configure_command_for_lavapipe(&mut command);
+            }
+            let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+            if use_gpu {
+                args.push("--gpu");
+            }
+            args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+            let output = command
+                .args(args)
+                .output()
+                .expect("scena material reflection quality render command runs");
+
+            assert_eq!(
+                output.status.success(),
+                should_pass,
+                "material reflection {case} status mismatch on {backend}; stdout={}, stderr={}",
+                String::from_utf8_lossy(&output.stdout),
+                stderr(&output)
+            );
+            assert!(
+                output.stderr.is_empty(),
+                "material reflection failures stay machine-readable on stdout, stderr={}",
+                stderr(&output)
+            );
+            let report = json_report(&output);
+            if use_gpu {
+                assert_eq!(
+                    report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                    "GPU material reflection proof must use HeadlessGpu, not a fallback: {report:#}"
+                );
+            } else {
+                assert_eq!(
+                    report["introspection"]["capabilities"]["backend"], "headless",
+                    "CPU material reflection proof should use Headless CPU: {report:#}"
+                );
+            }
+            let checks = report["verification"]["quality"]["checks"]
+                .as_array()
+                .expect("quality checks serialize");
+            let has_missing_reflection = checks
+                .iter()
+                .any(|check| check["code"] == "reflection_structure_missing");
+            assert_eq!(
+                has_missing_reflection, !enable_ssr,
+                "material reflection quality should fail only when SSR is absent on {backend}/{case}: {report:#}"
+            );
+            assert!(
+                png_path.exists(),
+                "material reflection {case} render writes the PNG on {backend}"
+            );
+            rendered.push((case, report, png_path));
+        }
+        let (_, off_report, off_png) = &rendered[0];
+        let (_, on_report, on_png) = &rendered[1];
+        let off = decode_png_rgba8(off_png);
+        let on = decode_png_rgba8(on_png);
+        assert_eq!((off.width, off.height), (on.width, on.height));
+        for target_id in ["mirror", "mirror_secondary"] {
+            let off_region = node_region_from_composition_report(off_report, target_id);
+            let on_region = node_region_from_composition_report(on_report, target_id);
+            assert_eq!(
+                off_region, on_region,
+                "material reflection ON/OFF proof should compare the same projected {target_id} region on {backend}"
+            );
+            let delta = frame_delta_in_region(&off.rgba8, &on.rgba8, off.width, off_region);
+            assert!(
+                delta.mean_channel_delta >= 5.0 && delta.max_channel_delta >= 20,
+                "material SSR must measurably change the reflective {target_id} region on {backend}, delta={delta:?}, region={off_region:?}, off_png={off_png:?}, on_png={on_png:?}"
+            );
+            all_results.push((backend.to_owned(), target_id.to_owned(), delta, off_region));
+        }
+    }
+    fs::write(
+        dir.join("material-reflection-delta-metrics.json"),
+        format_material_reflection_metrics(&all_results),
+    )
+    .expect("material reflection delta metrics write");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_ergonomic_product_scene_reaches_rust_api_quality_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-ergonomic-product");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (recipe_path, png_path) =
+            write_ergonomic_product_recipe(&dir, &format!("ergonomic-product-{backend}"));
+        let report = run_recipe_render_verify(&recipe_path, &png_path, use_gpu);
+        assert_eq!(
+            report["verification"]["quality"]["ok"], true,
+            "ergonomic recipe should pass product quality on {backend}: {report:#}"
+        );
+        assert_eq!(
+            report["verification"]["composition"]["ok"], true,
+            "ergonomic recipe should pass composition checks on {backend}: {report:#}"
+        );
+        let framing_check = composition_check(&report, "node.product.framing");
+        assert_eq!(
+            framing_check["code"], "subject_fit_sane",
+            "camera.framing should pass object-level composition framing on {backend}: {report:#}"
+        );
+        assert_eq!(
+            framing_check["status"], "checked",
+            "camera.framing should be checked for the product object on {backend}: {report:#}"
+        );
+        let fit = framing_check["observed"]["fit_fraction"]
+            .as_f64()
+            .expect("fit_fraction is reported");
+        assert!(
+            (0.35..=0.92).contains(&fit),
+            "camera.framing should produce Rust-helper-quality product framing for the product object on {backend}: {fit}, report={report:#}"
+        );
+        let quality_checks = report["verification"]["quality"]["checks"]
+            .as_array()
+            .expect("quality checks serialize");
+        assert!(
+            quality_checks.iter().all(|check| {
+                check["code"] != "reflection_structure_missing"
+                    && check["code"] != "low_clip_fraction_too_high"
+                    && check["code"] != "high_clip_fraction_too_high"
+            }),
+            "material.preset chrome + environment.preset + auto_exposure should not fail reflection/exposure quality on {backend}: {report:#}"
+        );
+        let composition_checks = report["verification"]["composition"]["checks"]
+            .as_array()
+            .expect("composition checks serialize");
+        assert!(
+            composition_checks.iter().any(|check| {
+                check["id"] == "node.product.pixel_exposure"
+                    && check["code"] == "subject_exposure_sane"
+                    && check["status"] == "checked"
+            }),
+            "render.auto_exposure should keep the product subject in sane exposure on {backend}: {report:#}"
+        );
+        let color_check = composition_check(&report, "node.product.expected_color");
+        assert_eq!(
+            color_check["code"], "material_base_color_available",
+            "material.preset chrome should produce inspected material intent for the product on {backend}: {report:#}"
+        );
+        assert!(
+            png_path.exists(),
+            "ergonomic product recipe writes a PNG on {backend}"
+        );
+        let image = decode_png_rgba8(&png_path);
+        let product_region = node_region_from_composition_report(&report, "product");
+        let metrics = chrome_region_metrics(&image, product_region);
+        assert!(
+            metrics.luminance_range >= 0.12
+                && metrics.unique_luma_levels >= 12
+                && metrics.foreground_fraction >= 0.35,
+            "material.preset chrome + environment.preset should render non-flat chrome-like product detail on {backend}, metrics={metrics:?}, region={product_region:?}, png={png_path:?}, report={report:#}"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_chrome_ibl_fireflies_are_filtered_on_cpu_and_gpu() {
+    // Doctor pin: chrome IBL fireflies were baked into GGX prefilter mips
+    // when the prefilter point-sampled tiny HDR emitters. This recipe uses
+    // the real Polyhaven studio HDRI and the public CLI verifier so the
+    // regression has to stay fixed on the CPU and lavapipe GPU paths.
+    let dir = artifact_dir("recipe-render-chrome-ibl-firefly");
+    let mut rendered = Vec::new();
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (recipe_path, png_path) =
+            write_chrome_ibl_firefly_recipe(&dir, &format!("chrome-ibl-firefly-{backend}"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena chrome IBL firefly render command runs");
+
+        assert!(
+            output.status.success(),
+            "chrome IBL reflection should pass firefly quality on {backend}; stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        if use_gpu {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU chrome IBL proof must use HeadlessGpu, not a fallback: {report:#}"
+            );
+        } else {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless",
+                "CPU chrome IBL proof should use Headless CPU: {report:#}"
+            );
+        }
+        assert_eq!(
+            report["verification"]["quality"]["ok"], true,
+            "chrome IBL reflection should pass quality checks on {backend}: {report:#}"
+        );
+        let checks = report["verification"]["quality"]["checks"]
+            .as_array()
+            .expect("quality checks serialize");
+        assert!(
+            checks.iter().all(|check| {
+                check["code"] != "reflection_firefly_outliers"
+                    && check["code"] != "reflection_structure_missing"
+            }),
+            "chrome IBL reflection should not emit reflection firefly/structure failures on {backend}: {report:#}"
+        );
+        assert!(png_path.exists(), "chrome IBL render writes the PNG");
+        let image = decode_png_rgba8(&png_path);
+        let region = node_region_from_composition_report(&report, "chrome_sphere");
+        let firefly_fraction =
+            reflection_firefly_fraction_in_region(&image.rgba8, image.width, image.height, region);
+        assert!(
+            firefly_fraction <= 0.006,
+            "chrome IBL reflection must not contain isolated bright fireflies on {backend}; fraction={firefly_fraction:.5}, region={region:?}, png={png_path:?}"
+        );
+        rendered.push((
+            backend.to_owned(),
+            report,
+            png_path,
+            image,
+            region,
+            firefly_fraction,
+        ));
+    }
+
+    let (cpu_backend, _cpu_report, _cpu_png, cpu, cpu_region, cpu_fireflies) = &rendered[0];
+    let (gpu_backend, _gpu_report, _gpu_png, gpu, gpu_region, gpu_fireflies) = &rendered[1];
+    assert_eq!(cpu_backend, "cpu");
+    assert_eq!(gpu_backend, "gpu");
+    assert_eq!((cpu.width, cpu.height), (gpu.width, gpu.height));
+    assert_eq!(
+        cpu_region, gpu_region,
+        "CPU/GPU chrome IBL proof should compare the same projected region"
+    );
+    let delta = frame_delta_in_region(&cpu.rgba8, &gpu.rgba8, cpu.width, *cpu_region);
+    assert!(
+        delta.mean_channel_delta <= 80.0,
+        "CPU/GPU chrome IBL reflection should agree within the broad renderer-backend tolerance after firefly filtering, delta={delta:?}, region={cpu_region:?}"
+    );
+    assert!(
+        (*cpu_fireflies - *gpu_fireflies).abs() <= 0.006,
+        "CPU/GPU chrome IBL firefly fractions should agree after filtering; cpu={cpu_fireflies:.5}, gpu={gpu_fireflies:.5}"
+    );
+    fs::write(
+        dir.join("chrome-ibl-firefly-metrics.json"),
+        format!(
+            "{{\n  \"schema\": \"scena.chrome_ibl_firefly_probe.v1\",\n  \"cpu_firefly_fraction\": {:.5},\n  \"gpu_firefly_fraction\": {:.5},\n  \"mean_channel_delta\": {:.3},\n  \"max_channel_delta\": {},\n  \"region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}\n}}\n",
+            cpu_fireflies,
+            gpu_fireflies,
+            delta.mean_channel_delta,
+            delta.max_channel_delta,
+            cpu_region.x,
+            cpu_region.y,
+            cpu_region.width,
+            cpu_region.height
+        ),
+    )
+    .expect("chrome IBL firefly metrics write");
 }
 
 #[cfg(feature = "scene-host")]
@@ -2156,11 +4010,12 @@ fn scena_recipe_render_supersample_changes_curve_grid_and_specular_pixels_on_cpu
 
 #[cfg(feature = "scene-host")]
 #[test]
-fn scena_recipe_render_gpu_reconstruction_widens_dashboard_bar_and_grid_edges_without_haloing() {
+fn scena_recipe_render_gpu_reconstruction_widens_dashboard_bar_and_preserves_grid_edges_without_haloing()
+ {
     let dir = artifact_dir("recipe-render-reconstruction-dashboard-edge");
     let mut results = Vec::new();
     let mut grid_results = Vec::new();
-    for supersample in [2_u8, 4] {
+    for supersample in [2_u8, 4, 8] {
         for reconstruction in ["box", "tent", "gaussian"] {
             let (recipe_path, png_path) = write_reconstruction_bar_recipe(
                 &dir,
@@ -2200,6 +4055,11 @@ fn scena_recipe_render_gpu_reconstruction_widens_dashboard_bar_and_grid_edges_wi
         .find(|(filter, supersample, _)| filter == "gaussian" && *supersample == 4)
         .expect("gaussian ss4 metrics exist")
         .2;
+    let gaussian_ss8 = results
+        .iter()
+        .find(|(filter, supersample, _)| filter == "gaussian" && *supersample == 8)
+        .expect("gaussian ss8 metrics exist")
+        .2;
     let tent_ss4 = results
         .iter()
         .find(|(filter, supersample, _)| filter == "tent" && *supersample == 4)
@@ -2214,6 +4074,11 @@ fn scena_recipe_render_gpu_reconstruction_widens_dashboard_bar_and_grid_edges_wi
         .iter()
         .find(|(filter, supersample, _)| filter == "tent" && *supersample == 2)
         .expect("grid tent ss2 metrics exist")
+        .2;
+    let grid_tent_ss8 = grid_results
+        .iter()
+        .find(|(filter, supersample, _)| filter == "tent" && *supersample == 8)
+        .expect("grid tent ss8 metrics exist")
         .2;
 
     fs::write(
@@ -2248,21 +4113,1103 @@ fn scena_recipe_render_gpu_reconstruction_widens_dashboard_bar_and_grid_edges_wi
         "hero reconstruction should retain most edge contrast; box_ss2={box_ss2:?}, gaussian_ss4={gaussian_ss4:?}, all={results:#?}"
     );
     assert!(
-        grid_tent_ss2.intermediate_px_per_edge > grid_box_ss2.intermediate_px_per_edge + 0.75,
-        "tent ss2 should widen the measured floor/grid stroke ramp, not just mesh silhouettes; grid_box_ss2={grid_box_ss2:?}, grid_tent_ss2={grid_tent_ss2:?}, all={grid_results:#?}"
+        gaussian_ss8.unique_luma_levels >= gaussian_ss4.unique_luma_levels
+            && gaussian_ss8.halo_overshoot <= 0.02
+            && gaussian_ss8.contrast_range >= box_ss2.contrast_range * 0.82,
+        "guarded ss8 hero reconstruction should render on the small dashboard target without halo or contrast loss; gaussian_ss4={gaussian_ss4:?}, gaussian_ss8={gaussian_ss8:?}, all={results:#?}"
     );
     assert!(
-        grid_tent_ss2.unique_luma_levels > grid_box_ss2.unique_luma_levels,
-        "tent ss2 should increase floor/grid stroke luma levels; grid_box_ss2={grid_box_ss2:?}, grid_tent_ss2={grid_tent_ss2:?}, all={grid_results:#?}"
+        grid_tent_ss2.intermediate_px_per_edge >= 3.5
+            && grid_tent_ss2.intermediate_px_per_edge
+                >= grid_box_ss2.intermediate_px_per_edge * 0.95,
+        "floor/grid strokes already have geometric AA; tent ss2 must preserve a broad ramp without regressing box ss2; grid_box_ss2={grid_box_ss2:?}, grid_tent_ss2={grid_tent_ss2:?}, all={grid_results:#?}"
     );
     assert!(
-        grid_tent_ss2.halo_overshoot <= grid_box_ss2.halo_overshoot,
-        "floor/grid stroke reconstruction must not increase the measured halo/overshoot; grid_box_ss2={grid_box_ss2:?}, grid_tent_ss2={grid_tent_ss2:?}, all={grid_results:#?}"
+        grid_tent_ss2.unique_luma_levels >= 100
+            && grid_tent_ss2.unique_luma_levels + 4 >= grid_box_ss2.unique_luma_levels,
+        "floor/grid strokes need dense subpixel luma levels and must not materially regress from box ss2; grid_box_ss2={grid_box_ss2:?}, grid_tent_ss2={grid_tent_ss2:?}, all={grid_results:#?}"
     );
     assert!(
-        grid_tent_ss2.contrast_range >= grid_box_ss2.contrast_range * 0.82,
+        grid_tent_ss2.halo_overshoot <= 0.08,
+        "floor/grid stroke reconstruction must keep halo/overshoot bounded; grid_box_ss2={grid_box_ss2:?}, grid_tent_ss2={grid_tent_ss2:?}, all={grid_results:#?}"
+    );
+    assert!(
+        grid_tent_ss2.contrast_range >= grid_box_ss2.contrast_range * 0.9,
         "floor/grid stroke reconstruction should retain most line contrast; grid_box_ss2={grid_box_ss2:?}, grid_tent_ss2={grid_tent_ss2:?}, all={grid_results:#?}"
     );
+    assert!(
+        grid_tent_ss8.intermediate_px_per_edge >= 3.0
+            && grid_tent_ss8.halo_overshoot <= 0.10
+            && grid_tent_ss8.contrast_range >= grid_box_ss2.contrast_range * 0.75,
+        "guarded ss8 reconstruction should keep grid/stroke lines usable without excessive haloing; grid_box_ss2={grid_box_ss2:?}, grid_tent_ss8={grid_tent_ss8:?}, all={grid_results:#?}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_grid_floor_lines_are_antialiased_and_stable_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-grid-floor-line-quality");
+    let mut results = Vec::new();
+    let mut detail_results = Vec::new();
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (recipe_path, png_path) = write_recipe_grid_floor_line_quality_recipe(
+            &dir,
+            &format!("{backend}-grid-floor-line-quality"),
+        );
+        let report = run_recipe_render_verify(&recipe_path, &png_path, use_gpu);
+        assert_eq!(
+            report["introspection"]["framing"]["cropped"], false,
+            "grid floor line proof must measure an uncropped native-resolution region on {backend}: {report:#}"
+        );
+
+        let image = decode_png_rgba8(&png_path);
+        let metrics = edge_reconstruction_metrics(&image.rgba8, image.width, image.height);
+        let detail_crop = floor_grid_detail_crop(&image);
+        let detail_metrics =
+            edge_reconstruction_metrics(&detail_crop.rgba8, detail_crop.width, detail_crop.height);
+        results.push((backend.to_owned(), 2, metrics));
+        detail_results.push((format!("{backend}-floor-detail"), 2, detail_metrics));
+        assert!(
+            metrics.intermediate_px_per_edge >= 4.5,
+            "floor grid lines need a broad antialiasing ramp at native resolution on {backend}, metrics={metrics:?}, report={report:#}"
+        );
+        assert!(
+            metrics.unique_luma_levels >= 90,
+            "floor grid lines need enough subpixel luminance levels to avoid visible stair-step bands on {backend}, metrics={metrics:?}, report={report:#}"
+        );
+        assert!(
+            metrics.halo_overshoot <= 0.45,
+            "floor grid line reconstruction must keep halo/overshoot bounded on {backend}, metrics={metrics:?}, report={report:#}"
+        );
+        assert!(
+            metrics.contrast_range >= 0.5,
+            "floor grid lines must retain enough contrast after reconstruction on {backend}, metrics={metrics:?}, report={report:#}"
+        );
+        assert!(
+            detail_metrics.transition_width_px >= 3.8,
+            "floor grid lines need enough coverage in the visible lower-floor detail crop on {backend}, detail_metrics={detail_metrics:?}, full_metrics={metrics:?}, report={report:#}"
+        );
+        assert!(
+            detail_metrics.halo_overshoot <= 0.03,
+            "floor grid line detail crop must keep halo/overshoot bounded on {backend}, detail_metrics={detail_metrics:?}, full_metrics={metrics:?}, report={report:#}"
+        );
+        assert!(
+            detail_metrics.contrast_range >= 0.86,
+            "floor grid line detail crop must retain line contrast on {backend}, detail_metrics={detail_metrics:?}, full_metrics={metrics:?}, report={report:#}"
+        );
+    }
+    fs::write(
+        dir.join("grid-floor-line-quality.json"),
+        format_reconstruction_metrics(&results),
+    )
+    .expect("grid floor line metrics artifact writes");
+    fs::write(
+        dir.join("grid-floor-line-detail-quality.json"),
+        format_reconstruction_metrics(&detail_results),
+    )
+    .expect("grid floor line detail metrics artifact writes");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_grid_floor_line_quality_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-grid-floor-line-quality-verification");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (bad_recipe, bad_png) = write_recipe_grid_floor_line_quality_recipe_with_settings(
+            &dir,
+            &format!("{backend}-grid-floor-line-quality-bad"),
+            "none",
+            1,
+            "box",
+            0.55,
+            "#39404A",
+            true,
+        );
+        let mut bad_command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut bad_command);
+        }
+        let mut bad_args = vec!["recipe", "render", path_str(&bad_recipe)];
+        if use_gpu {
+            bad_args.push("--gpu");
+        }
+        bad_args.extend(["--introspect", "--verify", "--out", path_str(&bad_png)]);
+        let bad_output = bad_command
+            .args(bad_args)
+            .output()
+            .expect("scena grid quality bad render command runs");
+        assert!(
+            !bad_output.status.success(),
+            "{backend} aliased scene.grid should fail verification, stdout={}, stderr={}",
+            String::from_utf8_lossy(&bad_output.stdout),
+            stderr(&bad_output)
+        );
+        let bad_report = json_report(&bad_output);
+        if use_gpu {
+            assert_eq!(
+                bad_report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU grid-line quality proof must use HeadlessGpu, not fallback: {bad_report:#}"
+            );
+        }
+        assert!(
+            bad_report["verification"]["quality"]["checks"]
+                .as_array()
+                .expect("quality checks array")
+                .iter()
+                .any(|check| check["id"] == "expect_quality.grid_floor_lines"
+                    && check["code"] == "grid_line_quality_too_low"),
+            "{backend} low-quality scene.grid must fail with exact grid_line_quality_too_low quality check: {bad_report:#}"
+        );
+        assert!(
+            bad_report["verification"]["reasons"]
+                .as_array()
+                .expect("verification reasons array")
+                .iter()
+                .any(|reason| reason["source"] == "quality"
+                    && reason["code"] == "grid_line_quality_too_low"
+                    && reason["expectation_id"] == "expect_quality.grid_floor_lines"),
+            "{backend} grid-line quality failure should surface as a verification reason: {bad_report:#}"
+        );
+
+        let (good_recipe, good_png) = write_recipe_grid_floor_line_quality_recipe_with_settings(
+            &dir,
+            &format!("{backend}-grid-floor-line-quality-good"),
+            "msaa4",
+            2,
+            "tent",
+            4.0,
+            "#F2F6FF",
+            true,
+        );
+        let good_report = run_recipe_render_verify(&good_recipe, &good_png, use_gpu);
+        assert!(
+            good_report["verification"]["quality"]["checks"]
+                .as_array()
+                .expect("quality checks array")
+                .iter()
+                .any(|check| check["id"] == "expect_quality.grid_floor_lines"
+                    && check["code"] == "grid_line_quality_checked"
+                    && check["severity"] == "info"),
+            "{backend} antialiased scene.grid should emit a passing grid-line quality coverage check: {good_report:#}"
+        );
+        assert!(
+            good_report["verification"]["quality"]["checks"]
+                .as_array()
+                .expect("quality checks array")
+                .iter()
+                .all(|check| check["code"] != "grid_line_quality_too_low"),
+            "{backend} antialiased scene.grid should pass grid-line quality: {good_report:#}"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_profile_quality_keeps_grid_floor_check_with_explicit_quality_blocks() {
+    let dir = artifact_dir("recipe-render-grid-floor-line-quality-profile-composed");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (bad_recipe, bad_png) = write_recipe_grid_floor_line_quality_recipe_with_settings(
+            &dir,
+            &format!("{backend}-grid-floor-line-quality-composed"),
+            "none",
+            1,
+            "box",
+            0.55,
+            "#39404A",
+            true,
+        );
+        add_text_quality_block(&bad_recipe);
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let mut args = vec!["recipe", "render", path_str(&bad_recipe)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--verify", "--out", path_str(&bad_png)]);
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena composed grid quality render command runs");
+        assert!(
+            !output.status.success(),
+            "{backend} profile quality with an explicit text block should still fail low-quality scene.grid output, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        if use_gpu {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU composed grid quality proof must use HeadlessGpu, not fallback: {report:#}"
+            );
+        }
+        assert!(
+            report["verification"]["quality"]["checks"]
+                .as_array()
+                .expect("quality checks array")
+                .iter()
+                .any(|check| check["id"] == "expect_quality.grid_floor_lines"
+                    && check["code"] == "grid_line_quality_too_low"),
+            "{backend} composed expect_quality must retain the grid-line baseline check: {report:#}"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_gpu_many_lights_use_tiled_assignment_before_truncation() {
+    let dir = artifact_dir("recipe-render-gpu-light-capacity");
+    let recipe_path = dir.join("many-point-lights.recipe.json");
+    let png_path = dir.join("many-point-lights.png");
+    let point_lights = (0..17)
+        .map(|index| {
+            json!({
+                "id": format!("point-{index}"),
+                "kind": "point",
+                "intensity_candela": 120.0,
+                "range": 4.0,
+                "transform": {
+                    "kind": "trs",
+                    "translation": [-1.6 + index as f64 * 0.2, 0.8, 1.0]
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "subject": "#C8CED8"
+            },
+            "geometries": [
+                { "id": "box_geo", "primitive": { "kind": "box", "size": [0.4, 0.4, 0.4] } }
+            ],
+            "materials": [
+                { "id": "box_mat", "kind": "pbr_metallic_roughness", "base_color": "subject", "roughness": 0.55 }
+            ],
+            "nodes": [
+                { "id": "box", "geometry": "box_geo", "material": "box_mat" }
+            ],
+            "lights": point_lights,
+            "render": {
+                "anti_aliasing": "none"
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 38.0,
+                "transform": {
+                    "kind": "look_at",
+                    "eye": [0.0, 0.7, 1.6],
+                    "target": [0.0, 0.0, 0.0]
+                }
+            }],
+            "capture": { "width": 160, "height": 120 }
+        }))
+        .expect("many-light capacity recipe serializes"),
+    )
+    .expect("many-light capacity recipe writes");
+
+    let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+    configure_command_for_lavapipe(&mut command);
+    let output = command
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--gpu",
+            "--introspect",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena GPU many-light capacity command runs");
+    assert!(
+        output.status.success(),
+        "GPU tiled light assignment should render many point lights instead of failing the old fixed uniform cap; stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    let backend = report
+        .pointer("/introspection/capabilities/backend")
+        .or_else(|| report.pointer("/capabilities/backend"));
+    assert_eq!(
+        backend,
+        Some(&json!("headless_gpu")),
+        "many-light proof must run on HeadlessGpu, not CPU fallback: {report:#}"
+    );
+    assert!(
+        png_path.exists(),
+        "many-light GPU render should write the requested PNG through tiled assignment"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_gpu_tiled_many_point_lights_use_late_light() {
+    let dir = artifact_dir("recipe-render-gpu-tiled-light-assignment");
+    let baseline_recipe_path = dir.join("tiled-many-point-lights-baseline.recipe.json");
+    let late_recipe_path = dir.join("tiled-many-point-lights-late.recipe.json");
+    let baseline_png = dir.join("tiled-many-point-lights-baseline.png");
+    let late_png = dir.join("tiled-many-point-lights-late.png");
+    let recipe = |include_late_light: bool| {
+        let mut lights = (0..20)
+            .map(|index| {
+                json!({
+                    "id": format!("point_{index}"),
+                    "kind": "point",
+                    "intensity_candela": 6.0,
+                    "range": 1.05,
+                    "transform": {
+                        "kind": "trs",
+                        "translation": [-1.55 + index as f64 * 0.155, 0.62, 0.92]
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        if include_late_light {
+            lights.push(json!({
+                "id": "point_20_blue_late",
+                "kind": "point",
+                "color": "#2E72FF",
+                "intensity_candela": 56.0,
+                "range": 0.82,
+                "transform": {
+                    "kind": "trs",
+                    "translation": [0.64, 0.32, 0.74]
+                }
+            }));
+        }
+        json!({
+            "schema": "scena.scene_recipe.v1",
+            "geometries": [
+                { "id": "body_geo", "primitive": { "kind": "box", "size": [0.9, 0.5, 0.24] } }
+            ],
+            "materials": [
+                {
+                    "id": "body_mat",
+                    "kind": "pbr_metallic_roughness",
+                    "base_color": "#5A6472",
+                    "metallic": 0.0,
+                    "roughness": 0.58
+                }
+            ],
+            "nodes": [
+                { "id": "body", "geometry": "body_geo", "material": "body_mat" }
+            ],
+            "lights": lights,
+            "scene": {
+                "background": { "kind": "custom", "color": "#20242C" },
+                "environment": { "kind": "none" }
+            },
+            "render": {
+                "anti_aliasing": "msaa4",
+                "tonemapper": "standard",
+                "exposure_ev": 0.0
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 30.0,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.22, 2.35], "target": "body" }
+            }],
+            "capture": { "width": 220, "height": 160 },
+            "expect": {
+                "expect_visible": [{
+                    "id": "body-visible",
+                    "target": { "kind": "node", "id": "body" }
+                }]
+            }
+        })
+    };
+    fs::write(
+        &baseline_recipe_path,
+        serde_json::to_string_pretty(&recipe(false))
+            .expect("baseline tiled-light recipe serializes"),
+    )
+    .expect("baseline tiled-light recipe writes");
+    fs::write(
+        &late_recipe_path,
+        serde_json::to_string_pretty(&recipe(true)).expect("late tiled-light recipe serializes"),
+    )
+    .expect("late tiled-light recipe writes");
+
+    let baseline_report = run_recipe_render_verify(&baseline_recipe_path, &baseline_png, true);
+    let late_report = run_recipe_render_verify(&late_recipe_path, &late_png, true);
+    assert_eq!(
+        baseline_report["introspection"]["capabilities"]["backend"], "headless_gpu",
+        "many-light proof must run on HeadlessGpu, not CPU fallback: {baseline_report:#}"
+    );
+    assert_eq!(
+        late_report["introspection"]["capabilities"]["backend"], "headless_gpu",
+        "many-light proof must run on HeadlessGpu, not CPU fallback: {late_report:#}"
+    );
+
+    let baseline = decode_png_rgba8(&baseline_png);
+    let late = decode_png_rgba8(&late_png);
+    let probe = QualityPixelRegion {
+        x: 124,
+        y: 57,
+        width: 54,
+        height: 52,
+    };
+    let baseline_blue = mean_blue_in_region(&baseline.rgba8, baseline.width, probe);
+    let late_blue = mean_blue_in_region(&late.rgba8, late.width, probe);
+    fs::write(
+        dir.join("tiled-many-point-light-blue-delta.json"),
+        format!(
+            "{{\n  \"schema\": \"scena.tiled_light_assignment_probe.v1\",\n  \"baseline_blue\": {:.4},\n  \"late_light_blue\": {:.4},\n  \"blue_delta\": {:.4},\n  \"region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}\n}}\n",
+            baseline_blue,
+            late_blue,
+            late_blue - baseline_blue,
+            probe.x,
+            probe.y,
+            probe.width,
+            probe.height
+        ),
+    )
+    .expect("tiled many-light metrics artifact writes");
+    assert!(
+        late_blue > baseline_blue + 0.030,
+        "a point light beyond the old fixed 16-light GPU lane must contribute to rendered pixels through tiled light assignment; baseline_blue={baseline_blue:.4}, late_blue={late_blue:.4}, baseline_report={baseline_report:#}, late_report={late_report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_area_light_shape_changes_pixels_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-area-light-shape");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (narrow_recipe, narrow_png) =
+            write_area_light_shape_recipe(&dir, &format!("{backend}-narrow"), 0.12);
+        let (wide_recipe, wide_png) =
+            write_area_light_shape_recipe(&dir, &format!("{backend}-wide"), 1.8);
+
+        let narrow_report = run_recipe_render_verify(&narrow_recipe, &narrow_png, use_gpu);
+        let wide_report = run_recipe_render_verify(&wide_recipe, &wide_png, use_gpu);
+        assert_eq!(narrow_report["capture"]["width"], 180, "{narrow_report:#}");
+        assert_eq!(wide_report["capture"]["height"], 140, "{wide_report:#}");
+
+        let narrow = decode_png_rgba8(&narrow_png);
+        let wide = decode_png_rgba8(&wide_png);
+        assert_eq!((narrow.width, narrow.height), (180, 140));
+        assert_eq!((wide.width, wide.height), (180, 140));
+        let delta = frame_delta_in_region(
+            &narrow.rgba8,
+            &wide.rgba8,
+            narrow.width,
+            QualityPixelRegion {
+                x: 0,
+                y: 0,
+                width: narrow.width,
+                height: narrow.height,
+            },
+        );
+        assert!(
+            delta.mean_channel_delta > 1.0 && delta.max_channel_delta > 10,
+            "area-light rect width must affect native-resolution pixels on {backend}; delta={delta:?}, narrow={narrow_report:#}, wide={wide_report:#}"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_area_light_broadens_specular_highlight_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-area-light-specular-spread");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (point_recipe, point_png) = write_area_light_specular_recipe(
+            &dir,
+            &format!("specular-spread-{backend}-point"),
+            false,
+        );
+        let (area_recipe, area_png) = write_area_light_specular_recipe(
+            &dir,
+            &format!("specular-spread-{backend}-area"),
+            true,
+        );
+
+        let point_report = run_recipe_render_verify(&point_recipe, &point_png, use_gpu);
+        let area_report = run_recipe_render_verify(&area_recipe, &area_png, use_gpu);
+        let point = decode_png_rgba8(&point_png);
+        let area = decode_png_rgba8(&area_png);
+        let region = QualityPixelRegion {
+            x: 22,
+            y: 10,
+            width: 136,
+            height: 122,
+        };
+        let point_metrics = specular_spread_metrics(&point.rgba8, point.width, region);
+        let area_metrics = specular_spread_metrics(&area.rgba8, area.width, region);
+        let metrics_name = match backend {
+            "cpu" => "specular-spread-cpu-metrics.json",
+            "gpu" => "specular-spread-gpu-metrics.json",
+            _ => unreachable!("known backend label"),
+        };
+        fs::write(
+            dir.join(metrics_name),
+            format!(
+                "{{\n  \"schema\": \"scena.specular_spread_probe.v1\",\n  \"backend\": \"{backend}\",\n  \"point\": {{ \"fwhm_pixels\": {}, \"unique_luma_levels\": {}, \"median_luminance\": {:.4}, \"peak_luminance\": {:.4}, \"threshold_luminance\": {:.4} }},\n  \"area\": {{ \"fwhm_pixels\": {}, \"unique_luma_levels\": {}, \"median_luminance\": {:.4}, \"peak_luminance\": {:.4}, \"threshold_luminance\": {:.4} }},\n  \"region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}\n}}\n",
+                point_metrics.fwhm_pixels,
+                point_metrics.unique_luma_levels,
+                point_metrics.median_luminance,
+                point_metrics.peak_luminance,
+                point_metrics.threshold_luminance,
+                area_metrics.fwhm_pixels,
+                area_metrics.unique_luma_levels,
+                area_metrics.median_luminance,
+                area_metrics.peak_luminance,
+                area_metrics.threshold_luminance,
+                region.x,
+                region.y,
+                region.width,
+                region.height
+            ),
+        )
+        .expect("specular spread metrics artifact writes");
+        assert!(
+            area_metrics.fwhm_pixels > point_metrics.fwhm_pixels.saturating_add(120),
+            "broad area light should produce a wider native-resolution specular lobe than a point light on {backend}; point={point_metrics:?}, area={area_metrics:?}, point_report={point_report:#}, area_report={area_report:#}"
+        );
+        assert!(
+            area_metrics.unique_luma_levels >= point_metrics.unique_luma_levels.saturating_sub(8),
+            "broad area-light highlight must remain graded, not collapse into a flat patch on {backend}; point={point_metrics:?}, area={area_metrics:?}"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_area_light_ltc_specular_matches_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-area-light-ltc-parity");
+    let (cpu_recipe, cpu_png) =
+        write_area_light_specular_recipe(&dir, "ltc-specular-cpu-area", true);
+    let (gpu_recipe, gpu_png) =
+        write_area_light_specular_recipe(&dir, "ltc-specular-gpu-area", true);
+
+    let cpu_report = run_recipe_render_verify(&cpu_recipe, &cpu_png, false);
+    let gpu_report = run_recipe_render_verify(&gpu_recipe, &gpu_png, true);
+    let cpu = decode_png_rgba8(&cpu_png);
+    let gpu = decode_png_rgba8(&gpu_png);
+    let region = QualityPixelRegion {
+        x: 22,
+        y: 10,
+        width: 136,
+        height: 122,
+    };
+    let cpu_metrics = specular_spread_metrics(&cpu.rgba8, cpu.width, region);
+    let gpu_metrics = specular_spread_metrics(&gpu.rgba8, gpu.width, region);
+    let delta = frame_delta_in_region(&cpu.rgba8, &gpu.rgba8, cpu.width, region);
+    fs::write(
+        dir.join("area-light-ltc-cpu-gpu-parity.json"),
+        format!(
+            "{{\n  \"schema\": \"scena.area_light_ltc_parity_probe.v1\",\n  \"cpu\": {{ \"fwhm_pixels\": {}, \"unique_luma_levels\": {}, \"median_luminance\": {:.4}, \"peak_luminance\": {:.4}, \"threshold_luminance\": {:.4} }},\n  \"gpu\": {{ \"fwhm_pixels\": {}, \"unique_luma_levels\": {}, \"median_luminance\": {:.4}, \"peak_luminance\": {:.4}, \"threshold_luminance\": {:.4} }},\n  \"delta\": {{ \"mean_channel_delta\": {:.4}, \"max_channel_delta\": {} }},\n  \"region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}\n}}\n",
+            cpu_metrics.fwhm_pixels,
+            cpu_metrics.unique_luma_levels,
+            cpu_metrics.median_luminance,
+            cpu_metrics.peak_luminance,
+            cpu_metrics.threshold_luminance,
+            gpu_metrics.fwhm_pixels,
+            gpu_metrics.unique_luma_levels,
+            gpu_metrics.median_luminance,
+            gpu_metrics.peak_luminance,
+            gpu_metrics.threshold_luminance,
+            delta.mean_channel_delta,
+            delta.max_channel_delta,
+            region.x,
+            region.y,
+            region.width,
+            region.height
+        ),
+    )
+    .expect("LTC area-light parity metrics artifact writes");
+
+    let fwhm_delta = cpu_metrics.fwhm_pixels.abs_diff(gpu_metrics.fwhm_pixels);
+    assert!(
+        fwhm_delta <= 260,
+        "CPU and GPU LTC area-light specular spread should stay within a tight native-resolution tolerance; cpu={cpu_metrics:?}, gpu={gpu_metrics:?}, delta={delta:?}, cpu_report={cpu_report:#}, gpu_report={gpu_report:#}"
+    );
+    assert!(
+        delta.mean_channel_delta <= 18.0 && delta.max_channel_delta <= 96,
+        "CPU and GPU area-light LTC renders should match within the established native-resolution tolerance; cpu={cpu_metrics:?}, gpu={gpu_metrics:?}, delta={delta:?}, cpu_report={cpu_report:#}, gpu_report={gpu_report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_area_light_caster_darkens_tessellated_receiver_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-area-light-shadow");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (baseline_recipe, baseline_png) =
+            write_area_light_shadow_recipe(&dir, &format!("area-shadow-{backend}-baseline"), false);
+        let (shadow_recipe, shadow_png) =
+            write_area_light_shadow_recipe(&dir, &format!("area-shadow-{backend}-caster"), true);
+        let baseline_report = run_recipe_render_verify(&baseline_recipe, &baseline_png, use_gpu);
+        let shadow_report = run_recipe_render_verify(&shadow_recipe, &shadow_png, use_gpu);
+        let baseline = decode_png_rgba8(&baseline_png);
+        let shadowed = decode_png_rgba8(&shadow_png);
+        let shadow_region = QualityPixelRegion {
+            x: 105,
+            y: 59,
+            width: 45,
+            height: 30,
+        };
+        let baseline_luma =
+            mean_non_caster_luminance_in_region(&baseline.rgba8, baseline.width, shadow_region);
+        let shadow_luma =
+            mean_non_caster_luminance_in_region(&shadowed.rgba8, shadowed.width, shadow_region);
+        let delta = baseline_luma.mean_luminance - shadow_luma.mean_luminance;
+        fs::write(
+            dir.join(format!("area-shadow-{backend}-metrics.json")),
+            format!(
+                "{{\n  \"schema\": \"scena.area_shadow_probe.v1\",\n  \"backend\": \"{backend}\",\n  \"baseline_receiver_luminance\": {:.4},\n  \"shadowed_receiver_luminance\": {:.4},\n  \"receiver_luminance_delta\": {:.4},\n  \"baseline_receiver_pixels\": {},\n  \"shadowed_receiver_pixels\": {},\n  \"region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}\n}}\n",
+                baseline_luma.mean_luminance,
+                shadow_luma.mean_luminance,
+                delta,
+                baseline_luma.receiver_pixels,
+                shadow_luma.receiver_pixels,
+                shadow_region.x,
+                shadow_region.y,
+                shadow_region.width,
+                shadow_region.height
+            ),
+        )
+        .expect("area shadow metrics artifact writes");
+        assert!(
+            delta > 0.012,
+            "area-light caster should darken the deterministic receiver shadow window on {backend}; delta={delta}, baseline={baseline_luma:?}, shadowed={shadow_luma:?}, baseline_report={baseline_report:#}, shadow_report={shadow_report:#}"
+        );
+        assert!(
+            baseline_luma.receiver_pixels > 1_200 && shadow_luma.receiver_pixels > 900,
+            "area-light shadow proof must measure the receiver surface, not the caster/background; baseline={baseline_luma:?}, shadowed={shadow_luma:?}"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_area_light_soft_shadow_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-area-light-quality");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (bad_recipe, bad_png) = write_area_light_quality_recipe(
+            &dir,
+            &format!("area-soft-shadow-bad-{backend}"),
+            0.04,
+            true,
+        );
+        let mut bad_args = vec!["recipe", "render", path_str(&bad_recipe)];
+        if use_gpu {
+            bad_args.push("--gpu");
+        }
+        bad_args.extend(["--introspect", "--verify", "--out", path_str(&bad_png)]);
+        let mut bad_command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut bad_command);
+        }
+        let bad_output = bad_command
+            .args(bad_args)
+            .output()
+            .expect("scena area-light quality bad recipe render command runs");
+        assert!(
+            !bad_output.status.success(),
+            "tiny area emitter should fail soft-shadow quality on {backend}, stdout={}, stderr={}",
+            String::from_utf8_lossy(&bad_output.stdout),
+            stderr(&bad_output)
+        );
+        let bad_report = json_report(&bad_output);
+        if use_gpu {
+            assert_eq!(
+                bad_report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU area-light quality failure proof must use the GPU backend, not a fallback: {bad_report:#}"
+            );
+        }
+        assert!(
+            bad_report["verification"]["quality"]["checks"]
+                .as_array()
+                .expect("quality checks serialize")
+                .iter()
+                .any(|check| check["id"] == "expect_quality.area_light.target"
+                    && check["code"] == "area_light_soft_shadow_insufficient"
+                    && check["region"]["kind"] == "area_light_shadow_target"),
+            "{backend} tiny area-light emitter must fail with exact area_light_soft_shadow_insufficient quality check: {bad_report:#}"
+        );
+        assert!(
+            bad_report["verification"]["reasons"]
+                .as_array()
+                .expect("verification reasons serialize")
+                .iter()
+                .any(
+                    |reason| reason["code"] == "area_light_soft_shadow_insufficient"
+                        && reason["expectation_id"] == "expect_quality.area_light.target",
+                ),
+            "{backend} tiny area-light emitter must surface the exact quality reason to agents: {bad_report:#}"
+        );
+
+        let (good_recipe, good_png) = write_area_light_quality_recipe(
+            &dir,
+            &format!("area-soft-shadow-good-{backend}"),
+            1.2,
+            true,
+        );
+        let good_report = run_recipe_render_verify(&good_recipe, &good_png, use_gpu);
+        assert!(
+            good_report["verification"]["quality"]["checks"]
+                .as_array()
+                .expect("quality checks serialize")
+                .iter()
+                .any(|check| check["id"] == "expect_quality.area_light.target"
+                    && check["code"] == "area_light_soft_shadow_checked"
+                    && check["region"]["kind"] == "area_light_shadow_target"),
+            "{backend} broad area emitter must pass with explicit area_light_soft_shadow_checked coverage: {good_report:#}"
+        );
+        assert!(
+            good_report["verification"]["quality"]["checks"]
+                .as_array()
+                .expect("quality checks serialize")
+                .iter()
+                .all(|check| check["code"] != "area_light_soft_shadow_insufficient"),
+            "{backend} broad area emitter must not emit area_light_soft_shadow_insufficient: {good_report:#}"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_area_light_soft_shadow_for_all_shapes_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-area-light-shape-quality");
+    for shape in ["rect", "disc", "sphere"] {
+        for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+            let (recipe, png) = write_area_light_quality_recipe_for_shape(
+                &dir,
+                &format!("area-soft-shadow-{shape}-{backend}"),
+                shape,
+                1.2,
+                true,
+            );
+            let report = run_recipe_render_verify(&recipe, &png, use_gpu);
+            let checks = report["verification"]["quality"]["checks"]
+                .as_array()
+                .expect("quality checks serialize");
+            let area_check = checks
+                .iter()
+                .find(|check| check["id"] == "expect_quality.area_light.target")
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{backend} {shape} area-light proof must emit an area-light quality check: {report:#}"
+                    )
+                });
+            assert_eq!(
+                area_check["code"], "area_light_soft_shadow_checked",
+                "{backend} {shape} finite emitter must pass the area-light quality check: {report:#}"
+            );
+            assert_eq!(
+                area_check["region"]["kind"], "area_light_shadow_target",
+                "{backend} {shape} area-light quality must measure the target region, not the whole frame: {report:#}"
+            );
+            let observed_extent = area_check["observed"]["soft_emitter_extent_meters"]
+                .as_f64()
+                .expect("soft emitter extent is numeric");
+            assert!(
+                observed_extent >= 0.5,
+                "{backend} {shape} area-light check must record a finite emitter extent above the configured soft-shadow threshold; observed={observed_extent}, report={report:#}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_depth_of_field_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-depth-of-field-quality");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let (missing_recipe, missing_png) =
+            write_depth_of_field_quality_recipe(&dir, &format!("dof-missing-{backend}"), None);
+        let missing_report =
+            run_recipe_render_verify_expect_failure(&missing_recipe, &missing_png, use_gpu);
+        assert_quality_reason(
+            &missing_report,
+            "depth_of_field_not_enabled",
+            "expect_quality.depth_of_field",
+        );
+
+        let (wrong_focus_recipe, wrong_focus_png) = write_depth_of_field_quality_recipe(
+            &dir,
+            &format!("dof-wrong-focus-{backend}"),
+            Some(4.35),
+        );
+        let wrong_focus_report =
+            run_recipe_render_verify_expect_failure(&wrong_focus_recipe, &wrong_focus_png, use_gpu);
+        assert_quality_reason(
+            &wrong_focus_report,
+            "depth_of_field_blur_insufficient",
+            "expect_quality.depth_of_field",
+        );
+
+        let (good_recipe, good_png) = write_depth_of_field_quality_recipe(
+            &dir,
+            &format!("dof-good-focus-{backend}"),
+            Some(3.0),
+        );
+        let good_report = run_recipe_render_verify(&good_recipe, &good_png, use_gpu);
+        assert!(
+            good_report["verification"]["quality"]["checks"]
+                .as_array()
+                .expect("quality checks serialize")
+                .iter()
+                .any(|check| check["id"] == "expect_quality.depth_of_field"
+                    && check["code"] == "depth_of_field_checked"
+                    && check["region"]["kind"] == "dof_background"
+                    && check["observed"]["background_sobel_drop_fraction"]
+                        .as_f64()
+                        .is_some_and(|value| value >= 0.18)),
+            "{backend} focused DoF render must pass with an explicit depth_of_field_checked quality result: {good_report:#}"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_gpu_many_point_lights_contribute_without_fixed_uniform_truncation() {
+    let dir = artifact_dir("recipe-render-gpu-light-capacity");
+    let four_recipe_path = dir.join("gpu-light-capacity-four.recipe.json");
+    let five_recipe_path = dir.join("gpu-light-capacity-five.recipe.json");
+    let four_png = dir.join("gpu-light-capacity-four-gpu.png");
+    let five_png = dir.join("gpu-light-capacity-five-gpu.png");
+    let recipe = |include_fifth: bool| {
+        let mut lights = vec![
+            json!({ "id": "point_0", "kind": "point", "intensity_candela": 8.0, "range": 4.0, "transform": { "kind": "trs", "translation": [-0.85, 0.9, 1.2] } }),
+            json!({ "id": "point_1", "kind": "point", "intensity_candela": 8.0, "range": 4.0, "transform": { "kind": "trs", "translation": [-0.35, 1.0, 1.1] } }),
+            json!({ "id": "point_2", "kind": "point", "intensity_candela": 8.0, "range": 4.0, "transform": { "kind": "trs", "translation": [0.15, 1.0, 1.1] } }),
+            json!({ "id": "point_3", "kind": "point", "intensity_candela": 8.0, "range": 4.0, "transform": { "kind": "trs", "translation": [0.65, 0.9, 1.2] } }),
+        ];
+        if include_fifth {
+            lights.push(json!({
+                "id": "point_4_blue",
+                "kind": "point",
+                "color": "#427DFF",
+                "intensity_candela": 40.0,
+                "range": 4.0,
+                "transform": { "kind": "trs", "translation": [1.05, 0.62, 0.8] }
+            }));
+        }
+        json!({
+            "schema": "scena.scene_recipe.v1",
+            "geometries": [
+                { "id": "body_geo", "primitive": { "kind": "box", "size": [0.72, 0.45, 0.28] } }
+            ],
+            "materials": [
+                {
+                    "id": "body_mat",
+                    "kind": "pbr_metallic_roughness",
+                    "base_color": "#59687D",
+                    "metallic": 0.0,
+                    "roughness": 0.62
+                }
+            ],
+            "nodes": [
+                { "id": "body", "geometry": "body_geo", "material": "body_mat" }
+            ],
+            "lights": lights,
+            "scene": {
+                "background": { "kind": "custom", "color": "#20242C" },
+                "environment": { "kind": "none" }
+            },
+            "render": {
+                "anti_aliasing": "msaa4",
+                "tonemapper": "standard",
+                "exposure_ev": 0.0
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 30.0,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.18, 2.25], "target": "body" }
+            }],
+            "capture": { "width": 200, "height": 150 },
+            "expect": {
+                "expect_visible": [{
+                    "id": "body-visible",
+                    "target": { "kind": "node", "id": "body" }
+                }]
+            }
+        })
+    };
+    fs::write(
+        &four_recipe_path,
+        serde_json::to_string_pretty(&recipe(false)).expect("four-light recipe serializes"),
+    )
+    .expect("four-light recipe writes");
+    fs::write(
+        &five_recipe_path,
+        serde_json::to_string_pretty(&recipe(true)).expect("five-light recipe serializes"),
+    )
+    .expect("five-light recipe writes");
+
+    let four_report = run_recipe_render_verify(&four_recipe_path, &four_png, true);
+    let five_report = run_recipe_render_verify(&five_recipe_path, &five_png, true);
+    assert_eq!(
+        four_report["introspection"]["capabilities"]["backend"], "headless_gpu",
+        "{four_report:#}"
+    );
+    assert_eq!(
+        five_report["introspection"]["capabilities"]["backend"], "headless_gpu",
+        "{five_report:#}"
+    );
+
+    let four = decode_png_rgba8(&four_png);
+    let five = decode_png_rgba8(&five_png);
+    let probe = QualityPixelRegion {
+        x: 120,
+        y: 46,
+        width: 52,
+        height: 58,
+    };
+    let four_blue = mean_blue_in_region(&four.rgba8, four.width, probe);
+    let five_blue = mean_blue_in_region(&five.rgba8, five.width, probe);
+    let blue_delta = five_blue - four_blue;
+    assert!(
+        blue_delta > 8.0,
+        "the fifth blue point light must visibly contribute on HeadlessGpu instead of being truncated; blue_delta={blue_delta:.3}, four_blue={four_blue:.3}, five_blue={five_blue:.3}, four={four_report:#}, five={five_report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_culls_offscreen_node_without_culling_visible_node_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-render-frustum-culling-proof");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let baseline_recipe_path =
+            dir.join(format!("frustum-culling-{backend}-baseline.recipe.json"));
+        let baseline_png_path = dir.join(format!("frustum-culling-{backend}-baseline.png"));
+        let culling_recipe_path = dir.join(format!("frustum-culling-{backend}.recipe.json"));
+        let culling_png_path = dir.join(format!("frustum-culling-{backend}.png"));
+        let recipe = |include_offscreen: bool| {
+            let mut nodes = vec![json!({
+                "id": "visible_box",
+                "geometry": "box_geo",
+                "material": "visible_mat",
+                "transform": { "kind": "trs", "translation": [0.0, 0.0, 0.0] }
+            })];
+            if include_offscreen {
+                nodes.push(json!({
+                    "id": "offscreen_box",
+                    "geometry": "box_geo",
+                    "material": "offscreen_mat",
+                    "transform": { "kind": "trs", "translation": [4.0, 0.0, 0.0] }
+                }));
+            }
+            json!({
+                "schema": "scena.scene_recipe.v1",
+                "geometries": [
+                    { "id": "box_geo", "primitive": { "kind": "box", "size": [0.35, 0.35, 0.12] } }
+                ],
+                "materials": [
+                    { "id": "visible_mat", "kind": "unlit", "base_color": "#2F9E44" },
+                    { "id": "offscreen_mat", "kind": "unlit", "base_color": "#C92A2A" }
+                ],
+                "nodes": nodes,
+                "scene": { "background": { "kind": "black" } },
+                "render": {
+                    "anti_aliasing": "none",
+                    "tonemapper": "standard",
+                    "exposure_ev": 0.0
+                },
+                "cameras": [{
+                    "id": "main",
+                    "kind": "perspective",
+                    "fov_degrees": 36.0,
+                    "active": true,
+                    "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": "visible_box" }
+                }],
+                "capture": { "width": 120, "height": 100 },
+                "expect": {}
+            })
+        };
+        fs::write(
+            &baseline_recipe_path,
+            serde_json::to_string_pretty(&recipe(false))
+                .expect("baseline frustum culling recipe serializes"),
+        )
+        .expect("baseline frustum culling recipe writes");
+        fs::write(
+            &culling_recipe_path,
+            serde_json::to_string_pretty(&recipe(true)).expect("frustum culling recipe serializes"),
+        )
+        .expect("frustum culling recipe writes");
+
+        let baseline = run_recipe_render_verify(&baseline_recipe_path, &baseline_png_path, use_gpu);
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let mut args = vec!["recipe", "render", path_str(&culling_recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend([
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&culling_png_path),
+        ]);
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena culling recipe render command runs");
+        assert!(
+            !output.status.success(),
+            "{backend} render with an offscreen declared node should fail composition verification, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        assert!(
+            output.stderr.is_empty(),
+            "culling proof failures stay machine-readable on stdout, stderr={}",
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        if use_gpu {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU culling proof must use the GPU backend, not a fallback: {report:#}"
+            );
+        }
+        let baseline_visible = baseline["introspection"]["visible_pixel_fraction"]
+            .as_f64()
+            .expect("baseline visible pixel fraction");
+        let culling_visible = report["introspection"]["visible_pixel_fraction"]
+            .as_f64()
+            .expect("culling visible pixel fraction");
+        assert!(
+            culling_visible > 0.01 && (culling_visible - baseline_visible).abs() <= 0.001,
+            "{backend} render should keep the visible box in frame: {report:#}"
+        );
+        let baseline_culled = baseline["introspection"]["nodes_summary"]["culled"]
+            .as_u64()
+            .expect("baseline culled count");
+        let culling_culled = report["introspection"]["nodes_summary"]["culled"]
+            .as_u64()
+            .expect("culling culled count");
+        assert!(
+            culling_culled > baseline_culled,
+            "{backend} render should increase culling when the offscreen box is added: baseline={baseline_culled}, culling={culling_culled}, report={report:#}"
+        );
+        assert!(
+            report["verification"]["reasons"]
+                .as_array()
+                .expect("verification reasons array")
+                .iter()
+                .any(|reason| reason["code"] == "visible_pixel_coverage_missing"
+                    && reason["expectation_id"] == "node.offscreen_box.visible_coverage"),
+            "{backend} render should fail only after proving the offscreen declared node has no visible coverage: {report:#}"
+        );
+    }
 }
 
 #[cfg(feature = "scene-host")]
@@ -2499,9 +5446,23 @@ fn scena_recipe_render_verify_emits_passing_composition_report_for_declared_node
             .as_array()
             .expect("composition checks array")
             .iter()
-            .any(|check| check["status"] == "skipped_no_backend_support"
-                && check["code"] == "object_mask_not_available"),
-        "coverage gaps should be explicit: {report:#}"
+            .any(|check| check["id"] == "node.visible_box.expected_color"
+                && check["status"] == "checked"
+                && check["code"] == "material_base_color_available"),
+        "material-backed declared node should expose a structural expected-color check: {report:#}"
+    );
+    assert!(
+        composition["checks"]
+            .as_array()
+            .expect("composition checks array")
+            .iter()
+            .any(|check| check["id"] == "node.visible_box.visible_coverage"
+                && check["status"] == "checked"
+                && check["code"] == "visible_pixel_coverage_available"
+                && check["observed"]["foreground_pixels"]
+                    .as_u64()
+                    .is_some_and(|value| value > 0)),
+        "declared visible node should have measured per-node visible coverage: {report:#}"
     );
     assert!(
         report["verification"]["reasons"]
@@ -2510,6 +5471,2732 @@ fn scena_recipe_render_verify_emits_passing_composition_report_for_declared_node
             .iter()
             .all(|reason| !(reason["source"] == "composition" && reason["severity"] == "error")),
         "passing composition checks should not produce composition errors: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_fails_required_composition_coverage_when_node_is_offscreen() {
+    let dir = artifact_dir("recipe-composition-required-coverage");
+    let recipe_path = dir.join("composition-required.recipe.json");
+    let png_path = dir.join("composition-required.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "green": "#2F9E44"
+            },
+            "geometries": [
+                { "id": "visible_geo", "primitive": { "kind": "box", "size": [0.35, 0.35, 0.08] } }
+            ],
+            "materials": [
+                { "id": "green_mat", "kind": "unlit", "base_color": "green" }
+            ],
+            "nodes": [
+                {
+                    "id": "visible_box",
+                    "geometry": "visible_geo",
+                    "material": "green_mat",
+                    "transform": { "kind": "trs", "translation": [4.0, 0.0, 0.0] }
+                }
+            ],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 36.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": [0.0, 0.0, 0.0] }
+            }],
+            "capture": { "width": 128, "height": 128 },
+            "expect": {
+                "expect_quality": { "profile": "cad" }
+            }
+        }))
+        .expect("composition required coverage recipe serializes"),
+    )
+    .expect("composition required coverage recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena composition required coverage render command runs");
+
+    assert!(
+        !output.status.success(),
+        "profile-required offscreen coverage failures must fail verification, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "composition coverage failures stay machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    let composition = &report["verification"]["composition"];
+    assert_eq!(composition["schema"], "scena.scene_composition.v1");
+    assert_eq!(composition["ok"], false, "{report:#}");
+    assert!(
+        composition["checks"]
+            .as_array()
+            .expect("composition checks array")
+            .iter()
+            .any(|check| check["id"] == "node.visible_box.visible_coverage"
+                && check["status"] == "failed"
+                && check["code"] == "visible_pixel_coverage_missing"),
+        "profile-required missing visible coverage should be an exact failed composition check: {report:#}"
+    );
+    assert!(
+        report["verification"]["reasons"]
+            .as_array()
+            .expect("verification reasons array")
+            .iter()
+            .any(|reason| reason["source"] == "composition"
+                && reason["code"] == "visible_pixel_coverage_missing"),
+        "profile-required missing visible coverage must surface as a verification reason: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_fails_overlay_line_through_label() {
+    let dir = artifact_dir("recipe-composition-overlay-collision");
+    let recipe_path = dir.join("composition-overlay-collision.recipe.json");
+    let png_path = dir.join("composition-overlay-collision.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "white": "#F8F9FA",
+                "black": "#050505"
+            },
+            "geometries": [
+                {
+                    "id": "crossing_line",
+                    "primitive": {
+                        "kind": "line",
+                        "start": [-0.6, 0.0, 0.0],
+                        "end": [0.6, 0.0, 0.0]
+                    }
+                }
+            ],
+            "materials": [
+                {
+                    "id": "line_mat",
+                    "kind": "line",
+                    "base_color": "white",
+                    "stroke_width_px": 2.0
+                }
+            ],
+            "nodes": [
+                {
+                    "id": "line",
+                    "geometry": "crossing_line",
+                    "material": "line_mat"
+                }
+            ],
+            "labels": [
+                {
+                    "id": "center_label",
+                    "text": "STATUS",
+                    "transform": { "kind": "trs", "translation": [0.0, 0.0, 0.0] },
+                    "color": "white",
+                    "background": "black",
+                    "size_px": 18.0
+                }
+            ],
+            "scene": { "background": { "kind": "black" } },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 34.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": [0.0, 0.0, 0.0] }
+            }],
+            "capture": { "width": 220, "height": 140 },
+            "expect": {}
+        }))
+        .expect("composition overlay-collision recipe serializes"),
+    )
+    .expect("composition overlay-collision recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena composition overlay-collision render command runs");
+
+    assert!(
+        !output.status.success(),
+        "line-through-label composition should fail verification, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "composition overlay failures stay machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert!(
+        report["verification"]["composition"]["checks"]
+            .as_array()
+            .expect("composition checks array")
+            .iter()
+            .any(|check| check["status"] == "failed"
+                && check["code"] == "overlay_label_intersects_line"),
+        "line-through-label should be an exact failed composition check: {report:#}"
+    );
+    assert!(
+        report["verification"]["reasons"]
+            .as_array()
+            .expect("verification reasons array")
+            .iter()
+            .any(|reason| reason["source"] == "composition"
+                && reason["code"] == "overlay_label_intersects_line"),
+        "line-through-label composition failure must surface as a verification reason: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_label_label_overlap_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-composition-label-label-overlap");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        for (case, right_x, should_pass) in [("separated", 0.62, true), ("overlap", 0.05, false)] {
+            let recipe_path = dir.join(format!("label-overlap-{backend}-{case}.recipe.json"));
+            let png_path = dir.join(format!("label-overlap-{backend}-{case}.png"));
+            fs::write(
+                &recipe_path,
+                serde_json::to_string_pretty(&json!({
+                    "schema": "scena.scene_recipe.v1",
+                    "colors": {
+                        "white": "#F8F9FA",
+                        "black": "#050505",
+                        "blue": "#173B8F"
+                    },
+                    "labels": [
+                        {
+                            "id": "left_label",
+                            "text": "PUMP A",
+                            "transform": { "kind": "trs", "translation": [-0.38, 0.0, 0.0] },
+                            "color": "white",
+                            "background": "black",
+                            "size_px": 18.0
+                        },
+                        {
+                            "id": "right_label",
+                            "text": "PUMP B",
+                            "transform": { "kind": "trs", "translation": [right_x, 0.0, 0.0] },
+                            "color": "white",
+                            "background": "blue",
+                            "size_px": 18.0
+                        }
+                    ],
+                    "scene": { "background": { "kind": "black" } },
+                    "render": {
+                        "anti_aliasing": "msaa4",
+                        "supersample": 1,
+                        "tonemapper": "standard",
+                        "exposure_ev": 0.0
+                    },
+                    "cameras": [{
+                        "id": "main",
+                        "kind": "perspective",
+                        "fov_degrees": 34.0,
+                        "active": true,
+                        "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": [0.0, 0.0, 0.0] }
+                    }],
+                    "capture": { "width": 260, "height": 140 },
+                    "expect": {}
+                }))
+                .expect("composition label-overlap recipe serializes"),
+            )
+            .expect("composition label-overlap recipe writes");
+
+            let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+            if use_gpu {
+                configure_command_for_lavapipe(&mut command);
+            }
+            let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+            if use_gpu {
+                args.push("--gpu");
+            }
+            args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+            let output = command
+                .args(args)
+                .output()
+                .expect("scena composition label-overlap render command runs");
+
+            if should_pass {
+                assert!(
+                    output.status.success(),
+                    "{backend}/{case} label overlap recipe should pass verification, stdout={}, stderr={}",
+                    String::from_utf8_lossy(&output.stdout),
+                    stderr(&output)
+                );
+            } else {
+                assert!(
+                    !output.status.success(),
+                    "{backend}/{case} label overlap recipe should fail verification, stdout={}, stderr={}",
+                    String::from_utf8_lossy(&output.stdout),
+                    stderr(&output)
+                );
+                assert!(
+                    output.stderr.is_empty(),
+                    "composition label-overlap failures stay machine-readable on stdout, stderr={}",
+                    stderr(&output)
+                );
+            }
+            let report = json_report(&output);
+            if use_gpu {
+                assert_eq!(
+                    report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                    "GPU label-overlap proof must use HeadlessGpu, not CPU fallback: {report:#}"
+                );
+            }
+            let expected_code = if should_pass {
+                "overlay_label_clear_of_labels"
+            } else {
+                "overlay_label_intersects_label"
+            };
+            let expected_status = if should_pass { "checked" } else { "failed" };
+            assert!(
+                report["verification"]["composition"]["checks"]
+                    .as_array()
+                    .expect("composition checks array")
+                    .iter()
+                    .any(
+                        |check| check["id"] == "overlay.label.left_label.label_clearance"
+                            && check["status"] == expected_status
+                            && check["code"] == expected_code
+                    ),
+                "{backend}/{case} should emit exact label-overlap composition check {expected_code}: {report:#}"
+            );
+            if !should_pass {
+                assert!(
+                    report["verification"]["reasons"]
+                        .as_array()
+                        .expect("verification reasons array")
+                        .iter()
+                        .any(|reason| reason["source"] == "composition"
+                            && reason["code"] == "overlay_label_intersects_label"
+                            && reason["expectation_id"]
+                                == "overlay.label.left_label.label_clearance"),
+                    "{backend}/{case} label-overlap failure should surface as a verification reason: {report:#}"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_label_viewport_fit_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-composition-label-viewport-fit");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        for (case, label_x, should_pass) in [("inside", 0.0, true), ("clipped", 1.0, false)] {
+            let recipe_path = dir.join(format!("label-viewport-{backend}-{case}.recipe.json"));
+            let png_path = dir.join(format!("label-viewport-{backend}-{case}.png"));
+            fs::write(
+                &recipe_path,
+                serde_json::to_string_pretty(&json!({
+                    "schema": "scena.scene_recipe.v1",
+                    "colors": {
+                        "white": "#F8F9FA",
+                        "black": "#050505"
+                    },
+                    "labels": [
+                        {
+                            "id": "edge_label",
+                            "text": "EDGE LABEL",
+                            "transform": { "kind": "trs", "translation": [label_x, 0.0, 0.0] },
+                            "color": "white",
+                            "background": "black",
+                            "size_px": 18.0
+                        }
+                    ],
+                    "scene": { "background": { "kind": "black" } },
+                    "render": {
+                        "anti_aliasing": "msaa4",
+                        "supersample": 1,
+                        "tonemapper": "standard",
+                        "exposure_ev": 0.0
+                    },
+                    "cameras": [{
+                        "id": "main",
+                        "kind": "perspective",
+                        "fov_degrees": 34.0,
+                        "active": true,
+                        "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": [0.0, 0.0, 0.0] }
+                    }],
+                    "capture": { "width": 220, "height": 120 },
+                    "expect": {}
+                }))
+                .expect("composition label viewport-fit recipe serializes"),
+            )
+            .expect("composition label viewport-fit recipe writes");
+
+            let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+            if use_gpu {
+                configure_command_for_lavapipe(&mut command);
+            }
+            let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+            if use_gpu {
+                args.push("--gpu");
+            }
+            args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+            let output = command
+                .args(args)
+                .output()
+                .expect("scena composition label viewport-fit render command runs");
+
+            if should_pass {
+                assert!(
+                    output.status.success(),
+                    "{backend}/{case} label viewport-fit recipe should pass verification, stdout={}, stderr={}",
+                    String::from_utf8_lossy(&output.stdout),
+                    stderr(&output)
+                );
+            } else {
+                assert!(
+                    !output.status.success(),
+                    "{backend}/{case} label viewport-fit recipe should fail verification, stdout={}, stderr={}",
+                    String::from_utf8_lossy(&output.stdout),
+                    stderr(&output)
+                );
+                assert!(
+                    output.stderr.is_empty(),
+                    "composition label viewport-fit failures stay machine-readable on stdout, stderr={}",
+                    stderr(&output)
+                );
+            }
+            let report = json_report(&output);
+            if use_gpu {
+                assert_eq!(
+                    report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                    "GPU label viewport-fit proof must use HeadlessGpu, not CPU fallback: {report:#}"
+                );
+            }
+            let expected_code = if should_pass {
+                "overlay_label_inside_viewport"
+            } else {
+                "overlay_label_clipped_by_viewport"
+            };
+            let expected_status = if should_pass { "checked" } else { "failed" };
+            assert!(
+                report["verification"]["composition"]["checks"]
+                    .as_array()
+                    .expect("composition checks array")
+                    .iter()
+                    .any(
+                        |check| check["id"] == "overlay.label.edge_label.viewport_fit"
+                            && check["status"] == expected_status
+                            && check["code"] == expected_code
+                    ),
+                "{backend}/{case} should emit exact label viewport-fit composition check {expected_code}: {report:#}"
+            );
+            if !should_pass {
+                assert!(
+                    report["verification"]["reasons"]
+                        .as_array()
+                        .expect("verification reasons array")
+                        .iter()
+                        .any(|reason| reason["source"] == "composition"
+                            && reason["code"] == "overlay_label_clipped_by_viewport"
+                            && reason["expectation_id"] == "overlay.label.edge_label.viewport_fit"),
+                    "{backend}/{case} label viewport-fit failure should surface as a verification reason: {report:#}"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_callout_annotation_ownership() {
+    let dir = artifact_dir("recipe-composition-callout-ownership");
+    let recipe_path = dir.join("composition-callout.recipe.json");
+    let png_path = dir.join("composition-callout.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "green": "#2F9E44"
+            },
+            "geometries": [
+                { "id": "visible_geo", "primitive": { "kind": "box", "size": [0.35, 0.35, 0.08] } }
+            ],
+            "materials": [
+                { "id": "green_mat", "kind": "unlit", "base_color": "green" }
+            ],
+            "nodes": [
+                {
+                    "id": "visible_box",
+                    "geometry": "visible_geo",
+                    "material": "green_mat",
+                    "transform": { "kind": "center" }
+                }
+            ],
+            "callouts": [
+                {
+                    "id": "box_note",
+                    "text": "BOX",
+                    "target": { "kind": "node", "id": "visible_box" },
+                    "label_offset": [0.22, 0.18, 0.0]
+                }
+            ],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 36.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": "visible_box" }
+            }],
+            "capture": { "width": 160, "height": 140 },
+            "expect": {}
+        }))
+        .expect("composition callout recipe serializes"),
+    )
+    .expect("composition callout recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena composition callout render command runs");
+
+    assert!(
+        output.status.success(),
+        "composition callout recipe should pass verification, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    let composition = &report["verification"]["composition"];
+    assert_eq!(composition["schema"], "scena.scene_composition.v1");
+    assert_eq!(composition["ok"], true, "{report:#}");
+    assert!(
+        composition["checks"]
+            .as_array()
+            .expect("composition checks array")
+            .iter()
+            .any(
+                |check| check["id"] == "annotation.callout.box_note.attachment"
+                    && check["status"] == "checked"
+                    && check["code"] == "callout_target_attached"
+            ),
+        "node callout target ownership should be checked: {report:#}"
+    );
+    assert!(
+        composition["checks"]
+            .as_array()
+            .expect("composition checks array")
+            .iter()
+            .any(|check| check["id"] == "annotation.callout.box_note.output"
+                && check["status"] == "checked"
+                && check["code"] == "callout_overlay_output_projected"),
+        "callout generated label and leader line should be checked: {report:#}"
+    );
+    assert!(
+        composition["checks"]
+            .as_array()
+            .expect("composition checks array")
+            .iter()
+            .any(|check| check["status"] == "checked"
+                && check["code"] == "overlay_label_clear_of_lines"),
+        "callout label should be checked as clear of crossing line overlays: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_grid_floor_ownership() {
+    let dir = artifact_dir("recipe-composition-grid-ownership");
+    let recipe_path = dir.join("composition-grid.recipe.json");
+    let png_path = dir.join("composition-grid.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "green": "#2F9E44"
+            },
+            "geometries": [
+                { "id": "visible_geo", "primitive": { "kind": "box", "size": [0.25, 0.25, 0.08] } }
+            ],
+            "materials": [
+                { "id": "green_mat", "kind": "unlit", "base_color": "green" }
+            ],
+            "nodes": [
+                {
+                    "id": "visible_box",
+                    "geometry": "visible_geo",
+                    "material": "green_mat",
+                    "transform": { "kind": "ground", "plane_y": 0.0 }
+                }
+            ],
+            "scene": {
+                "grid": {
+                    "enabled": true,
+                    "floor_y": 0.0,
+                    "padding": 0.15,
+                    "line_spacing": 0.1
+                }
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 36.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.42, 1.6], "target": "visible_box" }
+            }],
+            "capture": { "width": 160, "height": 140 },
+            "expect": {
+                "expect_grounded": [{
+                    "id": "box_on_floor",
+                    "target": { "kind": "node", "id": "visible_box" },
+                    "plane_y": 0.0,
+                    "tolerance": 0.01
+                }]
+            }
+        }))
+        .expect("composition grid recipe serializes"),
+    )
+    .expect("composition grid recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena composition grid render command runs");
+
+    assert!(
+        output.status.success(),
+        "composition grid recipe should pass verification, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    let composition = &report["verification"]["composition"];
+    assert_eq!(composition["schema"], "scena.scene_composition.v1");
+    assert_eq!(composition["ok"], true, "{report:#}");
+    assert!(
+        composition["checks"]
+            .as_array()
+            .expect("composition checks array")
+            .iter()
+            .any(|check| check["id"] == "scene.grid.ownership"
+                && check["status"] == "checked"
+                && check["code"] == "grid_floor_output_owned"),
+        "recipe grid floor output should have explicit composition ownership: {report:#}"
+    );
+    assert!(
+        composition["checks"]
+            .as_array()
+            .expect("composition checks array")
+            .iter()
+            .any(|check| check["id"] == "expect_grounded.box_on_floor"
+                && check["status"] == "checked"
+                && check["code"] == "ground_contact_present"),
+        "grounded node should emit a passing placement contact check: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_fails_floating_grounded_node_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-composition-ground-contact");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let recipe_path = dir.join(format!("composition-ground-contact-{backend}.recipe.json"));
+        let png_path = dir.join(format!("composition-ground-contact-{backend}.png"));
+        fs::write(
+            &recipe_path,
+            serde_json::to_string_pretty(&json!({
+                "schema": "scena.scene_recipe.v1",
+                "colors": {
+                    "green": "#2F9E44"
+                },
+                "geometries": [
+                    { "id": "visible_geo", "primitive": { "kind": "box", "size": [0.28, 0.28, 0.12] } }
+                ],
+                "materials": [
+                    { "id": "green_mat", "kind": "unlit", "base_color": "green" }
+                ],
+                "nodes": [
+                    {
+                        "id": "floating_box",
+                        "geometry": "visible_geo",
+                        "material": "green_mat",
+                        "transform": { "kind": "trs", "translation": [0.0, 0.34, 0.0] }
+                    }
+                ],
+                "scene": {
+                    "background": { "kind": "black" },
+                    "grid": {
+                        "enabled": true,
+                        "floor_y": 0.0,
+                        "padding": 0.15,
+                        "line_spacing": 0.1
+                    }
+                },
+                "cameras": [{
+                    "id": "main",
+                    "kind": "perspective",
+                    "fov_degrees": 36.0,
+                    "active": true,
+                    "transform": { "kind": "look_at", "eye": [0.0, 0.42, 1.8], "target": "floating_box" }
+                }],
+                "capture": { "width": 180, "height": 150 },
+                "expect": {
+                    "expect_grounded": [{
+                        "id": "box_on_floor",
+                        "target": { "kind": "node", "id": "floating_box" },
+                        "plane_y": 0.0,
+                        "tolerance": 0.01
+                    }]
+                }
+            }))
+            .expect("composition ground contact recipe serializes"),
+        )
+        .expect("composition ground contact recipe writes");
+
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena composition ground-contact render command runs");
+
+        assert!(
+            !output.status.success(),
+            "{backend} floating grounded node should fail verification, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        assert!(
+            output.stderr.is_empty(),
+            "composition placement failures stay machine-readable on stdout, stderr={}",
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        if use_gpu {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU ground-contact proof must use HeadlessGpu, not CPU fallback: {report:#}"
+            );
+        }
+        assert!(
+            report["verification"]["composition"]["checks"]
+                .as_array()
+                .expect("composition checks array")
+                .iter()
+                .any(|check| check["id"] == "expect_grounded.box_on_floor"
+                    && check["status"] == "failed"
+                    && check["code"] == "ground_contact_missing"),
+            "{backend} render should fail with exact ground_contact_missing composition check: {report:#}"
+        );
+        assert!(
+            report["verification"]["reasons"]
+                .as_array()
+                .expect("verification reasons array")
+                .iter()
+                .any(|reason| reason["source"] == "composition"
+                    && reason["code"] == "ground_contact_missing"
+                    && reason["expectation_id"] == "expect_grounded.box_on_floor"),
+            "{backend} ground-contact failure should surface as a verification reason: {report:#}"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_helper_layer_occlusion_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-composition-helper-occlusion");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        for (case, helper_z, should_pass) in [("behind", -0.22, true), ("front", 0.22, false)] {
+            let recipe_path = dir.join(format!("helper-occlusion-{backend}-{case}.recipe.json"));
+            let png_path = dir.join(format!("helper-occlusion-{backend}-{case}.png"));
+            fs::write(
+                &recipe_path,
+                serde_json::to_string_pretty(&json!({
+                    "schema": "scena.scene_recipe.v1",
+                    "colors": {
+                        "blue": "#0B5FFF",
+                        "red": "#FF2020"
+                    },
+                    "geometries": [
+                        { "id": "box_geo", "primitive": { "kind": "box", "size": [0.70, 0.55, 0.22] } },
+                        {
+                            "id": "helper_line_geo",
+                            "primitive": {
+                                "kind": "line",
+                                "start": [-0.42, 0.0, 0.0],
+                                "end": [0.42, 0.0, 0.0]
+                            }
+                        }
+                    ],
+                    "materials": [
+                        { "id": "box_mat", "kind": "unlit", "base_color": "blue" },
+                        { "id": "helper_mat", "kind": "line", "base_color": "red", "stroke_width_px": 3.0 }
+                    ],
+                    "nodes": [
+                        {
+                            "id": "box",
+                            "geometry": "box_geo",
+                            "material": "box_mat",
+                            "transform": { "kind": "center" }
+                        },
+                        {
+                            "id": "helper_line",
+                            "geometry": "helper_line_geo",
+                            "material": "helper_mat",
+                            "transform": { "kind": "trs", "translation": [0.0, 0.0, helper_z] }
+                        }
+                    ],
+                    "scene": { "background": { "kind": "black" } },
+                    "render": {
+                        "anti_aliasing": "msaa4",
+                        "supersample": 2,
+                        "reconstruction": "tent",
+                        "tonemapper": "standard",
+                        "exposure_ev": 0.0
+                    },
+                    "cameras": [{
+                        "id": "main",
+                        "kind": "perspective",
+                        "fov_degrees": 32.0,
+                        "active": true,
+                        "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.1], "target": "box" }
+                    }],
+                    "capture": { "width": 220, "height": 160 },
+                    "expect": {
+                        "expect_helper_occluded": [{
+                            "id": "helper-behind-box",
+                            "helper": { "kind": "node", "id": "helper_line" },
+                            "occluder": { "kind": "node", "id": "box" },
+                            "tolerance_pixels": 0
+                        }]
+                    }
+                }))
+                .expect("composition helper occlusion recipe serializes"),
+            )
+            .expect("composition helper occlusion recipe writes");
+
+            let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+            if use_gpu {
+                configure_command_for_lavapipe(&mut command);
+            }
+            let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+            if use_gpu {
+                args.push("--gpu");
+            }
+            args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+            let output = command
+                .args(args)
+                .output()
+                .expect("scena composition helper occlusion render command runs");
+            if should_pass {
+                assert!(
+                    output.status.success(),
+                    "{backend}/{case} helper behind subject should pass verification, stdout={}, stderr={}",
+                    String::from_utf8_lossy(&output.stdout),
+                    stderr(&output)
+                );
+            } else {
+                assert!(
+                    !output.status.success(),
+                    "{backend}/{case} helper in front of subject should fail verification, stdout={}, stderr={}",
+                    String::from_utf8_lossy(&output.stdout),
+                    stderr(&output)
+                );
+                assert!(
+                    output.stderr.is_empty(),
+                    "composition helper-layer failures stay machine-readable on stdout, stderr={}",
+                    stderr(&output)
+                );
+            }
+            let report = json_report(&output);
+            if use_gpu {
+                assert_eq!(
+                    report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                    "GPU helper-layer proof must use HeadlessGpu, not CPU fallback: {report:#}"
+                );
+            }
+            let expected_code = if should_pass {
+                "helper_layer_occluded_by_subject"
+            } else {
+                "helper_layer_overdraws_subject"
+            };
+            let expected_status = if should_pass { "checked" } else { "failed" };
+            assert!(
+                report["verification"]["composition"]["checks"]
+                    .as_array()
+                    .expect("composition checks array")
+                    .iter()
+                    .any(
+                        |check| check["id"] == "expect_helper_occluded.helper-behind-box"
+                            && check["status"] == expected_status
+                            && check["code"] == expected_code
+                            && check["observed"]["helper_pixels_inside_occluder"]
+                                .as_u64()
+                                .is_some()
+                    ),
+                "{backend}/{case} should emit exact helper-layer composition check {expected_code}: {report:#}"
+            );
+            if !should_pass {
+                assert!(
+                    report["verification"]["reasons"]
+                        .as_array()
+                        .expect("verification reasons array")
+                        .iter()
+                        .any(|reason| reason["source"] == "composition"
+                            && reason["code"] == "helper_layer_overdraws_subject"
+                            && reason["expectation_id"]
+                                == "expect_helper_occluded.helper-behind-box"),
+                    "{backend}/{case} helper-layer failure should surface as a verification reason: {report:#}"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_object_depth_order_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-composition-object-depth-order");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        for (case, front_z, back_z, should_pass) in [
+            ("blue_front", 0.10, -0.10, true),
+            ("blue_behind", -0.10, 0.10, false),
+        ] {
+            let recipe_path = dir.join(format!("object-depth-order-{backend}-{case}.recipe.json"));
+            let png_path = dir.join(format!("object-depth-order-{backend}-{case}.png"));
+            fs::write(
+                &recipe_path,
+                serde_json::to_string_pretty(&json!({
+                    "schema": "scena.scene_recipe.v1",
+                    "colors": {
+                        "blue": "#0B5FFF",
+                        "red": "#FF2020"
+                    },
+                    "geometries": [
+                        { "id": "box_geo", "primitive": { "kind": "box", "size": [0.62, 0.46, 0.08] } }
+                    ],
+                    "materials": [
+                        { "id": "blue_mat", "kind": "unlit", "base_color": "blue" },
+                        { "id": "red_mat", "kind": "unlit", "base_color": "red" }
+                    ],
+                    "nodes": [
+                        {
+                            "id": "expected_front",
+                            "geometry": "box_geo",
+                            "material": "blue_mat",
+                            "transform": { "kind": "trs", "translation": [0.0, 0.0, front_z] }
+                        },
+                        {
+                            "id": "expected_back",
+                            "geometry": "box_geo",
+                            "material": "red_mat",
+                            "transform": { "kind": "trs", "translation": [0.0, 0.0, back_z] }
+                        }
+                    ],
+                    "scene": { "background": { "kind": "black" } },
+                    "render": {
+                        "anti_aliasing": "msaa4",
+                        "tonemapper": "standard",
+                        "exposure_ev": 0.0
+                    },
+                    "cameras": [{
+                        "id": "main",
+                        "kind": "perspective",
+                        "fov_degrees": 30.0,
+                        "active": true,
+                        "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.3], "target": "expected_front" }
+                    }],
+                    "capture": { "width": 220, "height": 160 },
+                    "expect": {
+                        "expect_occlusion": [{
+                            "id": "blue-occludes-red",
+                            "front": { "kind": "node", "id": "expected_front" },
+                            "back": { "kind": "node", "id": "expected_back" },
+                            "tolerance_pixels": 0
+                        }]
+                    }
+                }))
+                .expect("composition object-depth-order recipe serializes"),
+            )
+            .expect("composition object-depth-order recipe writes");
+
+            let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+            if use_gpu {
+                configure_command_for_lavapipe(&mut command);
+            }
+            let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+            if use_gpu {
+                args.push("--gpu");
+            }
+            args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+            let output = command
+                .args(args)
+                .output()
+                .expect("scena composition object depth-order render command runs");
+            assert_eq!(
+                output.status.success(),
+                should_pass,
+                "{backend}/{case} object depth-order status mismatch, stdout={}, stderr={}",
+                String::from_utf8_lossy(&output.stdout),
+                stderr(&output)
+            );
+            assert!(
+                output.stderr.is_empty(),
+                "{backend}/{case} object depth-order failures stay machine-readable on stdout, stderr={}",
+                stderr(&output)
+            );
+            let report = json_report(&output);
+            if use_gpu {
+                assert_eq!(
+                    report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                    "GPU object depth-order proof must use HeadlessGpu, not fallback: {report:#}"
+                );
+            }
+            let expected_code = if should_pass {
+                "object_depth_order_satisfied"
+            } else {
+                "object_depth_order_mismatch"
+            };
+            let expected_status = if should_pass { "checked" } else { "failed" };
+            assert!(
+                report["verification"]["composition"]["checks"]
+                    .as_array()
+                    .expect("composition checks array")
+                    .iter()
+                    .any(|check| check["id"] == "expect_occlusion.blue-occludes-red"
+                        && check["status"] == expected_status
+                        && check["code"] == expected_code
+                        && check["observed"]["back_pixels_inside_front"]
+                            .as_u64()
+                            .is_some()),
+                "{backend}/{case} should emit exact object depth-order composition check {expected_code}: {report:#}"
+            );
+            if !should_pass {
+                assert!(
+                    report["verification"]["reasons"]
+                        .as_array()
+                        .expect("verification reasons array")
+                        .iter()
+                        .any(|reason| reason["source"] == "composition"
+                            && reason["code"] == "object_depth_order_mismatch"
+                            && reason["expectation_id"] == "expect_occlusion.blue-occludes-red"),
+                    "{backend}/{case} object depth-order failure should surface as a verification reason: {report:#}"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_rejects_ambiguous_object_depth_colors_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-composition-object-depth-ambiguous-color");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let recipe_path = dir.join(format!("object-depth-ambiguous-{backend}.recipe.json"));
+        let png_path = dir.join(format!("object-depth-ambiguous-{backend}.png"));
+        fs::write(
+            &recipe_path,
+            serde_json::to_string_pretty(&json!({
+                "schema": "scena.scene_recipe.v1",
+                "colors": {
+                    "blue": "#0B5FFF"
+                },
+                "geometries": [
+                    { "id": "box_geo", "primitive": { "kind": "box", "size": [0.62, 0.46, 0.08] } }
+                ],
+                "materials": [
+                    { "id": "blue_mat", "kind": "unlit", "base_color": "blue" }
+                ],
+                "nodes": [
+                    {
+                        "id": "expected_front",
+                        "geometry": "box_geo",
+                        "material": "blue_mat",
+                        "transform": { "kind": "trs", "translation": [0.0, 0.0, 0.10] }
+                    },
+                    {
+                        "id": "expected_back",
+                        "geometry": "box_geo",
+                        "material": "blue_mat",
+                        "transform": { "kind": "trs", "translation": [0.0, 0.0, -0.10] }
+                    }
+                ],
+                "scene": { "background": { "kind": "black" } },
+                "render": {
+                    "anti_aliasing": "msaa4",
+                    "tonemapper": "standard",
+                    "exposure_ev": 0.0
+                },
+                "cameras": [{
+                    "id": "main",
+                    "kind": "perspective",
+                    "fov_degrees": 30.0,
+                    "active": true,
+                    "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.3], "target": "expected_front" }
+                }],
+                "capture": { "width": 220, "height": 160 },
+                "expect": {
+                    "expect_occlusion": [{
+                        "id": "blue-occludes-blue",
+                        "front": { "kind": "node", "id": "expected_front" },
+                        "back": { "kind": "node", "id": "expected_back" },
+                        "tolerance_pixels": 0
+                    }]
+                }
+            }))
+            .expect("ambiguous object-depth recipe serializes"),
+        )
+        .expect("ambiguous object-depth recipe writes");
+
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena ambiguous object depth-order render command runs");
+        assert!(
+            !output.status.success(),
+            "{backend} ambiguous object depth-order should fail closed, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        assert!(
+            output.stderr.is_empty(),
+            "{backend} ambiguous object depth-order failure stays machine-readable on stdout, stderr={}",
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        if use_gpu {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU ambiguous object depth-order proof must use HeadlessGpu, not fallback: {report:#}"
+            );
+        }
+        assert!(
+            report["verification"]["composition"]["checks"]
+                .as_array()
+                .expect("composition checks array")
+                .iter()
+                .any(|check| check["id"] == "expect_occlusion.blue-occludes-blue"
+                    && check["status"] == "failed"
+                    && check["code"] == "object_depth_order_color_ambiguous"
+                    && check["observed"]["front_srgb8"].is_array()
+                    && check["observed"]["back_srgb8"].is_array()),
+            "{backend} should emit exact ambiguous-color object depth-order check: {report:#}"
+        );
+        assert!(
+            report["verification"]["reasons"]
+                .as_array()
+                .expect("verification reasons array")
+                .iter()
+                .any(|reason| reason["source"] == "composition"
+                    && reason["code"] == "object_depth_order_color_ambiguous"
+                    && reason["expectation_id"] == "expect_occlusion.blue-occludes-blue"),
+            "{backend} ambiguous color failure should surface as a verification reason: {report:#}"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_backend_conformance_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-composition-backend-conformance");
+    for (backend, use_gpu, expected_backend, expected_gpu_device) in [
+        ("cpu", false, "headless", false),
+        ("gpu", true, "headless_gpu", true),
+    ] {
+        let recipe_path = dir.join(format!("backend-conformance-{backend}.recipe.json"));
+        let png_path = dir.join(format!("backend-conformance-{backend}.png"));
+        fs::write(
+            &recipe_path,
+            serde_json::to_string_pretty(&json!({
+                "schema": "scena.scene_recipe.v1",
+                "colors": {
+                    "green": "#2F9E44"
+                },
+                "geometries": [
+                    { "id": "box_geo", "primitive": { "kind": "box", "size": [0.32, 0.32, 0.16] } }
+                ],
+                "materials": [
+                    { "id": "box_mat", "kind": "unlit", "base_color": "green" }
+                ],
+                "nodes": [
+                    {
+                        "id": "box",
+                        "geometry": "box_geo",
+                        "material": "box_mat",
+                        "transform": { "kind": "center" }
+                    }
+                ],
+                "scene": { "background": { "kind": "black" } },
+                "render": {
+                    "anti_aliasing": "msaa4",
+                    "supersample": 2,
+                    "reconstruction": "tent",
+                    "tonemapper": "standard",
+                    "exposure_ev": 0.0
+                },
+                "cameras": [{
+                    "id": "main",
+                    "kind": "perspective",
+                    "fov_degrees": 34.0,
+                    "active": true,
+                    "transform": { "kind": "look_at", "eye": [0.0, 0.0, 1.8], "target": "box" }
+                }],
+                "capture": { "width": 180, "height": 140 },
+                "expect": {
+                    "expect_backend": {
+                        "backend": expected_backend,
+                        "gpu_device": expected_gpu_device
+                    }
+                }
+            }))
+            .expect("composition backend recipe serializes"),
+        )
+        .expect("composition backend recipe writes");
+
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena composition backend render command runs");
+        assert!(
+            output.status.success(),
+            "{backend} backend conformance recipe should pass, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        assert_eq!(
+            report["introspection"]["capabilities"]["backend"], expected_backend,
+            "{report:#}"
+        );
+        assert_eq!(
+            report["introspection"]["capabilities"]["gpu_device"], expected_gpu_device,
+            "{report:#}"
+        );
+        for code in [
+            "backend_expectation_satisfied",
+            "render_antialiasing_active",
+            "render_supersample_active",
+            "render_reconstruction_active",
+        ] {
+            assert!(
+                report["verification"]["composition"]["checks"]
+                    .as_array()
+                    .expect("composition checks array")
+                    .iter()
+                    .any(|check| check["status"] == "checked" && check["code"] == code),
+                "{backend} render should emit checked backend conformance code {code}: {report:#}"
+            );
+        }
+    }
+
+    let bad_recipe_path = dir.join("backend-conformance-mismatch.recipe.json");
+    let bad_png_path = dir.join("backend-conformance-mismatch.png");
+    fs::write(
+        &bad_recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "green": "#2F9E44"
+            },
+            "geometries": [
+                { "id": "box_geo", "primitive": { "kind": "box", "size": [0.32, 0.32, 0.16] } }
+            ],
+            "materials": [
+                { "id": "box_mat", "kind": "unlit", "base_color": "green" }
+            ],
+            "nodes": [
+                {
+                    "id": "box",
+                    "geometry": "box_geo",
+                    "material": "box_mat",
+                    "transform": { "kind": "center" }
+                }
+            ],
+            "scene": { "background": { "kind": "black" } },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 34.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 1.8], "target": "box" }
+            }],
+            "capture": { "width": 180, "height": 140 },
+            "expect": {
+                "expect_backend": {
+                    "backend": "headless_gpu",
+                    "gpu_device": true
+                }
+            }
+        }))
+        .expect("composition backend mismatch recipe serializes"),
+    )
+    .expect("composition backend mismatch recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&bad_recipe_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&bad_png_path),
+        ])
+        .output()
+        .expect("scena composition backend mismatch render command runs");
+    assert!(
+        !output.status.success(),
+        "CPU render with GPU backend expectation should fail, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "backend-conformance failures stay machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert!(
+        report["verification"]["composition"]["checks"]
+            .as_array()
+            .expect("composition checks array")
+            .iter()
+            .any(|check| check["id"] == "expect_backend"
+                && check["status"] == "failed"
+                && check["code"] == "backend_expectation_mismatch"),
+        "backend mismatch should emit exact composition check: {report:#}"
+    );
+    assert!(
+        report["verification"]["reasons"]
+            .as_array()
+            .expect("verification reasons array")
+            .iter()
+            .any(|reason| reason["source"] == "composition"
+                && reason["code"] == "backend_expectation_mismatch"
+                && reason["expectation_id"] == "expect_backend"),
+        "backend mismatch should surface as compact verification reason: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_clipping_and_section_conformance_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-composition-clipping-conformance");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let recipe_path = dir.join(format!("clipping-conformance-{backend}.recipe.json"));
+        let png_path = dir.join(format!("clipping-conformance-{backend}.png"));
+        fs::write(
+            &recipe_path,
+            serde_json::to_string_pretty(&json!({
+                "schema": "scena.scene_recipe.v1",
+                "colors": {
+                    "green": "#2F9E44"
+                },
+                "geometries": [
+                    { "id": "box_geo", "primitive": { "kind": "box", "size": [0.46, 0.46, 0.28] } }
+                ],
+                "materials": [
+                    { "id": "box_mat", "kind": "unlit", "base_color": "green" }
+                ],
+                "nodes": [
+                    {
+                        "id": "box",
+                        "geometry": "box_geo",
+                        "material": "box_mat",
+                        "transform": { "kind": "center" }
+                    }
+                ],
+                "clipping_planes": [
+                    { "id": "front_clip", "normal": [0.0, 0.0, 1.0], "distance": -0.05, "active": true },
+                    { "id": "disabled_clip", "normal": [1.0, 0.0, 0.0], "distance": 0.0, "active": false }
+                ],
+                "section_box": {
+                    "target": { "kind": "node", "id": "box" },
+                    "margin": 0.02,
+                    "inverted": false,
+                    "helper_wireframe": true
+                },
+                "scene": { "background": { "kind": "black" } },
+                "render": {
+                    "anti_aliasing": "none",
+                    "tonemapper": "standard",
+                    "exposure_ev": 0.0
+                },
+                "cameras": [{
+                    "id": "main",
+                    "kind": "perspective",
+                    "fov_degrees": 34.0,
+                    "active": true,
+                    "transform": { "kind": "look_at", "eye": [0.0, 0.0, 1.9], "target": "box" }
+                }],
+                "capture": { "width": 180, "height": 140 },
+                "expect": {
+                    "expect_clipping": {
+                        "active_clipping_planes": 1,
+                        "section_box_active": true,
+                        "section_box_inverted": false
+                    }
+                }
+            }))
+            .expect("composition clipping recipe serializes"),
+        )
+        .expect("composition clipping recipe writes");
+
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena composition clipping render command runs");
+        assert!(
+            output.status.success(),
+            "{backend} clipping conformance recipe should pass, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        if use_gpu {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU clipping conformance proof must use HeadlessGpu, not fallback: {report:#}"
+            );
+        }
+        for code in [
+            "clipping_plane_count_satisfied",
+            "section_box_active",
+            "section_box_inversion_satisfied",
+        ] {
+            assert!(
+                report["verification"]["composition"]["checks"]
+                    .as_array()
+                    .expect("composition checks array")
+                    .iter()
+                    .any(|check| check["status"] == "checked" && check["code"] == code),
+                "{backend} render should emit checked clipping/section code {code}: {report:#}"
+            );
+        }
+    }
+
+    let bad_recipe_path = dir.join("clipping-conformance-missing.recipe.json");
+    let bad_png_path = dir.join("clipping-conformance-missing.png");
+    fs::write(
+        &bad_recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "green": "#2F9E44"
+            },
+            "geometries": [
+                { "id": "box_geo", "primitive": { "kind": "box", "size": [0.46, 0.46, 0.28] } }
+            ],
+            "materials": [
+                { "id": "box_mat", "kind": "unlit", "base_color": "green" }
+            ],
+            "nodes": [
+                {
+                    "id": "box",
+                    "geometry": "box_geo",
+                    "material": "box_mat",
+                    "transform": { "kind": "center" }
+                }
+            ],
+            "scene": { "background": { "kind": "black" } },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 34.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 1.9], "target": "box" }
+            }],
+            "capture": { "width": 180, "height": 140 },
+            "expect": {
+                "expect_clipping": {
+                    "active_clipping_planes": 1,
+                    "section_box_active": true
+                }
+            }
+        }))
+        .expect("composition clipping mismatch recipe serializes"),
+    )
+    .expect("composition clipping mismatch recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&bad_recipe_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&bad_png_path),
+        ])
+        .output()
+        .expect("scena composition clipping mismatch render command runs");
+    assert!(
+        !output.status.success(),
+        "render missing expected clipping/section state should fail, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "clipping-conformance failures stay machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    for code in ["clipping_plane_count_mismatch", "section_box_missing"] {
+        assert!(
+            report["verification"]["composition"]["checks"]
+                .as_array()
+                .expect("composition checks array")
+                .iter()
+                .any(|check| check["status"] == "failed" && check["code"] == code),
+            "missing clipping/section state should emit exact failed composition check {code}: {report:#}"
+        );
+    }
+
+    let inverted_recipe_path = dir.join("clipping-conformance-inversion.recipe.json");
+    let inverted_png_path = dir.join("clipping-conformance-inversion.png");
+    fs::write(
+        &inverted_recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "green": "#2F9E44"
+            },
+            "geometries": [
+                { "id": "box_geo", "primitive": { "kind": "box", "size": [0.46, 0.46, 0.28] } }
+            ],
+            "materials": [
+                { "id": "box_mat", "kind": "unlit", "base_color": "green" }
+            ],
+            "nodes": [
+                {
+                    "id": "box",
+                    "geometry": "box_geo",
+                    "material": "box_mat",
+                    "transform": { "kind": "center" }
+                }
+            ],
+            "clipping_planes": [
+                { "id": "front_clip", "normal": [0.0, 0.0, 1.0], "distance": -0.05, "active": true }
+            ],
+            "section_box": {
+                "target": { "kind": "node", "id": "box" },
+                "margin": 0.02,
+                "inverted": false,
+                "helper_wireframe": true
+            },
+            "scene": { "background": { "kind": "black" } },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 34.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 1.9], "target": "box" }
+            }],
+            "capture": { "width": 180, "height": 140 },
+            "expect": {
+                "expect_clipping": {
+                    "active_clipping_planes": 1,
+                    "section_box_active": true,
+                    "section_box_inverted": true
+                }
+            }
+        }))
+        .expect("composition clipping inversion recipe serializes"),
+    )
+    .expect("composition clipping inversion recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&inverted_recipe_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&inverted_png_path),
+        ])
+        .output()
+        .expect("scena composition clipping inversion render command runs");
+    assert!(
+        !output.status.success(),
+        "render with wrong section-box inversion should fail, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "section inversion failures stay machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert!(
+        report["verification"]["composition"]["checks"]
+            .as_array()
+            .expect("composition checks array")
+            .iter()
+            .any(|check| check["status"] == "failed"
+                && check["code"] == "section_box_inversion_mismatch"),
+        "wrong section-box inversion should emit exact failed composition check: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_material_variant_state_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-composition-material-variant-state");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        let recipe_path = dir.join(format!("variant-state-{backend}.recipe.json"));
+        let png_path = dir.join(format!("variant-state-{backend}.png"));
+        fs::write(
+            &recipe_path,
+            serde_json::to_string_pretty(&json!({
+                "schema": "scena.scene_recipe.v1",
+                "imports": [
+                    { "id": "part", "uri": "tests/assets/gltf/material_variants_scene.gltf" }
+                ],
+                "scene": { "background": { "kind": "black" } },
+                "render": {
+                    "anti_aliasing": "none",
+                    "tonemapper": "standard",
+                    "exposure_ev": 0.0
+                },
+                "capture": { "width": 180, "height": 140 },
+                "expect": {
+                    "expect_state": [{
+                        "id": "default_variant",
+                        "import": "part"
+                    }]
+                }
+            }))
+            .expect("composition state recipe serializes"),
+        )
+        .expect("composition state recipe writes");
+
+        let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+        if use_gpu {
+            configure_command_for_lavapipe(&mut command);
+        }
+        let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+        if use_gpu {
+            args.push("--gpu");
+        }
+        args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+        let output = command
+            .args(args)
+            .output()
+            .expect("scena composition state render command runs");
+        assert!(
+            output.status.success(),
+            "{backend} default material-variant state should pass, stdout={}, stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        let report = json_report(&output);
+        if use_gpu {
+            assert_eq!(
+                report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                "GPU material-variant state proof must use HeadlessGpu, not fallback: {report:#}"
+            );
+        }
+        assert!(
+            report["verification"]["composition"]["checks"]
+                .as_array()
+                .expect("composition checks array")
+                .iter()
+                .any(|check| check["status"] == "checked"
+                    && check["code"] == "material_variant_state_satisfied"),
+            "{backend} render should emit checked material variant state: {report:#}"
+        );
+    }
+
+    let mismatch_recipe_path = dir.join("variant-state-mismatch.recipe.json");
+    let mismatch_png_path = dir.join("variant-state-mismatch.png");
+    fs::write(
+        &mismatch_recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "imports": [
+                { "id": "part", "uri": "tests/assets/gltf/material_variants_scene.gltf" }
+            ],
+            "scene": { "background": { "kind": "black" } },
+            "render": {
+                "anti_aliasing": "none",
+                "tonemapper": "standard",
+                "exposure_ev": 0.0
+            },
+            "capture": { "width": 180, "height": 140 },
+            "expect": {
+                "expect_state": [{
+                    "id": "must_be_noon",
+                    "import": "part",
+                    "active_material_variant": "noon"
+                }]
+            }
+        }))
+        .expect("composition state mismatch recipe serializes"),
+    )
+    .expect("composition state mismatch recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&mismatch_recipe_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&mismatch_png_path),
+        ])
+        .output()
+        .expect("scena composition state mismatch render command runs");
+    assert!(
+        !output.status.success(),
+        "wrong material variant state should fail, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "material variant state failures stay machine-readable on stdout, stderr={}",
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert!(
+        report["verification"]["composition"]["checks"]
+            .as_array()
+            .expect("composition checks array")
+            .iter()
+            .any(|check| check["status"] == "failed"
+                && check["code"] == "material_variant_state_mismatch"),
+        "wrong material variant state should emit exact failed composition check: {report:#}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_transform_conformance_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-composition-transform-conformance");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        for (case, expected_translation, should_pass, expected_code) in [
+            (
+                "match",
+                [0.18_f64, 0.05_f64, 0.0_f64],
+                true,
+                "transform_conformance_satisfied",
+            ),
+            (
+                "mismatch",
+                [0.42_f64, 0.05_f64, 0.0_f64],
+                false,
+                "transform_conformance_mismatch",
+            ),
+        ] {
+            let recipe_path = dir.join(format!("transform-{backend}-{case}.recipe.json"));
+            let png_path = dir.join(format!("transform-{backend}-{case}.png"));
+            fs::write(
+                &recipe_path,
+                serde_json::to_string_pretty(&json!({
+                    "schema": "scena.scene_recipe.v1",
+                    "colors": {
+                        "blue": "#2D68C4"
+                    },
+                    "geometries": [
+                        { "id": "part_geo", "primitive": { "kind": "box", "size": [0.32, 0.24, 0.12] } }
+                    ],
+                    "materials": [
+                        { "id": "part_mat", "kind": "unlit", "base_color": "blue" }
+                    ],
+                    "nodes": [{
+                        "id": "part",
+                        "geometry": "part_geo",
+                        "material": "part_mat",
+                        "transform": {
+                            "kind": "trs",
+                            "translation": [0.18, 0.05, 0.0],
+                            "rotation_degrees": [0.0, 45.0, 0.0],
+                            "scale": [1.2, 0.8, 1.0]
+                        }
+                    }],
+                    "cameras": [{
+                        "id": "main",
+                        "kind": "perspective",
+                        "fov_degrees": 36.0,
+                        "active": true,
+                        "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.1], "target": "part" }
+                    }],
+                    "scene": { "background": { "kind": "white" } },
+                    "render": {
+                        "anti_aliasing": "none",
+                        "tonemapper": "standard",
+                        "exposure_ev": 0.0
+                    },
+                    "capture": { "width": 180, "height": 140 },
+                    "expect": {
+                        "expect_transform": [{
+                            "id": "part_world_transform",
+                            "target": { "kind": "node", "id": "part" },
+                            "translation": expected_translation,
+                            "scale": [1.2, 0.8, 1.0],
+                            "rotation_degrees": [0.0, 45.0, 0.0],
+                            "translation_tolerance": 0.002,
+                            "scale_tolerance": 0.002,
+                            "rotation_tolerance_degrees": 0.1
+                        }]
+                    }
+                }))
+                .expect("composition transform recipe serializes"),
+            )
+            .expect("composition transform recipe writes");
+
+            let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+            if use_gpu {
+                configure_command_for_lavapipe(&mut command);
+            }
+            let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+            if use_gpu {
+                args.push("--gpu");
+            }
+            args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+            let output = command
+                .args(args)
+                .output()
+                .expect("scena composition transform render command runs");
+            assert_eq!(
+                output.status.success(),
+                should_pass,
+                "{backend}/{case} transform conformance status mismatch, stdout={}, stderr={}",
+                String::from_utf8_lossy(&output.stdout),
+                stderr(&output)
+            );
+            assert!(
+                output.stderr.is_empty(),
+                "transform conformance failures stay machine-readable on stdout, stderr={}",
+                stderr(&output)
+            );
+            let report = json_report(&output);
+            if use_gpu {
+                assert_eq!(
+                    report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                    "GPU transform conformance proof must use HeadlessGpu, not fallback: {report:#}"
+                );
+            }
+            let composition = &report["verification"]["composition"];
+            assert_eq!(composition["schema"], "scena.scene_composition.v1");
+            assert_eq!(composition["ok"], should_pass, "{report:#}");
+            assert!(
+                composition["checks"]
+                    .as_array()
+                    .expect("composition checks array")
+                    .iter()
+                    .any(
+                        |check| check["id"] == "expect_transform.part_world_transform"
+                            && check["status"] == if should_pass { "checked" } else { "failed" }
+                            && check["code"] == expected_code,
+                    ),
+                "{backend}/{case} should emit exact transform conformance code {expected_code}: {report:#}"
+            );
+            if !should_pass {
+                assert!(
+                    report["verification"]["reasons"]
+                        .as_array()
+                        .expect("verification reasons array")
+                        .iter()
+                        .any(|reason| reason["source"] == "composition"
+                            && reason["code"] == "transform_conformance_mismatch"
+                            && reason["expectation_id"] == "expect_transform.part_world_transform"),
+                    "{backend}/{case} transform mismatch should surface as verification reason: {report:#}"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_world_bounds_separation_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-composition-world-bounds-separation");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        for (case, right_translation, should_pass, expected_code) in [
+            (
+                "separated",
+                [0.26_f64, 0.0_f64, 0.0_f64],
+                true,
+                "separation_conformance_satisfied",
+            ),
+            (
+                "intersecting",
+                [-0.02_f64, 0.0_f64, 0.0_f64],
+                false,
+                "separation_conformance_mismatch",
+            ),
+        ] {
+            let recipe_path = dir.join(format!("separation-{backend}-{case}.recipe.json"));
+            let png_path = dir.join(format!("separation-{backend}-{case}.png"));
+            fs::write(
+                &recipe_path,
+                serde_json::to_string_pretty(&json!({
+                    "schema": "scena.scene_recipe.v1",
+                    "colors": {
+                        "blue": "#2D68C4",
+                        "orange": "#F08C00"
+                    },
+                    "geometries": [
+                        { "id": "box_geo", "primitive": { "kind": "box", "size": [0.20, 0.20, 0.20] } }
+                    ],
+                    "materials": [
+                        { "id": "blue_mat", "kind": "unlit", "base_color": "blue" },
+                        { "id": "orange_mat", "kind": "unlit", "base_color": "orange" }
+                    ],
+                    "nodes": [
+                        {
+                            "id": "left_part",
+                            "geometry": "box_geo",
+                            "material": "blue_mat",
+                            "transform": { "kind": "trs", "translation": [-0.12, 0.0, 0.0] }
+                        },
+                        {
+                            "id": "right_part",
+                            "geometry": "box_geo",
+                            "material": "orange_mat",
+                            "transform": { "kind": "trs", "translation": right_translation }
+                        }
+                    ],
+                    "cameras": [{
+                        "id": "main",
+                        "kind": "perspective",
+                        "fov_degrees": 36.0,
+                        "active": true,
+                        "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": "left_part" }
+                    }],
+                    "scene": { "background": { "kind": "white" } },
+                    "render": {
+                        "anti_aliasing": "none",
+                        "tonemapper": "standard",
+                        "exposure_ev": 0.0
+                    },
+                    "capture": { "width": 180, "height": 140 },
+                    "expect": {
+                        "expect_separation": [{
+                            "id": "parts-do-not-intersect",
+                            "a": { "kind": "node", "id": "left_part" },
+                            "b": { "kind": "node", "id": "right_part" },
+                            "min_gap": 0.0,
+                            "tolerance": 0.001
+                        }]
+                    }
+                }))
+                .expect("composition separation recipe serializes"),
+            )
+            .expect("composition separation recipe writes");
+
+            let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+            if use_gpu {
+                configure_command_for_lavapipe(&mut command);
+            }
+            let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+            if use_gpu {
+                args.push("--gpu");
+            }
+            args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+            let output = command
+                .args(args)
+                .output()
+                .expect("scena composition separation render command runs");
+            assert_eq!(
+                output.status.success(),
+                should_pass,
+                "{backend}/{case} separation status mismatch, stdout={}, stderr={}",
+                String::from_utf8_lossy(&output.stdout),
+                stderr(&output)
+            );
+            assert!(
+                output.stderr.is_empty(),
+                "separation failures stay machine-readable on stdout, stderr={}",
+                stderr(&output)
+            );
+            let report = json_report(&output);
+            if use_gpu {
+                assert_eq!(
+                    report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                    "GPU separation proof must use HeadlessGpu, not fallback: {report:#}"
+                );
+            }
+            assert!(
+                report["verification"]["composition"]["checks"]
+                    .as_array()
+                    .expect("composition checks array")
+                    .iter()
+                    .any(
+                        |check| check["id"] == "expect_separation.parts-do-not-intersect"
+                            && check["status"] == if should_pass { "checked" } else { "failed" }
+                            && check["code"] == expected_code,
+                    ),
+                "{backend}/{case} should emit exact separation conformance code {expected_code}: {report:#}"
+            );
+            if !should_pass {
+                assert!(
+                    report["verification"]["reasons"]
+                        .as_array()
+                        .expect("verification reasons array")
+                        .iter()
+                        .any(|reason| reason["source"] == "composition"
+                            && reason["code"] == "separation_conformance_mismatch"
+                            && reason["expectation_id"]
+                                == "expect_separation.parts-do-not-intersect"),
+                    "{backend}/{case} separation mismatch should surface as a verification reason: {report:#}"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_object_exposure_and_salience_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-composition-object-pixel-quality");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        for (case, material_color, background_color, should_pass, expected_code) in [
+            ("good", "#2F9E44", "#DDE2E8", true, "subject_exposure_sane"),
+            (
+                "black-crush",
+                "#000000",
+                "#F0F3F5",
+                false,
+                "subject_black_crushed",
+            ),
+            (
+                "blown-out",
+                "#FFFFFF",
+                "#101820",
+                false,
+                "subject_blown_out",
+            ),
+            (
+                "low-salience",
+                "#34383D",
+                "#30343A",
+                false,
+                "subject_salience_too_low",
+            ),
+        ] {
+            let recipe_path = dir.join(format!("object-pixel-{case}-{backend}.recipe.json"));
+            let png_path = dir.join(format!("object-pixel-{case}-{backend}.png"));
+            fs::write(
+                &recipe_path,
+                serde_json::to_string_pretty(&json!({
+                    "schema": "scena.scene_recipe.v1",
+                    "colors": {
+                        "subject_color": material_color,
+                        "background_color": background_color
+                    },
+                    "geometries": [
+                        { "id": "subject_geo", "primitive": { "kind": "box", "size": [0.42, 0.42, 0.08] } }
+                    ],
+                    "materials": [
+                        { "id": "subject_mat", "kind": "unlit", "base_color": "subject_color" }
+                    ],
+                    "nodes": [
+                        {
+                            "id": "subject",
+                            "geometry": "subject_geo",
+                            "material": "subject_mat",
+                            "transform": { "kind": "center" }
+                        }
+                    ],
+                    "scene": {
+                        "background": { "kind": "custom", "color": "background_color" }
+                    },
+                    "render": {
+                        "anti_aliasing": "msaa4",
+                        "tonemapper": "standard",
+                        "exposure_ev": 0.0
+                    },
+                    "cameras": [{
+                        "id": "main",
+                        "kind": "perspective",
+                        "fov_degrees": 34.0,
+                        "active": true,
+                        "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": "subject" }
+                    }],
+                    "capture": { "width": 160, "height": 160 },
+                    "expect": {
+                        "expect_quality": {
+                            "profile": "product",
+                            "geometry": {
+                                "min_intermediate_edge_fraction": 0.0
+                            }
+                        }
+                    }
+                }))
+                .expect("object pixel composition recipe serializes"),
+            )
+            .expect("object pixel composition recipe writes");
+
+            let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+            if use_gpu {
+                configure_command_for_lavapipe(&mut command);
+            }
+            let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+            if use_gpu {
+                args.push("--gpu");
+            }
+            args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+            let output = command
+                .args(args)
+                .output()
+                .expect("scena object-pixel composition render command runs");
+            assert_eq!(
+                output.status.success(),
+                should_pass,
+                "{backend}/{case} object-pixel composition status mismatch, stdout={}, stderr={}",
+                String::from_utf8_lossy(&output.stdout),
+                stderr(&output)
+            );
+            assert!(
+                output.stderr.is_empty(),
+                "{backend}/{case} object-pixel composition failures stay machine-readable on stdout, stderr={}",
+                stderr(&output)
+            );
+            let report = json_report(&output);
+            if use_gpu {
+                assert_eq!(
+                    report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                    "GPU object-pixel proof must use HeadlessGpu, not fallback: {report:#}"
+                );
+            }
+            let composition = &report["verification"]["composition"];
+            assert_eq!(composition["schema"], "scena.scene_composition.v1");
+            assert_eq!(composition["ok"], should_pass, "{report:#}");
+            assert!(
+                composition["checks"]
+                    .as_array()
+                    .expect("composition checks array")
+                    .iter()
+                    .any(|check| check["id"] == "node.subject.pixel_exposure"
+                        && check["code"] == expected_code
+                        && check["status"] == if should_pass { "checked" } else { "failed" }
+                        && check["observed"]["low_clip_fraction"].as_f64().is_some()
+                        && check["observed"]["mean_background_delta"]
+                            .as_f64()
+                            .is_some()),
+                "{backend}/{case} should emit exact object-pixel exposure/salience code {expected_code}: {report:#}"
+            );
+            if !should_pass {
+                assert!(
+                    report["verification"]["reasons"]
+                        .as_array()
+                        .expect("verification reasons array")
+                        .iter()
+                        .any(|reason| reason["source"] == "composition"
+                            && reason["code"] == expected_code
+                            && reason["expectation_id"] == "node.subject.pixel_exposure"),
+                    "{backend}/{case} object-pixel failure must surface as verification reason: {report:#}"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_contact_shadow_grounding_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-quality-contact-shadow-grounding");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        for (case, ssao, should_pass, expected_code) in [
+            ("missing", None, false, "contact_shadow_missing"),
+            (
+                "present",
+                Some(json!({
+                    "radius_px": 4,
+                    "intensity": 0.8,
+                    "depth_threshold": 0.0
+                })),
+                true,
+                "contact_shadow_checked",
+            ),
+        ] {
+            let recipe_path = dir.join(format!("contact-shadow-{backend}-{case}.recipe.json"));
+            let png_path = dir.join(format!("contact-shadow-{backend}-{case}.png"));
+            let mut render = json!({
+                "anti_aliasing": "none",
+                "tonemapper": "standard",
+                "exposure_ev": 0.0
+            });
+            if let Some(ssao) = ssao {
+                render["ssao"] = ssao;
+            }
+            fs::write(
+                &recipe_path,
+                serde_json::to_string_pretty(&json!({
+                    "schema": "scena.scene_recipe.v1",
+                    "geometries": [
+                        {
+                            "id": "floor_geo",
+                            "mesh": {
+                                "topology": "triangles",
+                                "positions": [
+                                    [-0.75, -0.55, 0.0],
+                                    [0.75, -0.55, 0.0],
+                                    [0.75, 0.35, 0.0],
+                                    [-0.75, 0.35, 0.0]
+                                ],
+                                "indices": [0, 1, 2, 0, 2, 3]
+                            }
+                        },
+                        {
+                            "id": "block_geo",
+                            "mesh": {
+                                "topology": "triangles",
+                                "positions": [
+                                    [-0.14, -0.18, 0.16],
+                                    [0.14, -0.18, 0.16],
+                                    [0.14, 0.18, 0.16],
+                                    [-0.14, 0.18, 0.16]
+                                ],
+                                "indices": [0, 1, 2, 0, 2, 3]
+                            }
+                        }
+                    ],
+                    "materials": [
+                        { "id": "floor_mat", "kind": "unlit", "base_color": "#F6F7F8", "double_sided": true },
+                        { "id": "block_mat", "kind": "unlit", "base_color": "#AEB5BF", "double_sided": true }
+                    ],
+                    "nodes": [
+                        { "id": "floor", "geometry": "floor_geo", "material": "floor_mat" },
+                        { "id": "block", "geometry": "block_geo", "material": "block_mat" }
+                    ],
+                    "scene": { "background": { "kind": "custom", "color": "#F6F7F8" } },
+                    "render": render,
+                    "cameras": [{
+                        "id": "main",
+                        "kind": "perspective",
+                        "fov_degrees": 60.0,
+                        "active": true,
+                        "transform": { "kind": "look_at", "eye": [0.0, 0.0, 1.7320508], "target": [0.0, 0.0, 0.0] }
+                    }],
+                    "capture": { "width": 96, "height": 96 },
+                    "expect": {
+                        "expect_quality": {
+                            "profile": "product",
+                            "noise": { "max_outlier_fraction": 0.04 },
+                            "geometry": { "min_intermediate_edge_fraction": 0.0 },
+                            "grounding": {
+                                "target": { "kind": "node", "id": "block" },
+                                "min_contact_shadow_delta": 0.015
+                            }
+                        }
+                    }
+                }))
+                .expect("contact-shadow recipe serializes"),
+            )
+            .expect("contact-shadow recipe writes");
+
+            let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+            if use_gpu {
+                configure_command_for_lavapipe(&mut command);
+            }
+            let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+            if use_gpu {
+                args.push("--gpu");
+            }
+            args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+            let output = command
+                .args(args)
+                .output()
+                .expect("scena contact-shadow recipe render command runs");
+            assert_eq!(
+                output.status.success(),
+                should_pass,
+                "{backend}/{case} contact-shadow status mismatch, stdout={}, stderr={}",
+                String::from_utf8_lossy(&output.stdout),
+                stderr(&output)
+            );
+            assert!(
+                output.stderr.is_empty(),
+                "{backend}/{case} contact-shadow failures stay machine-readable on stdout, stderr={}",
+                stderr(&output)
+            );
+            let report = json_report(&output);
+            if use_gpu {
+                assert_eq!(
+                    report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                    "GPU contact-shadow proof must use HeadlessGpu, not CPU fallback: {report:#}"
+                );
+            }
+            assert!(
+                report["verification"]["quality"]["checks"]
+                    .as_array()
+                    .expect("quality checks array")
+                    .iter()
+                    .any(|check| check["id"] == "expect_quality.grounding.target"
+                        && check["code"] == expected_code
+                        && check["observed"]["contact_shadow_delta"].as_f64().is_some()),
+                "{backend}/{case} should emit exact contact-shadow quality check {expected_code}: {report:#}"
+            );
+            if !should_pass {
+                assert!(
+                    report["verification"]["reasons"]
+                        .as_array()
+                        .expect("verification reasons array")
+                        .iter()
+                        .any(|reason| reason["source"] == "quality"
+                            && reason["code"] == "contact_shadow_missing"
+                            && reason["expectation_id"] == "expect_quality.grounding.target"),
+                    "{backend}/{case} contact-shadow failure must surface as verification reason: {report:#}"
+                );
+            }
+            if should_pass {
+                let image = decode_png_rgba8(&png_path);
+                assert_contact_shadow_is_localized(backend, &image);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_object_framing_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-composition-object-framing");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        for (case, size, eye_z, should_pass, expected_code) in [
+            ("normal", [0.62, 0.46, 0.12], 2.2, true, "subject_fit_sane"),
+            (
+                "tiny",
+                [0.055, 0.040, 0.015],
+                4.8,
+                false,
+                "subject_too_small_in_frame",
+            ),
+        ] {
+            let recipe_path = dir.join(format!("object-framing-{backend}-{case}.recipe.json"));
+            let png_path = dir.join(format!("object-framing-{backend}-{case}.png"));
+            fs::write(
+                &recipe_path,
+                serde_json::to_string_pretty(&json!({
+                    "schema": "scena.scene_recipe.v1",
+                    "geometries": [
+                        { "id": "subject_geo", "primitive": { "kind": "box", "size": size } }
+                    ],
+                    "materials": [
+                        { "id": "subject_mat", "kind": "unlit", "base_color": "#2F9E44" }
+                    ],
+                    "nodes": [
+                        { "id": "subject", "geometry": "subject_geo", "material": "subject_mat" }
+                    ],
+                    "scene": { "background": { "kind": "custom", "color": "#DDE2E8" } },
+                    "render": {
+                        "anti_aliasing": "msaa4",
+                        "supersample": 2,
+                        "reconstruction": "tent",
+                        "tonemapper": "standard",
+                        "exposure_ev": 0.0
+                    },
+                    "cameras": [{
+                        "id": "main",
+                        "kind": "perspective",
+                        "fov_degrees": 30.0,
+                        "active": true,
+                        "transform": { "kind": "look_at", "eye": [0.0, 0.0, eye_z], "target": "subject" }
+                    }],
+                    "capture": { "width": 220, "height": 160 },
+                    "expect": {
+                        "expect_quality": {
+                            "profile": "product",
+                            "geometry": {
+                                "min_intermediate_edge_fraction": 0.0
+                            }
+                        }
+                    }
+                }))
+                .expect("object framing recipe serializes"),
+            )
+            .expect("object framing recipe writes");
+
+            let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+            if use_gpu {
+                configure_command_for_lavapipe(&mut command);
+            }
+            let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+            if use_gpu {
+                args.push("--gpu");
+            }
+            args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+            let output = command
+                .args(args)
+                .output()
+                .expect("scena object-framing composition render command runs");
+            assert_eq!(
+                output.status.success(),
+                should_pass,
+                "{backend}/{case} object framing status mismatch, stdout={}, stderr={}",
+                String::from_utf8_lossy(&output.stdout),
+                stderr(&output)
+            );
+            assert!(
+                output.stderr.is_empty(),
+                "{backend}/{case} object framing failures stay machine-readable on stdout, stderr={}",
+                stderr(&output)
+            );
+            let report = json_report(&output);
+            if use_gpu {
+                assert_eq!(
+                    report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                    "GPU object-framing proof must use HeadlessGpu, not fallback: {report:#}"
+                );
+            }
+            assert!(
+                report["verification"]["composition"]["checks"]
+                    .as_array()
+                    .expect("composition checks array")
+                    .iter()
+                    .any(|check| check["id"] == "node.subject.framing"
+                        && check["status"] == if should_pass { "checked" } else { "failed" }
+                        && check["code"] == expected_code
+                        && check["observed"]["fit_fraction"].as_f64().is_some()),
+                "{backend}/{case} should emit exact object framing composition check {expected_code}: {report:#}"
+            );
+            if !should_pass {
+                assert!(
+                    report["verification"]["reasons"]
+                        .as_array()
+                        .expect("verification reasons array")
+                        .iter()
+                        .any(|reason| reason["source"] == "composition"
+                            && reason["code"] == "subject_too_small_in_frame"
+                            && reason["expectation_id"] == "node.subject.framing"),
+                    "{backend}/{case} object framing failure should surface as verification reason: {report:#}"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_texture_material_result_on_cpu_and_gpu() {
+    let dir = artifact_dir("recipe-composition-texture-result");
+    let source_texture = Path::new("tests/assets/gltf/khronos/TextureSettingsTest/CheckAndX.png");
+    let local_texture = dir.join("check-and-x.png");
+    fs::copy(source_texture, &local_texture).expect("texture fixture copies next to recipe");
+    for (backend, use_gpu) in [("cpu", false), ("gpu", true)] {
+        for (case, uvs, should_pass, expected_code) in [
+            (
+                "mapped",
+                json!([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]),
+                true,
+                "texture_result_visible",
+            ),
+            (
+                "flat_uv",
+                json!([[0.08, 0.08], [0.08, 0.08], [0.08, 0.08], [0.08, 0.08]]),
+                false,
+                "texture_result_flat",
+            ),
+        ] {
+            let recipe_path = dir.join(format!("texture-result-{backend}-{case}.recipe.json"));
+            let png_path = dir.join(format!("texture-result-{backend}-{case}.png"));
+            fs::write(
+                &recipe_path,
+                serde_json::to_string_pretty(&json!({
+                    "schema": "scena.scene_recipe.v1",
+                    "geometries": [{
+                        "id": "panel_geo",
+                        "mesh": {
+                            "topology": "triangles",
+                            "positions": [
+                                [-0.55, -0.40, 0.0],
+                                [0.55, -0.40, 0.0],
+                                [0.55, 0.40, 0.0],
+                                [-0.55, 0.40, 0.0]
+                            ],
+                            "normals": [
+                                [0.0, 0.0, 1.0],
+                                [0.0, 0.0, 1.0],
+                                [0.0, 0.0, 1.0],
+                                [0.0, 0.0, 1.0]
+                            ],
+                            "uvs": uvs,
+                            "indices": [0, 1, 2, 0, 2, 3]
+                        }
+                    }],
+                    "materials": [{
+                        "id": "textured_mat",
+                        "kind": "unlit",
+                        "base_color": "#808080",
+                        "double_sided": false,
+                        "base_color_texture": { "uri": "check-and-x.png", "color_space": "srgb" }
+                    }],
+                    "nodes": [
+                        { "id": "textured_panel", "geometry": "panel_geo", "material": "textured_mat" }
+                    ],
+                    "scene": { "background": { "kind": "custom", "color": "#303030" } },
+                    "render": {
+                        "anti_aliasing": "msaa4",
+                        "supersample": 2,
+                        "reconstruction": "tent",
+                        "tonemapper": "standard",
+                        "exposure_ev": 0.0
+                    },
+                    "cameras": [{
+                        "id": "main",
+                        "kind": "perspective",
+                        "active": true,
+                        "fov_degrees": 24.0,
+                        "transform": { "kind": "look_at", "eye": [0.0, 0.0, 3.2], "target": "textured_panel" }
+                    }],
+                    "capture": { "width": 180, "height": 150 },
+                    "expect": {
+                        "expect_quality": {
+                            "profile": "product",
+                            "exposure": {}
+                        }
+                    }
+                }))
+                .expect("texture-result recipe serializes"),
+            )
+            .expect("texture-result recipe writes");
+
+            let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+            if use_gpu {
+                configure_command_for_lavapipe(&mut command);
+            }
+            let mut args = vec!["recipe", "render", path_str(&recipe_path)];
+            if use_gpu {
+                args.push("--gpu");
+            }
+            args.extend(["--introspect", "--verify", "--out", path_str(&png_path)]);
+            let output = command
+                .args(args)
+                .output()
+                .expect("scena texture-result recipe render command runs");
+            if should_pass {
+                assert!(
+                    output.status.success(),
+                    "{backend}/{case} textured material result should pass, stdout={}, stderr={}",
+                    String::from_utf8_lossy(&output.stdout),
+                    stderr(&output)
+                );
+            } else {
+                assert!(
+                    !output.status.success(),
+                    "{backend}/{case} flat texture mapping should fail, stdout={}, stderr={}",
+                    String::from_utf8_lossy(&output.stdout),
+                    stderr(&output)
+                );
+                assert!(
+                    output.stderr.is_empty(),
+                    "composition texture-result failures stay machine-readable on stdout, stderr={}",
+                    stderr(&output)
+                );
+            }
+            let report = json_report(&output);
+            if use_gpu {
+                assert_eq!(
+                    report["introspection"]["capabilities"]["backend"], "headless_gpu",
+                    "GPU texture-result proof must use HeadlessGpu, not CPU fallback: {report:#}"
+                );
+            }
+            assert!(
+                report["verification"]["composition"]["checks"]
+                    .as_array()
+                    .expect("composition checks array")
+                    .iter()
+                    .any(|check| check["id"] == "node.textured_panel.texture_result"
+                        && check["code"] == expected_code
+                        && check["observed"]["texture_slots"]
+                            .as_array()
+                            .is_some_and(|slots| {
+                                slots.iter().any(|slot| slot == "baseColorTexture")
+                            })
+                        && check["observed"]["luminance_stddev"].as_f64().is_some()),
+                "{backend}/{case} should emit exact texture-result composition check {expected_code}: {report:#}"
+            );
+            if !should_pass {
+                assert!(
+                    report["verification"]["reasons"]
+                        .as_array()
+                        .expect("verification reasons array")
+                        .iter()
+                        .any(|reason| reason["source"] == "composition"
+                            && reason["code"] == "texture_result_flat"
+                            && reason["expectation_id"] == "node.textured_panel.texture_result"),
+                    "{backend}/{case} texture-result failure should surface as a verification reason: {report:#}"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_measurement_overlay_ownership() {
+    let dir = artifact_dir("recipe-composition-measurement-ownership");
+    let recipe_path = dir.join("composition-measurement.recipe.json");
+    let png_path = dir.join("composition-measurement.png");
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "green": "#2F9E44"
+            },
+            "geometries": [
+                { "id": "visible_geo", "primitive": { "kind": "box", "size": [0.35, 0.35, 0.08] } }
+            ],
+            "materials": [
+                { "id": "green_mat", "kind": "unlit", "base_color": "green" }
+            ],
+            "nodes": [
+                {
+                    "id": "visible_box",
+                    "geometry": "visible_geo",
+                    "material": "green_mat",
+                    "transform": { "kind": "center" }
+                }
+            ],
+            "measurements": [
+                {
+                    "id": "box_width",
+                    "kind": "distance",
+                    "start": [-0.22, -0.25, 0.0],
+                    "end": [0.22, -0.25, 0.0],
+                    "label": "WIDTH",
+                    "unit": "m",
+                    "precision": 2
+                }
+            ],
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "fov_degrees": 36.0,
+                "active": true,
+                "transform": { "kind": "look_at", "eye": [0.0, 0.0, 2.0], "target": "visible_box" }
+            }],
+            "capture": { "width": 180, "height": 150 },
+            "expect": {}
+        }))
+        .expect("composition measurement recipe serializes"),
+    )
+    .expect("composition measurement recipe writes");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_scena"))
+        .args([
+            "recipe",
+            "render",
+            path_str(&recipe_path),
+            "--introspect",
+            "--verify",
+            "--out",
+            path_str(&png_path),
+        ])
+        .output()
+        .expect("scena composition measurement render command runs");
+
+    assert!(
+        output.status.success(),
+        "composition measurement recipe should pass verification, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    let composition = &report["verification"]["composition"];
+    assert_eq!(composition["schema"], "scena.scene_composition.v1");
+    assert_eq!(composition["ok"], true, "{report:#}");
+    assert!(
+        composition["checks"]
+            .as_array()
+            .expect("composition checks array")
+            .iter()
+            .any(
+                |check| check["id"] == "annotation.measurement.box_width.output"
+                    && check["status"] == "checked"
+                    && check["code"] == "measurement_overlay_output_projected",
+            ),
+        "measurement generated line and label should be owned and projected: {report:#}"
+    );
+    assert!(
+        composition["checks"]
+            .as_array()
+            .expect("composition checks array")
+            .iter()
+            .any(|check| check["status"] == "checked"
+                && check["code"] == "overlay_label_clear_of_lines"),
+        "measurement label should be checked as clear of crossing line overlays: {report:#}"
     );
 }
 
@@ -2620,6 +8307,14 @@ fn scena_recipe_render_verify_emits_composition_report_for_declared_nodes() {
             .any(|reason| reason["source"] == "composition"
                 && reason["code"] == "declared_node_not_drawn"),
         "composition failures must surface in verification reasons: {report:#}"
+    );
+    assert!(
+        report["verification"]["reasons"]
+            .as_array()
+            .expect("verification reasons array")
+            .iter()
+            .all(|reason| reason["code"] != "grounding_intent_not_declared"),
+        "optional composition skips must stay informational, not top-level warning reasons: {report:#}"
     );
 }
 
@@ -2985,7 +8680,7 @@ fn authored_verification_recipe(expect: serde_json::Value) -> serde_json::Value 
                 "material": "blue_mat",
                 "transform": {
                     "kind": "trs",
-                    "translation": [0.8, 0.0, 0.0]
+                    "translation": [0.42, 0.0, 0.0]
                 }
             }
         ],
@@ -3236,6 +8931,125 @@ fn decode_png_rgba8(path: &Path) -> DecodedPng {
 }
 
 #[cfg(feature = "scene-host")]
+fn floor_grid_detail_crop(image: &DecodedPng) -> DecodedPng {
+    let crop_width = ((image.width as f32) * 0.56).round() as u32;
+    let crop_height = ((image.height as f32) * 0.34).round() as u32;
+    let x0 = image.width.saturating_sub(crop_width) / 2;
+    let y0 = ((image.height as f32) * 0.58).floor() as u32;
+    let x1 = x0.saturating_add(crop_width).min(image.width);
+    let y1 = y0.saturating_add(crop_height).min(image.height);
+    let width = x1.saturating_sub(x0).max(1);
+    let height = y1.saturating_sub(y0).max(1);
+    let mut rgba8 = Vec::with_capacity((width as usize) * (height as usize) * 4);
+    for y in y0..y1 {
+        let row_start = ((y * image.width + x0) * 4) as usize;
+        let row_end = row_start + (width as usize) * 4;
+        rgba8.extend_from_slice(&image.rgba8[row_start..row_end]);
+    }
+    DecodedPng {
+        width,
+        height,
+        rgba8,
+    }
+}
+
+#[cfg(feature = "scene-host")]
+fn composition_check<'a>(report: &'a serde_json::Value, id: &str) -> &'a serde_json::Value {
+    report["verification"]["composition"]["checks"]
+        .as_array()
+        .expect("composition checks serialize")
+        .iter()
+        .find(|check| check["id"] == id)
+        .unwrap_or_else(|| panic!("composition check {id} not found in report: {report:#}"))
+}
+
+#[cfg(feature = "scene-host")]
+fn node_region_from_composition_report(
+    report: &serde_json::Value,
+    target_id: &str,
+) -> QualityPixelRegion {
+    let checks = report["verification"]["composition"]["checks"]
+        .as_array()
+        .expect("composition checks serialize");
+    for check in checks {
+        if check["category"] != "placement"
+            || check["code"] != "projected_bbox_available"
+            || check["target_id"] != target_id
+        {
+            continue;
+        }
+        let rect = &check["region"]["rect_css_px"];
+        let min_x = rect["min_x"].as_f64().expect("region min_x");
+        let min_y = rect["min_y"].as_f64().expect("region min_y");
+        let max_x = rect["max_x"].as_f64().expect("region max_x");
+        let max_y = rect["max_y"].as_f64().expect("region max_y");
+        let width = report["capture"]["width"].as_u64().expect("capture width") as u32;
+        let height = report["capture"]["height"]
+            .as_u64()
+            .expect("capture height") as u32;
+        let x = min_x.floor().max(0.0) as u32;
+        let y = min_y.floor().max(0.0) as u32;
+        let end_x = (max_x.ceil().max(min_x).min(f64::from(width))) as u32;
+        let end_y = (max_y.ceil().max(min_y).min(f64::from(height))) as u32;
+        return QualityPixelRegion {
+            x: x.min(width),
+            y: y.min(height),
+            width: end_x.saturating_sub(x).max(1),
+            height: end_y.saturating_sub(y).max(1),
+        };
+    }
+    panic!("projected bbox for target {target_id} not found in report: {report:#}");
+}
+
+#[cfg(feature = "scene-host")]
+#[derive(Debug, Clone, Copy)]
+struct ChromeRegionMetrics {
+    foreground_fraction: f32,
+    luminance_range: f32,
+    unique_luma_levels: usize,
+}
+
+#[cfg(feature = "scene-host")]
+fn chrome_region_metrics(image: &DecodedPng, region: QualityPixelRegion) -> ChromeRegionMetrics {
+    let mut foreground_pixels = 0usize;
+    let mut min_luma = f32::INFINITY;
+    let mut max_luma = f32::NEG_INFINITY;
+    let mut unique_luma = std::collections::BTreeSet::new();
+    for y in region.y..region.y.saturating_add(region.height).min(image.height) {
+        for x in region.x..region.x.saturating_add(region.width).min(image.width) {
+            let offset = ((y as usize) * (image.width as usize) + x as usize) * 4;
+            let Some(pixel) = image.rgba8.get(offset..offset + 4) else {
+                continue;
+            };
+            if pixel[3] == 0 || pixel[..3].iter().all(|channel| *channel >= 248) {
+                continue;
+            }
+            foreground_pixels += 1;
+            let luma = srgb_luminance_u8(pixel);
+            min_luma = min_luma.min(luma);
+            max_luma = max_luma.max(luma);
+            unique_luma.insert((luma * 255.0).round().clamp(0.0, 255.0) as u8);
+        }
+    }
+    let region_pixels = (region.width as usize).saturating_mul(region.height as usize);
+    ChromeRegionMetrics {
+        foreground_fraction: foreground_pixels as f32 / region_pixels.max(1) as f32,
+        luminance_range: if min_luma.is_finite() && max_luma.is_finite() {
+            max_luma - min_luma
+        } else {
+            0.0
+        },
+        unique_luma_levels: unique_luma.len(),
+    }
+}
+
+#[cfg(feature = "scene-host")]
+fn srgb_luminance_u8(pixel: &[u8]) -> f32 {
+    (0.2126 * f32::from(pixel[0]) + 0.7152 * f32::from(pixel[1]) + 0.0722 * f32::from(pixel[2]))
+        / 255.0
+}
+
+#[cfg(feature = "scene-host")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct QualityPixelRegion {
     x: u32,
@@ -3319,6 +9133,32 @@ fn frame_delta_in_region(
 }
 
 #[cfg(feature = "scene-host")]
+fn format_material_reflection_metrics(
+    results: &[(String, String, FrameDelta, QualityPixelRegion)],
+) -> String {
+    let rows = results
+        .iter()
+        .map(|(backend, target_id, delta, region)| {
+            format!(
+                "    {{ \"backend\": \"{}\", \"target_id\": \"{}\", \"mean_channel_delta\": {:.3}, \"max_channel_delta\": {}, \"region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }} }}",
+                backend,
+                target_id,
+                delta.mean_channel_delta,
+                delta.max_channel_delta,
+                region.x,
+                region.y,
+                region.width,
+                region.height
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",\n");
+    format!(
+        "{{\n  \"schema\": \"scena.material_reflection_delta_probe.v1\",\n  \"rows\": [\n{rows}\n  ]\n}}\n"
+    )
+}
+
+#[cfg(feature = "scene-host")]
 fn mean_luminance_in_region(rgba: &[u8], frame_width: u32, region: QualityPixelRegion) -> f32 {
     let mut total = 0.0_f32;
     let mut count = 0_u32;
@@ -3332,6 +9172,262 @@ fn mean_luminance_in_region(rgba: &[u8], frame_width: u32, region: QualityPixelR
         }
     }
     total / count.max(1) as f32
+}
+
+#[cfg(feature = "scene-host")]
+fn reflection_firefly_fraction_in_region(
+    rgba: &[u8],
+    frame_width: u32,
+    frame_height: u32,
+    region: QualityPixelRegion,
+) -> f32 {
+    let max_x = region.x.saturating_add(region.width).min(frame_width);
+    let max_y = region.y.saturating_add(region.height).min(frame_height);
+    if max_x <= region.x || max_y <= region.y {
+        return 0.0;
+    }
+    let mut luminance =
+        Vec::with_capacity((region.width as usize).saturating_mul(region.height as usize));
+    for y in region.y..max_y {
+        for x in region.x..max_x {
+            luminance.push(encoded_luminance_at(rgba, frame_width, x, y));
+        }
+    }
+    if luminance.len() < 9 {
+        return 0.0;
+    }
+    luminance.sort_by(f32::total_cmp);
+    let p95 = percentile(&luminance, 0.95);
+    let threshold = (p95 + 0.25).clamp(0.74, 0.97);
+    let mut isolated = 0usize;
+    for y in region.y..max_y {
+        for x in region.x..max_x {
+            let center = encoded_luminance_at(rgba, frame_width, x, y);
+            if center < threshold {
+                continue;
+            }
+            if bright_encoded_neighbor_count(rgba, frame_width, frame_height, x, y, center) <= 1 {
+                isolated = isolated.saturating_add(1);
+            }
+        }
+    }
+    isolated as f32 / (region.width.saturating_mul(region.height).max(1) as f32)
+}
+
+#[cfg(feature = "scene-host")]
+fn bright_encoded_neighbor_count(
+    rgba: &[u8],
+    frame_width: u32,
+    frame_height: u32,
+    x: u32,
+    y: u32,
+    center_luminance: f32,
+) -> usize {
+    let threshold = (center_luminance - 0.12).max(0.0);
+    let min_x = x.saturating_sub(1);
+    let min_y = y.saturating_sub(1);
+    let max_x = (x + 1).min(frame_width.saturating_sub(1));
+    let max_y = (y + 1).min(frame_height.saturating_sub(1));
+    let mut count = 0usize;
+    for ny in min_y..=max_y {
+        for nx in min_x..=max_x {
+            if nx == x && ny == y {
+                continue;
+            }
+            if encoded_luminance_at(rgba, frame_width, nx, ny) >= threshold {
+                count = count.saturating_add(1);
+            }
+        }
+    }
+    count
+}
+
+#[cfg(feature = "scene-host")]
+fn encoded_luminance_at(rgba: &[u8], width: u32, x: u32, y: u32) -> f32 {
+    let offset = ((y * width + x) * 4) as usize;
+    (0.2126 * f32::from(rgba[offset])
+        + 0.7152 * f32::from(rgba[offset + 1])
+        + 0.0722 * f32::from(rgba[offset + 2]))
+        / 255.0
+}
+
+#[cfg(feature = "scene-host")]
+#[derive(Debug, Clone, Copy)]
+struct LuminanceRegionStats {
+    mean: f32,
+    stddev: f32,
+    p05: f32,
+}
+
+#[cfg(feature = "scene-host")]
+fn luminance_region_stats(
+    rgba: &[u8],
+    frame_width: u32,
+    region: QualityPixelRegion,
+) -> LuminanceRegionStats {
+    let mut samples =
+        Vec::with_capacity((region.width as usize).saturating_mul(region.height as usize));
+    for y in region.y..region.y.saturating_add(region.height) {
+        for x in region.x..region.x.saturating_add(region.width) {
+            samples.push(linear_luminance_at(rgba, frame_width, x, y));
+        }
+    }
+    if samples.is_empty() {
+        return LuminanceRegionStats {
+            mean: 0.0,
+            stddev: 0.0,
+            p05: 0.0,
+        };
+    }
+    let mean = samples.iter().copied().sum::<f32>() / samples.len() as f32;
+    let variance = samples
+        .iter()
+        .map(|value| {
+            let delta = *value - mean;
+            delta * delta
+        })
+        .sum::<f32>()
+        / samples.len() as f32;
+    samples.sort_by(f32::total_cmp);
+    LuminanceRegionStats {
+        mean,
+        stddev: variance.sqrt(),
+        p05: percentile(&samples, 0.05),
+    }
+}
+
+#[cfg(feature = "scene-host")]
+fn assert_contact_shadow_is_localized(backend: &str, image: &DecodedPng) {
+    let floor_regions = [
+        (
+            "left-floor",
+            QualityPixelRegion {
+                x: image.width.saturating_mul(20) / 100,
+                y: image.height.saturating_mul(42) / 100,
+                width: image.width.saturating_mul(15) / 100,
+                height: image.height.saturating_mul(18) / 100,
+            },
+        ),
+        (
+            "right-floor",
+            QualityPixelRegion {
+                x: image.width.saturating_mul(65) / 100,
+                y: image.height.saturating_mul(42) / 100,
+                width: image.width.saturating_mul(15) / 100,
+                height: image.height.saturating_mul(18) / 100,
+            },
+        ),
+    ];
+    for (name, region) in floor_regions {
+        let stats = luminance_region_stats(&image.rgba8, image.width, region);
+        assert!(
+            stats.mean >= 0.83 && stats.p05 >= 0.78 && stats.stddev <= 0.05,
+            "{backend} contact shadow must stay localized and leave far {name} clean; stats={stats:?}, region={region:?}"
+        );
+    }
+}
+
+#[cfg(feature = "scene-host")]
+fn mean_blue_in_region(rgba: &[u8], frame_width: u32, region: QualityPixelRegion) -> f32 {
+    let mut total = 0.0_f32;
+    let mut count = 0_u32;
+    for y in region.y..region.y.saturating_add(region.height) {
+        for x in region.x..region.x.saturating_add(region.width) {
+            let offset = ((y * frame_width + x) * 4) as usize;
+            total += f32::from(rgba[offset + 2]);
+            count = count.saturating_add(1);
+        }
+    }
+    total / count.max(1) as f32
+}
+
+#[cfg(feature = "scene-host")]
+#[derive(Debug, Clone, Copy)]
+struct SpecularSpreadMetrics {
+    fwhm_pixels: u32,
+    unique_luma_levels: usize,
+    median_luminance: f32,
+    peak_luminance: f32,
+    threshold_luminance: f32,
+}
+
+#[cfg(feature = "scene-host")]
+fn specular_spread_metrics(
+    rgba: &[u8],
+    frame_width: u32,
+    region: QualityPixelRegion,
+) -> SpecularSpreadMetrics {
+    let mut samples =
+        Vec::with_capacity((region.width as usize).saturating_mul(region.height as usize));
+    for y in region.y..region.y.saturating_add(region.height) {
+        for x in region.x..region.x.saturating_add(region.width) {
+            samples.push(linear_luminance_at(rgba, frame_width, x, y));
+        }
+    }
+    if samples.is_empty() {
+        return SpecularSpreadMetrics {
+            fwhm_pixels: 0,
+            unique_luma_levels: 0,
+            median_luminance: 0.0,
+            peak_luminance: 0.0,
+            threshold_luminance: 0.0,
+        };
+    }
+    let mut sorted = samples.clone();
+    sorted.sort_by(f32::total_cmp);
+    let median_luminance = percentile(&sorted, 0.50);
+    let peak_luminance = *sorted.last().expect("non-empty luminance samples");
+    let threshold_luminance = median_luminance + (peak_luminance - median_luminance).max(0.0) * 0.5;
+    let mut unique_luma_levels = std::collections::BTreeSet::new();
+    let mut fwhm_pixels = 0_u32;
+    for luma in samples {
+        if luma >= threshold_luminance {
+            fwhm_pixels = fwhm_pixels.saturating_add(1);
+            unique_luma_levels.insert((luma * 255.0).round().clamp(0.0, 255.0) as u8);
+        }
+    }
+    SpecularSpreadMetrics {
+        fwhm_pixels,
+        unique_luma_levels: unique_luma_levels.len(),
+        median_luminance,
+        peak_luminance,
+        threshold_luminance,
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[derive(Debug, Clone, Copy)]
+struct ReceiverLuminance {
+    mean_luminance: f32,
+    receiver_pixels: u32,
+}
+
+#[cfg(feature = "scene-host")]
+fn mean_non_caster_luminance_in_region(
+    rgba: &[u8],
+    frame_width: u32,
+    region: QualityPixelRegion,
+) -> ReceiverLuminance {
+    let mut total = 0.0_f32;
+    let mut count = 0_u32;
+    for y in region.y..region.y.saturating_add(region.height) {
+        for x in region.x..region.x.saturating_add(region.width) {
+            let offset = ((y * frame_width + x) * 4) as usize;
+            let r = rgba[offset];
+            let g = rgba[offset + 1];
+            let b = rgba[offset + 2];
+            let luma = linear_luminance_at(rgba, frame_width, x, y);
+            let red_caster = r > g.saturating_add(28) && r > b.saturating_add(20);
+            if !red_caster {
+                total += luma;
+                count = count.saturating_add(1);
+            }
+        }
+    }
+    ReceiverLuminance {
+        mean_luminance: total / count.max(1) as f32,
+        receiver_pixels: count,
+    }
 }
 
 #[cfg(feature = "scene-host")]

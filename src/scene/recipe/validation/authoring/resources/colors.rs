@@ -40,7 +40,7 @@ fn validate_color_value(path: &str, value: &Value, diagnostics: &mut Vec<SceneRe
             "error",
             path,
             "color string must be #RRGGBB or a supported named color",
-            "use #3A7BD5, white, black, red, green, blue, yellow, cyan, magenta, warm_white, or cool_white",
+            "use #3A7BD5 or a Color named constant such as studio_backdrop, light_gray, orange, warm_white, or cool_white",
             None,
             false,
         ));

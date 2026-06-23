@@ -28,6 +28,19 @@ pub struct AutoExposureResult {
 }
 
 impl AutoExposureConfig {
+    pub const PRESET_NAMES: &'static [&'static str] =
+        &["product_studio", "indoor", "outdoor", "mixed"];
+
+    pub fn from_preset_name(name: &str) -> Option<Self> {
+        match name {
+            "product_studio" => Some(Self::product_studio()),
+            "indoor" => Some(Self::indoor()),
+            "outdoor" => Some(Self::outdoor()),
+            "mixed" => Some(Self::mixed()),
+            _ => None,
+        }
+    }
+
     pub const fn new(target_luminance: f32) -> Self {
         Self {
             target_luminance,

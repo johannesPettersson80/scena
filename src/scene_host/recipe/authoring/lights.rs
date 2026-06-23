@@ -7,7 +7,7 @@ use crate::scene::recipe::{
     SceneRecipeBuildTargetV1, SceneRecipeColorV1, SceneRecipeDiagnosticV1, SceneRecipeLightV1,
 };
 use crate::scene_host::SceneHostCore;
-use crate::{Angle, Color, DirectionalLight, PointLight, SpotLight};
+use crate::{Angle, AreaLight, AreaLightShape, Color, DirectionalLight, PointLight, SpotLight};
 
 use super::super::error_diagnostic;
 
@@ -22,6 +22,47 @@ pub(in crate::scene_host::recipe) fn build_authored_lights(
     let root_handle = host.root_handle();
     for (index, recipe) in recipes.iter().enumerate() {
         let path = format!("$.lights[{index}]");
+        if recipe.kind == "studio_rig" {
+            if let Some(preset) = recipe.preset.as_deref()
+                && preset != "studio_rig"
+            {
+                diagnostics.push(*invalid_light_preset(
+                    format!("{path}.preset"),
+                    format!("preset '{preset}' is not valid for studio_rig lights"),
+                    "use studio_rig or omit preset for the default studio rig",
+                ));
+                continue;
+            }
+            let handles =
+                match host.scene.add_studio_lighting() {
+                    Ok(handles) => handles,
+                    Err(error) => {
+                        diagnostics.push(error_diagnostic(
+                        &path,
+                        "light_create_failed",
+                        format!("failed to create studio lighting rig '{}': {error}", recipe.id),
+                        "check scene light capacity and report persistent failures as a scena bug",
+                    ));
+                        continue;
+                    }
+                };
+            for (suffix, node) in [
+                ("key", handles.key),
+                ("fill", handles.fill),
+                ("rim", handles.rim),
+            ] {
+                let handle = host.register_node(node);
+                manifest.push(SceneRecipeBuildTargetV1 {
+                    id: format!("{}.{}", recipe.id, suffix),
+                    handle,
+                    kind: "light".to_owned(),
+                    parent: Some(root_handle),
+                    name: Some(format!("{} {suffix}", recipe.id)),
+                    active: None,
+                });
+            }
+            continue;
+        }
         let empty_nodes = BTreeMap::new();
         let empty_imports = BTreeMap::new();
         let transform = match transform_from_recipe(
@@ -87,12 +128,24 @@ pub(in crate::scene_host::recipe) fn build_authored_lights(
                     continue;
                 }
             },
+            "area" => match authored_area_light(recipe, color, &path) {
+                Ok(light) => host
+                    .scene
+                    .area_light(light)
+                    .parent(root)
+                    .transform(transform)
+                    .add(),
+                Err(diagnostic) => {
+                    diagnostics.push(*diagnostic);
+                    continue;
+                }
+            },
             kind => {
                 diagnostics.push(error_diagnostic(
                     &path,
                     "unsupported_feature",
                     format!("light kind '{kind}' is not supported"),
-                    "use directional, point, or spot",
+                    "use directional, point, spot, or area",
                 ));
                 continue;
             }
@@ -209,6 +262,73 @@ fn authored_spot_light(
         light = light.with_outer_cone_angle(Angle::from_degrees(outer as f32));
     }
     Ok(light)
+}
+
+fn authored_area_light(
+    recipe: &SceneRecipeLightV1,
+    color: Option<Color>,
+    path: &str,
+) -> Result<AreaLight, Box<SceneRecipeDiagnosticV1>> {
+    let mut light = match recipe.preset.as_deref() {
+        Some("softbox") => AreaLight::softbox(),
+        Some(preset) => {
+            return Err(invalid_light_preset(
+                format!("{path}.preset"),
+                format!("preset '{preset}' is not valid for area lights"),
+                "use softbox",
+            ));
+        }
+        None => AreaLight::default(),
+    };
+    if let Some(color) = color {
+        light = light.with_color(color);
+    }
+    if let Some(luminous_flux) = recipe.luminous_flux_lumens {
+        light = light.with_luminous_flux_lumens(luminous_flux as f32);
+    }
+    if let Some(range) = recipe.range {
+        light = light.with_range(range as f32);
+    }
+    if let Some(shape) = authored_area_shape(recipe, path)? {
+        light = light.with_shape(shape);
+    }
+    Ok(light)
+}
+
+fn authored_area_shape(
+    recipe: &SceneRecipeLightV1,
+    path: &str,
+) -> Result<Option<AreaLightShape>, Box<SceneRecipeDiagnosticV1>> {
+    match recipe.shape.as_deref() {
+        Some("rect") => Ok(Some(AreaLightShape::rect(
+            recipe.width.unwrap_or(1.0) as f32,
+            recipe.height.unwrap_or(1.0) as f32,
+        ))),
+        Some("disc") => Ok(Some(AreaLightShape::disc(
+            recipe.radius.unwrap_or(0.5) as f32
+        ))),
+        Some("sphere") => Ok(Some(AreaLightShape::sphere(
+            recipe.radius.unwrap_or(0.5) as f32
+        ))),
+        Some(shape) => Err(Box::new(error_diagnostic(
+            format!("{path}.shape"),
+            "invalid_area_light_shape",
+            format!("area light shape '{shape}' is not supported"),
+            "use rect, disc, or sphere",
+        ))),
+        None => {
+            if recipe.width.is_some() || recipe.height.is_some() {
+                Ok(Some(AreaLightShape::rect(
+                    recipe.width.unwrap_or(1.0) as f32,
+                    recipe.height.unwrap_or(1.0) as f32,
+                )))
+            } else if let Some(radius) = recipe.radius {
+                Ok(Some(AreaLightShape::disc(radius as f32)))
+            } else {
+                Ok(None)
+            }
+        }
+    }
 }
 
 fn invalid_light_preset(

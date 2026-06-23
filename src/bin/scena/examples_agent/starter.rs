@@ -276,29 +276,46 @@ fn apply_presentation_defaults(recipe: &mut Value) {
         ]),
     );
 
-    let scene = object.entry("scene").or_insert_with(|| json!({}));
-    if !scene.is_object() {
-        *scene = json!({});
+    {
+        let scene = object.entry("scene").or_insert_with(|| json!({}));
+        if !scene.is_object() {
+            *scene = json!({});
+        }
+        let scene = scene
+            .as_object_mut()
+            .expect("scene object was just initialized");
+        scene
+            .entry("background")
+            .or_insert_with(|| json!({ "kind": "studio" }));
+        scene.insert(
+            "environment".to_owned(),
+            json!({ "kind": "uri", "uri": TEMPLATE_STUDIO_ENVIRONMENT }),
+        );
+        if let Some(grid) = scene.get_mut("grid")
+            && grid.is_object()
+        {
+            let grid = grid.as_object_mut().expect("grid is object");
+            if !matches!(grid.get("enabled"), Some(Value::Bool(false))) {
+                grid.entry("line_width_px").or_insert_with(|| json!(4.0));
+            }
+        }
     }
-    let scene = scene
-        .as_object_mut()
-        .expect("scene object was just initialized");
-    scene
-        .entry("background")
-        .or_insert_with(|| json!({ "kind": "studio" }));
-    scene.insert(
-        "environment".to_owned(),
-        json!({ "kind": "uri", "uri": TEMPLATE_STUDIO_ENVIRONMENT }),
-    );
 
-    object.entry("render").or_insert_with(|| {
-        json!({
-            "profile": "balanced",
-            "quality": "medium",
-            "anti_aliasing": "fxaa",
-            "tonemapper": "pbr_neutral"
-        })
-    });
+    let render = object.entry("render").or_insert_with(|| json!({}));
+    if !render.is_object() {
+        *render = json!({});
+    }
+    let render = render
+        .as_object_mut()
+        .expect("render object was just initialized");
+    render.entry("profile").or_insert_with(|| json!("balanced"));
+    render.insert("quality".to_owned(), json!("high"));
+    render.insert("anti_aliasing".to_owned(), json!("msaa4"));
+    render.insert("supersample".to_owned(), json!(2));
+    render.insert("reconstruction".to_owned(), json!("tent"));
+    render
+        .entry("tonemapper")
+        .or_insert_with(|| json!("pbr_neutral"));
 
     let capture = object.entry("capture").or_insert_with(|| json!({}));
     if !capture.is_object() {

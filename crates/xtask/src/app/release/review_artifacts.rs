@@ -212,6 +212,7 @@ pub(crate) const REQUIRED_RELEASE_ARTIFACT_SUFFIXES: &[&str] = &[
     "m9-platform/m9-capability-matrix.json",
     "m9-platform/m9-benchmarks.json",
     "m9-platform/m9-benchmarks-4k.json",
+    "m9-platform/m9-benchmarks-feature-matrix.json",
     "m9-platform/linux-native-vulkan/capabilities.json",
     "m9-platform/linux-native-vulkan/surface-context-loss.json",
     "m9-platform/linux-native-vulkan/default-scene.ppm",
@@ -325,6 +326,7 @@ pub(crate) const REQUIRED_MEASURED_CAPABILITY_ARTIFACT_SUFFIXES: &[&str] =
 pub(crate) const REQUIRED_BENCHMARK_ARTIFACT_SUFFIXES: &[&str] = &[
     "m9-platform/m9-benchmarks.json",
     "m9-platform/m9-benchmarks-4k.json",
+    "m9-platform/m9-benchmarks-feature-matrix.json",
 ];
 pub(crate) const REQUIRED_RENDERED_OUTPUT_METADATA_ARTIFACT_SUFFIXES: &[&str] = &[
     "m9-platform/linux-native-vulkan/rendered-output.json",

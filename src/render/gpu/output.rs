@@ -1,4 +1,5 @@
 use super::super::prepare::PreparedGpuLightUniform;
+use super::light_assignment::LightAssignmentResources;
 use crate::scene::{ClippingPlane, SectionBox};
 
 /// Phase 5.4 follow-up: the WGSL fragment shader source moved into
@@ -12,87 +13,125 @@ pub(super) const GPU_TRIANGLE_SHADER_TEXTURE_2D: &str =
     include_str!("output_shader_texture_2d.wgsl");
 
 pub(super) const MAX_OUTPUT_CLIPPING_PLANES: usize = 16;
-const OUTPUT_UNIFORM_BASE_FLOAT_COUNT: usize = 232;
+const OUTPUT_UNIFORM_BASE_FLOAT_COUNT: usize = 696;
 const OUTPUT_UNIFORM_FLOAT_COUNT: usize =
     OUTPUT_UNIFORM_BASE_FLOAT_COUNT + MAX_OUTPUT_CLIPPING_PLANES * 4 + 4;
-pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 1200;
+pub(super) const OUTPUT_UNIFORM_BYTE_LEN: u64 = 3056;
 
 pub(super) use super::draw_uniform::{
     DRAW_UNIFORM_ENTRY_STRIDE, create_draw_bind_group, create_draw_bind_group_layout,
     create_draw_uniform_buffer, encode_draw_uniform_bytes,
 };
 
-pub(super) fn create_output_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+pub(super) fn create_output_bind_group_layout(
+    device: &wgpu::Device,
+    include_tiled_light_storage: bool,
+) -> wgpu::BindGroupLayout {
+    let mut entries = vec![
+        wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+        wgpu::BindGroupLayoutEntry {
+            binding: 1,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Depth,
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        },
+        wgpu::BindGroupLayoutEntry {
+            binding: 2,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+            count: None,
+        },
+        // Phase 1C step 1: env cubemap. Placeholder when unset — gated
+        // on environment_diffuse_intensity.w in the fragment shader.
+        wgpu::BindGroupLayoutEntry {
+            binding: 3,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::Cube,
+                multisampled: false,
+            },
+            count: None,
+        },
+        wgpu::BindGroupLayoutEntry {
+            binding: 4,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+            count: None,
+        },
+        // Opaque scene color sampled by the transparent transmission pass.
+        // This is the minimum real renderer capability for glass proof:
+        // transparent fragments can refract/blur the already-rendered
+        // background instead of relying on alpha blend alone.
+        wgpu::BindGroupLayoutEntry {
+            binding: 6,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        },
+        wgpu::BindGroupLayoutEntry {
+            binding: 7,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+            count: None,
+        },
+    ];
+    if include_tiled_light_storage {
+        // TiledLightAssignment: per-tile light records for scenes that exceed
+        // the fixed 16-light uniform lane without silently truncating. WebGL2
+        // exposes zero fragment-stage storage buffers, so the texture-2D
+        // browser shader intentionally stays on the uniform light arrays.
+        entries.push(wgpu::BindGroupLayoutEntry {
+            binding: 5,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        });
+        entries.push(wgpu::BindGroupLayoutEntry {
+            binding: 8,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        });
+        entries.push(wgpu::BindGroupLayoutEntry {
+            binding: 9,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        });
+    }
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("scena.output.bind_group_layout"),
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 1,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Depth,
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 2,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
-                count: None,
-            },
-            // Phase 1C step 1: env cubemap. Placeholder when unset — gated
-            // on environment_diffuse_intensity.w in the fragment shader.
-            wgpu::BindGroupLayoutEntry {
-                binding: 3,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::Cube,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 4,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            },
-            // Opaque scene color sampled by the transparent transmission pass.
-            // This is the minimum real renderer capability for glass proof:
-            // transparent fragments can refract/blur the already-rendered
-            // background instead of relying on alpha blend alone. Binding 5
-            // stays unused so the shader can remain below WebGL2's 16 sampled
-            // texture limit while retaining stable group-0 binding numbers.
-            wgpu::BindGroupLayoutEntry {
-                binding: 6,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 7,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            },
-        ],
+        entries: &entries,
     })
 }
 
@@ -116,40 +155,56 @@ pub(super) fn create_output_bind_group(
     environment_sampler: &wgpu::Sampler,
     transmission_color_view: &wgpu::TextureView,
     transmission_color_sampler: &wgpu::Sampler,
+    light_assignment: Option<&LightAssignmentResources>,
 ) -> wgpu::BindGroup {
+    let mut entries = vec![
+        wgpu::BindGroupEntry {
+            binding: 0,
+            resource: uniform.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 1,
+            resource: wgpu::BindingResource::TextureView(shadow_view),
+        },
+        wgpu::BindGroupEntry {
+            binding: 2,
+            resource: wgpu::BindingResource::Sampler(shadow_sampler),
+        },
+        wgpu::BindGroupEntry {
+            binding: 3,
+            resource: wgpu::BindingResource::TextureView(environment_cubemap_view),
+        },
+        wgpu::BindGroupEntry {
+            binding: 4,
+            resource: wgpu::BindingResource::Sampler(environment_sampler),
+        },
+        wgpu::BindGroupEntry {
+            binding: 6,
+            resource: wgpu::BindingResource::TextureView(transmission_color_view),
+        },
+        wgpu::BindGroupEntry {
+            binding: 7,
+            resource: wgpu::BindingResource::Sampler(transmission_color_sampler),
+        },
+    ];
+    if let Some(light_assignment) = light_assignment {
+        entries.push(wgpu::BindGroupEntry {
+            binding: 5,
+            resource: light_assignment.records.as_entire_binding(),
+        });
+        entries.push(wgpu::BindGroupEntry {
+            binding: 8,
+            resource: light_assignment.tile_indices.as_entire_binding(),
+        });
+        entries.push(wgpu::BindGroupEntry {
+            binding: 9,
+            resource: light_assignment.tiles.as_entire_binding(),
+        });
+    }
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("scena.output.bind_group"),
         layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::TextureView(shadow_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: wgpu::BindingResource::Sampler(shadow_sampler),
-            },
-            wgpu::BindGroupEntry {
-                binding: 3,
-                resource: wgpu::BindingResource::TextureView(environment_cubemap_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 4,
-                resource: wgpu::BindingResource::Sampler(environment_sampler),
-            },
-            wgpu::BindGroupEntry {
-                binding: 6,
-                resource: wgpu::BindingResource::TextureView(transmission_color_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 7,
-                resource: wgpu::BindingResource::Sampler(transmission_color_sampler),
-            },
-        ],
+        entries: &entries,
     })
 }
 
@@ -268,6 +323,22 @@ pub(super) fn encode_output_uniform(
     );
     offset = encode_vec4_array(&mut values, offset, &upload.lighting.spot_light_cone_range);
     offset = encode_vec4_array(&mut values, offset, &upload.lighting.spot_light_color_range);
+    offset = encode_vec4_array(
+        &mut values,
+        offset,
+        &upload.lighting.area_light_position_flux,
+    );
+    offset = encode_vec4_array(
+        &mut values,
+        offset,
+        &upload.lighting.area_light_axis_x_shape,
+    );
+    offset = encode_vec4_array(
+        &mut values,
+        offset,
+        &upload.lighting.area_light_axis_y_range,
+    );
+    offset = encode_vec4_array(&mut values, offset, &upload.lighting.area_light_color);
     values[offset..offset + 4].copy_from_slice(&upload.lighting.light_counts);
     offset += 4;
     values[offset..offset + 4].copy_from_slice(&upload.lighting.environment_diffuse_intensity);
@@ -317,9 +388,10 @@ mod tests {
     #[test]
     fn output_uniform_buffer_matches_wgsl_uniform_layout() {
         assert_eq!(
-            OUTPUT_UNIFORM_BYTE_LEN, 1200,
+            OUTPUT_UNIFORM_BYTE_LEN, 3056,
             "CameraUniform stores view, projection, and view-projection matrices plus \
-             camera/exposure, viewport/depth, color-management, punctual-light arrays, \
+             camera/exposure, viewport/depth, color-management, widened punctual-light arrays, \
+             area-light arrays, \
              directional-shadow-control, environment, and sixteen clipping-plane uniforms — per-draw model + normal matrices live on the new \
              DrawUniform bind group at @group(2)"
         );
@@ -527,10 +599,15 @@ mod tests {
                 && GPU_TRIANGLE_SHADER_TEXTURE_2D.contains(
                     "let base_color_sample = textureSample(base_color_texture, base_color_sampler, transformed_uv)"
                 )
+                && !GPU_TRIANGLE_SHADER_TEXTURE_2D.contains("var<storage")
+                && !GPU_TRIANGLE_SHADER_TEXTURE_2D.contains("tiled_light_records")
+                && !GPU_TRIANGLE_SHADER_TEXTURE_2D.contains("light_tile_indices")
+                && !GPU_TRIANGLE_SHADER_TEXTURE_2D.contains("light_tiles")
                 && !GPU_TRIANGLE_SHADER_TEXTURE_2D
                     .contains("textureSample(base_color_texture, base_color_sampler, transformed_uv, material_layer)"),
             "WebGL2 uses a texture_2d material shader variant because wgpu 29's GL backend \
-             samples material texture arrays as black in Chromium WebGL2"
+             samples material texture arrays as black in Chromium WebGL2, and it must not \
+             declare fragment storage buffers because WebGL2 exposes a zero-storage limit"
         );
     }
 
@@ -627,7 +704,8 @@ mod tests {
                     && shader.contains("let normal_dir = normalize(normal);")
                     && shader.contains("let refracted = refract(-view_dir, normal_dir, 1.0 / ior);")
                     && shader.contains("let thickness_scale = 0.004 + min(thickness, 1.0) * 0.028;")
-                    && shader.contains("let blur_px = roughness * roughness * 12.0;")
+                    && shader.contains("let blur_px = roughness * roughness * 48.0;")
+                    && shader.contains("let refraction_mix = clamp(0.58 + roughness * 0.40 + rim_fresnel * 0.10, 0.58, 0.96);")
                     && shader.contains("let refracted_blurred =")
                     && shader.contains("let rim_fresnel = pow(1.0 - n_dot_v, 5.0);")
                     && shader.contains("let reflection_weight = clamp(0.08 + rim_fresnel * 0.42 + (1.0 - transmission) * 0.10, 0.08, 0.50);")
@@ -638,6 +716,31 @@ mod tests {
                     ),
                 "{name} shader must sample opaque scene color with IOR/thickness refraction \
                  and roughness blur; alpha-blend-only glass is not enough for Round E material proof"
+            );
+        }
+    }
+
+    #[test]
+    fn triangle_shader_applies_material_screen_space_reflections_in_native_and_webgl2_variants() {
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            assert!(
+                shader.contains("screen_space_material_reflection(")
+                    && shader.contains("camera.color_management.z")
+                    && shader.contains("let ssr_active = step(0.001, strength) * step(0.5, metallic);")
+                    && shader.contains("let reflection = reflect(-view_dir, normal_dir);")
+                    && shader.contains("let raw_reflected_uv = uv + vec2<f32>(reflection.x, -reflection.y) * reflect_scale;")
+                    && shader.contains("let edge_fade = smoothstep(0.0, 0.02, edge_distance);")
+                    && shader.contains(
+                        "textureSample(transmission_color_texture, transmission_color_sampler, reflected_uv"
+                    )
+                    && shader.contains(
+                        "let weight = clamp(ssr_active * strength * metallic * (0.38 + fresnel * 0.52) * (1.0 - roughness * 0.55) * edge_fade"
+                    ),
+                "{name} shader must sample opaque scene color for high-metallic material SSR; \
+                 floor-only post reflections do not prove chrome/mirror material reflections"
             );
         }
     }
@@ -728,13 +831,36 @@ mod tests {
                 && GPU_TRIANGLE_SHADER.contains("directional_light_direction_intensity")
                 && GPU_TRIANGLE_SHADER.contains("point_light_position_intensity")
                 && GPU_TRIANGLE_SHADER.contains("spot_light_direction_cones")
+                && GPU_TRIANGLE_SHADER.contains("area_light_position_flux")
+                && GPU_TRIANGLE_SHADER.contains("area_light_sample_position")
+                && GPU_TRIANGLE_SHADER.contains("ltc_area_light_specular_contribution")
+                && GPU_TRIANGLE_SHADER.contains("ltc_evaluate")
+                && GPU_TRIANGLE_SHADER.contains("ltc_matrix")
                 && GPU_TRIANGLE_SHADER.contains("pbr_light_contribution")
                 && GPU_TRIANGLE_SHADER.contains("fresnel_schlick")
                 && GPU_TRIANGLE_SHADER.contains("distribution_ggx")
                 && GPU_TRIANGLE_SHADER.contains("geometry_smith"),
-            "GPU PBR shader must consume prepared directional, point, and spot light uniforms \
+            "GPU PBR shader must consume prepared directional, point, spot, and area light uniforms \
              through a GGX/Smith/Schlick BRDF before backend PBR lighting can be claimed"
         );
+    }
+
+    #[test]
+    fn triangle_shader_contains_ltc_area_light_specular_path_for_both_texture_layouts() {
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            assert!(
+                shader.contains("fn ltc_area_light_specular_contribution")
+                    && shader.contains("fn ltc_area_light_polygon")
+                    && shader.contains("fn ltc_evaluate")
+                    && shader.contains("fn ltc_matrix")
+                    && shader.contains("fn ltc_integrate_edge")
+                    && shader.contains("shaded += ltc_area_light_specular_contribution("),
+                "{name} shader must include the same dedicated linearly-transformed-cosine area-light specular path as the CPU reference"
+            );
+        }
     }
 
     #[test]
@@ -855,6 +981,23 @@ mod tests {
              shadow-casting directional light was prepared; non-shadowed lights must not \
              be multiplied by a placeholder shadow texture"
         );
+    }
+
+    #[test]
+    fn triangle_shader_multiplies_area_lights_by_prepared_area_shadow_visibility() {
+        for (name, shader) in [
+            ("texture_2d_array", GPU_TRIANGLE_SHADER),
+            ("texture_2d", GPU_TRIANGLE_SHADER_TEXTURE_2D),
+        ] {
+            assert!(
+                shader.contains("let area_shadow_visibility = clamp(shadow_visibility, 0.0, 1.0)")
+                    && shader.contains(
+                        "area_light_radiance(i, sample_position, world_position) * area_shadow_visibility"
+                    ),
+                "{name} shader must consume prepared area-light visibility so finite emitters \
+                 can produce soft penumbra instead of unshadowed area-light radiance"
+            );
+        }
     }
 
     #[test]

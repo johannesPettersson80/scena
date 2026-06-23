@@ -6,6 +6,7 @@ mod environment_presets;
 mod khronos_samples;
 mod material_presets;
 mod material_presets_baseline;
+mod material_presets_browser;
 pub(super) mod material_presets_cloudflare;
 mod next_release;
 mod picking_outline_hover;

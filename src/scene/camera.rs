@@ -42,6 +42,19 @@ impl Default for PerspectiveCamera {
 }
 
 impl PerspectiveCamera {
+    pub const LENS_PRESET_NAMES: &'static [&'static str] =
+        &["wide_angle", "standard", "portrait", "telephoto"];
+
+    pub fn from_lens_preset_name(name: &str) -> Option<Self> {
+        match name {
+            "wide_angle" => Some(Self::wide_angle()),
+            "standard" => Some(Self::standard()),
+            "portrait" => Some(Self::portrait()),
+            "telephoto" => Some(Self::telephoto()),
+            _ => None,
+        }
+    }
+
     /// A wide-angle lens preset for tight spaces and broad establishing views.
     ///
     /// # Examples

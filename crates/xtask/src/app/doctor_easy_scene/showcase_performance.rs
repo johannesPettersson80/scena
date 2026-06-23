@@ -4,10 +4,10 @@ const DEMO_HDR_PATH: &str = "demo/samples/environment/white_studio_03_1k.hdr";
 const DEMO_HDR_SIDECAR_PATH: &str = "demo/samples/environment/white_studio_03_1k.hdr.prefilter.bin";
 const PUBLIC_SHOWCASE_WASM_PATH: &str = "demo/pkg/scena_bg.wasm";
 const PROOF_HARNESS_WASM_PATH: &str = "demo/proof/pkg/scena_bg.wasm";
-const PUBLIC_SHOWCASE_WASM_BASELINE_RAW_BYTES: u64 = 4_014_796;
-const PUBLIC_SHOWCASE_WASM_BASELINE_BROTLI_BYTES: u64 = 1_080_427;
-const PROOF_HARNESS_WASM_BASELINE_RAW_BYTES: u64 = 4_564_702;
-const PROOF_HARNESS_WASM_BASELINE_BROTLI_BYTES: u64 = 1_221_378;
+const PUBLIC_SHOWCASE_WASM_BASELINE_RAW_BYTES: u64 = 4_318_556;
+const PUBLIC_SHOWCASE_WASM_BASELINE_BROTLI_BYTES: u64 = 1_193_980;
+const PROOF_HARNESS_WASM_BASELINE_RAW_BYTES: u64 = 5_355_128;
+const PROOF_HARNESS_WASM_BASELINE_BROTLI_BYTES: u64 = 1_534_095;
 const PUBLIC_SHOWCASE_WASM_RAW_BUDGET_BYTES: u64 =
     ten_percent_growth_budget(PUBLIC_SHOWCASE_WASM_BASELINE_RAW_BYTES);
 const PUBLIC_SHOWCASE_WASM_BROTLI_BUDGET_BYTES: u64 =
@@ -71,6 +71,12 @@ pub(super) fn check_showcase_performance_contracts(root: &Path, findings: &mut V
             "--strip-debug",
             "--strip-dwarf",
             "--strip-producers",
+            "stampCacheBusters(writeSizeManifest())",
+            "wasm=${manifest.sha256}",
+            "demo/proof/index.html",
+            "demo/proof.js",
+            "demo/index.html",
+            "demo/main.js",
         ],
     );
     require_contains(

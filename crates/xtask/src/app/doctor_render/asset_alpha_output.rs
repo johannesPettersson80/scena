@@ -357,6 +357,7 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         "src/diagnostics/stats.rs",
         &[
             "pub ambient_occlusion_passes: u64",
+            "pub screen_space_reflection_passes: u64",
             "pub order_independent_transparency_passes: u64",
             "pub bloom_passes: u64",
             "pub fxaa_passes: u64",
@@ -374,7 +375,9 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
             "oit_scratch: Vec<cpu::OitAccumPixel>",
             "order_independent_transparency: Option<OrderIndependentTransparencyConfig>",
             "screen_space_ambient_occlusion: Option<ScreenSpaceAmbientOcclusionConfig>",
+            "screen_space_reflections: Option<ScreenSpaceReflectionConfig>",
             "self.stats.ambient_occlusion_passes = gpu_result.post_counts.ambient_occlusion",
+            "self.stats.screen_space_reflection_passes",
             "self.stats.bloom_passes = gpu_result.post_counts.bloom",
             "self.stats.fxaa_passes = gpu_result.post_counts.fxaa",
         ],
@@ -387,13 +390,15 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         &[
             "cpu::draw_order_independent_transparency_cpu(",
             "cpu::resolve_order_independent_transparency_cpu(",
+            "screen_space_reflections::apply_rgba8(",
             "output::apply_screen_space_ambient_occlusion_rgba8(",
             "output::apply_bloom_rgba8(",
             "AntiAliasing::None | AntiAliasing::Msaa4 | AntiAliasing::Msaa8 => 0",
             "AntiAliasing::Fxaa =>",
             "output::apply_fxaa_rgba8(",
             "self.supersample_factor > 1",
-            "downsample_rgba8_box_filter",
+            "cpu_resolve::downsample_cpu_supersample(",
+            "self.stats.screen_space_reflection_passes",
             "self.stats.ambient_occlusion_passes",
             "self.stats.order_independent_transparency_passes",
             "self.stats.bloom_passes",
@@ -426,6 +431,28 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
         root,
         findings,
         "ARCH-FXAA-OUTPUT",
+        "src/render/screen_space_reflections.rs",
+        &[
+            "pub struct ScreenSpaceReflectionConfig",
+            "pub(super) fn apply_rgba8",
+            "blurred_reflection_sample",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-FXAA-OUTPUT",
+        "src/render/cpu_resolve.rs",
+        &[
+            "downsample_cpu_supersample",
+            "downsample_rgba8_box_filter",
+            "downsample_rgba8_reconstruction_filter",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-FXAA-OUTPUT",
         "tests/m2_lighting_depth_clipping.rs",
         &[
             "subtle_bloom_expands_bright_output_without_second_tonemap",
@@ -436,7 +463,8 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
             "AntiAliasing::None",
             "AntiAliasing::Fxaa",
             "screen_space_ambient_occlusion_darkens_depth_contact_edges",
-            "ScreenSpaceAmbientOcclusionConfig::subtle()",
+            "ScreenSpaceAmbientOcclusionConfig::new(",
+            "4, 0.8, 0.0",
             "stats().ambient_occlusion_passes",
             "PostBloomConfig::subtle()",
             "stats().bloom_passes",
@@ -463,7 +491,8 @@ pub(crate) fn check_fxaa_output_contracts(root: &Path, findings: &mut Vec<Findin
             "validate_ssao_contact_on_off",
             "render_bloom_on_off",
             "validate_bloom_on_off",
-            "ScreenSpaceAmbientOcclusionConfig::subtle()",
+            "ScreenSpaceAmbientOcclusionConfig::new(",
+            "4, 0.8, 0.0",
             "PostBloomConfig::subtle()",
         ],
     );

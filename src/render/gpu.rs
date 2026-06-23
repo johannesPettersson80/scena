@@ -22,9 +22,11 @@ mod environment;
 mod instancing;
 mod labels;
 mod lifecycle;
+mod light_assignment;
 mod material_batched;
 mod material_bindings;
 mod material_mips;
+mod material_support;
 mod material_uniform;
 mod material_upload;
 mod materials;
@@ -33,6 +35,7 @@ mod output;
 mod overlays;
 mod pipeline;
 mod post;
+#[cfg(not(target_arch = "wasm32"))]
 mod prepare_resources;
 #[cfg(target_arch = "wasm32")]
 mod prepare_resources_wasm;
@@ -56,6 +59,7 @@ use crate::platform::SurfaceSize;
 use self::browser_readback::BrowserReadbackResources;
 use self::instancing::InstanceDrawBatch;
 use self::labels::LabelResources;
+use self::light_assignment::LightAssignmentResources;
 use self::material_bindings::MaterialTextureBindingMode;
 use self::pipeline::MeshPipelineSet;
 pub(super) use self::post::{GpuPostPassCounts, GpuPostSettings};
@@ -131,6 +135,8 @@ struct GpuPreparedResources {
     output_bind_group: wgpu::BindGroup,
     opaque_output_bind_group: wgpu::BindGroup,
     light_uniform: PreparedGpuLightUniform,
+    #[allow(dead_code)]
+    light_assignment: LightAssignmentResources,
     /// Phase 1B: directional-light view-projection. See `prepare/shadows.rs`.
     light_from_world: [f32; 16],
     material_resources: materials::MaterialResources,
@@ -203,6 +209,8 @@ struct GpuPreparedResources {
     output_bind_group: wgpu::BindGroup,
     opaque_output_bind_group: wgpu::BindGroup,
     light_uniform: PreparedGpuLightUniform,
+    #[allow(dead_code)]
+    light_assignment: LightAssignmentResources,
     /// Phase 1B: directional-light view-projection matrix; mirrors the
     /// native variant. Uploaded into the camera uniform's light_from_world
     /// slot.

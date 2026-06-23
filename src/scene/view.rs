@@ -231,6 +231,12 @@ impl Scene {
 
     fn scene_bounds_world(&self) -> Option<Aabb> {
         self.mesh_bounds_nodes()
+            .filter(|(node, _bounds)| {
+                !matches!(
+                    self.nodes.get(*node).map(|node_ref| &node_ref.kind),
+                    Some(NodeKind::Label(_))
+                )
+            })
             .filter_map(|(node, bounds)| {
                 let transform = self.world_transform(node)?;
                 Some(transform_aabb(bounds, transform))

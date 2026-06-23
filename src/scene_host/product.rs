@@ -2,11 +2,110 @@ use serde::{Deserialize, Serialize};
 
 use super::{SceneHostCore, SceneHostError, SceneHostErrorCode};
 use crate::{
-    AntiAliasing, AssetFetcher, AutoExposureConfig, Background, GridFloorOptions, LookupError,
-    PostBloomConfig, ScreenSpaceAmbientOcclusionConfig, Vec3,
+    AntiAliasing, AssetFetcher, AutoExposureConfig, Background, EnvironmentPreset,
+    GridFloorOptions, LookupError, PostBloomConfig, ScreenSpaceAmbientOcclusionConfig, Vec3,
 };
 
 pub const SCENE_HOST_GROUNDING_SCHEMA_V1: &str = "scena.scene_host_grounding.v1";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneSetupPreset {
+    ProductStudio,
+    CadStudio,
+    IndustrialStudio,
+}
+
+impl SceneSetupPreset {
+    pub const ALL: &'static [Self] =
+        &[Self::ProductStudio, Self::CadStudio, Self::IndustrialStudio];
+
+    pub const fn recipe_name(self) -> &'static str {
+        match self {
+            Self::ProductStudio => "product_studio",
+            Self::CadStudio => "cad_studio",
+            Self::IndustrialStudio => "industrial_studio",
+        }
+    }
+
+    pub fn from_recipe_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|preset| preset.recipe_name() == name)
+    }
+
+    pub const fn background(self) -> Background {
+        match self {
+            Self::ProductStudio => Background::Studio,
+            Self::CadStudio => Background::NeutralGray,
+            Self::IndustrialStudio => Background::DarkStudio,
+        }
+    }
+
+    pub const fn environment(self) -> EnvironmentPreset {
+        match self {
+            Self::ProductStudio | Self::IndustrialStudio => EnvironmentPreset::Studio,
+            Self::CadStudio => EnvironmentPreset::NeutralStudio,
+        }
+    }
+
+    pub const fn auto_exposure(self) -> AutoExposureConfig {
+        match self {
+            Self::ProductStudio => AutoExposureConfig::product_studio(),
+            Self::CadStudio => AutoExposureConfig::mixed(),
+            Self::IndustrialStudio => AutoExposureConfig::indoor(),
+        }
+    }
+
+    pub fn grid_options(self) -> GridFloorOptions {
+        match self {
+            Self::ProductStudio => GridFloorOptions::new()
+                .padding(0.18)
+                .line_spacing(0.08)
+                .line_width_px(4.0)
+                .color(crate::Color::from_srgb_u8(58, 62, 70))
+                .line_color(crate::Color::from_srgb_u8(83, 91, 104))
+                .roughness(0.88),
+            Self::CadStudio => GridFloorOptions::new()
+                .padding(0.10)
+                .line_spacing(0.05)
+                .line_width_px(3.8)
+                .color(crate::Color::from_srgb_u8(214, 218, 224))
+                .line_color(crate::Color::from_srgb_u8(150, 158, 170))
+                .roughness(0.92),
+            Self::IndustrialStudio => GridFloorOptions::new()
+                .padding(0.22)
+                .line_spacing(0.12)
+                .line_width_px(4.0)
+                .color(crate::Color::from_srgb_u8(39, 44, 54))
+                .line_color(crate::Color::from_srgb_u8(73, 84, 101))
+                .roughness(0.94),
+        }
+    }
+
+    pub const fn grid_reflection_strength(self) -> Option<f64> {
+        match self {
+            Self::ProductStudio => Some(0.32),
+            Self::IndustrialStudio => Some(0.18),
+            Self::CadStudio => None,
+        }
+    }
+
+    pub fn ssao(self) -> ScreenSpaceAmbientOcclusionConfig {
+        match self {
+            Self::ProductStudio => ScreenSpaceAmbientOcclusionConfig::new(4, 0.42, 0.025),
+            Self::CadStudio => ScreenSpaceAmbientOcclusionConfig::new(3, 0.28, 0.02),
+            Self::IndustrialStudio => ScreenSpaceAmbientOcclusionConfig::new(4, 0.36, 0.03),
+        }
+    }
+
+    pub const fn anti_aliasing(self) -> AntiAliasing {
+        match self {
+            Self::ProductStudio | Self::CadStudio | Self::IndustrialStudio => AntiAliasing::Fxaa,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SceneHostGroundingReportV1 {
@@ -35,17 +134,26 @@ pub struct SceneHostGroundingFallbackV1 {
 }
 
 impl<F: AssetFetcher> SceneHostCore<F> {
+    pub fn apply_scene_setup_preset_renderer(&mut self, preset: SceneSetupPreset) {
+        self.renderer.set_background(preset.background());
+        if self.renderer.auto_exposure().is_none() {
+            self.renderer.set_auto_exposure(preset.auto_exposure());
+        }
+        if self.renderer.screen_space_ambient_occlusion().is_none() {
+            self.renderer
+                .set_screen_space_ambient_occlusion(Some(preset.ssao()));
+        }
+    }
+
     pub fn apply_product_studio_visuals(&mut self, background: &str) -> Result<(), SceneHostError> {
         let background = scene_host_background(background)?;
         let environment = self.assets.default_environment();
         self.renderer.set_environment(environment);
+        self.apply_scene_setup_preset_renderer(SceneSetupPreset::ProductStudio);
         self.renderer.set_background(background);
         self.renderer
-            .set_auto_exposure(AutoExposureConfig::product_studio());
-        self.renderer.set_anti_aliasing(AntiAliasing::Fxaa);
+            .set_anti_aliasing(SceneSetupPreset::ProductStudio.anti_aliasing());
         self.renderer.set_bloom(Some(PostBloomConfig::subtle()));
-        self.renderer
-            .set_screen_space_ambient_occlusion(Some(ScreenSpaceAmbientOcclusionConfig::subtle()));
         let lights = self.scene.add_studio_lighting()?;
         self.register_node(lights.key);
         self.register_node(lights.fill);

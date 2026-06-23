@@ -1,4 +1,4 @@
-use super::AnimationObservation;
+use super::observations::AnimationObservation;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ExpectedNodeIssue {

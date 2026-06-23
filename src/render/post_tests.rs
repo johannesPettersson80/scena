@@ -4,7 +4,10 @@ use crate::material::Color;
 use crate::reference_image::{ReferenceImage, ReferenceImageTolerance, regress_with_tolerance};
 use crate::scene::{Scene, Transform, Vec3};
 
-use super::{AntiAliasing, PostBloomConfig, Renderer, ScreenSpaceAmbientOcclusionConfig};
+use super::output::{DepthOfFieldPostConfig, apply_depth_of_field_rgba8};
+use super::{
+    AntiAliasing, DepthOfFieldConfig, PostBloomConfig, Renderer, ScreenSpaceAmbientOcclusionConfig,
+};
 
 #[test]
 fn headless_gpu_post_chain_runs_enabled_passes_and_changes_pixels() {
@@ -54,7 +57,7 @@ fn headless_gpu_post_chain_runs_enabled_passes_and_changes_pixels() {
 }
 
 #[test]
-fn depth_color_target_is_allocated_only_for_ssao() {
+fn depth_color_target_is_allocated_only_for_depth_post_effects() {
     let Ok(mut renderer) = Renderer::headless_gpu(32, 32) else {
         return;
     };
@@ -118,6 +121,76 @@ fn depth_color_target_is_allocated_only_for_ssao() {
         Some(false),
         "clearing SSAO must restore a depth-only prepass"
     );
+
+    renderer.set_depth_of_field(Some(DepthOfFieldConfig::new(1.0, 1.4, 4)));
+    renderer
+        .render(&scene, camera)
+        .expect("DoF render allocates depth-color target");
+    assert_eq!(renderer.stats().depth_of_field_passes, 1);
+    assert_eq!(
+        gpu_depth_prepass_has_color_target(&renderer),
+        Some(true),
+        "DoF render must allocate the depth-color target"
+    );
+
+    renderer.clear_depth_of_field();
+    renderer
+        .render(&scene, camera)
+        .expect("all-off render after DoF drops depth-color target");
+    assert_eq!(renderer.stats().depth_of_field_passes, 0);
+    assert_eq!(
+        gpu_depth_prepass_has_color_target(&renderer),
+        Some(false),
+        "clearing DoF must restore a depth-only prepass"
+    );
+}
+
+#[test]
+fn depth_of_field_blurs_background_and_preserves_focal_plane() {
+    let target = crate::render::RasterTarget {
+        width: 12,
+        height: 8,
+        backend: crate::diagnostics::Backend::Headless,
+    };
+    let mut frame = vec![0_u8; target.byte_len()];
+    let mut depth = vec![0.75_f32; target.pixel_len()];
+    for y in 0..target.height {
+        for x in 0..target.width {
+            let offset = ((y * target.width + x) as usize) * 4;
+            let value = if x < 4 {
+                depth[(y * target.width + x) as usize] = 0.25;
+                96
+            } else if (x + y) % 2 == 0 {
+                32
+            } else {
+                224
+            };
+            frame[offset..offset + 4].copy_from_slice(&[value, value, value, 255]);
+        }
+    }
+    let before_focus = sample_luma(&frame, target.width, 2, 4);
+    let before_background_contrast = checker_region_contrast(&frame, target.width, 5..11, 2..6);
+    let mut scratch = vec![0_u8; target.byte_len()];
+
+    let passes = apply_depth_of_field_rgba8(
+        target,
+        &mut frame,
+        &mut scratch,
+        &depth,
+        DepthOfFieldPostConfig::new(0.25, 1.4, 3),
+    );
+
+    assert_eq!(passes, 1);
+    assert_eq!(
+        sample_luma(&frame, target.width, 2, 4),
+        before_focus,
+        "DoF must preserve pixels on the requested focal depth"
+    );
+    let after_background_contrast = checker_region_contrast(&frame, target.width, 5..11, 2..6);
+    assert!(
+        after_background_contrast < before_background_contrast / 2,
+        "DoF should reduce high-frequency background contrast; before={before_background_contrast} after={after_background_contrast}"
+    );
 }
 
 #[test]
@@ -171,6 +244,28 @@ fn cpu_and_gpu_bloom_threshold_delta_match_with_reference_tolerance() {
         "GPU bloom threshold fixture must alter pixels"
     );
     assert_reference_images_close("bloom threshold delta", &cpu_delta, &gpu_delta);
+}
+
+fn sample_luma(frame: &[u8], width: u32, x: u32, y: u32) -> u8 {
+    frame[((y * width + x) as usize) * 4]
+}
+
+fn checker_region_contrast(
+    frame: &[u8],
+    width: u32,
+    xs: std::ops::Range<u32>,
+    ys: std::ops::Range<u32>,
+) -> u32 {
+    let mut min_luma = u8::MAX;
+    let mut max_luma = 0_u8;
+    for y in ys {
+        for x in xs.clone() {
+            let value = sample_luma(frame, width, x, y);
+            min_luma = min_luma.min(value);
+            max_luma = max_luma.max(value);
+        }
+    }
+    u32::from(max_luma.saturating_sub(min_luma))
 }
 
 fn gpu_depth_prepass_has_color_target(renderer: &Renderer) -> Option<bool> {

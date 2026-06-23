@@ -108,7 +108,7 @@ pub(crate) fn check_diagnostics_contracts(root: &Path, findings: &mut Vec<Findin
         root,
         findings,
         "ARCH-DIAGNOSTICS",
-        "src/scene.rs",
+        "src/scene/render_nodes.rs",
         &[
             "pub(crate) fn node_transforms",
             "pub(crate) fn camera_nodes",

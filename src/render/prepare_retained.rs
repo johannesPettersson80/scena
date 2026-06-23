@@ -4,6 +4,7 @@ use crate::material::Color;
 use crate::scene::{NodeKey, Scene, Vec3};
 
 use super::{PreparedSceneState, prepare};
+use prepare::transforms::{normal_from_model_matrix, world_from_model_matrix};
 
 pub(super) fn assign_original_vertex_offsets(
     primitives: Vec<prepare::PreparedPrimitive>,
@@ -76,6 +77,11 @@ pub(super) fn filter_retained_primitives_for_scene(
             if !scene.visible_for_active_camera(node) {
                 continue;
             }
+            let transform = scene.world_transform(node)?;
+            primitive.set_world_from_model(
+                world_from_model_matrix(transform, scene.origin_shift()),
+                normal_from_model_matrix(transform),
+            );
             primitive.set_tint(prepare::draw_uniform_tint(scene.node_tint(node).ok()?));
         }
         visible.push(primitive);
@@ -93,7 +99,7 @@ pub(super) fn filter_retained_instances_for_scene(
         if !scene.visible_for_active_camera(set.source_node()) {
             continue;
         }
-        let live = scene.instance_set(set.source_set())?;
+        let live = scene.instance_set(set.source_set()?)?;
         let node_tint = scene.node_tint(set.source_node()).ok()?;
         let records = live
             .instances()
@@ -126,6 +132,8 @@ pub(super) fn filter_retained_strokes_for_scene(
             if !scene.visible_for_active_camera(node) {
                 continue;
             }
+            let transform = scene.world_transform(node)?;
+            stroke.set_world_from_model(world_from_model_matrix(transform, scene.origin_shift()));
             stroke.set_tint(prepare::draw_uniform_tint(scene.node_tint(node).ok()?));
         }
         visible.push(stroke);

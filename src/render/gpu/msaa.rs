@@ -1,9 +1,14 @@
+#[cfg(not(target_arch = "wasm32"))]
 use crate::diagnostics::RenderError;
 
+#[cfg(not(target_arch = "wasm32"))]
 use super::super::RasterTarget;
+#[cfg(not(target_arch = "wasm32"))]
 use super::pipeline::{GPU_COLOR_FORMAT, UnlitPipelines};
+#[cfg(not(target_arch = "wasm32"))]
 use super::{GpuPreparedResources, MsaaColorResources};
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn offscreen_pipelines_for_sample_count(
     resources: &GpuPreparedResources,
     sample_count: u32,
@@ -19,6 +24,7 @@ pub(super) fn offscreen_pipelines_for_sample_count(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn ensure_offscreen_msaa8_pipelines(
     adapter: &wgpu::Adapter,
     device: &wgpu::Device,
@@ -48,6 +54,7 @@ pub(super) fn ensure_offscreen_msaa8_pipelines(
     Ok(())
 }
 
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub(super) fn max_supported_sample_count(
     device: &wgpu::Device,
     adapter: &wgpu::Adapter,
@@ -63,6 +70,7 @@ pub(super) fn max_supported_sample_count(
         .unwrap_or(1)
 }
 
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub(super) fn texture_format_supports_sample_count(
     device: &wgpu::Device,
     adapter: &wgpu::Adapter,
@@ -82,6 +90,7 @@ pub(super) fn texture_format_supports_sample_count(
         .sample_count_supported(sample_count)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn ensure_msaa_color_resources(
     device: &wgpu::Device,
     resources: &mut GpuPreparedResources,

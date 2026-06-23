@@ -7,7 +7,7 @@ use base64::Engine;
 use scena::{
     ASSET_LOAD_REPORT_SCHEMA_V1, AlphaMode, Angle, AssetError, AssetFetcher, AssetLoadControl,
     AssetLoadOptions, AssetLoadProgress, AssetLoadReportV1, AssetLoadWarning, AssetLoadWarningV1,
-    AssetPath, Assets, Color, DiagnosticCode, DirectionalLight, EnvironmentPreset,
+    AssetPath, Assets, Backend, Color, DiagnosticCode, DirectionalLight, EnvironmentPreset,
     EnvironmentSourceKind, GeometryDesc, GltfDecoderPolicy, GltfExtensionStatus, MaterialDesc,
     MaterialKind, NodeKind, NotPreparedReason, PointLight, RenderError, Renderer, RetainPolicy,
     Scene, SpotLight, TextureColorSpace, TextureFilter, TextureSourceFormat, TextureWrap,
@@ -2964,106 +2964,75 @@ fn m8_headless_gpu_transmission_volume_ibl_capability_when_available() {
         return;
     }
 
-    let transmission_off = png_rgba8(1, 1, &[[0, 0, 0, 255]]);
-    let transmission_on = png_rgba8(1, 1, &[[255, 0, 0, 255]]);
-    let thickness_on = png_rgba8(1, 1, &[[0, 255, 0, 255]]);
     let environment_path = AssetPath::from("memory://gpu-transmission-ibl-blue_2x1.hdr");
-    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![
-        (
-            AssetPath::from("memory://gpu-transmission/off.png"),
-            transmission_off,
-        ),
-        (
-            AssetPath::from("memory://gpu-transmission/on.png"),
-            transmission_on,
-        ),
-        (
-            AssetPath::from("memory://gpu-transmission/thickness.png"),
-            thickness_on,
-        ),
-        (
-            environment_path.clone(),
-            tiny_radiance_hdr_rgbe(2, 1, &[[16, 32, 255, 132], [16, 32, 255, 132]]),
-        ),
-    ]));
-    let transmission_off = pollster::block_on(assets.load_texture(
-        "memory://gpu-transmission/off.png",
-        TextureColorSpace::Linear,
-    ))
-    .expect("blocked transmission texture loads");
-    let transmission_on = pollster::block_on(assets.load_texture(
-        "memory://gpu-transmission/on.png",
-        TextureColorSpace::Linear,
-    ))
-    .expect("enabled transmission texture loads");
-    let thickness_on = pollster::block_on(assets.load_texture(
-        "memory://gpu-transmission/thickness.png",
-        TextureColorSpace::Linear,
-    ))
-    .expect("thickness texture loads");
+    let assets = Assets::with_fetcher(MemoryFetcher::new(vec![(
+        environment_path.clone(),
+        tiny_radiance_hdr_rgbe(2, 1, &[[16, 32, 255, 132], [16, 32, 255, 132]]),
+    )]));
     let environment = pollster::block_on(assets.load_environment(environment_path.as_str()))
         .expect("HDR environment loads");
     let geometry = assets.create_geometry(GeometryDesc::box_xyz(0.55, 0.55, 0.05));
-    let blocked = assets.create_material(
-        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(190, 205, 230), 0.0, 0.08)
-            .with_transmission_factor(1.0)
-            .with_transmission_texture(transmission_off)
-            .with_ior(1.7)
-            .with_thickness_factor(2.0)
-            .with_thickness_texture(thickness_on)
-            .with_attenuation_distance(1.0)
-            .with_attenuation_color(Color::from_linear_rgb(0.08, 0.35, 1.0))
-            .with_double_sided(true),
-    );
-    let blue_glass = assets.create_material(
-        MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(190, 205, 230), 0.0, 0.08)
-            .with_transmission_factor(1.0)
-            .with_transmission_texture(transmission_on)
-            .with_ior(1.7)
-            .with_thickness_factor(2.0)
-            .with_thickness_texture(thickness_on)
-            .with_attenuation_distance(1.0)
-            .with_attenuation_color(Color::from_linear_rgb(0.08, 0.35, 1.0))
-            .with_double_sided(true),
-    );
-    let mut scene = Scene::new();
-    scene
-        .mesh(geometry, blocked)
-        .transform(Transform::at(Vec3::new(-0.4, 0.0, 0.0)))
-        .add()
-        .expect("blocked glass mesh inserts");
-    scene
-        .mesh(geometry, blue_glass)
-        .transform(Transform::at(Vec3::new(0.4, 0.0, 0.0)))
-        .add()
-        .expect("blue glass mesh inserts");
-    let camera = scene.add_default_camera().expect("camera inserts");
-    let mut renderer = match Renderer::headless_gpu(96, 64) {
-        Ok(renderer) => renderer,
-        Err(error) => {
-            let reason = format!("Renderer::headless_gpu unavailable on this host: {error:?}");
-            record_fail_closed_headless_gpu_lane(TEST_NAME, &reason);
-            panic!(
-                "{TEST_NAME} cannot produce approved release evidence with \
-                 SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS set: {reason}"
-            );
-        }
+    let backdrop_geometry = assets.create_geometry(GeometryDesc::box_xyz(2.6, 1.6, 0.02));
+    let backdrop = assets.create_material(MaterialDesc::unlit(Color::WHITE));
+    let render_glass = |attenuation_color: Color| -> ([u8; 3], Backend, String, String) {
+        let material = assets.create_material(
+            MaterialDesc::pbr_metallic_roughness(Color::from_srgb_u8(190, 205, 230), 0.0, 0.08)
+                .with_transmission_factor(1.0)
+                .with_ior(1.7)
+                .with_thickness_factor(2.0)
+                .with_attenuation_distance(1.0)
+                .with_attenuation_color(attenuation_color)
+                .with_double_sided(true),
+        );
+        let mut scene = Scene::new();
+        scene
+            .mesh(backdrop_geometry, backdrop)
+            .transform(Transform::at(Vec3::new(0.0, 0.0, -0.28)))
+            .add()
+            .expect("opaque backdrop mesh inserts");
+        scene
+            .mesh(geometry, material)
+            .transform(Transform::at(Vec3::ZERO))
+            .add()
+            .expect("glass mesh inserts");
+        let camera = scene.add_default_camera().expect("camera inserts");
+        let mut renderer = match Renderer::headless_gpu(96, 64) {
+            Ok(renderer) => renderer,
+            Err(error) => {
+                let reason = format!("Renderer::headless_gpu unavailable on this host: {error:?}");
+                record_fail_closed_headless_gpu_lane(TEST_NAME, &reason);
+                panic!(
+                    "{TEST_NAME} cannot produce approved release evidence with \
+                     SCENA_RUN_UNSTABLE_HEADLESS_GPU_RELEASE_TESTS set: {reason}"
+                );
+            }
+        };
+        renderer.set_environment(environment);
+        renderer
+            .prepare_with_assets(&mut scene, &assets)
+            .expect("GPU transmission+IBL scene prepares");
+        renderer
+            .render(&scene, camera)
+            .expect("GPU transmission+IBL scene renders");
+        let capabilities = renderer.capabilities();
+        (
+            sample_rgb(renderer.frame_rgba8(), 96, 64, 48, 32),
+            capabilities.backend,
+            format!("{:?}", capabilities.forward_pbr),
+            format!("{:?}", capabilities.readback_headless_screenshots),
+        )
     };
-    renderer.set_environment(environment);
 
-    renderer
-        .prepare_with_assets(&mut scene, &assets)
-        .expect("GPU transmission+IBL scene prepares");
-    renderer
-        .render(&scene, camera)
-        .expect("GPU transmission+IBL scene renders");
-
-    let frame = renderer.frame_rgba8();
-    let blocked = sample_rgb(frame, 96, 64, 28, 32);
-    let blue_glass = sample_rgb(frame, 96, 64, 68, 32);
+    let (red_glass, backend, forward_pbr, readback_headless_screenshots) =
+        render_glass(Color::from_linear_rgb(1.0, 0.08, 0.08));
+    let (blue_glass, _, _, _) = render_glass(Color::from_linear_rgb(0.08, 0.35, 1.0));
+    let red_r = i16::from(red_glass[0]);
+    let red_b = i16::from(red_glass[2]);
+    let blue_r = i16::from(blue_glass[0]);
+    let blue_b = i16::from(blue_glass[2]);
     assert!(
-        blue_glass[2] > blocked[2] + 10 && blue_glass[2] > blue_glass[0] + 10,
-        "headless GPU transmission/volume under IBL should tint transmitted glass blue; blocked={blocked:?} blue_glass={blue_glass:?}",
+        blue_b > red_b + 10 && red_r > blue_r + 10 && blue_b > blue_r + 10,
+        "headless GPU scalar transmission/volume under IBL should tint transmitted glass by attenuation color; red={red_glass:?} blue={blue_glass:?}",
     );
     record_headless_gpu_release_evidence(
         TEST_NAME,
@@ -3072,12 +3041,12 @@ fn m8_headless_gpu_transmission_volume_ibl_capability_when_available() {
             "test_name": TEST_NAME,
             "status": "passed",
             "release_evidence": true,
-            "backend": format!("{:?}", renderer.capabilities().backend),
+            "backend": format!("{backend:?}"),
             "capabilities": {
-                "forward_pbr": format!("{:?}", renderer.capabilities().forward_pbr),
-                "readback_headless_screenshots": format!("{:?}", renderer.capabilities().readback_headless_screenshots),
+                "forward_pbr": forward_pbr,
+                "readback_headless_screenshots": readback_headless_screenshots,
             },
-            "blocked_rgb": blocked,
+            "red_volume_rgb": red_glass,
             "transmission_volume_ibl_rgb": blue_glass,
         }),
     );

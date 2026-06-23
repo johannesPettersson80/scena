@@ -2,6 +2,7 @@ const fs = require("fs");
 const crypto = require("crypto");
 const http = require("http");
 const path = require("path");
+const { spawnSync } = require("child_process");
 const zlib = require("zlib");
 
 const MODEL_VIEWER_FIXTURE = "/fixtures/gltf/non_ndc_camera_scene.gltf";
@@ -25,6 +26,43 @@ function contentType(file) {
   if (file.endsWith(".jpg") || file.endsWith(".jpeg")) return "image/jpeg";
   if (file.endsWith(".webp")) return "image/webp";
   return "application/octet-stream";
+}
+
+function ensureBrowserProbePackage(pkgRoot) {
+  const jsPath = path.join(pkgRoot, "scena.js");
+  const wasmPath = path.join(pkgRoot, "scena_bg.wasm");
+  if (fs.existsSync(jsPath) && fs.existsSync(wasmPath)) {
+    return;
+  }
+
+  const command = process.platform === "win32" ? "wasm-pack.cmd" : "wasm-pack";
+  const args = [
+    "build",
+    "--dev",
+    "--target",
+    "web",
+    "--out-dir",
+    pkgRoot,
+    ".",
+    "--features",
+    "browser-probe",
+  ];
+  console.log(`[scena-browser-m6] running: ${command} ${args.join(" ")}`);
+  const result = spawnSync(command, args, {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      // Keep wasm32 builds independent from native linker flags configured on build hosts.
+      CARGO_ENCODED_RUSTFLAGS: "",
+    },
+    stdio: "inherit",
+  });
+  if (result.error) {
+    throw new Error(`[scena-browser-m6] failed to start ${command}: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(`[scena-browser-m6] ${command} exited with status ${result.status}`);
+  }
 }
 
 let generatedOversizedTexturePng = null;
@@ -293,13 +331,34 @@ function configuredBackends() {
     .filter(Boolean);
 }
 
+function configuredWorkflows(defaultWorkflows) {
+  const configured = (process.env.SCENA_BROWSER_WORKFLOWS || "")
+    .split(",")
+    .map((workflow) => workflow.trim())
+    .filter(Boolean);
+  if (configured.length === 0) {
+    return defaultWorkflows;
+  }
+  const known = new Set(defaultWorkflows);
+  for (const workflow of configured) {
+    if (!known.has(workflow)) {
+      throw new Error(`unknown SCENA_BROWSER_WORKFLOWS entry '${workflow}'`);
+    }
+  }
+  return defaultWorkflows.filter((workflow) => configured.includes(workflow));
+}
+
+function chromiumExecutablePath() {
+  return process.env.SCENA_BROWSER_EXECUTABLE || process.env.CHROMIUM || undefined;
+}
+
 function chromiumLaunchArgs(backends) {
   const args = [
     "--enable-unsafe-webgpu",
     "--enable-features=Vulkan,WebGPU",
     "--ignore-gpu-blocklist",
   ];
-  if (!backends.includes("webgpu")) {
+  if (!backends.includes("webgpu") && !chromiumExecutablePath()) {
     args.push("--use-angle=swiftshader");
   }
   return args;
@@ -339,6 +398,64 @@ function attachFixtureHash(fixtureRoot, result) {
   result.fixture_sha256 = fixture_sha256;
   result.screenshot_metadata = result.screenshot_metadata || {};
   result.screenshot_metadata.fixture_sha256 = fixture_sha256;
+}
+
+function compactBrowserProbeResult(result) {
+  const compact = {
+    schema: result.schema,
+    status: result.status,
+    backend: result.backend,
+    workflow: result.workflow,
+    proof_class: result.proof_class,
+    visual_proof: result.visual_proof,
+  };
+  if (result.pixel_source || result.pixels) {
+    compact.pixels = {
+      source: result.pixel_source,
+      nonblack: result.pixels && result.pixels.nonblack,
+      center: result.pixels && result.pixels.center,
+      max: result.pixels && result.pixels.max,
+    };
+  }
+  if (result.renderer_readback) {
+    compact.renderer_readback = {
+      source: result.renderer_readback.source,
+      width: result.renderer_readback.width,
+      height: result.renderer_readback.height,
+      rgba8_fnv1a64: result.renderer_readback.rgba8_fnv1a64,
+      nonblack:
+        result.renderer_readback.pixel_statistics &&
+        result.renderer_readback.pixel_statistics.nonblack,
+    };
+  }
+  if (result.material_preset_glass_pixels) {
+    compact.material_preset_glass_pixels = {
+      status: result.material_preset_glass_pixels.status,
+      min_contrast: result.material_preset_glass_pixels.min_contrast,
+      preset_contrasts: result.material_preset_glass_pixels.preset_contrasts,
+    };
+  }
+  if (result.screenshot_metadata) {
+    compact.screenshot_metadata = {
+      path: result.screenshot_metadata.path,
+      sha256: result.screenshot_metadata.sha256,
+      bytes: result.screenshot_metadata.bytes,
+      pixel_source: result.screenshot_metadata.pixel_source,
+    };
+  }
+  if (result.errors) {
+    compact.errors = result.errors;
+  }
+  return compact;
+}
+
+function compactBrowserProbeArtifact(artifact) {
+  return {
+    gate: artifact.gate,
+    status: artifact.status,
+    renderer: artifact.renderer,
+    results: artifact.results.map(compactBrowserProbeResult),
+  };
 }
 
 function isAllowedUnavailable(backend, error) {
@@ -928,6 +1045,19 @@ function assertMaterialPresetProof(backend, result) {
       `${backend} pbr-material-presets proof did not render visible preset output: ${JSON.stringify(result)}`,
     );
   }
+  const glassPixels = result.material_preset_glass_pixels || {};
+  if (
+    glassPixels.status !== "passed" ||
+    glassPixels.proof_class !== "browser-glass-pixel-probes" ||
+    !(glassPixels.min_contrast >= 10) ||
+    !Array.isArray(glassPixels.preset_contrasts) ||
+    glassPixels.preset_contrasts.length < 2 ||
+    glassPixels.preset_contrasts.some((entry) => entry.passed !== true)
+  ) {
+    throw new Error(
+      `${backend} pbr-material-presets proof did not measure structured glass pixels behind clear/frosted glass: ${JSON.stringify(result)}`,
+    );
+  }
   if (
     typeof result.canvas_data_url !== "string" ||
     !result.canvas_data_url.startsWith("data:image/png;base64,") ||
@@ -1346,7 +1476,16 @@ function assertAssetDoctorBrowserProof(result) {
   }
 }
 
+async function waitForProbeFunction(page, name) {
+  await page.waitForFunction(
+    (functionName) => typeof window[functionName] === "function",
+    name,
+    { timeout: 30_000 },
+  );
+}
+
 async function runCameraControlKitProof(page, artifactDir) {
+  await waitForProbeFunction(page, "scenaCameraControlKitProbe");
   const result = await page.evaluate(() => window.scenaCameraControlKitProbe());
   const screenshotPath = path.join(artifactDir, "camera-control-kit-browser-proof.png");
   await page
@@ -1364,6 +1503,7 @@ async function runCameraControlKitProof(page, artifactDir) {
 }
 
 async function runScenaViewerMobileA11yProof(page, artifactDir) {
+  await waitForProbeFunction(page, "scenaViewerMobileA11yProbe");
   const result = await page.evaluate(() => window.scenaViewerMobileA11yProbe());
   const screenshotPath = path.join(artifactDir, "scena-viewer-mobile-a11y-browser-proof.png");
   await page
@@ -1381,6 +1521,7 @@ async function runScenaViewerMobileA11yProof(page, artifactDir) {
 }
 
 async function runAssetDoctorBrowserProof(page, artifactDir) {
+  await waitForProbeFunction(page, "scenaAssetDoctorBrowserProbe");
   const result = await page.evaluate(() => window.scenaAssetDoctorBrowserProbe());
   const screenshotPath = path.join(artifactDir, "asset-doctor-browser-proof.png");
   await page
@@ -1398,6 +1539,7 @@ async function runAssetDoctorBrowserProof(page, artifactDir) {
 }
 
 async function runScenaViewerElementProof(page, artifactDir) {
+  await waitForProbeFunction(page, "scenaViewerElementProbe");
   const result = await page.evaluate(() => window.scenaViewerElementProbe());
   const screenshotPath = path.join(artifactDir, "scena-viewer-element-browser-proof.png");
   await page
@@ -1425,6 +1567,7 @@ function modelViewerPackageVersion() {
 }
 
 async function runScenaViewerParityProof(page, artifactDir) {
+  await waitForProbeFunction(page, "scenaViewerModelViewerParityProbe");
   const result = await page.evaluate(() => window.scenaViewerModelViewerParityProbe("webgl2"));
   result.model_viewer_package = modelViewerPackageVersion();
   const screenshotPath = path.join(
@@ -1498,16 +1641,18 @@ async function main() {
   );
   const artifactDir = path.join(process.cwd(), "target", "gate-artifacts");
   fs.mkdirSync(artifactDir, { recursive: true });
+  ensureBrowserProbePackage(pkgRoot);
 
   const { server, url } = await serve(browserRoot, pkgRoot, fixtureRoot, modelViewerRoot, demoRoot);
   const selectedBackends = configuredBackends();
   const viewerElementOnly = process.env.SCENA_BROWSER_VIEWER_ELEMENT_ONLY === "1";
   const browser = await chromium.launch({
+    executablePath: chromiumExecutablePath(),
     headless: true,
     args: chromiumLaunchArgs(selectedBackends),
   });
 
-  const workflows = [
+  let workflows = [
     "model-viewer",
     "instancing",
     "picking-selection",
@@ -1543,14 +1688,27 @@ async function main() {
   if (compressedAssetProofEnabled()) {
     workflows.push("compressed-assets");
   }
+  workflows = configuredWorkflows(workflows);
   const results = [];
   try {
     const viewerElementPage = await browser.newPage({ viewport: { width: 480, height: 320 } });
+    const viewerElementConsoleMessages = [];
+    viewerElementPage.on("console", (message) => {
+      viewerElementConsoleMessages.push(`${message.type()}: ${message.text()}`);
+    });
+    viewerElementPage.on("pageerror", (error) => {
+      viewerElementConsoleMessages.push(`pageerror: ${error.message}`);
+    });
     try {
       await viewerElementPage.goto(url);
       results.push(await runScenaViewerElementProof(viewerElementPage, artifactDir));
       results.push(await runCameraControlKitProof(viewerElementPage, artifactDir));
       results.push(await runAssetDoctorBrowserProof(viewerElementPage, artifactDir));
+    } catch (error) {
+      if (viewerElementConsoleMessages.length > 0) {
+        error.message += `\nconsole:\n${viewerElementConsoleMessages.join("\n")}`;
+      }
+      throw error;
     } finally {
       await viewerElementPage.close();
     }
@@ -1582,6 +1740,12 @@ async function main() {
       });
       try {
         await page.goto(url);
+        await waitForProbeFunction(page, "scenaM6RustWasmRendererProbe");
+        await waitForProbeFunction(page, "scenaM6DisplayP3OutputProbe");
+        await waitForProbeFunction(page, "scenaM6RustWasmWorkflowProbe");
+        await waitForProbeFunction(page, "scenaM6RustWasmLifecycleProbe");
+        await waitForProbeFunction(page, "scenaM6RustWasmBenchmarkProbe");
+        await waitForProbeFunction(page, "scenaM6RustWasmStateLifecycleProbe");
         let result;
         try {
           result = await page.evaluate(
@@ -1622,35 +1786,63 @@ async function main() {
           attachFixtureHash(fixtureRoot, workflowResult);
           results.push(workflowResult);
           if (workflowResult.status !== "passed") {
+            const consoleSuffix =
+              consoleMessages.length > 0 ? `\nconsole:\n${consoleMessages.join("\n")}` : "";
             throw new Error(
-              `${backend} ${workflow} Rust/WASM renderer probe failed: ${JSON.stringify(workflowResult)}`,
+              `${backend} ${workflow} Rust/WASM renderer probe failed: ${JSON.stringify(workflowResult)}${consoleSuffix}`,
             );
           }
           workflowResults.set(workflow, workflowResult);
         }
-        assertModelViewerProof(backend, workflowResults.get("model-viewer"));
-        assertDepthOverlapProof(backend, workflowResults.get("depth-overlap"));
-        assertPunctualLightProof(
-          backend,
-          workflowResults.get("pbr-point-light"),
-          "green",
-          "pbr-point-light",
-        );
-        assertPunctualLightProof(
-          backend,
-          workflowResults.get("pbr-spot-light"),
-          "blue",
-          "pbr-spot-light",
-        );
-        assertNormalMapProof(backend, workflowResults.get("pbr-normal-map"));
-        assertEnvironmentLightProof(backend, workflowResults.get("pbr-environment"));
-        assertShadowVisibilityProof(backend, workflowResults.get("pbr-shadow-visibility"));
-        assertMaterialExtensionProof(backend, workflowResults.get("pbr-material-extensions"));
-        assertMaterialPresetProof(backend, workflowResults.get("pbr-material-presets"));
-        assertMaterialTextureProof(backend, workflowResults.get("material-textures"));
-        assertLabelTextBrowserProof(backend, workflowResults.get("labels-helpers"));
-        assertSourceGltfMaterialProof(backend, workflowResults.get("source-gltf-materials"));
-        assertAssetCatalogPreviewProof(backend, workflowResults.get("asset-catalog-preview"));
+        if (workflowResults.has("model-viewer")) {
+          assertModelViewerProof(backend, workflowResults.get("model-viewer"));
+        }
+        if (workflowResults.has("depth-overlap")) {
+          assertDepthOverlapProof(backend, workflowResults.get("depth-overlap"));
+        }
+        if (workflowResults.has("pbr-point-light")) {
+          assertPunctualLightProof(
+            backend,
+            workflowResults.get("pbr-point-light"),
+            "green",
+            "pbr-point-light",
+          );
+        }
+        if (workflowResults.has("pbr-spot-light")) {
+          assertPunctualLightProof(
+            backend,
+            workflowResults.get("pbr-spot-light"),
+            "blue",
+            "pbr-spot-light",
+          );
+        }
+        if (workflowResults.has("pbr-normal-map")) {
+          assertNormalMapProof(backend, workflowResults.get("pbr-normal-map"));
+        }
+        if (workflowResults.has("pbr-environment")) {
+          assertEnvironmentLightProof(backend, workflowResults.get("pbr-environment"));
+        }
+        if (workflowResults.has("pbr-shadow-visibility")) {
+          assertShadowVisibilityProof(backend, workflowResults.get("pbr-shadow-visibility"));
+        }
+        if (workflowResults.has("pbr-material-extensions")) {
+          assertMaterialExtensionProof(backend, workflowResults.get("pbr-material-extensions"));
+        }
+        if (workflowResults.has("pbr-material-presets")) {
+          assertMaterialPresetProof(backend, workflowResults.get("pbr-material-presets"));
+        }
+        if (workflowResults.has("material-textures")) {
+          assertMaterialTextureProof(backend, workflowResults.get("material-textures"));
+        }
+        if (workflowResults.has("labels-helpers")) {
+          assertLabelTextBrowserProof(backend, workflowResults.get("labels-helpers"));
+        }
+        if (workflowResults.has("source-gltf-materials")) {
+          assertSourceGltfMaterialProof(backend, workflowResults.get("source-gltf-materials"));
+        }
+        if (workflowResults.has("asset-catalog-preview")) {
+          assertAssetCatalogPreviewProof(backend, workflowResults.get("asset-catalog-preview"));
+        }
         if (oversizedTextureProofEnabled()) {
           const oversizedTexture = workflowResults.get("oversized-browser-texture");
           assertOversizedBrowserTextureProof(backend, oversizedTexture);
@@ -1661,28 +1853,34 @@ async function main() {
           assertCompressedAssetProof(backend, compressedAssets);
           writeCompressedAssetBrowserLaneArtifact(artifactDir, backend, compressedAssets);
         }
-        assertTexturedConnectorViewerProof(
-          backend,
-          workflowResults.get("textured-connector-viewer"),
-        );
-        assertConnectorMagnetPreviewProof(
-          backend,
-          workflowResults.get("connector-magnet-preview"),
-        );
-        const connectorBefore = workflowResults.get("connector-before");
-        const connectorAfter = workflowResults.get("connector-after");
-        const connectorBeforeFingerprint = renderedOutputFingerprint(connectorBefore);
-        const connectorAfterFingerprint = renderedOutputFingerprint(connectorAfter);
-        if (
-          !connectorBefore ||
-          !connectorAfter ||
-          !connectorBeforeFingerprint ||
-          !connectorAfterFingerprint ||
-          connectorBeforeFingerprint === connectorAfterFingerprint
-        ) {
-          throw new Error(
-            `${backend} connector before/after workflow did not change rendered output`,
+        if (workflowResults.has("textured-connector-viewer")) {
+          assertTexturedConnectorViewerProof(
+            backend,
+            workflowResults.get("textured-connector-viewer"),
           );
+        }
+        if (workflowResults.has("connector-magnet-preview")) {
+          assertConnectorMagnetPreviewProof(
+            backend,
+            workflowResults.get("connector-magnet-preview"),
+          );
+        }
+        if (workflowResults.has("connector-before") || workflowResults.has("connector-after")) {
+          const connectorBefore = workflowResults.get("connector-before");
+          const connectorAfter = workflowResults.get("connector-after");
+          const connectorBeforeFingerprint = renderedOutputFingerprint(connectorBefore);
+          const connectorAfterFingerprint = renderedOutputFingerprint(connectorAfter);
+          if (
+            !connectorBefore ||
+            !connectorAfter ||
+            !connectorBeforeFingerprint ||
+            !connectorAfterFingerprint ||
+            connectorBeforeFingerprint === connectorAfterFingerprint
+          ) {
+            throw new Error(
+              `${backend} connector before/after workflow did not change rendered output`,
+            );
+          }
         }
         const lifecycleResult = await page.evaluate(
           (name) => window.scenaM6RustWasmLifecycleProbe(name),
@@ -1742,7 +1940,7 @@ async function main() {
   };
   const artifactPath = path.join(artifactDir, "m6-rust-wasm-renderer-probe.json");
   fs.writeFileSync(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`);
-  console.log(JSON.stringify(artifact, null, 2));
+  console.log(JSON.stringify(compactBrowserProbeArtifact(artifact), null, 2));
 }
 
 main().catch((error) => {

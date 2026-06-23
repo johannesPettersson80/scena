@@ -246,8 +246,12 @@ impl Renderer {
             fxaa_scratch: vec![0; target.byte_len()],
             bloom_scratch: vec![0; target.byte_len()],
             oit_scratch: vec![super::cpu::OitAccumPixel::default(); target.pixel_len()],
+            cpu_supersample_frame: Vec::new(),
+            cpu_supersample_oit_scratch: Vec::new(),
             linear_frame: (!has_gpu).then(|| vec![Color::BLACK; target.pixel_len()]),
             depth_frame: (!has_gpu).then(|| vec![f32::INFINITY; target.pixel_len()]),
+            cpu_supersample_linear_frame: Vec::new(),
+            cpu_supersample_depth_frame: Vec::new(),
             stats: RendererStats {
                 target_width: width,
                 target_height: height,
@@ -262,6 +266,8 @@ impl Renderer {
             reconstruction_filter: super::ReconstructionFilter::Box,
             order_independent_transparency: None,
             screen_space_ambient_occlusion: None,
+            screen_space_reflections: None,
+            depth_of_field: None,
             bloom: None,
             profile,
             quality,
@@ -281,6 +287,8 @@ impl Renderer {
             environment_revision: 0,
             target_revision: 0,
             prepare_telemetry: Default::default(),
+            #[cfg(test)]
+            depth_prepass_enabled_for_test: true,
             #[cfg(not(target_arch = "wasm32"))]
             _headless_gpu_test_guard: None,
             not_sync: PhantomData::<Cell<()>>,

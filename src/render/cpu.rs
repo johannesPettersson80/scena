@@ -4,8 +4,10 @@ use crate::scene::{ClippingPlane, SectionBox, Vec3};
 
 use super::RasterTarget;
 use super::camera::CameraProjection;
+pub(super) use super::cpu_overlay::write_label_overlay_pixel;
 use super::output::{OrderIndependentTransparencyConfig, OutputTransform};
 use super::prepare::PreparedPrimitive;
+use super::screen_space_reflections::{MaterialReflectionPixel, ScreenSpaceReflectionConfig};
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct OitAccumPixel {
@@ -27,9 +29,11 @@ impl Default for OitAccumPixel {
 pub(super) struct CpuFrame<'frame> {
     pub(super) target: RasterTarget,
     output: OutputTransform,
+    row_start: u32,
+    row_count: u32,
     linear_frame: &'frame mut [Color],
-    depth_frame: &'frame mut [f32],
-    frame: &'frame mut [u8],
+    pub(super) depth_frame: &'frame mut [f32],
+    pub(super) frame: &'frame mut [u8],
 }
 
 impl<'frame> CpuFrame<'frame> {
@@ -40,13 +44,53 @@ impl<'frame> CpuFrame<'frame> {
         depth_frame: &'frame mut [f32],
         frame: &'frame mut [u8],
     ) -> Self {
+        Self::new_rows(
+            target,
+            output,
+            0,
+            target.height,
+            linear_frame,
+            depth_frame,
+            frame,
+        )
+    }
+
+    pub(super) const fn new_rows(
+        target: RasterTarget,
+        output: OutputTransform,
+        row_start: u32,
+        row_count: u32,
+        linear_frame: &'frame mut [Color],
+        depth_frame: &'frame mut [f32],
+        frame: &'frame mut [u8],
+    ) -> Self {
         Self {
             target,
             output,
+            row_start,
+            row_count,
             linear_frame,
             depth_frame,
             frame,
         }
+    }
+
+    fn row_end(&self) -> u32 {
+        self.row_start
+            .saturating_add(self.row_count)
+            .min(self.target.height)
+    }
+
+    fn local_pixel_len(&self) -> usize {
+        (self.row_end().saturating_sub(self.row_start) as usize) * (self.target.width as usize)
+    }
+
+    pub(super) fn local_pixel_index(&self, x: u32, y: u32) -> Option<usize> {
+        if x >= self.target.width || y < self.row_start || y >= self.row_end() {
+            return None;
+        }
+        let local_y = y.saturating_sub(self.row_start);
+        Some((local_y as usize) * (self.target.width as usize) + (x as usize))
     }
 }
 
@@ -62,8 +106,8 @@ pub(super) fn clear_cpu(cpu_frame: &mut CpuFrame<'_>, color: Color) {
         *depth = f32::INFINITY;
         pixel.copy_from_slice(&rgba);
     }
-    debug_assert_eq!(cpu_frame.linear_frame.len(), cpu_frame.target.pixel_len());
-    debug_assert_eq!(cpu_frame.depth_frame.len(), cpu_frame.target.pixel_len());
+    debug_assert_eq!(cpu_frame.depth_frame.len(), cpu_frame.local_pixel_len());
+    debug_assert_eq!(cpu_frame.linear_frame.len(), cpu_frame.local_pixel_len());
 }
 
 pub(super) fn clear_order_independent_transparency(accum: &mut [OitAccumPixel]) {
@@ -87,8 +131,11 @@ pub(super) fn draw_primitive_cpu(
     clipping_planes: &[ClippingPlane],
     section_box: Option<SectionBox>,
     camera: &CameraProjection,
+    mut material_reflections: Option<&mut [MaterialReflectionPixel]>,
+    reflection_config: Option<ScreenSpaceReflectionConfig>,
 ) {
     let [a, b, c] = primitive.vertices();
+    let [attributes_a, attributes_b, attributes_c] = primitive.vertex_attributes();
     let Some(a) = ScreenVertex::from_vertex(*a, cpu_frame.target, camera) else {
         return;
     };
@@ -105,12 +152,19 @@ pub(super) fn draw_primitive_cpu(
             .max(c.x)
             .ceil()
             .min(cpu_frame.target.width as f32 - 1.0) as u32;
-    let min_y = a.y.min(b.y).min(c.y).floor().max(0.0) as u32;
+    let min_y =
+        a.y.min(b.y)
+            .min(c.y)
+            .floor()
+            .max(cpu_frame.row_start as f32) as u32;
     let max_y =
         a.y.max(b.y)
             .max(c.y)
             .ceil()
-            .min(cpu_frame.target.height as f32 - 1.0) as u32;
+            .min(cpu_frame.row_end().saturating_sub(1) as f32) as u32;
+    if min_y > max_y {
+        return;
+    }
 
     let area = edge(a, b, c.x, c.y);
     if area.abs() <= f32::EPSILON {
@@ -136,7 +190,29 @@ pub(super) fn draw_primitive_cpu(
             }
             let color = multiply_color(mix_color(a, b, c, w0, w1, w2), primitive.tint());
             let depth = mix_depth(a.depth, b.depth, c.depth, w0, w1, w2);
-            write_pixel(cpu_frame, x, y, color, depth);
+            if write_pixel(cpu_frame, x, y, color, depth)
+                && let (Some(buffer), Some(config), Some(reflection)) = (
+                    material_reflections.as_deref_mut(),
+                    reflection_config,
+                    primitive.material_reflection(),
+                )
+            {
+                super::cpu_reflections::record_material_reflection_pixel(
+                    super::cpu_reflections::MaterialReflectionRecord {
+                        target: cpu_frame.target,
+                        camera,
+                        material_reflections: buffer,
+                        x,
+                        y,
+                        position,
+                        normal: attributes_a.normal * w0
+                            + attributes_b.normal * w1
+                            + attributes_c.normal * w2,
+                        reflection,
+                        config,
+                    },
+                );
+            }
         }
     }
 }
@@ -167,12 +243,19 @@ pub(super) fn draw_order_independent_transparency_cpu(
             .max(c.x)
             .ceil()
             .min(cpu_frame.target.width as f32 - 1.0) as u32;
-    let min_y = a.y.min(b.y).min(c.y).floor().max(0.0) as u32;
+    let min_y =
+        a.y.min(b.y)
+            .min(c.y)
+            .floor()
+            .max(cpu_frame.row_start as f32) as u32;
     let max_y =
         a.y.max(b.y)
             .max(c.y)
             .ceil()
-            .min(cpu_frame.target.height as f32 - 1.0) as u32;
+            .min(cpu_frame.row_end().saturating_sub(1) as f32) as u32;
+    if min_y > max_y {
+        return;
+    }
 
     let area = edge(a, b, c.x, c.y);
     if area.abs() <= f32::EPSILON {
@@ -200,7 +283,9 @@ pub(super) fn draw_order_independent_transparency_cpu(
             if !depth.is_finite() {
                 continue;
             }
-            let pixel_index = cpu_frame.target.pixel_index(x, y);
+            let Some(pixel_index) = cpu_frame.local_pixel_index(x, y) else {
+                continue;
+            };
             if depth > cpu_frame.depth_frame[pixel_index] + f32::EPSILON {
                 continue;
             }
@@ -262,7 +347,7 @@ impl ScreenVertex {
             x: (projected.ndc_x * 0.5 + 0.5) * width,
             y: (1.0 - (projected.ndc_y * 0.5 + 0.5)) * height,
             depth: projected.depth,
-            inv_depth: projected.depth.recip(),
+            inv_depth: projected.view_depth.recip(),
             position: vertex.position,
             color: vertex.color,
         })
@@ -335,13 +420,21 @@ fn is_clipped(
         || section_box.is_some_and(|section| section.clips(position))
 }
 
-pub(super) fn write_pixel(cpu_frame: &mut CpuFrame<'_>, x: u32, y: u32, color: Color, depth: f32) {
+pub(super) fn write_pixel(
+    cpu_frame: &mut CpuFrame<'_>,
+    x: u32,
+    y: u32,
+    color: Color,
+    depth: f32,
+) -> bool {
     if !depth.is_finite() {
-        return;
+        return false;
     }
-    let pixel_index = cpu_frame.target.pixel_index(x, y);
+    let Some(pixel_index) = cpu_frame.local_pixel_index(x, y) else {
+        return false;
+    };
     if depth > cpu_frame.depth_frame[pixel_index] + f32::EPSILON {
-        return;
+        return false;
     }
     let blended = blend_source_over(color, cpu_frame.linear_frame[pixel_index]);
     cpu_frame.linear_frame[pixel_index] = blended;
@@ -352,66 +445,7 @@ pub(super) fn write_pixel(cpu_frame: &mut CpuFrame<'_>, x: u32, y: u32, color: C
     let byte_index = pixel_index * 4;
     cpu_frame.frame[byte_index..byte_index + 4]
         .copy_from_slice(&cpu_frame.output.encode_rgba8(blended));
-}
-
-pub(super) fn write_label_overlay_pixel(
-    cpu_frame: &mut CpuFrame<'_>,
-    x: u32,
-    y: u32,
-    color: Color,
-    coverage: f32,
-    depth: f32,
-) {
-    if !depth.is_finite() {
-        return;
-    }
-    let source_alpha = clamp_alpha_or(color.a, 1.0) * coverage.clamp(0.0, 1.0);
-    if source_alpha <= 0.0 {
-        return;
-    }
-    let pixel_index = cpu_frame.target.pixel_index(x, y);
-    if depth > cpu_frame.depth_frame[pixel_index] + f32::EPSILON {
-        return;
-    }
-
-    let byte_index = pixel_index * 4;
-    // label_overlay_aces_tonemap: overlay coverage is composited after the
-    // scene has already been ACES-tonemapped and sRGB-encoded.
-    blend_display_source_over(
-        [color.r, color.g, color.b],
-        source_alpha,
-        &mut cpu_frame.frame[byte_index..byte_index + 4],
-    );
-}
-
-fn blend_display_source_over(source_rgb: [f32; 3], source_alpha: f32, destination: &mut [u8]) {
-    let alpha = source_alpha.clamp(0.0, 1.0);
-    let inverse = 1.0 - alpha;
-    for channel in 0..3 {
-        let blended = source_rgb[channel].clamp(0.0, 1.0) * alpha
-            + srgb8_to_linear(destination[channel]) * inverse;
-        destination[channel] = linear_channel_to_srgb8(blended);
-    }
-    destination[3] = 255;
-}
-
-fn srgb8_to_linear(value: u8) -> f32 {
-    let value = f32::from(value) / 255.0;
-    if value <= 0.04045 {
-        value / 12.92
-    } else {
-        ((value + 0.055) / 1.055).powf(2.4)
-    }
-}
-
-fn linear_channel_to_srgb8(value: f32) -> u8 {
-    let value = value.clamp(0.0, 1.0);
-    let encoded = if value <= 0.003_130_8 {
-        value * 12.92
-    } else {
-        1.055 * value.powf(1.0 / 2.4) - 0.055
-    };
-    (encoded * 255.0).round().clamp(0.0, 255.0) as u8
+    true
 }
 
 fn accumulate_order_independent_transparency(

@@ -1,19 +1,24 @@
+use self::grid::{add_grid_floor_with_options, apply_grid, grid_options_under_scene_bounds};
 use std::collections::BTreeMap;
 
 use super::authoring::{DiagnosticPathExt, authored_color};
+use super::error_diagnostic;
 use super::policy::RecipeTextureBudget;
-use super::{error_diagnostic, scene_host_error_diagnostic};
-use crate::assets::DefaultAssetFetcher;
+use crate::assets::{AssetLoadOptions, DefaultAssetFetcher};
 use crate::scene::recipe::{
-    RecipeBuildPolicy, SceneRecipeBloomV1, SceneRecipeColorV1, SceneRecipeDiagnosticV1,
-    SceneRecipeEnvironmentV1, SceneRecipeGridV1, SceneRecipeRenderV1, SceneRecipeSceneV1,
-    SceneRecipeSsaoV1,
+    RecipeBuildPolicy, SceneRecipeAutoExposureV1, SceneRecipeBloomV1, SceneRecipeColorV1,
+    SceneRecipeDepthOfFieldV1, SceneRecipeDiagnosticV1, SceneRecipeEnvironmentV1,
+    SceneRecipeGridReflectionV1, SceneRecipeRenderV1, SceneRecipeSceneV1,
+    SceneRecipeScreenSpaceReflectionsV1, SceneRecipeSsaoV1,
 };
 use crate::scene_host::SceneHostCore;
 use crate::{
-    AntiAliasing, AssetPath, Background, GridFloorOptions, PostBloomConfig, Profile, Quality,
-    ReconstructionFilter, RendererOptions, ScreenSpaceAmbientOcclusionConfig, Tonemapper,
+    AntiAliasing, AssetPath, AutoExposureConfig, Background, DepthOfFieldConfig, EnvironmentPreset,
+    PostBloomConfig, Profile, Quality, ReconstructionFilter, RendererOptions, SceneSetupPreset,
+    ScreenSpaceAmbientOcclusionConfig, ScreenSpaceReflectionConfig, Tonemapper,
 };
+
+mod grid;
 
 pub(super) fn renderer_options_from_recipe(
     render: Option<&SceneRecipeRenderV1>,
@@ -69,8 +74,21 @@ pub(super) fn apply_render_setup(
     if let Some(ssao) = render.ssao.map(ssao_from_recipe) {
         host.renderer.set_screen_space_ambient_occlusion(Some(ssao));
     }
+    if let Some(reflections) = render.screen_space_reflections.map(ssr_from_recipe) {
+        host.renderer
+            .set_screen_space_reflections(Some(reflections));
+    }
+    if let Some(depth_of_field) = render.depth_of_field.map(dof_from_recipe) {
+        host.renderer.set_depth_of_field(Some(depth_of_field));
+    }
     if let Some(exposure_ev) = render.exposure_ev {
         host.renderer.set_exposure_ev(exposure_ev as f32);
+    }
+    if let Some(auto_exposure) = &render.auto_exposure {
+        match auto_exposure_from_recipe(auto_exposure) {
+            Ok(config) => host.renderer.set_auto_exposure(config),
+            Err(diagnostic) => diagnostics.push(*diagnostic),
+        }
     }
     if let Some(tonemapper) = render.tonemapper.as_deref().map(tonemapper_from_recipe) {
         host.renderer.set_tonemapper(tonemapper);
@@ -89,6 +107,22 @@ pub(super) async fn apply_scene_setup(
     let Some(scene) = scene else {
         return;
     };
+    if let Some(preset) = scene
+        .preset
+        .as_deref()
+        .and_then(SceneSetupPreset::from_recipe_name)
+    {
+        apply_scene_preset(
+            policy,
+            host,
+            recipe_path,
+            scene,
+            preset,
+            texture_budget,
+            diagnostics,
+        )
+        .await;
+    }
     if let Some(background) = &scene.background {
         match background_from_recipe(colors, background) {
             Ok(background) => host.renderer.set_background(background),
@@ -110,6 +144,33 @@ pub(super) async fn apply_scene_setup(
         && grid.enabled
     {
         apply_grid(host, colors, grid, diagnostics);
+    }
+}
+
+async fn apply_scene_preset(
+    policy: &RecipeBuildPolicy,
+    host: &mut SceneHostCore<DefaultAssetFetcher>,
+    recipe_path: &str,
+    scene: &SceneRecipeSceneV1,
+    preset: SceneSetupPreset,
+    texture_budget: &mut RecipeTextureBudget,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    host.apply_scene_setup_preset_renderer(preset);
+    if scene.environment.is_none() {
+        apply_environment_preset(
+            policy,
+            host,
+            recipe_path,
+            preset.environment(),
+            texture_budget,
+            diagnostics,
+        )
+        .await;
+    }
+    if scene.grid.is_none() {
+        let options = grid_options_under_scene_bounds(host, preset.grid_options());
+        add_grid_floor_with_options(host, options, preset_grid_reflection(preset), diagnostics);
     }
 }
 
@@ -172,6 +233,62 @@ fn ssao_from_recipe(value: SceneRecipeSsaoV1) -> ScreenSpaceAmbientOcclusionConf
     )
 }
 
+fn ssr_from_recipe(value: SceneRecipeScreenSpaceReflectionsV1) -> ScreenSpaceReflectionConfig {
+    ScreenSpaceReflectionConfig::new(
+        value.strength as f32,
+        value.roughness as f32,
+        value.horizon_fraction as f32,
+        value.fade as f32,
+    )
+}
+
+fn dof_from_recipe(value: SceneRecipeDepthOfFieldV1) -> DepthOfFieldConfig {
+    DepthOfFieldConfig::new(
+        value.focus_distance as f32,
+        value.aperture_f_stop as f32,
+        value.radius_px,
+    )
+}
+
+fn auto_exposure_from_recipe(
+    value: &SceneRecipeAutoExposureV1,
+) -> Result<AutoExposureConfig, Box<SceneRecipeDiagnosticV1>> {
+    let (preset, min_ev, max_ev, highlight_percentile, highlight_target_luminance) = match value {
+        SceneRecipeAutoExposureV1::Preset(preset) => (preset.as_str(), None, None, None, None),
+        SceneRecipeAutoExposureV1::Config {
+            preset,
+            min_ev,
+            max_ev,
+            highlight_percentile,
+            highlight_target_luminance,
+        } => (
+            preset.as_str(),
+            *min_ev,
+            *max_ev,
+            *highlight_percentile,
+            *highlight_target_luminance,
+        ),
+    };
+    let mut config = AutoExposureConfig::from_preset_name(preset).ok_or_else(|| {
+        Box::new(error_diagnostic(
+            "$.render.auto_exposure",
+            "invalid_render_setting",
+            format!("auto exposure preset '{preset}' is not supported"),
+            format!(
+                "use one of: {}",
+                AutoExposureConfig::PRESET_NAMES.join(", ")
+            ),
+        ))
+    })?;
+    if let (Some(min_ev), Some(max_ev)) = (min_ev, max_ev) {
+        config = config.with_ev_range(min_ev as f32, max_ev as f32);
+    }
+    if let (Some(percentile), Some(target)) = (highlight_percentile, highlight_target_luminance) {
+        config = config.with_highlight_guard(percentile as f32, target as f32);
+    }
+    Ok(config)
+}
+
 fn background_from_recipe(
     colors: &BTreeMap<String, SceneRecipeColorV1>,
     background: &crate::scene::recipe::SceneRecipeBackgroundV1,
@@ -216,7 +333,28 @@ async fn apply_environment(
     texture_budget: &mut RecipeTextureBudget,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
-    match environment.kind.as_str() {
+    if let Some(preset) = environment.preset.as_deref() {
+        let Some(preset) = EnvironmentPreset::from_recipe_name(preset) else {
+            diagnostics.push(error_diagnostic(
+                "$.scene.environment.preset",
+                "invalid_environment",
+                "unsupported environment preset",
+                "use studio or neutral_studio",
+            ));
+            return;
+        };
+        apply_environment_preset(
+            policy,
+            host,
+            recipe_path,
+            preset,
+            texture_budget,
+            diagnostics,
+        )
+        .await;
+        return;
+    }
+    match environment.kind.as_deref().unwrap_or("") {
         "none" => host.renderer.clear_environment(),
         "default" => {
             let handle = host.assets.default_environment();
@@ -246,7 +384,10 @@ async fn apply_environment(
             };
             match host
                 .assets
-                .load_environment(AssetPath::from(resolved.as_str()))
+                .load_environment_with_options(
+                    AssetPath::from(resolved.as_str()),
+                    AssetLoadOptions::default().with_fetch_byte_limit(policy.fetch_byte_limit()),
+                )
                 .await
             {
                 Ok(handle) => host.renderer.set_environment(handle),
@@ -273,58 +414,50 @@ async fn apply_environment(
     }
 }
 
-fn apply_grid(
+async fn apply_environment_preset(
+    policy: &RecipeBuildPolicy,
     host: &mut SceneHostCore<DefaultAssetFetcher>,
-    colors: &BTreeMap<String, SceneRecipeColorV1>,
-    grid: &SceneRecipeGridV1,
+    recipe_path: &str,
+    preset: EnvironmentPreset,
+    texture_budget: &mut RecipeTextureBudget,
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
-    let mut options = GridFloorOptions::new();
-    if let Ok(Some(bounds)) = host
-        .scene
-        .node_world_bounds(host.scene.root(), &host.assets)
+    let metadata = preset.metadata();
+    let uri = metadata.source_path();
+    let _resolved =
+        match texture_budget.reserve_environment_uri(policy, recipe_path, uri, "$.scene.preset") {
+            Ok(uri) => uri,
+            Err(diagnostic) => {
+                diagnostics.push(*diagnostic);
+                return;
+            }
+        };
+    match host
+        .assets
+        .load_environment_preset_with_options(
+            preset,
+            AssetLoadOptions::default().with_fetch_byte_limit(policy.fetch_byte_limit()),
+        )
+        .await
     {
-        options = options.under_bounds(bounds);
-    }
-    if let Some(floor_y) = grid.floor_y {
-        options = options.floor_y(floor_y as f32);
-    }
-    if let Some(padding) = grid.padding {
-        options = options.padding(padding as f32);
-    }
-    if let Some(line_spacing) = grid.line_spacing {
-        options = options.line_spacing(line_spacing as f32);
-    }
-    if let Some(color) = grid.color.as_deref() {
-        match authored_color(colors, color) {
-            Ok(color) => options = options.color(color),
-            Err(diagnostic) => {
-                diagnostics.push((*diagnostic).with_path("$.scene.grid.color".to_owned()));
-                return;
-            }
-        }
-    }
-    if let Some(color) = grid.line_color.as_deref() {
-        match authored_color(colors, color) {
-            Ok(color) => options = options.line_color(color),
-            Err(diagnostic) => {
-                diagnostics.push((*diagnostic).with_path("$.scene.grid.line_color".to_owned()));
-                return;
-            }
-        }
-    }
-    if let Some(roughness) = grid.roughness {
-        options = options.roughness(roughness as f32);
-    }
-    match host.scene.add_grid_floor(&host.assets, options) {
-        Ok(handles) => {
-            host.register_node(handles.slab);
-            host.register_node(handles.grid);
-        }
-        Err(error) => diagnostics.push(scene_host_error_diagnostic(
-            "$.scene.grid",
-            "grid_create_failed",
-            error.into(),
+        Ok(handle) => host.renderer.set_environment(handle),
+        Err(error) => diagnostics.push(error_diagnostic(
+            "$.scene.preset",
+            "environment_load_failed",
+            format!(
+                "scene preset environment '{}' could not be loaded from '{uri}': {error}",
+                metadata.name()
+            ),
+            "the bundled environment preset must be readable and inside RecipeBuildPolicy allowed_roots",
         )),
     }
+}
+
+fn preset_grid_reflection(preset: SceneSetupPreset) -> Option<SceneRecipeGridReflectionV1> {
+    preset
+        .grid_reflection_strength()
+        .map(|strength| SceneRecipeGridReflectionV1 {
+            enabled: true,
+            strength: Some(strength),
+        })
 }

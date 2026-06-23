@@ -53,6 +53,7 @@ pub(super) fn stats_json(stats: crate::RendererStats) -> serde_json::Value {
         "depth_prepass_passes": stats.depth_prepass_passes,
         "depth_prepass_draws": stats.depth_prepass_draws,
         "ambient_occlusion_passes": stats.ambient_occlusion_passes,
+        "screen_space_reflection_passes": stats.screen_space_reflection_passes,
         "order_independent_transparency_passes": stats.order_independent_transparency_passes,
         "bloom_passes": stats.bloom_passes,
         "fxaa_passes": stats.fxaa_passes,

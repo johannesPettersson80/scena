@@ -810,6 +810,22 @@ fn scena_verify_animation_cli_checks_sampled_change_and_fails_closed() {
     assert_eq!(report["clip"]["name"], "MoveTriangle");
     assert_eq!(report["summary"]["sample_count"], 3);
     assert_eq!(report["summary"]["visible_change"], true);
+    assert_eq!(report["summary"]["rendered_movement"], true);
+    assert!(
+        report["summary"]["rendered_movement_delta_px"]
+            .as_f64()
+            .expect("rendered movement delta is numeric")
+            > 1.0,
+        "animation report must measure selected-node rendered pixel movement: {report:#}"
+    );
+    assert!(
+        report["samples"]
+            .as_array()
+            .expect("animation samples")
+            .iter()
+            .any(|sample| sample["observed_values"][0]["rendered_centroid_css_px"].is_array()),
+        "animation samples must carry selected-node rendered coverage centroids: {report:#}"
+    );
     assert_eq!(report["samples"][0]["time_seconds"], 0.0);
     assert_eq!(report["samples"][1]["time_seconds"], 0.5);
     assert_eq!(report["samples"][2]["time_seconds"], 1.0);

@@ -3,7 +3,9 @@ use crate::geometry::{Primitive, Vertex};
 use crate::material::Color;
 use crate::scene::{PerspectiveCamera, Scene, Transform, Vec3};
 
-use super::{AntiAliasing, PostBloomConfig, Renderer, ScreenSpaceAmbientOcclusionConfig};
+use super::{
+    AntiAliasing, DepthOfFieldConfig, PostBloomConfig, Renderer, ScreenSpaceAmbientOcclusionConfig,
+};
 
 const CAMERA_DISTANCE_FOR_NDC_FIXTURES: f32 = 1.732_050_8;
 
@@ -105,6 +107,45 @@ fn gpu_post_passes_have_independent_quality_measurements() {
     assert!(
         (baseline_open - ssao_open).abs() <= 2.0,
         "SSAO alone should leave open floor within tolerance; baseline={baseline_open:.2} ssao={ssao_open:.2}"
+    );
+
+    let Some((baseline_dof, baseline_dof_stats)) =
+        render_gpu_post_frame(48, 32, depth_of_field_reference_scene, |renderer| {
+            renderer.set_anti_aliasing(AntiAliasing::None);
+            renderer.clear_bloom();
+            renderer.clear_screen_space_ambient_occlusion();
+            renderer.clear_depth_of_field();
+        })
+    else {
+        return;
+    };
+    let Some((dof, dof_stats)) =
+        render_gpu_post_frame(48, 32, depth_of_field_reference_scene, |renderer| {
+            renderer.set_anti_aliasing(AntiAliasing::None);
+            renderer.clear_bloom();
+            renderer.clear_screen_space_ambient_occlusion();
+            renderer.set_depth_of_field(Some(DepthOfFieldConfig::new(
+                CAMERA_DISTANCE_FOR_NDC_FIXTURES,
+                0.7,
+                12,
+            )));
+        })
+    else {
+        return;
+    };
+    assert_eq!(baseline_dof_stats.depth_of_field_passes, 0);
+    assert_eq!(dof_stats.depth_of_field_passes, 1);
+    let baseline_background = region_luma_range(&baseline_dof, 48, 30..44, 8..24);
+    let dof_background = region_luma_range(&dof, 48, 30..44, 8..24);
+    let baseline_focus = average_luma_region(&baseline_dof, 48, 22..26, 14..18);
+    let dof_focus = average_luma_region(&dof, 48, 22..26, 14..18);
+    assert!(
+        dof_background * 4 < baseline_background * 3,
+        "DoF alone should blur high-frequency background contrast; baseline={baseline_background} dof={dof_background}"
+    );
+    assert!(
+        (baseline_focus - dof_focus).abs() <= 8.0,
+        "DoF should preserve the focal subject luma; baseline={baseline_focus:.2} dof={dof_focus:.2}"
     );
 }
 
@@ -228,6 +269,58 @@ fn ssao_depth_contact_scene() -> (Assets, Scene, crate::CameraKey) {
     (assets, scene, camera)
 }
 
+fn depth_of_field_reference_scene() -> (Assets, Scene, crate::CameraKey) {
+    let assets = Assets::new();
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            PerspectiveCamera::default(),
+            Transform::at(Vec3::new(0.0, 0.0, CAMERA_DISTANCE_FOR_NDC_FIXTURES)),
+        )
+        .expect("camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("camera becomes active");
+    let mut background = Vec::new();
+    for row in 0..8 {
+        for col in 0..12 {
+            let x0 = -1.2 + col as f32 * 0.2;
+            let x1 = x0 + 0.2;
+            let y0 = -0.8 + row as f32 * 0.2;
+            let y1 = y0 + 0.2;
+            let value = if (row + col) % 2 == 0 { 0.08 } else { 1.2 };
+            background.extend(quad_primitives(
+                x0,
+                y0,
+                x1,
+                y1,
+                -1.6,
+                Color::from_linear_rgb(value, value, value),
+            ));
+        }
+    }
+    scene
+        .add_renderable(scene.root(), background, Transform::default())
+        .expect("background checker inserts");
+    scene
+        .add_renderable(
+            scene.root(),
+            quad_primitives(
+                -0.42,
+                -0.42,
+                0.42,
+                0.42,
+                0.0,
+                Color::from_linear_rgb(0.45, 0.45, 0.45),
+            )
+            .to_vec(),
+            Transform::default(),
+        )
+        .expect("focal subject inserts");
+    (assets, scene, camera)
+}
+
 fn quad_primitives(x0: f32, y0: f32, x1: f32, y1: f32, z: f32, color: Color) -> [Primitive; 2] {
     [
         Primitive::triangle([
@@ -307,6 +400,24 @@ fn average_luma_region(
         }
     }
     total as f32 / count.max(1) as f32
+}
+
+fn region_luma_range(
+    frame: &[u8],
+    width: u32,
+    region_x: std::ops::Range<u32>,
+    region_y: std::ops::Range<u32>,
+) -> u32 {
+    let mut min_luma = u8::MAX;
+    let mut max_luma = 0_u8;
+    for y in region_y {
+        for x in region_x.clone() {
+            let value = luma_at(frame, width, x, y);
+            min_luma = min_luma.min(value);
+            max_luma = max_luma.max(value);
+        }
+    }
+    u32::from(max_luma.saturating_sub(min_luma))
 }
 
 fn max_luma_drop_ring(

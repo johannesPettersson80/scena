@@ -191,7 +191,7 @@ pub(super) fn encode_browser_readback_pass(
             encoder,
             strokes::StrokePass {
                 view: &pass.readback.view,
-                depth_view: pass.depth_view,
+                depth_view: None,
                 output_bind_group: pass.output_bind_group,
                 draw_bind_group: pass.draw_bind_group,
                 resources: stroke_resources,
@@ -206,7 +206,7 @@ pub(super) fn encode_browser_readback_pass(
             encoder,
             labels::LabelPass {
                 view: &pass.readback.view,
-                depth_view: pass.depth_view,
+                depth_view: None,
                 output_bind_group: pass.output_bind_group,
                 resources: label_resources,
                 pipeline: labels::post_pipeline(label_resources),

@@ -6,6 +6,7 @@ mod probes;
 mod report;
 mod workflows;
 
+use base64::Engine;
 use report::{capabilities_json, diagnostics_json, stats_json};
 use serde_json::json;
 use wasm_bindgen::prelude::*;
@@ -391,6 +392,7 @@ pub(super) fn renderer_readback_json(readback: &PixelReadback) -> serde_json::Va
         "width": readback.width(),
         "height": readback.height(),
         "rgba8_fnv1a64": fnv1a64_hex(readback.rgba8()),
+        "rgba8_base64": base64::engine::general_purpose::STANDARD.encode(readback.rgba8()),
         "pixel_statistics": summarize_pixel_readback(readback),
     })
 }

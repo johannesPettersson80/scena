@@ -94,6 +94,7 @@ impl Renderer {
                 height: target.height,
             }
         })?;
+        let screen_space_scale = self.screen_space_prepare_scale();
         let mut diagnostics = prepare::collect_precision_diagnostics(scene, target.backend);
         diagnostics.extend(prepare::collect_camera_visibility_diagnostics(
             scene, target,
@@ -121,14 +122,24 @@ impl Renderer {
         let environment_prepare_stats =
             prepare::collect_environment_prepare_stats(environment_desc.as_ref());
         let environment_count = u64::from(environment_desc.is_some());
-        let lighting_stats = prepare::collect_lighting_stats(scene, self.target.backend)?;
-        let environment_lighting = self.environment_lighting_for_prepare(environment_desc.as_ref());
-        let gpu_light_uniform =
-            prepare::collect_gpu_light_uniform(scene, scene.origin_shift(), &environment_lighting);
-        step_start = log_prepare_step("environment + lights", step_start);
         let active_camera_projection = scene
             .active_camera()
             .and_then(|camera| camera::CameraProjection::from_scene(scene, camera, target).ok());
+        let lighting_stats = prepare::collect_lighting_stats(scene, self.target.backend)?;
+        let environment_lighting = self.environment_lighting_for_prepare(environment_desc.as_ref());
+        let tiled_light_assignment = prepare::collect_gpu_tiled_light_assignment(
+            scene,
+            scene.origin_shift(),
+            target,
+            active_camera_projection.as_ref(),
+        )?;
+        let gpu_light_uniform = prepare::collect_gpu_light_uniform(
+            scene,
+            scene.origin_shift(),
+            &environment_lighting,
+            tiled_light_assignment.is_active(),
+        );
+        step_start = log_prepare_step("environment + lights", step_start);
         let backend_material_slots = if self.gpu.is_some() {
             prepare::collect_backend_material_slots(scene, assets)
         } else {
@@ -207,6 +218,7 @@ impl Renderer {
             .collect::<Vec<_>>();
         let prepared_scene = prepare::collect_prepared_primitives(
             target,
+            screen_space_scale,
             scene,
             assets,
             active_camera_projection.as_ref(),
@@ -225,6 +237,8 @@ impl Renderer {
         let culled_primitives = culling::cull_prepared_primitives(
             prepared_scene.primitives,
             active_camera_projection.as_ref(),
+            target,
+            scene.clipping_planes().planes().is_empty() && scene.section_box().is_none(),
             self.gpu.is_some(),
         );
         let retained_primitives = assign_original_vertex_offsets(culled_primitives.visible);
@@ -259,6 +273,12 @@ impl Renderer {
                 .flat_map(|set| set.primitives().iter().cloned()),
         );
         let depth_stats = prepare::collect_depth_prepass_stats(&depth_primitives, target.backend);
+        #[cfg(test)]
+        let depth_stats = if self.depth_prepass_enabled_for_test {
+            depth_stats
+        } else {
+            prepare::PreparedDepthStats::default()
+        };
         self.apply_prepare_stats(
             logical_stats,
             environment_prepare_stats,
@@ -285,6 +305,7 @@ impl Renderer {
                 depth_stats,
                 &backend_material_slots,
                 &environment_lighting,
+                &tiled_light_assignment,
             )?;
             let stats = gpu.prepared_resource_stats();
             let pending_destructions = gpu.pending_destructions();
@@ -341,6 +362,14 @@ impl Renderer {
         super::target::validate_supersample_target(self.target, scale).map_err(|_| ())
     }
 
+    fn screen_space_prepare_scale(&self) -> f32 {
+        if self.gpu.is_none() || self.target.backend == crate::diagnostics::Backend::HeadlessGpu {
+            self.supersample_factor.max(1) as f32
+        } else {
+            1.0
+        }
+    }
+
     pub(super) fn dynamic_gpu_prepare_rejection_reason(
         &self,
         scene: &Scene,
@@ -375,6 +404,9 @@ impl Renderer {
             .any(|(node, _mesh, _transform)| scene.skin_binding(node).is_some())
         {
             return Some("skinned joints may have moved");
+        }
+        if prepare::gpu_tiled_light_assignment_required(scene) {
+            return Some("tiled light assignment may have moved");
         }
         if scene
             .mesh_nodes()

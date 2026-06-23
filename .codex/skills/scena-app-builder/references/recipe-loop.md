@@ -51,13 +51,41 @@ Rules:
 - use meters and Y-up right-handed coordinates;
 - use `rotation_degrees` only as documented by the schema;
 - use opaque colors unless a field explicitly supports alpha;
-- add a key/fill/rim directional light rig and an HDRI environment for
-  user-facing renders unless the task is deliberately flat or unlit;
+- prefer ergonomic helpers in recipe form: `material.preset`, `camera.lens`,
+  `camera.framing`, `scene.preset`, `scene.environment.preset`,
+  `render.auto_exposure`, named color constants, `kind:"studio_rig"` lights,
+  and the default `scene.grid.under_bounds:true`;
+- use `scene.preset:"product_studio"` plus
+  `render.auto_exposure:"product_studio"` for product/model shots unless a
+  fixed exposure is explicitly required; `auto_exposure` and `exposure_ev` are
+  mutually exclusive;
+- add a `studio_rig` light or a key/fill/rim directional light rig and an HDRI
+  environment for user-facing renders unless the task is deliberately flat or
+  unlit;
+- use an area `softbox` light only when a finite-emitter highlight or partial
+  penumbra is load-bearing, and pair it with `expect_quality.area_light`;
 - use `studio`, `neutral_gray`, or `dark_studio` backgrounds by default and
   raise capture size for images people will inspect;
 - use `render.quality:"high"` or `anti_aliasing:"msaa4"` for smooth geometry
   edges; add `render.supersample:2..4` only for hero captures because cost
   grows with N^2;
+- add `expect_backend` with `{"backend":"headless_gpu","gpu_device":true}` for
+  GPU/hero renders so CPU fallback fails verification instead of weakening the
+  proof;
+- keep labels and callouts clear of leader, measurement, and helper lines;
+- add `expect_grounded` for any object that must touch a floor, base, or grid;
+- add `expect_helper_occluded` when a depth-tested helper line, grid, or
+  wireframe must stay behind a solid subject;
+- add `expect_occlusion` when one solid object must visibly occlude another
+  overlapping object;
+- add `expect_clipping` when clipping planes or a section box are load-bearing
+  for the view;
+- add `expect_state` when an import's material variant is load-bearing for the
+  view;
+- include an `expect_quality` profile for user-facing renders so composition
+  verification catches object-level weak framing, black-crush, blown
+  highlights, weak subject/background salience, and flat decoded texture
+  results;
 - mark optional assets as optional only when missing content is acceptable;
 - keep host/domain state out of recipe JSON.
 

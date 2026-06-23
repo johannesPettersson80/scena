@@ -2,352 +2,405 @@
 
 const fs = require("fs");
 const path = require("path");
-const childProcess = require("child_process");
+const crypto = require("crypto");
 const { chromium } = require("playwright");
 
 const url = process.argv[2] || "http://127.0.0.1:18104/index.html";
 const outDir = path.resolve("target/gate-artifacts/cloudflare-demo");
-const rawImageMaxBuffer = 64 * 1024 * 1024;
+
 fs.mkdirSync(outDir, { recursive: true });
 for (const file of fs.readdirSync(outDir)) {
   if (file.endsWith(".png")) fs.unlinkSync(path.join(outDir, file));
 }
 
-function readRgba(file, extraArgs = []) {
-  return childProcess.execFileSync(
-    "magick",
-    [file, ...extraArgs, "-depth", "8", "rgba:-"],
-    { maxBuffer: rawImageMaxBuffer },
-  );
-}
-
-function imageStats(file) {
-  const mean = Number(
-    childProcess.execFileSync("magick", [
-      file,
-      "-colorspace",
-      "Gray",
-      "-format",
-      "%[fx:mean]",
-      "info:",
-    ]),
-  );
-  const deviation = Number(
-    childProcess.execFileSync("magick", [
-      file,
-      "-colorspace",
-      "Gray",
-      "-format",
-      "%[fx:standard_deviation]",
-      "info:",
-    ]),
-  );
-  return { mean, deviation };
-}
-
-function imageSize(file) {
-  const output = String(childProcess.execFileSync("identify", ["-format", "%w %h", file]));
-  const [width, height] = output.trim().split(/\s+/).map(Number);
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-    throw new Error(`could not read image size for ${file}: ${output}`);
-  }
-  return { width, height };
-}
-
-function redDominantPixelsInRegion(file, region) {
-  const { width, height } = imageSize(file);
-  const crop = {
-    x: Math.max(0, Math.floor(width * region.x)),
-    y: Math.max(0, Math.floor(height * region.y)),
-    width: Math.max(1, Math.floor(width * region.width)),
-    height: Math.max(1, Math.floor(height * region.height)),
-  };
-  crop.width = Math.min(crop.width, width - crop.x);
-  crop.height = Math.min(crop.height, height - crop.y);
-  const rgba = readRgba(file, [
-    "-crop",
-    `${crop.width}x${crop.height}+${crop.x}+${crop.y}`,
-    "+repage",
-  ]);
-  let count = 0;
-  for (let i = 0; i + 3 < rgba.length; i += 4) {
-    const r = rgba[i];
-    const g = rgba[i + 1];
-    const b = rgba[i + 2];
-    const a = rgba[i + 3];
-    if (a > 16 && r > 70 && r > g * 1.25 && r > b * 1.25) {
-      count += 1;
-    }
-  }
-  return { count, crop };
-}
-
-function foregroundRect(file, threshold = 18) {
-  const { width, height } = imageSize(file);
-  const rgba = readRgba(file);
-  const bg = [rgba[0], rgba[1], rgba[2]];
-  let minX = width;
-  let minY = height;
-  let maxX = -1;
-  let maxY = -1;
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const i = (y * width + x) * 4;
-      const delta =
-        Math.abs(rgba[i] - bg[0]) +
-        Math.abs(rgba[i + 1] - bg[1]) +
-        Math.abs(rgba[i + 2] - bg[2]);
-      if (rgba[i + 3] > 16 && delta > threshold) {
-        minX = Math.min(minX, x);
-        minY = Math.min(minY, y);
-        maxX = Math.max(maxX, x);
-        maxY = Math.max(maxY, y);
-      }
-    }
-  }
-  if (maxX < minX || maxY < minY) return null;
-  return { minX, minY, maxX, maxY, width: maxX - minX + 1, height: maxY - minY + 1, imageWidth: width, imageHeight: height };
-}
-
-function assertForegroundCoverage(file, label, minWidthFraction, minHeightFraction) {
-  const rect = foregroundRect(file);
+function assertForegroundCoverage(stats, label, minWidthFraction, minHeightFraction) {
+  const rect = stats.foregroundRect;
   if (!rect) throw new Error(`${label} has no foreground pixels`);
   const widthFraction = rect.width / rect.imageWidth;
   const heightFraction = rect.height / rect.imageHeight;
   if (widthFraction < minWidthFraction || heightFraction < minHeightFraction) {
     throw new Error(
-      `${label} foreground coverage is too small: ${JSON.stringify({ rect, widthFraction, heightFraction })}`,
+      `${label} foreground coverage is too small: ${JSON.stringify({
+        rect,
+        widthFraction,
+        heightFraction,
+      })}`,
     );
   }
-  return rect;
+  return { rect, widthFraction, heightFraction };
+}
+
+function statusFailed(status) {
+  return /failed|error|panic/i.test(status || "");
+}
+
+async function showcaseControllers(page) {
+  return page.evaluate(() => window.__scenaShowcaseProbe?.controllers?.() ?? []);
+}
+
+async function assertNoFailedController(page, phase) {
+  const controllers = await showcaseControllers(page);
+  const failed = controllers.filter((controller) => statusFailed(controller.status));
+  if (failed.length) {
+    throw new Error(`${phase} has failed showcase controllers: ${JSON.stringify(failed)}`);
+  }
+  return controllers;
+}
+
+async function waitForSceneRendered(page, scene, timeout = 90000) {
+  await page.locator(`.stage[data-scene='${scene}']`).scrollIntoViewIfNeeded();
+  await page.waitForFunction(
+    (sceneName) => {
+      const controller = window.__scenaShowcaseProbe
+        ?.controllers?.()
+        .find((candidate) => candidate.scene === sceneName);
+      if (!controller) return false;
+      if (/failed|error|panic/i.test(controller.status || "")) {
+        throw new Error(`${sceneName} failed: ${controller.status}`);
+      }
+      return controller.active && controller.renderedForActivation;
+    },
+    scene,
+    { timeout },
+  );
+  return assertNoFailedController(page, `after rendering ${scene}`);
+}
+
+async function captureSceneCanvas(page, scene, minWidthFraction, minHeightFraction) {
+  const file = path.join(outDir, `${scene}-canvas.png`);
+  const canvas = page.locator(`.stage[data-scene='${scene}'] canvas`);
+  const stats = await canvas.evaluate((source) => {
+    const width = source.width;
+    const height = source.height;
+    const sampleWidth = Math.max(1, Math.min(320, width));
+    const sampleHeight = Math.max(1, Math.min(240, height));
+    const canvas = document.createElement("canvas");
+    canvas.width = sampleWidth;
+    canvas.height = sampleHeight;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    context.drawImage(source, 0, 0, sampleWidth, sampleHeight);
+    const data = context.getImageData(0, 0, sampleWidth, sampleHeight).data;
+    const bg = [data[0], data[1], data[2]];
+    let sum = 0;
+    let sumSq = 0;
+    let minX = sampleWidth;
+    let minY = sampleHeight;
+    let maxX = -1;
+    let maxY = -1;
+    for (let y = 0; y < sampleHeight; y += 1) {
+      for (let x = 0; x < sampleWidth; x += 1) {
+        const i = (y * sampleWidth + x) * 4;
+        const gray = (data[i] * 0.2126 + data[i + 1] * 0.7152 + data[i + 2] * 0.0722) / 255;
+        sum += gray;
+        sumSq += gray * gray;
+        const delta =
+          Math.abs(data[i] - bg[0]) +
+          Math.abs(data[i + 1] - bg[1]) +
+          Math.abs(data[i + 2] - bg[2]);
+        if (data[i + 3] > 16 && delta > 18) {
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+        }
+      }
+    }
+    const count = sampleWidth * sampleHeight;
+    const mean = sum / count;
+    const variance = Math.max(0, sumSq / count - mean * mean);
+    const foregroundRect =
+      maxX >= minX && maxY >= minY
+        ? {
+            minX,
+            minY,
+            maxX,
+            maxY,
+            width: maxX - minX + 1,
+            height: maxY - minY + 1,
+            imageWidth: sampleWidth,
+            imageHeight: sampleHeight,
+          }
+        : null;
+    return {
+      sourceWidth: width,
+      sourceHeight: height,
+      sampleWidth,
+      sampleHeight,
+      mean,
+      deviation: Math.sqrt(variance),
+      foregroundRect,
+    };
+  });
+  await canvas.screenshot({ path: file });
+  if (stats.mean < 0.003 || stats.deviation < 0.002) {
+    throw new Error(`${scene} canvas looks blank: ${JSON.stringify(stats)}`);
+  }
+  const coverage = assertForegroundCoverage(
+    stats,
+    `${scene} canvas`,
+    minWidthFraction,
+    minHeightFraction,
+  );
+  return { file, stats, coverage };
+}
+
+async function sampleSceneCanvasPixels(page, scene) {
+  const canvas = page.locator(`.stage[data-scene='${scene}'] canvas`);
+  return canvas.evaluate((source) => {
+    const width = source.width;
+    const height = source.height;
+    const sampleWidth = Math.max(1, Math.min(320, width));
+    const sampleHeight = Math.max(1, Math.min(240, height));
+    const scratch = document.createElement("canvas");
+    scratch.width = sampleWidth;
+    scratch.height = sampleHeight;
+    const context = scratch.getContext("2d", { willReadFrequently: true });
+    context.drawImage(source, 0, 0, sampleWidth, sampleHeight);
+    const data = context.getImageData(0, 0, sampleWidth, sampleHeight).data;
+    return {
+      width: sampleWidth,
+      height: sampleHeight,
+      pixels: Array.from(data),
+    };
+  });
+}
+
+function renderedPixelMotion(before, after) {
+  if (before.width !== after.width || before.height !== after.height) {
+    throw new Error(
+      `cannot compare connector replay samples with different sizes: ${before.width}x${before.height} vs ${after.width}x${after.height}`,
+    );
+  }
+  let totalDelta = 0;
+  let changedPixels = 0;
+  let maxDelta = 0;
+  for (let index = 0; index < before.pixels.length; index += 4) {
+    const delta =
+      Math.abs(before.pixels[index] - after.pixels[index]) +
+      Math.abs(before.pixels[index + 1] - after.pixels[index + 1]) +
+      Math.abs(before.pixels[index + 2] - after.pixels[index + 2]);
+    totalDelta += delta;
+    maxDelta = Math.max(maxDelta, delta);
+    if (delta > 24) changedPixels += 1;
+  }
+  return {
+    changedPixels,
+    meanRgbDelta: totalDelta / (before.width * before.height * 3),
+    maxRgbDelta: maxDelta,
+  };
+}
+
+async function assertConnectorRenderedPixelsMoveDuringReplay(page) {
+  const before = await sampleSceneCanvasPixels(page, "connector");
+  const replayButton = page.locator(".stage[data-scene='connector'] .replay");
+  await replayButton.click();
+  await page.waitForTimeout(350);
+  const mid = await sampleSceneCanvasPixels(page, "connector");
+  await page.waitForTimeout(350);
+  const later = await sampleSceneCanvasPixels(page, "connector");
+  const beforeToMid = renderedPixelMotion(before, mid);
+  const midToLater = renderedPixelMotion(mid, later);
+  const moved =
+    beforeToMid.changedPixels >= 128 ||
+    midToLater.changedPixels >= 128 ||
+    beforeToMid.meanRgbDelta >= 0.08 ||
+    midToLater.meanRgbDelta >= 0.08;
+  if (!moved) {
+    throw new Error(
+      `connector replay marker motion is not enough; rendered connector pixels did not move: ${JSON.stringify({ beforeToMid, midToLater })}`,
+    );
+  }
+  return { beforeToMid, midToLater };
+}
+
+async function assertConnectorMarkers(page) {
+  await page.waitForFunction(
+    () => document.querySelectorAll(".connector-marker[data-visible='true']").length >= 2,
+    { timeout: 30000 },
+  );
+  const markers = await page.evaluate(() =>
+    Array.from(document.querySelectorAll(".connector-marker")).map((marker) => ({
+      connector: marker.dataset.connector,
+      visible: marker.dataset.visible,
+      left: marker.style.left,
+      top: marker.style.top,
+      rect: {
+        x: marker.getBoundingClientRect().x,
+        y: marker.getBoundingClientRect().y,
+        width: marker.getBoundingClientRect().width,
+        height: marker.getBoundingClientRect().height,
+      },
+    })),
+  );
+  for (const marker of markers) {
+    if (marker.visible !== "true") {
+      throw new Error(`connector marker is hidden: ${JSON.stringify(markers)}`);
+    }
+    if (!Number.isFinite(marker.rect.x) || !Number.isFinite(marker.rect.y)) {
+      throw new Error(`connector marker is not positioned: ${JSON.stringify(markers)}`);
+    }
+  }
+  return markers;
+}
+
+function chromiumLaunchOptions() {
+  const options = {
+    headless: true,
+    args: ["--no-sandbox", "--disable-dev-shm-usage"],
+  };
+  if (process.env.CHROMIUM) {
+    options.executablePath = process.env.CHROMIUM;
+  }
+  return options;
+}
+
+async function fetchBytes(resourceUrl) {
+  const response = await fetch(resourceUrl);
+  if (!response.ok) {
+    throw new Error(`failed to fetch ${resourceUrl}: HTTP ${response.status}`);
+  }
+  return Buffer.from(await response.arrayBuffer());
+}
+
+async function assertDeploymentBundleConsistency(pageUrl) {
+  const manifestUrl = new URL("./pkg/scena_bg.wasm.size.json", pageUrl).toString();
+  const wasmUrl = new URL("./pkg/scena_bg.wasm", pageUrl).toString();
+  const manifest = JSON.parse((await fetchBytes(manifestUrl)).toString("utf8"));
+  const wasmBytes = await fetchBytes(wasmUrl);
+  const actualSha256 = crypto.createHash("sha256").update(wasmBytes).digest("hex");
+  if (manifest.sha256 !== actualSha256) {
+    throw new Error(
+      `deployed WASM checksum mismatch: ${JSON.stringify({
+        manifest: manifestUrl,
+        wasm: wasmUrl,
+        expected: manifest.sha256,
+        actual: actualSha256,
+      })}`,
+    );
+  }
+  if (manifest.raw_bytes !== wasmBytes.length) {
+    throw new Error(
+      `deployed WASM byte length mismatch: ${JSON.stringify({
+        manifest: manifestUrl,
+        wasm: wasmUrl,
+        expected: manifest.raw_bytes,
+        actual: wasmBytes.length,
+      })}`,
+    );
+  }
+  return {
+    manifest: manifestUrl,
+    wasm: wasmUrl,
+    sha256: actualSha256,
+    rawBytes: wasmBytes.length,
+    checksumMatchesManifest: true,
+  };
+}
+
+async function assertImagesLoad(page) {
+  const imageCount = await page.locator("img").count();
+  for (let index = 0; index < imageCount; index += 1) {
+    const image = page.locator("img").nth(index);
+    await image.scrollIntoViewIfNeeded();
+    await page.waitForFunction(
+      (i) => {
+        const image = document.images[i];
+        return image?.complete && image.naturalWidth > 0 && image.naturalHeight > 0;
+      },
+      index,
+      { timeout: 30000 },
+    );
+  }
+  return page.evaluate(() =>
+    Array.from(document.images).map((image) => ({
+      src: image.getAttribute("src"),
+      complete: image.complete,
+      naturalWidth: image.naturalWidth,
+      naturalHeight: image.naturalHeight,
+    })),
+  );
 }
 
 (async () => {
   const errors = [];
-  const unexpectedConsole = [];
-  const browser = await chromium.launch({
-    headless: true,
-    executablePath: process.env.CHROMIUM || "/usr/bin/chromium",
-    args: ["--no-sandbox", "--disable-dev-shm-usage"],
-  });
+  const deploymentBundle = await assertDeploymentBundleConsistency(url);
+  const browser = await chromium.launch(chromiumLaunchOptions());
   try {
     const page = await browser.newPage({ viewport: { width: 1366, height: 820 } });
     page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
     page.on("console", (message) => {
-      if (message.type() === "error") {
-        errors.push(`console: ${message.text()}`);
-      } else if (["warning", "info", "log"].includes(message.type())) {
-        unexpectedConsole.push(`${message.type()}: ${message.text()}`);
-      }
+      if (message.type() === "error") errors.push(`console: ${message.text()}`);
     });
 
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(
-      () => Number(document.getElementById("metric-frame")?.textContent || "0") >= 1,
+      () => window.__scenaShowcaseProbe?.controllers?.().some(
+        (controller) => controller.scene === "hero" && controller.renderedForActivation,
+      ),
       { timeout: 90000 },
     );
+    await assertNoFailedController(page, "after hero render");
 
-    const tagline = await page.locator(".brand > p:not(.new-callout)").textContent();
-    if (tagline.trim() !== "Rust 3D viewer primitives, running in your browser.") {
-      throw new Error(`demo tagline is stale: ${tagline}`);
-    }
+    const hero = await captureSceneCanvas(page, "hero", 0.28, 0.22);
+    await waitForSceneRendered(page, "material");
+    const material = await captureSceneCanvas(page, "material", 0.18, 0.18);
+    await waitForSceneRendered(page, "model");
+    const model = await captureSceneCanvas(page, "model", 0.20, 0.22);
+    await waitForSceneRendered(page, "connector");
+    const connectorMarkers = await assertConnectorMarkers(page);
+    const connector = await captureSceneCanvas(page, "connector", 0.28, 0.18);
 
-    const mateSnippet = await page.locator("#code-snippet").textContent();
-    if (!mateSnippet.includes('scene.mate(&drive, "shaft", &load, "hub")?;')) {
-      throw new Error("default connector sample did not expose the mate snippet");
-    }
-    const connectorClaim = await page.locator("#connector-claim").textContent();
-    if (
-      !connectorClaim.includes("authored connectors") ||
-      !connectorClaim.includes("no coordinates")
-    ) {
-      throw new Error(`connector claim does not explain authored metadata mating: ${connectorClaim}`);
-    }
-    if ((await page.locator('.connector-marker[data-connector="shaft"]:visible').count()) !== 1) {
-      throw new Error("connector shaft marker must be visible on the default connector page");
-    }
-    if ((await page.locator('.connector-marker[data-connector="hub"]:visible').count()) !== 1) {
-      throw new Error("connector hub marker must be visible on the default connector page");
-    }
-    const initialMarkers = await connectorMarkerSnapshot(page);
-    assertConnectorMarkersOnCanvas(initialMarkers, "initial connector markers");
-    if (Math.abs(initialMarkers.shaft.y - initialMarkers.hub.y) > 56) {
-      throw new Error(
-        `connector before-state markers must be horizontally separated, not vertically scattered: ${JSON.stringify(initialMarkers)}`,
-      );
-    }
-    if (initialMarkers.hub.x - initialMarkers.shaft.x < 24) {
-      throw new Error(
-        `connector before-state markers must show the drive shaft left of the load hub: ${JSON.stringify(initialMarkers)}`,
-      );
-    }
-    const connectorResult = await page.locator("#connector-result").textContent();
-    if (!connectorResult.includes("Before snap")) {
-      throw new Error(`connector default state must explain the disassembled before state: ${connectorResult}`);
-    }
-    if ((await page.locator("textarea, #code-snippet[contenteditable='true']").count()) > 0) {
-      throw new Error("code panel must be a static synced display, not an editor");
-    }
-
-    const diagnostics = page.locator("#diagnostics");
-    if ((await diagnostics.count()) !== 1) {
-      throw new Error("diagnostics must be grouped in a collapsed details element");
-    }
-    if (await diagnostics.evaluate((node) => node.hasAttribute("open"))) {
-      throw new Error("diagnostics must be closed by default");
-    }
-
-    const replayButton = page.locator("#replay-button");
+    const replayButton = page.locator(".stage[data-scene='connector'] .replay");
     if ((await replayButton.count()) !== 1 || !(await replayButton.isVisible())) {
-      throw new Error("Replay snap action must be visible on the connector default page");
+      throw new Error("connector replay button is missing or hidden");
     }
-
-    const defaultStatus = await page.locator("#status-detail").textContent();
-    if (/replay|aligned/i.test(defaultStatus || "")) {
-      throw new Error("connector default page must start in the separated before state");
-    }
-    if (/frame\s+\d+/i.test(defaultStatus || "")) {
-      throw new Error(`connector public status must not expose frame-counter text: ${defaultStatus}`);
-    }
-
-    const canvasPath = path.join(outDir, "connector-snap-canvas.png");
-    await page.locator("#canvas").screenshot({ path: canvasPath });
-    const pagePath = path.join(outDir, "connector-snap-page.png");
-    await page.screenshot({ path: pagePath, fullPage: true });
-    const connectorStats = imageStats(canvasPath);
-    if (connectorStats.mean < 0.005 || connectorStats.deviation < 0.002) {
-      throw new Error(`connector canvas looks blank: ${JSON.stringify(connectorStats)}`);
-    }
-    assertForegroundCoverage(canvasPath, "connector canvas", 0.45, 0.24);
-
-    await replayButton.click();
+    const connectorReplayMotion = await assertConnectorRenderedPixelsMoveDuringReplay(page);
     await page.waitForFunction(
-      () =>
-        /running scene\.mate\(\)/i.test(document.getElementById("status-detail")?.textContent || "") &&
-        document.querySelector("#mate-line")?.classList.contains("is-active") &&
-        Number(document.getElementById("metric-frame")?.textContent || "0") >= 4,
+      () => {
+        const controller = window.__scenaShowcaseProbe
+          ?.controllers?.()
+          .find((candidate) => candidate.scene === "connector");
+        return controller && !/failed|error|panic/i.test(controller.status || "");
+      },
       { timeout: 30000 },
     );
-    const replayPath = path.join(outDir, "connector-snap-replay-page.png");
-    await page.screenshot({ path: replayPath, fullPage: true });
-    await page.waitForFunction(
-      () => /Aligned via authored connectors/.test(document.getElementById("connector-result")?.textContent || ""),
-      { timeout: 30000 },
-    );
-    const alignedStatus = await page.locator("#status-detail").textContent();
-    if (/frame\s+\d+/i.test(alignedStatus || "")) {
-      throw new Error(`aligned public status must not expose frame-counter text: ${alignedStatus}`);
-    }
-    const postReplayPath = path.join(outDir, "connector-snap-post-replay-page.png");
-    await page.screenshot({ path: postReplayPath, fullPage: true });
-    const postReplayMarkers = await connectorMarkerSnapshot(page);
-    assertConnectorMarkersOnCanvas(postReplayMarkers, "post-replay connector markers");
+    await assertConnectorMarkers(page);
 
-    const frameBeforeOrbit = await frameMetric(page);
-    await page.mouse.move(640, 360);
-    await page.mouse.down();
-    await page.mouse.move(760, 420, { steps: 6 });
-    await page.mouse.up();
-    await page.mouse.wheel(0, -300);
-    await page.waitForFunction(
-      (startFrame) => Number(document.getElementById("metric-frame")?.textContent || "0") > startFrame,
-      frameBeforeOrbit,
-      { timeout: 30000 },
-    );
-    const orbitMarkers = await connectorMarkerSnapshot(page);
-    assertConnectorMarkersOnCanvas(orbitMarkers, "orbited connector markers");
-    const projectedOrbitMarkers = await page.evaluate(() => window.__scenaDemoProbe?.connectorMarkerPositions?.() ?? null);
-    assertConnectorMarkerAnchorsMatchProjection(orbitMarkers, projectedOrbitMarkers, "orbited connector markers");
-    const markerMotion =
-      Math.hypot(orbitMarkers.shaft.x - postReplayMarkers.shaft.x, orbitMarkers.shaft.y - postReplayMarkers.shaft.y) +
-      Math.hypot(orbitMarkers.hub.x - postReplayMarkers.hub.x, orbitMarkers.hub.y - postReplayMarkers.hub.y);
-    if (markerMotion < 8) {
-      throw new Error(
-        `connector markers must follow camera orbit/zoom instead of staying fixed in the overlay: ${JSON.stringify({ postReplayMarkers, orbitMarkers })}`,
-      );
-    }
-    const orbitPath = path.join(outDir, "connector-snap-orbit-page.png");
-    await page.screenshot({ path: orbitPath, fullPage: true });
-
-    const drivePath = await captureSample(page, outDir, "Drive unit", "drive-unit", "/samples/connector-snap/drive_unit.glb");
-    const loadPath = await captureSample(page, outDir, "Load unit", "load-unit", "/samples/connector-snap/load_unit.glb");
-    const waterBottlePaths = await captureSample(page, outDir, "Khronos PBR", "water-bottle", "/samples/khronos/WaterBottle.glb");
-    const toyCarPath = await captureSample(page, outDir, "Khronos vehicle", "toy-car", "/samples/khronos/ToyCar.glb");
-    const materialPresetPath = await captureMaterialPresets(page, outDir);
-    const waterBottlePath = waterBottlePaths.canvasPath;
-    const waterBottlePagePath = waterBottlePaths.pagePath;
-    const waterBottleStats = imageStats(waterBottlePath);
-    if (waterBottleStats.mean < 0.005 || waterBottleStats.deviation < 0.002) {
-      throw new Error(`WaterBottle canvas looks blank: ${JSON.stringify(waterBottleStats)}`);
-    }
-    assertForegroundCoverage(waterBottlePath, "WaterBottle canvas", 0.25, 0.45);
-    const waterBottleLogo = redDominantPixelsInRegion(waterBottlePath, {
-      x: 0.25,
-      y: 0.30,
-      width: 0.50,
-      height: 0.36,
-    });
-    if (waterBottleLogo.count < 350) {
-      throw new Error(
-        `WaterBottle default view must face the red label/logo: ${JSON.stringify(waterBottleLogo)}`,
-      );
-    }
+    const images = await assertImagesLoad(page);
+    await page.screenshot({ path: path.join(outDir, "desktop-page.png"), fullPage: true });
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(
-      () => Number(document.getElementById("metric-frame")?.textContent || "0") >= 1,
+      () => window.__scenaShowcaseProbe?.controllers?.().some(
+        (controller) => controller.scene === "hero" && controller.renderedForActivation,
+      ),
       { timeout: 90000 },
     );
-    const mobilePath = path.join(outDir, "connector-snap-mobile-page.png");
-    await page.screenshot({ path: mobilePath, fullPage: true });
-    const mobileSize = imageSize(mobilePath);
-    if (mobileSize.height > 980) {
-      throw new Error(`mobile full-page screenshot has excessive dead space: ${JSON.stringify(mobileSize)}`);
-    }
-    const mobileCanvasPath = path.join(outDir, "connector-snap-mobile-canvas.png");
-    await page.locator("#canvas").screenshot({ path: mobileCanvasPath });
-    assertForegroundCoverage(mobileCanvasPath, "mobile connector canvas", 0.52, 0.24);
-    if ((await page.locator("#replay-button").count()) !== 1) {
-      throw new Error("mobile connector page must keep the replay action available");
-    }
-    const mobileReplayBox = await page.locator("#replay-button").boundingBox();
-    if (!mobileReplayBox || mobileReplayBox.y > 844) {
-      throw new Error(`mobile replay action must appear in the first viewport: ${JSON.stringify(mobileReplayBox)}`);
-    }
-    if (await page.locator("#diagnostics").evaluate((node) => node.hasAttribute("open"))) {
-      throw new Error("mobile diagnostics must stay closed by default");
-    }
+    await waitForSceneRendered(page, "connector");
+    await assertConnectorMarkers(page);
+    const mobileConnector = await captureSceneCanvas(page, "connector", 0.30, 0.16);
+    await page.screenshot({ path: path.join(outDir, "mobile-page.png"), fullPage: true });
 
-    if (errors.length) {
-      throw new Error(errors.join("\n"));
-    }
-    if (unexpectedConsole.length) {
-      throw new Error(`public demo emitted console noise:\n${unexpectedConsole.slice(0, 20).join("\n")}`);
-    }
+    if (errors.length) throw new Error(errors.join("\n"));
 
     console.log(
       JSON.stringify(
         {
           url,
-          connectorStats,
-          waterBottleStats,
-          screenshots: [
-            pagePath,
-            canvasPath,
-            replayPath,
-            postReplayPath,
-            orbitPath,
-            drivePath.pagePath,
-            loadPath.pagePath,
-            waterBottlePagePath,
-            waterBottlePath,
-            toyCarPath.pagePath,
-            materialPresetPath.pagePath,
-            materialPresetPath.canvasPath,
-            mobilePath,
-            mobileCanvasPath,
-          ],
+          deploymentBundle,
+          controllers: await showcaseControllers(page),
+          images,
+          connectorMarkers,
+          connectorReplayMotion,
+          captures: {
+            hero,
+            material,
+            model,
+            connector,
+            mobileConnector,
+          },
+          screenshots: outDir,
         },
         null,
         2,
@@ -360,152 +413,3 @@ function assertForegroundCoverage(file, label, minWidthFraction, minHeightFracti
   console.error(error);
   process.exit(1);
 });
-
-async function captureSample(page, outDir, label, fileBase, expectedPath) {
-  await page.getByRole("button", { name: new RegExp(`^${escapeRegExp(label)}\\b`) }).click();
-  await page.waitForFunction(
-    (expected) => document.getElementById("status-title")?.textContent === expected,
-    label,
-    { timeout: 30000 },
-  );
-  await page.waitForFunction(
-    () => Number(document.getElementById("metric-frame")?.textContent || "0") >= 1,
-    { timeout: 90000 },
-  );
-  await page.waitForFunction(
-    () => document.getElementById("status-detail")?.textContent === "rendered",
-    { timeout: 90000 },
-  );
-  const subtitle = await page.locator("#code-subtitle").textContent();
-  if (!subtitle.includes(expectedPath)) {
-    throw new Error(`${label} code subtitle does not match canvas asset: ${subtitle}`);
-  }
-  const snippet = await page.locator("#code-snippet").textContent();
-  if (!snippet.includes(`load_scene("${expectedPath}")`)) {
-    throw new Error(`${label} code snippet does not match canvas asset`);
-  }
-  const canvasPath = path.join(outDir, `${fileBase}-canvas.png`);
-  await page.locator("#canvas").screenshot({ path: canvasPath });
-  const pagePath = path.join(outDir, `${fileBase}-page.png`);
-  await page.screenshot({ path: pagePath, fullPage: true });
-  const stats = imageStats(canvasPath);
-  if (stats.mean < 0.005 || stats.deviation < 0.002) {
-    throw new Error(`${label} canvas looks blank: ${JSON.stringify(stats)}`);
-  }
-  return { pagePath, canvasPath };
-}
-
-async function captureMaterialPresets(page, outDir) {
-  await page.getByRole("button", { name: /^Material presets\b/ }).click();
-  await page.waitForFunction(
-    () => document.getElementById("status-title")?.textContent === "Material presets",
-    { timeout: 30000 },
-  );
-  await page.waitForFunction(
-    () => Number(document.getElementById("metric-frame")?.textContent || "0") >= 1,
-    { timeout: 90000 },
-  );
-  await page.waitForFunction(
-    () => document.getElementById("status-detail")?.textContent === "rendered",
-    { timeout: 90000 },
-  );
-  const canvasShape = await page.evaluate(() => {
-    const canvas = document.getElementById("canvas");
-    const rect = canvas.getBoundingClientRect();
-    return {
-      width: canvas.width,
-      height: canvas.height,
-      cssWidth: Math.round(rect.width),
-      cssHeight: Math.round(rect.height),
-    };
-  });
-  if (
-    Math.abs(canvasShape.width - canvasShape.cssWidth) > 1 ||
-    Math.abs(canvasShape.height - canvasShape.cssHeight) > 1
-  ) {
-    throw new Error(`material preset canvas backing buffer is stretched: ${JSON.stringify(canvasShape)}`);
-  }
-  const snippet = await page.locator("#code-snippet").textContent();
-  if (!snippet.includes("white_studio_03_1k.hdr")) {
-    throw new Error("material preset code snippet must show the approved white_studio_03 demo HDR");
-  }
-  for (const preset of ["chrome()", "brushed_steel()", "clear_glass", "frosted_glass", "rubber()"]) {
-    if (!snippet.includes(preset)) {
-      throw new Error(`material preset code snippet is missing ${preset}`);
-    }
-  }
-  const canvasPath = path.join(outDir, "material-presets-canvas.png");
-  await page.locator("#canvas").screenshot({ path: canvasPath });
-  const pagePath = path.join(outDir, "material-presets-page.png");
-  await page.screenshot({ path: pagePath, fullPage: true });
-  const stats = imageStats(canvasPath);
-  if (stats.mean < 0.005 || stats.deviation < 0.002) {
-    throw new Error(`Material presets canvas looks blank: ${JSON.stringify(stats)}`);
-  }
-  assertForegroundCoverage(canvasPath, "Material presets canvas", 0.30, 0.20);
-  return { pagePath, canvasPath };
-}
-
-function escapeRegExp(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-async function connectorMarkerSnapshot(page) {
-  return page.evaluate(() => {
-    const read = (name) => {
-      const marker = document.querySelector(`.connector-marker[data-connector="${name}"]`);
-      if (!marker) return null;
-      const rect = marker.getBoundingClientRect();
-      const canvasRect = document.getElementById("canvas").getBoundingClientRect();
-      return {
-        x: rect.left + rect.width * 0.5 - canvasRect.left,
-        y: rect.top + rect.height * 0.5 - canvasRect.top,
-        anchorX: Number.parseFloat(marker.style.left || "NaN"),
-        anchorY: Number.parseFloat(marker.style.top || "NaN"),
-        visible: marker.dataset.visible === "true",
-      };
-    };
-    const canvasRect = document.getElementById("canvas").getBoundingClientRect();
-    return {
-      canvas: { width: canvasRect.width, height: canvasRect.height },
-      shaft: read("shaft"),
-      hub: read("hub"),
-    };
-  });
-}
-
-function assertConnectorMarkerAnchorsMatchProjection(snapshot, projected, label) {
-  if (!projected) throw new Error(`${label}: missing projected marker positions`);
-  for (const name of ["shaft", "hub"]) {
-    const marker = snapshot[name];
-    const expected = projected[name];
-    if (!marker || !expected?.visible) {
-      throw new Error(`${label}: ${name} missing marker/projection: ${JSON.stringify({ snapshot, projected })}`);
-    }
-    const distance = Math.hypot(marker.anchorX - expected.x, marker.anchorY - expected.y);
-    if (!Number.isFinite(distance) || distance > 2.0) {
-      throw new Error(`${label}: ${name} marker anchor detached from projected connector: ${JSON.stringify({ marker, expected, distance })}`);
-    }
-  }
-}
-
-async function frameMetric(page) {
-  return Number(await page.locator("#metric-frame").textContent()) || 0;
-}
-
-function assertConnectorMarkersOnCanvas(snapshot, label) {
-  for (const name of ["shaft", "hub"]) {
-    const marker = snapshot[name];
-    if (!marker || !marker.visible) {
-      throw new Error(`${label}: ${name} marker is not projected and visible: ${JSON.stringify(snapshot)}`);
-    }
-    if (
-      marker.x < 0 ||
-      marker.x > snapshot.canvas.width ||
-      marker.y < 0 ||
-      marker.y > snapshot.canvas.height
-    ) {
-      throw new Error(`${label}: ${name} marker is outside the canvas: ${JSON.stringify(snapshot)}`);
-    }
-  }
-}

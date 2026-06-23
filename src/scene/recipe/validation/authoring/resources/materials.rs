@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
+use crate::MaterialDesc;
 use crate::scene::recipe::types::SceneRecipeDiagnosticV1;
 
 use super::super::{validate_known_fields, validate_required_id};
@@ -15,6 +16,7 @@ use crate::scene::recipe::validation::diagnostic;
 const MATERIAL_FIELDS: &[&str] = &[
     "id",
     "kind",
+    "preset",
     "base_color",
     "metallic",
     "roughness",
@@ -142,6 +144,44 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_materials(
         validate_known_fields(&path, object, MATERIAL_FIELDS, diagnostics);
         validate_required_id(&path, object.get("id"), diagnostics);
         let kind = object.get("kind").and_then(Value::as_str);
+        let preset = object.get("preset").and_then(Value::as_str);
+        if object.contains_key("kind") && object.contains_key("preset") {
+            diagnostics.push(diagnostic(
+                "invalid_material",
+                "error",
+                format!("{path}.preset"),
+                "material must use either preset or kind, not both",
+                "remove kind when using material.preset, or remove preset and use the low-level material kind",
+                None,
+                false,
+            ));
+        }
+        if let Some(value) = object.get("preset")
+            && !value.is_string()
+        {
+            diagnostics.push(diagnostic(
+                "invalid_material_preset",
+                "error",
+                format!("{path}.preset"),
+                "material preset must be a string",
+                "use a documented MaterialDesc preset name such as chrome, plastic, or brushed_steel",
+                None,
+                false,
+            ));
+        }
+        if let Some(preset) = preset
+            && MaterialDesc::from_preset_name(preset, None).is_none()
+        {
+            diagnostics.push(diagnostic(
+                "invalid_material_preset",
+                "error",
+                format!("{path}.preset"),
+                format!("material preset '{preset}' is not supported"),
+                format!("use one of: {}", MaterialDesc::PRESET_NAMES.join(", ")),
+                None,
+                false,
+            ));
+        }
         match kind {
             Some("unlit" | "pbr_metallic_roughness" | "line" | "wireframe" | "edge") => {}
             Some(kind) => diagnostics.push(diagnostic(
@@ -153,22 +193,25 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_materials(
                 None,
                 false,
             )),
-            None => diagnostics.push(diagnostic(
+            None if preset.is_none() => diagnostics.push(diagnostic(
                 "missing_material_kind",
                 "error",
                 format!("{path}.kind"),
-                "material must include a kind string",
-                "use kind:\"unlit\", \"pbr_metallic_roughness\", \"line\", \"wireframe\", or \"edge\"",
+                "material must include either a preset string or a kind string",
+                "use preset:\"chrome\" for ergonomic materials or kind:\"pbr_metallic_roughness\" with base_color",
                 None,
                 false,
             )),
+            None => {}
         }
-        validate_color_ref(
-            &format!("{path}.base_color"),
-            object.get("base_color"),
-            colors,
-            diagnostics,
-        );
+        if kind.is_some() || object.contains_key("base_color") {
+            validate_color_ref(
+                &format!("{path}.base_color"),
+                object.get("base_color"),
+                colors,
+                diagnostics,
+            );
+        }
         if let Some(emissive) = object.get("emissive") {
             validate_color_ref(
                 &format!("{path}.emissive"),
@@ -230,8 +273,20 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_materials(
             }
             Some(_) | None => {}
         }
-        if kind != Some("pbr_metallic_roughness") {
+        if kind != Some("pbr_metallic_roughness") && preset.is_none() {
             reject_advanced_pbr_fields_for_non_pbr(&path, object, diagnostics);
+        } else if preset.is_some() {
+            validate_unit_float(
+                &format!("{path}.metallic"),
+                object.get("metallic"),
+                diagnostics,
+            );
+            validate_unit_float(
+                &format!("{path}.roughness"),
+                object.get("roughness"),
+                diagnostics,
+            );
+            validate_advanced_pbr_fields(&path, object, colors, diagnostics);
         }
         match kind {
             Some("line" | "wireframe" | "edge") => validate_optional_positive(

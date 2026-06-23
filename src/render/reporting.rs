@@ -76,10 +76,18 @@ impl Renderer {
     fn post_processing_report(&self) -> PostProcessingReportV1 {
         let anti_aliasing = self.anti_aliasing.uses_post_fxaa();
         let bloom = self.bloom.is_some();
+        let screen_space_reflections = self.screen_space_reflections.is_some();
         let screen_space_ambient_occlusion = self.screen_space_ambient_occlusion.is_some();
+        let depth_of_field = self.depth_of_field.is_some();
         let mut active_passes = Vec::new();
+        if screen_space_reflections {
+            active_passes.push(PostProcessingPassV1::ScreenSpaceReflections);
+        }
         if screen_space_ambient_occlusion {
             active_passes.push(PostProcessingPassV1::ScreenSpaceAmbientOcclusion);
+        }
+        if depth_of_field {
+            active_passes.push(PostProcessingPassV1::DepthOfField);
         }
         if bloom {
             active_passes.push(PostProcessingPassV1::Bloom);
@@ -91,8 +99,17 @@ impl Renderer {
             active_passes,
             anti_aliasing,
             bloom,
+            screen_space_reflections,
             screen_space_ambient_occlusion,
+            depth_of_field,
             ssao_depth_source: screen_space_ambient_occlusion.then(|| {
+                if self.gpu.is_some() {
+                    PostProcessingDepthSourceV1::DepthColorTarget
+                } else {
+                    PostProcessingDepthSourceV1::CpuDepthFrame
+                }
+            }),
+            dof_depth_source: depth_of_field.then(|| {
                 if self.gpu.is_some() {
                     PostProcessingDepthSourceV1::DepthColorTarget
                 } else {

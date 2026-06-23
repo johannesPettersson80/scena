@@ -103,12 +103,20 @@ fn round_e_material_demo_does_not_apply_one_global_key_light_to_ibl_sensitive_pr
 }
 
 #[test]
-fn round_e_material_demo_camera_matches_external_reference_fixture() {
+fn round_e_material_proof_camera_matches_external_reference_fixture() {
     let source = include_str!("../src/demo_page/material_presets.rs");
+    let proof_js = include_str!("../demo/proof.js");
     assert!(
-        source.contains(".azimuth_elevation(-18.0, 18.0)"),
-        "Round E browser/demo proof must use the same camera azimuth/elevation pinned in \
-         round_e_material_fixture.toml so external-reference comparisons are meaningful"
+        source.contains("pub async fn load_material_proof_scene")
+            && source.contains(".azimuth_elevation(-18.0, 18.0)")
+            && proof_js.contains("load_material_proof_scene")
+            && proof_js.contains("load_material_proof_scene(canvas.width, canvas.height)")
+            && proof_js.contains("set_background_scheme(app, \"neutral_gray\")")
+            && proof_js.contains("applyCanvasBackground(\"neutral_gray\")")
+            && !proof_js.contains("load_material_presets_scene"),
+        "Round E hard-reference proof must use the material-specific proof export and camera \
+         pinned in round_e_material_fixture.toml; comparing the public 12-sphere route against \
+         material-specific references is not meaningful"
     );
 }
 

@@ -1,7 +1,7 @@
+use super::VerifyAnimationCommandArgs;
 use super::expectations::{apply_expected_node_status, expected_node_status};
-use super::{
-    AnimationObservation, VerifyAnimationCommandArgs, samples_from_observations,
-    selected_observed_node,
+use super::observations::{
+    AnimationObservation, samples_from_observations, selected_observed_node,
 };
 use crate::scena_input::{ResolvedSceneInput, scene_host_build_from_resolved_recipe};
 use crate::scena_output::{CliOutcome, json_outcome};
@@ -70,22 +70,28 @@ pub(super) async fn run_verify_recipe_animation(
             .map_err(|error| {
                 format!("failed to decode recipe animation inspection report: {error}")
             })?;
+        let node_rendered_coverage =
+            super::rendered_coverage::rendered_node_coverages(&capture, &inspection);
+        let node_transforms = inspection
+            .nodes
+            .iter()
+            .map(|node| (node.handle, node.world_transform))
+            .collect();
         observations.push(AnimationObservation {
             time_seconds: *time_seconds,
             transform_revision: inspection.revisions.transform,
             appearance_revision: inspection.revisions.appearance,
-            payload_fnv1a64: capture.descriptor.payload.fnv1a64,
-            node_transforms: inspection
-                .nodes
-                .into_iter()
-                .map(|node| (node.handle, node.world_transform))
-                .collect(),
+            payload_fnv1a64: capture.descriptor.payload.fnv1a64.clone(),
+            capture,
+            inspection,
+            node_transforms,
+            node_rendered_coverage,
         });
     }
     let selected_node = args.expected_node_handle.or_else(|| {
-        args.expected_translations
-            .as_ref()
-            .and_then(|_| selected_observed_node(&observations, 0.0001))
+        (args.expect_change || args.expected_translations.is_some())
+            .then(|| selected_observed_node(&observations, 0.0001))
+            .flatten()
     });
     let samples = samples_from_observations(
         &observations,

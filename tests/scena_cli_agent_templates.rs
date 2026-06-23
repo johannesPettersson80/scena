@@ -418,4 +418,24 @@ fn assert_template_recipe_has_beauty_defaults(recipe_path: &Path, name: &str) {
                 .is_some_and(|height| height >= 384),
         "template {name} should render high enough resolution for visual review: {recipe:#}"
     );
+    assert_eq!(
+        recipe["render"]["anti_aliasing"], "msaa4",
+        "template {name} should use sample AA for native-resolution review, not FXAA-only: {recipe:#}"
+    );
+    assert_eq!(
+        recipe["render"]["supersample"], 2,
+        "template {name} should opt into the proven hero supersample tier: {recipe:#}"
+    );
+    assert_eq!(
+        recipe["render"]["reconstruction"], "tent",
+        "template {name} should use the line-safe reconstruction filter for starter output: {recipe:#}"
+    );
+    if recipe["scene"]["grid"].is_object() {
+        assert!(
+            recipe["scene"]["grid"]["line_width_px"]
+                .as_f64()
+                .is_some_and(|width| width >= 3.6),
+            "template {name} with a grid should set a visible grid line width instead of relying on thin defaults: {recipe:#}"
+        );
+    }
 }

@@ -15,16 +15,22 @@ const LIGHT_FIELDS: &[&str] = &[
     "id",
     "kind",
     "preset",
+    "shape",
     "color",
     "illuminance_lux",
     "intensity_candela",
+    "luminous_flux_lumens",
     "range",
+    "width",
+    "height",
+    "radius",
     "inner_cone_degrees",
     "outer_cone_degrees",
     "transform",
 ];
 const DIRECTIONAL_PRESETS: &[&str] = &["sun", "key", "fill", "rim"];
 const POINT_PRESETS: &[&str] = &["softbox", "bulb_warm", "bulb_cool"];
+const AREA_PRESETS: &[&str] = &["softbox"];
 
 pub(in crate::scene::recipe::validation::authoring) fn validate_lights(
     value: Option<&Value>,
@@ -64,13 +70,13 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_lights(
         validate_required_id(&path, object.get("id"), diagnostics);
         let kind = object.get("kind").and_then(Value::as_str);
         match kind {
-            Some("directional" | "point" | "spot") => {}
+            Some("directional" | "point" | "spot" | "area" | "studio_rig") => {}
             Some(kind) => diagnostics.push(diagnostic(
                 "unsupported_feature",
                 "error",
                 format!("{path}.kind"),
                 format!("light kind '{kind}' is not supported"),
-                "use directional, point, or spot",
+                "use directional, point, spot, area, or studio_rig",
                 None,
                 false,
             )),
@@ -79,15 +85,19 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_lights(
                 "error",
                 format!("{path}.kind"),
                 "light must include kind",
-                "use directional, point, or spot",
+                "use directional, point, spot, area, or studio_rig",
                 None,
                 false,
             )),
         }
         validate_light_preset(&path, kind, object.get("preset"), diagnostics);
+        validate_light_field_compatibility(&path, kind, object, diagnostics);
         if let Some(color) = object.get("color") {
             match color.as_str() {
-                Some(value) if colors.contains(value) || Color::from_hex(value).is_ok() => {}
+                Some(value)
+                    if colors.contains(value)
+                        || Color::from_named_constant(value).is_some()
+                        || Color::from_hex(value).is_ok() => {}
                 Some(_) => diagnostics.push(diagnostic(
                     "unknown_color_ref",
                     "error",
@@ -108,13 +118,19 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_lights(
                 )),
             }
         }
-        for field in ["illuminance_lux", "intensity_candela", "range"] {
+        for field in [
+            "illuminance_lux",
+            "intensity_candela",
+            "luminous_flux_lumens",
+            "range",
+        ] {
             validate_optional_non_negative(
                 &format!("{path}.{field}"),
                 object.get(field),
                 diagnostics,
             );
         }
+        validate_area_shape(&path, kind, object, diagnostics);
         validate_optional_angle(
             &format!("{path}.inner_cone_degrees"),
             object.get("inner_cone_degrees"),
@@ -163,6 +179,17 @@ fn validate_light_preset(
     match kind {
         Some("directional") if DIRECTIONAL_PRESETS.contains(&preset) => {}
         Some("point") if POINT_PRESETS.contains(&preset) => {}
+        Some("area") if AREA_PRESETS.contains(&preset) => {}
+        Some("studio_rig") if preset == "studio_rig" => {}
+        Some("studio_rig") => diagnostics.push(diagnostic(
+            "invalid_light_preset",
+            "error",
+            preset_path,
+            format!("preset '{preset}' is not valid for studio_rig lights"),
+            "use studio_rig or omit preset for the default studio rig",
+            None,
+            false,
+        )),
         Some("spot") => diagnostics.push(diagnostic(
             "unsupported_feature",
             "error",
@@ -190,6 +217,171 @@ fn validate_light_preset(
             None,
             false,
         )),
+        Some("area") => diagnostics.push(diagnostic(
+            "invalid_light_preset",
+            "error",
+            preset_path,
+            format!("preset '{preset}' is not valid for area lights"),
+            "use softbox",
+            None,
+            false,
+        )),
         _ => {}
+    }
+}
+
+fn validate_light_field_compatibility(
+    path: &str,
+    kind: Option<&str>,
+    object: &serde_json::Map<String, Value>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    let Some(kind) = kind else {
+        return;
+    };
+    let incompatible: &[&str] = match kind {
+        "studio_rig" => &[
+            "shape",
+            "color",
+            "illuminance_lux",
+            "intensity_candela",
+            "luminous_flux_lumens",
+            "range",
+            "width",
+            "height",
+            "radius",
+            "inner_cone_degrees",
+            "outer_cone_degrees",
+            "transform",
+        ],
+        "directional" => &[
+            "shape",
+            "intensity_candela",
+            "luminous_flux_lumens",
+            "range",
+            "width",
+            "height",
+            "radius",
+            "inner_cone_degrees",
+            "outer_cone_degrees",
+        ],
+        "point" => &[
+            "shape",
+            "illuminance_lux",
+            "luminous_flux_lumens",
+            "width",
+            "height",
+            "radius",
+            "inner_cone_degrees",
+            "outer_cone_degrees",
+        ],
+        "spot" => &[
+            "shape",
+            "illuminance_lux",
+            "luminous_flux_lumens",
+            "width",
+            "height",
+            "radius",
+        ],
+        "area" => &[
+            "illuminance_lux",
+            "intensity_candela",
+            "inner_cone_degrees",
+            "outer_cone_degrees",
+        ],
+        _ => &[],
+    };
+    for field in incompatible {
+        if object.contains_key(*field) {
+            diagnostics.push(diagnostic(
+                "unsupported_feature",
+                "error",
+                format!("{path}.{field}"),
+                format!("field '{field}' is not valid for {kind} lights"),
+                "remove the field or switch to the light kind that owns it",
+                None,
+                false,
+            ));
+        }
+    }
+}
+
+fn validate_area_shape(
+    path: &str,
+    kind: Option<&str>,
+    object: &serde_json::Map<String, Value>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    if kind != Some("area") {
+        return;
+    }
+    let shape = object
+        .get("shape")
+        .and_then(Value::as_str)
+        .unwrap_or("rect");
+    match shape {
+        "rect" => {
+            validate_positive_dimension(path, object.get("width"), "width", diagnostics);
+            validate_positive_dimension(path, object.get("height"), "height", diagnostics);
+            if object.contains_key("radius") {
+                diagnostics.push(diagnostic(
+                    "invalid_area_light_shape",
+                    "error",
+                    format!("{path}.radius"),
+                    "rect area lights use width and height, not radius",
+                    "remove radius or use shape:\"disc\"/\"sphere\"",
+                    None,
+                    false,
+                ));
+            }
+        }
+        "disc" | "sphere" => {
+            validate_positive_dimension(path, object.get("radius"), "radius", diagnostics);
+            for field in ["width", "height"] {
+                if object.contains_key(field) {
+                    diagnostics.push(diagnostic(
+                        "invalid_area_light_shape",
+                        "error",
+                        format!("{path}.{field}"),
+                        format!("{shape} area lights use radius, not {field}"),
+                        "remove width/height or use shape:\"rect\"",
+                        None,
+                        false,
+                    ));
+                }
+            }
+        }
+        other => diagnostics.push(diagnostic(
+            "invalid_area_light_shape",
+            "error",
+            format!("{path}.shape"),
+            format!("area light shape '{other}' is not supported"),
+            "use rect, disc, or sphere",
+            None,
+            false,
+        )),
+    }
+}
+
+fn validate_positive_dimension(
+    path: &str,
+    value: Option<&Value>,
+    field: &str,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    match value.as_f64() {
+        Some(value) if value.is_finite() && value > 0.0 => {}
+        _ => diagnostics.push(diagnostic(
+            "invalid_area_light_shape",
+            "error",
+            format!("{path}.{field}"),
+            format!("area light {field} must be finite and > 0"),
+            "use a positive area-light dimension",
+            None,
+            false,
+        )),
     }
 }

@@ -12,11 +12,12 @@ mod render_result;
 mod setup;
 pub use authoring::{
     SceneRecipeAlphaModeV1, SceneRecipeAnimationChannelV1, SceneRecipeAnimationV1,
-    SceneRecipeCameraV1, SceneRecipeClippingPlaneV1, SceneRecipeColorV1,
-    SceneRecipeExpectedExtentV1, SceneRecipeFontV1, SceneRecipeGeometryV1, SceneRecipeImportV1,
-    SceneRecipeInstanceSetV1, SceneRecipeInstanceV1, SceneRecipeLabelV1, SceneRecipeLightV1,
-    SceneRecipeLookAtTargetV1, SceneRecipeMaterialV1, SceneRecipeMeshV1, SceneRecipeMorphTargetV1,
-    SceneRecipeMorphV1, SceneRecipeNodeSkinBindingV1, SceneRecipeNodeV1, SceneRecipeParticleSetV1,
+    SceneRecipeCameraFramingV1, SceneRecipeCameraV1, SceneRecipeClippingPlaneV1,
+    SceneRecipeColorV1, SceneRecipeExpectedExtentV1, SceneRecipeFontV1, SceneRecipeGeometryV1,
+    SceneRecipeImportV1, SceneRecipeInstanceSetV1, SceneRecipeInstanceV1, SceneRecipeLabelV1,
+    SceneRecipeLightV1, SceneRecipeLookAtTargetV1, SceneRecipeMaterialV1, SceneRecipeMeshV1,
+    SceneRecipeMorphTargetV1, SceneRecipeMorphV1, SceneRecipeNodeLodV1,
+    SceneRecipeNodeSkinBindingV1, SceneRecipeNodeV1, SceneRecipeParticleSetV1,
     SceneRecipeParticleV1, SceneRecipePrimitiveV1, SceneRecipeSkinV1,
     SceneRecipeTextureColorSpaceV1, SceneRecipeTextureSlotV1, SceneRecipeTransformV1,
 };
@@ -26,11 +27,16 @@ pub use build_manifest::{
     SceneRecipeDiagnosticV1, SceneRecipeValidationReportV1,
 };
 pub use expectations::{
-    SceneRecipeBboxFitExpectationV1, SceneRecipeColorExpectationV1, SceneRecipeExpectV1,
-    SceneRecipePickExpectationV1, SceneRecipeQualityContrastV1, SceneRecipeQualityExpectationV1,
-    SceneRecipeQualityExposureV1, SceneRecipeQualityGeometryV1, SceneRecipeQualityLineV1,
-    SceneRecipeQualityNoiseV1, SceneRecipeQualityTextV1, SceneRecipeReferenceExpectationV1,
-    SceneRecipeVisibleExpectationV1,
+    SceneRecipeBackendExpectationV1, SceneRecipeBboxFitExpectationV1,
+    SceneRecipeClippingExpectationV1, SceneRecipeColorExpectationV1, SceneRecipeExpectV1,
+    SceneRecipeGroundedExpectationV1, SceneRecipeHelperOcclusionExpectationV1,
+    SceneRecipePickExpectationV1, SceneRecipeQualityAreaLightV1, SceneRecipeQualityContrastV1,
+    SceneRecipeQualityDepthOfFieldV1, SceneRecipeQualityExpectationV1,
+    SceneRecipeQualityExposureV1, SceneRecipeQualityGeometryV1, SceneRecipeQualityGroundingV1,
+    SceneRecipeQualityLineV1, SceneRecipeQualityNoiseV1, SceneRecipeQualityReflectionV1,
+    SceneRecipeQualityTextV1, SceneRecipeReferenceExpectationV1,
+    SceneRecipeSeparationExpectationV1, SceneRecipeStateExpectationV1,
+    SceneRecipeTransformExpectationV1, SceneRecipeVisibleExpectationV1,
 };
 pub use overlays::{
     SceneRecipeCalloutTargetV1, SceneRecipeCalloutV1, SceneRecipeCaptureV1,
@@ -45,8 +51,10 @@ pub use render_result::{
     SceneRecipeVerificationReportV1, SceneRecipeVerificationSummaryV1,
 };
 pub use setup::{
-    SceneRecipeBackgroundV1, SceneRecipeBloomV1, SceneRecipeEnvironmentV1, SceneRecipeGridV1,
-    SceneRecipeRenderV1, SceneRecipeSceneV1, SceneRecipeSsaoV1,
+    SceneRecipeAutoExposureV1, SceneRecipeBackgroundV1, SceneRecipeBloomV1,
+    SceneRecipeDepthOfFieldV1, SceneRecipeEnvironmentV1, SceneRecipeGridReflectionV1,
+    SceneRecipeGridV1, SceneRecipeRenderV1, SceneRecipeSceneV1,
+    SceneRecipeScreenSpaceReflectionsV1, SceneRecipeSsaoV1,
 };
 
 pub const SCENE_RECIPE_SCHEMA_V1: &str = "scena.scene_recipe.v1";

@@ -1,9 +1,11 @@
 use super::super::scena_input::appearance_introspection_options;
 
 mod bbox_fit;
+mod interaction;
 mod quality;
 mod reference_quality;
 
+use interaction::{compile_interaction_expectation, run_interaction_verification};
 use std::path::Path;
 
 pub(crate) struct RecipeVerificationInput<'a> {
@@ -15,6 +17,7 @@ pub(crate) struct RecipeVerificationInput<'a> {
     pub(crate) inspection: &'a scena::SceneInspectionReportV1,
     pub(crate) introspection: &'a scena::RenderIntrospectionReportV1,
     pub(crate) detail: bool,
+    pub(crate) recipe_path: &'a Path,
     pub(crate) recipe_dir: &'a Path,
 }
 
@@ -30,6 +33,7 @@ pub(crate) fn verify_recipe_expectations(
         inspection,
         introspection,
         detail,
+        recipe_path,
         recipe_dir,
     } = input;
     let mut reasons = Vec::new();
@@ -104,90 +108,24 @@ pub(crate) fn verify_recipe_expectations(
         Some(report)
     };
 
-    let composition = host.composition_report(recipe, manifest, capture, inspection, expect);
+    let composition =
+        host.composition_report(recipe, manifest, capture, inspection, introspection, expect);
     push_composition_reasons(&composition, &mut reasons);
 
-    let quality_expectation_without_text =
-        quality::expectation_without_region_specific_checks(expect);
-    let mut quality = scena::evaluate_render_quality(
-        capture,
-        introspection,
-        quality_expectation_without_text.as_ref(),
-    );
-    if let Some(expect) = expect {
-        if let Some(text) = expect
-            .expect_quality
-            .as_ref()
-            .and_then(|quality| quality.text)
-        {
-            let label_targets =
-                host.label_quality_targets(capture.descriptor.width, capture.descriptor.height);
-            for (index, target) in label_targets.into_iter().enumerate() {
-                quality
-                    .checks
-                    .extend(scena::evaluate_label_region_quality_with_background(
-                        &format!("expect_quality.text.label[{index}]"),
-                        &capture.rgba8,
-                        capture.descriptor.width,
-                        capture.descriptor.height,
-                        target.region,
-                        text,
-                        target.background_srgb8,
-                    ));
-            }
-        }
-        if let Some(line) = expect
-            .expect_quality
-            .as_ref()
-            .and_then(|quality| quality.line)
-        {
-            let line_regions =
-                host.line_quality_regions(capture.descriptor.width, capture.descriptor.height);
-            for (index, region) in line_regions.into_iter().enumerate() {
-                quality.checks.extend(scena::evaluate_line_region_quality(
-                    &format!("expect_quality.line.segment[{index}]"),
-                    &capture.rgba8,
-                    capture.descriptor.width,
-                    capture.descriptor.height,
-                    region,
-                    line,
-                ));
-            }
-        }
-        if let Some(geometry) = quality::geometry_expectation(expect.expect_quality.as_ref()) {
-            quality
-                .checks
-                .extend(scena::evaluate_geometry_region_quality(
-                    "expect_quality.geometry",
-                    &capture.rgba8,
-                    capture.descriptor.width,
-                    capture.descriptor.height,
-                    quality::subject_region(capture, introspection),
-                    geometry,
-                ));
-        }
-        quality
-            .checks
-            .extend(reference_quality::verify_reference_expectations(
-                &expect.expect_reference,
-                capture,
-                recipe_dir,
-            )?);
-        reference_quality::refresh_quality_summary(&mut quality);
-    }
-    reasons.extend(
-        quality
-            .checks
-            .iter()
-            .map(|check| scena::SceneRecipeVerificationReasonV1 {
-                code: check.code.clone(),
-                severity: check.severity.clone(),
-                source: "quality".to_owned(),
-                expectation_id: Some(check.id.clone()),
-                affected_handles: check.region.handle.into_iter().collect(),
-                message: format!("{}; fix: {}", check.code, check.fix_hint),
-            }),
-    );
+    let quality = quality::verify_quality_expectations(
+        quality::QualityVerificationInput {
+            host,
+            recipe,
+            manifest,
+            expect,
+            capture,
+            introspection,
+            composition: &composition,
+            recipe_path,
+            recipe_dir,
+        },
+        &mut reasons,
+    )?;
 
     Ok(scena::SceneRecipeVerificationReportV1::new(
         render_checks,
@@ -303,88 +241,6 @@ fn compile_appearance_expectation(
     }
 }
 
-fn compile_interaction_expectation(
-    expect: &scena::SceneRecipeExpectV1,
-    manifest: &scena::SceneRecipeBuildV1,
-    capture: &scena::CaptureRgba8,
-    reasons: &mut Vec<scena::SceneRecipeVerificationReasonV1>,
-) -> scena::InteractionExpectationV1 {
-    let mut steps = Vec::new();
-    for pick in &expect.expect_pick {
-        let handle = match resolve_target_handle(&pick.target, manifest) {
-            Ok(handle) => handle,
-            Err(message) => {
-                push_reason(
-                    reasons,
-                    "target_not_found",
-                    "interaction",
-                    Some(pick.id.clone()),
-                    Vec::new(),
-                    message,
-                );
-                continue;
-            }
-        };
-        steps.push(scena::InteractionStepExpectationV1 {
-            action: "pick".to_owned(),
-            x_css_px: pick.x_css_px as f32,
-            y_css_px: pick.y_css_px as f32,
-            coordinate_space: "css".to_owned(),
-            expect_hit: Some(true),
-            expected_handle: Some(handle),
-            expect_hover: None,
-            expect_selection: None,
-            expected_events: vec!["pick".to_owned()],
-        });
-    }
-    scena::InteractionExpectationV1 {
-        schema: scena::INTERACTION_EXPECTATION_SCHEMA_V1.to_owned(),
-        viewport: scena::InteractionViewportV1 {
-            width_css_px: capture.descriptor.width as f32,
-            height_css_px: capture.descriptor.height as f32,
-            device_pixel_ratio: 1.0,
-        },
-        steps,
-    }
-}
-
-fn run_interaction_verification(
-    host: &mut scena::SceneHostCore,
-    expectation: scena::InteractionExpectationV1,
-) -> Result<scena::InteractionVerificationReportV1, String> {
-    let artifacts = scena::InteractionVerificationArtifactsV1::from_viewport(expectation.viewport);
-    let _ = host.drain_events();
-    let mut steps = Vec::with_capacity(expectation.steps.len());
-    for (index, step) in expectation.steps.iter().enumerate() {
-        let coordinates = scena::InteractionCoordinatesV1::from_step(step, expectation.viewport)?;
-        let handle = host
-            .pick(coordinates.x_css_px, coordinates.y_css_px)
-            .map_err(|error| format!("recipe interaction pick failed: {error}"))?;
-        let events = host
-            .drain_events()
-            .iter()
-            .map(scena::host_event_kind_name)
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        steps.push(scena::InteractionStepReportV1 {
-            index,
-            action: step.action.clone(),
-            coordinates,
-            expected: scena::InteractionStepExpectedV1::from(step),
-            observed: scena::InteractionStepObservedV1 {
-                hit: handle.is_some(),
-                handle,
-                hover_handle: host.hover_handle(),
-                selection_handle: host.primary_selection_handle(),
-                events,
-            },
-        });
-    }
-    Ok(scena::InteractionVerificationReportV1::from_steps(
-        artifacts, steps,
-    ))
-}
-
 fn resolve_target_handle(
     target: &scena::SceneRecipeTargetV1,
     manifest: &scena::SceneRecipeBuildV1,
@@ -395,7 +251,7 @@ fn resolve_target_handle(
         .ok_or_else(|| "target resolved to no handles".to_owned())
 }
 
-fn resolve_target_handles(
+pub(super) fn resolve_target_handles(
     target: &scena::SceneRecipeTargetV1,
     manifest: &scena::SceneRecipeBuildV1,
     allow_import: bool,

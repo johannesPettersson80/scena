@@ -42,6 +42,10 @@ pub struct SceneRecipePrimitiveV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bevel: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fillet: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub segments: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rings: Option<u32>,
@@ -105,8 +109,12 @@ impl SceneRecipeSkinV1 {
 #[serde(deny_unknown_fields)]
 pub struct SceneRecipeMaterialV1 {
     pub id: String,
-    pub kind: String,
-    pub base_color: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metallic: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -237,9 +245,18 @@ pub struct SceneRecipeNodeV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transform: Option<SceneRecipeTransformV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lods: Vec<SceneRecipeNodeLodV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub morph_weights: Vec<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skin_binding: Option<SceneRecipeNodeSkinBindingV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeNodeLodV1 {
+    pub geometry: String,
+    pub max_screen_fraction: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -381,10 +398,27 @@ pub struct SceneRecipeCameraV1 {
     pub kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fov_degrees: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lens: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub framing: Option<SceneRecipeCameraFramingV1>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub active: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transform: Option<SceneRecipeTransformV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRecipeCameraFramingV1 {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub margin_px: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -395,13 +429,23 @@ pub struct SceneRecipeLightV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preset: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub illuminance_lux: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intensity_candela: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub luminous_flux_lumens: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub range: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radius: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inner_cone_degrees: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -30,7 +30,9 @@ use replay::{lerp_transform, smoothstep};
 
 const CONNECTOR_REPLAY_SECONDS: f64 = 1.8;
 const DEMO_HDR_ENVIRONMENT: &str = "samples/environment/white_studio_03_1k.hdr";
-const CONNECTOR_SOLVE_SEED_OFFSET: Vec3 = Vec3::new(-0.62, 0.11, 0.0);
+// The hidden solve pose must stay within authored snap tolerance; the visible
+// before-state separation is applied after the mated pose is computed.
+const CONNECTOR_SOLVE_SEED_OFFSET: Vec3 = Vec3::new(-0.62, 0.0, 0.0);
 const CONNECTOR_REPLAY_SEPARATION_X: f32 = 0.48;
 const DEMO_BACKGROUND: Color = Color::CHARCOAL;
 

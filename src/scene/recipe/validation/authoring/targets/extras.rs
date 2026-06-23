@@ -403,7 +403,10 @@ pub(in crate::scene::recipe::validation::authoring::targets) fn validate_color_v
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
     match value.and_then(Value::as_str) {
-        Some(value) if colors.contains(value) || Color::from_hex(value).is_ok() => {}
+        Some(value)
+            if colors.contains(value)
+                || Color::from_named_constant(value).is_some()
+                || Color::from_hex(value).is_ok() => {}
         Some(value) => diagnostics.push(diagnostic(
             "unknown_color_ref",
             "error",

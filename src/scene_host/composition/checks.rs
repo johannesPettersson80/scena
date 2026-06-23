@@ -7,6 +7,8 @@ use crate::{
     SceneCompositionRegionV1, SceneCompositionStatusV1,
 };
 
+const OPTIONAL_COMPOSITION_SKIP_SEVERITY: &str = "info";
+
 pub(super) trait CompositionCheckExt {
     fn with_region(
         self,
@@ -110,7 +112,7 @@ pub(super) fn skip_check(
         category: category.to_owned(),
         code: code.to_owned(),
         status,
-        severity: "warning".to_owned(),
+        severity: OPTIONAL_COMPOSITION_SKIP_SEVERITY.to_owned(),
         target_id,
         affected_handles,
         observed: BTreeMap::new(),

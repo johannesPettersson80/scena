@@ -18,6 +18,8 @@ const PRIMITIVE_FIELDS: &[&str] = &[
     "major_radius",
     "minor_radius",
     "height",
+    "bevel",
+    "fillet",
     "segments",
     "rings",
     "divisions",
@@ -113,24 +115,32 @@ fn validate_primitive(path: &str, value: &Value, diagnostics: &mut Vec<SceneReci
         return;
     };
     validate_known_fields(path, object, PRIMITIVE_FIELDS, diagnostics);
+    validate_bevel_aliases(path, object, diagnostics);
     match object.get("kind").and_then(Value::as_str) {
-        Some("box") => validate_positive_number_list(
-            &format!("{path}.size"),
-            object.get("size"),
-            3,
-            "box primitive size must contain three finite positive dimensions",
-            "use size:[width,height,depth] in meters",
-            diagnostics,
-        ),
-        Some("plane") => validate_positive_number_list(
-            &format!("{path}.size"),
-            object.get("size"),
-            2,
-            "plane primitive size must contain finite positive width and depth",
-            "use size:[width,depth] in meters",
-            diagnostics,
-        ),
+        Some("box") => {
+            validate_positive_number_list(
+                &format!("{path}.size"),
+                object.get("size"),
+                3,
+                "box primitive size must contain three finite positive dimensions",
+                "use size:[width,height,depth] in meters",
+                diagnostics,
+            );
+            validate_optional_bevel_for_supported_kind(path, object, diagnostics);
+        }
+        Some("plane") => {
+            reject_bevel_for_kind(path, object, "plane", diagnostics);
+            validate_positive_number_list(
+                &format!("{path}.size"),
+                object.get("size"),
+                2,
+                "plane primitive size must contain finite positive width and depth",
+                "use size:[width,depth] in meters",
+                diagnostics,
+            );
+        }
         Some("sphere") => {
+            reject_bevel_for_kind(path, object, "sphere", diagnostics);
             validate_positive_number(&format!("{path}.radius"), object.get("radius"), diagnostics);
             validate_optional_positive_u32(
                 &format!("{path}.segments"),
@@ -146,6 +156,7 @@ fn validate_primitive(path: &str, value: &Value, diagnostics: &mut Vec<SceneReci
         Some("cylinder") => {
             validate_positive_number(&format!("{path}.radius"), object.get("radius"), diagnostics);
             validate_positive_number(&format!("{path}.height"), object.get("height"), diagnostics);
+            validate_optional_bevel_for_supported_kind(path, object, diagnostics);
             validate_optional_positive_u32(
                 &format!("{path}.segments"),
                 object.get("segments"),
@@ -153,6 +164,7 @@ fn validate_primitive(path: &str, value: &Value, diagnostics: &mut Vec<SceneReci
             );
         }
         Some("cone") => {
+            reject_bevel_for_kind(path, object, "cone", diagnostics);
             validate_positive_number(&format!("{path}.radius"), object.get("radius"), diagnostics);
             validate_positive_number(&format!("{path}.height"), object.get("height"), diagnostics);
             validate_optional_min_u32(
@@ -163,6 +175,7 @@ fn validate_primitive(path: &str, value: &Value, diagnostics: &mut Vec<SceneReci
             );
         }
         Some("disc") => {
+            reject_bevel_for_kind(path, object, "disc", diagnostics);
             validate_positive_number(&format!("{path}.radius"), object.get("radius"), diagnostics);
             validate_optional_min_u32(
                 &format!("{path}.segments"),
@@ -172,6 +185,7 @@ fn validate_primitive(path: &str, value: &Value, diagnostics: &mut Vec<SceneReci
             );
         }
         Some("torus") => {
+            reject_bevel_for_kind(path, object, "torus", diagnostics);
             validate_positive_number(
                 &format!("{path}.major_radius"),
                 object.get("major_radius"),
@@ -214,19 +228,24 @@ fn validate_primitive(path: &str, value: &Value, diagnostics: &mut Vec<SceneReci
                 diagnostics,
             );
         }
-        Some("wedge") => validate_positive_number_list(
-            &format!("{path}.size"),
-            object.get("size"),
-            3,
-            "wedge primitive size must contain three finite positive dimensions",
-            "use size:[width,height,depth] in meters",
-            diagnostics,
-        ),
+        Some("wedge") => {
+            reject_bevel_for_kind(path, object, "wedge", diagnostics);
+            validate_positive_number_list(
+                &format!("{path}.size"),
+                object.get("size"),
+                3,
+                "wedge primitive size must contain three finite positive dimensions",
+                "use size:[width,height,depth] in meters",
+                diagnostics,
+            );
+        }
         Some("line" | "arrow") => {
+            reject_bevel_for_kind(path, object, "line or arrow", diagnostics);
             validate_vec3(&format!("{path}.start"), object.get("start"), diagnostics);
             validate_vec3(&format!("{path}.end"), object.get("end"), diagnostics);
         }
         Some("polyline") => {
+            reject_bevel_for_kind(path, object, "polyline", diagnostics);
             validate_points(
                 &format!("{path}.points"),
                 object.get("points"),
@@ -235,6 +254,7 @@ fn validate_primitive(path: &str, value: &Value, diagnostics: &mut Vec<SceneReci
             );
         }
         Some("grid") => {
+            reject_bevel_for_kind(path, object, "grid", diagnostics);
             if object.get("length").is_some() {
                 validate_positive_number(
                     &format!("{path}.length"),
@@ -258,6 +278,7 @@ fn validate_primitive(path: &str, value: &Value, diagnostics: &mut Vec<SceneReci
             );
         }
         Some("axes") => {
+            reject_bevel_for_kind(path, object, "axes", diagnostics);
             validate_positive_number(&format!("{path}.length"), object.get("length"), diagnostics)
         }
         Some(kind) => diagnostics.push(diagnostic(
@@ -347,4 +368,53 @@ fn validate_mesh(path: &str, value: &Value, diagnostics: &mut Vec<SceneRecipeDia
         object.get("topology").and_then(Value::as_str),
         diagnostics,
     );
+}
+
+fn validate_bevel_aliases(
+    path: &str,
+    object: &serde_json::Map<String, Value>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    if object.contains_key("bevel") && object.contains_key("fillet") {
+        diagnostics.push(diagnostic(
+            "invalid_primitive",
+            "error",
+            path,
+            "primitive may specify bevel or fillet, not both",
+            "remove one bevel alias",
+            None,
+            false,
+        ));
+    }
+}
+
+fn validate_optional_bevel_for_supported_kind(
+    path: &str,
+    object: &serde_json::Map<String, Value>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    for field in ["bevel", "fillet"] {
+        if object.contains_key(field) {
+            validate_positive_number(&format!("{path}.{field}"), object.get(field), diagnostics);
+        }
+    }
+}
+
+fn reject_bevel_for_kind(
+    path: &str,
+    object: &serde_json::Map<String, Value>,
+    kind: &str,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    if object.contains_key("bevel") || object.contains_key("fillet") {
+        diagnostics.push(diagnostic(
+            "unsupported_feature",
+            "error",
+            path,
+            format!("primitive kind '{kind}' does not support bevel or fillet"),
+            "use bevel on box or cylinder primitives",
+            None,
+            false,
+        ));
+    }
 }

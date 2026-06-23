@@ -88,49 +88,193 @@ For presentation or beauty output, add `--gpu`; CPU remains the default, and
 the report `capabilities.backend` / `gpu_device` fields say which backend
 actually ran.
 
+For user-facing renders, add one more pass before calling the image done:
+inspect the native-resolution frame in explicit "what is wrong?" mode. Check
+the whole composition: declared objects visible and placed correctly, no stale
+or extra content, labels readable and attached, helper/grid lines not drawn over
+solid objects, objects grounded when intended, materials not black-crushed or
+blown out, and camera framing suited to the app. Convert any finding into a
+deterministic expectation or verifier gap; do not treat this critic pass as a
+silent green gate.
+
 ## Make It Look Good
 
 Correctness proof is not aesthetic proof. For scenes meant for a user-facing
-screenshot or demo, add presentation defaults instead of relying on the flat
-implicit setup:
+screenshot or demo, start with the ergonomic recipe fields instead of the
+low-level raw equivalents. They route to the same Rust helpers a Rust user
+would call:
 
 ```json
-"lights": [
-  { "id": "key", "kind": "directional", "preset": "key" },
-  { "id": "fill", "kind": "directional", "preset": "fill" },
-  { "id": "rim", "kind": "directional", "preset": "rim" }
+"materials": [
+  { "id": "body", "preset": "chrome", "roughness": 0.06 }
 ],
-"scene": {
-  "background": { "kind": "studio" },
-  "environment": {
-    "kind": "uri",
-    "uri": "tests/assets/environment/polyhaven/studio_small_03_1k.hdr"
+"lights": [
+  { "id": "studio", "kind": "studio_rig", "preset": "studio_rig" }
+],
+"cameras": [
+  {
+    "id": "camera",
+    "kind": "perspective",
+    "lens": "portrait",
+    "framing": { "preset": "three_quarter_front_right", "fill": 0.72 },
+    "active": true
   }
-},
+],
+"scene": { "preset": "product_studio" },
 "render": {
+  "auto_exposure": "product_studio",
   "quality": "high",
   "anti_aliasing": "msaa4",
-  "supersample": 2
+  "supersample": 2,
+  "reconstruction": "tent"
 },
 "capture": { "width": 1280, "height": 960 }
 ```
 
+Use `product_studio` for product/model screenshots, `cad_studio` for technical
+CAD/documentation scenes, and `industrial_studio` for dashboard or live-state
+views. Add explicit `scene.background`, `scene.environment`, or `scene.grid`
+only when you need to override the preset.
+
+Prefer `material.preset` (`chrome`, `metal`, `rough_metal`,
+`brushed_steel`, `plastic`, `clearcoat_plastic`, `satin`, `leather`,
+`rubber`, `matte`, `clear_glass`, `frosted_glass`) before raw PBR fields.
+Use `base_color` as an optional tint and scalar overrides such as `roughness`
+only where needed. Prefer `camera.lens` and `camera.framing` over manual
+camera distances. Prefer named color constants (`orange`, `gray`,
+`light_gray`, `dark_gray`, `charcoal`, `studio_backdrop`, `warm_white`,
+`cool_white`) when they fit. Use
+`scene.environment:{ "preset":"studio" }` or `"neutral_studio"` for bundled
+HDRI IBL, and leave `scene.grid.under_bounds` at its default `true` for
+auto-sized floors.
+
 Use `studio` or `neutral_gray` for model/product inspection, `dark_studio` for
 dashboards and twin state views, `white` or `transparent` for documentation
 exports, and `custom` only when the user gave an explicit color. The default
-environment is flat; the bundled HDRI gives reflections and material response.
+environment is flat; the bundled HDRI
+(`tests/assets/environment/polyhaven/studio_small_03_1k.hdr`) gives reflections
+and material response.
 Use real glTF/GLB assets for realistic products and digital twins. Use authored
-primitives for functional/CAD/diagram/chart scenes and tests.
+primitives for functional/CAD/diagram/chart scenes and tests. For visible
+primitive boxes or cylinders in product-style scenes, add a small `bevel` or
+`fillet` value so edges catch light; unsupported primitive kinds reject those
+fields instead of ignoring them. For large scenes with repeated distant parts,
+author explicit high/low geometry resources and add node `lods[]` thresholds so
+small-on-screen parts render with cheaper geometry; scena switches among those
+declared resources and does not invent simplifications.
 Use `quality:"high"` / `anti_aliasing:"msaa4"` for smooth geometry edges.
+For product-style floor reflections, enable `scene.grid.reflection`; it adds a
+verified structured floor reflection preset without requiring material SSR. If
+the reflection is load-bearing, add
+`expect_quality.reflection` so a flat matte floor fails with
+`reflection_structure_missing`.
+For hero product/studio reflections, use
+`render.screen_space_reflections:{strength,roughness,horizon_fraction,fade}`.
+It reflects rendered scene content in screen space for the floor band and
+high-metallic/low-roughness materials such as chrome. Screen-edge and occluded
+material samples fade back to the environment-lit material. Use bare
+`expect_quality.reflection` for floor/reflection-surface checks, or add
+`expect_quality.reflection.target:{kind:"node",id:"..."}` to prove a specific
+chrome/mirror subject changes from structured reflected detail rather than just
+being brighter. For chrome or polished-metal HDRI renders, add
+`max_firefly_fraction` to the reflection expectation so isolated bright
+specular specks fail with `reflection_firefly_outliers` instead of passing as
+valid structure.
+For recipe-authored glass, use scalar material fields:
+`transmission_factor`, `ior`, `thickness_factor`, `attenuation_distance`, and
+`attenuation_color`. Do not use `transmission_texture` or `thickness_texture`;
+the recipe validator rejects those slots until the GPU/WebGL2 texture-binding
+budget supports them. If glass output is load-bearing, render with `--gpu`, add
+`expect_backend`, and inspect the native-resolution output.
 Use `render.supersample:2..4` only for hero captures or fine glossy/texture
 details; it renders at N× resolution and downsamples, so cost grows with N^2.
 For final hero stills with high-contrast silhouettes, add
 `render.reconstruction:"tent"` after checking the native-resolution image;
 prefer it for floor grids, wireframes, and other line-heavy scenes because it
-keeps stroke contrast. Use `"gaussian"` only when a softer silhouette resolve is
-acceptable. Keep the default `"box"` for deterministic verification.
+keeps stroke contrast. For visible floor grids, set
+`scene.grid.line_width_px` around `3.6`-`4.2` so the antialiased stroke has
+enough coverage at native resolution. Add
+`expect_quality:{"profile":"product"}` when grid-line quality is load-bearing;
+`recipe render --verify` then emits `grid_line_quality_checked` or fails with
+`grid_line_quality_too_low`. Use `"gaussian"` only when a softer
+silhouette resolve is acceptable. Keep the default `"box"` for deterministic
+verification.
+For softer studio highlights or a partial penumbra, add an area softbox light:
+`{"id":"softbox","kind":"area","shape":"rect","preset":"softbox"}`. This is a
+finite-emitter softbox with LTC-style specular evaluation and deterministic
+soft-shadow visibility on CPU and HeadlessGpu. Use `shape:"rect"`, `"disc"`,
+or `"sphere"` for the intended emitter shape. If the soft shadow is
+load-bearing, add `expect_quality.area_light` targeting the receiver;
+`recipe render --verify` then emits `area_light_soft_shadow_checked` for broad
+finite emitters and fails point-like emitters with
+`area_light_soft_shadow_insufficient`.
+For hero product/documentation frames where the subject should stay crisp while
+the background softens, add
+`render.depth_of_field:{focus_distance,aperture_f_stop,radius_px}`. Use a
+small `aperture_f_stop`, keep `radius_px` moderate, and choose a textured or
+structured `background_target` so blur is measurable. Add
+`expect_quality.depth_of_field` with a focal `target`; `recipe render
+--verify` renders a same-backend no-DoF baseline and emits
+`depth_of_field_checked` or fails with actionable codes such as
+`depth_of_field_blur_insufficient`, `depth_of_field_background_detail_missing`,
+or `depth_of_field_focal_softened`.
 `supersample:8` is available only for small captures that stay within renderer
 limits.
+
+For CAD, documentation, dashboards, and tours with overlays, run
+`recipe render --verify` and check `verification.composition`: labels must be
+visible, uncropped, clear of leader, dimension, or helper lines, and clear of
+other label regions. Failed `overlay_label_intersects_line` or
+`overlay_label_intersects_label` checks are real composition failures, not
+aesthetic warnings. A failed `overlay_label_clipped_by_viewport` means the
+unclipped projected label rectangle extends outside the capture, even if some
+text remains visible. When an object must sit on a floor or grid, add an
+`expect_grounded` entry with the target node, `plane_y`, and tolerance; a failed
+`ground_contact_missing` means the subject is visibly floating or sinking
+relative to the declared floor. When a helper line, grid, or wireframe must be
+behind a subject, add `expect_helper_occluded` with the helper and occluder
+targets; a failed `helper_layer_overdraws_subject` means the helper is visibly
+drawn over the subject interior.
+For overlapping solid objects whose ordering is load-bearing, add
+`expect_occlusion` with `front`, `back`, and optional `tolerance_pixels`.
+Use high-contrast opaque front/back materials for this check: it is a
+native-resolution color-probe, so `object_depth_order_color_ambiguous` fails
+closed when the colours cannot be separated reliably. Treat
+`object_depth_order_mismatch` as a real occlusion/depth failure.
+For GPU or hero renders, add `expect_backend` with
+`{"backend":"headless_gpu","gpu_device":true}` so CPU fallback fails
+verification instead of silently producing a weaker proof. The composition
+report emits `backend_expectation_mismatch` when the backend does not match,
+and checked `render_antialiasing_active`, `render_supersample_active`, or
+`render_reconstruction_active` entries when requested render knobs are active.
+For cutaways or sectioned views, add `expect_clipping` with the expected
+`active_clipping_planes`, `section_box_active`, and `section_box_inverted`
+values. Treat `clipping_plane_count_mismatch`, `section_box_missing`, and
+`section_box_inversion_mismatch` as real composition failures.
+For configurators or product renders with material variants, add
+`expect_state` entries for the import id and expected
+`active_material_variant`. Omit or set `active_material_variant:null` when the
+default variant is intentional. Treat `material_variant_state_mismatch` as a
+real state/variant failure.
+When placement, scale, or orientation is load-bearing, add `expect_transform`
+for the authored/imported node target with the expected world-space
+`translation`, `scale`, and/or intrinsic X/Y/Z `rotation_degrees`. Treat
+`transform_conformance_mismatch` as a real placement/composition failure.
+When two declared parts must not intersect, add `expect_separation` with
+targets `a` and `b`. Use `min_gap` only when clearance matters; otherwise
+`min_gap:0` proves no world-bounds intersection. Treat
+`separation_conformance_mismatch` as a real assembly/composition failure.
+When `expect_quality.profile` is present, the composition report also checks
+each declared object's projected native-resolution region for framing,
+exposure, subject/background salience, and decoded base-color texture result.
+The render-quality profile is a baseline: adding explicit checks such as
+`text`, `line`, `reflection`, or `grounding` does not disable profile-derived
+geometry-edge or grid-floor checks.
+Treat `subject_too_small_in_frame`, `subject_too_large_in_frame`,
+`subject_black_crushed`, `subject_blown_out`, `subject_salience_too_low`, and
+`texture_result_flat` as real render defects: change camera/framing, lighting,
+exposure, material, background, UVs, or texture mapping before accepting the
+frame.
 
 ## Dedicated Verifiers
 

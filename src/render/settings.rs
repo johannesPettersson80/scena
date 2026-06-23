@@ -3,8 +3,9 @@ use crate::diagnostics::OutputColorSpace;
 use crate::material::Color;
 
 use super::{
-    AntiAliasing, Background, OrderIndependentTransparencyConfig, PostBloomConfig,
-    ReconstructionFilter, Renderer, ScreenSpaceAmbientOcclusionConfig, Tonemapper,
+    AntiAliasing, Background, DepthOfFieldConfig, OrderIndependentTransparencyConfig,
+    PostBloomConfig, ReconstructionFilter, Renderer, ScreenSpaceAmbientOcclusionConfig,
+    ScreenSpaceReflectionConfig, Tonemapper,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -196,6 +197,36 @@ impl Renderer {
 
     pub fn clear_screen_space_ambient_occlusion(&mut self) {
         self.set_screen_space_ambient_occlusion(None);
+    }
+
+    pub fn screen_space_reflections(&self) -> Option<ScreenSpaceReflectionConfig> {
+        self.screen_space_reflections
+    }
+
+    pub fn set_screen_space_reflections(&mut self, config: Option<ScreenSpaceReflectionConfig>) {
+        if self.screen_space_reflections != config {
+            self.screen_space_reflections = config;
+            self.mark_output_changed();
+        }
+    }
+
+    pub fn clear_screen_space_reflections(&mut self) {
+        self.set_screen_space_reflections(None);
+    }
+
+    pub fn depth_of_field(&self) -> Option<DepthOfFieldConfig> {
+        self.depth_of_field
+    }
+
+    pub fn set_depth_of_field(&mut self, config: Option<DepthOfFieldConfig>) {
+        if self.depth_of_field != config {
+            self.depth_of_field = config;
+            self.mark_output_changed();
+        }
+    }
+
+    pub fn clear_depth_of_field(&mut self) {
+        self.set_depth_of_field(None);
     }
 
     pub fn set_bloom(&mut self, bloom: Option<PostBloomConfig>) {

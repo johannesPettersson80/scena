@@ -70,18 +70,10 @@ pub(in crate::scene_host::recipe) fn authored_color(
 }
 
 fn parse_color_string(value: &str) -> Result<Color, crate::ColorParseError> {
-    match value {
-        "white" => Ok(Color::WHITE),
-        "black" => Ok(Color::BLACK),
-        "red" => Ok(Color::RED),
-        "green" => Ok(Color::GREEN),
-        "blue" => Ok(Color::BLUE),
-        "yellow" => Ok(Color::YELLOW),
-        "cyan" => Ok(Color::CYAN),
-        "magenta" => Ok(Color::MAGENTA),
-        "warm_white" => Ok(Color::WARM_WHITE),
-        "cool_white" => Ok(Color::COOL_WHITE),
-        _ => Color::from_hex(value),
+    if let Some(color) = Color::from_named_constant(value) {
+        Ok(color)
+    } else {
+        Color::from_hex(value)
     }
 }
 

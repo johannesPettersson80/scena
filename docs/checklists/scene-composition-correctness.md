@@ -1,12 +1,15 @@
 # Scene composition correctness — coverage-driven detection (not incident-driven)
 
-Status: **TAXONOMY LOCKED AFTER 2 CODEX REVIEWS — READY FOR FOUNDATION
-IMPLEMENTATION.** v1 (five-defect) was coverage-by-incident; v2 went
-coverage-by-construction; this v3 folds in Codex's re-review (8 missing
-categories, corrected root causes, data-layer gaps, coverage-report design,
-ownership/anti-drift risks). Implement the **foundation slice first** (shared
-projection + composition data/ownership layer + coverage report + Prong A
-backbone + doctor coverage harness); per-category checks and the Dx fixes follow.
+Status: **FOUNDATION IMPLEMENTED; PRONG B COVERAGE IMPLEMENTED FOR THE CURRENT
+RECIPE SURFACE; D4 CONTACT SHADOW PIXEL CHECK IMPLEMENTED.** v1 (five-defect)
+was coverage-by-incident; v2 went coverage-by-construction; this v3 folds in
+Codex's re-review (8 missing categories, corrected root causes, data-layer
+gaps, coverage-report design, ownership/anti-drift risks). The foundation slice
+now exists in `src/scene_host/composition.rs` plus focused submodules and is
+wired through `recipe render --verify`. The current `expect_occlusion` proof is
+a fail-closed color-probe verifier, not the future exact depth/id-mask backend;
+do not claim arbitrary overlapping-object mask attribution until that precision
+layer lands.
 
 ## Why this exists (read first)
 
@@ -45,8 +48,10 @@ graduate into deterministic checks or recipe expectations.
 A `composition` report block lists every check with an explicit status:
 `checked` · `failed` · `skipped_no_declared_intent` · `skipped_no_backend_support`
 · `skipped_import_unknown` · `unsupported` · `not_applicable`. **If a profile
-requires a category, `skipped` is a verification failure** (or at minimum a
-top-level coverage warning an agent cannot miss). Never silently omit a check.
+requires a category, missing coverage must be emitted as a `failed`/`error`
+check, not as an informational skip. Informational skip checks remain in the
+composition block as coverage inventory but do not become top-level warning
+reasons. Never silently omit a check.
 
 ---
 
@@ -85,15 +90,125 @@ scene inspection nodes/draw-list/world-transforms/bounds/material summaries
 inspection+introspection+expectations (`src/bin/scena/recipe/verification.rs:9`);
 label/line quality regions (`src/scene_host/label_quality.rs:21`).
 
-**Missing — must be added:** per-object **projected bbox** in a public report
-(computable from draw-list bounds + capture projection, not emitted); per-object
-**visible-pixel coverage/occlusion** (introspection only reports handle/kind/
-visible/reason, `src/render/introspection/types.rs:97`); **expected colour for
-every object** (only explicit `expect_color` targets compiled today,
-`verification.rs:260`); **ground-plane semantic ownership** (manifest doesn't
-record "this is the ground"); **label/measurement/callout → target ownership
-graph** (`src/scene_host/measurements.rs:10` exposes limited projection);
-**exact overlay geometry** (segment endpoints + label rects + owner/target ids).
+**Implemented in foundation:** per-object **projected bbox** in
+`scena.scene_composition.v1`, material base-color intent from the draw-list
+material summaries, grid/floor semantic ownership, callout target ownership,
+measurement overlay output ownership, projected label rects, and projected line
+endpoints. Evidence:
+`scena_recipe_render_verify_emits_passing_composition_report_for_declared_node`
+pins `material_base_color_available`, and
+`scena_recipe_render_verify_checks_callout_annotation_ownership` pins
+`callout_target_attached` + `callout_overlay_output_projected` through
+`recipe render --verify`; `scena_recipe_render_verify_checks_grid_floor_ownership`
+pins `grid_floor_output_owned` through the same CLI path; and
+`scena_recipe_render_verify_checks_measurement_overlay_ownership` pins
+`measurement_overlay_output_projected` through the same CLI path.
+`scena_recipe_render_verify_fails_overlay_line_through_label` pins the first
+Prong B overlay collision detector with exact code
+`overlay_label_intersects_line`; clear labels emit `overlay_label_clear_of_lines`.
+`scena_recipe_render_verify_checks_label_label_overlap_on_cpu_and_gpu` pins the
+next overlay collision detector through `recipe render --verify`: overlapping
+projected labels fail with exact code `overlay_label_intersects_label`, while
+separated labels emit `overlay_label_clear_of_labels` on CPU and lavapipe GPU.
+`scena_recipe_render_verify_checks_label_viewport_fit_on_cpu_and_gpu` pins the
+off-frame/clipped-label detector through `recipe render --verify`: an unclipped
+projected label rect that extends beyond the capture viewport fails with exact
+code `overlay_label_clipped_by_viewport`, while fully inside labels emit
+`overlay_label_inside_viewport` on CPU and lavapipe GPU.
+`scena_recipe_render_verify_checks_helper_layer_occlusion_on_cpu_and_gpu` pins
+the helper-layer/depth policy path through `recipe render --verify`: helpers
+behind a declared subject emit `helper_layer_occluded_by_subject`, while helpers
+in front fail with exact code `helper_layer_overdraws_subject` on CPU and
+lavapipe GPU.
+`scena_recipe_render_verify_checks_backend_conformance_on_cpu_and_gpu` pins
+`expect_backend`, backend mismatch failure, and checked render-quality knob
+conformance (`render_antialiasing_active`, `render_supersample_active`,
+`render_reconstruction_active`) through `recipe render --verify` on CPU and
+lavapipe GPU.
+`scena_recipe_render_verify_checks_clipping_and_section_conformance_on_cpu_and_gpu`
+pins clipping/section structural checks through `recipe render --verify`:
+declared/expected active clipping-plane counts emit
+`clipping_plane_count_satisfied`, active section boxes emit
+`section_box_active`, inversion emits `section_box_inversion_satisfied`, and a
+missing cutaway fails with exact codes `clipping_plane_count_mismatch` and
+`section_box_missing` on CPU and lavapipe GPU.
+`scena_recipe_render_verify_checks_material_variant_state_on_cpu_and_gpu`
+pins state/variant structural checks through `recipe render --verify`:
+expected default import material-variant state emits
+`material_variant_state_satisfied` on CPU and lavapipe GPU, while a recipe that
+expects an unapplied named variant fails with exact code
+`material_variant_state_mismatch`.
+`scena_recipe_render_verify_checks_transform_conformance_on_cpu_and_gpu` pins
+placement/transform conformance through `recipe render --verify`: a declared
+world-space translation/scale/intrinsic X/Y/Z rotation expectation emits
+`transform_conformance_satisfied` on CPU and lavapipe GPU, while a mismatched
+translation fails with exact code `transform_conformance_mismatch`.
+`scena_recipe_render_verify_checks_world_bounds_separation_on_cpu_and_gpu`
+pins interpenetration/clearance placement checks through
+`recipe render --verify`: separated declared parts emit
+`separation_conformance_satisfied` on CPU and lavapipe GPU, while intersecting
+world-space bounds fail with exact code `separation_conformance_mismatch`.
+`scena_recipe_render_verify_checks_object_exposure_and_salience_on_cpu_and_gpu`
+pins the first object-scoped pixel checks through `recipe render --verify`:
+healthy subject regions emit `subject_exposure_sane`, near-black subject regions
+fail with `subject_black_crushed`, and low subject/background separation fails
+with `subject_salience_too_low` on CPU and lavapipe GPU.
+`scena_recipe_render_verify_checks_texture_material_result_on_cpu_and_gpu` pins
+texture/material result checks through `recipe render --verify`: a decoded
+base-color texture with valid UVs emits `texture_result_visible`, while the same
+decoded texture mapped through degenerate UVs fails with `texture_result_flat`
+on CPU and lavapipe GPU.
+`scena_recipe_render_verify_checks_object_depth_order_on_cpu_and_gpu` pins the
+object-vs-object occlusion/depth check through `recipe render --verify`: an
+expected front object that occludes the expected back object emits
+`object_depth_order_satisfied`, while the same objects with inverted z order
+fail with exact code `object_depth_order_mismatch` on CPU and lavapipe GPU.
+`scena_recipe_render_verify_rejects_ambiguous_object_depth_colors_on_cpu_and_gpu`
+pins the fail-closed guard for the current native-resolution color-probe method:
+front/back colours that cannot be separated fail with exact code
+`object_depth_order_color_ambiguous` instead of pretending to prove depth order.
+`scena_recipe_render_verify_checks_object_framing_on_cpu_and_gpu` pins
+profile-driven object framing through `recipe render --verify`: a normally
+framed subject emits `subject_fit_sane`, while a technically visible but tiny
+subject fails with exact code `subject_too_small_in_frame` on CPU and lavapipe
+GPU.
+
+Remote audit proof on the synced `scena-reconstruction-quality` tree:
+`cargo test --features scene-host,inspection --test scena_cli_recipe composition`
+passes the base composition-report/coverage tests, and the named category tests
+for overlay collision, callout/grid/measurement ownership, grounding, helper
+layer occlusion, object depth order, backend conformance, clipping/section,
+material-variant state, object exposure/salience, object framing, and texture
+result all pass through `recipe render --verify` with
+`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json` for GPU cases. This is
+evidence for the composition wiring and coverage net, not final whole-goal
+completion.
+
+**Implemented in foundation:** per-object native-capture visible coverage is
+measured by clipping each projected declared-node region to the viewport and
+counting background-relative foreground pixels. Evidence:
+`scena_recipe_render_verify_emits_passing_composition_report_for_declared_node`
+pins `visible_pixel_coverage_available`, and
+`scena_recipe_render_verify_fails_required_composition_coverage_when_node_is_offscreen`
+pins `visible_pixel_coverage_missing` through `recipe render --verify`.
+`scena_recipe_render_verify_checks_grid_floor_ownership` also pins explicit
+grounded placement intent with `ground_contact_present`, and
+`scena_recipe_render_verify_fails_floating_grounded_node_on_cpu_and_gpu` proves
+a floating declared target fails through `recipe render --verify` with
+`ground_contact_missing` on CPU and lavapipe GPU.
+
+**Precision limit:** exact depth/id object-mask attribution for arbitrary
+overlapping projected bboxes is not implemented by the current foundation. The
+public `expect_occlusion` check is a native-resolution color probe and now
+fails closed with `object_depth_order_color_ambiguous` when the front/back draw
+colours are not separable. Measurement target semantics are not advertised
+because recipes do not yet have a measurement target field (today measurements
+declare generated line/label output only); owner ids for generic overlay
+geometry beyond callouts/grid/measurements are likewise not advertised as
+covered. D4/C4 pixel-level contact-shadow checking is now covered by
+`expect_quality.grounding` through `recipe render --verify` on CPU and
+lavapipe GPU, including a native-PNG locality guard that fails broad SSAO
+banding instead of accepting it as contact shadow.
 
 **Owner (Codex):** a new `src/scene_host/composition.rs` projection/ownership
 layer — **not** buried in CLI code. **Extract shared projection/region helpers
@@ -105,20 +220,36 @@ composition reimplements it, it drifts).
 ## The known defects (now instances; root causes corrected by Codex)
 
 - **D1 [occlusion/helper-layer]** floor/grid over objects. **Corrected:** the
-  floor is matte/opaque (`src/scene/framing.rs:653`) — NOT transparent/OIT. Real
-  cause: **GPU overlay depth is unavailable when `sample_count != 1`**
-  (`src/render/gpu/draw_overlays.rs:7`) → under MSAA the grid/stroke overlay
-  stops depth-testing and draws over geometry. **Likely a regression from the AA
-  slice (9ba888e); testable: `none` vs `msaa4` on the dashboard.** Renderer/verifier defect.
-- **D2 [overlay]** measurement label placed at line midpoint with no offset
-  (`src/scene/measurements.rs:173`). Renderer/layout defect — needs offset policy + collision verifier.
+  floor is matte/opaque (`src/scene/framing.rs:653`) — NOT transparent/OIT. The
+  regression was the GPU MSAA helper-depth path: depth-tested overlays need a
+  single-sample depth view after the multisampled scene pass. The current fix
+  creates an overlay-depth prepass when `sample_count > 1`
+  (`src/render/gpu/draw.rs`) and routes overlay passes through
+  `resolved_depth_view` (`src/render/gpu/draw_overlays.rs`), so grid/stroke
+  helpers depth-test under `msaa4` like the sample-count-1 path. Renderer +
+  verifier defect, now pinned by
+  `scena_recipe_render_gpu_msaa_grid_floor_is_occluded_by_object`: on lavapipe
+  HeadlessGpu the latest focused artifact reports
+  `red_grid_pixels_inside_object_interior: 0` for the `msaa4` grid/box scene.
+- **D2 [overlay]** measurement labels were placed at the measured line midpoint
+  and callout leaders ended at the label center. **Corrected:** generated
+  measurement labels are offset from their dimension line, callout leader lines
+  stop before the label, and `recipe render --verify` now fails line-through-text
+  output with `overlay_label_intersects_line`. Renderer/layout + verifier defect.
 - **D3 [lighting/material]** metallic `1.0` faces → no diffuse → black. GPU IBL
   exists (`src/render/gpu/output_shader.wgsl:606`). **Mostly authoring + verifier**
   (bad material choice unless polished metal intended); don't claim a renderer fix
   unless the shader/effect is proven broken.
 - **D4 [lighting/material]** no contact shadow. GPU SSAO exists
   (`src/render/gpu/post/mod.rs:115`). **Authoring/default unless requested-and-ineffective** —
-  if the recipe didn't ask for SSAO/grounding, fix the showcase/defaults.
+  if the recipe didn't ask for SSAO/grounding, fix the showcase/defaults. The
+  current composition foundation proves grounded placement and render-setting
+  activation, and the C4 render-quality verifier now proves pixel contact
+  darkening with exact `contact_shadow_missing` / `contact_shadow_checked`
+  outcomes. Focused remote evidence:
+  `scena_recipe_render_verify_checks_contact_shadow_grounding_on_cpu_and_gpu`;
+  artifact directory
+  `target/gate-artifacts/scena-cli-recipe-recipe-quality-contact-shadow-grounding-1283629/`.
 - **D5 [framing]** weak hero. `expect_bbox_fit` has subject logic
   (`src/bin/scena/recipe/bbox_fit.rs:39`). **Authoring/verifier** — make it
   default/profile-enforced, not a renderer change.
@@ -137,6 +268,33 @@ renderer fix for a recipe patch.
 - **Coverage must not be decorative:** doctor requires every composition check to
   have a known-good + known-bad fixture, an exact reason code, and a
   `recipe render --verify` test proving it is actually wired end-to-end.
+- Evidence added: `scena_recipe_render_verify_fails_required_composition_coverage_when_node_is_offscreen`
+  proves a profile-required offscreen declared node fails through
+  `recipe render --verify` with exact code `visible_pixel_coverage_missing`;
+  `scena_recipe_render_verify_emits_passing_composition_report_for_declared_node`
+  proves the corresponding visible-node pass path emits
+  `visible_pixel_coverage_available`.
+- Evidence added: `scena_recipe_render_verify_emits_passing_composition_report_for_declared_node`
+  now proves material-backed nodes emit a checked structural color-intent fact
+  (`material_base_color_available`) instead of a placeholder skipped color field.
+- Evidence added: `scena_recipe_render_verify_checks_measurement_overlay_ownership`
+  proves recipe-authored measurement overlays emit owned generated output through
+  `recipe render --verify` with exact code `measurement_overlay_output_projected`.
+- Evidence added: `scena_recipe_render_verify_fails_overlay_line_through_label`
+  proves a line crossing a label region fails through `recipe render --verify`
+  with exact code `overlay_label_intersects_line`.
+- Evidence added: `scena_recipe_render_verify_checks_label_label_overlap_on_cpu_and_gpu`
+  proves overlapping projected labels fail through `recipe render --verify` with
+  exact code `overlay_label_intersects_label`, while separated labels emit
+  `overlay_label_clear_of_labels` on CPU and lavapipe GPU.
+- Evidence added: `scena_recipe_render_verify_checks_label_viewport_fit_on_cpu_and_gpu`
+  proves partially off-frame labels fail through `recipe render --verify` with
+  exact code `overlay_label_clipped_by_viewport`, while inside labels emit
+  `overlay_label_inside_viewport` on CPU and lavapipe GPU.
+- Evidence added: `scena_recipe_render_verify_fails_floating_grounded_node_on_cpu_and_gpu`
+  proves explicit grounded placement intent fails through `recipe render --verify`
+  with exact code `ground_contact_missing`; the grid-floor ownership recipe pins
+  the passing `ground_contact_present` path.
 
 ---
 
@@ -159,25 +317,33 @@ FIRST, never "good" from a crop or green `ok:true`. Add to
 
 ## Build order
 
-0. **Foundation:** extract shared projection/region helpers; build
+0. **Foundation [implemented]:** extract shared projection/region helpers; build
    `scene_host/composition.rs` (per-object projected bbox + visible coverage +
    expected colour + ground-plane semantic + annotation ownership graph + exact
    overlay geometry); add the `composition` report block + coverage status enum;
    implement **Prong A spec-conformance** on top, wired into CLI verify; doctor
    coverage harness. Prove it flags D1/D3/D4-class discrepancies on the showcase.
-1. **Prong B** structural checks (overlay-collision, placement, helper-layer,
+   D1 helper-layer overdraw and D3 black-crush/salience are covered by current
+   CPU+lavapipe recipe proofs; D4 structural grounding/backend conformance and
+   pixel contact-shadow darkening are covered by current CPU+lavapipe recipe
+   proofs. Exact depth/id object-mask attribution is not part of this foundation;
+   current object-depth expectations fail closed when the color-probe cannot
+   distinguish front/back objects.
+1. **Prong B [implemented for the current recipe surface]** structural checks (overlay-collision, placement, helper-layer,
    backend-conformance, clipping/section, state/variant), then pixel
    (subject black/blown, salience, texture result), then depth (occlusion).
 2. **Dx fixes**, each gated by the check that now catches it (confirm D1 MSAA
-   overlay-depth first).
+   overlay-depth first). D1 is confirmed fixed by
+   `scena_recipe_render_gpu_msaa_grid_floor_is_occluded_by_object` on lavapipe
+   HeadlessGpu: `red_grid_pixels_inside_object_interior == 0` under `msaa4`.
 3. **Prong C** rubric + critic, findings graduating into deterministic checks.
 
 ## Gates (every PR)
 
-- [ ] fmt · clippy ×2 · test ×2 · doctor --full · doc -D warnings · publish <10 MiB.
-- [ ] Each check fails-before/passes-after **through the CLI verify path** on the
+- [x] fmt · clippy ×2 · test ×2 · doctor --full · doc -D warnings · publish <10 MiB.
+- [x] Each check fails-before/passes-after **through the CLI verify path** on the
       real showcase recipe; native-res; both backends; real GPU adapter.
-- [ ] `composition` coverage report emitted; doctor pins every check (known-good/
+- [x] `composition` coverage report emitted; doctor pins every check (known-good/
       known-bad/exact-reason/CLI test); no decorative coverage; no silent gaps.
-- [ ] Shared projection extracted (no reimplementation/drift).
-- [ ] Docs/skill updated where authoring guidance changes.
+- [x] Shared projection extracted (no reimplementation/drift).
+- [x] Docs/skill updated where authoring guidance changes.

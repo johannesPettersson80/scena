@@ -39,6 +39,24 @@ let framing = scene.frame_bounds(
 let controls = scena::OrbitControls::from_framing(framing);
 ```
 
+Scene recipes expose the same camera helpers. Prefer named lenses and framing
+presets instead of hand-tuning a `look_at` distance:
+
+```json
+"cameras": [{
+  "id": "camera",
+  "kind": "perspective",
+  "lens": "portrait",
+  "framing": { "preset": "three_quarter_front_right", "fill": 0.72, "margin_px": 24 },
+  "active": true
+}]
+```
+
+`lens` routes to `PerspectiveCamera::wide_angle()`, `standard()`,
+`portrait()`, or `telephoto()`. `framing` routes to `FramingOptions` and
+`Scene::frame_bounds`; `framing.mode:"default_for_bounds"` routes to
+`Scene::add_perspective_camera_default_for`.
+
 ## Lights
 
 `scena` supports directional, point, and spot lighting concepts for common
@@ -57,6 +75,24 @@ fill/rim lights. It is a convenient default, not a replacement for an authored
 scene-specific light rig.
 
 Start with `examples/industrial_static_scene.rs`.
+
+## Authored geometry
+
+Scene recipes can author deterministic primitives and custom meshes for
+functional, CAD, dashboard, diagram, chart, and test scenes. Use imported glTF
+or GLB assets when the goal is a realistic product or digital twin.
+
+For visible primitive boxes and cylinders in product-style renders, add a small
+`bevel` or `fillet` value to catch light on the edge. These fields generate real
+flat chamfer geometry; unsupported primitive kinds reject them instead of
+silently ignoring an inert knob. The build manifest reports the generated
+vertex/index counts so agents can verify the requested geometry was built.
+
+When a recipe uses intentionally repeated high/low geometry variants, attach a
+node `lods[]` chain to switch distant or small-on-screen subjects to the cheaper
+geometry by projected size. LOD levels reference existing geometry resources and
+use `max_screen_fraction` thresholds in `(0, 1]`; scena does not automatically
+simplify meshes.
 
 ## Materials
 
@@ -84,6 +120,22 @@ Material workflows include:
 - ACES/sRGB output.
 
 Create materials through `Assets` and attach them to scene renderables.
+For recipe-authored product scenes, prefer `material.preset` before raw PBR
+fields:
+
+```json
+"materials": [
+  { "id": "body", "preset": "chrome", "roughness": 0.06 },
+  { "id": "trim", "preset": "plastic", "base_color": "orange" }
+]
+```
+
+The recipe builder routes these names through the Rust `MaterialDesc` helpers:
+`chrome`, `metal`, `rough_metal`, `brushed_steel`, `plastic`,
+`clearcoat_plastic`, `satin`, `leather`, `rubber`, `matte`, `clear_glass`, and
+`frosted_glass`. `base_color` is optional for presets and acts as a tint where
+the helper accepts one; scalar overrides such as `roughness`, `metallic`, and
+advanced PBR factors are applied after the preset.
 Optional glTF `KHR_materials_clearcoat` scalar factors and texture slots are
 parsed into `MaterialDesc`. The CPU/reference path samples the clearcoat
 factor texture's red channel, clearcoat roughness texture's green channel, and
@@ -113,6 +165,15 @@ Optional glTF `KHR_materials_dispersion` factors are parsed into
 the factor as a channel-spread specular approximation. Required dispersion
 assets still report degraded status until approved backend proof and full
 transmission/volume glass behavior are promoted.
+Scalar physical-glass controls are supported on the GPU path: positive
+`transmission_factor` materials render through the scene-color transmission pass,
+and `ior`, `thickness_factor`, `attenuation_distance`, and
+`attenuation_color` affect refraction and volume tint when an opaque scene color
+exists behind the glass. `transmission_texture` and `thickness_texture` are not
+bound by the GPU/WebGL2 material texture layout yet; scene recipes reject those
+slots, and the Rust GPU prepare path fails closed instead of silently dropping
+them. Use scalar volume fields for portable recipe-authored glass until the
+texture-binding budget is expanded or packed.
 
 ## Environment
 
@@ -126,9 +187,45 @@ Renderer-managed auto exposure is available through named scenarios such as
 exposure adapts output brightness after a frame is rendered; lighting and
 materials still control shape, contrast, and dynamic range.
 
+Recipes can use the same exposure scenarios with `render.auto_exposure`:
+
+```json
+"render": { "auto_exposure": "product_studio" }
+```
+
+`render.auto_exposure` and fixed `render.exposure_ev` are mutually exclusive in
+`scena.scene_recipe.v1`; use auto exposure for product/model scenes and fixed
+EV only when a deterministic exposure is part of the specification.
+
+Recipe `scene.preset` values `product_studio`, `cad_studio`, and
+`industrial_studio` route through the shared Rust scene-setup preset helper, so
+they apply the matching background, bundled environment, grid/floor defaults,
+SSAO, and auto-exposure scenario instead of duplicating setup logic in the
+recipe layer. `scene.environment:{ "preset":"studio" }` and
+`"neutral_studio"` route through `Assets::load_environment_preset` after
+`RecipeBuildPolicy` checks the preset asset path.
+
 Use `Scene::add_grid_floor(&assets, GridFloorOptions::new().under_bounds(bounds))`
 when a model needs a matte reference floor. The floor helper derives size from
-bounds, keeps grid lines on the floor plane, and avoids reflective defaults.
+bounds, renders grid strokes slightly above the slab to avoid coplanar depth
+artifacts, and avoids reflective defaults. Use
+`GridFloorOptions::line_width_px` or recipe `scene.grid.line_width_px` when the
+grid is meant to stay visible in a high-resolution hero render; start around
+4.0 px for product-style floor grids and inspect the native-resolution crop.
+Recipe `scene.grid.under_bounds` defaults to `true` and explicitly maps to
+`GridFloorOptions::under_bounds(bounds)`; set it to `false` only when
+`floor_y`/padding must be authored manually.
+Recipe `scene.grid.reflection` opts into a deterministic floor-reflection decal
+preset for product-style shots. It is verified by `expect_quality.reflection`
+and works without requiring material SSR.
+Recipe `render.screen_space_reflections` enables opt-in screen-space
+reflections. It mirrors the already-rendered upper scene into the floor band and
+also lets high-metallic, low-roughness materials such as `MaterialDesc::chrome`
+sample visible scene colour in screen space. Material reflections are
+roughness-aware and fade back to the environment-lit material at screen edges or
+where no screen-space sample exists. Use `expect_quality.reflection` for
+floor/reflection-surface checks, or `expect_quality.reflection.target` for a
+specific chrome/mirror subject.
 
 ## Shadows
 
@@ -138,6 +235,14 @@ Directional shadows are supported on GPU-device WebGPU/WebGL2/native lanes
 where the renderer renders a shadow map and samples it into visible receiver
 pixels. CPU/reference and unattached factory capability rows report `degraded`
 instead of claiming the GPU receiver path.
+
+Area lights are evaluated as finite sampled emitters on both CPU and GPU, with
+LTC-style specular evaluation for rectangular, disc, and sphere emitter shapes.
+The prepare path computes deterministic per-vertex area-light visibility, so a
+partially occluded softbox can produce a partial penumbra signal instead of
+fully unshadowed radiance. Dedicated area-light shadow maps and clustered/tiled
+light assignment are still future rendering work; recipes should not treat area
+lights as a path-traced photographic soft-shadow system yet.
 
 ## Output
 
@@ -153,9 +258,9 @@ small material texture binding shim for wgpu 29's GL backend, but it does not
 use a separate raw WebGL renderer.
 
 The GPU output uniform layout is pinned by
-`OUTPUT_UNIFORM_BYTE_LEN: u64 = 1200`. That buffer contains view, projection,
+`OUTPUT_UNIFORM_BYTE_LEN: u64 = 3056`. That buffer contains view, projection,
 view-projection, light-space projection, camera/exposure, viewport/depth,
-color-management, punctual/environment/shadow lighting, and sixteen
+color-management, punctual/area/environment/shadow lighting, and sixteen
 scene-clipping plane uniforms plus clipping control. Per-draw model and normal
 matrices live in the draw-uniform bind group instead.
 
@@ -172,6 +277,24 @@ renderer.set_bloom(Some(scena::PostBloomConfig::subtle()));
 
 The bloom pass runs on the output frame before FXAA and is reported through
 `RendererStats::bloom_passes`.
+
+Depth of field is opt-in for product and documentation hero shots:
+
+```rust
+renderer.set_depth_of_field(Some(scena::DepthOfFieldConfig::new(
+    2.4, // focus distance from the active camera, in scene units
+    2.8, // aperture f-stop; lower values blur more
+    6,   // maximum blur radius in output pixels
+)));
+```
+
+Recipe authors can use `render.depth_of_field` with `focus_distance`,
+`aperture_f_stop`, and `radius_px`. The CPU path uses the CPU depth frame, and
+HeadlessGpu uses the depth-color post target, both reported through
+`PostProcessingReportV1.dof_depth_source`. When DoF is load-bearing, add
+`expect_quality.depth_of_field`; recipe verification renders a same-backend
+no-DoF baseline at native resolution and checks that the declared background
+loses Sobel detail while the focal subject remains sharp.
 
 Medium quality uses FXAA by default. High quality uses sample-based edge AA
 (`Msaa4` on the GPU path and a matching CPU supersample resolve) so geometry
@@ -209,8 +332,10 @@ renderer.set_screen_space_ambient_occlusion(Some(
 ));
 ```
 
-The SSAO pass uses the CPU depth buffer to darken contact edges before bloom
-and FXAA. GPU/WebGPU/WebGL2 SSAO remains a separate capability-gated lane.
+The SSAO pass uses the active backend's depth information to darken contact
+edges before bloom and FXAA. CPU/headless uses the CPU depth buffer; GPU,
+WebGPU, and WebGL2 use the renderer-owned depth-color target reported as
+`ssao_depth_source: "depth_color_target"` in post-processing capability reports.
 
 Headless and descriptor-backed CPU renders can enable weighted blended
 order-independent transparency for overlapping alpha-blended surfaces:

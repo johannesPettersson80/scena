@@ -148,6 +148,7 @@ pub(crate) fn release_lane_required_artifacts(lane: &str) -> Vec<String> {
             "target/gate-artifacts/m9-platform/headless-cpu/default-scene.ppm".to_string(),
             "target/gate-artifacts/m9-platform/headless-cpu/static-gltf.ppm".to_string(),
             "target/gate-artifacts/m9-platform/m9-benchmarks.json".to_string(),
+            "target/gate-artifacts/m9-platform/m9-benchmarks-feature-matrix.json".to_string(),
         ]
         .into_iter()
         .collect(),
@@ -161,6 +162,7 @@ pub(crate) fn release_lane_required_artifacts(lane: &str) -> Vec<String> {
             format!("target/gate-artifacts/m9-platform/{lane}/pbr-point-green.ppm"),
             format!("target/gate-artifacts/m9-platform/{lane}/pbr-spot-blue.ppm"),
             "target/gate-artifacts/m9-platform/m9-benchmarks.json".to_string(),
+            "target/gate-artifacts/m9-platform/m9-benchmarks-feature-matrix.json".to_string(),
         ]
         .into_iter()
         .collect(),

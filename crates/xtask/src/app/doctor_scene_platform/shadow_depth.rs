@@ -441,6 +441,17 @@ pub(crate) fn check_depth_prepass_contracts(root: &Path, findings: &mut Vec<Find
         root,
         findings,
         "ARCH-DEPTH-PREPASS",
+        "src/render/depth_prepass_tests.rs",
+        &[
+            "depth_prepass_prevents_later_far_triangle_from_overdrawing_near_triangle",
+            "set_depth_prepass_enabled_for_test(false)",
+            "the overdraw artifact this pass prevents",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-DEPTH-PREPASS",
         "tests/m1_geometry_materials.rs",
         &["headless_gpu_renders_technical_material_primitives_when_available"],
     );

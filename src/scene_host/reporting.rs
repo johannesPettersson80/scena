@@ -171,6 +171,10 @@ pub(super) fn stats_json(stats: RendererStats) -> serde_json::Value {
         json!(stats.ambient_occlusion_passes),
     );
     object.insert(
+        "screen_space_reflection_passes".to_string(),
+        json!(stats.screen_space_reflection_passes),
+    );
+    object.insert(
         "order_independent_transparency_passes".to_string(),
         json!(stats.order_independent_transparency_passes),
     );

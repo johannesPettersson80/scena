@@ -25,11 +25,11 @@ rgba_hash = "fnv1a64:386b4efab512b025"
 [[reference]]
 name = "ibl-environment"
 max_abs_diff = 0
-center_rgba = [219, 233, 246, 255]
-left_mid_rgba = [219, 233, 245, 255]
-right_mid_rgba = [219, 233, 246, 255]
+center_rgba = [226, 239, 251, 255]
+left_mid_rgba = [227, 239, 251, 255]
+right_mid_rgba = [226, 239, 251, 255]
 nonblack_pixels = 240
-rgba_hash = "fnv1a64:fa7f1a29918e8646"
+rgba_hash = "fnv1a64:52321c3142c0eca4"
 
 [[reference]]
 name = "fxaa-edge"
@@ -63,9 +63,9 @@ name = "ssao-contact-on-off"
 max_abs_diff = 0
 center_rgba = [0, 0, 0, 255]
 left_mid_rgba = [240, 240, 240, 255]
-right_mid_rgba = [240, 240, 240, 255]
+right_mid_rgba = [211, 211, 211, 255]
 nonblack_pixels = 154
-rgba_hash = "fnv1a64:0ec6270d35a4a042"
+rgba_hash = "fnv1a64:d8583641b89998e4"
 
 [[reference]]
 name = "oit-overlap-order-invariance"

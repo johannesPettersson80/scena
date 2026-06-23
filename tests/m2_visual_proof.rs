@@ -475,8 +475,9 @@ fn render_ssao_contact_on_off() -> VisualProof {
 
     let mut on_scene = depth_contact_scene();
     let mut on_renderer = Renderer::headless(16, 16).expect("SSAO-on renderer builds");
-    on_renderer
-        .set_screen_space_ambient_occlusion(Some(ScreenSpaceAmbientOcclusionConfig::subtle()));
+    on_renderer.set_screen_space_ambient_occlusion(Some(ScreenSpaceAmbientOcclusionConfig::new(
+        4, 0.8, 0.0,
+    )));
     on_renderer
         .prepare(&mut on_scene)
         .expect("SSAO-on scene prepares");

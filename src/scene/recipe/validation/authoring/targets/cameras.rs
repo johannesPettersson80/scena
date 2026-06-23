@@ -8,7 +8,16 @@ use super::super::{validate_known_fields, validate_required_id};
 use super::common::{TransformUse, validate_transform};
 use crate::scene::recipe::validation::diagnostic;
 
-const CAMERA_FIELDS: &[&str] = &["id", "kind", "fov_degrees", "active", "transform"];
+const CAMERA_FIELDS: &[&str] = &[
+    "id",
+    "kind",
+    "fov_degrees",
+    "lens",
+    "framing",
+    "active",
+    "transform",
+];
+const FRAMING_FIELDS: &[&str] = &["mode", "preset", "fill", "margin_px"];
 
 pub(in crate::scene::recipe::validation::authoring) fn validate_cameras(
     value: Option<&Value>,
@@ -83,6 +92,50 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_cameras(
                 )),
             }
         }
+        if object.contains_key("fov_degrees") && object.contains_key("lens") {
+            diagnostics.push(diagnostic(
+                "invalid_camera_lens",
+                "error",
+                format!("{path}.lens"),
+                "camera lens and fov_degrees are mutually exclusive",
+                "use lens:\"standard\" for a named helper preset or fov_degrees for a raw escape hatch",
+                None,
+                false,
+            ));
+        }
+        if let Some(lens) = object.get("lens") {
+            match lens.as_str() {
+                Some(name) if crate::PerspectiveCamera::from_lens_preset_name(name).is_some() => {}
+                Some(name) => diagnostics.push(diagnostic(
+                    "invalid_camera_lens",
+                    "error",
+                    format!("{path}.lens"),
+                    format!("camera lens preset '{name}' is not supported"),
+                    format!(
+                        "use one of: {}",
+                        crate::PerspectiveCamera::LENS_PRESET_NAMES.join(", ")
+                    ),
+                    None,
+                    false,
+                )),
+                None => diagnostics.push(diagnostic(
+                    "invalid_camera_lens",
+                    "error",
+                    format!("{path}.lens"),
+                    "camera lens must be a string",
+                    "use wide_angle, standard, portrait, or telephoto",
+                    None,
+                    false,
+                )),
+            }
+        }
+        validate_camera_framing(&path, object, diagnostics);
+        let default_for_bounds_active = object
+            .get("framing")
+            .and_then(Value::as_object)
+            .and_then(|framing| framing.get("mode"))
+            .and_then(Value::as_str)
+            == Some("default_for_bounds");
         if let Some(active) = object.get("active") {
             if active.as_bool() == Some(true) {
                 active_count += 1;
@@ -97,6 +150,8 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_cameras(
                     false,
                 ));
             }
+        } else if default_for_bounds_active {
+            active_count += 1;
         }
         if let Some(transform) = object.get("transform") {
             validate_transform(
@@ -119,5 +174,124 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_cameras(
             None,
             false,
         ));
+    }
+}
+
+fn validate_camera_framing(
+    path: &str,
+    camera: &serde_json::Map<String, Value>,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) {
+    let Some(framing) = camera.get("framing") else {
+        return;
+    };
+    let framing_path = format!("{path}.framing");
+    let Some(object) = framing.as_object() else {
+        diagnostics.push(diagnostic(
+            "invalid_camera_framing",
+            "error",
+            framing_path,
+            "camera framing must be an object",
+            "use framing:{preset:\"three_quarter_front_right\",fill:0.72}",
+            None,
+            false,
+        ));
+        return;
+    };
+    validate_known_fields(&framing_path, object, FRAMING_FIELDS, diagnostics);
+    let mode = object
+        .get("mode")
+        .and_then(Value::as_str)
+        .unwrap_or("frame_bounds");
+    if !matches!(mode, "frame_bounds" | "default_for_bounds") {
+        diagnostics.push(diagnostic(
+            "invalid_camera_framing",
+            "error",
+            format!("{framing_path}.mode"),
+            format!("camera framing mode '{mode}' is not supported"),
+            "use frame_bounds or default_for_bounds",
+            None,
+            false,
+        ));
+    }
+    if mode == "default_for_bounds" {
+        for field in ["lens", "fov_degrees", "transform"] {
+            if camera.contains_key(field) {
+                diagnostics.push(diagnostic(
+                    "invalid_camera_framing",
+                    "error",
+                    format!("{path}.{field}"),
+                    "default_for_bounds framing uses Scene::add_perspective_camera_default_for and does not accept manual camera fields",
+                    "remove lens/fov_degrees/transform or use framing.mode:\"frame_bounds\"",
+                    None,
+                    false,
+                ));
+            }
+        }
+        if camera.get("active").and_then(Value::as_bool) == Some(false) {
+            diagnostics.push(diagnostic(
+                "invalid_camera_framing",
+                "error",
+                format!("{path}.active"),
+                "default_for_bounds creates the active camera",
+                "omit active or set active:true",
+                None,
+                false,
+            ));
+        }
+    }
+    if let Some(preset) = object.get("preset") {
+        match preset.as_str() {
+            Some(name) if crate::FramingOptions::from_preset_name(name).is_some() => {}
+            Some(name) => diagnostics.push(diagnostic(
+                "invalid_camera_framing",
+                "error",
+                format!("{framing_path}.preset"),
+                format!("camera framing preset '{name}' is not supported"),
+                format!(
+                    "use one of: {}",
+                    crate::FramingOptions::PRESET_NAMES.join(", ")
+                ),
+                None,
+                false,
+            )),
+            None => diagnostics.push(diagnostic(
+                "invalid_camera_framing",
+                "error",
+                format!("{framing_path}.preset"),
+                "camera framing preset must be a string",
+                "use a named FramingOptions preset",
+                None,
+                false,
+            )),
+        }
+    }
+    if let Some(value) = object.get("fill") {
+        match value.as_f64() {
+            Some(value) if value.is_finite() && value > 0.0 => {}
+            _ => diagnostics.push(diagnostic(
+                "invalid_camera_framing",
+                "error",
+                format!("{framing_path}.fill"),
+                "camera framing fill must be finite and positive",
+                "use fill:0.72",
+                None,
+                false,
+            )),
+        }
+    }
+    if let Some(value) = object.get("margin_px") {
+        match value.as_f64() {
+            Some(value) if value.is_finite() && value >= 0.0 => {}
+            _ => diagnostics.push(diagnostic(
+                "invalid_camera_framing",
+                "error",
+                format!("{framing_path}.margin_px"),
+                "camera framing margin_px must be finite and non-negative",
+                "use margin_px:24.0",
+                None,
+                false,
+            )),
+        }
     }
 }

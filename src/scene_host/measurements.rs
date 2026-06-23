@@ -46,7 +46,14 @@ impl<F: AssetFetcher> SceneHostCore<F> {
             overlay = overlay.with_label(label);
         }
         let report = self.scene.add_measurement_overlay(&self.assets, overlay)?;
+        let label_node = self
+            .scene
+            .measurement_overlay_state(&report.id)
+            .and_then(|state| state.label_node());
         let line_node = self.register_node(report.line_node);
+        if let Some(label_node) = label_node {
+            self.register_node(label_node);
+        }
         let label_text = label.map(|label| format!("{label}: {}", report.formatted_value));
         let label_projection = label
             .map(|_| self.project_measurement_label((start + end) * 0.5))

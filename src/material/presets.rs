@@ -1,6 +1,52 @@
 use super::{AlphaMode, Color, MaterialDesc};
 
 impl MaterialDesc {
+    pub const PRESET_NAMES: &'static [&'static str] = &[
+        "chrome",
+        "metal",
+        "rough_metal",
+        "brushed_steel",
+        "plastic",
+        "clearcoat_plastic",
+        "satin",
+        "leather",
+        "rubber",
+        "matte",
+        "clear_glass",
+        "frosted_glass",
+    ];
+
+    pub fn from_preset_name(name: &str, base_color: Option<Color>) -> Option<Self> {
+        let material = match name {
+            "chrome" => Self::chrome(),
+            "metal" => Self::metal(base_color.unwrap_or(Color::LIGHT_GRAY)),
+            "rough_metal" => Self::rough_metal(base_color.unwrap_or(Color::LIGHT_GRAY)),
+            "brushed_steel" => {
+                let material = Self::brushed_steel();
+                match base_color {
+                    Some(color) => material.with_base_color(color),
+                    None => material,
+                }
+            }
+            "plastic" => Self::plastic(base_color.unwrap_or(Color::BLUE)),
+            "clearcoat_plastic" => Self::clearcoat_plastic(base_color.unwrap_or(Color::BLUE)),
+            "satin" => Self::satin(base_color.unwrap_or(Color::MAGENTA)),
+            "leather" => Self::leather(base_color.unwrap_or(Color::ORANGE)),
+            "rubber" => {
+                let material = Self::rubber();
+                match base_color {
+                    Some(color) => material.with_base_color(color),
+                    None => material,
+                }
+            }
+            "matte" => Self::matte(base_color.unwrap_or(Color::GRAY)),
+            "clear_glass" => Self::clear_glass(base_color.unwrap_or(Color::CYAN)),
+            "frosted_glass" => Self::frosted_glass(base_color.unwrap_or(Color::COOL_WHITE)),
+            _ => return None,
+        };
+        Some(material)
+    }
+
     /// Matte dielectric material preset: high roughness, non-metallic.
     ///
     /// # Examples
@@ -64,9 +110,13 @@ impl MaterialDesc {
         Self::pbr_metallic_roughness(base_color, 1.0, 0.82)
     }
 
-    /// Smooth chrome preset backed by metallic roughness and environment reflection quality.
+    /// Smooth chrome preset backed by metallic roughness, environment reflection,
+    /// and opt-in screen-space material reflections.
     ///
-    /// This preset does not claim screen-space reflected floors or caustics.
+    /// Enable [`Renderer::set_screen_space_reflections`](crate::Renderer::set_screen_space_reflections)
+    /// or recipe `render.screen_space_reflections` for chrome surfaces to sample
+    /// visible scene colour in screen space. Screen-edge and occluded samples
+    /// fall back to the environment-lit material; this is not a caustics model.
     ///
     /// # Examples
     ///

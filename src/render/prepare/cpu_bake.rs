@@ -4,7 +4,7 @@ use crate::scene::Vec3;
 use super::super::camera::CameraProjection;
 use super::lighting::PreparedLights;
 use super::materials::MaterialPass;
-use super::shadows::{ShadowOccluder, directional_shadow_factor};
+use super::shadows::{ShadowOccluder, area_shadow_factor, directional_shadow_factor};
 use super::types::{PreparedPrimitive, PrimitiveSinks, TransparentPrimitive};
 
 #[derive(Clone, Copy)]
@@ -15,7 +15,8 @@ pub(super) struct CpuBakeCorner {
     pub(super) tangent: Vec3,
     pub(super) tangent_handedness: f32,
     pub(super) vertex_color: Color,
-    pub(super) shadow_visibility: f32,
+    pub(super) directional_shadow_visibility: f32,
+    pub(super) area_shadow_visibility: f32,
 }
 
 pub(super) fn cpu_texture_subdivisions(
@@ -100,6 +101,14 @@ pub(super) fn baked_shadow_visibility(
     }
 }
 
+pub(super) fn baked_area_shadow_visibility(
+    position: Vec3,
+    lights: &PreparedLights,
+    shadow_occluders: &[ShadowOccluder],
+) -> f32 {
+    area_shadow_factor(position, lights, shadow_occluders)
+}
+
 fn interpolate_cpu_corner(
     corners: [CpuBakeCorner; 3],
     subdivisions: u32,
@@ -162,9 +171,12 @@ fn interpolate_cpu_corner(
                 + corners[1].vertex_color.a * w1
                 + corners[2].vertex_color.a * w2,
         ),
-        shadow_visibility: corners[0].shadow_visibility * w0
-            + corners[1].shadow_visibility * w1
-            + corners[2].shadow_visibility * w2,
+        directional_shadow_visibility: corners[0].directional_shadow_visibility * w0
+            + corners[1].directional_shadow_visibility * w1
+            + corners[2].directional_shadow_visibility * w2,
+        area_shadow_visibility: corners[0].area_shadow_visibility * w0
+            + corners[1].area_shadow_visibility * w1
+            + corners[2].area_shadow_visibility * w2,
     }
 }
 

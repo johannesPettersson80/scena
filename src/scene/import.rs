@@ -320,6 +320,11 @@ impl Scene {
                     .parent(parent)
                     .transform(transform)
                     .add(),
+                super::Light::Area(light) => self
+                    .area_light(light)
+                    .parent(parent)
+                    .transform(transform)
+                    .add(),
             },
             ([], None) => self.insert_node(parent, NodeKind::Empty, transform),
         }

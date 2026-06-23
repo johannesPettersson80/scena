@@ -3,12 +3,21 @@ use serde_json::Value;
 use super::diagnostic;
 use crate::scene::recipe::SceneRecipeDiagnosticV1;
 
+mod composition;
 mod quality;
 
 const EXPECT_FIELDS: &[&str] = &[
     "expect_visible",
     "expect_color",
     "expect_bbox_fit",
+    "expect_grounded",
+    "expect_helper_occluded",
+    "expect_occlusion",
+    "expect_backend",
+    "expect_clipping",
+    "expect_state",
+    "expect_transform",
+    "expect_separation",
     "expect_pick",
     "expect_quality",
     "expect_reference",
@@ -68,6 +77,50 @@ pub(super) fn validate_expectations(
         diagnostics,
     );
     validate_bbox_fit(object.get("expect_bbox_fit"), diagnostics);
+    validate_array(
+        object.get("expect_grounded"),
+        "$.expect.expect_grounded",
+        composition::GROUNDED_FIELDS,
+        composition::validate_grounded_expectation,
+        diagnostics,
+    );
+    validate_array(
+        object.get("expect_helper_occluded"),
+        "$.expect.expect_helper_occluded",
+        composition::HELPER_OCCLUDED_FIELDS,
+        composition::validate_helper_occluded_expectation,
+        diagnostics,
+    );
+    validate_array(
+        object.get("expect_occlusion"),
+        "$.expect.expect_occlusion",
+        composition::OCCLUSION_FIELDS,
+        composition::validate_occlusion_expectation,
+        diagnostics,
+    );
+    composition::validate_backend_expectation(object.get("expect_backend"), diagnostics);
+    composition::validate_clipping_expectation(object.get("expect_clipping"), diagnostics);
+    validate_array(
+        object.get("expect_state"),
+        "$.expect.expect_state",
+        composition::STATE_FIELDS,
+        composition::validate_state_expectation,
+        diagnostics,
+    );
+    validate_array(
+        object.get("expect_transform"),
+        "$.expect.expect_transform",
+        composition::TRANSFORM_FIELDS,
+        composition::validate_transform_expectation,
+        diagnostics,
+    );
+    validate_array(
+        object.get("expect_separation"),
+        "$.expect.expect_separation",
+        composition::SEPARATION_FIELDS,
+        composition::validate_separation_expectation,
+        diagnostics,
+    );
     validate_array(
         object.get("expect_pick"),
         "$.expect.expect_pick",
@@ -329,7 +382,7 @@ fn validate_id(path: &str, value: Option<&Value>, diagnostics: &mut Vec<SceneRec
     }
 }
 
-fn validate_target(
+pub(super) fn validate_target(
     path: &str,
     target: Option<&Value>,
     allow_import: bool,

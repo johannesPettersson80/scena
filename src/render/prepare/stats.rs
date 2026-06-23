@@ -1,8 +1,11 @@
 use crate::assets::EnvironmentDesc;
 use crate::diagnostics::{Backend, Capabilities, CapabilityStatus, PrepareError};
-use crate::scene::{Light, Scene};
+use crate::scene::{Light, Scene, Vec3};
 
-use super::PreparedPrimitive;
+use super::{
+    PreparedPrimitive,
+    lighting::{MAX_GPU_AREA_LIGHTS, PreparedLights},
+};
 
 const DIRECTIONAL_SHADOW_PCF_KERNEL: u8 = 3;
 // The depth pre-pass is correctness-load-bearing, not just an optimisation:
@@ -54,6 +57,7 @@ pub(in crate::render) fn collect_lighting_stats(
         }
         first_shadowed_directional = Some(node);
     }
+    validate_gpu_light_capacity(scene, backend)?;
     Ok(if first_shadowed_directional.is_some() {
         let capabilities = Capabilities::for_backend(backend);
         PreparedLightingStats {
@@ -66,6 +70,32 @@ pub(in crate::render) fn collect_lighting_stats(
     } else {
         PreparedLightingStats::default()
     })
+}
+
+fn validate_gpu_light_capacity(scene: &Scene, backend: Backend) -> Result<(), PrepareError> {
+    if !uses_fixed_gpu_light_uniforms(backend) {
+        return Ok(());
+    }
+    let [directional, point, spot, area] =
+        PreparedLights::from_scene(scene, Vec3::ZERO).gpu_uniform_counts();
+    let over_capacity = area > MAX_GPU_AREA_LIGHTS;
+    if !over_capacity {
+        return Ok(());
+    }
+    Err(PrepareError::BackendCapabilityMismatch {
+        feature: "gpu_light_uniform_capacity",
+        backend,
+        help: format!(
+            "prepared lighting has {directional} directional, {point} point, {spot} spot, and {area} area GPU light entries, but the current GPU path supports at most {MAX_GPU_AREA_LIGHTS} area entries; directional/point/spot lights beyond the fixed uniform lane require tiled light assignment"
+        ),
+    })
+}
+
+const fn uses_fixed_gpu_light_uniforms(backend: Backend) -> bool {
+    matches!(
+        backend,
+        Backend::HeadlessGpu | Backend::NativeSurface | Backend::WebGpu | Backend::WebGl2
+    )
 }
 
 pub(in crate::render) fn collect_depth_prepass_stats(

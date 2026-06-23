@@ -6,6 +6,8 @@ use super::cpu::{CpuFrame, write_label_overlay_pixel};
 use super::prepare::{PreparedLabelAtlas, PreparedStrokeSegment};
 use super::target::RasterTarget;
 
+const STROKE_AA_RADIUS_PX: f32 = 3.25;
+
 pub(super) fn draw_overlay_layers_cpu(
     cpu_frame: &mut CpuFrame<'_>,
     strokes: &[PreparedStrokeSegment],
@@ -59,7 +61,7 @@ fn draw_stroke_cpu(
     }
 
     let half_width = (stroke.width_px().max(0.001) * 0.5).max(0.5);
-    let aa_radius = 1.0;
+    let aa_radius = STROKE_AA_RADIUS_PX;
     let radius = half_width + aa_radius;
     let min_x = (start_screen.x.min(end_screen.x) - radius).floor().max(0.0) as u32;
     let max_x = (start_screen.x.max(end_screen.x) + radius)
@@ -118,7 +120,8 @@ fn stroke_coverage(distance_px: f32, half_width_px: f32) -> f32 {
     if distance_px <= half_width_px {
         1.0
     } else {
-        (1.0 - (distance_px - half_width_px)).clamp(0.0, 1.0)
+        let t = ((distance_px - half_width_px) / STROKE_AA_RADIUS_PX).clamp(0.0, 1.0);
+        1.0 - t * t * (3.0 - 2.0 * t)
     }
 }
 

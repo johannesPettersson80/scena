@@ -23,7 +23,7 @@ pub(crate) fn check_m7_visual_browser_contracts(root: &Path, findings: &mut Vec<
         root,
         findings,
         "ERGONOMICS-M7",
-        "src/scene.rs",
+        "src/scene/render_nodes.rs",
         &[
             ".world_transform(key)",
             "map(|transform| (key, mesh, transform))",
@@ -37,7 +37,7 @@ pub(crate) fn check_m7_visual_browser_contracts(root: &Path, findings: &mut Vec<
         root,
         findings,
         "ERGONOMICS-M7",
-        "src/scene.rs",
+        "src/scene/render_nodes.rs",
         &[
             "Some((key, mesh, node.transform))",
             "map(|instance_set| (node_key, instance_set, node.transform))",

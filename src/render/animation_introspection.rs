@@ -27,7 +27,7 @@ pub struct AnimationClipIntrospectionV1 {
     pub channel_count: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct AnimationIntrospectionSummaryV1 {
     pub sample_count: usize,
     pub changed_channel_count: usize,
@@ -35,6 +35,10 @@ pub struct AnimationIntrospectionSummaryV1 {
     pub invalid_channel_count: usize,
     pub visible_change: bool,
     pub capture_changes: usize,
+    #[serde(default)]
+    pub rendered_movement: bool,
+    #[serde(default)]
+    pub rendered_movement_delta_px: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -56,6 +60,10 @@ pub struct AnimationObservedValueV1 {
     pub node: u64,
     pub kind: String,
     pub transform: Transform,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rendered_centroid_css_px: Option<[f32; 2]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rendered_coverage_px: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_translation: Option<Vec3>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -97,6 +105,9 @@ impl AnimationIntrospectionReportV1 {
     ) -> Self {
         let capture_changes = capture_changes(&samples);
         let visible_change = capture_changes > 0;
+        let rendered_coverage_missing = rendered_coverage_missing(&samples);
+        let rendered_movement_delta_px = rendered_movement_delta_px(&samples);
+        let rendered_movement = rendered_movement_delta_px > 1.0;
         let sampled_times = samples
             .iter()
             .map(|sample| sample.time_seconds)
@@ -156,6 +167,35 @@ impl AnimationIntrospectionReportV1 {
                 "verify the animated node is visible, framed, and rendered after each explicit seek",
             );
         }
+        if expect_change && rendered_coverage_missing {
+            push_reason(
+                &mut reasons,
+                "rendered_node_coverage_missing",
+                "error",
+                "animation verification could not measure rendered pixels for the selected moving node in every sample",
+            );
+            push_fix(
+                &mut fixes,
+                "render_selected_node",
+                "verify the selected moving node is visible, framed, and not matching the background in every sampled frame",
+            );
+        } else if expect_change
+            && has_rendered_centroid_samples(&samples)
+            && !rendered_movement
+            && channel_counts.changed > 0
+        {
+            push_reason(
+                &mut reasons,
+                "rendered_node_coverage_frozen",
+                "error",
+                "animation channels changed but the selected node's rendered pixel coverage did not move across sampled frames",
+            );
+            push_fix(
+                &mut fixes,
+                "refresh_rendered_transform",
+                "ensure transform changes update the rendered draw state, not only scene metadata or overlay markers",
+            );
+        }
         if samples.iter().any(|sample| {
             sample
                 .observed_values
@@ -190,6 +230,8 @@ impl AnimationIntrospectionReportV1 {
                 invalid_channel_count: channel_counts.invalid,
                 visible_change,
                 capture_changes,
+                rendered_movement,
+                rendered_movement_delta_px: round3(rendered_movement_delta_px),
             },
             samples,
             reasons,
@@ -218,6 +260,8 @@ impl AnimationIntrospectionReportV1 {
                 invalid_channel_count: 0,
                 visible_change: false,
                 capture_changes: 0,
+                rendered_movement: false,
+                rendered_movement_delta_px: 0.0,
             },
             samples: Vec::new(),
             reasons: vec![AnimationIntrospectionReasonV1 {
@@ -370,6 +414,48 @@ fn capture_changes(samples: &[AnimationSampleV1]) -> usize {
         .count()
 }
 
+fn rendered_coverage_missing(samples: &[AnimationSampleV1]) -> bool {
+    let values = selected_rendered_values(samples);
+    !values.is_empty()
+        && values.iter().any(|value| {
+            value.rendered_coverage_px.unwrap_or(0) == 0 || value.rendered_centroid_css_px.is_none()
+        })
+}
+
+fn has_rendered_centroid_samples(samples: &[AnimationSampleV1]) -> bool {
+    selected_rendered_values(samples)
+        .iter()
+        .filter(|value| value.rendered_centroid_css_px.is_some())
+        .count()
+        >= 2
+}
+
+fn rendered_movement_delta_px(samples: &[AnimationSampleV1]) -> f32 {
+    let centroids = selected_rendered_values(samples)
+        .into_iter()
+        .filter_map(|value| value.rendered_centroid_css_px)
+        .collect::<Vec<_>>();
+    let Some(first) = centroids.first().copied() else {
+        return 0.0;
+    };
+    centroids
+        .iter()
+        .map(|centroid| {
+            let dx = centroid[0] - first[0];
+            let dy = centroid[1] - first[1];
+            (dx * dx + dy * dy).sqrt()
+        })
+        .fold(0.0, f32::max)
+}
+
+fn selected_rendered_values(samples: &[AnimationSampleV1]) -> Vec<&AnimationObservedValueV1> {
+    samples
+        .iter()
+        .flat_map(|sample| sample.observed_values.iter())
+        .filter(|value| value.kind == "transform")
+        .collect()
+}
+
 fn times_advance(times: &[f32]) -> bool {
     let mut unique = BTreeSet::new();
     for time in times {
@@ -436,5 +522,72 @@ fn round3(value: f32) -> f32 {
         (value * 1000.0).round() / 1000.0
     } else {
         0.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn report_fails_when_selected_rendered_coverage_is_frozen() {
+        let clip = AnimationClipIntrospectionV1 {
+            name: "Move".to_owned(),
+            duration_seconds: 1.0,
+            channel_count: 1,
+        };
+        let channel_counts = AnimationChannelChangeCounts {
+            changed: 1,
+            unchanged: 0,
+            invalid: 0,
+        };
+        let samples = vec![
+            rendered_sample(0.0, "1111111111111111", 0.0, [24.0, 24.0]),
+            rendered_sample(1.0, "2222222222222222", 1.0, [24.0, 24.0]),
+        ];
+
+        let report =
+            AnimationIntrospectionReportV1::from_samples(clip, channel_counts, samples, true);
+
+        assert!(!report.ok, "frozen rendered coverage must fail");
+        assert!(report.summary.visible_change);
+        assert!(!report.summary.rendered_movement);
+        assert!(
+            report
+                .reasons
+                .iter()
+                .any(|reason| reason.code == "rendered_node_coverage_frozen"),
+            "report must explain the stale rendered-node coverage: {report:#?}"
+        );
+    }
+
+    fn rendered_sample(
+        time_seconds: f32,
+        payload: &str,
+        translation_x: f32,
+        rendered_centroid_css_px: [f32; 2],
+    ) -> AnimationSampleV1 {
+        AnimationSampleV1 {
+            time_seconds,
+            transform_revision: time_seconds as u64 + 1,
+            appearance_revision: 1,
+            payload_fnv1a64: payload.to_owned(),
+            moving_node_count: usize::from(time_seconds > 0.0),
+            invalid_node_count: 0,
+            observed_values: vec![AnimationObservedValueV1 {
+                id: "selected-transform".to_owned(),
+                node: 7,
+                kind: "transform".to_owned(),
+                transform: Transform {
+                    translation: Vec3::new(translation_x, 0.0, 0.0),
+                    rotation: Quat::IDENTITY,
+                    scale: Vec3::ONE,
+                },
+                rendered_centroid_css_px: Some(rendered_centroid_css_px),
+                rendered_coverage_px: Some(128),
+                expected_translation: None,
+                within_tolerance: None,
+            }],
+        }
     }
 }

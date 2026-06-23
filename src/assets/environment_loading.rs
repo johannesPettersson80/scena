@@ -2,6 +2,10 @@ use base64::Engine;
 
 use super::environment::{DEFAULT_ENVIRONMENT_SOURCE_PATH, is_equirectangular_hdr_path};
 use super::environment_sidecar::{EnvironmentPrefilterSidecar, sidecar_path_for_environment};
+use super::load::AssetLoadOptions;
+use super::scene_loading::{
+    check_fetch_byte_limit_after_fetch, check_fetch_byte_limit_before_fetch,
+};
 use super::{AssetFetcher, AssetPath, Assets, EnvironmentDesc, EnvironmentHandle};
 use crate::diagnostics::AssetError;
 
@@ -13,12 +17,25 @@ impl<F> Assets<F> {
     where
         F: AssetFetcher,
     {
+        self.load_environment_with_options(path, AssetLoadOptions::default())
+            .await
+    }
+
+    pub async fn load_environment_with_options(
+        &self,
+        path: impl Into<AssetPath>,
+        options: AssetLoadOptions,
+    ) -> Result<EnvironmentHandle, AssetError>
+    where
+        F: AssetFetcher,
+    {
         let path = path.into();
         if let Some(handle) = self.storage().environment_lookup.get(&path).copied() {
             return Ok(handle);
         }
         let sidecar = if is_equirectangular_hdr_path(&path) {
-            self.try_load_environment_sidecar(&path).await?
+            self.try_load_environment_sidecar_with_options(&path, options)
+                .await?
         } else {
             None
         };
@@ -26,10 +43,21 @@ impl<F> Assets<F> {
             EnvironmentDesc::neutral_studio()
         } else if is_equirectangular_hdr_path(&path) {
             if let Some(source_bytes) = embedded_environment_bytes(&path)? {
+                check_fetch_byte_limit_after_fetch(
+                    &path,
+                    source_bytes.len(),
+                    options.fetch_byte_limit(),
+                )?;
                 environment_from_hdr_bytes(path.clone(), &source_bytes, sidecar)?
             } else {
+                check_fetch_byte_limit_before_fetch(&path, options.fetch_byte_limit())?;
                 match self.fetcher().fetch(&path).await {
                     Ok(source_bytes) => {
+                        check_fetch_byte_limit_after_fetch(
+                            &path,
+                            source_bytes.len(),
+                            options.fetch_byte_limit(),
+                        )?;
                         environment_from_hdr_bytes(path.clone(), &source_bytes, sidecar)?
                     }
                     Err(AssetError::NotFound { .. } | AssetError::Io { .. }) => {
@@ -72,9 +100,10 @@ impl<F> Assets<F> {
         handle
     }
 
-    async fn try_load_environment_sidecar(
+    async fn try_load_environment_sidecar_with_options(
         &self,
         environment_path: &AssetPath,
+        options: AssetLoadOptions,
     ) -> Result<Option<EnvironmentPrefilterSidecar>, AssetError>
     where
         F: AssetFetcher,
@@ -83,14 +112,25 @@ impl<F> Assets<F> {
             return Ok(None);
         }
         let sidecar_path = sidecar_path_for_environment(environment_path);
+        check_fetch_byte_limit_before_fetch(&sidecar_path, options.fetch_byte_limit())?;
         match self.fetcher().fetch(&sidecar_path).await {
-            Ok(bytes) => match EnvironmentPrefilterSidecar::parse(sidecar_path.clone(), &bytes) {
-                Ok(sidecar) => Ok(Some(sidecar)),
-                Err(error) => {
-                    warn_optional_environment_sidecar_failed(&sidecar_path, &format!("{error:?}"));
-                    Ok(None)
+            Ok(bytes) => {
+                check_fetch_byte_limit_after_fetch(
+                    &sidecar_path,
+                    bytes.len(),
+                    options.fetch_byte_limit(),
+                )?;
+                match EnvironmentPrefilterSidecar::parse(sidecar_path.clone(), &bytes) {
+                    Ok(sidecar) => Ok(Some(sidecar)),
+                    Err(error) => {
+                        warn_optional_environment_sidecar_failed(
+                            &sidecar_path,
+                            &format!("{error:?}"),
+                        );
+                        Ok(None)
+                    }
                 }
-            },
+            }
             Err(AssetError::NotFound { .. } | AssetError::Io { .. }) => Ok(None),
             Err(error) => Err(error),
         }

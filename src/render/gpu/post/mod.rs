@@ -11,9 +11,11 @@ mod blit;
 mod bloom;
 mod bloom_fxaa;
 mod copy;
+mod dof;
 mod fxaa;
 mod resources;
 mod ssao;
+mod ssr;
 #[cfg(test)]
 mod tests;
 mod types;
@@ -44,6 +46,7 @@ pub(super) fn scene_pipelines(resources: &PostResources, sample_count: u32) -> U
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub(super) fn ensure_scene_msaa8_pipelines(
     adapter: &wgpu::Adapter,
     device: &wgpu::Device,
@@ -83,6 +86,7 @@ pub(super) fn ensure_scene_msaa8_pipelines(
     Ok(())
 }
 
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub(super) const fn scene_color_format() -> wgpu::TextureFormat {
     resources::POST_COLOR_FORMAT
 }
@@ -111,6 +115,33 @@ pub(super) fn encode_chain(
     let mut current = PostTextureSlot::Scene;
     let mut next = PostTextureSlot::Ping;
     let mut counts = GpuPostPassCounts::default();
+
+    if let Some(config) = settings.reflections {
+        write_uniform(
+            queue,
+            resources,
+            [
+                resources.target.width as f32,
+                resources.target.height as f32,
+                0.0,
+                0.0,
+                config.strength(),
+                config.roughness(),
+                config.horizon_fraction(),
+                config.fade(),
+            ],
+        );
+        ssr::encode(
+            encoder,
+            &resources.ssr_pipeline,
+            bind_group(resources, current),
+            view(resources, next),
+            draw_submissions,
+        );
+        current = next;
+        next = next.alternate();
+        counts.screen_space_reflections = 1;
+    }
 
     if let Some(config) = settings.ambient_occlusion {
         let Some(depth_prepass) = depth_prepass else {
@@ -151,6 +182,47 @@ pub(super) fn encode_chain(
         current = next;
         next = next.alternate();
         counts.ambient_occlusion = 1;
+    }
+
+    if let Some(config) = settings.depth_of_field() {
+        let Some(depth_prepass) = depth_prepass else {
+            return Err(RenderError::GpuResourcesNotPrepared {
+                backend: resources.target.backend,
+            });
+        };
+        write_uniform(
+            queue,
+            resources,
+            [
+                resources.target.width as f32,
+                resources.target.height as f32,
+                config.focus_depth(),
+                f32::from(config.radius_px()),
+                config.aperture_f_stop(),
+                if depth_prepass.reversed_z() { 1.0 } else { 0.0 },
+                depth_prepass.clear_depth(),
+                0.0,
+            ],
+        );
+        let Some(depth_color_view) = depth_prepass.color_view() else {
+            return Err(RenderError::GpuResourcesNotPrepared {
+                backend: resources.target.backend,
+            });
+        };
+        dof::encode(
+            encoder,
+            device,
+            &resources.ssao_bind_group_layout,
+            &resources.uniform,
+            &resources.depth_of_field_pipeline,
+            view(resources, current),
+            depth_color_view,
+            view(resources, next),
+            draw_submissions,
+        );
+        current = next;
+        next = next.alternate();
+        counts.depth_of_field = 1;
     }
 
     if let Some(config) = settings.bloom {
@@ -302,6 +374,7 @@ pub(super) fn surface_blit_pipeline(resources: &PostResources) -> Option<&wgpu::
     resources.surface_blit_pipeline.as_ref()
 }
 
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub(super) const fn output_blit_pipeline(resources: &PostResources) -> &wgpu::RenderPipeline {
     &resources.output_blit_pipeline
 }

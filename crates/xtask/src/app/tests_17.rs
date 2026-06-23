@@ -133,9 +133,49 @@ pub(crate) fn cloudflare_material_proof_fails_closed_on_reference_delta() {
         "public material proof must not leave reference DeltaE in diagnostic-only mode",
     );
     assert!(
+        script.contains("https://scena-demo.pages.dev/proof/?sample=material-presets")
+            && !script.contains("https://scena-demo.pages.dev/?sample=material-presets"),
+        "public material proof must target the proof harness, not the landing page"
+    );
+    assert!(
         script.contains("metrics.reference_delta_gate === \"hard\"")
             && script.contains("!metrics.passed_reference_delta"),
         "public material proof must turn failed reference DeltaE into a script failure",
+    );
+    assert!(
+        script.contains("!cacheProof.bumped")
+            && script.contains("cache buster mismatch:")
+            && script.contains("!cacheProof.wasm.checksum_matches_build")
+            && script.contains("wasm checksum mismatch:"),
+        "public material proof must fail explicitly when the live deployment is stale or not the local wasm",
+    );
+    assert!(
+        script.contains("findVersionedScript(html)")
+            && script.contains("scriptPath.endsWith(\"/proof.js\")")
+            && script.contains("demo/proof/pkg/scena_bg.wasm")
+            && script.contains("findVersionedWasm(scriptText)"),
+        "public material proof must verify the actual proof-harness script and wasm, not hard-code the landing-page bundle",
+    );
+}
+
+#[test]
+pub(crate) fn demo_wasm_build_stamps_cache_busters_from_generated_artifact_hash() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let script =
+        fs::read_to_string(root.join("scripts/build_demo_wasm.js")).expect("demo build script");
+
+    assert!(
+        script.contains("stampCacheBusters(writeSizeManifest())")
+            && script.contains("cacheBusterForManifest(manifest)")
+            && script
+                .contains("normalizedCacheBusterInput(path.join(bundle.outDir, \"scena.js\"))")
+            && script.contains("wasm=${manifest.sha256}")
+            && script.contains("demo/proof/index.html")
+            && script.contains("demo/proof.js")
+            && script.contains("demo/index.html")
+            && script.contains("demo/main.js"),
+        "demo/proof wasm builds must stamp tracked cache busters from the generated JS/HTML plus \
+         optimized wasm hash, so a script-only proof fix cannot leave browsers on stale code",
     );
 }
 
@@ -271,7 +311,7 @@ pub(crate) fn write_expanded_material_preset_doctor_fixture(fixture_root: &Path)
         .expect("browser pbr fixture dir");
     fs::write(
         fixture_root.join("src/browser_probe/workflows/pbr/material_presets.rs"),
-        "material_presets_scene material_preset_showcase browser-pbr-material-preset-expanded-set webgl2_smooth_metal_sample_floor scene-color-ior-thickness-rough-blur-sorted-transparency /demo/samples/environment/white_studio_03_1k.hdr showcase_geometry source_surfaces",
+        "material_presets_scene material_preset_showcase browser-pbr-material-preset-expanded-set webgl2_smooth_metal_sample_floor scene-color-ior-thickness-rough-blur-sorted-transparency glass_pixel_probes glass_pixel_probe_viewport /demo/samples/environment/white_studio_03_1k.hdr showcase_geometry source_surfaces",
     )
     .expect("browser material preset fixture");
     let browser_probe = fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe.js");
@@ -282,9 +322,14 @@ pub(crate) fn write_expanded_material_preset_doctor_fixture(fixture_root: &Path)
         browser_probe_fixture.push(' ');
     }
     browser_probe_fixture.push_str(
-        "assertMaterialPresetProof pbr-material-presets webgl2_smooth_metal_sample_floor < 96 /demo/samples/environment/white_studio_03_1k.hdr single-shape grid Assets::material_presets()",
+        "assertMaterialPresetProof pbr-material-presets material_preset_glass_pixels browser-glass-pixel-probes structured glass pixels behind clear/frosted glass webgl2_smooth_metal_sample_floor < 96 /demo/samples/environment/white_studio_03_1k.hdr single-shape grid Assets::material_presets()",
     );
     fs::write(browser_probe, browser_probe_fixture).expect("browser probe fixture");
+    fs::write(
+        fixture_root.join("tests/browser/m6_rust_wasm_renderer_probe_page.js"),
+        "materialPresetGlassPixelProof glass_pixel_probes samplePixelBuffer browser-glass-pixel-probes readRenderedPixelBuffer",
+    )
+    .expect("browser probe page fixture");
     fs::create_dir_all(fixture_root.join("src/render/prepare"))
         .expect("render prepare fixture dir");
     fs::write(

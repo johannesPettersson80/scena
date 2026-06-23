@@ -65,6 +65,7 @@ pub(super) struct LabelResources {
     atlas_texture: wgpu::Texture,
     atlas_bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     flat_pipeline: wgpu::RenderPipeline,
     #[allow(dead_code)]
     surface_pipeline: Option<wgpu::RenderPipeline>,
@@ -275,6 +276,7 @@ pub(super) const fn pipeline(resources: &LabelResources) -> &wgpu::RenderPipelin
     &resources.pipeline
 }
 
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub(super) const fn flat_pipeline(resources: &LabelResources) -> &wgpu::RenderPipeline {
     &resources.flat_pipeline
 }

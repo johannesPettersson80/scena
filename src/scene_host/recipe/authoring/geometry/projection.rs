@@ -32,6 +32,10 @@ fn projected_primitive_counts(
     primitive: &SceneRecipePrimitiveV1,
 ) -> Result<ProjectedGeometryCounts, Box<SceneRecipeDiagnosticV1>> {
     let counts = match primitive.kind.as_str() {
+        "box" if primitive.bevel.or(primitive.fillet).is_some() => ProjectedGeometryCounts {
+            vertices: 96,
+            indices: 132,
+        },
         "box" => ProjectedGeometryCounts {
             vertices: 24,
             indices: 36,
@@ -54,13 +58,20 @@ fn projected_primitive_counts(
         }
         "cylinder" => {
             let segments = u64::from(primitive.segments.unwrap_or(32).max(3));
-            ProjectedGeometryCounts {
-                vertices: checked_add(
-                    checked_mul(segments, 4, "cylinder vertices")?,
-                    2,
-                    "cylinder vertices",
-                )?,
-                indices: checked_mul(segments, 12, "cylinder indices")?,
+            if primitive.bevel.or(primitive.fillet).is_some() {
+                ProjectedGeometryCounts {
+                    vertices: checked_mul(segments, 18, "beveled cylinder vertices")?,
+                    indices: checked_mul(segments, 24, "beveled cylinder indices")?,
+                }
+            } else {
+                ProjectedGeometryCounts {
+                    vertices: checked_add(
+                        checked_mul(segments, 4, "cylinder vertices")?,
+                        2,
+                        "cylinder vertices",
+                    )?,
+                    indices: checked_mul(segments, 12, "cylinder indices")?,
+                }
             }
         }
         "cone" => {
@@ -365,6 +376,8 @@ mod tests {
             major_radius: None,
             minor_radius: None,
             height: None,
+            bevel: None,
+            fillet: None,
             segments: None,
             rings: None,
             divisions: None,

@@ -21,8 +21,9 @@ const modelViewerPackage = require("@google/model-viewer/package.json");
 
 const mode = process.argv.includes("--check") ? "check" : "write";
 const referenceCommand = "node scripts/generate_round_e_model_viewer_references.mjs --write";
-const referenceCameraOrbit = "-18deg 18deg 1.2m";
-const referenceCameraFixture = "reference-orbit:-18deg,18deg,1.2m; browser-crops:4x3";
+const referenceCameraOrbit = "-18deg 72deg 5.8m";
+const referenceCameraFixture =
+  "reference-orbit:-18deg,72deg,5.8m; browser-crops:4x3; matches scena azimuth_elevation(-18deg,18deg)";
 const referenceBackground = "#93969c";
 const referenceViewport = { width: 512, height: 512 };
 const proofViewport = { width: 960, height: 960 };
@@ -35,6 +36,7 @@ const SCENA_LIGHT_GRAY = [0.69387174, 0.7230551, 0.76815116, 1.0];
 const SCENA_CYAN = [0.031896032, 0.41788507, 0.7912979, 1.0];
 const SCENA_COOL_WHITE = [0.8549926, 0.92158186, 1.0, 1.0];
 const SCENA_WHITE = [1.0, 1.0, 1.0, 1.0];
+const SCENA_LEATHER_BASE = [0.27049779, 0.08437621, 0.02955683, 1.0];
 const glassBackgroundBars = [
   { offset: [0.0, 0.0, -0.006], scale: [0.56, 0.38, 0.006], color: [1, 1, 1, 1] },
   { offset: [0.0, -0.13, 0.006], scale: [0.50, 0.040, 0.010], color: [0, 0, 0, 1] },
@@ -112,23 +114,23 @@ const presets = [
     },
   }),
   materialPreset("leather", "Leather", "Assets::material_presets()", "strap-panel", "studio", {
-    pbrMetallicRoughness: { baseColorFactor: [1.0, 1.0, 1.0, 1.0], metallicFactor: 0.0, roughnessFactor: 0.78 },
+    pbrMetallicRoughness: { baseColorFactor: SCENA_LEATHER_BASE, metallicFactor: 0.0, roughnessFactor: 0.78 },
     roundETextureSlots: textureSlots(sourceBackedTextureAssets.leather),
     extensions: {
       KHR_materials_sheen: {
-        sheenColorFactor: [1.0, 1.0, 1.0],
+        sheenColorFactor: SCENA_LEATHER_BASE.slice(0, 3),
         sheenRoughnessFactor: 0.72,
       },
     },
   }),
   materialPreset("clear_glass", "Clear glass", "MaterialDesc", "glass-block-grid", "ibl-only", {
     alphaMode: "BLEND",
-    pbrMetallicRoughness: { baseColorFactor: [...SCENA_COOL_WHITE.slice(0, 3), 0.28], metallicFactor: 0.0, roughnessFactor: 0.02 },
+    pbrMetallicRoughness: { baseColorFactor: [...SCENA_COOL_WHITE.slice(0, 3), 0.20], metallicFactor: 0.0, roughnessFactor: 0.02 },
     extensions: {
       KHR_materials_transmission: { transmissionFactor: 1.0 },
       KHR_materials_ior: { ior: 1.45 },
       KHR_materials_volume: {
-        thicknessFactor: 0.02,
+        thicknessFactor: 0.08,
         attenuationDistance: 2.0,
         attenuationColor: SCENA_COOL_WHITE.slice(0, 3),
       },
@@ -148,7 +150,7 @@ const presets = [
     },
   }),
   materialPreset("rubber", "Rubber", "Assets::material_presets()", "gasket-foot", "studio", {
-    pbrMetallicRoughness: { baseColorFactor: [1.0, 1.0, 1.0, 1.0], metallicFactor: 0.0, roughnessFactor: 1.0 },
+    pbrMetallicRoughness: { baseColorFactor: [1.0, 1.0, 1.0, 1.0], metallicFactor: 0.0, roughnessFactor: 0.86 },
     roundETextureSlots: textureSlots(sourceBackedTextureAssets.rubber),
   }),
 ];
@@ -249,27 +251,29 @@ async function renderReferences() {
   const browser = await chromium.launch({
     headless: true,
     chromiumSandbox: false,
+    executablePath: process.env.CHROMIUM || undefined,
     args: ["--no-sandbox", "--disable-dev-shm-usage"],
   });
   try {
-    const page = await browser.newPage({ viewport: referenceViewport, deviceScaleFactor: 1 });
+    const page = await browser.newPage({ viewport: proofViewport, deviceScaleFactor: 1 });
     const references = new Map();
+    const gltfPath = path.join(publicDir, "round-e-showcase.gltf");
+    fs.writeFileSync(gltfPath, JSON.stringify(createShowcaseGltf(), null, 2));
+    const htmlPath = path.join(publicDir, "round-e-showcase.html");
+    fs.writeFileSync(htmlPath, renderHtml("round-e-showcase.gltf", proofViewport));
+    await page.goto(`${server.url}/round-e-showcase.html`, { waitUntil: "networkidle" });
+    await page.waitForSelector("model-viewer");
+    await page.waitForFunction(() => {
+      const viewer = document.querySelector("model-viewer");
+      return viewer && viewer.loaded;
+    }, null, { timeout: 30000 });
+    await page.waitForTimeout(250);
+    if (process.env.SCENA_ROUND_E_REFERENCE_SHOWCASE) {
+      await page.screenshot({ path: process.env.SCENA_ROUND_E_REFERENCE_SHOWCASE });
+    }
     for (const preset of presets) {
-      const gltfPath = path.join(publicDir, `${preset.id}.gltf`);
-      fs.writeFileSync(gltfPath, JSON.stringify(createPresetGltf(preset), null, 2));
-      const htmlPath = path.join(publicDir, `${preset.id}.html`);
-      fs.writeFileSync(htmlPath, renderHtml(`${preset.id}.gltf`));
-      await page.goto(`${server.url}/${preset.id}.html`, { waitUntil: "networkidle" });
-      await page.waitForSelector("model-viewer");
-      await page.waitForFunction(() => {
-        const viewer = document.querySelector("model-viewer");
-        return viewer && viewer.loaded;
-      }, null, { timeout: 30000 });
-      await page.waitForTimeout(250);
       const imagePath = path.join(outDir, `${preset.id}.png`);
-      await page.screenshot({
-        path: imagePath,
-      });
+      await cropReferencePng(page, preset, imagePath);
       references.set(preset.id, {
         path: `tests/visual/references/round_e/${preset.id}.png`,
         sha256: sha256(fs.readFileSync(imagePath)),
@@ -281,6 +285,14 @@ async function renderReferences() {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(temp, { recursive: true, force: true });
   }
+}
+
+async function cropReferencePng(page, preset, imagePath) {
+  const crop = pixelCropWindow(preset.id);
+  await page.screenshot({
+    path: imagePath,
+    clip: crop,
+  });
 }
 
 function createShowcaseGltf() {
@@ -402,17 +414,6 @@ function renderHtml(source, viewport = referenceViewport) {
   </model-viewer>
 </body>
 </html>`;
-}
-
-function createPresetGltf(preset) {
-  const builder = new GltfBuilder();
-  const rootNodes = [];
-  const mainMaterial = builder.addMaterial(preset.material);
-  if (preset.geometry.includes("glass")) {
-    rootNodes.push(builder.addGlassTargetBars([0, 0, -0.14]));
-  }
-  rootNodes.push(builder.addShapeNode(preset.geometry, mainMaterial, [0, 0, 0]));
-  return builder.finish(rootNodes);
 }
 
 function presetPosition(id) {

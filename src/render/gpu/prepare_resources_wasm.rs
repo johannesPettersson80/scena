@@ -9,6 +9,7 @@ use crate::render::prepare::{
 
 use super::browser_readback::create_browser_readback_resources;
 use super::instancing::INSTANCE_BYTE_LEN;
+use super::material_support::reject_unsupported_volume_texture_slots;
 use super::materials::{
     create_material_bind_group_layout, create_material_resources, material_bind_group_count,
     material_texture_byte_len, material_texture_count,
@@ -22,10 +23,11 @@ use super::resource_encoding::{
 use super::stats::{PreparedResourceEstimateInput, estimate_prepared_resource_stats};
 use super::vertices::VERTEX_BYTE_LEN;
 use super::{
-    GpuDeviceState, GpuPrepareOutcome, GpuPreparedResources, depth, environment,
+    GpuDeviceState, GpuPrepareOutcome, GpuPreparedResources, depth, environment, light_assignment,
     material_texture_binding_mode, output, transmission,
 };
 use crate::render::RasterTarget;
+use crate::render::prepare::TiledLightAssignment;
 
 impl GpuDeviceState {
     #[allow(clippy::too_many_arguments)]
@@ -46,6 +48,7 @@ impl GpuDeviceState {
         depth_stats: PreparedDepthStats,
         material_slots: &[PreparedMaterialSlot],
         environment_lighting: &PreparedEnvironmentLighting,
+        tiled_light_assignment: &TiledLightAssignment,
     ) -> Result<GpuPrepareOutcome, crate::PrepareError> {
         self.configure_surface(target);
         self.release_prepared_resources();
@@ -59,6 +62,7 @@ impl GpuDeviceState {
         {
             return Ok(GpuPrepareOutcome::NoResources);
         }
+        reject_unsupported_volume_texture_slots(target, material_slots)?;
         let vertex_bytes = encode_retained_vertices(retained_primitives, retained_instances);
         let encoded_draw_resources =
             encode_draw_resources(draw_primitives, draw_instances, draw_strokes);
@@ -83,11 +87,18 @@ impl GpuDeviceState {
         });
         self.queue.write_buffer(&instance_buffer, 0, instance_bytes);
 
-        let output_bind_group_layout = create_output_bind_group_layout(&self.device);
+        let include_tiled_light_storage = target.backend != Backend::WebGl2;
+        let output_bind_group_layout =
+            create_output_bind_group_layout(&self.device, include_tiled_light_storage);
         let texture_binding_mode = material_texture_binding_mode(target);
         let material_bind_group_layout =
             create_material_bind_group_layout(&self.device, texture_binding_mode);
         let output_uniform = create_output_uniform_buffer(&self.device);
+        let light_assignment = light_assignment::create_light_assignment_resources(
+            &self.device,
+            &self.queue,
+            tiled_light_assignment,
+        );
         let material_resources = create_material_resources(
             &self.device,
             &self.queue,
@@ -139,7 +150,6 @@ impl GpuDeviceState {
             &draw_bind_group_layout,
             texture_binding_mode,
             depth_compare,
-            1,
         );
         let environment::OutputResources {
             shadow_caster,
@@ -158,6 +168,8 @@ impl GpuDeviceState {
             &transmission.view,
             &transmission.placeholder_view,
             &transmission.sampler,
+            &light_assignment,
+            include_tiled_light_storage,
             lighting_stats.directional_shadow_map_resolution,
             environment_lighting,
         );
@@ -169,6 +181,7 @@ impl GpuDeviceState {
             &draw_bind_group_layout,
             texture_binding_mode,
             depth_compare,
+            1,
         );
         let strokes = (!retained_strokes.is_empty()).then(|| {
             super::strokes::create_resources(
@@ -219,6 +232,7 @@ impl GpuDeviceState {
             depth_prepass_passes: u64::from(depth_prepass.is_some()),
             material_texture_count: material_texture_count(&material_resources),
             material_texture_bytes: material_texture_byte_len(&material_resources),
+            light_assignment_bytes: light_assignment.byte_len,
             material_bind_groups: material_bind_group_count(&material_resources),
         });
 
@@ -231,6 +245,7 @@ impl GpuDeviceState {
             output_bind_group,
             opaque_output_bind_group,
             light_uniform,
+            light_assignment,
             light_from_world,
             material_resources,
             shadow_caster,

@@ -33,6 +33,7 @@ mod inspection_tools;
 mod instances;
 mod labels;
 mod lights;
+mod lod;
 mod materials;
 mod math;
 mod measurements;
@@ -92,8 +93,10 @@ pub use inspection_tools::{
 pub use instances::{Instance, InstanceId, InstanceSet};
 pub use labels::{LabelBillboard, LabelDesc, LabelFontError, LabelFontFace, LabelMetrics};
 pub use lights::{
-    DirectionalLight, Light, LightBuilder, PointLight, SpotLight, StudioLightingHandles,
+    AreaLight, AreaLightShape, DirectionalLight, Light, LightBuilder, PointLight, SpotLight,
+    StudioLightingHandles,
 };
+pub use lod::MeshLodLevel;
 pub use math::{Angle, Quat, Transform, Vec3};
 pub use measurements::{
     MeasurementAxis, MeasurementKind, MeasurementOverlay, MeasurementOverlayReport,
@@ -133,10 +136,12 @@ pub struct Scene {
     anchors: SlotMap<AnchorKey, AnchorFrame>,
     annotations: BTreeMap<String, AnnotationAnchor>,
     callouts: BTreeMap<String, callouts::SceneCalloutState>,
+    measurements: BTreeMap<String, measurements::SceneMeasurementOverlayState>,
     connectors: SlotMap<ConnectorKey, ConnectorFrame>,
     connection_locked_nodes: BTreeSet<NodeKey>,
     node_bounds: BTreeMap<NodeKey, Aabb>,
     section_box: Option<clipping::SceneSectionBoxState>,
+    mesh_lods: BTreeMap<NodeKey, Vec<MeshLodLevel>>,
     morph_weights: BTreeMap<NodeKey, Vec<f32>>,
     skin_bindings: BTreeMap<NodeKey, SceneSkinBinding>,
     clipping_planes: SlotMap<ClippingPlaneKey, ClippingPlane>,
@@ -213,10 +218,12 @@ impl Scene {
             anchors: SlotMap::with_key(),
             annotations: BTreeMap::new(),
             callouts: BTreeMap::new(),
+            measurements: BTreeMap::new(),
             connectors: SlotMap::with_key(),
             connection_locked_nodes: BTreeSet::new(),
             node_bounds: BTreeMap::new(),
             section_box: None,
+            mesh_lods: BTreeMap::new(),
             morph_weights: BTreeMap::new(),
             skin_bindings: BTreeMap::new(),
             clipping_planes: SlotMap::with_key(),
@@ -344,103 +351,6 @@ impl Scene {
 
     pub(crate) const fn visibility_revision(&self) -> u64 {
         self.visibility_revision
-    }
-
-    pub(crate) fn mesh_nodes(&self) -> impl Iterator<Item = (NodeKey, MeshNode, Transform)> + '_ {
-        self.nodes.iter().filter_map(|(key, node)| {
-            let NodeKind::Mesh(mesh) = node.kind else {
-                return None;
-            };
-            if !self.visible_for_active_camera(key) {
-                return None;
-            }
-            self.world_transform(key)
-                .map(|transform| (key, mesh, transform))
-        })
-    }
-
-    pub(crate) fn instance_set_nodes(
-        &self,
-    ) -> impl Iterator<Item = (NodeKey, &InstanceSet, Transform)> + '_ {
-        self.nodes.iter().filter_map(|(node_key, node)| {
-            let NodeKind::InstanceSet(instance_set) = node.kind else {
-                return None;
-            };
-            if !self.visible_for_active_camera(node_key) {
-                return None;
-            }
-            self.instance_sets
-                .get(instance_set)
-                .and_then(|instance_set| {
-                    self.world_transform(node_key)
-                        .map(|transform| (node_key, instance_set, transform))
-                })
-        })
-    }
-
-    pub(crate) fn model_nodes(&self) -> impl Iterator<Item = NodeKey> + '_ {
-        self.nodes.iter().filter_map(|(key, node)| {
-            if !matches!(node.kind, NodeKind::Model(_)) || !self.visible_for_active_camera(key) {
-                return None;
-            }
-            Some(key)
-        })
-    }
-
-    pub(crate) fn label_nodes(
-        &self,
-    ) -> impl Iterator<Item = (NodeKey, LabelKey, &LabelDesc, Transform)> + '_ {
-        self.nodes.iter().filter_map(|(node_key, node)| {
-            let NodeKind::Label(label) = node.kind else {
-                return None;
-            };
-            if !self.visible_for_active_camera(node_key) {
-                return None;
-            }
-            self.labels.get(label).and_then(|label_desc| {
-                self.world_transform(node_key)
-                    .map(|transform| (node_key, label, label_desc, transform))
-            })
-        })
-    }
-
-    pub(crate) fn light_nodes(
-        &self,
-    ) -> impl Iterator<Item = (NodeKey, LightKey, Light, Transform)> + '_ {
-        self.nodes.iter().filter_map(|(node_key, node)| {
-            let NodeKind::Light(light_key) = node.kind else {
-                return None;
-            };
-            if !self.visible_for_active_camera(node_key) {
-                return None;
-            }
-            self.lights.get(light_key).copied().and_then(|light| {
-                self.world_transform(node_key)
-                    .map(|transform| (node_key, light_key, light, transform))
-            })
-        })
-    }
-
-    pub(crate) fn node_transforms(&self) -> impl Iterator<Item = (NodeKey, Transform)> + '_ {
-        self.nodes.iter().map(|(key, node)| (key, node.transform))
-    }
-
-    pub(crate) fn mesh_bounds_nodes(&self) -> impl Iterator<Item = (NodeKey, Aabb)> + '_ {
-        self.node_bounds
-            .iter()
-            .filter(|(node, _)| self.visible_for_active_camera(**node))
-            .map(|(node, bounds)| (*node, *bounds))
-    }
-
-    pub(crate) fn camera_nodes(&self) -> impl Iterator<Item = (NodeKey, CameraKey, &Camera)> + '_ {
-        self.nodes.iter().filter_map(|(node_key, node)| {
-            let NodeKind::Camera(camera_key) = node.kind else {
-                return None;
-            };
-            self.cameras
-                .get(camera_key)
-                .map(|camera| (node_key, camera_key, camera))
-        })
     }
 
     fn insert_camera(

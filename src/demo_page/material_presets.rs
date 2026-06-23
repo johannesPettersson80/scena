@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    Aabb, Assets, Color, FramingOptions, GeometryDesc, GeometryTopology, GeometryVertex, LabelDesc,
+    Aabb, Assets, Color, FramingOptions, GeometryDesc, GeometryTopology, GeometryVertex,
     MaterialDesc, OrbitControls, PerspectiveCamera, Scene, Transform, Vec3,
 };
 
@@ -16,8 +16,8 @@ pub async fn load_material_presets_scene(
     load_material_spheres_scene(viewport_width, viewport_height).await
 }
 
-#[allow(dead_code)]
-async fn load_material_proof_scene(
+#[wasm_bindgen]
+pub async fn load_material_proof_scene(
     viewport_width: u32,
     viewport_height: u32,
 ) -> Result<DemoApp, JsValue> {
@@ -69,17 +69,6 @@ async fn load_material_proof_scene(
                     "add {} material preset failed: {err:?}",
                     preset.id
                 ))
-            })?;
-        scene
-            .add_label(
-                scene.root(),
-                LabelDesc::new(preset.label)
-                    .with_color(Color::from_srgb_u8(225, 230, 238))
-                    .with_size(12.0),
-                Transform::at(preset.label_position()),
-            )
-            .map_err(|err| {
-                JsValue::from_str(&format!("add {} material label failed: {err:?}", preset.id))
             })?;
     }
 

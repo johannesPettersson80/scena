@@ -17,15 +17,19 @@ struct VertexOut {
 };
 
 struct LightingUniform {
-    directional_light_direction_intensity: array<vec4<f32>, 4>,
-    directional_light_color: array<vec4<f32>, 4>,
-    directional_shadow_control: array<vec4<f32>, 4>,
-    point_light_position_intensity: array<vec4<f32>, 4>,
-    point_light_color_range: array<vec4<f32>, 4>,
-    spot_light_position_intensity: array<vec4<f32>, 4>,
-    spot_light_direction_cones: array<vec4<f32>, 4>,
-    spot_light_cone_range: array<vec4<f32>, 4>,
-    spot_light_color_range: array<vec4<f32>, 4>,
+    directional_light_direction_intensity: array<vec4<f32>, 16>,
+    directional_light_color: array<vec4<f32>, 16>,
+    directional_shadow_control: array<vec4<f32>, 16>,
+    point_light_position_intensity: array<vec4<f32>, 16>,
+    point_light_color_range: array<vec4<f32>, 16>,
+    spot_light_position_intensity: array<vec4<f32>, 16>,
+    spot_light_direction_cones: array<vec4<f32>, 16>,
+    spot_light_cone_range: array<vec4<f32>, 16>,
+    spot_light_color_range: array<vec4<f32>, 16>,
+    area_light_position_flux: array<vec4<f32>, 2>,
+    area_light_axis_x_shape: array<vec4<f32>, 2>,
+    area_light_axis_y_range: array<vec4<f32>, 2>,
+    area_light_color: array<vec4<f32>, 2>,
     light_counts: vec4<f32>,
     environment_diffuse_intensity: vec4<f32>,
     environment_specular_intensity: vec4<f32>,
@@ -54,6 +58,8 @@ struct ClippedSegment {
     visible: f32,
 };
 
+const STROKE_AA_RADIUS_PX: f32 = 3.25;
+
 @group(0) @binding(0)
 var<uniform> camera: CameraUniform;
 
@@ -75,7 +81,7 @@ fn vs_main(quad: QuadVertex, segment: StrokeInstance) -> VertexOut {
     let direction = select(vec2<f32>(1.0, 0.0), normalize(delta), length_px > 0.001);
     let normal = vec2<f32>(-direction.y, direction.x);
     let half_width = max(segment.width_px, 0.001) * 0.5;
-    let aa_radius = 1.0;
+    let aa_radius = STROKE_AA_RADIUS_PX;
     let expanded_half_width = half_width + aa_radius;
     let offset_ndc = normal * quad.side_along.x * expanded_half_width * vec2<f32>(
         2.0 / max(camera.viewport_near_far.x, 1.0),
@@ -108,7 +114,8 @@ fn stroke_coverage(distance_px: f32, half_width_px: f32) -> f32 {
     if distance_px <= half_width_px {
         return 1.0;
     }
-    return clamp(1.0 - (distance_px - half_width_px), 0.0, 1.0);
+    let t = clamp((distance_px - half_width_px) / STROKE_AA_RADIUS_PX, 0.0, 1.0);
+    return 1.0 - t * t * (3.0 - 2.0 * t);
 }
 
 fn clip_segment_to_near(start: vec4<f32>, end: vec4<f32>) -> ClippedSegment {

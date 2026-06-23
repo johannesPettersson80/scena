@@ -416,6 +416,7 @@
     }
   ],
   "scene": {
+    "preset": "product_studio",
     "background": {
       "kind": "studio"
     },
@@ -425,7 +426,11 @@
     },
     "grid": {
       "padding": 0.05,
-      "line_spacing": 0.04
+      "line_spacing": 0.04,
+      "line_width_px": 4.0,
+      "reflection": {
+        "strength": 0.35
+      }
     }
   },
   "render": {
@@ -434,6 +439,17 @@
     "anti_aliasing": "fxaa",
     "supersample": 1,
     "reconstruction": "box",
+    "screen_space_reflections": {
+      "strength": 0.35,
+      "roughness": 0.22,
+      "horizon_fraction": 0.58,
+      "fade": 0.35
+    },
+    "depth_of_field": {
+      "focus_distance": 2.4,
+      "aperture_f_stop": 2.8,
+      "radius_px": 6
+    },
     "exposure_ev": 0.0,
     "tonemapper": "pbr_neutral"
   },
@@ -513,6 +529,102 @@
       "min": 0.05,
       "max": 0.95
     },
+    "expect_grounded": [
+      {
+        "id": "plate-on-floor",
+        "target": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "plane_y": 0.0,
+        "tolerance": 0.01
+      }
+    ],
+    "expect_helper_occluded": [
+      {
+        "id": "helper-line-behind-plate",
+        "helper": {
+          "kind": "node",
+          "id": "tri_deformed"
+        },
+        "occluder": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "tolerance_pixels": 0
+      }
+    ],
+    "expect_occlusion": [
+      {
+        "id": "plate-in-front-of-panel",
+        "front": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "back": {
+          "kind": "node",
+          "id": "tri_deformed"
+        },
+        "tolerance_pixels": 0
+      }
+    ],
+    "expect_backend": {
+      "backend": "headless",
+      "gpu_device": false
+    },
+    "expect_clipping": {
+      "active_clipping_planes": 1,
+      "section_box_active": true,
+      "section_box_inverted": false
+    },
+    "expect_state": [
+      {
+        "id": "default-import-variant",
+        "import": "part"
+      }
+    ],
+    "expect_transform": [
+      {
+        "id": "plate-transform",
+        "target": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "rotation_degrees": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "translation_tolerance": 0.001,
+        "scale_tolerance": 0.001,
+        "rotation_tolerance_degrees": 0.05
+      }
+    ],
+    "expect_separation": [
+      {
+        "id": "plate-clear-of-tri",
+        "a": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "b": {
+          "kind": "node",
+          "id": "tri"
+        },
+        "min_gap": 0.0,
+        "tolerance": 0.001
+      }
+    ],
     "expect_pick": [
       {
         "id": "plate-pick",
@@ -536,6 +648,43 @@
       "line": {
         "min_intermediate_edge_fraction": 0.005,
         "max_straightness_error": 0.08
+      },
+      "reflection": {
+        "target": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "min_luminance_range": 0.12,
+        "min_sobel_energy": 0.02,
+        "min_chroma_range": 0.04,
+        "max_firefly_fraction": 0.01
+      },
+      "area_light": {
+        "target": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "min_shadow_contrast": 0.025,
+        "min_penumbra_width_px": 1.5,
+        "min_penumbra_luma_levels": 18.0,
+        "min_emitter_extent_meters": 0.5
+      },
+      "grounding": {
+        "target": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "min_contact_shadow_delta": 0.018
+      },
+      "depth_of_field": {
+        "target": {
+          "kind": "node",
+          "id": "plate"
+        },
+        "min_source_background_sobel": 0.04,
+        "min_background_sobel_drop": 0.015,
+        "min_background_sobel_drop_fraction": 0.18,
+        "max_focal_mean_delta": 0.08
       }
     }
   },

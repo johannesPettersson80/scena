@@ -103,6 +103,10 @@ pub(super) async fn source_gltf_materials_scene() -> Result<WorkflowScene, JsVal
                 "kind": "spot",
                 "intensity_candela": light.intensity_candela(),
             }),
+            Light::Area(light) => json!({
+                "kind": "area",
+                "luminous_flux_lumens": light.luminous_flux_lumens(),
+            }),
         })
         .collect::<Vec<_>>();
 

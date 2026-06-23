@@ -8,7 +8,6 @@ use super::output::{
 use super::vertices::{PrimitiveDrawBatch, VERTEX_ATTRIBUTES, VERTEX_BYTE_LEN};
 
 pub(super) const BYTES_PER_PIXEL: u32 = 4;
-#[cfg(not(target_arch = "wasm32"))]
 pub(super) const GPU_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 /// WGPU evaluates front-face winding before viewport conversion; prepared
 /// triangle order that is front-facing in the CPU rasterizer maps to CCW here.

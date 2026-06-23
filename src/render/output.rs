@@ -5,6 +5,11 @@ use super::color_contract::{
     aces_tonemap, apply_exposure, linear_rgba_to_srgb8, pbr_neutral_tonemap,
 };
 
+mod depth_of_field;
+
+pub use depth_of_field::DepthOfFieldConfig;
+pub(in crate::render) use depth_of_field::{DepthOfFieldPostConfig, apply_depth_of_field_rgba8};
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct OutputTransform {
     exposure_ev: f32,
@@ -245,6 +250,7 @@ impl Default for ScreenSpaceAmbientOcclusionConfig {
 pub(super) fn apply_screen_space_ambient_occlusion_rgba8(
     target: RasterTarget,
     frame: &mut [u8],
+    scratch: &mut [u8],
     depth_frame: &[f32],
     config: ScreenSpaceAmbientOcclusionConfig,
 ) -> u64 {
@@ -254,35 +260,50 @@ pub(super) fn apply_screen_space_ambient_occlusion_rgba8(
         return 0;
     }
     debug_assert_eq!(frame.len(), target.byte_len());
+    debug_assert_eq!(scratch.len(), target.byte_len());
     debug_assert_eq!(depth_frame.len(), target.pixel_len());
 
     let threshold = config.depth_threshold().max(0.0);
+    scratch.fill(0);
     for y in 0..target.height {
         for x in 0..target.width {
             let pixel_index = target.pixel_index(x, y);
-            let center_depth = depth_frame[pixel_index];
+            let center_depth = quantize_screen_space_depth(depth_frame[pixel_index]);
             if !center_depth.is_finite() {
                 continue;
             }
-            let min_x = x.saturating_sub(radius);
-            let max_x = x.saturating_add(radius).min(target.width - 1);
-            let min_y = y.saturating_sub(radius);
-            let max_y = y.saturating_add(radius).min(target.height - 1);
+            let near_radius = (radius / 2).max(1);
+            let offsets = [
+                (-(near_radius as i32), 0_i32),
+                (near_radius as i32, 0_i32),
+                (0_i32, -(near_radius as i32)),
+                (0_i32, near_radius as i32),
+                (-(radius as i32), 0_i32),
+                (radius as i32, 0_i32),
+                (0_i32, -(radius as i32)),
+                (0_i32, radius as i32),
+            ];
             let mut finite_samples = 0_u32;
             let mut occluders = 0_u32;
-            for sample_y in min_y..=max_y {
-                for sample_x in min_x..=max_x {
-                    if sample_x == x && sample_y == y {
-                        continue;
-                    }
-                    let sample_depth = depth_frame[target.pixel_index(sample_x, sample_y)];
-                    if !sample_depth.is_finite() {
-                        continue;
-                    }
-                    finite_samples += 1;
-                    if sample_depth + threshold < center_depth {
-                        occluders += 1;
-                    }
+            for (offset_x, offset_y) in offsets {
+                let sample_x = x as i32 + offset_x;
+                let sample_y = y as i32 + offset_y;
+                if sample_x < 0
+                    || sample_y < 0
+                    || sample_x >= target.width as i32
+                    || sample_y >= target.height as i32
+                {
+                    continue;
+                }
+                let sample_depth = quantize_screen_space_depth(
+                    depth_frame[target.pixel_index(sample_x as u32, sample_y as u32)],
+                );
+                if !sample_depth.is_finite() {
+                    continue;
+                }
+                finite_samples += 1;
+                if sample_depth + threshold < center_depth {
+                    occluders += 1;
                 }
             }
             if occluders == 0 || finite_samples == 0 {
@@ -290,6 +311,36 @@ pub(super) fn apply_screen_space_ambient_occlusion_rgba8(
             }
             let coverage = occluders as f32 / finite_samples as f32;
             let darkening = (coverage * intensity).clamp(0.0, 0.65);
+            scratch[pixel_index] = (darkening * 255.0).round().clamp(0.0, 255.0) as u8;
+        }
+    }
+
+    for y in 0..target.height {
+        for x in 0..target.width {
+            let pixel_index = target.pixel_index(x, y);
+            if !depth_frame[pixel_index].is_finite() {
+                continue;
+            }
+            let min_x = x.saturating_sub(1);
+            let max_x = x.saturating_add(1).min(target.width - 1);
+            let min_y = y.saturating_sub(1);
+            let max_y = y.saturating_add(1).min(target.height - 1);
+            let mut darkening_sum = 0_u32;
+            let mut sample_count = 0_u32;
+            for sample_y in min_y..=max_y {
+                for sample_x in min_x..=max_x {
+                    let sample_index = target.pixel_index(sample_x, sample_y);
+                    if !depth_frame[sample_index].is_finite() {
+                        continue;
+                    }
+                    darkening_sum = darkening_sum.saturating_add(u32::from(scratch[sample_index]));
+                    sample_count = sample_count.saturating_add(1);
+                }
+            }
+            if sample_count == 0 || darkening_sum == 0 {
+                continue;
+            }
+            let darkening = (darkening_sum as f32 / sample_count as f32) / 255.0;
             let offset = pixel_offset(target, x, y);
             for channel in 0..3 {
                 frame[offset + channel] =
@@ -299,6 +350,13 @@ pub(super) fn apply_screen_space_ambient_occlusion_rgba8(
     }
 
     1
+}
+
+fn quantize_screen_space_depth(depth: f32) -> f32 {
+    if !depth.is_finite() {
+        return depth;
+    }
+    (depth.clamp(0.0, 1.0) * 65_535.0).round() / 65_535.0
 }
 
 pub(super) fn apply_bloom_rgba8(

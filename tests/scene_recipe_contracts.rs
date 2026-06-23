@@ -80,6 +80,137 @@ fn scene_recipe_validation_reports_future_sections_as_unsupported_features() {
 }
 
 #[test]
+fn scene_recipe_validation_accepts_ergonomic_backbone_fields() {
+    let report = scena::validate_scene_recipe_value(ergonomic_backbone_recipe());
+    assert!(
+        report.ok,
+        "ergonomic recipe fields should validate cleanly: {report:#?}"
+    );
+}
+
+#[test]
+fn scene_recipe_validation_rejects_unknown_ergonomic_presets_at_exact_paths() {
+    let invalid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "geometries": [
+            { "id": "body_geo", "primitive": { "kind": "box", "size": [0.12, 0.08, 0.08] } }
+        ],
+        "materials": [
+            { "id": "body_mat", "preset": "miracle_metal" }
+        ],
+        "nodes": [
+            { "id": "body", "geometry": "body_geo", "material": "body_mat" }
+        ],
+        "lights": [
+            { "id": "studio", "kind": "studio_rig", "preset": "softbox" }
+        ],
+        "cameras": [
+            {
+                "id": "camera",
+                "kind": "perspective",
+                "lens": "cinema",
+                "framing": { "preset": "hero_three_quarter", "fill": 0.0 },
+                "active": true
+            }
+        ],
+        "scene": {
+            "environment": { "preset": "moonlight" }
+        },
+        "render": {
+            "auto_exposure": "studio_magic"
+        }
+    }));
+
+    assert!(!invalid.ok);
+    assert_reason_at(&invalid, "invalid_material_preset", "$.materials[0].preset");
+    assert_reason_at(&invalid, "invalid_light_preset", "$.lights[0].preset");
+    assert_reason_at(&invalid, "invalid_camera_lens", "$.cameras[0].lens");
+    assert_reason_at(
+        &invalid,
+        "invalid_camera_framing",
+        "$.cameras[0].framing.preset",
+    );
+    assert_reason_at(
+        &invalid,
+        "invalid_camera_framing",
+        "$.cameras[0].framing.fill",
+    );
+    assert_reason_at(
+        &invalid,
+        "invalid_environment",
+        "$.scene.environment.preset",
+    );
+    assert_reason_at(&invalid, "invalid_render_setting", "$.render.auto_exposure");
+
+    let conflicting_exposure = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "geometries": [
+            { "id": "body_geo", "primitive": { "kind": "box", "size": [0.12, 0.08, 0.08] } }
+        ],
+        "materials": [
+            { "id": "body_mat", "preset": "chrome" }
+        ],
+        "nodes": [
+            { "id": "body", "geometry": "body_geo", "material": "body_mat" }
+        ],
+        "render": {
+            "exposure_ev": 0.0,
+            "auto_exposure": "product_studio"
+        }
+    }));
+    assert_reason_at(
+        &conflicting_exposure,
+        "conflicting_exposure_settings",
+        "$.render.auto_exposure",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_build_routes_ergonomic_fields_through_rust_helpers() {
+    let text =
+        serde_json::to_string(&ergonomic_backbone_recipe()).expect("ergonomic recipe serializes");
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/ergonomic-backbone.recipe.json",
+        &text,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("ergonomic recipe builds through SceneHostCore");
+
+    assert!(build.manifest.ok, "{:#?}", build.manifest);
+    assert_eq!(
+        build.host.renderer().auto_exposure(),
+        Some(scena::AutoExposureConfig::product_studio()),
+        "scene.preset/render.auto_exposure must reach Renderer::set_auto_exposure"
+    );
+    assert!(
+        build
+            .manifest
+            .materials
+            .iter()
+            .any(|material| material.id == "body_mat" && material.kind == "pbr_metallic_roughness"),
+        "material.preset should build a real PBR material resource: {:#?}",
+        build.manifest.materials
+    );
+    for id in ["studio.key", "studio.fill", "studio.rim"] {
+        assert!(
+            build.manifest.lights.iter().any(|light| light.id == id),
+            "studio_rig should expand through Scene::add_studio_lighting into {id}: {:#?}",
+            build.manifest.lights
+        );
+    }
+    assert!(
+        build
+            .manifest
+            .cameras
+            .iter()
+            .any(|camera| camera.id == "camera" && camera.active == Some(true)),
+        "camera.framing/lens should create and activate the authored camera: {:#?}",
+        build.manifest.cameras
+    );
+}
+
+#[test]
 fn scene_recipe_validation_accepts_authored_animation_and_rejects_bad_channels() {
     let valid = scena::validate_scene_recipe_value(json!({
         "schema": "scena.scene_recipe.v1",
@@ -569,6 +700,163 @@ fn scene_recipe_build_policy_rejects_arrow_projection_underestimate() {
     ))
     .expect_err("arrow projection must fail closed before builder allocation exceeds the cap");
     assert_build_reason(&report, "policy_violation", "$.geometries");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_beveled_box_and_cylinder_build_with_real_geometry() {
+    let recipe = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "steel": "#9EA7B3" },
+        "geometries": [
+            { "id": "body_geo", "primitive": { "kind": "box", "size": [0.24, 0.12, 0.16], "bevel": 0.01 } },
+            { "id": "pin_geo", "primitive": { "kind": "cylinder", "radius": 0.04, "height": 0.22, "segments": 12, "fillet": 0.006 } }
+        ],
+        "materials": [{ "id": "mat", "kind": "pbr_metallic_roughness", "base_color": "steel", "metallic": 0.0, "roughness": 0.48 }],
+        "nodes": [
+            { "id": "body", "geometry": "body_geo", "material": "mat" },
+            { "id": "pin", "geometry": "pin_geo", "material": "mat", "transform": { "kind": "trs", "translation": [0.22, 0.0, 0.0] } }
+        ],
+        "lights": [{ "id": "key", "kind": "directional", "preset": "key" }],
+        "capture": { "width": 160, "height": 120 }
+    }))
+    .expect("recipe serializes");
+
+    let validation = scena::validate_scene_recipe_json(&recipe);
+    assert!(
+        validation.ok,
+        "beveled primitives should validate: {validation:#?}"
+    );
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/beveled-primitives.recipe.json",
+        &recipe,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("beveled primitive recipe builds");
+
+    let body = build
+        .manifest
+        .geometries
+        .iter()
+        .find(|geometry| geometry.id == "body_geo")
+        .expect("beveled box geometry is reported");
+    let pin = build
+        .manifest
+        .geometries
+        .iter()
+        .find(|geometry| geometry.id == "pin_geo")
+        .expect("beveled cylinder geometry is reported");
+    assert_eq!(body.vertex_count, Some(96));
+    assert_eq!(body.index_count, Some(132));
+    assert_eq!(pin.vertex_count, Some(216));
+    assert_eq!(pin.index_count, Some(288));
+}
+
+#[test]
+fn scene_recipe_rejects_inert_bevel_knobs() {
+    let report = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "geometries": [
+            { "id": "ball", "primitive": { "kind": "sphere", "radius": 0.1, "bevel": 0.01 } },
+            { "id": "ambiguous", "primitive": { "kind": "box", "size": [0.1, 0.1, 0.1], "bevel": 0.01, "fillet": 0.01 } }
+        ]
+    }));
+    assert!(!report.ok);
+    assert_reason_at(&report, "unsupported_feature", "$.geometries[0].primitive");
+    assert_reason_at(&report, "invalid_primitive", "$.geometries[1].primitive");
+}
+
+#[test]
+fn scene_recipe_rejects_invalid_lod_levels() {
+    let report = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "white": "#FFFFFF" },
+        "geometries": [
+            { "id": "high", "primitive": { "kind": "cylinder", "radius": 0.5, "height": 1.0, "segments": 48 } }
+        ],
+        "materials": [{ "id": "mat", "kind": "unlit", "base_color": "white" }],
+        "nodes": [{
+            "id": "part",
+            "geometry": "high",
+            "material": "mat",
+            "lods": [
+                { "geometry": "missing", "max_screen_fraction": 0.2 },
+                { "geometry": "high", "max_screen_fraction": 1.5 }
+            ]
+        }]
+    }));
+    assert!(!report.ok);
+    assert_reason_at(
+        &report,
+        "unknown_geometry_ref",
+        "$.nodes[0].lods[0].geometry",
+    );
+    assert_reason_at(
+        &report,
+        "invalid_lod_threshold",
+        "$.nodes[0].lods[1].max_screen_fraction",
+    );
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_lod_selects_lower_triangle_geometry_when_small_on_screen() {
+    let near_triangles = render_lod_recipe_triangles(1.0);
+    let far_triangles = render_lod_recipe_triangles(0.1);
+    assert!(
+        near_triangles > 100,
+        "near subject should keep the high-detail geometry, got {near_triangles}"
+    );
+    assert!(
+        far_triangles <= 32,
+        "small projected subject should use the low-detail geometry, got {far_triangles}"
+    );
+    assert!(
+        far_triangles < near_triangles,
+        "LOD should reduce prepared triangle count, near={near_triangles}, far={far_triangles}"
+    );
+}
+
+#[cfg(feature = "scene-host")]
+fn render_lod_recipe_triangles(scale: f64) -> u64 {
+    let recipe = serde_json::to_string_pretty(&json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": { "white": "#FFFFFF" },
+        "geometries": [
+            { "id": "high", "primitive": { "kind": "cylinder", "radius": 0.5, "height": 1.0, "segments": 48 } },
+            { "id": "low", "primitive": { "kind": "cylinder", "radius": 0.5, "height": 1.0, "segments": 6 } }
+        ],
+        "materials": [{ "id": "mat", "kind": "unlit", "base_color": "white" }],
+        "nodes": [{
+            "id": "part",
+            "geometry": "high",
+            "material": "mat",
+            "transform": { "kind": "trs", "scale": [scale, scale, scale] },
+            "lods": [{ "geometry": "low", "max_screen_fraction": 0.1 }]
+        }],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "fov_degrees": 40.0,
+            "active": true,
+            "transform": {
+                "kind": "look_at",
+                "eye": [0.0, 0.0, 3.0],
+                "target": "part"
+            }
+        }],
+        "capture": { "width": 160, "height": 120 }
+    }))
+    .expect("recipe serializes");
+    let mut build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/lod.recipe.json",
+        &recipe,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("LOD recipe builds");
+    build.host.prepare().expect("LOD scene prepares");
+    build.host.render().expect("LOD scene renders");
+    build.host.renderer().stats().triangles
 }
 
 #[cfg(feature = "scene-host")]
@@ -2916,6 +3204,72 @@ fn scene_recipe_slice4_scene_and_render_setup_affect_real_output() {
     );
 }
 
+#[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_scene_presets_apply_environment_background_and_floor() {
+    for (preset, background) in [
+        ("product_studio", scena::Background::Studio),
+        ("cad_studio", scena::Background::NeutralGray),
+        ("industrial_studio", scena::Background::DarkStudio),
+    ] {
+        let recipe = json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": {
+                "body_color": "#7EA7E0"
+            },
+            "geometries": [
+                { "id": "body_geo", "primitive": { "kind": "box", "size": [0.16, 0.08, 0.08] } }
+            ],
+            "materials": [
+                { "id": "body_mat", "kind": "pbr_metallic_roughness", "base_color": "body_color", "roughness": 0.38, "metallic": 0.0 }
+            ],
+            "nodes": [
+                { "id": "body", "geometry": "body_geo", "material": "body_mat", "transform": { "kind": "ground" } }
+            ],
+            "cameras": [
+                { "id": "cam", "kind": "perspective", "active": true, "transform": { "kind": "look_at", "eye": [0.35, 0.24, 0.35], "target": "body" } }
+            ],
+            "scene": { "preset": preset },
+            "capture": { "width": 96, "height": 72 }
+        });
+        let text = serde_json::to_string_pretty(&recipe).expect("recipe serializes");
+
+        let validation = scena::validate_scene_recipe_json(&text);
+        assert!(
+            validation.ok,
+            "{preset} should validate as a first-path recipe setup: {validation:#?}"
+        );
+
+        let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+            "tests/assets/scene-preset.recipe.json",
+            &text,
+            scena::RecipeBuildPolicy::testing(),
+        ))
+        .unwrap_or_else(|manifest| panic!("{preset} recipe build failed: {manifest:#?}"));
+        assert!(build.manifest.ok, "{:#?}", build.manifest);
+        assert!(
+            build.host.renderer().environment().is_some(),
+            "{preset} should apply a real environment"
+        );
+        assert_eq!(
+            build.host.renderer().background_color(),
+            background.color(),
+            "{preset} should apply a matching studio background"
+        );
+
+        let inspection_json = build
+            .host
+            .inspect_json()
+            .expect("scene preset recipe inspects");
+        let inspection: scena::SceneInspectionReportV1 =
+            serde_json::from_str(&inspection_json).expect("inspection decodes");
+        assert!(
+            inspection.counts.visible_drawable >= 3,
+            "{preset} should add floor/grid drawables as real scene output: {inspection:#?}"
+        );
+    }
+}
+
 #[test]
 fn scene_recipe_slice4_scene_and_render_settings_fail_closed() {
     let report = scena::validate_scene_recipe_value(json!({
@@ -2933,6 +3287,7 @@ fn scene_recipe_slice4_scene_and_render_settings_fail_closed() {
             { "id": "body", "geometry": "body_geo", "material": "body_mat" }
         ],
         "scene": {
+            "preset": "not_a_preset",
             "background": { "kind": "not_a_background" },
             "grid": { "enabled": true, "line_spacing": -1.0 }
         },
@@ -2945,8 +3300,72 @@ fn scene_recipe_slice4_scene_and_render_settings_fail_closed() {
     }));
     assert!(!report.ok, "invalid scene/render knobs must fail closed");
     assert_reason(&report, "invalid_background", None);
+    assert_reason_at(&report, "invalid_scene_preset", "$.scene.preset");
     assert_reason(&report, "invalid_number", None);
     assert_reason(&report, "invalid_render_setting", None);
+}
+
+#[test]
+fn scene_recipe_depth_of_field_quality_threshold_domains_match_metrics() {
+    let valid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "body_color": "#FFFFFF"
+        },
+        "geometries": [
+            { "id": "body_geo", "primitive": { "kind": "box", "size": [0.1, 0.1, 0.1] } }
+        ],
+        "materials": [
+            { "id": "body_mat", "kind": "unlit", "base_color": "body_color" }
+        ],
+        "nodes": [
+            { "id": "body", "geometry": "body_geo", "material": "body_mat" }
+        ],
+        "expect": {
+            "expect_quality": {
+                "profile": "product",
+                "depth_of_field": {
+                    "min_source_background_sobel": 1.25,
+                    "min_background_sobel_drop": 1.1,
+                    "min_background_sobel_drop_fraction": 0.25,
+                    "max_focal_mean_delta": 0.08
+                }
+            }
+        }
+    }));
+    assert!(
+        valid.ok,
+        "Sobel-energy DoF thresholds are measured non-negative values, not unit fractions: {valid:#?}"
+    );
+
+    let invalid = scena::validate_scene_recipe_value(json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "body_color": "#FFFFFF"
+        },
+        "geometries": [
+            { "id": "body_geo", "primitive": { "kind": "box", "size": [0.1, 0.1, 0.1] } }
+        ],
+        "materials": [
+            { "id": "body_mat", "kind": "unlit", "base_color": "body_color" }
+        ],
+        "nodes": [
+            { "id": "body", "geometry": "body_geo", "material": "body_mat" }
+        ],
+        "expect": {
+            "expect_quality": {
+                "profile": "product",
+                "depth_of_field": {
+                    "min_background_sobel_drop_fraction": 1.1
+                }
+            }
+        }
+    }));
+    assert_reason_at(
+        &invalid,
+        "invalid_expect",
+        "$.expect.expect_quality.depth_of_field.min_background_sobel_drop_fraction",
+    );
 }
 
 #[test]
@@ -3055,15 +3474,35 @@ fn scene_recipe_slice4_render_settings_change_pixels_through_recipe() {
         "recipe anti_aliasing setting must smooth the hard edge; aliased={aliased_edge:?} smoothed={smoothed_edge:?}"
     );
 
-    let ssao_off = render_slice4_recipe_cpu(slice4_depth_contact_recipe(false));
-    let ssao_on = render_slice4_recipe_cpu(slice4_depth_contact_recipe(true));
-    let baseline_contact = recipe_pixel(&ssao_off, 48, 18, 24);
-    let occluded_contact = recipe_pixel(&ssao_on, 48, 18, 24);
+    let (ssao_off, ssao_off_stats) =
+        render_slice4_recipe_cpu_with_stats(slice4_depth_contact_recipe(false));
+    let (ssao_on, ssao_on_stats) =
+        render_slice4_recipe_cpu_with_stats(slice4_depth_contact_recipe(true));
+    assert_eq!(
+        ssao_off_stats
+            .get("ambient_occlusion_passes")
+            .and_then(serde_json::Value::as_u64),
+        Some(0),
+        "recipe without ssao must not run the SSAO pass: {ssao_off_stats:#?}"
+    );
+    assert_eq!(
+        ssao_on_stats
+            .get("ambient_occlusion_passes")
+            .and_then(serde_json::Value::as_u64),
+        Some(1),
+        "recipe ssao setting must run the SSAO pass: {ssao_on_stats:#?}"
+    );
+    let contact_drop =
+        recipe_max_luma_drop_ring(&ssao_off, &ssao_on, 48, (14..28, 18..30), (18..24, 20..28));
+    let baseline_open = recipe_average_luma_region(&ssao_off, 48, 8..14, 20..28);
+    let ssao_open = recipe_average_luma_region(&ssao_on, 48, 8..14, 20..28);
     assert!(
-        occluded_contact[0] + 18 < baseline_contact[0]
-            && occluded_contact[1] + 18 < baseline_contact[1]
-            && occluded_contact[2] + 18 < baseline_contact[2],
-        "recipe ssao setting must darken the depth contact; baseline={baseline_contact:?} occluded={occluded_contact:?}"
+        contact_drop >= 4,
+        "recipe ssao setting must darken the depth contact; contact_drop={contact_drop}"
+    );
+    assert!(
+        (baseline_open - ssao_open).abs() <= 2.0,
+        "recipe ssao setting should leave open floor within tolerance; baseline={baseline_open:.2} ssao={ssao_open:.2}"
     );
 }
 
@@ -3120,7 +3559,90 @@ fn scene_recipe_light_presets_fail_closed() {
 }
 
 #[cfg(feature = "scene-host")]
+#[test]
+fn scene_recipe_area_lights_validate_and_build_manifest_targets() {
+    let recipe = json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "warm": "#FFE2BA"
+        },
+        "geometries": [
+            { "id": "body_geo", "primitive": { "kind": "box", "size": [0.4, 0.18, 0.24] } }
+        ],
+        "materials": [
+            {
+                "id": "body_mat",
+                "kind": "pbr_metallic_roughness",
+                "base_color": "#60708F",
+                "metallic": 0.0,
+                "roughness": 0.38
+            }
+        ],
+        "nodes": [
+            { "id": "body", "geometry": "body_geo", "material": "body_mat" }
+        ],
+        "lights": [{
+            "id": "softbox_rect",
+            "kind": "area",
+            "shape": "rect",
+            "preset": "softbox",
+            "color": "warm",
+            "width": 1.2,
+            "height": 0.6,
+            "luminous_flux_lumens": 3600.0,
+            "transform": {
+                "kind": "look_at",
+                "eye": [0.0, 1.1, 0.9],
+                "target": [0.0, 0.0, 0.0]
+            }
+        }],
+        "cameras": [{
+            "id": "main",
+            "kind": "perspective",
+            "active": true,
+            "transform": {
+                "kind": "look_at",
+                "eye": [0.8, 0.45, 1.1],
+                "target": "body"
+            }
+        }],
+        "capture": { "width": 220, "height": 160 }
+    });
+    let text = serde_json::to_string_pretty(&recipe).expect("recipe serializes");
+    let validation = scena::validate_scene_recipe_json(&text);
+    assert!(
+        validation.ok,
+        "area-light recipe must validate: {validation:#?}"
+    );
+
+    let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
+        "tests/assets/slice-a3-area-light.recipe.json",
+        &text,
+        scena::RecipeBuildPolicy::testing(),
+    ))
+    .expect("area-light recipe builds");
+
+    assert!(build.manifest.ok, "{:#?}", build.manifest);
+    assert!(
+        build
+            .manifest
+            .lights
+            .iter()
+            .any(|light| light.id == "softbox_rect" && light.kind == "light"),
+        "area light must be present in the typed build manifest: {:#?}",
+        build.manifest.lights
+    );
+}
+
+#[cfg(feature = "scene-host")]
 fn render_slice4_recipe_cpu(recipe: serde_json::Value) -> Vec<u8> {
+    render_slice4_recipe_cpu_with_stats(recipe).0
+}
+
+#[cfg(feature = "scene-host")]
+fn render_slice4_recipe_cpu_with_stats(
+    recipe: serde_json::Value,
+) -> (Vec<u8>, serde_json::Map<String, serde_json::Value>) {
     let text = serde_json::to_string_pretty(&recipe).expect("recipe serializes");
     let build = pollster::block_on(scena::SceneHostCore::build_recipe_json(
         "tests/assets/slice4-render-proof.recipe.json",
@@ -3132,7 +3654,15 @@ fn render_slice4_recipe_cpu(recipe: serde_json::Value) -> Vec<u8> {
     let mut host = build.host;
     host.prepare().expect("Slice 4 render proof prepares");
     host.render().expect("Slice 4 render proof renders");
-    host.capture().expect("Slice 4 render proof captures").rgba8
+    let stats = serde_json::from_str::<serde_json::Value>(&host.stats_json())
+        .expect("Slice 4 render proof stats are JSON")
+        .as_object()
+        .expect("Slice 4 render proof stats are an object")
+        .clone();
+    (
+        host.capture().expect("Slice 4 render proof captures").rgba8,
+        stats,
+    )
 }
 
 #[cfg(feature = "scene-host")]
@@ -3250,7 +3780,7 @@ fn slice4_depth_contact_recipe(ssao: bool) -> serde_json::Value {
     let render = if ssao {
         json!({
             "anti_aliasing": "none",
-            "ssao": { "radius_px": 3, "intensity": 0.8, "depth_threshold": 0.015 }
+            "ssao": { "radius_px": 4, "intensity": 0.8, "depth_threshold": 0.0 }
         })
     } else {
         json!({ "anti_aliasing": "none" })
@@ -3354,6 +3884,55 @@ fn recipe_pixel(frame: &[u8], width: usize, x: usize, y: usize) -> [u8; 4] {
     frame[start..start + 4]
         .try_into()
         .expect("pixel has four channels")
+}
+
+#[cfg(feature = "scene-host")]
+fn recipe_luma_at(frame: &[u8], width: u32, x: u32, y: u32) -> u8 {
+    let offset = ((y * width + x) * 4) as usize;
+    let red = frame[offset] as f32;
+    let green = frame[offset + 1] as f32;
+    let blue = frame[offset + 2] as f32;
+    (0.299 * red + 0.587 * green + 0.114 * blue).round() as u8
+}
+
+#[cfg(feature = "scene-host")]
+fn recipe_average_luma_region(
+    frame: &[u8],
+    width: u32,
+    region_x: std::ops::Range<u32>,
+    region_y: std::ops::Range<u32>,
+) -> f32 {
+    let mut total = 0_u64;
+    let mut count = 0_u64;
+    for y in region_y {
+        for x in region_x.clone() {
+            total += u64::from(recipe_luma_at(frame, width, x, y));
+            count += 1;
+        }
+    }
+    total as f32 / count.max(1) as f32
+}
+
+#[cfg(feature = "scene-host")]
+fn recipe_max_luma_drop_ring(
+    before: &[u8],
+    after: &[u8],
+    width: u32,
+    outer: (std::ops::Range<u32>, std::ops::Range<u32>),
+    inner: (std::ops::Range<u32>, std::ops::Range<u32>),
+) -> u8 {
+    let mut max_drop = 0_u8;
+    for y in outer.1 {
+        for x in outer.0.clone() {
+            if inner.0.contains(&x) && inner.1.contains(&y) {
+                continue;
+            }
+            let drop = recipe_luma_at(before, width, x, y)
+                .saturating_sub(recipe_luma_at(after, width, x, y));
+            max_drop = max_drop.max(drop);
+        }
+    }
+    max_drop
 }
 
 #[cfg(feature = "scene-host")]
@@ -3845,6 +4424,78 @@ fn inspected_node_transform(host: &scena::SceneHostCore, handle: u64) -> scena::
         .find(|node| node.handle == handle)
         .unwrap_or_else(|| panic!("missing node handle {handle}: {inspection:#?}"))
         .local_transform
+}
+
+fn ergonomic_backbone_recipe() -> serde_json::Value {
+    json!({
+        "schema": "scena.scene_recipe.v1",
+        "colors": {
+            "accent": "orange",
+            "floor_tint": "studio_backdrop"
+        },
+        "geometries": [
+            {
+                "id": "body_geo",
+                "primitive": { "kind": "box", "size": [0.16, 0.10, 0.08], "bevel": 0.01 }
+            }
+        ],
+        "materials": [
+            {
+                "id": "body_mat",
+                "preset": "chrome",
+                "roughness": 0.06
+            },
+            {
+                "id": "floor_mat",
+                "preset": "matte",
+                "base_color": "floor_tint"
+            }
+        ],
+        "nodes": [
+            {
+                "id": "product",
+                "geometry": "body_geo",
+                "material": "body_mat",
+                "transform": { "kind": "trs", "translation": [0.0, 0.05, 0.0] }
+            }
+        ],
+        "lights": [
+            { "id": "studio", "kind": "studio_rig", "preset": "studio_rig" }
+        ],
+        "cameras": [
+            {
+                "id": "camera",
+                "kind": "perspective",
+                "lens": "portrait",
+                "framing": {
+                    "preset": "three_quarter_front_right",
+                    "fill": 0.66,
+                    "margin_px": 10.0
+                },
+                "active": true
+            }
+        ],
+        "scene": {
+            "preset": "product_studio",
+            "environment": { "preset": "studio" },
+            "grid": { "enabled": true, "under_bounds": true, "padding": 0.12 }
+        },
+        "render": {
+            "auto_exposure": "product_studio",
+            "screen_space_reflections": {
+                "strength": 0.5,
+                "roughness": 0.24,
+                "horizon_fraction": 0.42,
+                "fade": 0.18
+            }
+        },
+        "capture": { "width": 320, "height": 240 },
+        "expect": {
+            "expect_visible": [{ "id": "product-visible", "target": { "kind": "node", "id": "product" } }],
+            "expect_backend": { "backend": "headless", "gpu_device": false },
+            "expect_quality": { "profile": "product" }
+        }
+    })
 }
 
 fn assert_reason(

@@ -856,7 +856,8 @@ report evaluates native-resolution RGBA8 captures, never downscaled images, and
 keeps render quality separate from correctness checks. It is nested under
 `SceneRecipeVerificationReportV1.quality` and carries profile-scoped checks for
 exposure, contrast, noise, text integrity, line integrity, geometry-edge
-integrity, and reference fidelity.
+integrity, reflection presence, area-light soft-shadow structure, contact-shadow
+grounding, depth-of-field blur/focus, and reference fidelity.
 
 Required top-level fields:
 
@@ -872,7 +873,11 @@ deterministically ordered `observed` and `threshold` maps, and an actionable
 `fix_hint`. Exact failure codes include `severe_black_crush`,
 `label_ink_isolation`, `label_missing_antialiasing`,
 `line_missing_antialiasing`, `line_not_straight`,
-`geometry_missing_antialiasing`, `reference_delta_e2000_exceeded`, and
+  `geometry_missing_antialiasing`, `reflection_structure_missing`,
+  `reflection_firefly_outliers`,
+`area_light_soft_shadow_insufficient`, `contact_shadow_missing`,
+`depth_of_field_checked`, `depth_of_field_blur_insufficient`,
+`depth_of_field_focal_softened`, `reference_delta_e2000_exceeded`, and
 `reference_ssim_too_low`.
 
 The stable fixture lives at
@@ -883,8 +888,10 @@ The stable fixture lives at
 Produced by recipe verification when the `scene-host` feature is enabled. The
 report is nested under `SceneRecipeVerificationReportV1.composition` and
 records whether declared recipe elements and generated overlays have explicit,
-owned projected output. It is a foundation/spec-conformance layer, not the
-per-category pixel-quality verifier.
+owned projected output. It is a foundation/spec-conformance layer; when
+`expect_quality.profile` is present it also runs object-scoped native-capture
+pixel sanity checks for exposure, subject/background salience, and decoded
+base-color texture result variation on each declared object region.
 
 Required top-level fields:
 
@@ -898,16 +905,91 @@ Each `checks[]` entry has an `id`, `category`, stable `code`, explicit
 deterministically ordered `observed` data, and an actionable `fix_hint`.
 Statuses are one of `checked`, `failed`, `skipped_no_declared_intent`,
 `skipped_no_backend_support`, `skipped_import_unknown`, `unsupported`, and
-`not_applicable`. Failed checks are verification errors. Skipped checks remain
-visible as warning-level coverage gaps unless a later profile elevates that
-category.
+`not_applicable`. Failed checks are verification errors. Informational skipped
+checks remain visible in the composition block as coverage inventory and are
+not promoted to top-level warning reasons. If the selected verification profile
+requires a category, missing coverage must fail closed as a `failed`/`error`
+check instead of silently reporting `ok:true`.
 
 The foundation report checks declared-node presence, projected bboxes and
-screen size when bounds exist, declared color intent coverage, explicit
-overlay label/line geometry, and unexpected draw output. Exact reason codes
-include `declared_node_not_drawn`, `unexpected_draw_output`, and
-`object_mask_not_available`. Per-object visible-pixel coverage is reported as
-`skipped_no_backend_support` until an object-mask/depth-id backend exists.
+screen size when bounds exist, material base-color intent where draw-material
+inspection is available, native-capture visible-pixel coverage in the declared
+node's viewport-clipped projected region, object-scoped exposure/salience and
+texture-result checks when `expect_quality.profile` is declared, grid/floor
+ownership, callout target ownership, measurement overlay output ownership,
+explicit overlay label/line geometry, declared ground contact from
+`expect_grounded`, helper-layer occlusion from `expect_helper_occluded`,
+object depth order from `expect_occlusion`, and unexpected draw output. Exact
+reason codes include
+`declared_node_not_drawn`, `unexpected_draw_output`,
+`material_base_color_available`, `visible_pixel_coverage_available`,
+`visible_pixel_coverage_missing`, `subject_exposure_sane`,
+`subject_black_crushed`, `subject_blown_out`, `subject_salience_too_low`,
+`subject_fit_sane`, `subject_too_small_in_frame`,
+`subject_too_large_in_frame`,
+`texture_result_visible`, `texture_result_flat`, `texture_result_missing`,
+`grid_floor_output_owned`,
+`callout_target_attached`, `callout_overlay_output_projected`,
+`measurement_overlay_output_projected`, `overlay_label_clear_of_lines`,
+`overlay_label_intersects_line`, `overlay_label_clear_of_labels`,
+`overlay_label_intersects_label`, `overlay_label_inside_viewport`,
+`overlay_label_clipped_by_viewport`, `ground_contact_present`,
+`ground_contact_missing`, `ground_target_unresolved`,
+`helper_layer_occluded_by_subject`, `helper_layer_overdraws_subject`,
+`helper_occlusion_target_unresolved`, `helper_occlusion_region_unavailable`,
+`helper_occlusion_color_unavailable`, `object_depth_order_satisfied`,
+`object_depth_order_mismatch`, `object_depth_order_color_ambiguous`,
+`object_depth_order_target_unresolved`,
+`object_depth_order_region_unavailable`, `object_depth_order_color_unavailable`,
+`backend_expectation_satisfied`,
+`backend_expectation_mismatch`, `render_antialiasing_active`,
+`render_supersample_active`, `render_reconstruction_active`,
+`clipping_plane_count_satisfied`, `clipping_plane_count_mismatch`,
+`section_box_active`, `section_box_missing`, `section_box_inactive`,
+`section_box_unexpected_active`, `section_box_inversion_satisfied`,
+`section_box_inversion_mismatch`, `material_variant_state_satisfied`,
+`material_variant_state_mismatch`, `transform_conformance_satisfied`,
+`transform_conformance_mismatch`, `separation_conformance_satisfied`, and
+`separation_conformance_mismatch`. Visible coverage is
+computed from foreground pixels relative to the configured render background;
+line primitives use their projected stroke region rather than their zero-height
+geometric AABB. Grounded expectations compare inspected world-space bounds
+against `plane_y` within `tolerance`; use them for content that must touch a
+floor/ground plane, not intentionally floating content. Helper occlusion
+expectations count helper-coloured pixels inside the occluder's projected
+interior; use them for depth-tested helpers, grids, or wireframes that must
+stay behind solid subjects. Object occlusion expectations count the expected
+back object's colour inside the expected front object's projected interior; use
+them for declared object-vs-object depth order such as "part A must occlude
+part B." Backend expectations compare the actual render
+backend and GPU-device flag with `expect_backend`; use them for GPU/beauty
+renders where CPU fallback would invalidate the proof.
+Clipping expectations compare active user clipping-plane count and section-box
+state with `expect_clipping`; use them when an agent-authored cutaway, section
+box, or recipe clipping plane is load-bearing for the visual proof.
+Overlay clearance checks compare projected native-resolution label regions
+against both line overlays and other label regions; label-vs-label failures use
+`overlay_label_intersects_label`. Label viewport-fit checks compare the
+unclipped projected label rectangle against the capture viewport; clipped labels
+fail with `overlay_label_clipped_by_viewport`.
+State expectations compare the actual inspected import material-variant state
+with `expect_state`; use them when a configurator/product render depends on
+the default import variant or a named material variant being active.
+`expect_occlusion` currently uses a native-resolution color-probe in the
+front object's projected interior. It fails closed with
+`object_depth_order_color_ambiguous` when the expected front/back draw colours
+are too similar for that probe to distinguish. Use high-contrast opaque
+front/back materials for object-depth expectations.
+Object exposure/salience checks operate on each declared object's
+viewport-clipped projected region at native capture resolution and compare
+foreground pixels against the configured render background. Exact depth/id-mask
+occlusion attribution for arbitrary overlapping projected bboxes is a later
+precision layer, not implied by this foundation check.
+Object framing checks operate on each declared object's projected region when
+`expect_quality.profile` is present; use failures such as
+`subject_too_small_in_frame` or `subject_too_large_in_frame` as profile-driven
+camera/framing defects. `expect_bbox_fit` remains available for explicit
+recipe-specific min/max framing contracts.
 
 The stable fixture lives at
 `tests/assets/stable-contracts/scene_composition.v1.json`.
@@ -1117,17 +1199,30 @@ The current v1 recipe slice supports:
   `optional` skip policy, optional `transform`, and optional
   `expected_extent`
 - `colors` map entries with stable caller ids and direct `#RRGGBB`, `srgb8`,
-  linear RGB, Kelvin, or named color values
+  linear RGB, Kelvin, or named `Color` constants. Named constants include the
+  public Rust color helpers such as `white`, `black`, `gray`, `light_gray`,
+  `dark_gray`, `charcoal`, `studio_backdrop`, `warm_white`, `cool_white`,
+  `red`, `green`, `blue`, `orange`, `yellow`, `cyan`, and `magenta`.
 - `geometries[]` authored resources with stable caller `id`; primitive kinds
   `box`, `plane`, `sphere`, `cylinder`, `line`, `polyline`, `arrow`, `grid`,
   `axes`, `cone`, `torus`, `disc`, and `wedge`, plus custom `mesh` entries with
   topology, positions, normals, indices, optional colors, and optional UVs.
-  `torus` uses explicit `major_radius` and `minor_radius`; generated primitive
+  `torus` uses explicit `major_radius` and `minor_radius`; `box` and
+  `cylinder` accept optional `bevel`/`fillet` aliases that generate real flat
+  chamfer geometry and reject unsupported or ambiguous usage; generated primitive
   tessellation is deterministic and build manifests report vertex/index counts
-- `materials[]` authored resources with stable caller `id`; `unlit`,
-  `pbr_metallic_roughness`, `line`, `wireframe`, and `edge` material kinds;
-  base color, metallic/roughness, double-sided, emissive, alpha mode, stroke
-  width, edge threshold, and texture slots loaded under `RecipeBuildPolicy`.
+- `materials[]` authored resources with stable caller `id`; either ergonomic
+  `preset` (`chrome`, `metal`, `rough_metal`, `brushed_steel`, `plastic`,
+  `clearcoat_plastic`, `satin`, `leather`, `rubber`, `matte`, `clear_glass`,
+  or `frosted_glass`) or low-level `kind` (`unlit`,
+  `pbr_metallic_roughness`, `line`, `wireframe`, and `edge`). Presets route
+  through the matching Rust `MaterialDesc::*` helper; optional `base_color`
+  tints presets where applicable, and scalar/raw overrides are applied after
+  the helper result. Low-level kinds still require `base_color`. All texture
+  slots are loaded under `RecipeBuildPolicy`.
+  Shared material fields include base color, metallic/roughness,
+  double-sided, emissive, alpha mode, stroke width, edge threshold, and texture
+  slots loaded under `RecipeBuildPolicy`.
   `pbr_metallic_roughness` also accepts advanced-PBR scalars
   `clearcoat_factor`, `clearcoat_roughness_factor`, `clearcoat_normal_scale`,
   `sheen_color_factor`, `sheen_roughness_factor`,
@@ -1157,7 +1252,12 @@ The current v1 recipe slice supports:
   transform. `place_on` and `look_at` may reference authored nodes declared
   earlier in the recipe or imported node paths of the form `<import_id>:/<path>`;
   `align_to_anchor` resolves `<import_id>.<anchor_name>` against a live imported
-  anchor. Forward refs fail closed before build.
+  anchor. Forward refs fail closed before build. Mesh nodes may declare
+  `lods[]` entries of `{ "geometry", "max_screen_fraction" }`; the renderer
+  selects the first sorted LOD whose projected node bounds fit the finite
+  `(0, 1]` threshold, otherwise it uses the node's base geometry. This switches
+  among explicitly-authored geometry resources and never fabricates or silently
+  simplifies meshes.
 - `instance_sets[]` authored instance-set nodes with stable caller `id`,
   geometry/material references, optional parent and root transform, and
   per-instance stable ids with transform, opaque tint, and visibility. Hidden
@@ -1175,14 +1275,37 @@ The current v1 recipe slice supports:
   the channel arity and interpolation shape.
 - `cameras[]` authored perspective cameras with stable caller `id`; at most one
   camera may be `active`, and camera `look_at` transforms may target authored
-  nodes, instance sets, labels, or explicit world positions
-- `lights[]` authored directional, point, or spot lights with presets, color,
-  intensity/range/cone fields, and transforms
-- optional `scene` setup with named or custom background, `default`/`uri`/`none`
-  environment IBL, and grid-floor options. URI environments are loaded under
+  nodes, instance sets, labels, or explicit world positions. Ergonomic
+  `lens` presets (`wide_angle`, `standard`, `portrait`, `telephoto`) route
+  through the matching `PerspectiveCamera` helper and are mutually exclusive
+  with raw `fov_degrees`. Ergonomic `framing` routes through
+  `FramingOptions` and `Scene::frame_bounds`; `framing.mode:
+  "default_for_bounds"` routes through
+  `Scene::add_perspective_camera_default_for`.
+- `lights[]` authored directional, point, spot, area, or `studio_rig` lights
+  with presets, color, intensity/range/cone fields, area shape/size/flux
+  fields, and transforms. `kind:"studio_rig"` routes through
+  `Scene::add_studio_lighting()` and expands to stable `.key`, `.fill`, and
+  `.rim` manifest entries.
+- optional `scene` setup with scene presets `product_studio`, `cad_studio`,
+  and `industrial_studio`, named or custom background, `default`/`uri`/`none`
+  environment IBL, environment presets `studio` and `neutral_studio`, and
+  grid-floor options including `line_width_px` and `under_bounds`. Scene
+  presets route through the shared Rust scene-setup preset helper, including
+  the matching auto-exposure scenario. Environment presets are checked by
+  `RecipeBuildPolicy` and then loaded through
+  `Assets::load_environment_preset`. Grid `under_bounds` defaults to `true`
+  and routes to `GridFloorOptions::under_bounds(bounds)`.
+  `scene.grid.reflection` enables a deterministic structured floor-reflection
+  preset for product-style shots; material SSR is controlled separately through
+  `render.screen_space_reflections`. URI environments are loaded under
   `RecipeBuildPolicy`; missing required environments fail the build.
 - optional `render` setup with profile, quality, anti-aliasing, supersample,
-  reconstruction filter, bloom, SSAO, exposure EV, and tonemapper.
+  reconstruction filter, screen-space reflections, bloom, SSAO, depth of field,
+  exposure EV or ergonomic `auto_exposure`, and tonemapper.
+  `auto_exposure` accepts `product_studio`, `indoor`, `outdoor`, or `mixed`
+  and routes through `Renderer::set_auto_exposure(AutoExposureConfig::*)`.
+  `auto_exposure` and fixed `exposure_ev` are mutually exclusive in v1.
   `anti_aliasing` accepts `none`, `fxaa`, `msaa4`, and `msaa8`;
   `quality:"high"` maps to sample AA. The opt-in `supersample` factor accepts
   `1`, `2`, `3`, `4`, or `8` and renders the capture at N× resolution before
@@ -1190,10 +1313,50 @@ The current v1 recipe slice supports:
   within renderer limits. `reconstruction` accepts `box` (default), `tent`, or
   `gaussian`; the wider filters are hero-shot opt-ins because they can soften
   the frame. Supersampling composes with sample AA and should be reserved for
-  hero captures because cost grows with N^2. Values that
+  hero captures because cost grows with N^2. `screen_space_reflections` accepts
+  normalized `strength`, `roughness`, `horizon_fraction`, and `fade` and mirrors
+  rendered scene content into the configured lower screen band and into
+  high-metallic/low-roughness material fragments, fading to the environment-lit
+  material at screen edges or where no screen-space sample exists. Bare
+  `transmission_texture` and `thickness_texture` slots remain rejected until the
+  GPU/WebGL2 texture-binding budget can support them. `depth_of_field` accepts
+  `focus_distance`, `aperture_f_stop`, and `radius_px`; recipe verification can
+  pair it with `expect_quality.depth_of_field` so a same-backend no-DoF
+  baseline proves the background lost Sobel detail while the focal subject
+  remains sharp. The Sobel thresholds are finite non-negative measured values;
+  `min_background_sobel_drop_fraction` and `max_focal_mean_delta` are normalized
+  fractions.
+- `expect.expect_transform[]` compares an authored/imported node target's
+  inspected world transform against declared `translation`, `scale`, and/or
+  intrinsic X/Y/Z `rotation_degrees` with explicit tolerances. It is a
+  composition check, not an animation driver: mismatches fail verification with
+  `transform_conformance_mismatch`.
+- `expect.expect_separation[]` compares two authored/imported node targets'
+  inspected world-space bounds and verifies they do not intersect, or that they
+  satisfy an optional `min_gap` with `tolerance`. Use it for assembly,
+  documentation, CAD, and industrial viewer scenes where parts must remain clear of each
+  other; failures emit `separation_conformance_mismatch`.
+  `expect_quality.reflection` checks the floor/reflection-surface region;
+  `expect_quality.reflection.target` checks the projected region for a specific
+  node. Use `max_firefly_fraction` when polished/metallic IBL reflections must
+  reject isolated bright HDR specks separately from missing reflection
+  structure. `expect_quality.area_light` checks the projected target receiver for
+  measurable finite-emitter soft-shadow structure and emits
+  `area_light_soft_shadow_checked` or
+  `area_light_soft_shadow_insufficient` with observed penumbra width, luminance
+  levels, shadow contrast, and emitter extent. `expect_quality.grounding`
+  checks the projected target's contact band against nearby open floor and
+  emits `contact_shadow_checked` or `contact_shadow_missing` with observed
+  contact-shadow delta. `expect_quality.depth_of_field` accepts a focal
+  `target`, optional `background_target`, and thresholds for background Sobel
+  loss and focal-subject preservation; it emits `depth_of_field_checked`,
+  `depth_of_field_background_detail_missing`,
+  `depth_of_field_blur_insufficient`, or `depth_of_field_focal_softened`.
+  Values that
   renderer setters would clamp
   (`bloom.intensity`, `bloom.radius_px`, `ssao.intensity`,
-  `ssao.depth_threshold`) are rejected during validation when out of range.
+  `ssao.depth_threshold`, `screen_space_reflections.*`) are rejected during
+  validation when out of range.
 - optional `section_box` directives over an import's bounds or an authored/
   imported node target
 - `measurements[]` distance overlays with units and labels

@@ -187,7 +187,11 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
 - **clipping_planes[]** (Slice 6): `id`; finite non-zero `normal`; finite
   `distance`; `active?` (default true), bounded by renderer
   `max_clipping_planes`.
-- **lights[]**: `id`; `kind: directional|point|spot` or `preset: sun|key|fill|rim|softbox|...`; `color?`, intensity (`illuminance_lux`|`intensity_candela`), `range?`, cone angles (spot); `transform: TransformSpec`.
+- **lights[]**: `id`; `kind: directional|point|spot|area` or `preset:
+  sun|key|fill|rim|softbox|...`; `color?`, intensity
+  (`illuminance_lux`|`intensity_candela`|`luminous_flux_lumens`), `range?`,
+  cone angles (spot), area shape (`rect` with `width`/`height`, `disc` or
+  `sphere` with `radius`); `transform: TransformSpec`.
 - **cameras[]**: `id`; `kind: perspective|orthographic`; `fov_degrees?`/ortho extents; `aspect?`, `depth_range?`; `active?`; `transform: TransformSpec`.
 - **TransformSpec** (exact wire variants):
   - `{ "kind": "trs", "translation": [x,y,z], "rotation_degrees": [rx,ry,rz], "scale": [sx,sy,sz] }`
@@ -196,7 +200,7 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
   - `{ "kind": "center" }` | `{ "kind": "ground", "plane_y": 0.0 }` | `{ "kind": "fit_to_size", "size": [w,h,d] }`
   - `{ "kind": "place_on", "target": "<node id>", "offset": [x,y,z] }`
   - `{ "kind": "align_to_anchor", "anchor": "<import id>.<anchor name>" }`
-- **scene** (Slice 4): `background`, `environment`, `grid`.
+- **scene** (Slice 4): `preset`, `background`, `environment`, `grid`.
 - **render** (Slice 4): `profile`, `quality`, `anti_aliasing`, `supersample`, `reconstruction`, `bloom`, `ssao`, `exposure_ev`, `tonemapper`.
 - **overlays** (section_box/measurements/callouts/exploded_view): existing fields + `target: { kind: node|import|world, id|position }`.
 - **expect** (Slice 5): `expect_visible`, `expect_color { target, swatch, tolerance? }`, `expect_bbox_fit { min?, max? }`, `expect_pick { x, y, target }`, `expect_no_warnings`.
@@ -310,7 +314,7 @@ doctor `FIXTURES`. Do not freeze the placeholder form.
       resolve; a cycle fails closed.
 
 ### Slice 4 — Scene / render setup
-- [x] `scene`: background, environment/IBL, grid.
+- [x] `scene`: first-path preset, background, environment/IBL, grid.
 - [x] `render`: profile, quality, anti-aliasing, bloom, ssao, exposure,
       tonemapper.
 - [x] Proof: two settings produce observably different introspection / pixels

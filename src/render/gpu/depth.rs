@@ -20,15 +20,19 @@ struct VertexOut {
 };
 
 struct LightingUniform {
-    directional_light_direction_intensity: array<vec4<f32>, 4>,
-    directional_light_color: array<vec4<f32>, 4>,
-    directional_shadow_control: array<vec4<f32>, 4>,
-    point_light_position_intensity: array<vec4<f32>, 4>,
-    point_light_color_range: array<vec4<f32>, 4>,
-    spot_light_position_intensity: array<vec4<f32>, 4>,
-    spot_light_direction_cones: array<vec4<f32>, 4>,
-    spot_light_cone_range: array<vec4<f32>, 4>,
-    spot_light_color_range: array<vec4<f32>, 4>,
+    directional_light_direction_intensity: array<vec4<f32>, 16>,
+    directional_light_color: array<vec4<f32>, 16>,
+    directional_shadow_control: array<vec4<f32>, 16>,
+    point_light_position_intensity: array<vec4<f32>, 16>,
+    point_light_color_range: array<vec4<f32>, 16>,
+    spot_light_position_intensity: array<vec4<f32>, 16>,
+    spot_light_direction_cones: array<vec4<f32>, 16>,
+    spot_light_cone_range: array<vec4<f32>, 16>,
+    spot_light_color_range: array<vec4<f32>, 16>,
+    area_light_position_flux: array<vec4<f32>, 2>,
+    area_light_axis_x_shape: array<vec4<f32>, 2>,
+    area_light_axis_y_range: array<vec4<f32>, 2>,
+    area_light_color: array<vec4<f32>, 2>,
     light_counts: vec4<f32>,
     environment_diffuse_intensity: vec4<f32>,
     environment_specular_intensity: vec4<f32>,
@@ -144,6 +148,7 @@ pub(super) struct DepthPrepassResources {
     clear_depth: f32,
     reversed_z: bool,
     pub(super) color_compare: wgpu::CompareFunction,
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     sample_count: u32,
 }
 
@@ -354,6 +359,7 @@ impl DepthPrepassResources {
         self.color_view.is_some()
     }
 
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub(super) const fn sample_count(&self) -> u32 {
         self.sample_count
     }

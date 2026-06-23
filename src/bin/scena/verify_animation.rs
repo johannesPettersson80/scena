@@ -1,14 +1,19 @@
-use std::collections::BTreeMap;
-
 use super::scena_input::{resolve_scene_input, viewer_builder};
 use super::scena_output::{CliOutcome, json_outcome};
 use expectations::{apply_expected_node_status, expected_node_status};
+use observations::{AnimationObservation, samples_from_observations, selected_observed_node};
 
 #[path = "verify_animation/expectations.rs"]
 mod expectations;
+#[path = "verify_animation/observations.rs"]
+mod observations;
 #[cfg(feature = "scene-host")]
 #[path = "verify_animation/recipe.rs"]
 mod recipe;
+#[path = "verify_animation/rendered_coverage.rs"]
+mod rendered_coverage;
+
+use rendered_coverage::rendered_node_coverages;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct VerifyAnimationCommandArgs {
@@ -21,15 +26,6 @@ pub(crate) struct VerifyAnimationCommandArgs {
     expected_tolerance: f32,
     width: Option<u32>,
     height: Option<u32>,
-}
-
-#[derive(Debug, Clone)]
-struct AnimationObservation {
-    time_seconds: f32,
-    transform_revision: u64,
-    appearance_revision: u64,
-    payload_fnv1a64: String,
-    node_transforms: Vec<(u64, scena::Transform)>,
 }
 
 pub(crate) fn run_verify_animation_command(args: &[String]) -> Result<CliOutcome, String> {
@@ -103,23 +99,28 @@ pub(crate) fn run_verify_animation_command(args: &[String]) -> Result<CliOutcome
             .scene()
             .inspect_with_assets(viewer.assets())
             .to_schema_report();
+        let node_rendered_coverage = rendered_node_coverages(&capture, &inspection);
+        let node_transforms = inspection
+            .nodes
+            .iter()
+            .map(|node| (node.handle, node.world_transform))
+            .collect();
         observations.push(AnimationObservation {
             time_seconds: *time_seconds,
             transform_revision: inspection.revisions.transform,
             appearance_revision: inspection.revisions.appearance,
-            payload_fnv1a64: capture.descriptor.payload.fnv1a64,
-            node_transforms: inspection
-                .nodes
-                .into_iter()
-                .map(|node| (node.handle, node.world_transform))
-                .collect(),
+            payload_fnv1a64: capture.descriptor.payload.fnv1a64.clone(),
+            capture,
+            inspection,
+            node_transforms,
+            node_rendered_coverage,
         });
     }
 
     let selected_node = args.expected_node_handle.or_else(|| {
-        args.expected_translations
-            .as_ref()
-            .and_then(|_| selected_observed_node(&observations, 0.0001))
+        (args.expect_change || args.expected_translations.is_some())
+            .then(|| selected_observed_node(&observations, 0.0001))
+            .flatten()
     });
     let samples = samples_from_observations(
         &observations,
@@ -253,110 +254,6 @@ impl VerifyAnimationCommandArgs {
     }
 }
 
-fn samples_from_observations(
-    observations: &[AnimationObservation],
-    tolerance: f32,
-    expected_translations: Option<&[scena::Vec3]>,
-    selected_node: Option<u64>,
-    expected_tolerance: f32,
-) -> Vec<scena::AnimationSampleV1> {
-    let baseline = observations.first().map(|observation| {
-        observation
-            .node_transforms
-            .iter()
-            .copied()
-            .collect::<BTreeMap<_, _>>()
-    });
-    observations
-        .iter()
-        .enumerate()
-        .map(|(index, observation)| {
-            let invalid_node_count = observation
-                .node_transforms
-                .iter()
-                .filter(|(_, transform)| !scena::transform_is_finite(*transform))
-                .count();
-            let moving_node_count = baseline
-                .as_ref()
-                .map(|baseline| {
-                    observation
-                        .node_transforms
-                        .iter()
-                        .filter(|(handle, transform)| {
-                            baseline.get(handle).is_some_and(|baseline_transform| {
-                                scena::transform_differs(*baseline_transform, *transform, tolerance)
-                            })
-                        })
-                        .count()
-                })
-                .unwrap_or(0);
-            scena::AnimationSampleV1 {
-                time_seconds: round3(observation.time_seconds),
-                transform_revision: observation.transform_revision,
-                appearance_revision: observation.appearance_revision,
-                payload_fnv1a64: observation.payload_fnv1a64.clone(),
-                moving_node_count,
-                invalid_node_count,
-                observed_values: observed_values_for_sample(
-                    observation,
-                    selected_node,
-                    expected_translations.and_then(|expected| expected.get(index).copied()),
-                    expected_tolerance,
-                ),
-            }
-        })
-        .collect()
-}
-
-fn selected_observed_node(observations: &[AnimationObservation], tolerance: f32) -> Option<u64> {
-    let baseline = observations.first()?;
-    for (handle, baseline_transform) in &baseline.node_transforms {
-        if observations.iter().skip(1).any(|observation| {
-            observation
-                .node_transforms
-                .iter()
-                .find(|(candidate, _)| candidate == handle)
-                .is_some_and(|(_, transform)| {
-                    scena::transform_differs(*baseline_transform, *transform, tolerance)
-                })
-        }) {
-            return Some(*handle);
-        }
-    }
-    baseline.node_transforms.first().map(|(handle, _)| *handle)
-}
-
-fn observed_values_for_sample(
-    observation: &AnimationObservation,
-    selected_node: Option<u64>,
-    expected_translation: Option<scena::Vec3>,
-    expected_tolerance: f32,
-) -> Vec<scena::AnimationObservedValueV1> {
-    let Some(node) = selected_node else {
-        return Vec::new();
-    };
-    let Some((_, transform)) = observation
-        .node_transforms
-        .iter()
-        .find(|(candidate, _)| *candidate == node)
-    else {
-        return Vec::new();
-    };
-    let within_tolerance = expected_translation.map(|expected| {
-        (transform.translation.x - expected.x).abs() <= expected_tolerance
-            && (transform.translation.y - expected.y).abs() <= expected_tolerance
-            && (transform.translation.z - expected.z).abs() <= expected_tolerance
-    });
-    vec![scena::AnimationObservedValueV1 {
-        id: "selected-transform".to_owned(),
-        node,
-        kind: "transform".to_owned(),
-        transform: *transform,
-        expected_translation,
-        within_tolerance,
-    }]
-}
-
 fn available_clip_names(import: &scena::SceneImport) -> Vec<String> {
     let Ok(clips) = import.clips() else {
         return Vec::new();
@@ -462,14 +359,6 @@ fn parse_u64_handle(flag: &str, value: String) -> Result<u64, String> {
         return Err(format!("{flag} requires a non-zero handle"));
     }
     Ok(parsed)
-}
-
-fn round3(value: f32) -> f32 {
-    if value.is_finite() {
-        (value * 1000.0).round() / 1000.0
-    } else {
-        0.0
-    }
 }
 
 fn verify_animation_usage() -> String {

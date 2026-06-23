@@ -1,7 +1,6 @@
 use super::types::{
-    RenderQualityFrameMetrics, RenderQualityGeometryEdgeMetrics,
-    RenderQualityLabelBackgroundMetrics, RenderQualityLabelMetrics, RenderQualityLineMetrics,
-    RenderQualityRegion, round3,
+    RenderQualityFrameMetrics, RenderQualityLabelBackgroundMetrics, RenderQualityLabelMetrics,
+    RenderQualityLineMetrics, RenderQualityRegion, round3,
 };
 
 pub fn frame_metrics(
@@ -235,69 +234,6 @@ pub fn line_metrics(
     }
 }
 
-pub fn geometry_edge_metrics(
-    rgba8: &[u8],
-    width: u32,
-    height: u32,
-    region: RenderQualityRegion,
-) -> RenderQualityGeometryEdgeMetrics {
-    if width < 3 || height < 3 {
-        return RenderQualityGeometryEdgeMetrics {
-            intermediate_edge_fraction: 0.0,
-            edge_candidate_fraction: 0.0,
-        };
-    }
-    let x0 = region.x.max(1);
-    let y0 = region.y.max(1);
-    let x1 = region
-        .x
-        .saturating_add(region.width)
-        .min(width.saturating_sub(1));
-    let y1 = region
-        .y
-        .saturating_add(region.height)
-        .min(height.saturating_sub(1));
-    let mut edge_candidates = 0usize;
-    let mut intermediate = 0usize;
-    let mut inspected = 0usize;
-    for y in y0..y1 {
-        for x in x0..x1 {
-            inspected = inspected.saturating_add(1);
-            let mut min_luminance = f32::INFINITY;
-            let mut max_luminance = f32::NEG_INFINITY;
-            for sy in y.saturating_sub(1)..=y.saturating_add(1).min(height.saturating_sub(1)) {
-                for sx in x.saturating_sub(1)..=x.saturating_add(1).min(width.saturating_sub(1)) {
-                    let luminance = pixel_luminance(rgba8, width, sx, sy).unwrap_or(0.0);
-                    min_luminance = min_luminance.min(luminance);
-                    max_luminance = max_luminance.max(luminance);
-                }
-            }
-            let contrast = max_luminance - min_luminance;
-            if contrast < 0.25 {
-                continue;
-            }
-            edge_candidates = edge_candidates.saturating_add(1);
-            let center = pixel_luminance(rgba8, width, x, y).unwrap_or(0.0);
-            let normalized = ((center - min_luminance) / contrast).clamp(0.0, 1.0);
-            if (0.02..0.98).contains(&normalized) {
-                intermediate = intermediate.saturating_add(1);
-            }
-        }
-    }
-    RenderQualityGeometryEdgeMetrics {
-        intermediate_edge_fraction: round3(if edge_candidates == 0 {
-            0.0
-        } else {
-            intermediate as f32 / edge_candidates as f32
-        }),
-        edge_candidate_fraction: round3(if inspected == 0 {
-            0.0
-        } else {
-            edge_candidates as f32 / inspected as f32
-        }),
-    }
-}
-
 fn collect_luminance(
     rgba8: &[u8],
     width: u32,
@@ -454,7 +390,7 @@ fn line_straightness_error(
     minor.sqrt() / diagonal
 }
 
-fn pixel_luminance(rgba8: &[u8], width: u32, x: u32, y: u32) -> Option<f32> {
+pub(super) fn pixel_luminance(rgba8: &[u8], width: u32, x: u32, y: u32) -> Option<f32> {
     let offset = pixel_offset(rgba8, width, x, y)?;
     let pixel = rgba8.get(offset..offset + 4)?;
     Some(luminance_from_srgb8(pixel[0], pixel[1], pixel[2]))
@@ -477,7 +413,7 @@ pub(super) fn luminance_from_srgb8(r: u8, g: u8, b: u8) -> f32 {
     0.2126 * srgb_to_linear(r) + 0.7152 * srgb_to_linear(g) + 0.0722 * srgb_to_linear(b)
 }
 
-fn percentile_sorted(values: &[f32], percentile: f32) -> f32 {
+pub(super) fn percentile_sorted(values: &[f32], percentile: f32) -> f32 {
     if values.is_empty() {
         return 0.0;
     }

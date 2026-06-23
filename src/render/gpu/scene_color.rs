@@ -19,6 +19,7 @@ pub(super) struct SceneColorPasses<'a> {
     pub(super) identity_instance: u32,
     pub(super) transmission_view: &'a wgpu::TextureView,
     pub(super) transmission_pipelines: UnlitPipelines<'a>,
+    pub(super) force_scene_color_pass: bool,
     pub(super) clear_color: wgpu::Color,
     pub(super) base_label: &'static str,
     pub(super) draw_submissions: &'a mut u64,
@@ -29,7 +30,9 @@ pub(super) fn encode_scene_color_passes(
     passes: SceneColorPasses<'_>,
 ) {
     let draw_submissions = passes.draw_submissions;
-    if has_transparent_batches(passes.draw_batches, passes.instance_batches) {
+    if passes.force_scene_color_pass
+        || has_transparent_batches(passes.draw_batches, passes.instance_batches)
+    {
         encode_unlit_pass(
             encoder,
             UnlitPass {

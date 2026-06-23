@@ -1,4 +1,5 @@
 use super::super::prepare::{PreparedEnvironmentCubemap, PreparedEnvironmentLighting};
+use super::light_assignment::LightAssignmentResources;
 use super::output::create_output_bind_group;
 use super::shadow::{
     self, ShadowCasterResources, create_shadow_caster_resources, create_shadow_sampler,
@@ -29,6 +30,8 @@ pub(super) fn build_output_resources(
     transmission_color_view: &wgpu::TextureView,
     transmission_placeholder_view: &wgpu::TextureView,
     transmission_color_sampler: &wgpu::Sampler,
+    light_assignment: &LightAssignmentResources,
+    include_tiled_light_storage: bool,
     directional_shadow_map_resolution: Option<u32>,
     environment_lighting: &PreparedEnvironmentLighting,
 ) -> OutputResources {
@@ -59,6 +62,7 @@ pub(super) fn build_output_resources(
         &environment_sampler,
         transmission_color_view,
         transmission_color_sampler,
+        include_tiled_light_storage.then_some(light_assignment),
     );
     let opaque_output_bind_group = create_output_bind_group(
         device,
@@ -70,6 +74,7 @@ pub(super) fn build_output_resources(
         &environment_sampler,
         transmission_placeholder_view,
         transmission_color_sampler,
+        include_tiled_light_storage.then_some(light_assignment),
     );
     OutputResources {
         shadow_caster,

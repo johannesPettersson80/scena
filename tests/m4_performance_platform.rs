@@ -8,8 +8,8 @@ use scena::{
     Assets, Backend, CameraKey, CapabilityStatus, Color, DiagnosticCode, DiagnosticSeverity,
     GeometryDesc, GeometryTopology, GeometryVertex, HardwareTier, MaterialDesc, OrbitControlAction,
     OrbitControls, OutputColorSpace, PlatformSurface, PointerButton, PointerEvent,
-    PointerEventKind, Profile, Quality, RenderError, RenderMode, Renderer, RendererOptions, Scene,
-    SurfaceEvent, Transform, Vec3,
+    PointerEventKind, Primitive, Profile, Quality, RenderError, RenderMode, Renderer,
+    RendererOptions, Scene, SurfaceEvent, Transform, Vec3, Vertex,
 };
 
 #[global_allocator]
@@ -544,6 +544,121 @@ fn per_instance_cpu_culling_keeps_visible_instances_and_counts_culled_ones() {
 }
 
 #[test]
+fn cpu_occlusion_culling_drops_fully_hidden_opaque_triangle() {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            scena::PerspectiveCamera::default(),
+            Transform::at(Vec3::new(0.0, 0.0, 2.0)),
+        )
+        .expect("camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("camera can become active");
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![colored_triangle(
+                [
+                    Vec3::new(-0.6, -0.6, 0.0),
+                    Vec3::new(0.6, -0.6, 0.0),
+                    Vec3::new(0.0, 0.6, 0.0),
+                ],
+                Color::WHITE,
+            )],
+            Transform::default(),
+        )
+        .expect("front triangle inserts");
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![colored_triangle(
+                [
+                    Vec3::new(-0.2, -0.2, -0.2),
+                    Vec3::new(0.2, -0.2, -0.2),
+                    Vec3::new(0.0, 0.2, -0.2),
+                ],
+                Color::from_linear_rgba(1.0, 0.0, 0.0, 1.0),
+            )],
+            Transform::default(),
+        )
+        .expect("hidden back triangle inserts");
+    let mut renderer = Renderer::headless(96, 96).expect("renderer builds");
+
+    renderer.prepare(&mut scene).expect("prepare succeeds");
+    let outcome = renderer.render(&scene, camera).expect("render succeeds");
+
+    assert_eq!(
+        outcome.draw_calls, 1,
+        "fully hidden back triangle should be removed before draw"
+    );
+    assert_eq!(renderer.stats().culled_objects, 1);
+    assert_eq!(
+        count_red_pixels(renderer.frame_rgba8()),
+        0,
+        "hidden red triangle must not leak into the frame"
+    );
+}
+
+#[test]
+fn cpu_occlusion_culling_keeps_partially_visible_triangle() {
+    let mut scene = Scene::new();
+    let camera = scene
+        .add_perspective_camera(
+            scene.root(),
+            scena::PerspectiveCamera::default(),
+            Transform::at(Vec3::new(0.0, 0.0, 2.0)),
+        )
+        .expect("camera inserts");
+    scene
+        .set_active_camera(camera)
+        .expect("camera can become active");
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![colored_triangle(
+                [
+                    Vec3::new(-0.35, -0.35, 0.0),
+                    Vec3::new(0.35, -0.35, 0.0),
+                    Vec3::new(0.0, 0.35, 0.0),
+                ],
+                Color::WHITE,
+            )],
+            Transform::default(),
+        )
+        .expect("front triangle inserts");
+    scene
+        .add_renderable(
+            scene.root(),
+            vec![colored_triangle(
+                [
+                    Vec3::new(-0.2, -0.2, -0.2),
+                    Vec3::new(0.7, -0.2, -0.2),
+                    Vec3::new(0.25, 0.7, -0.2),
+                ],
+                Color::from_linear_rgba(1.0, 0.0, 0.0, 1.0),
+            )],
+            Transform::default(),
+        )
+        .expect("partially visible back triangle inserts");
+    let mut renderer = Renderer::headless(96, 96).expect("renderer builds");
+
+    renderer.prepare(&mut scene).expect("prepare succeeds");
+    let outcome = renderer.render(&scene, camera).expect("render succeeds");
+
+    assert_eq!(
+        outcome.draw_calls, 2,
+        "partially visible triangle must not be occlusion-culled"
+    );
+    assert_eq!(renderer.stats().culled_objects, 0);
+    assert!(
+        count_red_pixels(renderer.frame_rgba8()) > 20,
+        "visible red pixels should remain outside the front occluder"
+    );
+}
+
+#[test]
 fn gpu_capable_renderer_records_compute_culling_dispatch_when_available() {
     match Renderer::headless_gpu(32, 32) {
         Ok(mut renderer) => {
@@ -617,6 +732,17 @@ fn fullscreen_triangle_geometry() -> GeometryDesc {
         vec![0, 1, 2],
     )
     .expect("triangle geometry is valid")
+}
+
+fn colored_triangle(points: [Vec3; 3], color: Color) -> Primitive {
+    Primitive::triangle(points.map(|position| Vertex { position, color }))
+}
+
+fn count_red_pixels(frame: &[u8]) -> usize {
+    frame
+        .chunks_exact(4)
+        .filter(|pixel| pixel[0] > 120 && pixel[1] < 60 && pixel[2] < 60)
+        .count()
 }
 
 #[test]

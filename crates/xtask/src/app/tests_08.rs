@@ -497,7 +497,7 @@ pub(crate) fn release_readiness_rejects_benchmark_regression_against_stored_base
             "status": "failed",
             "baseline_path": "docs/benchmarks/m9-baselines.json",
             "baseline_sha256": "fnv1a64:0000000000000001",
-            "metric": "p95_frame_ms"
+            "metrics": ["p95_frame_ms", "max_allocations_per_frame"]
         },
         "rows": [
             {
@@ -505,11 +505,16 @@ pub(crate) fn release_readiness_rejects_benchmark_regression_against_stored_base
                 "backend": "Headless",
                 "sample_count": 100,
                 "p95_frame_ms": 12.0,
+                "max_allocations_per_frame": 2,
                 "baseline_comparison": {
                     "status": "failed",
+                    "frame_time_status": "failed",
+                    "allocation_status": "passed",
                     "baseline_p95_frame_ms": 10.0,
                     "allowed_regression_percent": 5.0,
-                    "regression_percent": 20.0
+                    "regression_percent": 20.0,
+                    "max_allocations_per_frame": 2,
+                    "allowed_max_allocations_per_frame": 4
                 }
             }
         ]

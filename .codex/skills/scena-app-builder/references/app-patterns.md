@@ -16,8 +16,12 @@ measurements, callouts, labels, and overlay-aware framing.
 Verify:
 
 - target part visible and not tiny;
+- grounded parts satisfy `expect_grounded` when they must sit on a base plane;
+- helper/wireframe/grid elements that must stay behind the inspected part
+  satisfy `expect_helper_occluded`;
 - section/cutaway visible when requested;
-- measurement/callout labels visible and uncropped;
+- measurement/callout labels visible, uncropped, and not crossed by leader or
+  dimension lines;
 - no CAD-kernel claims. DXF/DWG/B-rep parsing and constraints belong to the
   host or a geometry kernel.
 
@@ -30,6 +34,9 @@ Verify:
 
 - each named state renders;
 - sampled times change the intended target;
+- equipment expected to sit on the floor satisfies `expect_grounded`;
+- floor grids and helper wires expected behind equipment satisfy
+  `expect_helper_occluded`;
 - warning/fault colors match expectations;
 - no hidden autonomous loop inside scena.
 
@@ -54,7 +61,10 @@ Verify:
 
 - active alarm/status component visible;
 - expected status color matches;
-- labels are visible and not cropped;
+- machines or bars intended to be grounded satisfy `expect_grounded`;
+- labels are visible, not cropped, and not crossed by helper lines;
+- helper grid or status-line overlays expected behind the machines satisfy
+  `expect_helper_occluded`;
 - render stays within the requested viewport.
 
 ## Documentation Renderer
@@ -65,7 +75,7 @@ artifacts. Prefer static recipes that render in CI.
 Verify:
 
 - output PNG and descriptor exist;
-- overlays are not cropped;
+- overlays are not cropped and labels are not crossed by leader/dimension lines;
 - subject fill is above the documented floor;
 - no warning is present when `expect_no_warnings` is requested.
 
@@ -89,4 +99,4 @@ Verify:
 
 - every sampled step renders;
 - camera target remains framed;
-- labels/callouts remain visible.
+- labels/callouts remain visible and clear of crossing line overlays.

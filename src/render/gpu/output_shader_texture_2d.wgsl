@@ -1,5 +1,8 @@
 const PI: f32 = 3.141592653589793;
-const MAX_GPU_LIGHTS_PER_TYPE: u32 = 4u;
+const MAX_GPU_LIGHTS_PER_TYPE: u32 = 16u;
+const MAX_GPU_AREA_LIGHTS: u32 = 2u;
+const AREA_LIGHT_SAMPLE_COUNT: u32 = 16u;
+const MAX_TILED_GPU_LIGHTS_PER_TILE: u32 = 32u;
 
 struct VertexIn {
     @location(0) position: vec3<f32>,
@@ -31,15 +34,19 @@ struct VertexOut {
 };
 
 struct LightingUniform {
-    directional_light_direction_intensity: array<vec4<f32>, 4>,
-    directional_light_color: array<vec4<f32>, 4>,
-    directional_shadow_control: array<vec4<f32>, 4>,
-    point_light_position_intensity: array<vec4<f32>, 4>,
-    point_light_color_range: array<vec4<f32>, 4>,
-    spot_light_position_intensity: array<vec4<f32>, 4>,
-    spot_light_direction_cones: array<vec4<f32>, 4>,
-    spot_light_cone_range: array<vec4<f32>, 4>,
-    spot_light_color_range: array<vec4<f32>, 4>,
+    directional_light_direction_intensity: array<vec4<f32>, 16>,
+    directional_light_color: array<vec4<f32>, 16>,
+    directional_shadow_control: array<vec4<f32>, 16>,
+    point_light_position_intensity: array<vec4<f32>, 16>,
+    point_light_color_range: array<vec4<f32>, 16>,
+    spot_light_position_intensity: array<vec4<f32>, 16>,
+    spot_light_direction_cones: array<vec4<f32>, 16>,
+    spot_light_cone_range: array<vec4<f32>, 16>,
+    spot_light_color_range: array<vec4<f32>, 16>,
+    area_light_position_flux: array<vec4<f32>, 2>,
+    area_light_axis_x_shape: array<vec4<f32>, 2>,
+    area_light_axis_y_range: array<vec4<f32>, 2>,
+    area_light_color: array<vec4<f32>, 2>,
     light_counts: vec4<f32>,
     environment_diffuse_intensity: vec4<f32>,
     environment_specular_intensity: vec4<f32>,
@@ -386,6 +393,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
             dispersion_factor,
             dispersion_ior,
             in.world_position,
+            in.position,
             in.shadow_visibility,
         );
         var environment = pbr_environment_lighting(base.rgb, metallic, roughness, normal, view);
@@ -398,7 +406,15 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     }
     let shaded = vec4<f32>(shaded_rgb + emissive, base.a);
     let color_management_mode = camera.color_management.x;
-    let output_rgb = apply_tonemapper(shaded.rgb * camera.camera_position_exposure.w, color_management_mode);
+    var output_rgb = apply_tonemapper(shaded.rgb * camera.camera_position_exposure.w, color_management_mode);
+    output_rgb = screen_space_material_reflection(
+        in.position.xy,
+        normal,
+        view,
+        metallic,
+        roughness,
+        output_rgb,
+    );
     let transmitted = physical_transmission_color(
         in.position.xy,
         normal,
@@ -441,7 +457,7 @@ fn physical_transmission_color(
         vec2<f32>(0.999),
     );
     let texel = 1.0 / viewport;
-    let blur_px = roughness * roughness * 12.0;
+    let blur_px = roughness * roughness * 48.0;
     let blur = texel * blur_px;
     let straight = textureSample(transmission_color_texture, transmission_color_sampler, uv).rgb;
     let refracted_center = textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv).rgb;
@@ -451,7 +467,7 @@ fn physical_transmission_color(
         textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv - vec2<f32>(blur.x, 0.0)).rgb * 0.16 +
         textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv + vec2<f32>(0.0, blur.y)).rgb * 0.16 +
         textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv - vec2<f32>(0.0, blur.y)).rgb * 0.16;
-    let refraction_mix = clamp(0.46 + roughness * 0.36 + rim_fresnel * 0.10, 0.46, 0.86);
+    let refraction_mix = clamp(0.58 + roughness * 0.40 + rim_fresnel * 0.10, 0.58, 0.96);
     let scene_color = mix(straight, refracted_blurred, refraction_mix);
     let tint_strength = clamp(transmission * 0.035, 0.0, 0.035);
     let volume_tint = volume_transmittance(thickness, material.attenuation_color.rgb, material.transmission_factors.w);
@@ -459,6 +475,48 @@ fn physical_transmission_color(
     let reflection_weight = clamp(0.08 + rim_fresnel * 0.42 + (1.0 - transmission) * 0.10, 0.08, 0.50);
     let reflected = surface_rgb * volume_tint * (1.08 + rim_fresnel * 0.72);
     return vec4<f32>(mix(transmitted, reflected, reflection_weight), 1.0);
+}
+
+fn screen_space_material_reflection(
+    frag_coord: vec2<f32>,
+    normal: vec3<f32>,
+    view: vec3<f32>,
+    metallic: f32,
+    roughness: f32,
+    surface_rgb: vec3<f32>,
+) -> vec3<f32> {
+    let strength = clamp(camera.color_management.z, 0.0, 1.0);
+    let ssr_active = step(0.001, strength) * step(0.5, metallic);
+    let viewport = max(camera.viewport_near_far.xy, vec2<f32>(1.0, 1.0));
+    let uv = clamp(frag_coord / viewport, vec2<f32>(0.001), vec2<f32>(0.999));
+    let normal_dir = normalize(normal);
+    let view_dir = normalize(view);
+    let reflection = reflect(-view_dir, normal_dir);
+    let reflect_scale = (0.12 + (1.0 - roughness) * 0.24) * strength;
+    let raw_reflected_uv = uv + vec2<f32>(reflection.x, -reflection.y) * reflect_scale;
+    let edge_distance = min(
+        min(raw_reflected_uv.x, raw_reflected_uv.y),
+        min(1.0 - raw_reflected_uv.x, 1.0 - raw_reflected_uv.y),
+    );
+    let edge_fade = smoothstep(0.0, 0.02, edge_distance);
+    let reflected_uv = clamp(
+        raw_reflected_uv,
+        vec2<f32>(0.001),
+        vec2<f32>(0.999),
+    );
+    let texel = 1.0 / viewport;
+    let blur_px = clamp(roughness * roughness * 14.0 + camera.color_management.w * 5.0, 0.0, 8.0);
+    let blur = texel * blur_px;
+    let reflected =
+        textureSample(transmission_color_texture, transmission_color_sampler, reflected_uv).rgb * 0.44 +
+        textureSample(transmission_color_texture, transmission_color_sampler, reflected_uv + vec2<f32>(blur.x, 0.0)).rgb * 0.14 +
+        textureSample(transmission_color_texture, transmission_color_sampler, reflected_uv - vec2<f32>(blur.x, 0.0)).rgb * 0.14 +
+        textureSample(transmission_color_texture, transmission_color_sampler, reflected_uv + vec2<f32>(0.0, blur.y)).rgb * 0.14 +
+        textureSample(transmission_color_texture, transmission_color_sampler, reflected_uv - vec2<f32>(0.0, blur.y)).rgb * 0.14;
+    let n_dot_v = max(dot(normal_dir, view_dir), 0.0);
+    let fresnel = pow5(1.0 - n_dot_v);
+    let weight = clamp(ssr_active * strength * metallic * (0.38 + fresnel * 0.52) * (1.0 - roughness * 0.55) * edge_fade, 0.0, 0.88);
+    return mix(surface_rgb, reflected, weight);
 }
 
 fn volume_transmittance(
@@ -499,6 +557,208 @@ fn directional_shadow_factor(world_position: vec3<f32>) -> f32 {
     return textureSampleCompareLevel(shadow_map, shadow_sampler, shadow_uv, light_ndc.z);
 }
 
+fn area_light_sample_position(index: u32, sample: u32) -> vec3<f32> {
+    let center = camera.lighting.area_light_position_flux[index].xyz;
+    let axis_x_shape = camera.lighting.area_light_axis_x_shape[index];
+    let axis_x = axis_x_shape.xyz;
+    let axis_y = camera.lighting.area_light_axis_y_range[index].xyz;
+    if axis_x_shape.w < 0.5 {
+        let column = f32(sample % 4u);
+        let row = f32(sample / 4u);
+        let sx = column * 0.5 - 0.75;
+        let sy = row * 0.5 - 0.75;
+        return center + axis_x * sx + axis_y * sy;
+    }
+    if axis_x_shape.w < 1.5 {
+        let offsets = array<vec2<f32>, 16>(
+            vec2<f32>(0.35, 0.0),
+            vec2<f32>(0.247487, 0.247487),
+            vec2<f32>(0.0, 0.35),
+            vec2<f32>(-0.247487, 0.247487),
+            vec2<f32>(-0.35, 0.0),
+            vec2<f32>(-0.247487, -0.247487),
+            vec2<f32>(0.0, -0.35),
+            vec2<f32>(0.247487, -0.247487),
+            vec2<f32>(0.69291, 0.287013),
+            vec2<f32>(0.287013, 0.69291),
+            vec2<f32>(-0.287013, 0.69291),
+            vec2<f32>(-0.69291, 0.287013),
+            vec2<f32>(-0.69291, -0.287013),
+            vec2<f32>(-0.287013, -0.69291),
+            vec2<f32>(0.287013, -0.69291),
+            vec2<f32>(0.69291, -0.287013),
+        );
+        let offset = offsets[sample];
+        return center + axis_x * offset.x + axis_y * offset.y;
+    }
+    let radius = max(max(length(axis_x), length(axis_y)), 0.001);
+    let raw_forward = cross(axis_x, axis_y);
+    let forward_direction = select(
+        vec3<f32>(0.0, 0.0, 1.0),
+        normalize(raw_forward),
+        dot(raw_forward, raw_forward) > 0.00000001,
+    );
+    let forward = forward_direction * radius;
+    let offsets = array<vec3<f32>, 16>(
+        vec3<f32>(0.577350, 0.577350, 0.577350),
+        vec3<f32>(-0.577350, 0.577350, 0.577350),
+        vec3<f32>(0.577350, -0.577350, 0.577350),
+        vec3<f32>(-0.577350, -0.577350, 0.577350),
+        vec3<f32>(0.577350, 0.577350, -0.577350),
+        vec3<f32>(-0.577350, 0.577350, -0.577350),
+        vec3<f32>(0.577350, -0.577350, -0.577350),
+        vec3<f32>(-0.577350, -0.577350, -0.577350),
+        vec3<f32>(1.0, 0.0, 0.0),
+        vec3<f32>(-1.0, 0.0, 0.0),
+        vec3<f32>(0.0, 1.0, 0.0),
+        vec3<f32>(0.0, -1.0, 0.0),
+        vec3<f32>(0.0, 0.0, 1.0),
+        vec3<f32>(0.0, 0.0, -1.0),
+        vec3<f32>(0.0, 0.707107, 0.707107),
+        vec3<f32>(0.0, -0.707107, -0.707107),
+    );
+    let offset = offsets[sample];
+    return center + axis_x * offset.x + axis_y * offset.y + forward * offset.z;
+}
+
+fn area_light_radiance(index: u32, sample_position: vec3<f32>, world_position: vec3<f32>) -> vec3<f32> {
+    let to_light = sample_position - world_position;
+    let range = camera.lighting.area_light_axis_y_range[index].w;
+    let intensity_per_sample = camera.lighting.area_light_position_flux[index].w / (4.0 * PI) / f32(AREA_LIGHT_SAMPLE_COUNT);
+    return camera.lighting.area_light_color[index].rgb *
+        intensity_per_sample *
+        distance_attenuation(to_light, range);
+}
+
+fn safe_normalize_vec3(value: vec3<f32>, fallback: vec3<f32>) -> vec3<f32> {
+    let len_sq = dot(value, value);
+    return select(fallback, value * inverseSqrt(len_sq), len_sq > 0.00000001);
+}
+
+fn ltc_area_light_polygon(index: u32, world_position: vec3<f32>, normal: vec3<f32>) -> array<vec3<f32>, 4> {
+    let center = camera.lighting.area_light_position_flux[index].xyz;
+    let axis_x_shape = camera.lighting.area_light_axis_x_shape[index];
+    let axis_x = axis_x_shape.xyz;
+    let axis_y = camera.lighting.area_light_axis_y_range[index].xyz;
+    var polygon: array<vec3<f32>, 4>;
+    if axis_x_shape.w < 0.5 {
+        polygon[0] = center - axis_x - axis_y;
+        polygon[1] = center + axis_x - axis_y;
+        polygon[2] = center + axis_x + axis_y;
+        polygon[3] = center - axis_x + axis_y;
+        return polygon;
+    }
+    if axis_x_shape.w < 1.5 {
+        polygon[0] = center - axis_x;
+        polygon[1] = center - axis_y;
+        polygon[2] = center + axis_x;
+        polygon[3] = center + axis_y;
+        return polygon;
+    }
+    let radius = max(max(length(axis_x), length(axis_y)), 0.001);
+    let to_surface = safe_normalize_vec3(world_position - center, -normal);
+    let tangent = safe_normalize_vec3(cross(normal, to_surface), vec3<f32>(1.0, 0.0, 0.0)) * radius;
+    let bitangent = safe_normalize_vec3(cross(to_surface, tangent), vec3<f32>(0.0, 0.0, 1.0)) * radius;
+    polygon[0] = center - tangent - bitangent;
+    polygon[1] = center + tangent - bitangent;
+    polygon[2] = center + tangent + bitangent;
+    polygon[3] = center - tangent + bitangent;
+    return polygon;
+}
+
+fn ltc_matrix(normal: vec3<f32>, view: vec3<f32>, roughness: f32) -> mat3x3<f32> {
+    let fallback_axis = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(0.0, 0.0, 1.0), abs(normal.z) < 0.9);
+    let fallback_tangent = safe_normalize_vec3(cross(fallback_axis, normal), vec3<f32>(1.0, 0.0, 0.0));
+    let tangent = safe_normalize_vec3(view - normal * dot(view, normal), fallback_tangent);
+    let bitangent = safe_normalize_vec3(cross(normal, tangent), vec3<f32>(0.0, 0.0, 1.0));
+    let skew = (1.0 - clamp(roughness, 0.04, 1.0)) * 0.18;
+    return mat3x3<f32>(
+        safe_normalize_vec3(tangent + normal * skew, tangent),
+        bitangent,
+        normal,
+    );
+}
+
+fn ltc_integrate_edge(a: vec3<f32>, b: vec3<f32>) -> f32 {
+    let cosine = clamp(dot(a, b), -0.9999, 0.9999);
+    let y = abs(cosine);
+    let numerator = 0.8543985 + (0.4965155 + 0.0145206 * y) * y;
+    let denominator = max(3.417594 + (4.1616726 + y) * y, 0.0001);
+    let approximation = numerator / denominator;
+    let theta_sin_theta = select(
+        0.5 / sqrt(max(1.0 - cosine * cosine, 0.0001)) - approximation,
+        approximation,
+        cosine > 0.0,
+    );
+    return cross(a, b).z * theta_sin_theta;
+}
+
+fn ltc_evaluate(
+    polygon: array<vec3<f32>, 4>,
+    world_position: vec3<f32>,
+    normal: vec3<f32>,
+    view: vec3<f32>,
+    roughness_input: f32,
+) -> f32 {
+    let frame = ltc_matrix(normal, view, roughness_input);
+    let roughness = clamp(roughness_input, 0.04, 1.0);
+    let tangent_scale = max(0.42 + roughness * 0.58, 0.04);
+    let bitangent_scale = max(0.55 + roughness * 0.45, 0.04);
+    var vertices: array<vec3<f32>, 4>;
+    for (var i = 0u; i < 4u; i = i + 1u) {
+        let local = polygon[i] - world_position;
+        vertices[i] = safe_normalize_vec3(
+            vec3<f32>(
+                dot(local, frame[0]) / tangent_scale,
+                dot(local, frame[1]) / bitangent_scale,
+                max(dot(local, normal), 0.0),
+            ),
+            vec3<f32>(0.0, 0.0, 1.0),
+        );
+    }
+    var integral = 0.0;
+    for (var i = 0u; i < 4u; i = i + 1u) {
+        integral += ltc_integrate_edge(vertices[i], vertices[(i + 1u) % 4u]);
+    }
+    return max(abs(integral) / (2.0 * PI), 0.0);
+}
+
+fn ltc_area_light_specular_contribution(
+    index: u32,
+    base: vec3<f32>,
+    metallic: f32,
+    roughness: f32,
+    normal: vec3<f32>,
+    view: vec3<f32>,
+    world_position: vec3<f32>,
+    shadow_visibility: f32,
+) -> vec3<f32> {
+    let visibility = clamp(shadow_visibility, 0.0, 1.0);
+    if visibility <= 0.000001 {
+        return vec3<f32>(0.0);
+    }
+    let n_dot_v = clamp(dot(normal, view), 0.0, 1.0);
+    if n_dot_v <= 0.000001 {
+        return vec3<f32>(0.0);
+    }
+    let polygon = ltc_area_light_polygon(index, world_position, normal);
+    let irradiance = ltc_evaluate(polygon, world_position, normal, view, roughness);
+    if irradiance <= 0.000001 {
+        return vec3<f32>(0.0);
+    }
+    let center = camera.lighting.area_light_position_flux[index].xyz;
+    let to_light = center - world_position;
+    let range = camera.lighting.area_light_axis_y_range[index].w;
+    let radiance = camera.lighting.area_light_color[index].rgb *
+        camera.lighting.area_light_position_flux[index].w /
+        (4.0 * PI) *
+        distance_attenuation(to_light, range);
+    let f0 = vec3<f32>(0.04) * (1.0 - metallic) + base * metallic;
+    let fresnel = fresnel_schlick(n_dot_v, f0);
+    let roughness_gain = 0.45 + (1.0 - clamp(roughness, 0.0, 1.0)) * 0.75;
+    return fresnel * radiance * irradiance * roughness_gain * visibility;
+}
+
 fn pbr_punctual_lighting(
     base: vec3<f32>,
     metallic: f32,
@@ -521,15 +781,14 @@ fn pbr_punctual_lighting(
     dispersion_factor: f32,
     dispersion_ior: f32,
     world_position: vec3<f32>,
+    fragment_position: vec4<f32>,
     shadow_visibility: f32,
 ) -> vec3<f32> {
     var shaded = vec3<f32>(0.0);
-    // Phase 1B step 2: replace the per-vertex CPU-baked shadow_visibility
-    // input with the GPU shadow map sample so the GPU path stops relying
-    // on the CPU ray-cast bake (review F7). The argument is kept on the
-    // function signature for the WebGL2 fallback that does not yet have
-    // a shadow map.
-    _ = shadow_visibility;
+    // Directional shadows use the GPU shadow map below. The vertex stream's
+    // shadow_visibility now carries deterministic area-light sample visibility
+    // so CPU and GPU agree on soft penumbra approximation for finite emitters.
+    let area_shadow_visibility = clamp(shadow_visibility, 0.0, 1.0);
     let directional_count = min(u32(camera.lighting.light_counts.x), MAX_GPU_LIGHTS_PER_TYPE);
     for (var i = 0u; i < MAX_GPU_LIGHTS_PER_TYPE; i = i + 1u) {
         if i < directional_count {
@@ -592,13 +851,41 @@ fn pbr_punctual_lighting(
             shaded += dispersion_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, dispersion_factor, dispersion_ior);
         }
     }
+    let area_count = min(u32(camera.lighting.light_counts.w), MAX_GPU_AREA_LIGHTS);
+    for (var i = 0u; i < MAX_GPU_AREA_LIGHTS; i = i + 1u) {
+        if i < area_count {
+            shaded += ltc_area_light_specular_contribution(
+                i,
+                base,
+                metallic,
+                roughness,
+                normal,
+                view,
+                world_position,
+                area_shadow_visibility,
+            );
+            for (var sample = 0u; sample < AREA_LIGHT_SAMPLE_COUNT; sample = sample + 1u) {
+                let sample_position = area_light_sample_position(i, sample);
+                let to_light = sample_position - world_position;
+                let incoming = normalize(to_light);
+                let radiance = area_light_radiance(i, sample_position, world_position) * area_shadow_visibility;
+                shaded += pbr_light_contribution(base, metallic, roughness, normal, view, incoming, radiance);
+                shaded += clearcoat_light_contribution(clearcoat_normal, view, incoming, radiance, clearcoat_factor, clearcoat_roughness);
+                shaded += sheen_light_contribution(normal, view, incoming, radiance, sheen_color, sheen_roughness);
+                shaded += anisotropy_light_contribution(base, metallic, roughness, normal, world_tangent, tangent_handedness, view, incoming, radiance, anisotropy_strength, anisotropy_rotation, anisotropy_direction);
+                shaded += iridescence_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, iridescence_factor, iridescence_ior, iridescence_thickness);
+                shaded += dispersion_light_contribution(base, metallic, roughness, normal, view, incoming, radiance, dispersion_factor, dispersion_ior);
+            }
+        }
+    }
     return shaded;
 }
 
 fn has_punctual_light() -> bool {
     return camera.lighting.light_counts.x > 0.0 ||
         camera.lighting.light_counts.y > 0.0 ||
-        camera.lighting.light_counts.z > 0.0;
+        camera.lighting.light_counts.z > 0.0 ||
+        camera.lighting.light_counts.w > 0.0;
 }
 
 fn has_environment_light() -> bool {

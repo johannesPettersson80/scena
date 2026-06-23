@@ -1,7 +1,6 @@
 use crate::assets::Assets;
 use crate::diagnostics::LookupError;
-use crate::geometry::{Aabb, GeometryDesc};
-use crate::material::{Color, MaterialDesc};
+use crate::geometry::Aabb;
 
 use super::transforms::compose_transform;
 use super::view_math::{transform_aabb, union_aabb, world_to_view};
@@ -13,7 +12,7 @@ mod fit;
 mod grid;
 
 use fit::{ValidFramingOptions, perspective_fit};
-use grid::{GridFloorLayout, grid_geometry};
+pub use grid::{GridFloorHandles, GridFloorOptions};
 
 /// Options for fitting a camera to world-space bounds.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -72,30 +71,39 @@ pub struct ProjectedPoint {
     pub ndc_y: f32,
 }
 
-/// Options for [`Scene::add_grid_floor`].
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct GridFloorOptions {
-    bounds: Option<Aabb>,
-    floor_y: f32,
-    padding: f32,
-    line_spacing: f32,
-    color: Color,
-    line_color: Color,
-    roughness: f32,
-}
-
-/// Node handles and world bounds for a grid floor inserted by [`Scene::add_grid_floor`].
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct GridFloorHandles {
-    /// Slab mesh node.
-    pub slab: NodeKey,
-    /// Grid line mesh node.
-    pub grid: NodeKey,
-    /// World-space floor bounds.
-    pub bounds: Aabb,
-}
-
 impl FramingOptions {
+    pub const PRESET_NAMES: &'static [&'static str] = &[
+        "front",
+        "back",
+        "right",
+        "left",
+        "top",
+        "bottom",
+        "isometric",
+        "three_quarter_front_right",
+        "three_quarter_front_left",
+        "three_quarter_back_right",
+        "three_quarter_back_left",
+    ];
+
+    pub fn from_preset_name(name: &str) -> Option<Self> {
+        let options = match name {
+            "front" => Self::new().front(),
+            "back" => Self::new().back(),
+            "right" => Self::new().right(),
+            "left" => Self::new().left(),
+            "top" => Self::new().top(),
+            "bottom" => Self::new().bottom(),
+            "isometric" => Self::new().isometric(),
+            "three_quarter_front_right" => Self::new().three_quarter_front_right(),
+            "three_quarter_front_left" => Self::new().three_quarter_front_left(),
+            "three_quarter_back_right" => Self::new().three_quarter_back_right(),
+            "three_quarter_back_left" => Self::new().three_quarter_back_left(),
+            _ => return None,
+        };
+        Some(options)
+    }
+
     /// Creates perspective framing options with conservative defaults.
     pub const fn new() -> Self {
         Self {
@@ -648,45 +656,6 @@ impl Scene {
             points.push(point);
         }
         ScreenRect::from_points(&points).ok_or(LookupError::ImportHasNoBounds)
-    }
-
-    /// Adds a matte grid floor sized from [`GridFloorOptions`].
-    ///
-    /// # Errors
-    ///
-    /// Returns [`LookupError::InvalidFramingOption`] if the floor options are
-    /// invalid and [`LookupError::NodeNotFound`] if the floor mesh nodes cannot
-    /// be inserted under the scene root.
-    pub fn add_grid_floor<F>(
-        &mut self,
-        assets: &Assets<F>,
-        options: GridFloorOptions,
-    ) -> Result<GridFloorHandles, LookupError> {
-        let layout = GridFloorLayout::new(options)?;
-        let slab_geometry = assets.create_geometry(GeometryDesc::plane(layout.width, layout.depth));
-        let slab_material = assets.create_material(MaterialDesc::pbr_metallic_roughness(
-            options.color,
-            0.0,
-            options.roughness.clamp(0.0, 1.0),
-        ));
-        let slab = self
-            .mesh(slab_geometry, slab_material)
-            .transform(Transform::at(layout.center))
-            .add()?;
-
-        let grid_geometry =
-            assets.create_geometry(grid_geometry(layout.width, layout.depth, options));
-        let grid_material = assets.create_material(MaterialDesc::line(options.line_color, 1.0));
-        let grid = self
-            .mesh(grid_geometry, grid_material)
-            .transform(Transform::at(layout.center))
-            .add()?;
-
-        Ok(GridFloorHandles {
-            slab,
-            grid,
-            bounds: layout.bounds,
-        })
     }
 
     /// Computes union bounds for the same node evaluated at multiple transforms.

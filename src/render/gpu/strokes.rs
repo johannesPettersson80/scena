@@ -51,6 +51,7 @@ pub(super) struct StrokeResources {
     #[allow(dead_code)]
     instance_capacity: usize,
     pipeline: wgpu::RenderPipeline,
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     flat_pipeline: wgpu::RenderPipeline,
     #[allow(dead_code)]
     surface_pipeline: Option<wgpu::RenderPipeline>,
@@ -251,6 +252,7 @@ pub(super) const fn pipeline(resources: &StrokeResources) -> &wgpu::RenderPipeli
     &resources.pipeline
 }
 
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub(super) const fn flat_pipeline(resources: &StrokeResources) -> &wgpu::RenderPipeline {
     &resources.flat_pipeline
 }

@@ -410,8 +410,10 @@ fn write_recipe(
             "scene": template_scene_setup("studio"),
             "render": {
                 "profile": "balanced",
-                "quality": "medium",
-                "anti_aliasing": "fxaa",
+                "quality": "high",
+                "anti_aliasing": "msaa4",
+                "supersample": 2,
+                "reconstruction": "tent",
                 "tonemapper": "pbr_neutral"
             },
             "capture": {

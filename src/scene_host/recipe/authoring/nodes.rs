@@ -4,11 +4,11 @@ use super::common::{DiagnosticPathExt, authored_color};
 use super::transform::{TransformResolutionInput, transform_from_recipe};
 use crate::assets::DefaultAssetFetcher;
 use crate::geometry::SkinningMatrix;
-use crate::scene::SceneSkinBinding;
 use crate::scene::recipe::{
     RecipeBuildPolicy, SceneRecipeBuildTargetV1, SceneRecipeColorV1, SceneRecipeDiagnosticV1,
     SceneRecipeNodeV1,
 };
+use crate::scene::{MeshLodLevel, SceneSkinBinding};
 use crate::scene_host::SceneHostCore;
 use crate::{GeometryHandle, MaterialHandle, NodeKey};
 
@@ -70,6 +70,10 @@ pub(in crate::scene_host::recipe) fn build_authored_nodes(
                 ),
                 "declare the material before the node",
             ));
+            continue;
+        };
+        let Some(lod_levels) = resolve_lod_levels(recipe, resources.geometries, &path, diagnostics)
+        else {
             continue;
         };
         let parent = match &recipe.parent {
@@ -138,6 +142,18 @@ pub(in crate::scene_host::recipe) fn build_authored_nodes(
                 continue;
             }
         };
+        if let Err(error) = host.scene.set_mesh_lods(node, lod_levels) {
+            diagnostics.push(error_diagnostic(
+                &path,
+                "lod_create_failed",
+                format!(
+                    "failed to attach LOD levels to node '{}': {error}",
+                    recipe.id
+                ),
+                "attach LOD levels only to authored mesh nodes",
+            ));
+            continue;
+        }
         apply_node_attributes(host, recipe, node, resources.colors, &path, diagnostics);
         let handle = host.register_node(node);
         node_keys.insert(recipe.id.clone(), node);
@@ -170,6 +186,44 @@ pub(in crate::scene_host::recipe) fn build_authored_nodes(
         }
     }
     node_keys
+}
+
+fn resolve_lod_levels(
+    recipe: &SceneRecipeNodeV1,
+    geometries: &BTreeMap<String, GeometryHandle>,
+    path: &str,
+    diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
+) -> Option<Vec<MeshLodLevel>> {
+    let mut levels = Vec::new();
+    for (index, lod) in recipe.lods.iter().enumerate() {
+        let lod_path = format!("{path}.lods[{index}]");
+        let Some(geometry) = geometries.get(&lod.geometry).copied() else {
+            diagnostics.push(error_diagnostic(
+                &lod_path,
+                "unknown_geometry_ref",
+                format!(
+                    "LOD level for node '{}' references missing geometry '{}'",
+                    recipe.id, lod.geometry
+                ),
+                "declare the LOD geometry before the node",
+            ));
+            return None;
+        };
+        if !lod.max_screen_fraction.is_finite()
+            || lod.max_screen_fraction <= 0.0
+            || lod.max_screen_fraction > 1.0
+        {
+            diagnostics.push(error_diagnostic(
+                format!("{lod_path}.max_screen_fraction"),
+                "invalid_lod_threshold",
+                "LOD max_screen_fraction must be finite and in (0, 1]",
+                "use a fraction such as 0.15 for distant or small-on-screen geometry",
+            ));
+            return None;
+        }
+        levels.push(MeshLodLevel::new(lod.max_screen_fraction as f32, geometry));
+    }
+    Some(levels)
 }
 
 pub(in crate::scene_host::recipe) struct AuthoredNodeResources<'a> {

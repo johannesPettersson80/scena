@@ -9,8 +9,8 @@ impl Scene {
     ///
     /// The root node is permanent and cannot be removed. Removing a subtree
     /// also drops node-owned cameras, lights, labels, instance sets, bounds,
-    /// morph weights, skin bindings, anchors, and connectors that point at the
-    /// removed nodes.
+    /// morph weights, skin bindings, anchors, measurements, and connectors that
+    /// point at the removed nodes.
     pub fn remove_node(&mut self, node: NodeKey) -> Result<(), LookupError> {
         if node == self.root {
             return Err(LookupError::CannotRemoveRootNode(node));
@@ -114,6 +114,7 @@ impl Scene {
             NodeKind::Empty | NodeKind::Renderable(_) | NodeKind::Mesh(_) | NodeKind::Model(_) => {}
         }
         self.node_bounds.remove(&node);
+        self.mesh_lods.remove(&node);
         self.morph_weights.remove(&node);
         self.skin_bindings.remove(&node);
         self.connection_locked_nodes.remove(&node);
@@ -136,6 +137,8 @@ impl Scene {
         });
         self.callouts_mut()
             .retain(|_, callout| !callout.touches_removed_node(removed));
+        self.measurements_mut()
+            .retain(|_, measurement| !measurement.touches_removed_node(removed));
 
         let connectors = self
             .connectors

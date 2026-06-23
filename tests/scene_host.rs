@@ -14,12 +14,12 @@ use scena::{
     SceneHostAnimationPlayOptions, SceneHostCameraState, SceneHostCore, SceneHostEasing,
     SceneHostErrorCode, SceneHostGroundingPathV1, SceneHostSectionBoxReportV1,
     SceneHostSubtreeReportV1, SceneHostVisualStateV1, SceneHostVisualStatesReportV1,
-    SceneInspectionReportV1, ScreenSpaceAmbientOcclusionConfig, SurfaceEvent, Transform,
-    VISUAL_PATCH_SCHEMA_V1, Vec3, VisualPatchAnimationTimeModeV1, VisualPatchAnimationTimeV1,
-    VisualPatchCameraEasedV1, VisualPatchHoverV1, VisualPatchLabelTargetV1, VisualPatchLabelV1,
-    VisualPatchMaterialVariantV1, VisualPatchResultV1, VisualPatchSectionBoxV1,
-    VisualPatchSelectionV1, VisualPatchTintEasedV1, VisualPatchTransformEasedV1,
-    VisualPatchTransformV1, VisualPatchV1, VisualPatchVisibilityV1,
+    SceneInspectionReportV1, SceneSetupPreset, ScreenSpaceAmbientOcclusionConfig, SurfaceEvent,
+    Transform, VISUAL_PATCH_SCHEMA_V1, Vec3, VisualPatchAnimationTimeModeV1,
+    VisualPatchAnimationTimeV1, VisualPatchCameraEasedV1, VisualPatchHoverV1,
+    VisualPatchLabelTargetV1, VisualPatchLabelV1, VisualPatchMaterialVariantV1,
+    VisualPatchResultV1, VisualPatchSectionBoxV1, VisualPatchSelectionV1, VisualPatchTintEasedV1,
+    VisualPatchTransformEasedV1, VisualPatchTransformV1, VisualPatchV1, VisualPatchVisibilityV1,
 };
 use serde_json::json;
 
@@ -127,7 +127,7 @@ fn scene_host_product_studio_visuals_apply_renderable_defaults() {
     assert_eq!(host.renderer().bloom(), Some(PostBloomConfig::subtle()));
     assert_eq!(
         host.renderer().screen_space_ambient_occlusion(),
-        Some(ScreenSpaceAmbientOcclusionConfig::subtle())
+        Some(SceneSetupPreset::ProductStudio.ssao())
     );
     let report = host.scene().inspect();
     assert_eq!(
@@ -246,7 +246,7 @@ fn scene_host_product_grounding_preset_reports_floor_ssao_and_shadow_fallback() 
     }
     assert_eq!(
         host.renderer().screen_space_ambient_occlusion(),
-        Some(ScreenSpaceAmbientOcclusionConfig::subtle())
+        Some(SceneSetupPreset::ProductStudio.ssao())
     );
 
     let json_report: serde_json::Value = serde_json::from_str(

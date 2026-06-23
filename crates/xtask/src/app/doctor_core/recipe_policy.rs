@@ -17,6 +17,9 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
             "scene_recipe_build_policy_rejects_arrow_projection_underestimate",
             "scene_recipe_rejects_imported_weight_animation_without_morph_targets",
             "scene_recipe_rotation_degrees_uses_non_commuting_xyz_call_order",
+            "scene_recipe_validation_accepts_ergonomic_backbone_fields",
+            "scene_recipe_validation_rejects_unknown_ergonomic_presets_at_exact_paths",
+            "scene_recipe_build_routes_ergonomic_fields_through_rust_helpers",
             "scene_recipe_slice4_render_settings_change_pixels_through_recipe",
             "scene_recipe_slice4_grid_emits_visible_line_pixels",
             "scene_recipe_light_presets_fail_closed",
@@ -30,6 +33,249 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
             "\"$.scene.environment.uri\"",
             "\"$.imports[0].uri\"",
         ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-ERGONOMIC-BACKBONE",
+        &root.join("src/material/presets.rs"),
+        &[
+            "pub const PRESET_NAMES",
+            "pub fn from_preset_name",
+            "Self::chrome()",
+            "Self::metal(",
+            "Self::rough_metal(",
+            "Self::brushed_steel()",
+            "Self::plastic(",
+            "Self::clearcoat_plastic(",
+            "Self::satin(",
+            "Self::leather(",
+            "Self::rubber()",
+            "Self::matte(",
+            "Self::clear_glass(",
+            "Self::frosted_glass(",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-ERGONOMIC-BACKBONE",
+        &root.join("src/render/exposure.rs"),
+        &[
+            "pub const PRESET_NAMES",
+            "pub fn from_preset_name",
+            "Self::product_studio()",
+            "Self::indoor()",
+            "Self::outdoor()",
+            "Self::mixed()",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-ERGONOMIC-BACKBONE",
+        &root.join("src/scene/camera.rs"),
+        &[
+            "pub const LENS_PRESET_NAMES",
+            "pub fn from_lens_preset_name",
+            "Self::wide_angle()",
+            "Self::standard()",
+            "Self::portrait()",
+            "Self::telephoto()",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-ERGONOMIC-BACKBONE",
+        &root.join("src/scene/framing.rs"),
+        &[
+            "pub const PRESET_NAMES",
+            "pub fn from_preset_name",
+            "Self::new().front()",
+            "Self::new().isometric()",
+            "Self::new().three_quarter_front_right()",
+            "Self::new().three_quarter_back_left()",
+            "add_perspective_camera_default_for",
+            "self.frame_bounds(camera, bounds, options)",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-ERGONOMIC-BACKBONE",
+        &root.join("src/material/color.rs"),
+        &["pub const NAMED_CONSTANTS", "pub fn from_named_constant"],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-ERGONOMIC-BACKBONE",
+        &root.join("src/assets/environment_preset.rs"),
+        &[
+            "pub const ALL",
+            "pub const fn recipe_name",
+            "pub fn from_recipe_name",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-ERGONOMIC-BACKBONE",
+        &root.join("src/scene_host/product.rs"),
+        &[
+            "pub enum SceneSetupPreset",
+            "pub fn from_recipe_name",
+            "pub const fn auto_exposure",
+            "AutoExposureConfig::product_studio()",
+            "AutoExposureConfig::mixed()",
+            "AutoExposureConfig::indoor()",
+            "pub fn apply_scene_setup_preset_renderer",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-ERGONOMIC-BACKBONE",
+        &root.join("src/scene_host/recipe/authoring/materials.rs"),
+        &[
+            "MaterialDesc::from_preset_name",
+            "with_metallic_factor",
+            "with_roughness_factor",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-ERGONOMIC-BACKBONE",
+        &root.join("src/scene_host/recipe/authoring/cameras.rs"),
+        &[
+            "PerspectiveCamera::from_lens_preset_name",
+            "FramingOptions::from_preset_name",
+            ".add_perspective_camera_default_for(",
+            ".frame_bounds(",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-ERGONOMIC-BACKBONE",
+        &root.join("src/scene_host/recipe/authoring/lights.rs"),
+        &[".add_studio_lighting()"],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-ERGONOMIC-BACKBONE",
+        &root.join("src/scene_host/recipe/setup.rs"),
+        &[
+            "AutoExposureConfig::from_preset_name",
+            "host.renderer.set_auto_exposure(config)",
+            "SceneSetupPreset::from_recipe_name",
+            "host.apply_scene_setup_preset_renderer(preset)",
+            "texture_budget.reserve_environment_uri",
+            ".load_environment_preset_with_options(",
+            "grid_options_under_scene_bounds(host, preset.grid_options())",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-ERGONOMIC-BACKBONE",
+        &root.join("src/scene_host/recipe/setup/grid.rs"),
+        &[
+            "if grid.under_bounds",
+            "options = options.under_bounds(bounds)",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join("tests/scena_cli_recipe.rs"),
+        &[
+            "scena_recipe_render_grid_floor_lines_are_antialiased_and_stable_on_cpu_and_gpu",
+            "scena_recipe_render_verify_passes_screen_space_reflection_quality_on_cpu_and_gpu",
+            "grid-floor-line-quality",
+            "grid-floor-line-detail-quality",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join("src/scene/recipe/types/setup.rs"),
+        &[
+            "pub line_width_px: Option<f64>",
+            "pub screen_space_reflections: Option<SceneRecipeScreenSpaceReflectionsV1>",
+            "pub struct SceneRecipeScreenSpaceReflectionsV1",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join("src/scene/recipe/validation/setup/scene.rs"),
+        &["\"line_width_px\"", "$.scene.grid.line_width_px"],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join("src/scene/recipe/validation/setup/render.rs"),
+        &[
+            "\"screen_space_reflections\"",
+            "$.render.screen_space_reflections",
+            "SCREEN_SPACE_REFLECTION_FIELDS",
+        ],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join("src/scene_host/recipe/setup.rs"),
+        &["set_screen_space_reflections", "ssr_from_recipe"],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join("src/scene_host/recipe/setup/grid.rs"),
+        &["options.line_width_px(line_width_px as f32)"],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join("src/scene/framing/grid.rs"),
+        &["grid_material(options)", "grid_transform(layout)"],
+    );
+
+    require_markers(
+        root,
+        findings,
+        "RECIPE-BUILD-POLICY-BOUNDARY",
+        &root.join("src/scene/framing/grid.rs"),
+        &["options.resolved_line_width_px()", "grid_lift"],
     );
 
     require_markers(
@@ -144,6 +390,7 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
             "\"preset\": \"fill\"",
             "\"preset\": \"rim\"",
             "studio_small_03_1k.hdr",
+            "\"screen_space_reflections\"",
             "\"width\": 640",
             "\"height\": 480",
         ],
@@ -154,7 +401,22 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
         findings,
         "RECIPE-BUILD-POLICY-BOUNDARY",
         &root.join(".codex/skills/scena-app-builder/SKILL.md"),
-        &["Make the output presentable", "studio_small_03_1k.hdr"],
+        &[
+            "Make the output presentable",
+            "studio_small_03_1k.hdr",
+            "crossed by leader/dimension lines",
+            "expect_grounded",
+            "ground_contact_missing",
+            "expect_helper_occluded",
+            "helper_layer_overdraws_subject",
+            "expect_backend",
+            "backend_expectation_mismatch",
+            "expect_clipping",
+            "clipping_plane_count_mismatch",
+            "section_box_missing",
+            "expect_state",
+            "material_variant_state_mismatch",
+        ],
     );
 
     require_markers(
@@ -162,7 +424,22 @@ pub(crate) fn check_recipe_build_policy_boundary(root: &Path, findings: &mut Vec
         findings,
         "RECIPE-BUILD-POLICY-BOUNDARY",
         &root.join("docs/guides/llm-app-builder.md"),
-        &["Make It Look Good", "studio_small_03_1k.hdr"],
+        &[
+            "Make It Look Good",
+            "studio_small_03_1k.hdr",
+            "overlay_label_intersects_line",
+            "expect_grounded",
+            "ground_contact_missing",
+            "expect_helper_occluded",
+            "helper_layer_overdraws_subject",
+            "expect_backend",
+            "backend_expectation_mismatch",
+            "expect_clipping",
+            "clipping_plane_count_mismatch",
+            "section_box_missing",
+            "expect_state",
+            "material_variant_state_mismatch",
+        ],
     );
 
     require_markers(

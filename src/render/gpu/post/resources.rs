@@ -2,7 +2,7 @@ use super::super::super::RasterTarget;
 use super::super::material_bindings::MaterialTextureBindingMode;
 use super::super::pipeline::{GPU_COLOR_FORMAT, create_unlit_pipeline_set};
 use super::types::PostResources;
-use super::{blit, bloom, bloom_fxaa, fxaa, ssao};
+use super::{blit, bloom, bloom_fxaa, dof, fxaa, ssao, ssr};
 
 pub(super) const POST_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const POST_UNIFORM_BYTE_LEN: u64 = 32;
@@ -142,8 +142,10 @@ pub(in crate::render::gpu) fn create_resources(
         bloom_fxaa::create_surface_pipeline(device, &texture_bind_group_layout, format)
     });
     let fxaa_pipeline = fxaa::create_pipeline(device, &texture_bind_group_layout);
+    let ssr_pipeline = ssr::create_pipeline(device, &texture_bind_group_layout);
     let bloom_pipeline = bloom::create_pipeline(device, &texture_bind_group_layout);
     let ssao_pipeline = ssao::create_pipeline(device, &ssao_bind_group_layout);
+    let depth_of_field_pipeline = dof::create_pipeline(device, &ssao_bind_group_layout);
 
     PostResources {
         target,
@@ -164,8 +166,10 @@ pub(in crate::render::gpu) fn create_resources(
         surface_fxaa_pipeline,
         surface_bloom_fxaa_pipeline,
         fxaa_pipeline,
+        ssr_pipeline,
         bloom_pipeline,
         ssao_pipeline,
+        depth_of_field_pipeline,
     }
 }
 

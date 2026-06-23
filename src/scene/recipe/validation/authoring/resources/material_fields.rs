@@ -19,13 +19,16 @@ pub(in crate::scene::recipe::validation::authoring) fn validate_color_ref(
     diagnostics: &mut Vec<SceneRecipeDiagnosticV1>,
 ) {
     match value.and_then(Value::as_str) {
-        Some(value) if colors.contains(value) || Color::from_hex(value).is_ok() => {}
+        Some(value)
+            if colors.contains(value)
+                || Color::from_named_constant(value).is_some()
+                || Color::from_hex(value).is_ok() => {}
         Some(value) => diagnostics.push(diagnostic(
             "unknown_color_ref",
             "error",
             path,
             format!("base_color references unknown color '{value}'"),
-            "reference a key from colors or use a direct #RRGGBB value",
+            "reference a key from colors, a Color named constant, or a direct #RRGGBB value",
             None,
             false,
         )),

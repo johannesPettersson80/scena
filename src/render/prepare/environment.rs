@@ -37,8 +37,8 @@ pub(in crate::render) const PREFILTER_MIP_COUNT: u32 = 5;
 /// by `(N·V, roughness)`; 64×64 is enough resolution for visually
 /// smooth specular without blowing the GPU upload budget.
 pub(in crate::render) const BRDF_LUT_SIZE: u32 = 64;
-const HDR_DIFFUSE_IBL_RESPONSE_SCALE: f32 = 0.8;
-const HDR_IBL_INTENSITY_SCALE: f32 = 0.75;
+const HDR_DIFFUSE_IBL_RESPONSE_SCALE: f32 = 1.0;
+const HDR_IBL_INTENSITY_SCALE: f32 = 1.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(in crate::render) enum EnvironmentLightingProfile {
@@ -570,9 +570,9 @@ mod tests {
 
         assert_vec4_close(
             lighting.gpu_diffuse_intensity(),
-            [0.401_568_65, 0.200_784_33, 0.100_392_16, 0.75],
+            [0.501_960_8, 0.250_980_4, 0.125_490_2, 1.0],
         );
-        assert_vec4_close(lighting.gpu_specular_intensity(), [1.0, 1.0, 1.0, 0.75]);
+        assert_vec4_close(lighting.gpu_specular_intensity(), [1.0, 1.0, 1.0, 1.0]);
     }
 
     fn rle_radiance_hdr_uniform(width: u32, height: u32, rgbe: [u8; 4]) -> Vec<u8> {

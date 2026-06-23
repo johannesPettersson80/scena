@@ -198,14 +198,12 @@ impl Scene {
         }
         let resolved = self.resolve_callout_anchor(&callout)?;
         let label_position = resolved.local_anchor_position + callout.label_offset();
+        let leader_end = leader_line_end(resolved.local_anchor_position, label_position);
 
         self.set_annotation_anchor(resolved.annotation_anchor.clone())?;
         let line_node = self
             .mesh(
-                assets.create_geometry(line_geometry(
-                    resolved.local_anchor_position,
-                    label_position,
-                )),
+                assets.create_geometry(line_geometry(resolved.local_anchor_position, leader_end)),
                 assets.create_material(MaterialDesc::line(callout.color(), 1.0)),
             )
             .parent(resolved.parent)
@@ -383,4 +381,12 @@ fn line_geometry(start: Vec3, end: Vec3) -> GeometryDesc {
         vec![0, 1],
     )
     .expect("callout leader-line geometry is generated as a valid line pair")
+}
+
+fn leader_line_end(anchor: Vec3, label_position: Vec3) -> Vec3 {
+    let offset = label_position - anchor;
+    if offset.length_squared() <= f32::EPSILON {
+        return label_position;
+    }
+    anchor + offset * 0.25
 }

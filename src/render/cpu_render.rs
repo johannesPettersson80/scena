@@ -6,8 +6,17 @@ use crate::scene::{ClippingPlane, SectionBox};
 use super::output::OutputTransform;
 use super::prepare::PreparedPrimitive;
 use super::{
-    AntiAliasing, RasterTarget, ReconstructionFilter, Renderer, camera, cpu, cpu_strokes, output,
+    AntiAliasing, RasterTarget, Renderer, camera, cpu, cpu_resolve, cpu_strokes, output,
+    screen_space_reflections,
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+use rayon::prelude::*;
+
+const CPU_PARALLEL_MIN_PIXELS: usize = 512 * 512;
+const CPU_PARALLEL_MIN_PRIMITIVES: usize = 64;
+#[cfg(not(target_arch = "wasm32"))]
+const CPU_PARALLEL_MAX_WORKERS: usize = 8;
 
 impl Renderer {
     pub(super) fn draw_cpu(
@@ -37,33 +46,41 @@ impl Renderer {
                 super::target::validate_supersample_target(self.target, scale)?;
             let supersample_projection =
                 camera::CameraProjection::from_scene(scene, camera, supersample_target)?;
-            let mut supersample_linear = vec![Color::BLACK; supersample_target.pixel_len()];
-            let mut supersample_depth = vec![f32::INFINITY; supersample_target.pixel_len()];
-            let mut supersample_frame = vec![0; supersample_target.byte_len()];
-            let mut supersample_oit =
-                vec![cpu::OitAccumPixel::default(); supersample_target.pixel_len()];
+            self.cpu_supersample_linear_frame
+                .resize(supersample_target.pixel_len(), Color::BLACK);
+            self.cpu_supersample_depth_frame
+                .resize(supersample_target.pixel_len(), f32::INFINITY);
+            self.cpu_supersample_frame
+                .resize(supersample_target.byte_len(), 0);
+            self.cpu_supersample_oit_scratch.resize(
+                supersample_target.pixel_len(),
+                cpu::OitAccumPixel::default(),
+            );
             self.stats.order_independent_transparency_passes =
                 draw_cpu_geometry_pass(CpuGeometryPass {
                     target: supersample_target,
                     output: self.output,
+                    row_start: 0,
+                    row_count: supersample_target.height,
                     background_color: self.background_color,
                     primitives: &primitives,
                     clipping_planes: &clipping_planes,
                     section_box,
                     camera_projection: &supersample_projection,
                     order_independent_transparency: self.order_independent_transparency,
-                    linear_frame: &mut supersample_linear,
-                    depth_frame: &mut supersample_depth,
-                    frame: &mut supersample_frame,
-                    oit_scratch: &mut supersample_oit,
+                    linear_frame: &mut self.cpu_supersample_linear_frame,
+                    depth_frame: &mut self.cpu_supersample_depth_frame,
+                    frame: &mut self.cpu_supersample_frame,
+                    oit_scratch: &mut self.cpu_supersample_oit_scratch,
+                    screen_space_reflections: self.screen_space_reflections,
                 });
             if full_frame_supersample {
                 let mut cpu_frame = cpu::CpuFrame::new(
                     supersample_target,
                     self.output,
-                    &mut supersample_linear,
-                    &mut supersample_depth,
-                    &mut supersample_frame,
+                    &mut self.cpu_supersample_linear_frame,
+                    &mut self.cpu_supersample_depth_frame,
+                    &mut self.cpu_supersample_frame,
                 );
                 cpu_strokes::draw_overlay_layers_cpu(
                     &mut cpu_frame,
@@ -83,12 +100,12 @@ impl Renderer {
                 .depth_frame
                 .as_mut()
                 .expect("CPU renderer owns a depth buffer");
-            downsample_cpu_supersample(
+            cpu_resolve::downsample_cpu_supersample(
                 supersample_target,
                 scale,
-                &supersample_linear,
-                &supersample_depth,
-                &supersample_frame,
+                &self.cpu_supersample_linear_frame,
+                &self.cpu_supersample_depth_frame,
+                &self.cpu_supersample_frame,
                 self.target,
                 linear_frame,
                 depth_frame,
@@ -108,6 +125,8 @@ impl Renderer {
                 draw_cpu_geometry_pass(CpuGeometryPass {
                     target: self.target,
                     output: self.output,
+                    row_start: 0,
+                    row_count: self.target.height,
                     background_color: self.background_color,
                     primitives: &primitives,
                     clipping_planes: &clipping_planes,
@@ -118,9 +137,19 @@ impl Renderer {
                     depth_frame,
                     frame: &mut self.frame,
                     oit_scratch: &mut self.oit_scratch,
+                    screen_space_reflections: self.screen_space_reflections,
                 });
         }
 
+        self.stats.screen_space_reflection_passes =
+            self.screen_space_reflections.map_or(0, |config| {
+                screen_space_reflections::apply_rgba8(
+                    self.target,
+                    &mut self.frame,
+                    &mut self.bloom_scratch,
+                    config,
+                )
+            });
         self.stats.ambient_occlusion_passes = match (
             self.screen_space_ambient_occlusion,
             self.depth_frame.as_ref(),
@@ -129,10 +158,24 @@ impl Renderer {
                 output::apply_screen_space_ambient_occlusion_rgba8(
                     self.target,
                     &mut self.frame,
+                    &mut self.bloom_scratch,
                     depth_frame,
                     config,
                 )
             }
+            _ => 0,
+        };
+        self.stats.depth_of_field_passes = match (
+            super::depth_of_field_post_config(self.depth_of_field, camera_projection),
+            self.depth_frame.as_ref(),
+        ) {
+            (Some(config), Some(depth_frame)) => output::apply_depth_of_field_rgba8(
+                self.target,
+                &mut self.frame,
+                &mut self.bloom_scratch,
+                depth_frame,
+                config,
+            ),
             _ => 0,
         };
         self.stats.bloom_passes = self.bloom.map_or(0, |bloom| {
@@ -177,6 +220,8 @@ impl Renderer {
 struct CpuGeometryPass<'a> {
     target: RasterTarget,
     output: OutputTransform,
+    row_start: u32,
+    row_count: u32,
     background_color: Color,
     primitives: &'a [PreparedPrimitive],
     clipping_planes: &'a [ClippingPlane],
@@ -187,363 +232,256 @@ struct CpuGeometryPass<'a> {
     depth_frame: &'a mut [f32],
     frame: &'a mut [u8],
     oit_scratch: &'a mut [cpu::OitAccumPixel],
+    screen_space_reflections: Option<super::ScreenSpaceReflectionConfig>,
 }
 
 fn draw_cpu_geometry_pass(input: CpuGeometryPass<'_>) -> u64 {
-    let mut cpu_frame = cpu::CpuFrame::new(
-        input.target,
-        input.output,
-        input.linear_frame,
-        input.depth_frame,
-        input.frame,
+    if should_parallelize_cpu_geometry_pass(&input) {
+        return draw_cpu_geometry_pass_parallel(input);
+    }
+    draw_cpu_geometry_pass_serial(input)
+}
+
+fn draw_cpu_geometry_pass_serial(input: CpuGeometryPass<'_>) -> u64 {
+    debug_assert!(
+        input.row_start == 0 || input.screen_space_reflections.is_none(),
+        "row-scoped CPU geometry passes do not own the full material-reflection scratch buffer"
     );
-    cpu::clear_cpu(&mut cpu_frame, input.background_color);
-    if let Some(config) = input.order_independent_transparency {
-        cpu::clear_order_independent_transparency(input.oit_scratch);
-        for primitive in input.primitives {
-            if !primitive.gpu_triangle_path() {
-                continue;
+    let mut material_reflections = input.screen_space_reflections.map(|_| {
+        vec![screen_space_reflections::MaterialReflectionPixel::default(); input.target.pixel_len()]
+    });
+    let oit_passes = {
+        let mut cpu_frame = cpu::CpuFrame::new_rows(
+            input.target,
+            input.output,
+            input.row_start,
+            input.row_count,
+            input.linear_frame,
+            input.depth_frame,
+            input.frame,
+        );
+        cpu::clear_cpu(&mut cpu_frame, input.background_color);
+        if let Some(config) = input.order_independent_transparency {
+            cpu::clear_order_independent_transparency(input.oit_scratch);
+            for primitive in input.primitives {
+                if !primitive.gpu_triangle_path() {
+                    continue;
+                }
+                if cpu::primitive_needs_order_independent_transparency(primitive) {
+                    cpu::draw_order_independent_transparency_cpu(
+                        &mut cpu_frame,
+                        primitive,
+                        input.clipping_planes,
+                        input.section_box,
+                        input.camera_projection,
+                        input.oit_scratch,
+                        config,
+                    );
+                } else {
+                    cpu::draw_primitive_cpu(
+                        &mut cpu_frame,
+                        primitive,
+                        input.clipping_planes,
+                        input.section_box,
+                        input.camera_projection,
+                        material_reflections.as_deref_mut(),
+                        input.screen_space_reflections,
+                    );
+                }
             }
-            if cpu::primitive_needs_order_independent_transparency(primitive) {
-                cpu::draw_order_independent_transparency_cpu(
-                    &mut cpu_frame,
-                    primitive,
-                    input.clipping_planes,
-                    input.section_box,
-                    input.camera_projection,
-                    input.oit_scratch,
-                    config,
-                );
-            } else {
+            cpu::resolve_order_independent_transparency_cpu(&mut cpu_frame, input.oit_scratch)
+        } else {
+            for primitive in input.primitives {
+                if !primitive.gpu_triangle_path() {
+                    continue;
+                }
                 cpu::draw_primitive_cpu(
                     &mut cpu_frame,
                     primitive,
                     input.clipping_planes,
                     input.section_box,
                     input.camera_projection,
+                    material_reflections.as_deref_mut(),
+                    input.screen_space_reflections,
                 );
             }
+            0
         }
-        cpu::resolve_order_independent_transparency_cpu(&mut cpu_frame, input.oit_scratch)
-    } else {
-        for primitive in input.primitives {
-            if !primitive.gpu_triangle_path() {
-                continue;
-            }
-            cpu::draw_primitive_cpu(
-                &mut cpu_frame,
-                primitive,
-                input.clipping_planes,
-                input.section_box,
-                input.camera_projection,
-            );
-        }
-        0
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn downsample_cpu_supersample(
-    source_target: RasterTarget,
-    scale: u32,
-    source_linear: &[Color],
-    source_depth: &[f32],
-    source_frame: &[u8],
-    target: RasterTarget,
-    target_linear: &mut [Color],
-    target_depth: &mut [f32],
-    target_frame: &mut Vec<u8>,
-    reconstruction_filter: ReconstructionFilter,
-) {
-    debug_assert_eq!(source_target.width, target.width.saturating_mul(scale));
-    debug_assert_eq!(source_target.height, target.height.saturating_mul(scale));
-    let sample_count = scale.saturating_mul(scale).max(1) as f32;
-    for y in 0..target.height {
-        for x in 0..target.width {
-            let target_index = target.pixel_index(x, y);
-            let mut linear = Color::TRANSPARENT;
-            let mut depth = f32::INFINITY;
-            for sy in 0..scale {
-                for sx in 0..scale {
-                    let source_x = x.saturating_mul(scale).saturating_add(sx);
-                    let source_y = y.saturating_mul(scale).saturating_add(sy);
-                    let source_index = source_target.pixel_index(source_x, source_y);
-                    let source_color = source_linear[source_index];
-                    linear.r += source_color.r;
-                    linear.g += source_color.g;
-                    linear.b += source_color.b;
-                    linear.a += source_color.a;
-                    depth = depth.min(source_depth[source_index]);
-                }
-            }
-            linear.r /= sample_count;
-            linear.g /= sample_count;
-            linear.b /= sample_count;
-            linear.a /= sample_count;
-            target_linear[target_index] = linear;
-            target_depth[target_index] = depth;
-        }
-    }
-    downsample_rgba8_reconstruction_filter(
-        source_target,
-        scale,
-        source_frame,
-        target,
-        target_frame,
-        reconstruction_filter,
-    );
-}
-
-#[cfg(test)]
-pub(super) fn downsample_rgba8_box_filter(
-    source_target: RasterTarget,
-    scale: u32,
-    source_frame: &[u8],
-    target: RasterTarget,
-    target_frame: &mut Vec<u8>,
-) {
-    downsample_rgba8_reconstruction_filter(
-        source_target,
-        scale,
-        source_frame,
-        target,
-        target_frame,
-        ReconstructionFilter::Box,
-    );
-}
-
-pub(super) fn downsample_rgba8_reconstruction_filter(
-    source_target: RasterTarget,
-    scale: u32,
-    source_frame: &[u8],
-    target: RasterTarget,
-    target_frame: &mut Vec<u8>,
-    reconstruction_filter: ReconstructionFilter,
-) {
-    debug_assert_eq!(source_target.width, target.width.saturating_mul(scale));
-    debug_assert_eq!(source_target.height, target.height.saturating_mul(scale));
-    target_frame.resize(target.byte_len(), 0);
-    for y in 0..target.height {
-        for x in 0..target.width {
-            let target_offset = target.pixel_index(x, y).saturating_mul(4);
-            target_frame[target_offset..target_offset + 4].copy_from_slice(&sample_rgba8_kernel(
-                source_target,
-                scale,
-                source_frame,
-                x,
-                y,
-                reconstruction_filter,
-            ));
-        }
-    }
-}
-
-fn sample_rgba8_kernel(
-    source_target: RasterTarget,
-    scale: u32,
-    source_frame: &[u8],
-    target_x: u32,
-    target_y: u32,
-    reconstruction_filter: ReconstructionFilter,
-) -> [u8; 4] {
-    match reconstruction_filter {
-        ReconstructionFilter::Box => {
-            sample_rgba8_box(source_target, scale, source_frame, target_x, target_y)
-        }
-        ReconstructionFilter::Tent | ReconstructionFilter::Gaussian => sample_rgba8_weighted(
-            source_target,
-            scale,
-            source_frame,
-            target_x,
-            target_y,
-            reconstruction_filter,
-        ),
-    }
-}
-
-fn sample_rgba8_box(
-    source_target: RasterTarget,
-    scale: u32,
-    source_frame: &[u8],
-    target_x: u32,
-    target_y: u32,
-) -> [u8; 4] {
-    let mut linear = [0.0_f32; 3];
-    let mut alpha = 0.0_f32;
-    let mut weight_sum = 0.0_f32;
-    for sy in 0..scale {
-        for sx in 0..scale {
-            let source_x = target_x.saturating_mul(scale).saturating_add(sx);
-            let source_y = target_y.saturating_mul(scale).saturating_add(sy);
-            accumulate_rgba8_sample(
-                source_target,
-                source_frame,
-                source_x,
-                source_y,
-                1.0,
-                &mut linear,
-                &mut alpha,
-                &mut weight_sum,
-            );
-        }
-    }
-    encode_linear_average(linear, alpha, weight_sum)
-}
-
-fn sample_rgba8_weighted(
-    source_target: RasterTarget,
-    scale: u32,
-    source_frame: &[u8],
-    target_x: u32,
-    target_y: u32,
-    reconstruction_filter: ReconstructionFilter,
-) -> [u8; 4] {
-    let scale_f = scale.max(1) as f32;
-    let center_x = (target_x as f32 + 0.5) * scale_f;
-    let center_y = (target_y as f32 + 0.5) * scale_f;
-    let radius = match reconstruction_filter {
-        ReconstructionFilter::Tent => scale_f,
-        ReconstructionFilter::Gaussian => scale_f,
-        ReconstructionFilter::Box => scale_f * 0.5,
     };
-    let min_x = ((center_x - radius).floor() as i64).max(0) as u32;
-    let max_x = ((center_x + radius).ceil() as u32).min(source_target.width.saturating_sub(1));
-    let min_y = ((center_y - radius).floor() as i64).max(0) as u32;
-    let max_y = ((center_y + radius).ceil() as u32).min(source_target.height.saturating_sub(1));
-    let mut linear = [0.0_f32; 3];
-    let mut alpha = 0.0_f32;
-    let mut weight_sum = 0.0_f32;
-    for sy in min_y..=max_y {
-        let sample_y = sy as f32 + 0.5;
-        let wy = reconstruction_weight((sample_y - center_y) / scale_f, reconstruction_filter);
-        if wy <= 0.0 {
-            continue;
-        }
-        for sx in min_x..=max_x {
-            let sample_x = sx as f32 + 0.5;
-            let wx = reconstruction_weight((sample_x - center_x) / scale_f, reconstruction_filter);
-            let weight = wx * wy;
-            if weight <= 0.0 {
-                continue;
-            }
-            accumulate_rgba8_sample(
-                source_target,
-                source_frame,
-                sx,
-                sy,
-                weight,
-                &mut linear,
-                &mut alpha,
-                &mut weight_sum,
-            );
-        }
+
+    if let (Some(config), Some(material_reflections)) = (
+        input.screen_space_reflections,
+        material_reflections.as_deref(),
+    ) {
+        let mut scratch = vec![0; input.target.byte_len()];
+        screen_space_reflections::apply_material_rgba8(
+            input.target,
+            input.frame,
+            &mut scratch,
+            material_reflections,
+            config,
+        );
     }
-    encode_linear_average(linear, alpha, weight_sum)
+
+    oit_passes
 }
 
-fn reconstruction_weight(
-    distance_in_output_pixels: f32,
-    reconstruction_filter: ReconstructionFilter,
-) -> f32 {
-    match reconstruction_filter {
-        ReconstructionFilter::Box => {
-            if distance_in_output_pixels.abs() <= 0.5 {
-                1.0
-            } else {
-                0.0
-            }
-        }
-        ReconstructionFilter::Tent => (1.0 - distance_in_output_pixels.abs()).max(0.0),
-        ReconstructionFilter::Gaussian => {
-            let sigma = 0.42_f32;
-            (-0.5 * (distance_in_output_pixels / sigma).powi(2)).exp()
-        }
-    }
+fn should_parallelize_cpu_geometry_pass(input: &CpuGeometryPass<'_>) -> bool {
+    input.screen_space_reflections.is_none()
+        && input.primitives.len() >= CPU_PARALLEL_MIN_PRIMITIVES
+        && input.target.pixel_len() >= CPU_PARALLEL_MIN_PIXELS
+        && cpu_geometry_worker_count(input.target) > 1
 }
 
-#[allow(clippy::too_many_arguments)]
-fn accumulate_rgba8_sample(
-    source_target: RasterTarget,
-    source_frame: &[u8],
-    source_x: u32,
-    source_y: u32,
-    weight: f32,
-    linear: &mut [f32; 3],
-    alpha: &mut f32,
-    weight_sum: &mut f32,
-) {
-    let source_offset = source_target
-        .pixel_index(source_x, source_y)
-        .saturating_mul(4);
-    linear[0] += srgb8_to_linear(source_frame[source_offset]) * weight;
-    linear[1] += srgb8_to_linear(source_frame[source_offset + 1]) * weight;
-    linear[2] += srgb8_to_linear(source_frame[source_offset + 2]) * weight;
-    *alpha += (f32::from(source_frame[source_offset + 3]) / 255.0) * weight;
-    *weight_sum += weight;
+#[cfg(not(target_arch = "wasm32"))]
+fn cpu_geometry_worker_count(target: RasterTarget) -> usize {
+    std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+        .min(CPU_PARALLEL_MAX_WORKERS)
+        .min(target.height as usize)
+        .max(1)
 }
 
-fn encode_linear_average(linear: [f32; 3], alpha: f32, weight_sum: f32) -> [u8; 4] {
-    if weight_sum <= f32::EPSILON {
-        return [0, 0, 0, 0];
-    }
-    [
-        linear_to_srgb8(linear[0] / weight_sum),
-        linear_to_srgb8(linear[1] / weight_sum),
-        linear_to_srgb8(linear[2] / weight_sum),
-        ((alpha / weight_sum) * 255.0).round().clamp(0.0, 255.0) as u8,
-    ]
+#[cfg(target_arch = "wasm32")]
+fn cpu_geometry_worker_count(_target: RasterTarget) -> usize {
+    1
 }
 
-fn srgb8_to_linear(value: u8) -> f32 {
-    let value = f32::from(value) / 255.0;
-    if value <= 0.04045 {
-        value / 12.92
-    } else {
-        ((value + 0.055) / 1.055).powf(2.4)
-    }
+#[cfg(not(target_arch = "wasm32"))]
+fn draw_cpu_geometry_pass_parallel(input: CpuGeometryPass<'_>) -> u64 {
+    let worker_count = cpu_geometry_worker_count(input.target);
+    let width = input.target.width as usize;
+    let rows_per_worker = (input.target.height as usize).div_ceil(worker_count).max(1);
+    let chunk_pixels = rows_per_worker.saturating_mul(width);
+    let chunk_bytes = chunk_pixels.saturating_mul(4);
+    let target = input.target;
+    let output = input.output;
+    let background_color = input.background_color;
+    let primitives = input.primitives;
+    let clipping_planes = input.clipping_planes;
+    let section_box = input.section_box;
+    let camera_projection = input.camera_projection;
+    let order_independent_transparency = input.order_independent_transparency;
+    let linear_frame = input.linear_frame;
+    let depth_frame = input.depth_frame;
+    let frame = input.frame;
+    let oit_scratch = input.oit_scratch;
+
+    u64::from(
+        linear_frame
+            .par_chunks_mut(chunk_pixels)
+            .zip(depth_frame.par_chunks_mut(chunk_pixels))
+            .zip(frame.par_chunks_mut(chunk_bytes))
+            .zip(oit_scratch.par_chunks_mut(chunk_pixels))
+            .enumerate()
+            .map(
+                |(chunk_index, (((linear_frame, depth_frame), frame), oit_scratch))| {
+                    let row_start = chunk_index.saturating_mul(rows_per_worker) as u32;
+                    let row_count = (linear_frame.len() / width) as u32;
+                    draw_cpu_geometry_pass_serial(CpuGeometryPass {
+                        target,
+                        output,
+                        row_start,
+                        row_count,
+                        background_color,
+                        primitives,
+                        clipping_planes,
+                        section_box,
+                        camera_projection,
+                        order_independent_transparency,
+                        linear_frame,
+                        depth_frame,
+                        frame,
+                        oit_scratch,
+                        screen_space_reflections: None,
+                    })
+                },
+            )
+            .any(|passes| passes > 0),
+    )
 }
 
-fn linear_to_srgb8(value: f32) -> u8 {
-    let value = value.clamp(0.0, 1.0);
-    let encoded = if value <= 0.003_130_8 {
-        value * 12.92
-    } else {
-        1.055 * value.powf(1.0 / 2.4) - 0.055
-    };
-    (encoded * 255.0).round().clamp(0.0, 255.0) as u8
+#[cfg(target_arch = "wasm32")]
+fn draw_cpu_geometry_pass_parallel(input: CpuGeometryPass<'_>) -> u64 {
+    draw_cpu_geometry_pass_serial(input)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::diagnostics::Backend;
+    use crate::geometry::Primitive;
+    use crate::material::Color;
+    use crate::render::prepare::PreparedPrimitive;
+    use crate::scene::Scene;
 
     #[test]
-    fn rgba8_supersample_downsample_averages_rgb_in_linear_light() {
-        let source_target = RasterTarget {
-            width: 2,
-            height: 2,
-            backend: Backend::HeadlessGpu,
-        };
+    fn cpu_parallel_row_bands_match_serial_opaque_output() {
         let target = RasterTarget {
-            width: 1,
-            height: 1,
-            backend: Backend::HeadlessGpu,
+            width: 640,
+            height: 480,
+            backend: Backend::Headless,
         };
-        let source_frame = [
-            0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255, 255, 255, 255, 255,
-        ];
-        let mut target_frame = Vec::new();
+        let mut scene = Scene::new();
+        let camera = scene.add_default_camera().expect("camera inserts");
+        let camera_projection =
+            camera::CameraProjection::from_scene(&scene, camera, target).expect("projection");
+        let primitives = vec![PreparedPrimitive::new(
+            Primitive::unlit_triangle(),
+            None,
+            Color::WHITE,
+        )];
 
-        downsample_rgba8_box_filter(source_target, 2, &source_frame, target, &mut target_frame);
+        let mut serial_linear = vec![Color::BLACK; target.pixel_len()];
+        let mut serial_depth = vec![f32::INFINITY; target.pixel_len()];
+        let mut serial_frame = vec![0; target.byte_len()];
+        let mut serial_oit = vec![cpu::OitAccumPixel::default(); target.pixel_len()];
 
-        assert!(
-            (185..=190).contains(&target_frame[0])
-                && (185..=190).contains(&target_frame[1])
-                && (185..=190).contains(&target_frame[2]),
-            "linear-light average of 50% black + 50% white should encode near 188, got {:?}",
-            &target_frame[..4]
-        );
-        assert_eq!(target_frame[3], 255);
+        let mut parallel_linear = vec![Color::BLACK; target.pixel_len()];
+        let mut parallel_depth = vec![f32::INFINITY; target.pixel_len()];
+        let mut parallel_frame = vec![0; target.byte_len()];
+        let mut parallel_oit = vec![cpu::OitAccumPixel::default(); target.pixel_len()];
+
+        let serial_oit_passes = draw_cpu_geometry_pass_serial(CpuGeometryPass {
+            target,
+            output: OutputTransform::default(),
+            row_start: 0,
+            row_count: target.height,
+            background_color: Color::BLACK,
+            primitives: &primitives,
+            clipping_planes: &[],
+            section_box: None,
+            camera_projection: &camera_projection,
+            order_independent_transparency: None,
+            linear_frame: &mut serial_linear,
+            depth_frame: &mut serial_depth,
+            frame: &mut serial_frame,
+            oit_scratch: &mut serial_oit,
+            screen_space_reflections: None,
+        });
+
+        let parallel_oit_passes = draw_cpu_geometry_pass_parallel(CpuGeometryPass {
+            target,
+            output: OutputTransform::default(),
+            row_start: 0,
+            row_count: target.height,
+            background_color: Color::BLACK,
+            primitives: &primitives,
+            clipping_planes: &[],
+            section_box: None,
+            camera_projection: &camera_projection,
+            order_independent_transparency: None,
+            linear_frame: &mut parallel_linear,
+            depth_frame: &mut parallel_depth,
+            frame: &mut parallel_frame,
+            oit_scratch: &mut parallel_oit,
+            screen_space_reflections: None,
+        });
+
+        assert_eq!(serial_oit_passes, parallel_oit_passes);
+        assert_eq!(serial_frame, parallel_frame);
+        assert_eq!(serial_depth, parallel_depth);
+        assert_eq!(serial_linear, parallel_linear);
     }
 }

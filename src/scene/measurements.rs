@@ -7,6 +7,10 @@ use crate::material::{Color, MaterialDesc};
 
 use super::{LabelDesc, LabelKey, NodeKey, Scene, Transform, Vec3};
 
+const MEASUREMENT_LABEL_OFFSET_FRACTION: f32 = 0.20;
+const MEASUREMENT_LABEL_OFFSET_MIN_WORLD: f32 = 0.012;
+const MEASUREMENT_LABEL_OFFSET_MAX_WORLD: f32 = 0.28;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MeasurementKind {
     Distance,
@@ -53,6 +57,12 @@ pub struct MeasurementOverlayReport {
     pub formatted_value: String,
     pub line_node: NodeKey,
     pub label: Option<LabelKey>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SceneMeasurementOverlayState {
+    line_node: NodeKey,
+    label_node: Option<NodeKey>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -106,6 +116,10 @@ impl MeasurementOverlay {
     pub fn with_color(mut self, color: Color) -> Self {
         self.color = color;
         self
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
     }
 
     pub fn measure(&self) -> Result<MeasurementReport, LookupError> {
@@ -175,15 +189,17 @@ impl MeasurementOverlay {
             MeasurementGeometry::Distance { start, end } => {
                 validate_point(start)?;
                 validate_point(end)?;
-                Ok((start + end) * 0.5)
+                Ok((start + end) * 0.5 + segment_label_offset(start, end))
             }
             MeasurementGeometry::Angle { a, vertex, b } => {
                 angle_between(a, vertex, b)?;
-                Ok((a + vertex + b) / 3.0)
+                let span = a.distance(vertex).max(b.distance(vertex));
+                Ok((a + vertex + b) / 3.0 + Vec3::Y * measurement_label_offset_for_span(span))
             }
-            MeasurementGeometry::BoundsDimension { bounds, axis: _ } => {
+            MeasurementGeometry::BoundsDimension { bounds, axis } => {
                 validate_bounds(bounds)?;
-                Ok(bounds.center())
+                let center = bounds.center();
+                Ok(center + bounds_label_offset(bounds, axis))
             }
         }
     }
@@ -241,6 +257,9 @@ impl Scene {
         overlay: MeasurementOverlay,
     ) -> Result<MeasurementOverlayReport, LookupError> {
         let report = overlay.measure()?;
+        if self.measurements.contains_key(overlay.id()) {
+            self.clear_measurement_overlay(overlay.id());
+        }
         let line_geometry = assets.create_geometry(line_geometry(&overlay.line_segments()?));
         let line_material = assets.create_material(MaterialDesc::line(overlay.color, 1.0));
         let line_node = self
@@ -249,7 +268,7 @@ impl Scene {
             .add()?;
         let label = if overlay.label.is_some() {
             Some(
-                self.add_label(
+                self.add_label_node(
                     self.root(),
                     LabelDesc::new(overlay.label_text(&report.formatted_value))
                         .with_color(overlay.color)
@@ -260,14 +279,76 @@ impl Scene {
         } else {
             None
         };
+        let (label_key, label_node) = match label {
+            Some((label_key, label_node)) => (Some(label_key), Some(label_node)),
+            None => (None, None),
+        };
+        self.measurements.insert(
+            report.id.clone(),
+            SceneMeasurementOverlayState {
+                line_node,
+                label_node,
+            },
+        );
         Ok(MeasurementOverlayReport {
             id: report.id,
             kind: report.kind,
             value: report.value,
             formatted_value: report.formatted_value,
             line_node,
-            label,
+            label: label_key,
         })
+    }
+
+    #[cfg(feature = "scene-host")]
+    pub(crate) fn measurement_overlay_state(
+        &self,
+        id: &str,
+    ) -> Option<&SceneMeasurementOverlayState> {
+        self.measurements.get(id)
+    }
+
+    pub(crate) fn measurements_mut(
+        &mut self,
+    ) -> &mut std::collections::BTreeMap<String, SceneMeasurementOverlayState> {
+        &mut self.measurements
+    }
+
+    pub fn clear_measurement_overlay(&mut self, id: &str) -> bool {
+        let Some(measurement) = self.measurements.remove(id) else {
+            return false;
+        };
+        remove_generated_node_if_live(self, measurement.line_node);
+        if let Some(label_node) = measurement.label_node {
+            remove_generated_node_if_live(self, label_node);
+        }
+        true
+    }
+}
+
+impl SceneMeasurementOverlayState {
+    #[cfg(feature = "scene-host")]
+    pub const fn line_node(&self) -> NodeKey {
+        self.line_node
+    }
+
+    #[cfg(feature = "scene-host")]
+    pub const fn label_node(&self) -> Option<NodeKey> {
+        self.label_node
+    }
+
+    pub(crate) fn touches_removed_node(
+        &self,
+        removed: &std::collections::BTreeSet<NodeKey>,
+    ) -> bool {
+        removed.contains(&self.line_node)
+            || self.label_node.is_some_and(|node| removed.contains(&node))
+    }
+}
+
+fn remove_generated_node_if_live(scene: &mut Scene, node: NodeKey) {
+    if scene.node(node).is_some() {
+        let _ = scene.remove_node(node);
     }
 }
 
@@ -299,6 +380,46 @@ fn line_geometry(segments: &[(Vec3, Vec3)]) -> GeometryDesc {
     }
     GeometryDesc::try_new(GeometryTopology::Lines, vertices, indices)
         .expect("measurement line geometry is generated as valid line pairs")
+}
+
+fn segment_label_offset(start: Vec3, end: Vec3) -> Vec3 {
+    let delta = end - start;
+    let planar_perpendicular = Vec3::new(-delta.y, delta.x, 0.0);
+    let offset = measurement_label_offset_for_span(delta.length());
+    if planar_perpendicular.length_squared() > f32::EPSILON {
+        planar_perpendicular.normalize() * offset
+    } else {
+        Vec3::Y * offset
+    }
+}
+
+fn measurement_label_offset_for_span(span: f32) -> f32 {
+    if span.is_finite() {
+        (span * MEASUREMENT_LABEL_OFFSET_FRACTION).clamp(
+            MEASUREMENT_LABEL_OFFSET_MIN_WORLD,
+            MEASUREMENT_LABEL_OFFSET_MAX_WORLD,
+        )
+    } else {
+        MEASUREMENT_LABEL_OFFSET_MIN_WORLD
+    }
+}
+
+fn bounds_label_offset(bounds: Aabb, axis: MeasurementAxis) -> Vec3 {
+    let (start, end) = match axis {
+        MeasurementAxis::X => (
+            Vec3::new(bounds.min.x, bounds.center().y, bounds.center().z),
+            Vec3::new(bounds.max.x, bounds.center().y, bounds.center().z),
+        ),
+        MeasurementAxis::Y => (
+            Vec3::new(bounds.center().x, bounds.min.y, bounds.center().z),
+            Vec3::new(bounds.center().x, bounds.max.y, bounds.center().z),
+        ),
+        MeasurementAxis::Z => (
+            Vec3::new(bounds.center().x, bounds.center().y, bounds.min.z),
+            Vec3::new(bounds.center().x, bounds.center().y, bounds.max.z),
+        ),
+    };
+    segment_label_offset(start, end)
 }
 
 fn angle_between(a: Vec3, vertex: Vec3, b: Vec3) -> Result<f32, LookupError> {

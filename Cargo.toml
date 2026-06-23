@@ -16,7 +16,9 @@ include = [
     "/tests/*.rs",
     "/tests/browser/**",
     "/tests/assets/stable-contracts/**",
+    "/tests/assets/environment/neutral-studio.fixture.txt",
     "/tests/assets/environment/generated/**",
+    "/tests/assets/environment/polyhaven/**",
     "/examples/**",
     "!/examples/furuta_render.rs",
     "/docs/**/*.md",
@@ -121,11 +123,18 @@ codegen-units = 1
 panic = "abort"
 strip = "debuginfo"
 
+[profile.perf-test]
+inherits = "release"
+panic = "unwind"
+strip = "debuginfo"
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 pollster = "0.4.0"
+rayon = "1.11"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3.98"
+pollster = "0.4.0"
 wasm-bindgen = "0.2.121"
 wasm-bindgen-futures = "0.4.71"
 web-sys = { version = "0.3.98", features = [

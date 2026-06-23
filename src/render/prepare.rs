@@ -1,7 +1,9 @@
-use crate::assets::{Assets, TextureHandle};
+use crate::assets::{Assets, GeometryHandle, TextureHandle};
 use crate::diagnostics::PrepareError;
+use crate::geometry::Aabb;
 use crate::scene::{Scene, Vec3};
 
+use self::auto_instance::append_auto_instanced_mesh_groups;
 pub(super) use self::diagnostics::{
     collect_asset_camera_visibility_diagnostics, collect_camera_projection_diagnostics,
     collect_camera_visibility_diagnostics, collect_precision_diagnostics,
@@ -14,10 +16,15 @@ pub(in crate::render) use self::environment::{
     EnvironmentLightingProfile, PreparedEnvironmentCubemap, PreparedEnvironmentLighting,
 };
 use self::lighting::PreparedLights;
-pub(super) use self::lighting::{PreparedGpuLightUniform, collect_gpu_light_uniform};
+pub(super) use self::lighting::{
+    PreparedGpuLightUniform, TiledLightAssignment, collect_gpu_light_uniform,
+    collect_gpu_tiled_light_assignment, gpu_tiled_light_assignment_required,
+};
 use self::materials::validate_material_texture_handles;
 use self::primitives::append_geometry_primitives;
 pub(in crate::render) use self::primitives::draw_uniform_tint;
+#[cfg(test)]
+pub(in crate::render) use self::resources::PreparedMaterialTexture;
 pub(super) use self::resources::{
     PreparedLogicalResourceStats, PreparedMaterialSlot, collect_backend_material_slots,
     collect_logical_resource_stats, collect_material_texture_diagnostics,
@@ -34,6 +41,7 @@ use self::types::{
 };
 use super::{RasterTarget, camera::CameraProjection};
 
+mod auto_instance;
 mod cpu_bake;
 mod diagnostics;
 mod dynamic;
@@ -58,11 +66,13 @@ pub(super) mod transforms;
 mod types;
 pub(in crate::render) use types::{
     PreparedInstanceRecord, PreparedInstanceSet, PreparedLabelAtlas, PreparedLabelQuad,
-    PreparedPrimitive, PreparedStrokeSegment,
+    PreparedMaterialReflection, PreparedPrimitive, PreparedStrokeSegment,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn collect_prepared_primitives<F>(
     target: RasterTarget,
+    screen_space_scale: f32,
     scene: &Scene,
     assets: Option<&Assets<F>>,
     camera_projection: Option<&CameraProjection>,
@@ -76,7 +86,8 @@ pub(super) fn collect_prepared_primitives<F>(
 
     let origin_shift = scene.origin_shift();
     let lights = PreparedLights::from_scene(scene, origin_shift);
-    let needs_cpu_shadow_visibility = cpu_shadow_visibility_required(scene, backend_material_slots);
+    let needs_cpu_shadow_visibility =
+        cpu_shadow_visibility_required(scene, backend_material_slots) || lights.has_area_lights();
     let shadow_occluders = if needs_cpu_shadow_visibility {
         collect_shadow_occluders(scene, assets, origin_shift)?
     } else {
@@ -114,16 +125,53 @@ pub(super) fn collect_prepared_primitives<F>(
             | crate::diagnostics::Backend::WebGpu
             | crate::diagnostics::Backend::WebGl2
     );
+    let auto_instanced_nodes = if gpu_instance_path {
+        append_auto_instanced_mesh_groups(
+            target,
+            screen_space_scale,
+            scene,
+            assets,
+            origin_shift,
+            &lights,
+            &shadow_occluders,
+            camera_projection,
+            backend_sampled_base_color_textures,
+            backend_material_slots,
+            environment_lighting.clone(),
+            &mut instances,
+            &mut strokes,
+        )?
+    } else {
+        Vec::new()
+    };
 
     for (node, mesh, transform) in scene.mesh_nodes() {
+        if auto_instanced_nodes.contains(&node) {
+            continue;
+        }
         let Some(assets) = assets else {
             return Err(PrepareError::AssetsRequired { node });
         };
+        let base_geometry =
+            assets
+                .geometry(mesh.geometry())
+                .ok_or(PrepareError::GeometryNotFound {
+                    node,
+                    geometry: mesh.geometry(),
+                })?;
+        let geometry_handle = select_mesh_lod_geometry(
+            scene,
+            node,
+            mesh.geometry(),
+            base_geometry.bounds(),
+            transform,
+            camera_projection,
+        );
         let geometry = assets
-            .geometry(mesh.geometry())
+            .geometry(geometry_handle)
             .ok_or(PrepareError::GeometryNotFound {
                 node,
-                geometry: mesh.geometry(),
+                geometry: geometry_handle,
             })?;
         let material = assets
             .material(mesh.material())
@@ -147,6 +195,7 @@ pub(super) fn collect_prepared_primitives<F>(
             },
             PrimitiveBakeParams {
                 target,
+                screen_space_scale,
                 transform,
                 origin_shift,
                 lights: &lights,
@@ -207,6 +256,7 @@ pub(super) fn collect_prepared_primitives<F>(
                 DeformationInputs::default(),
                 PrimitiveBakeParams {
                     target,
+                    screen_space_scale,
                     transform: node_transform,
                     origin_shift,
                     lights: &lights,
@@ -256,6 +306,7 @@ pub(super) fn collect_prepared_primitives<F>(
                     DeformationInputs::default(),
                     PrimitiveBakeParams {
                         target,
+                        screen_space_scale,
                         transform: compose_transform(node_transform, instance.transform()),
                         origin_shift,
                         lights: &lights,
@@ -310,6 +361,71 @@ pub(super) fn collect_prepared_primitives<F>(
         instances,
         light_from_world,
     })
+}
+
+fn select_mesh_lod_geometry(
+    scene: &Scene,
+    node: crate::scene::NodeKey,
+    base_geometry: GeometryHandle,
+    local_bounds: Aabb,
+    transform: crate::scene::Transform,
+    camera_projection: Option<&CameraProjection>,
+) -> GeometryHandle {
+    let Some(levels) = scene.mesh_lods(node) else {
+        return base_geometry;
+    };
+    let Some(fraction) =
+        projected_bounds_screen_fraction(local_bounds, transform, camera_projection)
+    else {
+        return base_geometry;
+    };
+    levels
+        .iter()
+        .find(|level| fraction <= level.max_screen_fraction())
+        .map_or(base_geometry, |level| level.geometry())
+}
+
+fn projected_bounds_screen_fraction(
+    local_bounds: Aabb,
+    transform: crate::scene::Transform,
+    camera_projection: Option<&CameraProjection>,
+) -> Option<f32> {
+    let projection = camera_projection?;
+    let bounds = crate::scene::view_math::transform_aabb(local_bounds, transform);
+    let mut min_x = f32::INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    let mut projected_any = false;
+    for corner in aabb_corners(bounds) {
+        let Some(projected) = projection.project(corner) else {
+            continue;
+        };
+        min_x = min_x.min(projected.ndc_x);
+        min_y = min_y.min(projected.ndc_y);
+        max_x = max_x.max(projected.ndc_x);
+        max_y = max_y.max(projected.ndc_y);
+        projected_any = true;
+    }
+    if !projected_any {
+        return None;
+    }
+    let width_fraction = ((max_x - min_x).abs() * 0.5).clamp(0.0, 1.0);
+    let height_fraction = ((max_y - min_y).abs() * 0.5).clamp(0.0, 1.0);
+    Some(width_fraction.max(height_fraction))
+}
+
+fn aabb_corners(bounds: Aabb) -> [Vec3; 8] {
+    [
+        Vec3::new(bounds.min.x, bounds.min.y, bounds.min.z),
+        Vec3::new(bounds.max.x, bounds.min.y, bounds.min.z),
+        Vec3::new(bounds.min.x, bounds.max.y, bounds.min.z),
+        Vec3::new(bounds.max.x, bounds.max.y, bounds.min.z),
+        Vec3::new(bounds.min.x, bounds.min.y, bounds.max.z),
+        Vec3::new(bounds.max.x, bounds.min.y, bounds.max.z),
+        Vec3::new(bounds.min.x, bounds.max.y, bounds.max.z),
+        Vec3::new(bounds.max.x, bounds.max.y, bounds.max.z),
+    ]
 }
 
 fn collect_prepared_instance_records(

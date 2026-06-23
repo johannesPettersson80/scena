@@ -3,12 +3,20 @@ use std::f32::consts::PI;
 use crate::assets::ENVIRONMENT_CUBEMAP_FACE_NORMALS;
 use crate::scene::Vec3;
 
+use self::source_mips::{
+    build_source_cubemap_mip_chain, sample_source_cubemap_lod, source_mip_resolution,
+};
+
+mod source_mips;
+
 /// One sample direction-weight pair from the Hammersley sequence routed
 /// through GGX importance sampling. Used by both the specular cubemap
 /// prefilter and the BRDF LUT integrator.
 struct GgxSample {
     direction: Vec3,
     n_dot_l: f32,
+    n_dot_h: f32,
+    v_dot_h: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,6 +56,7 @@ pub(in crate::render) fn prefilter_specular_cubemap_mips_with_quality(
         return Vec::new();
     }
     let mut mips = Vec::with_capacity(mip_count as usize);
+    let source_mips = build_source_cubemap_mip_chain(source_face_pixels, resolution);
     for mip in 0..mip_count {
         let mip_resolution = (resolution >> mip).max(1);
         let mip_faces = if mip == 0 {
@@ -59,8 +68,8 @@ pub(in crate::render) fn prefilter_specular_cubemap_mips_with_quality(
                 0.0
             };
             prefilter_face_pixels(
-                source_face_pixels,
-                resolution,
+                &source_mips,
+                source_mip_floor_for_prefilter_mip(resolution, mip_resolution),
                 mip_resolution,
                 roughness,
                 quality,
@@ -74,8 +83,8 @@ pub(in crate::render) fn prefilter_specular_cubemap_mips_with_quality(
 /// Builds the GGX prefilter for a single mip level of the specular
 /// cubemap. Returns six face buffers of size `mip_resolution^2 * 4`.
 fn prefilter_face_pixels(
-    source_face_pixels: &[Vec<f32>; 6],
-    source_resolution: u32,
+    source_mips: &[[Vec<f32>; 6]],
+    minimum_source_mip: f32,
     mip_resolution: u32,
     roughness: f32,
     quality: EnvironmentPrefilterQuality,
@@ -93,8 +102,8 @@ fn prefilter_face_pixels(
                     normal,
                     roughness,
                     sample_count,
-                    source_face_pixels,
-                    source_resolution,
+                    source_mips,
+                    minimum_source_mip,
                 );
                 let pixel_index = ((y * mip_resolution + x) * 4) as usize;
                 face_pixels[pixel_index] = prefiltered.x;
@@ -139,13 +148,14 @@ fn integrate_ggx_specular(
     normal: Vec3,
     roughness: f32,
     sample_count: u32,
-    source_face_pixels: &[Vec<f32>; 6],
-    source_resolution: u32,
+    source_mips: &[[Vec<f32>; 6]],
+    minimum_source_mip: f32,
 ) -> Vec3 {
     if sample_count == 0 {
-        return sample_source_cubemap(source_face_pixels, source_resolution, normal);
+        return sample_source_cubemap_lod(source_mips, normal, 0.0);
     }
     let view = normal;
+    let source_resolution = source_mip_resolution(source_mips, 0);
     let mut accumulated = Vec3::ZERO;
     let mut total_weight = 0.0_f32;
     for sample_index in 0..sample_count {
@@ -153,8 +163,11 @@ fn integrate_ggx_specular(
         if sample.n_dot_l <= 0.0 {
             continue;
         }
-        let radiance =
-            sample_source_cubemap(source_face_pixels, source_resolution, sample.direction);
+        let pdf = ggx_sample_pdf(sample.n_dot_h, sample.v_dot_h, roughness);
+        let source_mip =
+            source_mip_level_for_sample(roughness, sample_count, source_resolution, pdf)
+                .max(minimum_source_mip);
+        let radiance = sample_source_cubemap_lod(source_mips, sample.direction, source_mip);
         accumulated.x += radiance.x * sample.n_dot_l;
         accumulated.y += radiance.y * sample.n_dot_l;
         accumulated.z += radiance.z * sample.n_dot_l;
@@ -218,9 +231,13 @@ fn importance_sample_ggx(
     let direction = reflect_vec3(view, half_world);
     let n_dot_l =
         (normal.x * direction.x + normal.y * direction.y + normal.z * direction.z).clamp(0.0, 1.0);
+    let n_dot_h = dot(normal, half_world).clamp(0.0, 1.0);
+    let v_dot_h = dot(view, half_world).clamp(0.0, 1.0);
     GgxSample {
         direction: normalize_or_z(direction),
         n_dot_l,
+        n_dot_h,
+        v_dot_h,
     }
 }
 
@@ -281,13 +298,52 @@ fn geometry_smith_ggx(n_dot_v: f32, n_dot_l: f32, roughness: f32) -> f32 {
     smith_v * smith_l
 }
 
+fn ggx_normal_distribution(n_dot_h: f32, roughness: f32) -> f32 {
+    let alpha = roughness * roughness;
+    let alpha_squared = (alpha * alpha).max(1e-6);
+    let n_dot_h_squared = n_dot_h.clamp(0.0, 1.0) * n_dot_h.clamp(0.0, 1.0);
+    let denominator = (n_dot_h_squared * (alpha_squared - 1.0) + 1.0).max(1e-6);
+    alpha_squared / (PI * denominator * denominator)
+}
+
+fn ggx_sample_pdf(n_dot_h: f32, v_dot_h: f32, roughness: f32) -> f32 {
+    let distribution = ggx_normal_distribution(n_dot_h, roughness);
+    (distribution * n_dot_h.clamp(0.0, 1.0) / (4.0 * v_dot_h.max(1e-4))).max(1e-6)
+}
+
+fn source_mip_level_for_sample(
+    roughness: f32,
+    sample_count: u32,
+    source_resolution: u32,
+    pdf: f32,
+) -> f32 {
+    if roughness <= 1e-4 || source_resolution <= 1 || sample_count == 0 {
+        return 0.0;
+    }
+    let resolution = source_resolution as f32;
+    let sample_solid_angle = 1.0 / (sample_count as f32 * pdf.max(1e-6));
+    let texel_solid_angle = 4.0 * PI / (6.0 * resolution * resolution);
+    (0.5 * (sample_solid_angle / texel_solid_angle).max(1e-6).log2()).max(0.0)
+}
+
+fn source_mip_floor_for_prefilter_mip(source_resolution: u32, target_resolution: u32) -> f32 {
+    if source_resolution <= target_resolution.max(1) {
+        return 0.0;
+    }
+    (source_resolution as f32 / target_resolution.max(1) as f32).log2()
+}
+
 fn reflect_vec3(view: Vec3, normal: Vec3) -> Vec3 {
-    let dot = view.x * normal.x + view.y * normal.y + view.z * normal.z;
+    let dot = dot(view, normal);
     Vec3::new(
         2.0 * dot * normal.x - view.x,
         2.0 * dot * normal.y - view.y,
         2.0 * dot * normal.z - view.z,
     )
+}
+
+fn dot(a: Vec3, b: Vec3) -> f32 {
+    a.x * b.x + a.y * b.y + a.z * b.z
 }
 
 fn cross(a: Vec3, b: Vec3) -> Vec3 {
@@ -332,65 +388,6 @@ fn sample_count_for_roughness(roughness: f32, quality: EnvironmentPrefilterQuali
     }
 }
 
-/// Bilinearly samples the source mip-0 cubemap at the given direction
-/// and returns its RGB radiance. The cube layout matches WebGPU's
-/// face-layer order (px, nx, py, ny, pz, nz).
-fn sample_source_cubemap(
-    source_face_pixels: &[Vec<f32>; 6],
-    resolution: u32,
-    direction: Vec3,
-) -> Vec3 {
-    let normalized = normalize_or_z(direction);
-    let (face, u, v) = direction_to_face_uv(normalized);
-    let pixel_x = ((u + 1.0) * 0.5 * resolution as f32 - 0.5).clamp(0.0, (resolution - 1) as f32);
-    let pixel_y = ((v + 1.0) * 0.5 * resolution as f32 - 0.5).clamp(0.0, (resolution - 1) as f32);
-    let x_low = pixel_x.floor() as u32;
-    let y_low = pixel_y.floor() as u32;
-    let x_high = (x_low + 1).min(resolution - 1);
-    let y_high = (y_low + 1).min(resolution - 1);
-    let fx = pixel_x - x_low as f32;
-    let fy = pixel_y - y_low as f32;
-    let face_pixels = &source_face_pixels[face];
-    let texel = |x: u32, y: u32| -> Vec3 {
-        let index = ((y * resolution + x) * 4) as usize;
-        Vec3::new(
-            face_pixels[index],
-            face_pixels[index + 1],
-            face_pixels[index + 2],
-        )
-    };
-    let lt = texel(x_low, y_low);
-    let rt = texel(x_high, y_low);
-    let lb = texel(x_low, y_high);
-    let rb = texel(x_high, y_high);
-    let top = lerp_vec3(lt, rt, fx);
-    let bottom = lerp_vec3(lb, rb, fx);
-    lerp_vec3(top, bottom, fy)
-}
-
-fn direction_to_face_uv(direction: Vec3) -> (usize, f32, f32) {
-    let abs_x = direction.x.abs();
-    let abs_y = direction.y.abs();
-    let abs_z = direction.z.abs();
-    if abs_x >= abs_y && abs_x >= abs_z {
-        if direction.x > 0.0 {
-            (0, -direction.z / abs_x, -direction.y / abs_x)
-        } else {
-            (1, direction.z / abs_x, -direction.y / abs_x)
-        }
-    } else if abs_y >= abs_z {
-        if direction.y > 0.0 {
-            (2, direction.x / abs_y, direction.z / abs_y)
-        } else {
-            (3, direction.x / abs_y, -direction.z / abs_y)
-        }
-    } else if direction.z > 0.0 {
-        (4, direction.x / abs_z, -direction.y / abs_z)
-    } else {
-        (5, -direction.x / abs_z, -direction.y / abs_z)
-    }
-}
-
 fn cubemap_face_direction(face_index: usize, u: f32, v: f32) -> Vec3 {
     let normal = ENVIRONMENT_CUBEMAP_FACE_NORMALS[face_index.min(5)];
     let raw = match face_index {
@@ -405,15 +402,6 @@ fn cubemap_face_direction(face_index: usize, u: f32, v: f32) -> Vec3 {
     normalize_or_z(raw)
 }
 
-fn lerp_vec3(start: Vec3, end: Vec3, t: f32) -> Vec3 {
-    let clamped = t.clamp(0.0, 1.0);
-    Vec3::new(
-        start.x + (end.x - start.x) * clamped,
-        start.y + (end.y - start.y) * clamped,
-        start.z + (end.z - start.z) * clamped,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,6 +414,54 @@ mod tests {
             }
             face
         })
+    }
+
+    fn overbright_softbox_cubemap() -> [Vec<f32>; 6] {
+        let resolution = 64;
+        let mut faces = uniform_cubemap(0.02);
+        let face = &mut faces[4];
+        let index = ((32 * resolution + 32) * 4) as usize;
+        face[index] = 80.0;
+        face[index + 1] = 80.0;
+        face[index + 2] = 80.0;
+        faces
+    }
+
+    fn bright_outlier_fraction(face_pixels: &[f32], threshold: f32) -> f32 {
+        let pixels = face_pixels.len() / 4;
+        if pixels == 0 {
+            return 0.0;
+        }
+        let outliers = face_pixels
+            .chunks_exact(4)
+            .filter(|pixel| pixel[0].max(pixel[1]).max(pixel[2]) >= threshold)
+            .count();
+        outliers as f32 / pixels as f32
+    }
+
+    fn max_rgb(face_pixels: &[f32]) -> f32 {
+        face_pixels
+            .chunks_exact(4)
+            .map(|pixel| pixel[0].max(pixel[1]).max(pixel[2]))
+            .fold(0.0_f32, f32::max)
+    }
+
+    #[test]
+    fn ggx_prefilter_suppresses_tiny_hdr_firefly_outliers() {
+        let source = overbright_softbox_cubemap();
+        let mips = prefilter_specular_cubemap_mips_with_quality(
+            &source,
+            64,
+            5,
+            EnvironmentPrefilterQuality::InteractiveWebGl2,
+        );
+        let mip_1_face = &mips[1][4];
+        let max_firefly = max_rgb(mip_1_face);
+        let bright_fraction = bright_outlier_fraction(mip_1_face, 4.0);
+        assert!(
+            max_firefly <= 8.0 && bright_fraction <= 0.005,
+            "GGX source prefilter must blur tiny HDR softboxes instead of baking firefly texels into mip 1; max={max_firefly:.3}, bright_fraction={bright_fraction:.5}"
+        );
     }
 
     #[test]
@@ -536,22 +572,6 @@ mod tests {
             assert!(
                 seen.insert((a.to_bits(), b.to_bits())),
                 "Hammersley sequence must produce unique 2D samples within {count}"
-            );
-        }
-    }
-
-    #[test]
-    fn direction_to_face_uv_round_trips_face_centers() {
-        for face in 0..6 {
-            let direction = cubemap_face_direction(face, 0.0, 0.0);
-            let (decoded_face, u, v) = direction_to_face_uv(direction);
-            assert_eq!(
-                decoded_face, face,
-                "direction at face {face} center must decode back to that face, got {decoded_face}"
-            );
-            assert!(
-                u.abs() < 1e-4 && v.abs() < 1e-4,
-                "face center should round-trip to (0, 0) UV; got ({u}, {v}) for face {face}"
             );
         }
     }

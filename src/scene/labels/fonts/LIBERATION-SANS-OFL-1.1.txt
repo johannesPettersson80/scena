@@ -2,6 +2,12 @@ Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: Liberation Fonts
 Source: https://github.com/liberationfonts
 
+Embedded subset:
+ src/scene/labels/fonts/ScenaBasicLatin-Regular.ttf is a basic-Latin subset
+ derived from Liberation Sans Regular using fontTools subset with obfuscated
+ font names. The renderer rejects non-basic-Latin default-label text, so the
+ embedded derivative intentionally carries only U+0020..U+007E.
+
 Files: *
 Copyright:
  Digitized data copyright (c) 2010 Google Corporation with Reserved Font Arimo, Tinos and Cousine.

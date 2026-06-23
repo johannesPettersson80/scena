@@ -127,6 +127,7 @@ pub(crate) fn run_recipe_render_command(args: &[String]) -> Result<CliOutcome, S
         inspection: &inspection,
         introspection: &introspection,
         detail: args.detail,
+        recipe_path: &args.recipe,
         recipe_dir: args
             .recipe
             .parent()

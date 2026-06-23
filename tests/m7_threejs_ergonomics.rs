@@ -2,6 +2,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 use std::fs;
 use std::path::Path;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
@@ -20,6 +21,7 @@ use scena::{
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 static ALLOCATION_COUNT: AtomicUsize = AtomicUsize::new(0);
+static ALLOCATION_MEASUREMENT_LOCK: Mutex<()> = Mutex::new(());
 
 thread_local! {
     static COUNT_ALLOCATIONS: Cell<bool> = const { Cell::new(false) };
@@ -2853,6 +2855,33 @@ fn m7_viewer_operations_dirty_prepare_without_persistent_resource_growth() {
         controls.handle_pointer(PointerEvent::primary_pressed(32.0, 32.0)),
         scena::OrbitControlAction::BeginOrbit
     );
+    assert_eq!(
+        controls.handle_pointer(PointerEvent::moved(33.0, 31.5, 1.0, -0.5)),
+        scena::OrbitControlAction::Orbit
+    );
+    let _allocation_guard = ALLOCATION_MEASUREMENT_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut warmed_nonzero_orbit_path = false;
+    for step in 0..8 {
+        let x = 33.5 + step as f32 * 0.125;
+        let y = 31.25 - step as f32 * 0.0625;
+        set_allocation_counting(true);
+        ALLOCATION_COUNT.store(0, Ordering::Relaxed);
+        let warm_action = controls.handle_pointer(PointerEvent::moved(x, y, 1.0, -0.5));
+        let warm_allocations = ALLOCATION_COUNT.load(Ordering::Relaxed);
+        set_allocation_counting(false);
+        assert_eq!(warm_action, scena::OrbitControlAction::Orbit);
+        if warm_allocations == 0 {
+            warmed_nonzero_orbit_path = true;
+            break;
+        }
+    }
+    assert!(
+        warmed_nonzero_orbit_path,
+        "steady orbit pointer handling kept allocating during warm-up"
+    );
+
     set_allocation_counting(true);
     ALLOCATION_COUNT.store(0, Ordering::Relaxed);
     let control_action = controls.handle_pointer(PointerEvent::moved(34.0, 31.0, 2.0, -1.0));
@@ -3193,6 +3222,9 @@ fn benchmark_m7_workflow(
     workflow: &'static str,
     operation: impl FnOnce() -> M7BenchmarkOutcome,
 ) -> serde_json::Value {
+    let _allocation_guard = ALLOCATION_MEASUREMENT_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     set_allocation_counting(true);
     ALLOCATION_COUNT.store(0, Ordering::Relaxed);
     let start = Instant::now();

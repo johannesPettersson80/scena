@@ -503,6 +503,39 @@ async function runPageProof(page) {
         rgba8_byte_length: capture.rgba8.length,
         rgba8_fnv1a64: fnv1a64(capture.rgba8),
       });
+      const captureDeltaSummary = (before, after) => {
+        const beforeDescriptor = JSON.parse(before.descriptorJson);
+        const afterDescriptor = JSON.parse(after.descriptorJson);
+        if (
+          beforeDescriptor.width !== afterDescriptor.width ||
+          beforeDescriptor.height !== afterDescriptor.height
+        ) {
+          throw new Error(
+            `capture dimensions differ: ${beforeDescriptor.width}x${beforeDescriptor.height} vs ${afterDescriptor.width}x${afterDescriptor.height}`,
+          );
+        }
+        let totalRgbDelta = 0;
+        let changedPixels = 0;
+        let maxRgbDelta = 0;
+        for (let index = 0; index < before.rgba8.length; index += 4) {
+          const delta =
+            Math.abs(before.rgba8[index] - after.rgba8[index]) +
+            Math.abs(before.rgba8[index + 1] - after.rgba8[index + 1]) +
+            Math.abs(before.rgba8[index + 2] - after.rgba8[index + 2]);
+          totalRgbDelta += delta;
+          maxRgbDelta = Math.max(maxRgbDelta, delta);
+          if (delta > 3) changedPixels += 1;
+        }
+        const pixelCount = beforeDescriptor.width * beforeDescriptor.height;
+        return {
+          width: beforeDescriptor.width,
+          height: beforeDescriptor.height,
+          changed_pixels: changedPixels,
+          changed_fraction: changedPixels / pixelCount,
+          mean_rgb_delta: totalRgbDelta / (pixelCount * 3),
+          max_rgb_delta: maxRgbDelta,
+        };
+      };
       const nodeByHandle = (report, handle) =>
         report && Array.isArray(report.nodes)
           ? report.nodes.find((node) => node.handle === handle)
@@ -1237,14 +1270,31 @@ async function runPageProof(page) {
         phase2OffSamples.push(samplePrepareRender(`phase2_post_off_${index}`));
         await waitForCanvasPresent();
       }
-      const phase2OffCapture = captureSummary(host.capture());
+      const phase2OffRawCapture = host.capture();
+      const phase2OffCapture = captureSummary(phase2OffRawCapture);
       const phase2OffStats = JSON.parse(host.statsJson());
+
+      const phase2SsaoConfig = JSON.stringify({
+        radius_px: 3,
+        intensity: 0.45,
+        depth_threshold: 0.025,
+      });
+      host.setAntiAliasing("none");
+      host.setBloom(null);
+      host.setAmbientOcclusion(phase2SsaoConfig);
+      const phase2SsaoOnlyWarmup = samplePrepareRender("phase2_ssao_only_warmup");
+      await waitForCanvasPresent();
+      const phase2SsaoOnlyRawCapture = host.capture();
+      const phase2SsaoOnlyCapture = captureSummary(phase2SsaoOnlyRawCapture);
+      const phase2SsaoOnlyStats = JSON.parse(host.statsJson());
+      const phase2SsaoOnlyDelta = captureDeltaSummary(
+        phase2OffRawCapture,
+        phase2SsaoOnlyRawCapture,
+      );
 
       host.setAntiAliasing("fxaa");
       host.setBloom(JSON.stringify({ threshold_srgb: 208, intensity: 0.28, radius_px: 3 }));
-      host.setAmbientOcclusion(
-        JSON.stringify({ radius_px: 3, intensity: 0.45, depth_threshold: 0.025 }),
-      );
+      host.setAmbientOcclusion(phase2SsaoConfig);
       const phase2OnWarmup = samplePrepareRender("phase2_post_on_warmup");
       await waitForCanvasPresent();
       const phase2OnSamples = [];
@@ -1785,6 +1835,10 @@ async function runPageProof(page) {
           off_median_ms: median(phase2OffSamples.map((sample) => sample.total_ms)),
           on_median_ms: median(phase2OnSamples.map((sample) => sample.total_ms)),
           off_capture: phase2OffCapture,
+          ssao_only_warmup: phase2SsaoOnlyWarmup,
+          ssao_only_capture: phase2SsaoOnlyCapture,
+          ssao_only_delta: phase2SsaoOnlyDelta,
+          ssao_only_stats: phase2SsaoOnlyStats,
           on_capture: phase2OnCapture,
           off_stats: phase2OffStats,
           on_stats: phase2OnStats,
@@ -2386,6 +2440,20 @@ function assertProof(pageProof, screenshot) {
     {
       off: phase2.off_capture.rgba8_fnv1a64,
       on: phase2.on_capture.rgba8_fnv1a64,
+    },
+  );
+  check(
+    "phase2_ssao_only_changes_rendered_pixels",
+    phase2.ssao_only_stats.ambient_occlusion_passes === 1 &&
+      phase2.ssao_only_stats.bloom_passes === 0 &&
+      phase2.ssao_only_stats.fxaa_passes === 0 &&
+      phase2.ssao_only_delta.changed_pixels > 16 &&
+      phase2.ssao_only_delta.max_rgb_delta > 3,
+    {
+      stats: phase2.ssao_only_stats,
+      delta: phase2.ssao_only_delta,
+      off: phase2.off_capture.rgba8_fnv1a64,
+      ssao_only: phase2.ssao_only_capture.rgba8_fnv1a64,
     },
   );
   const phase3 = pageProof.phase3_world_strokes;

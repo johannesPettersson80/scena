@@ -62,7 +62,11 @@ impl GpuDeviceState {
                 Some(surface.config.format),
             ));
         }
-        let color_management = post_color_management_uniform(color_management, post_enabled);
+        let mut color_management = post_color_management_uniform(color_management, post_enabled);
+        if let Some(reflections) = post_settings.reflections() {
+            color_management[2] = reflections.strength();
+            color_management[3] = reflections.roughness();
+        }
         let (clipping_planes, clipping_control) =
             encode_clipping_uniform(clipping_planes, section_box);
         self.queue.write_buffer(
@@ -161,6 +165,7 @@ impl GpuDeviceState {
                         identity_instance: resources.identity_instance,
                         transmission_view: &resources.transmission.view,
                         transmission_pipelines: resources.transmission.pipelines.refs(),
+                        force_scene_color_pass: post_settings.reflections().is_some(),
                         clear_color: wgpu_clear_color(background_color),
                         base_label: "scena.browser.proof_post_scene_pass",
                         draw_submissions: &mut draw_submissions,
@@ -179,7 +184,7 @@ impl GpuDeviceState {
                     &mut encoder,
                     OverlayPasses {
                         view: post::output_view(post_resources, output),
-                        depth_view: resources.depth_prepass.as_ref().map(|d| &d.view),
+                        depth_view: None,
                         output_bind_group: &resources.output_bind_group,
                         draw_bind_group: &resources.draw_bind_group,
                         stroke_resources: resources.strokes.as_ref(),
@@ -310,6 +315,7 @@ impl GpuDeviceState {
                 identity_instance: resources.identity_instance,
                 transmission_view: &resources.transmission.view,
                 transmission_pipelines: resources.transmission.pipelines.refs(),
+                force_scene_color_pass: post_settings.reflections().is_some(),
                 clear_color: wgpu_clear_color(background_color),
                 base_label,
                 draw_submissions: &mut draw_submissions,

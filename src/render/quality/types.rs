@@ -98,9 +98,34 @@ pub struct RenderQualityLineMetrics {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RenderQualityGridLineMetrics {
+    pub intermediate_px_per_edge: f32,
+    pub unique_luma_levels: usize,
+    pub transition_width_px: f32,
+    pub halo_overshoot: f32,
+    pub contrast_range: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RenderQualityAreaLightMetrics {
+    pub shadow_contrast: f32,
+    pub penumbra_width_px: f32,
+    pub penumbra_luma_levels: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RenderQualityGeometryEdgeMetrics {
     pub intermediate_edge_fraction: f32,
     pub edge_candidate_fraction: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RenderQualityDepthOfFieldMetrics {
+    pub source_background_sobel: f32,
+    pub focused_background_sobel: f32,
+    pub background_sobel_drop: f32,
+    pub background_sobel_drop_fraction: f32,
+    pub focal_mean_delta: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -185,7 +210,7 @@ impl RenderQualityProfile {
 
     pub const fn default_min_geometry_intermediate_edge_fraction(self) -> f32 {
         match self {
-            Self::Product => 0.30,
+            Self::Product => 0.25,
             Self::Documentation | Self::Cad | Self::Twin => 0.02,
             Self::Dashboard => 0.01,
         }

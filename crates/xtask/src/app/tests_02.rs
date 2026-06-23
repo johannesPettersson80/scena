@@ -190,6 +190,51 @@ pub(crate) fn prepare_asset_contracts_are_source_enforced() {
 }
 
 #[test]
+pub(crate) fn doctor_rejects_shipped_area_light_claims_without_ltc_or_light_assignment_source() {
+    let root = repo_root().expect("test runs inside the scena workspace");
+    let fixture_root = root.join("target/xtask-doctor-regressions/area-light-honesty");
+    fs::create_dir_all(fixture_root.join("docs/checklists")).expect("checklist fixture dir");
+    fs::create_dir_all(fixture_root.join("src/render/prepare")).expect("render fixture dir");
+    fs::write(
+        fixture_root.join("docs/checklists/stunning-renders-and-performance.md"),
+        r#"# Stunning renders + performance
+
+## A3 -- Soft area lights (LTC rect/disc/sphere) -- [shipped]
+
+- [x] LTC (linearly-transformed cosines) rect/disc/sphere area lights, with soft-shadow support.
+
+## B2 -- Clustered / tiled light culling -- [shipped]
+
+- [x] Cluster/tile light assignment so many-light scenes scale.
+"#,
+    )
+    .expect("checklist fixture");
+    fs::write(
+        fixture_root.join("src/render/prepare/lighting.rs"),
+        "pub const AREA_LIGHT_SAMPLE_COUNT: usize = 16;\npub fn finite_emitter_samples() {}\n",
+    )
+    .expect("finite-emitter render fixture");
+    let mut findings = Vec::new();
+
+    check_area_light_acceptance_honesty(&fixture_root, &mut findings);
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-PREPARE-AREA-LIGHT-HONESTY"
+                && finding.message.contains("A3 cannot be marked shipped")
+        }),
+        "doctor must reject a shipped A3/LTC claim without a dedicated LTC source marker: {findings:?}",
+    );
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "ARCH-PREPARE-AREA-LIGHT-HONESTY"
+                && finding.message.contains("B2 cannot be marked shipped")
+        }),
+        "doctor must reject a shipped B2 clustered/tiled claim without light-assignment source: {findings:?}",
+    );
+}
+
+#[test]
 pub(crate) fn particle_prepare_allocation_contract_is_source_enforced() {
     let root = repo_root().expect("test runs inside the scena workspace");
     let mut findings = Vec::new();

@@ -223,11 +223,26 @@ pub(crate) fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mu
             "pub(in crate::render) fn prefilter_specular_cubemap_mips",
             "pub(in crate::render) fn build_brdf_lut",
             "fn integrate_ggx_specular",
+            "fn source_mip_level_for_sample",
+            "source_mip_floor_for_prefilter_mip",
+            "ggx_prefilter_suppresses_tiny_hdr_firefly_outliers",
             "fn integrate_brdf_lut_cell",
             "fn importance_sample_ggx_local",
             "fn hammersley_2d",
             "fn radical_inverse_van_der_corput",
             "fn geometry_smith_ggx",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "src/render/prepare/environment_prefilter/source_mips.rs",
+        &[
+            "sample_source_cubemap_lod",
+            "build_source_cubemap_mip_chain",
+            "source_mip_resolution",
+            "direction_to_face_uv_round_trips_face_centers",
         ],
     );
     require_contains(
@@ -264,8 +279,15 @@ pub(crate) fn check_scene_light_contracts(root: &Path, findings: &mut Vec<Findin
             "DirectionalLight,",
             "LightBuilder,",
             "StudioLightingHandles",
-            "NodeKind::Light",
+            "Light(LightKey)",
         ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-SCENE-LIGHTS",
+        "src/scene/lights.rs",
+        &["NodeKind::Light"],
     );
     require_contains(
         root,
@@ -319,7 +341,7 @@ pub(crate) fn check_direct_light_shading_contracts(root: &Path, findings: &mut V
         root,
         findings,
         "ARCH-DIRECT-LIGHT-SHADING",
-        "src/scene.rs",
+        "src/scene/render_nodes.rs",
         &[
             "impl Iterator<Item = (NodeKey, LightKey, Light, Transform)>",
             "self.world_transform(node_key)",

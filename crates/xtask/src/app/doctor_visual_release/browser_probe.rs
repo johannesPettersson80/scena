@@ -12,21 +12,77 @@ pub(crate) fn check_m6_browser_renderer_probe(root: &Path, findings: &mut Vec<Fi
         findings,
         "VISUAL-BROWSER-M6",
         "package.json",
-        &["\"browser:scene-host-proof\": \"node tests/browser/scene_host_browser_proof.js\""],
+        &[
+            "\"browser:scene-host-proof\": \"node tests/browser/scene_host_browser_proof.js\"",
+            "\"cloudflare:demo\": \"node scripts/probe_cloudflare_demo.js\"",
+            "\"cloudflare:materials\": \"node scripts/probe_cloudflare_material_presets.mjs\"",
+        ],
     );
     require_contains(
         root,
         findings,
         "VISUAL-BROWSER-M6",
         ".github/workflows/ci.yml",
-        &["npm run browser:scene-host-proof"],
+        &[
+            "npm run browser:scene-host-proof",
+            "npm run demo:build",
+            "npm run cloudflare:demo -- http://127.0.0.1:18104/index.html",
+            "npm run cloudflare:materials",
+        ],
     );
     require_contains(
         root,
         findings,
         "VISUAL-BROWSER-M6",
         ".github/workflows/release.yml",
-        &["npm run browser:scene-host-proof"],
+        &[
+            "npm run browser:scene-host-proof",
+            "npm run demo:build",
+            "npm run cloudflare:demo -- http://127.0.0.1:18104/index.html",
+            "npm run cloudflare:materials",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "scripts/probe_cloudflare_demo.js",
+        &[
+            "assertConnectorRenderedPixelsMoveDuringReplay",
+            "assertDeploymentBundleConsistency",
+            "deployed WASM checksum mismatch",
+            "connector replay marker motion is not enough",
+            "rendered connector pixels did not move",
+            "changedPixels >= 128",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "tests/assets/browser-proof/round-e-cloudflare-material-proof.json",
+        &[
+            "\"proof_class\": \"round-e-cloudflare-material-proof\"",
+            "\"url\": \"https://scena-demo.pages.dev/proof/?sample=material-presets\"",
+            "\"status\": \"pass\"",
+            "\"checksum_matches_build\": true",
+            "\"per_material\"",
+            "\"neighbor_pairs\"",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "VISUAL-BROWSER-M6",
+        "tests/browser/scene_host_browser_proof.js",
+        &[
+            "phase2_ssao_only_changes_rendered_pixels",
+            "ssao_only_delta",
+            "phase2SsaoOnlyDelta",
+            "ambient_occlusion_passes === 1",
+            "bloom_passes === 0",
+            "fxaa_passes === 0",
+        ],
     );
     check_raw_webgl2_renderer_removed(root, findings);
     require_contains(

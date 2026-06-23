@@ -12,9 +12,14 @@ mod camera;
 mod color_contract;
 mod cpu;
 mod cpu_labels;
+mod cpu_overlay;
+mod cpu_reflections;
 mod cpu_render;
+mod cpu_resolve;
 mod cpu_strokes;
 mod culling;
+#[cfg(test)]
+mod depth_prepass_tests;
 mod environment_cache;
 mod exposure;
 mod gpu;
@@ -30,6 +35,7 @@ pub mod quality;
 mod reporting;
 #[cfg(feature = "inspection")]
 mod screen_bounds;
+mod screen_space_reflections;
 mod settings;
 // PreparedSceneState stores clipping_planes: Vec<ClippingPlane> in state.rs.
 mod state;
@@ -57,11 +63,12 @@ use self::gpu::GpuDeviceState;
 pub use self::offscreen::{OffscreenTarget, PixelReadback};
 use self::output::OutputTransform;
 pub use self::output::{
-    AntiAliasing, OrderIndependentTransparencyConfig, PostBloomConfig, ReconstructionFilter,
-    ScreenSpaceAmbientOcclusionConfig, Tonemapper,
+    AntiAliasing, DepthOfFieldConfig, OrderIndependentTransparencyConfig, PostBloomConfig,
+    ReconstructionFilter, ScreenSpaceAmbientOcclusionConfig, Tonemapper,
 };
 #[doc(hidden)]
 pub use self::prepare::precompute_environment_sidecar;
+pub use self::screen_space_reflections::ScreenSpaceReflectionConfig;
 pub use self::settings::{Profile, Quality, RenderMode, RendererOptions};
 use self::state::{PreparedSceneState, RenderedFrameState};
 use self::target::{RasterTarget, backend_for_attached_surface, validate_target_size};
@@ -74,11 +81,15 @@ pub struct Renderer {
     fxaa_scratch: Vec<u8>,
     bloom_scratch: Vec<u8>,
     oit_scratch: Vec<cpu::OitAccumPixel>,
+    cpu_supersample_frame: Vec<u8>,
+    cpu_supersample_oit_scratch: Vec<cpu::OitAccumPixel>,
     // CPU-only linear scene-referred straight-alpha accumulator. Stores the source of truth
     // before every pixel is ACES+sRGB encoded into `frame`.
     linear_frame: Option<Vec<Color>>,
     // CPU-only camera-space depth buffer. Lower positive values are closer to the active camera.
     depth_frame: Option<Vec<f32>>,
+    cpu_supersample_linear_frame: Vec<Color>,
+    cpu_supersample_depth_frame: Vec<f32>,
     stats: RendererStats,
     diagnostics: Vec<Diagnostic>,
     capabilities: Capabilities,
@@ -89,6 +100,8 @@ pub struct Renderer {
     reconstruction_filter: ReconstructionFilter,
     order_independent_transparency: Option<OrderIndependentTransparencyConfig>,
     screen_space_ambient_occlusion: Option<ScreenSpaceAmbientOcclusionConfig>,
+    screen_space_reflections: Option<ScreenSpaceReflectionConfig>,
+    depth_of_field: Option<DepthOfFieldConfig>,
     bloom: Option<PostBloomConfig>,
     profile: Profile,
     quality: Quality,
@@ -108,6 +121,8 @@ pub struct Renderer {
     environment_revision: u64,
     target_revision: u64,
     prepare_telemetry: PrepareTelemetry,
+    #[cfg(test)]
+    depth_prepass_enabled_for_test: bool,
     #[cfg(not(target_arch = "wasm32"))]
     _headless_gpu_test_guard: Option<build::HeadlessGpuTestSupportGuard>,
     not_sync: PhantomData<Cell<()>>,
@@ -176,7 +191,10 @@ impl Renderer {
                 gpu_draw_submissions = gpu_result.draw_submissions;
                 self.stats.order_independent_transparency_passes = 0;
                 self.stats.ambient_occlusion_passes = gpu_result.post_counts.ambient_occlusion;
+                self.stats.screen_space_reflection_passes =
+                    gpu_result.post_counts.screen_space_reflections;
                 self.stats.bloom_passes = gpu_result.post_counts.bloom;
+                self.stats.depth_of_field_passes = gpu_result.post_counts.depth_of_field;
                 self.stats.fxaa_passes = gpu_result.post_counts.fxaa;
             } else {
                 let cpu_projection =
@@ -283,6 +301,8 @@ impl Renderer {
             self.anti_aliasing,
             self.bloom,
             self.screen_space_ambient_occlusion,
+            self.screen_space_reflections,
+            depth_of_field_post_config(self.depth_of_field, camera_projection),
         );
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -313,7 +333,7 @@ impl Renderer {
                 post_settings,
             )?;
             if scale > 1 {
-                cpu_render::downsample_rgba8_reconstruction_filter(
+                cpu_resolve::downsample_rgba8_reconstruction_filter(
                     target,
                     scale,
                     supersample_frame.as_slice(),
@@ -334,6 +354,7 @@ impl Renderer {
 
         #[cfg(target_arch = "wasm32")]
         {
+            let _ = target;
             let gpu = self
                 .gpu
                 .as_mut()
@@ -443,6 +464,20 @@ impl Renderer {
     }
 }
 
+fn depth_of_field_post_config(
+    config: Option<DepthOfFieldConfig>,
+    camera_projection: &camera::CameraProjection,
+) -> Option<output::DepthOfFieldPostConfig> {
+    let config = config?;
+    let focus_depth =
+        camera_projection.depth_buffer_for_camera_distance(config.focus_distance())?;
+    Some(output::DepthOfFieldPostConfig::new(
+        focus_depth,
+        config.aperture_f_stop(),
+        config.radius_px(),
+    ))
+}
+
 fn prepared_triangle_alias_count(prepared: &PreparedSceneState) -> u64 {
     let primitive_triangles = prepared.primitives.len() as u64;
     let instance_triangles = prepared
@@ -453,6 +488,8 @@ fn prepared_triangle_alias_count(prepared: &PreparedSceneState) -> u64 {
     primitive_triangles.saturating_add(instance_triangles)
 }
 
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod movement_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod phase4_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]

@@ -391,17 +391,5 @@ pub(in crate::scene::recipe::validation::authoring) fn finite_number_list(
 }
 
 pub(in crate::scene::recipe::validation::authoring) fn named_color(name: &str) -> Option<Color> {
-    match name {
-        "white" => Some(Color::WHITE),
-        "black" => Some(Color::BLACK),
-        "red" => Some(Color::RED),
-        "green" => Some(Color::GREEN),
-        "blue" => Some(Color::BLUE),
-        "yellow" => Some(Color::YELLOW),
-        "cyan" => Some(Color::CYAN),
-        "magenta" => Some(Color::MAGENTA),
-        "warm_white" => Some(Color::WARM_WHITE),
-        "cool_white" => Some(Color::COOL_WHITE),
-        _ => None,
-    }
+    Color::from_named_constant(name)
 }

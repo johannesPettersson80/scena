@@ -63,7 +63,11 @@ impl GpuDeviceState {
                 self.surface.as_ref().map(|surface| surface.config.format),
             ));
         }
-        let color_management = post_color_management_uniform(color_management, post_enabled);
+        let mut color_management = post_color_management_uniform(color_management, post_enabled);
+        if let Some(reflections) = post_settings.reflections() {
+            color_management[2] = reflections.strength();
+            color_management[3] = reflections.roughness();
+        }
         let scene_format = if post_enabled {
             post::scene_color_format()
         } else {
@@ -272,6 +276,7 @@ impl GpuDeviceState {
                 identity_instance: resources.identity_instance,
                 transmission_view: &resources.transmission.view,
                 transmission_pipelines: resources.transmission.pipelines.refs(),
+                force_scene_color_pass: post_settings.reflections().is_some(),
                 clear_color: wgpu_clear_color(background_color),
                 base_label,
                 draw_submissions: &mut draw_submissions,
@@ -366,6 +371,7 @@ impl GpuDeviceState {
                     identity_instance: resources.identity_instance,
                     transmission_view: &resources.transmission.view,
                     transmission_pipelines: resources.transmission.pipelines.refs(),
+                    force_scene_color_pass: false,
                     clear_color: wgpu_clear_color(background_color),
                     base_label: "scena.surface.render_pass",
                     draw_submissions: &mut draw_submissions,
