@@ -6,8 +6,8 @@ use crate::diagnostics::Backend;
 use crate::scene::Vec3;
 
 use super::environment_prefilter::{
-    EnvironmentPrefilterQuality, build_brdf_lut_with_sample_count,
-    prefilter_specular_cubemap_mips_with_quality,
+    EnvironmentPrefilterQuality, build_brdf_lut_with_sample_count, prefilter_lod_for_roughness,
+    prefilter_specular_cubemap_mips_with_quality, sample_prefiltered_cubemap_lod,
 };
 use super::pbr_contract::{PbrMaterial, environment_split_sum_contribution, reflect_vec3};
 
@@ -29,9 +29,8 @@ fn log_environment_step(label: &str, start_ms: f64) -> f64 {
 
 /// Number of GGX-prefiltered specular mip levels emitted for the
 /// environment cubemap. Mip 0 carries the source radiance; mips 1+
-/// integrate the GGX kernel at increasing roughness so the WGSL
-/// specular path can sample roughness via `prefilter_mip = roughness *
-/// (mip_count - 1)`.
+/// integrate the GGX kernel at roughness values from the shared
+/// low-roughness-concentrated prefilter mapping.
 pub(in crate::render) const PREFILTER_MIP_COUNT: u32 = 5;
 /// 2D BRDF LUT resolution. The split-sum approximation indexes the LUT
 /// by `(N·V, roughness)`; 64×64 is enough resolution for visually
@@ -438,52 +437,8 @@ fn sample_prefiltered_specular(
     direction: Vec3,
     roughness: f32,
 ) -> Vec3 {
-    let max_mip = cubemap.mip_count.saturating_sub(1);
-    let mip = (roughness.clamp(0.0, 1.0) * max_mip as f32).round() as u32;
-    sample_cubemap_mip(cubemap, mip, direction)
-}
-
-fn sample_cubemap_mip(cubemap: &PreparedEnvironmentCubemap, mip: u32, direction: Vec3) -> Vec3 {
-    let Some(faces) = cubemap.mips.get(mip as usize) else {
-        return Vec3::ZERO;
-    };
-    let resolution = (cubemap.resolution >> mip).max(1);
-    let (face_index, u, v) = cubemap_face_uv(direction);
-    let x = (u.clamp(0.0, 1.0) * (resolution - 1) as f32).round() as u32;
-    let y = (v.clamp(0.0, 1.0) * (resolution - 1) as f32).round() as u32;
-    let pixel = ((y * resolution + x) * 4) as usize;
-    let face = &faces[face_index];
-    if pixel + 2 >= face.len() {
-        return Vec3::ZERO;
-    }
-    Vec3::new(face[pixel], face[pixel + 1], face[pixel + 2])
-}
-
-fn cubemap_face_uv(direction: Vec3) -> (usize, f32, f32) {
-    let ax = direction.x.abs();
-    let ay = direction.y.abs();
-    let az = direction.z.abs();
-    let (face, sc, tc, major) = if ax >= ay && ax >= az {
-        if direction.x >= 0.0 {
-            (0, -direction.z, -direction.y, ax)
-        } else {
-            (1, direction.z, -direction.y, ax)
-        }
-    } else if ay >= ax && ay >= az {
-        if direction.y >= 0.0 {
-            (2, direction.x, direction.z, ay)
-        } else {
-            (3, direction.x, -direction.z, ay)
-        }
-    } else if direction.z >= 0.0 {
-        (4, direction.x, -direction.y, az)
-    } else {
-        (5, -direction.x, -direction.y, az)
-    };
-    if major <= f32::EPSILON || !major.is_finite() {
-        return (4, 0.5, 0.5);
-    }
-    (face, 0.5 * (sc / major + 1.0), 0.5 * (tc / major + 1.0))
+    let lod = prefilter_lod_for_roughness(roughness, cubemap.mip_count);
+    sample_prefiltered_cubemap_lod(&cubemap.mips, direction, lod)
 }
 
 fn sample_brdf_lut(

@@ -1839,6 +1839,11 @@ fn write_ergonomic_product_recipe(dir: &Path, name: &str) -> (PathBuf, PathBuf) 
 
 #[cfg(feature = "scene-host")]
 fn write_chrome_ibl_firefly_recipe(dir: &Path, name: &str) -> (PathBuf, PathBuf) {
+    write_chrome_ibl_recipe(dir, name, 0.05)
+}
+
+#[cfg(feature = "scene-host")]
+fn write_chrome_ibl_recipe(dir: &Path, name: &str, roughness: f64) -> (PathBuf, PathBuf) {
     let recipe_path = dir.join(format!("{name}.recipe.json"));
     let png_path = dir.join(format!("{name}.png"));
     fs::write(
@@ -1865,7 +1870,7 @@ fn write_chrome_ibl_firefly_recipe(dir: &Path, name: &str) -> (PathBuf, PathBuf)
                     "kind": "pbr_metallic_roughness",
                     "base_color": "chrome",
                     "metallic": 1.0,
-                    "roughness": 0.05
+                    "roughness": roughness
                 }
             ],
             "nodes": [
@@ -1919,6 +1924,77 @@ fn write_chrome_ibl_firefly_recipe(dir: &Path, name: &str) -> (PathBuf, PathBuf)
         .expect("chrome IBL firefly recipe serializes"),
     )
     .expect("chrome IBL firefly recipe writes");
+    (recipe_path, png_path)
+}
+
+#[cfg(feature = "scene-host")]
+fn write_chrome_ibl_panel_recipe(dir: &Path, name: &str, roughness: f64) -> (PathBuf, PathBuf) {
+    let recipe_path = dir.join(format!("{name}.recipe.json"));
+    let png_path = dir.join(format!("{name}.png"));
+    fs::write(
+        &recipe_path,
+        serde_json::to_string_pretty(&json!({
+            "schema": "scena.scene_recipe.v1",
+            "colors": { "chrome": "#F2F4F8" },
+            "geometries": [
+                {
+                    "id": "chrome_geo",
+                    "primitive": {
+                        "kind": "box",
+                        "size": [1.05, 0.74, 0.035]
+                    }
+                }
+            ],
+            "materials": [
+                {
+                    "id": "chrome_mat",
+                    "kind": "pbr_metallic_roughness",
+                    "base_color": "chrome",
+                    "metallic": 1.0,
+                    "roughness": roughness,
+                    "double_sided": false
+                }
+            ],
+            "nodes": [
+                {
+                    "id": "chrome_panel",
+                    "geometry": "chrome_geo",
+                    "material": "chrome_mat",
+                    "transform": {
+                        "kind": "trs",
+                        "rotation_degrees": [0.0, -12.0, 0.0]
+                    }
+                }
+            ],
+            "scene": {
+                "background": { "kind": "white" },
+                "environment": {
+                    "kind": "uri",
+                    "uri": "tests/assets/environment/polyhaven/studio_small_03_1k.hdr"
+                }
+            },
+            "render": {
+                "anti_aliasing": "none",
+                "tonemapper": "standard",
+                "exposure_ev": 0.0
+            },
+            "cameras": [{
+                "id": "main",
+                "kind": "perspective",
+                "active": true,
+                "fov_degrees": 30.0,
+                "transform": {
+                    "kind": "look_at",
+                    "eye": [0.0, 0.0, 2.4],
+                    "target": "chrome_panel"
+                }
+            }],
+            "capture": { "width": 240, "height": 180 },
+            "expect": {}
+        }))
+        .expect("chrome IBL panel recipe serializes"),
+    )
+    .expect("chrome IBL panel recipe writes");
     (recipe_path, png_path)
 }
 
@@ -2906,6 +2982,42 @@ fn run_recipe_render_verify(
 }
 
 #[cfg(feature = "scene-host")]
+fn run_recipe_render_introspect(
+    recipe_path: &Path,
+    png_path: &Path,
+    use_gpu: bool,
+) -> serde_json::Value {
+    let mut args = vec!["recipe", "render", path_str(recipe_path)];
+    if use_gpu {
+        args.push("--gpu");
+    }
+    args.extend(["--introspect", "--out", path_str(png_path)]);
+    let mut command = Command::new(env!("CARGO_BIN_EXE_scena"));
+    if use_gpu {
+        configure_command_for_lavapipe(&mut command);
+    }
+    let output = command
+        .args(args)
+        .output()
+        .expect("scena recipe render introspection command runs");
+    assert!(
+        output.status.success(),
+        "recipe render should pass, stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr(&output)
+    );
+    let report = json_report(&output);
+    assert_eq!(report["schema"], "scena.render_introspection.v1");
+    if use_gpu {
+        assert_eq!(
+            report["capabilities"]["backend"], "headless_gpu",
+            "GPU chrome parity proof must use the GPU backend, not a fallback: {report:#}"
+        );
+    }
+    report
+}
+
+#[cfg(feature = "scene-host")]
 fn run_recipe_render_verify_expect_failure(
     recipe_path: &Path,
     png_path: &Path,
@@ -3812,6 +3924,132 @@ fn scena_recipe_render_verify_chrome_ibl_fireflies_are_filtered_on_cpu_and_gpu()
         ),
     )
     .expect("chrome IBL firefly metrics write");
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_chrome_ibl_near_mirror_matches_cpu_and_keeps_detail_on_gpu() {
+    // Doctor pin: near-mirror chrome must not blend low roughness into the
+    // first heavily blurred prefilter mip. This compares the real CLI recipe
+    // output on CPU and lavapipe HeadlessGpu instead of accepting verifier
+    // ok:true, which did not catch the washed GPU reflection.
+    let dir = artifact_dir("recipe-render-chrome-ibl-near-mirror-parity");
+    let (cpu_recipe, cpu_png) =
+        write_chrome_ibl_panel_recipe(&dir, "chrome-ibl-panel-cpu-r005", 0.05);
+    let (gpu_recipe, gpu_png) =
+        write_chrome_ibl_panel_recipe(&dir, "chrome-ibl-panel-gpu-r005", 0.05);
+    let (gpu_sphere_recipe, gpu_sphere_png) =
+        write_chrome_ibl_recipe(&dir, "chrome-ibl-sphere-gpu-r005", 0.05);
+    let (gpu_mirror_recipe, gpu_mirror_png) =
+        write_chrome_ibl_recipe(&dir, "chrome-ibl-sphere-gpu-r000", 0.0);
+    let (gpu_rough_recipe, gpu_rough_png) =
+        write_chrome_ibl_recipe(&dir, "chrome-ibl-sphere-gpu-r050", 0.50);
+
+    let cpu_report = run_recipe_render_introspect(&cpu_recipe, &cpu_png, false);
+    let gpu_report = run_recipe_render_introspect(&gpu_recipe, &gpu_png, true);
+    let gpu_sphere_report = run_recipe_render_introspect(&gpu_sphere_recipe, &gpu_sphere_png, true);
+    let gpu_mirror_report = run_recipe_render_introspect(&gpu_mirror_recipe, &gpu_mirror_png, true);
+    let gpu_rough_report = run_recipe_render_introspect(&gpu_rough_recipe, &gpu_rough_png, true);
+    let cpu = decode_png_rgba8(&cpu_png);
+    let gpu = decode_png_rgba8(&gpu_png);
+    let gpu_sphere = decode_png_rgba8(&gpu_sphere_png);
+    let gpu_mirror = decode_png_rgba8(&gpu_mirror_png);
+    let gpu_rough = decode_png_rgba8(&gpu_rough_png);
+    let panel_region = intersect_regions(
+        content_region_from_introspection_report(&cpu_report),
+        content_region_from_introspection_report(&gpu_report),
+    )
+    .expect("CPU/GPU chrome panel regions must overlap");
+    let panel_interior = shrink_region(panel_region, 18)
+        .expect("chrome panel should have a stable interior parity region");
+    let sphere_region = intersect_regions(
+        content_region_from_introspection_report(&gpu_sphere_report),
+        content_region_from_introspection_report(&gpu_mirror_report),
+    )
+    .expect("GPU roughness sweep regions must overlap");
+    let sphere_region = intersect_regions(
+        sphere_region,
+        content_region_from_introspection_report(&gpu_rough_report),
+    )
+    .expect("GPU roughness blur region must overlap near-mirror region");
+
+    let parity_rmse = frame_rmse_in_region(&cpu.rgba8, &gpu.rgba8, cpu.width, panel_interior);
+    let gpu_sobel = sobel_luminance_energy_in_region(
+        &gpu_sphere.rgba8,
+        gpu_sphere.width,
+        gpu_sphere.height,
+        sphere_region,
+    );
+    let gpu_mirror_sobel = sobel_luminance_energy_in_region(
+        &gpu_mirror.rgba8,
+        gpu_mirror.width,
+        gpu_mirror.height,
+        sphere_region,
+    );
+    let gpu_rough_sobel = sobel_luminance_energy_in_region(
+        &gpu_rough.rgba8,
+        gpu_rough.width,
+        gpu_rough.height,
+        sphere_region,
+    );
+    let cpu_chrome = chrome_region_metrics(&cpu, panel_interior);
+    let gpu_chrome = chrome_region_metrics(&gpu, panel_interior);
+    let gpu_sphere_chrome = chrome_region_metrics(&gpu_sphere, sphere_region);
+    let gpu_mirror_delta = frame_rmse_in_region(
+        &gpu_sphere.rgba8,
+        &gpu_mirror.rgba8,
+        gpu_sphere.width,
+        sphere_region,
+    );
+    let gpu_rough_delta = frame_rmse_in_region(
+        &gpu_rough.rgba8,
+        &gpu_mirror.rgba8,
+        gpu_rough.width,
+        sphere_region,
+    );
+    fs::write(
+        dir.join("chrome-ibl-near-mirror-parity.json"),
+        format!(
+            "{{\n  \"schema\": \"scena.chrome_ibl_near_mirror_parity_probe.v1\",\n  \"panel_cpu_gpu_rmse\": {:.5},\n  \"sphere_gpu_r005_r000_rmse\": {:.5},\n  \"sphere_gpu_r050_r000_rmse\": {:.5},\n  \"gpu_sobel_energy\": {:.5},\n  \"gpu_mirror_sobel_energy\": {:.5},\n  \"gpu_rough_sobel_energy\": {:.5},\n  \"cpu_panel_luminance_range\": {:.5},\n  \"gpu_panel_luminance_range\": {:.5},\n  \"gpu_sphere_luminance_range\": {:.5},\n  \"panel_region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }},\n  \"sphere_region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}\n}}\n",
+            parity_rmse,
+            gpu_mirror_delta,
+            gpu_rough_delta,
+            gpu_sobel,
+            gpu_mirror_sobel,
+            gpu_rough_sobel,
+            cpu_chrome.luminance_range,
+            gpu_chrome.luminance_range,
+            gpu_sphere_chrome.luminance_range,
+            panel_interior.x,
+            panel_interior.y,
+            panel_interior.width,
+            panel_interior.height,
+            sphere_region.x,
+            sphere_region.y,
+            sphere_region.width,
+            sphere_region.height
+        ),
+    )
+    .expect("near-mirror chrome parity metrics write");
+
+    assert!(
+        parity_rmse <= 0.055,
+        "CPU and GPU near-mirror chrome panel interior must match within a tight native-resolution tolerance; rmse={parity_rmse:.5}, cpu_range={:?}, gpu_range={:?}, region={panel_interior:?}, cpu_png={cpu_png:?}, gpu_png={gpu_png:?}",
+        cpu_chrome,
+        gpu_chrome
+    );
+    assert!(
+        gpu_mirror_delta <= 0.010 && gpu_sobel >= gpu_mirror_sobel * 0.94,
+        "GPU roughness 0.05 chrome sphere must retain near-mirror high-frequency reflection detail; roughness_delta={gpu_mirror_delta:.5}, gpu_sobel={gpu_sobel:.5}, gpu_mirror_sobel={gpu_mirror_sobel:.5}, gpu_png={gpu_sphere_png:?}, mirror_png={gpu_mirror_png:?}"
+    );
+    assert!(
+        gpu_sphere_chrome.luminance_range >= 0.92,
+        "GPU near-mirror chrome sphere must not wash out reflection contrast; gpu={gpu_sphere_chrome:?}, region={sphere_region:?}"
+    );
+    assert!(
+        gpu_rough_delta >= 0.10,
+        "GPU rough chrome must still sample distinct blurred prefilter mips, not force every material to mip0; rough_delta={gpu_rough_delta:.5}, mirror_delta={gpu_mirror_delta:.5}, rough_png={gpu_rough_png:?}"
+    );
 }
 
 #[cfg(feature = "scene-host")]
@@ -9002,6 +9240,31 @@ fn node_region_from_composition_report(
 }
 
 #[cfg(feature = "scene-host")]
+fn content_region_from_introspection_report(report: &serde_json::Value) -> QualityPixelRegion {
+    let rect = &report["content_bbox_css_px"];
+    let min_x = rect["min_x"].as_f64().expect("content bbox min_x");
+    let min_y = rect["min_y"].as_f64().expect("content bbox min_y");
+    let max_x = rect["max_x"].as_f64().expect("content bbox max_x");
+    let max_y = rect["max_y"].as_f64().expect("content bbox max_y");
+    let width = report["artifacts"]["capture"]["width"]
+        .as_u64()
+        .expect("capture width") as u32;
+    let height = report["artifacts"]["capture"]["height"]
+        .as_u64()
+        .expect("capture height") as u32;
+    let x = min_x.floor().max(0.0) as u32;
+    let y = min_y.floor().max(0.0) as u32;
+    let end_x = max_x.ceil().max(min_x).min(f64::from(width)) as u32;
+    let end_y = max_y.ceil().max(min_y).min(f64::from(height)) as u32;
+    QualityPixelRegion {
+        x: x.min(width),
+        y: y.min(height),
+        width: end_x.saturating_sub(x).max(1),
+        height: end_y.saturating_sub(y).max(1),
+    }
+}
+
+#[cfg(feature = "scene-host")]
 #[derive(Debug, Clone, Copy)]
 struct ChromeRegionMetrics {
     foreground_fraction: f32,
@@ -9056,6 +9319,29 @@ struct QualityPixelRegion {
     y: u32,
     width: u32,
     height: u32,
+}
+
+#[cfg(feature = "scene-host")]
+fn intersect_regions(
+    left: QualityPixelRegion,
+    right: QualityPixelRegion,
+) -> Option<QualityPixelRegion> {
+    let x0 = left.x.max(right.x);
+    let y0 = left.y.max(right.y);
+    let x1 = left
+        .x
+        .saturating_add(left.width)
+        .min(right.x.saturating_add(right.width));
+    let y1 = left
+        .y
+        .saturating_add(left.height)
+        .min(right.y.saturating_add(right.height));
+    (x1 > x0 && y1 > y0).then_some(QualityPixelRegion {
+        x: x0,
+        y: y0,
+        width: x1 - x0,
+        height: y1 - y0,
+    })
 }
 
 #[cfg(feature = "scene-host")]
@@ -9130,6 +9416,66 @@ fn frame_delta_in_region(
         max_channel_delta,
         mean_channel_delta: total as f32 / count.max(1) as f32,
     }
+}
+
+#[cfg(feature = "scene-host")]
+fn frame_rmse_in_region(
+    left: &[u8],
+    right: &[u8],
+    frame_width: u32,
+    region: QualityPixelRegion,
+) -> f32 {
+    assert_eq!(left.len(), right.len());
+    let mut sum_squares = 0.0_f64;
+    let mut count = 0_u64;
+    for y in region.y..region.y.saturating_add(region.height) {
+        for x in region.x..region.x.saturating_add(region.width) {
+            let offset = ((y * frame_width + x) * 4) as usize;
+            for channel in 0..3 {
+                let delta = (f64::from(left[offset + channel])
+                    - f64::from(right[offset + channel]))
+                    / 255.0;
+                sum_squares += delta * delta;
+                count = count.saturating_add(1);
+            }
+        }
+    }
+    (sum_squares / count.max(1) as f64).sqrt() as f32
+}
+
+#[cfg(feature = "scene-host")]
+fn sobel_luminance_energy_in_region(
+    rgba: &[u8],
+    frame_width: u32,
+    frame_height: u32,
+    region: QualityPixelRegion,
+) -> f32 {
+    let min_x = region.x.max(1);
+    let min_y = region.y.max(1);
+    let max_x = region
+        .x
+        .saturating_add(region.width)
+        .min(frame_width.saturating_sub(1));
+    let max_y = region
+        .y
+        .saturating_add(region.height)
+        .min(frame_height.saturating_sub(1));
+    let mut total = 0.0_f32;
+    let mut count = 0_u32;
+    for y in min_y..max_y {
+        for x in min_x..max_x {
+            let l = |ox: i32, oy: i32| {
+                let sx = (x as i32 + ox).clamp(0, frame_width.saturating_sub(1) as i32) as u32;
+                let sy = (y as i32 + oy).clamp(0, frame_height.saturating_sub(1) as i32) as u32;
+                linear_luminance_at(rgba, frame_width, sx, sy)
+            };
+            let gx = -l(-1, -1) + l(1, -1) - 2.0 * l(-1, 0) + 2.0 * l(1, 0) - l(-1, 1) + l(1, 1);
+            let gy = -l(-1, -1) - 2.0 * l(0, -1) - l(1, -1) + l(-1, 1) + 2.0 * l(0, 1) + l(1, 1);
+            total += (gx * gx + gy * gy).sqrt();
+            count = count.saturating_add(1);
+        }
+    }
+    total / count.max(1) as f32
 }
 
 #[cfg(feature = "scene-host")]

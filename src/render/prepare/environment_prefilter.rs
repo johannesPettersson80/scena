@@ -28,7 +28,7 @@ pub(in crate::render) enum EnvironmentPrefilterQuality {
 /// Builds the GGX-prefiltered specular cubemap mip chain (one face buffer
 /// per face per mip, RGBA32F). Mip 0 is the source radiance verbatim;
 /// each subsequent mip is the source radiance convolved with a GGX BRDF
-/// kernel at roughness `mip / (mip_count - 1)`. The split-sum
+/// kernel at `prefilter_roughness_for_mip(mip, mip_count)`. The split-sum
 /// approximation (Karis 2013) assumes view = normal at every fragment so
 /// the prefilter is independent of camera position and a 2D BRDF LUT
 /// can carry the view-dependent fresnel + geometry terms.
@@ -62,11 +62,7 @@ pub(in crate::render) fn prefilter_specular_cubemap_mips_with_quality(
         let mip_faces = if mip == 0 {
             source_face_pixels.clone()
         } else {
-            let roughness = if mip_count > 1 {
-                mip as f32 / (mip_count - 1) as f32
-            } else {
-                0.0
-            };
+            let roughness = prefilter_roughness_for_mip(mip, mip_count);
             prefilter_face_pixels(
                 &source_mips,
                 source_mip_floor_for_prefilter_mip(resolution, mip_resolution),
@@ -78,6 +74,42 @@ pub(in crate::render) fn prefilter_specular_cubemap_mips_with_quality(
         mips.push(mip_faces);
     }
     mips
+}
+
+/// Roughness represented by a prefilter mip index.
+///
+/// The mip chain has very few levels, so spacing them linearly makes near-mirror
+/// materials (`roughness ~= 0.05`) blend in too much of the first heavily blurred
+/// mip on GPU samplers. Squared spacing concentrates the available mip levels at
+/// the low-roughness end: for five mips the represented roughness values are
+/// `0.0, 0.0625, 0.25, 0.5625, 1.0`.
+pub(in crate::render) fn prefilter_roughness_for_mip(mip: u32, mip_count: u32) -> f32 {
+    let max_mip = mip_count.saturating_sub(1);
+    if max_mip == 0 {
+        return 0.0;
+    }
+    let normalized = mip.min(max_mip) as f32 / max_mip as f32;
+    normalized * normalized
+}
+
+/// Fractional mip level for a material roughness.
+///
+/// This is the inverse of `prefilter_roughness_for_mip` and must stay in sync
+/// with the WGSL `environment_prefilter_mip` helper in both output shaders.
+pub(in crate::render) fn prefilter_lod_for_roughness(roughness: f32, mip_count: u32) -> f32 {
+    let max_mip = mip_count.saturating_sub(1);
+    if max_mip == 0 {
+        return 0.0;
+    }
+    roughness.clamp(0.0, 1.0).sqrt() * max_mip as f32
+}
+
+pub(in crate::render) fn sample_prefiltered_cubemap_lod(
+    mips: &[[Vec<f32>; 6]],
+    direction: Vec3,
+    lod: f32,
+) -> Vec3 {
+    sample_source_cubemap_lod(mips, direction, lod)
 }
 
 /// Builds the GGX prefilter for a single mip level of the specular
@@ -380,8 +412,7 @@ fn sample_count_for_roughness(roughness: f32, quality: EnvironmentPrefilterQuali
         },
         EnvironmentPrefilterQuality::InteractiveWebGl2 => match stepped {
             0 => 16,
-            1 => 48,
-            2 => 96,
+            1 | 2 => 96,
             3 | 4 => 128,
             _ => 192,
         },
@@ -455,12 +486,19 @@ mod tests {
             5,
             EnvironmentPrefilterQuality::InteractiveWebGl2,
         );
-        let mip_1_face = &mips[1][4];
-        let max_firefly = max_rgb(mip_1_face);
-        let bright_fraction = bright_outlier_fraction(mip_1_face, 4.0);
+        let near_mirror_face = &mips[1][4];
+        let max_near_mirror = max_rgb(near_mirror_face);
+        let near_mirror_bright_fraction = bright_outlier_fraction(near_mirror_face, 4.0);
+        let rough_face = &mips[2][4];
+        let max_rough_firefly = max_rgb(rough_face);
+        let rough_bright_fraction = bright_outlier_fraction(rough_face, 4.0);
         assert!(
-            max_firefly <= 8.0 && bright_fraction <= 0.005,
-            "GGX source prefilter must blur tiny HDR softboxes instead of baking firefly texels into mip 1; max={max_firefly:.3}, bright_fraction={bright_fraction:.5}"
+            max_near_mirror <= 20.0 && near_mirror_bright_fraction <= 0.005,
+            "near-mirror prefilter mip must retain bright reflection detail without isolated firefly coverage; max={max_near_mirror:.3}, bright_fraction={near_mirror_bright_fraction:.5}"
+        );
+        assert!(
+            max_rough_firefly <= 8.0 && rough_bright_fraction <= 0.005,
+            "rough prefilter mip must blur tiny HDR softboxes instead of baking firefly texels; max={max_rough_firefly:.3}, bright_fraction={rough_bright_fraction:.5}"
         );
     }
 
@@ -477,6 +515,29 @@ mod tests {
                 "mip {mip} face buffer must size to its mip resolution"
             );
         }
+    }
+
+    #[test]
+    fn prefilter_roughness_lod_mapping_is_shared_and_low_roughness_concentrated() {
+        let mip_count = 5;
+        assert!((prefilter_roughness_for_mip(0, mip_count) - 0.0).abs() < 1.0e-6);
+        assert!((prefilter_roughness_for_mip(1, mip_count) - 0.0625).abs() < 1.0e-6);
+        assert!((prefilter_roughness_for_mip(2, mip_count) - 0.25).abs() < 1.0e-6);
+        assert!((prefilter_roughness_for_mip(3, mip_count) - 0.5625).abs() < 1.0e-6);
+        assert!((prefilter_roughness_for_mip(4, mip_count) - 1.0).abs() < 1.0e-6);
+
+        for mip in 0..mip_count {
+            let roughness = prefilter_roughness_for_mip(mip, mip_count);
+            let lod = prefilter_lod_for_roughness(roughness, mip_count);
+            assert!(
+                (lod - mip as f32).abs() < 1.0e-5,
+                "roughness-to-LOD must invert prefilter mip roughness for mip {mip}: roughness={roughness}, lod={lod}"
+            );
+        }
+        assert!(
+            prefilter_lod_for_roughness(0.05, mip_count) < 1.0,
+            "chrome-like roughness must sample only the sharp source and the first low-roughness mip"
+        );
     }
 
     #[test]

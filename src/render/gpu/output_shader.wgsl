@@ -3,6 +3,7 @@ const MAX_GPU_LIGHTS_PER_TYPE: u32 = 16u;
 const MAX_GPU_AREA_LIGHTS: u32 = 2u;
 const AREA_LIGHT_SAMPLE_COUNT: u32 = 16u;
 const MAX_TILED_GPU_LIGHTS_PER_TILE: u32 = 32u;
+const ENVIRONMENT_PREFILTER_MAX_MIP: f32 = 4.0;
 
 struct VertexIn {
     @location(0) position: vec3<f32>,
@@ -977,6 +978,10 @@ fn brdf_lut_approx(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     return vec2<f32>(-1.04, 1.04) * a004 + r.zw;
 }
 
+fn environment_prefilter_mip(roughness: f32) -> f32 {
+    return sqrt(clamp(roughness, 0.0, 1.0)) * ENVIRONMENT_PREFILTER_MAX_MIP;
+}
+
 fn pbr_environment_lighting(
     base: vec3<f32>,
     metallic: f32,
@@ -1001,8 +1006,7 @@ fn pbr_environment_lighting(
     let diffuse_irradiance = camera.lighting.environment_diffuse_intensity.rgb;
     let diffuse = diffuse_energy * base * diffuse_irradiance * camera.lighting.environment_diffuse_intensity.w;
     let reflection = reflect(-view, normal);
-    let prefilter_max_mip = 4.0;
-    let prefilter_mip = clamp(roughness, 0.0, 1.0) * prefilter_max_mip;
+    let prefilter_mip = environment_prefilter_mip(roughness);
     let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;
     let lut_sample = brdf_lut_approx(n_dot_v, clamp(roughness, 0.0, 1.0));
     let specular = prefiltered * (f0 * lut_sample.x + vec3<f32>(lut_sample.y)) * camera.lighting.environment_specular_intensity.w;
@@ -1020,8 +1024,7 @@ fn clearcoat_environment_lighting(
     }
     let n_dot_v = max(dot(normal, view), 0.001);
     let reflection = reflect(-view, normal);
-    let prefilter_max_mip = 4.0;
-    let prefilter_mip = clamp(roughness, 0.0, 1.0) * prefilter_max_mip;
+    let prefilter_mip = environment_prefilter_mip(roughness);
     let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;
     let lut_sample = brdf_lut_approx(n_dot_v, clamp(roughness, 0.0, 1.0));
     let specular = prefiltered * (vec3<f32>(0.04) * lut_sample.x + vec3<f32>(lut_sample.y));
@@ -1072,8 +1075,7 @@ fn anisotropy_environment_lighting(
     let n_dot_v = max(dot(normal, view), 0.001);
     let reflection = reflect(-view, anisotropic_normal);
     let directional_roughness = clamp(roughness * (1.0 - strength * 0.60), 0.04, 1.0);
-    let prefilter_max_mip = 4.0;
-    let prefilter_mip = directional_roughness * prefilter_max_mip;
+    let prefilter_mip = environment_prefilter_mip(directional_roughness);
     let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;
     let lut_sample = brdf_lut_approx(n_dot_v, directional_roughness);
     let f0 = vec3<f32>(0.04) * (1.0 - metallic) + base * metallic;

@@ -121,6 +121,8 @@ pub(crate) fn check_renderer_truth_camera_shader_contracts(
             // Phase 1C step 2: GGX prefilter + analytic split-sum specular.
             "var environment_cubemap: texture_cube<f32>",
             "var environment_sampler: sampler",
+            "fn environment_prefilter_mip",
+            "ENVIRONMENT_PREFILTER_MAX_MIP",
             "let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection",
             "fn brdf_lut_approx",
             "let lut_sample = brdf_lut_approx",
