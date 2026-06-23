@@ -7,6 +7,9 @@ use std::process::Command;
 
 use serde_json::json;
 
+#[cfg(feature = "scene-host")]
+mod support;
+
 const TEST_ASSET: &str = "tests/assets/gltf/mesh_material_vertex_color_scene.gltf";
 const ANCHORED_ASSET: &str = "tests/assets/gltf/anchored_triangle_scene.gltf";
 const ANCHOR_ASSET: &str = "tests/assets/gltf/anchor_debug_scene.gltf";
@@ -3963,124 +3966,148 @@ fn scena_recipe_render_chrome_ibl_near_mirror_matches_cpu_and_keeps_detail_on_gp
     let gpu_mid025 = decode_png_rgba8(&gpu_mid025_png);
     let gpu_mirror = decode_png_rgba8(&gpu_mirror_png);
     let gpu_rough = decode_png_rgba8(&gpu_rough_png);
-    let panel_region = intersect_regions(
-        content_region_from_introspection_report(&cpu_report),
-        content_region_from_introspection_report(&gpu_report),
-    )
-    .expect("CPU/GPU chrome panel regions must overlap");
-    let panel_interior = shrink_region(panel_region, 18)
-        .expect("chrome panel should have a stable interior parity region");
-    let sphere_region = intersect_regions(
-        content_region_from_introspection_report(&gpu_sphere_report),
-        content_region_from_introspection_report(&gpu_mirror_report),
-    )
-    .expect("GPU roughness sweep regions must overlap");
-    let sphere_region = intersect_regions(
-        sphere_region,
-        content_region_from_introspection_report(&gpu_mid012_report),
-    )
-    .expect("GPU roughness 0.12 blur region must overlap near-mirror region");
-    let sphere_region = intersect_regions(
-        sphere_region,
-        content_region_from_introspection_report(&gpu_mid025_report),
-    )
-    .expect("GPU roughness 0.25 blur region must overlap near-mirror region");
-    let sphere_region = intersect_regions(
-        sphere_region,
-        content_region_from_introspection_report(&gpu_rough_report),
-    )
-    .expect("GPU roughness blur region must overlap near-mirror region");
-
-    let parity_rmse = frame_rmse_in_region(&cpu.rgba8, &gpu.rgba8, cpu.width, panel_interior);
-    let gpu_sobel = sobel_luminance_energy_in_region(
+    let cpu_frame =
+        support::parity::RgbaFrame::new("cpu_panel_r005", &cpu.rgba8, cpu.width, cpu.height);
+    let gpu_frame =
+        support::parity::RgbaFrame::new("gpu_panel_r005", &gpu.rgba8, gpu.width, gpu.height);
+    let gpu_sphere_frame = support::parity::RgbaFrame::new(
+        "gpu_sphere_r005",
         &gpu_sphere.rgba8,
         gpu_sphere.width,
         gpu_sphere.height,
-        sphere_region,
     );
-    let gpu_mirror_sobel = sobel_luminance_energy_in_region(
-        &gpu_mirror.rgba8,
-        gpu_mirror.width,
-        gpu_mirror.height,
-        sphere_region,
-    );
-    let gpu_mid012_sobel = sobel_luminance_energy_in_region(
+    let gpu_mid012_frame = support::parity::RgbaFrame::new(
+        "gpu_sphere_r012",
         &gpu_mid012.rgba8,
         gpu_mid012.width,
         gpu_mid012.height,
-        sphere_region,
     );
-    let gpu_mid025_sobel = sobel_luminance_energy_in_region(
+    let gpu_mid025_frame = support::parity::RgbaFrame::new(
+        "gpu_sphere_r025",
         &gpu_mid025.rgba8,
         gpu_mid025.width,
         gpu_mid025.height,
-        sphere_region,
     );
-    let gpu_rough_sobel = sobel_luminance_energy_in_region(
+    let gpu_mirror_frame = support::parity::RgbaFrame::new(
+        "gpu_sphere_r000",
+        &gpu_mirror.rgba8,
+        gpu_mirror.width,
+        gpu_mirror.height,
+    );
+    let gpu_rough_frame = support::parity::RgbaFrame::new(
+        "gpu_sphere_r050",
         &gpu_rough.rgba8,
         gpu_rough.width,
         gpu_rough.height,
+    );
+    let panel_region = content_region_from_introspection_report(&cpu_report)
+        .intersect(content_region_from_introspection_report(&gpu_report))
+        .expect("CPU/GPU chrome panel regions must overlap");
+    let panel_interior = panel_region
+        .shrink(18)
+        .expect("chrome panel should have a stable interior parity region");
+    let sphere_region = content_region_from_introspection_report(&gpu_sphere_report)
+        .intersect(content_region_from_introspection_report(&gpu_mirror_report))
+        .expect("GPU roughness sweep regions must overlap");
+    let sphere_region = sphere_region
+        .intersect(content_region_from_introspection_report(&gpu_mid012_report))
+        .expect("GPU roughness 0.12 blur region must overlap near-mirror region");
+    let sphere_region = sphere_region
+        .intersect(content_region_from_introspection_report(&gpu_mid025_report))
+        .expect("GPU roughness 0.25 blur region must overlap near-mirror region");
+    let sphere_region = sphere_region
+        .intersect(content_region_from_introspection_report(&gpu_rough_report))
+        .expect("GPU roughness blur region must overlap near-mirror region");
+
+    let mut sweep = support::parity::ParitySweep::new("scena.chrome_ibl_near_mirror_parity_probe.v1");
+    let panel_comparison =
+        sweep.compare_region("chrome_panel_r005_cpu_vs_gpu", cpu_frame, gpu_frame, panel_interior);
+    let mirror_comparison = sweep.compare_region(
+        "chrome_sphere_r005_vs_r000_gpu",
+        gpu_sphere_frame,
+        gpu_mirror_frame,
         sphere_region,
     );
-    let cpu_chrome = chrome_region_metrics(&cpu, panel_interior);
-    let gpu_chrome = chrome_region_metrics(&gpu, panel_interior);
-    let gpu_sphere_chrome = chrome_region_metrics(&gpu_sphere, sphere_region);
-    let gpu_mid012_chrome = chrome_region_metrics(&gpu_mid012, sphere_region);
-    let gpu_mid025_chrome = chrome_region_metrics(&gpu_mid025, sphere_region);
-    let gpu_mirror_delta = frame_rmse_in_region(
-        &gpu_sphere.rgba8,
-        &gpu_mirror.rgba8,
-        gpu_sphere.width,
+    let mid012_comparison = sweep.compare_region(
+        "chrome_sphere_r012_vs_r000_gpu",
+        gpu_mid012_frame,
+        gpu_mirror_frame,
         sphere_region,
     );
-    let gpu_mid012_delta = frame_rmse_in_region(
-        &gpu_mid012.rgba8,
-        &gpu_mirror.rgba8,
-        gpu_mid012.width,
+    let mid025_comparison = sweep.compare_region(
+        "chrome_sphere_r025_vs_r000_gpu",
+        gpu_mid025_frame,
+        gpu_mirror_frame,
         sphere_region,
     );
-    let gpu_mid025_delta = frame_rmse_in_region(
-        &gpu_mid025.rgba8,
-        &gpu_mirror.rgba8,
-        gpu_mid025.width,
+    let rough_comparison = sweep.compare_region(
+        "chrome_sphere_r050_vs_r000_gpu",
+        gpu_rough_frame,
+        gpu_mirror_frame,
         sphere_region,
     );
-    let gpu_rough_delta = frame_rmse_in_region(
-        &gpu_rough.rgba8,
-        &gpu_mirror.rgba8,
-        gpu_rough.width,
-        sphere_region,
+    assert_eq!(
+        sweep.records().len(),
+        5,
+        "IBL parity proof must record the CPU/GPU panel comparison plus the GPU roughness sweep"
     );
-    fs::write(
+
+    let parity_rmse = panel_comparison.rmse;
+    let gpu_sobel = mirror_comparison.left_structure.sobel_luminance_energy;
+    let gpu_mirror_sobel = mirror_comparison.right_structure.sobel_luminance_energy;
+    let gpu_mid012_sobel = mid012_comparison.left_structure.sobel_luminance_energy;
+    let gpu_mid025_sobel = mid025_comparison.left_structure.sobel_luminance_energy;
+    let gpu_rough_sobel = rough_comparison.left_structure.sobel_luminance_energy;
+    let cpu_chrome = panel_comparison.left_structure;
+    let gpu_chrome = panel_comparison.right_structure;
+    let gpu_sphere_chrome = mirror_comparison.left_structure;
+    let gpu_mid012_chrome = mid012_comparison.left_structure;
+    let gpu_mid025_chrome = mid025_comparison.left_structure;
+    let gpu_mirror_delta = mirror_comparison.rmse;
+    let gpu_mid012_delta = mid012_comparison.rmse;
+    let gpu_mid025_delta = mid025_comparison.rmse;
+    let gpu_rough_delta = rough_comparison.rmse;
+    sweep.write_json(
         dir.join("chrome-ibl-near-mirror-parity.json"),
-        format!(
-            "{{\n  \"schema\": \"scena.chrome_ibl_near_mirror_parity_probe.v1\",\n  \"panel_cpu_gpu_rmse\": {:.5},\n  \"sphere_gpu_r005_r000_rmse\": {:.5},\n  \"sphere_gpu_r012_r000_rmse\": {:.5},\n  \"sphere_gpu_r025_r000_rmse\": {:.5},\n  \"sphere_gpu_r050_r000_rmse\": {:.5},\n  \"gpu_sobel_energy\": {:.5},\n  \"gpu_mirror_sobel_energy\": {:.5},\n  \"gpu_mid012_sobel_energy\": {:.5},\n  \"gpu_mid025_sobel_energy\": {:.5},\n  \"gpu_rough_sobel_energy\": {:.5},\n  \"cpu_panel_luminance_range\": {:.5},\n  \"gpu_panel_luminance_range\": {:.5},\n  \"gpu_sphere_luminance_range\": {:.5},\n  \"gpu_mid012_luminance_range\": {:.5},\n  \"gpu_mid025_luminance_range\": {:.5},\n  \"panel_region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }},\n  \"sphere_region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}\n}}\n",
-            parity_rmse,
-            gpu_mirror_delta,
-            gpu_mid012_delta,
-            gpu_mid025_delta,
-            gpu_rough_delta,
-            gpu_sobel,
-            gpu_mirror_sobel,
-            gpu_mid012_sobel,
-            gpu_mid025_sobel,
-            gpu_rough_sobel,
-            cpu_chrome.luminance_range,
-            gpu_chrome.luminance_range,
-            gpu_sphere_chrome.luminance_range,
-            gpu_mid012_chrome.luminance_range,
-            gpu_mid025_chrome.luminance_range,
-            panel_interior.x,
-            panel_interior.y,
-            panel_interior.width,
-            panel_interior.height,
-            sphere_region.x,
-            sphere_region.y,
-            sphere_region.width,
-            sphere_region.height
-        ),
-    )
-    .expect("near-mirror chrome parity metrics write");
+        &[
+            (
+                "parity_harness_schema",
+                "\"scena.cpu_gpu_parity_sweep.v1\"".to_owned(),
+            ),
+            ("panel_cpu_gpu_rmse", format!("{parity_rmse:.5}")),
+            ("sphere_gpu_r005_r000_rmse", format!("{gpu_mirror_delta:.5}")),
+            ("sphere_gpu_r012_r000_rmse", format!("{gpu_mid012_delta:.5}")),
+            ("sphere_gpu_r025_r000_rmse", format!("{gpu_mid025_delta:.5}")),
+            ("sphere_gpu_r050_r000_rmse", format!("{gpu_rough_delta:.5}")),
+            ("gpu_sobel_energy", format!("{gpu_sobel:.5}")),
+            ("gpu_mirror_sobel_energy", format!("{gpu_mirror_sobel:.5}")),
+            ("gpu_mid012_sobel_energy", format!("{gpu_mid012_sobel:.5}")),
+            ("gpu_mid025_sobel_energy", format!("{gpu_mid025_sobel:.5}")),
+            ("gpu_rough_sobel_energy", format!("{gpu_rough_sobel:.5}")),
+            (
+                "cpu_panel_luminance_range",
+                format!("{:.5}", cpu_chrome.luminance_range),
+            ),
+            (
+                "gpu_panel_luminance_range",
+                format!("{:.5}", gpu_chrome.luminance_range),
+            ),
+            (
+                "gpu_sphere_luminance_range",
+                format!("{:.5}", gpu_sphere_chrome.luminance_range),
+            ),
+            (
+                "gpu_mid012_luminance_range",
+                format!("{:.5}", gpu_mid012_chrome.luminance_range),
+            ),
+            (
+                "gpu_mid025_luminance_range",
+                format!("{:.5}", gpu_mid025_chrome.luminance_range),
+            ),
+            ("panel_region", parity_region_json(panel_interior)),
+            ("sphere_region", parity_region_json(sphere_region)),
+        ],
+    );
 
     assert!(
         parity_rmse <= 0.055,
@@ -9301,7 +9328,7 @@ fn node_region_from_composition_report(
 }
 
 #[cfg(feature = "scene-host")]
-fn content_region_from_introspection_report(report: &serde_json::Value) -> QualityPixelRegion {
+fn content_region_from_introspection_report(report: &serde_json::Value) -> support::parity::PixelRegion {
     let rect = &report["content_bbox_css_px"];
     let min_x = rect["min_x"].as_f64().expect("content bbox min_x");
     let min_y = rect["min_y"].as_f64().expect("content bbox min_y");
@@ -9317,12 +9344,20 @@ fn content_region_from_introspection_report(report: &serde_json::Value) -> Quali
     let y = min_y.floor().max(0.0) as u32;
     let end_x = max_x.ceil().max(min_x).min(f64::from(width)) as u32;
     let end_y = max_y.ceil().max(min_y).min(f64::from(height)) as u32;
-    QualityPixelRegion {
+    support::parity::PixelRegion {
         x: x.min(width),
         y: y.min(height),
         width: end_x.saturating_sub(x).max(1),
         height: end_y.saturating_sub(y).max(1),
     }
+}
+
+#[cfg(feature = "scene-host")]
+fn parity_region_json(region: support::parity::PixelRegion) -> String {
+    format!(
+        "{{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}",
+        region.x, region.y, region.width, region.height
+    )
 }
 
 #[cfg(feature = "scene-host")]
@@ -9380,29 +9415,6 @@ struct QualityPixelRegion {
     y: u32,
     width: u32,
     height: u32,
-}
-
-#[cfg(feature = "scene-host")]
-fn intersect_regions(
-    left: QualityPixelRegion,
-    right: QualityPixelRegion,
-) -> Option<QualityPixelRegion> {
-    let x0 = left.x.max(right.x);
-    let y0 = left.y.max(right.y);
-    let x1 = left
-        .x
-        .saturating_add(left.width)
-        .min(right.x.saturating_add(right.width));
-    let y1 = left
-        .y
-        .saturating_add(left.height)
-        .min(right.y.saturating_add(right.height));
-    (x1 > x0 && y1 > y0).then_some(QualityPixelRegion {
-        x: x0,
-        y: y0,
-        width: x1 - x0,
-        height: y1 - y0,
-    })
 }
 
 #[cfg(feature = "scene-host")]
@@ -9477,66 +9489,6 @@ fn frame_delta_in_region(
         max_channel_delta,
         mean_channel_delta: total as f32 / count.max(1) as f32,
     }
-}
-
-#[cfg(feature = "scene-host")]
-fn frame_rmse_in_region(
-    left: &[u8],
-    right: &[u8],
-    frame_width: u32,
-    region: QualityPixelRegion,
-) -> f32 {
-    assert_eq!(left.len(), right.len());
-    let mut sum_squares = 0.0_f64;
-    let mut count = 0_u64;
-    for y in region.y..region.y.saturating_add(region.height) {
-        for x in region.x..region.x.saturating_add(region.width) {
-            let offset = ((y * frame_width + x) * 4) as usize;
-            for channel in 0..3 {
-                let delta = (f64::from(left[offset + channel])
-                    - f64::from(right[offset + channel]))
-                    / 255.0;
-                sum_squares += delta * delta;
-                count = count.saturating_add(1);
-            }
-        }
-    }
-    (sum_squares / count.max(1) as f64).sqrt() as f32
-}
-
-#[cfg(feature = "scene-host")]
-fn sobel_luminance_energy_in_region(
-    rgba: &[u8],
-    frame_width: u32,
-    frame_height: u32,
-    region: QualityPixelRegion,
-) -> f32 {
-    let min_x = region.x.max(1);
-    let min_y = region.y.max(1);
-    let max_x = region
-        .x
-        .saturating_add(region.width)
-        .min(frame_width.saturating_sub(1));
-    let max_y = region
-        .y
-        .saturating_add(region.height)
-        .min(frame_height.saturating_sub(1));
-    let mut total = 0.0_f32;
-    let mut count = 0_u32;
-    for y in min_y..max_y {
-        for x in min_x..max_x {
-            let l = |ox: i32, oy: i32| {
-                let sx = (x as i32 + ox).clamp(0, frame_width.saturating_sub(1) as i32) as u32;
-                let sy = (y as i32 + oy).clamp(0, frame_height.saturating_sub(1) as i32) as u32;
-                linear_luminance_at(rgba, frame_width, sx, sy)
-            };
-            let gx = -l(-1, -1) + l(1, -1) - 2.0 * l(-1, 0) + 2.0 * l(1, 0) - l(-1, 1) + l(1, 1);
-            let gy = -l(-1, -1) - 2.0 * l(0, -1) - l(1, -1) + l(-1, 1) + 2.0 * l(0, 1) + l(1, 1);
-            total += (gx * gx + gy * gy).sqrt();
-            count = count.saturating_add(1);
-        }
-    }
-    total / count.max(1) as f32
 }
 
 #[cfg(feature = "scene-host")]

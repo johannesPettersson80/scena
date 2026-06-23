@@ -44,6 +44,14 @@ pub(crate) fn check_render_quality_reflection_contracts(root: &Path, findings: &
             "chrome-ibl-firefly-metrics.json",
             "chrome-ibl-near-mirror-parity.json",
             "scena.chrome_ibl_near_mirror_parity_probe.v1",
+            "scena.cpu_gpu_parity_sweep.v1",
+            "ParitySweep::new",
+            "chrome_panel_r005_cpu_vs_gpu",
+            "chrome_sphere_r005_vs_r000_gpu",
+            "chrome_sphere_r012_vs_r000_gpu",
+            "chrome_sphere_r025_vs_r000_gpu",
+            "chrome_sphere_r050_vs_r000_gpu",
+            "sweep.records().len()",
             "sphere_gpu_r012_r000_rmse",
             "sphere_gpu_r025_r000_rmse",
             "gpu_mid012_luminance_range",
@@ -52,6 +60,23 @@ pub(crate) fn check_render_quality_reflection_contracts(root: &Path, findings: &
             "reflection_structure_missing",
             "reflection_firefly_outliers",
             "max_firefly_fraction",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-QUALITY",
+        "tests/support/parity.rs",
+        &[
+            "PixelRegion",
+            "RgbaFrame",
+            "ParitySweep",
+            "ParitySweepRecord",
+            "compare_frames_in_region",
+            "frame_rmse_in_region",
+            "structure_metrics_in_region",
+            "sobel_luminance_energy_in_region",
+            "write_json",
         ],
     );
 }
