@@ -38,6 +38,11 @@ ssh scena-builder 'cd "$HOME/projects/scena" && cargo test'
 ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --full'
 ```
 
+Use the remote-builder validation ladder. Start with the focused visual/test proof that can
+fail on the exact bug, then add scoped gates for the touched surface. Full release gates are
+required for cross-backend renderer behavior, browser/WASM-visible changes, public API/schema
+changes, or release-ready work; they are not the default for every test-only proof update.
+
 ## Unit Test First Workflow
 
 1. Identify the contract from the spec/checklist.
@@ -48,6 +53,11 @@ ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --f
 
 Checklist items are not complete until the test-first evidence or a documented exception is
 recorded.
+
+For proof-only hardening, the proof must still be real: it should fail on the old broken
+output or missing contract. But once that focused proof passes, do not keep running unrelated
+test suites unless the edit touched production behavior or the checklist/release gate
+requires it.
 
 ## Quality Language
 

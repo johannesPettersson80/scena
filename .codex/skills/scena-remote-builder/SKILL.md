@@ -72,6 +72,29 @@ Do not delete unrelated caches, other repositories, checkouts, or user files wit
 explicit user approval. If `/tmp` is the constrained filesystem, set a task-local `TMPDIR`
 inside the validation checkout or task target cache before rerunning.
 
+## Validation Ladder
+
+Do not make every remote run a full release validation by default. Choose the smallest
+remote proof that can honestly catch the regression class:
+
+1. **Focused proof**: first run the exact test, CLI command, doctor check, browser check, or
+   rendered-output proof that exercises the changed behavior. If this fails, patch and rerun
+   this proof before broadening.
+2. **Scoped gates**: add only the broad gates relevant to the touched surface:
+   - Rust source formatting changed: `cargo fmt --check`.
+   - Production Rust behavior changed: focused test plus the relevant `cargo test ...`
+     target or package, then broaden if risk crosses modules.
+   - Doctor/checklist/schema pins changed: `cargo run -p xtask -- doctor --full`.
+   - CLI/recipe behavior changed: the affected integration test file or exact CLI proof.
+   - Browser/WASM-visible behavior changed: the browser lane or Playwright proof.
+3. **Full release gates**: run the full fmt/clippy/test/doctor/doc/publish/browser chain
+   only for release-ready work, public API/schema behavior, cross-backend renderer changes,
+   large refactors, or when the user explicitly asks for full release hygiene.
+
+For tiny test-only or doctor-pin-only changes, a focused proof plus the relevant scoped gate
+is usually enough. Do not spend hours on unrelated full-suite loops unless there is a real
+risk path from the edit to that gate.
+
 ## Gate Commands
 
 Run gates through SSH from the local machine:
@@ -85,7 +108,7 @@ ssh scena-builder 'cd "$HOME/projects/scena" && cargo test'
 ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --full'
 ```
 
-Release-ready handoff also requires:
+Release-ready handoff, or any task explicitly asking for full release proof, also requires:
 
 ```bash
 ssh scena-builder 'cd "$HOME/projects/scena" && RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features'

@@ -111,7 +111,21 @@ Use this command shape for remote gates:
 ssh scena-builder 'cd "$HOME/projects/scena" && <command>'
 ```
 
-For any code change, run:
+Use a tiered validation flow. Do not default to the full release gate chain for every
+small edit:
+
+1. Focused proof first: run only the test, CLI command, doctor rule, browser proof, or
+   rendered-output check that directly exercises the changed contract. For test-only or
+   doctor-pin-only changes, this focused proof is the main signal.
+2. Scoped gates next: run the narrowest compile/lint/check gate that can catch regressions
+   in the touched surface. Examples: `cargo fmt --check` after Rust edits, one integration
+   test file after CLI/recipe changes, `doctor --full` after doctor/checklist/schema pins,
+   or a browser lane only after browser/WASM-visible changes.
+3. Full release gates only when warranted: run the full cargo/clippy/test/doc/browser/publish
+   chain for production renderer behavior, public API/schema changes, release-ready work,
+   cross-backend rendering changes, or when the user explicitly asks for release-level proof.
+
+For a normal production code change, the default remote gate set is:
 
 ```bash
 ssh scena-builder 'cd "$HOME/projects/scena" && cargo fmt --check'
@@ -119,6 +133,11 @@ ssh scena-builder 'cd "$HOME/projects/scena" && cargo clippy --all-targets -- -D
 ssh scena-builder 'cd "$HOME/projects/scena" && cargo test'
 ssh scena-builder 'cd "$HOME/projects/scena" && cargo run -p xtask -- doctor --full'
 ```
+
+For a narrow proof-only change, do not run the whole suite just to spend time. Run the
+focused proof, `cargo fmt --check` if Rust formatting could change, and `doctor --full` only
+if doctor/checklist/schema evidence changed. State clearly which broader gates were not run
+and why.
 
 For browser, WebGPU/WebGL2, visual, or 3D rendering changes, add rendered-output proof.
 Prefer Playwright or a deterministic headless harness. Do not declare a visual fix from
