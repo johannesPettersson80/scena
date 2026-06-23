@@ -13,10 +13,14 @@ pub(super) const GPU_COLOR_CONTRACT_WGSL: &str = include_str!("../color_contract
 pub(super) const GPU_TRIANGLE_SHADER: &str = concat!(
     include_str!("output_shader.wgsl"),
     "\n",
+    include_str!("../pbr_brdf.wgsl"),
+    "\n",
     include_str!("../color_contract.wgsl")
 );
 pub(super) const GPU_TRIANGLE_SHADER_TEXTURE_2D: &str = concat!(
     include_str!("output_shader_texture_2d.wgsl"),
+    "\n",
+    include_str!("../pbr_brdf.wgsl"),
     "\n",
     include_str!("../color_contract.wgsl")
 );
@@ -851,7 +855,8 @@ mod tests {
                 && GPU_TRIANGLE_SHADER.contains("pbr_light_contribution")
                 && GPU_TRIANGLE_SHADER.contains("fresnel_schlick")
                 && GPU_TRIANGLE_SHADER.contains("distribution_ggx")
-                && GPU_TRIANGLE_SHADER.contains("geometry_smith"),
+                && GPU_TRIANGLE_SHADER.contains("visibility_ggx_correlated")
+                && GPU_TRIANGLE_SHADER.contains("brdf_specular_ggx"),
             "GPU PBR shader must consume prepared directional, point, spot, and area light uniforms \
              through a GGX/Smith/Schlick BRDF before backend PBR lighting can be claimed"
         );
@@ -900,7 +905,8 @@ mod tests {
             GPU_TRIANGLE_SHADER.contains("environment_diffuse_intensity")
                 && GPU_TRIANGLE_SHADER.contains("environment_specular_intensity")
                 && GPU_TRIANGLE_SHADER.contains("has_environment_light")
-                && GPU_TRIANGLE_SHADER.contains("pbr_environment_lighting"),
+                && GPU_TRIANGLE_SHADER.contains("pbr_environment_lighting")
+                && GPU_TRIANGLE_SHADER.contains("split_sum_brdf_approx"),
             "GPU PBR shader must consume prepared environment irradiance/specular uniforms \
              before backend IBL lighting can be claimed"
         );

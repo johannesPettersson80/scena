@@ -97,7 +97,7 @@ pub(crate) fn check_renderer_truth_camera_shader_contracts(
             "pbr_environment_lighting",
             "fresnel_schlick",
             "distribution_ggx",
-            "geometry_smith",
+            "brdf_specular_ggx",
             "environment_diffuse_intensity",
             "environment_specular_intensity",
             "directional_shadow_control",
@@ -124,9 +124,7 @@ pub(crate) fn check_renderer_truth_camera_shader_contracts(
             "fn environment_prefilter_mip",
             "ENVIRONMENT_PREFILTER_MAX_MIP",
             "let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection",
-            "fn brdf_lut_approx",
-            "let lut_sample = brdf_lut_approx",
-            "f0 * lut_sample.x + vec3<f32>(lut_sample.y)",
+            "GPU_TRIANGLE_SHADER.contains(\"split_sum_brdf_approx\")",
             "var transmission_color_texture: texture_2d<f32>",
             "fn physical_transmission_color",
             "@location(2) normal: vec3<f32>",
@@ -165,6 +163,30 @@ pub(crate) fn check_renderer_truth_camera_shader_contracts(
             "triangle_shader_consumes_gpu_punctual_light_uniforms",
             "triangle_shader_consumes_gpu_environment_light_uniforms",
             "triangle_shader_builds_tangent_space_normal_from_normal_map",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/render/gpu/output.rs",
+        &[
+            "include_str!(\"../pbr_brdf.wgsl\")",
+            "GPU_TRIANGLE_SHADER",
+            "GPU_TRIANGLE_SHADER_TEXTURE_2D",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-TRUTH",
+        "src/render/pbr_brdf.wgsl",
+        &[
+            "scena.pbr_brdf.wgsl",
+            "KhronosGroup/glTF-Sample-Renderer",
+            "fn brdf_specular_ggx",
+            "fn visibility_ggx_correlated",
+            "fn split_sum_brdf_approx",
         ],
     );
     if let Ok(shader_source) = fs::read_to_string(root.join("src/render/gpu/output.rs")) {

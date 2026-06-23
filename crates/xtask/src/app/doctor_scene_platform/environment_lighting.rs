@@ -262,10 +262,23 @@ pub(crate) fn check_environment_ibl_prepare_contracts(root: &Path, findings: &mu
             "prefilter_roughness_lod_mapping_is_shared_and_low_roughness_concentrated",
             "source_mip_lod_matches_khronos_filtered_importance_sampling_formula",
             "fn integrate_brdf_lut_cell",
+            "ggx_visibility_correlated",
             "fn importance_sample_ggx_local",
             "fn hammersley_2d",
             "fn radical_inverse_van_der_corput",
-            "fn geometry_smith_ggx",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-ENV-IBL-PREP",
+        "src/render/pbr_brdf.rs",
+        &[
+            "KhronosGroup/glTF-Sample-Renderer commit",
+            "pub(in crate::render) fn ggx_visibility_correlated",
+            "pub(in crate::render) fn brdf_specular_ggx",
+            "pub(in crate::render) fn split_sum_brdf_approx",
+            "khronos_correlated_ggx_reference_probes_match_bec106e",
         ],
     );
     forbid_contains(

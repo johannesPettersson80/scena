@@ -6,6 +6,7 @@ use crate::scene::Vec3;
 use self::source_mips::{
     build_source_cubemap_mip_chain, sample_source_cubemap_lod, source_mip_resolution,
 };
+use super::super::pbr_brdf;
 
 mod source_mips;
 
@@ -268,13 +269,19 @@ fn integrate_brdf_lut_cell(n_dot_v: f32, roughness: f32, sample_count: u32) -> (
         if n_dot_h <= 0.0 {
             continue;
         }
-        let geometry = geometry_smith_ggx(n_dot_v, n_dot_l, roughness);
-        let visibility = geometry * v_dot_h / (n_dot_h * n_dot_v.max(1e-4));
+        let alpha_roughness = pbr_brdf::alpha_roughness(roughness);
+        let visibility = pbr_brdf::ggx_visibility_correlated(n_dot_l, n_dot_v, alpha_roughness)
+            * v_dot_h
+            * n_dot_l
+            / n_dot_h.max(1e-4);
         let fresnel = (1.0 - v_dot_h).clamp(0.0, 1.0).powi(5);
         scale += (1.0 - fresnel) * visibility;
         bias += fresnel * visibility;
     }
-    (scale / sample_count as f32, bias / sample_count as f32)
+    (
+        4.0 * scale / sample_count as f32,
+        4.0 * bias / sample_count as f32,
+    )
 }
 
 fn importance_sample_ggx(
@@ -349,20 +356,8 @@ fn radical_inverse_van_der_corput(mut bits: u32) -> f32 {
     bits as f32 * 2.328_306_4e-10
 }
 
-fn geometry_smith_ggx(n_dot_v: f32, n_dot_l: f32, roughness: f32) -> f32 {
-    let alpha = roughness * roughness;
-    let k = alpha * 0.5;
-    let smith_v = n_dot_v / (n_dot_v * (1.0 - k) + k).max(1e-4);
-    let smith_l = n_dot_l / (n_dot_l * (1.0 - k) + k).max(1e-4);
-    smith_v * smith_l
-}
-
 fn ggx_normal_distribution(n_dot_h: f32, roughness: f32) -> f32 {
-    let alpha = roughness * roughness;
-    let alpha_squared = (alpha * alpha).max(1e-6);
-    let n_dot_h_squared = n_dot_h.clamp(0.0, 1.0) * n_dot_h.clamp(0.0, 1.0);
-    let denominator = (n_dot_h_squared * (alpha_squared - 1.0) + 1.0).max(1e-6);
-    alpha_squared / (PI * denominator * denominator)
+    pbr_brdf::ggx_normal_distribution(n_dot_h, pbr_brdf::alpha_roughness(roughness)).max(1e-6)
 }
 
 fn ggx_sample_pdf(n_dot_h: f32, v_dot_h: f32, roughness: f32) -> f32 {

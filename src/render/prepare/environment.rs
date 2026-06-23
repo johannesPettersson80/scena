@@ -5,6 +5,7 @@ use crate::diagnostics::AssetError;
 use crate::diagnostics::Backend;
 use crate::scene::Vec3;
 
+use super::super::pbr_brdf;
 use super::environment_baker::{
     EnvironmentIblBakeQuality, EnvironmentIblBakeRequest, bake_environment_ibl,
     prefilter_lod_for_roughness, sample_prefiltered_cubemap_lod,
@@ -318,11 +319,11 @@ impl PreparedEnvironmentLighting {
             .as_deref()
             .map(|cubemap| sample_prefiltered_specular(cubemap, reflection, material.roughness))
             .unwrap_or(self.specular_rgb);
-        let brdf = self
-            .cubemap
-            .as_deref()
-            .map(|cubemap| sample_brdf_lut(cubemap, dot_vec3(normal, view), material.roughness))
-            .unwrap_or((1.0, 0.0));
+        let brdf = if self.cubemap.is_some() {
+            pbr_brdf::split_sum_brdf_approx(dot_vec3(normal, view), material.roughness)
+        } else {
+            (1.0, 0.0)
+        };
         scale_vec3(
             environment_split_sum_contribution(material, normal, view, diffuse, prefiltered, brdf),
             self.intensity,
@@ -436,21 +437,6 @@ fn sample_prefiltered_specular(
 ) -> Vec3 {
     let lod = prefilter_lod_for_roughness(roughness, cubemap.mip_count);
     sample_prefiltered_cubemap_lod(&cubemap.mips, direction, lod)
-}
-
-fn sample_brdf_lut(
-    cubemap: &PreparedEnvironmentCubemap,
-    n_dot_v: f32,
-    roughness: f32,
-) -> (f32, f32) {
-    let size = cubemap.brdf_lut_size.max(1);
-    let x = (n_dot_v.clamp(0.0, 1.0) * (size - 1) as f32).round() as u32;
-    let y = (roughness.clamp(0.0, 1.0) * (size - 1) as f32).round() as u32;
-    let index = ((y * size + x) * 2) as usize;
-    if index + 1 >= cubemap.brdf_lut.len() {
-        return (1.0, 0.0);
-    }
-    (cubemap.brdf_lut[index], cubemap.brdf_lut[index + 1])
 }
 
 fn dot_vec3(left: Vec3, right: Vec3) -> f32 {

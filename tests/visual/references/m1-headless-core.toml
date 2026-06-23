@@ -59,7 +59,7 @@ name = "default-cube"
 max_abs_diff = 0
 # CPU split-sum IBL contributes real cubemap-derived irradiance to diffuse
 # PBR surfaces under the Khronos PBR Neutral output stage.
-center_rgba = [203, 208, 214, 255]
+center_rgba = [204, 208, 214, 255]
 corner_rgba = [0, 0, 0, 255]
 nonblack_pixels = 81
-rgba_hash = "fnv1a64:ec7f096ec1bfdc88"
+rgba_hash = "fnv1a64:d9579a5c21edcb68"

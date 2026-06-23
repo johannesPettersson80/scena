@@ -27,6 +27,7 @@ mod gpu;
 pub mod introspection;
 mod offscreen;
 mod output;
+mod pbr_brdf;
 mod prepare;
 mod prepare_lifecycle;
 mod prepare_retained;

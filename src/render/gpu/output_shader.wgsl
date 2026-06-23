@@ -970,14 +970,6 @@ fn has_environment_light() -> bool {
         camera.lighting.environment_specular_intensity.w > 0.0;
 }
 
-fn brdf_lut_approx(n_dot_v: f32, roughness: f32) -> vec2<f32> {
-    let c0 = vec4<f32>(-1.0, -0.0275, -0.572, 0.022);
-    let c1 = vec4<f32>(1.0, 0.0425, 1.04, -0.04);
-    let r = roughness * c0 + c1;
-    let a004 = min(r.x * r.x, exp2(-9.28 * n_dot_v)) * r.x + r.y;
-    return vec2<f32>(-1.04, 1.04) * a004 + r.zw;
-}
-
 fn environment_prefilter_mip(roughness: f32) -> f32 {
     return sqrt(clamp(roughness, 0.0, 1.0)) * ENVIRONMENT_PREFILTER_MAX_MIP;
 }
@@ -1008,7 +1000,7 @@ fn pbr_environment_lighting(
     let reflection = reflect(-view, normal);
     let prefilter_mip = environment_prefilter_mip(roughness);
     let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;
-    let lut_sample = brdf_lut_approx(n_dot_v, clamp(roughness, 0.0, 1.0));
+    let lut_sample = split_sum_brdf_approx(n_dot_v, roughness);
     let specular = prefiltered * (f0 * lut_sample.x + vec3<f32>(lut_sample.y)) * camera.lighting.environment_specular_intensity.w;
     return diffuse + specular;
 }
@@ -1026,7 +1018,7 @@ fn clearcoat_environment_lighting(
     let reflection = reflect(-view, normal);
     let prefilter_mip = environment_prefilter_mip(roughness);
     let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;
-    let lut_sample = brdf_lut_approx(n_dot_v, clamp(roughness, 0.0, 1.0));
+    let lut_sample = split_sum_brdf_approx(n_dot_v, roughness);
     let specular = prefiltered * (vec3<f32>(0.04) * lut_sample.x + vec3<f32>(lut_sample.y));
     return specular * camera.lighting.environment_specular_intensity.w * factor;
 }
@@ -1077,7 +1069,7 @@ fn anisotropy_environment_lighting(
     let directional_roughness = clamp(roughness * (1.0 - strength * 0.60), 0.04, 1.0);
     let prefilter_mip = environment_prefilter_mip(directional_roughness);
     let prefiltered = textureSampleLevel(environment_cubemap, environment_sampler, reflection, prefilter_mip).rgb;
-    let lut_sample = brdf_lut_approx(n_dot_v, directional_roughness);
+    let lut_sample = split_sum_brdf_approx(n_dot_v, directional_roughness);
     let f0 = vec3<f32>(0.04) * (1.0 - metallic) + base * metallic;
     let specular = prefiltered * (f0 * lut_sample.x + vec3<f32>(lut_sample.y));
     return specular * camera.lighting.environment_specular_intensity.w * strength;
@@ -1101,11 +1093,10 @@ fn pbr_light_contribution(
     let n_dot_h = max(dot(normal, half_vector), 0.0);
     let v_dot_h = max(dot(view, half_vector), 0.0);
     let alpha = roughness * roughness;
-    let distribution = distribution_ggx(n_dot_h, alpha);
-    let geometry = geometry_smith(n_dot_v, n_dot_l, roughness);
+    let specular_brdf = brdf_specular_ggx(alpha, n_dot_l, n_dot_v, n_dot_h);
     let f0 = vec3<f32>(0.04) * (1.0 - metallic) + base * metallic;
     let fresnel = fresnel_schlick(v_dot_h, f0);
-    let specular = fresnel * (distribution * geometry / max(4.0 * n_dot_v * n_dot_l, 0.0001));
+    let specular = fresnel * specular_brdf;
     let diffuse_energy = (vec3<f32>(1.0) - fresnel) * (1.0 - metallic);
     let diffuse = diffuse_energy * base / PI;
     return (diffuse + specular) * radiance * n_dot_l;
@@ -1131,10 +1122,9 @@ fn clearcoat_light_contribution(
     let n_dot_h = max(dot(normal, half_vector), 0.0);
     let v_dot_h = max(dot(view, half_vector), 0.0);
     let alpha = roughness * roughness;
-    let distribution = distribution_ggx(n_dot_h, alpha);
-    let geometry = geometry_smith(n_dot_v, n_dot_l, roughness);
+    let specular_brdf = brdf_specular_ggx(alpha, n_dot_l, n_dot_v, n_dot_h);
     let fresnel = fresnel_schlick(v_dot_h, vec3<f32>(0.04));
-    let specular = fresnel * (distribution * geometry / max(4.0 * n_dot_v * n_dot_l, 0.0001));
+    let specular = fresnel * specular_brdf;
     return specular * radiance * n_dot_l * factor;
 }
 
@@ -1158,9 +1148,7 @@ fn sheen_light_contribution(
     let half_vector = normalize(view + incoming);
     let n_dot_h = max(dot(normal, half_vector), 0.0);
     let alpha = roughness * roughness;
-    let distribution = distribution_ggx(n_dot_h, alpha);
-    let geometry = geometry_smith(n_dot_v, n_dot_l, roughness);
-    let sheen = sheen_color_clamped * (distribution * geometry / max(4.0 * n_dot_v * n_dot_l, 0.0001));
+    let sheen = sheen_color_clamped * brdf_specular_ggx(alpha, n_dot_l, n_dot_v, n_dot_h);
     return sheen * radiance * n_dot_l;
 }
 
@@ -1234,12 +1222,11 @@ fn iridescence_light_contribution(
     let n_dot_h = max(dot(normal, half_vector), 0.0);
     let v_dot_h = max(dot(view, half_vector), 0.0);
     let alpha = roughness * roughness;
-    let distribution = distribution_ggx(n_dot_h, alpha);
-    let geometry = geometry_smith(n_dot_v, n_dot_l, roughness);
+    let specular_brdf = brdf_specular_ggx(alpha, n_dot_l, n_dot_v, n_dot_h);
     let film_color = iridescence_film_color(thickness_nm, ior);
     let f0 = (vec3<f32>(0.04) * (1.0 - metallic) + base * metallic) * film_color;
     let fresnel = fresnel_schlick(v_dot_h, f0);
-    let specular = fresnel * film_color * (distribution * geometry / max(4.0 * n_dot_v * n_dot_l, 0.0001));
+    let specular = fresnel * film_color * specular_brdf;
     return specular * radiance * n_dot_l * factor;
 }
 
@@ -1267,11 +1254,10 @@ fn dispersion_light_contribution(
     let n_dot_h = max(dot(normal, half_vector), 0.0);
     let v_dot_h = max(dot(view, half_vector), 0.0);
     let alpha = roughness * roughness;
-    let distribution = distribution_ggx(n_dot_h, alpha);
-    let geometry = geometry_smith(n_dot_v, n_dot_l, roughness);
+    let specular_brdf = brdf_specular_ggx(alpha, n_dot_l, n_dot_v, n_dot_h);
     let f0 = dispersion_f0_from_ior(ior, dispersion);
     let fresnel = fresnel_schlick(v_dot_h, f0);
-    let specular = fresnel * (distribution * geometry / max(4.0 * n_dot_v * n_dot_l, 0.0001));
+    let specular = fresnel * specular_brdf;
     _ = base;
     _ = metallic;
     return specular * radiance * n_dot_l * dispersion;
@@ -1300,12 +1286,6 @@ fn dispersion_f0_from_ior(ior: f32, dispersion: f32) -> vec3<f32> {
 fn f0_from_ior(ior: f32) -> f32 {
     let ratio = (ior - 1.0) / max(ior + 1.0, 0.0001);
     return ratio * ratio;
-}
-
-fn distribution_ggx(n_dot_h: f32, alpha: f32) -> f32 {
-    let alpha_squared = alpha * alpha;
-    let denominator = n_dot_h * n_dot_h * (alpha_squared - 1.0) + 1.0;
-    return alpha_squared / max(PI * denominator * denominator, 0.0001);
 }
 
 fn distribution_ggx_anisotropic(n_dot_h: f32, t_dot_h: f32, b_dot_h: f32, tangent_alpha: f32, bitangent_alpha: f32) -> f32 {
@@ -1344,19 +1324,6 @@ fn rotated_anisotropy_direction(direction: vec2<f32>, rotation: f32) -> vec2<f32
     );
 }
 
-fn geometry_smith(n_dot_v: f32, n_dot_l: f32, roughness: f32) -> f32 {
-    let k = ((roughness + 1.0) * (roughness + 1.0)) / 8.0;
-    return geometry_schlick_ggx(n_dot_v, k) * geometry_schlick_ggx(n_dot_l, k);
-}
-
-fn geometry_schlick_ggx(n_dot: f32, k: f32) -> f32 {
-    return n_dot / max(n_dot * (1.0 - k) + k, 0.0001);
-}
-
-fn fresnel_schlick(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
-    return f0 + (vec3<f32>(1.0) - f0) * pow5(1.0 - clamp(cos_theta, 0.0, 1.0));
-}
-
 fn distance_attenuation(to_light: vec3<f32>, range: f32) -> f32 {
     let distance_squared = max(dot(to_light, to_light), 0.0001);
     let inverse_square = 1.0 / distance_squared;
@@ -1366,16 +1333,6 @@ fn distance_attenuation(to_light: vec3<f32>, range: f32) -> f32 {
     let distance = sqrt(distance_squared);
     let range_falloff = clamp(1.0 - pow4(distance / range), 0.0, 1.0);
     return inverse_square * range_falloff * range_falloff;
-}
-
-fn pow4(value: f32) -> f32 {
-    let squared = value * value;
-    return squared * squared;
-}
-
-fn pow5(value: f32) -> f32 {
-    let squared = value * value;
-    return squared * squared * value;
 }
 
 fn spot_cone_attenuation(cos_angle: f32, inner_cone_cos: f32, outer_cone_cos: f32) -> f32 {

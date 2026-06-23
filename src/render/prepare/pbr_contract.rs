@@ -8,15 +8,16 @@ use std::f32::consts::PI;
 
 use crate::scene::Vec3;
 
+use super::super::pbr_brdf;
+
 mod dispersion;
 pub(super) use dispersion::dispersion_light_contribution;
 mod transmission;
 pub(super) use transmission::transmission_volume_light_contribution;
 
-pub(super) const DIELECTRIC_F0: f32 = 0.04;
-pub(super) const MIN_ROUGHNESS: f32 = 0.04;
+pub(super) const DIELECTRIC_F0: f32 = pbr_brdf::DIELECTRIC_F0;
 const MIN_DENOMINATOR: f32 = 0.0001;
-const MIN_N_DOT_V: f32 = 0.001;
+const MIN_N_DOT_V: f32 = pbr_brdf::MIN_N_DOT_V;
 const DIRECTIONAL_LUX_TO_SCENE_RADIANCE: f32 = 1.0 / 10_000.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -36,20 +37,12 @@ impl PbrMaterial {
     }
 
     pub(super) fn f0(self) -> Vec3 {
-        mix_vec3(
-            Vec3::new(DIELECTRIC_F0, DIELECTRIC_F0, DIELECTRIC_F0),
-            self.base,
-            self.metallic,
-        )
+        pbr_brdf::f0_metallic_roughness(self.base, self.metallic)
     }
 }
 
 pub(super) fn roughness_or_min(value: f32) -> f32 {
-    if value.is_finite() {
-        value.clamp(MIN_ROUGHNESS, 1.0)
-    } else {
-        1.0
-    }
+    pbr_brdf::perceptual_roughness_or_min(value)
 }
 
 pub(super) fn punctual_light_contribution(
@@ -68,14 +61,10 @@ pub(super) fn punctual_light_contribution(
     let half_vector = normalize_or(add_vec3(view, incoming), normal);
     let n_dot_h = dot_vec3(normal, half_vector).max(0.0);
     let v_dot_h = dot_vec3(view, half_vector).max(0.0);
-    let alpha = material.roughness * material.roughness;
-    let distribution = distribution_ggx(n_dot_h, alpha);
-    let geometry = geometry_smith(n_dot_v, n_dot_l, material.roughness);
+    let alpha = pbr_brdf::alpha_roughness(material.roughness);
+    let specular_brdf = pbr_brdf::brdf_specular_ggx(alpha, n_dot_l, n_dot_v, n_dot_h);
     let fresnel = fresnel_schlick(v_dot_h, material.f0());
-    let specular = scale_vec3(
-        fresnel,
-        distribution * geometry / (4.0 * n_dot_v * n_dot_l).max(MIN_DENOMINATOR),
-    );
+    let specular = scale_vec3(fresnel, specular_brdf);
     let diffuse_energy = scale_vec3(
         subtract_vec3(Vec3::new(1.0, 1.0, 1.0), fresnel),
         1.0 - material.metallic,
@@ -109,17 +98,13 @@ pub(super) fn clearcoat_light_contribution(
     let n_dot_h = dot_vec3(normal, half_vector).max(0.0);
     let v_dot_h = dot_vec3(view, half_vector).max(0.0);
     let roughness = roughness_or_min(roughness);
-    let alpha = roughness * roughness;
-    let distribution = distribution_ggx(n_dot_h, alpha);
-    let geometry = geometry_smith(n_dot_v, n_dot_l, roughness);
+    let alpha = pbr_brdf::alpha_roughness(roughness);
+    let specular_brdf = pbr_brdf::brdf_specular_ggx(alpha, n_dot_l, n_dot_v, n_dot_h);
     let fresnel = fresnel_schlick(
         v_dot_h,
         Vec3::new(DIELECTRIC_F0, DIELECTRIC_F0, DIELECTRIC_F0),
     );
-    let specular = scale_vec3(
-        fresnel,
-        distribution * geometry * factor / (4.0 * n_dot_v * n_dot_l).max(MIN_DENOMINATOR),
-    );
+    let specular = scale_vec3(fresnel, specular_brdf * factor);
     scale_vec3(multiply_vec3(specular, radiance), n_dot_l)
 }
 
@@ -144,12 +129,10 @@ pub(super) fn sheen_light_contribution(
     let half_vector = normalize_or(add_vec3(view, incoming), normal);
     let n_dot_h = dot_vec3(normal, half_vector).max(0.0);
     let roughness = roughness_or_min(roughness);
-    let alpha = roughness * roughness;
-    let distribution = distribution_ggx(n_dot_h, alpha);
-    let geometry = geometry_smith(n_dot_v, n_dot_l, roughness);
+    let alpha = pbr_brdf::alpha_roughness(roughness);
     let sheen = scale_vec3(
         color,
-        distribution * geometry / (4.0 * n_dot_v * n_dot_l).max(MIN_DENOMINATOR),
+        pbr_brdf::brdf_specular_ggx(alpha, n_dot_l, n_dot_v, n_dot_h),
     );
     scale_vec3(multiply_vec3(sheen, radiance), n_dot_l)
 }
@@ -255,9 +238,8 @@ pub(super) fn iridescence_light_contribution(
     let n_dot_h = dot_vec3(normal, half_vector).max(0.0);
     let v_dot_h = dot_vec3(view, half_vector).max(0.0);
     let roughness = roughness_or_min(material.roughness);
-    let alpha = roughness * roughness;
-    let distribution = distribution_ggx(n_dot_h, alpha);
-    let geometry = geometry_smith(n_dot_v, n_dot_l, roughness);
+    let alpha = pbr_brdf::alpha_roughness(roughness);
+    let specular_brdf = pbr_brdf::brdf_specular_ggx(alpha, n_dot_l, n_dot_v, n_dot_h);
     let thickness = mix_scalar(
         finite_non_negative(thickness_minimum_nm),
         finite_non_negative(thickness_maximum_nm),
@@ -268,7 +250,7 @@ pub(super) fn iridescence_light_contribution(
     let fresnel = fresnel_schlick(v_dot_h, tinted_f0);
     let specular = scale_vec3(
         multiply_vec3(fresnel, film_color),
-        6.0 * distribution * geometry * factor / (4.0 * n_dot_v * n_dot_l).max(MIN_DENOMINATOR),
+        6.0 * specular_brdf * factor,
     );
     let film_sideband = scale_vec3(film_color, factor * n_dot_l * 0.35);
     scale_vec3(
@@ -344,12 +326,6 @@ pub(super) fn reflect_vec3(vector: Vec3, normal: Vec3) -> Vec3 {
     subtract_vec3(vector, scale_vec3(normal, 2.0 * dot_vec3(vector, normal)))
 }
 
-fn distribution_ggx(n_dot_h: f32, alpha: f32) -> f32 {
-    let alpha_squared = alpha * alpha;
-    let denominator = n_dot_h * n_dot_h * (alpha_squared - 1.0) + 1.0;
-    alpha_squared / (PI * denominator * denominator).max(MIN_DENOMINATOR)
-}
-
 fn distribution_ggx_anisotropic(
     n_dot_h: f32,
     t_dot_h: f32,
@@ -393,21 +369,8 @@ fn visibility_ggx_anisotropic(
     (0.5 / (ggx_v + ggx_l).max(MIN_DENOMINATOR)).clamp(0.0, 1.0)
 }
 
-fn geometry_smith(n_dot_v: f32, n_dot_l: f32, roughness: f32) -> f32 {
-    let k = ((roughness + 1.0) * (roughness + 1.0)) / 8.0;
-    geometry_schlick_ggx(n_dot_v, k) * geometry_schlick_ggx(n_dot_l, k)
-}
-
-fn geometry_schlick_ggx(n_dot: f32, k: f32) -> f32 {
-    n_dot / (n_dot * (1.0 - k) + k).max(MIN_DENOMINATOR)
-}
-
 fn fresnel_schlick(cos_theta: f32, f0: Vec3) -> Vec3 {
-    let factor = (1.0 - cos_theta.clamp(0.0, 1.0)).powi(5);
-    add_vec3(
-        f0,
-        scale_vec3(subtract_vec3(Vec3::new(1.0, 1.0, 1.0), f0), factor),
-    )
+    pbr_brdf::fresnel_schlick(f0, cos_theta)
 }
 
 fn finite_non_negative(value: f32) -> f32 {
@@ -452,11 +415,6 @@ fn scale_vec3(value: Vec3, scale: f32) -> Vec3 {
 
 fn multiply_vec3(left: Vec3, right: Vec3) -> Vec3 {
     Vec3::new(left.x * right.x, left.y * right.y, left.z * right.z)
-}
-
-fn mix_vec3(left: Vec3, right: Vec3, amount: f32) -> Vec3 {
-    let amount = clamp_unit(amount);
-    add_vec3(scale_vec3(left, 1.0 - amount), scale_vec3(right, amount))
 }
 
 fn mix_scalar(left: f32, right: f32, amount: f32) -> f32 {
@@ -542,6 +500,29 @@ mod tests {
         );
         let metal = PbrMaterial::new(base, 1.0, 0.5);
         assert_eq!(metal.f0(), base);
+    }
+
+    #[test]
+    fn core_pbr_brdf_matches_khronos_correlated_ggx_grazing_probe() {
+        // KhronosGroup/glTF-Sample-Renderer bec106e, brdf.glsl:
+        // BRDF_specularGGX = D_GGX(alphaRoughness) * V_GGX(correlated Smith).
+        let material = PbrMaterial::new(Vec3::new(0.7, 0.72, 0.75), 1.0, 0.2);
+        let grazing_z = 0.05_f32;
+        let grazing_x = (1.0 - grazing_z * grazing_z).sqrt();
+        let actual = punctual_light_contribution(
+            material,
+            Vec3::new(0.0, 0.0, 1.0),
+            Vec3::new(grazing_x, 0.0, grazing_z),
+            Vec3::new(-grazing_x, 0.0, grazing_z),
+            Vec3::new(1.0, 1.0, 1.0),
+        );
+
+        assert_vec3_close(
+            actual,
+            Vec3::new(724.38367, 727.89966, 733.1737),
+            0.25,
+            "core metallic GGX grazing probe",
+        );
     }
 
     #[test]
@@ -716,5 +697,17 @@ mod tests {
         } else {
             2
         }
+    }
+
+    fn assert_vec3_close(actual: Vec3, expected: Vec3, tolerance: f32, label: &str) {
+        let delta = Vec3::new(
+            (actual.x - expected.x).abs(),
+            (actual.y - expected.y).abs(),
+            (actual.z - expected.z).abs(),
+        );
+        assert!(
+            delta.x <= tolerance && delta.y <= tolerance && delta.z <= tolerance,
+            "{label} expected {expected:?}, got {actual:?}, delta {delta:?}"
+        );
     }
 }
