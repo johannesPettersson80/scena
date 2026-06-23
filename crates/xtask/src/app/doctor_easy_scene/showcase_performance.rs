@@ -56,7 +56,8 @@ pub(super) fn check_showcase_performance_contracts(root: &Path, findings: &mut V
         &[
             "prefilter_sidecar",
             "load_prefilter_sidecar",
-            "prefilter_specular_cubemap_mips_with_quality",
+            "bake_environment_ibl",
+            "EnvironmentIblBakeRequest",
             "precompute_environment_sidecar",
         ],
     );

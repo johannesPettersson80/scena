@@ -601,6 +601,8 @@ fn public_showcase_uses_hdr_sidecar_without_parallel_render_cache() {
     );
     assert!(
         sidecar_rs.contains("SIDECAR_FILE_SUFFIX")
+            && sidecar_rs.contains("SCENA_ENV_PF_V2")
+            && sidecar_rs.contains("const SIDECAR_VERSION: u32 = 2")
             && sidecar_rs.contains("EnvironmentSidecarHeader")
             && sidecar_rs.contains("bytemuck")
             && sidecar_rs.contains("source_sha256"),
@@ -609,9 +611,10 @@ fn public_showcase_uses_hdr_sidecar_without_parallel_render_cache() {
     assert!(
         prepare_environment_rs.contains("environment.prefilter_sidecar(sidecar_profile)")
             && prepare_environment_rs.contains("load_prefilter_sidecar")
-            && prepare_environment_rs.contains("prefilter_specular_cubemap_mips_with_quality"),
+            && prepare_environment_rs.contains("bake_environment_ibl")
+            && prepare_environment_rs.contains("EnvironmentIblBakeRequest"),
         "render prepare must consume sidecars through the existing environment_lighting_for_prepare \
-         path and only fall back to runtime GGX prefilter when the sidecar is absent"
+         path and only fall back to the current Rust IBL baker when the sidecar is absent"
     );
     assert!(
         environment_cache_rs.contains("EnvironmentLightingCache")

@@ -333,10 +333,10 @@ pub(crate) fn write_expanded_material_preset_doctor_fixture(fixture_root: &Path)
     fs::create_dir_all(fixture_root.join("src/render/prepare"))
         .expect("render prepare fixture dir");
     fs::write(
-        fixture_root.join("src/render/prepare/environment_prefilter.rs"),
-        "sample_count_for_roughness(0.28, EnvironmentPrefilterQuality::InteractiveWebGl2) 2 => 96 _ => 192",
+        fixture_root.join("src/render/prepare/environment_baker.rs"),
+        "sample_count_for_roughness(0.28, EnvironmentIblBakeQuality::InteractiveWebGl2) 2 => 96 _ => 192",
     )
-    .expect("environment prefilter fixture");
+    .expect("environment baker fixture");
 }
 
 #[test]

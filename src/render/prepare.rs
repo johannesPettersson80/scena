@@ -46,7 +46,7 @@ mod cpu_bake;
 mod diagnostics;
 mod dynamic;
 mod environment;
-mod environment_prefilter;
+mod environment_baker;
 mod labels;
 mod material_batch;
 pub(in crate::render) use self::material_batch::compute_material_batch_plan;

@@ -9,6 +9,14 @@ use self::source_mips::{
 
 mod source_mips;
 
+/// Rust-owned image-based-lighting baker for scena's runtime and WASM paths.
+///
+/// This module intentionally follows the Khronos glTF IBL Sampler filtered
+/// importance sampling shape: GGX prefilter samples choose a source cubemap LOD
+/// from the sample PDF, and the BRDF LUT uses the same deterministic Hammersley
+/// sequence. External tools are reference oracles only; this implementation is
+/// the self-contained bake path used by native and browser prepare.
+///
 /// One sample direction-weight pair from the Hammersley sequence routed
 /// through GGX importance sampling. Used by both the specular cubemap
 /// prefilter and the BRDF LUT integrator.
@@ -20,9 +28,45 @@ struct GgxSample {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::render) enum EnvironmentPrefilterQuality {
+pub(in crate::render) enum EnvironmentIblBakeQuality {
     Reference,
     InteractiveWebGl2,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::render) struct EnvironmentIblBakeRequest {
+    pub(in crate::render) source_resolution: u32,
+    pub(in crate::render) mip_count: u32,
+    pub(in crate::render) quality: EnvironmentIblBakeQuality,
+    pub(in crate::render) brdf_lut_size: u32,
+    pub(in crate::render) brdf_sample_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(in crate::render) struct BakedEnvironmentIbl {
+    pub(in crate::render) mips: Vec<[Vec<f32>; 6]>,
+    pub(in crate::render) mip_count: u32,
+    pub(in crate::render) brdf_lut: Vec<f32>,
+    pub(in crate::render) brdf_lut_size: u32,
+}
+
+pub(in crate::render) fn bake_environment_ibl(
+    source_face_pixels: &[Vec<f32>; 6],
+    request: EnvironmentIblBakeRequest,
+) -> BakedEnvironmentIbl {
+    let mip_count = request.mip_count.max(1);
+    let brdf_lut_size = request.brdf_lut_size.max(1);
+    BakedEnvironmentIbl {
+        mips: prefilter_specular_cubemap_mips_with_quality(
+            source_face_pixels,
+            request.source_resolution.max(1),
+            mip_count,
+            request.quality,
+        ),
+        mip_count,
+        brdf_lut: build_brdf_lut_with_sample_count(brdf_lut_size, request.brdf_sample_count),
+        brdf_lut_size,
+    }
 }
 
 /// Builds the GGX-prefiltered specular cubemap mip chain (one face buffer
@@ -33,7 +77,7 @@ pub(in crate::render) enum EnvironmentPrefilterQuality {
 /// the prefilter is independent of camera position and a 2D BRDF LUT
 /// can carry the view-dependent fresnel + geometry terms.
 #[cfg(test)]
-pub(in crate::render) fn prefilter_specular_cubemap_mips(
+fn prefilter_specular_cubemap_mips(
     source_face_pixels: &[Vec<f32>; 6],
     resolution: u32,
     mip_count: u32,
@@ -42,15 +86,15 @@ pub(in crate::render) fn prefilter_specular_cubemap_mips(
         source_face_pixels,
         resolution,
         mip_count,
-        EnvironmentPrefilterQuality::Reference,
+        EnvironmentIblBakeQuality::Reference,
     )
 }
 
-pub(in crate::render) fn prefilter_specular_cubemap_mips_with_quality(
+fn prefilter_specular_cubemap_mips_with_quality(
     source_face_pixels: &[Vec<f32>; 6],
     resolution: u32,
     mip_count: u32,
-    quality: EnvironmentPrefilterQuality,
+    quality: EnvironmentIblBakeQuality,
 ) -> Vec<[Vec<f32>; 6]> {
     if mip_count == 0 {
         return Vec::new();
@@ -63,13 +107,7 @@ pub(in crate::render) fn prefilter_specular_cubemap_mips_with_quality(
             source_face_pixels.clone()
         } else {
             let roughness = prefilter_roughness_for_mip(mip, mip_count);
-            prefilter_face_pixels(
-                &source_mips,
-                source_mip_floor_for_prefilter_mip(resolution, mip_resolution),
-                mip_resolution,
-                roughness,
-                quality,
-            )
+            prefilter_face_pixels(&source_mips, mip_resolution, roughness, quality)
         };
         mips.push(mip_faces);
     }
@@ -116,10 +154,9 @@ pub(in crate::render) fn sample_prefiltered_cubemap_lod(
 /// cubemap. Returns six face buffers of size `mip_resolution^2 * 4`.
 fn prefilter_face_pixels(
     source_mips: &[[Vec<f32>; 6]],
-    minimum_source_mip: f32,
     mip_resolution: u32,
     roughness: f32,
-    quality: EnvironmentPrefilterQuality,
+    quality: EnvironmentIblBakeQuality,
 ) -> [Vec<f32>; 6] {
     let sample_count = sample_count_for_roughness(roughness, quality);
     let mut faces: [Vec<f32>; 6] =
@@ -130,13 +167,8 @@ fn prefilter_face_pixels(
                 let u = (x as f32 + 0.5) / mip_resolution as f32 * 2.0 - 1.0;
                 let v = (y as f32 + 0.5) / mip_resolution as f32 * 2.0 - 1.0;
                 let normal = cubemap_face_direction(face_index, u, v);
-                let prefiltered = integrate_ggx_specular(
-                    normal,
-                    roughness,
-                    sample_count,
-                    source_mips,
-                    minimum_source_mip,
-                );
+                let prefiltered =
+                    integrate_ggx_specular(normal, roughness, sample_count, source_mips);
                 let pixel_index = ((y * mip_resolution + x) * 4) as usize;
                 face_pixels[pixel_index] = prefiltered.x;
                 face_pixels[pixel_index + 1] = prefiltered.y;
@@ -153,14 +185,11 @@ fn prefilter_face_pixels(
 /// out row-major. The shader computes specular as
 /// `prefiltered_radiance * (F0 * lut.x + lut.y)`.
 #[cfg(test)]
-pub(in crate::render) fn build_brdf_lut(size: u32) -> Vec<f32> {
+fn build_brdf_lut(size: u32) -> Vec<f32> {
     build_brdf_lut_with_sample_count(size, 1024)
 }
 
-pub(in crate::render) fn build_brdf_lut_with_sample_count(
-    size: u32,
-    sample_count: u32,
-) -> Vec<f32> {
+fn build_brdf_lut_with_sample_count(size: u32, sample_count: u32) -> Vec<f32> {
     let resolved_size = size.max(1);
     let mut pixels = vec![0.0_f32; (resolved_size as usize).pow(2) * 2];
     for y in 0..resolved_size {
@@ -181,7 +210,6 @@ fn integrate_ggx_specular(
     roughness: f32,
     sample_count: u32,
     source_mips: &[[Vec<f32>; 6]],
-    minimum_source_mip: f32,
 ) -> Vec3 {
     if sample_count == 0 {
         return sample_source_cubemap_lod(source_mips, normal, 0.0);
@@ -197,8 +225,7 @@ fn integrate_ggx_specular(
         }
         let pdf = ggx_sample_pdf(sample.n_dot_h, sample.v_dot_h, roughness);
         let source_mip =
-            source_mip_level_for_sample(roughness, sample_count, source_resolution, pdf)
-                .max(minimum_source_mip);
+            source_mip_level_for_sample(roughness, sample_count, source_resolution, pdf);
         let radiance = sample_source_cubemap_lod(source_mips, sample.direction, source_mip);
         accumulated.x += radiance.x * sample.n_dot_l;
         accumulated.y += radiance.y * sample.n_dot_l;
@@ -353,16 +380,11 @@ fn source_mip_level_for_sample(
         return 0.0;
     }
     let resolution = source_resolution as f32;
-    let sample_solid_angle = 1.0 / (sample_count as f32 * pdf.max(1e-6));
-    let texel_solid_angle = 4.0 * PI / (6.0 * resolution * resolution);
-    (0.5 * (sample_solid_angle / texel_solid_angle).max(1e-6).log2()).max(0.0)
-}
-
-fn source_mip_floor_for_prefilter_mip(source_resolution: u32, target_resolution: u32) -> f32 {
-    if source_resolution <= target_resolution.max(1) {
-        return 0.0;
-    }
-    (source_resolution as f32 / target_resolution.max(1) as f32).log2()
+    // Khronos glTF IBL Sampler `computeLod`: filtered importance sampling
+    // chooses the source mip from the sample PDF and source cubemap texel
+    // count, independent of the output mip resolution.
+    let weighted_texel_count = 6.0 * resolution * resolution;
+    (0.5 * (weighted_texel_count / (sample_count as f32 * pdf.max(1e-6))).log2()).max(0.0)
 }
 
 fn reflect_vec3(view: Vec3, normal: Vec3) -> Vec3 {
@@ -400,17 +422,17 @@ fn normalize_or_z(value: Vec3) -> Vec3 {
 /// (roughness 0) needs no convolution and we route it through this
 /// table only for completeness; smoother surfaces converge at fewer
 /// samples while rougher surfaces benefit from many more.
-fn sample_count_for_roughness(roughness: f32, quality: EnvironmentPrefilterQuality) -> u32 {
+fn sample_count_for_roughness(roughness: f32, quality: EnvironmentIblBakeQuality) -> u32 {
     let stepped = (roughness.clamp(0.0, 1.0) * 8.0).round() as u32;
     match quality {
-        EnvironmentPrefilterQuality::Reference => match stepped {
+        EnvironmentIblBakeQuality::Reference => match stepped {
             0 => 32,
             1 | 2 => 96,
             3 | 4 => 192,
             5 | 6 => 384,
             _ => 768,
         },
-        EnvironmentPrefilterQuality::InteractiveWebGl2 => match stepped {
+        EnvironmentIblBakeQuality::InteractiveWebGl2 => match stepped {
             0 => 16,
             1 | 2 => 96,
             3 | 4 => 128,
@@ -484,7 +506,7 @@ mod tests {
             &source,
             64,
             5,
-            EnvironmentPrefilterQuality::InteractiveWebGl2,
+            EnvironmentIblBakeQuality::InteractiveWebGl2,
         );
         let near_mirror_face = &mips[1][4];
         let max_near_mirror = max_rgb(near_mirror_face);
@@ -518,6 +540,30 @@ mod tests {
     }
 
     #[test]
+    fn bake_environment_ibl_owns_specular_mips_and_brdf_lut_product() {
+        let source: [Vec<f32>; 6] = std::array::from_fn(|_| vec![0.25; 8 * 8 * 4]);
+        let baked = bake_environment_ibl(
+            &source,
+            EnvironmentIblBakeRequest {
+                source_resolution: 8,
+                mip_count: 4,
+                quality: EnvironmentIblBakeQuality::InteractiveWebGl2,
+                brdf_lut_size: 8,
+                brdf_sample_count: 64,
+            },
+        );
+        assert_eq!(baked.mip_count, 4);
+        assert_eq!(baked.mips.len(), 4);
+        assert_eq!(baked.brdf_lut_size, 8);
+        assert_eq!(baked.brdf_lut.len(), 8 * 8 * 2);
+        assert_eq!(
+            baked.mips[0][0].len(),
+            8 * 8 * 4,
+            "baker owns the mip-0 source-radiance payload"
+        );
+    }
+
+    #[test]
     fn prefilter_roughness_lod_mapping_is_shared_and_low_roughness_concentrated() {
         let mip_count = 5;
         assert!((prefilter_roughness_for_mip(0, mip_count) - 0.0).abs() < 1.0e-6);
@@ -537,6 +583,19 @@ mod tests {
         assert!(
             prefilter_lod_for_roughness(0.05, mip_count) < 1.0,
             "chrome-like roughness must sample only the sharp source and the first low-roughness mip"
+        );
+    }
+
+    #[test]
+    fn source_mip_lod_matches_khronos_filtered_importance_sampling_formula() {
+        let source_resolution = 64;
+        let sample_count = 128;
+        let pdf = 0.25;
+        let expected = 0.5 * ((6.0 * 64.0_f32 * 64.0) / (sample_count as f32 * pdf)).log2();
+        let actual = source_mip_level_for_sample(0.5, sample_count, source_resolution, pdf);
+        assert!(
+            (actual - expected).abs() < 1.0e-5,
+            "filtered importance sampling source LOD must match Khronos glTF IBL Sampler computeLod; expected {expected}, got {actual}"
         );
     }
 
@@ -594,23 +653,23 @@ mod tests {
     #[test]
     fn interactive_prefilter_profile_caps_browser_runtime_work() {
         assert_eq!(
-            sample_count_for_roughness(1.0, EnvironmentPrefilterQuality::Reference),
+            sample_count_for_roughness(1.0, EnvironmentIblBakeQuality::Reference),
             768,
             "reference quality keeps the existing rough-environment sample count"
         );
         assert_eq!(
-            sample_count_for_roughness(0.28, EnvironmentPrefilterQuality::InteractiveWebGl2),
+            sample_count_for_roughness(0.28, EnvironmentIblBakeQuality::InteractiveWebGl2),
             96,
             "WebGL2 smooth-metal prefiltering must sample enough directions for chrome/brushed-metal presets"
         );
         assert_eq!(
-            sample_count_for_roughness(1.0, EnvironmentPrefilterQuality::InteractiveWebGl2),
+            sample_count_for_roughness(1.0, EnvironmentIblBakeQuality::InteractiveWebGl2),
             192,
             "WebGL2 rough-environment prefiltering stays below reference quality while no longer using the old 16-sample cap"
         );
         assert!(
-            sample_count_for_roughness(1.0, EnvironmentPrefilterQuality::InteractiveWebGl2)
-                < sample_count_for_roughness(1.0, EnvironmentPrefilterQuality::Reference),
+            sample_count_for_roughness(1.0, EnvironmentIblBakeQuality::InteractiveWebGl2)
+                < sample_count_for_roughness(1.0, EnvironmentIblBakeQuality::Reference),
             "interactive WebGL2 profile remains bounded below the reference offline sample count"
         );
         assert_eq!(

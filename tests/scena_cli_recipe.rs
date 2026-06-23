@@ -3940,6 +3940,10 @@ fn scena_recipe_render_chrome_ibl_near_mirror_matches_cpu_and_keeps_detail_on_gp
         write_chrome_ibl_panel_recipe(&dir, "chrome-ibl-panel-gpu-r005", 0.05);
     let (gpu_sphere_recipe, gpu_sphere_png) =
         write_chrome_ibl_recipe(&dir, "chrome-ibl-sphere-gpu-r005", 0.05);
+    let (gpu_mid012_recipe, gpu_mid012_png) =
+        write_chrome_ibl_recipe(&dir, "chrome-ibl-sphere-gpu-r012", 0.12);
+    let (gpu_mid025_recipe, gpu_mid025_png) =
+        write_chrome_ibl_recipe(&dir, "chrome-ibl-sphere-gpu-r025", 0.25);
     let (gpu_mirror_recipe, gpu_mirror_png) =
         write_chrome_ibl_recipe(&dir, "chrome-ibl-sphere-gpu-r000", 0.0);
     let (gpu_rough_recipe, gpu_rough_png) =
@@ -3948,11 +3952,15 @@ fn scena_recipe_render_chrome_ibl_near_mirror_matches_cpu_and_keeps_detail_on_gp
     let cpu_report = run_recipe_render_introspect(&cpu_recipe, &cpu_png, false);
     let gpu_report = run_recipe_render_introspect(&gpu_recipe, &gpu_png, true);
     let gpu_sphere_report = run_recipe_render_introspect(&gpu_sphere_recipe, &gpu_sphere_png, true);
+    let gpu_mid012_report = run_recipe_render_introspect(&gpu_mid012_recipe, &gpu_mid012_png, true);
+    let gpu_mid025_report = run_recipe_render_introspect(&gpu_mid025_recipe, &gpu_mid025_png, true);
     let gpu_mirror_report = run_recipe_render_introspect(&gpu_mirror_recipe, &gpu_mirror_png, true);
     let gpu_rough_report = run_recipe_render_introspect(&gpu_rough_recipe, &gpu_rough_png, true);
     let cpu = decode_png_rgba8(&cpu_png);
     let gpu = decode_png_rgba8(&gpu_png);
     let gpu_sphere = decode_png_rgba8(&gpu_sphere_png);
+    let gpu_mid012 = decode_png_rgba8(&gpu_mid012_png);
+    let gpu_mid025 = decode_png_rgba8(&gpu_mid025_png);
     let gpu_mirror = decode_png_rgba8(&gpu_mirror_png);
     let gpu_rough = decode_png_rgba8(&gpu_rough_png);
     let panel_region = intersect_regions(
@@ -3967,6 +3975,16 @@ fn scena_recipe_render_chrome_ibl_near_mirror_matches_cpu_and_keeps_detail_on_gp
         content_region_from_introspection_report(&gpu_mirror_report),
     )
     .expect("GPU roughness sweep regions must overlap");
+    let sphere_region = intersect_regions(
+        sphere_region,
+        content_region_from_introspection_report(&gpu_mid012_report),
+    )
+    .expect("GPU roughness 0.12 blur region must overlap near-mirror region");
+    let sphere_region = intersect_regions(
+        sphere_region,
+        content_region_from_introspection_report(&gpu_mid025_report),
+    )
+    .expect("GPU roughness 0.25 blur region must overlap near-mirror region");
     let sphere_region = intersect_regions(
         sphere_region,
         content_region_from_introspection_report(&gpu_rough_report),
@@ -3986,6 +4004,18 @@ fn scena_recipe_render_chrome_ibl_near_mirror_matches_cpu_and_keeps_detail_on_gp
         gpu_mirror.height,
         sphere_region,
     );
+    let gpu_mid012_sobel = sobel_luminance_energy_in_region(
+        &gpu_mid012.rgba8,
+        gpu_mid012.width,
+        gpu_mid012.height,
+        sphere_region,
+    );
+    let gpu_mid025_sobel = sobel_luminance_energy_in_region(
+        &gpu_mid025.rgba8,
+        gpu_mid025.width,
+        gpu_mid025.height,
+        sphere_region,
+    );
     let gpu_rough_sobel = sobel_luminance_energy_in_region(
         &gpu_rough.rgba8,
         gpu_rough.width,
@@ -3995,10 +4025,24 @@ fn scena_recipe_render_chrome_ibl_near_mirror_matches_cpu_and_keeps_detail_on_gp
     let cpu_chrome = chrome_region_metrics(&cpu, panel_interior);
     let gpu_chrome = chrome_region_metrics(&gpu, panel_interior);
     let gpu_sphere_chrome = chrome_region_metrics(&gpu_sphere, sphere_region);
+    let gpu_mid012_chrome = chrome_region_metrics(&gpu_mid012, sphere_region);
+    let gpu_mid025_chrome = chrome_region_metrics(&gpu_mid025, sphere_region);
     let gpu_mirror_delta = frame_rmse_in_region(
         &gpu_sphere.rgba8,
         &gpu_mirror.rgba8,
         gpu_sphere.width,
+        sphere_region,
+    );
+    let gpu_mid012_delta = frame_rmse_in_region(
+        &gpu_mid012.rgba8,
+        &gpu_mirror.rgba8,
+        gpu_mid012.width,
+        sphere_region,
+    );
+    let gpu_mid025_delta = frame_rmse_in_region(
+        &gpu_mid025.rgba8,
+        &gpu_mirror.rgba8,
+        gpu_mid025.width,
         sphere_region,
     );
     let gpu_rough_delta = frame_rmse_in_region(
@@ -4010,16 +4054,22 @@ fn scena_recipe_render_chrome_ibl_near_mirror_matches_cpu_and_keeps_detail_on_gp
     fs::write(
         dir.join("chrome-ibl-near-mirror-parity.json"),
         format!(
-            "{{\n  \"schema\": \"scena.chrome_ibl_near_mirror_parity_probe.v1\",\n  \"panel_cpu_gpu_rmse\": {:.5},\n  \"sphere_gpu_r005_r000_rmse\": {:.5},\n  \"sphere_gpu_r050_r000_rmse\": {:.5},\n  \"gpu_sobel_energy\": {:.5},\n  \"gpu_mirror_sobel_energy\": {:.5},\n  \"gpu_rough_sobel_energy\": {:.5},\n  \"cpu_panel_luminance_range\": {:.5},\n  \"gpu_panel_luminance_range\": {:.5},\n  \"gpu_sphere_luminance_range\": {:.5},\n  \"panel_region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }},\n  \"sphere_region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}\n}}\n",
+            "{{\n  \"schema\": \"scena.chrome_ibl_near_mirror_parity_probe.v1\",\n  \"panel_cpu_gpu_rmse\": {:.5},\n  \"sphere_gpu_r005_r000_rmse\": {:.5},\n  \"sphere_gpu_r012_r000_rmse\": {:.5},\n  \"sphere_gpu_r025_r000_rmse\": {:.5},\n  \"sphere_gpu_r050_r000_rmse\": {:.5},\n  \"gpu_sobel_energy\": {:.5},\n  \"gpu_mirror_sobel_energy\": {:.5},\n  \"gpu_mid012_sobel_energy\": {:.5},\n  \"gpu_mid025_sobel_energy\": {:.5},\n  \"gpu_rough_sobel_energy\": {:.5},\n  \"cpu_panel_luminance_range\": {:.5},\n  \"gpu_panel_luminance_range\": {:.5},\n  \"gpu_sphere_luminance_range\": {:.5},\n  \"gpu_mid012_luminance_range\": {:.5},\n  \"gpu_mid025_luminance_range\": {:.5},\n  \"panel_region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }},\n  \"sphere_region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}\n}}\n",
             parity_rmse,
             gpu_mirror_delta,
+            gpu_mid012_delta,
+            gpu_mid025_delta,
             gpu_rough_delta,
             gpu_sobel,
             gpu_mirror_sobel,
+            gpu_mid012_sobel,
+            gpu_mid025_sobel,
             gpu_rough_sobel,
             cpu_chrome.luminance_range,
             gpu_chrome.luminance_range,
             gpu_sphere_chrome.luminance_range,
+            gpu_mid012_chrome.luminance_range,
+            gpu_mid025_chrome.luminance_range,
             panel_interior.x,
             panel_interior.y,
             panel_interior.width,
@@ -4047,7 +4097,18 @@ fn scena_recipe_render_chrome_ibl_near_mirror_matches_cpu_and_keeps_detail_on_gp
         "GPU near-mirror chrome sphere must not wash out reflection contrast; gpu={gpu_sphere_chrome:?}, region={sphere_region:?}"
     );
     assert!(
-        gpu_rough_delta >= 0.10,
+        (0.08..=0.35).contains(&gpu_mid012_delta) && gpu_mid012_chrome.luminance_range >= 0.75,
+        "GPU roughness 0.12 chrome must enter the mid-roughness prefilter range without washing out structured reflection contrast; delta={gpu_mid012_delta:.5}, sobel={gpu_mid012_sobel:.5}, metrics={gpu_mid012_chrome:?}, png={gpu_mid012_png:?}"
+    );
+    assert!(
+        gpu_mid025_delta >= gpu_mid012_delta + 0.04
+            && gpu_mid025_delta <= 0.45
+            && gpu_mid025_chrome.luminance_range >= 0.70
+            && gpu_mid025_sobel > gpu_rough_sobel,
+        "GPU roughness 0.25 chrome must blur more than roughness 0.12 while retaining more structure than roughness 0.50; r012_delta={gpu_mid012_delta:.5}, r025_delta={gpu_mid025_delta:.5}, r025_sobel={gpu_mid025_sobel:.5}, r050_sobel={gpu_rough_sobel:.5}, metrics={gpu_mid025_chrome:?}, png={gpu_mid025_png:?}"
+    );
+    assert!(
+        gpu_rough_delta >= gpu_mid025_delta + 0.10,
         "GPU rough chrome must still sample distinct blurred prefilter mips, not force every material to mip0; rough_delta={gpu_rough_delta:.5}, mirror_delta={gpu_mirror_delta:.5}, rough_png={gpu_rough_png:?}"
     );
 }

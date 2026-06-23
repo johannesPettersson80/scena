@@ -222,9 +222,9 @@ pub(super) fn check_honest_material_presets(root: &Path, findings: &mut Vec<Find
         root,
         findings,
         "WEBGL2-IBL-SMOOTH-METAL",
-        "src/render/prepare/environment_prefilter.rs",
+        "src/render/prepare/environment_baker.rs",
         &[
-            "sample_count_for_roughness(0.28, EnvironmentPrefilterQuality::InteractiveWebGl2)",
+            "sample_count_for_roughness(0.28, EnvironmentIblBakeQuality::InteractiveWebGl2)",
             "2 => 96",
             "_ => 192",
         ],

@@ -26,10 +26,10 @@ rgba_hash = "fnv1a64:386b4efab512b025"
 name = "ibl-environment"
 max_abs_diff = 0
 center_rgba = [226, 239, 251, 255]
-left_mid_rgba = [227, 239, 251, 255]
+left_mid_rgba = [226, 239, 251, 255]
 right_mid_rgba = [226, 239, 251, 255]
 nonblack_pixels = 240
-rgba_hash = "fnv1a64:52321c3142c0eca4"
+rgba_hash = "fnv1a64:7f5dd2d515af6a54"
 
 [[reference]]
 name = "fxaa-edge"

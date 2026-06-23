@@ -4,8 +4,8 @@ use super::AssetPath;
 use crate::diagnostics::AssetError;
 
 pub const SIDECAR_FILE_SUFFIX: &str = ".prefilter.bin";
-const SIDECAR_MAGIC: [u8; 16] = *b"SCENA_ENV_PF_V1\0";
-const SIDECAR_VERSION: u32 = 1;
+const SIDECAR_MAGIC: [u8; 16] = *b"SCENA_ENV_PF_V2\0";
+const SIDECAR_VERSION: u32 = 2;
 const SIDE_CAR_FACE_COUNT: usize = 6;
 const RGBA_CHANNELS: usize = 4;
 
@@ -431,5 +431,36 @@ mod tests {
         assert_eq!(parsed.diffuse_rgb(), [0.1, 0.2, 0.3]);
         assert_eq!(parsed.mips()[1][3], vec![13.0; 16]);
         assert_eq!(parsed.brdf_lut(), &[0.25; 8]);
+    }
+
+    #[test]
+    fn legacy_v1_sidecar_is_rejected_after_khronos_baker_change() {
+        let mips = vec![std::array::from_fn(|face| vec![face as f32; 4 * 4 * 4])];
+        let source_sha = "ae94a965734e6306216feb48d6dd7154b1dbc484a605200bf13cb9ae23799b7b";
+        let sidecar = EnvironmentPrefilterSidecar::new(
+            EnvironmentSidecarProfile::InteractiveWebGl2,
+            source_sha,
+            4,
+            mips,
+            vec![0.25; 8],
+            2,
+            [0.1, 0.2, 0.3],
+        )
+        .expect("sidecar builds");
+        let mut legacy_bytes = sidecar.to_bytes();
+        legacy_bytes[..16].copy_from_slice(b"SCENA_ENV_PF_V1\0");
+        legacy_bytes[16..20].copy_from_slice(&1_u32.to_le_bytes());
+
+        let error = EnvironmentPrefilterSidecar::parse("legacy.hdr.prefilter.bin", &legacy_bytes)
+            .expect_err("legacy sidecar must not bypass the current baker");
+
+        let AssetError::Parse { reason, .. } = error else {
+            panic!("legacy sidecar should fail with a parse error");
+        };
+        assert!(
+            reason.contains("invalid sidecar magic")
+                || reason.contains("unsupported sidecar version"),
+            "legacy sidecar rejection must be explicit, got {reason}"
+        );
     }
 }

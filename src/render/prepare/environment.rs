@@ -5,9 +5,9 @@ use crate::diagnostics::AssetError;
 use crate::diagnostics::Backend;
 use crate::scene::Vec3;
 
-use super::environment_prefilter::{
-    EnvironmentPrefilterQuality, build_brdf_lut_with_sample_count, prefilter_lod_for_roughness,
-    prefilter_specular_cubemap_mips_with_quality, sample_prefiltered_cubemap_lod,
+use super::environment_baker::{
+    EnvironmentIblBakeQuality, EnvironmentIblBakeRequest, bake_environment_ibl,
+    prefilter_lod_for_roughness, sample_prefiltered_cubemap_lod,
 };
 use super::pbr_contract::{PbrMaterial, environment_split_sum_contribution, reflect_vec3};
 
@@ -57,10 +57,10 @@ impl EnvironmentLightingProfile {
         }
     }
 
-    fn prefilter_quality(self) -> EnvironmentPrefilterQuality {
+    fn prefilter_quality(self) -> EnvironmentIblBakeQuality {
         match self {
-            Self::Reference => EnvironmentPrefilterQuality::Reference,
-            Self::InteractiveWebGl2 => EnvironmentPrefilterQuality::InteractiveWebGl2,
+            Self::Reference => EnvironmentIblBakeQuality::Reference,
+            Self::InteractiveWebGl2 => EnvironmentIblBakeQuality::InteractiveWebGl2,
         }
     }
 
@@ -178,31 +178,28 @@ impl PreparedEnvironmentLighting {
                 let resolution = faces.resolution();
                 let source_pixels = faces.build_face_pixels_rgba32f();
                 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
-                let prefilter_start =
+                let bake_start =
                     log_environment_step("build_face_pixels_rgba32f", environment_step_start);
-                let mips = prefilter_specular_cubemap_mips_with_quality(
+                let baked = bake_environment_ibl(
                     &source_pixels,
-                    resolution,
-                    PREFILTER_MIP_COUNT,
-                    profile.prefilter_quality(),
-                );
-                #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
-                let brdf_start =
-                    log_environment_step("prefilter_specular_cubemap_mips", prefilter_start);
-                let brdf_lut = build_brdf_lut_with_sample_count(
-                    profile.brdf_lut_size(),
-                    profile.brdf_sample_count(),
+                    EnvironmentIblBakeRequest {
+                        source_resolution: resolution,
+                        mip_count: PREFILTER_MIP_COUNT,
+                        quality: profile.prefilter_quality(),
+                        brdf_lut_size: profile.brdf_lut_size(),
+                        brdf_sample_count: profile.brdf_sample_count(),
+                    },
                 );
                 #[cfg(all(target_arch = "wasm32", feature = "demo-page"))]
                 {
-                    log_environment_step("build_brdf_lut", brdf_start);
+                    log_environment_step("bake_environment_ibl", bake_start);
                 }
                 Arc::new(PreparedEnvironmentCubemap {
                     resolution,
-                    mips,
-                    mip_count: PREFILTER_MIP_COUNT,
-                    brdf_lut,
-                    brdf_lut_size: profile.brdf_lut_size(),
+                    mips: baked.mips,
+                    mip_count: baked.mip_count,
+                    brdf_lut: baked.brdf_lut,
+                    brdf_lut_size: baked.brdf_lut_size,
                 })
             })
         };
@@ -360,15 +357,15 @@ pub fn precompute_environment_sidecar(
         })?;
     let resolution = faces.resolution();
     let source_pixels = faces.build_face_pixels_rgba32f();
-    let mips = prefilter_specular_cubemap_mips_with_quality(
+    let baked = bake_environment_ibl(
         &source_pixels,
-        resolution,
-        PREFILTER_MIP_COUNT,
-        render_profile.prefilter_quality(),
-    );
-    let brdf_lut = build_brdf_lut_with_sample_count(
-        render_profile.brdf_lut_size(),
-        render_profile.brdf_sample_count(),
+        EnvironmentIblBakeRequest {
+            source_resolution: resolution,
+            mip_count: PREFILTER_MIP_COUNT,
+            quality: render_profile.prefilter_quality(),
+            brdf_lut_size: render_profile.brdf_lut_size(),
+            brdf_sample_count: render_profile.brdf_sample_count(),
+        },
     );
     let diffuse_rgb = environment
         .preview_irradiance_rgb()
@@ -377,9 +374,9 @@ pub fn precompute_environment_sidecar(
         profile,
         source_sha,
         resolution,
-        mips,
-        brdf_lut,
-        render_profile.brdf_lut_size(),
+        baked.mips,
+        baked.brdf_lut,
+        baked.brdf_lut_size,
         diffuse_rgb,
     )
 }
