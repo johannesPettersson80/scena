@@ -3,6 +3,7 @@ use crate::geometry::{GeometryDesc, Primitive, PrimitiveVertexAttributes, Skinni
 use crate::material::{Color, MaterialDesc};
 use crate::scene::{InstanceId, InstanceSetKey, NodeKey, Transform, Vec3};
 
+use super::super::physical_transmission::PreparedPhysicalTransmission as PhysicalTransmission;
 use super::super::{RasterTarget, camera::CameraProjection};
 use super::environment::PreparedEnvironmentLighting;
 use super::lighting::PreparedLights;
@@ -45,6 +46,7 @@ pub(in crate::render) struct PreparedPrimitive {
     gpu_triangle_path: bool,
     double_sided: bool,
     material_reflection: Option<PreparedMaterialReflection>,
+    material_transmission: Option<PhysicalTransmission>,
 }
 
 impl PreparedPrimitive {
@@ -61,6 +63,7 @@ impl PreparedPrimitive {
             gpu_triangle_path: true,
             double_sided: false,
             material_reflection: None,
+            material_transmission: None,
         }
     }
 
@@ -92,6 +95,14 @@ impl PreparedPrimitive {
         reflection: Option<PreparedMaterialReflection>,
     ) -> Self {
         self.material_reflection = reflection;
+        self
+    }
+
+    pub(in crate::render) const fn with_material_transmission(
+        mut self,
+        transmission: Option<PhysicalTransmission>,
+    ) -> Self {
+        self.material_transmission = transmission;
         self
     }
 
@@ -164,6 +175,10 @@ impl PreparedPrimitive {
         &self,
     ) -> Option<PreparedMaterialReflection> {
         self.material_reflection
+    }
+
+    pub(in crate::render) const fn material_transmission(&self) -> Option<PhysicalTransmission> {
+        self.material_transmission
     }
 
     pub(in crate::render) fn world_from_model(&self) -> [f32; 16] {

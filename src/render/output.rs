@@ -17,14 +17,20 @@ pub(super) struct OutputTransform {
 }
 
 impl OutputTransform {
-    pub(super) fn encode_rgba8(self, color: Color) -> [u8; 4] {
+    pub(super) fn post_color(self, color: Color) -> Color {
         match self.tonemapper {
-            Tonemapper::Aces => linear_rgba_to_srgb8(aces_tonemap(color, self.exposure_ev)),
-            Tonemapper::PbrNeutral => {
-                linear_rgba_to_srgb8(pbr_neutral_tonemap(color, self.exposure_ev))
-            }
-            Tonemapper::Standard => linear_rgba_to_srgb8(apply_exposure(color, self.exposure_ev)),
+            Tonemapper::Aces => aces_tonemap(color, self.exposure_ev),
+            Tonemapper::PbrNeutral => pbr_neutral_tonemap(color, self.exposure_ev),
+            Tonemapper::Standard => apply_exposure(color, self.exposure_ev),
         }
+    }
+
+    pub(super) fn encode_rgba8(self, color: Color) -> [u8; 4] {
+        linear_rgba_to_srgb8(self.post_color(color))
+    }
+
+    pub(super) fn encode_post_rgba8(self, color: Color) -> [u8; 4] {
+        linear_rgba_to_srgb8(color)
     }
 
     pub(super) fn encode_clear_rgba8(self, color: Color) -> [u8; 4] {

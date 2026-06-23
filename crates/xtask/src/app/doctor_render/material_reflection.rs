@@ -61,6 +61,55 @@ pub(crate) fn check_material_reflection_quality_contracts(
         root,
         findings,
         "ARCH-RENDER-QUALITY",
+        "src/render/physical_transmission.rs",
+        &[
+            "KHR_materials_transmission / KHR_materials_volume",
+            "pub(in crate::render) fn physical_transmission_color",
+            "pub(in crate::render) fn volume_transmittance",
+            "fn refract_vec3",
+            "volume_transmittance_matches_beer_lambert_probe",
+            "scene_color_transmission_uses_refraction_volume_and_reflection_terms",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-QUALITY",
+        "src/render/cpu_transmission.rs",
+        &[
+            "draw_physical_transmission_cpu",
+            "sample_post_scene_color",
+            "encode_post_rgba8",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-QUALITY",
+        "src/render/cpu.rs",
+        &["primitive_needs_physical_transmission"],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-QUALITY",
+        "tests/transmission_parity.rs",
+        &[
+            "physical_glass_transmission_matches_cpu_and_gpu_across_volume_sweep",
+            "scena.physical_glass_transmission_parity_sweep.v1",
+            "physical-glass-transmission-parity.json",
+            "clear-thin-neutral",
+            "clear-thick-blue",
+            "frosted-mid-green",
+            "frosted-thick-warm",
+            "render_scene_cpu_gpu_pair_with_renderer",
+            "GLASS_REGION",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-RENDER-QUALITY",
         "src/render/gpu/output.rs",
         &[
             "triangle_shader_applies_material_screen_space_reflections_in_native_and_webgl2_variants",
@@ -74,6 +123,9 @@ pub(crate) fn check_material_reflection_quality_contracts(
         "ARCH-RENDER-QUALITY",
         "src/render/gpu/output_shader.wgsl",
         &[
+            "fn physical_transmission_color",
+            "volume_transmittance(thickness, material.attenuation_color.rgb, material.transmission_factors.w)",
+            "textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv",
             "fn screen_space_material_reflection",
             "camera.color_management.z",
             "textureSample(transmission_color_texture, transmission_color_sampler, reflected_uv",
@@ -85,6 +137,9 @@ pub(crate) fn check_material_reflection_quality_contracts(
         "ARCH-RENDER-QUALITY",
         "src/render/gpu/output_shader_texture_2d.wgsl",
         &[
+            "fn physical_transmission_color",
+            "volume_transmittance(thickness, material.attenuation_color.rgb, material.transmission_factors.w)",
+            "textureSample(transmission_color_texture, transmission_color_sampler, refracted_uv",
             "fn screen_space_material_reflection",
             "camera.color_management.z",
             "textureSample(transmission_color_texture, transmission_color_sampler, reflected_uv",

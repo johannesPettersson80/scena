@@ -18,6 +18,7 @@ mod cpu_reflections;
 mod cpu_render;
 mod cpu_resolve;
 mod cpu_strokes;
+mod cpu_transmission;
 mod culling;
 #[cfg(test)]
 mod depth_prepass_tests;
@@ -29,6 +30,7 @@ pub mod introspection;
 mod offscreen;
 mod output;
 mod pbr_brdf;
+mod physical_transmission;
 mod prepare;
 mod prepare_lifecycle;
 mod prepare_retained;

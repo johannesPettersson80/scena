@@ -2,6 +2,7 @@ use crate::diagnostics::PrepareError;
 use crate::geometry::{GeometryTopology, Primitive, PrimitiveVertexAttributes, Vertex};
 use crate::material::{MaterialDesc, MaterialKind};
 use crate::render::camera::CameraProjection;
+use crate::render::physical_transmission::PreparedPhysicalTransmission;
 
 use super::cpu_bake::{
     CpuBakeCorner, baked_area_shadow_visibility, baked_shadow_visibility, cpu_texture_subdivisions,
@@ -334,6 +335,7 @@ fn append_triangle_primitives<F>(
         ];
         let subdivisions = cpu_texture_subdivisions(source.material, backend_shaded_material);
         let material_reflection = material_reflection(source.material);
+        let material_transmission = material_transmission(source.material);
         for sub_triangle in subdivided_cpu_corners(corners, subdivisions) {
             let primitive = Primitive::triangle_with_attributes(
                 sub_triangle.map(|corner| Vertex {
@@ -356,7 +358,8 @@ fn append_triangle_primitives<F>(
                 draw_uniform_tint(source.tint),
             )
             .with_double_sided(source.material.double_sided())
-            .with_material_reflection(material_reflection);
+            .with_material_reflection(material_reflection)
+            .with_material_transmission(material_transmission);
             push_material_pass_primitive(
                 primitive,
                 material_pass,
@@ -374,6 +377,20 @@ fn material_reflection(material: &MaterialDesc) -> Option<PreparedMaterialReflec
         return None;
     }
     PreparedMaterialReflection::new(material.metallic_factor(), material.roughness_factor())
+}
+
+fn material_transmission(material: &MaterialDesc) -> Option<PreparedPhysicalTransmission> {
+    if material.kind() != MaterialKind::PbrMetallicRoughness {
+        return None;
+    }
+    PreparedPhysicalTransmission::new(
+        material.transmission_factor(),
+        material.ior(),
+        material.thickness_factor(),
+        material.attenuation_color(),
+        material.attenuation_distance(),
+        material.roughness_factor(),
+    )
 }
 
 fn structural_vertex_tint(tint: Option<crate::material::Color>) -> Option<crate::material::Color> {

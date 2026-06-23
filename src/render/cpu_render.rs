@@ -6,8 +6,8 @@ use crate::scene::{ClippingPlane, SectionBox};
 use super::output::OutputTransform;
 use super::prepare::PreparedPrimitive;
 use super::{
-    AntiAliasing, RasterTarget, Renderer, camera, cpu, cpu_resolve, cpu_strokes, output,
-    screen_space_reflections,
+    AntiAliasing, RasterTarget, Renderer, camera, cpu, cpu_resolve, cpu_strokes, cpu_transmission,
+    output, screen_space_reflections,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -261,13 +261,19 @@ fn draw_cpu_geometry_pass_serial(input: CpuGeometryPass<'_>) -> u64 {
             input.frame,
         );
         cpu::clear_cpu(&mut cpu_frame, input.background_color);
-        if let Some(config) = input.order_independent_transparency {
+        let has_physical_transmission = input
+            .primitives
+            .iter()
+            .any(cpu::primitive_needs_physical_transmission);
+        let oit_passes = if let Some(config) = input.order_independent_transparency {
             cpu::clear_order_independent_transparency(input.oit_scratch);
             for primitive in input.primitives {
                 if !primitive.gpu_triangle_path() {
                     continue;
                 }
-                if cpu::primitive_needs_order_independent_transparency(primitive) {
+                if cpu::primitive_needs_physical_transmission(primitive) {
+                    continue;
+                } else if cpu::primitive_needs_order_independent_transparency(primitive) {
                     cpu::draw_order_independent_transparency_cpu(
                         &mut cpu_frame,
                         primitive,
@@ -295,6 +301,9 @@ fn draw_cpu_geometry_pass_serial(input: CpuGeometryPass<'_>) -> u64 {
                 if !primitive.gpu_triangle_path() {
                     continue;
                 }
+                if cpu::primitive_needs_physical_transmission(primitive) {
+                    continue;
+                }
                 cpu::draw_primitive_cpu(
                     &mut cpu_frame,
                     primitive,
@@ -306,7 +315,26 @@ fn draw_cpu_geometry_pass_serial(input: CpuGeometryPass<'_>) -> u64 {
                 );
             }
             0
+        };
+        if has_physical_transmission {
+            let scene_color_frame = cpu_frame.frame.to_vec();
+            for primitive in input.primitives {
+                if !primitive.gpu_triangle_path()
+                    || !cpu::primitive_needs_physical_transmission(primitive)
+                {
+                    continue;
+                }
+                cpu_transmission::draw_physical_transmission_cpu(
+                    &mut cpu_frame,
+                    primitive,
+                    &scene_color_frame,
+                    input.clipping_planes,
+                    input.section_box,
+                    input.camera_projection,
+                );
+            }
         }
+        oit_passes
     };
 
     if let (Some(config), Some(material_reflections)) = (
@@ -328,6 +356,10 @@ fn draw_cpu_geometry_pass_serial(input: CpuGeometryPass<'_>) -> u64 {
 
 fn should_parallelize_cpu_geometry_pass(input: &CpuGeometryPass<'_>) -> bool {
     input.screen_space_reflections.is_none()
+        && !input
+            .primitives
+            .iter()
+            .any(cpu::primitive_needs_physical_transmission)
         && input.primitives.len() >= CPU_PARALLEL_MIN_PRIMITIVES
         && input.target.pixel_len() >= CPU_PARALLEL_MIN_PIXELS
         && cpu_geometry_worker_count(input.target) > 1

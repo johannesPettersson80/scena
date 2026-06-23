@@ -28,10 +28,10 @@ impl Default for OitAccumPixel {
 
 pub(super) struct CpuFrame<'frame> {
     pub(super) target: RasterTarget,
-    output: OutputTransform,
-    row_start: u32,
+    pub(super) output: OutputTransform,
+    pub(super) row_start: u32,
     row_count: u32,
-    linear_frame: &'frame mut [Color],
+    pub(super) linear_frame: &'frame mut [Color],
     pub(super) depth_frame: &'frame mut [f32],
     pub(super) frame: &'frame mut [u8],
 }
@@ -75,7 +75,7 @@ impl<'frame> CpuFrame<'frame> {
         }
     }
 
-    fn row_end(&self) -> u32 {
+    pub(super) fn row_end(&self) -> u32 {
         self.row_start
             .saturating_add(self.row_count)
             .min(self.target.height)
@@ -123,6 +123,10 @@ pub(super) fn primitive_needs_order_independent_transparency(
         .vertices()
         .iter()
         .any(|vertex| clamp_alpha_or(vertex.color.a, 1.0) < 1.0 - f32::EPSILON)
+}
+
+pub(super) fn primitive_needs_physical_transmission(primitive: &PreparedPrimitive) -> bool {
+    primitive.material_transmission().is_some()
 }
 
 pub(super) fn draw_primitive_cpu(
