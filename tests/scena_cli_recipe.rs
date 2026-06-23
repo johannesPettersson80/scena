@@ -3896,11 +3896,32 @@ fn scena_recipe_render_tonemap_color_contract_matches_oracle_on_cpu_and_gpu() {
     let dir = artifact_dir("recipe-render-tonemap-color-contract");
     let cases = [
         (
+            "standard-gray-ev-minus2",
+            "standard",
+            -2.0,
+            [0.18, 0.18, 0.18],
+            [60, 60, 60],
+        ),
+        (
             "standard-gray-ev2",
             "standard",
             2.0,
             [0.18, 0.18, 0.18],
             [221, 221, 221],
+        ),
+        (
+            "standard-color-ev0",
+            "standard",
+            0.0,
+            [0.8, 0.2, 0.05],
+            [231, 124, 63],
+        ),
+        (
+            "pbr-neutral-gray-ev-minus1",
+            "pbr_neutral",
+            -1.0,
+            [0.18, 0.18, 0.18],
+            [63, 63, 63],
         ),
         (
             "pbr-neutral-color",
@@ -3909,7 +3930,28 @@ fn scena_recipe_render_tonemap_color_contract_matches_oracle_on_cpu_and_gpu() {
             [0.8, 0.2, 0.05],
             [227, 113, 34],
         ),
+        (
+            "pbr-neutral-bright-ev1",
+            "pbr_neutral",
+            1.0,
+            [1.0, 0.5, 0.1],
+            [250, 193, 122],
+        ),
+        (
+            "aces-gray-ev-minus2",
+            "aces",
+            -2.0,
+            [0.18, 0.18, 0.18],
+            [28, 28, 28],
+        ),
         ("aces-color", "aces", 0.0, [0.8, 0.2, 0.05], [198, 104, 45]),
+        (
+            "aces-gray-ev2",
+            "aces",
+            2.0,
+            [0.18, 0.18, 0.18],
+            [188, 188, 188],
+        ),
     ];
     let mut sweep = support::parity::ParitySweep::new("scena.tonemap_color_parity_sweep.v1");
     for (name, tonemapper, exposure_ev, linear_color, expected_srgb8) in cases {
