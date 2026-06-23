@@ -252,23 +252,24 @@ Area lights give **soft shadows and broad soft speculars** — the studio-softbo
   and lavapipe GPU, and
   `scena_recipe_render_verify_checks_area_light_soft_shadow_for_all_shapes_on_cpu_and_gpu`
   proves the same finite-emitter soft-shadow quality check for `rect`, `disc`,
-  and `sphere` area lights on both backends. Dedicated LTC-style specular
-  evaluation now runs in the CPU reference path and both GPU PBR shader variants
-  (`ltc_area_light_specular_contribution`, `ltc_evaluate`, `ltc_matrix`,
-  `ltc_integrate_edge`). Test-first evidence:
+  and `sphere` area lights on both backends. Dedicated fitted-table LTC
+  specular evaluation now runs in the CPU reference path and both GPU PBR
+  shader variants (`ltc_area_light_specular_contribution`,
+  `ltc_lookup_tables`, `ltc_clip_quad_to_horizon`, `ltc_integrate_edge`).
+  Test-first evidence:
   `triangle_shader_contains_ltc_area_light_specular_path_for_both_texture_layouts`
   failed before the WGSL implementation and now passes. The CPU unit
-  `area_ltc_specular_is_width_and_shape_sensitive` proves the rect path is
-  width-sensitive and the disc/sphere paths are not inert. The recipe proof
-  `scena_recipe_render_area_light_ltc_specular_matches_cpu_and_gpu` renders the
-  broad softbox through `recipe render --verify` on CPU and lavapipe HeadlessGpu
-  and records native-resolution parity in
-  `target/gate-artifacts/scena-cli-recipe-recipe-render-area-light-ltc-parity-1319445/area-light-ltc-cpu-gpu-parity.json`:
-  CPU FWHM `4717` pixels, 124 luma levels; GPU FWHM `4702` pixels, 124 luma
-  levels; region mean channel delta `0.7509`, max channel delta `37`.
-  The same focused area-light test subset passes on the synced scratch tree:
-  point vs area specular FWHM widens CPU `3549 → 4717` and GPU `3508 → 4702`,
-  while receiver shadow darkening remains CPU `0.0162` and GPU `0.0190`.
+  `area_ltc_specular_matches_selfshadow_reference_probe` failed against the
+  previous hand-rolled approximation (`1.242` red vs reference `0.168`) and now
+  passes through the shared selfshadow/ltc_code fitted-table path. The recipe
+  proof `scena_recipe_render_area_light_ltc_specular_matches_cpu_and_gpu`
+  renders a `rect`/`disc`/`sphere` roughness sweep through
+  `recipe render --verify` on CPU and lavapipe HeadlessGpu and records
+  native-resolution parity in
+  `area-light-ltc-cpu-gpu-parity-{rect-low-roughness,rect-mid-roughness,rect-high-roughness,disc-mid-roughness,sphere-high-roughness}.json`.
+  The same focused area-light test subset keeps point-vs-area specular spread
+  and receiver-shadow darkening under rendered-pixel assertions on both
+  backends.
   Doctor now pins the receiver-shadow
   artifact names, the all-shapes recipe proof, the dense 16-sample emitter
   visibility test, and the shader-side area-shadow multiplier so this cannot

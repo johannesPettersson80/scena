@@ -1,11 +1,9 @@
 use crate::scene::{AreaLightShape, Vec3};
 
+use super::super::super::area_ltc;
 use super::super::pbr_contract::{PbrMaterial, inverse_square_range_attenuation};
 use super::area::PreparedAreaLight;
-use super::math::{add_vec3, dot_vec3, normalize_or, scale_color, subtract_vec3};
-
-const MIN_DENOMINATOR: f32 = 0.0001;
-const INV_TWO_PI: f32 = 1.0 / (2.0 * std::f32::consts::PI);
+use super::math::{normalize_or, scale_color, subtract_vec3};
 
 pub(super) fn ltc_area_light_specular_contribution(
     light: PreparedAreaLight,
@@ -19,16 +17,16 @@ pub(super) fn ltc_area_light_specular_contribution(
     if shadow_factor <= f32::EPSILON {
         return Vec3::ZERO;
     }
-    let normal = normalize_or(normal, Vec3::Y);
-    let view = normalize_or(view, normal);
-    let n_dot_v = dot_vec3(normal, view).clamp(0.0, 1.0);
-    if n_dot_v <= f32::EPSILON {
-        return Vec3::ZERO;
-    }
-
     let polygon = ltc_area_light_polygon(light, position, normal);
-    let irradiance = ltc_evaluate(polygon, position, normal, view, material.roughness);
-    if irradiance <= f32::EPSILON {
+    let probe = area_ltc::evaluate_specular_polygon(
+        polygon,
+        position,
+        normal,
+        view,
+        material.roughness,
+        material.f0(),
+    );
+    if probe.irradiance <= f32::EPSILON {
         return Vec3::ZERO;
     }
 
@@ -38,11 +36,9 @@ pub(super) fn ltc_area_light_specular_contribution(
         light.luminous_flux_lumens / (4.0 * std::f32::consts::PI)
             * inverse_square_range_attenuation(to_light, light.range),
     );
-    let fresnel = fresnel_schlick(n_dot_v, material.f0());
-    let roughness_gain = 0.45 + (1.0 - material.roughness).clamp(0.0, 1.0) * 0.75;
     scale_vec3(
-        multiply_vec3(fresnel, radiance),
-        irradiance * roughness_gain * shadow_factor,
+        multiply_vec3(probe.fresnel_scale, radiance),
+        probe.irradiance * shadow_factor,
     )
 }
 
@@ -73,78 +69,6 @@ fn ltc_area_light_polygon(light: PreparedAreaLight, position: Vec3, normal: Vec3
             ]
         }
     }
-}
-
-fn ltc_evaluate(
-    polygon: [Vec3; 4],
-    position: Vec3,
-    normal: Vec3,
-    view: Vec3,
-    roughness: f32,
-) -> f32 {
-    let (tangent, bitangent) = ltc_matrix(normal, view, roughness);
-    let roughness = roughness.clamp(0.04, 1.0);
-    let tangent_scale = (0.42 + roughness * 0.58).max(0.04);
-    let bitangent_scale = (0.55 + roughness * 0.45).max(0.04);
-    let vertices = polygon.map(|point| {
-        let local = subtract_vec3(point, position);
-        normalize_or(
-            Vec3::new(
-                dot_vec3(local, tangent) / tangent_scale,
-                dot_vec3(local, bitangent) / bitangent_scale,
-                dot_vec3(local, normal).max(0.0),
-            ),
-            Vec3::Z,
-        )
-    });
-
-    let mut integral = 0.0;
-    for index in 0..vertices.len() {
-        integral += ltc_integrate_edge(vertices[index], vertices[(index + 1) % vertices.len()]);
-    }
-    (integral.abs() * INV_TWO_PI).max(0.0)
-}
-
-fn ltc_matrix(normal: Vec3, view: Vec3, roughness: f32) -> (Vec3, Vec3) {
-    let tangent = normalize_or(
-        subtract_vec3(view, scale_vec3(normal, dot_vec3(view, normal))),
-        {
-            let fallback_axis = if normal.z.abs() < 0.9 {
-                Vec3::Z
-            } else {
-                Vec3::Y
-            };
-            normalize_or(cross_vec3(fallback_axis, normal), Vec3::X)
-        },
-    );
-    let bitangent = normalize_or(cross_vec3(normal, tangent), Vec3::Z);
-    let skew = (1.0 - roughness.clamp(0.04, 1.0)) * 0.18;
-    (
-        normalize_or(add_vec3(tangent, scale_vec3(normal, skew)), tangent),
-        bitangent,
-    )
-}
-
-fn ltc_integrate_edge(a: Vec3, b: Vec3) -> f32 {
-    let cosine = dot_vec3(a, b).clamp(-0.9999, 0.9999);
-    let y = cosine.abs();
-    let numerator = 0.854_398_5 + (0.496_515_5 + 0.014_520_6 * y) * y;
-    let denominator = 3.417_594 + (4.161_672_6 + y) * y;
-    let approximation = numerator / denominator.max(MIN_DENOMINATOR);
-    let theta_sin_theta = if cosine > 0.0 {
-        approximation
-    } else {
-        0.5 * (1.0 - cosine * cosine).max(MIN_DENOMINATOR).sqrt().recip() - approximation
-    };
-    cross_vec3(a, b).z * theta_sin_theta
-}
-
-fn fresnel_schlick(cos_theta: f32, f0: Vec3) -> Vec3 {
-    let factor = (1.0 - cos_theta.clamp(0.0, 1.0)).powi(5);
-    add_vec3(
-        f0,
-        scale_vec3(subtract_vec3(Vec3::new(1.0, 1.0, 1.0), f0), factor),
-    )
 }
 
 fn multiply_vec3(left: Vec3, right: Vec3) -> Vec3 {
@@ -220,6 +144,33 @@ mod tests {
         assert!(
             disc_specular.x > 0.0 && sphere_specular.x > 0.0,
             "disc and sphere LTC area light paths must not be inert; disc={disc_specular:?}, sphere={sphere_specular:?}"
+        );
+    }
+
+    #[test]
+    fn area_ltc_specular_matches_selfshadow_reference_probe() {
+        let material = PbrMaterial::new(Vec3::new(0.82, 0.78, 0.72), 1.0, 0.34);
+        let position = Vec3::ZERO;
+        let normal = Vec3::Y;
+        let view = normalize_or(Vec3::new(0.0, 0.8, 1.6), Vec3::Y);
+        let wide = PreparedAreaLight {
+            color: Color::from_linear_rgb(1.0, 0.96, 0.9),
+            position: Vec3::new(0.0, 1.35, 0.32),
+            axis_x: Vec3::X * 0.9,
+            axis_y: Vec3::Z * 0.45,
+            luminous_flux_lumens: 900.0,
+            range: None,
+            shape: AreaLightShape::rect(1.8, 0.9),
+        };
+
+        let actual =
+            ltc_area_light_specular_contribution(wide, position, normal, view, material, 1.0);
+        let expected = Vec3::new(0.168_247_9, 0.154_115_4, 0.134_073_29);
+        let delta = (actual - expected).abs();
+
+        assert!(
+            delta.max_element() <= 0.000_75,
+            "LTC specular must match the selfshadow/ltc_code fitted-table probe; actual={actual:?}, expected={expected:?}, delta={delta:?}"
         );
     }
 }

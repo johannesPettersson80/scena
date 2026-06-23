@@ -6,6 +6,7 @@ use std::{cell::Cell, marker::PhantomData};
 pub mod animation_introspection;
 #[cfg(feature = "inspection")]
 pub mod appearance;
+mod area_ltc;
 mod background;
 mod build;
 mod camera;

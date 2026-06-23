@@ -13,12 +13,20 @@ pub(super) const GPU_COLOR_CONTRACT_WGSL: &str = include_str!("../color_contract
 pub(super) const GPU_TRIANGLE_SHADER: &str = concat!(
     include_str!("output_shader.wgsl"),
     "\n",
+    include_str!("../area_ltc_tables.wgsl"),
+    "\n",
+    include_str!("../area_ltc.wgsl"),
+    "\n",
     include_str!("../pbr_brdf.wgsl"),
     "\n",
     include_str!("../color_contract.wgsl")
 );
 pub(super) const GPU_TRIANGLE_SHADER_TEXTURE_2D: &str = concat!(
     include_str!("output_shader_texture_2d.wgsl"),
+    "\n",
+    include_str!("../area_ltc_tables.wgsl"),
+    "\n",
+    include_str!("../area_ltc.wgsl"),
     "\n",
     include_str!("../pbr_brdf.wgsl"),
     "\n",
@@ -850,8 +858,8 @@ mod tests {
                 && GPU_TRIANGLE_SHADER.contains("area_light_position_flux")
                 && GPU_TRIANGLE_SHADER.contains("area_light_sample_position")
                 && GPU_TRIANGLE_SHADER.contains("ltc_area_light_specular_contribution")
-                && GPU_TRIANGLE_SHADER.contains("ltc_evaluate")
-                && GPU_TRIANGLE_SHADER.contains("ltc_matrix")
+                && GPU_TRIANGLE_SHADER.contains("ltc_lookup_tables")
+                && GPU_TRIANGLE_SHADER.contains("LTC_TABLE_1")
                 && GPU_TRIANGLE_SHADER.contains("pbr_light_contribution")
                 && GPU_TRIANGLE_SHADER.contains("fresnel_schlick")
                 && GPU_TRIANGLE_SHADER.contains("distribution_ggx")
@@ -871,11 +879,14 @@ mod tests {
             assert!(
                 shader.contains("fn ltc_area_light_specular_contribution")
                     && shader.contains("fn ltc_area_light_polygon")
-                    && shader.contains("fn ltc_evaluate")
-                    && shader.contains("fn ltc_matrix")
+                    && shader.contains("fn ltc_evaluate_specular_polygon")
+                    && shader.contains("fn ltc_lookup_tables")
+                    && shader.contains("LTC_TABLE_1")
+                    && shader.contains("LTC_TABLE_2")
                     && shader.contains("fn ltc_integrate_edge")
+                    && shader.contains("fn ltc_clip_quad_to_horizon")
                     && shader.contains("shaded += ltc_area_light_specular_contribution("),
-                "{name} shader must include the same dedicated linearly-transformed-cosine area-light specular path as the CPU reference"
+                "{name} shader must include the same fitted-table linearly-transformed-cosine area-light specular path as the CPU reference"
             );
         }
     }

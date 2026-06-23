@@ -45,10 +45,10 @@ All notable user-facing changes are recorded here.
   `expect_quality.reflection.max_firefly_fraction` so recipe verification can
   fail isolated bright reflection specks instead of treating them as valid
   structure.
-- Added LTC-style area-light specular evaluation for rectangular, disc, and
-  sphere recipe area lights on the CPU reference path and both GPU PBR shader
-  variants, with CPU/lavapipe recipe-render parity proof for broad softbox
-  highlights.
+- Added fitted-table LTC area-light specular evaluation for rectangular, disc,
+  and sphere recipe area lights on the CPU reference path and both GPU PBR
+  shader variants, using the public `selfshadow/ltc_code` table convention with
+  CPU/lavapipe recipe-render parity proof across shape and roughness sweeps.
 - Added the repo-hosted `.codex/skills/scena-app-builder` LLM skill and
   `docs/guides/llm-app-builder.md` guide for building and verifying scena
   applications from public schemas, recipes, CLI commands, diagnostics, and

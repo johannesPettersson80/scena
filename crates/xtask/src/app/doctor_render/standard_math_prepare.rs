@@ -237,7 +237,36 @@ pub(crate) fn check_prepare_asset_contracts(root: &Path, findings: &mut Vec<Find
         findings,
         "ARCH-PREPARE-LIGHT-CAPACITY",
         "src/render/gpu/output.rs",
-        &["triangle_shader_multiplies_area_lights_by_prepared_area_shadow_visibility"],
+        &[
+            "triangle_shader_multiplies_area_lights_by_prepared_area_shadow_visibility",
+            "include_str!(\"../area_ltc_tables.wgsl\")",
+            "include_str!(\"../area_ltc.wgsl\")",
+            "triangle_shader_contains_ltc_area_light_specular_path_for_both_texture_layouts",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-LIGHT-CAPACITY",
+        "src/render/area_ltc.rs",
+        &[
+            "selfshadow/ltc_code",
+            "sample_ltc_tables",
+            "clip_quad_to_horizon",
+            "ltc_lookup_matches_selfshadow_table_texel_probes",
+            "ltc_rect_probe_matches_selfshadow_reference_irradiance",
+        ],
+    );
+    require_contains(
+        root,
+        findings,
+        "ARCH-PREPARE-LIGHT-CAPACITY",
+        "src/render/area_ltc_tables.rs",
+        &[
+            "90c2ae903e5e460c03f28bc14d0391dba9578e71",
+            "pub(super) const LTC_1",
+            "pub(super) const LTC_2",
+        ],
     );
     require_contains(
         root,
@@ -277,7 +306,7 @@ pub(crate) fn check_area_light_acceptance_honesty(root: &Path, findings: &mut Ve
     {
         findings.push(Finding::new(
             "ARCH-PREPARE-AREA-LIGHT-HONESTY",
-            "A3 cannot be marked shipped or its LTC checkbox checked until src/render contains a dedicated linearly-transformed-cosine area-light implementation marker such as ltc_evaluate, ltc_lut, or ltc_matrix",
+            "A3 cannot be marked shipped or its LTC checkbox checked until src/render contains the shared fitted-table linearly-transformed-cosine implementation and CPU/GPU shader route",
         ));
     }
     if checklist_claims_clustered_light_culling_shipped(&checklist)
@@ -325,15 +354,15 @@ fn render_source_text(root: &Path) -> String {
 
 fn render_source_contains_ltc(render_source_lower: &str) -> bool {
     [
-        "ltc_evaluate",
-        "ltc_lut",
-        "ltc_matrix",
-        "ltc_area_light",
-        "linearly transformed cosine",
-        "linearly-transformed cosine",
+        "selfshadow/ltc_code",
+        "sample_ltc_tables",
+        "ltc_1",
+        "ltc_2",
+        "evaluate_specular_polygon",
+        "clip_quad_to_horizon",
     ]
     .iter()
-    .any(|marker| render_source_lower.contains(marker))
+    .all(|marker| render_source_lower.contains(marker))
 }
 
 fn render_source_contains_clustered_light_assignment(render_source: &str) -> bool {

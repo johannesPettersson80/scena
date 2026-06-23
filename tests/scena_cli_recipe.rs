@@ -2521,17 +2521,31 @@ fn write_area_light_specular_recipe(
     name: &str,
     broad_area: bool,
 ) -> (PathBuf, PathBuf) {
+    let shape = if broad_area { "rect" } else { "point" };
+    write_area_light_specular_recipe_with_options(dir, name, broad_area, shape, 1.6, 0.9, 0.055)
+}
+
+#[cfg(feature = "scene-host")]
+fn write_area_light_specular_recipe_with_options(
+    dir: &Path,
+    name: &str,
+    broad_area: bool,
+    shape: &str,
+    width: f64,
+    height: f64,
+    roughness: f64,
+) -> (PathBuf, PathBuf) {
     let recipe_path = dir.join(format!("{name}.recipe.json"));
     let png_path = dir.join(format!("{name}.png"));
     let light = if broad_area {
-        json!({
+        let mut light = json!({
             "id": "softbox",
             "kind": "area",
             "preset": "softbox",
-            "shape": "rect",
+            "shape": shape,
             "color": "warm_color",
-            "width": 1.6,
-            "height": 0.9,
+            "width": width,
+            "height": height,
             "luminous_flux_lumens": 4200.0,
             "range": 4.0,
             "transform": {
@@ -2539,7 +2553,13 @@ fn write_area_light_specular_recipe(
                 "eye": [0.0, 0.9, 1.35],
                 "target": [0.0, 0.0, 0.0]
             }
-        })
+        });
+        if shape == "disc" || shape == "sphere" {
+            light.as_object_mut().unwrap().remove("width");
+            light.as_object_mut().unwrap().remove("height");
+            light["radius"] = json!(width * 0.5);
+        }
+        light
     } else {
         json!({
             "id": "point_key",
@@ -2566,7 +2586,7 @@ fn write_area_light_specular_recipe(
                 { "id": "body_geo", "primitive": { "kind": "sphere", "radius": 0.46, "segments": 64, "rings": 32 } }
             ],
             "materials": [
-                { "id": "body_mat", "kind": "pbr_metallic_roughness", "base_color": "body_color", "metallic": 0.0, "roughness": 0.055 }
+                { "id": "body_mat", "kind": "pbr_metallic_roughness", "base_color": "body_color", "metallic": 0.0, "roughness": roughness }
             ],
             "nodes": [
                 { "id": "body", "geometry": "body_geo", "material": "body_mat" }
@@ -5160,57 +5180,84 @@ fn scena_recipe_render_area_light_broadens_specular_highlight_on_cpu_and_gpu() {
 #[test]
 fn scena_recipe_render_area_light_ltc_specular_matches_cpu_and_gpu() {
     let dir = artifact_dir("recipe-render-area-light-ltc-parity");
-    let (cpu_recipe, cpu_png) =
-        write_area_light_specular_recipe(&dir, "ltc-specular-cpu-area", true);
-    let (gpu_recipe, gpu_png) =
-        write_area_light_specular_recipe(&dir, "ltc-specular-gpu-area", true);
-
-    let cpu_report = run_recipe_render_verify(&cpu_recipe, &cpu_png, false);
-    let gpu_report = run_recipe_render_verify(&gpu_recipe, &gpu_png, true);
-    let cpu = decode_png_rgba8(&cpu_png);
-    let gpu = decode_png_rgba8(&gpu_png);
+    let cases = [
+        ("rect-low-roughness", "rect", 1.6, 0.9, 0.08),
+        ("rect-mid-roughness", "rect", 1.6, 0.9, 0.34),
+        ("rect-high-roughness", "rect", 1.6, 0.9, 0.68),
+        ("disc-mid-roughness", "disc", 1.2, 1.2, 0.34),
+        ("sphere-high-roughness", "sphere", 0.9, 0.9, 0.56),
+    ];
     let region = QualityPixelRegion {
         x: 22,
         y: 10,
         width: 136,
         height: 122,
     };
-    let cpu_metrics = specular_spread_metrics(&cpu.rgba8, cpu.width, region);
-    let gpu_metrics = specular_spread_metrics(&gpu.rgba8, gpu.width, region);
-    let delta = frame_delta_in_region(&cpu.rgba8, &gpu.rgba8, cpu.width, region);
-    fs::write(
-        dir.join("area-light-ltc-cpu-gpu-parity.json"),
-        format!(
-            "{{\n  \"schema\": \"scena.area_light_ltc_parity_probe.v1\",\n  \"cpu\": {{ \"fwhm_pixels\": {}, \"unique_luma_levels\": {}, \"median_luminance\": {:.4}, \"peak_luminance\": {:.4}, \"threshold_luminance\": {:.4} }},\n  \"gpu\": {{ \"fwhm_pixels\": {}, \"unique_luma_levels\": {}, \"median_luminance\": {:.4}, \"peak_luminance\": {:.4}, \"threshold_luminance\": {:.4} }},\n  \"delta\": {{ \"mean_channel_delta\": {:.4}, \"max_channel_delta\": {} }},\n  \"region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}\n}}\n",
-            cpu_metrics.fwhm_pixels,
-            cpu_metrics.unique_luma_levels,
-            cpu_metrics.median_luminance,
-            cpu_metrics.peak_luminance,
-            cpu_metrics.threshold_luminance,
-            gpu_metrics.fwhm_pixels,
-            gpu_metrics.unique_luma_levels,
-            gpu_metrics.median_luminance,
-            gpu_metrics.peak_luminance,
-            gpu_metrics.threshold_luminance,
-            delta.mean_channel_delta,
-            delta.max_channel_delta,
-            region.x,
-            region.y,
-            region.width,
-            region.height
-        ),
-    )
-    .expect("LTC area-light parity metrics artifact writes");
 
-    let fwhm_delta = cpu_metrics.fwhm_pixels.abs_diff(gpu_metrics.fwhm_pixels);
-    assert!(
-        fwhm_delta <= 260,
-        "CPU and GPU LTC area-light specular spread should stay within a tight native-resolution tolerance; cpu={cpu_metrics:?}, gpu={gpu_metrics:?}, delta={delta:?}, cpu_report={cpu_report:#}, gpu_report={gpu_report:#}"
-    );
-    assert!(
-        delta.mean_channel_delta <= 18.0 && delta.max_channel_delta <= 96,
-        "CPU and GPU area-light LTC renders should match within the established native-resolution tolerance; cpu={cpu_metrics:?}, gpu={gpu_metrics:?}, delta={delta:?}, cpu_report={cpu_report:#}, gpu_report={gpu_report:#}"
-    );
+    for (case, shape, width, height, roughness) in cases {
+        let (cpu_recipe, cpu_png) = write_area_light_specular_recipe_with_options(
+            &dir,
+            &format!("ltc-specular-cpu-{case}"),
+            true,
+            shape,
+            width,
+            height,
+            roughness,
+        );
+        let (gpu_recipe, gpu_png) = write_area_light_specular_recipe_with_options(
+            &dir,
+            &format!("ltc-specular-gpu-{case}"),
+            true,
+            shape,
+            width,
+            height,
+            roughness,
+        );
+
+        let cpu_report = run_recipe_render_verify(&cpu_recipe, &cpu_png, false);
+        let gpu_report = run_recipe_render_verify(&gpu_recipe, &gpu_png, true);
+        let cpu = decode_png_rgba8(&cpu_png);
+        let gpu = decode_png_rgba8(&gpu_png);
+        let cpu_metrics = specular_spread_metrics(&cpu.rgba8, cpu.width, region);
+        let gpu_metrics = specular_spread_metrics(&gpu.rgba8, gpu.width, region);
+        let delta = frame_delta_in_region(&cpu.rgba8, &gpu.rgba8, cpu.width, region);
+        fs::write(
+            dir.join(format!("area-light-ltc-cpu-gpu-parity-{case}.json")),
+            format!(
+                "{{\n  \"schema\": \"scena.area_light_ltc_parity_probe.v1\",\n  \"case\": \"{}\",\n  \"shape\": \"{}\",\n  \"roughness\": {:.3},\n  \"cpu\": {{ \"fwhm_pixels\": {}, \"unique_luma_levels\": {}, \"median_luminance\": {:.4}, \"peak_luminance\": {:.4}, \"threshold_luminance\": {:.4} }},\n  \"gpu\": {{ \"fwhm_pixels\": {}, \"unique_luma_levels\": {}, \"median_luminance\": {:.4}, \"peak_luminance\": {:.4}, \"threshold_luminance\": {:.4} }},\n  \"delta\": {{ \"mean_channel_delta\": {:.4}, \"max_channel_delta\": {} }},\n  \"region\": {{ \"x\": {}, \"y\": {}, \"width\": {}, \"height\": {} }}\n}}\n",
+                case,
+                shape,
+                roughness,
+                cpu_metrics.fwhm_pixels,
+                cpu_metrics.unique_luma_levels,
+                cpu_metrics.median_luminance,
+                cpu_metrics.peak_luminance,
+                cpu_metrics.threshold_luminance,
+                gpu_metrics.fwhm_pixels,
+                gpu_metrics.unique_luma_levels,
+                gpu_metrics.median_luminance,
+                gpu_metrics.peak_luminance,
+                gpu_metrics.threshold_luminance,
+                delta.mean_channel_delta,
+                delta.max_channel_delta,
+                region.x,
+                region.y,
+                region.width,
+                region.height
+            ),
+        )
+        .expect("LTC area-light parity metrics artifact writes");
+
+        let fwhm_delta = cpu_metrics.fwhm_pixels.abs_diff(gpu_metrics.fwhm_pixels);
+        assert!(
+            fwhm_delta <= 48,
+            "CPU and GPU LTC area-light specular spread should stay within a tight native-resolution tolerance for {case}; cpu={cpu_metrics:?}, gpu={gpu_metrics:?}, delta={delta:?}, cpu_report={cpu_report:#}, gpu_report={gpu_report:#}"
+        );
+        assert!(
+            delta.mean_channel_delta <= 14.0 && delta.max_channel_delta <= 84,
+            "CPU and GPU area-light LTC renders should match across the shape/roughness sweep for {case}; cpu={cpu_metrics:?}, gpu={gpu_metrics:?}, delta={delta:?}, cpu_report={cpu_report:#}, gpu_report={gpu_report:#}"
+        );
+    }
 }
 
 #[cfg(feature = "scene-host")]
