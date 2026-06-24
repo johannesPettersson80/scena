@@ -282,12 +282,14 @@ When two declared parts must not intersect, add `expect_separation` with
 targets `a` and `b`. Use `min_gap` only when clearance matters; otherwise
 `min_gap:0` proves no world-bounds intersection. Treat
 `separation_conformance_mismatch` as a real assembly/composition failure.
-When `expect_quality.profile` is present, the composition report also checks
-each declared object's projected native-resolution region for framing,
-exposure, subject/background salience, and decoded base-color texture result.
-The render-quality profile is a baseline: adding explicit checks such as
-`text`, `line`, `reflection`, or `grounding` does not disable profile-derived
-geometry-edge or grid-floor checks.
+When `expect_quality.profile` is present, the composition report checks each
+declared object's projected native-resolution region for framing, exposure,
+subject/background salience, and decoded base-color texture result. Product
+renders that set `render.profile:"product"` or
+`render.auto_exposure:"product_studio"` also get severe subject exposure checks
+by default for authored and imported objects. The render-quality profile is a
+baseline: adding explicit checks such as `text`, `line`, `reflection`, or
+`grounding` does not disable profile-derived geometry-edge or grid-floor checks.
 Treat `subject_too_small_in_frame`, `subject_too_large_in_frame`,
 `subject_black_crushed`, `subject_blown_out`, `subject_salience_too_low`, and
 `texture_result_flat` as real render defects: change camera/framing, lighting,

@@ -868,9 +868,10 @@ Required top-level fields:
 - `checks`
 - `capabilities`
 
-Each `checks[]` entry has `id`, stable `code`, `severity`, `region`,
+Each `checks[]` entry has `id`, stable `code`, explicit `status`, `severity`, `region`,
 deterministically ordered `observed` and `threshold` maps, and an actionable
-`fix_hint`. Exact failure codes include `severe_black_crush`,
+`fix_hint`. Status is `checked` for evaluated passing checks and `failed` for
+warnings/errors that must be surfaced. Exact failure codes include `severe_black_crush`,
 `label_ink_isolation`, `label_missing_antialiasing`,
 `line_missing_antialiasing`, `line_not_straight`,
   `geometry_missing_antialiasing`, `reflection_structure_missing`,
@@ -888,10 +889,13 @@ The stable fixture lives at
 Produced by recipe verification when the `scene-host` feature is enabled. The
 report is nested under `SceneRecipeVerificationReportV1.composition` and
 records whether declared recipe elements and generated overlays have explicit,
-owned projected output. It is a foundation/spec-conformance layer; when
-`expect_quality.profile` is present it also runs object-scoped native-capture
-pixel sanity checks for exposure, subject/background salience, and decoded
-base-color texture result variation on each declared object region.
+owned projected output. It is a foundation/spec-conformance layer; explicit
+`expect_quality.profile` runs the full object-scoped native-capture checks for
+framing, exposure, subject/background salience, and decoded base-color texture
+result variation. Product-style verification (`render.profile:"product"` or
+`render.auto_exposure:"product_studio"`) also runs the severe subject exposure
+gate by default so imported product assets cannot pass verification while
+obviously blown out or dead dark.
 
 Required top-level fields:
 
@@ -912,11 +916,13 @@ requires a category, missing coverage must fail closed as a `failed`/`error`
 check instead of silently reporting `ok:true`.
 
 The foundation report checks declared-node presence, projected bboxes and
-screen size when bounds exist, material base-color intent where draw-material
+screen size when bounds exist, imported-root presence/coverage where import
+manifests expose node handles, material base-color intent where draw-material
 inspection is available, native-capture visible-pixel coverage in the declared
-node's viewport-clipped projected region, object-scoped exposure/salience and
-texture-result checks when `expect_quality.profile` is declared, grid/floor
-ownership, callout target ownership, measurement overlay output ownership,
+node or import's viewport-clipped projected region, object-scoped
+exposure/salience and texture-result checks when an object quality profile is
+declared or inferred from product-style render settings, grid/floor ownership,
+callout target ownership, measurement overlay output ownership,
 explicit overlay label/line geometry, declared ground contact from
 `expect_grounded`, helper-layer occlusion from `expect_helper_occluded`,
 object depth order from `expect_occlusion`, and unexpected draw output. Exact

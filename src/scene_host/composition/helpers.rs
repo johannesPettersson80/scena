@@ -47,6 +47,17 @@ pub(super) fn draws_for_handle(
         .collect()
 }
 
+pub(super) fn draws_for_handles<'a>(
+    inspection: &'a SceneInspectionReportV1,
+    handles: &BTreeSet<u64>,
+) -> Vec<&'a SceneDrawInspectionV1> {
+    inspection
+        .draw_list
+        .iter()
+        .filter(|draw| handles.contains(&draw.node))
+        .collect()
+}
+
 pub(super) fn projected_node_rect(
     capture: &CaptureRgba8,
     draws: &[&SceneDrawInspectionV1],

@@ -37,7 +37,7 @@ Additive public API changes in Unreleased:
   `Renderer::introspect_capture` (gated behind `inspection`)
 - `RENDER_QUALITY_SCHEMA_V1`, `RenderQualityReportV1`,
   `RenderQualityCheckV1`, `RenderQualitySummaryV1`,
-  `RenderQualityRegionV1`, `RenderQualityProfile`,
+  `RenderQualityRegionV1`, `RenderQualityStatusV1`, `RenderQualityProfile`,
   `RenderQualityFrameMetrics`, `RenderQualityLabelMetrics`,
   `ReferenceQualityMetrics`, `evaluate_render_quality`,
   `evaluate_render_quality_rgba8`, `evaluate_label_region_quality`,

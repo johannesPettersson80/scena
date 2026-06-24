@@ -1,7 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::metrics::{percentile_sorted, pixel_luminance};
-use super::types::{self, RenderQualityCheckV1, RenderQualityGridLineMetrics, RenderQualityRegion};
+use super::types::{
+    self, RenderQualityCheckV1, RenderQualityGridLineMetrics, RenderQualityRegion,
+    RenderQualityStatusV1,
+};
 
 pub fn grid_line_metrics(
     rgba8: &[u8],
@@ -135,6 +138,11 @@ pub fn evaluate_grid_line_region_quality(
             "grid_line_quality_too_low"
         }
         .to_owned(),
+        status: if passes {
+            RenderQualityStatusV1::Checked
+        } else {
+            RenderQualityStatusV1::Failed
+        },
         severity: if passes { "info" } else { "error" }.to_owned(),
         region: region.to_report(),
         observed: BTreeMap::from([

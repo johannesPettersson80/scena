@@ -1,6 +1,7 @@
 use crate::{diagnostics::Backend, material::Color};
 
 use super::Renderer;
+use super::color_contract::linear_rgba_to_srgb8;
 
 const DEFAULT_TARGET_LUMINANCE: f32 = 0.18;
 const DEFAULT_MIN_EV: f32 = -4.0;
@@ -8,6 +9,8 @@ const DEFAULT_MAX_EV: f32 = 4.0;
 const DEFAULT_HIGHLIGHT_PERCENTILE: f32 = 0.95;
 const DEFAULT_HIGHLIGHT_TARGET_LUMINANCE: f32 = 0.85;
 const LUMINANCE_EPSILON: f32 = 1.0e-4;
+const AUTO_EXPOSURE_BACKGROUND_TOLERANCE_RGBA8: u8 = 2;
+const MIN_FOREGROUND_AUTO_EXPOSURE_SAMPLES: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AutoExposureConfig {
@@ -278,6 +281,60 @@ pub fn estimate_auto_exposure_from_srgb8(
     estimate_auto_exposure_from_linear_colors(&colors, config)
 }
 
+fn estimate_auto_exposure_from_linear_colors_with_background(
+    colors: &[Color],
+    background: Color,
+    config: AutoExposureConfig,
+) -> Option<AutoExposureResult> {
+    let background = linear_rgba_to_srgb8(background);
+    let foreground = colors
+        .iter()
+        .copied()
+        .filter(|color| {
+            color.a > 0.0
+                && color_differs_from_background(
+                    linear_rgba_to_srgb8(*color).as_slice(),
+                    background,
+                    AUTO_EXPOSURE_BACKGROUND_TOLERANCE_RGBA8,
+                )
+        })
+        .collect::<Vec<_>>();
+    if foreground.len() >= MIN_FOREGROUND_AUTO_EXPOSURE_SAMPLES {
+        estimate_auto_exposure_from_linear_colors(&foreground, config)
+    } else {
+        estimate_auto_exposure_from_linear_colors(colors, config)
+    }
+}
+
+fn estimate_auto_exposure_from_srgb8_with_background(
+    rgba8: &[u8],
+    background: Color,
+    config: AutoExposureConfig,
+) -> Option<AutoExposureResult> {
+    let background = linear_rgba_to_srgb8(background);
+    let mut colors = Vec::with_capacity(rgba8.len() / 4);
+    let mut foreground = Vec::new();
+    for pixel in rgba8.chunks_exact(4) {
+        let color = Color::from_srgb_u8(pixel[0], pixel[1], pixel[2]);
+        let color = Color::from_linear_rgba(color.r, color.g, color.b, f32::from(pixel[3]) / 255.0);
+        colors.push(color);
+        if color.a > 0.0
+            && color_differs_from_background(
+                pixel,
+                background,
+                AUTO_EXPOSURE_BACKGROUND_TOLERANCE_RGBA8,
+            )
+        {
+            foreground.push(color);
+        }
+    }
+    if foreground.len() >= MIN_FOREGROUND_AUTO_EXPOSURE_SAMPLES {
+        estimate_auto_exposure_from_linear_colors(&foreground, config)
+    } else {
+        estimate_auto_exposure_from_linear_colors(&colors, config)
+    }
+}
+
 impl Renderer {
     pub fn set_auto_exposure(&mut self, config: AutoExposureConfig) {
         self.auto_exposure = Some(config);
@@ -304,7 +361,11 @@ impl Renderer {
         &self,
         config: AutoExposureConfig,
     ) -> Option<AutoExposureResult> {
-        estimate_auto_exposure_from_linear_colors(self.linear_frame.as_deref()?, config)
+        estimate_auto_exposure_from_linear_colors_with_background(
+            self.linear_frame.as_deref()?,
+            self.background_color(),
+            config,
+        )
     }
 
     pub fn apply_auto_exposure_from_last_cpu_frame(
@@ -338,7 +399,11 @@ impl Renderer {
         config: AutoExposureConfig,
     ) -> Option<AutoExposureResult> {
         if let Some(linear_frame) = self.linear_frame.as_deref() {
-            return estimate_auto_exposure_from_linear_colors(linear_frame, config);
+            return estimate_auto_exposure_from_linear_colors_with_background(
+                linear_frame,
+                self.background_color(),
+                config,
+            );
         }
         #[cfg(target_arch = "wasm32")]
         if let Some(result) = self
@@ -351,7 +416,11 @@ impl Renderer {
         if matches!(self.target.backend, Backend::WebGpu | Backend::WebGl2) {
             return None;
         }
-        estimate_auto_exposure_from_srgb8(&self.frame, config)
+        estimate_auto_exposure_from_srgb8_with_background(
+            &self.frame,
+            self.background_color(),
+            config,
+        )
     }
 }
 
@@ -379,5 +448,66 @@ fn valid_luminance_or(value: f32, fallback: f32) -> f32 {
         value
     } else {
         fallback
+    }
+}
+
+fn color_differs_from_background(pixel: &[u8], background: [u8; 4], tolerance: u8) -> bool {
+    (0..3).any(|channel| pixel[channel].abs_diff(background[channel]) > tolerance)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auto_exposure_prefers_foreground_over_flat_background() {
+        let background = Color::STUDIO_BACKDROP;
+        let subject = Color::from_srgb_u8(60, 68, 78);
+        let mut colors = vec![background; 900];
+        colors.extend(std::iter::repeat_n(subject, 100));
+
+        let full_frame = estimate_auto_exposure_from_linear_colors(
+            &colors,
+            AutoExposureConfig::product_studio(),
+        )
+        .expect("full-frame auto exposure estimates");
+        let foreground = estimate_auto_exposure_from_linear_colors_with_background(
+            &colors,
+            background,
+            AutoExposureConfig::product_studio(),
+        )
+        .expect("foreground auto exposure estimates");
+
+        assert!(
+            foreground.exposure_ev() > full_frame.exposure_ev() + 1.0,
+            "product exposure must meter the foreground subject rather than the bright studio background"
+        );
+        assert_eq!(foreground.sample_count(), 100);
+    }
+
+    #[test]
+    fn auto_exposure_falls_back_when_foreground_is_too_sparse() {
+        let background = Color::STUDIO_BACKDROP;
+        let subject = Color::from_srgb_u8(60, 68, 78);
+        let mut colors = vec![background; 900];
+        colors.extend(std::iter::repeat_n(
+            subject,
+            MIN_FOREGROUND_AUTO_EXPOSURE_SAMPLES - 1,
+        ));
+
+        let full_frame = estimate_auto_exposure_from_linear_colors(
+            &colors,
+            AutoExposureConfig::product_studio(),
+        )
+        .expect("full-frame auto exposure estimates");
+        let foreground = estimate_auto_exposure_from_linear_colors_with_background(
+            &colors,
+            background,
+            AutoExposureConfig::product_studio(),
+        )
+        .expect("foreground auto exposure estimates");
+
+        assert_eq!(foreground.sample_count(), full_frame.sample_count());
+        assert!((foreground.exposure_ev() - full_frame.exposure_ev()).abs() < f32::EPSILON);
     }
 }

@@ -3510,10 +3510,10 @@ fn scena_recipe_render_verify_low_contrast_geometry_edges_require_sample_aa_on_c
                 stderr(&output)
             );
             assert!(
-                checks
-                    .iter()
-                    .all(|check| check["code"] != "geometry_missing_antialiasing"),
-                "sampled low-contrast geometry edge should not emit geometry_missing_antialiasing for {name}: {report:#}"
+                checks.iter().all(|check| {
+                    check["code"] != "geometry_missing_antialiasing" || check["status"] != "failed"
+                }),
+                "sampled low-contrast geometry edge should not fail geometry_missing_antialiasing for {name}: {report:#}"
             );
         } else {
             let edge_check = checks
@@ -3849,9 +3849,10 @@ fn scena_recipe_render_ergonomic_product_scene_reaches_rust_api_quality_on_cpu_a
             .expect("quality checks serialize");
         assert!(
             quality_checks.iter().all(|check| {
-                check["code"] != "reflection_structure_missing"
-                    && check["code"] != "low_clip_fraction_too_high"
-                    && check["code"] != "high_clip_fraction_too_high"
+                check["status"] != "failed"
+                    || (check["code"] != "reflection_structure_missing"
+                        && check["code"] != "low_clip_fraction_too_high"
+                        && check["code"] != "high_clip_fraction_too_high")
             }),
             "material.preset chrome + environment.preset + auto_exposure should not fail reflection/exposure quality on {backend}: {report:#}"
         );
@@ -8230,6 +8231,121 @@ fn scena_recipe_render_verify_checks_object_exposure_and_salience_on_cpu_and_gpu
                     "{backend}/{case} object-pixel failure must surface as verification reason: {report:#}"
                 );
             }
+        }
+    }
+}
+
+#[cfg(feature = "scene-host")]
+#[test]
+fn scena_recipe_render_verify_checks_imported_product_exposure_by_default_on_gpu() {
+    let dir = artifact_dir("recipe-import-product-exposure");
+    for (case, background, environment, lights, should_pass, expected_code) in [
+        (
+            "neutral-environment-auto-exposes-import",
+            "studio",
+            "neutral_studio",
+            json!([]),
+            true,
+            "subject_exposure_sane",
+        ),
+        (
+            "close-softbox-blows-out-import",
+            "dark_studio",
+            "studio",
+            json!([{
+                "id": "softbox",
+                "kind": "area",
+                "shape": "rect",
+                "preset": "softbox",
+                "transform": {
+                    "kind": "trs",
+                    "translation": [0.1, 0.3, 0.2]
+                }
+            }]),
+            false,
+            "subject_blown_out",
+        ),
+    ] {
+        let recipe_path = dir.join(format!("{case}.recipe.json"));
+        let png_path = dir.join(format!("{case}.png"));
+        fs::write(
+            &recipe_path,
+            serde_json::to_string_pretty(&json!({
+                "schema": "scena.scene_recipe.v1",
+                "capture": { "width": 512, "height": 640 },
+                "imports": [{
+                    "id": "bottle",
+                    "uri": "tests/assets/gltf/khronos/WaterBottle/WaterBottle.gltf",
+                    "expected_extent": { "min": 0.001, "max": 100.0, "unit": "m" }
+                }],
+                "scene": {
+                    "background": { "kind": background },
+                    "environment": { "preset": environment }
+                },
+                "render": {
+                    "auto_exposure": "product_studio",
+                    "quality": "high",
+                    "anti_aliasing": "msaa4",
+                    "supersample": 1,
+                    "reconstruction": "tent"
+                },
+                "cameras": [{
+                    "id": "main",
+                    "active": true,
+                    "kind": "perspective",
+                    "lens": "portrait",
+                    "framing": {
+                        "preset": "three_quarter_front_right",
+                        "fill": 0.7
+                    }
+                }],
+                "lights": lights
+            }))
+            .expect("WaterBottle exposure recipe serializes"),
+        )
+        .expect("WaterBottle exposure recipe writes");
+
+        let report = if should_pass {
+            run_recipe_render_verify(&recipe_path, &png_path, true)
+        } else {
+            run_recipe_render_verify_expect_failure(&recipe_path, &png_path, true)
+        };
+        let composition = &report["verification"]["composition"];
+        assert_eq!(composition["schema"], "scena.scene_composition.v1");
+        assert_eq!(composition["ok"], should_pass, "{report:#}");
+        let import_pixel_check = composition["checks"]
+            .as_array()
+            .expect("composition checks serialize")
+            .iter()
+            .find(|check| check["id"] == "import.bottle.pixel_exposure")
+            .unwrap_or_else(|| {
+                panic!("imported WaterBottle must emit object-pixel exposure check: {report:#}")
+            });
+        assert_eq!(import_pixel_check["code"], expected_code, "{report:#}");
+        assert_eq!(
+            import_pixel_check["status"],
+            if should_pass { "checked" } else { "failed" },
+            "{report:#}"
+        );
+        if should_pass {
+            let mean_luminance = import_pixel_check["observed"]["mean_luminance"]
+                .as_f64()
+                .expect("mean luminance serializes");
+            assert!(
+                mean_luminance >= 0.34,
+                "neutral-studio WaterBottle should not stay dull after product auto-exposure: {report:#}"
+            );
+        } else {
+            assert!(
+                report["verification"]["reasons"]
+                    .as_array()
+                    .expect("verification reasons serialize")
+                    .iter()
+                    .any(|reason| reason["source"] == "composition"
+                        && reason["code"] == expected_code
+                        && reason["expectation_id"] == "import.bottle.pixel_exposure"),
+                "blown-out import exposure must surface as a composition verification reason: {report:#}"
+            );
         }
     }
 }

@@ -8,6 +8,7 @@ mod clipping;
 mod grid;
 mod helper_layer;
 mod helpers;
+mod import_roots;
 mod object_depth;
 mod object_framing;
 mod object_pixels;
@@ -96,6 +97,7 @@ impl<F: AssetFetcher> SceneHostCore<F> {
         checks.extend(composition_transform_checks(manifest, inspection, expect));
         checks.extend(composition_separation_checks(expect, manifest, inspection));
         checks.extend(composition_object_checks(ObjectCompositionInput {
+            recipe,
             manifest,
             capture,
             inspection,

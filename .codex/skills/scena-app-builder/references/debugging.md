@@ -135,9 +135,10 @@ intentional.
 
 ## Object Too Dark, Blown Out, Or Low Contrast
 
-When a render passes visibility checks but looks visually dead, include an
-`expect_quality` profile and inspect `verification.composition`. A failed
-`subject_black_crushed` means a declared object region is dominated by
+When a render passes visibility checks but looks visually dead, inspect
+`verification.composition`; product renders run severe subject exposure checks
+for authored and imported objects even without an explicit `expect_quality`
+profile. A failed `subject_black_crushed` means a declared object region is dominated by
 near-black pixels; add lighting/environment, raise exposure, or avoid dead
 metallic-black materials unless that is the intended proof. A failed
 `subject_blown_out` means highlights are clipped. A failed

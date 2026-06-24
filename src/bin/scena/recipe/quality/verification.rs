@@ -97,6 +97,7 @@ pub(crate) fn verify_quality_expectations(
         quality
             .checks
             .iter()
+            .filter(|check| !matches!(check.status, scena::RenderQualityStatusV1::Checked))
             .map(|check| scena::SceneRecipeVerificationReasonV1 {
                 code: check.code.clone(),
                 severity: check.severity.clone(),

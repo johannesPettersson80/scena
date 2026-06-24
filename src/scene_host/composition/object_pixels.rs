@@ -219,7 +219,7 @@ impl ObjectPixelThresholds {
             },
             _ => Self {
                 max_low_clip_fraction: 0.80,
-                max_high_clip_fraction: 0.65,
+                max_high_clip_fraction: 0.30,
                 min_mean_background_delta: 0.060,
             },
         }

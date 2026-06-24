@@ -27,11 +27,19 @@ pub struct RenderQualitySummaryV1 {
 pub struct RenderQualityCheckV1 {
     pub id: String,
     pub code: String,
+    pub status: RenderQualityStatusV1,
     pub severity: String,
     pub region: RenderQualityRegionV1,
     pub observed: BTreeMap<String, f32>,
     pub threshold: BTreeMap<String, f32>,
     pub fix_hint: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RenderQualityStatusV1 {
+    Checked,
+    Failed,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

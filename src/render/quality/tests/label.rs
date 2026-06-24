@@ -23,7 +23,8 @@ fn label_quality_known_bad_fails_exact_reason_and_good_passes() {
     assert!(
         bad_checks
             .iter()
-            .any(|check| check.code == "label_ink_isolation"),
+            .any(|check| check.code == "label_ink_isolation"
+                && check.status == RenderQualityStatusV1::Failed),
         "eroded label fixture must fail with label_ink_isolation: {bad_checks:#?}"
     );
 
@@ -36,9 +37,9 @@ fn label_quality_known_bad_fails_exact_reason_and_good_passes() {
     );
     let good_checks =
         evaluate_label_region_quality("good-label", &good, width, height, region, expectation);
-    assert!(
-        good_checks.is_empty(),
-        "known-good antialiased label should pass quality checks: {good_checks:#?}"
+    assert_no_failed_checks(
+        &good_checks,
+        "known-good antialiased label should pass quality checks",
     );
 }
 
@@ -74,7 +75,8 @@ fn label_quality_known_bad_gpu_eroded_fixture_fails_exact_reason() {
     assert!(
         checks
             .iter()
-            .any(|check| check.code == "label_ink_coverage_too_low"),
+            .any(|check| check.code == "label_ink_coverage_too_low"
+                && check.status == RenderQualityStatusV1::Failed),
         "old GPU-eroded label fixture must fail exact label_ink_coverage_too_low: {checks:#?}"
     );
 }
@@ -103,7 +105,8 @@ fn label_quality_known_bad_bitmap_fixture_fails_antialiasing_reason() {
     assert!(
         checks
             .iter()
-            .any(|check| check.code == "label_missing_antialiasing"),
+            .any(|check| check.code == "label_missing_antialiasing"
+                && check.status == RenderQualityStatusV1::Failed),
         "old blocky bitmap-style label fixture must fail exact label_missing_antialiasing: {checks:#?}"
     );
 }
@@ -141,7 +144,8 @@ fn label_background_quality_known_bad_fails_exact_reason_and_good_passes() {
     assert!(
         bad_checks
             .iter()
-            .any(|check| check.code == "label_background_not_uniform"),
+            .any(|check| check.code == "label_background_not_uniform"
+                && check.status == RenderQualityStatusV1::Failed),
         "non-uniform label background fixture must fail exact label_background_not_uniform: {bad_checks:#?}"
     );
 
@@ -161,8 +165,8 @@ fn label_background_quality_known_bad_fails_exact_reason_and_good_passes() {
         expectation,
         Some(expected),
     );
-    assert!(
-        good_checks.is_empty(),
-        "flat authored label background should pass quality checks: {good_checks:#?}"
+    assert_no_failed_checks(
+        &good_checks,
+        "flat authored label background should pass quality checks",
     );
 }

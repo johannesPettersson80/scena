@@ -11,6 +11,7 @@
     {
       "id": "label-fixture",
       "code": "label_ink_isolation",
+      "status": "failed",
       "severity": "error",
       "region": {
         "kind": "label",
@@ -35,6 +36,7 @@
     {
       "id": "line-fixture",
       "code": "line_missing_antialiasing",
+      "status": "failed",
       "severity": "error",
       "region": {
         "kind": "line",
@@ -59,6 +61,7 @@
     {
       "id": "geometry-fixture",
       "code": "geometry_missing_antialiasing",
+      "status": "failed",
       "severity": "error",
       "region": {
         "kind": "subject",
@@ -82,6 +85,7 @@
     {
       "id": "reflection-fixture",
       "code": "reflection_structure_missing",
+      "status": "failed",
       "severity": "error",
       "region": {
         "kind": "reflection_surface",
@@ -109,6 +113,7 @@
     {
       "id": "reflection-firefly-fixture",
       "code": "reflection_firefly_outliers",
+      "status": "failed",
       "severity": "error",
       "region": {
         "kind": "reflection_surface",
@@ -132,6 +137,7 @@
     {
       "id": "area-light-fixture",
       "code": "area_light_soft_shadow_insufficient",
+      "status": "failed",
       "severity": "error",
       "region": {
         "kind": "area_light_shadow_target",
@@ -162,6 +168,7 @@
     {
       "id": "grounding-fixture",
       "code": "contact_shadow_missing",
+      "status": "failed",
       "severity": "error",
       "region": {
         "kind": "contact_shadow_target",
@@ -190,6 +197,7 @@
     {
       "id": "dof-fixture",
       "code": "depth_of_field_checked",
+      "status": "checked",
       "severity": "info",
       "region": {
         "kind": "dof_background",

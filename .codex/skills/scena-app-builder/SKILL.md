@@ -297,9 +297,12 @@ Load only the reference needed for the task.
   full projected label is off-frame even if part of the text is visible.
 - When `expect_quality.profile` is present, `verification.composition` also
   checks each declared object region for object-level framing, exposure,
-  salience, and decoded base-color texture result. The quality profile is a
-  baseline: adding explicit `text`, `line`, `reflection`, or `grounding`
-  checks does not turn off profile-derived geometry-edge or grid-floor checks.
+  salience, and decoded base-color texture result. Product renders with
+  `render.profile:"product"` or `render.auto_exposure:"product_studio"` also
+  run severe subject exposure checks by default for authored and imported
+  objects. The quality profile is a baseline: adding explicit `text`, `line`,
+  `reflection`, or `grounding` checks does not turn off profile-derived
+  geometry-edge or grid-floor checks.
   Treat
   `subject_too_small_in_frame`, `subject_too_large_in_frame`,
   `subject_black_crushed`, `subject_blown_out`, `subject_salience_too_low`,

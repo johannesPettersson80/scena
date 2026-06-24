@@ -20,7 +20,8 @@ fn line_quality_known_bad_fails_exact_reason_and_good_passes() {
     assert!(
         bad_checks
             .iter()
-            .any(|check| check.code == "line_missing_antialiasing"),
+            .any(|check| check.code == "line_missing_antialiasing"
+                && check.status == RenderQualityStatusV1::Failed),
         "hard 1px line fixture must fail exact line_missing_antialiasing: {bad_checks:#?}"
     );
 
@@ -33,9 +34,9 @@ fn line_quality_known_bad_fails_exact_reason_and_good_passes() {
     );
     let good_checks =
         evaluate_line_region_quality("good-line", &good, width, height, region, expectation);
-    assert!(
-        good_checks.is_empty(),
-        "known-good antialiased straight line should pass quality checks: {good_checks:#?}"
+    assert_no_failed_checks(
+        &good_checks,
+        "known-good antialiased straight line should pass quality checks",
     );
 }
 
@@ -66,7 +67,8 @@ fn geometry_edge_quality_known_bad_fails_exact_reason_and_good_passes() {
     assert!(
         bad_checks
             .iter()
-            .any(|check| check.code == "geometry_missing_antialiasing"),
+            .any(|check| check.code == "geometry_missing_antialiasing"
+                && check.status == RenderQualityStatusV1::Failed),
         "hard 1-bit geometry edge fixture must fail exact geometry_missing_antialiasing: {bad_checks:#?}"
     );
 
@@ -85,8 +87,8 @@ fn geometry_edge_quality_known_bad_fails_exact_reason_and_good_passes() {
         region,
         expectation,
     );
-    assert!(
-        good_checks.is_empty(),
-        "known-good sampled geometry edge should pass quality checks: {good_checks:#?}"
+    assert_no_failed_checks(
+        &good_checks,
+        "known-good sampled geometry edge should pass quality checks",
     );
 }

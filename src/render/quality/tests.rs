@@ -233,15 +233,30 @@ fn quality_input<'a>(
 
 fn assert_has_code(report: &RenderQualityReportV1, code: &str) {
     assert!(
-        report.checks.iter().any(|check| check.code == code),
-        "expected quality code {code} in report: {report:#?}"
+        report
+            .checks
+            .iter()
+            .any(|check| check.code == code && check.status == RenderQualityStatusV1::Failed),
+        "expected failed quality code {code} in report: {report:#?}"
     );
 }
 
 fn assert_lacks_code(report: &RenderQualityReportV1, code: &str) {
     assert!(
-        report.checks.iter().all(|check| check.code != code),
-        "expected no quality code {code} in report: {report:#?}"
+        report
+            .checks
+            .iter()
+            .all(|check| check.code != code || check.status != RenderQualityStatusV1::Failed),
+        "expected no failed quality code {code} in report: {report:#?}"
+    );
+}
+
+fn assert_no_failed_checks(checks: &[RenderQualityCheckV1], context: &str) {
+    assert!(
+        checks
+            .iter()
+            .all(|check| check.status != RenderQualityStatusV1::Failed),
+        "{context}: {checks:#?}"
     );
 }
 

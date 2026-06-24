@@ -300,10 +300,19 @@ fn authored_area_shape(
     path: &str,
 ) -> Result<Option<AreaLightShape>, Box<SceneRecipeDiagnosticV1>> {
     match recipe.shape.as_deref() {
-        Some("rect") => Ok(Some(AreaLightShape::rect(
-            recipe.width.unwrap_or(1.0) as f32,
-            recipe.height.unwrap_or(1.0) as f32,
-        ))),
+        Some("rect") => {
+            if recipe.preset.as_deref() == Some("softbox")
+                && recipe.width.is_none()
+                && recipe.height.is_none()
+            {
+                Ok(None)
+            } else {
+                Ok(Some(AreaLightShape::rect(
+                    recipe.width.unwrap_or(1.0) as f32,
+                    recipe.height.unwrap_or(1.0) as f32,
+                )))
+            }
+        }
         Some("disc") => Ok(Some(AreaLightShape::disc(
             recipe.radius.unwrap_or(0.5) as f32
         ))),
@@ -342,4 +351,42 @@ fn invalid_light_preset(
         message,
         help,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn area_recipe_with_softbox_shape() -> SceneRecipeLightV1 {
+        SceneRecipeLightV1 {
+            id: "softbox".to_owned(),
+            kind: "area".to_owned(),
+            preset: Some("softbox".to_owned()),
+            shape: Some("rect".to_owned()),
+            color: None,
+            illuminance_lux: None,
+            intensity_candela: None,
+            luminous_flux_lumens: None,
+            range: None,
+            width: None,
+            height: None,
+            radius: None,
+            inner_cone_degrees: None,
+            outer_cone_degrees: None,
+            transform: None,
+        }
+    }
+
+    #[test]
+    fn softbox_rect_shape_without_dimensions_preserves_preset_extent() {
+        let recipe = area_recipe_with_softbox_shape();
+
+        let light = authored_area_light(&recipe, None, "$.lights[0]").expect("softbox builds");
+
+        assert_eq!(
+            light.shape(),
+            AreaLightShape::rect(1.2, 0.6),
+            "shape:\"rect\" without dimensions must not silently overwrite the softbox preset extent"
+        );
+    }
 }

@@ -142,6 +142,11 @@ fn reference_check(check: ReferenceCheckInput<'_>) -> scena::RenderQualityCheckV
     scena::RenderQualityCheckV1 {
         id: check.reference.id.clone(),
         code: check.code.to_owned(),
+        status: if check.severity == "error" {
+            scena::RenderQualityStatusV1::Failed
+        } else {
+            scena::RenderQualityStatusV1::Checked
+        },
         severity: check.severity.to_owned(),
         region: scena::RenderQualityRegionV1 {
             kind: "frame".to_owned(),

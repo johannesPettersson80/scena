@@ -27,7 +27,7 @@ pub use types::{
     RenderQualityGeometryEdgeMetrics, RenderQualityGridLineMetrics,
     RenderQualityLabelBackgroundMetrics, RenderQualityLabelMetrics, RenderQualityLineMetrics,
     RenderQualityProfile, RenderQualityRegion, RenderQualityRegionV1, RenderQualityReportV1,
-    RenderQualitySummaryV1,
+    RenderQualityStatusV1, RenderQualitySummaryV1,
 };
 
 use crate::{

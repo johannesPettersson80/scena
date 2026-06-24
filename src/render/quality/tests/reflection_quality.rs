@@ -31,7 +31,8 @@ fn reflection_quality_known_bad_fireflies_fail_exact_reason_and_good_passes() {
     assert!(
         bad_checks
             .iter()
-            .any(|check| check.code == "reflection_firefly_outliers"),
+            .any(|check| check.code == "reflection_firefly_outliers"
+                && check.status == RenderQualityStatusV1::Failed),
         "isolated bright reflection specks must fail exact reflection_firefly_outliers: {bad_checks:#?}"
     );
 
@@ -50,8 +51,8 @@ fn reflection_quality_known_bad_fireflies_fail_exact_reason_and_good_passes() {
         region,
         expectation,
     );
-    assert!(
-        good_checks.is_empty(),
-        "structured reflection without isolated bright specks should pass quality checks: {good_checks:#?}"
+    assert_no_failed_checks(
+        &good_checks,
+        "structured reflection without isolated bright specks should pass quality checks",
     );
 }

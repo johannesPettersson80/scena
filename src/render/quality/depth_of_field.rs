@@ -5,6 +5,7 @@ use crate::scene::recipe::SceneRecipeQualityDepthOfFieldV1;
 use super::metrics::frame_metrics;
 use super::types::{
     self, RenderQualityCheckV1, RenderQualityDepthOfFieldMetrics, RenderQualityRegion,
+    RenderQualityStatusV1,
 };
 
 pub struct DepthOfFieldQualityInput<'a> {
@@ -99,6 +100,11 @@ pub fn evaluate_depth_of_field_region_quality(
     vec![RenderQualityCheckV1 {
         id: id.to_owned(),
         code: code.to_owned(),
+        status: if severity == "error" {
+            RenderQualityStatusV1::Failed
+        } else {
+            RenderQualityStatusV1::Checked
+        },
         severity: severity.to_owned(),
         region: background_region.to_report(),
         observed: BTreeMap::from([

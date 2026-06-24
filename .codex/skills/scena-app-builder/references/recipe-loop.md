@@ -85,7 +85,9 @@ Rules:
 - include an `expect_quality` profile for user-facing renders so composition
   verification catches object-level weak framing, black-crush, blown
   highlights, weak subject/background salience, and flat decoded texture
-  results;
+  results. Product renders that use `render.profile:"product"` or
+  `render.auto_exposure:"product_studio"` get severe subject exposure checks by
+  default, including imported roots;
 - mark optional assets as optional only when missing content is acceptable;
 - keep host/domain state out of recipe JSON.
 

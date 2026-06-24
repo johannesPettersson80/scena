@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::RenderIntrospectionRectV1;
 
-use super::types::{RenderQualityCheckV1, RenderQualityRegion, round3};
+use super::types::{RenderQualityCheckV1, RenderQualityRegion, RenderQualityStatusV1, round3};
 
 pub(super) struct ThresholdCheck<'a> {
     pub(super) id: &'a str,
@@ -33,6 +33,21 @@ pub(super) fn push_threshold_check(
             threshold: check.threshold,
             fix_hint: check.fix_hint,
         }));
+    } else {
+        checks.push(single_value_check_with_status(
+            SingleValueCheck {
+                id: check.id,
+                code: check.code,
+                severity: "info",
+                region: check.region,
+                observed_key: check.observed_key,
+                observed: check.observed,
+                threshold_key: check.threshold_key,
+                threshold: check.threshold,
+                fix_hint: "no action needed",
+            },
+            RenderQualityStatusV1::Checked,
+        ));
     }
 }
 
@@ -49,9 +64,17 @@ pub(super) struct SingleValueCheck<'a> {
 }
 
 pub(super) fn single_value_check(check: SingleValueCheck<'_>) -> RenderQualityCheckV1 {
+    single_value_check_with_status(check, RenderQualityStatusV1::Failed)
+}
+
+pub(super) fn single_value_check_with_status(
+    check: SingleValueCheck<'_>,
+    status: RenderQualityStatusV1,
+) -> RenderQualityCheckV1 {
     RenderQualityCheckV1 {
         id: check.id.to_owned(),
         code: check.code.to_owned(),
+        status,
         severity: check.severity.to_owned(),
         region: check.region.to_report(),
         observed: BTreeMap::from([(check.observed_key.to_owned(), round3(check.observed))]),

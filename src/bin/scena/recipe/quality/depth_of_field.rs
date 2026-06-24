@@ -211,6 +211,11 @@ fn depth_of_field_single_check(input: DepthOfFieldSingleCheck<'_>) -> scena::Ren
     scena::RenderQualityCheckV1 {
         id: "expect_quality.depth_of_field".to_owned(),
         code: input.code.to_owned(),
+        status: if input.severity == "error" {
+            scena::RenderQualityStatusV1::Failed
+        } else {
+            scena::RenderQualityStatusV1::Checked
+        },
         severity: input.severity.to_owned(),
         region: scena::RenderQualityRegionV1 {
             kind: input.region.kind.to_owned(),

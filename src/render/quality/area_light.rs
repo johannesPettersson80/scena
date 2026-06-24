@@ -5,6 +5,7 @@ use crate::scene::recipe::SceneRecipeQualityAreaLightV1;
 use super::metrics::{percentile_sorted, pixel_luminance};
 use super::types::{
     self, RenderQualityAreaLightMetrics, RenderQualityCheckV1, RenderQualityRegion,
+    RenderQualityStatusV1,
 };
 
 pub fn area_light_shadow_metrics(
@@ -134,6 +135,11 @@ pub fn evaluate_area_light_region_quality(
             "area_light_soft_shadow_insufficient"
         }
         .to_owned(),
+        status: if passes {
+            RenderQualityStatusV1::Checked
+        } else {
+            RenderQualityStatusV1::Failed
+        },
         severity: if passes { "info" } else { "error" }.to_owned(),
         region: region.to_report(),
         observed: BTreeMap::from([

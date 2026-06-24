@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::scene::recipe::SceneRecipeQualityGroundingV1;
 
 use super::metrics::pixel_luminance;
-use super::types::{self, RenderQualityCheckV1, RenderQualityRegion};
+use super::types::{self, RenderQualityCheckV1, RenderQualityRegion, RenderQualityStatusV1};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RenderQualityGroundingMetrics {
@@ -61,6 +61,11 @@ pub fn evaluate_grounding_region_quality(
             "contact_shadow_missing"
         }
         .to_owned(),
+        status: if passes {
+            RenderQualityStatusV1::Checked
+        } else {
+            RenderQualityStatusV1::Failed
+        },
         severity: if passes { "info" } else { "error" }.to_owned(),
         region: target_region.to_report(),
         observed: BTreeMap::from([

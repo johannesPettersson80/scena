@@ -12,12 +12,15 @@ use super::helpers::{
 use super::object_framing::object_framing_check;
 use super::object_pixels::object_pixel_quality_check;
 use super::object_textures::object_texture_result_check;
+use crate::scene::recipe::SceneRecipeAutoExposureV1;
 use crate::{
-    CaptureRgba8, CaptureScreenRegion, Color, SceneCompositionCheckV1, SceneCompositionStatusV1,
-    SceneInspectionReportV1, SceneRecipeBuildV1, SceneRecipeExpectV1,
+    CaptureRgba8, CaptureScreenRegion, Color, RenderQualityProfile, SceneCompositionCheckV1,
+    SceneCompositionStatusV1, SceneInspectionReportV1, SceneRecipeBuildV1, SceneRecipeExpectV1,
+    SceneRecipeV1,
 };
 
 pub(super) struct ObjectCompositionInput<'a> {
+    pub(super) recipe: &'a SceneRecipeV1,
     pub(super) manifest: &'a SceneRecipeBuildV1,
     pub(super) capture: &'a CaptureRgba8,
     pub(super) inspection: &'a SceneInspectionReportV1,
@@ -31,12 +34,7 @@ pub(super) fn composition_object_checks(
     input: ObjectCompositionInput<'_>,
 ) -> Vec<SceneCompositionCheckV1> {
     let explicit_color_handles = expected_color_handles(input.expect, input.manifest);
-    let required_profile = input.expect.and_then(|expect| {
-        expect
-            .expect_quality
-            .as_ref()
-            .map(|quality| quality.profile.as_str())
-    });
+    let required_profile = required_object_profile(input.recipe, input.expect);
     let require_object_masks = required_profile.is_some();
     let mut checks = Vec::new();
 
@@ -400,7 +398,47 @@ pub(super) fn composition_object_checks(
         ));
     }
 
+    checks.extend(super::import_roots::composition_import_checks(
+        &input,
+        required_profile,
+        require_object_masks,
+    ));
+
     checks
+}
+
+pub(super) fn required_object_profile<'a>(
+    recipe: &'a SceneRecipeV1,
+    expect: Option<&'a SceneRecipeExpectV1>,
+) -> Option<&'a str> {
+    if let Some(profile) = expect.and_then(|expect| {
+        expect
+            .expect_quality
+            .as_ref()
+            .map(|quality| quality.profile.as_str())
+    }) {
+        return Some(profile);
+    }
+    if let Some(profile) = recipe
+        .render
+        .as_ref()
+        .and_then(|render| render.profile.as_deref())
+        && RenderQualityProfile::parse(profile).is_some()
+    {
+        return Some(profile);
+    }
+    let auto_exposure_preset = recipe
+        .render
+        .as_ref()
+        .and_then(|render| render.auto_exposure.as_ref())
+        .map(|auto_exposure| match auto_exposure {
+            SceneRecipeAutoExposureV1::Preset(preset) => preset.as_str(),
+            SceneRecipeAutoExposureV1::Config { preset, .. } => preset.as_str(),
+        });
+    if matches!(auto_exposure_preset, Some("product_studio")) {
+        return Some("product");
+    }
+    None
 }
 
 pub(super) fn owned_draw_handles(

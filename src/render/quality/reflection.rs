@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::scene::recipe::SceneRecipeQualityReflectionV1;
 
 use super::metrics::frame_metrics;
-use super::types::{self, RenderQualityCheckV1, RenderQualityRegion};
+use super::types::{self, RenderQualityCheckV1, RenderQualityRegion, RenderQualityStatusV1};
 
 pub fn evaluate_reflection_region_quality(
     id: &str,
@@ -28,6 +28,7 @@ pub fn evaluate_reflection_region_quality(
         checks.push(RenderQualityCheckV1 {
             id: id.to_owned(),
             code: "reflection_structure_missing".to_owned(),
+            status: RenderQualityStatusV1::Failed,
             severity: "error".to_owned(),
             region: region.to_report(),
             observed: BTreeMap::from([
@@ -47,6 +48,7 @@ pub fn evaluate_reflection_region_quality(
         checks.push(RenderQualityCheckV1 {
             id: id.to_owned(),
             code: "reflection_firefly_outliers".to_owned(),
+            status: RenderQualityStatusV1::Failed,
             severity: "error".to_owned(),
             region: region.to_report(),
             observed: BTreeMap::from([(
